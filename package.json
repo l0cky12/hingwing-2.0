@@ -1,0 +1,19 @@
+{
+  "name": "highwing",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.21.0",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p packages/hermes && tsc -p docs/design/sketch/.typecheck/tsconfig.json",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "eslint": "^9.30.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0",
+    "typescript-eslint": "^8.35.0",
+    "vitest": "^3.2.0"
+  }
+}

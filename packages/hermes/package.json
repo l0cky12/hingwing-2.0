@@ -1,0 +1,9 @@
+{
+  "name": "@highwing/hermes",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./domain": "./src/domain/index.ts",
+    "./testing": "./src/testing/fixture.ts"
+  }
+}
