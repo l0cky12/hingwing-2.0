@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "skipLibCheck": true,
+    "types": [],
+    "paths": {
+      "@highwing/hermes": ["./packages/hermes/src/hub.ts"],
+      "@highwing/hermes/domain": ["./packages/hermes/src/domain/index.ts"],
+      "@highwing/hermes/testing": ["./packages/hermes/src/testing/fixture.ts"],
+      "@highwing/thread": ["./packages/thread/src/thread-view.ts"]
+    }
+  },
+  "include": ["packages", "apps", "usage.ts"]
+}
