@@ -2,7 +2,7 @@
  * The canonical dispatcher's param check, `canonical_param_problems` in Hermes's
  * `tui_gateway/contracts/registry.py:154-166`, run over the vendored OpenRPC document.
  */
-import { readFileSync } from 'node:fs'
+import contract from '../wire/contract.openrpc.json' with { type: 'json' }
 
 interface Schema {
   readonly $ref?: string
@@ -39,7 +39,7 @@ let loaded: { readonly doc: OpenRpc; readonly contracts: ReadonlyMap<string, Con
 
 function load() {
   if (loaded !== undefined) return loaded
-  const doc = JSON.parse(readFileSync(new URL('../wire/contract.openrpc.json', import.meta.url), 'utf8')) as OpenRpc
+  const doc = contract as unknown as OpenRpc
   const contracts = new Map<string, Contract>(doc.methods.map(entry => [entry.name, null]))
   for (const entry of doc['x-canonical-methods']) {
     contracts.set(entry.name, { schema: entry.params[0].schema, shared: contracts.has(entry.name) })
