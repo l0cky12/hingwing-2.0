@@ -21,6 +21,7 @@ sha256sums=('SKIP'
             'e1d077c7a087d7e344350ea0c5cd2b7dc5af3d9bf7979474f38e0fc1a560b875')
 
 prepare() {
+  rm -rf "$srcdir/electron"
   mkdir "$srcdir/electron"
   bsdtar -xf "electron-v$_electron-linux-x64.zip" -C "$srcdir/electron"
 
