@@ -35,8 +35,6 @@ export type ParsedEvent =
    */
   | { readonly scope: 'unrouted'; readonly type: string; readonly why: string }
 
-// ---------- payloads the generated contract does not describe (checked against Hermes 0.23.3) ----------
-
 /** `gateway/session_pending_controls.py:71,93`: the prompt's own generation rides along. */
 interface PromptSettledPayload { prompt_id: string; execution_generation: number | null }
 /** `tui_gateway/session_lifecycle.py:636-643`, the TUI gateway's broadcast. The canonical gateway settles a dropped prompt with `*.settled`. */
@@ -48,13 +46,10 @@ type CanonicalToolComplete = ToolCompletePayload & { is_error?: boolean }
 /** `gateway/session_settlement_recovery.py:40-49`, and a cancelled queued row's `{text, content, admission_id, outcome}` (`gateway/session_authority.py:890`). */
 type CanonicalComplete = MessageCompletePayload & { outcome?: string; content?: unknown }
 
-// ---------- field readers ----------
-
 type Obj = { readonly [key: string]: unknown }
 
 const isObject = (value: unknown): value is Obj => value !== null && typeof value === 'object' && !Array.isArray(value)
 
-/** Thrown by a field reader and caught by `usable`, so a payload parser reads as a list of fields. Never leaves this module. */
 class Unusable extends Error {}
 
 function usable<T>(parse: () => T): T | null {
@@ -66,11 +61,6 @@ function usable<T>(parse: () => T): T | null {
   }
 }
 
-/**
- * Typed reads of one wire object. Keys are checked against the contract type `P`, so a field Hermes
- * renames fails to compile here. A required field that is missing, or any field of the wrong type,
- * makes the whole value unusable. An optional field reads absent and `null` alike, as `null`.
- */
 function fields<P>(value: unknown) {
   if (!isObject(value)) throw new Unusable()
   type Key = keyof P & string
@@ -115,21 +105,15 @@ function isJson(value: unknown): value is Json {
 }
 const isJsonObject = (raw: unknown): raw is { readonly [key: string]: Json } => isObject(raw) && isJson(raw)
 
-// ---------- text ----------
-
-/** CSI (colours, cursor moves), OSC (titles, links) and the two-byte escapes. */
 const ANSI = new RegExp(String.raw`\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)|\u001b[@-Z\\-_]`, 'g')
 const stripAnsi = (text: string) => text.replace(ANSI, '')
 
-/** 256 kB of UTF-16 code units, the unit `clipped` counts. */
 const RESULT_CAP = 256 * 1024
 
 function clip(raw: string): { readonly text: string; readonly clipped: number } {
   const text = stripAnsi(raw)
   return text.length <= RESULT_CAP ? { text, clipped: 0 } : { text: text.slice(0, RESULT_CAP), clipped: text.length - RESULT_CAP }
 }
-
-// ---------- shared shapes ----------
 
 const COMPLETE: Outcome = { kind: 'complete' }
 const STOPPED: Outcome = { kind: 'stopped' }
@@ -160,8 +144,6 @@ function admissionOf(value: unknown): Admission {
   return { inputId: row.str('input_id') as Admission['inputId'], admissionId: row.str('admission_id'), text: row.str('text'), status: status as Admission['status'] }
 }
 
-// ---------- the event table ----------
-
 type Shown = (payload: Obj, envelope: Obj) => SessionEvent
 
 function meta(title: string | null, revision: number | null, queue: readonly Admission[] | null): SessionEvent {
@@ -176,10 +158,6 @@ function meta(title: string | null, revision: number | null, queue: readonly Adm
 const promptOpened: Shown = payload => ({ type: 'prompt.opened', ...promptOf(payload) })
 const promptSettled: Shown = payload => ({ type: 'prompt.settled', id: fields<PromptSettledPayload>(payload).str('prompt_id') as PromptId })
 
-/**
- * The wire types Highwing shows, each with its payload parser. A parser that cannot use its payload
- * throws `Unusable` and the frame becomes `skipped: 'invalid'`.
- */
 export const SHOWN: { readonly [type: string]: Shown } = {
   /** `{}` for an ordinary admission (`gateway/session_authority.py:1239`). The turn id, when stamped, rides on the deltas. */
   'message.start': (payload, envelope) => {
@@ -216,23 +194,19 @@ export const SHOWN: { readonly [type: string]: Shown } = {
   },
   /** Spinner text while a model request is in flight (`gateway/local_viewer_events.py:44`). */
   'thinking.delta': () => ({ type: 'thinking' }),
-  /** `gateway/local_viewer_events.py:38`. */
   'tool.generating': payload => ({ type: 'tool.announced', name: fields<ToolGeneratingPayload>(payload).str('name') }),
-  /** `gateway/run_turn_progress.py:97-108`. */
   'tool.start': payload => {
     const p = fields<ToolStartPayload>(payload)
     const args = p.raw('args') ?? {}
     if (!isJsonObject(args)) throw new Unusable()
     return { type: 'tool.started', id: toolIdOf(p.str('tool_id')), name: p.str('name'), args }
   },
-  /** An MCP server's progress for a running call (`gateway/local_viewer_events.py:138-140`). */
   'tool.progress': payload => {
     const p = fields<ToolProgressPayload>(payload)
     const total = p.optNum('total')
     const count = `${p.optNum('progress') ?? 0}${total === null ? '' : ` of ${total}`}`
     return { type: 'tool.progress', id: toolIdOf(p.str('tool_id')), note: stripAnsi(p.optStr('message') || count) }
   },
-  /** `gateway/run_turn_progress.py:111-123,1057-1075` and `gateway/local_viewer_events.py:207-232` (`duration_s`, `inline_diff`). */
   'tool.complete': payload => {
     const p = fields<CanonicalToolComplete>(payload)
     const args = p.raw('args') ?? null
@@ -266,10 +240,6 @@ export const SHOWN: { readonly [type: string]: Shown } = {
   error: payload => ({ type: 'notice', tone: 'error', text: stripAnsi(fields<ErrorPayload>(payload).str('message')) })
 }
 
-/**
- * Known wire types that never become a session event in this build. Unknown types are treated the
- * same way at runtime; this list exists so a test can say which types are new.
- */
 export const UNSHOWN: ReadonlySet<string> = new Set([
   /** Every canonical turn publishes it (`gateway/run_turn_progress.py:1092`); not in the generated contract. */
   'agent.step',
@@ -311,7 +281,6 @@ function toolIdOf(id: string): ToolId {
   return id as ToolId
 }
 
-/** The envelope's position in the session's stream. `execution_generation` is copied as given and absent before a claim. */
 function stampOf(envelope: Obj): Stamp | null {
   return usable(() => {
     const frame = fields<CanonicalReplayEvent>(envelope)
@@ -337,8 +306,6 @@ export function parseEvent(params: unknown): ParsedEvent {
   if (event === null) return { scope: 'session', sessionId, type, stamp, event: null, skipped: 'invalid' }
   return { scope: 'session', sessionId, type, stamp, event }
 }
-
-// ---------- replies ----------
 
 /**
  * `messages_omitted` -> history null. Otherwise history comes from `display_messages`, the gateway's
@@ -366,7 +333,6 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
   }
 }
 
-/** The replayed params, each stamped from its own envelope. A frame that names no stream position cannot be placed and is left out. */
 export function parseReplay(reply: CanonicalEventsResult): Replay {
   const events = reply.events.flatMap((params): StampedEvent[] => {
     const parsed = parseEvent(params)
@@ -449,7 +415,6 @@ function storedRow(value: unknown, index: number) {
   return { role, text, rowId, item }
 }
 
-/** `last_active_at` and `started_at` are epoch seconds; the domain keeps milliseconds. */
 export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<SidebarRow, 'badge'>[] {
   return rows.map(row => {
     const seconds = row.last_active_at ?? row.started_at
@@ -468,9 +433,6 @@ export function parseServerRequest(request: { readonly id: string; readonly meth
   return { requestId: request.id, method: request.method, sessionId: typeof sessionId === 'string' && sessionId !== '' ? sessionId as SessionId : null }
 }
 
-// ---------- tool output ----------
-
-/** Hermes's unified-diff prefixes, tested in its order (`agent/display.py:759-779`). */
 function diffLineKind(line: string): FileDiff['lines'][number]['t'] | null {
   if (line.startsWith('@@')) return 'hunk'
   if (line.startsWith('-')) return 'del'

@@ -60,12 +60,10 @@ function storedTurn(id: string, rows: readonly number[]): SettledTurn {
 
 const feed = (state: Tracked, ...inputs: SessionInput[]): Tracked => inputs.reduce(reduce, state)
 
-/** Opened from an empty snapshot: live at seq 0, one attach attempt used. */
 function live(): Tracked {
   return feed(emptyTracked('s1' as SessionId), { in: 'attach' }, { in: 'attached', attempt: 1, snapshot: snapshot(), replay: null })
 }
 
-/** A turn that wrote "Hello" (seq 1-2), then the socket dropped and a new one asked to attach (attempt 2). */
 function reattaching(): Tracked {
   return feed(live(), event(1, started('t1')), event(2, delta('Hello')), { in: 'link.lost' }, { in: 'attach' })
 }

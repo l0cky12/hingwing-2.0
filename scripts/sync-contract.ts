@@ -1,8 +1,3 @@
-/**
- * `pnpm sync:contract`: vendor the installed Hermes's gateway contract into `packages/hermes/src/wire/`.
- * Copies the generated TypeScript and the OpenRPC document, and records the Hermes version and commit
- * they came from in `contract.version.json`.
- */
 import { copyFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CONTRACT_FILES, type ContractVersion, installedHermes, VERSION_FILE, WIRE_DIR } from './hermes-install'

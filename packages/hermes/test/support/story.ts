@@ -1,8 +1,3 @@
-/**
- * Folds a fixture straight through `parseEvent` and `reduce`, with a stand-in user and a stand-in
- * gateway that answers attaches from the frames it has published. No socket, link or actor: those
- * come with unit 4, whose `playToEnd` must reach the same session as this fold.
- */
 import { loadFixture, type Fixture } from '../../src/testing/fixture'
 import { parseEvent, parseRows } from '../../src/wire/parse'
 import {
@@ -66,10 +61,6 @@ export function readStory(path: string): Story {
   return { fixture, sessionId: fixture.header.sessionId, epoch, beats, frames }
 }
 
-/**
- * What the gateway would answer to `session.resume` once it has published `frames`. Derived from the
- * published frames alone, never from the reducer's state, so a reducer bug cannot hide in its input.
- */
 export function snapshotAfter(story: Story, published: readonly StampedEvent[], subscriptionId: string, history: Snapshot['history']): Snapshot {
   let running = false
   let generation = 0
@@ -106,7 +97,6 @@ function attempt(state: Tracked): number {
   return state.gate.attempt
 }
 
-/** First open: the resume carries the stored rows as of before the story. */
 function open(story: Story): Tracked {
   const attaching = reduce(emptyTracked(story.sessionId), { in: 'attach' })
   const rows = parseRows(story.fixture.header.stored)
@@ -116,7 +106,6 @@ function open(story: Story): Tracked {
 
 export interface Moment { readonly beat: number; readonly state: Tracked }
 
-/** The undisturbed fold. Calls `onMoment` after every beat, so a test can look at any moment of the turn. */
 export function fold(story: Story, onMoment?: (moment: Moment) => void): Tracked {
   let state = open(story)
   story.beats.forEach((beat, index) => {
@@ -128,13 +117,6 @@ export function fold(story: Story, onMoment?: (moment: Moment) => void): Tracked
   return state
 }
 
-/**
- * The same story with the socket lost after the `afterFrame`-th frame. While detached the gateway
- * publishes up to `missed` more frames, stopping early at a step that waits on the user, because the
- * story cannot move past it until the client calls. On the next socket the session re-attaches from
- * its cursor: the gateway replays all but the last missed frame, the last one arrives as a catch-up
- * frame before the resume reply (so it is parked), and the snapshot's watermark is that frame.
- */
 export function foldWithDrop(story: Story, afterFrame: number, missed: number): Tracked {
   let state = open(story)
   let seen = 0

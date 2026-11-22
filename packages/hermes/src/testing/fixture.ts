@@ -46,7 +46,6 @@ const isObject = (value: unknown): value is Json =>
 
 const STEP_KINDS = ['push', 'await', 'stored', 'drop'] as const
 
-/** The step on one line, or a sentence saying what is wrong with it. */
 function parseStep(value: unknown, previousAt: number): FixtureStep | string {
   if (!isObject(value)) return 'a step must be an object'
   const { at } = value
@@ -87,7 +86,6 @@ function parseStep(value: unknown, previousAt: number): FixtureStep | string {
   }
 }
 
-/** The header on line 1, or a sentence saying what is wrong with it. */
 function parseHeader(value: unknown): Fixture['header'] | string {
   if (!isObject(value)) return 'the header must be an object'
   const { fixture, hermes, source, sessionId, stored } = value

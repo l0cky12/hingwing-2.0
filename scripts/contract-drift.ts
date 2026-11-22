@@ -1,9 +1,3 @@
-/**
- * `pnpm contract:drift`: compare the vendored gateway contract with the installed Hermes's.
- * Prints the methods, server requests and event types that were added, removed or changed, and exits 1.
- * A method or event counts as changed when its schema differs with every `$ref` expanded.
- * Prints one line and exits 0 when there is no difference.
- */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CONTRACT_FILES, type ContractVersion, installedHermes, VERSION_FILE, WIRE_DIR } from './hermes-install'
@@ -34,7 +28,6 @@ const read = (path: string) => readFileSync(path, 'utf8')
 const vendored = JSON.parse(read(join(WIRE_DIR, openrpc.vendored))) as OpenRpc
 const installed = JSON.parse(read(join(hermes.dir, openrpc.hermes))) as OpenRpc
 
-/** `value` with every `#/components/schemas/X` reference replaced by X's schema; a cycle stays a `$ref`. */
 function expand(value: unknown, schemas: OpenRpc['components']['schemas'], seen: ReadonlySet<string> = new Set()): unknown {
   if (Array.isArray(value)) return value.map(item => expand(item, schemas, seen))
   if (value === null || typeof value !== 'object') return value

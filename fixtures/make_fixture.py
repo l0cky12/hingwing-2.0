@@ -66,7 +66,6 @@ sys.path.insert(0, HERMES_DIR)
 import hermes_bootstrap  # noqa: E402,F401
 
 WORK = "/tmp/hermes-proto-work"
-# The gateway's own state lives outside WORK, so the story's `ls -la` lists only what the errand made.
 HOME = "/tmp/hermes-proto-home"
 OUT = Path(__file__).resolve().parent / "errand.jsonl"
 USER = "highwing-fixture"
@@ -107,16 +106,10 @@ def final_words() -> str:
 
 
 def pin_listing_times():
-    """``ls -la`` prints mtimes: pin the errand's own entries so the listing repeats. Noon UTC on a day
-    more than six months back prints the same date in every time zone, in ``ls``'s year format. The
-    ``..`` line describes /tmp itself and still differs between runs."""
     for name in ("scratch/old.txt", "scratch", "notes.md", "."):
         os.utime(os.path.join(WORK, name), (1767268800, 1767268800))
 
 
-# One entry per model request: the words it streams (a callable when they depend on the tools' work),
-# then the tool call it makes, or none to finish. ``ms`` is the virtual time the tool takes, and
-# ``stage`` prepares the folder before the tool runs.
 STORY = [
     {"say": "I'll create the notes file first, then make the edit.",
      "call": ("write_file", {"path": f"{WORK}/notes.md", "content": NOTES}), "ms": 12},
@@ -154,8 +147,6 @@ class Clock:
 
 CLOCK = Clock()
 local_viewer_events.time = SimpleNamespace(monotonic=CLOCK.monotonic)
-# Wall time for the rows the gateway stores (``timestamp``, ``started_at``): the story starts at
-# 2026-11-21 09:00 UTC and moves only with the virtual clock.
 STORY_START = 1795251600
 time.time = lambda: STORY_START + CLOCK.now() / 1000
 # The creation time of the session's routing entry and row (``session_local.stage_local_session``).
@@ -163,7 +154,6 @@ session_lifecycle._now = lambda: datetime.fromtimestamp(time.time())
 
 
 def wire(frame):
-    """A frame as the WebSocket transport serializes it."""
     return json.loads(serialize_frame(frame, "fixture", logging.getLogger("fixture")))
 
 
@@ -217,8 +207,6 @@ def flushing_agent(db, session_id):
 
 
 def play_turn(turn, db, history, call_ids):
-    """The agent thread. Plays the model's part and calls the sinks ``TurnRunner`` installs on a
-    provider-backed agent for a local viewer's turn (``run_turn_runner.py`` ``_wire_agent``)."""
     authority, session_id, generation = turn._approval_owner
     agent = flushing_agent(db, session_id)
     messages = list(history) + [{"role": "user", "content": REQUEST}]
@@ -366,13 +354,11 @@ async def main():
     if recorder.written != pushes:
         sys.exit("the socket received other frames than the session published")
 
-    # A second viewer opening the chat now: the rows a resume with history returns.
     reader = AuthorityConnection(authority, SimpleNamespace(write=lambda obj: True), {"user_id": USER})
     snapshot = (await call(reader, "session.resume", {"session_id": session_id, "display_projection": True}))["result"]
     CLOCK.tick(4)
     recorder.steps.append({"at": CLOCK.now(), "stored": snapshot["display_messages"]})
 
-    # A new session stores no rows yet.
     header = {"fixture": 1, "hermes": HERMES_VERSION, "source": "generated", "sessionId": session_id,
               "describe": describe, "list": listing, "stored": created["messages"]}
     with OUT.open("w") as out:

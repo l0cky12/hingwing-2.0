@@ -159,11 +159,6 @@ export interface Fence {
   readonly admissions: { readonly [admissionId: string]: InputId }
   /** Highest stored row id among the turns held as settled. See the `lost` rule in the seed below. */
   readonly settledThrough: number | null
-  /**
-   * The newest run the gateway has named, in a snapshot or on a frame's stamp. null until the first
-   * seed, which is how `attach` tells a first open from a rebuild. A declined request carries no
-   * generation of its own, so a run it has to open uses this one.
-   */
   readonly generation: Generation | null
   /** Attach attempts begun so far. The next attempt is this plus one. */
   readonly attaches: number
@@ -231,8 +226,6 @@ export function reduce(state: Tracked, input: SessionInput): Tracked {
   }
 }
 
-// ---------- the gate ----------
-
 type Attaching = Extract<Gate, { at: 'attaching' }>
 const REBUILD: Attaching['plan'] = { mode: 'rebuild' }
 
@@ -241,7 +234,6 @@ function beginAttach(state: Tracked, plan: Attaching['plan'], parked: readonly S
   return { ...state, gate: { at: 'attaching', attempt, plan, parked }, fence: { ...state.fence, attaches: attempt } }
 }
 
-/** The cursor the next socket can replay from. */
 function resumePoint(gate: Gate): Cursor | null {
   switch (gate.at) {
     case 'detached':
@@ -260,7 +252,6 @@ function gap(state: Tracked): Tracked {
   return gate.cursor === null ? state : { ...state, gate: { ...gate, cursor: null } }
 }
 
-/** The seq gate. Live frames, replayed frames and parked frames all pass through here. */
 function admit(state: Tracked, frame: StampedEvent): Tracked {
   const { gate, fence } = state
   switch (gate.at) {
@@ -305,13 +296,11 @@ function attached(state: Tracked, gate: Attaching, snapshot: Snapshot, replay: R
   return beginAttach(state, REBUILD, parked)
 }
 
-/** Replaces the content from a snapshot that carries history. */
 function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
   const { content, fence } = state
   const before = content.run
   const sameRun = before.state === 'running' && snapshot.running && snapshot.generation === before.generation
   const leftOpen = snapshot.running ? null : page.unfinished
-  // The unfinished turn, when there is one, is the turn whose end was missed.
   const missed = before.state === 'running' && !sameRun && !(fence.settledThrough === null && leftOpen !== null)
   const stored = missed ? markLost(page.turns, fence.settledThrough) : page.turns
   const history = leftOpen === null ? stored : [...stored, {
@@ -348,14 +337,12 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
   return snapshot.queue.reduce(admission, seeded)
 }
 
-/** The end of these turns was never seen, so none of them may read as done. */
 function markLost(turns: readonly SettledTurn[], settledThrough: number | null): readonly SettledTurn[] {
   const lost = (turn: SettledTurn): SettledTurn => turn.outcome.kind === 'lost' ? turn : { ...turn, outcome: LOST }
   if (settledThrough === null) return turns.map((turn, index) => index === turns.length - 1 ? lost(turn) : turn)
   return turns.map(turn => turn.rows.some(row => row > settledThrough) ? lost(turn) : turn)
 }
 
-/** Step 4 of a replayed attach. The snapshot is the truth as of the watermark. It never moves the cursor. */
 function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
   let next: Tracked = {
     ...state,
@@ -385,7 +372,6 @@ function startedRequest(queue: readonly Admission[]): Request | null {
   return started === undefined ? null : { text: started.text, inputId: started.inputId }
 }
 
-/** What the gateway's queue says about one of our outbox entries. A row we hold no entry for is not ours to show. */
 function admission(state: Tracked, row: Pick<Admission, 'inputId' | 'admissionId' | 'status'>): Tracked {
   const { content, fence } = state
   const entry = content.outbox.find(held => held.inputId === row.inputId)
@@ -401,8 +387,6 @@ function admission(state: Tracked, row: Pick<Admission, 'inputId' | 'admissionId
     case 'terminal':
       return dropEntry(state, row.inputId)
     case 'started': {
-      // `turn.started` claims the entry when it arrives. A run that is already open without a known
-      // sender is that turn.
       const { run } = content
       if (run.state !== 'running') return remembered
       const { request } = run.turn
@@ -487,18 +471,14 @@ function act(state: Tracked, action: LocalAction): Tracked {
   }
 }
 
-// ---------- the fold ----------
-
 const IDLE: Run = { state: 'idle' }
 const LOST: Outcome = { kind: 'lost' }
 const ANSWERED_ELSEWHERE: PromptItem['state'] = { s: 'answered', reply: null }
 
-/** Applies one admitted event to the content. `state.gate` already holds the frame's cursor. */
 function fold(state: Tracked, stamp: Stamp, event: SessionEvent): Tracked {
   switch (event.type) {
     case 'turn.started': {
       const { run } = state.content
-      // A run is opened only for a generation the frame names. One generation is one run.
       if (stamp.generation === null || (event.turnId !== null && holdsTurn(state.content, event.turnId))) return state
       if (run.state === 'running' && stamp.generation <= run.generation) return state
       const settled = settle(state, LOST, null, [])
@@ -526,7 +506,6 @@ function fold(state: Tracked, stamp: Stamp, event: SessionEvent): Tracked {
         if (last?.kind === 'text' && !last.sealed) {
           return { ...turn, items: turn.items.with(-1, { kind: 'text', markdown: event.text ?? last.markdown, sealed: true }) }
         }
-        // The segment arrives whole when its deltas were missed. A structural item may have sealed it already.
         const latest = turn.items.findLast(item => item.kind === 'text')
         if (event.text === null || event.text === '' || latest?.markdown === event.text) return turn
         return pushItem(turn, { kind: 'text', markdown: event.text, sealed: true })
@@ -589,7 +568,6 @@ function openRun(state: Tracked, generation: Generation, id: TurnId, request: Re
   return { ...state, content: { ...state.content, run }, fence: patch(state.fence, { text: null }) }
 }
 
-/** An event of a turn whose start was not seen (we attached mid-turn) opens the run it belongs to. */
 function ensureRun(state: Tracked, generation: Generation | null): Tracked {
   return state.content.run.state === 'running' || generation === null ? state : openRun(state, generation, runTurnId(generation), null)
 }
@@ -611,20 +589,17 @@ function holdsDeclined(content: SessionContent, requestId: string): boolean {
   return (content.run.state === 'running' && content.run.turn.items.some(isIt)) || content.history.some(turn => turn.items.some(isIt))
 }
 
-/** The outbox entry a starting turn answers, if it is one of ours. */
 function claimEntry(state: Tracked, admissionId: string | null, requestText: string | null): OutboxEntry | null {
   const { outbox } = state.content
   const { admissions } = state.fence
   const inputId = admissionId === null ? undefined : admissions[admissionId]
   const admitted = outbox.find(entry => entry.inputId === inputId)
   if (admitted !== undefined) return admitted
-  // No receipt yet. An entry the gateway has already admitted under another id is not this turn's.
   const sending = outbox.filter(entry => entry.state.s === 'sending' && !Object.values(admissions).includes(entry.inputId))
   const [only] = sending
   return only !== undefined && sending.length === 1 && (requestText === null || requestText === only.text) ? only : null
 }
 
-/** Ends the open turn. Nothing running or waiting survives into history. */
 function settle(state: Tracked, outcome: Outcome, finalText: string | null, rows: readonly number[]): Tracked {
   const { content, fence } = state
   if (content.run.state !== 'running') return state
@@ -660,16 +635,12 @@ function settledItem(item: Item): Item<'settled'> {
   }
 }
 
-// The settled item types are the open ones minus the running, waiting and unsealed states, so an
-// item already past those states is kept as it is.
 const isSealed = (item: TextItem): item is TextItem & { readonly sealed: true } => item.sealed
 const isFinished = (item: ToolItem): item is ToolItem & { readonly status: ToolItem<'settled'>['status'] } => item.status.s !== 'running'
 const isClosed = (item: PromptItem): item is PromptItem & { readonly state: PromptItem<'settled'>['state'] } =>
   item.state.s === 'answered' || item.state.s === 'withdrawn'
-/** A prompt the user can still answer, or whose answer is on its way. */
 const isPending = (item: Item): item is PromptItem => item.kind === 'prompt' && !isClosed(item)
 
-/** A prompt that stopped waiting without a word about who answered. A reply of ours in flight is taken to be the answer. */
 function answeredFrom(prompt: PromptItem): PromptItem['state'] {
   return prompt.state.s === 'sending' ? { s: 'answered', reply: prompt.state.reply } : ANSWERED_ELSEWHERE
 }
@@ -694,7 +665,6 @@ function mapItems(turn: OpenTurn, change: (item: Item) => Item): OpenTurn {
   return items.every((item, index) => item === turn.items[index]) ? turn : { ...turn, items }
 }
 
-/** A new tool, prompt or notice seals the text before it, so prose always lands above the row that followed it. */
 function pushItem(turn: OpenTurn, item: ToolItem | PromptItem | NoticeItem | TextItem): OpenTurn {
   const last = turn.items.at(-1)
   const above = last?.kind === 'text' && !last.sealed ? turn.items.with(-1, { ...last, sealed: true }) : turn.items
@@ -720,7 +690,6 @@ function highestRow(through: number | null, rows: readonly number[]): number | n
   return rows.reduce<number | null>((highest, row) => highest === null || row > highest ? row : highest, through)
 }
 
-/** `value` itself when no field would change, so an input that changes nothing keeps every reference. */
 function patch<T extends object>(value: T, changes: Partial<T>): T {
   const keys = Object.keys(changes) as (keyof T)[]
   return keys.every(key => Object.is(value[key], changes[key])) ? value : { ...value, ...changes }

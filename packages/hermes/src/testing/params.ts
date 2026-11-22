@@ -1,7 +1,3 @@
-/**
- * The gateway's closed key sets, read from the vendored `wire/contract.openrpc.json`, never listed by hand.
- * The scripted gateway refuses a call with these, and fixture tests check recorded params with them.
- */
 import { readFileSync } from 'node:fs'
 
 interface Schema {
@@ -44,13 +40,6 @@ function load(): ReadonlyMap<string, KeySet> {
   return (keySets = sets)
 }
 
-/**
- * The keys the gateway refuses in `params` for `method`, as the `fields` of its 4001 `invalid_params`
- * error: unknown keys, and for a canonical method also missing required keys
- * (`tui_gateway/contracts/registry.py` `canonical_param_problems`). Empty when the key set is accepted.
- * `undefined` when the contract has no such method, which the gateway answers with -32601.
- * Values are not checked; the gateway's handlers own those refusals.
- */
 export function checkParams(method: string, params: unknown): readonly string[] | undefined {
   const keySet = load().get(method)
   if (keySet === undefined) return undefined

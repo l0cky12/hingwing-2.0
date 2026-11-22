@@ -35,7 +35,6 @@ function only<T>(values: readonly T[]): T {
   return values[0] as T
 }
 
-/** The event a frame of the fixture parses to, failing when it is not a shown session frame. */
 function eventOf(frame: Params): SessionEvent {
   const parsed = parseEvent(frame)
   if (parsed.scope !== 'session' || parsed.event === null) throw new Error(`${frame.type} seq ${frame.seq} did not parse to an event: ${JSON.stringify(parsed)}`)
