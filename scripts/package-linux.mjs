@@ -28,11 +28,32 @@ const scripts = dir =>
 
 const isShipped = specifier => /^(?:\.|\/|node:)/.test(specifier) || SHIPPED.has(specifier)
 
-const unshippedImports = file =>
-  ts
-    .preProcessFile(readFileSync(file, 'utf8'), true, true)
-    .importedFiles.map(imported => imported.fileName)
-    .filter(specifier => !isShipped(specifier))
+// Rolldown rewrites a CommonJS `require` in an ES module bundle to `__require`, which preProcessFile does not see.
+const REQUIRE_CALLEES = new Set(['require', '__require'])
+
+const specifiersOf = node => {
+  if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+    return [node.moduleSpecifier.text]
+  }
+  if (ts.isCallExpression(node) && ts.isStringLiteralLike(node.arguments[0] ?? node)) {
+    const dynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword
+    const required = ts.isIdentifier(node.expression) && REQUIRE_CALLEES.has(node.expression.text)
+    if (dynamicImport || required) return [node.arguments[0].text]
+  }
+  return []
+}
+
+const importedBy = file => {
+  const found = []
+  const visit = node => {
+    found.push(...specifiersOf(node))
+    ts.forEachChild(node, visit)
+  }
+  visit(ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, false, ts.ScriptKind.JS))
+  return found
+}
+
+const unshippedImports = file => importedBy(file).filter(specifier => !isShipped(specifier))
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,

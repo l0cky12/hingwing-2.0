@@ -45,7 +45,9 @@ describe('package-linux', () => {
   it.each([
     ['a static import of a workspace package', 'main/index.js', 'import { openHermes } from "@highwing/hermes"', '@highwing/hermes'],
     ['a dynamic import of an npm package', 'main/chunk.js', 'const { WebSocketServer } = await import("ws")', 'ws'],
-    ['a require of an npm package in the preload', 'preload/index.cjs', 'const react = require("react")', 'react']
+    ['a require of an npm package in the preload', 'preload/index.cjs', 'const react = require("react")', 'react'],
+    ['a bundler __require of a workspace package', 'main/index.js', 'var __require = createRequire(import.meta.url)\nconst hermes = __require("@highwing/hermes")', '@highwing/hermes'],
+    ['a re-export of an npm package', 'main/index.js', 'export { createRoot } from "react-dom/client"', 'react-dom/client']
   ])('fails on %s', (_name, file, source, specifier) => {
     const { app, stage } = builtApp({ [file]: source })
     const result = run(app, stage)
@@ -56,7 +58,7 @@ describe('package-linux', () => {
   })
 
   it('ignores a package name inside a string or a comment', () => {
-    const { app, stage } = builtApp({ 'main/index.js': '// import "@highwing/hermes"\nconst note = "require(\'ws\')"' })
+    const { app, stage } = builtApp({ 'main/index.js': '// import "@highwing/hermes"\nconst note = "require(\'ws\')"\nconst other = "__require(\'react\')"' })
     expect(run(app, stage).status).toBe(0)
   })
 
