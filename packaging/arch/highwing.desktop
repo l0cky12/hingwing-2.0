@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Highwing
+GenericName=Hermes client
+Comment=Desktop client for the Hermes agent gateway
+Exec=highwing
+Icon=highwing
+Terminal=false
+Categories=Network;Chat;
+StartupWMClass=highwing
