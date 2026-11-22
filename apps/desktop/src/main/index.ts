@@ -1,6 +1,7 @@
 import { liveDialer, openHermes, type Dialer } from '@highwing/hermes'
 import { loadFixture, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
 import { app, ipcMain } from 'electron'
+import { pinnedConnection } from './connection'
 import { serveWindows } from './ipc'
 import { isAppUrl, openWindow } from './windows'
 
@@ -14,11 +15,11 @@ const dial: Dialer = fixture
     : liveDialer()
 
 app.whenReady().then(() => {
-  const hermes = openHermes({ dial, client: { name: 'highwing', version: app.getVersion() } })
-  const served = serveWindows(hermes, ipcMain, isAppUrl)
+  const owner = pinnedConnection(openHermes({ dial, client: { name: 'highwing', version: app.getVersion() } }))
+  const served = serveWindows(owner, ipcMain, isAppUrl)
   openWindow(fixture?.header.sessionId ?? null)
   app.on('window-all-closed', () => {
     served.dispose()
-    void hermes.close().finally(() => app.quit())
+    void owner.close().finally(() => app.quit())
   })
 })
