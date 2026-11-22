@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint'
 const contract = { group: ['**/contract.generated*', '**/contract.openrpc.json'], message: 'Gateway shapes stay inside wire/ and testing/.' }
 
 export default tseslint.config(
-  { ignores: ['docs/**', 'node_modules/**', 'packages/hermes/src/wire/contract.generated.ts'] },
+  { ignores: ['docs/**', '**/node_modules/**', 'apps/desktop/out/**', 'packages/hermes/src/wire/contract.generated.ts'] },
   ...tseslint.configs.recommended,
   {
     files: ['packages/hermes/src/domain/**'],
@@ -15,7 +15,25 @@ export default tseslint.config(
     rules: { 'no-restricted-imports': ['error', { paths: ['electron'], patterns: [contract] }] }
   },
   {
+    files: ['packages/thread/src/**'],
+    rules: { 'no-restricted-imports': ['error', { patterns: [{ regex: '^(?!@highwing/hermes/domain$)(@highwing/|node:|\\.\\./)', message: '@highwing/thread imports @highwing/hermes/domain and nothing else.' }] }] }
+  },
+  {
     files: ['packages/hermes/src/wire/**', 'packages/hermes/src/testing/**'],
     rules: { 'no-restricted-imports': ['error', { paths: ['electron'] }] }
+  },
+  {
+    files: ['apps/desktop/src/**'],
+    ignores: ['apps/desktop/src/main/index.ts'],
+    rules: { 'no-restricted-imports': ['error', { paths: [{ name: '@highwing/hermes/testing', message: 'Only main/index.ts reads HIGHWING_FIXTURE and HIGHWING_RECORD.' }] }] }
+  },
+  {
+    files: ['apps/desktop/src/renderer/**', 'apps/desktop/src/ipc-contract.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: ['@highwing/hermes', '@highwing/hermes/testing', 'electron'].map(name => ({ name, message: 'The renderer imports @highwing/hermes/domain, @highwing/thread and ipc-contract only.' })),
+        patterns: [{ group: ['node:*'], message: 'The renderer has no Node.' }]
+      }]
+    }
   }
 )

@@ -82,16 +82,56 @@ describe('the errand fixture', () => {
   })
 })
 
-describe('checkParams', () => {
-  const answer = { session_id: 's', execution_generation: 1, prompt_id: 'p', choice: 'once' }
+/**
+ * Each row is a call and the answer of Hermes 0.23.3's own `canonical_param_problems`
+ * (`tui_gateway/contracts/registry.py:154`), run with Hermes's interpreter.
+ */
+const DISPATCHER_VERDICTS: readonly (readonly [string, Record<string, unknown>, readonly string[]])[] = [
+  ['prompt.submit', { session_id: 's' }, []],
+  ['prompt.submit', {}, []],
+  ['prompt.submit', { session_id: 's', text: 1 }, ['text']],
+  ['prompt.submit', { session_id: 's', text: 'x', bogus: 1 }, ['bogus']],
+  ['prompt.submit', { session_id: 's', text: 'x', queued: 'yes' }, []],
+  ['prompt.submit', { session_id: 's', text: 'x', queued: 1 }, []],
+  ['prompt.submit', { session_id: 's', text: 'x', attachments: [{ x: 1 }] }, ['attachments.0.x']],
+  ['approval.respond', { session_id: 's' }, []],
+  ['approval.respond', { session_id: 's', execution_generation: '1', prompt_id: 'p', choice: 'once' }, []],
+  ['approval.respond', { session_id: 's', execution_generation: 'x', prompt_id: 'p', choice: 'once' }, ['execution_generation']],
+  ['approval.respond', { session_id: 's', execution_generation: true, prompt_id: 'p', choice: 'once' }, []],
+  ['approval.respond', { session_id: 's', execution_generation: 1.5, prompt_id: 'p', choice: 'once', all: true }, ['execution_generation', 'all']],
+  ['session.create', { source: 'nope' }, ['source']],
+  ['session.create', { source: 'gui', cwd: 3, cwd_explicit: true }, ['cwd']],
+  ['session.create', {}, []],
+  ['session.create', { client: { name: 'a', version: 'b' } }, []],
+  ['session.create', { client: { name: 'a', version: 'b', zzz: 1 } }, ['client.zzz']],
+  ['clarify.respond', { session_id: 's' }, ['execution_generation', 'prompt_id', 'answer']],
+  ['clarify.respond', { session_id: 's', execution_generation: 'x', prompt_id: 'p', answer: 3 }, []],
+  ['session.detach', { session_id: 's', subscription_id: 5, x: 1 }, ['x']],
+  ['session.resume', { session_id: 5 }, ['session_id']],
+  ['session.resume', {}, []],
+  ['session.events.since', { last_seen: 1 }, []],
+  ['session.events.since', { session_id: 's', last_seen: '1' }, []],
+  ['session.interrupt', { session_id: 's' }, []],
+  ['runtime.describe', { a: 1 }, ['a']]
+]
 
-  it('refuses an unknown key and a missing key on a canonical method', () => {
-    expect(checkParams('approval.respond', { ...answer, all: true })).toEqual(['all'])
-    expect(checkParams('prompt.submit', { session_id: 's' })).toEqual(['text'])
+describe('checkParams', () => {
+  it.each(DISPATCHER_VERDICTS)('%s %j is refused for %j, as the gateway\'s dispatcher refuses it', (method, params, refused) => {
+    expect([...(checkParams(method, params) ?? ['undeclared'])].sort()).toEqual([...refused].sort())
   })
 
-  it('knows no method the contract does not declare', () => {
-    expect(checkParams('approval.answer', answer)).toBeUndefined()
+  it('leaves a missing key on a method the sidecar shares to the handler, and refuses a bad value', () => {
+    expect(checkParams('prompt.submit', { session_id: 's' })).toEqual([])
+    expect(checkParams('approval.respond', { session_id: 's', choice: 7 })).toEqual(['choice'])
+  })
+
+  it('refuses params that are not an object', () => {
+    expect(checkParams('session.resume', ['s'])).toEqual(['params'])
+  })
+
+  it('checks nothing on a method only the sidecar declares, and knows no method the contract does not declare', () => {
+    expect(checkParams('client.capabilities', { server_requests: true, anything: 1 })).toEqual([])
+    expect(checkParams('approval.answer', {})).toBeUndefined()
   })
 })
 

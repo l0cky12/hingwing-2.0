@@ -24,7 +24,8 @@ highwing-2.0/
         domain/                  public entry "./domain"  browser-safe, imports nothing
           session.ts                                      Session, Run, Turn, Item, Link, Sidebar
           reduce.ts                                       SessionEvent, Gate, SessionInput, reduce, syncOf, activityOf
-          index.ts                                        exports the session types and activityOf only
+          command.ts                                      Command, ResultOf, Outcome, Refusal: data the renderer sends and gets back
+          index.ts                                        exports the session and command types and activityOf only
         wire/                    private                  the only code that knows gateway shapes
           contract.generated.ts                           copied from Hermes by `pnpm sync:contract`
           contract.openrpc.json                           copied with it; read only by testing/ for key sets

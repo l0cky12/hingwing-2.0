@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'">
+  <title>Hermes chat prototype</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="bar">
+    <h1><span class="brand">Hermes</span> UI prototype recording</h1>
+    <nav class="switch" aria-label="Tool call design" title="Keys 1, 2 and 3 switch designs">
+      <button data-v="A"><b>A</b> Status mark</button>
+      <button data-v="B"><b>B</b> Step rows</button>
+      <button data-v="C"><b>C</b> Grouped</button>
+    </nav>
+  </header>
+  <main id="scroll"><div id="transcript"></div></main>
+  <footer class="composer">
+    <form id="form"><textarea id="input" rows="2" placeholder="Ask Hermes to do something" aria-label="Message Hermes"></textarea><button>Send</button></form>
+  </footer>
+  <script src="renderer.js"></script>
+</body>
+</html>

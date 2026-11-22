@@ -168,7 +168,20 @@ Rejected:
 
 ## Implementation reconciliation
 
-n/a until implementation.
+Units 1 to 4 found these differences between the design and Hermes 0.23.3. The code follows Hermes.
+
+| Design said | Hermes does | Where the code handles it |
+|---|---|---|
+| Six event types are missing from the generated contract. | Seven are missing. `agent.step` arrives on every turn. | `wire/parse.ts`, unshown table |
+| The approval arrives before its tool (question 10). | `tool.start` comes first, then `approval.request`. | `@highwing/thread` puts the approval above its tool and hides that tool until you answer. |
+| The sidebar rows come from the stored list. | The stored list leaves out every session the gateway has mounted, idle or not (`gateway/session_listing.py:103-170`). | `sidebar.ts` merges the stored list and the live list. |
+| Every session verb needs an attached socket. | Only `prompt.submit` and the two respond verbs check it. Interrupt and mutate only authorize (`gateway/session_authority.py:972-976`). | The scripted gateway refuses exactly those three. |
+| Server requests wait for `client.capabilities`. | The canonical gateway writes them to every attached socket. Only the legacy sidecar checks the capability. | The client still sends the capability. The scripted gateway does not enforce the rule. |
+| A refused ticket closes with 4403. | Node's `WebSocket` reports a refused upgrade as close 1006. | It reads as a dropped link and is retried with a fresh ticket. This is untested against the real gateway. |
+| Canonical params are closed key sets. | Methods the sidecar also declares refuse unknown keys and wrong types, and leave missing keys to the handler (`tui_gateway/contracts/registry.py:154-166`). | `testing/params.ts` |
+| Live text is plain markdown. | Text after a tool starts with blank lines. | `@highwing/thread` trims them. |
+
+Still open: a failed Stop leaves the turn showing "Stopping", because the reducer has no input that undoes a requested stop. `liveDialer` has not dialed the real gateway yet, which is unit 6.
 
 ## Open questions and risks
 
@@ -186,7 +199,7 @@ Facts that need a live provider, or the first live recording:
 7. When a chat is first opened while its turn runs, the snapshot has no partial text. Can `session.events.since` from 0 paint the earlier part? Until a provider exists to test with, the turn shows its stored rows and fills in from the next delta.
 8. Does any canonical event arrive without a session id? The diagnostics counter answers this.
 9. Do the gateway's catch-up frames always reach the socket before the resume reply? If they can arrive after it, step 5 sees a hole and rebuilds. That is safe, and slower than it needs to be.
-10. In a real run, does `tool.start` for a command arrive before or after its `approval.request`? The fixture scripts the approval first. The view handles both orders.
+10. Answered by the canonical fixture: `tool.start` arrives before `approval.request`. The view handles both orders.
 11. Do stored rows carry tool arguments and results, and does any row say that a turn failed or was stopped? The sketch read the row type, not a real page.
 
 One path is untried on this machine. The quick-ask route through a Hyprland bind and `second-instance` needs a run on the real compositor before quick-ask is built.
