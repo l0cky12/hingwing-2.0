@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint'
 const contract = { group: ['**/contract.generated*', '**/contract.openrpc.json'], message: 'Gateway shapes stay inside wire/ and testing/.' }
 
 export default tseslint.config(
-  { ignores: ['docs/**', 'node_modules/**', 'packages/hermes/src/wire/contract.generated.ts'] },
+  { ignores: ['docs/**', '**/node_modules/**', 'apps/desktop/out/**', 'packages/hermes/src/wire/contract.generated.ts'] },
   ...tseslint.configs.recommended,
   {
     files: ['packages/hermes/src/domain/**'],
