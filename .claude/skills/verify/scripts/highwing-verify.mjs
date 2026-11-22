@@ -251,7 +251,7 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
@@ -267,6 +267,7 @@ async function run(argv) {
   const given = options.fixture ? resolve(process.cwd(), options.fixture) : scenario ? ERRAND : null
   const fixture = options['drop-after'] ? withDrop(given, options['drop-after'], join(evidence, 'fixture-with-drop.jsonl')) : given
   const ctx = { page: null, evidence, fixture, timeout: Number(options.timeout ?? 15_000), holding: null }
+  const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
   const userData = join(scratch, 'user-data')
   const saved = SAVED[options.saved ?? 'none']
@@ -287,7 +288,7 @@ async function run(argv) {
   if (!host) env.HIGHWING_FIXTURE = fixture
 
   const { _electron } = requireDesktop('playwright-core')
-  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"` : `HIGHWING_FIXTURE=${fixture}`}`)
+  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"` : `HIGHWING_FIXTURE=${fixture}`}${Object.keys(media).length > 0 ? `, emulating ${JSON.stringify(media)}` : ''}`)
   const app = await _electron.launch({
     executablePath: electronBinary() ?? fail('electron binary missing; run doctor'),
     args: [MAIN_JS, '--ozone-platform=x11', '--force-device-scale-factor=1', '--disable-gpu', `--user-data-dir=${userData}`],
@@ -307,6 +308,7 @@ async function run(argv) {
   let failed = null
   try {
     ctx.page = await app.firstWindow({ timeout: ctx.timeout })
+    if (Object.keys(media).length > 0) await ctx.page.emulateMedia(media)
     ctx.page.on('console', message => appendFileSync(join(evidence, 'console.log'), `${message.type()} ${message.text()}\n`))
     ctx.page.on('pageerror', error => appendFileSync(join(evidence, 'console.log'), `pageerror ${error.stack ?? error}\n`))
     await ctx.page.waitForLoadState('domcontentloaded')
