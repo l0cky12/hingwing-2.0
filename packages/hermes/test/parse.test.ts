@@ -3,9 +3,14 @@ import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '../src/domain/reduce'
 import type { FileDiff, ToolResult } from '../src/domain/session'
 import { loadFixture } from '../src/testing/fixture'
-import type { CanonicalPendingPrompt } from '../src/wire/contract.generated'
+import type {
+  CanonicalEventsResult, CanonicalPendingPrompt, CanonicalSessionListRow, CanonicalSnapshot, StoredTranscriptResult, TranscriptMessage
+} from '../src/wire/contract.generated'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
-import { parseEvent, parseInlineDiff, parseToolResult, SHOWN, UNSHOWN } from '../src/wire/parse'
+import {
+  parseEvent, parseInlineDiff, parseListRows, parseReplay, parseRows, parseServerRequest, parseSnapshot, parseToolResult,
+  parseTranscript, SHOWN, UNSHOWN
+} from '../src/wire/parse'
 
 const ERRAND = fileURLToPath(new URL('../../../fixtures/errand.jsonl', import.meta.url))
 
@@ -21,6 +26,7 @@ interface Params {
 const fixture = loadFixture(ERRAND)
 const SESSION = fixture.header.sessionId
 const params = fixture.steps.flatMap(step => ('push' in step ? [(step.push as { params: Params }).params] : []))
+const stored = fixture.steps.flatMap(step => ('stored' in step ? [step.stored as TranscriptMessage[]] : [])).at(-1) ?? []
 const EPOCH = params[0]?.replay_epoch ?? ''
 const REQUEST = 'In /tmp/hermes-proto-work: make notes.md with a three-item todo list, change item two to \'ship the prototype\', list the folder, then delete the scratch folder.'
 
@@ -204,6 +210,150 @@ describe('parseEvent outside the happy path', () => {
     const unlisted = GATEWAY_EVENT_TYPES.filter(type => !(type in SHOWN) && !UNSHOWN.has(type) && parseEvent({ type }).scope !== 'app')
     expect(unlisted).toEqual([])
     expect(Object.keys(SHOWN).filter(type => UNSHOWN.has(type))).toEqual([])
+  })
+})
+
+describe('parseRows on the stored errand', () => {
+  it('folds the stored rows into one complete turn that lists every row id', () => {
+    const { turns, unfinished } = parseRows(stored)
+    expect(unfinished).toBeNull()
+    const turn = only(turns)
+    expect(turn.request).toEqual({ text: REQUEST, inputId: null })
+    expect(turn.outcome).toEqual({ kind: 'complete' })
+    expect(turn.rows).toEqual(stored.flatMap(row => (typeof row.row_id === 'number' ? [row.row_id] : [])))
+    expect(turn.rows).toEqual([1, 2, 6, 10])
+  })
+
+  it('makes assistant text and tool rows its items, with done tools and no diffs', () => {
+    const turn = only(parseRows(stored).turns)
+    expect(turn.items.map(item => (item.kind === 'tool' ? `tool ${item.name}` : item.kind))).toEqual(
+      ['text', 'tool write_file', 'tool patch', 'text', 'tool terminal', 'tool terminal', 'text'])
+    const tools = turn.items.flatMap(item => (item.kind === 'tool' ? [item] : []))
+    for (const tool of tools) expect(tool.status).toMatchObject({ s: 'done', durationS: null, diffs: [] })
+    expect(tools[0]).toMatchObject({ id: 'call_4350cc1721e54f21acd552a0', args: { path: '/tmp/hermes-proto-work/notes.md' } })
+    expect(tools[2]?.status).toMatchObject({ result: { kind: 'none' } })
+    expect(turn.items.at(-1)).toMatchObject({ kind: 'text', sealed: true, markdown: expect.stringMatching(/^Done\. I created `notes\.md`/) })
+  })
+
+  it('leaves a last turn without an answer unfinished and an earlier one lost', () => {
+    const { turns, unfinished } = parseRows([...stored.slice(0, 4), ...stored, ...stored.slice(0, 3)])
+    expect(turns.map(turn => turn.outcome.kind)).toEqual(['lost', 'complete'])
+    expect(unfinished).toMatchObject({ request: REQUEST, items: [{ kind: 'text' }, { kind: 'tool', name: 'write_file' }] })
+  })
+})
+
+function snapshotReply(over: Partial<CanonicalSnapshot> = {}): CanonicalSnapshot {
+  return {
+    session_id: SESSION,
+    stored_session_id: SESSION,
+    messages: [],
+    display_messages: stored,
+    message_count: 10,
+    running: false,
+    authority_epoch: 1,
+    replay_epoch: EPOCH,
+    last_sequence: 43,
+    subscription_id: 'sub-1',
+    revision: 1,
+    execution_generation: 1,
+    pending: [],
+    prompts: [],
+    info: { desktop_protocol: 'hermes-gateway-v1', cwd: '/tmp/hermes-proto-work', title: 'Errand' },
+    open_requests: [],
+    ...over
+  }
+}
+
+describe('parseSnapshot', () => {
+  it('reads a settled session with its history up to the watermark', () => {
+    expect(parseSnapshot(snapshotReply())).toMatchObject({
+      id: SESSION,
+      title: 'Errand',
+      cwd: '/tmp/hermes-proto-work',
+      running: false,
+      generation: 1,
+      revision: 1,
+      subscriptionId: 'sub-1',
+      watermark: { epoch: EPOCH, seq: 43 },
+      queue: [],
+      prompts: [],
+      history: { turns: [{ rows: [1, 2, 6, 10], outcome: { kind: 'complete' } }], unfinished: null, older: null },
+      openRequests: []
+    })
+  })
+
+  it('reads a running session waiting on an approval, with no rows asked for', () => {
+    const approval = params.find(({ type }) => type === 'approval.request')?.payload as unknown as CanonicalPendingPrompt
+    const snapshot = parseSnapshot(snapshotReply({
+      running: true,
+      messages_omitted: true,
+      display_messages: null,
+      prompts: [approval],
+      pending: [{
+        admission_id: 'e07cb5793e7f497bbcc1c0c8b0cdf20a', ref: { profile_id: '/tmp/hermes-proto-home', session_id: SESSION }, sequence: 1,
+        status: 'started', outcome: null, authority_epoch: 1, execution_generation: 1, input_id: 'input_990d3cd8381d422f', text: REQUEST
+      }],
+      open_requests: [{ id: 'req-1', method: 'sudo', params: { session_id: SESSION, command: 'apt install x' } }]
+    }))
+    expect(snapshot.history).toBeNull()
+    expect(snapshot.prompts).toEqual([{
+      id: '3c0eea6699184b1dbee7a16b0a6bf830', generation: 1,
+      ask: { kind: 'approval', command: 'rm -rf /tmp/hermes-proto-work/scratch', reason: 'delete in root path', choices: ['once', 'deny', 'session', 'always'] }
+    }])
+    expect(snapshot.queue).toEqual([{ inputId: 'input_990d3cd8381d422f', admissionId: 'e07cb5793e7f497bbcc1c0c8b0cdf20a', text: REQUEST, status: 'started' }])
+    expect(snapshot.openRequests).toEqual([{ requestId: 'req-1', method: 'sudo', sessionId: SESSION }])
+  })
+
+  it('says older rows exist when the first stored row was cut by the byte budget', () => {
+    const history = parseSnapshot(snapshotReply({ messages: [{ role: 'user', text: 'old', archived_truncated: true }] })).history
+    expect(history?.older).toEqual({ cursor: null })
+  })
+})
+
+describe('parseReplay', () => {
+  it('stamps each replayed frame from its own envelope', () => {
+    const tail = params.slice(-3) as unknown as CanonicalEventsResult['events']
+    const reply: CanonicalEventsResult = { events: tail, latest_seq: 43, last_sequence: 43, epoch: EPOCH, replay_epoch: EPOCH, truncated: false, snapshot_required: false, count: 3 }
+    const replay = parseReplay(reply)
+    expect(replay).toMatchObject({ snapshotRequired: false, epoch: EPOCH })
+    expect(replay.events.map(({ stamp }) => stamp)).toEqual([41, 42, 43].map(seq => ({ epoch: EPOCH, seq, generation: 1 })))
+    expect(replay.events.map(({ event }) => event?.type)).toEqual(['text.delta', 'turn.ended', 'meta'])
+  })
+
+  it('passes on that the gateway cannot replay', () => {
+    const reply: CanonicalEventsResult = { events: [], latest_seq: 90, last_sequence: 90, epoch: 'e2', replay_epoch: 'e2', truncated: true, snapshot_required: true, count: 0 }
+    expect(parseReplay(reply)).toEqual({ snapshotRequired: true, epoch: 'e2', events: [] })
+  })
+})
+
+describe('parseTranscript', () => {
+  const page = (rows: readonly TranscriptMessage[], next: string | null): StoredTranscriptResult =>
+    ({ session_id: SESSION, rows: rows.map(row => ({ ...row, row_kind: 'message' as const })), next_cursor: next, reset: false })
+
+  it('reads pages newest first into turns oldest first, continuing from the oldest page cursor', () => {
+    const newer = stored.map(row => (row.row_id == null ? row : { ...row, row_id: row.row_id + 100 }))
+    const compaction = { role: 'system', text: 'Earlier work summarised.', row_id: 50 }
+    const oldest = { ...page([...stored, compaction], 'cursor-1') }
+    const history = parseTranscript([page(newer, null), { ...oldest, rows: oldest.rows.map(row => (row.row_id === 50 ? { ...row, row_kind: 'compaction' as const } : row)) }])
+    expect(history.older).toEqual({ cursor: 'cursor-1' })
+    expect(history.turns.map(turn => turn.rows)).toEqual([[1, 2, 6, 10, 50], [101, 102, 106, 110]])
+    expect(history.turns.map(turn => turn.outcome.kind)).toEqual(['complete', 'complete'])
+    expect(history.turns[0]?.items.at(-1)).toEqual({ kind: 'notice', what: 'said', tone: 'info', text: 'Earlier work summarised.' })
+  })
+
+  it('skips a row it cannot use without failing the page', () => {
+    expect(parseRows([...stored.slice(0, 2), { role: 'assistant', text: 'x', row_id: -1 }, 'junk', ...stored.slice(2)]).turns[0]?.rows).toEqual([1, 2, 6, 10])
+  })
+})
+
+describe('parseListRows and parseServerRequest', () => {
+  it('reads the fixture list row with its start time in milliseconds', () => {
+    const { sessions } = fixture.header.list as { sessions: CanonicalSessionListRow[] }
+    expect(parseListRows(sessions)).toEqual([{ id: SESSION, title: '', preview: null, lastActiveAt: 1795251600000 }])
+  })
+
+  it('reads an app-level request as having no session', () => {
+    expect(parseServerRequest({ id: 'r2', method: 'display.install.sudo', params: { session_id: '' } })).toEqual({ requestId: 'r2', method: 'display.install.sudo', sessionId: null })
   })
 })
 

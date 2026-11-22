@@ -2,12 +2,15 @@
  * The only place gateway shapes become domain shapes. Everything past these functions trusts its types.
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
-import type { Admission, SessionEvent, Stamp } from '../domain/reduce'
-import type { Ask, FileDiff, Generation, Json, Outcome, PromptId, SessionId, ToolId, ToolResult, TurnId } from '../domain/session'
+import type { Admission, HistoryPage, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type {
-  CanonicalPendingAdmission, CanonicalPendingPrompt, CanonicalReplayEvent, ErrorPayload, ErrorSurface, MessageCompletePayload,
-  MessageDeltaPayload, MessageInterimPayload, MessageStartPayload, PersistedTurn, SessionLiveInfo, SessionMutateResult,
-  SessionTitlePayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload
+  Ask, FileDiff, Generation, Item, Json, Outcome, PromptId, SessionId, SettledTurn, SidebarRow, ToolId, ToolResult, TurnId
+} from '../domain/session'
+import type {
+  CanonicalEventsResult, CanonicalPendingAdmission, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
+  CanonicalSnapshot, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
+  MessageStartPayload, PersistedTurn, SessionLiveInfo, SessionMutateResult, SessionTitlePayload, StoredTranscriptResult,
+  StoredTranscriptRow, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload
 } from './contract.generated'
 
 export type ParsedEvent =
@@ -130,6 +133,7 @@ function clip(raw: string): { readonly text: string; readonly clipped: number } 
 
 const COMPLETE: Outcome = { kind: 'complete' }
 const STOPPED: Outcome = { kind: 'stopped' }
+const LOST: Outcome = { kind: 'lost' }
 const NO_RESULT: ToolResult = { kind: 'none' }
 
 /** An approval or clarify prompt. Event payloads and snapshot entries are the same dict (`gateway/session_pending_controls.py:18-51,74`). */
@@ -332,6 +336,136 @@ export function parseEvent(params: unknown): ParsedEvent {
   const event = isObject(payload) ? usable(() => shown(payload, params)) : null
   if (event === null) return { scope: 'session', sessionId, type, stamp, event: null, skipped: 'invalid' }
   return { scope: 'session', sessionId, type, stamp, event }
+}
+
+// ---------- replies ----------
+
+/**
+ * `messages_omitted` -> history null. Otherwise history comes from `display_messages`, the gateway's
+ * own display rows, through `parseRows`. `older` is set when the first stored row carries
+ * `archived_truncated` (`gateway/session_local_recovery.py:388`), which only `messages` keeps.
+ */
+export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
+  const first = reply.messages[0]
+  return {
+    id: reply.session_id as SessionId,
+    title: reply.info.title ?? '',
+    cwd: reply.info.cwd || null,
+    running: reply.running,
+    generation: reply.execution_generation as Generation,
+    revision: reply.revision,
+    subscriptionId: reply.subscription_id,
+    watermark: { epoch: reply.replay_epoch, seq: reply.last_sequence },
+    queue: reply.pending.flatMap(row => usable(() => admissionOf(row)) ?? []),
+    prompts: reply.prompts.flatMap(prompt => usable(() => promptOf(prompt)) ?? []),
+    history: reply.messages_omitted === true ? null : {
+      ...parseRows(reply.display_messages ?? []),
+      older: first?.['archived_truncated'] === true ? { cursor: null } : null
+    },
+    openRequests: (reply.open_requests ?? []).map(parseServerRequest)
+  }
+}
+
+/** The replayed params, each stamped from its own envelope. A frame that names no stream position cannot be placed and is left out. */
+export function parseReplay(reply: CanonicalEventsResult): Replay {
+  const events = reply.events.flatMap((params): StampedEvent[] => {
+    const parsed = parseEvent(params)
+    return parsed.scope === 'session' ? [{ stamp: parsed.stamp, event: parsed.event }] : []
+  })
+  return { snapshotRequired: reply.snapshot_required, epoch: reply.epoch, events }
+}
+
+/** Consecutive `session.transcript` pages of older rows, newest page first. Same row parser as the snapshot. */
+export function parseTranscript(pages: readonly StoredTranscriptResult[]): HistoryPage {
+  const oldestFirst = pages.toReversed()
+  const cursor = oldestFirst[0]?.next_cursor ?? null
+  return { ...parseRows(oldestFirst.flatMap(page => page.rows)), older: cursor === null ? null : { cursor } }
+}
+
+interface TurnInProgress {
+  readonly request: string | null
+  readonly items: Item<'settled'>[]
+  readonly rows: number[]
+}
+
+/**
+ * Stored rows -> settled turns, shared by `parseSnapshot` and `parseTranscript` (a transcript
+ * `message` row is a `display_messages` row). A user row opens a turn. Assistant text, tool rows and
+ * compaction rows become its items. Stored rows carry no diff, so a history tool is `done` with
+ * `diffs: []`. A turn that ends in an assistant answer is `complete`. A turn with no answer is
+ * `unfinished` when it is the last one, else `lost`. Every turn lists the `row_id`s its rows carry.
+ *
+ * Display rows come from `tui_gateway/session_history.py:297-373`: a tool row has no `row_id`, carries
+ * `content` only for write_file, patch, skill_manage and clarify, and an assistant row with no text is
+ * left out, so a turn lists fewer ids than the completion receipt names.
+ */
+export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' | 'unfinished'> {
+  const turns: TurnInProgress[] = []
+  rows.forEach((value, index) => {
+    const row = usable(() => storedRow(value, index))
+    if (row === null) return
+    if (row.role === 'user') turns.push({ request: row.text, items: [], rows: [] })
+    if (row.item !== null && turns.length === 0) turns.push({ request: null, items: [], rows: [] })
+    const turn = turns.at(-1)
+    if (row.item !== null) turn?.items.push(row.item)
+    if (row.rowId !== null) turn?.rows.push(row.rowId)
+  })
+  // A compaction row sits before the row it was stored on, so it can follow a turn's answer.
+  const answered = (turn: TurnInProgress) => turn.items.findLast(item => item.kind !== 'notice')?.kind === 'text'
+  const last = turns.at(-1)
+  const open = last !== undefined && !answered(last) ? last : null
+  return {
+    turns: turns.flatMap((turn, index): SettledTurn[] => turn === open ? [] : [{
+      id: `stored:${turn.rows[0] ?? `@${index}`}` as TurnId,
+      request: turn.request === null ? null : { text: turn.request, inputId: null },
+      items: turn.items,
+      outcome: answered(turn) ? COMPLETE : LOST,
+      rows: turn.rows
+    }]),
+    unfinished: open === null ? null : { request: open.request, items: open.items }
+  }
+}
+
+function storedRow(value: unknown, index: number) {
+  const row = fields<StoredTranscriptRow>(value)
+  const role = row.optStr('role')
+  const text = row.optStr('text') ?? ''
+  const rowId = row.optInt('row_id')
+  const item = ((): Item<'settled'> | null => {
+    if (row.optStr('row_kind') === 'compaction') return { kind: 'notice', what: 'said', tone: 'info', text }
+    if (role === 'assistant') return text.trim() === '' ? null : { kind: 'text', markdown: text, sealed: true }
+    if (role !== 'tool') return null
+    const args = row.raw('args') ?? {}
+    if (!isJsonObject(args)) throw new Unusable()
+    const content = row.raw('content')
+    return {
+      kind: 'tool',
+      id: (row.optStr('tool_call_id') || `stored-tool:${index}`) as ToolId,
+      name: row.optStr('name') || 'tool',
+      args,
+      status: { s: 'done', durationS: null, diffs: [], result: content === undefined ? NO_RESULT : parseToolResult(content, null, false) }
+    }
+  })()
+  return { role, text, rowId, item }
+}
+
+/** `last_active_at` and `started_at` are epoch seconds; the domain keeps milliseconds. */
+export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<SidebarRow, 'badge'>[] {
+  return rows.map(row => {
+    const seconds = row.last_active_at ?? row.started_at
+    return {
+      id: row.session_id as SessionId,
+      title: row.title,
+      preview: row.preview || null,
+      lastActiveAt: seconds === null ? null : Math.round(seconds * 1000)
+    }
+  })
+}
+
+/** A server-to-client request frame, or an `open_requests` entry of a snapshot. Its params carry the session (`tui_gateway/server_requests.py:98,103`); an app-level one has `''`. */
+export function parseServerRequest(request: { readonly id: string; readonly method: string; readonly params: unknown }): ServerRequest {
+  const sessionId = isObject(request.params) ? request.params.session_id : undefined
+  return { requestId: request.id, method: request.method, sessionId: typeof sessionId === 'string' && sessionId !== '' ? sessionId as SessionId : null }
 }
 
 // ---------- tool output ----------
