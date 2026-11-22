@@ -18,7 +18,12 @@ const requireDesktop = createRequire(join(DESKTOP, 'package.json'))
 
 /** Named states: a locator that is visible exactly while the app is in that state. */
 const STATES = {
-  window: page => page.locator('#root > *').first()
+  window: page => page.locator('#root > *').first(),
+  live: page => page.getByRole('button', { name: 'Send', exact: true, disabled: false }),
+  'tool-running': page => page.locator('.step[data-end="live"]').filter({ hasText: /^Running / }),
+  approval: page => page.getByRole('group', { name: 'Run this command?' }).getByRole('button', { name: 'Run once', exact: true, disabled: false }),
+  settled: page => page.locator('[data-end="done"]'),
+  offline: page => page.getByRole('status', { name: 'Connection' })
 }
 
 /** Steps a `run` takes, with how many arguments each consumes. */
@@ -28,7 +33,13 @@ const STEPS = {
   click: { arity: 2, run: async (ctx, role, name) => ctx.page.getByRole(role, { name, exact: true }).click({ timeout: ctx.timeout }) },
   type: { arity: 2, run: async (ctx, label, text) => ctx.page.getByLabel(label, { exact: true }).fill(expand(ctx, text), { timeout: ctx.timeout }) },
   press: { arity: 1, run: async (ctx, key) => ctx.page.keyboard.press(key) },
-  shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) }
+  shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
+  disabled: {
+    arity: 2,
+    run: async (ctx, role, name) => {
+      if (!(await ctx.page.getByRole(role, { name, exact: true }).isDisabled({ timeout: ctx.timeout }))) throw new Error(`${role} "${name}" is enabled`)
+    }
+  }
 }
 
 const fail = message => {
@@ -121,14 +132,20 @@ function log(ctx, line) {
   appendFileSync(join(ctx.evidence, 'steps.log'), `${stamped}\n`)
 }
 
+/** Polls without backoff: Playwright's own `waitFor` spaces polls up to 500 ms apart and misses brief states. */
 async function waitFor(ctx, state) {
   const locate = STATES[state] ?? fail(`unknown state "${state}". Known: ${Object.keys(STATES).join(', ')}`)
-  await locate(ctx.page).waitFor({ state: 'visible', timeout: ctx.timeout })
+  const locator = locate(ctx.page)
+  const deadline = Date.now() + ctx.timeout
+  while (!(await locator.isVisible())) {
+    if (Date.now() > deadline) throw new Error(`state "${state}" did not appear within ${ctx.timeout} ms`)
+  }
   ctx.holding = state
 }
 
 async function shoot(ctx, name) {
   const path = join(ctx.evidence, `${name}.png`)
+  await ctx.page.mouse.move(0, 0)
   await ctx.page.screenshot({ path, animations: 'disabled', caret: 'hide' })
   writeFileSync(join(ctx.evidence, `${name}.aria.txt`), await ctx.page.locator('body').ariaSnapshot())
   const size = pngSize(path)
@@ -161,9 +178,24 @@ function ownDisplay() {
   if (parent !== process.ppid) fail(`display ${process.env.DISPLAY} belongs to another run's X server. Start this run again.`)
 }
 
+/**
+ * Verification scaffolding: a copy of the fixture whose gateway closes the socket right after the
+ * first frame of event type `type`. The client then shows the dropped link until its redial lands.
+ */
+function withDrop(fixturePath, type, out) {
+  const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
+  const steps = lines.slice(1).map(line => JSON.parse(line))
+  const at = steps.findIndex(step => step.push?.params?.type === type)
+  if (at === -1) fail(`${fixturePath} pushes no ${type} frame`)
+  const dropAt = Math.min(steps[at].at + 50, steps[at + 1]?.at ?? Infinity)
+  steps.splice(at + 1, 0, { at: dropAt, drop: 1006 })
+  writeFileSync(out, [lines[0], ...steps.map(step => JSON.stringify(step))].join('\n') + '\n')
+  return out
+}
+
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', speed: 'value', timeout: 'value', 'no-fixture': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', 'no-fixture': 'flag' })
   const steps = parseSteps(rest)
   if (!options.fixture && !options['no-fixture']) fail('pass --fixture <path>, or --no-fixture to launch against no gateway')
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')
@@ -172,24 +204,28 @@ async function run(argv) {
   const scratch = join(SCRATCH_ROOT, runId)
   mkdirSync(evidence, { recursive: true })
   mkdirSync(scratch, { recursive: true })
-  const fixture = options.fixture ? resolve(process.cwd(), options.fixture) : null
+  const given = options.fixture ? resolve(process.cwd(), options.fixture) : null
+  const fixture = given && options['drop-after'] ? withDrop(given, options['drop-after'], join(evidence, 'fixture-with-drop.jsonl')) : given
   const ctx = { page: null, evidence, fixture, timeout: Number(options.timeout ?? 15_000), holding: null }
 
   const env = { ...process.env, PATH: fixture ? process.env.PATH : pathWithoutHermes() }
   delete env.WAYLAND_DISPLAY
   delete env.ELECTRON_RENDERER_URL
   delete env.HIGHWING_FIXTURE
-  delete env.HIGHWING_FIXTURE_SPEED
   if (fixture) env.HIGHWING_FIXTURE = fixture
-  if (options.speed) env.HIGHWING_FIXTURE_SPEED = options.speed
 
   const { _electron } = requireDesktop('playwright-core')
-  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${fixture ? `HIGHWING_FIXTURE=${fixture}` : 'no fixture, hermes removed from PATH'}${options.speed ? ` at speed ${options.speed}` : ''}`)
+  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${fixture ? `HIGHWING_FIXTURE=${fixture}` : 'no fixture, hermes removed from PATH'}`)
   const app = await _electron.launch({
     executablePath: electronBinary() ?? fail('electron binary missing; run doctor'),
     args: [MAIN_JS, '--ozone-platform=x11', '--force-device-scale-factor=1', '--disable-gpu', `--user-data-dir=${join(scratch, 'user-data')}`],
     cwd: REPO,
-    env
+    env,
+    timeout: ctx.timeout
+  }).catch(error => {
+    log(ctx, `FAILED to launch: ${error.message.split('\n')[0]}`)
+    log(ctx, `FAIL evidence in ${evidence}`)
+    process.exit(1)
   })
   const pid = app.process().pid
   writeFileSync(join(scratch, 'pid'), String(pid))
@@ -220,23 +256,27 @@ async function run(argv) {
   process.exit(failed ? 1 : 0)
 }
 
-/** Side-by-side composites, the reference on the left: shot `<name>.png` pairs with `<name>-C.png`. */
+/** The design C reference each shot name is compared with, from docs/design/reference/. */
+const REFERENCES = {
+  'tool-running': 'tool-running-C.png',
+  approval: 'approval-C.png',
+  settled: 'settled-C.png',
+  'settled-expanded': 'settled-C-expanded.png'
+}
+
+/** Side-by-side composites, the reference on the left, for every shot named in `REFERENCES`. */
 function compare(argv) {
   const [runId] = argv
   if (!runId) fail('compare <run>')
   const evidence = join(EVIDENCE_ROOT, runId)
-  let made = 0
-  for (const file of readdirSync(evidence).filter(name => name.endsWith('.png') && !name.startsWith('compare-'))) {
-    const name = file.slice(0, -4)
-    const reference = join(REFERENCE, `${name}-C.png`)
-    if (!existsSync(reference)) continue
+  const shots = Object.keys(REFERENCES).filter(name => existsSync(join(evidence, `${name}.png`)))
+  if (shots.length === 0) fail(`no shot in ${evidence} is named ${Object.keys(REFERENCES).join(', ')}`)
+  for (const name of shots) {
     const out = join(evidence, `compare-${name}.png`)
-    const result = spawnSync('magick', [reference, join(evidence, file), '+append', out], { stdio: 'inherit' })
+    const result = spawnSync('magick', [join(REFERENCE, REFERENCES[name]), join(evidence, `${name}.png`), '+append', out], { stdio: 'inherit' })
     if (result.status !== 0) fail(`magick failed for ${name}`)
     console.log(out)
-    made++
   }
-  if (made === 0) fail(`no shot in ${evidence} is named after a reference (${readdirSync(REFERENCE).filter(name => name.endsWith('-C.png')).join(', ')})`)
 }
 
 /** Stops instances this skill started and removes their scratch state. Evidence under /tmp/highwing-verify is never touched. */

@@ -5,7 +5,6 @@ import { Composer } from '../composer/Composer'
 import { run, useTopic } from '../store'
 import { Thread } from './Thread'
 
-/** One chat: reads one session value and sends commands as data. */
 export function Chat({ id }: { readonly id: SessionId }) {
   const session = useTopic(`session:${id}`)
   const view = useMemo(() => (session === undefined ? null : threadView(session)), [session])

@@ -112,13 +112,11 @@ export const validators: Validators = {
   reconnect: raw => (typeof raw.start === 'boolean' ? { do: 'reconnect', start: raw.start } : null)
 }
 
-/** A command from a window, or null when its shape is wrong. */
 export function parseCommand(raw: unknown): Command | null {
   if (!isObject(raw) || !text(raw.do) || !Object.hasOwn(validators, raw.do)) return null
   return (validators[raw.do as Command['do']] as (raw: Obj) => Command | null)(raw)
 }
 
-/** A topic from a window, or null. */
 export function parseTopic(raw: unknown): Topic | null {
   if (raw === 'link' || raw === 'sidebar') return raw
   return text(raw) && raw.startsWith('session:') && raw.length > 'session:'.length ? (raw as Topic) : null

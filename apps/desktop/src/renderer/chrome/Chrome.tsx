@@ -19,7 +19,6 @@ function bannerOf(link: Link): BannerCopy | null {
   }
 }
 
-/** Shown while the link is waiting or blocked. The thread underneath stays as it was. */
 export function Banner({ link }: { readonly link: Link }) {
   const copy = bannerOf(link)
   if (copy === null) return null

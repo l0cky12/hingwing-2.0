@@ -1,6 +1,6 @@
 import type { PromptId, PromptReply } from '@highwing/hermes/domain'
 import type { PromptCard, ThreadEnd, ThreadNode, ThreadView, TurnView } from '@highwing/thread'
-import { memo, useState, type FormEvent } from 'react'
+import { memo, useCallback, useState, type FormEvent } from 'react'
 import { cx, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
 
@@ -121,11 +121,11 @@ interface ThreadProps {
 /** Draws `threadView(session)` node for node. Which rows are open is this window's own state. */
 export function Thread({ view, onAnswer, onLoadEarlier }: ThreadProps) {
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set())
-  const [onToggle] = useState(() => (key: string) => setOpened(held => {
+  const onToggle = useCallback((key: string) => setOpened(held => {
     const next = new Set(held)
     if (!next.delete(key)) next.add(key)
     return next
-  }))
+  }), [])
   return (
     <div id="transcript">
       {view.earlier === 'more' && <button className="earlier" onClick={onLoadEarlier}>Show earlier turns</button>}
