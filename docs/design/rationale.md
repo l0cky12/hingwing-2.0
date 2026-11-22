@@ -144,7 +144,7 @@ Rejected:
 
 - We accept owning a protocol client of a few hundred lines, in exchange for one owner of the attach sequence and no legacy dialect. Hermes's hold, settle and replay test cases get ported as fixtures.
 - We accept a per-window copy of each watched session, in exchange for one socket and one reducer state in main. A `rev` on every push lets a window detect a missed patch.
-- We accept that opening or rebuilding a session reads its whole history on the gateway's serial lane, in exchange for rows and a watermark that come from one lock. A long chat may take seconds to open (Hermes's own comment at `gateway/session_controls.py:722`), and during that read a Stop or an approval answer for another chat waits. Build unit 6 times the largest stored session on this machine.
+- We accept that opening or rebuilding a session reads its whole history on the gateway's serial lane, in exchange for rows and a watermark that come from one lock. A long chat may take seconds to open (Hermes's own comment at `gateway/session_controls.py:722`), and during that read a Stop or an approval answer for another chat waits. Unit 6 found nothing large enough to time (see Implementation reconciliation).
 - We accept that history turns are plainer than live ones. Stored rows carry no diff, so an old turn reads "Wrote notes.md" with no Changes section where the live turn read "Created notes.md".
 - We accept no sending while offline, in exchange for never delivering a request minutes late to an agent that runs commands.
 - We accept no client-side timer that force-settles a silent turn. A long tool run is silent too. A turn whose owner died stays running until a snapshot says otherwise.
@@ -168,7 +168,7 @@ Rejected:
 
 ## Implementation reconciliation
 
-Units 1 to 4 found these differences between the design and Hermes 0.23.3. The code follows Hermes.
+Units 1 to 6 found these differences between the design and Hermes 0.23.3. The code follows Hermes.
 
 | Design said | Hermes does | Where the code handles it |
 |---|---|---|
@@ -177,11 +177,16 @@ Units 1 to 4 found these differences between the design and Hermes 0.23.3. The c
 | The sidebar rows come from the stored list. | The stored list leaves out every session the gateway has mounted, idle or not (`gateway/session_listing.py:103-170`). | `sidebar.ts` merges the stored list and the live list. |
 | Every session verb needs an attached socket. | Only `prompt.submit` and the two respond verbs check it. Interrupt and mutate only authorize (`gateway/session_authority.py:972-976`). | The scripted gateway refuses exactly those three. |
 | Server requests wait for `client.capabilities`. | The canonical gateway writes them to every attached socket. Only the legacy sidecar checks the capability. | The client still sends the capability. The scripted gateway does not enforce the rule. |
-| A refused ticket closes with 4403. | Node's `WebSocket` reports a refused upgrade as close 1006. | It reads as a dropped link and is retried with a fresh ticket. This is untested against the real gateway. |
+| A refused ticket closes with 4403. | Node's `WebSocket` reports a refused upgrade as close 1006. | It reads as a dropped link and is retried with a fresh ticket. Unit 6 confirmed it on the live gateway. A reused ticket closes with 1006. |
 | Canonical params are closed key sets. | Methods the sidecar also declares refuse unknown keys and wrong types, and leave missing keys to the handler (`tui_gateway/contracts/registry.py:154-166`). | `testing/params.ts` |
 | Live text is plain markdown. | Text after a tool starts with blank lines. | `@highwing/thread` trims them. |
+| A failed turn is stored like any other. | It stores nothing, neither the request nor the failure. All 31 stored sessions on this machine have no message rows. | The live thread says why the turn failed. After a restart that chat opens empty (question 5). |
+| Opening the largest stored session may take seconds. | With no rows stored, an open took 0.89 s from launch, of which 0.70 s was the dial. | Nothing to time yet. Time it again once a provider exists. |
+| Session events always carry a session id (question 8). | `platforms.changed` is gateway-wide and arrives with none, twice in a 40 s run. | Counted as `unrouted` and dropped. |
 
-Still open: a failed Stop leaves the turn showing "Stopping", because the reducer has no input that undoes a requested stop. `liveDialer` has not dialed the real gateway yet, which is unit 6.
+Still open: a failed Stop leaves the turn showing "Stopping", because the reducer has no input that undoes a requested stop.
+
+Unit 6 ran the client against the live gateway with no provider set up. Connect, list, create and send all worked unchanged. The turn failed with `auth_permanent` in under 2 s, and the thread says so in plain words. That run is `fixtures/first-live.jsonl`, and `pnpm live:check` repeats it.
 
 ## Open questions and risks
 
@@ -191,16 +196,16 @@ Product calls for you:
 2. May Highwing start the Hermes gateway itself on launch? The sketch defaults to yes, once, and never on a retry. The alternative is to show "Hermes isn't running" and wait for your click.
 3. Which folder should a new chat start in: your home folder, the last one you used, or a picker each time?
 4. A message sent while a turn runs is queued by the gateway. Should the composer also offer steering, which hands your text to the running turn?
-5. Should settled live turns be cached on disk, so that history keeps its diffs and durations after a restart? The first build keeps nothing on disk.
+5. Should settled live turns be cached on disk, so that history keeps its diffs and durations after a restart? The first build keeps nothing on disk. Without it, a chat whose only turn failed opens empty after a restart, because Hermes stores nothing for a failed turn.
 6. Is it acceptable for Highwing to stay attached to every running chat? The cost with many chats running at once is not measured. The alternative is an "asking" badge only for chats you have open.
 
 Facts that need a live provider, or the first live recording:
 
 7. When a chat is first opened while its turn runs, the snapshot has no partial text. Can `session.events.since` from 0 paint the earlier part? Until a provider exists to test with, the turn shows its stored rows and fills in from the next delta.
-8. Does any canonical event arrive without a session id? The diagnostics counter answers this.
+8. Answered by the first live run: `platforms.changed` arrives without a session id. It is gateway-wide, so dropping it loses nothing.
 9. Do the gateway's catch-up frames always reach the socket before the resume reply? If they can arrive after it, step 5 sees a hole and rebuilds. That is safe, and slower than it needs to be.
 10. Answered by the canonical fixture: `tool.start` arrives before `approval.request`. The view handles both orders.
-11. Do stored rows carry tool arguments and results, and does any row say that a turn failed or was stopped? The sketch read the row type, not a real page.
+11. Do stored rows carry tool arguments and results? No row exists on this machine to read. Partly answered by the first live run: a failed turn writes no row at all.
 
 One path is untried on this machine. The quick-ask route through a Hyprland bind and `second-instance` needs a run on the real compositor before quick-ask is built.
 
