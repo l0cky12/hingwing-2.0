@@ -1,0 +1,190 @@
+@font-face { font-family: Literata; src: url(./fonts/literata-latin-400-normal.woff2) format("woff2"); font-weight: 400; font-style: normal; }
+@font-face { font-family: Literata; src: url(./fonts/literata-latin-400-italic.woff2) format("woff2"); font-weight: 400; font-style: italic; }
+@font-face { font-family: Literata; src: url(./fonts/literata-latin-600-normal.woff2) format("woff2"); font-weight: 600; font-style: normal; }
+@font-face { font-family: Schibsted; src: url(./fonts/schibsted-grotesk-latin-400-normal.woff2) format("woff2"); font-weight: 400; }
+@font-face { font-family: Schibsted; src: url(./fonts/schibsted-grotesk-latin-500-normal.woff2) format("woff2"); font-weight: 500; }
+@font-face { font-family: Schibsted; src: url(./fonts/schibsted-grotesk-latin-700-normal.woff2) format("woff2"); font-weight: 700; }
+/* The prototype used a system Nerd Font; the app ships JetBrains Mono so it looks the same on any machine. */
+@font-face { font-family: "JetBrains Mono"; src: url(@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2) format("woff2"); font-weight: 400; }
+
+:root {
+  --paper: #E8EBE4;
+  --sheet: #F6F7F3;
+  --ink: #1F2A26;
+  --graphite: #5F6B66;
+  --rule: #C3CAC2;
+  --signal: #0F6A5B;
+  --signal-soft: #CFE3DC;
+  --caution: #935600;
+  --caution-soft: #F3E8D4;
+  --add: #D6E7D2;
+  --del: #F1D9D3;
+  --code-bg: #DCE1D8;
+  --moss: #3F6B3A;
+  --brick: #A3402B;
+  --serif: Literata, Georgia, serif;
+  --sans: Schibsted, "Liberation Sans", sans-serif;
+  --mono: "JetBrains Mono", "DejaVu Sans Mono", monospace;
+  --thread-x: 9px;
+  --col: 32px;
+  --gap: 6px;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; height: 100%; }
+body {
+  background: var(--paper); color: var(--ink);
+  font: 400 14px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+#root { display: grid; grid-template-rows: auto 1fr auto; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:disabled { cursor: default; opacity: .45; }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; border-radius: 4px; }
+code, pre { font-family: var(--mono); }
+
+/* top bar, kept quiet; its height matches the prototype's bar with the design switcher in it */
+.bar { display: flex; align-items: center; gap: 24px; min-height: 56px; padding: 12px 28px; border-bottom: 1px solid var(--rule); }
+.bar h1 { margin: 0; font-size: 14px; font-weight: 400; color: var(--graphite); }
+.bar h1 .brand { font-weight: 700; color: var(--ink); margin-right: 8px; }
+
+/* connection banner: the link is waiting or blocked */
+.banner { display: flex; align-items: center; gap: 16px; padding: 9px 28px; background: var(--caution-soft); border-bottom: 1px solid var(--rule); }
+.banner p { margin: 0; color: var(--caution); font-weight: 500; }
+.banner button { margin-left: auto; padding: 4px 14px; border-radius: 6px; border: 1px solid var(--ink); background: transparent; }
+.banner button:hover { background: var(--sheet); }
+
+main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: thin; scrollbar-color: #78857E transparent; }
+#transcript { max-width: 760px; margin: 0 auto; padding: 36px 28px 56px; }
+.turn + .turn { margin-top: 44px; }
+.turn.pending .request { color: var(--graphite); border-left-color: var(--rule); }
+.earlier { display: block; margin: 0 0 28px var(--col); padding: 0; border: 0; background: none; color: var(--graphite); }
+.notice { color: var(--graphite); margin: 4px 0; }
+
+/* the person's request opens the dispatch */
+.request {
+  margin: 0 0 22px calc(var(--thread-x) - 0.75px); padding: 2px 0 2px calc(var(--col) - var(--thread-x) - 2.25px);
+  border-left: 3px solid var(--ink);
+  font-size: 16px; line-height: 1.5; max-width: 62ch; white-space: pre-wrap;
+}
+
+/* the thread: one line down the turn, steps hang on it, the live tip ends it */
+.thread { position: relative; padding-left: var(--col); display: flex; flex-direction: column; gap: var(--gap); }
+.thread > * { position: relative; }
+.thread > *::after {
+  content: ""; position: absolute; z-index: 0; width: 1.5px; background: var(--rule);
+  left: calc(var(--thread-x) - var(--col)); top: 0; bottom: calc(-1 * var(--gap));
+}
+.thread > :first-child::after { top: 8px; }
+.thread > :last-child::after { bottom: auto; height: 18px; }
+.thread > .step::before, .thread > .group::before, .thread > .approval::before {
+  content: ""; position: absolute; z-index: 1; left: calc(var(--thread-x) - var(--col) - 4px); top: 13px;
+  width: 9.5px; height: 9.5px; border-radius: 50%; background: var(--graphite);
+}
+.thread > .step.running::before { background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--graphite); }
+.thread > .group::before { border-radius: 2px; }
+.thread > .approval::before { top: 12px; background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--caution); }
+.thread > .approval.live::before { left: calc(var(--thread-x) - var(--col) - 6.25px); top: 16px; width: 14px; height: 14px; background: var(--caution); box-shadow: none; }
+
+/* agent prose, set for reading */
+.prose { font: 400 16.5px/1.62 var(--serif); margin: 0; padding: 4px 0 6px; }
+.prose p { max-width: 66ch; }
+.prose p { margin: 0 0 10px; }
+.prose p:last-child { margin-bottom: 0; }
+.prose code { font-size: 0.82em; background: var(--code-bg); padding: 1px 3px; border-radius: 3px; }
+.prose pre { margin: 6px 0 0; padding: 12px 14px; background: var(--sheet); border-radius: 6px; font-size: 13px; line-height: 1.55; overflow-x: auto; }
+.prose pre code { background: none; padding: 0; font-size: inherit; }
+.caret::after { content: ""; display: inline-block; width: 0.5em; height: 1em; margin-left: 2px; vertical-align: -0.12em; background: var(--signal); animation: blink 1s steps(2) infinite; }
+
+/* steps (B) and groups (C): closed is a line on the thread, open is a sheet */
+.step > .head, .group > .head {
+  display: flex; align-items: baseline; gap: 16px; width: calc(100% + 10px);
+  background: none; border: 0; border-radius: 6px; padding: 6px 14px 6px 10px; margin-left: -10px; text-align: left;
+}
+.step > button.head:hover, .group > button.head:hover { background: var(--sheet); }
+.head .title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.head .title code { font-size: 12.5px; font-weight: 400; margin-left: 2px; }
+.head .count { flex: none; margin-left: -6px; font-weight: 400; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.head .chev { flex: none; display: inline-block; width: 6px; height: 6px; margin: 0 0 2px -6px; border-right: 1.5px solid var(--graphite); border-bottom: 1.5px solid var(--graphite); transform: rotate(-45deg); transition: transform .15s ease; }
+.open > .head .chev { transform: rotate(45deg); margin-bottom: 4px; }
+.head .meta { display: flex; margin-left: auto; gap: 14px; color: var(--graphite); font-variant-numeric: tabular-nums; font-size: 13px; white-space: nowrap; }
+.stat .plus { color: var(--moss); }
+.stat .minus { color: var(--brick); }
+.record, .steps { display: none; }
+.step.open { padding-bottom: 8px; }
+.step.open > .record.bare { padding: 0 14px; background: none; }
+.step.open > .record { display: flex; flex-direction: column; gap: 12px; margin: 2px 0 0; padding: 10px 14px 12px; background: var(--sheet); border-radius: 6px; }
+.group.open { padding-bottom: 6px; }
+.group.open > .steps { display: flex; flex-direction: column; gap: 2px; margin: 0; padding-left: 24px; }
+.record h4 { margin: 0 0 5px; font-size: 13px; font-weight: 500; color: var(--graphite); }
+.record pre { margin: 0; font-size: 12.5px; line-height: 1.6; max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.record .path { margin: 0 0 6px; font: 12.5px var(--mono); color: var(--graphite); }
+.record .empty { margin: 0; color: var(--graphite); font-size: 13px; }
+.diff .ln { display: block; padding-right: 8px; }
+.diff .mk { display: inline-block; width: 20px; margin-right: 8px; text-align: center; font: 500 13px var(--sans); color: var(--graphite); user-select: none; }
+.diff .add { background: var(--add); }
+.diff .add .mk { color: var(--moss); }
+.diff .del { background: var(--del); }
+.diff .del .mk { color: var(--brick); }
+.diff .hunk { color: var(--graphite); padding-left: 28px; margin: 2px 0; }
+
+.step.live > .head .title, .group.live > .head .title { color: var(--signal); }
+.thread > .step.live::before, .thread > .group.live::before { left: calc(var(--thread-x) - var(--col) - 6.25px); top: 10px; width: 14px; height: 14px; border-radius: 50%; background: var(--signal); box-shadow: none; animation: halo 1.6s ease-out infinite; }
+
+/* approval: the one place the page asks for something */
+.approval { padding: 14px 16px 16px; background: var(--caution-soft); border-radius: 6px; margin: 0; }
+.approval h3 { margin: 0 0 8px; font-size: 15px; font-weight: 700; color: var(--caution); }
+.approval pre { margin: 0; padding: 9px 11px; font-size: 13px; background: var(--sheet); border-radius: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.approval .why { margin: 8px 0 0; color: var(--ink); font-size: 13.5px; }
+.approval .choices { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.approval .choices button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--ink); background: transparent; }
+.approval .choices button:hover { background: var(--sheet); }
+.approval .choices button.primary { background: var(--ink); color: var(--sheet); }
+.approval .choices button.deny { margin-left: auto; }
+.approval .answer { display: flex; gap: 8px; margin-top: 10px; }
+.approval .answer input { flex: 1; padding: 6px 10px; font: inherit; background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; }
+.approval .answer button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--ink); background: transparent; }
+.approval.answered { background: none; border-left: 0; padding: 6px 0; margin: 0; border-radius: 0; }
+.approval.answered p { margin: 0 0 6px; color: var(--graphite); }
+.approval.answered pre { background: none; padding: 0; color: var(--graphite); font-size: 12.5px; overflow-wrap: anywhere; }
+
+/* the tip: the live end of the thread, the one bold element */
+.tip { display: flex; align-items: center; gap: 0; padding: 6px 0; min-height: 30px; font-weight: 500; color: var(--signal); }
+.tip code { font-size: 12.5px; font-weight: 400; margin-left: 2px; }
+.tip .glyph { position: absolute; z-index: 1; left: calc(var(--thread-x) - var(--col) - 6.25px); width: 14px; height: 14px; border-radius: 50%; background: var(--signal); }
+.tip.thinking .glyph, .tip.streaming .glyph, .tip.working .glyph { animation: halo 1.6s ease-out infinite; }
+.tip.blocked { color: var(--caution); }
+.tip.blocked .glyph { background: var(--caution); }
+.tip.complete { color: var(--graphite); font-weight: 400; }
+.tip.complete .glyph { width: 14px; height: 14px; left: calc(var(--thread-x) - var(--col) - 6.25px); background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--graphite); }
+.tip.complete .glyph::after { content: ""; position: absolute; left: 4.5px; top: 1.75px; width: 4.5px; height: 8px; border-right: 2px solid var(--graphite); border-bottom: 2px solid var(--graphite); transform: rotate(45deg); box-sizing: border-box; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.tip.paused, .tip.lost { color: var(--graphite); font-weight: 400; }
+.tip.paused .glyph { background: var(--graphite); }
+.tip.lost .glyph { background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--graphite); }
+.tip.error, .tip.interrupted { color: var(--brick); }
+.tip.error .glyph, .tip.interrupted .glyph { background: var(--brick); }
+.err { color: var(--brick); margin: 4px 0; }
+
+@keyframes halo { 0% { box-shadow: 0 0 0 0 rgba(15, 106, 91, .45); } 100% { box-shadow: 0 0 0 9px rgba(15, 106, 91, 0); } }
+@keyframes blink { 50% { opacity: 0; } }
+
+.composer { padding: 14px 0 18px; border-top: 1px solid var(--rule); background: var(--paper); }
+.composer form { display: flex; gap: 10px; max-width: 760px; margin: 0 auto; padding: 0 28px 0 calc(28px + var(--col)); }
+textarea { flex: 1; resize: none; padding: 10px 12px; font: 15px/1.45 var(--sans); color: var(--ink); background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; }
+textarea::placeholder { color: var(--graphite); }
+textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
+.composer button { padding: 0 20px; border: 0; border-radius: 8px; background: var(--ink); color: var(--sheet); font-weight: 500; }
+.composer button.stop { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.composer .refusal { max-width: 760px; margin: 8px auto 0; padding: 0 28px 0 calc(28px + var(--col)); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; }
+}
+@media (max-width: 640px) {
+  .bar { flex-wrap: wrap; gap: 8px; padding: 10px 16px; }
+  .banner { padding: 9px 16px; }
+  #transcript { padding-left: 16px; padding-right: 16px; }
+  .composer form { padding: 0 16px 0 calc(16px + var(--col)); }
+  textarea { min-width: 0; }
+}

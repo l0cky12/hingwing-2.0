@@ -1,12 +1,24 @@
-import { app, BrowserWindow } from 'electron'
-import { join } from 'node:path'
+import { liveDialer, openHermes, type Dialer } from '@highwing/hermes'
+import { loadFixture, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
+import { app, ipcMain } from 'electron'
+import { serveWindows } from './ipc'
+import { isAppUrl, openWindow } from './windows'
+
+const { HIGHWING_FIXTURE, HIGHWING_RECORD } = process.env
+const fixture = HIGHWING_FIXTURE ? loadFixture(HIGHWING_FIXTURE) : null
+
+const dial: Dialer = fixture
+  ? scriptedDialer(fixture, { timing: 'recorded' })
+  : HIGHWING_RECORD
+    ? recordingDialer(liveDialer(), HIGHWING_RECORD)
+    : liveDialer()
 
 app.whenReady().then(() => {
-  const window = new BrowserWindow({
-    width: 1180, height: 860, useContentSize: true,
-    webPreferences: { preload: join(import.meta.dirname, '../preload/index.cjs'), sandbox: true, contextIsolation: true }
+  const hermes = openHermes({ dial, client: { name: 'highwing', version: app.getVersion() } })
+  const served = serveWindows(hermes, ipcMain, isAppUrl)
+  openWindow(fixture?.header.sessionId ?? null)
+  app.on('window-all-closed', () => {
+    served.dispose()
+    void hermes.close().finally(() => app.quit())
   })
-  if (process.env.ELECTRON_RENDERER_URL) void window.loadURL(process.env.ELECTRON_RENDERER_URL)
-  else void window.loadFile(join(import.meta.dirname, '../renderer/index.html'))
 })
-app.on('window-all-closed', () => app.quit())

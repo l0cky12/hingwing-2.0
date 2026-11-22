@@ -21,5 +21,19 @@ export default tseslint.config(
   {
     files: ['packages/hermes/src/wire/**', 'packages/hermes/src/testing/**'],
     rules: { 'no-restricted-imports': ['error', { paths: ['electron'] }] }
+  },
+  {
+    files: ['apps/desktop/src/**'],
+    ignores: ['apps/desktop/src/main/index.ts'],
+    rules: { 'no-restricted-imports': ['error', { paths: [{ name: '@highwing/hermes/testing', message: 'Only main/index.ts reads HIGHWING_FIXTURE and HIGHWING_RECORD.' }] }] }
+  },
+  {
+    files: ['apps/desktop/src/renderer/**', 'apps/desktop/src/ipc-contract.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: ['@highwing/hermes', '@highwing/hermes/testing', 'electron'].map(name => ({ name, message: 'The renderer imports @highwing/hermes/domain, @highwing/thread and ipc-contract only.' })),
+        patterns: [{ group: ['node:*'], message: 'The renderer has no Node.' }]
+      }]
+    }
   }
 )
