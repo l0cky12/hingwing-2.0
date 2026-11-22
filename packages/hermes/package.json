@@ -3,7 +3,12 @@
   "private": true,
   "type": "module",
   "exports": {
+    ".": "./src/hub.ts",
     "./domain": "./src/domain/index.ts",
     "./testing": "./src/testing/fixture.ts"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2",
+    "ws": "^8.23.0"
   }
 }
