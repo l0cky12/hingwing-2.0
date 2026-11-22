@@ -27,22 +27,24 @@ Hermes has no Tailscale integration of its own. Tailscale's part is name resolut
 
 ```ts
 // apps/desktop/src/main/index.ts
-const dialerFor = (target: Target): Dialer =>
-  target.kind === 'local' ? liveDialer() : remoteDialer(target.host)
+const routeFor = (target: Target): Route =>
+  target.kind === 'local' ? { dial: liveDialer(), dispose: () => {} } : remoteRoute(target.host)
 
 const owner = fixture
   ? pinnedConnection(openHermes({ dial: scriptedDialer(fixture), client }))
-  : ownConnection({ loaded: await loadSettings(dir), save: t => saveSettings(dir, t), check: checkTarget, dialerFor, open })
+  : ownConnection({ loaded: await loadSettings(dir), save: t => saveSettings(dir, t), check: checkTarget, routeFor, open })
 serveWindows(owner, ipcMain, isAppUrl)
 
 // renderer
 const setup = useTopic('setup')
 run({ do: 'checkTarget', target: { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' } })
 run({ do: 'editTarget' })   // the top bar's Connection button
+run({ do: 'openChat' })     // the saved screen's Open chat button
 
 // a unit test: a full remote dial, no network, no real ssh
 const host = await fakeHost('ok', gateway)
-const hermes = openHermes({ dial: remoteDialer(FAKE_HOST, { sshBin: host.ssh }), client })
+const route = remoteRoute(FAKE_HOST, { sshBin: host.ssh })
+const hermes = openHermes({ dial: route.dial, client })
 ```
 
 ```
@@ -63,37 +65,37 @@ type Target =
   | { readonly kind: 'remote'; readonly host: SshHost }   // "[user@]name", never starts with "-"
 ```
 
-On disk, `~/.config/Highwing/connection.json` (Electron `userData` once `productName` is `Highwing`), mode 0600:
+On disk, `connection.json` in Electron's `userData` directory, mode 0600. That is `~/.config/Highwing/` once `productName` is `Highwing`, or the directory a `--user-data-dir` flag names:
 
 ```json
 {"version": 1, "target": {"kind": "remote", "host": "hermes-host.example-tailnet.ts.net"}}
 ```
 
-- One field. User, port and key come from `~/.ssh/config`, because Highwing runs the system `ssh`. A different login name goes in the field as `user@hermes-host`. The hermes path on the far machine is found again on every run, so it is never saved and cannot go stale.
+- One field. User, port and key come from `~/.ssh/config`, because Highwing runs the system `ssh`. A different login name goes in the field as `user@hermes-host`. ssh gets the whole value. The Tailscale `peer` step matches only the part after `@`. The hermes path on the far machine is found again on every run, so it is never saved and cannot go stale.
 - `parseSettings(text)` is pure and the only code that knows the shape. It returns `none | saved | unreadable | newer`. The same `targetOf` parser guards the IPC command, so the file and the window cannot disagree on what a valid target is.
 - An unreadable or newer file opens setup with a notice and stays untouched. The first save renames it to `connection.<reason>-<ms>.json`, then writes a temp file, fsyncs it and renames it over `connection.json`. A crash leaves the old file or the new one, and a file from a newer Highwing is never lost.
 - `settings.ts` takes the directory as an argument and imports nothing from Electron.
 
 ### Remote route
 
-`remoteDialer(host)` is `dialWith(remoteMint(host))`. `dialWith` (including its `error` listener from #9), `connect`, `cliMint` and `liveDialer` do not change, so the handshake, heartbeat, backoff, the no-`Origin` dial and the protocol check run the code the local route runs today.
+`remoteRoute(host)` returns a `Route`, `{ dial: Dialer; dispose(): void }`. Its `dial` is `dialWith(remoteMint(host))`. `dialWith` (including its `error` listener from #9), `connect`, `cliMint` and `liveDialer` do not change, so the handshake, heartbeat, backoff, the no-`Origin` dial and the protocol check run the code the local route runs today. The local route is `{ dial: liveDialer(), dispose: () => {} }`.
 
 One dial:
 
 1. **Probe (first dial only, memoised).** `ssh <host> <locate> gateway tickets --probe --json`. This honours client rule 1. If it reports `windows_service_session: true`, Highwing never passes `--start` (client rule 2).
 2. **Attach.** `ssh <host> <locate> gateway attach --json`, with `--start --timeout 75` when the dial asks to start the gateway and `--timeout 20` otherwise. This gives a fresh ticket and the gateway's current loopback port.
-3. **Relay.** Highwing listens on `127.0.0.1:0`, accepts one connection, closes the listener and pipes the connection through `ssh <host> -W 127.0.0.1:<port>`. The mint returns `ws://127.0.0.1:<relay port>/api/ws` with attach's `protocols`.
+3. **Relay.** Highwing listens on `127.0.0.1:0`, accepts one connection, closes the listener and pipes the connection through `ssh <host> -W 127.0.0.1:<port>`. The mint returns `ws://127.0.0.1:<relay port>/api/ws` with attach's `protocols`. If no byte comes back from the far side within `UPGRADE_MS` (10 s, the same as `HANDSHAKE_MS`), the relay destroys the socket and kills the ssh. `dialWith` then sees a close before open and rejects with `dropped`, so a stalled upgrade cannot hold a dial open.
 4. **Dial.** `dialWith` dials it with Node's `WebSocket`, which sends no `Origin`. The ticket travels from attach's stdout to `protocols` to the upgrade and nowhere else.
 
 `<locate>` is a fixed `sh -c` script that copies Hermes's own locator (`hermes_cli/gateway_connections_ssh_remote.py:201-224`). It tries `bash -lc 'command -v hermes'`, then `~/.local/bin/hermes`, `/usr/local/bin/hermes` and `~/.hermes/hermes-agent/venv/bin/hermes`, and exits 127 when none is there. Remote commands are literal tuples (`HermesArgs`), so no typed value is ever put into a remote shell string. ssh options copy Hermes's transport: `BatchMode=yes`, `StrictHostKeyChecking=accept-new`, `ConnectTimeout=10`, `ServerAliveInterval=15`, `ServerAliveCountMax=3`.
 
-Process ownership. Nothing runs between dials and there is no ControlMaster.
+Process ownership. Nothing runs between dials and there is no ControlMaster. The route keeps every child and every open relay in one set, and `dispose()` kills them all and refuses later dials with `dropped`. The connection owner calls `dispose()` when it closes that route's `Hermes`. This covers a switch or a quit while a dial is still pending: `connect().close()` closes a socket only after the dial resolves (`wire/link.ts:310`), so without `dispose()` a pending attach or a stalled upgrade could keep the old host's ssh alive for up to 90 s.
 
 | Child | Owner | Ends when |
 |---|---|---|
-| probe | the dialer's memo | it exits, or 20 s |
-| attach | that dial's mint | it exits, or 35 s (90 s with `--start`) |
-| `ssh -W` | the relay's one socket | the socket closes. Its own exit destroys the socket. |
+| probe | the route's memo | it exits, 20 s, or `dispose()` |
+| attach | that dial's mint | it exits, 35 s (90 s with `--start`), or `dispose()` |
+| `ssh -W` | the relay's one socket | the socket closes, no reply within `UPGRADE_MS`, or `dispose()`. Its own exit destroys the socket. |
 | check commands | the running check | the check is replaced or cancelled (`AbortSignal`), or its deadline |
 
 A gateway that restarts on another port needs no handling, because the next attach names the new port. A Highwing that crashes leaves no ssh behind, because `ssh -W` exits when its stdin closes.
@@ -124,7 +126,7 @@ ssh's own failures are classified by one ordered table, `SSH_STDERR`, in the ord
 | Step | Command | Failures |
 |---|---|---|
 | `tailscale` | `tailscale status --json` on this computer | `tailscale-missing`, `tailscale-off` (`BackendState` is not `Running`), `tailscale-signed-out` (`NeedsLogin`) |
-| `peer` | the same JSON | `host-not-found` (no `Peer` matches by `DNSName` with any trailing dot dropped, by `HostName`, or by `TailscaleIPs`), `host-offline` (`Online: false`) |
+| `peer` | the same JSON | `host-not-found` (no `Peer` matches the host part after any `user@`, by `DNSName` with any trailing dot dropped, by `HostName`, or by `TailscaleIPs`), `host-offline` (`Online: false`) |
 | `ssh` | one ssh run of `<locate> gateway tickets --probe --json` | `unreachable`, `ssh-missing`, `ssh-denied`, `ssh-check`, `host-changed` |
 | `hermes` | the exit code of that same run | `hermes-not-found` (127), `hermes-too-old` (any other exit, or no JSON) |
 
@@ -136,24 +138,38 @@ ssh's own failures are classified by one ordered table, `SSH_STDERR`, in the ord
 
 ```ts
 type Setup =
-  | { at: 'form'; live: Live | null; notice: 'unreadable' | 'newer' | null }
+  | { at: 'chat'; live: Live }                                                  // the normal state
+  | { at: 'form'; live: Live | null; notice: 'unreadable' | 'newer' | null }    // live !== null: editing
   | { at: 'checking'; live: Live | null; target: Target; step: CheckStep }
   | { at: 'failed'; live: Live | null; target: Target; failure: CheckFailure }
-  | { at: 'saved'; live: Live }
-  | { at: 'pinned' }                                    // HIGHWING_FIXTURE: no setup
+  | { at: 'saved'; live: Live }                                                 // confirmation
+  | { at: 'pinned' }                                                            // HIGHWING_FIXTURE: no setup
 type Live = { target: Target; epoch: number }
 ```
 
 `nextSetup(setup, event)` is a pure transition table. A command that does not apply in the current state is refused. A step from a superseded check is dropped by a generation guard.
 
-The Bridge keeps its two methods, `watch` and `run`. `Topic` gains `'setup'`. `Command` gains `checkTarget`, `editTarget` and `keepTarget` (cancel), each with a row in `validators`.
+| From | Event | To |
+|---|---|---|
+| (launch) | settings `saved` | `chat` |
+| (launch) | settings `none`, `unreadable` or `newer` | `form` with `live: null` and the notice |
+| `chat` | `editTarget` | `form` with the same `live` |
+| `form`, `failed` | `checkTarget(t)` | `checking` at the first step |
+| `checking` | a step finishes | `checking` at the next step |
+| `checking` | a step fails | `failed` |
+| `checking` | the check passes and the save succeeds | `saved` with the new `live` |
+| `checking` | the check passes and the save fails | `failed` with `cant-save` |
+| `form`, `checking`, `failed` with `live` | `keepTarget` (Cancel) | `chat` with that `live`. A running check is aborted. |
+| `saved` | `openChat` | `chat` |
+
+The Bridge keeps its two methods, `watch` and `run`. `Topic` gains `'setup'`. `Command` gains `checkTarget`, `editTarget`, `keepTarget` and `openChat`, each with a row in `validators`.
 
 Saving a target goes in this order:
 
 1. The check passes.
 2. The owner saves the target.
-3. It opens a new `Hermes` with `dialerFor(target)` and bumps `epoch`.
-4. It closes the old `Hermes`. Its socket closes, and that kills its relay's ssh.
+3. It opens a new `Hermes` with `routeFor(target).dial` and bumps `epoch`.
+4. It closes the old `Hermes` and calls the old route's `dispose()`. That kills its relay's ssh and any attach still running.
 
 A failed check never touches the live connection. Re-checking the live target does not switch.
 
@@ -161,12 +177,12 @@ A failed check never touches the live connection. Re-checking the live target do
 
 `App.tsx` reads the `setup` topic:
 
+- `chat` draws the chat, keyed by `live.epoch`.
 - `form`, `checking` and `failed` draw `Setup.tsx`.
 - `saved` draws the saved screen with an Open chat button.
-- `live` present draws the chat, which is keyed by `live.epoch`.
 - `pinned` draws the chat, as fixture runs do today.
 
-The top bar gets a Connection button that sends `editTarget`. Cancel shows only when something is live.
+The renderer decides nothing from `live`. Each state names its own screen. The top bar gets a Connection button that sends `editTarget`. Cancel shows only when `live` is not null.
 
 A switch remounts the chat subtree with the new epoch. Its `watch` calls then unsubscribe and subscribe again through the normal path, so `main/ipc.ts` needs no rebind logic. A window reload was rejected because `serveWindows` drops a window's subscriptions only on `destroyed`, which a reload does not fire. The old subscriptions would leak.
 
@@ -174,12 +190,14 @@ A switch remounts the chat subtree with the new epoch. Its `watch` calls then un
 
 - **Pure tables.** `parseSshHost`, `sshFailureOf`, the Tailscale verdicts, `parseSettings` and `nextSetup` are tested from literal inputs.
 - **Fake host (`packages/hermes/src/testing/fake-host.ts`).** It writes fake `ssh`, `tailscale` and `hermes` executables (Node scripts) into a temp bin directory. They ask a 127.0.0.1 control server what to do. Fake `attach` mints from the existing `loopback()` scripted gateway, which already refuses an `Origin` header or a reused ticket. It prints a port that only the fake `ssh -W` resolves, so a client that skips the tunnel fails. `SCENARIOS` is keyed by `CheckFailure | 'ok' | 'slow'`, so a new failure kind does not compile without a scenario. `holdAt` pauses a scenario at a step, which pins the checking state for a screenshot without a sleep.
-- **Remote dial tests.** The errand fixture plays through `remoteDialer` with Origin-free, single-use upgrades. A restarted gateway on a new port is followed by the next dial. `--start` appears only on launch and on Start. No ssh child is alive after `close()`.
-- **Verify skill.** It gains `--fake-host <scenario>`, which sets `PATH` to the fake bin directory alone so `*-missing` is a real `ENOENT`. It also gains `--saved none|local|remote`, which gives each run its own `XDG_CONFIG_HOME`. It shoots empty, checking, every failure, saved, and a remote chat that goes live.
+- **Remote dial tests.** The errand fixture plays through `remoteRoute` with Origin-free, single-use upgrades. A restarted gateway on a new port is followed by the next dial. `--start` appears only on launch and on Start. No ssh child is alive after `close()` and `dispose()`, including when they run while an attach is pending and while the upgrade stalls.
+- **Verify skill.** It gains `--fake-host <scenario>`, which sets `PATH` to the fake bin directory alone so `*-missing` is a real `ENOENT`. It also gains `--saved none|local|remote`, which writes `connection.json` into the run's `--user-data-dir` (the helper already passes one, `highwing-verify.mjs:211`). It shoots empty, checking, every failure, saved, and a remote chat that goes live, and checks that `--saved remote` starts on the chat.
 
 ### Packaging
 
-The route is a `PKGBUILD` that bundles the pinned Electron 45.4.1 release zip, checksummed in `source`, into `/usr/lib/highwing`. It ships `out/` as `resources/app`, a `/usr/bin/highwing` launcher, `highwing.desktop` and a hicolor icon. It depends on `openssh`, with `tailscale` optional. `scripts/package-linux.mjs` stages the app and fails if the bundle still imports a workspace package by bare name.
+The route is a `PKGBUILD` that bundles the pinned Electron 45.4.1 release zip, checksummed in `source`, into `/usr/lib/highwing`. It ships a `/usr/bin/highwing` launcher, `highwing.desktop` and a hicolor icon. `scripts/package-linux.mjs` stages `resources/app`: the electron-vite `out/` folder plus a generated `package.json` with `name`, `version`, `type: "module"` and `main: "out/main/index.js"`, because Electron reads `main` from that manifest to start. The script fails if the bundle still imports a workspace package by bare name.
+
+`depends` lists Electron's own runtime libraries, copied from Arch's `electron44` package (`gtk3`, `nss`, `alsa-lib` and the rest), plus `openssh`. `tailscale` is optional. The launch proof installs only the declared dependencies and the display tools (Xvfb, the screenshot tool), so a missing library fails it.
 
 Why bundled. Arch's `extra` repository ships `electron39` to `electron44` and no `electron45` (measured in `archlinux:latest`). A dependency on `electron44` would run a major version that no test and no verify run has seen. An AppImage needs FUSE 2 and gives no pacman integration.
 
@@ -193,9 +211,9 @@ The proof is `makepkg -si` as a non-root user in a clean `archlinux:latest` cont
 | `packages/hermes/src/domain/session.ts` | changed | five new `Why` kinds |
 | `packages/hermes/src/wire/link.ts` | changed | `WORDS` and `RETRIES` rows; exports `EXIT_KINDS` and `endpointOf` to `remote.ts` |
 | `packages/hermes/src/wire/ssh.ts` | new, private | `SSH_OPTIONS`, `HermesArgs`, `remoteHermes`, `sshExec`, `SSH_STDERR`, `relay` |
-| `packages/hermes/src/wire/remote.ts` | new, private | `remoteDialer`, the probe memo |
+| `packages/hermes/src/wire/remote.ts` | new, private | `remoteRoute`, `Route`, the probe memo |
 | `packages/hermes/src/wire/check.ts` | new, private | `checkTarget` |
-| `packages/hermes/src/hub.ts` | changed | exports `remoteDialer`, `checkTarget` |
+| `packages/hermes/src/hub.ts` | changed | exports `remoteRoute`, `Route`, `checkTarget` |
 | `packages/hermes/src/testing/fake-host.ts` | new | `fakeHost`, `SCENARIOS` |
 | `apps/desktop/src/main/settings.ts` | new | `parseSettings`, `loadSettings`, `saveSettings` |
 | `apps/desktop/src/main/connection.ts` | new | `ownConnection`, `nextSetup`, `pinnedConnection` |
@@ -207,7 +225,7 @@ The proof is `makepkg -si` as a non-root user in a clean `archlinux:latest` cont
 | `README.md` | changed | "Install on Arch" and "Connect over Tailscale" |
 | `docs/compatibility.md` | changed | the remote route's Hermes commands (`attach --json`, `tickets --probe --json`) and what an older Hermes shows |
 
-`@highwing/hermes` gains two exported functions and the domain tables. The ssh options, the locator, the stderr table, the relay and the Tailscale JSON stay inside `wire/`. No file in `packages/hermes` imports Electron.
+`@highwing/hermes` gains two exported functions, the `Route` type and the domain tables. The ssh options, the locator, the stderr table, the relay and the Tailscale JSON stay inside `wire/`. No file in `packages/hermes` imports Electron.
 
 ## Synthesis decision
 
@@ -243,4 +261,4 @@ Rejected:
 
 ## Next implementation step
 
-Write `domain/reach.ts` and `wire/ssh.ts` with their table tests, then `testing/fake-host.ts` with the `ok` scenario playing the errand fixture through `remoteDialer`.
+Write `domain/reach.ts` and `wire/ssh.ts` with their table tests, then `testing/fake-host.ts` with the `ok` scenario playing the errand fixture through `remoteRoute`.
