@@ -7,6 +7,7 @@
     "test": "vitest run",
     "typecheck": "tsc -p packages/hermes && tsc -p packages/thread && tsc -p docs/design/sketch/.typecheck/tsconfig.json && tsc -p apps/desktop/tsconfig.node.json && tsc -p apps/desktop/tsconfig.web.json",
     "lint": "eslint .",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
     "sync:contract": "tsx scripts/sync-contract.ts",
     "contract:drift": "tsx scripts/contract-drift.ts"
   },

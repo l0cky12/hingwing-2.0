@@ -18,7 +18,7 @@ Closes #
 ## How I verified it
 <!-- What you ran and what you saw. "Tests pass" is not enough.
      Say what you could NOT check (e.g. WebView2, real audio devices). -->
-- [ ] `npm run check` passes
+- [ ] `pnpm check` passes (lint, typecheck and tests)
 - [ ] Ran the built app on: [ ] Windows  [ ] Linux (.deb / AppImage / Arch)
 - [ ] Hermes tested against (version or commit): ___
 - [ ] Settings → Diagnostics shows no newly unsupported features
