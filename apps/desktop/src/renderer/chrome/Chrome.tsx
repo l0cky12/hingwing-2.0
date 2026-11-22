@@ -7,7 +7,6 @@ export function TopBar() {
 
 interface BannerCopy {
   readonly words: string
-  /** Start is the only way a dial after launch starts the gateway. */
   readonly action: { readonly label: string; readonly start: boolean } | null
 }
 

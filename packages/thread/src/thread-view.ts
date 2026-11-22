@@ -77,9 +77,9 @@ export interface StepView {
 }
 
 export interface RecordView { readonly sections: readonly RecordSection[] }
-/** `label` is null when the record has a single section. */
 /** A clipped text, or the words to show when there is none ("No output"). */
 export type RecordBody = { readonly text: string; readonly more: number } | { readonly empty: string }
+/** `label` is null when the record has a single section. */
 export type RecordSection =
   | { readonly kind: 'changes'; readonly label: string | null; readonly path: string; readonly lines: FileDiff['lines'] }
   | { readonly kind: 'output' | 'result' | 'input'; readonly label: string | null; readonly body: RecordBody }

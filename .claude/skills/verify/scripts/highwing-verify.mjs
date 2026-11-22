@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// Drives the Highwing desktop app through Playwright's Electron driver, inside a private Xvfb display.
-// Usage: highwing-verify.mjs <doctor|build|run|compare|cleanup> ...   (see ../SKILL.md)
 import { spawn, spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, appendFileSync, openSync, readSync, closeSync } from 'node:fs'
@@ -16,7 +14,6 @@ const REFERENCE = join(REPO, 'docs/design/reference')
 const SIZE = { width: 1180, height: 860 }
 const requireDesktop = createRequire(join(DESKTOP, 'package.json'))
 
-/** Named states: a locator that is visible exactly while the app is in that state. */
 const STATES = {
   window: page => page.locator('#root > *').first(),
   live: page => page.getByRole('button', { name: 'Send', exact: true, disabled: false }),
@@ -26,7 +23,6 @@ const STATES = {
   offline: page => page.getByRole('status', { name: 'Connection' })
 }
 
-/** Steps a `run` takes, with how many arguments each consumes. */
 const STEPS = {
   wait: { arity: 1, run: async (ctx, state) => waitFor(ctx, state) },
   see: { arity: 1, run: async (ctx, text) => ctx.page.getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout: ctx.timeout }) },
@@ -72,7 +68,6 @@ const newestMtime = dir => readdirSync(dir, { recursive: true, withFileTypes: tr
 const SOURCES = [join(DESKTOP, 'src'), join(REPO, 'packages/hermes/src'), join(REPO, 'packages/thread/src')]
 const buildIsStale = () => !existsSync(MAIN_JS) || Math.max(...SOURCES.map(newestMtime), statSync(join(DESKTOP, 'electron.vite.config.ts')).mtimeMs) > newestMtime(join(DESKTOP, 'out'))
 
-/** PATH without any directory holding a `hermes` executable, so a no-fixture launch cannot reach the real gateway. */
 const pathWithoutHermes = () => (process.env.PATH ?? '').split(delimiter).filter(dir => !existsSync(join(dir, 'hermes'))).join(delimiter)
 
 const pngSize = path => {
@@ -114,7 +109,6 @@ function build() {
   process.exit(result.status ?? 1)
 }
 
-/** Text the fixture's first `await prompt.submit` step recorded, for `type <label> @request`. */
 function requestText(fixturePath) {
   for (const line of readFileSync(fixturePath, 'utf8').split('\n').slice(1)) {
     if (!line.trim()) continue
@@ -178,10 +172,6 @@ function ownDisplay() {
   if (parent !== process.ppid) fail(`display ${process.env.DISPLAY} belongs to another run's X server. Start this run again.`)
 }
 
-/**
- * Verification scaffolding: a copy of the fixture whose gateway closes the socket right after the
- * first frame of event type `type`. The client then shows the dropped link until its redial lands.
- */
 function withDrop(fixturePath, type, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const steps = lines.slice(1).map(line => JSON.parse(line))
@@ -256,7 +246,6 @@ async function run(argv) {
   process.exit(failed ? 1 : 0)
 }
 
-/** The design C reference each shot name is compared with, from docs/design/reference/. */
 const REFERENCES = {
   'tool-running': 'tool-running-C.png',
   approval: 'approval-C.png',
@@ -264,7 +253,6 @@ const REFERENCES = {
   'settled-expanded': 'settled-C-expanded.png'
 }
 
-/** Side-by-side composites, the reference on the left, for every shot named in `REFERENCES`. */
 function compare(argv) {
   const [runId] = argv
   if (!runId) fail('compare <run>')
@@ -279,7 +267,6 @@ function compare(argv) {
   }
 }
 
-/** Stops instances this skill started and removes their scratch state. Evidence under /tmp/highwing-verify is never touched. */
 function cleanup(argv) {
   const { options } = parseOptions(argv, { run: 'value', all: 'flag' })
   if (!options.run && !options.all) fail('cleanup --run <run> or cleanup --all')
@@ -298,13 +285,9 @@ function cleanup(argv) {
   }
 }
 
-/**
- * Re-enter under a private X server so the window never reaches the user's compositor. `xvfb-run -a`
- * alone hands two runs started together the same display, so each run starts its search at its own number.
- */
 function underXvfb(argv) {
   const firstDisplay = String(100 + (process.pid % 800))
-  const child = spawn('xvfb-run', ['-a', '-n', firstDisplay, '-s', '-screen 0 1600x1200x24', process.execPath, fileURLToPath(import.meta.url), ...argv], {
+  const child = spawn('xvfb-run', ['-n', firstDisplay, '-a', '-s', '-screen 0 1600x1200x24', process.execPath, fileURLToPath(import.meta.url), ...argv], {
     stdio: 'inherit', env: { ...process.env, HIGHWING_VERIFY_XVFB: '1' }
   })
   child.on('exit', code => process.exit(code ?? 1))

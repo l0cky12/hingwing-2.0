@@ -8,7 +8,6 @@ interface ComposerProps {
   readonly onStop: () => void
 }
 
-/** The draft survives a refused send and the time offline; it is cleared only when Hermes takes the message. */
 export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
   const [draft, setDraft] = useState('')
   const [refusal, setRefusal] = useState<string | null>(null)

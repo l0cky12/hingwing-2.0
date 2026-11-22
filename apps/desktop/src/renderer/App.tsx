@@ -9,7 +9,6 @@ const fixed = new URLSearchParams(window.location.search).get(SESSION_PARAM) as 
 
 const NO_CHAT = async () => ({ ok: false, refusal: { kind: 'rejected', message: 'There is no chat to send to.' } }) as const
 
-/** Without a session in the URL, the window shows the first chat in the sidebar. */
 function FirstChat() {
   const first = useTopic('sidebar')?.rows[0]?.id
   return first === undefined

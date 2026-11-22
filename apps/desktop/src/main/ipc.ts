@@ -2,10 +2,8 @@ import type { Hermes } from '@highwing/hermes'
 import type { CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
 import { CHANNEL, parseCommand, parseTopic, type Push, type SessionPatch, type Tail, type Topic } from '../ipc-contract'
 
-/** At most one push per topic per window in this window of time. */
 export const COALESCE_MS = 16
 
-/** The parts of Electron's `ipcMain` and `WebContents` that serving windows uses. Tests pass fakes. */
 export interface WindowSender {
   readonly id: number
   send(channel: string, ...args: unknown[]): void
@@ -25,7 +23,6 @@ export interface IpcMainLike {
 
 type Source = (listener: (value: unknown) => void) => () => void
 
-/** Every topic as a source that reports its current value at once and each later one. */
 const SOURCES: { readonly [K in 'link' | 'sidebar' | 'session']: (hermes: Hermes, topic: Topic) => Source } = {
   link: hermes => listener => {
     listener(hermes.link.get())
@@ -45,7 +42,6 @@ function tail<T>(pushed: readonly T[], next: readonly T[]): Tail<T> {
   return { from, items: next.slice(from) }
 }
 
-/** The change from the session last pushed to `next`, found by reference compare. */
 export function sessionPatch(pushed: Session, next: Session): SessionPatch {
   const { history, run, ...rest } = next
   if (run.state === 'idle') return { rest, history: tail(pushed.history, history), run }
@@ -53,10 +49,6 @@ export function sessionPatch(pushed: Session, next: Session): SessionPatch {
   return { rest, history: tail(pushed.history, history), run: { state: 'running', head, turn, items: tail(pushed.run.state === 'running' ? pushed.run.turn.items : [], items) } }
 }
 
-/**
- * Serves one topic to one window: the first value in full, then at most one push per `COALESCE_MS`
- * carrying only what changed since the last push.
- */
 function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): () => void {
   let pushed: unknown
   let latest: unknown
@@ -86,10 +78,6 @@ function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): (
 
 const REFUSED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Highwing refused a malformed request from its window.' } }
 
-/**
- * Serves every topic from one `Hermes` to any number of windows. Only the top frame of a page whose
- * URL `isAppUrl` accepts may watch or run.
- */
 export function serveWindows(hermes: Hermes, ipc: IpcMainLike, isAppUrl: (url: string) => boolean): { dispose(): void } {
   const windows = new Map<number, Map<number, () => void>>()
   const trusted = ({ senderFrame }: IpcEvent) => senderFrame !== null && senderFrame.parent === null && isAppUrl(senderFrame.url)

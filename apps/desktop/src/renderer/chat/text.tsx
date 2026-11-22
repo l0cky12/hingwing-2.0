@@ -16,7 +16,6 @@ function inline(paragraph: string): ReactNode[] {
   })
 }
 
-/** The markdown subset Hermes writes in prose: fenced code, paragraphs, inline code, bold, line breaks. */
 export function Markdown({ source, caret }: { readonly source: string; readonly caret: boolean }) {
   const blocks = source.split(/```[\w-]*\n?/).flatMap((chunk, index) => index % 2 === 1
     ? [{ code: true, text: chunk.replace(/\n$/, '') }]

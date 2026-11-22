@@ -5,7 +5,6 @@ declare global {
   interface Window { readonly highwing: Bridge }
 }
 
-/** This window's read-only copy of one topic. Only `applyPush` writes `value`. */
 interface Copy {
   value: unknown
   rev: number
@@ -56,7 +55,6 @@ const subscribe = (topic: Topic) => {
   return created
 }
 
-/** The window's copy of a topic, `undefined` until the first full push arrives. */
 export function useTopic<T extends Topic>(topic: T): TopicValue<T> | undefined {
   return useSyncExternalStore(subscribe(topic), () => copies.get(topic)?.value as TopicValue<T> | undefined)
 }

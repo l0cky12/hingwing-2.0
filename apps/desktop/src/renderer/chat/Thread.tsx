@@ -8,8 +8,7 @@ type Answer = (promptId: PromptId, reply: PromptReply) => void
 
 interface NodeProps {
   readonly node: ThreadNode
-  /** The end mark's tone when it sits on this node. */
-  readonly end: 'live' | 'asking' | null
+  readonly endTone: 'live' | 'asking' | null
   readonly opened: ReadonlySet<string>
   readonly onToggle: (key: string) => void
   readonly onAnswer: Answer
@@ -49,16 +48,16 @@ function Prompt({ card, asking, onAnswer }: { readonly card: PromptCard; readonl
   )
 }
 
-function Node({ node, end, opened, onToggle, onAnswer }: NodeProps) {
+function Node({ node, endTone, opened, onToggle, onAnswer }: NodeProps) {
   switch (node.kind) {
     case 'prose':
       return <div className="prose"><Markdown source={node.markdown} caret={node.streaming} /></div>
     case 'step':
-      return <Step step={node.step} live={end === 'live'} open={opened.has(node.key)} onToggle={onToggle} />
+      return <Step step={node.step} live={endTone === 'live'} open={opened.has(node.key)} onToggle={onToggle} />
     case 'group': {
       const open = opened.has(node.key)
       return (
-        <div className={cx('group', open && 'open', end === 'live' && 'live')} {...(end === 'live' ? { 'data-end': 'live' } : {})}>
+        <div className={cx('group', open && 'open', endTone === 'live' && 'live')} {...(endTone === 'live' ? { 'data-end': 'live' } : {})}>
           <button className="head" aria-expanded={open} onClick={() => onToggle(node.key)}>
             <span className="title"><PhraseText words={node.title} /></span>
             <span className="count">{node.count} steps</span>
@@ -72,7 +71,7 @@ function Node({ node, end, opened, onToggle, onAnswer }: NodeProps) {
       )
     }
     case 'prompt':
-      return <Prompt card={node.card} asking={end === 'asking'} onAnswer={onAnswer} />
+      return <Prompt card={node.card} asking={endTone === 'asking'} onAnswer={onAnswer} />
     case 'notice':
       return <p className={node.tone === 'error' ? 'err' : 'notice'}>{node.text}</p>
   }
@@ -102,7 +101,7 @@ const Turn = memo(function Turn({ turn, opened, onToggle, onAnswer }: TurnProps)
       {turn.request !== null && <p className="request">{turn.request}</p>}
       <div className="thread">
         {turn.nodes.map(node => (
-          <Node key={node.key} node={node} end={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} opened={opened} onToggle={onToggle} onAnswer={onAnswer} />
+          <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} opened={opened} onToggle={onToggle} onAnswer={onAnswer} />
         ))}
         <End end={end} />
       </div>
@@ -118,7 +117,6 @@ interface ThreadProps {
   readonly onLoadEarlier: () => void
 }
 
-/** Draws `threadView(session)` node for node. Which rows are open is this window's own state. */
 export function Thread({ view, onAnswer, onLoadEarlier }: ThreadProps) {
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set())
   const onToggle = useCallback((key: string) => setOpened(held => {

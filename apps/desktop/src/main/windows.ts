@@ -7,16 +7,17 @@ import { SESSION_PARAM } from '../ipc-contract'
 const INDEX_HTML = join(import.meta.dirname, '../renderer/index.html')
 const DEV_URL = process.env.ELECTRON_RENDERER_URL
 
-/** The renderer's own page, with or without a query. Nothing else may watch or run. */
 export const isAppUrl = (url: string) => {
   const page = url.split(/[?#]/)[0]
   return DEV_URL ? page === new URL(DEV_URL).href : page === pathToFileURL(INDEX_HTML).href
 }
 
-/** One chat window at the size the design was drawn at. `sessionId` fixes which chat it shows. */
+/** The content size design C was drawn and reviewed at. */
+const DESIGN_SIZE = { width: 1180, height: 860 } as const
+
 export function openWindow(sessionId: SessionId | null): BrowserWindow {
   const window = new BrowserWindow({
-    width: 1180, height: 860, useContentSize: true,
+    ...DESIGN_SIZE, useContentSize: true,
     title: 'Highwing', backgroundColor: '#E8EBE4',
     webPreferences: { preload: join(import.meta.dirname, '../preload/index.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false }
   })
