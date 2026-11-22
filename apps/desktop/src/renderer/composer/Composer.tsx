@@ -6,9 +6,10 @@ interface ComposerProps {
   readonly showStop: boolean
   readonly onSend: (text: string) => Promise<CommandOutcome>
   readonly onStop: () => void
+  readonly onInput: () => void
 }
 
-export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
+export function Composer({ canSend, showStop, onSend, onStop, onInput }: ComposerProps) {
   const [draft, setDraft] = useState('')
   const [refusal, setRefusal] = useState<string | null>(null)
 
@@ -29,7 +30,7 @@ export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
   return (
     <footer className="composer">
       <form onSubmit={submit}>
-        <textarea rows={2} placeholder="Ask Hermes to do something" aria-label="Message Hermes" value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={onKeyDown} />
+        <textarea rows={1} placeholder="Ask Hermes to do something" aria-label="Message Hermes" value={draft} onChange={event => { setDraft(event.target.value); onInput() }} onKeyDown={onKeyDown} />
         {showStop && <button type="button" className="stop" disabled={!canSend} onClick={onStop}>Stop</button>}
         <button type="submit" disabled={!canSend}>Send</button>
       </form>
