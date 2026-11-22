@@ -26,10 +26,11 @@ version. If this table and that file disagree, the file is right.
 
 ## When a change needs a newer Hermes route
 
-1. Run `pnpm sync:contract` against the newer Hermes. This updates the vendored
-   contract and `contract.version.json`.
-2. Run `pnpm contract:drift` to see which methods, requests and notifications
-   changed.
+1. Install the newer Hermes, then run `pnpm contract:drift` to see which
+   methods, requests and notifications changed. Run it before step 2: it
+   compares the vendored contract with the installed one.
+2. Run `pnpm sync:contract`. This copies the installed contract into the repo
+   and updates `contract.version.json`.
 3. Update the table above with the oldest Hermes version that has the route.
 4. Make sure an older server shows a "not supported" note in the app, not an
    error.
