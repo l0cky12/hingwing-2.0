@@ -269,7 +269,7 @@ const basename = (path: unknown) => text(text(path)?.replace(/\/+$/, '').split('
 const command = (args: ToolItem['args']) => text(text(args.command)?.replace(/^cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*&&\s*/, ''))
 const file = (args: ToolItem['args']) => basename(args.path)
 
-/** One row per tool. A new tool is one row. */
+/** A new tool is one row. */
 const TOOL_WORDS: { readonly [toolName: string]: ToolWords } = {
   write_file: { done: 'Wrote', doing: 'Writing', created: 'Created', isCommand: false, subject: file },
   patch: { done: 'Edited', doing: 'Editing', created: null, isCommand: false, subject: file },
@@ -484,8 +484,7 @@ function openEnd(turn: Turn, nodes: readonly ThreadNode[], activity: Activity, s
     case 'working': {
       const key = `${turn.id}/${activity.item}`
       const node = nodes.find(n => n.key === key || (n.kind === 'group' && n.steps.some(step => step.key === key)))
-      if (node) return { kind: 'at', nodeKey: node.key, tone: activity.kind === 'asking' ? 'asking' : 'live' }
-      return { kind: 'tip', words: [{ t: 'text', v: TIP_WORDS.thinking }] }
+      return { kind: 'at', nodeKey: node?.key ?? key, tone: activity.kind === 'asking' ? 'asking' : 'live' }
     }
     case 'preparing':
       return { kind: 'tip', words: [{ t: 'text', v: 'Preparing ' }, { t: 'code', v: activity.tool }] }
