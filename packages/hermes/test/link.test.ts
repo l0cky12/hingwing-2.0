@@ -1,6 +1,7 @@
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { backoffMs, DialError, liveDialer, Offline, RpcRefusal } from '../src/wire/link'
 import { DESCRIBE, fakeGateway } from './support/wire'
@@ -287,5 +288,15 @@ describe('liveDialer', () => {
   it('reads output that names no url as incompatible', async () => {
     const { bin } = hermes(0, 'ready\n')
     expect(await kindOf(liveDialer({ hermesBin: bin })({ start: false }))).toBe('incompatible')
+  })
+})
+
+describe('time', () => {
+  it('is read from the system in one file, where the system clock is', () => {
+    const src = fileURLToPath(new URL('../src/', import.meta.url))
+    const readers = readdirSync(src, { recursive: true, encoding: 'utf8' })
+      .filter(file => file.endsWith('.ts') && !file.endsWith('contract.generated.ts'))
+      .filter(file => /\bDate\b|\bperformance\b|(?<![.\w])(setTimeout|setInterval)\(/.test(readFileSync(join(src, file), 'utf8')))
+    expect(readers).toEqual(['wire/link.ts'])
   })
 })

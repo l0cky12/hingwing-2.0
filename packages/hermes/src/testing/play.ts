@@ -73,7 +73,7 @@ export async function* play(fixture: Fixture, options: Omit<ScriptOptions, 'timi
     const startedAt = clock.now()
     for (let latest: Session | undefined, progressAt = startedAt; ;) {
       if (virtual !== null) await virtual.next()
-      else await new Promise(resolve => setTimeout(resolve, LOOPBACK.turnMs))
+      else await new Promise<void>(resolve => void clock.setTimeout(resolve, LOOPBACK.turnMs))
       if (failure !== null) throw failure
       if (moments.length > 0) progressAt = clock.now()
       for (const moment of moments.splice(0)) {
