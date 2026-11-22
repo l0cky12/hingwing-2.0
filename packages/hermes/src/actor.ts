@@ -1,15 +1,8 @@
+import type { Outcome, Refusal } from './domain/command'
 import { emptyTracked, reduce, sessionOf, type Gate, type LocalAction, type ServerRequest, type SessionInput, type Tracked } from './domain/reduce'
 import type { InputId, PromptId, PromptReply, Session, SessionId } from './domain/session'
 import { Offline, RpcRefusal, type Clock, type Connection } from './wire/link'
 import { parseReplay, parseSnapshot, parseTranscript } from './wire/parse'
-
-/** A command that could not be carried out. A value, not an exception, so it crosses IPC unchanged. */
-export interface Refusal {
-  readonly kind: 'offline' | 'not-attached' | 'stale' | 'conflict' | 'rejected' | 'unsupported'
-  /** Plain words for the user. */
-  readonly message: string
-}
-export type Outcome<T = void> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly refusal: Refusal }
 
 export const DONE: Outcome = { ok: true, value: undefined }
 export const refused = (kind: Refusal['kind'], message: string): Outcome<never> => ({ ok: false, refusal: { kind, message } })

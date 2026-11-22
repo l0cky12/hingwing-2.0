@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import { DONE, refusalOf, refused, SessionActor, type Outcome } from './actor'
+import { DONE, refusalOf, refused, SessionActor } from './actor'
+import type { Command, Outcome, ResultOf } from './domain/command'
 import type { ServerRequest } from './domain/reduce'
-import type { InputId, Link, PromptId, PromptReply, Session, SessionContent, SessionId, Sidebar } from './domain/session'
+import type { Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { deriveSidebar, sessionList } from './sidebar'
 import { connect, systemClock, type Clock, type Dialer } from './wire/link'
 import { parseEvent, parseServerRequest, type ParsedEvent } from './wire/parse'
 
-export type { Outcome, Refusal } from './actor'
+export type { Command, Outcome, Refusal, ResultOf } from './domain/command'
 export type { Clock, Dialer, WireSocket } from './wire/link'
 export { DialError, liveDialer } from './wire/link'
 
@@ -15,21 +16,6 @@ export interface Feed<T> {
   get(): T
   subscribe(listener: (value: T) => void): () => void
 }
-
-export type Command =
-  /** `draftId` is minted when the empty "new chat" view opens. Retrying with it cannot create a second session. */
-  | { readonly do: 'create'; readonly draftId: string; readonly cwd: string | null }
-  | { readonly do: 'send'; readonly sessionId: SessionId; readonly text: string }
-  | { readonly do: 'stop'; readonly sessionId: SessionId }
-  | { readonly do: 'answer'; readonly sessionId: SessionId; readonly promptId: PromptId; readonly reply: PromptReply }
-  | { readonly do: 'discard'; readonly sessionId: SessionId; readonly inputId: InputId }
-  | { readonly do: 'rename'; readonly sessionId: SessionId; readonly title: string }
-  | { readonly do: 'archive'; readonly sessionId: SessionId; readonly archived: boolean }
-  | { readonly do: 'loadEarlier'; readonly sessionId: SessionId }
-  /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
-  | { readonly do: 'reconnect'; readonly start: boolean }
-
-export type ResultOf<C extends Command> = C extends { do: 'create' } ? SessionId : void
 
 export interface Hermes {
   readonly link: Feed<Link>
