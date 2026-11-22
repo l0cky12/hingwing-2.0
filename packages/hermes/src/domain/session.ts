@@ -189,8 +189,11 @@ export type WaitingWhy =
   | 'not-running' // the gateway is absent or still starting
   | 'draining' //    the gateway is shutting down or restarting
   | 'dropped' //     the socket closed or the network failed
+  | 'unreachable' // ssh could not reach the machine Hermes runs on
 /** Why a dial failed in a way that needs the user. */
-export type BlockedWhy = 'hermes-missing' | 'incompatible' | 'auth' | 'inaccessible' | 'refused'
+export type BlockedWhy =
+  | 'hermes-missing' | 'incompatible' | 'auth' | 'inaccessible' | 'refused'
+  | 'ssh-missing' | 'ssh-denied' | 'ssh-check' | 'host-changed'
 
 /** The app-wide connection to the gateway. */
 export type Link =
