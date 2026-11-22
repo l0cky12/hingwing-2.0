@@ -8,7 +8,8 @@
     "typecheck": "tsc -p packages/hermes && tsc -p packages/thread && tsc -p docs/design/sketch/.typecheck/tsconfig.json && tsc -p apps/desktop/tsconfig.node.json && tsc -p apps/desktop/tsconfig.web.json",
     "lint": "eslint .",
     "sync:contract": "tsx scripts/sync-contract.ts",
-    "contract:drift": "tsx scripts/contract-drift.ts"
+    "contract:drift": "tsx scripts/contract-drift.ts",
+    "live:check": "tsx scripts/live-check.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
