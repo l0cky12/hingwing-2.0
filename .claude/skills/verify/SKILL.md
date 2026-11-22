@@ -26,6 +26,8 @@ Options:
 
 - `--fixture <path>` sets `HIGHWING_FIXTURE`. Main then plays that recorded gateway through the real client, and no socket or process outside Electron is touched.
 - `--no-fixture` launches with no fixture and with every `PATH` directory that holds a `hermes` executable removed. Hermes is installed on this machine, and without this the app would dial the user's real gateway. With it, the link ends `blocked` (Hermes missing).
+- `--live` keeps `hermes` on `PATH` and sets no fixture, so the app dials the user's real gateway on this machine. It opens the most recent chat, and anything typed goes to the user's real Hermes. Exactly one of `--fixture`, `--no-fixture` and `--live` is required.
+- `--record <path>` (with `--live` only) sets `HIGHWING_RECORD`, so main saves the live gateway's frames as a fixture at that path. The recording holds no ticket.
 - `--drop-after <event type>` is verification scaffolding. It writes a copy of the fixture whose gateway closes the socket 50 ms after the first frame of that type, and plays the copy instead. The copy is saved as `fixture-with-drop.jsonl` in the evidence directory. The client shows the dropped link until its redial lands about 1 s later.
 - `--run <name>` names the evidence directory. The default is a timestamp plus the PID.
 - `--timeout <ms>` is the per-step limit. The default is 15000.

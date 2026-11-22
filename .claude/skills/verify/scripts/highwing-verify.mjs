@@ -185,9 +185,11 @@ function withDrop(fixturePath, type, out) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', 'no-fixture': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', 'no-fixture': 'flag', live: 'flag', record: 'value' })
   const steps = parseSteps(rest)
-  if (!options.fixture && !options['no-fixture']) fail('pass --fixture <path>, or --no-fixture to launch against no gateway')
+  const modes = [options.fixture, options['no-fixture'], options.live].filter(Boolean).length
+  if (modes !== 1) fail('pass exactly one of --fixture <path>, --no-fixture (no gateway) or --live (the real gateway)')
+  if (options.record && !options.live) fail('--record <path> needs --live')
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')
   const runId = options.run ?? `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`
   const evidence = join(EVIDENCE_ROOT, runId)
@@ -198,14 +200,16 @@ async function run(argv) {
   const fixture = given && options['drop-after'] ? withDrop(given, options['drop-after'], join(evidence, 'fixture-with-drop.jsonl')) : given
   const ctx = { page: null, evidence, fixture, timeout: Number(options.timeout ?? 15_000), holding: null }
 
-  const env = { ...process.env, PATH: fixture ? process.env.PATH : pathWithoutHermes() }
+  const env = { ...process.env, PATH: fixture || options.live ? process.env.PATH : pathWithoutHermes() }
   delete env.WAYLAND_DISPLAY
   delete env.ELECTRON_RENDERER_URL
   delete env.HIGHWING_FIXTURE
+  delete env.HIGHWING_RECORD
   if (fixture) env.HIGHWING_FIXTURE = fixture
+  if (options.record) env.HIGHWING_RECORD = resolve(process.cwd(), options.record)
 
   const { _electron } = requireDesktop('playwright-core')
-  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${fixture ? `HIGHWING_FIXTURE=${fixture}` : 'no fixture, hermes removed from PATH'}`)
+  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${fixture ? `HIGHWING_FIXTURE=${fixture}` : options.live ? `the real gateway${env.HIGHWING_RECORD ? `, recording to ${env.HIGHWING_RECORD}` : ''}` : 'no fixture, hermes removed from PATH'}`)
   const app = await _electron.launch({
     executablePath: electronBinary() ?? fail('electron binary missing; run doctor'),
     args: [MAIN_JS, '--ozone-platform=x11', '--force-device-scale-factor=1', '--disable-gpu', `--user-data-dir=${join(scratch, 'user-data')}`],
