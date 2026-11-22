@@ -5,8 +5,9 @@
  * its way). Tests feed it event logs.
  */
 import type {
-  Ask, FileDiff, Generation, InputId, Json, Link, Outcome, PromptId, PromptReply, Session, SessionContent,
-  SessionId, SettledTurn, Sync, ToolId, ToolResult, TurnId
+  Ask, FileDiff, Generation, InputId, Item, Json, Link, NoticeItem, OpenTurn, Outcome, OutboxEntry, PromptId,
+  PromptItem, PromptReply, Request, Run, Session, SessionContent, SessionId, SettledTurn, Sync, TextItem, ToolId,
+  ToolItem, ToolResult, TurnId
 } from './session'
 
 /** A gateway event in domain terms. `wire/parse.ts` builds these. Field names are ours, not the wire's. */
@@ -158,6 +159,12 @@ export interface Fence {
   readonly admissions: { readonly [admissionId: string]: InputId }
   /** Highest stored row id among the turns held as settled. See the `lost` rule in the seed below. */
   readonly settledThrough: number | null
+  /**
+   * The newest run the gateway has named, in a snapshot or on a frame's stamp. null until the first
+   * seed, which is how `attach` tells a first open from a rebuild. A declined request carries no
+   * generation of its own, so a run it has to open uses this one.
+   */
+  readonly generation: Generation | null
   /** Attach attempts begun so far. The next attempt is this plus one. */
   readonly attaches: number
 }
@@ -169,7 +176,11 @@ export interface Tracked {
 }
 
 export function emptyTracked(id: SessionId): Tracked {
-  throw new Error('not implemented')
+  return {
+    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, outbox: [] },
+    gate: { at: 'detached', why: 'new', cursor: null },
+    fence: { revision: 0, text: null, older: null, admissions: {}, settledThrough: null, generation: null, attaches: 0 }
+  }
 }
 
 /** More frames than this parked during one attach is treated as a gap. */
@@ -185,63 +196,538 @@ export const PARK_LIMIT = 2048
  * - A reply of an older attach attempt changes nothing.
  */
 export function reduce(state: Tracked, input: SessionInput): Tracked {
-  // ---------- the gate ----------
-  // TODO attach: detached -> attaching{attempt: attaches + 1, parked: [], plan}. plan is replay{from: cursor}
-  //   when a cursor survives, else open when nothing was ever seeded, else rebuild. Otherwise no change.
-  // TODO link.lost: -> detached{'link-lost', cursor: the live cursor, or the replay plan's `from`, or the
-  //   cursor already kept}. Parked frames are discarded: the next socket replays or rebuilds.
-  // TODO attach.failed (attempt must match): -> detached{refused ? {refused} : 'link-lost', cursor kept}.
-  // TODO event, one rule for live frames, replayed frames and parked frames (the seq gate):
-  //   detached                      -> drop. We are not subscribed; this is a straggler.
-  //   attaching                     -> park. Past PARK_LIMIT, handle as `gap`.
-  //   live, epoch !== cursor.epoch  -> handle as `gap`. The stream restarted.
-  //   live, seq <= cursor.seq       -> drop. Already applied.
-  //   live, otherwise               -> cursor = stamp. Then fold `event`, unless it is null or its
-  //                                    stamp.generation is older than an open run's generation.
-  // TODO gap (never meets the seq gate, because `session.replay_gap` carries no envelope seq):
-  //   live or attaching -> attaching{attempt: attaches + 1, plan: rebuild, parked: []}.
-  //   detached          -> cursor = null, so the next attach rebuilds.
-  //   Content stays on screen until the seed replaces it.
-  // TODO attached (attempt must match). Three cases:
-  //   A. plan replay, replay not snapshotRequired, and replay.epoch === snapshot.watermark.epoch === from.epoch.
-  //      Content is kept. The order is the point:
-  //      1. Fold replay.events through the seq gate, starting at `from`.
-  //      2. Fold the parked frames with seq <= watermark.seq. These are the gateway's catch-up frames,
-  //         published between its replay answer and the join (gateway/session_events.py:114-124).
-  //         A `turn.ended` among them settles the run before the snapshot is compared with it.
-  //      3. cursor.seq !== watermark.seq -> frames are missing: go to C. The reconcile below never moves
-  //         the cursor, so it cannot skip a catch-up frame.
-  //      4. Reconcile with the snapshot, the truth as of the watermark: revision, title, queue.
-  //         A waiting prompt absent from snapshot.prompts -> answered{reply: null}. A snapshot prompt we do
-  //         not hold -> added as waiting. An open run whose generation the snapshot no longer runs -> settled
-  //         `lost`. snapshot.running with no open run -> open one, request from the queue's started entry.
-  //      5. Fold the remaining parked frames through the seq gate. gate = live{cursor, subscriptionId}.
-  //   B. snapshot.history !== null (first open, create, rebuild): content = seed(snapshot), cursor = watermark.
-  //      Then fold the parked frames of that epoch with seq > watermark.seq. gate = live.
-  //   C. Anything else (snapshot_required, an epoch changed, a hole): attaching{attempt: attaches + 1,
-  //      plan: rebuild, parked kept}. The actor sees the new attempt and resumes again, with history.
-  // TODO seed: history = snapshot.history.turns, fence.older = snapshot.history.older. If snapshot.running,
-  //   run = a turn built from history.unfinished plus snapshot.prompts as waiting prompt items. If not
-  //   running, history.unfinished becomes a settled turn with outcome `lost`, and snapshot.prompts are dropped.
-  //   If a run was open before the seed and the snapshot no longer runs its generation, its end was missed
-  //   for good: every history turn with a row newer than fence.settledThrough gets outcome `lost` (only
-  //   the last turn when settledThrough is null). Outbox entries are matched to snapshot.queue by inputId.
-  // ---------- the fold ----------
-  // TODO turn.started: open a run for stamp.generation. Request = the outbox entry claimed through
-  //   fence.admissions[admissionId]; else the single entry still 'sending'; else requestText; else null.
-  //   Remove the claimed entry from the outbox. A repeated turnId is a duplicate and changes nothing.
-  //   A newer generation while a run is open means its end was missed: settle that turn as `lost` first.
-  //   Any item event with no open run opens one first with request null (we attached mid-turn).
-  // TODO prompt.opened: upsert by id as waiting, with the event's own generation.
-  // TODO text.delta: drop when `at` is not after fence.text. Append to the last item when it is unsealed
-  //   text, else push a new text item. text.sealed seals it. A structural item (tool, prompt, notice)
-  //   seals the text before it, so prose always lands above the row that followed it.
-  // TODO turn.ended: finalText replaces the text after the last structural item, or is appended when there
-  //   is none. Convert items to settled: running tool -> cut, waiting or sending prompt -> withdrawn,
-  //   text -> sealed. Push SettledTurn{outcome, rows} to history, raise fence.settledThrough, run = idle.
-  // TODO declined: upsert a declined notice by requestId in the open turn (opening one if none is open).
-  // TODO earlier: prepend page.turns, minus every row already in some turn's `rows`. fence.older = page.older.
-  throw new Error('not implemented')
+  const { gate } = state
+  switch (input.in) {
+    case 'attach': {
+      if (gate.at !== 'detached') return state
+      if (gate.cursor !== null) return beginAttach(state, { mode: 'replay', from: gate.cursor }, [])
+      return beginAttach(state, state.fence.generation === null ? { mode: 'open' } : REBUILD, [])
+    }
+    case 'attached':
+      return gate.at === 'attaching' && gate.attempt === input.attempt ? attached(state, gate, input.snapshot, input.replay) : state
+    case 'attach.failed': {
+      if (gate.at !== 'attaching' || gate.attempt !== input.attempt) return state
+      const why = input.refused === null ? 'link-lost' : { refused: input.refused }
+      return { ...state, gate: { at: 'detached', why, cursor: resumePoint(gate) } }
+    }
+    case 'link.lost':
+      if (gate.at === 'detached' && gate.why === 'link-lost') return state
+      return { ...state, gate: { at: 'detached', why: 'link-lost', cursor: resumePoint(gate) } }
+    case 'event':
+      return admit(state, input.frame)
+    case 'gap':
+      return gap(state)
+    case 'earlier':
+      return earlier(state, input.page)
+    case 'declined': {
+      const { requestId, method } = input.request
+      if (holdsDeclined(state.content, requestId)) return state
+      return editTurn(ensureRun(state, state.fence.generation), turn => pushItem(turn, { kind: 'notice', what: 'declined', requestId, method }))
+    }
+    case 'local':
+      return act(state, input.action)
+    default:
+      return unreachable(input)
+  }
+}
+
+// ---------- the gate ----------
+
+type Attaching = Extract<Gate, { at: 'attaching' }>
+const REBUILD: Attaching['plan'] = { mode: 'rebuild' }
+
+function beginAttach(state: Tracked, plan: Attaching['plan'], parked: readonly StampedEvent[]): Tracked {
+  const attempt = state.fence.attaches + 1
+  return { ...state, gate: { at: 'attaching', attempt, plan, parked }, fence: { ...state.fence, attaches: attempt } }
+}
+
+/** The cursor the next socket can replay from. */
+function resumePoint(gate: Gate): Cursor | null {
+  switch (gate.at) {
+    case 'detached':
+    case 'live':
+      return gate.cursor
+    case 'attaching':
+      return gate.plan.mode === 'replay' ? gate.plan.from : null
+    default:
+      return unreachable(gate)
+  }
+}
+
+function gap(state: Tracked): Tracked {
+  const { gate } = state
+  if (gate.at !== 'detached') return beginAttach(state, REBUILD, [])
+  return gate.cursor === null ? state : { ...state, gate: { ...gate, cursor: null } }
+}
+
+/** The seq gate. Live frames, replayed frames and parked frames all pass through here. */
+function admit(state: Tracked, frame: StampedEvent): Tracked {
+  const { gate, fence } = state
+  switch (gate.at) {
+    case 'detached':
+      return state
+    case 'attaching':
+      return gate.parked.length >= PARK_LIMIT ? gap(state) : { ...state, gate: { ...gate, parked: [...gate.parked, frame] } }
+    case 'live': {
+      const { epoch, seq, generation } = frame.stamp
+      if (epoch !== gate.cursor.epoch) return gap(state)
+      if (seq <= gate.cursor.seq) return state
+      const moved: Tracked = {
+        ...state,
+        gate: { ...gate, cursor: { epoch, seq } },
+        fence: patch(fence, { generation: newest(fence.generation, generation) })
+      }
+      const { run } = state.content
+      const stale = run.state === 'running' && generation !== null && generation < run.generation
+      return frame.event === null || stale ? moved : fold(moved, frame.stamp, frame.event)
+    }
+    default:
+      return unreachable(gate)
+  }
+}
+
+function attached(state: Tracked, gate: Attaching, snapshot: Snapshot, replay: Replay | null): Tracked {
+  const { plan, parked } = gate
+  const { watermark } = snapshot
+  const liveAt = (cursor: Cursor): Tracked => ({ ...state, gate: { at: 'live', cursor, subscriptionId: snapshot.subscriptionId } })
+  const upToWatermark = (frame: StampedEvent) => frame.stamp.seq <= watermark.seq
+
+  if (plan.mode === 'replay' && replay !== null && !replay.snapshotRequired && replay.epoch === watermark.epoch && replay.epoch === plan.from.epoch) {
+    // The gateway's catch-up frames sit among the parked ones (gateway/session_events.py:114-124). They
+    // go in before the snapshot is compared, so a turn that ended in that window keeps its real outcome.
+    const caughtUp = [...replay.events, ...parked.filter(upToWatermark)].reduce(admit, liveAt(plan.from))
+    if (caughtUp.gate.at !== 'live' || caughtUp.gate.cursor.seq !== watermark.seq) return beginAttach(state, REBUILD, parked)
+    return parked.filter(frame => !upToWatermark(frame)).reduce(admit, reconcile(caughtUp, snapshot))
+  }
+  if (snapshot.history !== null) {
+    return parked.filter(frame => frame.stamp.epoch === watermark.epoch).reduce(admit, seed(liveAt(watermark), snapshot, snapshot.history))
+  }
+  return beginAttach(state, REBUILD, parked)
+}
+
+/** Replaces the content from a snapshot that carries history. */
+function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
+  const { content, fence } = state
+  const before = content.run
+  const sameRun = before.state === 'running' && snapshot.running && snapshot.generation === before.generation
+  const leftOpen = snapshot.running ? null : page.unfinished
+  // The unfinished turn, when there is one, is the turn whose end was missed.
+  const missed = before.state === 'running' && !sameRun && !(fence.settledThrough === null && leftOpen !== null)
+  const stored = missed ? markLost(page.turns, fence.settledThrough) : page.turns
+  const history = leftOpen === null ? stored : [...stored, {
+    id: `unfinished:${snapshot.watermark.epoch}:${snapshot.watermark.seq}` as TurnId,
+    request: requestOf(leftOpen.request),
+    items: leftOpen.items,
+    outcome: LOST,
+    rows: []
+  }]
+  const run: Run = !snapshot.running ? IDLE : {
+    state: 'running',
+    generation: snapshot.generation,
+    stop: sameRun ? before.stop : 'none',
+    turn: {
+      id: runTurnId(snapshot.generation),
+      request: requestOf(page.unfinished?.request ?? null) ?? startedRequest(snapshot.queue),
+      items: [...(page.unfinished?.items ?? []), ...snapshot.prompts.map(waitingPrompt)],
+      announced: null
+    }
+  }
+  const seeded: Tracked = {
+    ...state,
+    content: { id: content.id, title: snapshot.title, cwd: snapshot.cwd, history, earlier: page.older === null ? 'none' : 'more', run, outbox: content.outbox },
+    fence: {
+      revision: Math.max(fence.revision, snapshot.revision),
+      text: null,
+      older: page.older,
+      admissions: {},
+      settledThrough: history.reduce<number | null>((through, turn) => highestRow(through, turn.rows), null),
+      generation: newest(fence.generation, snapshot.generation),
+      attaches: fence.attaches
+    }
+  }
+  return snapshot.queue.reduce(admission, seeded)
+}
+
+/** The end of these turns was never seen, so none of them may read as done. */
+function markLost(turns: readonly SettledTurn[], settledThrough: number | null): readonly SettledTurn[] {
+  const lost = (turn: SettledTurn): SettledTurn => turn.outcome.kind === 'lost' ? turn : { ...turn, outcome: LOST }
+  if (settledThrough === null) return turns.map((turn, index) => index === turns.length - 1 ? lost(turn) : turn)
+  return turns.map(turn => turn.rows.some(row => row > settledThrough) ? lost(turn) : turn)
+}
+
+/** Step 4 of a replayed attach. The snapshot is the truth as of the watermark. It never moves the cursor. */
+function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
+  let next: Tracked = {
+    ...state,
+    content: patch(state.content, { title: snapshot.title }),
+    fence: patch(state.fence, {
+      revision: Math.max(state.fence.revision, snapshot.revision),
+      generation: newest(state.fence.generation, snapshot.generation)
+    })
+  }
+  const { run } = next.content
+  if (run.state === 'running' && !(snapshot.running && snapshot.generation === run.generation)) next = settle(next, LOST, null, [])
+  if (snapshot.running && next.content.run.state === 'idle') {
+    next = openRun(next, snapshot.generation, runTurnId(snapshot.generation), startedRequest(snapshot.queue))
+  }
+  next = editTurn(next, turn => {
+    const answered = mapItems(turn, item =>
+      isPending(item) && !snapshot.prompts.some(prompt => prompt.id === item.id) ? { ...item, state: answeredFrom(item) } : item)
+    return snapshot.prompts
+      .filter(prompt => !answered.items.some(item => item.kind === 'prompt' && item.id === prompt.id))
+      .reduce((open, prompt) => pushItem(open, waitingPrompt(prompt)), answered)
+  })
+  return snapshot.queue.reduce(admission, next)
+}
+
+function startedRequest(queue: readonly Admission[]): Request | null {
+  const started = queue.find(row => row.status === 'started')
+  return started === undefined ? null : { text: started.text, inputId: started.inputId }
+}
+
+/** What the gateway's queue says about one of our outbox entries. A row we hold no entry for is not ours to show. */
+function admission(state: Tracked, row: Pick<Admission, 'inputId' | 'admissionId' | 'status'>): Tracked {
+  const { content, fence } = state
+  const entry = content.outbox.find(held => held.inputId === row.inputId)
+  if (entry === undefined) return state
+  const remembered: Tracked = fence.admissions[row.admissionId] === row.inputId
+    ? state
+    : { ...state, fence: { ...fence, admissions: { ...fence.admissions, [row.admissionId]: row.inputId } } }
+  switch (row.status) {
+    case 'unknown':
+      return remembered
+    case 'queued':
+      return entry.state.s === 'queued' ? remembered : setEntry(remembered, { ...entry, state: { s: 'queued' } })
+    case 'terminal':
+      return dropEntry(state, row.inputId)
+    case 'started': {
+      // `turn.started` claims the entry when it arrives. A run that is already open without a known
+      // sender is that turn.
+      const { run } = content
+      if (run.state !== 'running') return remembered
+      const { request } = run.turn
+      if (request !== null && request.inputId !== null && request.inputId !== row.inputId) return remembered
+      const claimed = editTurn(state, turn => ({ ...turn, request: { text: request?.text ?? entry.text, inputId: entry.inputId } }))
+      return dropEntry(claimed, row.inputId)
+    }
+    default:
+      return unreachable(row.status)
+  }
+}
+
+function setEntry(state: Tracked, entry: OutboxEntry): Tracked {
+  const outbox = state.content.outbox.map(held => held.inputId === entry.inputId ? entry : held)
+  return { ...state, content: { ...state.content, outbox } }
+}
+
+function dropEntry(state: Tracked, inputId: InputId): Tracked {
+  const { content, fence } = state
+  if (!content.outbox.some(entry => entry.inputId === inputId)) return state
+  const admissions = Object.fromEntries(Object.entries(fence.admissions).filter(([, held]) => held !== inputId))
+  return {
+    ...state,
+    content: { ...content, outbox: content.outbox.filter(entry => entry.inputId !== inputId) },
+    fence: { ...fence, admissions }
+  }
+}
+
+function earlier(state: Tracked, page: HistoryPage): Tracked {
+  const { content, fence } = state
+  const held = (turn: SettledTurn) =>
+    content.history.some(known => known.id === turn.id || known.rows.some(row => turn.rows.includes(row)))
+  const fresh = page.turns.filter(turn => !held(turn))
+  return {
+    ...state,
+    content: patch(content, {
+      history: fresh.length === 0 ? content.history : [...fresh, ...content.history],
+      earlier: page.older === null ? 'none' : 'more'
+    }),
+    fence: patch(fence, { older: page.older })
+  }
+}
+
+function act(state: Tracked, action: LocalAction): Tracked {
+  const { content } = state
+  switch (action.did) {
+    case 'send': {
+      const entry = content.outbox.find(held => held.inputId === action.inputId)
+      const sending: OutboxEntry = { inputId: action.inputId, text: action.text, state: { s: 'sending' } }
+      if (entry === undefined) return { ...state, content: { ...content, outbox: [...content.outbox, sending] } }
+      return entry.state.s === 'failed' ? setEntry(state, sending) : state
+    }
+    case 'send.admitted':
+      return admission(state, action)
+    case 'send.failed': {
+      const entry = content.outbox.find(held => held.inputId === action.inputId)
+      if (entry === undefined || (entry.state.s === 'failed' && entry.state.message === action.message)) return state
+      return setEntry(state, { ...entry, state: { s: 'failed', message: action.message } })
+    }
+    case 'send.discarded':
+      return dropEntry(state, action.inputId)
+    case 'stop':
+      return content.run.state === 'running' && content.run.stop === 'none'
+        ? { ...state, content: { ...content, run: { ...content.run, stop: 'requested' } } }
+        : state
+    case 'answer':
+      return editPrompt(state, action.promptId, prompt =>
+        prompt.state.s === 'waiting' ? { ...prompt, state: { s: 'sending', reply: action.reply } } : prompt)
+    case 'answer.resolved':
+      return editPrompt(state, action.promptId, prompt => {
+        if (!isClosed(prompt)) return { ...prompt, state: action.byUs ? answeredFrom(prompt) : ANSWERED_ELSEWHERE }
+        // The gateway's settle event can arrive before this receipt and assume the reply was ours.
+        return prompt.state.s === 'answered' && prompt.state.reply !== null && !action.byUs ? { ...prompt, state: ANSWERED_ELSEWHERE } : prompt
+      })
+    case 'answer.failed':
+      return editPrompt(state, action.promptId, prompt =>
+        prompt.state.s === 'sending' ? { ...prompt, state: { s: 'waiting', error: action.message } } : prompt)
+    case 'earlier.requested':
+      return content.earlier === 'more' ? { ...state, content: { ...content, earlier: 'loading' } } : state
+    default:
+      return unreachable(action)
+  }
+}
+
+// ---------- the fold ----------
+
+const IDLE: Run = { state: 'idle' }
+const LOST: Outcome = { kind: 'lost' }
+const ANSWERED_ELSEWHERE: PromptItem['state'] = { s: 'answered', reply: null }
+
+/** Applies one admitted event to the content. `state.gate` already holds the frame's cursor. */
+function fold(state: Tracked, stamp: Stamp, event: SessionEvent): Tracked {
+  switch (event.type) {
+    case 'turn.started': {
+      const { run } = state.content
+      // A run is opened only for a generation the frame names. One generation is one run.
+      if (stamp.generation === null || (event.turnId !== null && holdsTurn(state.content, event.turnId))) return state
+      if (run.state === 'running' && stamp.generation <= run.generation) return state
+      const settled = settle(state, LOST, null, [])
+      const claimed = claimEntry(settled, event.admissionId, event.requestText)
+      const request = claimed !== null
+        ? { text: claimed.text, inputId: claimed.inputId }
+        : requestOf(event.requestText)
+      return openRun(
+        claimed === null ? settled : dropEntry(settled, claimed.inputId),
+        stamp.generation,
+        event.turnId ?? runTurnId(stamp.generation),
+        request
+      )
+    }
+    case 'text.delta': {
+      const open = ensureRun(state, stamp.generation)
+      const seen = open.fence.text
+      if (event.at !== null && seen !== null && !isAfter(event.at, seen)) return open
+      const fenced: Tracked = event.at === null ? open : { ...open, fence: { ...open.fence, text: event.at } }
+      return event.text === '' ? fenced : editTurn(fenced, turn => appendText(turn, event.text))
+    }
+    case 'text.sealed':
+      return editTurn(state, turn => {
+        const last = turn.items.at(-1)
+        if (last?.kind === 'text' && !last.sealed) {
+          return { ...turn, items: turn.items.with(-1, { kind: 'text', markdown: event.text ?? last.markdown, sealed: true }) }
+        }
+        // The segment arrives whole when its deltas were missed. A structural item may have sealed it already.
+        const latest = turn.items.findLast(item => item.kind === 'text')
+        if (event.text === null || event.text === '' || latest?.markdown === event.text) return turn
+        return pushItem(turn, { kind: 'text', markdown: event.text, sealed: true })
+      })
+    case 'thinking':
+      return ensureRun(state, stamp.generation)
+    case 'tool.announced':
+      return editTurn(ensureRun(state, stamp.generation), turn => patch(turn, { announced: event.name }))
+    case 'tool.started':
+      return editTurn(ensureRun(state, stamp.generation), turn =>
+        turn.items.some(item => item.kind === 'tool' && item.id === event.id)
+          ? turn
+          : pushItem(turn, { kind: 'tool', id: event.id, name: event.name, args: event.args, status: { s: 'running', note: null } }))
+    case 'tool.progress':
+      return editTurn(state, turn => mapItems(turn, item =>
+        item.kind === 'tool' && item.id === event.id && item.status.s === 'running' && item.status.note !== event.note
+          ? { ...item, status: { s: 'running', note: event.note } }
+          : item))
+    case 'tool.finished': {
+      const status: ToolItem['status'] = { s: 'done', durationS: event.durationS, diffs: event.diffs, result: event.result }
+      return editTurn(ensureRun(state, stamp.generation), turn => {
+        if (!turn.items.some(item => item.kind === 'tool' && item.id === event.id)) {
+          return pushItem(turn, { kind: 'tool', id: event.id, name: event.name, args: event.args ?? {}, status })
+        }
+        return mapItems(turn, item =>
+          item.kind === 'tool' && item.id === event.id && item.status.s !== 'done'
+            ? { ...item, name: event.name, args: event.args ?? item.args, status }
+            : item)
+      })
+    }
+    case 'prompt.opened':
+      return editTurn(ensureRun(state, event.generation), turn =>
+        turn.items.some(item => item.kind === 'prompt' && item.id === event.id) ? turn : pushItem(turn, waitingPrompt(event)))
+    case 'prompt.settled':
+      return editPrompt(state, event.id, prompt => isClosed(prompt) ? prompt : { ...prompt, state: answeredFrom(prompt) })
+    case 'prompts.cancelled':
+      return editTurn(state, turn => mapItems(turn, item =>
+        isPending(item) && event.ids.includes(item.id) ? { ...item, state: { s: 'withdrawn' } } : item))
+    case 'turn.ended':
+      // A queued message that is cancelled completes with no generation on its stamp
+      // (gateway/session_authority.py:886). That is not the end of the turn running ahead of it.
+      return stamp.generation === null ? state : settle(state, event.outcome, event.finalText, event.rows)
+    case 'notice':
+      return editTurn(ensureRun(state, stamp.generation), turn =>
+        pushItem(turn, { kind: 'notice', what: 'said', tone: event.tone, text: event.text }))
+    case 'meta': {
+      const titled: Tracked = event.title === undefined ? state : { ...state, content: patch(state.content, { title: event.title }) }
+      const revised: Tracked = event.revision === undefined
+        ? titled
+        : { ...titled, fence: patch(titled.fence, { revision: Math.max(titled.fence.revision, event.revision) }) }
+      return (event.queue ?? []).reduce(admission, revised)
+    }
+    default:
+      return unreachable(event)
+  }
+}
+
+function openRun(state: Tracked, generation: Generation, id: TurnId, request: Request | null): Tracked {
+  const run: Run = { state: 'running', generation, stop: 'none', turn: { id, request, items: [], announced: null } }
+  return { ...state, content: { ...state.content, run }, fence: patch(state.fence, { text: null }) }
+}
+
+/** An event of a turn whose start was not seen (we attached mid-turn) opens the run it belongs to. */
+function ensureRun(state: Tracked, generation: Generation | null): Tracked {
+  return state.content.run.state === 'running' || generation === null ? state : openRun(state, generation, runTurnId(generation), null)
+}
+
+function runTurnId(generation: Generation): TurnId {
+  return `run:${generation}` as TurnId
+}
+
+function requestOf(text: string | null): Request | null {
+  return text === null ? null : { text, inputId: null }
+}
+
+function holdsTurn(content: SessionContent, id: TurnId): boolean {
+  return (content.run.state === 'running' && content.run.turn.id === id) || content.history.some(turn => turn.id === id)
+}
+
+function holdsDeclined(content: SessionContent, requestId: string): boolean {
+  const isIt = (item: Item) => item.kind === 'notice' && item.what === 'declined' && item.requestId === requestId
+  return (content.run.state === 'running' && content.run.turn.items.some(isIt)) || content.history.some(turn => turn.items.some(isIt))
+}
+
+/** The outbox entry a starting turn answers, if it is one of ours. */
+function claimEntry(state: Tracked, admissionId: string | null, requestText: string | null): OutboxEntry | null {
+  const { outbox } = state.content
+  const { admissions } = state.fence
+  const inputId = admissionId === null ? undefined : admissions[admissionId]
+  const admitted = outbox.find(entry => entry.inputId === inputId)
+  if (admitted !== undefined) return admitted
+  // No receipt yet. An entry the gateway has already admitted under another id is not this turn's.
+  const sending = outbox.filter(entry => entry.state.s === 'sending' && !Object.values(admissions).includes(entry.inputId))
+  const [only] = sending
+  return only !== undefined && sending.length === 1 && (requestText === null || requestText === only.text) ? only : null
+}
+
+/** Ends the open turn. Nothing running or waiting survives into history. */
+function settle(state: Tracked, outcome: Outcome, finalText: string | null, rows: readonly number[]): Tracked {
+  const { content, fence } = state
+  if (content.run.state !== 'running') return state
+  const { id, request, items } = content.run.turn
+  const turn: SettledTurn = { id, request, items: withFinalText(items, finalText).map(settledItem), outcome, rows }
+  return {
+    ...state,
+    content: { ...content, history: [...content.history, turn], run: IDLE },
+    fence: patch(fence, { text: null, settledThrough: highestRow(fence.settledThrough, rows) })
+  }
+}
+
+function withFinalText(items: readonly Item[], finalText: string | null): readonly Item[] {
+  if (finalText === null || finalText === '') return items
+  const tail = items.findLastIndex(item => item.kind !== 'text') + 1
+  const [only, ...rest] = items.slice(tail)
+  if (only?.kind === 'text' && rest.length === 0 && only.markdown === finalText) return items
+  return [...items.slice(0, tail), { kind: 'text', markdown: finalText, sealed: true }]
+}
+
+function settledItem(item: Item): Item<'settled'> {
+  switch (item.kind) {
+    case 'text':
+      return isSealed(item) ? item : { ...item, sealed: true }
+    case 'tool':
+      return isFinished(item) ? item : { ...item, status: { s: 'cut' } }
+    case 'prompt':
+      return isClosed(item) ? item : { ...item, state: { s: 'withdrawn' } }
+    case 'notice':
+      return item
+    default:
+      return unreachable(item)
+  }
+}
+
+// The settled item types are the open ones minus the running, waiting and unsealed states, so an
+// item already past those states is kept as it is.
+const isSealed = (item: TextItem): item is TextItem & { readonly sealed: true } => item.sealed
+const isFinished = (item: ToolItem): item is ToolItem & { readonly status: ToolItem<'settled'>['status'] } => item.status.s !== 'running'
+const isClosed = (item: PromptItem): item is PromptItem & { readonly state: PromptItem<'settled'>['state'] } =>
+  item.state.s === 'answered' || item.state.s === 'withdrawn'
+/** A prompt the user can still answer, or whose answer is on its way. */
+const isPending = (item: Item): item is PromptItem => item.kind === 'prompt' && !isClosed(item)
+
+/** A prompt that stopped waiting without a word about who answered. A reply of ours in flight is taken to be the answer. */
+function answeredFrom(prompt: PromptItem): PromptItem['state'] {
+  return prompt.state.s === 'sending' ? { s: 'answered', reply: prompt.state.reply } : ANSWERED_ELSEWHERE
+}
+
+function waitingPrompt(prompt: { readonly id: PromptId; readonly generation: Generation; readonly ask: Ask }): PromptItem {
+  return { kind: 'prompt', id: prompt.id, generation: prompt.generation, ask: prompt.ask, state: { s: 'waiting', error: null } }
+}
+
+function editTurn(state: Tracked, edit: (turn: OpenTurn) => OpenTurn): Tracked {
+  const { run } = state.content
+  if (run.state !== 'running') return state
+  const turn = edit(run.turn)
+  return turn === run.turn ? state : { ...state, content: { ...state.content, run: { ...run, turn } } }
+}
+
+function editPrompt(state: Tracked, id: PromptId, edit: (prompt: PromptItem) => PromptItem): Tracked {
+  return editTurn(state, turn => mapItems(turn, item => item.kind === 'prompt' && item.id === id ? edit(item) : item))
+}
+
+function mapItems(turn: OpenTurn, change: (item: Item) => Item): OpenTurn {
+  const items = turn.items.map(change)
+  return items.every((item, index) => item === turn.items[index]) ? turn : { ...turn, items }
+}
+
+/** A new tool, prompt or notice seals the text before it, so prose always lands above the row that followed it. */
+function pushItem(turn: OpenTurn, item: ToolItem | PromptItem | NoticeItem | TextItem): OpenTurn {
+  const last = turn.items.at(-1)
+  const above = last?.kind === 'text' && !last.sealed ? turn.items.with(-1, { ...last, sealed: true }) : turn.items
+  return { ...turn, announced: null, items: [...above, item] }
+}
+
+function appendText(turn: OpenTurn, text: string): OpenTurn {
+  const last = turn.items.at(-1)
+  if (last?.kind !== 'text' || last.sealed) return pushItem(turn, { kind: 'text', markdown: text, sealed: false })
+  return { ...turn, announced: null, items: turn.items.with(-1, { ...last, markdown: last.markdown + text }) }
+}
+
+function isAfter(at: TextCursor, seen: TextCursor): boolean {
+  return at.segment > seen.segment || (at.segment === seen.segment && at.offset > seen.offset)
+}
+
+function newest(held: Generation | null, named: Generation | null): Generation | null {
+  if (held === null || named === null) return held ?? named
+  return named > held ? named : held
+}
+
+function highestRow(through: number | null, rows: readonly number[]): number | null {
+  return rows.reduce<number | null>((highest, row) => highest === null || row > highest ? row : highest, through)
+}
+
+/** `value` itself when no field would change, so an input that changes nothing keeps every reference. */
+function patch<T extends object>(value: T, changes: Partial<T>): T {
+  const keys = Object.keys(changes) as (keyof T)[]
+  return keys.every(key => Object.is(value[key], changes[key])) ? value : { ...value, ...changes }
+}
+
+function unreachable(value: never): never {
+  throw new Error(`unhandled case: ${JSON.stringify(value)}`)
 }
 
 /**
@@ -251,12 +737,28 @@ export function reduce(state: Tracked, input: SessionInput): Tracked {
  * detached{'new'} -> opening while the link is online, else offline.
  */
 export function syncOf(gate: Gate, link: Link): Sync {
-  throw new Error('not implemented')
+  switch (gate.at) {
+    case 'live':
+      return { state: 'live' }
+    case 'attaching':
+      return { state: ATTACHING_SYNC[gate.plan.mode] }
+    case 'detached':
+      if (typeof gate.why === 'object') return { state: 'unavailable', message: gate.why.refused }
+      return { state: gate.why === 'new' && link.state === 'online' ? 'opening' : 'offline' }
+    default:
+      return unreachable(gate)
+  }
 }
+
+const ATTACHING_SYNC = { open: 'opening', replay: 'catching-up', rebuild: 'rebuilding' } as const satisfies Record<Attaching['plan']['mode'], Sync['state']>
 
 /** The value the actor publishes: the content plus `syncOf`. Returns `previous` when neither changed. */
 export function sessionOf(state: Tracked, link: Link, previous: Session | null): Session {
-  throw new Error('not implemented')
+  const next: Session = { ...state.content, sync: syncOf(state.gate, link) }
+  if (previous === null) return next
+  const sameSync = previous.sync.state === next.sync.state
+    && (previous.sync.state !== 'unavailable' || next.sync.state !== 'unavailable' || previous.sync.message === next.sync.message)
+  return sameSync ? patch(previous, state.content) : next
 }
 
 /**
@@ -276,5 +778,15 @@ export type Activity =
   | { readonly kind: 'stopping' }
 
 export function activityOf(session: SessionContent): Activity {
-  throw new Error('not implemented')
+  const { run } = session
+  if (run.state === 'idle') return { kind: 'idle' }
+  if (run.stop === 'requested') return { kind: 'stopping' }
+  const { items, announced } = run.turn
+  const asking = items.findIndex(isPending)
+  if (asking !== -1) return { kind: 'asking', item: asking }
+  const working = items.findLastIndex(item => item.kind === 'tool' && item.status.s === 'running')
+  if (working !== -1) return { kind: 'working', item: working }
+  const last = items.at(-1)
+  if (last?.kind === 'text' && !last.sealed) return { kind: 'writing' }
+  return announced === null ? { kind: 'thinking' } : { kind: 'preparing', tool: announced }
 }
