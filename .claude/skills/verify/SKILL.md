@@ -58,6 +58,8 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `shot <name>` | file stem | moves the pointer off the page, then saves `<name>.png` and `<name>.aria.txt` |
 | `disabled <role> <name>` | ARIA role, exact accessible name | fails unless that control is disabled now |
 | `value <label> <text>` | exact label, text | fails unless the field holds exactly that text now |
+| `focused <role> <name>` | ARIA role, exact accessible name | fails unless that element is `document.activeElement` now |
+| `marks <count>` | number | fails unless the ranges in the `find` and `find-current` highlights add up to the count. A missing highlight counts as 0. It reads state and never sets it |
 
 Named states live in the `STATES` table in the helper. Add a state there, not a sleep.
 
