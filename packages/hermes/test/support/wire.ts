@@ -14,7 +14,6 @@ export const DESCRIBE = { instance_id: 'i', profile_id: 'p', authority_epoch: 1,
 export interface Peer {
   readonly socket: WireSocket
   readonly sent: Frame[]
-  /** Calls the peer leaves unanswered. The handshake and the ping are answered unless named here. */
   readonly mute: Set<string>
   closedByClient: boolean
   push(frame: unknown): void
@@ -55,7 +54,6 @@ function peer(ready: unknown): Peer {
   return held
 }
 
-/** A gateway at the `WireSocket` seam that answers the handshake and the ping and nothing else. */
 export function fakeGateway(options: { readonly startOnLaunch?: boolean; readonly random?: () => number } = {}) {
   const clock = manualClock()
   const dials: boolean[] = []

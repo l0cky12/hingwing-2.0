@@ -20,7 +20,6 @@ async function listener(clock: Clock = systemClock): Promise<Loopback> {
   return held
 }
 
-/** The upgrade a client other than ours would send, with headers and protocols of the test's choosing. */
 const upgradeWith = (url: string, protocols: readonly string[], headers: Record<string, string> = {}) =>
   new Promise<string>(resolve => {
     const ws = new WsClient(url, [...protocols], { headers })

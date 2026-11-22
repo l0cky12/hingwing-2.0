@@ -7,17 +7,11 @@ const isObject = (value: unknown): value is Obj => value !== null && typeof valu
 
 type Header = { -readonly [K in keyof Fixture['header']]?: Fixture['header'][K] }
 
-/** A step in the order the story needs it. A call holds its place from the request until its reply fills it in. */
 interface Slot { step: FixtureStep | null }
 
 type Found = { readonly push: unknown } | { readonly stored: readonly unknown[] }
 const NOTHING: readonly Found[] = []
 
-/**
- * The calls the scripted gateway answers by itself, so a recording holds no step for them. Each
- * names what its reply adds to the recording instead: a header field, the stored rows, or the
- * frames a replay delivered in place of the socket.
- */
 const OWN_ANSWERS: Readonly<Record<string, (header: Header, reply: Obj, params: Obj) => readonly Found[]>> = {
   'client.capabilities': () => NOTHING,
   'gateway.ping': () => NOTHING,

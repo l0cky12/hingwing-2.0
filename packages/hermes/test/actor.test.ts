@@ -15,7 +15,6 @@ interface Call {
   reject(error: Error): void
 }
 
-/** A resume reply as the gateway sends it. */
 const snapshot = (more: Record<string, unknown> = {}) => ({
   session_id: ID, stored_session_id: ID, messages: [], display_messages: [], message_count: 0, running: false, authority_epoch: 1,
   replay_epoch: EPOCH, last_sequence: 0, subscription_id: 'sub-1', revision: 3, execution_generation: 0, pending: [], prompts: [], info: {}, open_requests: [],
@@ -63,7 +62,6 @@ function stage() {
       state.link = link
       actor.linkChanged()
     },
-    /** Open the session and bring it live with an empty snapshot. */
     open: async (more: Record<string, unknown> = {}) => {
       actor.attach()
       await answer('session.resume', snapshot(more))

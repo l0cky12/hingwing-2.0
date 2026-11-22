@@ -1,8 +1,3 @@
-/**
- * The session list. Private to `@highwing/hermes`; the hub publishes its result as `Hermes.sidebar`.
- * The rows come from the gateway. What an attached session knows better (its title, whether it is
- * asking) is merged in when the sidebar is published and is never written back into the rows.
- */
 import { activityOf } from './domain/reduce'
 import type { SessionContent, SessionId, Sidebar, SidebarRow } from './domain/session'
 import { Offline, RpcRefusal, type Connection } from './wire/link'
@@ -12,29 +7,15 @@ type ListRow = Omit<SidebarRow, 'badge'>
 
 export interface SessionList {
   readonly status: Sidebar['status']
-  /**
-   * Both of the gateway's lists, most recently active first. `session.list {scope: 'live'}` holds
-   * every session the gateway has mounted and `{scope: 'stored', limit: 100}` the ones it has not:
-   * closed chats and rows from older versions (Hermes's gateway/session_controls.py:641-656,
-   * gateway/session_listing.py:103-170). A session is in one or the other.
-   */
   readonly rows: readonly ListRow[]
   /**
    * The live rows whose turn is running now. The stored list cannot say, because its `running`
-   * field is always false (gateway/session_listing.py:70). The hub keeps every one of these attached.
+   * field is always false (gateway/session_listing.py:70).
    */
   readonly running: ReadonlySet<SessionId>
-  /**
-   * Fetch both lists and replace `rows` and `running` together. Calls made while one is in flight
-   * collapse into one follow-up fetch. Called on every `onOnline` and, debounced 300 ms, on
-   * `sessions.changed` and after each turn of an attached session starts or ends.
-   */
   refresh(): void
-  /** `session.title` for any session, attached or not. */
   retitle(id: SessionId, title: string): void
-  /** Hide a row at once after a successful archive. The next refresh confirms it. */
   drop(id: SessionId): void
-  /** Socket lost: keep the rows, mark them stale. */
   stale(): void
 }
 
@@ -64,7 +45,6 @@ export function sessionList(conn: Connection, changed: () => void): SessionList 
       status = 'ready'
       changed()
     } catch (error) {
-      // The next `onOnline` refreshes again. A refusal leaves the rows as they are.
       if (!(error instanceof Offline) && !(error instanceof RpcRefusal)) throw error
     } finally {
       fetching = false
@@ -105,11 +85,6 @@ const BADGES = {
   idle: 'none', thinking: 'running', preparing: 'running', writing: 'running', working: 'running', stopping: 'running', asking: 'asking'
 } as const satisfies Record<ReturnType<typeof activityOf>['kind'], SidebarRow['badge']>
 
-/**
- * Pure. Order is the list's. For a session in `attached`, the sessions whose first attach has
- * settled: title from the session, badge from `activityOf`. Otherwise 'running' when
- * `list.running` has it, else 'none'.
- */
 export function deriveSidebar(list: Pick<SessionList, 'status' | 'rows' | 'running'>, attached: ReadonlyMap<SessionId, SessionContent>): Sidebar {
   return {
     status: list.status,

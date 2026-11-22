@@ -11,7 +11,6 @@ type AwaitStep = Extract<FixtureStep, { await: string }>
 
 const recorded = (step: AwaitStep): Recorded => (step.params !== null && typeof step.params === 'object' ? step.params as Recorded : {})
 
-/** What the stand-in user does when the story waits for a call: the fixture's recorded params, as the command a window would send. */
 const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded) => Command>> = {
   'prompt.submit': (sessionId, params) => ({ do: 'send', sessionId, text: String(params.text) }),
   'approval.respond': (sessionId, params) => ({ do: 'answer', sessionId, promptId: params.prompt_id as PromptId, reply: { kind: 'choice', value: String(params.choice) } }),
@@ -19,12 +18,18 @@ const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded) => 
   'session.interrupt': sessionId => ({ do: 'stop', sessionId })
 }
 
-/** The keys the client mints fresh, in the order the story's calls use them. */
 const mintedIn = (step: AwaitStep): unknown => recorded(step).input_id ?? recorded(step).request_id
 
-/** Story time with nothing happening before a play gives up, far past any backoff or heartbeat. */
 const STUCK_MS = 10 * 60_000
 const LOOPBACK = { turnMs: 2, stuckMs: 20_000 } as const
+
+export interface Moment {
+  /** The index of the step the story was at when the session changed. */
+  readonly step: number
+  readonly session: Session
+  readonly hermes: Hermes
+  readonly script: ScriptedDialer
+}
 
 /**
  * Plays a fixture through `openHermes` with a stand-in user: when the story awaits `prompt.submit`,
@@ -36,14 +41,6 @@ const LOOPBACK = { turnMs: 2, stuckMs: 20_000 } as const
  * Time is virtual in memory: the client's timers (backoff, heartbeat) run as soon as nothing else
  * can, so a play with a drop takes no real second. Over loopback the system clock runs.
  */
-export interface Moment {
-  /** The index of the step the story was at when the session changed. */
-  readonly step: number
-  readonly session: Session
-  readonly hermes: Hermes
-  readonly script: ScriptedDialer
-}
-
 export async function* play(fixture: Fixture, options: Omit<ScriptOptions, 'timing' | 'clock'> = {}): AsyncGenerator<Moment> {
   const { sessionId } = fixture.header
   const virtual = options.transport === 'loopback' ? null : manualClock()
@@ -65,7 +62,6 @@ export async function* play(fixture: Fixture, options: Omit<ScriptOptions, 'timi
     const command = USER[step.await]?.(sessionId, recorded(step))
     if (command === undefined) throw new Error(`step ${index}: the stand-in user has no command for ${step.await}`)
     asked.add(index)
-    // A refusal means the client was not ready for it (the socket dropped, the prompt has not arrived). It is asked again.
     void hermes.run(command).then(outcome => { if (!outcome.ok) asked.delete(index) })
   }
 

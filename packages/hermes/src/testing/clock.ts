@@ -1,16 +1,13 @@
 import type { Clock } from '../wire/link'
 
 export interface ManualClock extends Clock {
-  /** Moves time forward by `ms`, running each timer that falls due at its own time, in order. */
   advance(ms: number): Promise<void>
-  /** Jumps to the next timer and runs it. False when none is set. */
   next(): Promise<boolean>
 }
 
 /** Lets every promise that is already resolvable run. A macrotask, so chains of any depth finish. */
 export const settle = (): Promise<void> => new Promise(resolve => setImmediate(resolve))
 
-/** A clock that only moves when told to, so a test owns every timer the client sets. */
 export function manualClock(start = 0): ManualClock {
   let now = start
   let order = 0

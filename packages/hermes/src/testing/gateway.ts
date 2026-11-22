@@ -8,7 +8,6 @@ import { parseEvent } from '../wire/parse'
 import type { Fixture, FixtureStep } from './fixture'
 import { checkParams } from './params'
 
-/** One accepted socket, from the gateway's side. */
 export interface Peer {
   write(frame: unknown): void
   close(code: number): void
@@ -23,7 +22,6 @@ export interface GatewayOptions {
 
 /** The replay ring's bound per session (Hermes's tui_gateway/event_replay.py:30). */
 export const RING_FRAMES = 512
-/** How a socket that vanished closes, as against one the gateway closed with a code. */
 export const ABNORMAL_CLOSE = 1006
 
 type Obj = Readonly<Record<string, unknown>>
@@ -37,9 +35,9 @@ const isInt = (value: unknown): value is number => typeof value === 'number' && 
 
 type WireError = { readonly code: number; readonly message: string; readonly data?: unknown }
 
-/** A handler's refusal, as `AuthorityRefusal` reaches the wire (gateway/session_controls.py:401-406). */
 const epochOf = (step: FixtureStep): unknown => ('push' in step && isObject(step.push) && isObject(step.push.params) ? step.push.params.replay_epoch : undefined)
 
+/** A handler's refusal, as `AuthorityRefusal` reaches the wire (gateway/session_controls.py:401-406). */
 class Refused extends Error {
   constructor(reason: string, readonly wire: WireError = { code: 4001, message: reason, data: { reason } }) {
     super(reason)
@@ -50,13 +48,11 @@ class Refused extends Error {
 interface Socket {
   readonly peer: Peer
   readonly subscriptionId: string
-  /** session id -> subscription id. Lost with the socket. */
   readonly subscriptions: Map<string, string>
   /** session id -> the seq this socket's last `session.events.since` answered. Spent by the next resume. */
   readonly replayCursors: Map<string, number>
 }
 
-/** What a resume snapshot says about the session, kept up to date from the frames published. */
 interface View {
   running: boolean
   generation: number
@@ -66,7 +62,6 @@ interface View {
   readonly prompts: Map<string, Obj>
 }
 
-/** How each published event changes the snapshot. Event names are the domain's, so the wire's stay in `wire/parse.ts`. */
 const TRACK: { readonly [T in SessionEvent['type']]?: (view: View, event: Extract<SessionEvent, { type: T }>, payload: Obj) => void } = {
   'turn.started': view => { view.running = true },
   'turn.ended': view => {
@@ -83,18 +78,12 @@ const TRACK: { readonly [T in SessionEvent['type']]?: (view: View, event: Extrac
   }
 }
 
-/**
- * The socket drop a test asked for. Once the socket is gone the story publishes the missed frames
- * to nobody. The last of several is held back and published between the `session.events.since`
- * answer and the resume, so it reaches the client as a catch-up frame.
- */
 type Drop =
   | { readonly at: 'armed'; readonly afterPush: number; readonly missed: number }
   | { readonly at: 'holding'; readonly step: PushStep }
   | { readonly at: 'spent' }
 
 type Handler = (gateway: ScriptedGateway, socket: Socket, params: Obj) => unknown
-/** One refusal a handler makes before it acts: the reason, or null. */
 type Check = (gateway: ScriptedGateway, socket: Socket, params: Obj) => string | null
 
 const attached: Check = (_gateway, socket, params) => (socket.subscriptions.has(String(params.session_id)) ? null : 'permission_denied')
@@ -117,7 +106,6 @@ const STORY_CHECKS: Readonly<Record<string, readonly Check[]>> = {
   'session.interrupt': [(gateway, _socket, params) => (gateway.view.generation === params.execution_generation ? null : 'stale_generation')]
 }
 
-/** The calls the gateway answers by itself. */
 const HANDLERS: Readonly<Record<string, Handler>> = {
   /** tui_gateway/methods_voice.py:526-545 */
   'client.capabilities': () => ({ server_requests: ['clarify', 'secret', 'sudo'], declines_not_shown: true, canonical_clarify_batch: true }),
@@ -126,7 +114,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (Object.keys(params).length > 0) throw new Refused('invalid_params')
     return gateway.fixture.header.describe
   },
-  /** gateway/session_controls.py:599-656. The stored feed holds only sessions the gateway has not mounted (gateway/session_listing.py:103-170). */
+  /** gateway/session_controls.py:599-656 */
   'session.list': (gateway, _socket, params) => {
     const { limit = 200, scope = 'live' } = params
     if (!isInt(limit) || limit < 1 || limit > 200 || (scope !== 'live' && scope !== 'stored') || ('title' in params && 'scope' in params)) {
@@ -172,15 +160,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 export class ScriptedGateway {
   readonly sessionId: string
   readonly epoch: string
-  /** Every session event published so far, as the `params` a replay returns. */
   readonly ring: Params[] = []
   readonly view: View = { running: false, generation: 0, revision: 0, title: '', pending: [], prompts: new Map() }
-  /** Every frame a client sent, parsed. */
   readonly received: unknown[] = []
   readonly done: Promise<void>
-  /** Sockets accepted so far. */
   dials = 0
-  /** The index of the step the story is at. */
   step = 0
   finished = false
 
@@ -198,7 +182,6 @@ export class ScriptedGateway {
     this.drop = options.drop === null ? { at: 'spent' } : { at: 'armed', ...options.drop }
     this.epoch = fixture.steps.map(epochOf).find(isText) ?? 'fixture-epoch'
     this.done = new Promise((resolve, reject) => { this.settle = { resolve, reject } })
-    // A test that never awaits `done` still sees the failure through `play`.
     this.done.catch(() => {})
   }
 
@@ -264,7 +247,6 @@ export class ScriptedGateway {
     if (params.session_id !== this.sessionId) throw new Refused('not_found')
   }
 
-  /** The story answers a call it is waiting for. Any other call fails the story. */
   private story(socket: Socket, method: string, params: Obj): unknown {
     this.authorize(params)
     for (const check of STORY_CHECKS[method] ?? []) {
@@ -325,7 +307,6 @@ export class ScriptedGateway {
     return [...this.sockets].filter(socket => socket.subscriptions.has(this.sessionId))
   }
 
-  /** Runs the next step when it is the story's to run: a call is the client's, and a frame needs a viewer. */
   private pump(): void {
     const step = this.fixture.steps[this.step]
     if (this.scheduled || this.finished) return
@@ -375,9 +356,8 @@ export class ScriptedGateway {
   }
 
   /**
-   * One frame of the story. A session event is stamped into the ring and fanned out to the sockets
-   * attached to the session (gateway/session_events.py:76-112). A server request goes to the same
-   * sockets and stays open until one answers (gateway/session_server_requests.py:171-177).
+   * A session event is stamped into the ring and fanned out to the sockets attached to the session
+   * (gateway/session_events.py:76-112).
    */
   private publish({ push }: PushStep): void {
     if (!isObject(push)) return

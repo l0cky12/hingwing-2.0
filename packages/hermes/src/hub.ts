@@ -1,8 +1,3 @@
-/**
- * The public face of `@highwing/hermes`: a live, typed mirror of the gateway plus the commands a UI needs.
- * A caller never sees a ticket, a socket, a seq, an epoch, a generation, a revision or an idempotency key.
- * Runs in Node. No Electron import: the desktop app, a test and a future CLI all use it the same way.
- */
 import { randomUUID } from 'node:crypto'
 import { DONE, refusalOf, refused, SessionActor, type Outcome } from './actor'
 import type { ServerRequest } from './domain/reduce'
@@ -21,17 +16,13 @@ export interface Feed<T> {
   subscribe(listener: (value: T) => void): () => void
 }
 
-/**
- * Everything a UI can ask for, as data. The same union crosses IPC unchanged, so adding a command
- * means adding one member here and one case in `Hermes.run`.
- */
 export type Command =
   /** `draftId` is minted when the empty "new chat" view opens. Retrying with it cannot create a second session. */
   | { readonly do: 'create'; readonly draftId: string; readonly cwd: string | null }
   | { readonly do: 'send'; readonly sessionId: SessionId; readonly text: string }
   | { readonly do: 'stop'; readonly sessionId: SessionId }
   | { readonly do: 'answer'; readonly sessionId: SessionId; readonly promptId: PromptId; readonly reply: PromptReply }
-  | { readonly do: 'discard'; readonly sessionId: SessionId; readonly inputId: InputId } // drop a failed outbox entry
+  | { readonly do: 'discard'; readonly sessionId: SessionId; readonly inputId: InputId }
   | { readonly do: 'rename'; readonly sessionId: SessionId; readonly title: string }
   | { readonly do: 'archive'; readonly sessionId: SessionId; readonly archived: boolean }
   | { readonly do: 'loadEarlier'; readonly sessionId: SessionId }
@@ -101,7 +92,6 @@ function sameSidebar(a: Sidebar, b: Sidebar): boolean {
   })
 }
 
-/** An attach that is still in flight. A command for the session waits for it. */
 const ATTACHING: ReadonlySet<Session['sync']['state']> = new Set(['opening', 'catching-up', 'rebuilding'])
 
 export function openHermes(options: HermesOptions): Hermes {
@@ -114,7 +104,6 @@ export function openHermes(options: HermesOptions): Hermes {
   const releases = new Map<SessionId, () => void>()
   let cancelRefresh: (() => void) | null = null
 
-  /** The one path for a server request this build cannot show (sudo, secret, setup cards), live or listed by a snapshot. */
   const refuse = (request: ServerRequest) => {
     conn.decline(request.requestId, CANT_SHOW)
     if (request.sessionId !== null) actors.get(request.sessionId)?.feed({ in: 'declined', request })
@@ -135,7 +124,6 @@ export function openHermes(options: HermesOptions): Hermes {
       else if (parsed.event.type === 'meta' && parsed.event.title !== undefined) list.retitle(parsed.sessionId, parsed.event.title)
       const actor = actors.get(parsed.sessionId)
       if (actor === undefined) return count('unrouted', parsed.type)
-      // A frame with nothing to show is fed too: it moves the cursor.
       actor.feed({ in: 'event', frame: { stamp: parsed.stamp, event: parsed.event } })
     },
     gap: parsed => actors.get(parsed.sessionId)?.feed({ in: 'gap' }),
@@ -194,11 +182,6 @@ export function openHermes(options: HermesOptions): Hermes {
     return session !== undefined && (session.run.state === 'running' || session.outbox.length > 0)
   }
 
-  /**
-   * Every session a window watches or the gateway lists as running gets an actor. An actor nothing
-   * wants is detached after `RETAIN_MS`. `list.running` is why an approval in a chat that no window
-   * shows still turns its sidebar row to `asking`.
-   */
   const retain = () => {
     for (const id of [...watchers.keys(), ...list.running]) actorFor(id)
     for (const id of [...actors.keys()]) {
@@ -231,7 +214,6 @@ export function openHermes(options: HermesOptions): Hermes {
     }
   }
 
-  /** The session's actor, once the attach it has in flight has settled either way. */
   const attached = (id: SessionId): Promise<SessionActor> => new Promise(resolve => {
     const unwatch: { stop?: () => void } = {}
     unwatch.stop = watch(id, session => {
@@ -268,7 +250,6 @@ export function openHermes(options: HermesOptions): Hermes {
     const params = Object.fromEntries(Object.entries(asked).filter(([key]) => creation.parameters.includes(key)))
     try {
       const id = (await conn.call('session.create', params)).session_id as SessionId
-      // Attached like any other session. That costs one resume and keeps a single attach path.
       actorFor(id)
       refreshSoon()
       return { ok: true, value: id }

@@ -28,7 +28,6 @@ function open(fixture: Fixture = ERRAND, options: ScriptOptions & Partial<Hermes
   return { clock, script, hermes, client, diagnostics, starts, state, seen, sent, detaches, watch: () => hermes.watch(SESSION, session => seen.push(session)) }
 }
 
-/** Sends the errand's request and lets the story run until it waits for the approval. */
 async function toApproval(opened: ReturnType<typeof open>) {
   await opened.clock.advance(0)
   expect(await opened.hermes.run({ do: 'send', sessionId: SESSION, text: TEXT })).toEqual({ ok: true, value: undefined })

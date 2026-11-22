@@ -1,10 +1,3 @@
-/**
- * Design C as data. `Session -> ThreadView` is a pure function with no DOM, no clock and no I/O.
- * The React components map this view one to one and decide nothing: every grouping, wording and
- * record rule from the design spec lives in this package and is tested from event logs.
- *
- * Public: `threadView`, `outline`, `checkThread` and the view types.
- */
 import {
   activityOf,
   type Activity, type FileDiff, type Item, type NoticeItem, type Outcome, type PromptId, type PromptItem, type PromptReply,
@@ -28,7 +21,6 @@ export interface TurnView {
   readonly request: string | null
   /** Top to bottom along the thread. */
   readonly nodes: readonly ThreadNode[]
-  /** One field, so a turn cannot have two live ends or none. */
   readonly end: ThreadEnd
 }
 
@@ -145,7 +137,6 @@ function settledView(turn: SettledTurn): TurnView {
   return view
 }
 
-/** `live`: the session is attached, so a prompt can be answered. */
 function turnView(turn: Turn, live: boolean, end: (nodes: readonly ThreadNode[]) => ThreadEnd): TurnView {
   const at = (index: number) => `${turn.id}/${index}`
   const nodes = groupRuns(placeApprovals(turn.items).filter(isShown)).map((run): ThreadNode => {
@@ -177,11 +168,9 @@ function turnView(turn: Turn, live: boolean, end: (nodes: readonly ThreadNode[])
   return { key: turn.id, request: turn.request?.text ?? null, nodes, end: end(nodes) }
 }
 
-/** An item in display order, with `at` its index in `turn.items`. */
 interface Placed<I extends Item = Item> {
   readonly item: I
   readonly at: number
-  /** The tool that ran an approval's command, or the approval a tool waited on. */
   readonly partner: Item | null
 }
 
@@ -220,10 +209,6 @@ function placeApprovals(items: readonly Item[]): readonly Placed[] {
   return order
 }
 
-/**
- * Blank prose is not drawn. Neither is a tool waiting on its approval: the card shows the command,
- * and the tool has not really run until the answer comes.
- */
 function isShown({ item, partner }: Placed): boolean {
   if (item.kind === 'text') return trimBlankLines(item.markdown) !== ''
   if (item.kind === 'tool' && partner?.kind === 'prompt') return !isPending(partner)
@@ -232,12 +217,10 @@ function isShown({ item, partner }: Placed): boolean {
 
 const isPending = (prompt: PromptItem) => prompt.state.s === 'waiting' || prompt.state.s === 'sending'
 
-/** Live text after a tool starts with blank lines, and markdown keeps none at its edges. */
 const trimBlankLines = (markdown: string) => markdown.replace(/^(?:[ \t]*\n)+/, '').replace(/(?:\n[ \t]*)+$/, '')
 
 type Run = { readonly tools: readonly Placed<ToolItem>[] } | { readonly other: Placed<Exclude<Item, ToolItem>> }
 
-/** Consecutive tool items between two non-tool items form a run. Every item appears once, in order. */
 function groupRuns(placed: readonly Placed[]): readonly Run[] {
   const runs: ({ tools: Placed<ToolItem>[] } | { other: Placed<Exclude<Item, ToolItem>> })[] = []
   for (const entry of placed) {
@@ -254,11 +237,8 @@ const isTool = (placed: Placed): placed is Placed<ToolItem> => placed.item.kind 
 interface ToolWords {
   readonly done: string
   readonly doing: string
-  /** Replaces `done` when the tool's diff creates the file. */
   readonly created: string | null
-  /** A command row shows Output and never Input. */
   readonly isCommand: boolean
-  /** The file's basename, or the command without a leading `cd X && `. Clipped by `stepView`. */
   subject(args: ToolItem['args']): string | null
 }
 
@@ -269,7 +249,6 @@ const basename = (path: unknown) => text(text(path)?.replace(/\/+$/, '').split('
 const command = (args: ToolItem['args']) => text(text(args.command)?.replace(/^cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*&&\s*/, ''))
 const file = (args: ToolItem['args']) => basename(args.path)
 
-/** A new tool is one row. */
 const TOOL_WORDS: { readonly [toolName: string]: ToolWords } = {
   write_file: { done: 'Wrote', doing: 'Writing', created: 'Created', isCommand: false, subject: file },
   patch: { done: 'Edited', doing: 'Editing', created: null, isCommand: false, subject: file },
@@ -315,7 +294,6 @@ function stepView(tool: ToolItem, key: string, waited: boolean): StepView {
 
 const clip = (subject: string) => (subject.length > SUBJECT_LIMIT ? `${subject.slice(0, SUBJECT_LIMIT - 1)}…` : subject)
 
-/** A new file's lone hunk header says nothing the Created verb does not. */
 function changeLines(diff: FileDiff): FileDiff['lines'] {
   const hunks = diff.lines.filter(line => line.t === 'hunk')
   return diff.createsFile && hunks.length === 1 && diff.lines[0]?.t === 'hunk' ? diff.lines.slice(1) : diff.lines
@@ -350,11 +328,6 @@ function groupStat(tools: readonly ToolItem[]): DiffStat | null {
   return new Set(diffs.map(diff => diff.path)).size > 1 ? sumStat(diffs) : null
 }
 
-/**
- * The group's summary. Per file, in first-touched order: "Created" when the first diff for that file
- * creates it, "Created and edited" when more diffs for it follow, "Edited" otherwise. Then
- * "ran <cmd>" for one command or "ran N commands". No diffs and no commands: "Used N tools".
- */
 function groupTitle(tools: readonly ToolItem[]): Phrase {
   const files = new Map<string, { created: boolean; more: boolean }>()
   for (const diff of tools.flatMap(diffsOf)) {
@@ -374,7 +347,6 @@ function groupTitle(tools: readonly ToolItem[]): Phrase {
   return joinParts(parts)
 }
 
-/** "A, b and c", with every part after the first starting lower case. */
 function joinParts(parts: readonly Phrase[]): Phrase {
   return mergeText(parts.flatMap((part, index): Phrase => {
     if (index === 0) return part
@@ -396,7 +368,6 @@ function mergeText(pieces: Phrase): Phrase {
 
 type Role = 'primary' | 'plain' | 'decline'
 
-/** One row per approval choice: its button and the line left once it is answered. */
 const APPROVAL_CHOICES: { readonly [choice: string]: { readonly label: string; readonly role: Role; readonly answered: string } } = {
   once: { label: 'Run once', role: 'primary', answered: 'You allowed this once.' },
   session: { label: 'Allow in this chat', role: 'plain', answered: 'You allowed this for this chat.' },
@@ -410,7 +381,6 @@ const PROMPT_WORDS = {
   clarify: { heading: 'Hermes has a question', freeText: true }
 } as const satisfies Record<PromptItem['ask']['kind'], { heading: string; freeText: boolean }>
 
-/** `paired`: the tool step next to the card runs the same command, so the answered card drops it. */
 function promptCard(prompt: PromptItem, paired: boolean, live: boolean): PromptCard {
   const { ask, state } = prompt
   if (state.s === 'waiting' || state.s === 'sending') {
@@ -445,7 +415,6 @@ function answeredWords(prompt: PromptItem, state: Exclude<PromptItem['state'], {
   return known?.answered ?? `You answered “${reply.value}”.`
 }
 
-/** Keyed by the request method's first segment, so `sudo` and `sudo.request` read the same. */
 const DECLINED_WORDS: { readonly [method: string]: string } = {
   sudo: "Hermes asked for your sudo password. Highwing can't show that prompt yet, so it said no.",
   secret: "Hermes asked for a secret. Highwing can't show that prompt yet, so it said no.",
@@ -473,10 +442,6 @@ const TIP_WORDS = {
   stopping: 'Stopping'
 } as const satisfies Record<Exclude<Activity['kind'], 'preparing' | 'working' | 'asking'>, string>
 
-/**
- * An open turn's end. Link not live: paused. Otherwise from the activity: asking and working sit on
- * the node that holds the item, everything else is a tip row.
- */
 function openEnd(turn: Turn, nodes: readonly ThreadNode[], activity: Activity, sync: Sync['state']): ThreadEnd {
   if (sync !== 'live') return { kind: 'paused', words: PAUSED_WORDS[sync] }
   switch (activity.kind) {
@@ -495,7 +460,6 @@ function openEnd(turn: Turn, nodes: readonly ThreadNode[], activity: Activity, s
 
 const LOST_WORDS = 'Ended while Highwing was disconnected.'
 
-/** `lost` never maps to done. */
 function settledEnd(outcome: Outcome): ThreadEnd {
   switch (outcome.kind) {
     case 'complete': return { kind: 'done', words: 'Done' }

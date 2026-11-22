@@ -15,14 +15,11 @@ const TICKET_TTL_MS = 30_000
 
 export interface Upgrade {
   readonly origin: string | null
-  /** Which ticket the upgrade offered, counted from the first one minted. null when it offered none this gateway minted. */
   readonly ticket: number | null
-  /** The rule that refused it, or null when it was accepted. */
   readonly refused: string | null
 }
 
 export interface Loopback {
-  /** A fresh single-use ticket for one dial. */
   mint(): Endpoint
   readonly upgrades: readonly Upgrade[]
   close(): Promise<void>

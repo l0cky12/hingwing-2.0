@@ -8,7 +8,6 @@ import { manualClock } from '../src/testing/clock'
 import { loadFixture, playToEnd, recordingDialer, scriptedDialer, type FixtureStep } from '../src/testing/fixture'
 import { ERRAND, paramsOf, SESSION } from './support/errand'
 
-/** Runs the errand by hand through a recording dialer, as the dev app would with HIGHWING_RECORD set. */
 async function record(drop?: { afterPush: number; missed: number }) {
   const path = join(mkdtempSync(join(tmpdir(), 'highwing-record-')), 'errand.jsonl')
   const clock = manualClock()

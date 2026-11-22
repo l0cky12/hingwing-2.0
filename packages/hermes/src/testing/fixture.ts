@@ -1,7 +1,5 @@
 /**
  * `@highwing/hermes/testing`: a recorded or generated gateway, played back through the real client.
- * Handshake, attach, replay, parsing and the reducer all run for real, in tests and in the dev app.
- * No AI provider is involved. This file holds the fixture format and its loader.
  */
 import { readFileSync } from 'node:fs'
 import type { SessionId } from '../domain/session'

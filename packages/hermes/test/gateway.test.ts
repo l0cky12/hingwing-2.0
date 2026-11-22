@@ -9,7 +9,6 @@ interface Reply {
   readonly error?: { readonly code: number; readonly message: string; readonly data?: Record<string, unknown> }
 }
 
-/** A bare socket to the scripted gateway: no client, so a test can send what the client never would. */
 async function rawSocket(options: ScriptOptions = {}) {
   const script = scriptedDialer(ERRAND, { clock: manualClock(), ...options })
   const socket = await script({ start: false })

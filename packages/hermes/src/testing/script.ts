@@ -40,7 +40,6 @@ export interface ScriptedDialer extends Dialer {
   close(): Promise<void>
 }
 
-/** A socket pair in memory. Each direction delivers in order, one microtask later, as a network would: never inside the sender's call. */
 function memorySocket(gateway: ScriptedGateway): WireSocket {
   let open = true
   const wire = wireSocket({

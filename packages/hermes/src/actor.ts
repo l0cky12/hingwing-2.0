@@ -1,9 +1,3 @@
-/**
- * One session. The single owner of its `Tracked` state, which holds the content, the attach
- * lifecycle (`Gate`) and the fencing tokens. Every change is one `reduce`. This class is the thin
- * shell that makes the gateway calls a state asks for and feeds the replies back in as inputs.
- * Private to `@highwing/hermes`. The hub creates one per session and routes events to it.
- */
 import { emptyTracked, reduce, sessionOf, type Gate, type LocalAction, type ServerRequest, type SessionInput, type Tracked } from './domain/reduce'
 import type { InputId, PromptId, PromptReply, Session, SessionId } from './domain/session'
 import { Offline, RpcRefusal, type Clock, type Connection } from './wire/link'
@@ -20,7 +14,6 @@ export type Outcome<T = void> = { readonly ok: true; readonly value: T } | { rea
 export const DONE: Outcome = { ok: true, value: undefined }
 export const refused = (kind: Refusal['kind'], message: string): Outcome<never> => ({ ok: false, refusal: { kind, message } })
 
-/** The gateway's reason for a refusal, in words for the user and as the kind a caller can branch on. */
 const REFUSALS: Readonly<Record<string, Refusal>> = {
   permission_denied: { kind: 'not-attached', message: "Hermes won't let Highwing do that in this chat." },
   not_found: { kind: 'rejected', message: 'Hermes no longer has this chat.' },
@@ -39,7 +32,6 @@ export function refusalOf(error: unknown): Refusal {
   throw error
 }
 
-/** A session that restarts its attach this often inside the window is told to stop, in words. */
 export const RESTART_LIMIT = { count: 4, withinMs: 60_000 } as const
 const KEEPS_RESTARTING = 'Hermes keeps restarting this chat.'
 const EARLIER = { pageRows: 200, pages: 3 } as const
@@ -49,19 +41,17 @@ type Attaching = Extract<Gate, { at: 'attaching' }>
 export interface ActorDeps {
   readonly conn: Connection
   readonly clock: Clock
-  /** Called with each new published value, and the one it replaces. */
   readonly publish: (session: Session, previous: Session) => void
-  /** The hub's one path for a server request this build cannot show: declines it and files the notice. */
   readonly refuse: (request: ServerRequest) => void
-  /** Mints an idempotency key: the `input_id` of a message, the `request_id` of a mutation. */
   readonly mintId: () => string
 }
 
+/** A page that begins with a user row holds whole turns, so the read can stop there. */
+const startsAtTurn = (page: { readonly rows: readonly { readonly role?: unknown }[] }) => page.rows[0]?.role === 'user'
+
 export class SessionActor {
-  /** The only state. Everything the actor knows about attach is in `tracked.gate`. */
   private tracked: Tracked
   private published: Session
-  /** When each attach that restarted a live or attaching session began. Time is not a reducer input. */
   private restarts: readonly number[] = []
 
   constructor(readonly id: SessionId, private readonly deps: ActorDeps) {
@@ -69,37 +59,24 @@ export class SessionActor {
     this.published = sessionOf(this.tracked, deps.conn.link, null)
   }
 
-  /** The last published value, built by `sessionOf`. */
   get session(): Session {
     return this.published
   }
 
-  /**
-   * From the hub's router: a frame of this session's stream, a `session.replay_gap`, or a server
-   * request that was refused. Whether a frame is applied, parked or dropped is the gate's decision
-   * in `reduce`.
-   */
   feed(input: Extract<SessionInput, { in: 'event' | 'gap' | 'declined' }>): void {
     this.step(input)
   }
 
-  /**
-   * Ask for this session to be attached on the current socket. Safe to call any number of times and
-   * at any point. It only steps `{in: 'attach'}` when the link is online. The reducer ignores it
-   * unless the gate is detached.
-   */
   attach(): void {
     if (this.deps.conn.link.state === 'online') this.step({ in: 'attach' })
   }
 
-  /** The link changed. Not online -> step `link.lost`. Online -> `attach()`. Either way the sync may differ, so republish. */
   linkChanged(): void {
     if (this.deps.conn.link.state === 'online') this.attach()
     else this.step({ in: 'link.lost' })
     this.publish()
   }
 
-  /** The only path to `reduce`. */
   private step(input: SessionInput): void {
     const before = this.tracked.gate
     this.tracked = reduce(this.tracked, input)
@@ -125,7 +102,6 @@ export class SessionActor {
     this.deps.publish(next, previous)
   }
 
-  /** The gateway calls of one attach attempt. Never touches state except through `step`. */
   private async runAttach({ attempt, plan }: Attaching, restart: boolean): Promise<void> {
     const { conn, clock } = this.deps
     const session_id = this.id
@@ -149,7 +125,6 @@ export class SessionActor {
         this.attached(attempt, parseSnapshot(await conn.call('session.resume', { session_id, display_projection: true })), null)
       }
     } catch (error) {
-      // Offline: `linkChanged` moves the gate to detached, and the next socket attaches again.
       if (!(error instanceof Offline)) this.step({ in: 'attach.failed', attempt, refused: refusalOf(error).message })
     }
   }
@@ -164,10 +139,6 @@ export class SessionActor {
     return this.tracked.gate.at === 'live' ? null : { ok: false, refusal: NOT_CONNECTED }
   }
 
-  /**
-   * Commands. Each one refuses with `offline` unless the gate is live. None of them takes a fencing
-   * token: the actor reads generation and revision from its own state.
-   */
   send(text: string): Promise<Outcome> {
     const offline = this.offline()
     if (offline !== null) return Promise.resolve(offline)
@@ -176,7 +147,6 @@ export class SessionActor {
     return this.submit(inputId, text)
   }
 
-  /** A turn that is running makes the gateway answer `queued`. A submit the socket dropped stays `sending` for the next attach. */
   private async submit(inputId: InputId, text: string): Promise<Outcome> {
     try {
       const receipt = await this.deps.conn.call('prompt.submit', { session_id: this.id, text, input_id: inputId })
@@ -207,7 +177,6 @@ export class SessionActor {
       return DONE
     } catch (error) {
       const refusal = refusalOf(error)
-      // The turn ended before the Stop arrived.
       return refusal.kind === 'stale' ? DONE : { ok: false, refusal }
     }
   }
@@ -233,7 +202,6 @@ export class SessionActor {
     }
   }
 
-  /** Rename and archive. One `request_id` per user intent, reused when a revision conflict forces a retry. */
   async mutate(change: { readonly title: string } | { readonly archived: boolean }): Promise<Outcome> {
     const offline = this.offline()
     if (offline !== null) return offline
@@ -261,13 +229,12 @@ export class SessionActor {
     this.act({ did: 'earlier.requested' })
     const pages: Parameters<typeof parseTranscript>[0][number][] = []
     try {
-      // A page can begin in the middle of a turn, so read on until the rows begin at a user row.
       for (let cursor = older.cursor; pages.length < EARLIER.pages;) {
         const page = await this.deps.conn.call('session.transcript', {
           session_id: this.id, order: 'latest', limit: EARLIER.pageRows, ...(cursor === null ? {} : { cursor })
         })
         pages.push(page)
-        if (page.next_cursor === null || page.rows[0]?.role === 'user') break
+        if (page.next_cursor === null || startsAtTurn(page)) break
         cursor = page.next_cursor
       }
       this.step({ in: 'earlier', page: parseTranscript(pages) })
@@ -279,7 +246,6 @@ export class SessionActor {
     }
   }
 
-  /** `session.detach` with the gate's subscription id. The hub calls it when nothing retains the session, then drops the actor. */
   async detach(): Promise<void> {
     const { gate } = this.tracked
     if (gate.at !== 'live') return

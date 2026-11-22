@@ -255,7 +255,6 @@ describe('calls', () => {
 })
 
 describe('liveDialer', () => {
-  /** A stand-in `hermes` that records its arguments, prints `stdout` and exits with `code`. */
   const hermes = (code: number, stdout: string) => {
     const dir = mkdtempSync(join(tmpdir(), 'highwing-hermes-'))
     const bin = join(dir, 'hermes')
