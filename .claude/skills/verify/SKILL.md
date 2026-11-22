@@ -58,6 +58,8 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `shot <name>` | file stem | moves the pointer off the page, then saves `<name>.png` and `<name>.aria.txt` |
 | `disabled <role> <name>` | ARIA role, exact accessible name | fails unless that control is disabled now |
 | `value <label> <text>` | exact label, text | fails unless the field holds exactly that text now |
+| `gone <role> <name>` | ARIA role, exact accessible name | polls until no visible element has that role and name, and fails at the timeout. Waits out a fade |
+| `inview <role> <name>` | ARIA role, exact accessible name | fails unless that element's box lies fully inside the visible area of every scrolling ancestor and of the window |
 
 Named states live in the `STATES` table in the helper. Add a state there, not a sleep.
 
