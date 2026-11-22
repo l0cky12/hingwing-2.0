@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ATTACH, HERMES_PATHS, PROBE, probeOf, remoteHermes, runTool, SSH_OPTIONS, sshFailureOf } from '../src/wire/ssh'
+import { parseSshHost } from '../src/domain/reach'
+import { ATTACH, HERMES_PATHS, PROBE, probeOf, relay, remoteHermes, runTool, SSH_OPTIONS, sshFailureOf } from '../src/wire/ssh'
 import { manualClock, settle } from '../src/testing/clock'
 
 describe('sshFailureOf', () => {
@@ -150,5 +151,14 @@ describe('runTool', () => {
     life.abort()
     expect(await run).toEqual({ end: 'cut', stderr: '' })
     expect(await runTool('/bin/sh', ['-c', 'echo ran'], { deadlineMs: 5_000, signal: life.signal })).toEqual({ end: 'cut', stderr: '' })
+  })
+})
+
+describe('relay', () => {
+  it('settles when the route is disposed before the relay is listening', async () => {
+    const life = new AbortController()
+    const pending = relay(parseSshHost('hermes-host.example-tailnet.ts.net')!, 1, { sshBin: '/nonexistent/ssh', signal: life.signal })
+    life.abort()
+    await expect(pending).rejects.toThrow('before it was dialed')
   })
 })

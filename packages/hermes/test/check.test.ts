@@ -36,8 +36,8 @@ describe('tailnetOf', () => {
 
   it('lists each peer under every name ssh could be given for it', () => {
     expect(tailnetOf(status({ BackendState: 'Running', Peer: { 'nodekey:a': PEER, 'nodekey:b': { HostName: 'Phone', Online: false } } }))).toEqual([
-      { names: ['hermes-host.example-tailnet.ts.net', 'hermes-host', 'workstation', '100.101.102.103', 'fd7a:115c:a1e0::1'], online: true },
-      { names: ['phone'], online: false }
+      { names: ['hermes-host.example-tailnet.ts.net', 'hermes-host', '100.101.102.103', 'fd7a:115c:a1e0::1'], alias: 'workstation', online: true },
+      { names: [], alias: 'phone', online: false }
     ])
   })
 
@@ -49,7 +49,7 @@ describe('tailnetOf', () => {
 describe('peerFailure', () => {
   const peers = tailnetOf(status({ BackendState: 'Running', Peer: { a: PEER, b: { HostName: 'asleep', Online: false } } })) as readonly Peer[]
 
-  it.each(['hermes-host.example-tailnet.ts.net', 'hermes-host', 'Hermes-Host', 'workstation', '100.101.102.103', 'fd7a:115c:a1e0::1'])('finds the machine by %s', name => {
+  it.each(['hermes-host.example-tailnet.ts.net', 'hermes-host.example-tailnet.ts.net.', 'hermes-host', 'Hermes-Host', 'workstation', '100.101.102.103', 'fd7a:115c:a1e0::1'])('finds the machine by %s', name => {
     expect(peerFailure(peers, name)).toBeNull()
   })
 
@@ -57,6 +57,11 @@ describe('peerFailure', () => {
     ['hermes', 'host-not-found'], ['example-tailnet.ts.net', 'host-not-found'], ['100.101.102.104', 'host-not-found'], ['asleep', 'host-offline']
   ] as const)('reads %s as %s', (name, failure) => {
     expect(peerFailure(peers, name)).toBe(failure)
+  })
+
+  it("finds a machine by its MagicDNS name when an offline machine has that name as its hostname", () => {
+    const shadowed = tailnetOf(status({ BackendState: 'Running', Peer: { old: { HostName: 'hermes-host', Online: false }, a: PEER } })) as readonly Peer[]
+    expect(peerFailure(shadowed, 'hermes-host')).toBeNull()
   })
 })
 

@@ -153,6 +153,7 @@ export function relay(host: SshHost, port: number, { sshBin = 'ssh', signal, clo
       neverDialed()
       signal.removeEventListener('abort', abandon)
       server.close()
+      reject(new Error('The relay closed before it was dialed.'))
     }
     const neverDialed = clock.setTimeout(abandon, UPGRADE_MS)
     signal.addEventListener('abort', abandon, { once: true })

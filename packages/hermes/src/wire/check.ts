@@ -20,7 +20,10 @@ const PROBE_MS = 20_000
 
 /** A machine of the tailnet other than this one, by every name ssh could be given for it. */
 export interface Peer {
+  /** The MagicDNS name, its short form and the Tailscale IPs: unique on a tailnet. */
   readonly names: readonly string[]
+  /** The machine's own hostname, which two machines can share. Matched only when no peer has the name above. */
+  readonly alias: string | null
   readonly online: boolean
 }
 
@@ -30,8 +33,9 @@ const texts = (values: readonly unknown[]) => values.filter((value): value is st
 
 function peerOf(raw: Obj): Peer {
   const dns = typeof raw.DNSName === 'string' ? raw.DNSName.replace(/\.$/, '') : ''
-  const names = texts([dns, dns.split('.')[0], raw.HostName, ...(Array.isArray(raw.TailscaleIPs) ? raw.TailscaleIPs : [])])
-  return { names: names.map(name => name.toLowerCase()), online: raw.Online === true }
+  const names = texts([dns, dns.split('.')[0], ...(Array.isArray(raw.TailscaleIPs) ? raw.TailscaleIPs : [])])
+  const alias = typeof raw.HostName === 'string' && raw.HostName !== '' ? raw.HostName.toLowerCase() : null
+  return { names: names.map(name => name.toLowerCase()), alias, online: raw.Online === true }
 }
 
 /** Reads `tailscale status --json`. The key names were measured on Tailscale 1.104. */
@@ -51,7 +55,8 @@ export function tailnetOf(run: ToolRun): readonly Peer[] | 'tailscale-missing' |
 }
 
 export function peerFailure(peers: readonly Peer[], name: string): 'host-not-found' | 'host-offline' | null {
-  const peer = peers.find(({ names }) => names.includes(name.toLowerCase()))
+  const wanted = name.toLowerCase().replace(/\.$/, '')
+  const peer = peers.find(({ names }) => names.includes(wanted)) ?? peers.find(({ alias }) => alias === wanted)
   if (peer === undefined) return 'host-not-found'
   return peer.online ? null : 'host-offline'
 }
