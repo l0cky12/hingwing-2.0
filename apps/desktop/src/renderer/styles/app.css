@@ -117,11 +117,12 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .record .path { margin: 0 0 6px; font: 12.5px var(--mono); color: var(--graphite); }
 .record .empty { margin: 0; color: var(--graphite); font-size: 13px; }
 .diff .ln { display: block; padding-right: 8px; }
-.diff .mk { display: inline-block; width: 20px; margin-right: 8px; text-align: center; font: 500 13px var(--sans); color: var(--graphite); user-select: none; }
+.diff .ln.add::before, .diff .ln.del::before, .diff .ln.ctx::before { display: inline-block; width: 20px; margin-right: 8px; text-align: center; font: 500 13px var(--sans); color: var(--graphite); }
+.diff .ln.add::before { content: "+"; color: var(--moss); }
+.diff .ln.del::before { content: "\2212"; color: var(--brick); }
+.diff .ln.ctx::before { content: " "; }
 .diff .add { background: var(--add); }
-.diff .add .mk { color: var(--moss); }
 .diff .del { background: var(--del); }
-.diff .del .mk { color: var(--brick); }
 .diff .hunk { color: var(--graphite); padding-left: 28px; margin: 2px 0; }
 
 .step.live > .head .title, .group.live > .head .title { color: var(--signal); }

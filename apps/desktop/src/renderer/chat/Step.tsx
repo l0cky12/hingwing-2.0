@@ -14,8 +14,6 @@ export function Stat({ stat }: { readonly stat: DiffStat | null }) {
   )
 }
 
-const DIFF_MARK = { add: '+', del: '−', ctx: ' ' } as const
-
 function Section({ section }: { readonly section: RecordSection }) {
   const label = section.label === null ? null : <h4>{section.label}</h4>
   if (section.kind === 'changes') {
@@ -24,9 +22,7 @@ function Section({ section }: { readonly section: RecordSection }) {
         {label}
         <p className="path">{section.path}</p>
         <pre className="diff">
-          {section.lines.map((line, index) => line.t === 'hunk'
-            ? <span key={index} className="ln hunk">{line.text}</span>
-            : <span key={index} className={`ln ${line.t}`}><span className="mk">{DIFF_MARK[line.t]}</span>{line.text}</span>)}
+          {section.lines.map((line, index) => <span key={index} className={`ln ${line.t}`}>{line.text}</span>)}
         </pre>
       </section>
     )
