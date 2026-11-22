@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs'
 import type { SessionId } from '../domain/session'
 
 export { play, playToEnd, type Moment } from './play'
+export { recordingDialer } from './record'
 export { scriptedDialer, type ScriptedDialer, type ScriptOptions } from './script'
 
 /**
