@@ -15,7 +15,6 @@ export function Stat({ stat }: { readonly stat: DiffStat | null }) {
 }
 
 const DIFF_MARK = { add: '+', del: '−', ctx: ' ' } as const
-const EMPTY_WORDS = { output: 'No output', result: 'No result', input: 'No input' } as const
 
 function Section({ section }: { readonly section: RecordSection }) {
   const label = section.label === null ? null : <h4>{section.label}</h4>
@@ -36,8 +35,8 @@ function Section({ section }: { readonly section: RecordSection }) {
   return (
     <section>
       {label}
-      {body === 'empty'
-        ? <p className="empty">{EMPTY_WORDS[section.kind]}</p>
+      {'empty' in body
+        ? <p className="empty">{body.empty}</p>
         : <pre>{body.text}{body.more > 0 && `\n… ${body.more} more characters`}</pre>}
     </section>
   )
@@ -58,7 +57,7 @@ export function Step({ step, live, open, onToggle }: StepProps) {
     return <div className={cx('step', step.state, live && 'live')} {...end}><div className="head">{title}{meta}</div></div>
   }
   const [only] = step.record.sections
-  const bare = step.record.sections.length === 1 && only?.kind !== 'changes' && only?.body === 'empty'
+  const bare = step.record.sections.length === 1 && only !== undefined && only.kind !== 'changes' && 'empty' in only.body
   return (
     <div className={cx('step', step.state, open && 'open', live && 'live')} {...end}>
       <button className="head" aria-expanded={open} onClick={() => onToggle(step.key)}>

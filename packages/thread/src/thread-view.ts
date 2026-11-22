@@ -78,9 +78,11 @@ export interface StepView {
 
 export interface RecordView { readonly sections: readonly RecordSection[] }
 /** `label` is null when the record has a single section. */
+/** A clipped text, or the words to show when there is none ("No output"). */
+export type RecordBody = { readonly text: string; readonly more: number } | { readonly empty: string }
 export type RecordSection =
   | { readonly kind: 'changes'; readonly label: string | null; readonly path: string; readonly lines: FileDiff['lines'] }
-  | { readonly kind: 'output' | 'result' | 'input'; readonly label: string | null; readonly body: { readonly text: string; readonly more: number } | 'empty' }
+  | { readonly kind: 'output' | 'result' | 'input'; readonly label: string | null; readonly body: RecordBody }
 
 export type PromptCard =
   | {
@@ -89,8 +91,8 @@ export type PromptCard =
       readonly heading: string
       /** The command for an approval, long tokens wrapped by CSS. null for a clarify. */
       readonly command: string | null
-      /** Hermes's own reason or question, quoted as given. */
-      readonly quote: string | null
+      /** Why Hermes asks: its flagged reason in a sentence, or its question as given. */
+      readonly why: string | null
       readonly buttons: readonly { readonly reply: PromptReply; readonly label: string; readonly role: 'primary' | 'plain' | 'decline' }[]
       readonly freeText: boolean
       /** An answer is on its way, or the session is not live. Buttons are disabled, the card stays amber. */
@@ -274,8 +276,9 @@ function stepView(tool: ToolItem, key: string, waited: boolean): StepView {
 
   const sections: RecordSection[] = diffs.map(diff => ({ kind: 'changes', label: null, path: diff.path, lines: changeLines(diff) }))
   if (status.s === 'done') {
-    const body = resultBody(status.result)
-    if (body !== null && (diffs.length === 0 || isError(status.result))) sections.push({ kind: words.isCommand ? 'output' : 'result', label: null, body })
+    const kind = words.isCommand ? 'output' : 'result'
+    const body = resultBody(status.result, kind)
+    if (body !== null && (diffs.length === 0 || isError(status.result))) sections.push({ kind, label: null, body })
   }
   if (diffs.length === 0 && !words.isCommand && Object.keys(tool.args).length > 0)
     sections.push({ kind: 'input', label: null, body: { text: JSON.stringify(tool.args, null, 2), more: 0 } })
@@ -301,10 +304,12 @@ function changeLines(diff: FileDiff): FileDiff['lines'] {
 
 type Result = Extract<ToolItem['status'], { s: 'done' }>['result']
 
-function resultBody(result: Result): { readonly text: string; readonly more: number } | 'empty' | null {
+const EMPTY_WORDS = { output: 'No output', result: 'No result' } as const
+
+function resultBody(result: Result, kind: keyof typeof EMPTY_WORDS): RecordBody | null {
   if (result.kind === 'none') return null
   const body = result.kind === 'command' ? result.output : result.text
-  return trimBlankLines(body) === '' ? 'empty' : { text: trimBlankLines(body), more: result.clipped }
+  return trimBlankLines(body) === '' ? { empty: EMPTY_WORDS[kind] } : { text: trimBlankLines(body), more: result.clipped }
 }
 
 const isError = (result: Result) =>
@@ -393,7 +398,7 @@ function promptCard(prompt: PromptItem, paired: boolean, live: boolean): PromptC
       promptId: prompt.id,
       heading: PROMPT_WORDS[ask.kind].heading,
       command: ask.kind === 'approval' ? ask.command : null,
-      quote: ask.kind === 'approval' ? ask.reason : ask.question,
+      why: ask.kind === 'approval' ? (ask.reason === null ? null : `Hermes flagged it as “${ask.reason}”.`) : ask.question,
       buttons,
       freeText: PROMPT_WORDS[ask.kind].freeText,
       busy: state.s === 'sending' || !live,
@@ -499,7 +504,7 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
  *       ● Created `notes.md`  +5
  *   ● Ran `ls -la && ls scratch`                               step
  *   ○ You allowed this once.                                   answered prompt
- *   ◆ Run this command?                                        asking prompt, its command, quote and buttons indented
+ *   ◆ Run this command?                                        asking prompt, its command, reason and buttons indented
  *   ! Hermes asked for your sudo password. ...                 notice
  *   ✓ Done                                                     end: ✓ done, ✗ failed, ⊘ stopped, ~ lost, each with its words
  *
@@ -540,7 +545,7 @@ function nodeLines(node: ThreadNode, live: boolean, opened: ReadonlySet<string>)
       return [
         `◆ ${card.heading}${card.busy ? '  (busy)' : ''}`,
         ...(card.command === null ? [] : [`    ${card.command}`]),
-        ...(card.quote === null ? [] : [`    “${card.quote}”`]),
+        ...(card.why === null ? [] : [`    ${card.why}`]),
         `    ${card.buttons.map(button => `[${button.label}]`).join(' ')}${card.freeText ? ' [Type an answer]' : ''}`,
         ...(card.error === null ? [] : [`    ! ${card.error}`])
       ]
@@ -561,11 +566,10 @@ function stepLines(step: StepView, glyph: string, indent: string, opened: Readon
 }
 
 const DIFF_MARK = { hunk: '', add: '+ ', del: '- ', ctx: '  ' } as const
-const EMPTY_WORDS = { output: 'No output', result: 'No result', input: 'No input' } as const
 
 function sectionLines(section: RecordSection): string[] {
   if (section.kind === 'changes') return [section.path, ...section.lines.map(line => `${DIFF_MARK[line.t]}${line.text}`)]
-  if (section.body === 'empty') return [EMPTY_WORDS[section.kind]]
+  if ('empty' in section.body) return [section.body.empty]
   return [...section.body.text.split('\n'), ...(section.body.more > 0 ? [`… ${section.body.more} more characters`] : [])]
 }
 

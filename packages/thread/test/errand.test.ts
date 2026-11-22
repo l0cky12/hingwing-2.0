@@ -58,7 +58,7 @@ describe('the errand as design C', () => {
       '● Ran `ls -la && ls scratch`',
       '◆ Run this command?',
       '    rm -rf /tmp/hermes-proto-work/scratch',
-      '    “delete in root path”',
+      '    Hermes flagged it as “delete in root path”.',
       "    [Run once] [Allow in this chat] [Always allow] [Don't run]"
     ].join('\n'))
   })

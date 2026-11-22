@@ -30,7 +30,7 @@ function Prompt({ card, asking, onAnswer }: { readonly card: PromptCard; readonl
     <div className={cx('approval', asking && 'live')} role="group" aria-label={card.heading} {...(asking ? { 'data-end': 'asking' } : {})}>
       <h3>{card.heading}</h3>
       {card.command !== null && <pre>{card.command}</pre>}
-      {card.quote !== null && <p className="why">{card.command !== null ? <>Hermes flagged it as “{card.quote}”.</> : card.quote}</p>}
+      {card.why !== null && <p className="why">{card.why}</p>}
       <div className="choices">
         {card.buttons.map(button => (
           <button key={button.label} className={ROLE_CLASS[button.role] ?? undefined} disabled={card.busy} onClick={() => onAnswer(card.promptId, button.reply)}>
