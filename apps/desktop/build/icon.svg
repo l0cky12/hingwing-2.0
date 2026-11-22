@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>Highwing</title>
+  <rect width="512" height="512" rx="112" fill="#0F6A5B"/>
+  <path d="M96 372C140 244 262 150 420 128C404 208 330 316 96 372Z" fill="#F6F7F3"/>
+  <path d="M96 412C160 308 268 244 400 232C376 300 292 384 96 412Z" fill="#CFE3DC"/>
+  <path d="M96 450C170 372 262 328 356 322C332 372 262 430 96 450Z" fill="#CFE3DC" fill-opacity=".6"/>
+</svg>

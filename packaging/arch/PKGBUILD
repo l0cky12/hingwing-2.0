@@ -1,0 +1,65 @@
+pkgname=highwing
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Desktop client for the Hermes agent gateway'
+arch=('x86_64')
+url='https://github.com/l0cky12/hingwing-2.0'
+license=('LicenseRef-all-rights-reserved' 'MIT' 'BSD-3-Clause')
+depends=('alsa-lib' 'at-spi2-core' 'bash' 'cairo' 'dbus' 'expat' 'glib2' 'glibc' 'gtk3' 'hicolor-icon-theme'
+         'libcups' 'libgcc' 'libx11' 'libxcb' 'libxcomposite' 'libxdamage' 'libxext' 'libxfixes'
+         'libxkbcommon' 'libxrandr' 'mesa' 'nspr' 'nss' 'openssh' 'pango' 'systemd-libs')
+makedepends=('corepack' 'librsvg' 'nodejs')
+optdepends=('tailscale: reach a Hermes gateway on another machine')
+options=('!strip' '!debug')
+
+_electron=45.4.1
+# The first source is made from a checkout (see the README), so it has no fixed checksum.
+source=("$pkgname.tar.gz"
+        "electron-v$_electron-linux-x64.zip::https://github.com/electron/electron/releases/download/v$_electron/electron-v$_electron-linux-x64.zip")
+noextract=("electron-v$_electron-linux-x64.zip")
+sha256sums=('SKIP'
+            'e1d077c7a087d7e344350ea0c5cd2b7dc5af3d9bf7979474f38e0fc1a560b875')
+
+prepare() {
+  rm -rf "$srcdir/electron"
+  mkdir "$srcdir/electron"
+  bsdtar -xf "electron-v$_electron-linux-x64.zip" -C "$srcdir/electron"
+
+  cd "$srcdir/$pkgname"
+  export COREPACK_HOME="$srcdir/.corepack" COREPACK_ENABLE_DOWNLOAD_PROMPT=0 ELECTRON_SKIP_BINARY_DOWNLOAD=1
+  corepack pnpm install --frozen-lockfile --store-dir "$srcdir/.pnpm-store"
+}
+
+build() {
+  cd "$srcdir/$pkgname"
+  export COREPACK_HOME="$srcdir/.corepack" COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+  corepack pnpm --filter @highwing/desktop build
+  node scripts/package-linux.mjs "$srcdir/app" --version "$pkgver"
+  rsvg-convert -w 512 -h 512 apps/desktop/build/icon.svg -o "$srcdir/highwing-512.png"
+}
+
+package() {
+  local lib="$pkgdir/usr/lib/$pkgname"
+  install -d "$lib"
+  cp -a "$srcdir/electron/." "$lib"
+  mv "$lib/electron" "$lib/$pkgname"
+  rm "$lib/resources/default_app.asar"
+  cp -a "$srcdir/app" "$lib/resources/app"
+  chmod 4755 "$lib/chrome-sandbox"
+
+  local licenses="$pkgdir/usr/share/licenses/$pkgname"
+  install -Dm644 "$lib/LICENSE" "$licenses/LICENSE.electron"
+  install -Dm644 "$lib/LICENSES.chromium.html" "$licenses/LICENSES.chromium.html"
+  rm "$lib/LICENSE" "$lib/LICENSES.chromium.html"
+  # The repository has no license file yet. Replace this with its license once it has one.
+  cat > "$licenses/LICENSE.highwing" <<'NOTICE'
+Highwing has no license file in its source repository. Its authors reserve all rights.
+Electron is under the MIT license (LICENSE.electron). Chromium's licenses are in LICENSES.chromium.html.
+NOTICE
+
+  local packaging="$srcdir/$pkgname/packaging/arch"
+  install -Dm755 "$packaging/highwing.sh" "$pkgdir/usr/bin/$pkgname"
+  install -Dm644 "$packaging/highwing.desktop" "$pkgdir/usr/share/applications/$pkgname.desktop"
+  install -Dm644 "$srcdir/$pkgname/apps/desktop/build/icon.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/$pkgname.svg"
+  install -Dm644 "$srcdir/highwing-512.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/$pkgname.png"
+}

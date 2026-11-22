@@ -3,3 +3,8 @@ fixtures/recorded/
 .audit/
 fixtures/__pycache__/
 apps/desktop/out/
+packaging/arch/*.tar.gz
+packaging/arch/*.zip
+packaging/arch/*.pkg.tar.*
+packaging/arch/src/
+packaging/arch/pkg/
