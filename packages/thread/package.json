@@ -1,0 +1,11 @@
+{
+  "name": "@highwing/thread",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/thread-view.ts"
+  },
+  "dependencies": {
+    "@highwing/hermes": "workspace:*"
+  }
+}

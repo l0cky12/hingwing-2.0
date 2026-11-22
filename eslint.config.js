@@ -15,6 +15,10 @@ export default tseslint.config(
     rules: { 'no-restricted-imports': ['error', { paths: ['electron'], patterns: [contract] }] }
   },
   {
+    files: ['packages/thread/src/**'],
+    rules: { 'no-restricted-imports': ['error', { patterns: [{ regex: '^(?!@highwing/hermes/domain$)(@highwing/|node:|\\.\\./)', message: '@highwing/thread imports @highwing/hermes/domain and nothing else.' }] }] }
+  },
+  {
     files: ['packages/hermes/src/wire/**', 'packages/hermes/src/testing/**'],
     rules: { 'no-restricted-imports': ['error', { paths: ['electron'] }] }
   }

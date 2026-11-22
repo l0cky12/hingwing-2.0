@@ -196,6 +196,12 @@ importers:
 
   packages/hermes: {}
 
+  packages/thread:
+    dependencies:
+      '@highwing/hermes':
+        specifier: workspace:*
+        version: link:../hermes
+
 packages:
 
   '@esbuild/aix-ppc64@0.28.2':

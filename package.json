@@ -5,7 +5,7 @@
   "packageManager": "pnpm@12.21.0",
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc -p packages/hermes && tsc -p docs/design/sketch/.typecheck/tsconfig.json",
+    "typecheck": "tsc -p packages/hermes && tsc -p packages/thread && tsc -p docs/design/sketch/.typecheck/tsconfig.json",
     "lint": "eslint .",
     "sync:contract": "tsx scripts/sync-contract.ts",
     "contract:drift": "tsx scripts/contract-drift.ts"
