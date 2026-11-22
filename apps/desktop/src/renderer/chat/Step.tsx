@@ -1,4 +1,5 @@
 import type { DiffStat, RecordSection, StepView } from '@highwing/thread'
+import { fieldId } from '@highwing/thread/find'
 import { PhraseText } from './text'
 
 export const cx = (...names: readonly (string | false | null)[]) => names.filter(Boolean).join(' ')
@@ -14,15 +15,23 @@ export function Stat({ stat }: { readonly stat: DiffStat | null }) {
   )
 }
 
-function Section({ section }: { readonly section: RecordSection }) {
+interface SectionProps {
+  readonly section: RecordSection
+  readonly stepKey: string
+  readonly index: number
+}
+
+function Section({ section, stepKey, index }: SectionProps) {
   const label = section.label === null ? null : <h4>{section.label}</h4>
   if (section.kind === 'changes') {
     return (
       <section>
         {label}
-        <p className="path">{section.path}</p>
+        <p className="path" data-find={fieldId(stepKey, `path ${index}`)}>{section.path}</p>
         <pre className="diff">
-          {section.lines.map((line, index) => <span key={index} className={`ln ${line.t}`}>{line.text}</span>)}
+          {section.lines.map((line, at) => (
+            <span key={at} className={`ln ${line.t}`} data-find={fieldId(stepKey, `line ${index} ${at}`)}>{line.text}</span>
+          ))}
         </pre>
       </section>
     )
@@ -33,7 +42,7 @@ function Section({ section }: { readonly section: RecordSection }) {
       {label}
       {'empty' in body
         ? <p className="empty">{body.empty}</p>
-        : <pre>{body.text}{body.more > 0 && `\n… ${body.more} more characters`}</pre>}
+        : <pre data-find={fieldId(stepKey, `body ${index}`)}>{body.text}{body.more > 0 && `\n… ${body.more} more characters`}</pre>}
     </section>
   )
 }
@@ -46,7 +55,7 @@ interface StepProps {
 }
 
 export function Step({ step, live, open, onToggle }: StepProps) {
-  const title = <span className="title"><PhraseText words={step.title} /></span>
+  const title = <span className="title" data-find={fieldId(step.key, 'title')}><PhraseText words={step.title} /></span>
   const meta = <span className="meta"><Stat stat={step.stat} />{step.duration !== null && <span className="dur">{step.duration}</span>}</span>
   const end = live ? { 'data-end': 'live' } : {}
   if (step.record === null) {
@@ -60,7 +69,7 @@ export function Step({ step, live, open, onToggle }: StepProps) {
         {title}<span className="chev" aria-hidden="true" />{meta}
       </button>
       <div className={cx('record', bare && 'bare')}>
-        {step.record.sections.map((section, index) => <Section key={index} section={section} />)}
+        {step.record.sections.map((section, index) => <Section key={index} section={section} stepKey={step.key} index={index} />)}
       </div>
     </div>
   )

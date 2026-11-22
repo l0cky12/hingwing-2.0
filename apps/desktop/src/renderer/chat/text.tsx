@@ -1,4 +1,5 @@
 import { proseBlocks, type Phrase, type ProseBlock } from '@highwing/thread'
+import { fieldId } from '@highwing/thread/find'
 import { Fragment } from 'react'
 
 export function PhraseText({ words }: { readonly words: Phrase }) {
@@ -16,12 +17,19 @@ function Pieces({ pieces }: { readonly pieces: ProseBlock['pieces'] }) {
   })
 }
 
-export function Markdown({ source, caret }: { readonly source: string; readonly caret: boolean }) {
+interface MarkdownProps {
+  readonly source: string
+  readonly caret: boolean
+  readonly nodeKey: string
+}
+
+export function Markdown({ source, caret, nodeKey }: MarkdownProps) {
   const blocks = proseBlocks(source)
   return blocks.map((block, index) => {
     const tail = caret && index === blocks.length - 1 ? <span className="caret" /> : null
+    const find = fieldId(nodeKey, `block ${index}`)
     return block.code
-      ? <pre key={index}><code><Pieces pieces={block.pieces} /></code>{tail}</pre>
-      : <p key={index}><Pieces pieces={block.pieces} />{tail}</p>
+      ? <pre key={index} data-find={find}><code><Pieces pieces={block.pieces} /></code>{tail}</pre>
+      : <p key={index} data-find={find}><Pieces pieces={block.pieces} />{tail}</p>
   })
 }

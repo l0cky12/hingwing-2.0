@@ -1,6 +1,8 @@
 import type { PromptId, PromptReply } from '@highwing/hermes/domain'
 import type { PromptCard, ThreadEnd, ThreadNode, ThreadView, TurnView } from '@highwing/thread'
-import { memo, useCallback, useState, type FormEvent } from 'react'
+import { fieldId, findInThread } from '@highwing/thread/find'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { FIND_OPEN, FindBar, isFindKey, reveal, useFindMarks, type FindState } from './Find'
 import { cx, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
 
@@ -16,10 +18,22 @@ interface NodeProps {
 
 const ROLE_CLASS = { primary: 'primary', plain: null, decline: 'deny' } as const
 
-function Prompt({ card, asking, onAnswer }: { readonly card: PromptCard; readonly asking: boolean; readonly onAnswer: Answer }) {
+interface PromptProps {
+  readonly nodeKey: string
+  readonly card: PromptCard
+  readonly asking: boolean
+  readonly onAnswer: Answer
+}
+
+function Prompt({ nodeKey, card, asking, onAnswer }: PromptProps) {
   const [text, setText] = useState('')
   if (card.state === 'answered') {
-    return <div className="approval answered"><p>{card.words}</p>{card.command !== null && <pre>{card.command}</pre>}</div>
+    return (
+      <div className="approval answered">
+        <p data-find={fieldId(nodeKey, 'words')}>{card.words}</p>
+        {card.command !== null && <pre data-find={fieldId(nodeKey, 'command')}>{card.command}</pre>}
+      </div>
+    )
   }
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -27,9 +41,9 @@ function Prompt({ card, asking, onAnswer }: { readonly card: PromptCard; readonl
   }
   return (
     <div className={cx('approval', asking && 'live')} role="group" aria-label={card.heading} {...(asking ? { 'data-end': 'asking' } : {})}>
-      <h3>{card.heading}</h3>
-      {card.command !== null && <pre>{card.command}</pre>}
-      {card.why !== null && <p className="why">{card.why}</p>}
+      <h3 data-find={fieldId(nodeKey, 'heading')}>{card.heading}</h3>
+      {card.command !== null && <pre data-find={fieldId(nodeKey, 'command')}>{card.command}</pre>}
+      {card.why !== null && <p className="why" data-find={fieldId(nodeKey, 'why')}>{card.why}</p>}
       <div className="choices">
         {card.buttons.map(button => (
           <button key={button.label} className={ROLE_CLASS[button.role] ?? undefined} disabled={card.busy} onClick={() => onAnswer(card.promptId, button.reply)}>
@@ -51,7 +65,7 @@ function Prompt({ card, asking, onAnswer }: { readonly card: PromptCard; readonl
 function Node({ node, endTone, opened, onToggle, onAnswer }: NodeProps) {
   switch (node.kind) {
     case 'prose':
-      return <div className="prose"><Markdown source={node.markdown} caret={node.streaming} /></div>
+      return <div className="prose"><Markdown source={node.markdown} caret={node.streaming} nodeKey={node.key} /></div>
     case 'step':
       return <Step step={node.step} live={endTone === 'live'} open={opened.has(node.key)} onToggle={onToggle} />
     case 'group': {
@@ -59,7 +73,7 @@ function Node({ node, endTone, opened, onToggle, onAnswer }: NodeProps) {
       return (
         <div className={cx('group', open && 'open', endTone === 'live' && 'live')} {...(endTone === 'live' ? { 'data-end': 'live' } : {})}>
           <button className="head" aria-expanded={open} onClick={() => onToggle(node.key)}>
-            <span className="title"><PhraseText words={node.title} /></span>
+            <span className="title" data-find={fieldId(node.key, 'title')}><PhraseText words={node.title} /></span>
             <span className="count">{node.count} steps</span>
             <span className="chev" aria-hidden="true" />
             <span className="meta"><Stat stat={node.stat} /></span>
@@ -71,9 +85,9 @@ function Node({ node, endTone, opened, onToggle, onAnswer }: NodeProps) {
       )
     }
     case 'prompt':
-      return <Prompt card={node.card} asking={endTone === 'asking'} onAnswer={onAnswer} />
+      return <Prompt nodeKey={node.key} card={node.card} asking={endTone === 'asking'} onAnswer={onAnswer} />
     case 'notice':
-      return <p className={node.tone === 'error' ? 'err' : 'notice'}>{node.text}</p>
+      return <p className={node.tone === 'error' ? 'err' : 'notice'} data-find={fieldId(node.key, 'text')}>{node.text}</p>
   }
 }
 
@@ -98,7 +112,7 @@ const Turn = memo(function Turn({ turn, opened, onToggle, onAnswer }: TurnProps)
   const { end } = turn
   return (
     <article className="turn">
-      {turn.request !== null && <p className="request">{turn.request}</p>}
+      {turn.request !== null && <p className="request" data-find={fieldId(turn.key, 'request')}>{turn.request}</p>}
       <div className="thread">
         {turn.nodes.map(node => (
           <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} opened={opened} onToggle={onToggle} onAnswer={onAnswer} />
@@ -115,26 +129,86 @@ interface ThreadProps {
   readonly view: ThreadView
   readonly onAnswer: Answer
   readonly onLoadEarlier: () => void
+  readonly onFindClosed: () => void
 }
 
-export function Thread({ view, onAnswer, onLoadEarlier }: ThreadProps) {
+export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed }: ThreadProps) {
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set())
+  const [find, setFind] = useState<FindState | null>(null)
+  const transcript = useRef<HTMLDivElement>(null)
+  const findInput = useRef<HTMLInputElement>(null)
+  const navigated = useRef(false)
+
   const onToggle = useCallback((key: string) => setOpened(held => {
     const next = new Set(held)
     if (!next.delete(key)) next.add(key)
     return next
   }), [])
+
+  const query = find?.query ?? ''
+  const matches = useMemo(() => findInThread(view, query), [view, query])
+  const current = find?.current != null && find.current < matches.length ? find.current : null
+  const currentRange = useFindMarks(transcript, matches, current)
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isFindKey(event)) return
+      event.preventDefault()
+      if (findInput.current === null) setFind(FIND_OPEN)
+      else {
+        findInput.current.focus()
+        findInput.current.select()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!navigated.current) return
+    navigated.current = false
+    const scroller = transcript.current?.closest('main')
+    if (currentRange.current !== null && scroller) reveal(currentRange.current, scroller)
+  }, [find, currentRange])
+
+  const step = (direction: 1 | -1) => {
+    if (find === null || matches.length === 0) return
+    const next = current === null ? (direction === 1 ? 0 : matches.length - 1) : (current + direction + matches.length) % matches.length
+    const fresh = (matches[next]?.opens ?? []).filter(key => !opened.has(key))
+    if (fresh.length > 0) setOpened(held => new Set([...held, ...fresh]))
+    navigated.current = true
+    setFind({ ...find, current: next, foundOpen: new Set([...find.foundOpen, ...fresh]) })
+  }
+
+  const closeFind = () => {
+    if (find === null) return
+    setOpened(held => new Set([...held].filter(key => !find.foundOpen.has(key))))
+    setFind(null)
+    onFindClosed()
+  }
+
   return (
-    <div id="transcript">
-      {view.earlier === 'more' && <button className="earlier" onClick={onLoadEarlier}>Show earlier turns</button>}
-      {view.earlier === 'loading' && <p className="earlier">Loading earlier turns</p>}
-      {view.turns.map(turn => <Turn key={turn.key} turn={turn} opened={opened} onToggle={onToggle} onAnswer={onAnswer} />)}
-      {view.pending.map(message => (
-        <article key={message.key} className="turn pending">
-          <p className="request">{message.text}</p>
-          <p className={message.status === 'failed' ? 'err' : 'notice'}>{message.status === 'failed' ? message.detail : PENDING_WORDS[message.status]}</p>
-        </article>
-      ))}
-    </div>
+    <>
+      {find !== null && (
+        <FindBar
+          query={find.query} total={matches.length} current={current} earlier={view.earlier} inputRef={findInput}
+          onQuery={next => setFind({ ...find, query: next, current: null })}
+          onStep={step} onClose={closeFind} onLoadEarlier={onLoadEarlier}
+        />
+      )}
+      <div id="transcript" ref={transcript}>
+        {view.earlier === 'more' && <button className="earlier" onClick={onLoadEarlier}>Show earlier turns</button>}
+        {view.earlier === 'loading' && <p className="earlier">Loading earlier turns</p>}
+        {view.turns.map(turn => <Turn key={turn.key} turn={turn} opened={opened} onToggle={onToggle} onAnswer={onAnswer} />)}
+        {view.pending.map(message => (
+          <article key={message.key} className="turn pending">
+            <p className="request" data-find={fieldId(message.key, 'text')}>{message.text}</p>
+            {message.status === 'failed'
+              ? <p className="err" data-find={fieldId(message.key, 'detail')}>{message.detail}</p>
+              : <p className="notice">{PENDING_WORDS[message.status]}</p>}
+          </article>
+        ))}
+      </div>
+    </>
   )
 }

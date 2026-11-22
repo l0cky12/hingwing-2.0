@@ -9,6 +9,7 @@ export function Chat({ id }: { readonly id: SessionId }) {
   const session = useTopic(`session:${id}`)
   const view = useMemo(() => (session === undefined ? null : threadView(session)), [session])
   const scroller = useRef<HTMLElement>(null)
+  const composer = useRef<HTMLTextAreaElement>(null)
   const stuck = useRef(true)
 
   useLayoutEffect(() => {
@@ -22,15 +23,17 @@ export function Chat({ id }: { readonly id: SessionId }) {
   }
   const onAnswer = useCallback((promptId: PromptId, reply: PromptReply) => void run({ do: 'answer', sessionId: id, promptId, reply }), [id])
   const onLoadEarlier = useCallback(() => void run({ do: 'loadEarlier', sessionId: id }), [id])
+  const onFindClosed = useCallback(() => composer.current?.focus(), [])
 
   return (
     <>
       <main id="scroll" ref={scroller} onScroll={onScroll}>
         {view !== null && (
-          <Thread view={view} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} />
+          <Thread view={view} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} />
         )}
       </main>
       <Composer
+        inputRef={composer}
         canSend={session?.sync.state === 'live'}
         showStop={session !== undefined && activityOf(session).kind !== 'idle'}
         onSend={text => run({ do: 'send', sessionId: id, text })}

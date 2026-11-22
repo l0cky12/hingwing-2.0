@@ -209,7 +209,27 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .bar { flex-wrap: wrap; gap: 8px; padding: 10px 16px; }
   .banner { padding: 9px 16px; }
   #transcript { padding-left: 16px; padding-right: 16px; }
+  .find { right: 16px; width: calc(100% - 32px); }
   .composer form { padding: 0 16px 0 calc(16px + var(--col)); }
   .setup { padding: 36px 16px 40px; }
   textarea { min-width: 0; }
 }
+
+.find-anchor { position: sticky; top: 0; height: 0; z-index: 2; max-width: 760px; margin: 0 auto; }
+.find {
+  position: absolute; top: 12px; right: 28px; width: min(400px, calc(100% - 56px));
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px;
+  padding: 5px 6px 5px 12px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(31, 42, 38, .14); font: 400 14px/1.4 var(--sans);
+}
+.find:focus-within { border-color: var(--signal); }
+.find input { flex: 1 1 120px; min-width: 0; padding: 4px 0; border: 0; background: transparent; color: var(--ink); font: inherit; }
+.find input:focus-visible { outline: none; }
+.find .count { flex: none; min-width: 4.5em; margin: 0 6px; text-align: right; color: var(--graphite); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.find button { flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--ink); line-height: 1; }
+.find button:hover:not(:disabled) { background: var(--paper); }
+.find .note { flex: 1 0 100%; margin: 2px 6px 3px 0; color: var(--graphite); font-size: 13px; }
+.find .note button { width: auto; height: auto; padding: 0; color: var(--signal); text-decoration: underline; }
+
+::highlight(find) { background-color: var(--signal-soft); }
+::highlight(find-current) { background-color: var(--signal); color: var(--sheet); }
