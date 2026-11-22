@@ -1,0 +1,75 @@
+import { describe, expect, it } from 'vitest'
+import { sessionOf } from '../../hermes/src/domain/reduce'
+import type { Link } from '../../hermes/src/domain/session'
+import { errand, fold } from '../../hermes/test/support/story'
+import { fieldId, findInThread } from '../src/find'
+import { outline, proseBlocks, proseText, threadView, type StepView, type ThreadView } from '../src/thread-view'
+
+const ONLINE: Link = { state: 'online' }
+const view: ThreadView = threadView(sessionOf(fold(errand()), ONLINE, null))
+
+const nodes = view.turns.flatMap(turn => turn.nodes)
+const steps: readonly StepView[] = nodes.flatMap(node => (node.kind === 'step' ? [node.step] : node.kind === 'group' ? node.steps : []))
+const group = nodes.find(node => node.kind === 'group')
+const listing = steps.find(step => step.title.some(piece => piece.v.includes('ls -la')))
+const occurrences = (text: string, word: string) => text.toLowerCase().split(word.toLowerCase()).length - 1
+
+if (group === undefined || listing === undefined) throw new Error('the errand view lost its group or its listing step')
+
+describe('finding text in the settled errand', () => {
+  it('finds a word that only a closed step holds, and says which step to open', () => {
+    expect(findInThread(view, 'old.txt')).toEqual([
+      { field: fieldId(listing.key, 'body 0'), start: expect.any(Number), end: expect.any(Number), opens: [listing.key] }
+    ])
+  })
+
+  it('finds every occurrence in a step output', () => {
+    const matches = findInThread(view, 'drwxr')
+    expect(matches).toHaveLength(3)
+    expect(matches.every(match => match.field === fieldId(listing.key, 'body 0') && match.opens.length === 1 && match.opens[0] === listing.key)).toBe(true)
+  })
+
+  it('counts "notes.md" as often as the outline with every row open prints it', () => {
+    const everyKey = new Set([...nodes.map(node => node.key), ...steps.map(step => step.key)])
+    expect(findInThread(view, 'notes.md')).toHaveLength(occurrences(outline(view, everyKey), 'notes.md'))
+  })
+
+  it('opens the step, then its group, for a match inside a grouped diff', () => {
+    const inGroup = findInThread(view, 'sketch').filter(match => match.opens.length === 2)
+    expect(inGroup.length).toBeGreaterThan(0)
+    for (const match of inGroup) {
+      expect(match.opens[1]).toBe(group.key)
+      expect(group.kind === 'group' && group.steps.map(step => step.key)).toContain(match.opens[0])
+    }
+  })
+
+  it('opens nothing for text that is always shown', () => {
+    const request = findInThread(view, 'make notes.md')
+    expect(request).toHaveLength(1)
+    expect(request[0]?.opens).toEqual([])
+  })
+
+  it('ignores case', () => {
+    expect(findInThread(view, 'NOTES.MD')).toEqual(findInThread(view, 'notes.md'))
+  })
+
+  it('takes the query literally', () => {
+    expect(findInThread(view, '.*')).toEqual([])
+    expect(findInThread(view, '(')).toEqual([])
+  })
+
+  it('finds nothing for a missing word or an empty query', () => {
+    expect(findInThread(view, 'zzzz')).toEqual([])
+    expect(findInThread(view, '')).toEqual([])
+  })
+})
+
+describe('the prose a reader sees', () => {
+  it('has no backticks in the closing paragraph', () => {
+    const closing = nodes.findLast(node => node.kind === 'prose')
+    if (closing?.kind !== 'prose') throw new Error('the errand ends without prose')
+    const text = proseBlocks(closing.markdown).map(proseText).join('\n')
+    expect(text).toContain('notes.md')
+    expect(text).not.toContain('`')
+  })
+})
