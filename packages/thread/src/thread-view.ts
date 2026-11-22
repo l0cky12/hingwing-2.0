@@ -79,10 +79,13 @@ export interface StepView {
 export interface RecordView { readonly sections: readonly RecordSection[] }
 /** A clipped text, or the words to show when there is none ("No output"). */
 export type RecordBody = { readonly text: string; readonly more: number } | { readonly empty: string }
-/** `label` is null when the record has a single section. */
+/**
+ * `label` is null when the record has a single section. `copy` is what a Copy control puts on the clipboard:
+ * the shown text without the "… N more characters" line, or a unified diff. It is null when the body shows its empty words.
+ */
 export type RecordSection =
-  | { readonly kind: 'changes'; readonly label: string | null; readonly path: string; readonly lines: FileDiff['lines'] }
-  | { readonly kind: 'output' | 'result' | 'input'; readonly label: string | null; readonly body: RecordBody }
+  | { readonly kind: 'changes'; readonly label: string | null; readonly path: string; readonly lines: FileDiff['lines']; readonly copy: string }
+  | { readonly kind: 'output' | 'result' | 'input'; readonly label: string | null; readonly body: RecordBody; readonly copy: string | null }
 
 export type PromptCard =
   | {
@@ -274,14 +277,16 @@ function stepView(tool: ToolItem, key: string, waited: boolean): StepView {
   const verb = status.s === 'running' ? words.doing : (diffs[0]?.createsFile && words.created) || words.done
   const subject = clip(words.subject(tool.args) ?? tool.name)
 
-  const sections: RecordSection[] = diffs.map(diff => ({ kind: 'changes', label: null, path: diff.path, lines: changeLines(diff) }))
+  const sections: RecordSection[] = diffs.map(diff => ({ kind: 'changes', label: null, path: diff.path, lines: changeLines(diff), copy: unifiedDiff(diff) }))
   if (status.s === 'done') {
     const kind = words.isCommand ? 'output' : 'result'
     const body = resultBody(status.result, kind)
-    if (body !== null && (diffs.length === 0 || isError(status.result))) sections.push({ kind, label: null, body })
+    if (body !== null && (diffs.length === 0 || isError(status.result))) sections.push({ kind, label: null, body, copy: copyOf(body) })
   }
-  if (diffs.length === 0 && !words.isCommand && Object.keys(tool.args).length > 0)
-    sections.push({ kind: 'input', label: null, body: { text: JSON.stringify(tool.args, null, 2), more: 0 } })
+  if (diffs.length === 0 && !words.isCommand && Object.keys(tool.args).length > 0) {
+    const body = { text: JSON.stringify(tool.args, null, 2), more: 0 }
+    sections.push({ kind: 'input', label: null, body, copy: body.text })
+  }
 
   return {
     key,
@@ -296,6 +301,21 @@ function stepView(tool: ToolItem, key: string, waited: boolean): StepView {
 }
 
 const clip = (subject: string) => (subject.length > SUBJECT_LIMIT ? `${subject.slice(0, SUBJECT_LIMIT - 1)}…` : subject)
+
+const copyOf = (body: RecordBody) => ('empty' in body ? null : body.text)
+
+const DIFF_COPY_MARK = { add: '+', del: '-', ctx: ' ' } as const
+
+/** The full diff, so a created file keeps its first hunk header, which `changeLines` drops for display. */
+function unifiedDiff(diff: FileDiff): string {
+  const deletes = /\+0,0\b/.test(diff.lines.find(line => line.t === 'hunk')?.text ?? '')
+  const body = diff.lines.map(line => (line.t === 'hunk' ? line.text : `${DIFF_COPY_MARK[line.t]}${line.text}`))
+  return [
+    `--- ${diff.createsFile ? '/dev/null' : `a/${diff.path}`}`,
+    `+++ ${deletes ? '/dev/null' : `b/${diff.path}`}`,
+    ...body
+  ].join('\n') + '\n'
+}
 
 function changeLines(diff: FileDiff): FileDiff['lines'] {
   const hunks = diff.lines.filter(line => line.t === 'hunk')

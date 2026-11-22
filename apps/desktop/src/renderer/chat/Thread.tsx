@@ -1,6 +1,7 @@
 import type { PromptId, PromptReply } from '@highwing/hermes/domain'
 import type { PromptCard, ThreadEnd, ThreadNode, ThreadView, TurnView } from '@highwing/thread'
 import { memo, useCallback, useState, type FormEvent } from 'react'
+import { CopyButton } from './Copy'
 import { cx, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
 
@@ -16,10 +17,14 @@ interface NodeProps {
 
 const ROLE_CLASS = { primary: 'primary', plain: null, decline: 'deny' } as const
 
+function Command({ command }: { readonly command: string }) {
+  return <div className="copyable"><pre>{command}</pre><CopyButton text={command} name="Copy command" /></div>
+}
+
 function Prompt({ card, asking, onAnswer }: { readonly card: PromptCard; readonly asking: boolean; readonly onAnswer: Answer }) {
   const [text, setText] = useState('')
   if (card.state === 'answered') {
-    return <div className="approval answered"><p>{card.words}</p>{card.command !== null && <pre>{card.command}</pre>}</div>
+    return <div className="approval answered"><p>{card.words}</p>{card.command !== null && <Command command={card.command} />}</div>
   }
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -28,7 +33,7 @@ function Prompt({ card, asking, onAnswer }: { readonly card: PromptCard; readonl
   return (
     <div className={cx('approval', asking && 'live')} role="group" aria-label={card.heading} {...(asking ? { 'data-end': 'asking' } : {})}>
       <h3>{card.heading}</h3>
-      {card.command !== null && <pre>{card.command}</pre>}
+      {card.command !== null && <Command command={card.command} />}
       {card.why !== null && <p className="why">{card.why}</p>}
       <div className="choices">
         {card.buttons.map(button => (
@@ -51,7 +56,12 @@ function Prompt({ card, asking, onAnswer }: { readonly card: PromptCard; readonl
 function Node({ node, endTone, opened, onToggle, onAnswer }: NodeProps) {
   switch (node.kind) {
     case 'prose':
-      return <div className="prose"><Markdown source={node.markdown} caret={node.streaming} /></div>
+      return (
+        <div className="prose">
+          <Markdown source={node.markdown} caret={node.streaming} />
+          {!node.streaming && <CopyButton text={node.markdown} name="Copy reply" />}
+        </div>
+      )
     case 'step':
       return <Step step={node.step} live={endTone === 'live'} open={opened.has(node.key)} onToggle={onToggle} />
     case 'group': {
@@ -98,7 +108,7 @@ const Turn = memo(function Turn({ turn, opened, onToggle, onAnswer }: TurnProps)
   const { end } = turn
   return (
     <article className="turn">
-      {turn.request !== null && <p className="request">{turn.request}</p>}
+      {turn.request !== null && <p className="request">{turn.request}<CopyButton text={turn.request} name="Copy request" /></p>}
       <div className="thread">
         {turn.nodes.map(node => (
           <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} opened={opened} onToggle={onToggle} onAnswer={onAnswer} />

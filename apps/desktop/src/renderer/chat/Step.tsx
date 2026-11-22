@@ -1,4 +1,5 @@
 import type { DiffStat, RecordSection, StepView } from '@highwing/thread'
+import { CopyButton } from './Copy'
 import { PhraseText } from './text'
 
 export const cx = (...names: readonly (string | false | null)[]) => names.filter(Boolean).join(' ')
@@ -16,12 +17,18 @@ export function Stat({ stat }: { readonly stat: DiffStat | null }) {
 
 const DIFF_MARK = { add: '+', del: '−', ctx: ' ' } as const
 
-function Section({ section }: { readonly section: RecordSection }) {
+const COPY_NAME = { output: 'Copy output', result: 'Copy result', input: 'Copy input' } as const
+
+function Section({ section, open }: { readonly section: RecordSection; readonly open: boolean }) {
   const label = section.label === null ? null : <h4>{section.label}</h4>
+  const copy = open && section.copy !== null
+    ? <CopyButton text={section.copy} name={section.kind === 'changes' ? `Copy changes to ${section.path}` : COPY_NAME[section.kind]} />
+    : null
   if (section.kind === 'changes') {
     return (
       <section>
         {label}
+        {copy}
         <p className="path">{section.path}</p>
         <pre className="diff">
           {section.lines.map((line, index) => line.t === 'hunk'
@@ -35,6 +42,7 @@ function Section({ section }: { readonly section: RecordSection }) {
   return (
     <section>
       {label}
+      {copy}
       {'empty' in body
         ? <p className="empty">{body.empty}</p>
         : <pre>{body.text}{body.more > 0 && `\n… ${body.more} more characters`}</pre>}
@@ -64,7 +72,7 @@ export function Step({ step, live, open, onToggle }: StepProps) {
         {title}<span className="chev" aria-hidden="true" />{meta}
       </button>
       <div className={cx('record', bare && 'bare')}>
-        {step.record.sections.map((section, index) => <Section key={index} section={section} />)}
+        {step.record.sections.map((section, index) => <Section key={index} section={section} open={open} />)}
       </div>
     </div>
   )

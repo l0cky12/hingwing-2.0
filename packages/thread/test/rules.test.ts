@@ -152,7 +152,7 @@ describe('steps and groups', () => {
   it('reads an empty command output as No output', () => {
     const s = session({ history: [settled([tool('terminal', { command: 'true' }, { result: command('') })])] })
     const step = stepOf(nodesOf(s)[0])
-    expect(step.record).toEqual({ sections: [{ kind: 'output', label: null, body: { empty: 'No output' } }] })
+    expect(step.record).toEqual({ sections: [{ kind: 'output', label: null, body: { empty: 'No output' }, copy: null }] })
     expect(lines(s, new Set([step.key])).slice(1, 3)).toEqual(['● Ran `true`', '      No output'])
   })
 
