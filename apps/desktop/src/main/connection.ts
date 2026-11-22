@@ -106,6 +106,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
 
   let open = deps.loaded.state === 'saved' ? connect(deps.loaded.target, 1) : null
   let checking: AbortController | null = null
+  let closed = false
   const setup = feed<Setup>(firstSetup(deps.loaded, open?.live ?? null))
 
   const apply = (event: SetupEvent): boolean => {
@@ -127,8 +128,11 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
     try {
       await deps.save(target)
     } catch {
-      return void apply({ do: 'fail', failure: 'cant-save' })
+      if (!stale()) apply({ do: 'fail', failure: 'cant-save' })
+      return
     }
+    // A close during the save ended this check. Opening a connection now would outlive the app.
+    if (stale()) return
     const before = open
     open = connect(target, (before?.live.epoch ?? 0) + 1)
     apply({ do: 'connect', live: open.live })
@@ -136,7 +140,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
   }
 
   const runSetup = (command: SetupCommand): CommandOutcome => {
-    if (!apply(command)) return NOT_NOW
+    if (closed || !apply(command)) return NOT_NOW
     if (command.do === 'keepTarget') {
       checking?.abort()
       checking = null
@@ -153,6 +157,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
       return outcome as CommandOutcome<AppResult<C>>
     },
     close: async () => {
+      closed = true
       checking?.abort()
       checking = null
       await (open === null ? undefined : disconnect(open))

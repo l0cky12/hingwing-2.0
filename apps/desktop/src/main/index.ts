@@ -1,7 +1,7 @@
 import { checkTarget, liveDialer, openHermes, remoteRoute, type Dialer, type Route } from '@highwing/hermes'
 import type { Target } from '@highwing/hermes/domain'
 import { loadFixture, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
-import { app, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { ownConnection, pinnedConnection } from './connection'
 import { serveWindows } from './ipc'
 import { loadSettings, saveSettings } from './settings'
@@ -16,6 +16,10 @@ const routeFor = (target: Target): Route => {
   const route = target.kind === 'local' ? { dial: liveDialer(), dispose: () => {} } : remoteRoute(target.host)
   return { ...route, dial: recorded(route.dial) }
 }
+
+// One instance per user-data directory: a second would open a second socket and race the first one's saves.
+if (!app.requestSingleInstanceLock()) app.exit(0)
+app.on('second-instance', () => BrowserWindow.getAllWindows()[0]?.focus())
 
 app.whenReady().then(async () => {
   const open = (dial: Dialer) => openHermes({ dial, client: { name: 'highwing', version: app.getVersion() } })

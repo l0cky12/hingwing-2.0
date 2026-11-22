@@ -229,6 +229,19 @@ describe('ownConnection, checking a target', () => {
     expect(opened).toMatchObject([{ closed: true, disposed: true }])
     await closed
   })
+
+  it('opens nothing when the app closes while a save is still running, and refuses setup after close', async () => {
+    let finishSave = () => {}
+    const { owner, opened, pass, settled } = harness({ state: 'saved', target: LOCAL }, () => new Promise<void>(resolve => { finishSave = resolve }))
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    await owner.close()
+    finishSave()
+    await settled()
+    expect(opened).toMatchObject([{ target: LOCAL, closed: true, disposed: true }])
+    expect(await owner.run({ do: 'checkTarget', target: REMOTE })).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+  })
 })
 
 describe('pinnedConnection', () => {
