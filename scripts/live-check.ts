@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Session } from '../packages/hermes/src/domain'
+import type { Link, Session, Sidebar } from '../packages/hermes/src/domain'
 import { liveDialer, openHermes } from '../packages/hermes/src/hub'
 import { recordingDialer } from '../packages/hermes/src/testing/fixture'
 import { outline, threadView } from '../packages/thread/src/thread-view'
@@ -20,23 +20,37 @@ const hermes = openHermes({
   onDiagnostic: ({ kind, type }) => diagnostics.set(`${kind}:${type}`, (diagnostics.get(`${kind}:${type}`) ?? 0) + 1)
 })
 
-const until = <T>(what: string, start: (done: (value: T) => void, stop: (reason: string) => void) => () => void) =>
-  new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`timed out after ${TIMEOUT_MS / 1000}s waiting for ${what}`)), TIMEOUT_MS)
-    const off = start(
-      value => { clearTimeout(timer); off(); resolve(value) },
-      reason => { clearTimeout(timer); off(); reject(new Error(reason)) }
-    )
-  })
+interface Watchable<V> { subscribe(listener: (value: V) => void): () => void }
 
-async function check(): Promise<string> {
-  await until<void>('the link to come online', (done, stop) => hermes.link.subscribe(link => {
+/** Settles on the first value `judge` decides on, the current one included, or rejects after TIMEOUT_MS. */
+function until<V, T>(what: string, source: Watchable<V> & { get?(): V }, judge: (value: V, done: (result: T) => void, stop: (reason: string) => void) => void): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let over = false
+    const end = (settle: () => void) => {
+      if (over) return
+      over = true
+      clearTimeout(timer)
+      queueMicrotask(() => off())
+      settle()
+    }
+    const done = (result: T) => end(() => resolve(result))
+    const stop = (reason: string) => end(() => reject(new Error(reason)))
+    const timer = setTimeout(() => stop(`timed out after ${TIMEOUT_MS / 1000}s waiting for ${what}`), TIMEOUT_MS)
+    const off = source.subscribe(value => judge(value, done, stop))
+    if (source.get) judge(source.get(), done, stop)
+  })
+}
+
+async function check(): Promise<void> {
+  await until<Link, void>('the link to come online', hermes.link, (link, done, stop) => {
     if (link.state === 'online') done()
     if (link.state === 'blocked') stop(`link refused: ${link.message}`)
-  }))
+  })
   say('link online')
 
-  const rows = await until<number>('the sidebar listing', done => hermes.sidebar.subscribe(sidebar => { if (sidebar.status === 'ready') done(sidebar.rows.length) }))
+  const rows = await until<Sidebar, number>('the sidebar listing', hermes.sidebar, (sidebar, done) => {
+    if (sidebar.status === 'ready') done(sidebar.rows.length)
+  })
   say(`listed ${rows} chats`)
 
   const cwd = mkdtempSync(join(tmpdir(), 'highwing-live-check-'))
@@ -45,7 +59,8 @@ async function check(): Promise<string> {
   say(`created chat ${created.value} in ${cwd}`)
 
   let sent = false
-  const settled = await until<Session>('the turn to settle', (done, stop) => hermes.watch(created.value, session => {
+  const chat = { subscribe: (listener: (value: Session) => void) => hermes.watch(created.value, listener) }
+  const settled = await until<Session, Session>('the turn to settle', chat, (session, done, stop) => {
     if (session.sync.state === 'live' && !sent) {
       sent = true
       void hermes.run({ do: 'send', sessionId: created.value, text: MESSAGE }).then(result => {
@@ -53,13 +68,12 @@ async function check(): Promise<string> {
       })
     }
     if (sent && session.run.state === 'idle' && session.history.length > 0) done(session)
-  }))
+  })
 
   const text = outline(threadView(settled))
   console.log(text)
   const last = text.split('\n').at(-1) ?? ''
   if (!last.startsWith('✓ ') && !last.startsWith("✗ Hermes couldn't sign in")) throw new Error(`unexpected last line: ${last}`)
-  return last
 }
 
 console.log('This writes one new chat to your real Hermes on every run.')
