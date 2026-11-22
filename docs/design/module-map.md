@@ -18,21 +18,26 @@ highwing-2.0/
   packages/
     hermes/                      @highwing/hermes        Node. No Electron, no DOM.
       src/
-        hub.ts                   public entry "."         openHermes, Hermes, Command, Feed
+        hub.ts                   public entry "."         openHermes, Hermes, Command, Feed, remoteRoute, Route, checkTarget
         actor.ts                 private                  one session: owns its Tracked state, makes the calls a state asks for
         sidebar.ts               private                  stored rows, the running set, deriveSidebar
         domain/                  public entry "./domain"  browser-safe, imports nothing
           session.ts                                      Session, Run, Turn, Item, Link, Sidebar
           reduce.ts                                       SessionEvent, Gate, SessionInput, reduce, syncOf, activityOf
           command.ts                                      Command, ResultOf, Outcome, Refusal: data the renderer sends and gets back
-          index.ts                                        exports the session and command types and activityOf only
+          reach.ts                                        Target, SshHost, CheckStep, CheckFailure, CHECK_FAILURES: where Hermes runs and what can stop Highwing reaching it
+          index.ts                                        exports the session, command and reach types, activityOf and the reach tables
         wire/                    private                  the only code that knows gateway shapes
           contract.generated.ts                           copied from Hermes by `pnpm sync:contract`
           contract.openrpc.json                           copied with it; read only by testing/ for key sets
           link.ts                                         ticket, dial, handshake, heartbeat, JSON-RPC, backoff
+          ssh.ts                                          Hermes's SSH client contract: the locator, one hermes command over ssh, the stderr table, the relay
+          remote.ts                                       remoteRoute: a Dialer to the gateway on another machine, and its processes
+          check.ts                                        checkTarget: Tailscale, ssh and Hermes, one step at a time
           parse.ts                                        gateway shapes -> domain shapes
         testing/                 public entry "./testing" Node
           fixture.ts                                      fixture format, scriptedDialer, recordingDialer, play
+          fake-host.ts                                    fake ssh, tailscale and hermes executables, and SCENARIOS (imported by path, not exported)
     thread/                      @highwing/thread         pure, browser-safe
       src/thread-view.ts                                  design C: threadView, outline, checkThread
   apps/desktop/
