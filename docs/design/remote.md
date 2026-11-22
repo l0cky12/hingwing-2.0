@@ -182,7 +182,7 @@ A failed check never touches the live connection. Re-checking the live target do
 - `saved` draws the saved screen with an Open chat button.
 - `pinned` draws the chat, as fixture runs do today.
 
-The renderer decides nothing from `live`. Each state names its own screen. The top bar gets a Connection button that sends `editTarget`. Cancel shows only when `live` is not null.
+The renderer decides nothing from `live`. Each state names its own screen. While `live` is not null, the chat subtree stays mounted under the setup screen with the `hidden` attribute, so an unsent draft survives Connection and Cancel. Only a new `epoch` remounts it, and a switch to another host is the one action that drops a draft. The top bar gets a Connection button that sends `editTarget`. Cancel shows only when `live` is not null.
 
 A switch remounts the chat subtree with the new epoch. Its `watch` calls then unsubscribe and subscribe again through the normal path, so `main/ipc.ts` needs no rebind logic. A window reload was rejected because `serveWindows` drops a window's subscriptions only on `destroyed`, which a reload does not fire. The old subscriptions would leak.
 
