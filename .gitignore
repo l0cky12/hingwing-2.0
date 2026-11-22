@@ -1,0 +1,4 @@
+node_modules/
+fixtures/recorded/
+.audit/
+fixtures/__pycache__/
