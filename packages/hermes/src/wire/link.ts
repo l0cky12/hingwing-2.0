@@ -146,6 +146,10 @@ export function dialWith(mint: Mint): Dialer {
         if (open) wire.closed(event.code, event.reason)
         else reject(new DialError(CLOSE_KINDS[event.code] ?? 'dropped'))
       })
+      // Node 22's WebSocket fires `error` and never `close` when a dial fails, so `close` alone would leave the dial pending.
+      ws.addEventListener('error', () => {
+        if (!open) reject(new DialError('dropped'))
+      })
     })
   }
 }
