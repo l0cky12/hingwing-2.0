@@ -35,3 +35,4 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Send a message](./send-a-message.md) covers the composer's Send button, Enter, and Stop while a turn runs.
 - [Answer an approval](./answer-an-approval.md) covers the approval card and "Run once" releasing the story to Done.
 - [Offline banner](./offline-banner.md) covers the blocked banner with Retry, the dropped banner with disabled buttons, and recovery.
+- [Grow the composer](./grow-the-composer.md) covers the message box growing with its text, its cap and scrollbar, the thread staying pinned, and shrinking back to one line.
