@@ -1,9 +1,14 @@
 /**
  * `@highwing/hermes/testing`: a recorded or generated gateway, played back through the real client.
- * Units 1 and 2 hold the fixture format and its loader. The scripted gateway, `play` and `playToEnd` come with unit 4.
+ * Handshake, attach, replay, parsing and the reducer all run for real, in tests and in the dev app.
+ * No AI provider is involved. This file holds the fixture format and its loader.
  */
 import { readFileSync } from 'node:fs'
 import type { SessionId } from '../domain/session'
+
+export { play, playToEnd, type Moment } from './play'
+export { recordingDialer } from './record'
+export { scriptedDialer, type ScriptedDialer, type ScriptOptions } from './script'
 
 /**
  * A fixture is a JSONL file: one header line, then steps in order.
