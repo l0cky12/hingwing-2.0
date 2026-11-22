@@ -6,7 +6,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p packages/hermes && tsc -p docs/design/sketch/.typecheck/tsconfig.json",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "sync:contract": "tsx scripts/sync-contract.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
