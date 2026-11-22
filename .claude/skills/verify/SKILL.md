@@ -53,6 +53,9 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `press <key>` | Playwright key name | presses it |
 | `shot <name>` | file stem | moves the pointer off the page, then saves `<name>.png` and `<name>.aria.txt` |
 | `disabled <role> <name>` | ARIA role, exact accessible name | fails unless that control is disabled now |
+| `focused <role> <name>` | ARIA role, exact accessible name | fails unless that control has keyboard focus now |
+| `count <role> <name> <n>` | ARIA role, exact name or `/regex/`, a number | fails unless exactly `n` such controls are in the accessibility tree |
+| `clipboard <name>` | file stem | waits until the system clipboard holds new text, then saves it as `<name>.clip.txt`. Fails when it stays empty or unchanged since the last `clipboard` step |
 
 Named states live in the `STATES` table in the helper. Add a state there, not a sleep.
 
@@ -75,6 +78,7 @@ Each run writes to `/tmp/highwing-verify/<run>/`:
 
 - `steps.log` lists every step with a timestamp, and ends with `PASS` or `FAIL`.
 - `<name>.png` and `<name>.aria.txt` hold each shot and the ARIA snapshot of the page at that moment.
+- `<name>.clip.txt` holds the clipboard text that a `clipboard` step read.
 - `main.log` holds the Electron main process's stdout and stderr. `console.log` holds the renderer console and page errors.
 - `failure.png` is the window when a step failed.
 - `compare-<name>.png` comes from `$H compare <run>`. It puts the reference on the left and the shot on the right. Shots named `tool-running`, `approval`, `settled` and `settled-expanded` pair with `docs/design/reference/tool-running-C.png`, `approval-C.png`, `settled-C.png` and `settled-C-expanded.png`.

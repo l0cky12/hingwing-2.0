@@ -1,0 +1,36 @@
+# Copy a block
+
+A **Copy** control sits at the top right of your request, of each reply block, of the command on an approval card, and of each section of an open step's record. It shows while the pointer is over the block or focus is inside it, and Tab reaches it. A press writes the block's plain text to the clipboard: a reply as its Markdown source, a command with no prompt sign, and a diff as a unified diff. The control then reads "Copied" for two seconds, and a polite live region says the same word. A closed step shows no control.
+
+## Sub-features
+
+- `copy-request` copies the request exactly as you typed it.
+- `copy-command` copies the approval card's command before you answer.
+- `copy-record` shows one control per record section of an open step, named for what it copies: `Copy changes to <path>`, `Copy output`, `Copy result` or `Copy input`. A section that shows only "No output" or "No result" has nothing to copy and no control.
+- `copy-closed` keeps every closed step free of controls.
+- `copy-keys` reaches each control with Tab.
+
+## How to get to it (user POV)
+
+- Replay the errand, send the request, and allow the delete. Point at the request, a reply, or an open step's record section, then press **Copy**.
+
+## Driving it with highwing-verify
+
+Preconditions:
+
+- `$H doctor` prints only `ok` lines and the build is current.
+
+- **Request.** Run `$H run --fixture fixtures/errand.jsonl --run copy wait live type "Message Hermes" @request click button Send wait approval click button "Run once" wait settled click button "Copy request" see "Copied" clipboard request shot copied`. `request.clip.txt` holds the fixture's request, and `copied.aria.txt` shows `button "Copy request": Copied` and the live region's `text: Copied`.
+- **Command.** Run `$H run --fixture fixtures/errand.jsonl --run copy-command wait live type "Message Hermes" @request click button Send wait approval click textbox "Message Hermes" press Shift+Tab focused button "Don't run" press Shift+Tab press Shift+Tab press Shift+Tab focused button "Run once" press Shift+Tab focused button "Copy command" press Enter see "Copied" clipboard command shot approval-copied`. `command.clip.txt` is `rm -rf /tmp/hermes-proto-work/scratch`.
+- **Records.** Run `$H run --fixture fixtures/errand.jsonl --run copy-record wait live type "Message Hermes" @request click button Send wait approval click button "Run once" wait settled click button "Created and edited notes.md 2 steps" count button "/^Copy (changes|output|result|input)/" 0 click button "Created notes.md +5" count button "/^Copy (changes|output|result|input)/" 1 click button "Edited notes.md +1 −1" count button "/^Copy (changes|output|result|input)/" 2 click button "Ran ls -la && ls scratch" count button "/^Copy (changes|output|result|input)/" 3 click button "Ran rm -rf /tmp/hermes-proto-work/scratch" count button "/^Copy (changes|output|result|input)/" 3 see "No output" shot copy-record`.
+- **Closed.** Run `$H run --fixture fixtures/errand.jsonl --run copy-closed wait live type "Message Hermes" @request click button Send wait approval click button "Run once" wait settled count button "/^Copy (changes|output|result|input)/" 0 count button "/^Copy/" 4 shot copy-closed`. `copy-closed.aria.txt` holds `Copy request` and three `Copy reply` controls, and nothing else named Copy.
+- **Keys.** Run `$H run --fixture fixtures/errand.jsonl --run copy-tab wait live type "Message Hermes" @request click button Send wait approval click button "Run once" wait settled click textbox "Message Hermes" press Shift+Tab focused button "Copy reply" press Enter clipboard reply press Shift+Tab focused button "Ran rm -rf /tmp/hermes-proto-work/scratch" press Shift+Tab focused button "Ran ls -la && ls scratch" press Enter press Tab focused button "Copy output" press Enter clipboard output press Shift+Tab press Shift+Tab focused button "Copy reply" press Shift+Tab focused button "Created and edited notes.md 2 steps" press Enter press Tab focused button "Created notes.md +5" press Enter press Tab focused button "Copy changes to /tmp/hermes-proto-work/notes.md" press Enter clipboard created-diff press Tab focused button "Edited notes.md +1 −1" press Enter press Tab focused button "Copy changes to /tmp/hermes-proto-work/notes.md" press Enter clipboard edited-diff press Shift+Tab press Shift+Tab press Shift+Tab press Shift+Tab press Shift+Tab focused button "Copy reply" press Shift+Tab focused button "Copy request" press Enter clipboard request`. In a scratch directory, `patch -p1 < created-diff.clip.txt` and then `patch -p1 < edited-diff.clip.txt` give the final `notes.md`.
+
+## Gotchas
+
+- The errand waits at `prompt.submit` and again at the approval, so `wait settled` needs the send and the "Run once" click first.
+- The controls are transparent until hover or focus, not hidden, so Tab reaches them. `shot` moves the pointer off the page, so a shot of a settled thread looks as it did before this feature.
+- A closed record is `display: none`, and the record controls render only when the step is open. Either one keeps them out of the accessibility tree.
+- The errand's diffs name an absolute path, `a//tmp/hermes-proto-work/notes.md`, as Hermes wrote it. `patch -p1` applies it. `git apply` refuses any absolute path.
+- After a press, "Copied" stays on screen for two seconds, so a later `see "Copied"` can match the earlier control. Use `clipboard`, which waits for new clipboard text.
+- Two open diffs of the same file carry the same name. `click` needs a unique name, so reach the second one with Tab.
