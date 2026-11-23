@@ -49,16 +49,24 @@ function threadColumn({ width, ink }) {
   return null
 }
 
+function bottomBorder({ width, height, ink }) {
+  for (let y = height - 1; y > height >> 1; y--) {
+    if (runs(width, x => ink(x, y)).some(([from, to]) => to - from + 1 > width * 0.9)) return y
+  }
+  return null
+}
+
 function checkThread(shot, image) {
   const cx = threadColumn(image)
   if (cx === null) return [`FAIL ${shot}: no request rule to locate the thread column`]
+  const transcriptEnd = bottomBorder(image)
+  if (transcriptEnd === null) return [`FAIL ${shot}: no border above the composer to locate the transcript's end`]
   const x0 = Math.floor(cx)
   const onLine = y => [-1, 0, 1].some(d => image.ink(x0 + d, y))
   const onNode = y => {
     const xs = Array.from({ length: 2 * NODE_REACH + 1 }, (_, i) => x0 - NODE_REACH + i).filter(x => image.ink(x, y))
     return xs.length > 0 && xs.at(-1) - xs[0] + 1 >= NODE_WIDTH
   }
-  const transcriptEnd = image.height - 100
   const rowsOnLine = Array.from({ length: transcriptEnd }, (_, y) => y).filter(y => y > 60 && onLine(y))
   const threadRows = rowsOnLine.slice(rowsOnLine.findIndex((y, i) => i > 0 && y !== rowsOnLine[i - 1] + 1))
   if (rowsOnLine.length < 2 || threadRows.length < 2 || threadRows[0] === rowsOnLine[0]) return [`FAIL ${shot}: nothing is drawn on the thread column x=${cx} below the request`]
