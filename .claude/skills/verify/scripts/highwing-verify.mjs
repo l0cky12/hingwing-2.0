@@ -183,6 +183,13 @@ const STEPS = {
       if (!(await ctx.page.getByRole(role, { name, exact: true }).isChecked({ timeout: ctx.timeout }))) throw new Error(`${role} "${name}" is not checked`)
     }
   },
+  current: {
+    arity: 2,
+    run: async (ctx, role, name) => {
+      const value = await ctx.page.getByRole(role, { name, exact: true }).getAttribute('aria-current', { timeout: ctx.timeout })
+      if (value !== 'true') throw new Error(`${role} "${name}" is not the current one`)
+    }
+  },
   tally: {
     arity: 2,
     run: async (ctx, role, n) => {
@@ -387,13 +394,35 @@ async function checkInView(ctx, role, name) {
   if (problem) throw new Error(`${role} "${name}" is not fully in view: ${problem}`)
 }
 
+/**
+ * `--size` sets the size a shot must have. `--chat-only` makes that the size of the chat column:
+ * the window grows by whatever sits left of `.screen`, and every shot is clipped to the column. A
+ * clipped shot then reads like a shot from before the window had a sidebar, which the design C
+ * references, forced-colors-check.mjs and chat-parity.mjs all expect.
+ */
+async function sizeWindow(ctx, options) {
+  const [width, height] = (options.size ?? `${SIZE.width}x${SIZE.height}`).split('x').map(Number)
+  ctx.size = { width, height }
+  if (options['chat-only']) {
+    await STATES.window(ctx.page).waitFor({ state: 'visible', timeout: ctx.timeout })
+    const left = await ctx.page.evaluate(() => document.querySelector('.screen')?.getBoundingClientRect().left ?? null)
+    if (left === null) throw new Error('--chat-only found no .screen to clip to')
+    ctx.clip = { x: left, y: 0, width, height }
+  }
+  const content = { width: width + (ctx.clip?.x ?? 0), height }
+  if (content.width === SIZE.width && content.height === SIZE.height) return
+  await ctx.app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height), content)
+  await ctx.page.waitForFunction(size => innerWidth === size.width && innerHeight === size.height, content, { timeout: ctx.timeout })
+    .catch(() => { throw new Error(`the window did not become ${content.width}x${content.height}`) })
+}
+
 async function shoot(ctx, name) {
   const path = join(ctx.evidence, `${name}.png`)
   await ctx.page.mouse.move(0, 0)
-  await ctx.page.screenshot({ path, animations: 'disabled', caret: 'hide' })
+  await ctx.page.screenshot({ path, animations: 'disabled', caret: 'hide', ...(ctx.clip && { clip: ctx.clip }) })
   writeFileSync(join(ctx.evidence, `${name}.aria.txt`), await ctx.page.locator('body').ariaSnapshot())
   const size = pngSize(path)
-  if (size.width !== SIZE.width || size.height !== SIZE.height) throw new Error(`${name}.png is ${size.width}x${size.height}, not ${SIZE.width}x${SIZE.height}`)
+  if (size.width !== ctx.size.width || size.height !== ctx.size.height) throw new Error(`${name}.png is ${size.width}x${size.height}, not ${ctx.size.width}x${ctx.size.height}`)
   if (ctx.holding && !(await STATES[ctx.holding](ctx.page).isVisible())) {
     throw new Error(`state "${ctx.holding}" ended before ${name}.png was taken, so the shot may show a later moment`)
   }
@@ -460,13 +489,14 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
   if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
   if (scenario && (options['drop-after'] || options.models || options.guarded)) fail('--drop-after, --models and --guarded edit the fixture a --fixture run replays. They do nothing with --fake-host')
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
+  if (options.size && !/^[1-9]\d*x[1-9]\d*$/.test(options.size)) fail(`--size takes <width>x<height>, not "${options.size}"`)
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')
   const runId = options.run ?? `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`
   const evidence = join(EVIDENCE_ROOT, runId)
@@ -478,7 +508,7 @@ async function run(argv) {
   const fixture = edits.dropAfter || edits.models || edits.guarded ? withEdits(given, edits, join(evidence, 'fixture-edited.jsonl')) : given
   const calls = join(evidence, 'gateway-calls.jsonl')
   rmSync(calls, { force: true })
-  const ctx = { app: null, page: null, evidence, fixture, calls, called: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null }
+  const ctx = { app: null, page: null, evidence, fixture, calls, called: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null, size: SIZE, clip: null }
   const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
   const userData = join(scratch, 'user-data')
@@ -534,6 +564,7 @@ async function run(argv) {
       ctx.errors.push(String(error.message ?? error))
     })
     await ctx.page.waitForLoadState('domcontentloaded')
+    await sizeWindow(ctx, options)
     for (const { verb, args } of steps) {
       log(ctx, `${verb} ${args.map(arg => JSON.stringify(arg)).join(' ')}`)
       if (verb !== 'shot' && verb !== 'wait') ctx.holding = null
