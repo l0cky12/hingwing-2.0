@@ -33,8 +33,12 @@ Every run names one of two gateways. Hermes, ssh and Tailscale are installed on 
 - `--drop-after <event type>` is verification scaffolding. It writes a copy of the fixture whose gateway closes the socket 50 ms after the first frame of that type, and plays the copy instead. The copy is saved as `fixture-edited.jsonl` in the evidence directory. The client shows the dropped link until its redial lands about 1 s later.
 - `--models <reply.json>` writes a copy of the fixture whose header carries that canned `model.options` reply, and plays the copy. The gateway then lists those models, starts the chat on the reply's `model`, and switches it on a `session.mutate` with operation `model`. Without it the gateway refuses `model.options` as an unknown method, as an older Hermes does. `fixtures/models/three.json` offers three models with `fast-small` current. `fixtures/models/none.json` offers none. It combines with `--drop-after` into one `fixture-edited.jsonl`.
 - `--guarded <model,...>` makes a switch to those models need a second yes, as Hermes's guard does for a costly model. An idle switch answers with a confirmation. A switch held during a turn is asked about when the turn ends.
+- `--forced-colors` emulates the desktop's forced-colors (high-contrast) mode in the first window once it opens, before any step runs, so the window draws only with system colors.
+- `--more-contrast` emulates `prefers-contrast: more`.
 - `--run <name>` names the evidence directory. The default is a timestamp plus the PID.
 - `--timeout <ms>` is the per-step limit. The default is 15000.
+
+Every run sets `HIGHWING_OPEN_LOG` to `opens.jsonl` in the evidence directory. Main then records each request to open a file or show its folder in that file, and opens nothing on the desktop.
 
 Ready means the first window has loaded. Use `wait window` as the first step.
 
@@ -60,12 +64,20 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `shot <name>` | file stem | moves the pointer off the page, then saves `<name>.png` and `<name>.aria.txt` |
 | `disabled <role> <name>` | ARIA role, exact accessible name | fails unless that control is disabled now |
 | `value <label> <text>` | exact label, text | fails unless the field holds exactly that text now |
-| `focused <role> <name>` | ARIA role, exact accessible name | fails unless that element is `document.activeElement` now |
+| `field <label> <lines> <fits\|scrolls>` | exact label, a line count, `fits` or `scrolls` | logs how many lines the field shows and whether its text scrolls with a visible scrollbar, and fails unless both match |
+| `pinned` | none | logs where the thread sits, and fails unless it is scrolled to its end, its last row is in view (wholly, when it fits), and the composer does not cover it |
+| `focused <role> <name>` | ARIA role, exact accessible name | fails unless that control has keyboard focus now |
+| `count <role> <name> <n>` | ARIA role, exact name or `/regex/`, a number | fails unless exactly `n` such controls are in the accessibility tree |
+| `clipboard <name>` | file stem | waits until the system clipboard holds new text, then saves it as `<name>.clip.txt`. Fails when it stays empty or unchanged since the last `clipboard` step |
 | `marks <count>` | number | fails unless the ranges in the `find` and `find-current` highlights add up to the count. A missing highlight counts as 0. It reads state and never sets it |
+| `opened <action> <path>` | `open` or `show`, absolute path | fails unless `opens.jsonl` holds exactly one call, and that call is this one |
+| `copied <text>` | text | fails unless the system clipboard holds exactly this text |
+| `gone <role> <name>` | ARIA role, exact accessible name | polls until no visible element has that role and name, and fails at the timeout. Waits out a fade |
+| `inview <role> <name>` | ARIA role, exact accessible name | fails unless that element's box lies fully inside the visible area of every scrolling ancestor and of the window |
 | `enabled <role> <name>` | ARIA role, exact accessible name | fails unless that control is enabled now |
 | `checked <role> <name>` | ARIA role, exact accessible name | fails unless that radio or checkbox is checked now |
-| `count <role> <n>` | ARIA role, number | waits until exactly n elements of that role are shown, and fails if the count never settles on n |
-| `gone <text>` | text | fails if the text is visible anywhere now |
+| `tally <role> <n>` | ARIA role, number | waits until exactly n elements of that role are shown, and fails if the count never settles on n |
+| `absent <text>` | text | fails if the text is visible anywhere now |
 | `called <method> <json> <n>` | method, JSON object, number | waits until the gateway was sent n calls of that method whose params contain the JSON (every key, recursively), and fails on any other count. It is checked again when the steps end, so "exactly n" holds for the whole run. `--fixture` runs only |
 | `quiet` | none | fails if the window logged a console error or a page error so far |
 
@@ -94,6 +106,8 @@ Each run writes to `/tmp/highwing-verify/<run>/`:
 
 - `steps.log` lists every step with a timestamp, and ends with `PASS` or `FAIL`.
 - `<name>.png` and `<name>.aria.txt` hold each shot and the ARIA snapshot of the page at that moment.
+- `<name>.clip.txt` holds the clipboard text that a `clipboard` step read.
+- `opens.jsonl` holds one JSON line for each open or show call that main accepted.
 - `main.log` holds the Electron main process's stdout and stderr. `console.log` holds the renderer console and page errors.
 - `failure.png` is the window when a step failed.
 - `gateway-calls.jsonl` holds every frame the client sent the scripted gateway, one per line, as it arrived (`--fixture` runs). Main writes it when `HIGHWING_FIXTURE_CALLS` names a file, which `run` always sets.

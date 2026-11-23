@@ -1,4 +1,6 @@
 import { fieldId, type DiffStat, type RecordSection, type StepView } from '@highwing/thread'
+import { CopyButton } from './Copy'
+import { FilePath } from './FilePath'
 import { PhraseText } from './text'
 
 export const cx = (...names: readonly (string | false | null)[]) => names.filter(Boolean).join(' ')
@@ -18,15 +20,22 @@ interface SectionProps {
   readonly section: RecordSection
   readonly stepKey: string
   readonly index: number
+  readonly open: boolean
 }
 
-function Section({ section, stepKey, index }: SectionProps) {
+const COPY_NAME = { output: 'Copy output', result: 'Copy result', input: 'Copy input' } as const
+
+function Section({ section, stepKey, index, open }: SectionProps) {
   const label = section.label === null ? null : <h4>{section.label}</h4>
+  const copy = open && section.copy !== null
+    ? <CopyButton text={section.copy} name={section.kind === 'changes' ? `Copy changes to ${section.path}` : COPY_NAME[section.kind]} />
+    : null
   if (section.kind === 'changes') {
     return (
       <section>
         {label}
-        <p className="path" data-find={fieldId(stepKey, `path ${index}`)}>{section.path}</p>
+        {copy}
+        <FilePath path={section.path} findId={fieldId(stepKey, `path ${index}`)} />
         <pre className="diff">
           {section.lines.map((line, at) => (
             <span key={at} className={`ln ${line.t}`} data-find={fieldId(stepKey, `line ${index} ${at}`)}>{line.text}</span>
@@ -39,6 +48,7 @@ function Section({ section, stepKey, index }: SectionProps) {
   return (
     <section>
       {label}
+      {copy}
       {'empty' in body
         ? <p className="empty">{body.empty}</p>
         : <pre data-find={fieldId(stepKey, `body ${index}`)}>{body.text}{body.more > 0 && `\n… ${body.more} more characters`}</pre>}
@@ -71,8 +81,9 @@ export function Step({ step, live, elapsed, open, onToggle }: StepProps) {
       <button className="head" aria-expanded={open} onClick={() => onToggle(step.key)}>
         {title}<Elapsed elapsed={elapsed} /><span className="chev" aria-hidden="true" />{meta}
       </button>
+      {open && step.record.command !== null && <CopyButton text={step.record.command} name="Copy command" />}
       <div className={cx('record', bare && 'bare')}>
-        {step.record.sections.map((section, index) => <Section key={index} section={section} stepKey={step.key} index={index} />)}
+        {step.record.sections.map((section, index) => <Section key={index} section={section} stepKey={step.key} index={index} open={open} />)}
       </div>
     </div>
   )

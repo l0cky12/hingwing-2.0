@@ -40,15 +40,15 @@ highwing-2.0/
           fake-host.ts                                    fake ssh, tailscale and hermes executables, and SCENARIOS (imported by path, not exported)
     thread/                      @highwing/thread         pure, browser-safe
       src/thread-view.ts                                  design C: threadView, outline, checkThread
-      src/prose.ts                                        proseBlocks: the markdown parse the renderer draws
+      src/prose.ts                                        parseMarkdown and proseLeaves: the reply's block tree, drawn and searched
       src/find.ts                                         findInThread: matches across a view's text
       src/when.ts                                         the words and thresholds for turn times (internal)
   apps/desktop/
     src/ipc-contract.ts          shared by all three      Topic, Push, Bridge, applyPush, Setup, SetupCommand
-    src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows)
+    src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows), files.ts (openablePath)
       settings.ts                no Electron              parseSettings, loadSettings, saveSettings: connection.json, the only state on disk
       connection.ts              no Electron              ownConnection, nextSetup, pinnedConnection: the setup state, the saved target, the live Hermes
-    src/preload/index.ts         preload                  exposes Bridge: watch and run
+    src/preload/index.ts         preload                  exposes Bridge: watch, run and file
     src/renderer/                renderer                 store.ts (useTopic), setup/, sidebar/, chat/, composer/, chrome/, styles/
   fixtures/                                               *.jsonl, make_fixture.py (run with Hermes's interpreter)
   scripts/                                                sync-contract.ts, contract-drift.ts

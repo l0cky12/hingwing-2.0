@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
-  test: { include: ['packages/*/test/**/*.test.ts', 'apps/*/test/**/*.test.ts', 'scripts/*.test.ts'] }
+  esbuild: { jsx: 'automatic' },
+  test: { include: ['packages/*/test/**/*.test.{ts,tsx}', 'apps/*/test/**/*.test.{ts,tsx}', 'scripts/*.test.ts'] }
 })

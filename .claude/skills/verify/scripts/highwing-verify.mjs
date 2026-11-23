@@ -47,11 +47,78 @@ const STEPS = {
   click: { arity: 2, run: async (ctx, role, name) => ctx.page.getByRole(role, { name, exact: true }).click({ timeout: ctx.timeout }) },
   type: { arity: 2, run: async (ctx, label, text) => ctx.page.getByLabel(label, { exact: true }).fill(expand(ctx, text), { timeout: ctx.timeout }) },
   press: { arity: 1, run: async (ctx, key) => ctx.page.keyboard.press(key) },
+  gone: { arity: 2, run: async (ctx, role, name) => waitGone(ctx, role, name) },
+  inview: { arity: 2, run: async (ctx, role, name) => checkInView(ctx, role, name) },
   shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
+  field: {
+    arity: 3,
+    run: async (ctx, label, lines, outcome) => {
+      if (outcome !== 'fits' && outcome !== 'scrolls') throw new Error(`field outcome must be "fits" or "scrolls", not "${outcome}"`)
+      const m = await ctx.page.getByLabel(label, { exact: true }).evaluate(el => {
+        const style = getComputedStyle(el)
+        return {
+          client: el.clientHeight,
+          content: el.scrollHeight,
+          lineHeight: parseFloat(style.lineHeight),
+          padding: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
+          scrollbar: el.offsetWidth - el.clientWidth - parseFloat(style.borderLeftWidth) - parseFloat(style.borderRightWidth)
+        }
+      }, undefined, { timeout: ctx.timeout })
+      const shown = Math.round((m.client - m.padding) / m.lineHeight)
+      const scrolls = m.content > m.client + 1 && m.scrollbar > 2
+      log(ctx, `  "${label}" shows ${shown} lines in ${m.client}px (content ${m.content}px, scrollbar ${m.scrollbar}px), ${scrolls ? 'scrolls' : 'fits'}`)
+      if (shown !== Number(lines)) throw new Error(`"${label}" shows ${shown} lines, not ${lines}`)
+      if (scrolls !== (outcome === 'scrolls')) throw new Error(`"${label}" ${scrolls ? 'scrolls' : 'fits'}, not ${outcome}`)
+    }
+  },
+  pinned: {
+    arity: 0,
+    run: async ctx => {
+      const m = await ctx.page.evaluate(() => {
+        const scroller = document.querySelector('#scroll')
+        const footer = document.querySelector('footer')
+        if (!scroller || !footer) return null
+        const rows = scroller.querySelectorAll('.request, .thread > *, .turn.pending > *')
+        const last = rows[rows.length - 1] ?? scroller
+        const view = scroller.getBoundingClientRect()
+        const row = last.getBoundingClientRect()
+        return {
+          fromEnd: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight,
+          rowTop: row.top,
+          rowBottom: row.bottom,
+          viewTop: view.top,
+          viewBottom: view.bottom,
+          footerTop: footer.getBoundingClientRect().top
+        }
+      })
+      if (m === null) throw new Error('no #scroll or footer on the page')
+      log(ctx, `  thread ${m.fromEnd.toFixed(1)}px from its end, last row ${m.rowTop.toFixed(1)}-${m.rowBottom.toFixed(1)} in view ${m.viewTop.toFixed(1)}-${m.viewBottom.toFixed(1)}, footer top ${m.footerTop.toFixed(1)}`)
+      if (m.fromEnd > 1) throw new Error(`thread is ${m.fromEnd.toFixed(1)}px short of its end`)
+      const fitsInView = m.rowBottom - m.rowTop <= m.viewBottom - m.viewTop
+      if (m.rowBottom > m.viewBottom + 0.5 || m.rowBottom < m.viewTop || (fitsInView && m.rowTop < m.viewTop - 0.5)) throw new Error('the last row of the thread is not in view')
+      if (m.viewBottom > m.footerTop + 0.5) throw new Error('the composer covers the thread')
+    }
+  },
   disabled: {
     arity: 2,
     run: async (ctx, role, name) => {
       if (!(await ctx.page.getByRole(role, { name, exact: true }).isDisabled({ timeout: ctx.timeout }))) throw new Error(`${role} "${name}" is enabled`)
+    }
+  },
+  opened: {
+    arity: 2,
+    run: async (ctx, action, path) => {
+      const calls = await pollUntil(ctx, () => opensRecorded(ctx), recorded => recorded.length > 0).catch(() => [])
+      if (calls.length !== 1 || calls[0].action !== action || calls[0].path !== path) {
+        throw new Error(`expected exactly one open call ${JSON.stringify({ action, path })}, recorded ${JSON.stringify(calls)}`)
+      }
+    }
+  },
+  copied: {
+    arity: 1,
+    run: async (ctx, text) => {
+      const held = await pollUntil(ctx, () => ctx.app.evaluate(({ clipboard }) => clipboard.readText()), value => value === text).catch(() => null)
+      if (held !== text) throw new Error(`clipboard holds ${JSON.stringify(held ?? 'something else')}, not ${JSON.stringify(text)}`)
     }
   },
   value: {
@@ -64,8 +131,33 @@ const STEPS = {
   focused: {
     arity: 2,
     run: async (ctx, role, name) => {
-      const has = await ctx.page.getByRole(role, { name, exact: true }).evaluate(element => element === document.activeElement, null, { timeout: ctx.timeout })
-      if (!has) throw new Error(`${role} "${name}" does not have focus`)
+      const found = ctx.page.getByRole(role, { name, exact: true })
+      if (!(await found.evaluateAll(nodes => nodes.includes(document.activeElement)))) {
+        const now = await ctx.page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent ?? 'nothing')
+        throw new Error(`${role} "${name}" does not have focus; "${now}" does`)
+      }
+    }
+  },
+  count: {
+    arity: 3,
+    run: async (ctx, role, name, n) => {
+      const found = await ctx.page.getByRole(role, { name: nameMatcher(name), exact: true }).count()
+      if (found !== Number(n)) throw new Error(`${found} ${role}(s) named ${name}, not ${n}`)
+    }
+  },
+  clipboard: {
+    arity: 1,
+    run: async (ctx, name) => {
+      const read = () => ctx.app.evaluate(({ clipboard }) => clipboard.readText())
+      const deadline = Date.now() + ctx.timeout
+      let text = await read()
+      while (text === '' || text === ctx.clipboard) {
+        if (Date.now() > deadline) throw new Error(text === '' ? 'the clipboard is empty' : 'the clipboard has not changed since the last clipboard step')
+        text = await read()
+      }
+      ctx.clipboard = text
+      writeFileSync(join(ctx.evidence, `${name}.clip.txt`), text)
+      log(ctx, `  saved ${name}.clip.txt (${text.length} characters)`)
     }
   },
   marks: {
@@ -87,7 +179,7 @@ const STEPS = {
       if (!(await ctx.page.getByRole(role, { name, exact: true }).isChecked({ timeout: ctx.timeout }))) throw new Error(`${role} "${name}" is not checked`)
     }
   },
-  count: {
+  tally: {
     arity: 2,
     run: async (ctx, role, n) => {
       const locator = ctx.page.getByRole(role)
@@ -95,7 +187,7 @@ const STEPS = {
       if (seen !== Number(n)) throw new Error(`${seen} ${role} element(s) are shown, not ${n}`)
     }
   },
-  gone: {
+  absent: {
     arity: 1,
     run: async (ctx, text) => {
       const shown = await ctx.page.getByText(text, { exact: false }).filter({ visible: true }).count()
@@ -137,6 +229,8 @@ function callsLike(ctx, { method, expected }) {
   return readFileSync(ctx.calls, 'utf8').split('\n').filter(line => line.trim() !== '').map(line => JSON.parse(line))
     .filter(frame => frame.method === method && contains(frame.params, expected)).length
 }
+
+const nameMatcher = name => (/^\/.+\/$/.test(name) ? new RegExp(name.slice(1, -1)) : name)
 
 const fail = message => {
   console.error(`highwing-verify: ${message}`)
@@ -233,6 +327,20 @@ function log(ctx, line) {
   appendFileSync(join(ctx.evidence, 'steps.log'), `${stamped}\n`)
 }
 
+const opensRecorded = ctx => existsSync(ctx.opens)
+  ? readFileSync(ctx.opens, 'utf8').split('\n').filter(line => line.trim() !== '').map(line => JSON.parse(line))
+  : []
+
+async function pollUntil(ctx, read, done) {
+  const deadline = Date.now() + ctx.timeout
+  for (;;) {
+    const value = await read()
+    if (done(value)) return value
+    if (Date.now() > deadline) throw new Error(`still ${JSON.stringify(value)} after ${ctx.timeout} ms`)
+    await new Promise(resolve => setTimeout(resolve, 50))
+  }
+}
+
 /** Polls without backoff: Playwright's own `waitFor` spaces polls up to 500 ms apart and misses brief states. */
 async function waitFor(ctx, state) {
   const locate = STATES[state] ?? fail(`unknown state "${state}". Known: ${Object.keys(STATES).join(', ')}`)
@@ -242,6 +350,36 @@ async function waitFor(ctx, state) {
     if (Date.now() > deadline) throw new Error(`state "${state}" did not appear within ${ctx.timeout} ms`)
   }
   ctx.holding = state
+}
+
+/** Polls like `waitFor`: the control's fade ends 150 ms after the state changes, and a missed poll is a false pass. */
+async function waitGone(ctx, role, name) {
+  const locator = ctx.page.getByRole(role, { name, exact: true })
+  const deadline = Date.now() + ctx.timeout
+  while ((await locator.count()) > 0 && (await locator.first().isVisible())) {
+    if (Date.now() > deadline) throw new Error(`${role} "${name}" still visible after ${ctx.timeout} ms`)
+  }
+}
+
+async function checkInView(ctx, role, name) {
+  const locator = ctx.page.getByRole(role, { name, exact: true })
+  await locator.first().waitFor({ state: 'visible', timeout: ctx.timeout })
+  const problem = await locator.first().evaluate(element => {
+    const box = element.getBoundingClientRect()
+    const outside = (rect, label) => (box.top < rect.top - 0.5 || box.bottom > rect.bottom + 0.5 || box.left < rect.left - 0.5 || box.right > rect.right + 0.5
+      ? `${label} spans ${Math.round(rect.top)}..${Math.round(rect.bottom)} but the element spans ${Math.round(box.top)}..${Math.round(box.bottom)}`
+      : null)
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      const { overflowX, overflowY } = getComputedStyle(parent)
+      if (/(auto|scroll|hidden|clip)/.test(overflowX + overflowY)) {
+        const rect = parent.getBoundingClientRect()
+        const found = outside({ top: rect.top + parent.clientTop, bottom: rect.top + parent.clientTop + parent.clientHeight, left: rect.left + parent.clientLeft, right: rect.left + parent.clientLeft + parent.clientWidth }, `<${parent.localName}${parent.id ? `#${parent.id}` : ''}>`)
+        if (found) return found
+      }
+    }
+    return outside({ top: 0, bottom: innerHeight, left: 0, right: innerWidth }, 'window')
+  })
+  if (problem) throw new Error(`${role} "${name}" is not fully in view: ${problem}`)
 }
 
 async function shoot(ctx, name) {
@@ -317,7 +455,7 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
@@ -335,7 +473,8 @@ async function run(argv) {
   const fixture = edits.dropAfter || edits.models || edits.guarded ? withEdits(given, edits, join(evidence, 'fixture-edited.jsonl')) : given
   const calls = join(evidence, 'gateway-calls.jsonl')
   rmSync(calls, { force: true })
-  const ctx = { page: null, evidence, fixture, calls, called: [], errors: [], timeout: Number(options.timeout ?? 15_000), holding: null }
+  const ctx = { app: null, page: null, evidence, fixture, calls, called: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null }
+  const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
   const userData = join(scratch, 'user-data')
   const saved = SAVED[options.saved ?? 'none']
@@ -355,9 +494,11 @@ async function run(argv) {
   delete env.HIGHWING_RECORD
   delete env.HIGHWING_FIXTURE_CALLS
   if (!host) Object.assign(env, { HIGHWING_FIXTURE: fixture, HIGHWING_FIXTURE_CALLS: calls })
+  rmSync(ctx.opens, { force: true })
+  env.HIGHWING_OPEN_LOG = ctx.opens
 
   const { _electron } = requireDesktop('playwright-core')
-  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"` : `HIGHWING_FIXTURE=${fixture}`}`)
+  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"` : `HIGHWING_FIXTURE=${fixture}`}${Object.keys(media).length > 0 ? `, emulating ${JSON.stringify(media)}` : ''}`)
   const app = await _electron.launch({
     executablePath: electronBinary() ?? fail('electron binary missing; run doctor'),
     args: [MAIN_JS, '--ozone-platform=x11', '--force-device-scale-factor=1', '--disable-gpu', `--user-data-dir=${userData}`],
@@ -369,6 +510,7 @@ async function run(argv) {
     log(ctx, `FAIL evidence in ${evidence}`)
     process.exit(1)
   })
+  ctx.app = app
   const pid = app.process().pid
   writeFileSync(join(scratch, 'pid'), String(pid))
   const mainLog = join(evidence, 'main.log')
@@ -377,6 +519,7 @@ async function run(argv) {
   let failed = null
   try {
     ctx.page = await app.firstWindow({ timeout: ctx.timeout })
+    if (Object.keys(media).length > 0) await ctx.page.emulateMedia(media)
     ctx.page.on('console', message => {
       appendFileSync(join(evidence, 'console.log'), `${message.type()} ${message.text()}\n`)
       if (message.type() === 'error') ctx.errors.push(message.text())

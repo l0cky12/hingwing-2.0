@@ -1,6 +1,7 @@
 import type { PromptId, PromptReply } from '@highwing/hermes/domain'
 import { fieldId, findInThread, type FindMatch, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { CopyButton } from './Copy'
 import { FIND_OPEN, FindBar, isFindKey, reveal, useFindMarks, type FindState } from './Find'
 import { cx, Elapsed, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
@@ -18,6 +19,10 @@ interface NodeProps {
 
 const ROLE_CLASS = { primary: 'primary', plain: null, decline: 'deny' } as const
 
+function Command({ nodeKey, command }: { readonly nodeKey: string; readonly command: string }) {
+  return <div className="copyable"><pre data-find={fieldId(nodeKey, 'command')}>{command}</pre><CopyButton text={command} name="Copy command" /></div>
+}
+
 interface PromptProps {
   readonly nodeKey: string
   readonly card: PromptCard
@@ -31,7 +36,7 @@ function Prompt({ nodeKey, card, asking, onAnswer }: PromptProps) {
     return (
       <div className="approval answered">
         <p data-find={fieldId(nodeKey, 'words')}>{card.words}</p>
-        {card.command !== null && <pre data-find={fieldId(nodeKey, 'command')}>{card.command}</pre>}
+        {card.command !== null && <Command nodeKey={nodeKey} command={card.command} />}
       </div>
     )
   }
@@ -42,7 +47,7 @@ function Prompt({ nodeKey, card, asking, onAnswer }: PromptProps) {
   return (
     <div className={cx('approval', asking && 'live')} role="group" aria-label={card.heading} {...(asking ? { 'data-end': 'asking' } : {})}>
       <h3 data-find={fieldId(nodeKey, 'heading')}>{card.heading}</h3>
-      {card.command !== null && <pre data-find={fieldId(nodeKey, 'command')}>{card.command}</pre>}
+      {card.command !== null && <Command nodeKey={nodeKey} command={card.command} />}
       {card.why !== null && <p className="why" data-find={fieldId(nodeKey, 'why')}>{card.why}</p>}
       <div className="choices">
         {card.buttons.map(button => (
@@ -65,7 +70,12 @@ function Prompt({ nodeKey, card, asking, onAnswer }: PromptProps) {
 function Node({ node, endTone, elapsed, opened, onToggle, onAnswer }: NodeProps) {
   switch (node.kind) {
     case 'prose':
-      return <div className="prose"><Markdown source={node.markdown} caret={node.streaming} nodeKey={node.key} /></div>
+      return (
+        <div className="prose">
+          <Markdown source={node.markdown} caret={node.streaming} nodeKey={node.key} />
+          {!node.streaming && <CopyButton text={node.markdown} name="Copy reply" />}
+        </div>
+      )
     case 'step':
       return <Step step={node.step} live={endTone === 'live'} elapsed={elapsed} open={opened.has(node.key)} onToggle={onToggle} />
     case 'group': {
@@ -114,7 +124,7 @@ const Turn = memo(function Turn({ turn, opened, onToggle, onAnswer }: TurnProps)
   return (
     <article className="turn">
       {turn.time !== null && <p className="when">{turn.time}</p>}
-      {turn.request !== null && <p className="request" data-find={fieldId(turn.key, 'request')}>{turn.request}</p>}
+      {turn.request !== null && <p className="request" data-find={fieldId(turn.key, 'request')}>{turn.request}<CopyButton text={turn.request} name="Copy request" /></p>}
       <div className="thread">
         {turn.nodes.map(node => (
           <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} elapsed={end.kind === 'at' && end.tone === 'live' && end.nodeKey === node.key ? end.elapsed : null} opened={opened} onToggle={onToggle} onAnswer={onAnswer} />
