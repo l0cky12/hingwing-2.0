@@ -42,6 +42,7 @@ highwing-2.0/
       src/thread-view.ts                                  design C: threadView, outline, checkThread
       src/prose.ts                                        proseBlocks: the markdown parse the renderer draws
       src/find.ts                                         findInThread: matches across a view's text
+      src/when.ts                                         the words and thresholds for turn times (internal)
   apps/desktop/
     src/ipc-contract.ts          shared by all three      Topic, Push, Bridge, applyPush, Setup, SetupCommand
     src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows)
@@ -69,7 +70,8 @@ highwing-2.0/
 | The saved connection on disk | `main/settings.ts` | nobody. `ownConnection` gets `loaded` and `save` as arguments |
 | A window's copy of a topic | `renderer/store.ts` in that window, written only by `applyPush` | components read with `useTopic` |
 | Selected session, open rows, composer drafts | React state in that window | not shared; not Hermes's state |
-| The design C view | nobody; `threadView(session)` recomputes it and memoises settled turns by reference | |
+| The design C view | nobody; `threadView(session, clock)` recomputes it and memoises settled turns by reference | |
+| When a turn began | `reduce`: the stored request row's time, or the clock reading the hub attaches to a live frame | nobody. The view derives every shown time from it |
 
 Two windows on one session read the same actor through two IPC subscriptions. There is one socket and one reducer state no matter how many windows exist.
 
@@ -98,9 +100,9 @@ A `message.delta` frame becomes pixels in four steps.
 
 | What | How | Where |
 |---|---|---|
-| Design C | `outline(threadView(session))` compared with a golden text, for each fixture | `@highwing/thread` tests |
-| Soundness at every moment | `checkThread(threadView(session))` on every step of every fixture | same |
-| Find | `findInThread(threadView(session), query)` on the settled errand, counted against `outline` with every row open | same |
+| Design C | `outline(threadView(session, clock))` compared with a golden text, for each fixture | `@highwing/thread` tests |
+| Soundness at every moment | `checkThread(threadView(session, clock))` on every step of every fixture | same |
+| Find | `findInThread(threadView(session, clock), query)` on the settled errand, counted against `outline` with every row open | same |
 | The attach order | `reduce` fed the `attached` cases by hand: a catch-up frame that ends the turn, a hole, a new epoch | `domain/` tests |
 | Reconnect | `playToEnd(fixture, { drop })` for a drop after every push, compared with the undisturbed outline | `@highwing/hermes` tests |
 | A gap | the same with `ringFrames` small, so replay answers `snapshot_required` | same |

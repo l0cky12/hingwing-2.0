@@ -61,6 +61,7 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .earlier { display: block; margin: 0 0 28px var(--col); padding: 0; border: 0; background: none; color: var(--graphite); }
 .notice { color: var(--graphite); margin: 4px 0; }
 
+.when { margin: 0 0 6px var(--col); color: var(--graphite); font-size: 13px; }
 .request {
   margin: 0 0 22px calc(var(--thread-x) - 0.75px); padding: 2px 0 2px calc(var(--col) - var(--thread-x) - 2.25px);
   border-left: 3px solid var(--ink);
@@ -103,6 +104,9 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .head .count { flex: none; margin-left: -6px; font-weight: 400; color: var(--graphite); font-variant-numeric: tabular-nums; }
 .head .chev { flex: none; display: inline-block; width: 6px; height: 6px; margin: 0 0 2px -6px; border-right: 1.5px solid var(--graphite); border-bottom: 1.5px solid var(--graphite); transform: rotate(-45deg); transition: transform .15s ease; }
 .open > .head .chev { transform: rotate(45deg); margin-bottom: 4px; }
+.elapsed { font: 400 14px/1.5 var(--sans); color: var(--graphite); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.head .elapsed { flex: none; margin-left: -6px; }
+.tip .elapsed { margin-left: 8px; }
 .head .meta { display: flex; margin-left: auto; gap: 14px; color: var(--graphite); font-variant-numeric: tabular-nums; font-size: 13px; white-space: nowrap; }
 .stat .plus { color: var(--moss); }
 .stat .minus { color: var(--brick); }

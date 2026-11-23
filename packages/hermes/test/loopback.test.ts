@@ -6,7 +6,7 @@ import { RING_FRAMES, ScriptedGateway } from '../src/testing/gateway'
 import { loopback, type Loopback } from '../src/testing/loopback'
 import { dialWith, DialError, GATEWAY_PROTOCOL, systemClock, type Clock } from '../src/wire/link'
 import { ERRAND } from './support/errand'
-import { errand, fold } from './support/story'
+import { errand, fold, ignoringStartTimes } from './support/story'
 
 const closers: (() => Promise<unknown>)[] = []
 afterEach(async () => {
@@ -36,7 +36,7 @@ describe('the real dial, against a loopback gateway', () => {
       last = moment.session
       upgrades = moment.script.upgrades
     }
-    expect(last).toEqual({ ...fold(errand()).content, sync: { state: 'live' } })
+    expect(ignoringStartTimes(last!)).toEqual({ ...fold(errand()).content, sync: { state: 'live' } })
     expect(upgrades).toEqual([{ origin: null, ticket: 0, refused: null }])
   })
 
@@ -107,5 +107,5 @@ describe('the loopback gateway\'s upgrade gate', () => {
 })
 
 it('plays to the same end over loopback as in memory', async () => {
-  expect(await playToEnd(ERRAND, { transport: 'loopback' })).toEqual(await playToEnd(ERRAND))
+  expect(ignoringStartTimes(await playToEnd(ERRAND, { transport: 'loopback' }))).toEqual(ignoringStartTimes(await playToEnd(ERRAND)))
 })

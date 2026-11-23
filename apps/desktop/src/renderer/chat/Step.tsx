@@ -49,23 +49,27 @@ function Section({ section, stepKey, index }: SectionProps) {
 interface StepProps {
   readonly step: StepView
   readonly live: boolean
+  readonly elapsed: string | null
   readonly open: boolean
   readonly onToggle: (key: string) => void
 }
 
-export function Step({ step, live, open, onToggle }: StepProps) {
+export const Elapsed = ({ elapsed }: { readonly elapsed: string | null }) =>
+  elapsed === null ? null : <span className="elapsed"><span className="sr">, </span>{elapsed}</span>
+
+export function Step({ step, live, elapsed, open, onToggle }: StepProps) {
   const title = <span className="title" data-find={fieldId(step.key, 'title')}><PhraseText words={step.title} /></span>
   const meta = <span className="meta"><Stat stat={step.stat} />{step.duration !== null && <span className="dur">{step.duration}</span>}</span>
   const end = live ? { 'data-end': 'live' } : {}
   if (step.record === null) {
-    return <div className={cx('step', step.state, live && 'live')} {...end}><div className="head">{title}{meta}</div></div>
+    return <div className={cx('step', step.state, live && 'live')} {...end}><div className="head">{title}<Elapsed elapsed={elapsed} />{meta}</div></div>
   }
   const [only] = step.record.sections
   const bare = step.record.sections.length === 1 && only !== undefined && only.kind !== 'changes' && 'empty' in only.body
   return (
     <div className={cx('step', step.state, open && 'open', live && 'live')} {...end}>
       <button className="head" aria-expanded={open} onClick={() => onToggle(step.key)}>
-        {title}<span className="chev" aria-hidden="true" />{meta}
+        {title}<Elapsed elapsed={elapsed} /><span className="chev" aria-hidden="true" />{meta}
       </button>
       <div className={cx('record', bare && 'bare')}>
         {step.record.sections.map((section, index) => <Section key={index} section={section} stepKey={step.key} index={index} />)}
