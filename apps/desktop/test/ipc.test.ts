@@ -1,8 +1,8 @@
 import type { Hermes } from '@highwing/hermes'
-import type { Session, SlashCatalog } from '@highwing/hermes/domain'
+import type { Link, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyPush, CHANNEL, isWebLink, parseCommand, parseFileRequest, validators, type FileOutcome, type Push, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, parseCommand, parseFileRequest, validators, type AppTopics, type FileOutcome, type Push, type Topic } from '../src/ipc-contract'
 import { pinnedConnection } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import { COALESCE_MS, serveWindows, sessionPatch, type IpcEvent, type IpcMainLike } from '../src/main/ipc'
@@ -111,6 +111,10 @@ describe('validators', () => {
   })
 })
 
+const still = <T>(value: T) => ({ get: () => value, subscribe: () => () => {} })
+const LINK: Link = { state: 'blocked', why: 'hermes-missing', message: 'A link of this test.' }
+const SIDEBAR: Sidebar = { status: 'stale', rows: [] }
+
 function harness() {
   const listeners = new Map<string, (event: IpcEvent, ...args: unknown[]) => void>()
   const handlers = new Map<string, (event: IpcEvent, ...args: unknown[]) => unknown>()
@@ -131,6 +135,8 @@ function harness() {
   let catalog: SlashCatalog = []
   const catalogListeners = new Set<(value: SlashCatalog) => void>()
   const hermes = {
+    link: still(LINK),
+    sidebar: still(SIDEBAR),
     slash: {
       get: () => catalog,
       subscribe: (listener: (value: SlashCatalog) => void) => {
@@ -197,6 +203,16 @@ describe('serveWindows', () => {
     vi.advanceTimersByTime(COALESCE_MS)
     setCatalog(listed)
     expect(pushes).toEqual([{ topic: 'slash', rev: 1, full: [] }, { topic: 'slash', rev: 2, full: listed }])
+  })
+
+  it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
+    const { listeners, pushes, event } = harness()
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [] }
+    const watch = listeners.get(CHANNEL.watch)!
+    Object.keys(served).forEach((name, id) => watch(event(), id, name))
+    expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))
+    for (const name of ['toString', 'session:', 'bot', 7, null]) watch(event(), 99, name)
+    expect(pushes).toHaveLength(Object.keys(served).length)
   })
 
   it('stops pushing when the window unwatches or is destroyed', () => {

@@ -1,6 +1,6 @@
 import type { Hermes } from '@highwing/hermes'
 import type { CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
-import { CHANNEL, parseCommand, parseFileRequest, parseTopic, type FileOutcome, type Push, type SessionPatch, type Tail, type Topic } from '../ipc-contract'
+import { CHANNEL, isAppTopic, parseCommand, parseFileRequest, parseTopic, type AppTopic, type FileOutcome, type Push, type SessionPatch, type Tail, type Topic } from '../ipc-contract'
 import type { ConnectionOwner } from './connection'
 import { openablePath, type Opener } from './files'
 
@@ -24,7 +24,7 @@ export interface IpcMainLike {
 }
 
 type Source = (listener: (value: unknown) => void) => () => void
-type Kind = 'setup' | 'link' | 'sidebar' | 'slash' | 'session'
+type Kind = AppTopic | 'session'
 
 const current = <T>(feed: { get(): T; subscribe(listener: (value: T) => void): () => void }): Source => listener => {
   listener(feed.get())
@@ -43,7 +43,7 @@ const SOURCES: { readonly [K in Kind]: (owner: ConnectionOwner, topic: Topic) =>
   slash: onHermes(hermes => current(hermes.slash)),
   session: onHermes((hermes, topic) => listener => hermes.watch(topic.slice('session:'.length) as SessionId, listener))
 }
-const kindOf = (topic: Topic): Kind => (topic === 'setup' || topic === 'link' || topic === 'sidebar' || topic === 'slash' ? topic : 'session')
+const kindOf = (topic: Topic): Kind => (isAppTopic(topic) ? topic : 'session')
 
 function tail<T>(pushed: readonly T[], next: readonly T[]): Tail<T> {
   let from = 0

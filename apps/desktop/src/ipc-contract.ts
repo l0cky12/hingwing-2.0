@@ -32,8 +32,21 @@ export type SetupCommand =
 export type AppCommand = Command | SetupCommand
 export type AppResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 
-export type Topic = 'setup' | 'link' | 'sidebar' | 'slash' | `session:${SessionId}`
-export type TopicValue<T extends Topic> = T extends 'setup' ? Setup : T extends 'link' ? Link : T extends 'sidebar' ? Sidebar : T extends 'slash' ? SlashCatalog : Session
+/** Every topic with one value per connection, and what it carries. Add a topic here, and the compiler asks for its entry in `APP_TOPICS` and its source in main. */
+export interface AppTopics {
+  readonly setup: Setup
+  readonly link: Link
+  readonly sidebar: Sidebar
+  readonly slash: SlashCatalog
+}
+export type AppTopic = keyof AppTopics
+
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true }
+
+export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
+
+export type Topic = AppTopic | `session:${SessionId}`
+export type TopicValue<T extends Topic> = T extends AppTopic ? AppTopics[T] : Session
 
 export interface Tail<T> { readonly from: number; readonly items: readonly T[] }
 
@@ -163,6 +176,6 @@ export function parseFileRequest(raw: unknown): FileRequest | null {
 }
 
 export function parseTopic(raw: unknown): Topic | null {
-  if (raw === 'setup' || raw === 'link' || raw === 'sidebar' || raw === 'slash') return raw
+  if (isAppTopic(raw)) return raw
   return text(raw) && raw.startsWith('session:') && raw.length > 'session:'.length ? (raw as Topic) : null
 }
