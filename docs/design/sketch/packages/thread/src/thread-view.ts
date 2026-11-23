@@ -18,11 +18,21 @@ export interface ThreadView {
   /** Messages sent and not yet picked up, shown under the last turn. */
   readonly pending: readonly { readonly key: string; readonly text: string; readonly status: 'sending' | 'queued' | 'failed'; readonly detail: string | null }[]
   readonly earlier: Session['earlier']
+  /**
+   * The earliest instant after the clock's `now` at which the same session would read differently
+   * (an elapsed time ticks over, a time line appears or says a new day), or null when none will.
+   */
+  readonly changesAt: number | null
 }
+
+/** The time a view is drawn at. `timeZone` is an IANA name. Passed in, so the view stays pure and a test fixes it. */
+export interface ViewClock { readonly now: number; readonly timeZone: string }
 
 export interface TurnView {
   /** Stable for the life of the turn. Node keys below are stable while the turn only grows. */
   readonly key: string
+  /** The quiet line above the request: "Today 14:05". null draws nothing. Never the empty string. */
+  readonly time: string | null
   readonly request: string | null
   /** Top to bottom along the thread. */
   readonly nodes: readonly ThreadNode[]
@@ -53,6 +63,9 @@ export type ThreadNode =
  * - `at`: the mark sits on an existing node. Viridian and pulsing on a running step or group,
  *   amber on a pending prompt card. No separate tip row is drawn.
  * - `tip`: a viridian pulsing row of its own ("Thinking", "Writing", "Preparing write_file", "Stopping").
+ * - `elapsed` on a live `at` and on a `tip`: the time since the turn began, "3 min", once a minute has
+ *   passed. Separate text, never part of the words. A prompt card that waits on you shows none, and
+ *   neither does a paused end. After you answer, the count still runs from the turn's start.
  * - `paused`: the turn was running when the link dropped. Graphite, no pulse, says so.
  * - `done`: graphite check ring, `words` for screen readers only.
  * - `failed` and `stopped`: brick, with words.
@@ -60,8 +73,9 @@ export type ThreadNode =
  *   turn ended is unknown, so nothing on screen claims it succeeded.
  */
 export type ThreadEnd =
-  | { readonly kind: 'at'; readonly nodeKey: string; readonly tone: 'live' | 'asking' }
-  | { readonly kind: 'tip'; readonly words: Phrase }
+  | { readonly kind: 'at'; readonly nodeKey: string; readonly tone: 'live'; readonly elapsed: string | null }
+  | { readonly kind: 'at'; readonly nodeKey: string; readonly tone: 'asking' }
+  | { readonly kind: 'tip'; readonly words: Phrase; readonly elapsed: string | null }
   | { readonly kind: 'paused'; readonly words: string }
   | { readonly kind: 'done'; readonly words: string }
   | { readonly kind: 'failed'; readonly words: string }
@@ -112,7 +126,7 @@ export type PromptCard =
  * memoised by reference in a module-level WeakMap, so a streaming delta recomputes only the open turn
  * and every settled `TurnView` keeps its identity for `React.memo`.
  */
-export function threadView(session: Session): ThreadView {
+export function threadView(session: Session, clock: ViewClock): ThreadView {
   throw new Error('not implemented')
 }
 

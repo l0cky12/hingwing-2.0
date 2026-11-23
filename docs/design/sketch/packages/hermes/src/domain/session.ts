@@ -73,10 +73,26 @@ export type Run =
       readonly stop: 'none' | 'requested'
     }
 
+/** When a turn began, and whose clock read it. `at` is Unix milliseconds. */
+export interface Began {
+  readonly at: number
+  /**
+   * `hermes`: the stored request row's time, read on the gateway's clock. `client`: this client's clock
+   * when the turn's first live frame arrived, since the gateway sends no time with a live event.
+   */
+  readonly clock: 'hermes' | 'client'
+}
+
 interface TurnBase<S extends 'open' | 'settled'> {
   readonly id: TurnId
   /** null when the turn was started by something other than a user message we know. */
   readonly request: Request | null
+  /**
+   * null when unknown: a stored row with no time, a turn whose request sits on an older page, a turn
+   * first heard through replay or catch-up, a running turn found at attach with no stored request.
+   * An open turn's value never moves once a frame has set it.
+   */
+  readonly began: Began | null
   /** In arrival order. Append-only while open, except that a tool, a prompt or a declined notice is updated in place by id. */
   readonly items: readonly Item<S>[]
 }
