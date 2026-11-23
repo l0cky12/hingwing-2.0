@@ -1,14 +1,15 @@
 import type { CommandOutcome } from '@highwing/hermes/domain'
-import { useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useState, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
 
 interface ComposerProps {
+  readonly inputRef?: RefObject<HTMLTextAreaElement | null>
   readonly canSend: boolean
   readonly showStop: boolean
   readonly onSend: (text: string) => Promise<CommandOutcome>
   readonly onStop: () => void
 }
 
-export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
+export function Composer({ inputRef, canSend, showStop, onSend, onStop }: ComposerProps) {
   const [draft, setDraft] = useState('')
   const [refusal, setRefusal] = useState<string | null>(null)
 
@@ -29,7 +30,7 @@ export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
   return (
     <footer className="composer">
       <form onSubmit={submit}>
-        <textarea rows={2} placeholder="Ask Hermes to do something" aria-label="Message Hermes" value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={onKeyDown} />
+        <textarea ref={inputRef} rows={2} placeholder="Ask Hermes to do something" aria-label="Message Hermes" value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={onKeyDown} />
         {showStop && <button type="button" className="stop" disabled={!canSend} onClick={onStop}>Stop</button>}
         <button type="submit" disabled={!canSend}>Send</button>
       </form>
