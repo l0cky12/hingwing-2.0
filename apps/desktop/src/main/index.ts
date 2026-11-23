@@ -1,10 +1,11 @@
 import { liveDialer, openHermes, type Dialer } from '@highwing/hermes'
 import { loadFixture, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
-import { app, ipcMain } from 'electron'
+import { app, ipcMain, shell } from 'electron'
+import { desktopOpener, recordingOpener } from './files'
 import { serveWindows } from './ipc'
 import { isAppUrl, openWindow } from './windows'
 
-const { HIGHWING_FIXTURE, HIGHWING_RECORD } = process.env
+const { HIGHWING_FIXTURE, HIGHWING_RECORD, HIGHWING_OPEN_LOG } = process.env
 const fixture = HIGHWING_FIXTURE ? loadFixture(HIGHWING_FIXTURE) : null
 
 const dial: Dialer = fixture
@@ -15,7 +16,8 @@ const dial: Dialer = fixture
 
 app.whenReady().then(() => {
   const hermes = openHermes({ dial, client: { name: 'highwing', version: app.getVersion() } })
-  const served = serveWindows(hermes, ipcMain, isAppUrl)
+  const opener = HIGHWING_OPEN_LOG ? recordingOpener(HIGHWING_OPEN_LOG) : desktopOpener(shell)
+  const served = serveWindows(hermes, ipcMain, isAppUrl, opener)
   openWindow(fixture?.header.sessionId ?? null)
   app.on('window-all-closed', () => {
     served.dispose()

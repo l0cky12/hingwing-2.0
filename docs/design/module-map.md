@@ -37,8 +37,8 @@ highwing-2.0/
       src/thread-view.ts                                  design C: threadView, outline, checkThread
   apps/desktop/
     src/ipc-contract.ts          shared by all three      Topic, Push, Bridge, applyPush
-    src/main/                    Electron main            index.ts (pick dialer, openHermes), windows.ts, ipc.ts (serveWindows)
-    src/preload/index.ts         preload                  exposes Bridge: watch and run
+    src/main/                    Electron main            index.ts (pick dialer, openHermes), windows.ts, ipc.ts (serveWindows), files.ts (openablePath)
+    src/preload/index.ts         preload                  exposes Bridge: watch, run and file
     src/renderer/                renderer                 store.ts (useTopic), sidebar/, chat/, composer/, chrome/, styles/
   fixtures/                                               *.jsonl, make_fixture.py (run with Hermes's interpreter)
   scripts/                                                sync-contract.ts, contract-drift.ts
