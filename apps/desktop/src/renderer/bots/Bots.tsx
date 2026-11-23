@@ -72,10 +72,10 @@ export function BotsPanel({ bots }: { readonly bots: Bots | undefined }) {
               // A profile name may hold a space, which would split an id list, so the id comes from the row's place.
               const preview = `${ids}-${at}-${row}`
               return (
-                <button key={bot.id} type="button" className="bot" aria-label={bot.role === null ? bot.name : `${bot.name}, ${bot.role}`} aria-describedby={preview} aria-current={selected === bot.id || undefined} onClick={() => setPicked(bot.id)}>
+                <button key={bot.id} type="button" className="bot" aria-label={bot.name} aria-describedby={preview} aria-current={selected === bot.id || undefined} onClick={() => setPicked(bot.id)}>
                   <Avatar bot={bot} size={32} />
                   <span className="bot-text">
-                    <span className="bot-name">{bot.name}{bot.role !== null && <span className="bot-role"> · {bot.role}</span>}</span>
+                    <span className="bot-name">{bot.name}</span>
                     <span className="bot-preview" id={preview}>{bot.preview ?? 'No messages yet'}</span>
                   </span>
                 </button>

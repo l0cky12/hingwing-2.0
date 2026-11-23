@@ -20,9 +20,9 @@ describe('the bots sidebar', () => {
     expect(markup).not.toMatch(/<footer|id="scroll"/)
   })
 
-  it('names each row by its bot and role, and the default bot as the default bot', () => {
+  it('names each row by its bot, and the default bot as the default bot', () => {
     expect(buttons(markup).map(tag => attr(tag, 'aria-label'))).toEqual([
-      'Search bots', 'New bot', 'Hermes Agent, default bot', 'Researcher', 'Reviewer, Code review', 'Ops, On call', 'Scribe'
+      'Search bots', 'New bot', 'Hermes Agent, default bot', 'Researcher', 'Reviewer', 'Ops', 'Scribe'
     ])
     expect(markup).toMatch(/<h3>Work<\/h3>.*<h3>Unassigned<\/h3>/s)
   })
@@ -34,7 +34,7 @@ describe('the bots sidebar', () => {
   it('describes each row by its preview, or by having no messages', () => {
     const scribe = attr(named(markup, 'Scribe')!, 'aria-describedby')
     expect(markup).toContain(`id="${scribe}">No messages yet<`)
-    const ops = attr(named(markup, 'Ops, On call')!, 'aria-describedby')
+    const ops = attr(named(markup, 'Ops')!, 'aria-describedby')
     expect(markup).toContain(`id="${ops}">Pruned four worktrees.<`)
   })
 

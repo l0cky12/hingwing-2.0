@@ -32,10 +32,9 @@ describe('what the bot list shows', () => {
     expect(outline(listOf(APPROVED, '   ')), 'a search of spaces').toEqual(all)
   })
 
-  it('narrows by name and by role, whatever the case and the spaces around the words', () => {
+  it('narrows by name, whatever the case and the spaces around the words', () => {
     expect(outline(listOf(APPROVED, 'RE'))).toEqual(['Work', '  Researcher', '  Reviewer'])
-    expect(outline(listOf(APPROVED, ' code review '))).toEqual(['Work', '  Reviewer'])
-    expect(outline(listOf(APPROVED, 'on call'))).toEqual(['(no section)', '  Ops'])
+    expect(outline(listOf(APPROVED, ' ops '))).toEqual(['(no section)', '  Ops'])
     expect(outline(listOf(APPROVED, 'hermes'))).toEqual(['* Hermes Agent'])
   })
 

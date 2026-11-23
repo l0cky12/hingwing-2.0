@@ -10,7 +10,7 @@ const EDGE: CanonicalProfilesResult = edgeReply
 
 const listed = (reply: unknown) => rosterOf(parseBots(reply as CanonicalProfilesResult))
 const row = (name: string, more: Partial<CanonicalProfileRow> = {}): CanonicalProfileRow => ({ name, path: `/profiles/${name}`, ...more })
-const line = (bot: Bot) => `${bot.name}${bot.role === null ? '' : ` · ${bot.role}`} [${bot.tone}] ${bot.preview ?? 'no messages'}`
+const line = (bot: Bot) => `${bot.name} [${bot.tone}] ${bot.preview ?? 'no messages'}`
 const outline = (roster: Roster) => [
   roster.featured === null ? '(no default bot)' : `* ${line(roster.featured)}`,
   ...roster.sections.flatMap(section => [section.name ?? '(no section)', ...section.bots.map(bot => `  ${line(bot)}`)])
@@ -33,9 +33,9 @@ describe('the placeholder roster', () => {
       '* Hermes Agent [ink] no messages',
       'Work',
       '  Researcher [slate] Three of the five sources agree on the 2024 figure; the other two cite an older survey.',
-      '  Reviewer · Code review [umber] The slash menu change looks right. One nit about the empty state copy.',
+      '  Reviewer [umber] The slash menu change looks right. One nit about the empty state copy.',
       '(no section)',
-      '  Ops · On call [plum] Pruned four worktrees and freed 11 GB on the build box.',
+      '  Ops [plum] Pruned four worktrees and freed 11 GB on the build box.',
       '  Scribe [olive] no messages'
     ])
   })
@@ -68,11 +68,11 @@ describe('a profiles.list reply', () => {
   it.each([
     ['null', null],
     ['an array', ['section', 'Work']],
-    ['numbers under its keys', { section: 7, role: 7, color: 7 }],
-    ['blank words under its keys', { section: ' ', role: '', color: '' }]
+    ['numbers under its keys', { section: 7 }],
+    ['blank words under its keys', { section: ' ' }]
   ])('reads a ui_meta that is %s as saying nothing', (_, ui_meta) => {
     expect(listed({ profiles: [row('plain', { ui_meta: ui_meta as never })] }).sections).toEqual([
-      { name: null, bots: [{ id: 'plain', name: 'plain', role: null, preview: null, tone: 'slate' }] }
+      { name: null, bots: [{ id: 'plain', name: 'plain', preview: null, tone: 'slate' }] }
     ])
   })
 
@@ -100,8 +100,8 @@ describe('the awkward roster', () => {
     expect(inOrder(roster).filter(bot => bot.tone === 'ink').map(bot => bot.name)).toEqual(['Hermes Agent'])
   })
 
-  it('keeps a tone the user chose, and paints over a colour that is not one of the tones', () => {
-    expect(named('Painter')?.tone).toBe('plum')
+  it('paints over a colour Hermes stored', () => {
+    expect(BOT_TONES).toContain(named('Painter')?.tone)
     expect(BOT_TONES).toContain(named('Hexer')?.tone)
   })
 
@@ -116,22 +116,18 @@ describe('the awkward roster', () => {
 })
 
 describe('avatar tones', () => {
-  it('never give two neighbours the same tone unless the user chose both, keep every chosen tone, and keep ink for the default bot', () => {
+  it('never give a bot the tone of the bot above it, and keep ink for the default bot', () => {
     const random = seeded(23)
-    const pick = <T>(from: readonly T[]) => from[Math.floor(random() * from.length)] as T
     for (let round = 0; round < 200; round++) {
       const facts: BotFacts[] = Array.from({ length: 1 + Math.floor(random() * 24) }, (_, at) => ({
-        id: `bot-${at}` as BotFacts['id'], name: `Bot ${at}`, isDefault: random() < 0.1, role: null, preview: null,
-        section: pick(['Work', 'Home', null]), chosenTone: random() < 0.4 ? pick(BOT_TONES) : null
+        id: `bot-${at}` as BotFacts['id'], name: `Bot ${at}`, isDefault: random() < 0.1, preview: null,
+        section: (['Work', 'Home', null] as const)[Math.floor(random() * 3)] ?? null
       }))
-      const chosen = new Map(facts.map(bot => [bot.id, bot.chosenTone]))
       const roster = rosterOf(facts)
       const rows = roster.sections.flatMap(section => section.bots)
       rows.forEach((bot, at) => {
-        const above = rows[at - 1]
         expect(bot.tone, `round ${round}: ${bot.id} is not the default bot`).not.toBe('ink')
-        if (chosen.get(bot.id) !== null) expect(bot.tone, `round ${round}: ${bot.id} keeps its tone`).toBe(chosen.get(bot.id))
-        if (above !== undefined && (chosen.get(bot.id) === null || chosen.get(above.id) === null)) expect(bot.tone, `round ${round}: ${bot.id} under ${above.id}`).not.toBe(above.tone)
+        if (at > 0) expect(bot.tone, `round ${round}: ${bot.id} under ${rows[at - 1]?.id}`).not.toBe(rows[at - 1]?.tone)
       })
       expect(roster.featured?.tone ?? 'ink', `round ${round}: the default bot`).toBe('ink')
     }

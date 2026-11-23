@@ -25,7 +25,7 @@ export function listOf(bots: Bots | undefined, query: string | null): ListView {
   const { roster } = bots
   if (roster.featured === null && roster.sections.length === 0) return { show: 'note', words: NO_BOTS }
   const sought = (query ?? '').trim().toLowerCase()
-  const kept = (bot: Bot) => [bot.name, bot.role ?? ''].some(text => text.toLowerCase().includes(sought))
+  const kept = (bot: Bot) => bot.name.toLowerCase().includes(sought)
   const featured = roster.featured !== null && kept(roster.featured) ? roster.featured : null
   const sections = roster.sections.map(section => ({ ...section, bots: section.bots.filter(kept) })).filter(section => section.bots.length > 0)
   return featured === null && sections.length === 0 ? { show: 'note', words: `No bots match “${query}”` } : { show: 'roster', featured, sections }

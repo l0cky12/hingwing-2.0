@@ -20,11 +20,8 @@ export interface BotFacts {
   /** The name shown. Never blank. */
   readonly name: string
   readonly isDefault: boolean
-  readonly role: string | null
   /** null: Hermes puts this bot in no section. */
   readonly section: string | null
-  /** The tone the user chose for this bot. null: Highwing picks one. */
-  readonly chosenTone: BotTone | null
   /** One line from the bot's newest chat. null: it has no messages yet. */
   readonly preview: string | null
 }
@@ -32,7 +29,6 @@ export interface BotFacts {
 export interface Bot {
   readonly id: BotId
   readonly name: string
-  readonly role: string | null
   readonly preview: string | null
   readonly tone: AvatarTone
 }
@@ -46,7 +42,7 @@ export interface BotSection {
 
 /**
  * Every bot once, in the order the sidebar draws them: the default bot, then each section from the
- * top. No two neighbours in that order share a tone unless the user chose both tones.
+ * top. No two neighbours in that order share a tone.
  */
 export interface Roster {
   /** Hermes's default profile. null when Hermes marks none. */
@@ -67,22 +63,7 @@ export type Bots =
   /** The newest roster Hermes gave. It stays while the connection is down or a later ask is refused. */
   | { readonly state: 'listed'; readonly roster: Roster }
 
-const shown = ({ id, name, role, preview }: BotFacts, tone: AvatarTone): Bot => ({ id, name, role, preview, tone })
-
-function painted(rows: readonly BotFacts[]): Bot[] {
-  const out: Bot[] = []
-  let next = 0
-  for (const [at, row] of rows.entries()) {
-    let tone = row.chosenTone
-    if (tone === null) {
-      const avoid = [out[at - 1]?.tone, rows[at + 1]?.chosenTone]
-      while (avoid.includes(BOT_TONES[next % BOT_TONES.length])) next++
-      tone = BOT_TONES[next++ % BOT_TONES.length] as BotTone
-    }
-    out.push(shown(row, tone))
-  }
-  return out
-}
+const shown = ({ id, name, preview }: BotFacts, tone: AvatarTone): Bot => ({ id, name, preview, tone })
 
 /** Only the first default bot is featured. */
 export function rosterOf(facts: readonly BotFacts[]): Roster {
@@ -90,7 +71,7 @@ export function rosterOf(facts: readonly BotFacts[]): Roster {
   const rest = facts.filter(bot => bot !== featured)
   const names = [...new Set(rest.map(bot => bot.section))].sort((a, b) => Number(a === null) - Number(b === null))
   const ordered = names.flatMap(name => rest.filter(bot => bot.section === name))
-  const bots = painted(ordered)
+  const bots = ordered.map((bot, at) => shown(bot, BOT_TONES[at % BOT_TONES.length] as BotTone))
   return {
     featured: featured === null ? null : shown(featured, 'ink'),
     sections: names.map(name => ({ name, bots: bots.filter((_, at) => ordered[at]?.section === name) }))

@@ -417,7 +417,6 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .bot-feature[aria-current] .bot-badge { box-shadow: 0 0 0 2px var(--sheet); }
 .bot-text { display: flex; flex-direction: column; min-width: 0; }
 .bot-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bot-role { font-weight: 400; color: var(--graphite); }
 .bot-preview { font-size: 13px; color: var(--graphite); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bot-feature { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; padding: 14px 12px 12px; border-radius: 6px; }
 .bot-badged { position: relative; display: inline-block; }

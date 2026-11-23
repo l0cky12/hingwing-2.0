@@ -2,7 +2,7 @@
  * The only place gateway shapes become domain shapes. Everything past these functions trusts its types.
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
-import { BOT_TONES, type BotFacts, type BotId } from '../domain/bots'
+import type { BotFacts, BotId } from '../domain/bots'
 import type { ModelConfirm, ModelMenu } from '../domain/command'
 import type { Admission, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type {
@@ -527,20 +527,17 @@ export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<Si
 }
 
 /**
- * Where Highwing looks in a profile's `ui_meta` for what the contract has no field for. These three
- * key names are Highwing's own guess: the contract types `ui_meta` as an open object, and no Hermes
+ * Where Highwing looks in a profile's `ui_meta` for what the contract has no field for. This key
+ * name is Highwing's own guess: the contract types `ui_meta` as an open object, and no Hermes
  * source or recorded reply was at hand to read the real names from. A recording made with
  * HIGHWING_RECORD keeps the real `profiles.list` reply in its header. Read the names there, change
  * them here, and update the "Bots" section of docs/compatibility.md.
  */
-const UI_META = { section: 'section', role: 'role', tone: 'color' } as const
+const UI_META = { section: 'section' } as const
 
 const words = (raw: unknown): string | null => (isString(raw) && raw.trim() !== '' ? raw.trim() : null)
 
-/**
- * `profiles.list` as flat facts, in the reply's order. A colour is kept only when it is one of
- * Highwing's own tone names, so an avatar's contrast never depends on what Hermes stored.
- */
+/** `profiles.list` as flat facts, in the reply's order. */
 export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
   const rows: readonly unknown[] = isObject(reply) && Array.isArray(reply.profiles) ? reply.profiles : []
   const seen = new Set<string>()
@@ -548,14 +545,11 @@ export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
     if (!isObject(row) || !isString(row.name) || row.name.trim() === '' || seen.has(row.name)) return []
     seen.add(row.name)
     const meta: Obj = isObject(row.ui_meta) ? row.ui_meta : {}
-    const colour = words(meta[UI_META.tone])
     return [{
       id: row.name as BotId,
       name: words(row.display_name) ?? row.name,
       isDefault: row.is_default === true,
-      role: words(meta[UI_META.role]),
       section: words(meta[UI_META.section]),
-      chosenTone: BOT_TONES.find(tone => tone === colour) ?? null,
       preview: isObject(row.last_session) ? words(row.last_session.preview) : null
     }]
   })
