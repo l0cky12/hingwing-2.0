@@ -191,13 +191,6 @@ const STEPS = {
       if (value !== 'true') throw new Error(`${role} "${name}" is not the current one`)
     }
   },
-  minwidth: {
-    arity: 1,
-    run: async (ctx, px) => {
-      const [width] = await ctx.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getMinimumSize())
-      if (width !== Number(px)) throw new Error(`the window's minimum width is ${width}, not ${px}`)
-    }
-  },
   tally: {
     arity: 2,
     run: async (ctx, role, n) => {
@@ -420,10 +413,7 @@ async function sizeWindow(ctx, options) {
   const content = { width: width + (ctx.clip?.x ?? 0), height }
   if (content.width === SIZE.width && content.height === SIZE.height) return
   await ctx.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows()[0]
-    // Electron holds a resize to the window's minimum. A tiling compositor does not, so a smaller size lifts it.
-    if (size.width < window.getMinimumSize()[0]) window.setMinimumSize(0, 0)
-    window.setContentSize(size.width, size.height)
+    BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height)
   }, content)
   await ctx.page.waitForFunction(size => innerWidth === size.width && innerHeight === size.height, content, { timeout: ctx.timeout })
     .catch(() => { throw new Error(`the window did not become ${content.width}x${content.height}`) })

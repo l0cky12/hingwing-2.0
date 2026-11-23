@@ -526,7 +526,6 @@ export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<Si
   })
 }
 
-/** A server-to-client request frame, or an `open_requests` entry of a snapshot. Its params carry the session (`tui_gateway/server_requests.py:98,103`); an app-level one has `''`. */
 /**
  * Where Highwing looks in a profile's `ui_meta` for what the contract has no field for. These three
  * key names are Highwing's own guess: the contract types `ui_meta` as an open object, and no Hermes
@@ -562,6 +561,7 @@ export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
   })
 }
 
+/** A server-to-client request frame, or an `open_requests` entry of a snapshot. Its params carry the session (`tui_gateway/server_requests.py:98,103`); an app-level one has `''`. */
 export function parseServerRequest(request: { readonly id: string; readonly method: string; readonly params: unknown }): ServerRequest {
   const sessionId = isObject(request.params) ? request.params.session_id : undefined
   return { requestId: request.id, method: request.method, sessionId: typeof sessionId === 'string' && sessionId !== '' ? sessionId as SessionId : null }

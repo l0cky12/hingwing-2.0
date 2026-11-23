@@ -392,7 +392,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 }
 
 /* The bots sidebar. The tone tokens are for avatars alone. */
-.window { display: grid; grid-template-columns: 288px minmax(0, 1fr); height: 100%; }
+.window { display: grid; grid-template-columns: 288px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; }
 .window[hidden] { display: none; }
 :root { --bots-hover: color-mix(in srgb, var(--sheet) 55%, var(--paper)); --tone-slate: #3E5C7A; --tone-plum: #5A4E7C; --tone-olive: #5B6A34; --tone-mauve: #7A4A5A; --tone-umber: #6E5640; }
 .bots { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--rule); background: var(--paper); }
@@ -439,8 +439,11 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .avatar, .bot-badge { border: 1px solid CanvasText; }
   .bot[aria-current]:focus-visible { border-left-width: 5px; padding-left: 7px; }
 }
-/* The approved rules give the window's one row no limit, so a long thread stretched the page instead of scrolling in its column. */
-.window { grid-template-rows: minmax(0, 1fr); }
 /* New bot does nothing yet. It stays focusable through aria-disabled, so `button:disabled` does not reach it. */
 .bots-head button[aria-disabled="true"] { opacity: .45; cursor: default; }
 .bots-head button[aria-disabled="true"]:hover { background: none; color: var(--graphite); }
+/* Below this the chat would be narrower than its compact layout fits, so the chat keeps the whole window. */
+@media (max-width: 679px) {
+  .window { grid-template-columns: minmax(0, 1fr); }
+  .bots { display: none; }
+}

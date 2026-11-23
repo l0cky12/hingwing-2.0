@@ -14,8 +14,6 @@ export const isAppUrl = (url: string) => {
 
 /** The content size design C was drawn and reviewed at. */
 const DESIGN_SIZE = { width: 1180, height: 860 } as const
-/** Leaves the chat 392 px beside the 288 px bots column, which its compact layout fits. */
-const MIN_WIDTH = 680
 
 export function openWindow(sessionId: SessionId | null): BrowserWindow {
   const window = new BrowserWindow({
@@ -23,8 +21,6 @@ export function openWindow(sessionId: SessionId | null): BrowserWindow {
     title: 'Highwing', backgroundColor: '#E8EBE4',
     webPreferences: { preload: join(import.meta.dirname, '../preload/index.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false }
   })
-  // Not the `minWidth` option: Electron 45 drops it when `useContentSize` is set and no `minHeight` comes with it.
-  window.setMinimumSize(MIN_WIDTH, 0)
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isWebLink(url)) void shell.openExternal(url)
     return { action: 'deny' }
