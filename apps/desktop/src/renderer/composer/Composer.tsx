@@ -4,7 +4,7 @@ import { useState, type FormEvent, type KeyboardEvent } from 'react'
 interface ComposerProps {
   readonly canSend: boolean
   readonly showStop: boolean
-  readonly onSend: (text: string) => Promise<CommandOutcome>
+  readonly onSend: (text: string) => Promise<CommandOutcome<string | null>>
   readonly onStop: () => void
 }
 

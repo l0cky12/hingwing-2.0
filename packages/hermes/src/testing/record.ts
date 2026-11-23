@@ -20,6 +20,10 @@ const OWN_ANSWERS: Readonly<Record<string, (header: Header, reply: Obj, params: 
     header.describe ??= reply
     return NOTHING
   },
+  'commands.catalog': (header, reply) => {
+    header.catalog ??= reply
+    return NOTHING
+  },
   'session.list': (header, reply, params) => {
     if (params.scope !== 'stored') header.list ??= reply
     return NOTHING

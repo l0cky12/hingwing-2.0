@@ -218,6 +218,19 @@ describe('send', () => {
     await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
     expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'hello', state: { s: 'queued' } }])
   })
+
+  it('shows one text and gives the model another, and sends both again after a drop', async () => {
+    const { actor, open, dropAndRedial, answer, calls } = stage()
+    await open()
+    const sent = actor.send('/release-notes', 'SKILL BODY')
+    expect(calls.map(call => call.params)).toEqual([{ session_id: ID, text: '/release-notes', input_id: 'id-1', api_text: 'SKILL BODY' }])
+    dropAndRedial()
+    await sent
+    expect(actor.session.outbox[0]).toMatchObject({ text: '/release-notes', state: { s: 'sending' } })
+    await answer('session.events.since', replay())
+    await answer('session.resume', reconnectSnapshot())
+    expect(calls.map(call => call.params)).toEqual([{ session_id: ID, text: '/release-notes', input_id: 'id-1', api_text: 'SKILL BODY' }])
+  })
 })
 
 describe('answer and stop', () => {

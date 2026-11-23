@@ -3,9 +3,10 @@ import { DONE, refusalOf, refused, SessionActor } from './actor'
 import type { Command, Outcome, ResultOf } from './domain/command'
 import type { ServerRequest } from './domain/reduce'
 import type { Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
+import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import { deriveSidebar, sessionList } from './sidebar'
 import { connect, systemClock, type Clock, type Dialer } from './wire/link'
-import { parseEvent, parseServerRequest, type ParsedEvent } from './wire/parse'
+import { parseCatalog, parseDirective, parseEvent, parseServerRequest, type ParsedEvent } from './wire/parse'
 
 export type { Command, Outcome, Refusal, ResultOf } from './domain/command'
 export type { Clock, Dialer, WireSocket } from './wire/link'
@@ -20,6 +21,8 @@ export interface Feed<T> {
 export interface Hermes {
   readonly link: Feed<Link>
   readonly sidebar: Feed<Sidebar>
+  /** The commands and skills a `/` line can run, read once per connection. Empty when Hermes has no catalog or refused it. */
+  readonly slash: Feed<SlashCatalog>
   /**
    * Watch one session. The listener gets the current value at once and every later one. A session is
    * kept attached while a window watches it, while the gateway lists it as running, while its own
@@ -78,6 +81,15 @@ function sameSidebar(a: Sidebar, b: Sidebar): boolean {
   })
 }
 
+const sameCatalog = (a: SlashCatalog, b: SlashCatalog) =>
+  a.length === b.length && a.every((entry, index) => {
+    const other = b[index]
+    return other !== undefined && entry.kind === other.kind && entry.name === other.name && entry.description === other.description
+  })
+
+const NOTHING_TO_SHOW: Outcome<string | null> = { ok: true, value: null }
+const showing = (outcome: Outcome, words: string | null = null): Outcome<string | null> => (outcome.ok ? { ok: true, value: words } : outcome)
+
 const ATTACHING: ReadonlySet<Session['sync']['state']> = new Set(['opening', 'catching-up', 'rebuilding'])
 
 export function openHermes(options: HermesOptions): Hermes {
@@ -123,7 +135,10 @@ export function openHermes(options: HermesOptions): Hermes {
       for (const actor of [...actors.values()]) actor.linkChanged()
       if (next.state !== 'online') list.stale()
     },
-    onOnline: () => list.refresh(),
+    onOnline: () => {
+      list.refresh()
+      void readCatalog()
+    },
     onEvent: params => {
       const parsed = parseEvent(params)
       ;(routes[parsed.scope] as (parsed: ParsedEvent) => void)(parsed)
@@ -132,6 +147,14 @@ export function openHermes(options: HermesOptions): Hermes {
   }, { startOnLaunch: options.startGatewayOnLaunch ?? true, clock })
 
   const link = feed<Link>(conn.link)
+  const slash = feed<SlashCatalog>([], sameCatalog)
+  let catalogReads = 0
+
+  const readCatalog = async () => {
+    const read = ++catalogReads
+    const catalog = await conn.call('commands.catalog', {}).then(parseCatalog, () => [])
+    if (read === catalogReads) slash.set(catalog)
+  }
 
   const publishSidebar = () => {
     const settled = new Map<SessionId, SessionContent>()
@@ -209,8 +232,12 @@ export function openHermes(options: HermesOptions): Hermes {
     })
   })
 
-  const sessionCommands: { readonly [K in SessionCommand['do']]: (actor: SessionActor, command: Extract<Command, { do: K }>) => Outcome | Promise<Outcome> } = {
-    send: (actor, { text }) => actor.send(text),
+  type Handled<C extends Command> = Outcome<ResultOf<C>> | Promise<Outcome<ResultOf<C>>>
+  const sessionCommands: { readonly [K in SessionCommand['do']]: (actor: SessionActor, command: Extract<Command, { do: K }>) => Handled<Extract<Command, { do: K }>> } = {
+    send: async (actor, { text }) => {
+      const line = slashLineOf(text, slash.get())
+      return line === null ? showing(await actor.send(text)) : runSlash(actor, line)
+    },
     stop: actor => actor.stop(),
     answer: (actor, { promptId, reply }) => actor.answer(promptId, reply),
     discard: (actor, { inputId }) => actor.discard(inputId),
@@ -226,6 +253,26 @@ export function openHermes(options: HermesOptions): Hermes {
       if (outcome.ok) refreshSoon()
       return outcome
     }
+  }
+
+  const highwingRuns: { readonly [name: string]: (actor: SessionActor, arg: string) => Outcome | Promise<Outcome> | null } = {
+    title: (actor, title) => (title === '' ? null : sessionCommands.rename(actor, { do: 'rename', sessionId: actor.id, title }))
+  }
+
+  const runSlash = async (actor: SessionActor, { entry, arg }: SlashLine): Promise<Outcome<string | null>> => {
+    const own = entry.kind === 'command' ? highwingRuns[entry.name]?.(actor, arg) : null
+    if (own != null) return showing(await own)
+    const typed = `/${entry.name}${arg === '' ? '' : ` ${arg}`}`
+    let reply
+    try {
+      reply = await conn.call('command.dispatch', { session_id: actor.id, name: entry.name, ...(arg === '' ? {} : { arg }) })
+    } catch (error) {
+      return { ok: false, refusal: refusalOf(error) }
+    }
+    const directive = parseDirective(reply, typed)
+    if (directive === null) return refused('unsupported', "Highwing can't carry out what Hermes answered to that command.")
+    if (directive.do === 'show') return directive.text === '' ? NOTHING_TO_SHOW : { ok: true, value: directive.text }
+    return showing(await actor.send(directive.text, directive.apiText), directive.note)
   }
 
   const create = async ({ draftId, cwd }: Extract<Command, { do: 'create' }>): Promise<Outcome<SessionId>> => {
@@ -244,20 +291,21 @@ export function openHermes(options: HermesOptions): Hermes {
     }
   }
 
-  const run = async (command: Command): Promise<Outcome<SessionId | void>> => {
+  const run = async (command: Command): Promise<Outcome<ResultOf<Command>>> => {
     if (command.do === 'create') return create(command)
     if (command.do === 'reconnect') {
       conn.retryNow({ start: command.start })
       for (const actor of [...actors.values()]) actor.attach()
       return DONE
     }
-    const handle = sessionCommands[command.do] as (actor: SessionActor, command: SessionCommand) => Outcome | Promise<Outcome>
+    const handle = sessionCommands[command.do] as (actor: SessionActor, command: SessionCommand) => Handled<SessionCommand>
     return handle(await attached(command.sessionId), command)
   }
 
   return {
     link,
     sidebar,
+    slash,
     watch,
     run: command => run(command) as Promise<Outcome<ResultOf<typeof command>>>,
     close: async () => {

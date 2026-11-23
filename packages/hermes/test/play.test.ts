@@ -27,17 +27,18 @@ describe('the errand, played through the real client', () => {
     expect(await playToEnd(fixture)).toEqual(LIVE)
   })
 
-  it('opens with the handshake, one resume with history and both lists, then makes the story\'s two calls', async () => {
+  it('opens with the handshake, one resume with history, both lists and the slash catalog, then makes the story\'s two calls', async () => {
     const { script } = (await moments(fixture)).at(-1) as Moment
     expect(script.dials).toBe(1)
     const sent = methodsOf(script.received)
     expect(sent.map(call => call.method)).toEqual([
-      'client.capabilities', 'runtime.describe', 'session.resume', 'session.list', 'session.list', 'prompt.submit', 'approval.respond'
+      'client.capabilities', 'runtime.describe', 'session.resume', 'session.list', 'session.list', 'commands.catalog', 'prompt.submit', 'approval.respond'
     ])
     expect(sent[2]?.params).toEqual({ session_id: fixture.header.sessionId, display_projection: true })
     expect(sent.slice(3, 5).map(call => call.params)).toEqual([{ scope: 'live' }, { scope: 'stored', limit: 100 }])
-    expect(sent[5]?.params).toEqual((fixture.steps[stepOf('prompt.submit')] as { params: unknown }).params)
-    expect(sent[6]?.params).toEqual((fixture.steps[stepOf('approval.respond')] as { params: unknown }).params)
+    expect(sent[5]?.params).toEqual({})
+    expect(sent[6]?.params).toEqual((fixture.steps[stepOf('prompt.submit')] as { params: unknown }).params)
+    expect(sent[7]?.params).toEqual((fixture.steps[stepOf('approval.respond')] as { params: unknown }).params)
   })
 
   it('yields the session at every step that changed it', async () => {

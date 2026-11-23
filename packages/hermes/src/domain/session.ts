@@ -181,6 +181,8 @@ export type NoticeItem =
 export interface OutboxEntry {
   readonly inputId: InputId
   readonly text: string
+  /** What the model reads when it differs from the `text` the thread and the stored history show. */
+  readonly apiText?: string
   readonly state: { readonly s: 'sending' } | { readonly s: 'queued' } | { readonly s: 'failed'; readonly message: string }
 }
 
