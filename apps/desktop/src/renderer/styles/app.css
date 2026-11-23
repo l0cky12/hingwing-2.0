@@ -239,21 +239,24 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 }
 
 @media (forced-colors: active) {
-  .thread > *::after { width: 0; background: none; border-left: 2px solid CanvasText; }
+  .thread > *::after { width: 0; border-left: 2px solid CanvasText; }
+  .thread > .approval:not(.answered):not(:first-child)::after { top: -1px; }
+  .thread > .approval:not(.answered):not(:last-child)::after { bottom: calc(-1px - var(--gap)); }
   .thread > .step::before, .thread > .group::before, .thread > .approval::before {
     left: calc(var(--thread-x) - var(--col) - 4.25px); width: 10px; height: 10px; box-sizing: border-box;
-    background: none; box-shadow: none; border: 5px solid CanvasText;
+    background: Canvas; border: 5px solid CanvasText;
   }
   .thread > .step.running::before, .thread > .approval::before { border-width: 2px; }
-  .thread > .step.live::before, .thread > .group.live::before, .thread > .approval.live::before { box-shadow: none; border: 7px solid Highlight; }
-  .tip .glyph { background: none; border: 7px solid CanvasText; }
-  .tip.thinking .glyph, .tip.streaming .glyph, .tip.working .glyph, .tip.blocked .glyph { border-color: Highlight; }
+  .thread > .step.live::before, .thread > .group.live::before, .thread > .approval.live::before, .tip.working .glyph {
+    border: 7px solid Highlight; outline: 2px solid Highlight; outline-offset: 2px;
+  }
+  .tip .glyph { background: Canvas; border: 7px solid CanvasText; }
   .tip.complete .glyph, .tip.lost .glyph { border-width: 2px; }
-  .tip.complete .glyph::after { left: 2.5px; top: -0.25px; }
-  .caret::after { width: 0; background: none; border-left: 0.5em solid CanvasText; }
+  .tip.complete .glyph::after { left: 3px; top: 0.25px; width: 4px; height: 7px; }
+  .caret::after { width: 0; border-left: 0.5em solid CanvasText; }
 
   .approval { --card-edge: 1px; border: 1px solid CanvasText; }
-  .approval.live { --card-edge: 4px; border-left: var(--card-edge) solid Highlight; }
+  .approval.live { --card-edge: 4px; border-left-width: var(--card-edge); }
   .approval.answered { --card-edge: 0px; }
   .approval.answered, .approval.answered pre { border: 0; }
   .thread > .approval::after { left: calc(var(--thread-x) - var(--col) - var(--card-edge)); }
@@ -267,7 +270,6 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .diff .del { padding-left: 0; border-left: var(--line-edge) dotted CanvasText; }
 
   .step.open > .record:not(.bare), .prose pre, .approval pre { border: 1px solid CanvasText; }
-  .banner { border-block: 1px solid CanvasText; }
   .composer button { border: 1px solid ButtonText; }
   textarea:focus { outline: 2px solid Highlight; outline-offset: 2px; }
 }
