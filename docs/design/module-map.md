@@ -40,6 +40,8 @@ highwing-2.0/
           fake-host.ts                                    fake ssh, tailscale and hermes executables, and SCENARIOS (imported by path, not exported)
     thread/                      @highwing/thread         pure, browser-safe
       src/thread-view.ts                                  design C: threadView, outline, checkThread
+      src/prose.ts                                        proseBlocks: the markdown parse the renderer draws
+      src/find.ts                                         findInThread: matches across a view's text
   apps/desktop/
     src/ipc-contract.ts          shared by all three      Topic, Push, Bridge, applyPush, Setup, SetupCommand
     src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows)
@@ -98,6 +100,7 @@ A `message.delta` frame becomes pixels in four steps.
 |---|---|---|
 | Design C | `outline(threadView(session))` compared with a golden text, for each fixture | `@highwing/thread` tests |
 | Soundness at every moment | `checkThread(threadView(session))` on every step of every fixture | same |
+| Find | `findInThread(threadView(session), query)` on the settled errand, counted against `outline` with every row open | same |
 | The attach order | `reduce` fed the `attached` cases by hand: a catch-up frame that ends the turn, a hole, a new epoch | `domain/` tests |
 | Reconnect | `playToEnd(fixture, { drop })` for a drop after every push, compared with the undisturbed outline | `@highwing/hermes` tests |
 | A gap | the same with `ringFrames` small, so replay answers `snapshot_required` | same |
