@@ -74,7 +74,68 @@ const STEPS = {
       const found = await ctx.page.evaluate(() => ['find', 'find-current'].reduce((total, name) => total + (CSS.highlights.get(name)?.size ?? 0), 0))
       if (found !== Number(count)) throw new Error(`${found} ranges are marked, expected ${count}`)
     }
+  },
+  enabled: {
+    arity: 2,
+    run: async (ctx, role, name) => {
+      if (!(await ctx.page.getByRole(role, { name, exact: true }).isEnabled({ timeout: ctx.timeout }))) throw new Error(`${role} "${name}" is disabled`)
+    }
+  },
+  checked: {
+    arity: 2,
+    run: async (ctx, role, name) => {
+      if (!(await ctx.page.getByRole(role, { name, exact: true }).isChecked({ timeout: ctx.timeout }))) throw new Error(`${role} "${name}" is not checked`)
+    }
+  },
+  count: {
+    arity: 2,
+    run: async (ctx, role, n) => {
+      const locator = ctx.page.getByRole(role)
+      const seen = await poll(ctx, () => locator.count(), held => held === Number(n))
+      if (seen !== Number(n)) throw new Error(`${seen} ${role} element(s) are shown, not ${n}`)
+    }
+  },
+  gone: {
+    arity: 1,
+    run: async (ctx, text) => {
+      const shown = await ctx.page.getByText(text, { exact: false }).filter({ visible: true }).count()
+      if (shown > 0) throw new Error(`"${text}" is shown ${shown} time(s)`)
+    }
+  },
+  called: {
+    arity: 3,
+    run: async (ctx, method, json, n) => {
+      const check = { method, expected: JSON.parse(json), n: Number(n) }
+      const seen = await poll(ctx, async () => callsLike(ctx, check), held => held >= check.n)
+      if (seen !== check.n) throw new Error(`the gateway saw ${seen} ${method} call(s) containing ${json}, not ${n}`)
+      ctx.called.push(check)
+    }
+  },
+  quiet: {
+    arity: 0,
+    run: async ctx => {
+      if (ctx.errors.length > 0) throw new Error(`the window logged ${ctx.errors.length} error(s): ${ctx.errors[0]}`)
+    }
   }
+}
+
+async function poll(ctx, read, done) {
+  const deadline = Date.now() + ctx.timeout
+  for (;;) {
+    const held = await read()
+    if (done(held) || Date.now() > deadline) return held
+    await new Promise(resolve => setTimeout(resolve, 50))
+  }
+}
+
+const contains = (actual, expected) => expected !== null && typeof expected === 'object' && !Array.isArray(expected)
+  ? actual !== null && typeof actual === 'object' && Object.entries(expected).every(([key, value]) => contains(actual[key], value))
+  : JSON.stringify(actual) === JSON.stringify(expected)
+
+function callsLike(ctx, { method, expected }) {
+  if (!existsSync(ctx.calls)) return 0
+  return readFileSync(ctx.calls, 'utf8').split('\n').filter(line => line.trim() !== '').map(line => JSON.parse(line))
+    .filter(frame => frame.method === method && contains(frame.params, expected)).length
 }
 
 const fail = message => {
@@ -218,14 +279,19 @@ function ownDisplay() {
   if (parent !== process.ppid) fail(`display ${process.env.DISPLAY} belongs to another run's X server. Start this run again.`)
 }
 
-function withDrop(fixturePath, type, out) {
+function withEdits(fixturePath, { dropAfter, models, guarded }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
+  const header = JSON.parse(lines[0])
   const steps = lines.slice(1).map(line => JSON.parse(line))
-  const at = steps.findIndex(step => step.push?.params?.type === type)
-  if (at === -1) fail(`${fixturePath} pushes no ${type} frame`)
-  const dropAt = Math.min(steps[at].at + 50, steps[at + 1]?.at ?? Infinity)
-  steps.splice(at + 1, 0, { at: dropAt, drop: 1006 })
-  writeFileSync(out, [lines[0], ...steps.map(step => JSON.stringify(step))].join('\n') + '\n')
+  if (models) header.models = JSON.parse(readFileSync(resolve(process.cwd(), models), 'utf8'))
+  if (guarded) header.guarded = guarded.split(',')
+  if (dropAfter) {
+    const at = steps.findIndex(step => step.push?.params?.type === dropAfter)
+    if (at === -1) fail(`${fixturePath} pushes no ${dropAfter} frame`)
+    const dropAt = Math.min(steps[at].at + 50, steps[at + 1]?.at ?? Infinity)
+    steps.splice(at + 1, 0, { at: dropAt, drop: 1006 })
+  }
+  writeFileSync(out, [header, ...steps].map(line => JSON.stringify(line)).join('\n') + '\n')
   return out
 }
 
@@ -251,12 +317,12 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
   if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
-  if (scenario && options['drop-after']) fail('--drop-after edits the fixture a --fixture run replays. It does nothing with --fake-host')
+  if (scenario && (options['drop-after'] || options.models || options.guarded)) fail('--drop-after, --models and --guarded edit the fixture a --fixture run replays. They do nothing with --fake-host')
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')
   const runId = options.run ?? `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`
@@ -265,8 +331,11 @@ async function run(argv) {
   mkdirSync(evidence, { recursive: true })
   mkdirSync(scratch, { recursive: true })
   const given = options.fixture ? resolve(process.cwd(), options.fixture) : scenario ? ERRAND : null
-  const fixture = options['drop-after'] ? withDrop(given, options['drop-after'], join(evidence, 'fixture-with-drop.jsonl')) : given
-  const ctx = { page: null, evidence, fixture, timeout: Number(options.timeout ?? 15_000), holding: null }
+  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded }
+  const fixture = edits.dropAfter || edits.models || edits.guarded ? withEdits(given, edits, join(evidence, 'fixture-edited.jsonl')) : given
+  const calls = join(evidence, 'gateway-calls.jsonl')
+  rmSync(calls, { force: true })
+  const ctx = { page: null, evidence, fixture, calls, called: [], errors: [], timeout: Number(options.timeout ?? 15_000), holding: null }
 
   const userData = join(scratch, 'user-data')
   const saved = SAVED[options.saved ?? 'none']
@@ -284,7 +353,8 @@ async function run(argv) {
   delete env.ELECTRON_RENDERER_URL
   delete env.HIGHWING_FIXTURE
   delete env.HIGHWING_RECORD
-  if (!host) env.HIGHWING_FIXTURE = fixture
+  delete env.HIGHWING_FIXTURE_CALLS
+  if (!host) Object.assign(env, { HIGHWING_FIXTURE: fixture, HIGHWING_FIXTURE_CALLS: calls })
 
   const { _electron } = requireDesktop('playwright-core')
   log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"` : `HIGHWING_FIXTURE=${fixture}`}`)
@@ -307,13 +377,23 @@ async function run(argv) {
   let failed = null
   try {
     ctx.page = await app.firstWindow({ timeout: ctx.timeout })
-    ctx.page.on('console', message => appendFileSync(join(evidence, 'console.log'), `${message.type()} ${message.text()}\n`))
-    ctx.page.on('pageerror', error => appendFileSync(join(evidence, 'console.log'), `pageerror ${error.stack ?? error}\n`))
+    ctx.page.on('console', message => {
+      appendFileSync(join(evidence, 'console.log'), `${message.type()} ${message.text()}\n`)
+      if (message.type() === 'error') ctx.errors.push(message.text())
+    })
+    ctx.page.on('pageerror', error => {
+      appendFileSync(join(evidence, 'console.log'), `pageerror ${error.stack ?? error}\n`)
+      ctx.errors.push(String(error.message ?? error))
+    })
     await ctx.page.waitForLoadState('domcontentloaded')
     for (const { verb, args } of steps) {
       log(ctx, `${verb} ${args.map(arg => JSON.stringify(arg)).join(' ')}`)
       if (verb !== 'shot' && verb !== 'wait') ctx.holding = null
       await STEPS[verb].run(ctx, ...args)
+    }
+    for (const check of ctx.called) {
+      const seen = callsLike(ctx, check)
+      if (seen !== check.n) throw new Error(`by the end of the run the gateway saw ${seen} ${check.method} call(s) containing ${JSON.stringify(check.expected)}, not ${check.n}`)
     }
   } catch (error) {
     failed = error

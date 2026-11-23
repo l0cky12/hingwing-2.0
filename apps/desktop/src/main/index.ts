@@ -2,12 +2,13 @@ import { checkTarget, liveDialer, openHermes, remoteRoute, type Dialer, type Rou
 import type { Target } from '@highwing/hermes/domain'
 import { loadFixture, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
 import { app, BrowserWindow, ipcMain } from 'electron'
+import { appendFileSync } from 'node:fs'
 import { ownConnection, pinnedConnection } from './connection'
 import { serveWindows } from './ipc'
 import { loadSettings, saveSettings } from './settings'
 import { isAppUrl, openWindow } from './windows'
 
-const { HIGHWING_FIXTURE, HIGHWING_RECORD } = process.env
+const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_RECORD } = process.env
 const fixture = HIGHWING_FIXTURE ? loadFixture(HIGHWING_FIXTURE) : null
 
 const recorded = (dial: Dialer): Dialer => (HIGHWING_RECORD ? recordingDialer(dial, HIGHWING_RECORD) : dial)
@@ -25,7 +26,10 @@ app.whenReady().then(async () => {
   const open = (dial: Dialer) => openHermes({ dial, client: { name: 'highwing', version: app.getVersion() } })
   const settingsDir = app.getPath('userData')
   const owner = fixture
-    ? pinnedConnection(open(scriptedDialer(fixture, { timing: 'recorded' })))
+    ? pinnedConnection(open(scriptedDialer(fixture, {
+      timing: 'recorded',
+      ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(frame)}\n`) } : {})
+    })))
     : ownConnection({ loaded: await loadSettings(settingsDir), save: target => saveSettings(settingsDir, target), check: checkTarget, routeFor, open })
   const served = serveWindows(owner, ipcMain, isAppUrl)
   openWindow(fixture?.header.sessionId ?? null)
