@@ -1,10 +1,15 @@
-"""Write a fixture of one Hermes turn, recorded from Hermes's own canonical gateway.
+"""Write one story's fixture: one Hermes turn, recorded from Hermes's own canonical gateway.
 
-Run with Hermes's interpreter:  <hermes python> -I fixtures/make_fixture.py [errand|markdown]
+Run with Hermes's interpreter:  <hermes python> -I fixtures/make_fixture.py [story]
 
-``errand`` (the default) writes fixtures/errand.jsonl: four tool calls and an approval. ``markdown``
-writes fixtures/markdown.jsonl: a text-only reply that holds a list, a heading, a link, a table and a
-fenced block.
+The stories are in ``STORIES``:
+- ``errand`` (the default) writes fixtures/errand.jsonl. Its turn asks to delete a folder, the story
+  answers ``once``, and the fixture ends with the settled turn's ``stored`` rows.
+- ``long-turn`` writes fixtures/long-turn.jsonl: a turn with enough steps to overflow the window. The
+  fixture ends at its ``approval.request``; the script then answers ``deny`` off the record so the
+  turn can finish.
+- ``markdown`` writes fixtures/markdown.jsonl: a text-only reply that holds a list, a heading, a
+  link, a table and a fenced block. It asks for no approval.
 
 The script runs the canonical gateway in-process, the way Hermes's own
 tests/gateway/test_authority_complete_persisted_turn.py does: a real ``SessionAuthority`` over a
@@ -24,17 +29,18 @@ Real:
 - the approval: the real ``terminal`` tool trips Hermes's danger detector and blocks in
   ``tools/approval.py`` until the gateway resolves the prompt;
 - the stored rows: the turn's messages are flushed by ``AIAgent._flush_messages_to_session_db``,
-  the receipt is ``gateway.run_turn_runner._persisted_turn``, and the ``stored`` step is the
+  the receipt is ``gateway.run_turn_runner._persisted_turn``, and a ``stored`` step is the
   ``display_messages`` of a real ``session.resume {display_projection: true}``.
 
 Scripted, because no AI provider exists on this machine:
-- the assistant's words and its choice of tool calls (the story's ``steps`` below). ``execute_finite_admission``
+- the assistant's words and its choice of tool calls (each story's ``steps``). ``execute_finite_admission``
   is replaced, as the Hermes test above replaces it, by a turn that plays the model's part and
   calls the same ``TurnRunner`` sinks a provider-backed turn calls, in the agent loop's order
   (``agent/turn_iteration_prep.py``, ``agent/turn_tool_round.py``, ``agent/stream_delivery.py``);
 - the clock. ``at`` and ``tool.complete.duration_s`` come from a virtual clock so a rerun diffs
-  cleanly; tool durations are fixed per call in ``STORY``;
-- ids. ``uuid.uuid4`` is seeded, so admission, prompt, turn and epoch ids repeat across runs.
+  cleanly; tool durations, and any pause before a step, are fixed per call in the story's ``steps``;
+- ids. ``uuid.uuid4`` is seeded per story, so admission, prompt, turn and epoch ids repeat across
+  runs and differ between fixtures.
 
 Not emitted, because only a provider produces them: ``thinking.delta`` (spinner text while a request
 is in flight), ``reasoning.delta`` and ``session.usage`` (token counts).
@@ -51,51 +57,31 @@ import sys
 import threading
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-
-SEED = 20261121
-_rng = random.Random(SEED)
-# Patched before Hermes is imported, so modules that bind ``from uuid import uuid4`` get it too.
-uuid.uuid4 = lambda: uuid.UUID(int=_rng.getrandbits(128), version=4)
-
-
-_version = subprocess.run(["hermes", "--version"], capture_output=True, text=True, check=True).stdout
-_found = re.search(r"^Hermes Agent v(\S+)", _version, re.M), re.search(r"^Install directory:\s*(.+)$", _version, re.M)
-if not all(_found):
-    sys.exit(f"hermes --version printed no version or no 'Install directory:' line:\n{_version}")
-HERMES_VERSION, HERMES_DIR = _found[0].group(1), _found[1].group(1).strip()
-sys.path.insert(0, HERMES_DIR)
-import hermes_bootstrap  # noqa: E402,F401
 
 WORK = "/tmp/hermes-proto-work"
 HOME = "/tmp/hermes-proto-home"
 USER = "highwing-fixture"
 
-for path in (WORK, HOME):
-    shutil.rmtree(path, ignore_errors=True)
-os.makedirs(os.path.join(WORK, "scratch"))
-os.makedirs(HOME)
-Path(WORK, "scratch", "old.txt").write_text("tmp\n")
-# After the bootstrap: pointed at a new home first, it would prepare a whole runtime there.
-os.environ["HERMES_HOME"] = HOME
 
-import model_tools  # noqa: E402
-from gateway import local_viewer_events, session_finite, session_lifecycle  # noqa: E402
-from gateway.config import GatewayConfig, Platform  # noqa: E402
-from gateway.run_turn_runner import TurnRunner, _persisted_turn  # noqa: E402
-from gateway.session import SessionStore  # noqa: E402
-from gateway.session_authority import SessionAuthority  # noqa: E402
-from gateway.session_context import clear_session_vars, set_session_vars  # noqa: E402
-from gateway.session_controls import AuthorityConnection  # noqa: E402
-from persistence_assembly import open_persistence, profile_scope  # noqa: E402
-from run_agent import AIAgent  # noqa: E402
-from tools.approval import register_gateway_notify, unregister_gateway_notify  # noqa: E402
-from tools.approval_context import reset_current_session_key, set_current_session_key  # noqa: E402
-from tui_gateway.transport import serialize_frame  # noqa: E402
+@dataclass(frozen=True)
+class Story:
+    request: str
+    steps: list
+    out: str
+    seed: int
+    # The work dir's files before the turn, by path under WORK.
+    files: dict
+    # The folder the story's rm -rf asks to delete, or None when it deletes nothing.
+    doomed: str | None
+    # The recorded answer to the approval. None ends the fixture at ``approval.request``.
+    answer: str | None
+    # False for a turn that never asks for an approval. The fixture then ends with the turn's ``stored`` rows.
+    approves: bool = True
 
-logging.basicConfig(level=logging.ERROR)
 
 NOTES = "# Todo\n\n- [ ] sketch the chat view\n- [ ] wire the gateway socket\n- [ ] review screenshots\n"
 
@@ -111,24 +97,91 @@ def pin_listing_times():
         os.utime(os.path.join(WORK, name), (1767268800, 1767268800))
 
 
-def scratch_is_gone():
-    if os.path.exists(f"{WORK}/scratch"):
-        sys.exit("the approved rm -rf did not remove the scratch folder")
+ERRAND = Story(
+    request=("In /tmp/hermes-proto-work: make notes.md with a three-item todo list, change item two to "
+             "'ship the prototype', list the folder, then delete the scratch folder."),
+    steps=[
+        {"say": "I'll create the notes file first, then make the edit.",
+         "call": ("write_file", {"path": f"{WORK}/notes.md", "content": NOTES}), "ms": 12},
+        {"say": "",
+         "call": ("patch", {"mode": "replace", "path": f"{WORK}/notes.md",
+                            "old_string": "- [ ] wire the gateway socket", "new_string": "- [ ] ship the prototype"}),
+         "ms": 18},
+        {"say": "Edited. Checking the folder before I delete anything.",
+         "call": ("terminal", {"command": f"cd {WORK} && ls -la && ls scratch"}), "ms": 140,
+         "stage": pin_listing_times},
+        {"say": "", "call": ("terminal", {"command": f"rm -rf {WORK}/scratch"}), "ms": 95},
+        {"say": final_words, "call": None},
+    ],
+    out="errand.jsonl", seed=20261121, files={"scratch/old.txt": "tmp\n"}, doomed=f"{WORK}/scratch", answer="once")
+
+APP = f"{WORK}/app"
 
 
-ERRAND = [
-    {"say": "I'll create the notes file first, then make the edit.",
-     "call": ("write_file", {"path": f"{WORK}/notes.md", "content": NOTES}), "ms": 12},
-    {"say": "",
-     "call": ("patch", {"mode": "replace", "path": f"{WORK}/notes.md",
-                        "old_string": "- [ ] wire the gateway socket", "new_string": "- [ ] ship the prototype"}),
-     "ms": 18},
-    {"say": "Edited. Checking the folder before I delete anything.",
-     "call": ("terminal", {"command": f"cd {WORK} && ls -la && ls scratch"}), "ms": 140,
-     "stage": pin_listing_times},
-    {"say": "", "call": ("terminal", {"command": f"rm -rf {WORK}/scratch"}), "ms": 95},
-    {"say": final_words, "call": None},
-]
+def read(path):
+    return ("read_file", {"path": f"{APP}/{path}"})
+
+
+def edit(path, old, new):
+    return ("patch", {"mode": "replace", "path": f"{APP}/{path}", "old_string": old, "new_string": new})
+
+
+# The thread outgrows the window before the first terminal call, the ``wc`` stays the live end for 3 s,
+# steps keep arriving after it, and the fixture stops while the turn waits on an approval.
+# Each search matches in at most one file: ripgrep does not promise an order across files.
+LONG_TURN = Story(
+    request=("In /tmp/hermes-proto-work/app: rename the greet helper to welcome everywhere, start a changelog, "
+             "count the lines in each file, bump the version to 0.2.0, then delete the build folder."),
+    steps=[
+        {"say": "I'll start with the README to see what the project does.", "call": read("README.md"), "ms": 14},
+        {"say": "Now the helper itself.", "call": read("src/util.py"), "ms": 11},
+        {"say": "And the entry point that calls it.", "call": read("src/main.py"), "ms": 12},
+        {"say": "Checking whether the tests use it too.",
+         "call": ("search_files", {"pattern": "greet", "path": f"{APP}/tests"}), "ms": 36},
+        {"say": "They do, so I'll read that test.", "call": read("tests/test_util.py"), "ms": 10},
+        {"say": "Renaming the function first.", "call": edit("src/util.py", "def greet(", "def welcome("), "ms": 19},
+        {"say": "Then the import in main.py.",
+         "call": edit("src/main.py", "from util import greet", "from util import welcome"), "ms": 17},
+        {"say": "And the call that prints the greeting.",
+         "call": edit("src/main.py", "print(greet(", "print(welcome("), "ms": 16},
+        {"say": "Now the test's import.",
+         "call": edit("tests/test_util.py", "from util import greet", "from util import welcome"), "ms": 18},
+        {"say": "And the test itself.",
+         "call": edit("tests/test_util.py", "def test_greet():\n    assert greet(",
+                      "def test_welcome():\n    assert welcome("), "ms": 21},
+        {"say": "Making sure no call to greet is left.",
+         "call": ("search_files", {"pattern": r"greet\(", "path": APP}), "ms": 41},
+        {"say": "Reading the config for the current version.", "call": read("config.toml"), "ms": 9},
+        {"say": "Starting a changelog for the rename.",
+         "call": ("write_file", {"path": f"{APP}/CHANGELOG.md",
+                                 "content": "# Changelog\n\n## Unreleased\n\n- Renamed `greet` to `welcome`.\n"}),
+         "ms": 13},
+        {"say": "Mentioning the new name in the README.",
+         "call": edit("README.md", "A tiny greeter.", "A tiny greeter. Its helper is `welcome`."), "ms": 15},
+        {"say": "Counting the lines in each file.",
+         "call": ("terminal", {"command": f"cd {APP} && wc -l README.md CHANGELOG.md config.toml src/*.py tests/*.py"}),
+         "ms": 3000},
+        {"say": "Bumping the version for the release.",
+         "call": edit("config.toml", 'version = "0.1.0"', 'version = "0.2.0"'), "ms": 240},
+        {"say": "Checking that only the config has the new version.",
+         "call": ("search_files", {"pattern": r"0\.2\.0", "path": APP}), "ms": 260},
+        {"say": "Putting the version in the changelog heading.",
+         "call": edit("CHANGELOG.md", "## Unreleased", "## 0.2.0"), "ms": 230},
+        {"say": "Reading the changelog back.", "call": read("CHANGELOG.md"), "ms": 250},
+        {"say": "Last, removing the stale build folder.", "pause": 1500,
+         "call": ("terminal", {"command": f"rm -rf {APP}/build"}), "ms": 90},
+        {"say": "I left the build folder in place.", "call": None},
+    ],
+    out="long-turn.jsonl", seed=20261122,
+    files={
+        "app/README.md": "# app\n\nA tiny greeter. `python src/main.py NAME` prints a greeting.\n",
+        "app/config.toml": '[app]\nname = "app"\nversion = "0.1.0"\n',
+        "app/src/util.py": 'def greet(name):\n    return f"Hello, {name}!"\n',
+        "app/src/main.py": "import sys\n\nfrom util import greet\n\nprint(greet(sys.argv[1]))\n",
+        "app/tests/test_util.py": 'from util import greet\n\n\ndef test_greet():\n    assert greet("Ada") == "Hello, Ada!"\n',
+        "app/build/app.pyz": "stale\n",
+    },
+    doomed=f"{APP}/build", answer=None)
 
 MARKDOWN_REPLY = """Here is the plan for notes.md.
 
@@ -150,23 +203,57 @@ Run this first:
 cp notes.md notes.md.bak
 ```"""
 
-# ``approves``: the story waits for an approval prompt. ``check`` runs once the turn has ended.
-STORIES = {
-    "errand": {
-        "request": ("In /tmp/hermes-proto-work: make notes.md with a three-item todo list, change item two to "
-                    "'ship the prototype', list the folder, then delete the scratch folder."),
-        "steps": ERRAND, "out": "errand.jsonl", "approves": True, "check": scratch_is_gone},
-    "markdown": {
-        "request": "Give me a short plan for backing up notes.md and renaming its heading.",
-        "steps": [{"say": MARKDOWN_REPLY, "call": None}], "out": "markdown.jsonl", "approves": False,
-        "check": lambda: None},
-}
-if len(sys.argv) > 2 or (sys.argv[1:] and sys.argv[1] not in STORIES):
-    sys.exit(f"usage: make_fixture.py [{'|'.join(STORIES)}]")
-TALE = STORIES[sys.argv[1] if len(sys.argv) > 1 else "errand"]
-REQUEST, STORY = TALE["request"], TALE["steps"]
-OUT = Path(__file__).resolve().parent / TALE["out"]
+MARKDOWN = Story(
+    request="Give me a short plan for backing up notes.md and renaming its heading.",
+    steps=[{"say": MARKDOWN_REPLY, "call": None}],
+    out="markdown.jsonl", seed=20261123, files={}, doomed=None, answer=None, approves=False)
 
+STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN}
+NAME = sys.argv[1] if len(sys.argv) > 1 else "errand"
+if NAME not in STORIES:
+    sys.exit(f"no story named {NAME!r}; pick one of: {', '.join(STORIES)}")
+TALE = STORIES[NAME]
+REQUEST, STORY = TALE.request, TALE.steps
+
+_rng = random.Random(TALE.seed)
+# Patched before Hermes is imported, so modules that bind ``from uuid import uuid4`` get it too.
+uuid.uuid4 = lambda: uuid.UUID(int=_rng.getrandbits(128), version=4)
+
+
+_version = subprocess.run(["hermes", "--version"], capture_output=True, text=True, check=True).stdout
+_found = re.search(r"^Hermes Agent v(\S+)", _version, re.M), re.search(r"^Install directory:\s*(.+)$", _version, re.M)
+if not all(_found):
+    sys.exit(f"hermes --version printed no version or no 'Install directory:' line:\n{_version}")
+HERMES_VERSION, HERMES_DIR = _found[0].group(1), _found[1].group(1).strip()
+sys.path.insert(0, HERMES_DIR)
+import hermes_bootstrap  # noqa: E402,F401
+
+OUT = Path(__file__).resolve().parent / TALE.out
+
+for path in (WORK, HOME):
+    shutil.rmtree(path, ignore_errors=True)
+for name, text in TALE.files.items():
+    Path(WORK, name).parent.mkdir(parents=True, exist_ok=True)
+    Path(WORK, name).write_text(text)
+os.makedirs(HOME)
+# After the bootstrap: pointed at a new home first, it would prepare a whole runtime there.
+os.environ["HERMES_HOME"] = HOME
+
+import model_tools  # noqa: E402
+from gateway import local_viewer_events, session_finite, session_lifecycle  # noqa: E402
+from gateway.config import GatewayConfig, Platform  # noqa: E402
+from gateway.run_turn_runner import TurnRunner, _persisted_turn  # noqa: E402
+from gateway.session import SessionStore  # noqa: E402
+from gateway.session_authority import SessionAuthority  # noqa: E402
+from gateway.session_context import clear_session_vars, set_session_vars  # noqa: E402
+from gateway.session_controls import AuthorityConnection  # noqa: E402
+from persistence_assembly import open_persistence, profile_scope  # noqa: E402
+from run_agent import AIAgent  # noqa: E402
+from tools.approval import register_gateway_notify, unregister_gateway_notify  # noqa: E402
+from tools.approval_context import reset_current_session_key, set_current_session_key  # noqa: E402
+from tui_gateway.transport import serialize_frame  # noqa: E402
+
+logging.basicConfig(level=logging.ERROR)
 
 class Clock:
     """Virtual milliseconds since the story began. ``monotonic`` stands in for ``time.monotonic``
@@ -271,6 +358,7 @@ def play_turn(turn, db, history, call_ids):
     streamed = False
     try:
         for iteration, step in enumerate(STORY, start=1):
+            CLOCK.tick(step.get("pause", 0))
             turn._ctx._step_callback_sync(iteration, [])
             words = step["say"]() if callable(step["say"]) else step["say"]
             if words:
@@ -378,30 +466,46 @@ async def main():
     recorder.recording = True
     await story_call("prompt.submit", {"session_id": session_id, "text": REQUEST,
                                        "input_id": "input_" + uuid.uuid4().hex[:16]})
-    if TALE["approves"]:
+    if TALE.approves:
         try:
             request = await asyncio.wait_for(recorder.push_of("approval.request"), 60)
         except TimeoutError:
             sys.exit("the gateway never asked to approve the rm -rf")
         prompt = request["params"]["payload"]
+        answer_to = {"session_id": session_id, "execution_generation": prompt["execution_generation"],
+                     "prompt_id": prompt["prompt_id"]}
+
+    async def stop_recording():
+        pushes = [step["push"] for step in recorder.steps if "push" in step]
+        for _ in range(100):
+            if len(recorder.written) >= len(pushes):
+                break
+            await asyncio.sleep(0.05)
+        recorder.recording = False
+        if recorder.written != pushes:
+            sys.exit("the socket received other frames than the session published")
+        return pushes
+
+    async def record_stored():
+        reader = AuthorityConnection(authority, SimpleNamespace(write=lambda obj: True), {"user_id": USER})
+        snapshot = (await call(reader, "session.resume", {"session_id": session_id, "display_projection": True}))["result"]
+        CLOCK.tick(4)
+        recorder.steps.append({"at": CLOCK.now(), "stored": snapshot["display_messages"]})
+
+    if not TALE.approves:
+        await live.task
+        pushes = await stop_recording()
+        await record_stored()
+    elif TALE.answer is None:
+        pushes = await stop_recording()
+        await call(socket, "approval.respond", {**answer_to, "choice": "deny"})
+        await live.task
+    else:
         CLOCK.tick(1500)
-        await story_call("approval.respond", {"session_id": session_id, "execution_generation": prompt["execution_generation"],
-                                              "prompt_id": prompt["prompt_id"], "choice": "once"})
-
-    await live.task
-    pushes = [step["push"] for step in recorder.steps if "push" in step]
-    for _ in range(100):
-        if len(recorder.written) >= len(pushes):
-            break
-        await asyncio.sleep(0.05)
-    recorder.recording = False
-    if recorder.written != pushes:
-        sys.exit("the socket received other frames than the session published")
-
-    reader = AuthorityConnection(authority, SimpleNamespace(write=lambda obj: True), {"user_id": USER})
-    snapshot = (await call(reader, "session.resume", {"session_id": session_id, "display_projection": True}))["result"]
-    CLOCK.tick(4)
-    recorder.steps.append({"at": CLOCK.now(), "stored": snapshot["display_messages"]})
+        await story_call("approval.respond", {**answer_to, "choice": TALE.answer})
+        await live.task
+        pushes = await stop_recording()
+        await record_stored()
 
     header = {"fixture": 1, "hermes": HERMES_VERSION, "source": "generated", "sessionId": session_id,
               "describe": describe, "list": listing, "stored": created["messages"]}
@@ -410,7 +514,8 @@ async def main():
             out.write(json.dumps(line, ensure_ascii=False) + "\n")
     db.close()
     print(f"wrote {OUT}: {len(pushes)} pushes, {len(recorder.steps) - len(pushes)} other steps", file=sys.stderr)
-    TALE["check"]()
+    if TALE.doomed is not None and os.path.exists(TALE.doomed) != (TALE.answer is None):
+        sys.exit(f"after the answer to the rm -rf, {TALE.doomed} {'is gone' if TALE.answer is None else 'is still there'}")
 
 
 asyncio.run(main())

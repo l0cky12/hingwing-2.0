@@ -2,8 +2,9 @@ import type { Hermes } from '@highwing/hermes'
 import type { Session } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyPush, CHANNEL, isWebLink, parseCommand, validators, type Push, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, parseCommand, parseFileRequest, validators, type FileOutcome, type Push, type Topic } from '../src/ipc-contract'
 import { pinnedConnection } from '../src/main/connection'
+import type { Opener } from '../src/main/files'
 import { COALESCE_MS, serveWindows, sessionPatch, type IpcEvent, type IpcMainLike } from '../src/main/ipc'
 
 const fixture = loadFixture('fixtures/errand.jsonl')
@@ -104,41 +105,45 @@ describe('validators', () => {
   })
 })
 
+function harness() {
+  const listeners = new Map<string, (event: IpcEvent, ...args: unknown[]) => void>()
+  const handlers = new Map<string, (event: IpcEvent, ...args: unknown[]) => unknown>()
+  const ipc: IpcMainLike = {
+    on: (channel, listener) => listeners.set(channel, listener),
+    handle: (channel, handler) => void handlers.set(channel, handler),
+    removeAllListeners: channel => listeners.delete(channel),
+    removeHandler: channel => void handlers.delete(channel)
+  }
+  const pushes: Push[] = []
+  const destroyed: (() => void)[] = []
+  const event = (url = 'app://index.html', senderId = 1): IpcEvent => ({
+    sender: { id: senderId, send: (_channel, _id, push) => void pushes.push(push as Push), isDestroyed: () => false, once: (_name, listener) => destroyed.push(listener) },
+    senderFrame: { url, parent: null }
+  })
+  let emit: (session: Session) => void = () => {}
+  const commands: unknown[] = []
+  const hermes = {
+    watch: (_id: unknown, listener: (session: Session) => void) => {
+      emit = listener
+      listener(moments[0]!)
+      return () => { emit = () => {} }
+    },
+    run: async (command: unknown) => {
+      commands.push(command)
+      return { ok: true, value: undefined }
+    }
+  } as unknown as Hermes
+  const opened: { action: string; path: string }[] = []
+  const opener: Opener = {
+    open: async path => (opened.push({ action: 'open', path }), { ok: true }),
+    show: async path => (opened.push({ action: 'show', path }), { ok: true })
+  }
+  const served = serveWindows(pinnedConnection(hermes), ipc, url => url.startsWith('app://'), opener)
+  return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, served }
+}
+
 describe('serveWindows', () => {
   afterEach(() => vi.useRealTimers())
-
-  function harness() {
-    const listeners = new Map<string, (event: IpcEvent, ...args: unknown[]) => void>()
-    const handlers = new Map<string, (event: IpcEvent, ...args: unknown[]) => unknown>()
-    const ipc: IpcMainLike = {
-      on: (channel, listener) => listeners.set(channel, listener),
-      handle: (channel, handler) => void handlers.set(channel, handler),
-      removeAllListeners: channel => listeners.delete(channel),
-      removeHandler: channel => void handlers.delete(channel)
-    }
-    const pushes: Push[] = []
-    const destroyed: (() => void)[] = []
-    const event = (url = 'app://index.html'): IpcEvent => ({
-      sender: { id: 1, send: (_channel, _id, push) => void pushes.push(push as Push), isDestroyed: () => false, once: (_name, listener) => destroyed.push(listener) },
-      senderFrame: { url, parent: null }
-    })
-    let emit: (session: Session) => void = () => {}
-    const commands: unknown[] = []
-    const hermes = {
-      watch: (_id: unknown, listener: (session: Session) => void) => {
-        emit = listener
-        listener(moments[0]!)
-        return () => { emit = () => {} }
-      },
-      run: async (command: unknown) => {
-        commands.push(command)
-        return { ok: true, value: undefined }
-      }
-    } as unknown as Hermes
-    const copied: string[] = []
-    const served = serveWindows(pinnedConnection(hermes), ipc, url => url.startsWith('app://'), text => void copied.push(text))
-    return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, copied, served }
-  }
 
   it('sends one full value, then coalesced tail patches the window can apply', () => {
     vi.useFakeTimers()
@@ -197,27 +202,6 @@ describe('serveWindows', () => {
     await expect(run(event('https://example.com/'), { do: 'stop', sessionId: 's1' })).resolves.toMatchObject({ ok: false })
     expect(commands).toEqual([{ do: 'stop', sessionId: 's1' }])
   })
-
-  it('writes a string from the app page to the clipboard', () => {
-    const { handlers, event, copied } = harness()
-    expect(handlers.get(CHANNEL.copy)!(event(), 'cp notes.md notes.md.bak')).toBe(true)
-    expect(copied).toEqual(['cp notes.md notes.md.bak'])
-  })
-
-  it.each([
-    ['a foreign frame', 'https://example.com/', 'cp notes.md notes.md.bak'],
-    ['a value that is not text', 'app://index.html', { text: 'cp' }]
-  ])('writes nothing to the clipboard for %s', (_, url, value) => {
-    const { handlers, event, copied } = harness()
-    expect(handlers.get(CHANNEL.copy)!(event(url), value)).toBe(false)
-    expect(copied).toEqual([])
-  })
-
-  it('stops handling copies once disposed', () => {
-    const { handlers, served } = harness()
-    served.dispose()
-    expect(handlers.has(CHANNEL.copy)).toBe(false)
-  })
 })
 
 describe('isWebLink', () => {
@@ -227,5 +211,78 @@ describe('isWebLink', () => {
 
   it.each(['javascript:alert(1)', 'file:///etc/passwd', '/style-guide', 'style-guide.md', '', 'http//missing-colon'])('refuses %s', url => {
     expect(isWebLink(url)).toBe(false)
+  })
+})
+
+describe('the file call', () => {
+  const NOTES = '/tmp/hermes-proto-work/notes.md'
+  const diffMoment = () => moments.find(session => itemsOf(session).some(item => item.kind === 'tool' && item.status.s === 'done' && item.status.diffs.some(diff => diff.path === NOTES)))!
+  const asked = (action: 'open' | 'show', path: string, sessionId: string = fixture.header.sessionId) => ({ action, sessionId, path })
+
+  function watching(senderId = 1) {
+    const rig = harness()
+    rig.listeners.get(CHANNEL.watch)!(rig.event(undefined, senderId), 1, topic)
+    rig.emit(diffMoment())
+    const file = rig.handlers.get(CHANNEL.file)!
+    return { ...rig, file: (raw: unknown, event = rig.event(undefined, senderId)) => file(event, raw) as Promise<FileOutcome> }
+  }
+
+  it('opens a path a step of the watched session named, once, with the absolute path', async () => {
+    const { file, opened } = watching()
+    await expect(file(asked('open', NOTES))).resolves.toEqual({ ok: true })
+    expect(opened).toEqual([{ action: 'open', path: NOTES }])
+    await expect(file(asked('show', NOTES))).resolves.toEqual({ ok: true })
+    expect(opened).toEqual([{ action: 'open', path: NOTES }, { action: 'show', path: NOTES }])
+  })
+
+  it.each([
+    ['a path no step named', '/tmp/hermes-proto-work/other.md'],
+    ['a path that climbs out of what a step named', '/tmp/hermes-proto-work/../../etc/passwd'],
+    ['the folder that holds what a step named', '/tmp/hermes-proto-work'],
+    ['a file url for a path a step named', `file://${NOTES}`],
+    ['a web url', 'https://example.com/notes.md'],
+    ['a relative path', 'notes.md']
+  ])('refuses %s', async (_, path) => {
+    const { file, opened } = watching()
+    await expect(file(asked('open', path))).resolves.toEqual({ ok: false, reason: 'refused' })
+    await expect(file(asked('show', path))).resolves.toEqual({ ok: false, reason: 'refused' })
+    expect(opened).toEqual([])
+  })
+
+  it('refuses a path before any step has named it', async () => {
+    const rig = harness()
+    rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
+    await expect(rig.handlers.get(CHANNEL.file)!(rig.event(), asked('open', NOTES))).resolves.toEqual({ ok: false, reason: 'refused' })
+    expect(rig.opened).toEqual([])
+  })
+
+  it('refuses a session this window does not watch, whatever another window watches', async () => {
+    const { file, opened, listeners, event } = watching()
+    await expect(file(asked('open', NOTES, 'someone-else'))).resolves.toEqual({ ok: false, reason: 'refused' })
+    await expect(file(asked('open', NOTES), event(undefined, 2))).resolves.toEqual({ ok: false, reason: 'refused' })
+    listeners.get(CHANNEL.unwatch)!(event(), 1)
+    await expect(file(asked('open', NOTES))).resolves.toEqual({ ok: false, reason: 'refused' })
+    expect(opened).toEqual([])
+  })
+
+  it('refuses a foreign frame and a malformed request', async () => {
+    const { file, opened, event } = watching()
+    await expect(file(asked('open', NOTES), event('https://example.com/'))).resolves.toEqual({ ok: false, reason: 'refused' })
+    for (const raw of [null, 'open', { ...asked('open', NOTES), action: 'delete' }, asked('open', '  '), { action: 'open', path: NOTES }]) {
+      await expect(file(raw)).resolves.toEqual({ ok: false, reason: 'refused' })
+    }
+    expect(opened).toEqual([])
+  })
+
+  it('stops answering once disposed', () => {
+    const { handlers, served } = watching()
+    served.dispose()
+    expect(handlers.has(CHANNEL.file)).toBe(false)
+  })
+})
+
+describe('parseFileRequest', () => {
+  it('keeps the three known fields', () => {
+    expect(parseFileRequest({ action: 'show', sessionId: 's1', path: '/a/b', extra: 1 })).toEqual({ action: 'show', sessionId: 's1', path: '/a/b' })
   })
 })

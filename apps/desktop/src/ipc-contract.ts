@@ -50,13 +50,17 @@ export type Push<T extends Topic = Topic> =
   | { readonly topic: T; readonly rev: number; readonly full: TopicValue<T> }
   | (T extends `session:${string}` ? { readonly topic: T; readonly rev: number; readonly patch: SessionPatch } : never)
 
+export type FileAction = 'open' | 'show'
+export interface FileRequest { readonly action: FileAction; readonly sessionId: SessionId; readonly path: string }
+export type FileOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: 'refused' | 'missing' | 'failed' }
+
 export interface Bridge {
   watch<T extends Topic>(topic: T, onPush: (push: Push<T>) => void): () => void
   run<C extends AppCommand>(command: C): Promise<CommandOutcome<AppResult<C>>>
-  copy(text: string): Promise<boolean>
+  file(request: FileRequest): Promise<FileOutcome>
 }
 
-export const CHANNEL = { watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', copy: 'highwing:copy' } as const
+export const CHANNEL = { watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file' } as const
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
 
@@ -136,6 +140,12 @@ export const validators: Validators = {
 export function parseCommand(raw: unknown): AppCommand | null {
   if (!isObject(raw) || !text(raw.do) || !Object.hasOwn(validators, raw.do)) return null
   return (validators[raw.do as AppCommand['do']] as (raw: Obj) => AppCommand | null)(raw)
+}
+
+export function parseFileRequest(raw: unknown): FileRequest | null {
+  if (!isObject(raw) || (raw.action !== 'open' && raw.action !== 'show')) return null
+  const sessionId = sessionIdOf(raw)
+  return sessionId && filled(raw.path) ? { action: raw.action, sessionId, path: raw.path } : null
 }
 
 export function parseTopic(raw: unknown): Topic | null {

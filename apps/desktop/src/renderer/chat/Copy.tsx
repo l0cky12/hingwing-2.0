@@ -1,17 +1,29 @@
-import { useEffect, useState } from 'react'
-import { copyText } from '../store'
+import { useEffect, useRef, useState } from 'react'
 
-const COPIED_MS = 2000
+const SHOWN_MS = 2000
 
-export function Copy({ text }: { readonly text: string }) {
-  const [presses, setPresses] = useState(0)
-  useEffect(() => {
-    if (presses === 0) return
-    const timer = setTimeout(() => setPresses(0), COPIED_MS)
-    return () => clearTimeout(timer)
-  }, [presses])
-  const press = async () => {
-    if (await copyText(text)) setPresses(count => count + 1)
+const WORDS = { copied: 'Copied', failed: 'Couldn’t copy' } as const
+
+type Outcome = keyof typeof WORDS | null
+
+export function CopyButton({ text, name }: { readonly text: string; readonly name: string }) {
+  const [outcome, setOutcome] = useState<Outcome>(null)
+  const timer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+  const show = (next: Outcome) => {
+    setOutcome(next)
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => setOutcome(null), SHOWN_MS)
   }
-  return <button type="button" className={presses > 0 ? 'copy copied' : 'copy'} onClick={() => void press()}>{presses > 0 ? 'Copied' : 'Copy'}</button>
+  const press = () => {
+    navigator.clipboard.writeText(text).then(() => show('copied'), () => show('failed'))
+  }
+  return (
+    <>
+      <button type="button" className={outcome === null ? 'copy' : 'copy shown'} aria-label={name} onClick={press}>
+        {outcome === null ? 'Copy' : WORDS[outcome]}
+      </button>
+      <span className="sr" aria-live="polite">{outcome === null ? '' : WORDS[outcome]}</span>
+    </>
+  )
 }

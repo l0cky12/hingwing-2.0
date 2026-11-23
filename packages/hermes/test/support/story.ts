@@ -4,7 +4,7 @@ import {
   emptyTracked, reduce,
   type Admission, type Cursor, type SessionInput, type Snapshot, type StampedEvent, type Tracked
 } from '../../src/domain/reduce'
-import type { Generation, InputId, PromptId, SessionId } from '../../src/domain/session'
+import type { Generation, InputId, PromptId, SessionId, SettledTurn } from '../../src/domain/session'
 
 export type Beat =
   | { readonly kind: 'frame'; readonly frame: StampedEvent }
@@ -51,7 +51,7 @@ export function readStory(path: string): Story {
       if (parsed.scope !== 'session' || parsed.sessionId !== fixture.header.sessionId)
         throw new Error(`push ${JSON.stringify(step.push).slice(0, 120)} is not a frame of the fixture's session`)
       epoch ??= parsed.stamp.epoch
-      beats.push({ kind: 'frame', frame: { stamp: parsed.stamp, event: parsed.event } })
+      beats.push({ kind: 'frame', frame: { stamp: parsed.stamp, event: parsed.event, seenAt: null } })
     } else if ('await' in step) {
       beats.push({ kind: 'user', inputs: userInputs(step.await, step.params as Record<string, unknown>, step.reply as Record<string, unknown> | undefined) })
     }
@@ -156,5 +156,8 @@ export function foldWithDrop(story: Story, afterFrame: number, missed: number): 
   for (; index < story.beats.length; index++) play(story.beats[index]!)
   return state
 }
+
+export const ignoringStartTimes = <T extends { readonly history: readonly SettledTurn[] }>(session: T): T =>
+  ({ ...session, history: session.history.map(turn => ({ ...turn, began: null })) })
 
 export const errand = () => readStory(new URL('../../../../fixtures/errand.jsonl', import.meta.url).pathname)

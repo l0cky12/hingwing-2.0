@@ -1,7 +1,8 @@
 import type { Hermes } from '@highwing/hermes'
 import type { CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
-import { CHANNEL, parseCommand, parseTopic, type Push, type SessionPatch, type Tail, type Topic } from '../ipc-contract'
+import { CHANNEL, parseCommand, parseFileRequest, parseTopic, type FileOutcome, type Push, type SessionPatch, type Tail, type Topic } from '../ipc-contract'
 import type { ConnectionOwner } from './connection'
+import { openablePath, type Opener } from './files'
 
 export const COALESCE_MS = 16
 
@@ -56,7 +57,13 @@ export function sessionPatch(pushed: Session, next: Session): SessionPatch {
   return { rest, history: tail(pushed.history, history), run: { state: 'running', head, turn, items: tail(pushed.run.state === 'running' ? pushed.run.turn.items : [], items) } }
 }
 
-function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): () => void {
+interface Served {
+  readonly topic: Topic
+  current(): unknown
+  stop(): void
+}
+
+function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): Served {
   let pushed: unknown
   let latest: unknown
   let rev = 0
@@ -77,26 +84,31 @@ function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): (
     latest = value
     if (cooling === null) flush()
   })
-  return () => {
-    stop()
-    if (cooling !== null) clearTimeout(cooling)
+  return {
+    topic,
+    current: () => latest,
+    stop() {
+      stop()
+      if (cooling !== null) clearTimeout(cooling)
+    }
   }
 }
 
 const REFUSED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Highwing refused a malformed request from its window.' } }
+const FILE_REFUSED: FileOutcome = { ok: false, reason: 'refused' }
 
-export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, writeClipboard: (text: string) => void): { dispose(): void } {
-  const windows = new Map<number, Map<number, () => void>>()
+export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener): { dispose(): void } {
+  const windows = new Map<number, Map<number, Served>>()
   const trusted = ({ senderFrame }: IpcEvent) => senderFrame !== null && senderFrame.parent === null && isAppUrl(senderFrame.url)
 
   const stopWindow = (windowId: number) => {
-    for (const stop of windows.get(windowId)?.values() ?? []) stop()
+    for (const served of windows.get(windowId)?.values() ?? []) served.stop()
     windows.delete(windowId)
   }
   const subscriptionsOf = (sender: WindowSender) => {
     const held = windows.get(sender.id)
     if (held !== undefined) return held
-    const created = new Map<number, () => void>()
+    const created = new Map<number, Served>()
     windows.set(sender.id, created)
     sender.once('destroyed', () => stopWindow(sender.id))
     return created
@@ -106,7 +118,7 @@ export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl:
     const topic = parseTopic(raw)
     if (!trusted(event) || topic === null || typeof id !== 'number') return
     const subscriptions = subscriptionsOf(event.sender)
-    subscriptions.get(id)?.()
+    subscriptions.get(id)?.stop()
     subscriptions.set(id, serveTopic(topic, SOURCES[kindOf(topic)](owner, topic), push => {
       if (!event.sender.isDestroyed()) event.sender.send(CHANNEL.push, id, push)
     }))
@@ -114,17 +126,21 @@ export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl:
   ipc.on(CHANNEL.unwatch, (event, id) => {
     const subscriptions = windows.get(event.sender.id)
     if (typeof id !== 'number' || subscriptions === undefined) return
-    subscriptions.get(id)?.()
+    subscriptions.get(id)?.stop()
     subscriptions.delete(id)
   })
   ipc.handle(CHANNEL.run, async (event, raw) => {
     const command = parseCommand(raw)
     return trusted(event) && command !== null ? owner.run(command) : REFUSED
   })
-  ipc.handle(CHANNEL.copy, (event, text) => {
-    if (!trusted(event) || typeof text !== 'string') return false
-    writeClipboard(text)
-    return true
+
+  ipc.handle(CHANNEL.file, async (event, raw) => {
+    const request = parseFileRequest(raw)
+    if (!trusted(event) || request === null) return FILE_REFUSED
+    const watched = [...(windows.get(event.sender.id)?.values() ?? [])].find(served => served.topic === `session:${request.sessionId}`)
+    const session = watched?.current() as Session | undefined
+    const target = session === undefined ? null : openablePath(session, request.path)
+    return target === null ? FILE_REFUSED : opener[request.action](target)
   })
 
   return {
@@ -133,7 +149,7 @@ export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl:
       ipc.removeAllListeners(CHANNEL.watch)
       ipc.removeAllListeners(CHANNEL.unwatch)
       ipc.removeHandler(CHANNEL.run)
-      ipc.removeHandler(CHANNEL.copy)
+      ipc.removeHandler(CHANNEL.file)
     }
   }
 }

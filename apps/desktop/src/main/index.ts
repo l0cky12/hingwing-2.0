@@ -1,13 +1,14 @@
 import { checkTarget, liveDialer, openHermes, remoteRoute, type Dialer, type Route } from '@highwing/hermes'
 import type { Target } from '@highwing/hermes/domain'
 import { loadFixture, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
-import { app, BrowserWindow, clipboard, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { ownConnection, pinnedConnection } from './connection'
+import { desktopOpener, recordingOpener } from './files'
 import { serveWindows } from './ipc'
 import { loadSettings, saveSettings } from './settings'
 import { isAppUrl, openWindow } from './windows'
 
-const { HIGHWING_FIXTURE, HIGHWING_RECORD } = process.env
+const { HIGHWING_FIXTURE, HIGHWING_RECORD, HIGHWING_OPEN_LOG } = process.env
 const fixture = HIGHWING_FIXTURE ? loadFixture(HIGHWING_FIXTURE) : null
 
 const recorded = (dial: Dialer): Dialer => (HIGHWING_RECORD ? recordingDialer(dial, HIGHWING_RECORD) : dial)
@@ -27,7 +28,8 @@ app.whenReady().then(async () => {
   const owner = fixture
     ? pinnedConnection(open(scriptedDialer(fixture, { timing: 'recorded' })))
     : ownConnection({ loaded: await loadSettings(settingsDir), save: target => saveSettings(settingsDir, target), check: checkTarget, routeFor, open })
-  const served = serveWindows(owner, ipcMain, isAppUrl, text => clipboard.writeText(text))
+  const opener = HIGHWING_OPEN_LOG ? recordingOpener(HIGHWING_OPEN_LOG) : desktopOpener(shell)
+  const served = serveWindows(owner, ipcMain, isAppUrl, opener)
   openWindow(fixture?.header.sessionId ?? null)
   let closed: Promise<void> | null = null
   const close = () => (closed ??= (served.dispose(), owner.close()))

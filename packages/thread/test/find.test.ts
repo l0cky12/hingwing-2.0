@@ -5,7 +5,8 @@ import { errand, fold, type Moment } from '../../hermes/test/support/story'
 import { fieldId, findInThread, leafText, outline, parseMarkdown, proseLeaves, threadView, type StepView, type ThreadView } from '../src/thread-view'
 
 const ONLINE: Link = { state: 'online' }
-const view: ThreadView = threadView(sessionOf(fold(errand()), ONLINE, null))
+const CLOCK = { now: 0, timeZone: 'UTC' }
+const view: ThreadView = threadView(sessionOf(fold(errand()), ONLINE, null), CLOCK)
 
 const nodes = view.turns.flatMap(turn => turn.nodes)
 const steps: readonly StepView[] = nodes.flatMap(node => (node.kind === 'step' ? [node.step] : node.kind === 'group' ? node.steps : []))
@@ -90,11 +91,11 @@ describe('a match while the turn runs', () => {
   it('needs the group once the next step joins its step into one', () => {
     const moments: Moment[] = []
     fold(errand(), moment => moments.push(moment))
-    const opensOf = (moment: Moment) => findInThread(threadView(sessionOf(moment.state, ONLINE, null)), 'wire the gateway')[0]?.opens ?? []
+    const opensOf = (moment: Moment) => findInThread(threadView(sessionOf(moment.state, ONLINE, null), CLOCK), 'wire the gateway')[0]?.opens ?? []
     const alone = moments.find(moment => opensOf(moment).length === 1)
     const grouped = moments.find(moment => moment.beat > (alone?.beat ?? Infinity) && opensOf(moment).length === 2)
     if (alone === undefined || grouped === undefined) throw new Error('the errand never grouped the first write')
-    const group = threadView(sessionOf(grouped.state, ONLINE, null)).turns[0]?.nodes.find(node => node.kind === 'group')
+    const group = threadView(sessionOf(grouped.state, ONLINE, null), CLOCK).turns[0]?.nodes.find(node => node.kind === 'group')
     expect(opensOf(grouped)).toEqual([opensOf(alone)[0], group?.key])
   })
 })

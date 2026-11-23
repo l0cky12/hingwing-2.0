@@ -1,7 +1,7 @@
 import { fieldId, parseMarkdown, proseLeaves, type Block, type Inline, type Phrase, type ProseLeaf } from '@highwing/thread'
 import { Fragment, useMemo, type ReactNode } from 'react'
 import { isWebLink } from '../../ipc-contract'
-import { Copy } from './Copy'
+import { CopyButton } from './Copy'
 
 export function PhraseText({ words }: { readonly words: Phrase }) {
   return words.map((piece, index) => (piece.t === 'code' ? <code key={index}>{piece.v}</code> : <Fragment key={index}>{piece.v}</Fragment>))
@@ -58,7 +58,7 @@ function block(node: Block, key: number, tail: ReactNode, ids: FindIds): ReactNo
       return (
         <div key={key} className="code">
           <pre data-find={ids.get(node)}><code>{node.text}</code>{tail}</pre>
-          <div className="chip">{node.lang !== null && <span className="lang">{node.lang}</span>}<Copy text={node.text} /></div>
+          <div className="chip">{node.lang !== null && <span className="lang">{node.lang}</span>}<CopyButton text={node.text} name="Copy code" /></div>
         </div>
       )
     case 'table':
