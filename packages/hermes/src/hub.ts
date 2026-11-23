@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { DONE, refusalOf, refused, SessionActor } from './actor'
+import type { Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
 import type { ServerRequest } from './domain/reduce'
 import type { Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
+import { botList } from './roster'
 import { deriveSidebar, sessionList } from './sidebar'
 import { connect, systemClock, type Clock, type Dialer } from './wire/link'
 import { parseCatalog, parseDirective, parseEvent, parseServerRequest, type ParsedEvent } from './wire/parse'
@@ -25,6 +27,11 @@ export interface Hermes {
   readonly sidebar: Feed<Sidebar>
   /** The commands and skills a `/` line can run, read once per connection. Empty when Hermes has no catalog or refused it. */
   readonly slash: Feed<SlashCatalog>
+  /**
+   * The bots of this Hermes, read on every new socket and again when sessions change. `unsupported`
+   * on a Hermes with no `profiles.list`. A listed roster stays while the link is down.
+   */
+  readonly bots: Feed<Bots>
   /**
    * Watch one session. The listener gets the current value at once and every later one. A session is
    * kept attached while a window watches it, while the gateway lists it as running, while its own
@@ -117,6 +124,7 @@ export function openHermes(options: HermesOptions): Hermes {
     cancelRefresh = clock.setTimeout(() => {
       cancelRefresh = null
       list.refresh()
+      roster.refresh()
     }, LIST_DEBOUNCE_MS)
   }
 
@@ -138,10 +146,12 @@ export function openHermes(options: HermesOptions): Hermes {
       link.set(next)
       for (const actor of [...actors.values()]) actor.linkChanged()
       if (next.state !== 'online') list.stale()
+      roster.linked(next.state)
     },
     onOnline: () => {
       list.refresh()
       catalogRead = readCatalog()
+      roster.ask()
     },
     onEvent: params => {
       const parsed = parseEvent(params)
@@ -172,6 +182,9 @@ export function openHermes(options: HermesOptions): Hermes {
     retain()
   })
   const sidebar = feed<Sidebar>(deriveSidebar(list, new Map()), sameSidebar)
+
+  const roster = botList(conn, () => bots.set(roster.bots))
+  const bots = feed<Bots>(roster.bots)
 
   const actorFor = (id: SessionId): SessionActor => {
     const held = actors.get(id)
@@ -314,6 +327,7 @@ export function openHermes(options: HermesOptions): Hermes {
     link,
     sidebar,
     slash,
+    bots,
     watch,
     run: command => run(command) as Promise<Outcome<ResultOf<typeof command>>>,
     close: async () => {

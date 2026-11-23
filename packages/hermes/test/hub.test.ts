@@ -3,7 +3,7 @@ import type { Item, PromptId, Session } from '../src/domain/session'
 import { DialError, openHermes, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
 import { play, scriptedDialer, type Fixture, type FixtureStep, type Moment, type ScriptOptions } from '../src/testing/fixture'
-import { callsIn, ERRAND, paramsOf, SESSION, SLASH, stepOf, withSudo } from './support/errand'
+import { callsIn, ERRAND, paramsOf, PROFILES, SESSION, SLASH, stepOf, WITH_BOTS, withSudo } from './support/errand'
 
 const CLIENT = { name: 'highwing-test', version: '0.0.0' }
 const TEXT = String(paramsOf('prompt.submit').text)
@@ -285,6 +285,79 @@ describe('the slash catalog', () => {
     await opened.clock.advance(1_000)
     expect(opened.sent().filter(call => call.method === 'commands.catalog'), 'once on each of the two sockets').toHaveLength(2)
     expect(opened.hermes.slash.get()).toHaveLength(35)
+  })
+})
+
+describe('the bots', () => {
+  const asks = (opened: ReturnType<typeof open>) => opened.sent().filter(call => call.method === 'profiles.list')
+  const names = (opened: ReturnType<typeof open>) => {
+    const bots = opened.hermes.bots.get()
+    return bots.state === 'listed' ? [bots.roster.featured?.name, ...bots.roster.sections.flatMap(section => section.bots.map(bot => bot.name))] : bots.state
+  }
+
+  it('are loading, then listed once the link is online, in the order the sidebar draws them', async () => {
+    const opened = open(WITH_BOTS)
+    const states: string[] = []
+    opened.hermes.bots.subscribe(bots => states.push(bots.state))
+    expect(opened.hermes.bots.get()).toEqual({ state: 'loading' })
+    await opened.clock.advance(0)
+    expect(states).toEqual(['listed'])
+    expect(names(opened)).toEqual(['Hermes Agent', 'Researcher', 'Reviewer', 'Ops', 'Scribe'])
+    expect(asks(opened)).toEqual([{ method: 'profiles.list', params: { include_sessions: true } }])
+  })
+
+  it('are unsupported, with nothing counted, on a Hermes that does not know the call, which is then asked once for the whole errand', async () => {
+    const opened = open()
+    opened.watch()
+    await opened.clock.advance(0)
+    expect(opened.hermes.bots.get()).toEqual({ state: 'unsupported' })
+    expect(opened.diagnostics).toEqual([])
+    await toApproval(opened)
+    await approve(opened.hermes)
+    await opened.clock.advance(1_000)
+    expect(opened.script.finished).toBe(true)
+    expect(asks(opened)).toHaveLength(1)
+  })
+
+  it('are offline when the first dial fails, then listed after a reconnect', async () => {
+    const opened = open(WITH_BOTS)
+    opened.state.failWith = new DialError('not-running')
+    await opened.clock.advance(100)
+    expect(opened.hermes.bots.get()).toEqual({ state: 'offline' })
+    opened.state.failWith = null
+    await opened.hermes.run({ do: 'reconnect', start: true })
+    await opened.clock.advance(0)
+    expect(names(opened)).toHaveLength(5)
+  })
+
+  it('stay listed while the socket is gone, and are read again on the new one', async () => {
+    const opened = open(WITH_BOTS, { drop: { afterPush: 5, missed: 0 } })
+    opened.watch()
+    await toApproval(opened)
+    expect(opened.hermes.link.get()).toMatchObject({ state: 'waiting', why: 'dropped' })
+    expect(names(opened)).toHaveLength(5)
+    await opened.clock.advance(1_000)
+    expect(opened.hermes.link.get()).toEqual({ state: 'online' })
+    expect(asks(opened).length, 'at least once on each of the two sockets').toBeGreaterThanOrEqual(2)
+    expect(names(opened)).toHaveLength(5)
+  })
+
+  it('show a preview that changed in Hermes 300 ms after the turn ends', async () => {
+    const profiles = structuredClone(PROFILES) as { profiles: { last_session: { preview: string } | null }[] }
+    const opened = open({ ...ERRAND, header: { ...ERRAND.header, profiles } })
+    const previewOf = () => {
+      const bots = opened.hermes.bots.get()
+      return bots.state === 'listed' ? bots.roster.sections[0]?.bots[0]?.preview : bots.state
+    }
+    opened.watch()
+    await toApproval(opened)
+    profiles.profiles[1]!.last_session!.preview = 'A newer line.'
+    await approve(opened.hermes)
+    await opened.clock.advance(0)
+    expect(opened.script.finished).toBe(true)
+    expect(previewOf()).toMatch(/^Three of the five sources/)
+    await opened.clock.advance(300)
+    expect(previewOf()).toBe('A newer line.')
   })
 })
 
