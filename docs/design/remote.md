@@ -1,6 +1,6 @@
 # Remote route, saved connection and setup
 
-Design for issue #7. Status: reviewed. The remote route and the setup check are built against it. "Implementation reconciliation" at the end lists where the code differs and why.
+Design for issue #7. Status: reviewed. The remote route, the setup check, the saved connection and the setup screen are built against it. "Implementation reconciliation" at the end lists where the code differs and why.
 
 ## Problem
 
@@ -280,3 +280,17 @@ Where the code differs from the text above. The text above is unchanged, so each
 | The route's errors use `WORDS`. | A remote dial passes the sentence from `CHECK_FAILURES`, which names the machine. `WORDS` gets a row per new kind, built from the same table. A Windows service session that finds no gateway says to start Hermes from that machine's desktop (client rule 2). | One table holds the words, and the banner names the machine it could not reach. |
 | Tests play the errand "through `remoteRoute`". | `scriptedDialer` takes a function as `transport`, and `play` takes `ended`. | The errand had to play through a dialer the test builds. Over a relay the last frames arrive after the story ends, so the test names the session it waits for. |
 
+### Saved connection and setup screen (`apps/desktop`)
+
+| The design said | The code does | Why |
+|---|---|---|
+| `Command` gains `checkTarget`, `editTarget`, `keepTarget` and `openChat`. | `Command` is unchanged. `ipc-contract.ts` adds `SetupCommand` and `AppCommand = Command \| SetupCommand`. `validators` has a row per verb of both. | `Command` is what `Hermes.run` accepts. The setup verbs are answered by the connection owner, which has no gateway behind it on a first run. |
+| `serveWindows(owner, ...)` and a `Hermes` behind it. | `ConnectionOwner` is `setup`, `hermes` and one `run` for every command. `run` sends a setup verb through `nextSetup` and any other verb to the live `Hermes`, or refuses it as `offline` when none is live. | The window has one `run`. One place decides which side a verb belongs to. |
+| `checking` with `keepTarget` goes to `chat`. | The same, except at step `save`, where `keepTarget` is refused. | A Cancel between the save and the switch would leave the file and the chat on different machines. |
+| A check that passes saves and opens a new `Hermes`. "Re-checking the live target does not switch." | When the checked target equals the live one, the owner goes to `saved` with the same `live`. It does not save, open or bump `epoch`. | The file already holds that target, and a new epoch would drop the user's draft for nothing. |
+| `saveSettings(dir, target)` renames an unreadable or newer file "on the first save". | `saveSettings` reads the file itself and sets it aside when it is `unreadable` or `newer`. The temp file has one fixed name, `connection.json.tmp`. | The save needs no memory of what the load found, so it is correct after a crash too. A fixed temp name is overwritten by the next save and never piles up. |
+| The chat subtree is "keyed by `live.epoch`", and its `watch` calls subscribe again. | The same, and `renderer/store.ts` keys each topic copy by epoch through an `Epoch` context. | Without it the first render of a new connection read the old connection's copies, and watched the old session id on the new gateway. |
+| The owner closes the old `Hermes`, then calls `dispose()`. | The same order, with both done before `close()` returns its promise. `main/index.ts` also closes the owner on `will-quit`. | Electron does not emit `window-all-closed` when the app quits from `app.quit()`. A verify run showed a check's ssh still running after such a quit. |
+| The top bar gets a Connection button. | The top bar also says which machine the chat is on. A fixture run shows neither. | The button changes that machine, so the bar names it. A `pinned` run has no connection to name or change. |
+| The verify helper gains `--fake-host` and `--saved none\|local\|remote`. | It also gains `--saved unreadable\|newer`, `--hold-at` and a `value` step, and loses `--no-fixture`. A `--fake-host` run fails at teardown when the app left a fake tool running. `scripts/fake-host.ts` runs the fake machine. | `--no-fixture` now opens the setup screen with the real `ssh` and `tailscale` on `PATH`. Every run without a fixture must use the fake host. The teardown check keeps the quit defect above from coming back. |
+| Nothing about a second Highwing. | `main/index.ts` takes Electron's single-instance lock, which lives in the user-data directory. A second launch exits, and the first window gets the focus. A close while a save runs ends the check, so nothing opens after it, and setup commands are refused after close. | Two instances shared `connection.json.tmp`, and saves at the same moment wrote malformed JSON (sol-loop round 1 on #43). One instance also keeps the design's one socket per gateway. |

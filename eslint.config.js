@@ -28,6 +28,17 @@ export default tseslint.config(
     rules: { 'no-restricted-imports': ['error', { paths: [{ name: '@highwing/hermes/testing', message: 'Only main/index.ts reads HIGHWING_FIXTURE and HIGHWING_RECORD.' }] }] }
   },
   {
+    files: ['apps/desktop/src/main/settings.ts', 'apps/desktop/src/main/connection.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          { name: 'electron', message: 'The settings file and the connection owner take what they need as arguments, so a test drives them with no Electron.' },
+          { name: '@highwing/hermes/testing', message: 'Only main/index.ts reads HIGHWING_FIXTURE and HIGHWING_RECORD.' }
+        ]
+      }]
+    }
+  },
+  {
     files: ['apps/desktop/src/renderer/**', 'apps/desktop/src/ipc-contract.ts'],
     rules: {
       'no-restricted-imports': ['error', {

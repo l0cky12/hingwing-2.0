@@ -14,15 +14,11 @@ When the link to Hermes is not online, a banner under the top bar says why. If t
 
 ## Driving it with highwing-verify
 
-Preconditions:
-
-- For `offline-blocked`, `$H doctor` shows `ok   no-fixture launch cannot see hermes`.
-
-- **Blocked.** Run `$H run --no-fixture --run offline-missing wait window wait offline shot offline-missing see "Highwing can't find the hermes command." click button Retry wait offline`. The banner holds its words and a Retry button, and is still there after Retry.
+- **Blocked.** Run `$H run --fake-host hermes-not-found --saved local --run offline-missing wait window wait offline shot offline-missing see "Highwing can't find the hermes command." click button Retry wait offline`. The saved connection is this computer, and the fake machine has no `hermes`. The banner holds its words and a Retry button, and is still there after Retry.
 - **Dropped.** Run `$H run --fixture fixtures/errand.jsonl --drop-after approval.request --run offline-drop wait live type "Message Hermes" @request click button Send wait offline shot offline-drop see "Reconnecting to Hermes." disabled button "Run once" disabled button Send wait approval shot approval-back`. `offline-drop.png` shows the banner, the greyed-out card and buttons, and the paused end. `approval-back.png` shows the card answerable with no banner.
 
 ## Gotchas
 
 - The dropped state lasts about 1 s, until the first redial. Put `shot` and the `disabled` checks right after `wait offline`.
-- `--no-fixture` is the only safe way to see the blocked banner on this machine. Without it the app dials the real Hermes gateway.
+- `--fake-host hermes-not-found --saved local` is the safe way to see the blocked banner on this machine. The app's whole `PATH` is the fake bin directory, so it cannot find the real `hermes`.
 - No banner shows while the link is still `connecting` at launch. That matches `banner()` in `docs/design/sketch/usage.ts`.

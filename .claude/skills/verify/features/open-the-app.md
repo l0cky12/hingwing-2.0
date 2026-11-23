@@ -1,6 +1,6 @@
 # Open the app
 
-Starting Highwing opens one window whose content area is 1180x860.
+Starting Highwing opens one window whose content area is 1180x860. With no saved connection the window shows the setup screen. With one saved it shows the chat.
 
 ## Sub-features
 
@@ -16,8 +16,8 @@ Preconditions:
 
 - `$H doctor` prints only `ok` lines.
 
-- **Open.** Run `$H run --no-fixture --run open wait window shot open`. `steps.log` ends in `PASS`, and `open.png` is 1180x860.
+- **Open.** Run `$H run --fake-host ok --run open wait window shot open`. `steps.log` ends in `PASS`, and `open.png` is 1180x860 and shows "Where does Hermes run?".
 
 ## Gotchas
 
-- `--no-fixture` removes `hermes` from `PATH`. Without that the app would dial the user's real gateway.
+- A run needs `--fixture` or `--fake-host`. Without one the app would run the real `ssh`, `tailscale` and `hermes` of this machine.
