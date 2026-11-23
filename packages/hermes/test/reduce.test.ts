@@ -20,11 +20,11 @@ const promptId = (id: string) => id as PromptId
 const turnId = (id: string) => id as TurnId
 const inputId = (id: string) => id as InputId
 
-function frame(seq: number, event: SessionEvent | null, gen: number | null = 1, epoch = EPOCH): StampedEvent {
-  return { stamp: { epoch, seq, generation: gen === null ? null : generation(gen) }, event }
+function frame(seq: number, event: SessionEvent | null, gen: number | null = 1, epoch = EPOCH, seenAt: number | null = null): StampedEvent {
+  return { stamp: { epoch, seq, generation: gen === null ? null : generation(gen) }, event, seenAt }
 }
-const event = (seq: number, sessionEvent: SessionEvent | null, gen: number | null = 1, epoch = EPOCH): SessionInput =>
-  ({ in: 'event', frame: frame(seq, sessionEvent, gen, epoch) })
+const event = (seq: number, sessionEvent: SessionEvent | null, gen: number | null = 1, epoch = EPOCH, seenAt: number | null = null): SessionInput =>
+  ({ in: 'event', frame: frame(seq, sessionEvent, gen, epoch, seenAt) })
 
 const started = (id: string, requestText: string | null = 'Tidy the notes'): SessionEvent =>
   ({ type: 'turn.started', turnId: turnId(id), admissionId: null, requestText })
@@ -55,7 +55,7 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
 }
 
 function storedTurn(id: string, rows: readonly number[]): SettledTurn {
-  return { id: turnId(id), request: { text: `request ${id}`, inputId: null }, items: [{ kind: 'text', markdown: `answer ${id}`, sealed: true }], outcome: COMPLETE, rows }
+  return { id: turnId(id), request: { text: `request ${id}`, inputId: null }, items: [{ kind: 'text', markdown: `answer ${id}`, sealed: true }], began: null, outcome: COMPLETE, rows }
 }
 
 const feed = (state: Tracked, ...inputs: SessionInput[]): Tracked => inputs.reduce(reduce, state)
@@ -142,6 +142,7 @@ describe('the fold', () => {
     expect(state.content.history).toEqual([{
       id: 't1',
       request: { text: 'Tidy the notes', inputId: null },
+      began: null,
       items: [
         { kind: 'tool', id: 'a', name: 'terminal', args: { command: 'a' }, status: { s: 'cut' } },
         { kind: 'prompt', id: 'p1', generation: 1, ask: APPROVAL, state: { s: 'withdrawn' } }
@@ -170,7 +171,7 @@ describe('the fold', () => {
       state: 'running',
       generation: 2,
       stop: 'none',
-      turn: { id: 't2', request: { text: 'Next errand', inputId: null }, items: [], announced: null }
+      turn: { id: 't2', request: { text: 'Next errand', inputId: null }, began: null, items: [], announced: null }
     })
   })
 
@@ -247,6 +248,7 @@ describe('attached', () => {
     expect(state.content.history).toEqual([{
       id: 't1',
       request: { text: 'Tidy the notes', inputId: null },
+      began: null,
       items: [{ kind: 'text', markdown: 'Hello world', sealed: true }],
       outcome: COMPLETE,
       rows: [7]
@@ -314,7 +316,7 @@ describe('attached', () => {
           generation: generation(3),
           watermark: { epoch: EPOCH, seq: 5 },
           prompts: [{ id: promptId('p1'), generation: generation(3), ask: APPROVAL }],
-          history: { turns: [storedTurn('h1', [1, 2])], unfinished: { request: 'Fix the build', items: [tool] }, older: null }
+          history: { turns: [storedTurn('h1', [1, 2])], unfinished: { request: 'Fix the build', began: null, items: [tool] }, older: null }
         })
       }
     )
@@ -334,7 +336,7 @@ describe('attached', () => {
       in: 'attached', attempt: 1, replay: null,
       snapshot: snapshot({
         prompts: [{ id: promptId('p1'), generation: generation(1), ask: APPROVAL }],
-        history: { turns: [storedTurn('h1', [1])], unfinished: { request: 'Fix the build', items: [] }, older: null }
+        history: { turns: [storedTurn('h1', [1])], unfinished: { request: 'Fix the build', began: null, items: [] }, older: null }
       })
     })
     expect(state.content.run).toEqual({ state: 'idle' })
@@ -473,7 +475,7 @@ describe('activityOf', () => {
     const text = { kind: 'text', markdown: 'Wri', sealed: false } as const
     const session = (items: OpenTurn['items'], announced: string | null, stop: 'none' | 'requested'): SessionContent => ({
       ...live().content,
-      run: { state: 'running', generation: generation(1), stop, turn: { id: turnId('t1'), request: null, items, announced } }
+      run: { state: 'running', generation: generation(1), stop, turn: { id: turnId('t1'), request: null, began: null, items, announced } }
     })
     expect(activityOf(session([tool, prompt, text], 'write_file', 'requested'))).toEqual({ kind: 'stopping' })
     expect(activityOf(session([tool, prompt, text], 'write_file', 'none'))).toEqual({ kind: 'asking', item: 1 })
@@ -490,5 +492,112 @@ describe('activityOf', () => {
       { in: 'local', action: { did: 'answer', promptId: promptId('p1'), reply: { kind: 'choice', value: 'once' } } }
     )
     expect(activityOf(state.content)).toEqual({ kind: 'asking', item: 0 })
+  })
+})
+
+describe('when a turn began', () => {
+  const beganOf = (state: Tracked) => {
+    const { run } = state.content
+    if (run.state !== 'running') throw new Error('expected an open run')
+    return run.turn.began
+  }
+  const hermesAt = (at: number) => ({ at, clock: 'hermes' as const })
+  const clientAt = (at: number) => ({ at, clock: 'client' as const })
+  const dropped = () => feed(live(), { in: 'link.lost' }, { in: 'attach' })
+  const catchUp = (state: Tracked, watermark: number, running: boolean, ...parked: SessionInput[]) =>
+    feed(state, ...parked, {
+      in: 'attached', attempt: 2,
+      replay: { snapshotRequired: false, epoch: EPOCH, events: [] },
+      snapshot: snapshot({ history: null, running, watermark: { epoch: EPOCH, seq: watermark } })
+    })
+
+  it('stamps a live turn.started with the client clock', () => {
+    expect(beganOf(feed(live(), event(1, started('t1'), 1, EPOCH, 9_000)))).toEqual(clientAt(9_000))
+  })
+
+  it('stamps a turn whose first frame to arrive is not its start', () => {
+    expect(beganOf(feed(live(), event(1, delta('Hello'), 1, EPOCH, 9_000)))).toEqual(clientAt(9_000))
+  })
+
+  it('leaves a turn started by a frame with no known arrival time unstamped', () => {
+    expect(beganOf(feed(live(), event(1, started('t1'))))).toBeNull()
+  })
+
+  it('does not move a turn\'s start when later frames arrive', () => {
+    expect(beganOf(feed(live(), event(1, started('t1'), 1, EPOCH, 9_000), event(2, delta('Hello'), 1, EPOCH, 12_000), event(3, toolStarted('a'), 1, EPOCH, 15_000)))).toEqual(clientAt(9_000))
+  })
+
+  it('leaves a turn opened by a replayed frame unstamped', () => {
+    const state = feed(dropped(), {
+      in: 'attached', attempt: 2,
+      replay: { snapshotRequired: false, epoch: EPOCH, events: [frame(1, started('t1'))] },
+      snapshot: snapshot({ history: null, running: true, watermark: { epoch: EPOCH, seq: 1 } })
+    })
+    expect(beganOf(state)).toBeNull()
+  })
+
+  it('leaves a turn opened by a catch-up frame parked at the watermark unstamped', () => {
+    expect(beganOf(catchUp(dropped(), 1, true, event(1, started('t1'), 1, EPOCH, 9_000)))).toBeNull()
+  })
+
+  it('keeps the stamp of a frame parked past the watermark', () => {
+    expect(beganOf(catchUp(dropped(), 1, true, event(1, delta('Hello')), event(2, started('t2', 'Next'), 2, EPOCH, 9_500)))).toEqual(clientAt(9_500))
+  })
+
+  it('carries the start over when the turn settles', () => {
+    const state = feed(live(), event(1, started('t1'), 1, EPOCH, 9_000), event(2, ended(COMPLETE, 'Done.')))
+    expect(state.content.history.map(turn => turn.began)).toEqual([clientAt(9_000)])
+  })
+
+  it('opens a turn from a snapshot that shows a running errand with the stored request row\'s time', () => {
+    const state = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, {
+      in: 'attached', attempt: 1, replay: null,
+      snapshot: snapshot({
+        running: true,
+        history: { turns: [{ ...storedTurn('h1', [1, 2]), began: hermesAt(1_000) }], unfinished: { request: 'Fix the build', began: hermesAt(5_000), items: [] }, older: null }
+      })
+    })
+    expect(beganOf(state)).toEqual(hermesAt(5_000))
+    expect(state.content.history.map(turn => turn.began)).toEqual([hermesAt(1_000)])
+  })
+
+  it('gives a snapshot\'s running turn no start when there is no stored request row and no earlier start', () => {
+    const state = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, { in: 'attached', attempt: 1, replay: null, snapshot: snapshot({ running: true }) })
+    expect(beganOf(state)).toBeNull()
+  })
+
+  it('keeps the start of the same run through a rebuild that finds no stored request row', () => {
+    const rebuilt = feed(live(), event(1, started('t1'), 1, EPOCH, 9_000), { in: 'gap' }, {
+      in: 'attached', attempt: 2, replay: null,
+      snapshot: snapshot({ running: true, watermark: { epoch: EPOCH, seq: 1 } })
+    })
+    expect(beganOf(rebuilt)).toEqual(clientAt(9_000))
+  })
+
+  it('prefers the stored request row\'s time to the stamp of the same run', () => {
+    const rebuilt = feed(live(), event(1, started('t1'), 1, EPOCH, 9_000), { in: 'gap' }, {
+      in: 'attached', attempt: 2, replay: null,
+      snapshot: snapshot({
+        running: true, watermark: { epoch: EPOCH, seq: 1 },
+        history: { turns: [], unfinished: { request: 'Tidy the notes', began: hermesAt(8_000), items: [] }, older: null }
+      })
+    })
+    expect(beganOf(rebuilt)).toEqual(hermesAt(8_000))
+  })
+
+  it('never lends one run\'s start to another', () => {
+    const rebuilt = feed(live(), event(1, started('t1'), 1, EPOCH, 9_000), { in: 'gap' }, {
+      in: 'attached', attempt: 2, replay: null,
+      snapshot: snapshot({ running: true, generation: generation(2), watermark: { epoch: EPOCH, seq: 1 } })
+    })
+    expect(beganOf(rebuilt)).toBeNull()
+  })
+
+  it('gives a turn left unfinished in a snapshot that is not running the start its stored request has', () => {
+    const state = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, {
+      in: 'attached', attempt: 1, replay: null,
+      snapshot: snapshot({ history: { turns: [], unfinished: { request: 'Fix the build', began: hermesAt(5_000), items: [] }, older: null } })
+    })
+    expect(state.content.history.map(turn => turn.began)).toEqual([hermesAt(5_000)])
   })
 })

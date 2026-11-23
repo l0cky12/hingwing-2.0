@@ -48,6 +48,55 @@ const STEPS = {
   type: { arity: 2, run: async (ctx, label, text) => ctx.page.getByLabel(label, { exact: true }).fill(expand(ctx, text), { timeout: ctx.timeout }) },
   press: { arity: 1, run: async (ctx, key) => ctx.page.keyboard.press(key) },
   shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
+  field: {
+    arity: 3,
+    run: async (ctx, label, lines, outcome) => {
+      if (outcome !== 'fits' && outcome !== 'scrolls') throw new Error(`field outcome must be "fits" or "scrolls", not "${outcome}"`)
+      const m = await ctx.page.getByLabel(label, { exact: true }).evaluate(el => {
+        const style = getComputedStyle(el)
+        return {
+          client: el.clientHeight,
+          content: el.scrollHeight,
+          lineHeight: parseFloat(style.lineHeight),
+          padding: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
+          scrollbar: el.offsetWidth - el.clientWidth - parseFloat(style.borderLeftWidth) - parseFloat(style.borderRightWidth)
+        }
+      }, undefined, { timeout: ctx.timeout })
+      const shown = Math.round((m.client - m.padding) / m.lineHeight)
+      const scrolls = m.content > m.client + 1 && m.scrollbar > 2
+      log(ctx, `  "${label}" shows ${shown} lines in ${m.client}px (content ${m.content}px, scrollbar ${m.scrollbar}px), ${scrolls ? 'scrolls' : 'fits'}`)
+      if (shown !== Number(lines)) throw new Error(`"${label}" shows ${shown} lines, not ${lines}`)
+      if (scrolls !== (outcome === 'scrolls')) throw new Error(`"${label}" ${scrolls ? 'scrolls' : 'fits'}, not ${outcome}`)
+    }
+  },
+  pinned: {
+    arity: 0,
+    run: async ctx => {
+      const m = await ctx.page.evaluate(() => {
+        const scroller = document.querySelector('#scroll')
+        const footer = document.querySelector('footer')
+        if (!scroller || !footer) return null
+        const rows = scroller.querySelectorAll('.request, .thread > *, .turn.pending > *')
+        const last = rows[rows.length - 1] ?? scroller
+        const view = scroller.getBoundingClientRect()
+        const row = last.getBoundingClientRect()
+        return {
+          fromEnd: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight,
+          rowTop: row.top,
+          rowBottom: row.bottom,
+          viewTop: view.top,
+          viewBottom: view.bottom,
+          footerTop: footer.getBoundingClientRect().top
+        }
+      })
+      if (m === null) throw new Error('no #scroll or footer on the page')
+      log(ctx, `  thread ${m.fromEnd.toFixed(1)}px from its end, last row ${m.rowTop.toFixed(1)}-${m.rowBottom.toFixed(1)} in view ${m.viewTop.toFixed(1)}-${m.viewBottom.toFixed(1)}, footer top ${m.footerTop.toFixed(1)}`)
+      if (m.fromEnd > 1) throw new Error(`thread is ${m.fromEnd.toFixed(1)}px short of its end`)
+      const fitsInView = m.rowBottom - m.rowTop <= m.viewBottom - m.viewTop
+      if (m.rowBottom > m.viewBottom + 0.5 || m.rowBottom < m.viewTop || (fitsInView && m.rowTop < m.viewTop - 0.5)) throw new Error('the last row of the thread is not in view')
+      if (m.viewBottom > m.footerTop + 0.5) throw new Error('the composer covers the thread')
+    }
+  },
   disabled: {
     arity: 2,
     run: async (ctx, role, name) => {
@@ -64,8 +113,33 @@ const STEPS = {
   focused: {
     arity: 2,
     run: async (ctx, role, name) => {
-      const has = await ctx.page.getByRole(role, { name, exact: true }).evaluate(element => element === document.activeElement, null, { timeout: ctx.timeout })
-      if (!has) throw new Error(`${role} "${name}" does not have focus`)
+      const found = ctx.page.getByRole(role, { name, exact: true })
+      if (!(await found.evaluateAll(nodes => nodes.includes(document.activeElement)))) {
+        const now = await ctx.page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent ?? 'nothing')
+        throw new Error(`${role} "${name}" does not have focus; "${now}" does`)
+      }
+    }
+  },
+  count: {
+    arity: 3,
+    run: async (ctx, role, name, n) => {
+      const found = await ctx.page.getByRole(role, { name: nameMatcher(name), exact: true }).count()
+      if (found !== Number(n)) throw new Error(`${found} ${role}(s) named ${name}, not ${n}`)
+    }
+  },
+  clipboard: {
+    arity: 1,
+    run: async (ctx, name) => {
+      const read = () => ctx.app.evaluate(({ clipboard }) => clipboard.readText())
+      const deadline = Date.now() + ctx.timeout
+      let text = await read()
+      while (text === '' || text === ctx.clipboard) {
+        if (Date.now() > deadline) throw new Error(text === '' ? 'the clipboard is empty' : 'the clipboard has not changed since the last clipboard step')
+        text = await read()
+      }
+      ctx.clipboard = text
+      writeFileSync(join(ctx.evidence, `${name}.clip.txt`), text)
+      log(ctx, `  saved ${name}.clip.txt (${text.length} characters)`)
     }
   },
   marks: {
@@ -76,6 +150,8 @@ const STEPS = {
     }
   }
 }
+
+const nameMatcher = name => (/^\/.+\/$/.test(name) ? new RegExp(name.slice(1, -1)) : name)
 
 const fail = message => {
   console.error(`highwing-verify: ${message}`)
@@ -266,7 +342,7 @@ async function run(argv) {
   mkdirSync(scratch, { recursive: true })
   const given = options.fixture ? resolve(process.cwd(), options.fixture) : scenario ? ERRAND : null
   const fixture = options['drop-after'] ? withDrop(given, options['drop-after'], join(evidence, 'fixture-with-drop.jsonl')) : given
-  const ctx = { page: null, evidence, fixture, timeout: Number(options.timeout ?? 15_000), holding: null }
+  const ctx = { app: null, page: null, evidence, fixture, timeout: Number(options.timeout ?? 15_000), holding: null, clipboard: null }
   const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
   const userData = join(scratch, 'user-data')
@@ -300,6 +376,7 @@ async function run(argv) {
     log(ctx, `FAIL evidence in ${evidence}`)
     process.exit(1)
   })
+  ctx.app = app
   const pid = app.process().pid
   writeFileSync(join(scratch, 'pid'), String(pid))
   const mainLog = join(evidence, 'main.log')
