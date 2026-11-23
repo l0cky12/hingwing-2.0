@@ -191,6 +191,13 @@ const STEPS = {
       if (value !== 'true') throw new Error(`${role} "${name}" is not the current one`)
     }
   },
+  minwidth: {
+    arity: 1,
+    run: async (ctx, px) => {
+      const [width] = await ctx.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getMinimumSize())
+      if (width !== Number(px)) throw new Error(`the window's minimum width is ${width}, not ${px}`)
+    }
+  },
   tally: {
     arity: 2,
     run: async (ctx, role, n) => {

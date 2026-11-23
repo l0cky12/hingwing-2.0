@@ -19,10 +19,12 @@ const MIN_WIDTH = 680
 
 export function openWindow(sessionId: SessionId | null): BrowserWindow {
   const window = new BrowserWindow({
-    ...DESIGN_SIZE, minWidth: MIN_WIDTH, useContentSize: true,
+    ...DESIGN_SIZE, useContentSize: true,
     title: 'Highwing', backgroundColor: '#E8EBE4',
     webPreferences: { preload: join(import.meta.dirname, '../preload/index.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false }
   })
+  // Not the `minWidth` option: Electron 45 drops it when `useContentSize` is set and no `minHeight` comes with it.
+  window.setMinimumSize(MIN_WIDTH, 0)
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isWebLink(url)) void shell.openExternal(url)
     return { action: 'deny' }
