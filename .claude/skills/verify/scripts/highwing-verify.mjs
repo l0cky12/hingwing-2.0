@@ -419,7 +419,12 @@ async function sizeWindow(ctx, options) {
   }
   const content = { width: width + (ctx.clip?.x ?? 0), height }
   if (content.width === SIZE.width && content.height === SIZE.height) return
-  await ctx.app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height), content)
+  await ctx.app.evaluate(({ BrowserWindow }, size) => {
+    const window = BrowserWindow.getAllWindows()[0]
+    // Electron holds a resize to the window's minimum. A tiling compositor does not, so a smaller size lifts it.
+    if (size.width < window.getMinimumSize()[0]) window.setMinimumSize(0, 0)
+    window.setContentSize(size.width, size.height)
+  }, content)
   await ctx.page.waitForFunction(size => innerWidth === size.width && innerHeight === size.height, content, { timeout: ctx.timeout })
     .catch(() => { throw new Error(`the window did not become ${content.width}x${content.height}`) })
 }

@@ -34,4 +34,4 @@ Preconditions:
 - Chromium snaps border widths to whole pixels. A 1.5px border draws 1px wide.
 - The universal `box-sizing: border-box` rule does not reach pseudo-elements. The thread nodes set it themselves.
 - `settled-expanded` shows the top of the turn, as the design C reference does, so the Done ring is below the fold. The checker reports `n/a` for its end mark. The `settled` shot shows the same end mark.
-- The checker finds the thread column from the request's left rule and the background from the pixel at (20, 70), so it needs the 1180x860 reference size and a shot of the chat column alone. Without `--chat-only` it reads the sidebar and fails.
+- The checker finds the thread column from the request's left rule and the background from the pixel at (20, 70), so it needs the 1180x860 reference size and a shot of the chat column alone. Without `--chat-only` it finds no border above the composer and fails.
