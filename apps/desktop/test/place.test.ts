@@ -34,6 +34,10 @@ describe('progressOf', () => {
     expect(progressOf(view([turn('t', 3, 'done')]))).not.toBe(base)
     expect(progressOf(view([turn('t', 3, 'at')], 1))).not.toBe(base)
   })
+  it('changes when a group in the last turn gains a step', () => {
+    const grouped = (count: number) => ({ ...turn('t', 0, 'at'), nodes: [{ kind: 'group', key: 'g', count, steps: [] }] }) as unknown as TurnView
+    expect(progressOf(view([grouped(3)]))).not.toBe(progressOf(view([grouped(2)])))
+  })
   it('ignores earlier turns being prepended and rebuilt views', () => {
     const base = progressOf(view([turn('t', 3)]))
     expect(progressOf(view([turn('old', 9), turn('t', 3)]))).toBe(base)

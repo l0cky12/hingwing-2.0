@@ -216,7 +216,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .jump button:focus-visible { outline: none; }
 .jump:has(button:focus-visible) { outline: 2px solid var(--signal); outline-offset: 2px; }
 .jump span { padding-right: 14px; font-weight: 500; white-space: nowrap; }
-.jump span:empty { display: none; }
+.jump span:empty { padding: 0; }
 .jump.asking span { color: var(--caution); }
 
 @media (prefers-reduced-motion: reduce) {

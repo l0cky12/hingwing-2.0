@@ -20,5 +20,5 @@ export function progressOf(view: ThreadView): string {
   const last = view.turns.at(-1)
   return last === undefined
     ? `none:${view.pending.length}`
-    : `${last.key}:${last.nodes.length}:${last.end.kind}:${view.pending.length}`
+    : `${last.key}:${last.nodes.reduce((size, node) => size + (node.kind === 'group' ? node.count : 1), 0)}:${last.end.kind}:${view.pending.length}`
 }

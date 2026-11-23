@@ -33,23 +33,24 @@ export function Chat({ id }: { readonly id: SessionId }) {
     else setPlace(held => placeAfter(held, distanceFrom(element), progress))
   }, [view, progress])
 
-  const onScroll = () => {
+  const onScroll = useCallback(() => {
     const element = scroller.current
     if (element !== null) setPlace(held => placeAfter(held, distanceFrom(element), progress))
-  }
+  }, [progress])
 
   const jump = useCallback(() => {
     const element = scroller.current
     if (element === null) return
     element.scrollTop = element.scrollHeight
     setPlace(FOLLOWING)
-    if (document.activeElement === jumper.current) field.current?.focus()
   }, [])
 
   useEffect(() => {
     const page = (direction: 1 | -1) => () => {
       const element = scroller.current
-      if (element !== null) element.scrollBy({ top: direction * PAGE * element.clientHeight, behavior: 'instant' })
+      if (element === null) return
+      element.scrollBy({ top: direction * PAGE * element.clientHeight, behavior: 'instant' })
+      onScroll()
     }
     const keys: Record<string, () => void> = { PageUp: page(-1), PageDown: page(1), End: jump }
     const onKeyDown = (event: KeyboardEvent) => {
@@ -62,10 +63,14 @@ export function Chat({ id }: { readonly id: SessionId }) {
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [jump])
+  }, [jump, onScroll])
 
   const asking = session !== undefined && activityOf(session).kind === 'asking'
   const shown = place.kind === 'reading' && place.far
+  useEffect(() => {
+    if (!shown && document.activeElement === jumper.current) field.current?.focus()
+  }, [shown])
+
   const notice = place.kind !== 'reading' ? '' : asking ? 'Waiting for your OK' : progress !== place.since ? 'New steps below' : ''
 
   const onAnswer = useCallback((promptId: PromptId, reply: PromptReply) => void run({ do: 'answer', sessionId: id, promptId, reply }), [id])
