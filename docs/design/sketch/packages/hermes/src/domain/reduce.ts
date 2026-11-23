@@ -5,7 +5,7 @@
  * its way). Tests feed it event logs.
  */
 import type {
-  Ask, FileDiff, Generation, InputId, Json, Link, Outcome, PromptId, PromptReply, Session, SessionContent,
+  Ask, Began, FileDiff, Generation, InputId, Json, Link, Outcome, PromptId, PromptReply, Session, SessionContent,
   SessionId, SettledTurn, Sync, ToolId, ToolResult, TurnId
 } from './session'
 
@@ -48,7 +48,15 @@ export interface Stamp extends Cursor { readonly generation: Generation | null }
  * One frame of a session's stream. `event` is null for a type Highwing does not show yet and for a
  * payload it could not use. Such a frame still moves the cursor, so it is never mistaken for a hole.
  */
-export interface StampedEvent { readonly stamp: Stamp; readonly event: SessionEvent | null }
+export interface StampedEvent {
+  readonly stamp: Stamp
+  readonly event: SessionEvent | null
+  /**
+   * This client's clock when the frame came off the live socket. null for a frame whose arrival says
+   * nothing about when it happened: a replayed one, or a catch-up frame parked during an attach.
+   */
+  readonly seenAt: number | null
+}
 
 /** A user message as the gateway's queue sees it. */
 export interface Admission {
@@ -95,7 +103,7 @@ export interface Replay {
 export interface HistoryPage {
   readonly turns: readonly SettledTurn[]
   /** Set when the last stored turn has no end yet. On a running session it becomes the open turn's start. */
-  readonly unfinished: { readonly request: string | null; readonly items: SettledTurn['items'] } | null
+  readonly unfinished: { readonly request: string | null; readonly began: Began | null; readonly items: SettledTurn['items'] } | null
   /** null: the gateway holds nothing older. Otherwise where `session.transcript` continues (`cursor` null: from its latest page). */
   readonly older: { readonly cursor: string | null } | null
 }

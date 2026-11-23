@@ -9,9 +9,10 @@ export interface ScriptOptions {
   /**
    * `'memory'` (default): the fake sits at the `WireSocket` seam. `'loopback'`: the same fake listens
    * on 127.0.0.1 and the client reaches it through the real dial code (`dialWith`), with the fake's
-   * own single-use tickets in place of the Hermes CLI.
+   * own single-use tickets in place of the Hermes CLI. A function: the same listener, reached through
+   * the dialer the function returns for it, such as a `remoteRoute` to a fake host that mints from it.
    */
-  readonly transport?: 'memory' | 'loopback'
+  readonly transport?: 'memory' | 'loopback' | ((gateway: Loopback) => Dialer | Promise<Dialer>)
   /**
    * Close the socket after the client received this many pushes. The story then publishes up to
    * `missed` more frames while no socket is attached, stopping early at a call it waits for, so
@@ -87,14 +88,20 @@ export function scriptedDialer(fixture: Fixture, options: ScriptOptions = {}): S
   const gateway = new ScriptedGateway(fixture, {
     clock, timing: options.timing ?? 'instant', ringFrames: options.ringFrames ?? RING_FRAMES, drop: options.drop ?? null
   })
+  const { transport = 'memory' } = options
   let listener: Promise<Loopback> | null = null
   let upgrades: readonly Upgrade[] = []
-  const overLoopback = dialWith(async () => {
+  const listening = async () => {
     const held = await (listener ??= loopback(gateway, clock))
     upgrades = held.upgrades
-    return held.mint()
-  })
-  const dial: Dialer = options.transport === 'loopback' ? overLoopback : async () => memorySocket(gateway)
+    return held
+  }
+  let routed: Promise<Dialer> | null = null
+  const dial: Dialer = transport === 'memory'
+    ? async () => memorySocket(gateway)
+    : transport === 'loopback'
+      ? dialWith(async () => (await listening()).mint())
+      : async request => (await (routed ??= listening().then(transport)))(request)
   return Object.defineProperties((request: { readonly start: boolean }) => dial(request), {
     done: { value: gateway.done },
     finished: { get: () => gateway.finished },

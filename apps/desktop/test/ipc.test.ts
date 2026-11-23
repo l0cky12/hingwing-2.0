@@ -3,6 +3,7 @@ import type { Session } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { applyPush, CHANNEL, parseCommand, parseFileRequest, validators, type FileOutcome, type Push, type Topic } from '../src/ipc-contract'
+import { pinnedConnection } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import { COALESCE_MS, serveWindows, sessionPatch, type IpcEvent, type IpcMainLike } from '../src/main/ipc'
 
@@ -75,7 +76,16 @@ describe('validators', () => {
     expect(parseCommand({ do: 'reconnect', start: true })).toEqual({ do: 'reconnect', start: true })
   })
 
+  it('read a target with the parser the settings file uses', () => {
+    expect(parseCommand({ do: 'checkTarget', target: { kind: 'remote', host: ' hermes-host.example-tailnet.ts.net ', port: 22 } }))
+      .toEqual({ do: 'checkTarget', target: { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' } })
+    expect(parseCommand({ do: 'checkTarget', target: { kind: 'local' } })).toEqual({ do: 'checkTarget', target: { kind: 'local' } })
+    expect(parseCommand({ do: 'editTarget', target: { kind: 'local' } })).toEqual({ do: 'editTarget' })
+  })
+
   it.each([
+    ['a target ssh would read as an option', { do: 'checkTarget', target: { kind: 'remote', host: '-oProxyCommand=true' } }],
+    ['a check with no target', { do: 'checkTarget' }],
     ['not an object', 'send'],
     ['an unknown verb', { do: 'format-disk' }],
     ['a verb from the prototype', { do: 'toString' }],
@@ -89,7 +99,9 @@ describe('validators', () => {
   })
 
   it('cover every command verb', () => {
-    expect(Object.keys(validators).sort()).toEqual(['answer', 'archive', 'create', 'discard', 'loadEarlier', 'reconnect', 'rename', 'send', 'stop'])
+    expect(Object.keys(validators).sort()).toEqual([
+      'answer', 'archive', 'checkTarget', 'create', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'openChat', 'reconnect', 'rename', 'send', 'stop'
+    ])
   })
 })
 
@@ -126,7 +138,7 @@ function harness() {
     open: async path => (opened.push({ action: 'open', path }), { ok: true }),
     show: async path => (opened.push({ action: 'show', path }), { ok: true })
   }
-  const served = serveWindows(hermes, ipc, url => url.startsWith('app://'), opener)
+  const served = serveWindows(pinnedConnection(hermes), ipc, url => url.startsWith('app://'), opener)
   return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, served }
 }
 
@@ -172,6 +184,14 @@ describe('serveWindows', () => {
     emit(moments[2]!)
     vi.advanceTimersByTime(COALESCE_MS * 4)
     expect(pushes).toHaveLength(2)
+  })
+
+  it('serves the setup state as a full value, and refuses a setup command a fixture run has no use for', async () => {
+    const { listeners, handlers, pushes, event, commands } = harness()
+    listeners.get(CHANNEL.watch)!(event(), 3, 'setup')
+    expect(pushes).toEqual([{ topic: 'setup', rev: 1, full: { at: 'pinned' } }])
+    await expect(handlers.get(CHANNEL.run)!(event(), { do: 'editTarget' })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(commands).toEqual([])
   })
 
   it('runs a valid command from the app page and refuses a malformed one or a foreign frame', async () => {

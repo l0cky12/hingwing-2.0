@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { CHECK_FAILURES, type SshFailure } from '../domain/reach'
 import type { BlockedWhy, Link, WaitingWhy } from '../domain/session'
 import type { CanonicalRpcMethods } from './contract.generated'
 
@@ -21,6 +22,8 @@ export type Dialer = (request: { readonly start: boolean }) => Promise<WireSocke
 
 type Why = WaitingWhy | BlockedWhy
 
+const sshWords = (failure: SshFailure) => CHECK_FAILURES[failure].words('the Hermes machine')
+
 const WORDS: Readonly<Record<Why, string>> = {
   'not-running': "Hermes isn't running.",
   draining: 'Hermes is restarting.',
@@ -29,12 +32,18 @@ const WORDS: Readonly<Record<Why, string>> = {
   incompatible: "This version of Hermes doesn't work with Highwing.",
   auth: 'Hermes refused access to this profile.',
   inaccessible: "Highwing can't reach the Hermes gateway.",
-  refused: 'Hermes refused the connection.'
+  refused: 'Hermes refused the connection.',
+  unreachable: sshWords('unreachable'),
+  'ssh-missing': sshWords('ssh-missing'),
+  'ssh-denied': sshWords('ssh-denied'),
+  'ssh-check': sshWords('ssh-check'),
+  'host-changed': sshWords('host-changed')
 }
 
 const RETRIES: Readonly<Record<Why, boolean>> = {
-  'not-running': true, draining: true, dropped: true,
-  'hermes-missing': false, incompatible: false, auth: false, inaccessible: false, refused: false
+  'not-running': true, draining: true, dropped: true, unreachable: true,
+  'hermes-missing': false, incompatible: false, auth: false, inaccessible: false, refused: false,
+  'ssh-missing': false, 'ssh-denied': false, 'ssh-check': false, 'host-changed': false
 }
 
 export class DialError extends Error {
@@ -49,12 +58,12 @@ export type Mint = (request: { readonly start: boolean }) => Promise<Endpoint>
 export const GATEWAY_PROTOCOL = 'hermes-gateway-v1'
 
 /** `ensure_exit_code` in Hermes's `hermes_cli/gateway_runtime_cli.py:11-17`. 2 is an invocation this Hermes does not know. */
-const EXIT_KINDS: Readonly<Record<number, Why>> = { 2: 'incompatible', 3: 'incompatible', 4: 'auth', 5: 'not-running', 6: 'draining', 7: 'inaccessible' }
+export const EXIT_KINDS: Readonly<Record<number, Why>> = { 2: 'incompatible', 3: 'incompatible', 4: 'auth', 5: 'not-running', 6: 'draining', 7: 'inaccessible' }
 
 const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
-function endpointOf(stdout: string): Endpoint | null {
+export function endpointOf(stdout: string): Endpoint | null {
   try {
     const reply: unknown = JSON.parse(stdout.trim().split('\n').at(-1) ?? '')
     if (!isObject(reply)) return null

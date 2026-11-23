@@ -9,7 +9,9 @@ import { parseEvent, parseServerRequest, type ParsedEvent } from './wire/parse'
 
 export type { Command, Outcome, Refusal, ResultOf } from './domain/command'
 export type { Clock, Dialer, WireSocket } from './wire/link'
+export { checkTarget, type CheckOptions, type CheckResult } from './wire/check'
 export { DialError, liveDialer } from './wire/link'
+export { remoteRoute, type Route } from './wire/remote'
 
 /** A value that changes. `subscribe` calls back on every change, not for the current value. */
 export interface Feed<T> {
@@ -110,7 +112,7 @@ export function openHermes(options: HermesOptions): Hermes {
       else if (parsed.event.type === 'meta' && parsed.event.title !== undefined) list.retitle(parsed.sessionId, parsed.event.title)
       const actor = actors.get(parsed.sessionId)
       if (actor === undefined) return count('unrouted', parsed.type)
-      actor.feed({ in: 'event', frame: { stamp: parsed.stamp, event: parsed.event } })
+      actor.feed({ in: 'event', frame: { stamp: parsed.stamp, event: parsed.event, seenAt: clock.now() } })
     },
     gap: parsed => actors.get(parsed.sessionId)?.feed({ in: 'gap' }),
     app: refreshSoon,

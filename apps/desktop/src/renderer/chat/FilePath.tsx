@@ -17,7 +17,7 @@ const WORDS = {
   copy: "Highwing couldn't copy this path."
 } as const
 
-export function FilePath({ path }: { readonly path: string }) {
+export function FilePath({ path, findId }: { readonly path: string; readonly findId: string }) {
   const fileCall = useContext(FileCallContext)
   const [menu, setMenu] = useState(false)
   const [note, setNote] = useState<string | null>(null)
@@ -61,7 +61,7 @@ export function FilePath({ path }: { readonly path: string }) {
       }}
     >
       <div className="file-row">
-        <button className="file-open" aria-label={`Open ${name}`} title={path} onClick={() => void act('open')}>{path}</button>
+        <button className="file-open" aria-label={`Open ${name}`} title={path} data-find={findId} onClick={() => void act('open')}>{path}</button>
         <span className="file-side">
           <button className="file-more" ref={toggle} aria-label={`More for ${name}`} aria-expanded={menu} onClick={() => setMenu(open => !open)}>
             <span aria-hidden="true">⋯</span>

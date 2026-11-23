@@ -23,12 +23,13 @@ export function startMain(env: { HIGHWING_FIXTURE?: string; HIGHWING_RECORD?: st
 }
 
 // 2. Renderer: the chat view reads one value and sends commands as data (apps/desktop/src/renderer/chat/).
+const { timeZone } = Intl.DateTimeFormat().resolvedOptions()
 export function chatView(id: SessionId) {
   const session = useTopic(`session:${id}`)
   if (!session) return { skeleton: true as const }
   return {
     skeleton: false as const,
-    thread: threadView(session), // the same call the tests make; settled turns keep their identity
+    thread: threadView(session, { now: Date.now(), timeZone }), // the same call the tests make; settled turns keep their identity
     composer: { canSend: session.sync.state === 'live', showStop: activityOf(session).kind !== 'idle' },
     onSend: (text: string) => highwing.run({ do: 'send', sessionId: id, text }),
     onStop: () => highwing.run({ do: 'stop', sessionId: id }),
@@ -45,33 +46,34 @@ export function banner(link: Link) {
 }
 
 // 3. Tests: design C from an event log, with no provider, no socket and no DOM.
+const clock = { now: 0, timeZone: 'UTC' } // the view takes the clock, so a test fixes it
 test('a settled errand collapses its runs into named groups', async () => {
   const session = await playToEnd(loadFixture('fixtures/errand.jsonl'))
-  expect(outline(threadView(session))).toMatchInlineSnapshot()
+  expect(outline(threadView(session, clock))).toMatchInlineSnapshot()
 })
 
 test('while the listing runs, its row carries the live end', async () => {
   for await (const { session } of play(loadFixture('fixtures/errand.jsonl'))) {
     if (activityOf(session).kind !== 'working') continue
-    expect(threadView(session).turns.at(-1)!.end.kind).toBe('at')
+    expect(threadView(session, clock).turns.at(-1)!.end.kind).toBe('at')
   }
 })
 
 test('every moment of every fixture is a sound thread', async () => {
   for (const path of ALL_FIXTURES) {
     for await (const { session, step } of play(loadFixture(path))) {
-      expect(checkThread(threadView(session)), `${path} step ${step}`).toEqual([])
+      expect(checkThread(threadView(session, clock)), `${path} step ${step}`).toEqual([])
     }
   }
 })
 
 test('a socket drop after any frame ends in the same thread', async () => {
   const fixture = loadFixture('fixtures/errand.jsonl')
-  const want = outline(threadView(await playToEnd(fixture)))
+  const want = outline(threadView(await playToEnd(fixture), clock))
   const pushes = fixture.steps.filter(step => 'push' in step).length
   for (let afterPush = 1; afterPush <= pushes; afterPush++) {
     const session = await playToEnd(fixture, { drop: { afterPush, missed: 3 } })
-    expect(outline(threadView(session)), `drop after push ${afterPush}`).toBe(want)
+    expect(outline(threadView(session, clock)), `drop after push ${afterPush}`).toBe(want)
   }
 })
 

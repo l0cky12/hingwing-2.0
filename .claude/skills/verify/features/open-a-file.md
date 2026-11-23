@@ -23,7 +23,7 @@ Each recipe starts with the same steps, `PRE`: `wait live type "Message Hermes" 
 
 - **Open.** Run `$H run --fixture fixtures/errand.jsonl --run open-file PRE shot edited-open click button "Open notes.md" opened open /tmp/hermes-proto-work/notes.md shot opened`. `edited-open.aria.txt` holds `button "Open notes.md": /tmp/hermes-proto-work/notes.md` and `button "More for notes.md"`. `opens.jsonl` holds one line, `{"action":"open","path":"/tmp/hermes-proto-work/notes.md"}`.
 - **Show in folder.** Run `$H run --fixture fixtures/errand.jsonl --run open-file-show PRE click button "More for notes.md" shot menu-open click button "Show in folder" opened show /tmp/hermes-proto-work/notes.md shot shown`. `menu-open.aria.txt` holds `button "More for notes.md" [expanded]`, then `button "Show in folder"` and `button "Copy path"`.
-- **Copy path.** Run `$H run --fixture fixtures/errand.jsonl --run open-file-copy PRE click button "More for notes.md" click button "Copy path" clipboard /tmp/hermes-proto-work/notes.md shot copied`.
+- **Copy path.** Run `$H run --fixture fixtures/errand.jsonl --run open-file-copy PRE click button "More for notes.md" click button "Copy path" copied /tmp/hermes-proto-work/notes.md shot copied`.
 
 ## Gotchas
 

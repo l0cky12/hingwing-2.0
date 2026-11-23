@@ -73,10 +73,26 @@ export type Run =
       readonly stop: 'none' | 'requested'
     }
 
+/** When a turn began, and whose clock read it. `at` is Unix milliseconds. */
+export interface Began {
+  readonly at: number
+  /**
+   * `hermes`: the stored request row's time, read on the gateway's clock. `client`: this client's clock
+   * when the turn's first live frame arrived, since the gateway sends no time with a live event.
+   */
+  readonly clock: 'hermes' | 'client'
+}
+
 interface TurnBase<S extends 'open' | 'settled'> {
   readonly id: TurnId
   /** null when the turn was started by something other than a user message we know. */
   readonly request: Request | null
+  /**
+   * null when unknown: a stored row with no time, a turn whose request sits on an older page, a turn
+   * first heard through replay or catch-up, a running turn found at attach with no stored request.
+   * An open turn's value never moves once a frame has set it.
+   */
+  readonly began: Began | null
   /** In arrival order. Append-only while open, except that a tool, a prompt or a declined notice is updated in place by id. */
   readonly items: readonly Item<S>[]
 }
@@ -137,6 +153,14 @@ export interface FileDiff {
   readonly path: string
   /** The first hunk starts at `@@ -0,0`. */
   readonly createsFile: boolean
+  /** The file header's target is `/dev/null`. */
+  readonly deletesFile: boolean
+  /**
+   * The lines may not be the whole diff. Hermes caps the diff it sends at 80 lines and 6 files, and this file is where
+   * it stopped: the "omitted" summary follows it, or a hunk is short of its counts. A diff with no whole hunk at all,
+   * such as one without an `@@` header, is cut too.
+   */
+  readonly cut: boolean
   readonly added: number
   readonly removed: number
   readonly lines: readonly { readonly t: 'hunk' | 'add' | 'del' | 'ctx'; readonly text: string }[]
@@ -189,8 +213,11 @@ export type WaitingWhy =
   | 'not-running' // the gateway is absent or still starting
   | 'draining' //    the gateway is shutting down or restarting
   | 'dropped' //     the socket closed or the network failed
+  | 'unreachable' // ssh could not reach the machine Hermes runs on
 /** Why a dial failed in a way that needs the user. */
-export type BlockedWhy = 'hermes-missing' | 'incompatible' | 'auth' | 'inaccessible' | 'refused'
+export type BlockedWhy =
+  | 'hermes-missing' | 'incompatible' | 'auth' | 'inaccessible' | 'refused'
+  | 'ssh-missing' | 'ssh-denied' | 'ssh-check' | 'host-changed'
 
 /** The app-wide connection to the gateway. */
 export type Link =

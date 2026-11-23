@@ -2,8 +2,8 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, appendFileSync, openSync, readSync, closeSync } from 'node:fs'
-import { delimiter, dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
 const DESKTOP = join(REPO, 'apps/desktop')
@@ -12,10 +12,28 @@ const EVIDENCE_ROOT = '/tmp/highwing-verify'
 const SCRATCH_ROOT = '/tmp/highwing-verify-scratch'
 const REFERENCE = join(REPO, 'docs/design/reference')
 const SIZE = { width: 1180, height: 860 }
+const QUIT_MS = 5_000
 const requireDesktop = createRequire(join(DESKTOP, 'package.json'))
 
+const FAKE_HOST = 'hermes-host.example-tailnet.ts.net'
+const ERRAND = join(REPO, 'fixtures/errand.jsonl')
+const SETTINGS_FILE = 'connection.json'
+
+/** What `--saved` leaves in the user-data directory before launch. null: no file. */
+const SAVED = {
+  none: null,
+  local: JSON.stringify({ version: 1, target: { kind: 'local' } }),
+  remote: JSON.stringify({ version: 1, target: { kind: 'remote', host: FAKE_HOST } }),
+  unreadable: '{"version": 1, "target"',
+  newer: JSON.stringify({ version: 2, target: { kind: 'relay' } })
+}
+
 const STATES = {
-  window: page => page.locator('#root > *').first(),
+  window: page => page.locator('#root > :not([hidden])').first(),
+  setup: page => page.getByRole('button', { name: 'Connect', exact: true, disabled: false }),
+  'setup-checking': page => page.getByRole('status', { name: 'Checking' }),
+  'setup-failed': page => page.getByRole('alert'),
+  'setup-saved': page => page.getByRole('button', { name: 'Open chat', exact: true }),
   live: page => page.getByRole('button', { name: 'Send', exact: true, disabled: false }),
   'tool-running': page => page.locator('.step[data-end="live"]').filter({ hasText: /^Running / }),
   approval: page => page.getByRole('group', { name: 'Run this command?' }).getByRole('button', { name: 'Run once', exact: true, disabled: false }),
@@ -30,6 +48,55 @@ const STEPS = {
   type: { arity: 2, run: async (ctx, label, text) => ctx.page.getByLabel(label, { exact: true }).fill(expand(ctx, text), { timeout: ctx.timeout }) },
   press: { arity: 1, run: async (ctx, key) => ctx.page.keyboard.press(key) },
   shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
+  field: {
+    arity: 3,
+    run: async (ctx, label, lines, outcome) => {
+      if (outcome !== 'fits' && outcome !== 'scrolls') throw new Error(`field outcome must be "fits" or "scrolls", not "${outcome}"`)
+      const m = await ctx.page.getByLabel(label, { exact: true }).evaluate(el => {
+        const style = getComputedStyle(el)
+        return {
+          client: el.clientHeight,
+          content: el.scrollHeight,
+          lineHeight: parseFloat(style.lineHeight),
+          padding: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
+          scrollbar: el.offsetWidth - el.clientWidth - parseFloat(style.borderLeftWidth) - parseFloat(style.borderRightWidth)
+        }
+      }, undefined, { timeout: ctx.timeout })
+      const shown = Math.round((m.client - m.padding) / m.lineHeight)
+      const scrolls = m.content > m.client + 1 && m.scrollbar > 2
+      log(ctx, `  "${label}" shows ${shown} lines in ${m.client}px (content ${m.content}px, scrollbar ${m.scrollbar}px), ${scrolls ? 'scrolls' : 'fits'}`)
+      if (shown !== Number(lines)) throw new Error(`"${label}" shows ${shown} lines, not ${lines}`)
+      if (scrolls !== (outcome === 'scrolls')) throw new Error(`"${label}" ${scrolls ? 'scrolls' : 'fits'}, not ${outcome}`)
+    }
+  },
+  pinned: {
+    arity: 0,
+    run: async ctx => {
+      const m = await ctx.page.evaluate(() => {
+        const scroller = document.querySelector('#scroll')
+        const footer = document.querySelector('footer')
+        if (!scroller || !footer) return null
+        const rows = scroller.querySelectorAll('.request, .thread > *, .turn.pending > *')
+        const last = rows[rows.length - 1] ?? scroller
+        const view = scroller.getBoundingClientRect()
+        const row = last.getBoundingClientRect()
+        return {
+          fromEnd: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight,
+          rowTop: row.top,
+          rowBottom: row.bottom,
+          viewTop: view.top,
+          viewBottom: view.bottom,
+          footerTop: footer.getBoundingClientRect().top
+        }
+      })
+      if (m === null) throw new Error('no #scroll or footer on the page')
+      log(ctx, `  thread ${m.fromEnd.toFixed(1)}px from its end, last row ${m.rowTop.toFixed(1)}-${m.rowBottom.toFixed(1)} in view ${m.viewTop.toFixed(1)}-${m.viewBottom.toFixed(1)}, footer top ${m.footerTop.toFixed(1)}`)
+      if (m.fromEnd > 1) throw new Error(`thread is ${m.fromEnd.toFixed(1)}px short of its end`)
+      const fitsInView = m.rowBottom - m.rowTop <= m.viewBottom - m.viewTop
+      if (m.rowBottom > m.viewBottom + 0.5 || m.rowBottom < m.viewTop || (fitsInView && m.rowTop < m.viewTop - 0.5)) throw new Error('the last row of the thread is not in view')
+      if (m.viewBottom > m.footerTop + 0.5) throw new Error('the composer covers the thread')
+    }
+  },
   disabled: {
     arity: 2,
     run: async (ctx, role, name) => {
@@ -45,14 +112,62 @@ const STEPS = {
       }
     }
   },
-  clipboard: {
+  copied: {
     arity: 1,
     run: async (ctx, text) => {
       const held = await pollUntil(ctx, () => ctx.app.evaluate(({ clipboard }) => clipboard.readText()), value => value === text).catch(() => null)
       if (held !== text) throw new Error(`clipboard holds ${JSON.stringify(held ?? 'something else')}, not ${JSON.stringify(text)}`)
     }
+  },
+  value: {
+    arity: 2,
+    run: async (ctx, label, text) => {
+      const held = await ctx.page.getByLabel(label, { exact: true }).inputValue({ timeout: ctx.timeout })
+      if (held !== text) throw new Error(`"${label}" holds ${JSON.stringify(held)}, not ${JSON.stringify(text)}`)
+    }
+  },
+  focused: {
+    arity: 2,
+    run: async (ctx, role, name) => {
+      const found = ctx.page.getByRole(role, { name, exact: true })
+      if (!(await found.evaluateAll(nodes => nodes.includes(document.activeElement)))) {
+        const now = await ctx.page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent ?? 'nothing')
+        throw new Error(`${role} "${name}" does not have focus; "${now}" does`)
+      }
+    }
+  },
+  count: {
+    arity: 3,
+    run: async (ctx, role, name, n) => {
+      const found = await ctx.page.getByRole(role, { name: nameMatcher(name), exact: true }).count()
+      if (found !== Number(n)) throw new Error(`${found} ${role}(s) named ${name}, not ${n}`)
+    }
+  },
+  clipboard: {
+    arity: 1,
+    run: async (ctx, name) => {
+      const read = () => ctx.app.evaluate(({ clipboard }) => clipboard.readText())
+      const deadline = Date.now() + ctx.timeout
+      let text = await read()
+      while (text === '' || text === ctx.clipboard) {
+        if (Date.now() > deadline) throw new Error(text === '' ? 'the clipboard is empty' : 'the clipboard has not changed since the last clipboard step')
+        text = await read()
+      }
+      ctx.clipboard = text
+      writeFileSync(join(ctx.evidence, `${name}.clip.txt`), text)
+      log(ctx, `  saved ${name}.clip.txt (${text.length} characters)`)
+    }
+  },
+  marks: {
+    arity: 1,
+    run: async (ctx, count) => {
+      const found = await ctx.page.evaluate(() => ['find', 'find-current'].reduce((total, name) => total + (CSS.highlights.get(name)?.size ?? 0), 0))
+      if (found !== Number(count)) throw new Error(`${found} ranges are marked, expected ${count}`)
+    }
   }
 }
+
+const nameMatcher = name => (/^\/.+\/$/.test(name) ? new RegExp(name.slice(1, -1)) : name)
 
 const fail = message => {
   console.error(`highwing-verify: ${message}`)
@@ -84,7 +199,14 @@ const newestMtime = dir => readdirSync(dir, { recursive: true, withFileTypes: tr
 const SOURCES = [join(DESKTOP, 'src'), join(REPO, 'packages/hermes/src'), join(REPO, 'packages/thread/src')]
 const buildIsStale = () => !existsSync(MAIN_JS) || Math.max(...SOURCES.map(newestMtime), statSync(join(DESKTOP, 'electron.vite.config.ts')).mtimeMs) > newestMtime(join(DESKTOP, 'out'))
 
-const pathWithoutHermes = () => (process.env.PATH ?? '').split(delimiter).filter(dir => !existsSync(join(dir, 'hermes'))).join(delimiter)
+const tsxLoader = () => {
+  try { return pathToFileURL(createRequire(join(REPO, 'package.json')).resolve('tsx')).href } catch { return null }
+}
+
+/** The pids of fake tools from `bin` that are still running. The app must leave none behind when it quits. */
+const toolsRunning = bin => readdirSync('/proc').filter(entry => /^\d+$/.test(entry)).filter(pid => {
+  try { return readFileSync(`/proc/${pid}/cmdline`, 'utf8').includes(bin) } catch { return false }
+})
 
 const pngSize = path => {
   const fd = openSync(path, 'r')
@@ -112,7 +234,7 @@ function doctor() {
     ['playwright-core installed', (() => { try { return Boolean(requireDesktop.resolve('playwright-core')) } catch { return false } })(), 'pnpm install'],
     ['electron binary downloaded', Boolean(electronBinary()) && existsSync(electronBinary()), electronBinary() ?? 'run: node -e "require(\'electron\')" in apps/desktop'],
     ['build present and newer than sources', !buildIsStale(), 'run: highwing-verify.mjs build'],
-    ['no-fixture launch cannot see hermes', spawnSync('sh', ['-c', 'command -v hermes'], { env: { ...process.env, PATH: pathWithoutHermes() } }).status !== 0, 'PATH filter']
+    ['tsx installed', Boolean(tsxLoader()), 'needed to run the fake host; pnpm install']
   ]
   for (const [name, ok, detail] of checks) console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : `  (${detail})`}`)
   const running = instances().filter(({ pid }) => alive(pid))
@@ -213,34 +335,71 @@ function withDrop(fixturePath, type, out) {
   return out
 }
 
+/**
+ * Starts the fake Hermes machine in its own process and resolves with the bin directory of its fake
+ * ssh, tailscale and hermes. The app is then launched with that directory as its whole PATH, so it
+ * cannot reach the real ones.
+ */
+function startFakeHost(scenario, fixture, holdAt, scratch) {
+  const child = spawn(process.execPath, ['--import', tsxLoader() ?? fail('tsx is missing; run doctor'), join(REPO, 'scripts/fake-host.ts'), scenario, fixture, ...(holdAt ? [holdAt] : [])], {
+    cwd: REPO, stdio: ['ignore', 'pipe', 'inherit']
+  })
+  writeFileSync(join(scratch, 'host-pid'), String(child.pid))
+  return new Promise(resolve => {
+    let text = ''
+    child.stdout.on('data', chunk => {
+      text += chunk
+      if (text.includes('\n')) resolve({ child, bin: JSON.parse(text).bin })
+    })
+    child.on('exit', code => fail(`the fake host exited with code ${code} before the run ended`))
+  })
+}
+
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', 'no-fixture': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag' })
   const steps = parseSteps(rest)
-  if (!options.fixture && !options['no-fixture']) fail('pass --fixture <path>, or --no-fixture to launch against no gateway')
+  const scenario = options['fake-host']
+  if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
+  if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
+  if (scenario && options['drop-after']) fail('--drop-after edits the fixture a --fixture run replays. It does nothing with --fake-host')
+  if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')
   const runId = options.run ?? `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`
   const evidence = join(EVIDENCE_ROOT, runId)
   const scratch = join(SCRATCH_ROOT, runId)
   mkdirSync(evidence, { recursive: true })
   mkdirSync(scratch, { recursive: true })
-  const given = options.fixture ? resolve(process.cwd(), options.fixture) : null
-  const fixture = given && options['drop-after'] ? withDrop(given, options['drop-after'], join(evidence, 'fixture-with-drop.jsonl')) : given
-  const ctx = { app: null, page: null, evidence, opens: join(evidence, 'opens.jsonl'), fixture, timeout: Number(options.timeout ?? 15_000), holding: null }
+  const given = options.fixture ? resolve(process.cwd(), options.fixture) : scenario ? ERRAND : null
+  const fixture = options['drop-after'] ? withDrop(given, options['drop-after'], join(evidence, 'fixture-with-drop.jsonl')) : given
+  const ctx = { app: null, page: null, evidence, fixture, timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null }
+  const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
-  const env = { ...process.env, PATH: fixture ? process.env.PATH : pathWithoutHermes() }
+  const userData = join(scratch, 'user-data')
+  const saved = SAVED[options.saved ?? 'none']
+  if (scenario) {
+    rmSync(userData, { recursive: true, force: true })
+    mkdirSync(userData, { recursive: true })
+    if (saved !== null) writeFileSync(join(userData, SETTINGS_FILE), saved)
+    // The check of this scenario passes. The save after it fails, because its temp file cannot be opened.
+    if (scenario === 'cant-save') mkdirSync(join(userData, `${SETTINGS_FILE}.tmp`))
+  }
+  const host = scenario ? await startFakeHost(scenario, fixture, options['hold-at'], scratch) : null
+
+  const env = { ...process.env, ...(host ? { PATH: host.bin } : {}) }
   delete env.WAYLAND_DISPLAY
   delete env.ELECTRON_RENDERER_URL
   delete env.HIGHWING_FIXTURE
-  if (fixture) env.HIGHWING_FIXTURE = fixture
+  delete env.HIGHWING_RECORD
+  if (!host) env.HIGHWING_FIXTURE = fixture
   rmSync(ctx.opens, { force: true })
   env.HIGHWING_OPEN_LOG = ctx.opens
 
   const { _electron } = requireDesktop('playwright-core')
-  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${fixture ? `HIGHWING_FIXTURE=${fixture}` : 'no fixture, hermes removed from PATH'}`)
+  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"` : `HIGHWING_FIXTURE=${fixture}`}${Object.keys(media).length > 0 ? `, emulating ${JSON.stringify(media)}` : ''}`)
   const app = await _electron.launch({
     executablePath: electronBinary() ?? fail('electron binary missing; run doctor'),
-    args: [MAIN_JS, '--ozone-platform=x11', '--force-device-scale-factor=1', '--disable-gpu', `--user-data-dir=${join(scratch, 'user-data')}`],
+    args: [MAIN_JS, '--ozone-platform=x11', '--force-device-scale-factor=1', '--disable-gpu', `--user-data-dir=${userData}`],
     cwd: REPO,
     env,
     timeout: ctx.timeout
@@ -258,6 +417,7 @@ async function run(argv) {
   let failed = null
   try {
     ctx.page = await app.firstWindow({ timeout: ctx.timeout })
+    if (Object.keys(media).length > 0) await ctx.page.emulateMedia(media)
     ctx.page.on('console', message => appendFileSync(join(evidence, 'console.log'), `${message.type()} ${message.text()}\n`))
     ctx.page.on('pageerror', error => appendFileSync(join(evidence, 'console.log'), `pageerror ${error.stack ?? error}\n`))
     await ctx.page.waitForLoadState('domcontentloaded')
@@ -271,9 +431,22 @@ async function run(argv) {
     log(ctx, `FAILED: ${error.message.split('\n')[0]}`)
     await ctx.page?.screenshot({ path: join(evidence, 'failure.png') }).catch(() => {})
   } finally {
-    await app.close().catch(() => {})
+    // A tool the app left running holds the app's pipes open, and close() would then wait on it for ever.
+    await Promise.race([app.close().catch(() => {}), new Promise(done => setTimeout(done, QUIT_MS))])
     if (alive(pid)) process.kill(pid, 'SIGKILL')
     rmSync(join(scratch, 'pid'), { force: true })
+    if (host) {
+      const deadline = Date.now() + QUIT_MS
+      while (toolsRunning(host.bin).length > 0 && Date.now() < deadline) await new Promise(done => setTimeout(done, 50))
+      const left = toolsRunning(host.bin)
+      if (left.length > 0 && !failed) {
+        failed = new Error(`the app quit and left ${left.length} ssh, tailscale or hermes process(es) running: pid ${left.join(', ')}`)
+        log(ctx, `FAILED: ${failed.message}`)
+      }
+      host.child.removeAllListeners('exit')
+      host.child.kill()
+      rmSync(join(scratch, 'host-pid'), { force: true })
+    }
   }
   log(ctx, `${failed ? 'FAIL' : 'PASS'} evidence in ${evidence}`)
   process.exit(failed ? 1 : 0)
@@ -306,8 +479,8 @@ function cleanup(argv) {
   const targets = options.all ? (existsSync(SCRATCH_ROOT) ? readdirSync(SCRATCH_ROOT) : []) : [options.run]
   for (const runId of targets) {
     const scratch = join(SCRATCH_ROOT, runId)
-    const pidFile = join(scratch, 'pid')
-    if (existsSync(pidFile)) {
+    for (const pidFile of [join(scratch, 'pid'), join(scratch, 'host-pid')]) {
+      if (!existsSync(pidFile)) continue
       const pid = Number(readFileSync(pidFile, 'utf8'))
       if (alive(pid)) process.kill(pid, 'SIGKILL')
       console.log(`stopped ${runId} pid ${pid}`)

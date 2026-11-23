@@ -212,6 +212,35 @@ describe('parseEvent outside the happy path', () => {
   })
 })
 
+describe('parseRows and when a turn began', () => {
+  const user = (text: string, timestamp?: number | null): TranscriptMessage => ({ role: 'user', text, ...(timestamp === undefined ? {} : { timestamp }) })
+  const answer = (text: string, timestamp?: number): TranscriptMessage => ({ role: 'assistant', text, ...(timestamp === undefined ? {} : { timestamp }) })
+
+  it('reads a request row\'s timestamp, in seconds, as the turn\'s start on the gateway\'s clock', () => {
+    const turn = only(parseRows([user('First', 1_795_251_600.182), answer('Done.', 1_795_251_700)]).turns)
+    expect(turn.began).toEqual({ at: 1_795_251_600_182, clock: 'hermes' })
+  })
+
+  it('takes the start of the stored errand from its request row', () => {
+    expect(only(parseRows(stored).turns).began).toEqual({ at: Math.round((stored[0]?.timestamp as number) * 1000), clock: 'hermes' })
+  })
+
+  it.each([[undefined], [null], [0], [-5]])('gives a request row with timestamp %s no start', timestamp => {
+    expect(only(parseRows([user('First', timestamp), answer('Done.', 1_795_251_700)]).turns).began).toBeNull()
+  })
+
+  it('gives a turn whose request sits on an older page no start, whatever its other rows say', () => {
+    const { turns } = parseRows([answer('The tail of an older turn.', 1_795_251_500), user('Next', 1_795_251_600), answer('Done.', 1_795_251_700)])
+    expect(turns.map(turn => turn.began)).toEqual([null, { at: 1_795_251_600_000, clock: 'hermes' }])
+  })
+
+  it('carries the start of an unfinished turn', () => {
+    const { turns, unfinished } = parseRows([user('First', 1_795_251_600), answer('Done.'), user('Second', 1_795_251_900)])
+    expect(turns.map(turn => turn.began)).toEqual([{ at: 1_795_251_600_000, clock: 'hermes' }])
+    expect(unfinished?.began).toEqual({ at: 1_795_251_900_000, clock: 'hermes' })
+  })
+})
+
 describe('parseRows on the stored errand', () => {
   it('folds the stored rows into one complete turn that lists every row id', () => {
     const { turns, unfinished } = parseRows(stored)
@@ -319,6 +348,12 @@ describe('parseReplay', () => {
     expect(replay.events.map(({ event }) => event?.type)).toEqual(['text.delta', 'turn.ended', 'meta'])
   })
 
+  it('marks every replayed frame as seen at no known time', () => {
+    const tail = params.slice(-3) as unknown as CanonicalEventsResult['events']
+    const replay = parseReplay({ events: tail, latest_seq: 43, last_sequence: 43, epoch: EPOCH, replay_epoch: EPOCH, truncated: false, snapshot_required: false, count: 3 })
+    expect(replay.events.map(({ seenAt }) => seenAt)).toEqual([null, null, null])
+  })
+
   it('passes on that the gateway cannot replay', () => {
     const reply: CanonicalEventsResult = { events: [], latest_seq: 90, last_sequence: 90, epoch: 'e2', replay_epoch: 'e2', truncated: true, snapshot_required: true, count: 0 }
     expect(parseReplay(reply)).toEqual({ snapshotRequired: true, epoch: 'e2', events: [] })
@@ -359,10 +394,40 @@ describe('parseListRows and parseServerRequest', () => {
 describe('parseInlineDiff and parseToolResult', () => {
   it('keeps one FileDiff per file header and drops the banner and the omitted summary', () => {
     const raw = ['  ┊ review diff', '\u001b[33ma/a.txt → b/a.txt\u001b[0m', '@@ -1 +1 @@', '-x', '+y', 'a/b.txt → b/b.txt', '@@ -0,0 +1 @@', '+new', '… omitted 4 diff line(s)'].join('\n')
-    expect(parseInlineDiff(raw).map(({ path, createsFile, added, removed }): Partial<FileDiff> => ({ path, createsFile, added, removed }))).toEqual([
-      { path: 'a.txt', createsFile: false, added: 1, removed: 1 },
-      { path: 'b.txt', createsFile: true, added: 1, removed: 0 }
+    expect(parseInlineDiff(raw).map(({ path, createsFile, cut, added, removed }): Partial<FileDiff> => ({ path, createsFile, cut, added, removed }))).toEqual([
+      { path: 'a.txt', createsFile: false, cut: false, added: 1, removed: 1 },
+      { path: 'b.txt', createsFile: true, cut: true, added: 1, removed: 0 }
     ])
+  })
+
+  it('marks a file cut when the cap falls between two of its hunks, though every kept hunk is whole', () => {
+    const raw = ['a/a.txt → b/a.txt', '@@ -1 +1 @@', '-x', '+y', '… omitted 4 diff line(s)'].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([true])
+  })
+
+  it('marks a file cut when the cap falls inside a hunk', () => {
+    const raw = ['a/a.txt → b/a.txt', '@@ -1,90 +1,90 @@', ' one', '-two', '+three'].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([true])
+  })
+
+  it('reads a /dev/null target as a delete', () => {
+    const raw = ['a/old.txt → /dev/null', '@@ -1 +0,0 @@', '-gone'].join('\n')
+    expect(parseInlineDiff(raw).map(({ path, deletesFile, cut }) => ({ path, deletesFile, cut }))).toEqual([{ path: 'old.txt', deletesFile: true, cut: false }])
+  })
+
+  it('leaves whole files uncut when a note sits between them', () => {
+    const raw = ['a/a.txt → b/a.txt', '@@ -1 +1 @@', '-x', '+y', '# Moved: a.txt -> b.txt', 'a/c.txt → b/c.txt', '@@ -1 +1 @@', '-p', '+q'].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([false, false])
+  })
+
+  it.each(['# Moved: a.txt -> b.txt', '# Deleted: c.txt'])('leaves a whole file uncut when the patch ends with "%s"', note => {
+    const raw = ['a/a.txt → b/a.txt', '@@ -1 +1 @@', '-x', '+y', note].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([false])
+  })
+
+  it('leaves a whole diff uncut', () => {
+    const raw = ['  ┊ review diff', 'a/a.txt → b/a.txt', '@@ -1,2 +1,2 @@', ' one', '-two', '+three'].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([false])
   })
 
   it('strips ANSI from command output and caps text at 256 kB', () => {
