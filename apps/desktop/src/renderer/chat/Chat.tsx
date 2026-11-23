@@ -43,6 +43,7 @@ export function Chat({ id }: { readonly id: SessionId }) {
     if (element === null) return
     element.scrollTop = element.scrollHeight
     setPlace(FOLLOWING)
+    if (document.activeElement === jumper.current) field.current?.focus()
   }, [])
 
   useEffect(() => {
@@ -67,7 +68,7 @@ export function Chat({ id }: { readonly id: SessionId }) {
 
   const asking = session !== undefined && activityOf(session).kind === 'asking'
   const shown = place.kind === 'reading' && place.far
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!shown && document.activeElement === jumper.current) field.current?.focus()
   }, [shown])
 
