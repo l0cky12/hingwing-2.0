@@ -22,20 +22,20 @@ describe('the bots sidebar', () => {
 
   it('names each row by its bot, and the default bot as the default bot', () => {
     expect(buttons(markup).map(tag => attr(tag, 'aria-label'))).toEqual([
-      'Search bots', 'New bot', 'Hermes Agent, default bot', 'Researcher', 'Reviewer', 'Ops', 'Scribe'
+      'Search bots', 'New bot', 'Emu, default bot', 'dr eggbot', 'Research', 'Timothy · CEO', 'Hermes', 'highwing'
     ])
-    expect(markup).toMatch(/<h3>Work<\/h3>.*<h3>Unassigned<\/h3>/s)
+    expect(markup).toMatch(/<h3>New section<\/h3>.*<h3>Unassigned<\/h3>/s)
   })
 
   it('marks the default bot as the current one at launch, and no other', () => {
-    expect(buttons(markup).filter(tag => attr(tag, 'aria-current') !== undefined).map(tag => attr(tag, 'aria-label'))).toEqual(['Hermes Agent, default bot'])
+    expect(buttons(markup).filter(tag => attr(tag, 'aria-current') !== undefined).map(tag => attr(tag, 'aria-label'))).toEqual(['Emu, default bot'])
   })
 
   it('describes each row by its preview, or by having no messages', () => {
-    const scribe = attr(named(markup, 'Scribe')!, 'aria-describedby')
-    expect(markup).toContain(`id="${scribe}">No messages yet<`)
-    const ops = attr(named(markup, 'Ops')!, 'aria-describedby')
-    expect(markup).toContain(`id="${ops}">Pruned four worktrees.<`)
+    const timothy = attr(named(markup, 'Timothy · CEO')!, 'aria-describedby')
+    expect(markup).toContain(`id="${timothy}">Should I start building Launch<`)
+    const fresh = render(listed(fact('fresh', 'Fresh')))
+    expect(fresh).toContain(`id="${attr(named(fresh, 'Fresh')!, 'aria-describedby')}">No messages yet<`)
   })
 
   it('shows New bot as unavailable, still reachable, and says why', () => {

@@ -10,6 +10,7 @@ const EDGE: CanonicalProfilesResult = edgeReply
 
 const listed = (reply: unknown) => rosterOf(parseBots(reply as CanonicalProfilesResult))
 const row = (name: string, more: Partial<CanonicalProfileRow> = {}): CanonicalProfileRow => ({ name, path: `/profiles/${name}`, ...more })
+const filed = (meta: Record<string, unknown>) => ({ ui_meta: { 'hermes-bots': meta } })
 const line = (bot: Bot) => `${bot.name} [${bot.tone}] ${bot.preview ?? 'no messages'}`
 const outline = (roster: Roster) => [
   roster.featured === null ? '(no default bot)' : `* ${line(roster.featured)}`,
@@ -27,53 +28,84 @@ function seeded(seed: number) {
   }
 }
 
-describe('the placeholder roster', () => {
-  it('reads as the approved layout: the default bot, Work, then the bots in no section', () => {
+describe("the user's roster", () => {
+  it('reads as their own Hermes draws it: Emu, New section, then Unassigned', () => {
     expect(outline(listed(ROSTER))).toEqual([
-      '* Hermes Agent [ink] no messages',
-      'Work',
-      '  Researcher [slate] Three of the five sources agree on the 2024 figure; the other two cite an older survey.',
-      '  Reviewer [umber] The slash menu change looks right. One nit about the empty state copy.',
+      '* Emu [ink] no messages',
+      'New section',
+      '  dr eggbot [slate] the SOUL.md is the same thi',
       '(no section)',
-      '  Ops [plum] Pruned four worktrees and freed 11 GB on the build box.',
-      '  Scribe [olive] no messages'
+      "  Research [umber] In Let's talk about QAing your",
+      '  Timothy · CEO [plum] Should I start building Launch',
+      '  Hermes [olive] Use case 6 is the video\'s "aut',
+      '  highwing [mauve] The step 1 plan is ready in the'
     ])
   })
 })
 
 describe('a profiles.list reply', () => {
-  it('shows the display name, or the profile name when that is blank', () => {
-    const { sections } = listed({ profiles: [row('named', { display_name: 'Shown' }), row('bare'), row('blank', { display_name: '  ' })] })
-    expect(sections[0]?.bots.map(bot => [bot.id, bot.name])).toEqual([['named', 'Shown'], ['bare', 'bare'], ['blank', 'blank']])
-  })
-
-  it('reads a blank preview and a missing session as no messages', () => {
-    const session = { id: 's', resolved_id: 's' }
+  it('shows the title, else the display name, else the profile name, skipping blanks', () => {
     const { sections } = listed({ profiles: [
-      row('spoke', { last_session: { ...session, preview: ' Hello. ' } }), row('blank', { last_session: { ...session, preview: ' ' } }),
-      row('silent', { last_session: session }), row('new', { last_session: null }), row('older')
+      row('titled', { display_name: 'Display', ...filed({ title: ' Title ' }) }), row('blank-title', { display_name: 'Display', ...filed({ title: ' ' }) }),
+      row('bare'), row('blank', { display_name: '  ', ...filed({ title: '' }) })
     ] })
-    expect(sections[0]?.bots.map(bot => bot.preview)).toEqual(['Hello.', null, null, null, null])
+    expect(sections[0]?.bots.map(bot => [bot.id, bot.name])).toEqual([['titled', 'Title'], ['blank-title', 'Display'], ['bare', 'bare'], ['blank', 'blank']])
   })
 
-  it('keeps sections in the order their first bot arrives, with the bots in no section last', () => {
+  it('shows a title that holds a dot as the whole name', () => {
+    expect(listed({ profiles: [row('timothy', filed({ title: 'Timothy · CEO' }))] }).sections[0]?.bots[0]?.name).toBe('Timothy · CEO')
+  })
+
+  it('previews the chat a click opens, and the newest chat only when there is none', () => {
+    const session = (preview?: string) => ({ id: 's', resolved_id: 's', ...(preview === undefined ? {} : { preview }) })
+    const { sections } = listed({ profiles: [
+      row('canonical', { canonical_session: session('Bot Chat line.'), last_session: session('Newer line.') }),
+      row('quiet-canonical', { canonical_session: session(' '), last_session: session('Newer line.') }),
+      row('newest', { canonical_session: null, last_session: session(' Hello. ') }),
+      row('blank', { last_session: session(' ') }), row('silent', { last_session: session() }), row('new', { last_session: null }), row('older')
+    ] })
+    expect(sections[0]?.bots.map(bot => [bot.id, bot.preview])).toEqual([
+      ['canonical', 'Bot Chat line.'], ['quiet-canonical', null], ['newest', 'Hello.'], ['blank', null], ['silent', null], ['new', null], ['older', null]
+    ])
+  })
+
+  it('groups bots by section name, in the order each section first arrives, with the bots in no section last', () => {
     const roster = listed({ profiles: [
-      row('loose'), row('b1', { ui_meta: { section: 'Beta' } }), row('a1', { ui_meta: { section: 'Alpha' } }), row('b2', { ui_meta: { section: ' Beta ' } }), row('stray')
+      row('loose'), row('b1', filed({ sectionId: 'sec-b', sectionName: 'Beta' })), row('a1', filed({ sectionName: 'Alpha' })),
+      row('b2', filed({ sectionId: 'sec-b', sectionName: ' Beta ' })), row('unnamed', filed({ sectionId: 'sec-c' })), row('stray', filed({ sectionName: null }))
     ] })
     expect(roster.sections.map(section => [section.name, section.bots.map(bot => bot.id)])).toEqual([
-      ['Beta', ['b1', 'b2']], ['Alpha', ['a1']], [null, ['loose', 'stray']]
+      ['Beta', ['b1', 'b2']], ['Alpha', ['a1']], [null, ['loose', 'unnamed', 'stray']]
     ])
+  })
+
+  it('leaves out a bot the user hid, even the default bot', () => {
+    const roster = listed({ profiles: [
+      row('default', { is_default: true, ...filed({ hidden: true }) }), row('spare', { is_default: true }),
+      row('gone', filed({ hidden: true, sectionName: 'Work' })), row('kept', filed({ hidden: false, sectionName: 'Work' })), row('odd', filed({ hidden: 'true' }))
+    ] })
+    expect(roster.featured?.id).toBe('spare')
+    expect(roster.sections.map(section => [section.name, section.bots.map(bot => bot.id)])).toEqual([['Work', ['kept']], [null, ['odd']]])
   })
 
   it.each([
     ['null', null],
-    ['an array', ['section', 'Work']],
-    ['numbers under its keys', { section: 7 }],
-    ['blank words under its keys', { section: ' ' }]
+    ['an array', ['hermes-bots', { sectionName: 'Work' }]],
+    ['holding the keys at its top level', { title: 'Guessed', section: 'Work', sectionName: 'Work', hidden: true }],
+    ['another plugin\'s', { 'other-plugin': { title: 'Guessed', sectionName: 'Work', hidden: true } }],
+    ['holding hermes-bots as null', { 'hermes-bots': null }],
+    ['holding hermes-bots as an array', { 'hermes-bots': [{ title: 'Guessed' }] }],
+    ['holding numbers under hermes-bots', { 'hermes-bots': { title: 7, sectionName: 7, hidden: 1 } }],
+    ['holding blank words under hermes-bots', { 'hermes-bots': { title: ' ', sectionName: '' } }]
   ])('reads a ui_meta that is %s as saying nothing', (_, ui_meta) => {
     expect(listed({ profiles: [row('plain', { ui_meta: ui_meta as never })] }).sections).toEqual([
       { name: null, bots: [{ id: 'plain', name: 'plain', preview: null, tone: 'slate' }] }
     ])
+  })
+
+  it('paints a bot over the colour Hermes stored for it', () => {
+    const roster = listed({ profiles: [row('red', filed({ color: '#ff0000' })), row('slate', filed({ color: 'slate' }))] })
+    expect(roster.sections[0]?.bots.map(bot => bot.tone)).toEqual(['slate', 'umber'])
   })
 
   it('drops a row with no name and a second row with a name already seen', () => {
@@ -93,24 +125,41 @@ describe('a profiles.list reply', () => {
 describe('the awkward roster', () => {
   const roster = listed(EDGE)
   const named = (name: string) => inOrder(roster).find(bot => bot.name === name)
+  const shown = EDGE.profiles.filter(profile => (profile.ui_meta?.['hermes-bots'] as { hidden?: boolean } | undefined)?.hidden !== true)
 
-  it('features the first default bot and leaves a second one in its section', () => {
+  it('features the first default bot in ink and leaves a second one in its section', () => {
     expect(roster.featured?.name).toBe('Hermes Agent')
     expect(roster.sections.find(section => section.name === 'Work')?.bots.map(bot => bot.name)).toContain('Standby Agent')
     expect(inOrder(roster).filter(bot => bot.tone === 'ink').map(bot => bot.name)).toEqual(['Hermes Agent'])
   })
 
-  it('paints over a colour Hermes stored', () => {
-    expect(BOT_TONES).toContain(named('Painter')?.tone)
-    expect(BOT_TONES).toContain(named('Hexer')?.tone)
+  it('leaves out the hidden bot, and lists the other thirty', () => {
+    expect(inOrder(roster).map(bot => bot.id)).not.toContain('retired')
+    expect(inOrder(roster)).toHaveLength(30)
   })
 
-  it('lists every bot exactly once, however the reply is ordered', () => {
+  it('shows the title over the display name, and paints over a hex colour and any other CSS colour', () => {
+    expect(named('The exceptionally long-named quarterly planning and forecasting assistant')?.id).toBe('planner')
+    expect(named('Planner')).toBeUndefined()
+    expect(BOT_TONES).toContain(named('Hexer')?.tone)
+    expect(BOT_TONES).toContain(named('Painter')?.tone)
+  })
+
+  it('previews the Bot Chat over a newer chat', () => {
+    expect(named('🇮🇪 Dublin desk')?.preview).toBe('Morning summary is ready.')
+  })
+
+  it('reads nothing from keys outside hermes-bots', () => {
+    expect(named('zed')).toBeDefined()
+    expect(roster.sections.find(section => section.bots.some(bot => bot.name === 'zed'))?.name).toBeNull()
+  })
+
+  it('lists every shown bot exactly once, however the reply is ordered', () => {
     const random = seeded(7)
     for (let round = 0; round < 50; round++) {
       const profiles = EDGE.profiles.map(profile => ({ profile, key: random() })).sort((a, b) => a.key - b.key).map(({ profile }) => profile)
       const ids = inOrder(listed({ profiles })).map(bot => bot.id)
-      expect([...ids].sort(), `shuffle ${round}`).toEqual(EDGE.profiles.map(profile => profile.name).sort())
+      expect([...ids].sort(), `shuffle ${round}`).toEqual(shown.map(profile => profile.name).sort())
     }
   })
 })

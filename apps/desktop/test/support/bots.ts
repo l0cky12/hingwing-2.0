@@ -6,9 +6,10 @@ export const fact = (id: string, name: string, more: Partial<BotFacts> = {}): Bo
 export const listed = (...facts: readonly BotFacts[]): Bots => ({ state: 'listed', roster: rosterOf(facts) })
 
 export const APPROVED = listed(
-  fact('default', 'Hermes Agent', { isDefault: true }),
-  fact('researcher', 'Researcher', { section: 'Work', preview: 'Three of the five sources agree.' }),
-  fact('reviewer', 'Reviewer', { section: 'Work', preview: 'The slash menu change looks right.' }),
-  fact('ops', 'Ops', { preview: 'Pruned four worktrees.' }),
-  fact('scribe', 'Scribe')
+  fact('default', 'Emu', { isDefault: true }),
+  fact('dr-eggbot', 'dr eggbot', { section: 'New section', preview: 'the SOUL.md is the same thi' }),
+  fact('research', 'Research', { preview: "In Let's talk about QAing your" }),
+  fact('timothy', 'Timothy · CEO', { preview: 'Should I start building Launch' }),
+  fact('hermes-dev', 'Hermes', { preview: 'Use case 6 is the video\'s "aut' }),
+  fact('highwing', 'highwing', { preview: 'The step 1 plan is ready in the' })
 )

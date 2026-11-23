@@ -28,8 +28,36 @@
         "last_active": 1795251000
       },
       "ui_meta": {
-        "section": "Work",
-        "role": "Release"
+        "hermes-bots": {
+          "sectionId": "sec-work0a1-4k7",
+          "sectionName": "Work",
+          "color": "#8b5cf6",
+          "shape": "blobatar::organic"
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "retired",
+      "path": "/tmp/hermes-proto-home/profiles/retired",
+      "is_default": false,
+      "display_name": "Retired",
+      "last_session": {
+        "id": "local-0099",
+        "resolved_id": "local-0099",
+        "title": "",
+        "preview": "Hidden from the roster.",
+        "last_active": 1795251500
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Retired helper",
+          "sectionId": "sec-work0a1-4k7",
+          "sectionName": "Work",
+          "color": "#64748b",
+          "shape": "blobatar::nub",
+          "hidden": true
+        }
       },
       "has_avatar": false
     },
@@ -42,19 +70,32 @@
         "id": "local-0002",
         "resolved_id": "local-0002",
         "title": "",
-        "preview": "Morning summary is ready.",
+        "preview": "A newer chat that the row does not open.",
         "last_active": 1795250400
       },
       "ui_meta": {
-        "section": "Work"
+        "hermes-bots": {
+          "sectionId": "sec-work0a1-4k7",
+          "sectionName": "Work",
+          "color": "#f97316",
+          "shape": "blobatar::boxy"
+        }
       },
-      "has_avatar": false
+      "has_avatar": false,
+      "canonical_session": {
+        "id": "local-0100",
+        "resolved_id": "local-0101",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "Morning summary is ready.",
+        "last_active": 1795250300
+      }
     },
     {
       "name": "planner",
       "path": "/tmp/hermes-proto-home/profiles/planner",
       "is_default": false,
-      "display_name": "The exceptionally long-named quarterly planning and forecasting assistant",
+      "display_name": "Planner",
       "last_session": {
         "id": "local-0003",
         "resolved_id": "local-0003",
@@ -63,8 +104,13 @@
         "last_active": 1795249800
       },
       "ui_meta": {
-        "section": "Work",
-        "role": "Planning and forecasting for every team"
+        "hermes-bots": {
+          "title": "The exceptionally long-named quarterly planning and forecasting assistant",
+          "sectionId": "sec-work0a1-4k7",
+          "sectionName": "Work",
+          "color": "#22c55e",
+          "shape": "blobatar::capsule"
+        }
       },
       "has_avatar": false
     },
@@ -81,8 +127,12 @@
         "last_active": 1795249200
       },
       "ui_meta": {
-        "section": "Work",
-        "role": "Second default"
+        "hermes-bots": {
+          "sectionId": "sec-work0a1-4k7",
+          "sectionName": "Work",
+          "color": "#f43f5e",
+          "shape": "blobatar::nub"
+        }
       },
       "has_avatar": false
     },
@@ -95,12 +145,16 @@
         "id": "local-0005",
         "resolved_id": "local-0005",
         "title": "",
-        "preview": "Chose plum.",
+        "preview": "Chose a purple of its own.",
         "last_active": 1795248600
       },
       "ui_meta": {
-        "section": "Work",
-        "color": "plum"
+        "hermes-bots": {
+          "sectionId": "sec-work0a1-4k7",
+          "sectionName": "Work",
+          "color": "hsl(270 60% 55%)",
+          "shape": "blobatar::cloud"
+        }
       },
       "has_avatar": false
     },
@@ -117,8 +171,12 @@
         "last_active": 1795248000
       },
       "ui_meta": {
-        "section": "Work",
-        "color": "#ff3366"
+        "hermes-bots": {
+          "sectionId": "sec-work0a1-4k7",
+          "sectionName": "Work",
+          "color": "#ff3366",
+          "shape": "blobatar::droplet"
+        }
       },
       "has_avatar": false
     },
@@ -135,8 +193,12 @@
         "last_active": 1795247400
       },
       "ui_meta": {
-        "section": "Ops",
-        "role": "On call"
+        "hermes-bots": {
+          "sectionId": "sec-ops0a1-3k7",
+          "sectionName": "Ops",
+          "color": "#8b5cf6",
+          "shape": "blobatar::hexagon"
+        }
       },
       "has_avatar": false
     },
@@ -152,7 +214,14 @@
         "preview": "lower-case name",
         "last_active": 1795246800
       },
-      "ui_meta": null,
+      "ui_meta": {
+        "other-plugin": {
+          "sectionName": "Elsewhere",
+          "title": "Not zed"
+        },
+        "section": "Guessed",
+        "role": "Guessed"
+      },
       "has_avatar": false
     },
     {
@@ -161,7 +230,6 @@
       "is_default": false,
       "display_name": "Quiet",
       "last_session": null,
-      "ui_meta": {},
       "has_avatar": false
     },
     {
@@ -177,7 +245,12 @@
         "last_active": 1795245600
       },
       "ui_meta": {
-        "section": "Research"
+        "hermes-bots": {
+          "sectionId": "sec-research0a1-8k7",
+          "sectionName": "Research",
+          "color": "#f43f5e",
+          "shape": "blobatar::round"
+        }
       },
       "has_avatar": false
     },
@@ -194,8 +267,12 @@
         "last_active": 1795245000
       },
       "ui_meta": {
-        "section": "Ops",
-        "role": "Reading"
+        "hermes-bots": {
+          "sectionId": "sec-ops0a1-3k7",
+          "sectionName": "Ops",
+          "color": "#eab308",
+          "shape": "blobatar::organic"
+        }
       },
       "has_avatar": false
     },
@@ -212,8 +289,12 @@
         "last_active": 1795244400
       },
       "ui_meta": {
-        "section": "Home",
-        "role": "Triage"
+        "hermes-bots": {
+          "sectionId": "sec-home0a1-4k7",
+          "sectionName": "Home",
+          "color": "#38bdf8",
+          "shape": "blobatar::boxy"
+        }
       },
       "has_avatar": false
     },
@@ -229,7 +310,12 @@
         "preview": "Dispatcher finished run 4 of the week.",
         "last_active": 1795243800
       },
-      "ui_meta": {},
+      "ui_meta": {
+        "hermes-bots": {
+          "color": "#8b5cf6",
+          "shape": "blobatar::capsule"
+        }
+      },
       "has_avatar": false
     },
     {
@@ -245,8 +331,12 @@
         "last_active": 1795243200
       },
       "ui_meta": {
-        "section": "Research",
-        "role": "Errands"
+        "hermes-bots": {
+          "sectionId": "sec-research0a1-8k7",
+          "sectionName": "Research",
+          "color": "#f97316",
+          "shape": "blobatar::nub"
+        }
       },
       "has_avatar": false
     },
@@ -263,7 +353,12 @@
         "last_active": 1795242600
       },
       "ui_meta": {
-        "section": "Ops"
+        "hermes-bots": {
+          "sectionId": "sec-ops0a1-3k7",
+          "sectionName": "Ops",
+          "color": "#22c55e",
+          "shape": "blobatar::cloud"
+        }
       },
       "has_avatar": false
     },
@@ -280,8 +375,12 @@
         "last_active": 1795242000
       },
       "ui_meta": {
-        "section": "Home",
-        "role": "Reading"
+        "hermes-bots": {
+          "sectionId": "sec-home0a1-4k7",
+          "sectionName": "Home",
+          "color": "#f43f5e",
+          "shape": "blobatar::droplet"
+        }
       },
       "has_avatar": false
     },
@@ -298,7 +397,10 @@
         "last_active": 1795241400
       },
       "ui_meta": {
-        "role": "Triage"
+        "hermes-bots": {
+          "color": "#eab308",
+          "shape": "blobatar::hexagon"
+        }
       },
       "has_avatar": false
     },
@@ -315,7 +417,12 @@
         "last_active": 1795240800
       },
       "ui_meta": {
-        "section": "Research"
+        "hermes-bots": {
+          "sectionId": "sec-research0a1-8k7",
+          "sectionName": "Research",
+          "color": "#38bdf8",
+          "shape": "blobatar::sun"
+        }
       },
       "has_avatar": false
     },
@@ -332,8 +439,12 @@
         "last_active": 1795240200
       },
       "ui_meta": {
-        "section": "Ops",
-        "role": "Errands"
+        "hermes-bots": {
+          "sectionId": "sec-ops0a1-3k7",
+          "sectionName": "Ops",
+          "color": "#8b5cf6",
+          "shape": "blobatar::triangle"
+        }
       },
       "has_avatar": false
     },
@@ -350,7 +461,12 @@
         "last_active": 1795239600
       },
       "ui_meta": {
-        "section": "Home"
+        "hermes-bots": {
+          "sectionId": "sec-home0a1-4k7",
+          "sectionName": "Home",
+          "color": "#f97316",
+          "shape": "blobatar::round"
+        }
       },
       "has_avatar": false
     },
@@ -367,7 +483,10 @@
         "last_active": 1795239000
       },
       "ui_meta": {
-        "role": "Reading"
+        "hermes-bots": {
+          "color": "#22c55e",
+          "shape": "blobatar::organic"
+        }
       },
       "has_avatar": false
     },
@@ -384,8 +503,12 @@
         "last_active": 1795238400
       },
       "ui_meta": {
-        "section": "Research",
-        "role": "Triage"
+        "hermes-bots": {
+          "sectionId": "sec-research0a1-8k7",
+          "sectionName": "Research",
+          "color": "#f43f5e",
+          "shape": "blobatar::boxy"
+        }
       },
       "has_avatar": false
     },
@@ -402,7 +525,12 @@
         "last_active": 1795237800
       },
       "ui_meta": {
-        "section": "Ops"
+        "hermes-bots": {
+          "sectionId": "sec-ops0a1-3k7",
+          "sectionName": "Ops",
+          "color": "#eab308",
+          "shape": "blobatar::capsule"
+        }
       },
       "has_avatar": false
     },
@@ -419,8 +547,12 @@
         "last_active": 1795237200
       },
       "ui_meta": {
-        "section": "Home",
-        "role": "Errands"
+        "hermes-bots": {
+          "sectionId": "sec-home0a1-4k7",
+          "sectionName": "Home",
+          "color": "#38bdf8",
+          "shape": "blobatar::nub"
+        }
       },
       "has_avatar": false
     },
@@ -436,7 +568,12 @@
         "preview": "Porter finished run 16 of the week.",
         "last_active": 1795236600
       },
-      "ui_meta": {},
+      "ui_meta": {
+        "hermes-bots": {
+          "color": "#8b5cf6",
+          "shape": "blobatar::cloud"
+        }
+      },
       "has_avatar": false
     },
     {
@@ -452,8 +589,12 @@
         "last_active": 1795236000
       },
       "ui_meta": {
-        "section": "Research",
-        "role": "Reading"
+        "hermes-bots": {
+          "sectionId": "sec-research0a1-8k7",
+          "sectionName": "Research",
+          "color": "#f97316",
+          "shape": "blobatar::droplet"
+        }
       },
       "has_avatar": false
     },
@@ -470,8 +611,12 @@
         "last_active": 1795235400
       },
       "ui_meta": {
-        "section": "Ops",
-        "role": "Triage"
+        "hermes-bots": {
+          "sectionId": "sec-ops0a1-3k7",
+          "sectionName": "Ops",
+          "color": "#22c55e",
+          "shape": "blobatar::hexagon"
+        }
       },
       "has_avatar": false
     },
@@ -488,7 +633,12 @@
         "last_active": 1795234800
       },
       "ui_meta": {
-        "section": "Home"
+        "hermes-bots": {
+          "sectionId": "sec-home0a1-4k7",
+          "sectionName": "Home",
+          "color": "#f43f5e",
+          "shape": "blobatar::sun"
+        }
       },
       "has_avatar": false
     },
@@ -505,7 +655,10 @@
         "last_active": 1795234200
       },
       "ui_meta": {
-        "role": "Errands"
+        "hermes-bots": {
+          "color": "#eab308",
+          "shape": "blobatar::triangle"
+        }
       },
       "has_avatar": false
     }

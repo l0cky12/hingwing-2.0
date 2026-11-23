@@ -192,6 +192,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const { model } = gateway.view
     return model === null ? models : { ...models, model: model.model, ...(model.provider === null ? {} : { provider: model.provider }) }
   },
+  /** tui_gateway/methods_profiles.py:271-290 */
   'profiles.list': gateway => {
     const { profiles } = gateway.fixture.header
     if (profiles === undefined) throw unknownMethod('profiles.list')

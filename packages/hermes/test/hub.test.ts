@@ -302,7 +302,7 @@ describe('the bots', () => {
     expect(opened.hermes.bots.get()).toEqual({ state: 'loading' })
     await opened.clock.advance(0)
     expect(states).toEqual(['listed'])
-    expect(names(opened)).toEqual(['Hermes Agent', 'Researcher', 'Reviewer', 'Ops', 'Scribe'])
+    expect(names(opened)).toEqual(['Emu', 'dr eggbot', 'Research', 'Timothy · CEO', 'Hermes', 'highwing'])
     expect(asks(opened)).toEqual([{ method: 'profiles.list', params: { include_sessions: true } }])
   })
 
@@ -327,7 +327,7 @@ describe('the bots', () => {
     opened.state.failWith = null
     await opened.hermes.run({ do: 'reconnect', start: true })
     await opened.clock.advance(0)
-    expect(names(opened)).toHaveLength(5)
+    expect(names(opened)).toHaveLength(6)
   })
 
   it('stay listed while the socket is gone, and are read again on the new one', async () => {
@@ -335,15 +335,15 @@ describe('the bots', () => {
     opened.watch()
     await toApproval(opened)
     expect(opened.hermes.link.get()).toMatchObject({ state: 'waiting', why: 'dropped' })
-    expect(names(opened)).toHaveLength(5)
+    expect(names(opened)).toHaveLength(6)
     await opened.clock.advance(1_000)
     expect(opened.hermes.link.get()).toEqual({ state: 'online' })
     expect(asks(opened).length, 'at least once on each of the two sockets').toBeGreaterThanOrEqual(2)
-    expect(names(opened)).toHaveLength(5)
+    expect(names(opened)).toHaveLength(6)
   })
 
   it('show a preview that changed in Hermes 300 ms after the turn ends', async () => {
-    const profiles = structuredClone(PROFILES) as { profiles: { last_session: { preview: string } | null }[] }
+    const profiles = structuredClone(PROFILES) as { profiles: { canonical_session: { preview: string } | null }[] }
     const opened = open({ ...ERRAND, header: { ...ERRAND.header, profiles } })
     const previewOf = () => {
       const bots = opened.hermes.bots.get()
@@ -351,11 +351,11 @@ describe('the bots', () => {
     }
     opened.watch()
     await toApproval(opened)
-    profiles.profiles[1]!.last_session!.preview = 'A newer line.'
+    profiles.profiles[1]!.canonical_session!.preview = 'A newer line.'
     await approve(opened.hermes)
     await opened.clock.advance(0)
     expect(opened.script.finished).toBe(true)
-    expect(previewOf()).toMatch(/^Three of the five sources/)
+    expect(previewOf()).toBe('the SOUL.md is the same thi')
     await opened.clock.advance(300)
     expect(previewOf()).toBe('A newer line.')
   })

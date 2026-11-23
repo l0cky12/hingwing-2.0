@@ -30,7 +30,7 @@ describe('what Highwing knows about the bots', () => {
     const { list, answer } = hermes()
     expect(list.bots).toEqual({ state: 'loading' })
     await answer(ask => ask.resolve(PROFILES))
-    expect(list.bots).toMatchObject({ state: 'listed', roster: { featured: { name: 'Hermes Agent' } } })
+    expect(list.bots).toMatchObject({ state: 'listed', roster: { featured: { name: 'Emu' } } })
   })
 
   it('is refused when Hermes would not answer, and asks again when sessions change', async () => {

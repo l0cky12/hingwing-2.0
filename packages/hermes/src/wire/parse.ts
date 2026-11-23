@@ -526,31 +526,26 @@ export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<Si
   })
 }
 
-/**
- * Where Highwing looks in a profile's `ui_meta` for what the contract has no field for. This key
- * name is Highwing's own guess: the contract types `ui_meta` as an open object, and no Hermes
- * source or recorded reply was at hand to read the real names from. A recording made with
- * HIGHWING_RECORD keeps the real `profiles.list` reply in its header. Read the names there, change
- * them here, and update the "Bots" section of docs/compatibility.md.
- */
-const UI_META = { section: 'section' } as const
-
 const words = (raw: unknown): string | null => (isString(raw) && raw.trim() !== '' ? raw.trim() : null)
 
-/** `profiles.list` as flat facts, in the reply's order. */
+/** `profiles.list` as flat facts, in the reply's order, without the bots the user hid. */
 export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
   const rows: readonly unknown[] = isObject(reply) && Array.isArray(reply.profiles) ? reply.profiles : []
   const seen = new Set<string>()
   return rows.flatMap((row): BotFacts[] => {
     if (!isObject(row) || !isString(row.name) || row.name.trim() === '' || seen.has(row.name)) return []
     seen.add(row.name)
-    const meta: Obj = isObject(row.ui_meta) ? row.ui_meta : {}
+    // The shape Hermes's Bots plugin writes: `BotMeta` in apps/desktop/src/plugins/hermes-bots/types.ts.
+    const meta: Obj = isObject(row.ui_meta) && isObject(row.ui_meta['hermes-bots']) ? row.ui_meta['hermes-bots'] : {}
+    if (meta.hidden === true) return []
+    // A row previews the chat a click opens, as Hermes's own bot row does (hermes-bots/bot-row.tsx:144).
+    const session = isObject(row.canonical_session) ? row.canonical_session : row.last_session
     return [{
       id: row.name as BotId,
-      name: words(row.display_name) ?? row.name,
+      name: words(meta.title) ?? words(row.display_name) ?? row.name,
       isDefault: row.is_default === true,
-      section: words(meta[UI_META.section]),
-      preview: isObject(row.last_session) ? words(row.last_session.preview) : null
+      section: words(meta.sectionName),
+      preview: isObject(session) ? words(session.preview) : null
     }]
   })
 }

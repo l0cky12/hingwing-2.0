@@ -26,16 +26,17 @@ describe('what the bot list shows', () => {
   })
 
   it('draws the default bot, then each section, with the bots in no section last', () => {
-    const all = ['* Hermes Agent', 'Work', '  Researcher', '  Reviewer', '(no section)', '  Ops', '  Scribe']
+    const all = ['* Emu', 'New section', '  dr eggbot', '(no section)', '  Research', '  Timothy · CEO', '  Hermes', '  highwing']
     expect(outline(listOf(APPROVED, null))).toEqual(all)
     expect(outline(listOf(APPROVED, '')), 'an open, empty search').toEqual(all)
     expect(outline(listOf(APPROVED, '   ')), 'a search of spaces').toEqual(all)
   })
 
   it('narrows by name, whatever the case and the spaces around the words', () => {
-    expect(outline(listOf(APPROVED, 'RE'))).toEqual(['Work', '  Researcher', '  Reviewer'])
-    expect(outline(listOf(APPROVED, ' ops '))).toEqual(['(no section)', '  Ops'])
-    expect(outline(listOf(APPROVED, 'hermes'))).toEqual(['* Hermes Agent'])
+    expect(outline(listOf(APPROVED, 'EGG'))).toEqual(['New section', '  dr eggbot'])
+    expect(outline(listOf(APPROVED, ' ceo '))).toEqual(['(no section)', '  Timothy · CEO'])
+    expect(outline(listOf(APPROVED, 'h'))).toEqual(['(no section)', '  Research', '  Timothy · CEO', '  Hermes', '  highwing'])
+    expect(outline(listOf(APPROVED, 'emu'))).toEqual(['* Emu'])
   })
 
   it('says so, with the search as typed, when no bot matches', () => {
@@ -44,18 +45,18 @@ describe('what the bot list shows', () => {
 
   it('keeps each bot its tone while the list is narrowed', () => {
     const full = listOf(APPROVED, null)
-    const narrowed = listOf(APPROVED, 'scribe')
+    const narrowed = listOf(APPROVED, 'highwing')
     if (full.show !== 'roster' || narrowed.show !== 'roster') throw new Error('expected two rosters')
-    const scribe = full.sections.flatMap(section => section.bots).find(bot => bot.name === 'Scribe')
-    expect(narrowed.sections[0]?.bots).toEqual([scribe])
-    expect(scribe?.tone).toBe('olive')
+    const highwing = full.sections.flatMap(section => section.bots).find(bot => bot.name === 'highwing')
+    expect(narrowed.sections[0]?.bots).toEqual([highwing])
+    expect(highwing?.tone).toBe('mauve')
   })
 })
 
 describe('the selected bot', () => {
   it('is the default bot until a click, then the clicked bot', () => {
     expect(selectedIn(APPROVED, null)).toBe('default')
-    expect(selectedIn(APPROVED, id('reviewer'))).toBe('reviewer')
+    expect(selectedIn(APPROVED, id('timothy'))).toBe('timothy')
     expect(selectedIn(APPROVED, id('default'))).toBe('default')
   })
 
@@ -68,8 +69,8 @@ describe('the selected bot', () => {
   })
 
   it('is no bot while there is no roster', () => {
-    expect(selectedIn(undefined, id('reviewer'))).toBeNull()
-    expect(selectedIn({ state: 'offline' }, id('reviewer'))).toBeNull()
+    expect(selectedIn(undefined, id('timothy'))).toBeNull()
+    expect(selectedIn({ state: 'offline' }, id('timothy'))).toBeNull()
   })
 })
 
