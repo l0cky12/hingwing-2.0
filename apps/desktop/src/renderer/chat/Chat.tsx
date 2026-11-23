@@ -1,6 +1,6 @@
 import { activityOf, type PromptId, type PromptReply, type SessionId } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
-import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef } from 'react'
 import { Composer } from '../composer/Composer'
 import { run, useTopic } from '../store'
 import { Thread } from './Thread'
@@ -9,9 +9,17 @@ const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 
 export function Chat({ id }: { readonly id: SessionId }) {
   const session = useTopic(`session:${id}`)
-  const view = useMemo(() => (session === undefined ? null : threadView(session, { now: Date.now(), timeZone: TIME_ZONE })), [session])
+  const [tick, wake] = useReducer((count: number) => count + 1, 0)
+  const view = useMemo(() => (session === undefined ? null : threadView(session, { now: Date.now(), timeZone: TIME_ZONE })), [session, tick])
   const scroller = useRef<HTMLElement>(null)
   const stuck = useRef(true)
+
+  useEffect(() => {
+    const at = view?.changesAt ?? null
+    if (at === null) return
+    const id = setTimeout(wake, Math.max(0, at - Date.now()) + 25)
+    return () => clearTimeout(id)
+  }, [view])
 
   useLayoutEffect(() => {
     const element = scroller.current

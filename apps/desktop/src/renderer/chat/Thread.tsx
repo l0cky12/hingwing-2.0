@@ -1,7 +1,7 @@
 import type { PromptId, PromptReply } from '@highwing/hermes/domain'
 import type { PromptCard, ThreadEnd, ThreadNode, ThreadView, TurnView } from '@highwing/thread'
 import { memo, useCallback, useState, type FormEvent } from 'react'
-import { cx, Stat, Step } from './Step'
+import { cx, Elapsed, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
 
 type Answer = (promptId: PromptId, reply: PromptReply) => void
@@ -9,6 +9,7 @@ type Answer = (promptId: PromptId, reply: PromptReply) => void
 interface NodeProps {
   readonly node: ThreadNode
   readonly endTone: 'live' | 'asking' | null
+  readonly elapsed: string | null
   readonly opened: ReadonlySet<string>
   readonly onToggle: (key: string) => void
   readonly onAnswer: Answer
@@ -48,12 +49,12 @@ function Prompt({ card, asking, onAnswer }: { readonly card: PromptCard; readonl
   )
 }
 
-function Node({ node, endTone, opened, onToggle, onAnswer }: NodeProps) {
+function Node({ node, endTone, elapsed, opened, onToggle, onAnswer }: NodeProps) {
   switch (node.kind) {
     case 'prose':
       return <div className="prose"><Markdown source={node.markdown} caret={node.streaming} /></div>
     case 'step':
-      return <Step step={node.step} live={endTone === 'live'} open={opened.has(node.key)} onToggle={onToggle} />
+      return <Step step={node.step} live={endTone === 'live'} elapsed={elapsed} open={opened.has(node.key)} onToggle={onToggle} />
     case 'group': {
       const open = opened.has(node.key)
       return (
@@ -61,11 +62,12 @@ function Node({ node, endTone, opened, onToggle, onAnswer }: NodeProps) {
           <button className="head" aria-expanded={open} onClick={() => onToggle(node.key)}>
             <span className="title"><PhraseText words={node.title} /></span>
             <span className="count">{node.count} steps</span>
+            <Elapsed elapsed={elapsed} />
             <span className="chev" aria-hidden="true" />
             <span className="meta"><Stat stat={node.stat} /></span>
           </button>
           <div className="steps">
-            {node.steps.map(step => <Step key={step.key} step={step} live={false} open={opened.has(step.key)} onToggle={onToggle} />)}
+            {node.steps.map(step => <Step key={step.key} step={step} live={false} elapsed={null} open={opened.has(step.key)} onToggle={onToggle} />)}
           </div>
         </div>
       )
@@ -83,7 +85,7 @@ const END_CLASS = {
 
 function End({ end }: { readonly end: ThreadEnd }) {
   if (end.kind === 'at') return null
-  const words = end.kind === 'tip' ? <span><PhraseText words={end.words} /></span> : end.kind === 'done' ? <span className="sr">{end.words}</span> : <span>{end.words}</span>
+  const words = end.kind === 'tip' ? <><span><PhraseText words={end.words} /></span><Elapsed elapsed={end.elapsed} /></> : end.kind === 'done' ? <span className="sr">{end.words}</span> : <span>{end.words}</span>
   return <div className={`tip ${END_CLASS[end.kind]}`} role="status" data-end={end.kind}><span className="glyph" />{words}</div>
 }
 
@@ -98,10 +100,11 @@ const Turn = memo(function Turn({ turn, opened, onToggle, onAnswer }: TurnProps)
   const { end } = turn
   return (
     <article className="turn">
+      {turn.time !== null && <p className="when">{turn.time}</p>}
       {turn.request !== null && <p className="request">{turn.request}</p>}
       <div className="thread">
         {turn.nodes.map(node => (
-          <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} opened={opened} onToggle={onToggle} onAnswer={onAnswer} />
+          <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} elapsed={end.kind === 'at' && end.tone === 'live' && end.nodeKey === node.key ? end.elapsed : null} opened={opened} onToggle={onToggle} onAnswer={onAnswer} />
         ))}
         <End end={end} />
       </div>
