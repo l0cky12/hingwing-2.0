@@ -4,7 +4,8 @@ import { useLayoutEffect, useRef, type KeyboardEvent, type RefObject } from 'rea
 
 export interface FindState {
   readonly query: string
-  readonly current: { readonly field: string; readonly start: number } | null
+  /** `asked`: the rows find has opened, or left to you, for this match. A row it needs later, such as a new group, opens then. */
+  readonly current: { readonly field: string; readonly start: number; readonly asked: ReadonlySet<string> } | null
   readonly openedByFind: ReadonlySet<string>
 }
 
@@ -54,7 +55,7 @@ export function FindBar({ query, total, current, earlier, inputRef, onQuery, onS
         <button type="button" aria-label="Next match" disabled={total === 0} onClick={() => onStep(1)}><span aria-hidden="true">↓</span></button>
         <button type="button" aria-label="Close find" onClick={onClose}><span aria-hidden="true">×</span></button>
         {earlier === 'more' && (
-          <p className="note">Searching the loaded part of this chat. <button type="button" onClick={onLoadEarlier}>Load earlier turns</button></p>
+          <p className="note">Searching the loaded part of this chat. <button type="button" onClick={() => { onLoadEarlier(); inputRef.current?.focus() }}>Load earlier turns</button></p>
         )}
         {earlier === 'loading' && <p className="note">Loading earlier turns</p>}
       </form>
@@ -87,6 +88,7 @@ function rangeIn(element: Element, start: number, end: number): Range | null {
 }
 
 function rangesOf(root: Element, matches: readonly FindMatch[]): (Range | null)[] {
+  if (matches.length === 0) return []
   const elements = new Map<string, Element>()
   for (const element of root.querySelectorAll('[data-find]')) elements.set(element.getAttribute('data-find') ?? '', element)
   return matches.map(match => {
@@ -97,7 +99,11 @@ function rangesOf(root: Element, matches: readonly FindMatch[]): (Range | null)[
 
 function paint(name: string, ranges: readonly Range[]) {
   if (ranges.length === 0) CSS.highlights.delete(name)
-  else CSS.highlights.set(name, new Highlight(...ranges))
+  else {
+    const highlight = new Highlight()
+    for (const range of ranges) highlight.add(range)
+    CSS.highlights.set(name, highlight)
+  }
 }
 
 export function useFindMarks(root: RefObject<HTMLElement | null>, matches: readonly FindMatch[], current: number | null) {

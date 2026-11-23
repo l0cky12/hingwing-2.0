@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { sessionOf } from '../../hermes/src/domain/reduce'
 import type { Link } from '../../hermes/src/domain/session'
-import { errand, fold } from '../../hermes/test/support/story'
+import { errand, fold, type Moment } from '../../hermes/test/support/story'
 import { fieldId, findInThread } from '../src/find'
 import { outline, proseBlocks, proseText, threadView, type StepView, type ThreadView } from '../src/thread-view'
 
@@ -61,6 +61,41 @@ describe('finding text in the settled errand', () => {
   it('finds nothing for a missing word or an empty query', () => {
     expect(findInThread(view, 'zzzz')).toEqual([])
     expect(findInThread(view, '')).toEqual([])
+  })
+})
+
+describe('words outside steps', () => {
+  const [turn] = view.turns
+  if (turn === undefined) throw new Error('the errand has no turn')
+
+  it('finds the sentence a failed turn ends with', () => {
+    const failed: ThreadView = { ...view, turns: [{ ...turn, end: { kind: 'failed', words: 'HTTP 401 from provider' } }] }
+    expect(findInThread(failed, 'http 401')).toEqual([{ field: fieldId(turn.key, 'end'), start: 0, end: 8, opens: [] }])
+  })
+
+  it('finds the error on an approval card', () => {
+    const card = { kind: 'prompt', key: 'run:1/9', card: {
+      state: 'asking', promptId: 'p1', heading: 'Run this command?', command: 'rm -rf scratch', why: null,
+      buttons: [], freeText: false, busy: false, error: 'Approval receipt timed out'
+    } } as const
+    const asking = { ...view, turns: [{ ...turn, nodes: [...turn.nodes, card] }] } as ThreadView
+    expect(findInThread(asking, 'timed out').map(match => match.field)).toEqual([fieldId('run:1/9', 'error')])
+  })
+
+  it('does not search the Done words, which only screen readers hear', () => {
+    expect(findInThread(view, 'done').every(match => match.field !== fieldId(turn.key, 'end'))).toBe(true)
+  })
+})
+
+describe('a match while the turn runs', () => {
+  it('needs the group once the next step joins its step into one', () => {
+    const moments: Moment[] = []
+    fold(errand(), moment => moments.push(moment))
+    const opensOf = (moment: Moment) => findInThread(threadView(sessionOf(moment.state, ONLINE, null)), 'wire the gateway')[0]?.opens ?? []
+    const alone = moments.find(moment => opensOf(moment).length === 1)
+    const grouped = moments.find(moment => moment.beat > (alone?.beat ?? Infinity) && opensOf(moment).length === 2)
+    if (alone === undefined || grouped === undefined) throw new Error('the errand never grouped the first write')
+    expect(opensOf(grouped)[0]).toBe(opensOf(alone)[0])
   })
 })
 

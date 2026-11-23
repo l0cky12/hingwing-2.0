@@ -232,5 +232,5 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .find .note { flex: 1 0 100%; margin: 2px 6px 3px 0; color: var(--graphite); font-size: 13px; }
 .find .note button { width: auto; height: auto; padding: 0; color: var(--signal); text-decoration: underline; }
 
-::highlight(find) { background-color: var(--signal-soft); }
+::highlight(find) { background-color: var(--signal-soft); color: var(--ink); }
 ::highlight(find-current) { background-color: var(--signal); color: var(--sheet); }

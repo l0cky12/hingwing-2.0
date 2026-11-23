@@ -2,7 +2,7 @@ import { proseBlocks, proseText } from './prose'
 import type { Phrase, StepView, ThreadView } from './thread-view'
 
 export type FieldPart =
-  | 'request' | 'title' | 'heading' | 'command' | 'why' | 'words' | 'text' | 'detail'
+  | 'request' | 'title' | 'heading' | 'command' | 'why' | 'error' | 'words' | 'text' | 'detail' | 'end'
   | `block ${number}` | `path ${number}` | `line ${number} ${number}` | `body ${number}`
 
 export const fieldId = (key: string, part: FieldPart) => `${key} ${part}`
@@ -59,6 +59,7 @@ function fields(view: ThreadView): Field[] {
             add(node.key, 'heading', card.heading)
             if (card.command !== null) add(node.key, 'command', card.command)
             if (card.why !== null) add(node.key, 'why', card.why)
+            if (card.error !== null) add(node.key, 'error', card.error)
           }
           break
         }
@@ -67,6 +68,8 @@ function fields(view: ThreadView): Field[] {
           break
       }
     }
+    const { end } = turn
+    if (end.kind === 'paused' || end.kind === 'failed' || end.kind === 'stopped' || end.kind === 'lost') add(turn.key, 'end', end.words)
   }
   for (const message of view.pending) {
     add(message.key, 'text', message.text)

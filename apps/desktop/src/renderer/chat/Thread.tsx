@@ -1,6 +1,6 @@
 import type { PromptId, PromptReply } from '@highwing/hermes/domain'
 import type { PromptCard, ThreadEnd, ThreadNode, ThreadView, TurnView } from '@highwing/thread'
-import { fieldId, findInThread } from '@highwing/thread/find'
+import { fieldId, findInThread, type FindMatch } from '@highwing/thread/find'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { FIND_OPEN, FindBar, isFindKey, reveal, useFindMarks, type FindState } from './Find'
 import { cx, Stat, Step } from './Step'
@@ -57,7 +57,7 @@ function Prompt({ nodeKey, card, asking, onAnswer }: PromptProps) {
           <button disabled={card.busy}>Answer</button>
         </form>
       )}
-      {card.error !== null && <p className="err">{card.error}</p>}
+      {card.error !== null && <p className="err" data-find={fieldId(nodeKey, 'error')}>{card.error}</p>}
     </div>
   )
 }
@@ -95,9 +95,9 @@ const END_CLASS = {
   tip: 'working', paused: 'paused', done: 'complete', failed: 'error', stopped: 'interrupted', lost: 'lost'
 } as const satisfies Record<Exclude<ThreadEnd['kind'], 'at'>, string>
 
-function End({ end }: { readonly end: ThreadEnd }) {
+function End({ turnKey, end }: { readonly turnKey: string; readonly end: ThreadEnd }) {
   if (end.kind === 'at') return null
-  const words = end.kind === 'tip' ? <span><PhraseText words={end.words} /></span> : end.kind === 'done' ? <span className="sr">{end.words}</span> : <span>{end.words}</span>
+  const words = end.kind === 'tip' ? <span><PhraseText words={end.words} /></span> : end.kind === 'done' ? <span className="sr">{end.words}</span> : <span data-find={fieldId(turnKey, 'end')}>{end.words}</span>
   return <div className={`tip ${END_CLASS[end.kind]}`} role="status" data-end={end.kind}><span className="glyph" />{words}</div>
 }
 
@@ -117,7 +117,7 @@ const Turn = memo(function Turn({ turn, opened, onToggle, onAnswer }: TurnProps)
         {turn.nodes.map(node => (
           <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} opened={opened} onToggle={onToggle} onAnswer={onAnswer} />
         ))}
-        <End end={end} />
+        <End turnKey={turn.key} end={end} />
       </div>
     </article>
   )
@@ -176,15 +176,28 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed }: ThreadPr
     if (currentRange.current !== null && scroller) reveal(currentRange.current, scroller)
   }, [find, currentRange])
 
+  const show = (held: FindState, match: FindMatch, asked: ReadonlySet<string>) => {
+    const fresh = match.opens.filter(key => !asked.has(key) && !opened.has(key))
+    if (fresh.length > 0) setOpened(rows => new Set([...rows, ...fresh]))
+    navigated.current = true
+    setFind({
+      ...held,
+      current: { field: match.field, start: match.start, asked: new Set([...asked, ...match.opens]) },
+      openedByFind: new Set([...held.openedByFind, ...fresh])
+    })
+  }
+
   const step = (direction: 1 | -1) => {
     if (find === null || matches.length === 0) return
     const next = current === null ? (direction === 1 ? 0 : matches.length - 1) : (current + direction + matches.length) % matches.length
-    const fresh = (matches[next]?.opens ?? []).filter(key => !opened.has(key))
-    if (fresh.length > 0) setOpened(held => new Set([...held, ...fresh]))
-    navigated.current = true
-    const { field, start } = matches[next]!
-    setFind({ ...find, current: { field, start }, openedByFind: new Set([...find.openedByFind, ...fresh]) })
+    show(find, matches[next]!, new Set())
   }
+
+  useLayoutEffect(() => {
+    const match = current === null ? undefined : matches[current]
+    if (find?.current == null || match === undefined || match.opens.every(key => find.current!.asked.has(key))) return
+    show(find, match, find.current.asked)
+  })
 
   const closeFind = () => {
     if (find === null) return
