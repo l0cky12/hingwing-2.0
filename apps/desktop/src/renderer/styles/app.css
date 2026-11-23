@@ -118,7 +118,18 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .group.open > .steps { display: flex; flex-direction: column; gap: 2px; margin: 0; padding-left: 24px; }
 .record h4 { margin: 0 0 5px; font-size: 13px; font-weight: 500; color: var(--graphite); }
 .record pre { margin: 0; font-size: 12.5px; line-height: 1.6; max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
-.record .path { margin: 0 0 6px; font: 12.5px var(--mono); color: var(--graphite); }
+.file { margin: 0 0 6px; }
+.file-row { display: flex; align-items: flex-start; gap: 4px; }
+.file-open { min-width: 0; padding: 0; border: 0; background: none; text-align: left; overflow-wrap: anywhere; font: 12.5px var(--mono); color: var(--graphite); }
+.file-open:hover { color: var(--signal); text-decoration: underline; text-underline-offset: 2px; }
+.file-side { position: relative; flex: none; }
+.file-more { width: 20px; height: 16px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--graphite); font: 12.5px/16px var(--sans); opacity: .55; }
+.file-row:hover .file-more, .file-more:focus-visible, .file-more[aria-expanded="true"] { opacity: 1; }
+.file-more:hover, .file-more[aria-expanded="true"] { background: var(--code-bg); }
+.file-menu { position: absolute; z-index: 1; top: calc(100% + 2px); right: 0; display: flex; flex-direction: column; min-width: 140px; padding: 3px; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); box-shadow: 0 2px 8px rgb(31 42 38 / .12); }
+.file-menu button { padding: 5px 10px; border: 0; border-radius: 4px; background: none; text-align: left; font-size: 13px; }
+.file-menu button:hover { background: var(--signal-soft); }
+.file-note { margin: 4px 0 0; font-size: 13px; color: var(--caution); }
 .record .empty { margin: 0; color: var(--graphite); font-size: 13px; }
 .diff .ln { display: block; padding-right: 8px; }
 .diff .ln.add::before, .diff .ln.del::before, .diff .ln.ctx::before { display: inline-block; width: 20px; margin-right: 8px; text-align: center; font: 500 13px var(--sans); color: var(--graphite); }

@@ -1,5 +1,6 @@
 import { fieldId, type DiffStat, type RecordSection, type StepView } from '@highwing/thread'
 import { CopyButton } from './Copy'
+import { FilePath } from './FilePath'
 import { PhraseText } from './text'
 
 export const cx = (...names: readonly (string | false | null)[]) => names.filter(Boolean).join(' ')
@@ -34,7 +35,7 @@ function Section({ section, stepKey, index, open }: SectionProps) {
       <section>
         {label}
         {copy}
-        <p className="path" data-find={fieldId(stepKey, `path ${index}`)}>{section.path}</p>
+        <FilePath path={section.path} findId={fieldId(stepKey, `path ${index}`)} />
         <pre className="diff">
           {section.lines.map((line, at) => (
             <span key={at} className={`ln ${line.t}`} data-find={fieldId(stepKey, `line ${index} ${at}`)}>{line.text}</span>

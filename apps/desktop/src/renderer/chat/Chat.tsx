@@ -3,6 +3,7 @@ import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef } from 'react'
 import { Composer } from '../composer/Composer'
 import { run, useTopic } from '../store'
+import { FileCallContext, fileCallFor } from './FilePath'
 import { Thread } from './Thread'
 
 const NEAR_END = 60
@@ -59,11 +60,15 @@ export function Chat({ id }: { readonly id: SessionId }) {
   const onLoadEarlier = useCallback(() => void run({ do: 'loadEarlier', sessionId: id }), [id])
   const onFindClosed = useCallback(() => composer.current?.focus(), [])
 
+  const fileCall = useMemo(() => fileCallFor(id), [id])
+
   return (
     <>
       <main id="scroll" ref={scroller} onScroll={onScroll}>
         {view !== null && (
-          <Thread view={view} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll} />
+          <FileCallContext value={fileCall}>
+            <Thread view={view} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll} />
+          </FileCallContext>
         )}
       </main>
       <Composer
