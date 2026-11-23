@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { manualClock, settle } from '../src/testing/clock'
 import { scriptedDialer, type Fixture, type ScriptOptions } from '../src/testing/fixture'
-import { ERRAND, paramsOf, SESSION, SLASH } from './support/errand'
+import { ERRAND, paramsOf, PROFILES, SESSION, SLASH, WITH_BOTS } from './support/errand'
 
 interface Reply {
   readonly id?: number
@@ -145,6 +145,20 @@ describe('the scripted gateway answers the slash catalog and command calls as He
   it('does not know commands.catalog when the fixture has no catalog, as an older Hermes', async () => {
     const { call } = await rawSocket()
     expect(await call('commands.catalog', {})).toMatchObject({ error: { code: -32601, data: { reason: 'unknown_method' } } })
+  })
+
+  it('answers profiles.list from the fixture, and refuses a key the contract does not declare', async () => {
+    const { script, call } = await rawSocket({}, WITH_BOTS)
+    expect((await call('profiles.list', {})).result).toEqual(PROFILES)
+    expect((await call('profiles.list', { include_sessions: true })).result).toEqual(PROFILES)
+    expect(await call('profiles.list', { session_id: SESSION })).toMatchObject(refusal('invalid_params', { fields: ['session_id'] }))
+    expect(script.step, 'the story has not moved').toBe(0)
+  })
+
+  it('does not know profiles.list when the fixture has no profiles, as an older Hermes', async () => {
+    const { script, call } = await rawSocket()
+    expect(await call('profiles.list', {})).toMatchObject({ error: { code: -32601, data: { reason: 'unknown_method' } } })
+    expect(script.step, 'the story has not moved').toBe(0)
   })
 
   it('refuses a command.dispatch with an undeclared key, a value that is not text, or a name of more than one word', async () => {

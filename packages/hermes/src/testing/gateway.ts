@@ -192,6 +192,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const { model } = gateway.view
     return model === null ? models : { ...models, model: model.model, ...(model.provider === null ? {} : { provider: model.provider }) }
   },
+  /**
+   * Copies no Hermes source, because none was at hand. The client never sends `profile` or
+   * `include_sessions: false`, so the reply is the header's, whole.
+   */
+  'profiles.list': gateway => {
+    const { profiles } = gateway.fixture.header
+    if (profiles === undefined) throw unknownMethod('profiles.list')
+    return profiles
+  },
   'session.mutate': (gateway, socket, params) => (params.operation === 'model' ? gateway.switchModel(params) : gateway.story(socket, 'session.mutate', params)),
   /** gateway/session_controls.py:779-803 */
   'session.detach': (_gateway, socket, params) => {
