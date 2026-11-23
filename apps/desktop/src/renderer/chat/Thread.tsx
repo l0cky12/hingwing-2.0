@@ -139,15 +139,20 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed }: ThreadPr
   const findInput = useRef<HTMLInputElement>(null)
   const navigated = useRef(false)
 
-  const onToggle = useCallback((key: string) => setOpened(held => {
-    const next = new Set(held)
-    if (!next.delete(key)) next.add(key)
-    return next
-  }), [])
+  const onToggle = useCallback((key: string) => {
+    setOpened(held => {
+      const next = new Set(held)
+      if (!next.delete(key)) next.add(key)
+      return next
+    })
+    setFind(held => (held?.openedByFind.has(key) ? { ...held, openedByFind: new Set([...held.openedByFind].filter(row => row !== key)) } : held))
+  }, [])
 
   const query = find?.query ?? ''
   const matches = useMemo(() => findInThread(view, query), [view, query])
-  const current = find?.current != null && find.current < matches.length ? find.current : null
+  const at = find?.current ?? null
+  const found = at === null ? -1 : matches.findIndex(match => match.field === at.field && match.start === at.start)
+  const current = found === -1 ? null : found
   const currentRange = useFindMarks(transcript, matches, current)
 
   useEffect(() => {
@@ -177,7 +182,8 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed }: ThreadPr
     const fresh = (matches[next]?.opens ?? []).filter(key => !opened.has(key))
     if (fresh.length > 0) setOpened(held => new Set([...held, ...fresh]))
     navigated.current = true
-    setFind({ ...find, current: next, openedByFind: new Set([...find.openedByFind, ...fresh]) })
+    const { field, start } = matches[next]!
+    setFind({ ...find, current: { field, start }, openedByFind: new Set([...find.openedByFind, ...fresh]) })
   }
 
   const closeFind = () => {
@@ -186,6 +192,17 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed }: ThreadPr
     setFind(null)
     onFindClosed()
   }
+
+  useEffect(() => {
+    if (find === null) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.isComposing || transcript.current?.checkVisibility() !== true) return
+      event.preventDefault()
+      closeFind()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  })
 
   return (
     <>

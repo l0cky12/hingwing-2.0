@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef, type KeyboardEvent, type RefObject } from 'rea
 
 export interface FindState {
   readonly query: string
-  readonly current: number | null
+  readonly current: { readonly field: string; readonly start: number } | null
   readonly openedByFind: ReadonlySet<string>
 }
 
@@ -39,10 +39,7 @@ export function FindBar({ query, total, current, earlier, inputRef, onQuery, onS
   }, [inputRef])
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      onClose()
-    } else if (event.key === 'Enter' && event.target === inputRef.current && !event.nativeEvent.isComposing) {
+    if (event.key === 'Enter' && event.target === inputRef.current && !event.nativeEvent.isComposing) {
       event.preventDefault()
       onStep(event.shiftKey ? -1 : 1)
     }
