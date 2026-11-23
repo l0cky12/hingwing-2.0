@@ -192,6 +192,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const { model } = gateway.view
     return model === null ? models : { ...models, model: model.model, ...(model.provider === null ? {} : { provider: model.provider }) }
   },
+  /** tui_gateway/methods_profiles.py:271-290 */
+  'profiles.list': gateway => {
+    const { profiles } = gateway.fixture.header
+    if (profiles === undefined) throw unknownMethod('profiles.list')
+    return profiles
+  },
   'session.mutate': (gateway, socket, params) => (params.operation === 'model' ? gateway.switchModel(params) : gateway.story(socket, 'session.mutate', params)),
   /** gateway/session_controls.py:779-803 */
   'session.detach': (_gateway, socket, params) => {

@@ -2,6 +2,7 @@
  * The only place gateway shapes become domain shapes. Everything past these functions trusts its types.
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
+import type { BotFacts, BotId } from '../domain/bots'
 import type { ModelConfirm, ModelMenu } from '../domain/command'
 import type { Admission, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type {
@@ -10,7 +11,7 @@ import type {
 } from '../domain/session'
 import type { SlashCatalog, SlashEntry } from '../domain/slash'
 import type {
-  CanonicalEventsResult, CanonicalPendingAdmission, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
+  CanonicalEventsResult, CanonicalPendingAdmission, CanonicalProfilesResult, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
   CanonicalSnapshot, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
   MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, SessionLiveInfo, SessionMutateResult, SessionTitlePayload, StoredTranscriptResult,
   StoredTranscriptRow, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload
@@ -522,6 +523,30 @@ export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<Si
       preview: row.preview || null,
       lastActiveAt: seconds === null ? null : Math.round(seconds * 1000)
     }
+  })
+}
+
+const words = (raw: unknown): string | null => (isString(raw) && raw.trim() !== '' ? raw.trim() : null)
+
+/** `profiles.list` as flat facts, in the reply's order, without the bots the user hid. */
+export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
+  const rows: readonly unknown[] = isObject(reply) && Array.isArray(reply.profiles) ? reply.profiles : []
+  const seen = new Set<string>()
+  return rows.flatMap((row): BotFacts[] => {
+    if (!isObject(row) || !isString(row.name) || row.name.trim() === '' || seen.has(row.name)) return []
+    seen.add(row.name)
+    // The shape Hermes's Bots plugin writes: `BotMeta` in apps/desktop/src/plugins/hermes-bots/types.ts.
+    const meta: Obj = isObject(row.ui_meta) && isObject(row.ui_meta['hermes-bots']) ? row.ui_meta['hermes-bots'] : {}
+    if (meta.hidden === true) return []
+    // A row previews the chat a click opens, as Hermes's own bot row does (hermes-bots/bot-row.tsx:144).
+    const session = isObject(row.canonical_session) ? row.canonical_session : row.last_session
+    return [{
+      id: row.name as BotId,
+      name: words(meta.title) ?? words(row.display_name) ?? row.name,
+      isDefault: row.is_default === true,
+      section: words(meta.sectionName),
+      preview: isObject(session) ? words(session.preview) : null
+    }]
   })
 }
 

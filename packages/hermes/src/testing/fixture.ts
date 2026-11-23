@@ -32,6 +32,11 @@ export interface Fixture {
     readonly models?: unknown
     /** Models a switch to needs a second yes, as Hermes's guard asks for a costly model. */
     readonly guarded?: readonly string[]
+    /**
+     * The canned `profiles.list` reply, as Hermes sends it. Absent: the gateway refuses
+     * `profiles.list` as an unknown method, as a Hermes older than the call does.
+     */
+    readonly profiles?: unknown
   }
   readonly steps: readonly FixtureStep[]
 }
@@ -110,10 +115,13 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (models !== undefined && !(isObject(models) && Array.isArray(models.providers))) return '"models" must be a model.options reply with "providers"'
   const { guarded } = value
   if (guarded !== undefined && !(Array.isArray(guarded) && guarded.every(model => typeof model === 'string'))) return '"guarded" must be a list of model names'
+  const { profiles } = value
+  if (profiles !== undefined && !(isObject(profiles) && Array.isArray(profiles.profiles))) return '"profiles" must be a profiles.list reply with "profiles"'
   return {
     fixture, hermes, source, sessionId: sessionId as SessionId, describe: value.describe, list: value.list, stored,
     ...('catalog' in value ? { catalog: value.catalog } : {}),
-    ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] })
+    ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] }),
+    ...(profiles === undefined ? {} : { profiles })
   }
 }
 

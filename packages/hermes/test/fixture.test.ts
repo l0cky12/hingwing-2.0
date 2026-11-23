@@ -148,6 +148,12 @@ describe('loadFixture', () => {
     expect(() => loadFixture(path)).toThrow(`${path}:3: not JSON`)
   })
 
+  it('refuses a header whose profiles are not a profiles.list reply', () => {
+    const path = write([{ ...header, profiles: [{ name: 'default' }] }])
+    expect(() => loadFixture(path)).toThrow(`${path}:1: "profiles" must be a profiles.list reply with "profiles"`)
+    expect(loadFixture(write([{ ...header, profiles: { profiles: [] } }])).header.profiles).toEqual({ profiles: [] })
+  })
+
   it('names the line of the prototype\'s envelope', () => {
     const path = write([header, { at: 0, push: { kind: 'event', type: 'message.delta', session_id: 's', seq: 1, payload: {} } }])
     expect(() => loadFixture(path)).toThrow(`${path}:2: "push" must be a JSON-RPC 2.0 frame with a method`)

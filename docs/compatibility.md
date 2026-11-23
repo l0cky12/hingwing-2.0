@@ -60,6 +60,9 @@ that attach returned, which serves the profile attach ran in.
 - If Hermes can't start a chat from the desktop app, Highwing refuses the
   command and shows "This Hermes can't start a chat from Highwing." See
   `packages/hermes/src/hub.ts`.
+- If Hermes doesn't answer `profiles.list`, the sidebar says "This Hermes can't
+  list its bots." and the chat works as before. Highwing asks again on the next
+  connection.
 - If Hermes doesn't answer `commands.catalog`, Highwing shows no slash menu
   and no error, and sends a `/` line to the agent as text. See
   `packages/hermes/src/hub.ts`.
@@ -171,3 +174,44 @@ menu lists the 33 of them that the catalog also offers to a desktop app. Update
 Hermes generates the full per-command table at
 `website/docs/developer-guide/gateway-command-parity.md` in its install
 directory. Read the install directory from `hermes --version`.
+
+## Bots
+
+A bot in Highwing's sidebar is a Hermes profile. Highwing reads them with
+`profiles.list`, a canonical method of the vendored contract, on every new
+connection and again when sessions change. Hermes sends no "profiles changed"
+event.
+
+Highwing reads the reply in the shape `tui_gateway/methods_profiles.py:271-290`
+sends. The contract types `ui_meta` as an open object. Hermes's own desktop
+Bots plugin keeps a bot's metadata under one key of it, `ui_meta['hermes-bots']`,
+typed as `BotMeta` in `apps/desktop/src/plugins/hermes-bots/types.ts`. Highwing
+reads that key only when it is an object, and no other `ui_meta` key:
+
+- The name shown is `title`, then `display_name`, then the profile `name`,
+  whichever comes first and is not blank, as `displayName` in the plugin's
+  `labels.ts` picks it. A title such as "Timothy · CEO" is the whole name.
+  Hermes keeps no separate role.
+- The bot's section is `sectionName`. A bot with none is under "Unassigned",
+  which is always last. Hermes groups by `sectionId` against section records
+  that only the desktop which made them stores, so Highwing groups by the name
+  Hermes writes beside the id. Two sections with one name show as one.
+- A bot whose `hidden` is `true` is left out, as the plugin's
+  `hidden-bots.ts` hides it.
+- `color` is ignored. It is any CSS colour, and Highwing paints each avatar in
+  one of its own five tones so that it reads in every theme.
+- `pinned`, `shape`, `description` and the rest are not read.
+
+The default bot is the first row with `is_default`. The preview is of the chat
+a click on the row opens: `canonical_session.preview` when Hermes reports a
+Bot Chat, else `last_session.preview`, as the plugin's `bot-row.tsx:144`
+picks it.
+
+Whether a real Hermes answers `profiles.list` on Highwing's ticket is not yet
+proven. If it refuses, the sidebar says "Hermes wouldn't list its bots." A
+recording made with `HIGHWING_RECORD` keeps the real reply in its header under
+`profiles`.
+
+Highwing can't create a bot. `profiles.create` is not a canonical method, so
+New bot is shown as unavailable. Avatar images are not shown either, because
+`profiles.get_asset` is not canonical.

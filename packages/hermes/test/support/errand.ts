@@ -1,9 +1,13 @@
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { loadFixture, type Fixture, type FixtureStep } from '../../src/testing/fixture'
 
 export const ERRAND = loadFixture(fileURLToPath(new URL('../../../../fixtures/errand.jsonl', import.meta.url)))
 export const SESSION = ERRAND.header.sessionId
 export const SLASH = loadFixture(fileURLToPath(new URL('../../../../fixtures/slash.jsonl', import.meta.url)))
+
+export const PROFILES: unknown = JSON.parse(readFileSync(fileURLToPath(new URL('../../../../fixtures/profiles/roster.json', import.meta.url)), 'utf8'))
+export const WITH_BOTS: Fixture = { ...ERRAND, header: { ...ERRAND.header, profiles: PROFILES } }
 
 export const stepOf = (method: string) => ERRAND.steps.findIndex(step => 'await' in step && step.await === method)
 export const paramsOf = (method: string) => (ERRAND.steps[stepOf(method)] as Extract<FixtureStep, { await: string }>).params as Record<string, unknown>

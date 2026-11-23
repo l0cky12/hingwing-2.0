@@ -1,6 +1,7 @@
 import type { SessionId, Target } from '@highwing/hermes/domain'
 import type { ReactNode } from 'react'
 import { SESSION_PARAM, type Setup } from '../ipc-contract'
+import { BotsSidebar } from './bots/Bots'
 import { Chat } from './chat/Chat'
 import { Banner, TopBar } from './chrome/Chrome'
 import { Composer } from './composer/Composer'
@@ -54,8 +55,11 @@ export function App() {
     <>
       {(setup.at === 'pinned' || live !== null) && (
         <Epoch key={live?.epoch ?? 0} value={live?.epoch ?? 0}>
-          <div className="screen" hidden={over !== null}>
-            <ChatScreen target={live?.target ?? null} />
+          <div className="window" hidden={over !== null}>
+            <BotsSidebar />
+            <div className="screen">
+              <ChatScreen target={live?.target ?? null} />
+            </div>
           </div>
         </Epoch>
       )}

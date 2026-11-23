@@ -1,4 +1,4 @@
-import { appendFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { systemClock, wireSocket, type Clock, type Dialer } from '../wire/link'
 import type { Fixture, FixtureStep } from './fixture'
 
@@ -22,6 +22,10 @@ const OWN_ANSWERS: Readonly<Record<string, (header: Header, reply: Obj, params: 
   },
   'commands.catalog': (header, reply) => {
     header.catalog ??= reply
+    return NOTHING
+  },
+  'profiles.list': (header, reply) => {
+    header.profiles ??= reply
     return NOTHING
   },
   'session.list': (header, reply, params) => {
@@ -59,7 +63,7 @@ export function recordingDialer(inner: Dialer, path: string, clock: Clock = syst
   const startedAt = clock.now()
   const header: Header = { fixture: 1, source: 'recorded' }
   const slots: Slot[] = []
-  let headerWritten = false
+  let written: string | null = null
   const line = (value: unknown) => `${JSON.stringify(value)}\n`
   const at = () => clock.now() - startedAt
   const add = (step: FixtureStep | null): Slot => {
@@ -70,8 +74,10 @@ export function recordingDialer(inner: Dialer, path: string, clock: Clock = syst
   const flush = () => {
     const { describe, list, sessionId, stored } = header
     if (describe === undefined || list === undefined || sessionId === undefined || stored === undefined) return
-    if (!headerWritten) writeFileSync(path, line({ ...header, hermes: header.hermes ?? 'unknown' }))
-    headerWritten = true
+    const head = line({ ...header, hermes: header.hermes ?? 'unknown' })
+    if (written === null) writeFileSync(path, head)
+    else if (head !== written) writeFileSync(path, head + readFileSync(path, 'utf8').slice(written.length))
+    written = head
     for (let next = slots[0]; next !== undefined && next.step !== null; next = slots[0]) {
       appendFileSync(path, line(next.step))
       slots.shift()

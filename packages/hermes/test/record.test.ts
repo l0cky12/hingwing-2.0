@@ -6,12 +6,12 @@ import type { PromptId } from '../src/domain/session'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
 import { loadFixture, playToEnd, recordingDialer, scriptedDialer, type FixtureStep } from '../src/testing/fixture'
-import { ERRAND, paramsOf, SESSION } from './support/errand'
+import { ERRAND, paramsOf, PROFILES, SESSION, SLASH } from './support/errand'
 
-async function record(drop?: { afterPush: number; missed: number }) {
+async function record(drop?: { afterPush: number; missed: number }, fixture = ERRAND) {
   const path = join(mkdtempSync(join(tmpdir(), 'highwing-record-')), 'errand.jsonl')
   const clock = manualClock()
-  const script = scriptedDialer(ERRAND, { clock, timing: 'recorded', ...(drop === undefined ? {} : { drop }) })
+  const script = scriptedDialer(fixture, { clock, timing: 'recorded', ...(drop === undefined ? {} : { drop }) })
   const hermes = openHermes({
     dial: recordingDialer(script, path, clock), clock, client: { name: 'highwing-test', version: '0' },
     mintId: () => String(paramsOf('prompt.submit').input_id)
@@ -52,6 +52,14 @@ describe('recordingDialer', () => {
     expect(seqs).toEqual(seqs.map((_seq, index) => index + 1))
     expect(seqs).toHaveLength(ERRAND.steps.filter(step => 'push' in step).length)
     expect(await playToEnd(recorded), 'the recording replays, drop included').toEqual(await playToEnd(ERRAND))
+  })
+
+  it('keeps the bots and the slash catalog in the header, out of the story, so the recording plays to the end', async () => {
+    const { catalog } = SLASH.header
+    const recorded = loadFixture(await record(undefined, { ...ERRAND, header: { ...ERRAND.header, profiles: PROFILES, catalog } }))
+    expect(recorded.header).toMatchObject({ profiles: PROFILES, catalog })
+    expect(recorded.steps.map(kindOf)).toEqual(ERRAND.steps.filter(step => !('stored' in step)).map(kindOf))
+    expect(await playToEnd(recorded)).toEqual(await playToEnd(ERRAND))
   })
 
   it('writes no handshake, heartbeat or attach call, and nothing that looks like a ticket', async () => {
