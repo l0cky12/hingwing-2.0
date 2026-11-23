@@ -442,6 +442,7 @@ function diffLineKind(line: string): FileDiff['lines'][number]['t'] | null {
 }
 
 const FILE_HEADER = /^(.+) → (.+)$/
+const PATCH_NOTE = /^# (?:Moved|Deleted): /
 
 const HUNK_HEADER = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/
 
@@ -466,7 +467,7 @@ function hunksAreWhole(lines: FileDiff['lines']): boolean {
  * Hermes's `inline_diff`: ANSI-coloured, with a "review diff" banner and an "a/x → b/x" line per file
  * (`agent/display.py:746-790`). Lines before the first file header and lines with no diff prefix are dropped.
  * Hermes ends a capped diff with an "omitted" summary line, so a last line that is not part of a diff marks the
- * file before it cut.
+ * file before it cut. The patch tool's own `# Moved:` and `# Deleted:` notes are not a summary.
  */
 export function parseInlineDiff(raw: string): FileDiff[] {
   const files: { path: string; deletesFile: boolean; lines: FileDiff['lines'][number][] }[] = []
@@ -475,7 +476,7 @@ export function parseInlineDiff(raw: string): FileDiff[] {
     if (line === '') continue
     const t = diffLineKind(line)
     const header = t === null ? FILE_HEADER.exec(line) : null
-    summarized = t === null && header === null && files.length > 0
+    summarized = t === null && header === null && files.length > 0 && !PATCH_NOTE.test(line)
     if (header !== null) {
       const [, from = '', to = ''] = header
       files.push({ path: (to === '/dev/null' ? from : to).replace(/^[ab]\//, ''), deletesFile: to === '/dev/null', lines: [] })
