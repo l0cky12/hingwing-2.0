@@ -14,7 +14,7 @@ const NO_CHAT = async () => ({ ok: false, refusal: { kind: 'rejected', message: 
 function FirstChat() {
   const first = useTopic('sidebar')?.rows[0]?.id
   return first === undefined
-    ? <><main id="scroll" /><Composer canSend={false} showStop={false} onSend={NO_CHAT} onStop={() => {}} /></>
+    ? <><main id="scroll" /><Composer canSend={false} showStop={false} onSend={NO_CHAT} onStop={() => {}} onInput={() => {}} /></>
     : <Chat id={first} />
 }
 
