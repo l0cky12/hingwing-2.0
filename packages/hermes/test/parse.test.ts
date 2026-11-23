@@ -385,8 +385,8 @@ describe('parseInlineDiff and parseToolResult', () => {
     expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([false, false])
   })
 
-  it('leaves a whole file uncut when the patch ends with a move note', () => {
-    const raw = ['a/a.txt → b/a.txt', '@@ -1 +1 @@', '-x', '+y', '# Moved: a.txt -> b.txt'].join('\n')
+  it.each(['# Moved: a.txt -> b.txt', '# Deleted: c.txt'])('leaves a whole file uncut when the patch ends with "%s"', note => {
+    const raw = ['a/a.txt → b/a.txt', '@@ -1 +1 @@', '-x', '+y', note].join('\n')
     expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([false])
   })
 
