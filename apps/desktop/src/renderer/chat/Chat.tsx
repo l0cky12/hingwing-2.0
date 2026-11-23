@@ -57,6 +57,7 @@ export function Chat({ id }: { readonly id: SessionId }) {
     const onKeyDown = (event: KeyboardEvent) => {
       const act = keys[event.key]
       if (act === undefined || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      if (scroller.current?.checkVisibility() !== true) return
       if (event.target instanceof Node && scroller.current?.contains(event.target)) return
       if (holdsText(event.target)) return
       event.preventDefault()
