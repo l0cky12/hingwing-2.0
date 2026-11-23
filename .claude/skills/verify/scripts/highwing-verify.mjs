@@ -39,7 +39,8 @@ const STATES = {
   approval: page => page.getByRole('group', { name: 'Run this command?' }).getByRole('button', { name: 'Run once', exact: true, disabled: false }),
   settled: page => page.locator('[data-end="done"]'),
   offline: page => page.getByRole('status', { name: 'Connection' }),
-  'slash-menu': page => page.getByRole('listbox', { name: 'Commands and skills' })
+  'slash-menu': page => page.getByRole('listbox', { name: 'Commands and skills' }),
+  bots: page => page.locator('aside[data-state="listed"]')
 }
 
 const rendered = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
@@ -451,12 +452,13 @@ function ownDisplay() {
   if (parent !== process.ppid) fail(`display ${process.env.DISPLAY} belongs to another run's X server. Start this run again.`)
 }
 
-function withEdits(fixturePath, { dropAfter, models, guarded }, out) {
+function withEdits(fixturePath, { dropAfter, models, guarded, profiles }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const header = JSON.parse(lines[0])
   const steps = lines.slice(1).map(line => JSON.parse(line))
   if (models) header.models = JSON.parse(readFileSync(resolve(process.cwd(), models), 'utf8'))
   if (guarded) header.guarded = guarded.split(',')
+  if (profiles) header.profiles = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
   if (dropAfter) {
     const at = steps.findIndex(step => step.push?.params?.type === dropAfter)
     if (at === -1) fail(`${fixturePath} pushes no ${dropAfter} frame`)
@@ -489,12 +491,12 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', profiles: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
   if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
-  if (scenario && (options['drop-after'] || options.models || options.guarded)) fail('--drop-after, --models and --guarded edit the fixture a --fixture run replays. They do nothing with --fake-host')
+  if (scenario && (options['drop-after'] || options.models || options.guarded || options.profiles)) fail('--drop-after, --models, --guarded and --profiles edit the fixture a --fixture run replays. They do nothing with --fake-host')
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
   if (options.size && !/^[1-9]\d*x[1-9]\d*$/.test(options.size)) fail(`--size takes <width>x<height>, not "${options.size}"`)
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')
@@ -504,8 +506,8 @@ async function run(argv) {
   mkdirSync(evidence, { recursive: true })
   mkdirSync(scratch, { recursive: true })
   const given = options.fixture ? resolve(process.cwd(), options.fixture) : scenario ? ERRAND : null
-  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded }
-  const fixture = edits.dropAfter || edits.models || edits.guarded ? withEdits(given, edits, join(evidence, 'fixture-edited.jsonl')) : given
+  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, profiles: options.profiles }
+  const fixture = Object.values(edits).some(Boolean) ? withEdits(given, edits, join(evidence, 'fixture-edited.jsonl')) : given
   const calls = join(evidence, 'gateway-calls.jsonl')
   rmSync(calls, { force: true })
   const ctx = { app: null, page: null, evidence, fixture, calls, called: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null, size: SIZE, clip: null }
@@ -604,7 +606,8 @@ const REFERENCES = {
   'tool-running': 'tool-running-C.png',
   approval: 'approval-C.png',
   settled: 'settled-C.png',
-  'settled-expanded': 'settled-C-expanded.png'
+  'settled-expanded': 'settled-C-expanded.png',
+  'bots-approved': 'bots-sidebar.png'
 }
 
 function compare(argv) {

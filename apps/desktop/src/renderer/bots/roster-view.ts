@@ -1,0 +1,55 @@
+import type { Bot, BotId, Bots, BotSection } from '@highwing/hermes/domain'
+
+/** What the list under the header shows. Exactly one of these, so the component checks no state of its own. */
+export type ListView =
+  | { readonly show: 'loading' }
+  | { readonly show: 'note'; readonly words: string }
+  /** `sections` holds no empty section, and `featured` and `sections` are not both empty. */
+  | { readonly show: 'roster'; readonly featured: Bot | null; readonly sections: readonly BotSection[] }
+
+/** One line for every state with nothing to draw. A new `Bots` state does not compile until it has words. */
+export const NOTES: { readonly [S in Exclude<Bots['state'], 'loading' | 'listed'>]: string } = {
+  offline: "Can't reach Hermes.",
+  unsupported: "This Hermes can't list its bots.",
+  refused: "Hermes wouldn't list its bots."
+}
+export const NO_BOTS = 'No bots yet.'
+export const UNASSIGNED = 'Unassigned'
+
+const LOADING: ListView = { show: 'loading' }
+
+/**
+ * `bots` undefined: Electron main has not pushed the topic yet, drawn as loading.
+ * `query` null: search is closed. Otherwise a bot is kept when its name or its role contains the
+ * trimmed query, whatever the case. Sections left with no bot are dropped.
+ */
+export function listOf(bots: Bots | undefined, query: string | null): ListView {
+  if (bots === undefined || bots.state === 'loading') return LOADING
+  if (bots.state !== 'listed') return { show: 'note', words: NOTES[bots.state] }
+  const { roster } = bots
+  if (roster.featured === null && roster.sections.length === 0) return { show: 'note', words: NO_BOTS }
+  const sought = (query ?? '').trim().toLowerCase()
+  const kept = (bot: Bot) => [bot.name, bot.role ?? ''].some(text => text.toLowerCase().includes(sought))
+  const featured = roster.featured !== null && kept(roster.featured) ? roster.featured : null
+  const sections = roster.sections.map(section => ({ ...section, bots: section.bots.filter(kept) })).filter(section => section.bots.length > 0)
+  return featured === null && sections.length === 0 ? { show: 'note', words: `No bots match “${query}”` } : { show: 'roster', featured, sections }
+}
+
+/**
+ * The selected bot: `picked` while the roster still lists it, else the default bot, else none.
+ * Derived on every render and never stored, so a roster that arrives late or drops a bot needs no effect to fix the selection.
+ */
+export function selectedIn(bots: Bots | undefined, picked: BotId | null): BotId | null {
+  if (bots?.state !== 'listed') return null
+  const { featured, sections } = bots.roster
+  const listed = featured?.id === picked || sections.some(section => section.bots.some(bot => bot.id === picked))
+  return listed ? picked : featured?.id ?? null
+}
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
+/** The avatar's letter: the first grapheme of the name, so a flag or a joined emoji stays whole. */
+export function initialOf(name: string): string {
+  const [first] = graphemes.segment(name)
+  return (first?.segment ?? '').toUpperCase()
+}
