@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import type { BlockedWhy, Link, WaitingWhy } from '../domain/session'
-import type { CanonicalRpcMethods } from './contract.generated'
+import type { CanonicalRpcMethods, RpcMethods } from './contract.generated'
 
 /** The seam under the whole client. Text frames in, text frames out. Fixtures implement it in memory. */
 export interface WireSocket {
@@ -166,11 +166,16 @@ export class RpcRefusal extends Error {
 }
 export class Offline extends Error {}
 
-type Method = keyof CanonicalRpcMethods
+/**
+ * The canonical route also serves two methods the generated contract files as shared, not canonical:
+ * `AuthorityConnection.handlers` names them (gateway/session_controls.py:239-247).
+ */
+type Served = CanonicalRpcMethods & Pick<RpcMethods, 'commands.catalog' | 'command.dispatch'>
+type Method = keyof Served
 
 export interface Connection {
   readonly link: Link
-  call<M extends Method>(method: M, params: CanonicalRpcMethods[M]['params'], timeoutMs?: number): Promise<CanonicalRpcMethods[M]['result']>
+  call<M extends Method>(method: M, params: Served[M]['params'], timeoutMs?: number): Promise<Served[M]['result']>
   /**
    * Answer a server-to-client request with JSON-RPC error -32601, the code Hermes's own client uses for
    * a request it has no handler for (apps/shared/src/json-rpc-channel.ts:94), so the agent stops waiting.
@@ -400,9 +405,9 @@ export function connect(
   return {
     get link() { return link },
     get creation() { return phase.at === 'online' ? phase.creation : null },
-    call: <M extends Method>(method: M, params: CanonicalRpcMethods[M]['params'], timeoutMs?: number) => {
+    call: <M extends Method>(method: M, params: Served[M]['params'], timeoutMs?: number) => {
       if (phase.at !== 'online') return Promise.reject(new Offline(`${method} was not sent: Highwing is not connected to Hermes.`))
-      return request(phase.socket, method, params, timeoutMs) as Promise<CanonicalRpcMethods[M]['result']>
+      return request(phase.socket, method, params, timeoutMs) as Promise<Served[M]['result']>
     },
     decline: (requestId, message) => {
       if (phase.at === 'online') phase.socket.send(JSON.stringify({ jsonrpc: '2.0', id: requestId, error: { code: METHOD_NOT_FOUND, message } }))

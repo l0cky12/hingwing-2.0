@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { manualClock, settle } from '../src/testing/clock'
-import { scriptedDialer, type ScriptOptions } from '../src/testing/fixture'
-import { ERRAND, paramsOf, SESSION } from './support/errand'
+import { scriptedDialer, type Fixture, type ScriptOptions } from '../src/testing/fixture'
+import { ERRAND, paramsOf, SESSION, SLASH } from './support/errand'
 
 interface Reply {
   readonly id?: number
@@ -9,8 +9,8 @@ interface Reply {
   readonly error?: { readonly code: number; readonly message: string; readonly data?: Record<string, unknown> }
 }
 
-async function rawSocket(options: ScriptOptions = {}) {
-  const script = scriptedDialer(ERRAND, { clock: manualClock(), ...options })
+async function rawSocket(options: ScriptOptions = {}, fixture: Fixture = ERRAND) {
+  const script = scriptedDialer(fixture, { clock: manualClock(), ...options })
   const socket = await script({ start: false })
   const frames: Reply[] = []
   socket.onText = text => frames.push(JSON.parse(text) as Reply)
@@ -124,5 +124,35 @@ describe('the scripted gateway', () => {
     await call('session.resume', { session_id: SESSION })
     expect(await call('session.interrupt', { session_id: SESSION, execution_generation: 0 })).toMatchObject({ error: { code: -32603 } })
     await expect(script.done).rejects.toThrow('the story did not expect session.interrupt at step 0: it waits for prompt.submit')
+  })
+})
+
+describe('the scripted gateway answers the slash catalog and command calls as Hermes does', () => {
+  it('answers commands.catalog from the fixture, with or without a session', async () => {
+    const { call } = await rawSocket({}, SLASH)
+    expect((await call('commands.catalog', {})).result).toEqual(SLASH.header.catalog)
+    expect((await call('commands.catalog', { session_id: SESSION, profile: 'default' })).result).toEqual(SLASH.header.catalog)
+  })
+
+  it('refuses a commands.catalog key the handler does not declare, a value that is not text, and another session', async () => {
+    const { call } = await rawSocket({}, SLASH)
+    expect(await call('commands.catalog', { text: '/' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('commands.catalog', { session_id: 7 })).toMatchObject(refusal('invalid_params'))
+    expect(await call('commands.catalog', { profile: null })).toMatchObject(refusal('invalid_params'))
+    expect(await call('commands.catalog', { session_id: 'someone-else' })).toMatchObject(refusal('not_found'))
+  })
+
+  it('does not know commands.catalog when the fixture has no catalog, as an older Hermes', async () => {
+    const { call } = await rawSocket()
+    expect(await call('commands.catalog', {})).toMatchObject({ error: { code: -32601, data: { reason: 'unknown_method' } } })
+  })
+
+  it('refuses a command.dispatch with an undeclared key, a value that is not text, or a name of more than one word', async () => {
+    const { call } = await rawSocket({}, SLASH)
+    const dispatch = { session_id: SESSION, name: 'status' }
+    expect(await call('command.dispatch', { ...dispatch, command: '/status' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('command.dispatch', { ...dispatch, arg: 3 })).toMatchObject(refusal('invalid_params'))
+    expect(await call('command.dispatch', { ...dispatch, name: 'status now' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('command.dispatch', { ...dispatch, session_id: 'someone-else' })).toMatchObject(refusal('not_found'))
   })
 })
