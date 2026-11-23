@@ -23,18 +23,18 @@ export interface IpcMainLike {
 
 type Source = (listener: (value: unknown) => void) => () => void
 
-const SOURCES: { readonly [K in 'link' | 'sidebar' | 'session']: (hermes: Hermes, topic: Topic) => Source } = {
-  link: hermes => listener => {
-    listener(hermes.link.get())
-    return hermes.link.subscribe(listener)
-  },
-  sidebar: hermes => listener => {
-    listener(hermes.sidebar.get())
-    return hermes.sidebar.subscribe(listener)
-  },
+const feedSource = <T>(feed: { get(): T; subscribe(listener: (value: T) => void): () => void }): Source => listener => {
+  listener(feed.get())
+  return feed.subscribe(listener)
+}
+
+const SOURCES: { readonly [K in 'link' | 'sidebar' | 'slash' | 'session']: (hermes: Hermes, topic: Topic) => Source } = {
+  link: hermes => feedSource(hermes.link),
+  sidebar: hermes => feedSource(hermes.sidebar),
+  slash: hermes => feedSource(hermes.slash),
   session: (hermes, topic) => listener => hermes.watch(topic.slice('session:'.length) as SessionId, listener)
 }
-const kindOf = (topic: Topic) => (topic === 'link' || topic === 'sidebar' ? topic : 'session')
+const kindOf = (topic: Topic) => (topic === 'link' || topic === 'sidebar' || topic === 'slash' ? topic : 'session')
 
 function tail<T>(pushed: readonly T[], next: readonly T[]): Tail<T> {
   let from = 0

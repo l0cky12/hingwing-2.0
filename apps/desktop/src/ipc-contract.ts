@@ -1,9 +1,9 @@
 import type {
-  Command, CommandOutcome, Item, Link, OpenTurn, PromptReply, ResultOf, Session, SessionId, SettledTurn, Sidebar
+  Command, CommandOutcome, Item, Link, OpenTurn, PromptReply, ResultOf, Session, SessionId, SettledTurn, Sidebar, SlashCatalog
 } from '@highwing/hermes/domain'
 
-export type Topic = 'link' | 'sidebar' | `session:${SessionId}`
-export type TopicValue<T extends Topic> = T extends 'link' ? Link : T extends 'sidebar' ? Sidebar : Session
+export type Topic = 'link' | 'sidebar' | 'slash' | `session:${SessionId}`
+export type TopicValue<T extends Topic> = T extends 'link' ? Link : T extends 'sidebar' ? Sidebar : T extends 'slash' ? SlashCatalog : Session
 
 export interface Tail<T> { readonly from: number; readonly items: readonly T[] }
 
@@ -96,6 +96,6 @@ export function parseCommand(raw: unknown): Command | null {
 }
 
 export function parseTopic(raw: unknown): Topic | null {
-  if (raw === 'link' || raw === 'sidebar') return raw
+  if (raw === 'link' || raw === 'sidebar' || raw === 'slash') return raw
   return text(raw) && raw.startsWith('session:') && raw.length > 'session:'.length ? (raw as Topic) : null
 }
