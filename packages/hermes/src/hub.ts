@@ -110,7 +110,7 @@ export function openHermes(options: HermesOptions): Hermes {
       else if (parsed.event.type === 'meta' && parsed.event.title !== undefined) list.retitle(parsed.sessionId, parsed.event.title)
       const actor = actors.get(parsed.sessionId)
       if (actor === undefined) return count('unrouted', parsed.type)
-      actor.feed({ in: 'event', frame: { stamp: parsed.stamp, event: parsed.event } })
+      actor.feed({ in: 'event', frame: { stamp: parsed.stamp, event: parsed.event, seenAt: clock.now() } })
     },
     gap: parsed => actors.get(parsed.sessionId)?.feed({ in: 'gap' }),
     app: refreshSoon,

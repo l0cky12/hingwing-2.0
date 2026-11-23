@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { activityOf } from '../src/domain/reduce'
 import type { Session, SettledTurn } from '../src/domain/session'
 import { loadFixture, play, playToEnd, type Fixture, type Moment } from '../src/testing/fixture'
-import { errand, fold } from './support/story'
+import { errand, fold, ignoringStartTimes } from './support/story'
 
 const fixture = loadFixture(fileURLToPath(new URL('../../../fixtures/errand.jsonl', import.meta.url)))
 const want = fold(errand()).content
@@ -24,7 +24,9 @@ async function moments(played: Fixture, options?: Parameters<typeof play>[1]): P
 
 describe('the errand, played through the real client', () => {
   it('ends in the session the direct fold gives', async () => {
-    expect(await playToEnd(fixture)).toEqual(LIVE)
+    const played = await playToEnd(fixture)
+    expect(ignoringStartTimes(played)).toEqual(LIVE)
+    expect(played.history[0]?.began).toEqual({ at: expect.any(Number), clock: 'client' })
   })
 
   it('opens with the handshake, one resume with history and both lists, then makes the story\'s two calls', async () => {
@@ -46,7 +48,7 @@ describe('the errand, played through the real client', () => {
     expect(steps).toEqual([...steps].sort((a, b) => a - b))
     expect(new Set(steps).size).toBeGreaterThan(30)
     expect(seen[0]?.session.sync.state).toBe('offline')
-    expect(seen.at(-1)?.session).toEqual(LIVE)
+    expect(ignoringStartTimes(seen.at(-1)!.session)).toEqual(LIVE)
 
     const asking = seen.find(moment => activityOf(moment.session).kind === 'asking')
     expect(asking?.step, 'the approval card is up while the story waits for the answer').toBe(stepOf('approval.respond'))
@@ -61,7 +63,7 @@ describe('a socket drop after every push of the errand, played through the real 
   it.each(Array.from({ length: pushes }, (_, index) => index + 1))('drop after push %i, 3 missed, ends in the undisturbed session', async afterPush => {
     const seen = await moments(fixture, { drop: { afterPush, missed: 3 } })
     const { session, script } = seen.at(-1) as Moment
-    expect(session).toEqual(LIVE)
+    expect(ignoringStartTimes(session)).toEqual(LIVE)
 
     expect(script.dials, 'one redial').toBe(2)
     const states = seen.map(moment => moment.session.sync.state)

@@ -56,7 +56,7 @@ function stage() {
     sync: () => actor.session.sync,
     methods: () => calls.map(call => call.method),
     event: (event: SessionEvent | null, generation: number | null = 1) =>
-      actor.feed({ in: 'event', frame: { stamp: { epoch: EPOCH, seq: ++seq, generation: generation as Generation | null }, event } }),
+      actor.feed({ in: 'event', frame: { stamp: { epoch: EPOCH, seq: ++seq, generation: generation as Generation | null }, event, seenAt: null } }),
     seq: () => seq,
     link: (link: Link) => {
       state.link = link
