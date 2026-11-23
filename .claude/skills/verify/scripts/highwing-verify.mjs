@@ -35,6 +35,22 @@ const STEPS = {
     run: async (ctx, role, name) => {
       if (!(await ctx.page.getByRole(role, { name, exact: true }).isDisabled({ timeout: ctx.timeout }))) throw new Error(`${role} "${name}" is enabled`)
     }
+  },
+  opened: {
+    arity: 2,
+    run: async (ctx, action, path) => {
+      const calls = await pollUntil(ctx, () => opensRecorded(ctx), recorded => recorded.length > 0).catch(() => [])
+      if (calls.length !== 1 || calls[0].action !== action || calls[0].path !== path) {
+        throw new Error(`expected exactly one open call ${JSON.stringify({ action, path })}, recorded ${JSON.stringify(calls)}`)
+      }
+    }
+  },
+  clipboard: {
+    arity: 1,
+    run: async (ctx, text) => {
+      const held = await pollUntil(ctx, () => ctx.app.evaluate(({ clipboard }) => clipboard.readText()), value => value === text).catch(() => null)
+      if (held !== text) throw new Error(`clipboard holds ${JSON.stringify(held ?? 'something else')}, not ${JSON.stringify(text)}`)
+    }
   }
 }
 
@@ -126,6 +142,20 @@ function log(ctx, line) {
   appendFileSync(join(ctx.evidence, 'steps.log'), `${stamped}\n`)
 }
 
+const opensRecorded = ctx => existsSync(ctx.opens)
+  ? readFileSync(ctx.opens, 'utf8').split('\n').filter(line => line.trim() !== '').map(line => JSON.parse(line))
+  : []
+
+async function pollUntil(ctx, read, done) {
+  const deadline = Date.now() + ctx.timeout
+  for (;;) {
+    const value = await read()
+    if (done(value)) return value
+    if (Date.now() > deadline) throw new Error(`still ${JSON.stringify(value)} after ${ctx.timeout} ms`)
+    await new Promise(resolve => setTimeout(resolve, 50))
+  }
+}
+
 /** Polls without backoff: Playwright's own `waitFor` spaces polls up to 500 ms apart and misses brief states. */
 async function waitFor(ctx, state) {
   const locate = STATES[state] ?? fail(`unknown state "${state}". Known: ${Object.keys(STATES).join(', ')}`)
@@ -196,13 +226,15 @@ async function run(argv) {
   mkdirSync(scratch, { recursive: true })
   const given = options.fixture ? resolve(process.cwd(), options.fixture) : null
   const fixture = given && options['drop-after'] ? withDrop(given, options['drop-after'], join(evidence, 'fixture-with-drop.jsonl')) : given
-  const ctx = { page: null, evidence, fixture, timeout: Number(options.timeout ?? 15_000), holding: null }
+  const ctx = { app: null, page: null, evidence, opens: join(evidence, 'opens.jsonl'), fixture, timeout: Number(options.timeout ?? 15_000), holding: null }
 
   const env = { ...process.env, PATH: fixture ? process.env.PATH : pathWithoutHermes() }
   delete env.WAYLAND_DISPLAY
   delete env.ELECTRON_RENDERER_URL
   delete env.HIGHWING_FIXTURE
   if (fixture) env.HIGHWING_FIXTURE = fixture
+  rmSync(ctx.opens, { force: true })
+  env.HIGHWING_OPEN_LOG = ctx.opens
 
   const { _electron } = requireDesktop('playwright-core')
   log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${fixture ? `HIGHWING_FIXTURE=${fixture}` : 'no fixture, hermes removed from PATH'}`)
@@ -217,6 +249,7 @@ async function run(argv) {
     log(ctx, `FAIL evidence in ${evidence}`)
     process.exit(1)
   })
+  ctx.app = app
   const pid = app.process().pid
   writeFileSync(join(scratch, 'pid'), String(pid))
   const mainLog = join(evidence, 'main.log')

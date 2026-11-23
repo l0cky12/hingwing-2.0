@@ -30,6 +30,8 @@ Options:
 - `--run <name>` names the evidence directory. The default is a timestamp plus the PID.
 - `--timeout <ms>` is the per-step limit. The default is 15000.
 
+Every run sets `HIGHWING_OPEN_LOG` to `opens.jsonl` in the evidence directory. Main then records each request to open a file or show its folder in that file, and opens nothing on the desktop.
+
 Ready means the first window has loaded. Use `wait window` as the first step.
 
 The window's content area is 1180x860, the size of the reference screenshots. `run` passes `--ozone-platform=x11`, `--force-device-scale-factor=1` and `--disable-gpu`, and removes `WAYLAND_DISPLAY`. Electron 45 would otherwise pick Wayland and open the window on the real compositor. `run` also checks that the X server on its display was started by its own `xvfb-run`. Plain `xvfb-run -a` gives two runs started together the same display, and the first teardown would then kill the other run.
@@ -53,6 +55,8 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `press <key>` | Playwright key name | presses it |
 | `shot <name>` | file stem | moves the pointer off the page, then saves `<name>.png` and `<name>.aria.txt` |
 | `disabled <role> <name>` | ARIA role, exact accessible name | fails unless that control is disabled now |
+| `opened <action> <path>` | `open` or `show`, absolute path | fails unless `opens.jsonl` holds exactly one call, and that call is this one |
+| `clipboard <text>` | text | fails unless the system clipboard holds exactly this text |
 
 Named states live in the `STATES` table in the helper. Add a state there, not a sleep.
 
@@ -75,6 +79,7 @@ Each run writes to `/tmp/highwing-verify/<run>/`:
 
 - `steps.log` lists every step with a timestamp, and ends with `PASS` or `FAIL`.
 - `<name>.png` and `<name>.aria.txt` hold each shot and the ARIA snapshot of the page at that moment.
+- `opens.jsonl` holds one JSON line for each open or show call that main accepted.
 - `main.log` holds the Electron main process's stdout and stderr. `console.log` holds the renderer console and page errors.
 - `failure.png` is the window when a step failed.
 - `compare-<name>.png` comes from `$H compare <run>`. It puts the reference on the left and the shot on the right. Shots named `tool-running`, `approval`, `settled` and `settled-expanded` pair with `docs/design/reference/tool-running-C.png`, `approval-C.png`, `settled-C.png` and `settled-C-expanded.png`.
