@@ -1,6 +1,10 @@
-"""Write fixtures/errand.jsonl: one Hermes turn, recorded from Hermes's own canonical gateway.
+"""Write a fixture of one Hermes turn, recorded from Hermes's own canonical gateway.
 
-Run with Hermes's interpreter:  <hermes python> -I fixtures/make_fixture.py
+Run with Hermes's interpreter:  <hermes python> -I fixtures/make_fixture.py [errand|markdown]
+
+``errand`` (the default) writes fixtures/errand.jsonl: four tool calls and an approval. ``markdown``
+writes fixtures/markdown.jsonl: a text-only reply that holds a list, a heading, a link, a table and a
+fenced block.
 
 The script runs the canonical gateway in-process, the way Hermes's own
 tests/gateway/test_authority_complete_persisted_turn.py does: a real ``SessionAuthority`` over a
@@ -24,7 +28,7 @@ Real:
   ``display_messages`` of a real ``session.resume {display_projection: true}``.
 
 Scripted, because no AI provider exists on this machine:
-- the assistant's words and its choice of tool calls (``STORY`` below). ``execute_finite_admission``
+- the assistant's words and its choice of tool calls (the story's ``steps`` below). ``execute_finite_admission``
   is replaced, as the Hermes test above replaces it, by a turn that plays the model's part and
   calls the same ``TurnRunner`` sinks a provider-backed turn calls, in the agent loop's order
   (``agent/turn_iteration_prep.py``, ``agent/turn_tool_round.py``, ``agent/stream_delivery.py``);
@@ -67,7 +71,6 @@ import hermes_bootstrap  # noqa: E402,F401
 
 WORK = "/tmp/hermes-proto-work"
 HOME = "/tmp/hermes-proto-home"
-OUT = Path(__file__).resolve().parent / "errand.jsonl"
 USER = "highwing-fixture"
 
 for path in (WORK, HOME):
@@ -94,8 +97,6 @@ from tui_gateway.transport import serialize_frame  # noqa: E402
 
 logging.basicConfig(level=logging.ERROR)
 
-REQUEST = ("In /tmp/hermes-proto-work: make notes.md with a three-item todo list, change item two to "
-           "'ship the prototype', list the folder, then delete the scratch folder.")
 NOTES = "# Todo\n\n- [ ] sketch the chat view\n- [ ] wire the gateway socket\n- [ ] review screenshots\n"
 
 
@@ -110,7 +111,12 @@ def pin_listing_times():
         os.utime(os.path.join(WORK, name), (1767268800, 1767268800))
 
 
-STORY = [
+def scratch_is_gone():
+    if os.path.exists(f"{WORK}/scratch"):
+        sys.exit("the approved rm -rf did not remove the scratch folder")
+
+
+ERRAND = [
     {"say": "I'll create the notes file first, then make the edit.",
      "call": ("write_file", {"path": f"{WORK}/notes.md", "content": NOTES}), "ms": 12},
     {"say": "",
@@ -123,6 +129,43 @@ STORY = [
     {"say": "", "call": ("terminal", {"command": f"rm -rf {WORK}/scratch"}), "ms": 95},
     {"say": final_words, "call": None},
 ]
+
+MARKDOWN_REPLY = """Here is the plan for notes.md.
+
+1. Back up notes.md
+2. Rename the heading
+
+## Details
+
+The [style guide](https://example.com/style-guide) says to keep headings short.
+
+| File | Lines | Changed |
+| --- | --- | --- |
+| notes.md | 42 | yes |
+| todo.md | 7 | no |
+
+Run this first:
+
+```sh
+cp notes.md notes.md.bak
+```"""
+
+# ``approves``: the story waits for an approval prompt. ``check`` runs once the turn has ended.
+STORIES = {
+    "errand": {
+        "request": ("In /tmp/hermes-proto-work: make notes.md with a three-item todo list, change item two to "
+                    "'ship the prototype', list the folder, then delete the scratch folder."),
+        "steps": ERRAND, "out": "errand.jsonl", "approves": True, "check": scratch_is_gone},
+    "markdown": {
+        "request": "Give me a short plan for backing up notes.md and renaming its heading.",
+        "steps": [{"say": MARKDOWN_REPLY, "call": None}], "out": "markdown.jsonl", "approves": False,
+        "check": lambda: None},
+}
+if len(sys.argv) > 2 or (sys.argv[1:] and sys.argv[1] not in STORIES):
+    sys.exit(f"usage: make_fixture.py [{'|'.join(STORIES)}]")
+TALE = STORIES[sys.argv[1] if len(sys.argv) > 1 else "errand"]
+REQUEST, STORY = TALE["request"], TALE["steps"]
+OUT = Path(__file__).resolve().parent / TALE["out"]
 
 
 class Clock:
@@ -335,14 +378,15 @@ async def main():
     recorder.recording = True
     await story_call("prompt.submit", {"session_id": session_id, "text": REQUEST,
                                        "input_id": "input_" + uuid.uuid4().hex[:16]})
-    try:
-        request = await asyncio.wait_for(recorder.push_of("approval.request"), 60)
-    except TimeoutError:
-        sys.exit("the gateway never asked to approve the rm -rf")
-    prompt = request["params"]["payload"]
-    CLOCK.tick(1500)
-    await story_call("approval.respond", {"session_id": session_id, "execution_generation": prompt["execution_generation"],
-                                          "prompt_id": prompt["prompt_id"], "choice": "once"})
+    if TALE["approves"]:
+        try:
+            request = await asyncio.wait_for(recorder.push_of("approval.request"), 60)
+        except TimeoutError:
+            sys.exit("the gateway never asked to approve the rm -rf")
+        prompt = request["params"]["payload"]
+        CLOCK.tick(1500)
+        await story_call("approval.respond", {"session_id": session_id, "execution_generation": prompt["execution_generation"],
+                                              "prompt_id": prompt["prompt_id"], "choice": "once"})
 
     await live.task
     pushes = [step["push"] for step in recorder.steps if "push" in step]
@@ -366,8 +410,7 @@ async def main():
             out.write(json.dumps(line, ensure_ascii=False) + "\n")
     db.close()
     print(f"wrote {OUT}: {len(pushes)} pushes, {len(recorder.steps) - len(pushes)} other steps", file=sys.stderr)
-    if os.path.exists(f"{WORK}/scratch"):
-        sys.exit("the approved rm -rf did not remove the scratch folder")
+    TALE["check"]()
 
 
 asyncio.run(main())
