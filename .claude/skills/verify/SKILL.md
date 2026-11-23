@@ -31,8 +31,12 @@ Every run names one of two gateways. Hermes, ssh and Tailscale are installed on 
 - `--saved none|local|remote|unreadable|newer` needs `--fake-host`. It writes that `connection.json` into the run's user-data directory before launch. The default is `none`, a first run. `remote` saves the fake machine, and `local` saves this computer, where the fake `hermes` answers.
 - `--hold-at tailscale|ssh|attach|relay` needs `--fake-host`. The fake tool that reaches that moment waits for the rest of the run. `ssh` pins the setup check at "Connecting to hermes-host".
 - `--drop-after <event type>` is verification scaffolding. It writes a copy of the fixture whose gateway closes the socket 50 ms after the first frame of that type, and plays the copy instead. The copy is saved as `fixture-with-drop.jsonl` in the evidence directory. The client shows the dropped link until its redial lands about 1 s later.
+- `--forced-colors` emulates the desktop's forced-colors (high-contrast) mode in the first window once it opens, before any step runs, so the window draws only with system colors.
+- `--more-contrast` emulates `prefers-contrast: more`.
 - `--run <name>` names the evidence directory. The default is a timestamp plus the PID.
 - `--timeout <ms>` is the per-step limit. The default is 15000.
+
+Every run sets `HIGHWING_OPEN_LOG` to `opens.jsonl` in the evidence directory. Main then records each request to open a file or show its folder in that file, and opens nothing on the desktop.
 
 Ready means the first window has loaded. Use `wait window` as the first step.
 
@@ -58,6 +62,14 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `shot <name>` | file stem | moves the pointer off the page, then saves `<name>.png` and `<name>.aria.txt` |
 | `disabled <role> <name>` | ARIA role, exact accessible name | fails unless that control is disabled now |
 | `value <label> <text>` | exact label, text | fails unless the field holds exactly that text now |
+| `field <label> <lines> <fits\|scrolls>` | exact label, a line count, `fits` or `scrolls` | logs how many lines the field shows and whether its text scrolls with a visible scrollbar, and fails unless both match |
+| `pinned` | none | logs where the thread sits, and fails unless it is scrolled to its end, its last row is in view (wholly, when it fits), and the composer does not cover it |
+| `focused <role> <name>` | ARIA role, exact accessible name | fails unless that control has keyboard focus now |
+| `count <role> <name> <n>` | ARIA role, exact name or `/regex/`, a number | fails unless exactly `n` such controls are in the accessibility tree |
+| `clipboard <name>` | file stem | waits until the system clipboard holds new text, then saves it as `<name>.clip.txt`. Fails when it stays empty or unchanged since the last `clipboard` step |
+| `marks <count>` | number | fails unless the ranges in the `find` and `find-current` highlights add up to the count. A missing highlight counts as 0. It reads state and never sets it |
+| `opened <action> <path>` | `open` or `show`, absolute path | fails unless `opens.jsonl` holds exactly one call, and that call is this one |
+| `copied <text>` | text | fails unless the system clipboard holds exactly this text |
 | `gone <role> <name>` | ARIA role, exact accessible name | polls until no visible element has that role and name, and fails at the timeout. Waits out a fade |
 | `inview <role> <name>` | ARIA role, exact accessible name | fails unless that element's box lies fully inside the visible area of every scrolling ancestor and of the window |
 
@@ -86,6 +98,8 @@ Each run writes to `/tmp/highwing-verify/<run>/`:
 
 - `steps.log` lists every step with a timestamp, and ends with `PASS` or `FAIL`.
 - `<name>.png` and `<name>.aria.txt` hold each shot and the ARIA snapshot of the page at that moment.
+- `<name>.clip.txt` holds the clipboard text that a `clipboard` step read.
+- `opens.jsonl` holds one JSON line for each open or show call that main accepted.
 - `main.log` holds the Electron main process's stdout and stderr. `console.log` holds the renderer console and page errors.
 - `failure.png` is the window when a step failed.
 - `compare-<name>.png` comes from `$H compare <run>`. It puts the reference on the left and the shot on the right. Shots named `tool-running`, `approval`, `settled` and `settled-expanded` pair with `docs/design/reference/tool-running-C.png`, `approval-C.png`, `settled-C.png` and `settled-C-expanded.png`.

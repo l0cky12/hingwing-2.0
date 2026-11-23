@@ -4,6 +4,7 @@ import { activityOf, type Session } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { checkThread, threadView } from '../src/thread-view'
 
+const CLOCK = { now: 0, timeZone: 'UTC' }
 const fixture = loadFixture(fileURLToPath(new URL('../../../fixtures/long-turn.jsonl', import.meta.url)))
 
 async function sessions(): Promise<Session[]> {
@@ -15,13 +16,13 @@ async function sessions(): Promise<Session[]> {
 describe('the long turn played through the real client', () => {
   it('is a sound thread at every moment', async () => {
     const seen = await sessions()
-    expect(seen.flatMap((session, index) => checkThread(threadView(session)).map(problem => `moment ${index}: ${problem}`))).toEqual([])
+    expect(seen.flatMap((session, index) => checkThread(threadView(session, CLOCK)).map(problem => `moment ${index}: ${problem}`))).toEqual([])
   })
 
   it('ends waiting on the delete, with the approval card as the live end', async () => {
     const last = (await sessions()).at(-1) as Session
     expect(activityOf(last).kind).toBe('asking')
-    const turn = threadView(last).turns.at(-1)
+    const turn = threadView(last, CLOCK).turns.at(-1)
     const end = turn?.end
     expect(end).toMatchObject({ kind: 'at', tone: 'asking' })
     const card = turn?.nodes.find(node => end?.kind === 'at' && node.key === end.nodeKey)

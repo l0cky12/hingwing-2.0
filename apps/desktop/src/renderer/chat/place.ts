@@ -6,7 +6,7 @@ export type Place =
 
 export const FOLLOWING: Place = { kind: 'following' }
 
-const FOLLOW_WITHIN = 60
+export const FOLLOW_WITHIN = 60
 const FAR_BEYOND = 80
 
 export function placeAfter(held: Place, distance: number, progress: string): Place {

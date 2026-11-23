@@ -25,7 +25,7 @@ A window reads one value per session and sends commands as data.
 
 ```ts
 const session = useTopic(`session:${id}`)             // Session | undefined
-const thread = threadView(session)                     // design C, the same call the tests make
+const thread = threadView(session, { now: Date.now(), timeZone })   // design C, the same call the tests make
 const showStop = activityOf(session).kind !== 'idle'   // idle | thinking | writing | working | asking | ...
 highwing.run({ do: 'send', sessionId: id, text })
 highwing.run({ do: 'answer', sessionId: id, promptId, reply: { kind: 'choice', value: 'once' } })
@@ -37,19 +37,20 @@ A test derives design C from an event log with no provider, no socket and no DOM
 ```ts
 const fixture = loadFixture('fixtures/errand.jsonl')
 const pushes = fixture.steps.filter(step => 'push' in step).length
-const want = outline(threadView(await playToEnd(fixture)))
+const clock = { now: 0, timeZone: 'UTC' }                  // the view takes the clock, so a test fixes it
+const want = outline(threadView(await playToEnd(fixture), clock))
 expect(want).toMatchInlineSnapshot()                   // "■ Created and edited `notes.md` · 2 steps" ...
 for await (const { session, step } of play(fixture))   // every moment of the turn
-  expect(checkThread(threadView(session)), `step ${step}`).toEqual([])
+  expect(checkThread(threadView(session, clock)), `step ${step}`).toEqual([])
 for (let afterPush = 1; afterPush <= pushes; afterPush++)   // a socket drop after any frame
-  expect(outline(threadView(await playToEnd(fixture, { drop: { afterPush, missed: 3 } })))).toBe(want)
+  expect(outline(threadView(await playToEnd(fixture, { drop: { afterPush, missed: 3 } }), clock))).toBe(want)
 ```
 
 No call site mentions a ticket, a socket, a seq, an epoch, a generation, a revision or an idempotency key.
 
 ## Shape
 
-**Data first.** `Session` is plain JSON. Its content has three parts that change: `history: SettledTurn[]`, `run` and `outbox`. `Run` is `{state: 'idle'} | {state: 'running', generation, turn: OpenTurn, stop}`. An open turn has no outcome field and a settled turn requires one. `Item<'settled'>` excludes a running tool and a waiting prompt, so those exist only inside `run.turn`. Waiting for approval is not stored. It is a prompt item in the open turn, and `activityOf(session)` derives it along with thinking, writing and working (per model-the-domain, type-system-discipline).
+**Data first.** `Session` is plain JSON. Its content has three parts that change: `history: SettledTurn[]`, `run` and `outbox`. `Run` is `{state: 'idle'} | {state: 'running', generation, turn: OpenTurn, stop}`. An open turn has no outcome field and a settled turn requires one. `Item<'settled'>` excludes a running tool and a waiting prompt, so those exist only inside `run.turn`. Waiting for approval is not stored. It is a prompt item in the open turn, and `activityOf(session)` derives it along with thinking, writing and working (per model-the-domain, type-system-discipline). A turn, open or settled, also holds `began`: the time its request was made and whose clock read it, or null when that is unknown. Everything the thread shows about time is derived from it and the clock.
 
 **One writer per session, attach included.** A `SessionActor` in Electron main owns one `Tracked` value: the content that windows see, a `Gate`, and a `Fence` of revision and paging tokens. Every change is a `reduce(state, input)`. Gateway events, attach replies, a lost link and this client's own actions are all inputs. `Gate` is the attach lifecycle as one union: `detached` (with the cursor to replay from), `attaching` (with an attempt number, a plan and the frames parked so far) or `live` (with the cursor and the subscription id). It decides whether a frame is applied, parked or dropped. `Session.sync` is not stored. `syncOf(gate, link)` derives it each time the actor publishes, so the banner in a window cannot disagree with what the socket is doing. The actor itself is a thin shell that makes the gateway calls a state asks for and feeds the replies back in.
 
@@ -89,7 +90,7 @@ A session with no cursor, and any session that must rebuild, sends one `session.
 | Hermes asks for a sudo password, a secret or a setup card | Refuses the request at once and adds a notice to the thread. | "Hermes asked for your sudo password. Highwing can't show that prompt yet, so it said no." |
 | You open a chat whose turn is already running | The snapshot has the stored rows and no partial text. | The request, the stored steps and a live end. Text fills in from the next delta. |
 
-**5. How is design C a pure derivation, and how is it tested?** `@highwing/thread` imports only domain types and exports three functions. `threadView(session)` is the one entry point. The renderer calls it on every session value, and the tests call it on every fixture step. It returns nodes (`prose`, `step`, `group`, `prompt`, `notice`) and one `end` field per turn, so a turn cannot have two live ends. Each spec rule is a private pure function there, and per-tool wording is one table. Components map the view to DOM and decide nothing.
+**5. How is design C a pure derivation, and how is it tested?** `@highwing/thread` imports only domain types and exports three functions. `threadView(session, clock)` is the one entry point. The renderer calls it on every session value, and the tests call it on every fixture step. The clock is `{ now, timeZone }`, passed in, so the view stays pure and a test fixes it. The view also says when it next reads differently (`changesAt`), so the renderer sets one timer for that moment. The timer never waits longer than a minute, so a machine suspend cannot leave it late. It returns nodes (`prose`, `step`, `group`, `prompt`, `notice`) and one `end` field per turn, so a turn cannot have two live ends. Each spec rule is a private pure function there, and per-tool wording is one table. Components map the view to DOM and decide nothing.
 
 A fixture is JSONL of wire frames, `await` steps that pause the story until the client makes a call, and `stored` steps that set the session's stored rows. Tests play fixtures through the real client and compare `outline(view)`, a text form of the thread with one glyph per kind of node. `checkThread` runs on every step of every fixture. The scripted gateway enforces the real gateway's rules, so a client protocol bug fails a fixture test (per test-behavior-not-implementation). It refuses a wrong key set, a session verb on an unattached socket, and, on a loopback socket where the real dial code runs, an `Origin` header or a reused ticket. It answers `events.since` and `resume` from the frames it has pushed, catch-up frames included. That makes "drop the socket after every frame and compare the outline" a real reconnect test. `module-map.md` lists each test.
 
@@ -103,7 +104,7 @@ The hub keeps a session attached while a window watches it, while its own run is
 
 ### Interface depth
 
-`Hermes` is two feeds, `watch`, `run` and `close`. The preload `Bridge` is `watch` and `run`. Behind them sit ticket minting, the handshake, heartbeat, backoff, attach-before-act, parking, replay, gap recovery, generation and revision fencing, idempotency keys, declining requests and attach retention. A caller's one duty is to call the function `watch` returns. `Command` is a data union, so IPC adds no forwarding method per command.
+`Hermes` is two feeds, `watch`, `run` and `close`. The preload `Bridge` is `watch`, `run` and `file`. Behind them sit ticket minting, the handshake, heartbeat, backoff, attach-before-act, parking, replay, gap recovery, generation and revision fencing, idempotency keys, declining requests and attach retention. A caller's one duty is to call the function `watch` returns. `Command` is a data union, so IPC adds no forwarding method per command. `file` is a desktop action, not a Hermes command. It asks main to open a file or show its folder, and main allows only a path that a step of a session the window watches named.
 
 The design has no timer that force-settles a quiet turn, no REST calls, no legacy dialect, no state on disk in the first build, and no sending while offline.
 
@@ -155,6 +156,7 @@ Rejected:
 - We accept six event payloads typed by hand in `wire/parse.ts`, because Hermes's generated contract does not list them.
 - We accept one `hermes` process start per dial, and Electron's size over Tauri's.
 - `@highwing/hermes` imports nothing from Electron. That looks like ceremony for a one-process app. It lets the core move into a `utilityProcess` later by changing only the composition root in `apps/desktop/src/main/`.
+- We accept that a turn's start is the client's clock for a live turn, and unknown for a turn heard through replay or catch-up. The gateway sends no time with a live event, and a replayed event arrives long after it happened, so stamping it on arrival would show a wrong time. A turn rebuilt from stored rows takes its request row's time, read on the gateway's clock. We apply no skew correction, so with a remote gateway (`remote.md`) a stored start can sit some seconds off this machine's clock. An unknown start draws nothing. The elapsed time counts from the turn's start and shows only on a live end. A prompt card that waits on you and a paused end show none, because the thread cannot say then that Hermes is working.
 - `activityOf` rescans the open turn's items on each call. That looks like a missing cache. A stored copy is the thing that could disagree.
 
 ## Alternatives considered
