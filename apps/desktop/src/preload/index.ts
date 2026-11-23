@@ -15,7 +15,8 @@ const bridge: Bridge = {
       if (subscribers.delete(id)) ipcRenderer.send(CHANNEL.unwatch, id)
     }
   },
-  run: command => ipcRenderer.invoke(CHANNEL.run, command)
+  run: command => ipcRenderer.invoke(CHANNEL.run, command),
+  copy: text => ipcRenderer.invoke(CHANNEL.copy, text)
 }
 
 contextBridge.exposeInMainWorld('highwing', bridge)

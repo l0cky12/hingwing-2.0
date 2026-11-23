@@ -1,8 +1,8 @@
 import type { SessionId } from '@highwing/hermes/domain'
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { SESSION_PARAM } from '../ipc-contract'
+import { isWebLink, SESSION_PARAM } from '../ipc-contract'
 
 const INDEX_HTML = join(import.meta.dirname, '../renderer/index.html')
 const DEV_URL = process.env.ELECTRON_RENDERER_URL
@@ -21,7 +21,10 @@ export function openWindow(sessionId: SessionId | null): BrowserWindow {
     title: 'Highwing', backgroundColor: '#E8EBE4',
     webPreferences: { preload: join(import.meta.dirname, '../preload/index.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false }
   })
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (isWebLink(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
   window.webContents.on('will-navigate', event => event.preventDefault())
   const query: Record<string, string> = sessionId === null ? {} : { [SESSION_PARAM]: sessionId }
   if (DEV_URL) void window.loadURL(`${DEV_URL}?${new URLSearchParams(query)}`)

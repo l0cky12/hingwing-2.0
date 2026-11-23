@@ -1,7 +1,7 @@
 import { checkTarget, liveDialer, openHermes, remoteRoute, type Dialer, type Route } from '@highwing/hermes'
 import type { Target } from '@highwing/hermes/domain'
 import { loadFixture, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, clipboard, ipcMain } from 'electron'
 import { ownConnection, pinnedConnection } from './connection'
 import { serveWindows } from './ipc'
 import { loadSettings, saveSettings } from './settings'
@@ -27,7 +27,7 @@ app.whenReady().then(async () => {
   const owner = fixture
     ? pinnedConnection(open(scriptedDialer(fixture, { timing: 'recorded' })))
     : ownConnection({ loaded: await loadSettings(settingsDir), save: target => saveSettings(settingsDir, target), check: checkTarget, routeFor, open })
-  const served = serveWindows(owner, ipcMain, isAppUrl)
+  const served = serveWindows(owner, ipcMain, isAppUrl, text => clipboard.writeText(text))
   openWindow(fixture?.header.sessionId ?? null)
   let closed: Promise<void> | null = null
   const close = () => (closed ??= (served.dispose(), owner.close()))

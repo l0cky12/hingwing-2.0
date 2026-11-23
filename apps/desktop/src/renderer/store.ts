@@ -67,3 +67,4 @@ export function useTopic<T extends Topic>(topic: T): TopicValue<T> | undefined {
 }
 
 export const run: Bridge['run'] = command => window.highwing.run(command)
+export const copyText: Bridge['copy'] = text => window.highwing.copy(text)

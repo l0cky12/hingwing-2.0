@@ -2,7 +2,7 @@ import type { Hermes } from '@highwing/hermes'
 import type { Session } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyPush, CHANNEL, parseCommand, validators, type Push, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, parseCommand, validators, type Push, type Topic } from '../src/ipc-contract'
 import { pinnedConnection } from '../src/main/connection'
 import { COALESCE_MS, serveWindows, sessionPatch, type IpcEvent, type IpcMainLike } from '../src/main/ipc'
 
@@ -135,8 +135,9 @@ describe('serveWindows', () => {
         return { ok: true, value: undefined }
       }
     } as unknown as Hermes
-    const served = serveWindows(pinnedConnection(hermes), ipc, url => url.startsWith('app://'))
-    return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, served }
+    const copied: string[] = []
+    const served = serveWindows(pinnedConnection(hermes), ipc, url => url.startsWith('app://'), text => void copied.push(text))
+    return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, copied, served }
   }
 
   it('sends one full value, then coalesced tail patches the window can apply', () => {
@@ -195,5 +196,36 @@ describe('serveWindows', () => {
     await expect(run(event(), { do: 'stop' })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
     await expect(run(event('https://example.com/'), { do: 'stop', sessionId: 's1' })).resolves.toMatchObject({ ok: false })
     expect(commands).toEqual([{ do: 'stop', sessionId: 's1' }])
+  })
+
+  it('writes a string from the app page to the clipboard', () => {
+    const { handlers, event, copied } = harness()
+    expect(handlers.get(CHANNEL.copy)!(event(), 'cp notes.md notes.md.bak')).toBe(true)
+    expect(copied).toEqual(['cp notes.md notes.md.bak'])
+  })
+
+  it.each([
+    ['a foreign frame', 'https://example.com/', 'cp notes.md notes.md.bak'],
+    ['a value that is not text', 'app://index.html', { text: 'cp' }]
+  ])('writes nothing to the clipboard for %s', (_, url, value) => {
+    const { handlers, event, copied } = harness()
+    expect(handlers.get(CHANNEL.copy)!(event(url), value)).toBe(false)
+    expect(copied).toEqual([])
+  })
+
+  it('stops handling copies once disposed', () => {
+    const { handlers, served } = harness()
+    served.dispose()
+    expect(handlers.has(CHANNEL.copy)).toBe(false)
+  })
+})
+
+describe('isWebLink', () => {
+  it.each(['https://example.com/style-guide', 'http://localhost:8080/', 'mailto:someone@example.com'])('opens %s', url => {
+    expect(isWebLink(url)).toBe(true)
+  })
+
+  it.each(['javascript:alert(1)', 'file:///etc/passwd', '/style-guide', 'style-guide.md', '', 'http//missing-colon'])('refuses %s', url => {
+    expect(isWebLink(url)).toBe(false)
   })
 })

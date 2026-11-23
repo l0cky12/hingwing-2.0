@@ -53,9 +53,15 @@ export type Push<T extends Topic = Topic> =
 export interface Bridge {
   watch<T extends Topic>(topic: T, onPush: (push: Push<T>) => void): () => void
   run<C extends AppCommand>(command: C): Promise<CommandOutcome<AppResult<C>>>
+  copy(text: string): Promise<boolean>
 }
 
-export const CHANNEL = { watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run' } as const
+export const CHANNEL = { watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', copy: 'highwing:copy' } as const
+
+const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
+
+/** The links a reply may open, in the user's browser. Shared so the renderer draws only links main will open. */
+export const isWebLink = (url: string): boolean => WEB_SCHEMES.has(URL.parse(url)?.protocol ?? '')
 
 export const SESSION_PARAM = 'session'
 

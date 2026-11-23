@@ -85,7 +85,7 @@ function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): (
 
 const REFUSED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Highwing refused a malformed request from its window.' } }
 
-export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean): { dispose(): void } {
+export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, writeClipboard: (text: string) => void): { dispose(): void } {
   const windows = new Map<number, Map<number, () => void>>()
   const trusted = ({ senderFrame }: IpcEvent) => senderFrame !== null && senderFrame.parent === null && isAppUrl(senderFrame.url)
 
@@ -121,6 +121,11 @@ export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl:
     const command = parseCommand(raw)
     return trusted(event) && command !== null ? owner.run(command) : REFUSED
   })
+  ipc.handle(CHANNEL.copy, (event, text) => {
+    if (!trusted(event) || typeof text !== 'string') return false
+    writeClipboard(text)
+    return true
+  })
 
   return {
     dispose() {
@@ -128,6 +133,7 @@ export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl:
       ipc.removeAllListeners(CHANNEL.watch)
       ipc.removeAllListeners(CHANNEL.unwatch)
       ipc.removeHandler(CHANNEL.run)
+      ipc.removeHandler(CHANNEL.copy)
     }
   }
 }
