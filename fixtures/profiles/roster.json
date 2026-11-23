@@ -1,0 +1,59 @@
+{
+  "profiles": [
+    {
+      "name": "default",
+      "path": "/tmp/hermes-proto-home",
+      "is_default": true,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "Hermes Agent",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": { "id": "local-0000", "resolved_id": "local-0000", "title": "", "preview": "", "last_active": 1795251600 },
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {},
+      "ui_meta": null,
+      "has_avatar": false
+    },
+    {
+      "name": "researcher",
+      "path": "/tmp/hermes-proto-home/profiles/researcher",
+      "is_default": false,
+      "display_name": "Researcher",
+      "last_session": { "id": "local-0001", "resolved_id": "local-0001", "title": "Sources", "preview": "Three of the five sources agree on the 2024 figure; the other two cite an older survey.", "last_active": 1795250600 },
+      "ui_meta": { "section": "Work" },
+      "has_avatar": false
+    },
+    {
+      "name": "reviewer",
+      "path": "/tmp/hermes-proto-home/profiles/reviewer",
+      "is_default": false,
+      "display_name": "Reviewer",
+      "last_session": { "id": "local-0002", "resolved_id": "local-0002", "title": "PR 57", "preview": "The slash menu change looks right. One nit about the empty state copy.", "last_active": 1795249600 },
+      "ui_meta": { "section": "Work", "role": "Code review" },
+      "has_avatar": false
+    },
+    {
+      "name": "ops",
+      "path": "/tmp/hermes-proto-home/profiles/ops",
+      "is_default": false,
+      "display_name": "Ops",
+      "last_session": { "id": "local-0003", "resolved_id": "local-0003", "title": "Disk", "preview": "Pruned four worktrees and freed 11 GB on the build box.", "last_active": 1795246600 },
+      "ui_meta": { "role": "On call" },
+      "has_avatar": false
+    },
+    {
+      "name": "scribe",
+      "path": "/tmp/hermes-proto-home/profiles/scribe",
+      "is_default": false,
+      "display_name": "Scribe",
+      "last_session": null,
+      "ui_meta": {},
+      "has_avatar": false
+    }
+  ],
+  "bot_mode_protocol": true,
+  "install_id": "fixture"
+}

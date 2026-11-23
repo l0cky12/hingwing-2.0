@@ -2,6 +2,7 @@
  * The only place gateway shapes become domain shapes. Everything past these functions trusts its types.
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
+import { BOT_TONES, type BotFacts, type BotId } from '../domain/bots'
 import type { ModelConfirm, ModelMenu } from '../domain/command'
 import type { Admission, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type {
@@ -10,7 +11,7 @@ import type {
 } from '../domain/session'
 import type { SlashCatalog, SlashEntry } from '../domain/slash'
 import type {
-  CanonicalEventsResult, CanonicalPendingAdmission, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
+  CanonicalEventsResult, CanonicalPendingAdmission, CanonicalProfilesResult, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
   CanonicalSnapshot, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
   MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, SessionLiveInfo, SessionMutateResult, SessionTitlePayload, StoredTranscriptResult,
   StoredTranscriptRow, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload
@@ -526,6 +527,43 @@ export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<Si
 }
 
 /** A server-to-client request frame, or an `open_requests` entry of a snapshot. Its params carry the session (`tui_gateway/server_requests.py:98,103`); an app-level one has `''`. */
+/**
+ * Where Highwing looks in a profile's `ui_meta` for what the contract has no field for. These three
+ * key names are Highwing's own guess: the contract types `ui_meta` as an open object, and no Hermes
+ * source or recorded reply was at hand to read the real names from. A recording made with
+ * HIGHWING_RECORD keeps the real `profiles.list` reply in its header. Read the names there, change
+ * them here, and update the "Bots" section of docs/compatibility.md.
+ */
+const UI_META = { section: 'section', role: 'role', tone: 'color' } as const
+
+const words = (raw: unknown): string | null => (isString(raw) && raw.trim() !== '' ? raw.trim() : null)
+
+/**
+ * `profiles.list` as flat facts, in the reply's order. A row with no name is no bot, and a second
+ * row with a name already seen is dropped. A `ui_meta` that is not an object, or holds something
+ * other than words under a key, counts as not having that key. A colour is kept only when it is one
+ * of Highwing's own tone names, so an avatar's contrast never depends on what Hermes stored.
+ */
+export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
+  const rows: readonly unknown[] = isObject(reply) && Array.isArray(reply.profiles) ? reply.profiles : []
+  const seen = new Set<string>()
+  return rows.flatMap((row): BotFacts[] => {
+    if (!isObject(row) || !isString(row.name) || row.name.trim() === '' || seen.has(row.name)) return []
+    seen.add(row.name)
+    const meta: Obj = isObject(row.ui_meta) ? row.ui_meta : {}
+    const colour = words(meta[UI_META.tone])
+    return [{
+      id: row.name as BotId,
+      name: words(row.display_name) ?? row.name,
+      isDefault: row.is_default === true,
+      role: words(meta[UI_META.role]),
+      section: words(meta[UI_META.section]),
+      chosenTone: BOT_TONES.find(tone => tone === colour) ?? null,
+      preview: isObject(row.last_session) ? words(row.last_session.preview) : null
+    }]
+  })
+}
+
 export function parseServerRequest(request: { readonly id: string; readonly method: string; readonly params: unknown }): ServerRequest {
   const sessionId = isObject(request.params) ? request.params.session_id : undefined
   return { requestId: request.id, method: request.method, sessionId: typeof sessionId === 'string' && sessionId !== '' ? sessionId as SessionId : null }
