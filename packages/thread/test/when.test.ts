@@ -164,6 +164,15 @@ describe('changesAt', () => {
     expect(threadView(session(history), { now: NOW, timeZone: 'Asia/Tokyo' }).changesAt).toBe(at('2026-11-22T15:00:00Z'))
   })
 
+  it('moves on to the following midnight once the clock reaches one', () => {
+    const history = [settled('t1', client(NOW - 2 * HOUR))]
+    const kolkata = (now: number): ViewClock => ({ now, timeZone: 'Asia/Kolkata' })
+    const midnight = at('2026-11-21T18:30:00Z')
+    expect(threadView(session(history), kolkata(midnight - MINUTE)).changesAt).toBe(midnight)
+    expect(threadView(session(history), kolkata(midnight)).changesAt).toBe(midnight + 24 * HOUR)
+    expect(threadView(session(history), kolkata(midnight - 1)).changesAt).toBe(midnight)
+  })
+
   it('finds midnight on a day that is 25 hours long', () => {
     const history = [settled('t1', client(at('2026-10-30T12:00:00Z')))]
     const view = threadView(session(history), { now: at('2026-11-01T04:30:00Z'), timeZone: 'America/New_York' })
