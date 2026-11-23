@@ -22,40 +22,44 @@
 .head .kind { flex: none; color: var(--graphite); font-weight: 400; margin-right: -8px; }
 .helper.live > .head .title { color: var(--signal); }
 .head .meta .failed { color: var(--brick); }
-.helper .now { display: block; margin: -4px 0 2px; padding: 0 14px 0 0; color: var(--graphite); font-size: 13px; }
-.helper .now code { font-size: 12px; }
+.helper .now { display: block; margin: -4px 0 2px; color: var(--graphite); font-size: 13px; }
+.helper .now code { font-size: 12.5px; }
 .helper.live .now { color: var(--signal); }
-.helper .sub, .plan .items { display: none; }
+.helper.open > .now { display: none; }
+.helper .sub { display: none; }
 .helper.open > .sub { display: block; position: relative; margin: 2px 0 8px; padding-left: 26px; }
 .helper.open > .sub::before { content: ""; position: absolute; left: 7px; top: 4px; bottom: 6px; width: 1.5px; background: var(--rule); }
-.sub > .row { position: relative; display: flex; align-items: baseline; gap: 16px; padding: 4px 0; }
-.sub > .row::before { content: ""; position: absolute; left: -22.5px; top: 11px; width: 7px; height: 7px; border-radius: 50%; background: var(--graphite); }
-.sub > .row.running::before { background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--signal); }
-.sub > .row.running { color: var(--signal); }
-.sub > .row.nested::before { width: 6px; height: 6px; transform: rotate(45deg); border-radius: 1px; left: -22px; }
-.sub > .row .title { font-weight: 500; }
-.sub > .row .title code { font-size: 12.5px; font-weight: 400; margin-left: 2px; }
-.sub > .row .more { color: var(--graphite); }
-.sub > .reply { margin: 8px 0 0; padding: 10px 14px 12px; background: var(--sheet); border-radius: 6px; }
-.sub > .reply h4 { margin: 0 0 5px; font-size: 13px; font-weight: 500; color: var(--graphite); }
-.sub > .reply p { margin: 0; font: 400 15px/1.55 var(--serif); }
+.sub ol { margin: 0; padding: 0; list-style: none; }
+.sub li { position: relative; display: flex; align-items: baseline; gap: 16px; padding: 4px 0; }
+.sub li::before { content: ""; position: absolute; left: -22.5px; top: 11px; width: 7px; height: 7px; border-radius: 50%; background: var(--graphite); }
+.sub li.latest::before { background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--graphite); }
+.sub li.nested::before { width: 6px; height: 6px; transform: rotate(45deg); border-radius: 1px; left: -22px; }
+.sub li .title { font-weight: 500; }
+.sub li .title code { font-size: 12.5px; font-weight: 400; margin-left: 2px; }
+.sub li .kind { color: var(--graphite); font-weight: 400; margin-right: -8px; }
+.sub li .more { color: var(--graphite); }
+.sub .reply { margin: 8px 0 0; padding: 10px 14px 12px; background: var(--sheet); border-radius: 6px; }
+.sub .reply h4 { margin: 0 0 5px; font-size: 13px; font-weight: 500; color: var(--graphite); }
+.sub .reply p { margin: 0; font: 400 15px/1.55 var(--serif); }
 
 .thread > .plan::before {
-  content: ""; position: absolute; z-index: 1; left: calc(var(--thread-x) - var(--col) - 4.25px); top: 12.5px;
-  width: 10px; height: 10px; border-radius: 2px; background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--graphite);
+  content: ""; position: absolute; z-index: 1; left: calc(var(--thread-x) - var(--col) - 5px); top: 12px;
+  width: 11px; height: 11px; border-radius: 3px; background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--graphite);
 }
+.thread > .plan.finished::before { background: var(--graphite); box-shadow: none; }
+.thread > .plan.finished > .tick { position: absolute; z-index: 2; left: calc(var(--thread-x) - var(--col) - 1.25px); top: 13.75px; width: 3.5px; height: 6.5px; border-right: 1.75px solid var(--paper); border-bottom: 1.75px solid var(--paper); transform: rotate(45deg); }
+.plan .items { display: none; }
 .plan.open > .items { display: flex; flex-direction: column; gap: 1px; margin: 0 0 8px; padding: 0; list-style: none; }
-.items li { display: flex; align-items: baseline; gap: 10px; padding: 3px 0; }
-.items li.child { padding-left: 24px; }
+.items ul { margin: 1px 0 0; padding: 0 0 0 24px; list-style: none; display: flex; flex-direction: column; gap: 1px; }
+.items li > .item { display: flex; align-items: baseline; gap: 10px; padding: 3px 0; }
 .items .box { flex: none; position: relative; top: 2px; width: 14px; height: 14px; border-radius: 3px; box-shadow: inset 0 0 0 1.5px var(--graphite); }
-.items .doing .box { background: var(--signal); box-shadow: none; }
-.items .doing { color: var(--signal); font-weight: 500; }
-.items .done .box { background: var(--graphite); box-shadow: none; }
-.items .done .box::after { content: ""; position: absolute; left: 5px; top: 2px; width: 4px; height: 7.5px; border-right: 2px solid var(--sheet); border-bottom: 1.75px solid var(--sheet); transform: rotate(45deg); }
-.items .done .text { color: var(--graphite); }
-.items .dropped .box::after { content: ""; position: absolute; left: 3px; right: 3px; top: 6.25px; height: 1.5px; background: var(--graphite); }
-.items .dropped .text { color: var(--graphite); text-decoration: line-through; }
-
+.items .doing > .item .box { background: var(--graphite); box-shadow: none; }
+.live-turn .items .doing > .item .box { background: var(--signal); }
+.items .done > .item .box { background: var(--graphite); box-shadow: none; }
+.items .done > .item .box::after { content: ""; position: absolute; left: 5px; top: 2px; width: 4px; height: 7.5px; border-right: 2px solid var(--sheet); border-bottom: 2px solid var(--sheet); transform: rotate(45deg); }
+.items .done > .item .text { color: var(--graphite); }
+.items .cancelled > .item .box::after { content: ""; position: absolute; left: 3px; right: 3px; top: 6.25px; height: 1.5px; background: var(--graphite); }
+.items .cancelled > .item .text { color: var(--graphite); text-decoration: line-through; }
 </style>
 </head>
 <body>
@@ -72,37 +76,39 @@
 </template>
 
 <template id="s-running" data-composer="running">
-<article class="turn">
+<article class="turn live-turn">
   <p class="request">Find out why last night's backup failed. Check the logs and the disk at the same time.</p>
   <div class="thread">
     <div class="prose"><p>I'll hand the logs and the disk to two helpers so both checks run at once.</p></div>
     <div class="helper">
-      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Search the backup job's logs for last night's errors</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>6 steps</span><span>41 s</span></span></button>
+      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Search the backup job's logs for last night's errors</span><span class="count">6 steps</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>41 s</span></span><span class="sr">done</span></button>
     </div>
     <div class="helper live" data-end="live">
-      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Check free space on the backup disk</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>2 steps</span></span></button>
-      <span class="now">Running <code>du -sh /var/backups/*</code></span>
+      <button class="head" aria-expanded="false" aria-describedby="now-disk"><span class="kind">Helper</span><span class="title">Check free space on the backup disk</span><span class="count">4 steps</span><span class="chev" aria-hidden="true"></span><span class="meta"></span><span class="sr">working</span></button>
+      <span class="now" id="now-disk" aria-live="polite">Started <code>du -sh /var/backups/*</code></span>
     </div>
   </div>
 </article>
 </template>
 
 <template id="s-running-open" data-composer="running">
-<article class="turn">
+<article class="turn live-turn">
   <p class="request">Find out why last night's backup failed. Check the logs and the disk at the same time.</p>
   <div class="thread">
     <div class="prose"><p>I'll hand the logs and the disk to two helpers so both checks run at once.</p></div>
     <div class="helper">
-      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Search the backup job's logs for last night's errors</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>6 steps</span><span>41 s</span></span></button>
+      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Search the backup job's logs for last night's errors</span><span class="count">6 steps</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>41 s</span></span><span class="sr">done</span></button>
     </div>
     <div class="helper live open" data-end="live">
-      <button class="head" aria-expanded="true"><span class="kind">Helper</span><span class="title">Check free space on the backup disk</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>4 steps</span></span></button>
-      <span class="now">Running <code>du -sh /var/backups/*</code></span>
-      <div class="sub" role="list" aria-label="Helper steps">
-        <div class="row" role="listitem"><span class="title">Ran <code>df -h /var/backups</code></span></div>
-        <div class="row" role="listitem"><span class="title">Read <code>/etc/fstab</code></span></div>
-        <div class="row nested" role="listitem"><span class="title">Asked a helper to list snapshots older than 30 days</span><span class="more">and 1 helper of its own</span></div>
-        <div class="row running" role="listitem"><span class="title">Running <code>du -sh /var/backups/*</code></span></div>
+      <button class="head" aria-expanded="true" aria-controls="sub-disk"><span class="kind">Helper</span><span class="title">Check free space on the backup disk</span><span class="count">4 steps</span><span class="chev" aria-hidden="true"></span><span class="meta"></span><span class="sr">working</span></button>
+      <span class="now" aria-live="polite">Started <code>du -sh /var/backups/*</code></span>
+      <div class="sub" id="sub-disk">
+        <ol aria-label="Helper steps">
+          <li><span class="title">Ran <code>df -h /var/backups</code></span></li>
+          <li><span class="title">Read <code>fstab</code></span></li>
+          <li class="nested"><span class="kind">Helper</span><span class="title">List snapshots older than 30 days</span><span class="more">and 1 helper of its own</span></li>
+          <li class="latest"><span class="title">Started <code>du -sh /var/backups/*</code></span><span class="sr">latest step</span></li>
+        </ol>
       </div>
     </div>
   </div>
@@ -110,42 +116,45 @@
 </template>
 
 <template id="s-parallel" data-composer="running">
-<article class="turn">
+<article class="turn live-turn">
   <p class="request">Check the three web servers for anything that would block tonight's upgrade.</p>
   <div class="thread">
     <div class="plan open">
-      <button class="head" aria-expanded="true"><span class="title">Plan</span><span class="count">1 of 4 done</span><span class="chev" aria-hidden="true"></span></button>
-      <ul class="items" aria-label="Plan">
-        <li class="done"><span class="box" aria-hidden="true"></span><span class="text">List the servers from the inventory</span><span class="sr">done</span></li>
-        <li class="doing"><span class="box" aria-hidden="true"></span><span class="text">Check each server for pending restarts and full disks</span><span class="sr">in progress</span></li>
-        <li><span class="box" aria-hidden="true"></span><span class="text">Compare package versions with the upgrade notes</span></li>
-        <li><span class="box" aria-hidden="true"></span><span class="text">Write up what blocks the upgrade</span></li>
+      <button class="head" aria-expanded="true" aria-controls="plan-web"><span class="title">Plan</span><span class="count">1 of 4 done</span><span class="chev" aria-hidden="true"></span></button>
+      <ul class="items" id="plan-web" aria-label="Plan" aria-live="polite">
+        <li class="done"><span class="item"><span class="box" aria-hidden="true"></span><span class="text">List the servers from the inventory</span><span class="sr">done</span></span></li>
+        <li class="doing"><span class="item"><span class="box" aria-hidden="true"></span><span class="text">Check each server for pending restarts and full disks</span><span class="sr">in progress</span></span></li>
+        <li><span class="item"><span class="box" aria-hidden="true"></span><span class="text">Compare package versions with the upgrade notes</span><span class="sr">to do</span></span></li>
+        <li><span class="item"><span class="box" aria-hidden="true"></span><span class="text">Write up what blocks the upgrade</span><span class="sr">to do</span></span></li>
       </ul>
     </div>
     <div class="prose"><p>There are three servers. One helper per server.</p></div>
     <div class="helper">
-      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Check web-1 for pending restarts and full disks</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>5 steps</span><span>18 s</span></span></button>
+      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Check web-1 for pending restarts and full disks</span><span class="count">5 steps</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>18 s</span></span><span class="sr">done</span></button>
     </div>
     <div class="helper working">
-      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Check web-2 for pending restarts and full disks</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>3 steps</span></span></button>
-      <span class="now">Running <code>needrestart -b</code></span>
+      <button class="head" aria-expanded="false" aria-describedby="now-web2"><span class="kind">Helper</span><span class="title">Check web-2 for pending restarts and full disks</span><span class="count">3 steps</span><span class="chev" aria-hidden="true"></span><span class="meta"></span><span class="sr">working</span></button>
+      <span class="now" id="now-web2" aria-live="polite">Thinking</span>
     </div>
     <div class="helper live" data-end="live">
-      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Check web-3 for pending restarts and full disks</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>1 step</span></span></button>
-      <span class="now">Running <code>df -h</code></span>
+      <button class="head" aria-expanded="false" aria-describedby="now-web3"><span class="kind">Helper</span><span class="title">Check web-3 for pending restarts and full disks</span><span class="count">1 step</span><span class="chev" aria-hidden="true"></span><span class="meta"></span><span class="sr">working</span></button>
+      <span class="now" id="now-web3" aria-live="polite">Started <code>df -h</code></span>
+    </div>
+    <div class="helper working">
+      <button class="head" aria-expanded="false" aria-describedby="now-lb"><span class="kind">Helper</span><span class="title">Check the load balancer's health checks</span><span class="chev" aria-hidden="true"></span><span class="meta"></span><span class="sr">waiting to start</span></button>
+      <span class="now" id="now-lb" aria-live="polite">Waiting to start</span>
     </div>
   </div>
 </article>
 </template>
 
 <template id="s-asking" data-composer="running">
-<article class="turn">
+<article class="turn live-turn">
   <p class="request">Free up space on the backup disk, then rerun last night's backup.</p>
   <div class="thread">
     <div class="prose"><p>A helper will clear old snapshots while I check the backup job's settings.</p></div>
     <div class="helper working">
-      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Delete snapshots older than 30 days from /var/backups</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>3 steps</span></span></button>
-      <span class="now">Running <code>find /var/backups -name 'snap-*' -mtime +30 -delete</code></span>
+      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Delete snapshots older than 30 days from /var/backups</span><span class="count">3 steps</span><span class="chev" aria-hidden="true"></span><span class="meta"></span><span class="sr">working</span></button>
     </div>
     <div class="approval live" role="group" aria-label="Run this command?" data-end="asking">
       <h3>Run this command?</h3>
@@ -161,18 +170,19 @@
 <article class="turn">
   <p class="request">Find out why last night's backup failed. Check the logs and the disk at the same time.</p>
   <div class="thread">
-    <div class="plan">
-      <button class="head" aria-expanded="false"><span class="title">Plan</span><span class="count">4 of 4 done</span><span class="chev" aria-hidden="true"></span></button>
+    <div class="plan finished">
+      <span class="tick" aria-hidden="true"></span>
+      <button class="head" aria-expanded="false"><span class="title">Plan</span><span class="count">4 of 4 done</span><span class="count">1 cancelled</span><span class="chev" aria-hidden="true"></span></button>
     </div>
     <div class="prose"><p>I'll hand the logs and the disk to two helpers so both checks run at once.</p></div>
     <div class="helper">
-      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Search the backup job's logs for last night's errors</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>6 steps</span><span>41 s</span></span></button>
+      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Search the backup job's logs for last night's errors</span><span class="count">6 steps</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>41 s</span></span><span class="sr">done</span></button>
     </div>
     <div class="helper">
-      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Check free space on the backup disk</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>7 steps</span><span>1 min 12 s</span></span></button>
+      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Check free space on the backup disk</span><span class="count">6 steps</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>1 min 12 s</span></span><span class="sr">done</span></button>
     </div>
     <div class="helper failed">
-      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Read the tape library's error counters</span><span class="chev" aria-hidden="true"></span><span class="meta"><span class="failed">Failed</span><span>2 steps</span><span>9 s</span></span></button>
+      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Read the tape library's error counters</span><span class="count">2 steps</span><span class="chev" aria-hidden="true"></span><span class="meta"><span class="failed">Failed</span><span>9 s</span></span></button>
     </div>
     <div class="prose"><p>The disk filled up at 02:10. The backup wrote 41 GB into a volume with 12 GB free and stopped. Old snapshots from August take 63 GB. The tape library didn't answer, so I couldn't check it.</p></div>
     <div class="tip complete" role="status" data-end="done"><span class="glyph"></span><span class="sr">Done</span></div>
@@ -184,30 +194,42 @@
 <article class="turn">
   <p class="request">Find out why last night's backup failed. Check the logs and the disk at the same time.</p>
   <div class="thread">
-    <div class="plan open">
-      <button class="head" aria-expanded="true"><span class="title">Plan</span><span class="count">4 of 4 done</span><span class="chev" aria-hidden="true"></span></button>
-      <ul class="items" aria-label="Plan">
-        <li class="done"><span class="box" aria-hidden="true"></span><span class="text">Read the backup job's cron entry</span><span class="sr">done</span></li>
-        <li class="done"><span class="box" aria-hidden="true"></span><span class="text">Search the logs and check the disk</span><span class="sr">done</span></li>
-        <li class="done child"><span class="box" aria-hidden="true"></span><span class="text">Find the last good run</span><span class="sr">done</span></li>
-        <li class="dropped child"><span class="box" aria-hidden="true"></span><span class="text">Check the tape library</span><span class="sr">dropped</span></li>
-        <li class="done"><span class="box" aria-hidden="true"></span><span class="text">Write up the cause</span><span class="sr">done</span></li>
+    <div class="plan finished open">
+      <span class="tick" aria-hidden="true"></span>
+      <button class="head" aria-expanded="true" aria-controls="plan-backup"><span class="title">Plan</span><span class="count">4 of 4 done</span><span class="count">1 cancelled</span><span class="chev" aria-hidden="true"></span></button>
+      <ul class="items" id="plan-backup" aria-label="Plan">
+        <li class="done"><span class="item"><span class="box" aria-hidden="true"></span><span class="text">Read the backup job's cron entry</span><span class="sr">done</span></span></li>
+        <li class="done"><span class="item"><span class="box" aria-hidden="true"></span><span class="text">Search the logs and check the disk</span><span class="sr">done</span></span>
+          <ul>
+            <li class="done"><span class="item"><span class="box" aria-hidden="true"></span><span class="text">Find the last good run</span><span class="sr">done</span></span></li>
+            <li class="cancelled"><span class="item"><span class="box" aria-hidden="true"></span><span class="text">Check the tape library</span><span class="sr">cancelled</span></span></li>
+          </ul>
+        </li>
+        <li class="done"><span class="item"><span class="box" aria-hidden="true"></span><span class="text">Write up the cause</span><span class="sr">done</span></span></li>
       </ul>
     </div>
     <div class="prose"><p>I'll hand the logs and the disk to two helpers so both checks run at once.</p></div>
+    <div class="helper">
+      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Search the backup job's logs for last night's errors</span><span class="count">6 steps</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>41 s</span></span><span class="sr">done</span></button>
+    </div>
     <div class="helper open">
-      <button class="head" aria-expanded="true"><span class="kind">Helper</span><span class="title">Check free space on the backup disk</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>7 steps</span><span>1 min 12 s</span></span></button>
-      <div class="sub" role="list" aria-label="Helper steps">
-        <div class="row" role="listitem"><span class="title">Ran <code>df -h /var/backups</code></span></div>
-        <div class="row" role="listitem"><span class="title">Read <code>/etc/fstab</code></span></div>
-        <div class="row nested" role="listitem"><span class="title">Asked a helper to list snapshots older than 30 days</span><span class="more">and 1 helper of its own</span></div>
-        <div class="row" role="listitem"><span class="title">Ran <code>du -sh /var/backups/*</code></span></div>
-        <div class="row" role="listitem"><span class="title">Ran <code>journalctl -u backup --since yesterday</code></span></div>
-        <div class="row" role="listitem"><span class="title">Read <code>/var/log/backup/last.log</code></span></div>
-        <div class="reply" role="listitem"><h4>Helper's reply</h4><p>/var/backups is 100% full. Snapshots from August take 63 GB. The job's log ends at 02:10 with "No space left on device".</p></div>
+      <button class="head" aria-expanded="true" aria-controls="sub-disk-done"><span class="kind">Helper</span><span class="title">Check free space on the backup disk</span><span class="count">6 steps</span><span class="chev" aria-hidden="true"></span><span class="meta"><span>1 min 12 s</span></span><span class="sr">done</span></button>
+      <div class="sub" id="sub-disk-done">
+        <ol aria-label="Helper steps">
+          <li><span class="title">Ran <code>df -h /var/backups</code></span></li>
+          <li><span class="title">Read <code>fstab</code></span></li>
+          <li class="nested"><span class="kind">Helper</span><span class="title">List snapshots older than 30 days</span><span class="more">and 1 helper of its own</span></li>
+          <li><span class="title">Ran <code>du -sh /var/backups/*</code></span></li>
+          <li><span class="title">Ran <code>journalctl -u backup --since yesterday</code></span></li>
+          <li><span class="title">Read <code>last.log</code></span></li>
+        </ol>
+        <section class="reply"><h4>Helper's summary</h4><p>/var/backups is 100% full. Snapshots from August take 63 GB. The job's log ends at 02:10 with "No space left on device".</p></section>
       </div>
     </div>
-    <div class="prose"><p>The disk filled up at 02:10. The backup wrote 41 GB into a volume with 12 GB free and stopped.</p></div>
+    <div class="helper failed">
+      <button class="head" aria-expanded="false"><span class="kind">Helper</span><span class="title">Read the tape library's error counters</span><span class="count">2 steps</span><span class="chev" aria-hidden="true"></span><span class="meta"><span class="failed">Failed</span><span>9 s</span></span></button>
+    </div>
+    <div class="prose"><p>The disk filled up at 02:10. The backup wrote 41 GB into a volume with 12 GB free and stopped. Old snapshots from August take 63 GB. The tape library didn't answer, so I couldn't check it.</p></div>
     <div class="tip complete" role="status" data-end="done"><span class="glyph"></span><span class="sr">Done</span></div>
   </div>
 </article>
