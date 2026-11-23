@@ -53,7 +53,7 @@ highwing-2.0/
       connection.ts              no Electron              ownConnection, nextSetup, pinnedConnection: the setup state, the saved target, the live Hermes
     src/preload/index.ts         preload                  exposes Bridge: watch, run and file
     src/renderer/                renderer                 store.ts (useTopic), setup/, bots/, chat/, composer/, chrome/, styles/
-  fixtures/                                               *.jsonl, make_fixture.py (run with Hermes's interpreter), profiles/*.json (placeholder `profiles.list` replies)
+  fixtures/                                               *.jsonl, make_fixture.py (run with Hermes's interpreter), profiles/*.json (canned `profiles.list` replies)
   scripts/                                                sync-contract.ts, contract-drift.ts
 ```
 
