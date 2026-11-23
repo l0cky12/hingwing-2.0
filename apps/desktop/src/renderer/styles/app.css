@@ -58,7 +58,7 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .earlier { display: block; margin: 0 0 28px var(--col); padding: 0; border: 0; background: none; color: var(--graphite); }
 .notice { color: var(--graphite); margin: 4px 0; }
 
-.when { margin: 0 0 6px var(--col); color: var(--graphite); font-size: 13px; font-variant-numeric: tabular-nums; }
+.when { margin: 0 0 6px var(--col); color: var(--graphite); font-size: 13px; }
 .request {
   margin: 0 0 22px calc(var(--thread-x) - 0.75px); padding: 2px 0 2px calc(var(--col) - var(--thread-x) - 2.25px);
   border-left: 3px solid var(--ink);

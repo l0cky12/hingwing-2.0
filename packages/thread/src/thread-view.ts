@@ -57,9 +57,9 @@ export type ThreadNode =
  * - `at`: the mark sits on an existing node. Viridian and pulsing on a running step or group,
  *   amber on a pending prompt card. No separate tip row is drawn.
  * - `tip`: a viridian pulsing row of its own ("Thinking", "Writing", "Preparing write_file", "Stopping").
- * - `elapsed` on a live `at` and on a `tip`: how long Hermes has worked on the turn, "3 min", once a
- *   minute has passed. Separate text, never part of the words. A prompt card waiting on you has none,
- *   because that time is yours.
+ * - `elapsed` on a live `at` and on a `tip`: the time since the turn began, "3 min", once a minute has
+ *   passed. Separate text, never part of the words. A prompt card that waits on you shows none, and
+ *   neither does a paused end. After you answer, the count still runs from the turn's start.
  * - `paused`: the turn was running when the link dropped. Graphite, no pulse, says so.
  * - `done`: graphite check ring, `words` for screen readers only.
  * - `failed` and `stopped`: brick, with words.

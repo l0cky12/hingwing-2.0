@@ -51,7 +51,7 @@ interface StepProps {
 }
 
 export const Elapsed = ({ elapsed }: { readonly elapsed: string | null }) =>
-  elapsed === null ? null : <span className="elapsed">{elapsed}</span>
+  elapsed === null ? null : <span className="elapsed"><span className="sr">, </span>{elapsed}</span>
 
 export function Step({ step, live, elapsed, open, onToggle }: StepProps) {
   const title = <span className="title"><PhraseText words={step.title} /></span>
