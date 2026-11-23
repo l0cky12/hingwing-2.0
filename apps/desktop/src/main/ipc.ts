@@ -41,6 +41,7 @@ const SOURCES: { readonly [K in Kind]: (owner: ConnectionOwner, topic: Topic) =>
   link: onHermes(hermes => current(hermes.link)),
   sidebar: onHermes(hermes => current(hermes.sidebar)),
   slash: onHermes(hermes => current(hermes.slash)),
+  bots: onHermes(hermes => current(hermes.bots)),
   session: onHermes((hermes, topic) => listener => hermes.watch(topic.slice('session:'.length) as SessionId, listener))
 }
 const kindOf = (topic: Topic): Kind => (isAppTopic(topic) ? topic : 'session')

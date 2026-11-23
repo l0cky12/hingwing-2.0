@@ -1,6 +1,6 @@
 import {
   targetOf,
-  type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenTurn, type PromptReply, type ResultOf,
+  type Bots, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenTurn, type PromptReply, type ResultOf,
   type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target
 } from '@highwing/hermes/domain'
 
@@ -38,10 +38,11 @@ export interface AppTopics {
   readonly link: Link
   readonly sidebar: Sidebar
   readonly slash: SlashCatalog
+  readonly bots: Bots
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 

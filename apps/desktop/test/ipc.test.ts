@@ -1,5 +1,5 @@
 import type { Hermes } from '@highwing/hermes'
-import type { Link, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
+import type { Bots, Link, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { applyPush, CHANNEL, isWebLink, parseCommand, parseFileRequest, validators, type AppTopics, type FileOutcome, type Push, type Topic } from '../src/ipc-contract'
@@ -114,6 +114,7 @@ describe('validators', () => {
 const still = <T>(value: T) => ({ get: () => value, subscribe: () => () => {} })
 const LINK: Link = { state: 'blocked', why: 'hermes-missing', message: 'A link of this test.' }
 const SIDEBAR: Sidebar = { status: 'stale', rows: [] }
+const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] } }
 
 function harness() {
   const listeners = new Map<string, (event: IpcEvent, ...args: unknown[]) => void>()
@@ -134,9 +135,18 @@ function harness() {
   const commands: unknown[] = []
   let catalog: SlashCatalog = []
   const catalogListeners = new Set<(value: SlashCatalog) => void>()
+  let bots: Bots = { state: 'loading' }
+  const botsListeners = new Set<(value: Bots) => void>()
   const hermes = {
     link: still(LINK),
     sidebar: still(SIDEBAR),
+    bots: {
+      get: () => bots,
+      subscribe: (listener: (value: Bots) => void) => {
+        botsListeners.add(listener)
+        return () => void botsListeners.delete(listener)
+      }
+    },
     slash: {
       get: () => catalog,
       subscribe: (listener: (value: SlashCatalog) => void) => {
@@ -164,7 +174,11 @@ function harness() {
     catalog = next
     catalogListeners.forEach(listener => listener(next))
   }
-  return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, served, setCatalog }
+  const setBots = (next: Bots) => {
+    bots = next
+    botsListeners.forEach(listener => listener(next))
+  }
+  return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, served, setCatalog, setBots }
 }
 
 describe('serveWindows', () => {
@@ -207,12 +221,24 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [] }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' } }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))
     for (const name of ['toString', 'session:', 'bot', 7, null]) watch(event(), 99, name)
     expect(pushes).toHaveLength(Object.keys(served).length)
+  })
+
+  it('serves the bots as full values, and nothing when the hub publishes no change', () => {
+    vi.useFakeTimers()
+    const { listeners, pushes, event, setBots } = harness()
+    listeners.get(CHANNEL.watch)!(event(), 4, 'bots')
+    vi.advanceTimersByTime(COALESCE_MS)
+    setBots(NO_BOTS)
+    vi.advanceTimersByTime(COALESCE_MS)
+    setBots(NO_BOTS)
+    vi.advanceTimersByTime(COALESCE_MS)
+    expect(pushes).toEqual([{ topic: 'bots', rev: 1, full: { state: 'loading' } }, { topic: 'bots', rev: 2, full: NO_BOTS }])
   })
 
   it('stops pushing when the window unwatches or is destroyed', () => {
