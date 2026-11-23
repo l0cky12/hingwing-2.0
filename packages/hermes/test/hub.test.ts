@@ -392,3 +392,15 @@ describe('sending a slash line', () => {
     expect(opened.sent().some(call => call.method === 'command.dispatch')).toBe(false)
   })
 })
+
+describe('when a turn began', () => {
+  it('stamps a live turn from the hub\'s clock', async () => {
+    const opened = open()
+    opened.watch()
+    await opened.clock.advance(4_321)
+    await toApproval(opened)
+    const { run } = opened.seen.at(-1) as Session
+    if (run.state !== 'running') throw new Error('expected the turn to be running at the approval')
+    expect(run.turn.began).toEqual({ at: 4_321, clock: 'client' })
+  })
+})

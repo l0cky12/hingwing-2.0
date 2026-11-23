@@ -1,6 +1,8 @@
 import type { Hermes } from '@highwing/hermes'
 import type { CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
-import { CHANNEL, parseCommand, parseTopic, type Push, type SessionPatch, type Tail, type Topic } from '../ipc-contract'
+import { CHANNEL, parseCommand, parseFileRequest, parseTopic, type FileOutcome, type Push, type SessionPatch, type Tail, type Topic } from '../ipc-contract'
+import type { ConnectionOwner } from './connection'
+import { openablePath, type Opener } from './files'
 
 export const COALESCE_MS = 16
 
@@ -22,19 +24,26 @@ export interface IpcMainLike {
 }
 
 type Source = (listener: (value: unknown) => void) => () => void
+type Kind = 'setup' | 'link' | 'sidebar' | 'slash' | 'session'
 
-const feedSource = <T>(feed: { get(): T; subscribe(listener: (value: T) => void): () => void }): Source => listener => {
+const current = <T>(feed: { get(): T; subscribe(listener: (value: T) => void): () => void }): Source => listener => {
   listener(feed.get())
   return feed.subscribe(listener)
 }
+const NEVER: Source = () => () => {}
 
-const SOURCES: { readonly [K in 'link' | 'sidebar' | 'slash' | 'session']: (hermes: Hermes, topic: Topic) => Source } = {
-  link: hermes => feedSource(hermes.link),
-  sidebar: hermes => feedSource(hermes.sidebar),
-  slash: hermes => feedSource(hermes.slash),
-  session: (hermes, topic) => listener => hermes.watch(topic.slice('session:'.length) as SessionId, listener)
+/** A Hermes topic is bound to the connection that is live when the window asks. A window that sees a new epoch asks again. */
+const onHermes = (source: (hermes: Hermes, topic: Topic) => Source) => (owner: ConnectionOwner, topic: Topic): Source =>
+  owner.hermes === null ? NEVER : source(owner.hermes, topic)
+
+const SOURCES: { readonly [K in Kind]: (owner: ConnectionOwner, topic: Topic) => Source } = {
+  setup: owner => current(owner.setup),
+  link: onHermes(hermes => current(hermes.link)),
+  sidebar: onHermes(hermes => current(hermes.sidebar)),
+  slash: onHermes(hermes => current(hermes.slash)),
+  session: onHermes((hermes, topic) => listener => hermes.watch(topic.slice('session:'.length) as SessionId, listener))
 }
-const kindOf = (topic: Topic) => (topic === 'link' || topic === 'sidebar' || topic === 'slash' ? topic : 'session')
+const kindOf = (topic: Topic): Kind => (topic === 'setup' || topic === 'link' || topic === 'sidebar' || topic === 'slash' ? topic : 'session')
 
 function tail<T>(pushed: readonly T[], next: readonly T[]): Tail<T> {
   let from = 0
@@ -49,7 +58,13 @@ export function sessionPatch(pushed: Session, next: Session): SessionPatch {
   return { rest, history: tail(pushed.history, history), run: { state: 'running', head, turn, items: tail(pushed.run.state === 'running' ? pushed.run.turn.items : [], items) } }
 }
 
-function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): () => void {
+interface Served {
+  readonly topic: Topic
+  current(): unknown
+  stop(): void
+}
+
+function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): Served {
   let pushed: unknown
   let latest: unknown
   let rev = 0
@@ -70,26 +85,31 @@ function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): (
     latest = value
     if (cooling === null) flush()
   })
-  return () => {
-    stop()
-    if (cooling !== null) clearTimeout(cooling)
+  return {
+    topic,
+    current: () => latest,
+    stop() {
+      stop()
+      if (cooling !== null) clearTimeout(cooling)
+    }
   }
 }
 
 const REFUSED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Highwing refused a malformed request from its window.' } }
+const FILE_REFUSED: FileOutcome = { ok: false, reason: 'refused' }
 
-export function serveWindows(hermes: Hermes, ipc: IpcMainLike, isAppUrl: (url: string) => boolean): { dispose(): void } {
-  const windows = new Map<number, Map<number, () => void>>()
+export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener): { dispose(): void } {
+  const windows = new Map<number, Map<number, Served>>()
   const trusted = ({ senderFrame }: IpcEvent) => senderFrame !== null && senderFrame.parent === null && isAppUrl(senderFrame.url)
 
   const stopWindow = (windowId: number) => {
-    for (const stop of windows.get(windowId)?.values() ?? []) stop()
+    for (const served of windows.get(windowId)?.values() ?? []) served.stop()
     windows.delete(windowId)
   }
   const subscriptionsOf = (sender: WindowSender) => {
     const held = windows.get(sender.id)
     if (held !== undefined) return held
-    const created = new Map<number, () => void>()
+    const created = new Map<number, Served>()
     windows.set(sender.id, created)
     sender.once('destroyed', () => stopWindow(sender.id))
     return created
@@ -99,20 +119,29 @@ export function serveWindows(hermes: Hermes, ipc: IpcMainLike, isAppUrl: (url: s
     const topic = parseTopic(raw)
     if (!trusted(event) || topic === null || typeof id !== 'number') return
     const subscriptions = subscriptionsOf(event.sender)
-    subscriptions.get(id)?.()
-    subscriptions.set(id, serveTopic(topic, SOURCES[kindOf(topic)](hermes, topic), push => {
+    subscriptions.get(id)?.stop()
+    subscriptions.set(id, serveTopic(topic, SOURCES[kindOf(topic)](owner, topic), push => {
       if (!event.sender.isDestroyed()) event.sender.send(CHANNEL.push, id, push)
     }))
   })
   ipc.on(CHANNEL.unwatch, (event, id) => {
     const subscriptions = windows.get(event.sender.id)
     if (typeof id !== 'number' || subscriptions === undefined) return
-    subscriptions.get(id)?.()
+    subscriptions.get(id)?.stop()
     subscriptions.delete(id)
   })
   ipc.handle(CHANNEL.run, async (event, raw) => {
     const command = parseCommand(raw)
-    return trusted(event) && command !== null ? hermes.run(command) : REFUSED
+    return trusted(event) && command !== null ? owner.run(command) : REFUSED
+  })
+
+  ipc.handle(CHANNEL.file, async (event, raw) => {
+    const request = parseFileRequest(raw)
+    if (!trusted(event) || request === null) return FILE_REFUSED
+    const watched = [...(windows.get(event.sender.id)?.values() ?? [])].find(served => served.topic === `session:${request.sessionId}`)
+    const session = watched?.current() as Session | undefined
+    const target = session === undefined ? null : openablePath(session, request.path)
+    return target === null ? FILE_REFUSED : opener[request.action](target)
   })
 
   return {
@@ -121,6 +150,7 @@ export function serveWindows(hermes: Hermes, ipc: IpcMainLike, isAppUrl: (url: s
       ipc.removeAllListeners(CHANNEL.watch)
       ipc.removeAllListeners(CHANNEL.unwatch)
       ipc.removeHandler(CHANNEL.run)
+      ipc.removeHandler(CHANNEL.file)
     }
   }
 }

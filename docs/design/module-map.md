@@ -18,7 +18,7 @@ highwing-2.0/
   packages/
     hermes/                      @highwing/hermes        Node. No Electron, no DOM.
       src/
-        hub.ts                   public entry "."         openHermes, Hermes, Command, Feed
+        hub.ts                   public entry "."         openHermes, Hermes, Command, Feed, remoteRoute, Route, checkTarget
         actor.ts                 private                  one session: owns its Tracked state, makes the calls a state asks for
         sidebar.ts               private                  stored rows, the running set, deriveSidebar
         domain/                  public entry "./domain"  browser-safe, imports nothing
@@ -26,21 +26,31 @@ highwing-2.0/
           reduce.ts                                       SessionEvent, Gate, SessionInput, reduce, syncOf, activityOf
           command.ts                                      Command, ResultOf, Outcome, Refusal: data the renderer sends and gets back
           slash.ts                                        SlashEntry, SlashCatalog, slashLineOf: the slash menu's rows
-          index.ts                                        exports the session, command and slash types and activityOf only
+          reach.ts                                        Target, SshHost, CheckStep, CheckFailure, CHECK_FAILURES: where Hermes runs and what can stop Highwing reaching it
+          index.ts                                        exports the session, command, slash and reach types, activityOf and the reach tables
         wire/                    private                  the only code that knows gateway shapes
           contract.generated.ts                           copied from Hermes by `pnpm sync:contract`
           contract.openrpc.json                           copied with it; read only by testing/ for key sets
           link.ts                                         ticket, dial, handshake, heartbeat, JSON-RPC, backoff
+          ssh.ts                                          Hermes's SSH client contract: the locator, one hermes command over ssh, the stderr table, the relay
+          remote.ts                                       remoteRoute: a Dialer to the gateway on another machine, and its processes
+          check.ts                                        checkTarget: Tailscale, ssh and Hermes, one step at a time
           parse.ts                                        gateway shapes -> domain shapes
         testing/                 public entry "./testing" Node
           fixture.ts                                      fixture format, scriptedDialer, recordingDialer, play
+          fake-host.ts                                    fake ssh, tailscale and hermes executables, and SCENARIOS (imported by path, not exported)
     thread/                      @highwing/thread         pure, browser-safe
       src/thread-view.ts                                  design C: threadView, outline, checkThread
+      src/prose.ts                                        parseMarkdown and proseLeaves: the reply's block tree, drawn and searched
+      src/find.ts                                         findInThread: matches across a view's text
+      src/when.ts                                         the words and thresholds for turn times (internal)
   apps/desktop/
-    src/ipc-contract.ts          shared by all three      Topic, Push, Bridge, applyPush
-    src/main/                    Electron main            index.ts (pick dialer, openHermes), windows.ts, ipc.ts (serveWindows)
-    src/preload/index.ts         preload                  exposes Bridge: watch and run
-    src/renderer/                renderer                 store.ts (useTopic), sidebar/, chat/, composer/, chrome/, styles/
+    src/ipc-contract.ts          shared by all three      Topic, Push, Bridge, applyPush, Setup, SetupCommand
+    src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows), files.ts (openablePath)
+      settings.ts                no Electron              parseSettings, loadSettings, saveSettings: connection.json, the only state on disk
+      connection.ts              no Electron              ownConnection, nextSetup, pinnedConnection: the setup state, the saved target, the live Hermes
+    src/preload/index.ts         preload                  exposes Bridge: watch, run and file
+    src/renderer/                renderer                 store.ts (useTopic), setup/, sidebar/, chat/, composer/, chrome/, styles/
   fixtures/                                               *.jsonl, make_fixture.py (run with Hermes's interpreter)
   scripts/                                                sync-contract.ts, contract-drift.ts
 ```
@@ -57,9 +67,12 @@ highwing-2.0/
 | Revision, text position, paging cursor | the same actor, as `Fence` | nobody |
 | Running, asking, settled | derived from `Session.run` by `activityOf` | nobody stores it |
 | Stored list rows and the set of running sessions | `sidebar.ts` | `Sidebar` is derived from them plus each actor's session when published |
+| Where Hermes runs, which screen shows, and which `Hermes` is live | `ownConnection` in `main/connection.ts`, changed only through `nextSetup` | windows read the `setup` topic and send `checkTarget`, `editTarget`, `keepTarget`, `openChat` |
+| The saved connection on disk | `main/settings.ts` | nobody. `ownConnection` gets `loaded` and `save` as arguments |
 | A window's copy of a topic | `renderer/store.ts` in that window, written only by `applyPush` | components read with `useTopic` |
 | Selected session, open rows, composer drafts | React state in that window | not shared; not Hermes's state |
-| The design C view | nobody; `threadView(session)` recomputes it and memoises settled turns by reference | |
+| The design C view | nobody; `threadView(session, clock)` recomputes it and memoises settled turns by reference | |
+| When a turn began | `reduce`: the stored request row's time, or the clock reading the hub attaches to a live frame | nobody. The view derives every shown time from it |
 
 Two windows on one session read the same actor through two IPC subscriptions. There is one socket and one reducer state no matter how many windows exist.
 
@@ -71,8 +84,9 @@ Two windows on one session read the same actor through two IPC subscriptions. Th
 4. `packages/hermes` never imports `electron`. It takes a `Dialer` and a `Clock` instead of reaching for globals.
 5. The renderer imports `@highwing/hermes/domain`, `@highwing/thread` and `ipc-contract.ts`. It cannot import `@highwing/hermes` or `./testing`, which need Node.
 6. Main imports `@highwing/hermes` and `ipc-contract.ts`. Only `main/index.ts` imports `./testing`, to honour `HIGHWING_FIXTURE` and `HIGHWING_RECORD`.
+7. `main/settings.ts` and `main/connection.ts` never import `electron`. They take the settings directory, the check and the route as arguments.
 
-Rules 2, 3 and 5 are enforced by `exports` maps and by the renderer's tsconfig having no Node types. Rules 1, 3 and 4 inside the package are enforced by one ESLint `no-restricted-imports` block per folder. CI runs both.
+Rules 2, 3 and 5 are enforced by `exports` maps and by the renderer's tsconfig having no Node types. Rules 1, 3 and 4 inside the package, and rule 7, are enforced by one ESLint `no-restricted-imports` block per folder. CI runs both.
 
 ## The path of one event
 
@@ -87,8 +101,9 @@ A `message.delta` frame becomes pixels in four steps.
 
 | What | How | Where |
 |---|---|---|
-| Design C | `outline(threadView(session))` compared with a golden text, for each fixture | `@highwing/thread` tests |
-| Soundness at every moment | `checkThread(threadView(session))` on every step of every fixture | same |
+| Design C | `outline(threadView(session, clock))` compared with a golden text, for each fixture | `@highwing/thread` tests |
+| Soundness at every moment | `checkThread(threadView(session, clock))` on every step of every fixture | same |
+| Find | `findInThread(threadView(session, clock), query)` on the settled errand, counted against `outline` with every row open | same |
 | The attach order | `reduce` fed the `attached` cases by hand: a catch-up frame that ends the turn, a hole, a new epoch | `domain/` tests |
 | Reconnect | `playToEnd(fixture, { drop })` for a drop after every push, compared with the undisturbed outline | `@highwing/hermes` tests |
 | A gap | the same with `ringFrames` small, so replay answers `snapshot_required` | same |

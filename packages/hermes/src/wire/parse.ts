@@ -2,15 +2,17 @@
  * The only place gateway shapes become domain shapes. Everything past these functions trusts its types.
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
-import type { Admission, HistoryPage, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
+import type { ModelConfirm, ModelMenu } from '../domain/command'
+import type { Admission, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type {
-  Ask, FileDiff, Generation, Item, Json, Outcome, PromptId, SessionId, SettledTurn, SidebarRow, ToolId, ToolResult, TurnId
+  Ask, Began, FileDiff, Generation, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PromptId, SessionId, SettledTurn,
+  SidebarRow, ToolId, ToolResult, TurnId
 } from '../domain/session'
 import type { SlashCatalog, SlashEntry } from '../domain/slash'
 import type {
   CanonicalEventsResult, CanonicalPendingAdmission, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
   CanonicalSnapshot, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
-  MessageStartPayload, PersistedTurn, SessionLiveInfo, SessionMutateResult, SessionTitlePayload, StoredTranscriptResult,
+  MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, SessionLiveInfo, SessionMutateResult, SessionTitlePayload, StoredTranscriptResult,
   StoredTranscriptRow, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload
 } from './contract.generated'
 
@@ -147,13 +149,51 @@ function admissionOf(value: unknown): Admission {
 
 type Shown = (payload: Obj, envelope: Obj) => SessionEvent
 
-function meta(title: string | null, revision: number | null, queue: readonly Admission[] | null): SessionEvent {
+interface MetaFields {
+  readonly title?: string | null
+  readonly revision?: number | null
+  readonly queue?: readonly Admission[] | null
+  readonly model?: ModelRef | null
+  readonly pick?: PickOutcome | null
+  readonly generation?: number | null
+}
+
+function meta({ title, revision, queue, model, pick, generation }: MetaFields): SessionEvent {
   return {
     type: 'meta',
-    ...(title === null ? {} : { title }),
-    ...(revision === null ? {} : { revision }),
-    ...(queue === null ? {} : { queue })
+    ...(title == null ? {} : { title }),
+    ...(revision == null ? {} : { revision }),
+    ...(queue == null ? {} : { queue }),
+    ...(model == null ? {} : { model }),
+    ...(pick == null ? {} : { pick }),
+    ...(generation == null ? {} : { generation: generation as Generation })
   }
+}
+
+type ModelReceiptFields = SessionMutateResult & {
+  status?: string; model?: string; provider?: string; execution_generation?: number
+  confirm?: string; confirm_message?: string; payload?: unknown; committed_model?: string; committed_provider?: string
+}
+
+/**
+ * A model receipt on the stream (gateway/session_mutations.py:352, gateway/session_deferred_pick.py:126-148).
+ * A held pick that needs a second yes names the committed model as `committed_model` and the pick in `payload`.
+ * A held pick that no longer resolves is `refused` and names the committed model as `model`.
+ */
+function modelReceipt(p: ReturnType<typeof fields<ModelReceiptFields>>): SessionEvent {
+  const revision = p.optInt('revision')
+  if (p.optStr('status') !== 'confirmation_required') {
+    return meta({ revision, model: modelOf(p.optStr('model'), p.optStr('provider')), pick: { is: 'settled' }, generation: p.optInt('execution_generation') })
+  }
+  const asked = fields<{ model?: string; provider?: string }>(p.optObj('payload') ?? {})
+  const model = modelOf(asked.optStr('model'), asked.optStr('provider'))
+  const token = p.optStr('confirm')
+  const ask = model === null || !token ? null : { is: 'asking' as const, ask: { model, token, message: p.optStr('confirm_message') || CONFIRM_ASKED } }
+  return meta({ revision, model: modelOf(p.optStr('committed_model'), p.optStr('committed_provider')), pick: ask })
+}
+
+function modelOf(model: string | null | undefined, provider: string | null | undefined): ModelRef | null {
+  return model ? { id: model as ModelId, provider: provider || null } : null
 }
 
 const promptOpened: Shown = payload => ({ type: 'prompt.opened', ...promptOf(payload) })
@@ -230,13 +270,18 @@ export const SHOWN: { readonly [type: string]: Shown } = {
   'approval.cancelled': payload => ({ type: 'prompts.cancelled', ids: fields<ApprovalCancelledPayload>(payload).strs('request_ids') as PromptId[] }),
   'session.info': payload => {
     const p = fields<CanonicalSessionInfo>(payload)
-    return meta(p.optStr('title'), p.optInt('revision'), p.optList('pending')?.map(admissionOf) ?? null)
+    // Its execution_generation is how an attached viewer learns a generation a policy change moved (gateway/session_authority.py:484-495).
+    return meta({
+      title: p.optStr('title'), revision: p.optInt('revision'), queue: p.optList('pending')?.map(admissionOf) ?? null,
+      model: modelOf(p.optStr('model'), p.optStr('provider')), generation: p.optInt('execution_generation')
+    })
   },
-  'session.title': payload => meta(fields<SessionTitlePayload>(payload).str('title'), null, null),
+  'session.title': payload => meta({ title: fields<SessionTitlePayload>(payload).str('title') }),
   /** A committed `session.mutate` result (`gateway/session_mutations.py:352`). */
   'session.updated': payload => {
-    const p = fields<SessionMutateResult>(payload)
-    return meta(p.optStr('title'), p.optInt('revision'), null)
+    const p = fields<ModelReceiptFields>(payload)
+    if (p.optStr('operation') === 'model' && p.optStr('status') !== 'deferred') return modelReceipt(p)
+    return meta({ title: p.optStr('title'), revision: p.optInt('revision'), generation: p.optInt('execution_generation') })
   },
   error: payload => ({ type: 'notice', tone: 'error', text: stripAnsi(fields<ErrorPayload>(payload).str('message')) })
 }
@@ -319,6 +364,7 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
     id: reply.session_id as SessionId,
     title: reply.info.title ?? '',
     cwd: reply.info.cwd || null,
+    model: modelOf(reply.info.model, reply.info.provider),
     running: reply.running,
     generation: reply.execution_generation as Generation,
     revision: reply.revision,
@@ -334,10 +380,57 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
   }
 }
 
+export function parseModelMenu(reply: ModelOptionsResult): ModelMenu {
+  const options = (Array.isArray(reply.providers) ? reply.providers : []).flatMap(row => usable(() => providerOptions(row)) ?? [])
+  const unique = options.filter((option, index) =>
+    options.findIndex(other => other.id === option.id && other.provider === option.provider) === index)
+  return { options: unique, fallback: modelOf(typeof reply.model === 'string' ? reply.model : null, typeof reply.provider === 'string' ? reply.provider : null) }
+}
+
+function providerOptions(row: unknown): ModelOption[] {
+  const p = fields<ModelOptionProvider>(row)
+  if (p.optBool('authenticated') === false) return []
+  const provider = p.str('slug')
+  const providerName = p.optStr('name') || provider
+  const unavailable = new Set(p.optList('unavailable_models')?.filter(isString) ?? [])
+  return (p.optList('models') ?? [])
+    .filter((model): model is string => isString(model) && model !== '' && !unavailable.has(model))
+    .map(model => ({ id: model as ModelId, provider, providerName }))
+}
+
+export type ModelReceipt =
+  | { readonly status: 'committed' }
+  | { readonly status: 'deferred'; readonly during: Generation | null }
+  | { readonly status: 'confirm'; readonly confirm: ModelConfirm }
+  | { readonly status: 'confirm-without-token'; readonly message: string }
+
+export function parseModelReceipt(reply: SessionMutateResult): ModelReceipt {
+  return usable(() => receiptOf(reply)) ?? COMMITTED
+}
+
+function receiptOf(reply: SessionMutateResult): ModelReceipt {
+  const p = fields<SessionMutateResult & { status?: string; execution_generation?: number; confirm?: string; confirm_message?: string }>(reply)
+  switch (p.optStr('status')) {
+    case 'deferred':
+      return { status: 'deferred', during: p.optInt('execution_generation') as Generation | null }
+    case 'confirmation_required': {
+      const token = p.optStr('confirm')
+      const message = p.optStr('confirm_message') || CONFIRM_ASKED
+      return token ? { status: 'confirm', confirm: { token, message } } : { status: 'confirm-without-token', message }
+    }
+    default:
+      return COMMITTED
+  }
+}
+
+const COMMITTED: ModelReceipt = { status: 'committed' }
+
+const CONFIRM_ASKED = 'Hermes asks you to confirm this model before it switches.'
+
 export function parseReplay(reply: CanonicalEventsResult): Replay {
   const events = reply.events.flatMap((params): StampedEvent[] => {
     const parsed = parseEvent(params)
-    return parsed.scope === 'session' ? [{ stamp: parsed.stamp, event: parsed.event }] : []
+    return parsed.scope === 'session' ? [{ stamp: parsed.stamp, event: parsed.event, seenAt: null }] : []
   })
   return { snapshotRequired: reply.snapshot_required, epoch: reply.epoch, events }
 }
@@ -351,6 +444,7 @@ export function parseTranscript(pages: readonly StoredTranscriptResult[]): Histo
 
 interface TurnInProgress {
   readonly request: string | null
+  readonly began: Began | null
   readonly items: Item<'settled'>[]
   readonly rows: number[]
 }
@@ -371,8 +465,8 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   rows.forEach((value, index) => {
     const row = usable(() => storedRow(value, index))
     if (row === null) return
-    if (row.role === 'user') turns.push({ request: row.text, items: [], rows: [] })
-    if (row.item !== null && turns.length === 0) turns.push({ request: null, items: [], rows: [] })
+    if (row.role === 'user') turns.push({ request: row.text, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [] })
+    if (row.item !== null && turns.length === 0) turns.push({ request: null, began: null, items: [], rows: [] })
     const turn = turns.at(-1)
     if (row.item !== null) turn?.items.push(row.item)
     if (row.rowId !== null) turn?.rows.push(row.rowId)
@@ -385,11 +479,12 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
     turns: turns.flatMap((turn, index): SettledTurn[] => turn === open ? [] : [{
       id: `stored:${turn.rows[0] ?? `@${index}`}` as TurnId,
       request: turn.request === null ? null : { text: turn.request, inputId: null },
+      began: turn.began,
       items: turn.items,
       outcome: answered(turn) ? COMPLETE : LOST,
       rows: turn.rows
     }]),
-    unfinished: open === null ? null : { request: open.request, items: open.items }
+    unfinished: open === null ? null : { request: open.request, began: open.began, items: open.items }
   }
 }
 
@@ -398,6 +493,8 @@ function storedRow(value: unknown, index: number) {
   const role = row.optStr('role')
   const text = row.optStr('text') ?? ''
   const rowId = row.optInt('row_id')
+  const seconds = row.optNum('timestamp')
+  const at = seconds !== null && seconds > 0 ? Math.round(seconds * 1000) : null
   const item = ((): Item<'settled'> | null => {
     if (row.optStr('row_kind') === 'compaction') return { kind: 'notice', what: 'said', tone: 'info', text }
     if (role === 'assistant') return text.trim() === '' ? null : { kind: 'text', markdown: text, sealed: true }
@@ -413,7 +510,7 @@ function storedRow(value: unknown, index: number) {
       status: { s: 'done', durationS: null, diffs: [], result: content === undefined ? NO_RESULT : parseToolResult(content, null, false) }
     }
   })()
-  return { role, text, rowId, item }
+  return { role, text, rowId, at, item }
 }
 
 export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<SidebarRow, 'badge'>[] {
@@ -443,27 +540,53 @@ function diffLineKind(line: string): FileDiff['lines'][number]['t'] | null {
 }
 
 const FILE_HEADER = /^(.+) → (.+)$/
+const PATCH_NOTE = /^# (?:Moved|Deleted): /
+
+const HUNK_HEADER = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/
+
+function hunksAreWhole(lines: FileDiff['lines']): boolean {
+  let left = { old: 0, new: 0 }
+  let hunks = 0
+  for (const line of lines) {
+    if (line.t === 'hunk') {
+      const header = HUNK_HEADER.exec(line.text)
+      if (header === null || left.old !== 0 || left.new !== 0) return false
+      left = { old: Number(header[1] ?? 1), new: Number(header[2] ?? 1) }
+      hunks++
+    } else {
+      if (line.t !== 'add') left.old--
+      if (line.t !== 'del') left.new--
+    }
+  }
+  return hunks > 0 && left.old === 0 && left.new === 0
+}
 
 /**
  * Hermes's `inline_diff`: ANSI-coloured, with a "review diff" banner and an "a/x → b/x" line per file
- * (`agent/display.py:746-790`). Lines before the first file header and lines with no diff prefix (the
- * banner, the "omitted" summary) are dropped.
+ * (`agent/display.py:746-790`). Lines before the first file header and lines with no diff prefix are dropped.
+ * Hermes ends a capped diff with an "omitted" summary line, so a last line that is not part of a diff marks the
+ * file before it cut. The patch tool's own `# Moved:` and `# Deleted:` notes are not a summary.
  */
 export function parseInlineDiff(raw: string): FileDiff[] {
-  const files: { path: string; lines: FileDiff['lines'][number][] }[] = []
+  const files: { path: string; deletesFile: boolean; lines: FileDiff['lines'][number][] }[] = []
+  let summarized = false
   for (const line of stripAnsi(raw).split('\n')) {
+    if (line === '') continue
     const t = diffLineKind(line)
     const header = t === null ? FILE_HEADER.exec(line) : null
+    summarized = t === null && header === null && files.length > 0 && !PATCH_NOTE.test(line)
     if (header !== null) {
       const [, from = '', to = ''] = header
-      files.push({ path: (to === '/dev/null' ? from : to).replace(/^[ab]\//, ''), lines: [] })
+      files.push({ path: (to === '/dev/null' ? from : to).replace(/^[ab]\//, ''), deletesFile: to === '/dev/null', lines: [] })
     } else if (t !== null) {
       files.at(-1)?.lines.push({ t, text: t === 'hunk' ? line : line.slice(1) })
     }
   }
-  return files.map(({ path, lines }) => ({
+  return files.map(({ path, deletesFile, lines }, index) => ({
     path,
     createsFile: lines.find(line => line.t === 'hunk')?.text.startsWith('@@ -0,0') ?? false,
+    deletesFile,
+    cut: (summarized && index === files.length - 1) || !hunksAreWhole(lines),
     added: lines.filter(line => line.t === 'add').length,
     removed: lines.filter(line => line.t === 'del').length,
     lines

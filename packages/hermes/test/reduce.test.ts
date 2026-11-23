@@ -3,8 +3,10 @@ import {
   activityOf, emptyTracked, reduce, sessionOf, syncOf,
   type Gate, type SessionEvent, type SessionInput, type Snapshot, type StampedEvent, type Tracked
 } from '../src/domain/reduce'
+import type { ModelMenu } from '../src/domain/command'
+import { modelViewOf, sameModel } from '../src/domain/model'
 import type {
-  Ask, Generation, InputId, Link, OpenTurn, Outcome, PromptId, SessionContent, SessionId, SettledTurn, ToolId, ToolResult, TurnId
+  Ask, Generation, InputId, Link, ModelId, ModelRef, OpenTurn, Outcome, PromptId, SessionContent, SessionId, SettledTurn, ToolId, ToolResult, TurnId
 } from '../src/domain/session'
 
 const EPOCH = 'e1'
@@ -20,11 +22,11 @@ const promptId = (id: string) => id as PromptId
 const turnId = (id: string) => id as TurnId
 const inputId = (id: string) => id as InputId
 
-function frame(seq: number, event: SessionEvent | null, gen: number | null = 1, epoch = EPOCH): StampedEvent {
-  return { stamp: { epoch, seq, generation: gen === null ? null : generation(gen) }, event }
+function frame(seq: number, event: SessionEvent | null, gen: number | null = 1, epoch = EPOCH, seenAt: number | null = null): StampedEvent {
+  return { stamp: { epoch, seq, generation: gen === null ? null : generation(gen) }, event, seenAt }
 }
-const event = (seq: number, sessionEvent: SessionEvent | null, gen: number | null = 1, epoch = EPOCH): SessionInput =>
-  ({ in: 'event', frame: frame(seq, sessionEvent, gen, epoch) })
+const event = (seq: number, sessionEvent: SessionEvent | null, gen: number | null = 1, epoch = EPOCH, seenAt: number | null = null): SessionInput =>
+  ({ in: 'event', frame: frame(seq, sessionEvent, gen, epoch, seenAt) })
 
 const started = (id: string, requestText: string | null = 'Tidy the notes'): SessionEvent =>
   ({ type: 'turn.started', turnId: turnId(id), admissionId: null, requestText })
@@ -41,6 +43,7 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
     id: 's1' as SessionId,
     title: 'Errand',
     cwd: '/home/u',
+    model: null,
     running: false,
     generation: generation(1),
     revision: 1,
@@ -55,7 +58,7 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
 }
 
 function storedTurn(id: string, rows: readonly number[]): SettledTurn {
-  return { id: turnId(id), request: { text: `request ${id}`, inputId: null }, items: [{ kind: 'text', markdown: `answer ${id}`, sealed: true }], outcome: COMPLETE, rows }
+  return { id: turnId(id), request: { text: `request ${id}`, inputId: null }, items: [{ kind: 'text', markdown: `answer ${id}`, sealed: true }], began: null, outcome: COMPLETE, rows }
 }
 
 const feed = (state: Tracked, ...inputs: SessionInput[]): Tracked => inputs.reduce(reduce, state)
@@ -142,6 +145,7 @@ describe('the fold', () => {
     expect(state.content.history).toEqual([{
       id: 't1',
       request: { text: 'Tidy the notes', inputId: null },
+      began: null,
       items: [
         { kind: 'tool', id: 'a', name: 'terminal', args: { command: 'a' }, status: { s: 'cut' } },
         { kind: 'prompt', id: 'p1', generation: 1, ask: APPROVAL, state: { s: 'withdrawn' } }
@@ -170,7 +174,7 @@ describe('the fold', () => {
       state: 'running',
       generation: 2,
       stop: 'none',
-      turn: { id: 't2', request: { text: 'Next errand', inputId: null }, items: [], announced: null }
+      turn: { id: 't2', request: { text: 'Next errand', inputId: null }, began: null, items: [], announced: null }
     })
   })
 
@@ -247,6 +251,7 @@ describe('attached', () => {
     expect(state.content.history).toEqual([{
       id: 't1',
       request: { text: 'Tidy the notes', inputId: null },
+      began: null,
       items: [{ kind: 'text', markdown: 'Hello world', sealed: true }],
       outcome: COMPLETE,
       rows: [7]
@@ -297,7 +302,7 @@ describe('attached', () => {
       snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 9 }, history: { turns, unfinished: null, older: { cursor: 'c1' } } })
     })
     expect(state.gate).toEqual({ at: 'live', cursor: { epoch: EPOCH, seq: 9 }, subscriptionId: 'sub-1' })
-    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, outbox: [] })
+    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, outbox: [], model: { current: null, next: null, ask: null } })
   })
 
   it('B: opens the unfinished turn of a running snapshot with its waiting prompts, then the parked frames above the watermark', () => {
@@ -314,7 +319,7 @@ describe('attached', () => {
           generation: generation(3),
           watermark: { epoch: EPOCH, seq: 5 },
           prompts: [{ id: promptId('p1'), generation: generation(3), ask: APPROVAL }],
-          history: { turns: [storedTurn('h1', [1, 2])], unfinished: { request: 'Fix the build', items: [tool] }, older: null }
+          history: { turns: [storedTurn('h1', [1, 2])], unfinished: { request: 'Fix the build', began: null, items: [tool] }, older: null }
         })
       }
     )
@@ -334,7 +339,7 @@ describe('attached', () => {
       in: 'attached', attempt: 1, replay: null,
       snapshot: snapshot({
         prompts: [{ id: promptId('p1'), generation: generation(1), ask: APPROVAL }],
-        history: { turns: [storedTurn('h1', [1])], unfinished: { request: 'Fix the build', items: [] }, older: null }
+        history: { turns: [storedTurn('h1', [1])], unfinished: { request: 'Fix the build', began: null, items: [] }, older: null }
       })
     })
     expect(state.content.run).toEqual({ state: 'idle' })
@@ -473,7 +478,7 @@ describe('activityOf', () => {
     const text = { kind: 'text', markdown: 'Wri', sealed: false } as const
     const session = (items: OpenTurn['items'], announced: string | null, stop: 'none' | 'requested'): SessionContent => ({
       ...live().content,
-      run: { state: 'running', generation: generation(1), stop, turn: { id: turnId('t1'), request: null, items, announced } }
+      run: { state: 'running', generation: generation(1), stop, turn: { id: turnId('t1'), request: null, began: null, items, announced } }
     })
     expect(activityOf(session([tool, prompt, text], 'write_file', 'requested'))).toEqual({ kind: 'stopping' })
     expect(activityOf(session([tool, prompt, text], 'write_file', 'none'))).toEqual({ kind: 'asking', item: 1 })
@@ -490,5 +495,230 @@ describe('activityOf', () => {
       { in: 'local', action: { did: 'answer', promptId: promptId('p1'), reply: { kind: 'choice', value: 'once' } } }
     )
     expect(activityOf(state.content)).toEqual({ kind: 'asking', item: 0 })
+  })
+})
+
+describe('when a turn began', () => {
+  const beganOf = (state: Tracked) => {
+    const { run } = state.content
+    if (run.state !== 'running') throw new Error('expected an open run')
+    return run.turn.began
+  }
+  const hermesAt = (at: number) => ({ at, clock: 'hermes' as const })
+  const clientAt = (at: number) => ({ at, clock: 'client' as const })
+  const dropped = () => feed(live(), { in: 'link.lost' }, { in: 'attach' })
+  const catchUp = (state: Tracked, watermark: number, running: boolean, ...parked: SessionInput[]) =>
+    feed(state, ...parked, {
+      in: 'attached', attempt: 2,
+      replay: { snapshotRequired: false, epoch: EPOCH, events: [] },
+      snapshot: snapshot({ history: null, running, watermark: { epoch: EPOCH, seq: watermark } })
+    })
+
+  it('stamps a live turn.started with the client clock', () => {
+    expect(beganOf(feed(live(), event(1, started('t1'), 1, EPOCH, 9_000)))).toEqual(clientAt(9_000))
+  })
+
+  it('stamps a turn whose first frame to arrive is not its start', () => {
+    expect(beganOf(feed(live(), event(1, delta('Hello'), 1, EPOCH, 9_000)))).toEqual(clientAt(9_000))
+  })
+
+  it('leaves a turn started by a frame with no known arrival time unstamped', () => {
+    expect(beganOf(feed(live(), event(1, started('t1'))))).toBeNull()
+  })
+
+  it('does not move a turn\'s start when later frames arrive', () => {
+    expect(beganOf(feed(live(), event(1, started('t1'), 1, EPOCH, 9_000), event(2, delta('Hello'), 1, EPOCH, 12_000), event(3, toolStarted('a'), 1, EPOCH, 15_000)))).toEqual(clientAt(9_000))
+  })
+
+  it('leaves a turn opened by a replayed frame unstamped', () => {
+    const state = feed(dropped(), {
+      in: 'attached', attempt: 2,
+      replay: { snapshotRequired: false, epoch: EPOCH, events: [frame(1, started('t1'))] },
+      snapshot: snapshot({ history: null, running: true, watermark: { epoch: EPOCH, seq: 1 } })
+    })
+    expect(beganOf(state)).toBeNull()
+  })
+
+  it('leaves a turn opened by a catch-up frame parked at the watermark unstamped', () => {
+    expect(beganOf(catchUp(dropped(), 1, true, event(1, started('t1'), 1, EPOCH, 9_000)))).toBeNull()
+  })
+
+  it('keeps the stamp of a frame parked past the watermark', () => {
+    expect(beganOf(catchUp(dropped(), 1, true, event(1, delta('Hello')), event(2, started('t2', 'Next'), 2, EPOCH, 9_500)))).toEqual(clientAt(9_500))
+  })
+
+  it('carries the start over when the turn settles', () => {
+    const state = feed(live(), event(1, started('t1'), 1, EPOCH, 9_000), event(2, ended(COMPLETE, 'Done.')))
+    expect(state.content.history.map(turn => turn.began)).toEqual([clientAt(9_000)])
+  })
+
+  it('opens a turn from a snapshot that shows a running errand with the stored request row\'s time', () => {
+    const state = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, {
+      in: 'attached', attempt: 1, replay: null,
+      snapshot: snapshot({
+        running: true,
+        history: { turns: [{ ...storedTurn('h1', [1, 2]), began: hermesAt(1_000) }], unfinished: { request: 'Fix the build', began: hermesAt(5_000), items: [] }, older: null }
+      })
+    })
+    expect(beganOf(state)).toEqual(hermesAt(5_000))
+    expect(state.content.history.map(turn => turn.began)).toEqual([hermesAt(1_000)])
+  })
+
+  it('gives a snapshot\'s running turn no start when there is no stored request row and no earlier start', () => {
+    const state = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, { in: 'attached', attempt: 1, replay: null, snapshot: snapshot({ running: true }) })
+    expect(beganOf(state)).toBeNull()
+  })
+
+  it('keeps the start of the same run through a rebuild that finds no stored request row', () => {
+    const rebuilt = feed(live(), event(1, started('t1'), 1, EPOCH, 9_000), { in: 'gap' }, {
+      in: 'attached', attempt: 2, replay: null,
+      snapshot: snapshot({ running: true, watermark: { epoch: EPOCH, seq: 1 } })
+    })
+    expect(beganOf(rebuilt)).toEqual(clientAt(9_000))
+  })
+
+  it('prefers the stored request row\'s time to the stamp of the same run', () => {
+    const rebuilt = feed(live(), event(1, started('t1'), 1, EPOCH, 9_000), { in: 'gap' }, {
+      in: 'attached', attempt: 2, replay: null,
+      snapshot: snapshot({
+        running: true, watermark: { epoch: EPOCH, seq: 1 },
+        history: { turns: [], unfinished: { request: 'Tidy the notes', began: hermesAt(8_000), items: [] }, older: null }
+      })
+    })
+    expect(beganOf(rebuilt)).toEqual(hermesAt(8_000))
+  })
+
+  it('never lends one run\'s start to another', () => {
+    const rebuilt = feed(live(), event(1, started('t1'), 1, EPOCH, 9_000), { in: 'gap' }, {
+      in: 'attached', attempt: 2, replay: null,
+      snapshot: snapshot({ running: true, generation: generation(2), watermark: { epoch: EPOCH, seq: 1 } })
+    })
+    expect(beganOf(rebuilt)).toBeNull()
+  })
+
+  it('gives a turn left unfinished in a snapshot that is not running the start its stored request has', () => {
+    const state = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, {
+      in: 'attached', attempt: 1, replay: null,
+      snapshot: snapshot({ history: { turns: [], unfinished: { request: 'Fix the build', began: hermesAt(5_000), items: [] }, older: null } })
+    })
+    expect(state.content.history.map(turn => turn.began)).toEqual([hermesAt(5_000)])
+  })
+})
+
+describe('the session model', () => {
+  const fast: ModelRef = { id: 'fast-small' as ModelId, provider: 'acme' }
+  const careful: ModelRef = { id: 'careful-large' as ModelId, provider: 'acme' }
+  const deferred = (model: ModelRef, gen: number): SessionInput =>
+    ({ in: 'local', action: { did: 'model.deferred', model, during: generation(gen) } })
+
+  it('a model event updates the session model and leaves history and run untouched', () => {
+    const before = feed(live(), event(1, started('t1')), event(2, delta('Hello')))
+    const after = reduce(before, event(3, { type: 'meta', model: careful }, null))
+    expect(after.content.model).toEqual({ current: careful, next: null, ask: null })
+    expect(after.content.history).toBe(before.content.history)
+    expect(after.content.run).toBe(before.content.run)
+  })
+
+  it('takes the model a snapshot names and keeps it when a later snapshot names none', () => {
+    const named = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, { in: 'attached', attempt: 1, snapshot: snapshot({ model: fast }), replay: null })
+    expect(named.content.model.current).toEqual(fast)
+    const rebuilt = feed(named, { in: 'gap' }, { in: 'attached', attempt: 2, snapshot: snapshot({ model: null }), replay: null })
+    expect(rebuilt.content.model.current).toEqual(fast)
+  })
+
+  it('holds a deferred pick until Hermes names the model, without touching the turn', () => {
+    const running = feed(live(), event(1, started('t1')))
+    const waiting = reduce(running, deferred(careful, 1))
+    expect(waiting.content.model).toEqual({ current: null, next: { model: careful, during: generation(1) }, ask: null })
+    expect(waiting.content.run).toBe(running.content.run)
+    expect(reduce(waiting, deferred(careful, 1)).content).toBe(waiting.content)
+    const landed = feed(
+      waiting,
+      event(2, ended(COMPLETE)),
+      event(3, { type: 'meta', model: careful, revision: 2 }, null),
+      event(4, { type: 'meta', model: careful, revision: 2, pick: { is: 'settled' }, generation: generation(2) }, null)
+    )
+    expect(landed.content.model).toEqual({ current: careful, next: null, ask: null })
+    expect(landed.fence.generation).toBe(2)
+  })
+
+  it('keeps a held pick when Hermes repeats the model the turn still runs on', () => {
+    const waiting = feed(live(), event(1, { type: 'meta', model: fast }, null), event(2, started('t1')), deferred(careful, 1))
+    const repeated = reduce(waiting, event(3, { type: 'meta', model: fast, title: 'Tidy notes' }, null))
+    expect(repeated.content.model.next).toEqual({ model: careful, during: generation(1) })
+  })
+
+  it('asks for a held pick Hermes wants confirmed, and forgets the ask once the pick settles', () => {
+    const ask = { model: careful, token: 'tok', message: 'This model costs more.' }
+    const asking = feed(live(), event(1, { type: 'meta', model: fast, pick: { is: 'asking', ask } }, null))
+    expect(asking.content.model).toEqual({ current: fast, next: null, ask })
+    expect(reduce(asking, event(2, { type: 'meta', pick: { is: 'asking', ask } }, null)).content).toBe(asking.content)
+    const settled = reduce(asking, event(2, { type: 'meta', model: careful, pick: { is: 'settled' } }, null))
+    expect(settled.content.model).toEqual({ current: careful, next: null, ask: null })
+  })
+
+  it('drops an ask when a newer pick is held in its place', () => {
+    const ask = { model: careful, token: 'tok', message: 'This model costs more.' }
+    const local: ModelRef = { id: 'local-7b' as ModelId, provider: 'local' }
+    const replaced = feed(live(), event(1, { type: 'meta', model: fast, pick: { is: 'asking', ask } }, null), event(2, started('t2'), 2), deferred(local, 2))
+    expect(replaced.content.model).toEqual({ current: fast, next: { model: local, during: generation(2) }, ask: null })
+  })
+
+  it('ignores a held pick whose run has already ended', () => {
+    const over = feed(live(), event(1, started('t1')), event(2, ended(COMPLETE)))
+    expect(reduce(over, deferred(careful, 1)).content).toBe(over.content)
+  })
+
+  it('forgets a held pick and an ask when the session is rebuilt, since Hermes asks a new viewer again', () => {
+    const ask = { model: careful, token: 'tok', message: 'This model costs more.' }
+    const asking = feed(live(), event(1, { type: 'meta', model: fast, pick: { is: 'asking', ask } }, null))
+    const rebuilt = feed(asking, { in: 'gap' }, { in: 'attached', attempt: 2, snapshot: snapshot({ model: fast }), replay: null })
+    expect(rebuilt.content.model).toEqual({ current: fast, next: null, ask: null })
+  })
+
+  it('moves the generation fence to the one session.info names', () => {
+    expect(reduce(live(), event(1, { type: 'meta', generation: generation(4) }, null)).fence.generation).toBe(4)
+  })
+
+  it('keeps the same content when Hermes repeats the model it already named', () => {
+    const named = reduce(live(), event(1, { type: 'meta', model: fast }, null))
+    expect(reduce(named, event(2, { type: 'meta', model: { ...fast } }, null)).content).toBe(named.content)
+  })
+})
+
+describe('modelViewOf', () => {
+  const fast = { id: 'fast-small' as ModelId, provider: 'acme', providerName: 'Acme' }
+  const careful = { id: 'careful-large' as ModelId, provider: 'acme', providerName: 'Acme' }
+  const menu: ModelMenu = { options: [fast, careful], fallback: { id: fast.id, provider: 'acme' } }
+
+  it('hides the control until Hermes lists its models', () => {
+    expect(modelViewOf(null, live().content)).toEqual({ show: 'hidden' })
+    expect(modelViewOf(menu, undefined)).toEqual({ show: 'hidden' })
+  })
+
+  it('says nothing is set up when the list is empty', () => {
+    expect(modelViewOf({ options: [], fallback: null }, live().content)).toEqual({ show: 'none' })
+  })
+
+  it('falls back to the model Hermes names for the chat until the session names one', () => {
+    expect(modelViewOf(menu, live().content)).toMatchObject({ show: 'list', current: menu.fallback, next: null, deferring: false })
+  })
+
+  it('shows a deferred pick only while the run it waits on is running', () => {
+    const pick: SessionInput = { in: 'local', action: { did: 'model.deferred', model: { id: careful.id, provider: 'acme' }, during: generation(1) } }
+    const waiting = feed(live(), event(1, started('t1')), pick)
+    expect(modelViewOf(menu, waiting.content)).toMatchObject({ next: { id: careful.id }, deferring: true })
+    const over = reduce(waiting, event(2, ended(COMPLETE)))
+    expect(modelViewOf(menu, over.content)).toMatchObject({ next: null, deferring: false })
+  })
+
+  it('takes the provider from model.options when the session names the same model without one', () => {
+    const named = reduce(live(), event(1, { type: 'meta', model: { id: fast.id, provider: null } }, null))
+    expect(modelViewOf(menu, named.content)).toMatchObject({ current: { id: fast.id, provider: 'acme' } })
+  })
+
+  it('matches a model with no provider to an option of any provider', () => {
+    expect(sameModel({ id: fast.id, provider: null }, fast)).toBe(true)
+    expect(sameModel({ id: fast.id, provider: 'other' }, fast)).toBe(false)
   })
 })

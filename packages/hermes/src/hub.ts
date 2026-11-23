@@ -10,7 +10,9 @@ import { parseCatalog, parseDirective, parseEvent, parseServerRequest, type Pars
 
 export type { Command, Outcome, Refusal, ResultOf } from './domain/command'
 export type { Clock, Dialer, WireSocket } from './wire/link'
+export { checkTarget, type CheckOptions, type CheckResult } from './wire/check'
 export { DialError, liveDialer } from './wire/link'
+export { remoteRoute, type Route } from './wire/remote'
 
 /** A value that changes. `subscribe` calls back on every change, not for the current value. */
 export interface Feed<T> {
@@ -124,7 +126,7 @@ export function openHermes(options: HermesOptions): Hermes {
       else if (parsed.event.type === 'meta' && parsed.event.title !== undefined) list.retitle(parsed.sessionId, parsed.event.title)
       const actor = actors.get(parsed.sessionId)
       if (actor === undefined) return count('unrouted', parsed.type)
-      actor.feed({ in: 'event', frame: { stamp: parsed.stamp, event: parsed.event } })
+      actor.feed({ in: 'event', frame: { stamp: parsed.stamp, event: parsed.event, seenAt: clock.now() } })
     },
     gap: parsed => actors.get(parsed.sessionId)?.feed({ in: 'gap' }),
     app: refreshSoon,
@@ -246,6 +248,8 @@ export function openHermes(options: HermesOptions): Hermes {
     answer: (actor, { promptId, reply }) => actor.answer(promptId, reply),
     discard: (actor, { inputId }) => actor.discard(inputId),
     loadEarlier: actor => actor.loadEarlier(),
+    models: actor => actor.models(),
+    pickModel: (actor, { model, confirm }) => actor.pickModel(model, confirm ?? null),
     rename: async (actor, { title }) => {
       const outcome = await actor.mutate({ title })
       if (outcome.ok) list.retitle(actor.id, title)
@@ -295,7 +299,7 @@ export function openHermes(options: HermesOptions): Hermes {
     }
   }
 
-  const run = async (command: Command): Promise<Outcome<ResultOf<Command>>> => {
+  const run = async (command: Command): Promise<Outcome<unknown>> => {
     if (command.do === 'create') return create(command)
     if (command.do === 'reconnect') {
       conn.retryNow({ start: command.start })

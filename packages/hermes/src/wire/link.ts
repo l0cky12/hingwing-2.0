@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { CHECK_FAILURES, type SshFailure } from '../domain/reach'
 import type { BlockedWhy, Link, WaitingWhy } from '../domain/session'
 import type { CanonicalRpcMethods, RpcMethods } from './contract.generated'
 
@@ -21,6 +22,8 @@ export type Dialer = (request: { readonly start: boolean }) => Promise<WireSocke
 
 type Why = WaitingWhy | BlockedWhy
 
+const sshWords = (failure: SshFailure) => CHECK_FAILURES[failure].words('the Hermes machine')
+
 const WORDS: Readonly<Record<Why, string>> = {
   'not-running': "Hermes isn't running.",
   draining: 'Hermes is restarting.',
@@ -29,12 +32,18 @@ const WORDS: Readonly<Record<Why, string>> = {
   incompatible: "This version of Hermes doesn't work with Highwing.",
   auth: 'Hermes refused access to this profile.',
   inaccessible: "Highwing can't reach the Hermes gateway.",
-  refused: 'Hermes refused the connection.'
+  refused: 'Hermes refused the connection.',
+  unreachable: sshWords('unreachable'),
+  'ssh-missing': sshWords('ssh-missing'),
+  'ssh-denied': sshWords('ssh-denied'),
+  'ssh-check': sshWords('ssh-check'),
+  'host-changed': sshWords('host-changed')
 }
 
 const RETRIES: Readonly<Record<Why, boolean>> = {
-  'not-running': true, draining: true, dropped: true,
-  'hermes-missing': false, incompatible: false, auth: false, inaccessible: false, refused: false
+  'not-running': true, draining: true, dropped: true, unreachable: true,
+  'hermes-missing': false, incompatible: false, auth: false, inaccessible: false, refused: false,
+  'ssh-missing': false, 'ssh-denied': false, 'ssh-check': false, 'host-changed': false
 }
 
 export class DialError extends Error {
@@ -49,12 +58,12 @@ export type Mint = (request: { readonly start: boolean }) => Promise<Endpoint>
 export const GATEWAY_PROTOCOL = 'hermes-gateway-v1'
 
 /** `ensure_exit_code` in Hermes's `hermes_cli/gateway_runtime_cli.py:11-17`. 2 is an invocation this Hermes does not know. */
-const EXIT_KINDS: Readonly<Record<number, Why>> = { 2: 'incompatible', 3: 'incompatible', 4: 'auth', 5: 'not-running', 6: 'draining', 7: 'inaccessible' }
+export const EXIT_KINDS: Readonly<Record<number, Why>> = { 2: 'incompatible', 3: 'incompatible', 4: 'auth', 5: 'not-running', 6: 'draining', 7: 'inaccessible' }
 
 const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
-function endpointOf(stdout: string): Endpoint | null {
+export function endpointOf(stdout: string): Endpoint | null {
   try {
     const reply: unknown = JSON.parse(stdout.trim().split('\n').at(-1) ?? '')
     if (!isObject(reply)) return null
@@ -159,7 +168,8 @@ export class RpcRefusal extends Error {
     readonly code: number,
     readonly reason: string | null,
     message: string,
-    readonly revision: number | null = null
+    readonly revision: number | null = null,
+    readonly generation: number | null = null
   ) {
     super(message)
   }
@@ -167,10 +177,11 @@ export class RpcRefusal extends Error {
 export class Offline extends Error {}
 
 /**
- * The canonical route also serves two methods the generated contract files as shared, not canonical:
- * `AuthorityConnection.handlers` names them (gateway/session_controls.py:239-247).
+ * The canonical route also serves three methods the generated contract does not list as canonical:
+ * `commands.catalog` and `command.dispatch` (`AuthorityConnection.handlers`, gateway/session_controls.py:239-247)
+ * and `model.options` (gateway/session_config.py:11-13).
  */
-type Served = CanonicalRpcMethods & Pick<RpcMethods, 'commands.catalog' | 'command.dispatch'>
+type Served = CanonicalRpcMethods & Pick<RpcMethods, 'commands.catalog' | 'command.dispatch' | 'model.options'>
 type Method = keyof Served
 
 export interface Connection {
@@ -255,12 +266,13 @@ interface Pending {
 
 function refusalOf(error: unknown): RpcRefusal {
   const { code, message, data } = isObject(error) ? error : {}
-  const { reason, revision } = isObject(data) ? data : {}
+  const { reason, revision, execution_generation: generation } = isObject(data) ? data : {}
   return new RpcRefusal(
     typeof code === 'number' ? code : 0,
     typeof reason === 'string' ? reason : null,
     typeof message === 'string' ? message : 'The gateway refused the call.',
-    typeof revision === 'number' ? revision : null
+    typeof revision === 'number' ? revision : null,
+    typeof generation === 'number' ? generation : null
   )
 }
 

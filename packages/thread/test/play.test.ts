@@ -6,9 +6,10 @@ import { sessionOf } from '../../hermes/src/domain/reduce'
 import { errand, fold } from '../../hermes/test/support/story'
 import { checkThread, outline, threadView } from '../src/thread-view'
 
+const AT_PLAY_START = { now: 0, timeZone: 'UTC' }
 const fixture = loadFixture(fileURLToPath(new URL('../../../fixtures/errand.jsonl', import.meta.url)))
 const pushes = fixture.steps.filter(step => 'push' in step).length
-const want = outline(threadView(sessionOf(fold(errand()), { state: 'online' }, null)))
+const want = outline(threadView(sessionOf(fold(errand()), { state: 'online' }, null), AT_PLAY_START))
 
 async function sessions(options?: Parameters<typeof play>[1]): Promise<Session[]> {
   const seen: Session[] = []
@@ -17,13 +18,13 @@ async function sessions(options?: Parameters<typeof play>[1]): Promise<Session[]
 }
 
 function unsound(seen: readonly Session[]): string[] {
-  return seen.flatMap((session, index) => checkThread(threadView(session)).map(problem => `moment ${index}: ${problem}`))
+  return seen.flatMap((session, index) => checkThread(threadView(session, AT_PLAY_START)).map(problem => `moment ${index}: ${problem}`))
 }
 
 describe('design C from the errand played through the real client', () => {
   it('draws the outline of the direct fold, which the settled-C golden pins', async () => {
     const seen = await sessions()
-    expect(outline(threadView(seen.at(-1) as Session))).toBe(want)
+    expect(outline(threadView(seen.at(-1) as Session, AT_PLAY_START))).toBe(want)
     expect(want.split('\n').at(-1)).toBe('✓ Done')
   })
 
@@ -34,13 +35,13 @@ describe('design C from the errand played through the real client', () => {
   it.each(Array.from({ length: pushes }, (_, index) => index + 1))('a drop after push %i, 3 missed, ends in the same outline and stays sound', async afterPush => {
     const seen = await sessions({ drop: { afterPush, missed: 3 } })
     expect(unsound(seen)).toEqual([])
-    expect(outline(threadView(seen.at(-1) as Session))).toBe(want)
+    expect(outline(threadView(seen.at(-1) as Session, AT_PLAY_START))).toBe(want)
   })
 
   it('a ring too small for the gap rebuilds into a sound, settled thread', async () => {
     const seen = await sessions({ drop: { afterPush: 12, missed: 6 }, ringFrames: 2 })
     expect(unsound(seen)).toEqual([])
-    const rebuilt = outline(threadView(seen.at(-1) as Session))
+    const rebuilt = outline(threadView(seen.at(-1) as Session, AT_PLAY_START))
     expect(rebuilt.split('\n')[0]).toBe(want.split('\n')[0])
     expect(rebuilt.split('\n').at(-1)).toBe('✓ Done')
   })

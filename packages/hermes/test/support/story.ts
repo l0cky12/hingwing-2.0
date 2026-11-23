@@ -4,7 +4,7 @@ import {
   emptyTracked, reduce,
   type Admission, type Cursor, type SessionInput, type Snapshot, type StampedEvent, type Tracked
 } from '../../src/domain/reduce'
-import type { Generation, InputId, PromptId, SessionId } from '../../src/domain/session'
+import type { Generation, InputId, PromptId, SessionId, SettledTurn } from '../../src/domain/session'
 
 export type Beat =
   | { readonly kind: 'frame'; readonly frame: StampedEvent }
@@ -51,7 +51,7 @@ export function readStory(path: string): Story {
       if (parsed.scope !== 'session' || parsed.sessionId !== fixture.header.sessionId)
         throw new Error(`push ${JSON.stringify(step.push).slice(0, 120)} is not a frame of the fixture's session`)
       epoch ??= parsed.stamp.epoch
-      beats.push({ kind: 'frame', frame: { stamp: parsed.stamp, event: parsed.event } })
+      beats.push({ kind: 'frame', frame: { stamp: parsed.stamp, event: parsed.event, seenAt: null } })
     } else if ('await' in step) {
       beats.push({ kind: 'user', inputs: userInputs(step.await, step.params as Record<string, unknown>, step.reply as Record<string, unknown> | undefined) })
     }
@@ -87,7 +87,7 @@ export function snapshotAfter(story: Story, published: readonly StampedEvent[], 
   const last = published.at(-1)
   const watermark: Cursor = { epoch: story.epoch, seq: last ? last.stamp.seq : 0 }
   return {
-    id: story.sessionId, title, cwd: null, running, generation: generation as Generation, revision, subscriptionId,
+    id: story.sessionId, title, cwd: null, model: null, running, generation: generation as Generation, revision, subscriptionId,
     watermark, queue, prompts: [...prompts.values()], history, openRequests: []
   }
 }
@@ -156,5 +156,8 @@ export function foldWithDrop(story: Story, afterFrame: number, missed: number): 
   for (; index < story.beats.length; index++) play(story.beats[index]!)
   return state
 }
+
+export const ignoringStartTimes = <T extends { readonly history: readonly SettledTurn[] }>(session: T): T =>
+  ({ ...session, history: session.history.map(turn => ({ ...turn, began: null })) })
 
 export const errand = () => readStory(new URL('../../../../fixtures/errand.jsonl', import.meta.url).pathname)

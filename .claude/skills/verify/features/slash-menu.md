@@ -24,16 +24,16 @@ Preconditions:
 - `fixtures/slash.jsonl`, the errand with a real catalog from `fixtures/make_slash_fixture.py`. Highwing lists 35 of its 100 rows: the 33 commands the gateway runs and 2 skills.
 - `fixtures/errand.jsonl` has no catalog, so its gateway answers the call with -32601, as an older Hermes does.
 
-- **Open.** Run `$H run --fixture fixtures/slash.jsonl --run slash-open wait live type "Message Hermes" / wait slash-menu count option 35 shot slash-open`. `slash-open.aria.txt` shows `listbox "Commands and skills"` with `group "Commands"` and `group "Skills"`.
-- **Narrow and complete.** Run `$H run --fixture fixtures/slash.jsonl --run slash-narrow wait live type "Message Hermes" / wait slash-menu press c press o count option 3 shot slash-narrowed press Tab value "Message Hermes" "/context " count listbox 0`.
-- **Escape.** Run `$H run --fixture fixtures/slash.jsonl --run slash-escape wait live type "Message Hermes" / wait slash-menu press c press o press Escape count listbox 0 value "Message Hermes" /co press Backspace press Backspace press Backspace press / press c press o count option 3`. Escape closes the list only until the text changes, so typing `/co` again opens it.
-- **Focus.** Run `$H run --fixture fixtures/slash.jsonl --run slash-focus wait live type "Message Hermes" / wait slash-menu press Shift+Tab count listbox 0 click textbox "Message Hermes" count option 35`.
-- **Mid-sentence.** Run `$H run --fixture fixtures/slash.jsonl --run slash-mid wait live type "Message Hermes" "Please run " press / count listbox 0 value "Message Hermes" "Please run /"`.
-- **No catalog.** Run `$H run --fixture fixtures/errand.jsonl --run slash-none wait live type "Message Hermes" / count listbox 0 value "Message Hermes" / shot slash-none`. `slash-none.aria.txt` shows the textbox and Send, and no refusal words.
-- **Wrap.** Run `$H run --fixture fixtures/slash.jsonl --run slash-wrap wait live type "Message Hermes" / wait slash-menu press ArrowUp shot slash-wrapped press Enter value "Message Hermes" "/release-notes " count listbox 0`.
+- **Open.** Run `$H run --fixture fixtures/slash.jsonl --run slash-open wait live type "Message Hermes" / wait slash-menu tally option 35 shot slash-open`. `slash-open.aria.txt` shows `listbox "Commands and skills"` with `group "Commands"` and `group "Skills"`.
+- **Narrow and complete.** Run `$H run --fixture fixtures/slash.jsonl --run slash-narrow wait live type "Message Hermes" / wait slash-menu press c press o tally option 3 shot slash-narrowed press Tab value "Message Hermes" "/context " tally listbox 0`.
+- **Escape.** Run `$H run --fixture fixtures/slash.jsonl --run slash-escape wait live type "Message Hermes" / wait slash-menu press c press o press Escape tally listbox 0 value "Message Hermes" /co press Backspace press Backspace press Backspace press / press c press o tally option 3`. Escape closes the list only until the text changes, so typing `/co` again opens it.
+- **Focus.** Run `$H run --fixture fixtures/slash.jsonl --run slash-focus wait live type "Message Hermes" / wait slash-menu press Shift+Tab tally listbox 0 click textbox "Message Hermes" tally option 35`.
+- **Mid-sentence.** Run `$H run --fixture fixtures/slash.jsonl --run slash-mid wait live type "Message Hermes" "Please run " press / tally listbox 0 value "Message Hermes" "Please run /"`.
+- **No catalog.** Run `$H run --fixture fixtures/errand.jsonl --run slash-none wait live type "Message Hermes" / tally listbox 0 value "Message Hermes" / shot slash-none`. `slash-none.aria.txt` shows the textbox and Send, and no refusal words.
+- **Wrap.** Run `$H run --fixture fixtures/slash.jsonl --run slash-wrap wait live type "Message Hermes" / wait slash-menu press ArrowUp shot slash-wrapped press Enter value "Message Hermes" "/release-notes " tally listbox 0`.
 
 ## Gotchas
 
-- `count` and `value` wait two animation frames before they read, so a zero count cannot pass before React renders the list.
+- `tally` and `value` wait two animation frames before they read, so a zero count cannot pass before React renders the list.
 - `type` replaces the box's text. Use `press` for each further character, as a user types.
 - `fixtures/slash.jsonl` has no `command.dispatch` step, so sending a listed command fails its story. To see `slash-run`, put a `command.dispatch` step with an `exec` reply before its first step.

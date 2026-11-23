@@ -1,8 +1,8 @@
-import type { Outcome, Refusal } from './domain/command'
+import type { ModelConfirm, ModelMenu, Outcome, Refusal } from './domain/command'
 import { emptyTracked, reduce, sessionOf, type Gate, type LocalAction, type ServerRequest, type SessionInput, type Tracked } from './domain/reduce'
-import type { InputId, OutboxEntry, PromptId, PromptReply, Session, SessionId } from './domain/session'
+import type { InputId, ModelOption, OutboxEntry, PromptId, PromptReply, Session, SessionId } from './domain/session'
 import { Offline, RpcRefusal, type Clock, type Connection } from './wire/link'
-import { parseReplay, parseSnapshot, parseTranscript } from './wire/parse'
+import { parseModelMenu, parseModelReceipt, parseReplay, parseSnapshot, parseTranscript } from './wire/parse'
 
 export const DONE: Outcome = { ok: true, value: undefined }
 export const refused = (kind: Refusal['kind'], message: string): Outcome<never> => ({ ok: false, refusal: { kind, message } })
@@ -15,8 +15,11 @@ const REFUSALS: Readonly<Record<string, Refusal>> = {
   session_busy: { kind: 'rejected', message: 'Hermes is busy with this chat. Try again in a moment.' },
   runtime_draining: { kind: 'rejected', message: 'Hermes is restarting. Try again in a moment.' },
   invalid_params: { kind: 'rejected', message: 'Hermes did not accept the request.' },
-  unsupported_command: { kind: 'unsupported', message: "Hermes can't run that command from Highwing." }
+  unsupported_command: { kind: 'unsupported', message: "Hermes can't run that command from Highwing." },
+  unknown_method: { kind: 'unsupported', message: "This Hermes doesn't support that." }
 }
+const FENCE_REFUSALS: ReadonlySet<string> = new Set(['revision_conflict', 'stale_generation'])
+const MOVED_ON: Refusal = { kind: 'stale', message: 'This chat changed while Highwing was switching its model. Try again.' }
 const NOT_CONNECTED: Refusal = { kind: 'offline', message: "Highwing isn't connected to this chat right now." }
 const DROPPED_ANSWER = 'The connection dropped before Hermes confirmed your answer.'
 
@@ -201,20 +204,65 @@ export class SessionActor {
   async mutate(change: { readonly title: string } | { readonly archived: boolean }): Promise<Outcome> {
     const offline = this.offline()
     if (offline !== null) return offline
-    const request_id = this.deps.mintId()
-    const operation = 'title' in change ? 'rename' : 'archive'
-    const commit = (expected_revision: number) =>
-      this.deps.conn.call('session.mutate', { session_id: this.id, request_id, expected_revision, operation, payload: { ...change } })
     try {
-      await commit(this.tracked.fence.revision).catch((error: unknown) => {
-        // The refusal carries the fresh revision (Hermes's gateway/session_controls.py:915-920), so one retry needs no read.
-        if (error instanceof RpcRefusal && error.reason === 'revision_conflict' && error.revision !== null) return commit(error.revision)
-        throw error
-      })
+      await this.mutation('title' in change ? 'rename' : 'archive', { ...change }, null)
       return DONE
     } catch (error) {
       return { ok: false, refusal: refusalOf(error) }
     }
+  }
+
+  async models(): Promise<Outcome<ModelMenu>> {
+    const offline = this.offline()
+    if (offline !== null) return offline
+    try {
+      // explicit_only leaves out providers that only look signed in through ambient credentials.
+      return { ok: true, value: parseModelMenu(await this.deps.conn.call('model.options', { session_id: this.id, explicit_only: true })) }
+    } catch (error) {
+      return { ok: false, refusal: refusalOf(error) }
+    }
+  }
+
+  async pickModel(model: ModelOption, confirm: string | null): Promise<Outcome<ModelConfirm | null>> {
+    const offline = this.offline()
+    if (offline !== null) return offline
+    const payload = { model: model.id, provider: model.provider, ...(confirm === null ? {} : { confirm }) }
+    try {
+      const receipt = parseModelReceipt(await this.mutation('model', payload, this.tracked.fence.generation ?? 0))
+      switch (receipt.status) {
+        case 'confirm':
+          return { ok: true, value: receipt.confirm }
+        case 'confirm-without-token':
+          return refused('rejected', receipt.message)
+        case 'deferred': {
+          const { run } = this.tracked.content
+          const during = receipt.during ?? (run.state === 'running' ? run.generation : null)
+          if (during !== null) this.act({ did: 'model.deferred', model: { id: model.id, provider: model.provider }, during })
+          return { ok: true, value: null }
+        }
+        case 'committed':
+          return { ok: true, value: null }
+      }
+    } catch (error) {
+      const refusal = refusalOf(error)
+      return { ok: false, refusal: refusal.kind === 'stale' ? MOVED_ON : refusal }
+    }
+  }
+
+  /** `generation`: the `expected_generation` an operation that needs one sends, as a model switch does. */
+  private mutation(operation: string, payload: Record<string, unknown>, generation: number | null) {
+    const request_id = this.deps.mintId()
+    const commit = (expected_revision: number, expected_generation: number | null) => this.deps.conn.call('session.mutate', {
+      session_id: this.id, request_id, expected_revision, operation, payload,
+      ...(expected_generation === null ? {} : { expected_generation })
+    })
+    return commit(this.tracked.fence.revision, generation).catch((error: unknown) => {
+      // The refusal carries both fresh fences (Hermes's gateway/session_controls.py:915-920), so one retry needs no read.
+      if (error instanceof RpcRefusal && FENCE_REFUSALS.has(error.reason ?? '') && error.revision !== null) {
+        return commit(error.revision, generation === null ? null : error.generation ?? generation)
+      }
+      throw error
+    })
   }
 
   async loadEarlier(): Promise<Outcome> {

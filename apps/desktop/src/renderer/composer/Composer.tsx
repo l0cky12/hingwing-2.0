@@ -1,13 +1,16 @@
 import type { CommandOutcome, SlashCatalog, SlashEntry } from '@highwing/hermes/domain'
-import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { useTopic } from '../store'
 import { completionOf, menuOf, type Menu } from './slash-menu'
 
 interface ComposerProps {
+  readonly inputRef?: RefObject<HTMLTextAreaElement | null>
   readonly canSend: boolean
   readonly showStop: boolean
   readonly onSend: (text: string) => Promise<CommandOutcome<string | null>>
   readonly onStop: () => void
+  readonly onInput: () => void
+  readonly children?: ReactNode
 }
 
 const NO_CATALOG: SlashCatalog = []
@@ -18,7 +21,7 @@ const GROUPS = [
   { kind: 'skill', label: 'Skills' }
 ] as const
 
-export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
+export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput, children }: ComposerProps) {
   const catalog = useTopic('slash') ?? NO_CATALOG
   const [draft, setDraft] = useState('')
   const [active, setActive] = useState(0)
@@ -28,7 +31,8 @@ export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
   const [pending, setPending] = useState(false)
   const [focused, setFocused] = useState(false)
   const sending = useRef(false)
-  const box = useRef<HTMLTextAreaElement>(null)
+  const ownBox = useRef<HTMLTextAreaElement>(null)
+  const box = inputRef ?? ownBox
   const caretToEnd = useRef(false)
   const typed = menuOf(draft, catalog, { active, dismissedDraft })
   const menu = focused ? typed : { open: false as const }
@@ -49,6 +53,7 @@ export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
     setDraft(next)
     setActive(0)
     setDismissedDraft(null)
+    onInput()
   }
   const pick = (entry: SlashEntry) => {
     caretToEnd.current = true
@@ -117,7 +122,7 @@ export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
       )}
       <form onSubmit={submit}>
         <textarea
-          ref={box} rows={2} placeholder="Ask Hermes to do something" aria-label="Message Hermes" value={draft}
+          ref={box} rows={1} placeholder="Ask Hermes to do something" aria-label="Message Hermes" value={draft}
           aria-autocomplete="list" aria-controls={menu.open ? MENU_ID : undefined}
           aria-activedescendant={menu.open ? optionId(menu.active) : undefined}
           onChange={event => edit(event.target.value)} onKeyDown={onKeyDown}
@@ -126,6 +131,7 @@ export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
         {showStop && <button type="button" className="stop" disabled={!canSend} onClick={onStop}>Stop</button>}
         <button type="submit" disabled={!canSend || pending}>Send</button>
       </form>
+      {children}
       {refusal !== null && <p className="err refusal">{refusal}</p>}
       <pre className="slash-output" role="status" aria-label="Command output" aria-busy={pending}>{output}</pre>
     </footer>

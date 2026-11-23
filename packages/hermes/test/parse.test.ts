@@ -8,7 +8,7 @@ import type {
 } from '../src/wire/contract.generated'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 import {
-  parseEvent, parseInlineDiff, parseListRows, parseReplay, parseRows, parseServerRequest, parseSnapshot, parseToolResult,
+  parseEvent, parseInlineDiff, parseListRows, parseModelMenu, parseModelReceipt, parseReplay, parseRows, parseServerRequest, parseSnapshot, parseToolResult,
   parseTranscript, SHOWN, UNSHOWN
 } from '../src/wire/parse'
 
@@ -138,13 +138,13 @@ describe('parseEvent on the errand fixture', () => {
     expect(eventOf(complete)).toEqual({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] })
   })
 
-  it('reads the queue and revision from session.info', () => {
+  it('reads the queue, revision and generation from session.info', () => {
     const [submitted, running, settled] = params.filter(({ type }) => type === 'session.info')
     expect(eventOf(submitted as Params)).toEqual({
-      type: 'meta', revision: 0, queue: [{ inputId: 'input_990d3cd8381d422f', admissionId: 'e07cb5793e7f497bbcc1c0c8b0cdf20a', text: REQUEST, status: 'queued' }]
+      type: 'meta', revision: 0, generation: 0, queue: [{ inputId: 'input_990d3cd8381d422f', admissionId: 'e07cb5793e7f497bbcc1c0c8b0cdf20a', text: REQUEST, status: 'queued' }]
     })
     expect(eventOf(running as Params)).toMatchObject({ type: 'meta', revision: 0, queue: [{ status: 'started' }] })
-    expect(eventOf(settled as Params)).toEqual({ type: 'meta', revision: 1, queue: [] })
+    expect(eventOf(settled as Params)).toEqual({ type: 'meta', revision: 1, generation: 1, queue: [] })
   })
 })
 
@@ -209,6 +209,35 @@ describe('parseEvent outside the happy path', () => {
     const unlisted = GATEWAY_EVENT_TYPES.filter(type => !(type in SHOWN) && !UNSHOWN.has(type) && parseEvent({ type }).scope !== 'app')
     expect(unlisted).toEqual([])
     expect(Object.keys(SHOWN).filter(type => UNSHOWN.has(type))).toEqual([])
+  })
+})
+
+describe('parseRows and when a turn began', () => {
+  const user = (text: string, timestamp?: number | null): TranscriptMessage => ({ role: 'user', text, ...(timestamp === undefined ? {} : { timestamp }) })
+  const answer = (text: string, timestamp?: number): TranscriptMessage => ({ role: 'assistant', text, ...(timestamp === undefined ? {} : { timestamp }) })
+
+  it('reads a request row\'s timestamp, in seconds, as the turn\'s start on the gateway\'s clock', () => {
+    const turn = only(parseRows([user('First', 1_795_251_600.182), answer('Done.', 1_795_251_700)]).turns)
+    expect(turn.began).toEqual({ at: 1_795_251_600_182, clock: 'hermes' })
+  })
+
+  it('takes the start of the stored errand from its request row', () => {
+    expect(only(parseRows(stored).turns).began).toEqual({ at: Math.round((stored[0]?.timestamp as number) * 1000), clock: 'hermes' })
+  })
+
+  it.each([[undefined], [null], [0], [-5]])('gives a request row with timestamp %s no start', timestamp => {
+    expect(only(parseRows([user('First', timestamp), answer('Done.', 1_795_251_700)]).turns).began).toBeNull()
+  })
+
+  it('gives a turn whose request sits on an older page no start, whatever its other rows say', () => {
+    const { turns } = parseRows([answer('The tail of an older turn.', 1_795_251_500), user('Next', 1_795_251_600), answer('Done.', 1_795_251_700)])
+    expect(turns.map(turn => turn.began)).toEqual([null, { at: 1_795_251_600_000, clock: 'hermes' }])
+  })
+
+  it('carries the start of an unfinished turn', () => {
+    const { turns, unfinished } = parseRows([user('First', 1_795_251_600), answer('Done.'), user('Second', 1_795_251_900)])
+    expect(turns.map(turn => turn.began)).toEqual([{ at: 1_795_251_600_000, clock: 'hermes' }])
+    expect(unfinished?.began).toEqual({ at: 1_795_251_900_000, clock: 'hermes' })
   })
 })
 
@@ -319,6 +348,12 @@ describe('parseReplay', () => {
     expect(replay.events.map(({ event }) => event?.type)).toEqual(['text.delta', 'turn.ended', 'meta'])
   })
 
+  it('marks every replayed frame as seen at no known time', () => {
+    const tail = params.slice(-3) as unknown as CanonicalEventsResult['events']
+    const replay = parseReplay({ events: tail, latest_seq: 43, last_sequence: 43, epoch: EPOCH, replay_epoch: EPOCH, truncated: false, snapshot_required: false, count: 3 })
+    expect(replay.events.map(({ seenAt }) => seenAt)).toEqual([null, null, null])
+  })
+
   it('passes on that the gateway cannot replay', () => {
     const reply: CanonicalEventsResult = { events: [], latest_seq: 90, last_sequence: 90, epoch: 'e2', replay_epoch: 'e2', truncated: true, snapshot_required: true, count: 0 }
     expect(parseReplay(reply)).toEqual({ snapshotRequired: true, epoch: 'e2', events: [] })
@@ -359,10 +394,40 @@ describe('parseListRows and parseServerRequest', () => {
 describe('parseInlineDiff and parseToolResult', () => {
   it('keeps one FileDiff per file header and drops the banner and the omitted summary', () => {
     const raw = ['  ┊ review diff', '\u001b[33ma/a.txt → b/a.txt\u001b[0m', '@@ -1 +1 @@', '-x', '+y', 'a/b.txt → b/b.txt', '@@ -0,0 +1 @@', '+new', '… omitted 4 diff line(s)'].join('\n')
-    expect(parseInlineDiff(raw).map(({ path, createsFile, added, removed }): Partial<FileDiff> => ({ path, createsFile, added, removed }))).toEqual([
-      { path: 'a.txt', createsFile: false, added: 1, removed: 1 },
-      { path: 'b.txt', createsFile: true, added: 1, removed: 0 }
+    expect(parseInlineDiff(raw).map(({ path, createsFile, cut, added, removed }): Partial<FileDiff> => ({ path, createsFile, cut, added, removed }))).toEqual([
+      { path: 'a.txt', createsFile: false, cut: false, added: 1, removed: 1 },
+      { path: 'b.txt', createsFile: true, cut: true, added: 1, removed: 0 }
     ])
+  })
+
+  it('marks a file cut when the cap falls between two of its hunks, though every kept hunk is whole', () => {
+    const raw = ['a/a.txt → b/a.txt', '@@ -1 +1 @@', '-x', '+y', '… omitted 4 diff line(s)'].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([true])
+  })
+
+  it('marks a file cut when the cap falls inside a hunk', () => {
+    const raw = ['a/a.txt → b/a.txt', '@@ -1,90 +1,90 @@', ' one', '-two', '+three'].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([true])
+  })
+
+  it('reads a /dev/null target as a delete', () => {
+    const raw = ['a/old.txt → /dev/null', '@@ -1 +0,0 @@', '-gone'].join('\n')
+    expect(parseInlineDiff(raw).map(({ path, deletesFile, cut }) => ({ path, deletesFile, cut }))).toEqual([{ path: 'old.txt', deletesFile: true, cut: false }])
+  })
+
+  it('leaves whole files uncut when a note sits between them', () => {
+    const raw = ['a/a.txt → b/a.txt', '@@ -1 +1 @@', '-x', '+y', '# Moved: a.txt -> b.txt', 'a/c.txt → b/c.txt', '@@ -1 +1 @@', '-p', '+q'].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([false, false])
+  })
+
+  it.each(['# Moved: a.txt -> b.txt', '# Deleted: c.txt'])('leaves a whole file uncut when the patch ends with "%s"', note => {
+    const raw = ['a/a.txt → b/a.txt', '@@ -1 +1 @@', '-x', '+y', note].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([false])
+  })
+
+  it('leaves a whole diff uncut', () => {
+    const raw = ['  ┊ review diff', 'a/a.txt → b/a.txt', '@@ -1,2 +1,2 @@', ' one', '-two', '+three'].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([false])
   })
 
   it('strips ANSI from command output and caps text at 256 kB', () => {
@@ -381,3 +446,76 @@ describe('parseInlineDiff and parseToolResult', () => {
   })
 })
 
+
+describe('models', () => {
+  const frame = (type: string, payload: Record<string, unknown>) => ({ type, session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload })
+
+  it('reads the model Hermes names on session.info and on a committed session.updated', () => {
+    expect(parseEvent(frame('session.info', { revision: 3, model: 'careful-large', provider: 'acme' })))
+      .toMatchObject({ event: { type: 'meta', revision: 3, model: { id: 'careful-large', provider: 'acme' } } })
+    expect(parseEvent(frame('session.updated', { session_id: SESSION, operation: 'model', revision: 3, model: 'careful-large' })))
+      .toMatchObject({ event: { type: 'meta', model: { id: 'careful-large', provider: null } } })
+    expect(parseEvent(frame('session.updated', { session_id: SESSION, operation: 'model', status: 'deferred', model: 'careful-large' })))
+      .toMatchObject({ event: { type: 'meta' } })
+    expect(parseEvent(frame('session.updated', { session_id: SESSION, operation: 'model', status: 'deferred', model: 'careful-large' })))
+      .not.toMatchObject({ event: { model: expect.anything() } })
+  })
+
+  it('settles a pick on a committed or refused receipt, carrying the generation the switch moved to', () => {
+    const base = { session_id: SESSION, operation: 'model', revision: 4 }
+    expect(parseEvent(frame('session.updated', { ...base, model: 'careful-large', provider: 'acme', execution_generation: 3 })))
+      .toMatchObject({ event: { type: 'meta', revision: 4, model: { id: 'careful-large' }, pick: { is: 'settled' }, generation: 3 } })
+    expect(parseEvent(frame('session.updated', { ...base, status: 'refused', reason: 'model_resolution_failed', target_model: 'careful-large', model: 'fast-small' })))
+      .toMatchObject({ event: { model: { id: 'fast-small' }, pick: { is: 'settled' } } })
+    expect(parseEvent(frame('session.updated', { session_id: SESSION, operation: 'rename', revision: 5, title: 'Notes' })))
+      .not.toMatchObject({ event: { pick: expect.anything() } })
+  })
+
+  it('asks for a held pick Hermes wants confirmed at the turn boundary', () => {
+    const asked = {
+      session_id: SESSION, operation: 'model', status: 'confirmation_required', confirm_required: true, confirm: 'tok',
+      confirm_message: 'This model costs more.', payload: { model: 'careful-large', provider: 'acme' }, committed_model: 'fast-small', committed_provider: 'acme'
+    }
+    expect(parseEvent(frame('session.updated', asked))).toMatchObject({
+      event: {
+        type: 'meta',
+        model: { id: 'fast-small', provider: 'acme' },
+        pick: { is: 'asking', ask: { model: { id: 'careful-large', provider: 'acme' }, token: 'tok', message: 'This model costs more.' } }
+      }
+    })
+  })
+
+  it('keeps signed-in providers and their usable models, once each, in Hermes order', () => {
+    const menu = parseModelMenu({
+      model: 'fast-small',
+      provider: 'acme',
+      providers: [
+        { slug: 'acme', name: 'Acme', models: ['fast-small', 'careful-large', 'retired', 'fast-small'], unavailable_models: ['retired'], authenticated: true },
+        { slug: 'signed-out', name: 'Signed out', models: ['locked'], authenticated: false },
+        { slug: 'local', name: 'Local', models: ['local-7b'] },
+        { name: 'no slug', models: ['lost'] } as never
+      ]
+    })
+    expect(menu).toEqual({
+      options: [
+        { id: 'fast-small', provider: 'acme', providerName: 'Acme' },
+        { id: 'careful-large', provider: 'acme', providerName: 'Acme' },
+        { id: 'local-7b', provider: 'local', providerName: 'Local' }
+      ],
+      fallback: { id: 'fast-small', provider: 'acme' }
+    })
+    expect(parseModelMenu({ providers: [] })).toEqual({ options: [], fallback: null })
+  })
+
+  it('tells a deferred pick and a confirmation apart from a committed one', () => {
+    const base = { session_id: SESSION, operation: 'model', revision: 4 }
+    expect(parseModelReceipt({ ...base, status: 'deferred', model: 'careful-large', execution_generation: 2 })).toEqual({ status: 'deferred', during: 2 })
+    expect(parseModelReceipt({ ...base, status: 'confirmation_required', confirm: 'tok', confirm_message: 'This model costs more.' }))
+      .toEqual({ status: 'confirm', confirm: { token: 'tok', message: 'This model costs more.' } })
+    expect(parseModelReceipt({ ...base, status: 'applied', model: 'careful-large' })).toEqual({ status: 'committed' })
+    expect(parseModelReceipt({ ...base, status: 'deferred' })).toEqual({ status: 'deferred', during: null })
+    expect(parseModelReceipt({ ...base, status: 'confirmation_required' }))
+      .toEqual({ status: 'confirm-without-token', message: 'Hermes asks you to confirm this model before it switches.' })
+    expect(parseModelReceipt({ ...base, status: 'deferred', execution_generation: 'two' })).toEqual({ status: 'committed' })
+  })
+})

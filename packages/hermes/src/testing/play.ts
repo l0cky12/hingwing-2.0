@@ -23,6 +23,15 @@ const mintedIn = (step: AwaitStep): unknown => recorded(step).input_id ?? record
 const STUCK_MS = 10 * 60_000
 const LOOPBACK = { turnMs: 2, stuckMs: 20_000 } as const
 
+export interface PlayOptions extends Omit<ScriptOptions, 'timing' | 'clock'> {
+  /**
+   * When the play is over, once the story has played every step. Default: the session is live.
+   * Over a real socket the last frames are still on their way when the story ends, so a test that
+   * reads the final session passes the session it waits for.
+   */
+  readonly ended?: (session: Session) => boolean
+}
+
 export interface Moment {
   /** The index of the step the story was at when the session changed. */
   readonly step: number
@@ -39,11 +48,12 @@ export interface Moment {
  * `script` is the gateway's side: what the client sent it, and how often it dialed.
  *
  * Time is virtual in memory: the client's timers (backoff, heartbeat) run as soon as nothing else
- * can, so a play with a drop takes no real second. Over loopback the system clock runs.
+ * can, so a play with a drop takes no real second. Over a real socket the system clock runs.
  */
-export async function* play(fixture: Fixture, options: Omit<ScriptOptions, 'timing' | 'clock'> = {}): AsyncGenerator<Moment> {
+export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncGenerator<Moment> {
   const { sessionId } = fixture.header
-  const virtual = options.transport === 'loopback' ? null : manualClock()
+  const ended = options.ended ?? (session => session.sync.state === 'live')
+  const virtual = (options.transport ?? 'memory') === 'memory' ? manualClock() : null
   const clock = virtual ?? systemClock
   const script = scriptedDialer(fixture, { ...options, timing: 'instant', clock })
   const ids = fixture.steps.flatMap(step => ('await' in step && typeof mintedIn(step) === 'string' ? [mintedIn(step) as string] : []))
@@ -77,7 +87,7 @@ export async function* play(fixture: Fixture, options: Omit<ScriptOptions, 'timi
         yield { ...moment, hermes, script }
       }
       if (latest !== undefined) user(latest)
-      if (script.finished && latest?.sync.state === 'live') return
+      if (script.finished && latest !== undefined && ended(latest)) return
       if (clock.now() - progressAt > (virtual === null ? LOOPBACK.stuckMs : STUCK_MS)) {
         const step = fixture.steps[script.step]
         const waiting = step !== undefined && 'await' in step ? `waiting for ${step.await}` : 'with no viewer attached'
@@ -92,7 +102,7 @@ export async function* play(fixture: Fixture, options: Omit<ScriptOptions, 'timi
 }
 
 /** The last value `play` yields. */
-export async function playToEnd(fixture: Fixture, options?: Omit<ScriptOptions, 'timing' | 'clock'>): Promise<Session> {
+export async function playToEnd(fixture: Fixture, options?: PlayOptions): Promise<Session> {
   let last: Session | undefined
   for await (const { session } of play(fixture, options)) last = session
   if (last === undefined) throw new Error('the play published no session')

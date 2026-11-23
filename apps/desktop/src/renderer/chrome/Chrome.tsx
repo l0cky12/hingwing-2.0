@@ -1,8 +1,25 @@
-import type { Link } from '@highwing/hermes/domain'
+import { machineOf, type Link, type Target } from '@highwing/hermes/domain'
+import type { ReactNode } from 'react'
 import { run } from '../store'
 
-export function TopBar() {
-  return <header className="bar"><h1><span className="brand">Hermes</span></h1></header>
+/** The bar every screen has. `children` is what the screen puts at its right end. */
+export function Bar({ where, children }: { readonly where: string | null; readonly children?: ReactNode }) {
+  return (
+    <header className="bar">
+      <h1><span className="brand">Hermes</span>{where}</h1>
+      {children}
+    </header>
+  )
+}
+
+/** `target` is null in a fixture run, which has no connection to name or to change. */
+export function TopBar({ target }: { readonly target: Target | null }) {
+  if (target === null) return <Bar where={null} />
+  return (
+    <Bar where={`on ${machineOf(target)}`}>
+      <button onClick={() => void run({ do: 'editTarget' })}>Connection</button>
+    </Bar>
+  )
 }
 
 interface BannerCopy {
