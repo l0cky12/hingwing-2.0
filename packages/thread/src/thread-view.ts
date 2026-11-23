@@ -3,6 +3,12 @@ import {
   type Activity, type FileDiff, type Item, type NoticeItem, type Outcome, type PromptId, type PromptItem, type PromptReply,
   type Session, type SettledTurn, type Sync, type ToolItem, type Turn
 } from '@highwing/hermes/domain'
+import { changesAt, elapsedWords, timeLines, type ViewClock } from './when'
+
+export type { ViewClock }
+
+export { proseBlocks, proseText, type ProseBlock, type ProseRun } from './prose'
+export { fieldId, findInThread, type FieldPart, type FindMatch } from './find'
 
 /** Text with literal parts. `code` is set in JetBrains Mono; nothing here is HTML. */
 export type Phrase = readonly { readonly t: 'text' | 'code'; readonly v: string }[]
@@ -13,11 +19,18 @@ export interface ThreadView {
   /** Messages sent and not yet picked up, shown under the last turn. */
   readonly pending: readonly { readonly key: string; readonly text: string; readonly status: 'sending' | 'queued' | 'failed'; readonly detail: string | null }[]
   readonly earlier: Session['earlier']
+  /**
+   * The earliest instant after the clock's `now` at which the same session would read differently
+   * (an elapsed time ticks over, a time line appears or says a new day), or null when none will.
+   */
+  readonly changesAt: number | null
 }
 
 export interface TurnView {
   /** Stable for the life of the turn. Node keys below are stable while the turn only grows. */
   readonly key: string
+  /** The quiet line above the request: "Today 14:05". null draws nothing. Never the empty string. */
+  readonly time: string | null
   readonly request: string | null
   /** Top to bottom along the thread. */
   readonly nodes: readonly ThreadNode[]
@@ -47,6 +60,9 @@ export type ThreadNode =
  * - `at`: the mark sits on an existing node. Viridian and pulsing on a running step or group,
  *   amber on a pending prompt card. No separate tip row is drawn.
  * - `tip`: a viridian pulsing row of its own ("Thinking", "Writing", "Preparing write_file", "Stopping").
+ * - `elapsed` on a live `at` and on a `tip`: the time since the turn began, "3 min", once a minute has
+ *   passed. Separate text, never part of the words. A prompt card that waits on you shows none, and
+ *   neither does a paused end. After you answer, the count still runs from the turn's start.
  * - `paused`: the turn was running when the link dropped. Graphite, no pulse, says so.
  * - `done`: graphite check ring, `words` for screen readers only.
  * - `failed` and `stopped`: brick, with words.
@@ -54,8 +70,9 @@ export type ThreadNode =
  *   claims it succeeded.
  */
 export type ThreadEnd =
-  | { readonly kind: 'at'; readonly nodeKey: string; readonly tone: 'live' | 'asking' }
-  | { readonly kind: 'tip'; readonly words: Phrase }
+  | { readonly kind: 'at'; readonly nodeKey: string; readonly tone: 'live'; readonly elapsed: string | null }
+  | { readonly kind: 'at'; readonly nodeKey: string; readonly tone: 'asking' }
+  | { readonly kind: 'tip'; readonly words: Phrase; readonly elapsed: string | null }
   | { readonly kind: 'paused'; readonly words: string }
   | { readonly kind: 'done'; readonly words: string }
   | { readonly kind: 'failed'; readonly words: string }
@@ -112,34 +129,41 @@ const settledViews = new WeakMap<SettledTurn, TurnView>()
  * The whole thread, and the one entry point: the renderer calls it on every session value and the
  * tests call it on every fixture step. Settled turns are memoised by reference, so a streaming delta
  * recomputes only the open turn and every settled `TurnView` keeps its identity for `React.memo`.
+ * A tick of `clock` that changes no turn's time line keeps that identity too.
  */
-export function threadView(session: Session): ThreadView {
+export function threadView(session: Session, clock: ViewClock): ThreadView {
   const { run, sync } = session
-  const settled = session.history.map(settledView)
+  const turns: readonly Turn[] = run.state === 'running' ? [...session.history, run.turn] : session.history
+  const starts = turns.map(turn => turn.began?.at ?? null)
+  const lines = timeLines(starts, clock)
+  const settled = session.history.map((turn, index) => settledView(turn, lines[index] ?? null))
+  const open = run.state === 'running'
+    ? turnView(run.turn, lines.at(-1) ?? null, sync.state === 'live', nodes => openEnd(run.turn, nodes, activityOf(session), sync.state, clock))
+    : null
+  const elapsing = open !== null && (open.end.kind === 'tip' || (open.end.kind === 'at' && open.end.tone === 'live'))
   return {
     state: VIEW_STATE[sync.state],
-    turns: run.state === 'running'
-      ? [...settled, turnView(run.turn, sync.state === 'live', nodes => openEnd(run.turn, nodes, activityOf(session), sync.state))]
-      : settled,
+    turns: open === null ? settled : [...settled, open],
     pending: session.outbox.map(entry => ({
       key: entry.inputId,
       text: entry.text,
       status: entry.state.s,
       detail: entry.state.s === 'failed' ? entry.state.message : null
     })),
-    earlier: session.earlier
+    earlier: session.earlier,
+    changesAt: changesAt(starts, lines, elapsing ? starts.at(-1) ?? null : null, clock)
   }
 }
 
-function settledView(turn: SettledTurn): TurnView {
+function settledView(turn: SettledTurn, time: string | null): TurnView {
   const memo = settledViews.get(turn)
-  if (memo) return memo
-  const view = turnView(turn, false, () => settledEnd(turn.outcome))
+  if (memo?.time === time) return memo
+  const view = memo === undefined ? turnView(turn, time, false, () => settledEnd(turn.outcome)) : { ...memo, time }
   settledViews.set(turn, view)
   return view
 }
 
-function turnView(turn: Turn, live: boolean, end: (nodes: readonly ThreadNode[]) => ThreadEnd): TurnView {
+function turnView(turn: Turn, time: string | null, live: boolean, end: (nodes: readonly ThreadNode[]) => ThreadEnd): TurnView {
   const at = (index: number) => `${turn.id}/${index}`
   const nodes = groupRuns(placeApprovals(turn.items).filter(isShown)).map((run): ThreadNode => {
     if ('tools' in run) {
@@ -167,7 +191,7 @@ function turnView(turn: Turn, live: boolean, end: (nodes: readonly ThreadNode[])
         return { kind: 'notice', key, ...noticeWords(item) }
     }
   })
-  return { key: turn.id, request: turn.request?.text ?? null, nodes, end: end(nodes) }
+  return { key: turn.id, time, request: turn.request?.text ?? null, nodes, end: end(nodes) }
 }
 
 interface Placed<I extends Item = Item> {
@@ -447,19 +471,21 @@ const TIP_WORDS = {
   stopping: 'Stopping'
 } as const satisfies Record<Exclude<Activity['kind'], 'preparing' | 'working' | 'asking'>, string>
 
-function openEnd(turn: Turn, nodes: readonly ThreadNode[], activity: Activity, sync: Sync['state']): ThreadEnd {
+function openEnd(turn: Turn, nodes: readonly ThreadNode[], activity: Activity, sync: Sync['state'], clock: ViewClock): ThreadEnd {
   if (sync !== 'live') return { kind: 'paused', words: PAUSED_WORDS[sync] }
+  const elapsed = elapsedWords(turn.began?.at ?? null, clock.now)
   switch (activity.kind) {
     case 'asking':
     case 'working': {
       const key = `${turn.id}/${activity.item}`
       const node = nodes.find(n => n.key === key || (n.kind === 'group' && n.steps.some(step => step.key === key)))
-      return { kind: 'at', nodeKey: node?.key ?? key, tone: activity.kind === 'asking' ? 'asking' : 'live' }
+      const nodeKey = node?.key ?? key
+      return activity.kind === 'asking' ? { kind: 'at', nodeKey, tone: 'asking' } : { kind: 'at', nodeKey, tone: 'live', elapsed }
     }
     case 'preparing':
-      return { kind: 'tip', words: [{ t: 'text', v: 'Preparing ' }, { t: 'code', v: activity.tool }] }
+      return { kind: 'tip', words: [{ t: 'text', v: 'Preparing ' }, { t: 'code', v: activity.tool }], elapsed }
     default:
-      return { kind: 'tip', words: [{ t: 'text', v: TIP_WORDS[activity.kind] }] }
+      return { kind: 'tip', words: [{ t: 'text', v: TIP_WORDS[activity.kind] }], elapsed }
   }
 }
 
@@ -498,6 +524,7 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
 /**
  * The view as text, one line per node, for golden tests, bug reports and a replay CLI:
  *
+ *   @ Today 14:05                                              time line, when the turn has one
  *   > make notes.md with a three-item todo list ...            request
  *   | I'll create the notes file first, then make the edit.    prose (first line)
  *   ■ Created and edited `notes.md` · 2 steps                  group, its steps indented under it
@@ -509,8 +536,8 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
  *   ✓ Done                                                     end: ✓ done, ✗ failed, ⊘ stopped, ~ lost, each with its words
  *
  * `◉` replaces the glyph of the step or group that carries the live end, or opens a tip line
- * ("◉ Thinking"). `◌` is a paused end. `⋯` is a pending message. Keys in `opened` print that row's
- * record sections under it.
+ * ("◉ Thinking"). Once a minute has passed the live end adds `, 3 min` after its words. `◌` is a
+ * paused end. `⋯` is a pending message. Keys in `opened` print that row's record sections under it.
  */
 export function outline(view: ThreadView, opened: ReadonlySet<string> = new Set()): string {
   const lines: string[] = []
@@ -518,9 +545,11 @@ export function outline(view: ThreadView, opened: ReadonlySet<string> = new Set(
   if (view.earlier !== 'none') lines.push(`… earlier turns${view.earlier === 'loading' ? ' (loading)' : ''}`)
   view.turns.forEach((turn, index) => {
     if (index > 0) lines.push('')
+    if (turn.time !== null) lines.push(`@ ${turn.time}`)
     if (turn.request !== null) lines.push(`> ${firstLine(turn.request)}`)
     const liveKey = turn.end.kind === 'at' ? turn.end.nodeKey : null
-    for (const node of turn.nodes) lines.push(...nodeLines(node, node.key === liveKey, opened))
+    const elapsed = turn.end.kind === 'at' && turn.end.tone === 'live' ? turn.end.elapsed : null
+    for (const node of turn.nodes) lines.push(...nodeLines(node, node.key === liveKey, elapsed, opened))
     const end = endLine(turn.end)
     if (end !== null) lines.push(end)
   })
@@ -528,16 +557,16 @@ export function outline(view: ThreadView, opened: ReadonlySet<string> = new Set(
   return lines.join('\n')
 }
 
-function nodeLines(node: ThreadNode, live: boolean, opened: ReadonlySet<string>): string[] {
+function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, opened: ReadonlySet<string>): string[] {
   switch (node.kind) {
     case 'prose':
       return [`| ${firstLine(node.markdown)}${node.streaming ? ' …' : ''}`]
     case 'step':
-      return stepLines(node.step, live ? '◉' : '●', '', opened)
+      return stepLines(node.step, live ? '◉' : '●', '', live ? elapsed : null, opened)
     case 'group':
       return [
-        `${live ? '◉' : '■'} ${phrase(node.title)} · ${node.count} steps${meta(node.stat, null)}`,
-        ...node.steps.flatMap(step => stepLines(step, '●', '    ', opened))
+        `${live ? '◉' : '■'} ${phrase(node.title)} · ${node.count} steps${live ? elapsedSuffix(elapsed) : ''}${meta(node.stat, null)}`,
+        ...node.steps.flatMap(step => stepLines(step, '●', '    ', null, opened))
       ]
     case 'prompt': {
       const { card } = node
@@ -555,8 +584,8 @@ function nodeLines(node: ThreadNode, live: boolean, opened: ReadonlySet<string>)
   }
 }
 
-function stepLines(step: StepView, glyph: string, indent: string, opened: ReadonlySet<string>): string[] {
-  const head = `${indent}${glyph} ${phrase(step.title)}${meta(step.stat, step.duration)}${step.state === 'cut' ? '  (cut)' : ''}`
+function stepLines(step: StepView, glyph: string, indent: string, elapsed: string | null, opened: ReadonlySet<string>): string[] {
+  const head = `${indent}${glyph} ${phrase(step.title)}${elapsedSuffix(elapsed)}${meta(step.stat, step.duration)}${step.state === 'cut' ? '  (cut)' : ''}`
   if (!opened.has(step.key) || step.record === null) return [head]
   const pad = `${indent}    `
   return [head, ...step.record.sections.flatMap(section => [
@@ -576,10 +605,12 @@ function sectionLines(section: RecordSection): string[] {
 function endLine(end: ThreadEnd): string | null {
   switch (end.kind) {
     case 'at': return null
-    case 'tip': return `◉ ${phrase(end.words)}`
+    case 'tip': return `◉ ${phrase(end.words)}${elapsedSuffix(end.elapsed)}`
     default: return `${END_GLYPH[end.kind]} ${end.words}`
   }
 }
+
+const elapsedSuffix = (elapsed: string | null) => (elapsed === null ? '' : `, ${elapsed}`)
 
 function meta(stat: DiffStat | null, duration: string | null): string {
   const parts = [
@@ -610,6 +641,7 @@ export function checkThread(view: ThreadView): string[] {
     const last = index === view.turns.length - 1
     const settled = SETTLED_ENDS.has(turn.end.kind)
     claim(turn.key)
+    if (turn.time === '') problems.push(`${where}: the time line is an empty string`)
     for (const node of turn.nodes) {
       claim(node.key)
       if (node.kind === 'group') {
@@ -639,5 +671,6 @@ export function checkThread(view: ThreadView): string[] {
         problems.push(`${where}: the live end sits on ${node.kind} ${node.key}`)
     }
   })
+  for (const message of view.pending) claim(message.key)
   return problems
 }

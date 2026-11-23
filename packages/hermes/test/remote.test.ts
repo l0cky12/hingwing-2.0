@@ -9,7 +9,7 @@ import type { Loopback } from '../src/testing/loopback'
 import { UPGRADE_MS } from '../src/wire/ssh'
 import { ERRAND } from './support/errand'
 import { closing, errandGateway, host, listen, until } from './support/host'
-import { errand, fold } from './support/story'
+import { errand, fold, ignoringStartTimes } from './support/story'
 
 const PROBE = 'gateway tickets --probe --json'
 const ATTACH = 'gateway attach --json --timeout 20'
@@ -35,14 +35,14 @@ describe('remoteRoute, against the fake host and the loopback gateway', () => {
     let far: FakeHost | undefined
     let gateway: Loopback | undefined
     const last = await playToEnd(ERRAND, {
-      ended: session => isDeepStrictEqual(session, want),
+      ended: session => isDeepStrictEqual(ignoringStartTimes(session), want),
       transport: async listening => {
         gateway = listening
         far = await host('ok', listening)
         return routeTo(far).dial
       }
     })
-    expect(last).toEqual(want)
+    expect(ignoringStartTimes(last)).toEqual(want)
     expect(gateway?.upgrades, 'one upgrade, with no Origin and a ticket no dial used before').toEqual([ACCEPTED(0)])
     expect(far?.calls).toEqual([PROBE, ATTACH_START, 'relay 1'])
   })

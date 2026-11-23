@@ -212,6 +212,35 @@ describe('parseEvent outside the happy path', () => {
   })
 })
 
+describe('parseRows and when a turn began', () => {
+  const user = (text: string, timestamp?: number | null): TranscriptMessage => ({ role: 'user', text, ...(timestamp === undefined ? {} : { timestamp }) })
+  const answer = (text: string, timestamp?: number): TranscriptMessage => ({ role: 'assistant', text, ...(timestamp === undefined ? {} : { timestamp }) })
+
+  it('reads a request row\'s timestamp, in seconds, as the turn\'s start on the gateway\'s clock', () => {
+    const turn = only(parseRows([user('First', 1_795_251_600.182), answer('Done.', 1_795_251_700)]).turns)
+    expect(turn.began).toEqual({ at: 1_795_251_600_182, clock: 'hermes' })
+  })
+
+  it('takes the start of the stored errand from its request row', () => {
+    expect(only(parseRows(stored).turns).began).toEqual({ at: Math.round((stored[0]?.timestamp as number) * 1000), clock: 'hermes' })
+  })
+
+  it.each([[undefined], [null], [0], [-5]])('gives a request row with timestamp %s no start', timestamp => {
+    expect(only(parseRows([user('First', timestamp), answer('Done.', 1_795_251_700)]).turns).began).toBeNull()
+  })
+
+  it('gives a turn whose request sits on an older page no start, whatever its other rows say', () => {
+    const { turns } = parseRows([answer('The tail of an older turn.', 1_795_251_500), user('Next', 1_795_251_600), answer('Done.', 1_795_251_700)])
+    expect(turns.map(turn => turn.began)).toEqual([null, { at: 1_795_251_600_000, clock: 'hermes' }])
+  })
+
+  it('carries the start of an unfinished turn', () => {
+    const { turns, unfinished } = parseRows([user('First', 1_795_251_600), answer('Done.'), user('Second', 1_795_251_900)])
+    expect(turns.map(turn => turn.began)).toEqual([{ at: 1_795_251_600_000, clock: 'hermes' }])
+    expect(unfinished?.began).toEqual({ at: 1_795_251_900_000, clock: 'hermes' })
+  })
+})
+
 describe('parseRows on the stored errand', () => {
   it('folds the stored rows into one complete turn that lists every row id', () => {
     const { turns, unfinished } = parseRows(stored)
@@ -317,6 +346,12 @@ describe('parseReplay', () => {
     expect(replay).toMatchObject({ snapshotRequired: false, epoch: EPOCH })
     expect(replay.events.map(({ stamp }) => stamp)).toEqual([41, 42, 43].map(seq => ({ epoch: EPOCH, seq, generation: 1 })))
     expect(replay.events.map(({ event }) => event?.type)).toEqual(['text.delta', 'turn.ended', 'meta'])
+  })
+
+  it('marks every replayed frame as seen at no known time', () => {
+    const tail = params.slice(-3) as unknown as CanonicalEventsResult['events']
+    const replay = parseReplay({ events: tail, latest_seq: 43, last_sequence: 43, epoch: EPOCH, replay_epoch: EPOCH, truncated: false, snapshot_required: false, count: 3 })
+    expect(replay.events.map(({ seenAt }) => seenAt)).toEqual([null, null, null])
   })
 
   it('passes on that the gateway cannot replay', () => {

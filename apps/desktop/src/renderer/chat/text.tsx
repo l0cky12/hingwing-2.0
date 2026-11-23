@@ -1,29 +1,34 @@
-import type { Phrase } from '@highwing/thread'
-import { Fragment, type ReactNode } from 'react'
+import { fieldId, proseBlocks, type Phrase, type ProseRun } from '@highwing/thread'
+import { Fragment } from 'react'
 
 export function PhraseText({ words }: { readonly words: Phrase }) {
   return words.map((piece, index) => (piece.t === 'code' ? <code key={index}>{piece.v}</code> : <Fragment key={index}>{piece.v}</Fragment>))
 }
 
-const INLINE = /(`[^`]+`|\*\*[^*]+\*\*|\n)/
-
-function inline(paragraph: string): ReactNode[] {
-  return paragraph.split(INLINE).filter(Boolean).map((part, index) => {
-    if (part === '\n') return <br key={index} />
-    if (part.startsWith('`')) return <code key={index}>{part.slice(1, -1)}</code>
-    if (part.startsWith('**')) return <b key={index}>{part.slice(2, -2)}</b>
-    return <Fragment key={index}>{part}</Fragment>
+function Runs({ runs }: { readonly runs: readonly ProseRun[] }) {
+  return runs.map((run, index) => {
+    switch (run.t) {
+      case 'br': return <br key={index} />
+      case 'code': return <code key={index}>{run.v}</code>
+      case 'bold': return <b key={index}>{run.v}</b>
+      case 'text': return <Fragment key={index}>{run.v}</Fragment>
+    }
   })
 }
 
-export function Markdown({ source, caret }: { readonly source: string; readonly caret: boolean }) {
-  const blocks = source.split(/```[\w-]*\n?/).flatMap((chunk, index) => index % 2 === 1
-    ? [{ code: true, text: chunk.replace(/\n$/, '') }]
-    : chunk.split(/\n{2,}/).filter(block => block.trim() !== '').map(text => ({ code: false, text })))
+interface MarkdownProps {
+  readonly source: string
+  readonly caret: boolean
+  readonly nodeKey: string
+}
+
+export function Markdown({ source, caret, nodeKey }: MarkdownProps) {
+  const blocks = proseBlocks(source)
   return blocks.map((block, index) => {
     const tail = caret && index === blocks.length - 1 ? <span className="caret" /> : null
+    const find = fieldId(nodeKey, `block ${index}`)
     return block.code
-      ? <pre key={index}><code>{block.text}</code>{tail}</pre>
-      : <p key={index}>{inline(block.text)}{tail}</p>
+      ? <pre key={index} data-find={find}><code>{block.text}</code>{tail}</pre>
+      : <p key={index} data-find={find}><Runs runs={block.runs} />{tail}</p>
   })
 }

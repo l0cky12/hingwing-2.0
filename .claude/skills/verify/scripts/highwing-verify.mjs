@@ -109,6 +109,20 @@ const STEPS = {
       const held = await ctx.page.getByLabel(label, { exact: true }).inputValue({ timeout: ctx.timeout })
       if (held !== text) throw new Error(`"${label}" holds ${JSON.stringify(held)}, not ${JSON.stringify(text)}`)
     }
+  },
+  focused: {
+    arity: 2,
+    run: async (ctx, role, name) => {
+      const has = await ctx.page.getByRole(role, { name, exact: true }).evaluate(element => element === document.activeElement, null, { timeout: ctx.timeout })
+      if (!has) throw new Error(`${role} "${name}" does not have focus`)
+    }
+  },
+  marks: {
+    arity: 1,
+    run: async (ctx, count) => {
+      const found = await ctx.page.evaluate(() => ['find', 'find-current'].reduce((total, name) => total + (CSS.highlights.get(name)?.size ?? 0), 0))
+      if (found !== Number(count)) throw new Error(`${found} ranges are marked, expected ${count}`)
+    }
   }
 }
 

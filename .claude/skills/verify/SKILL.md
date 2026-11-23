@@ -60,6 +60,8 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `value <label> <text>` | exact label, text | fails unless the field holds exactly that text now |
 | `field <label> <lines> <fits\|scrolls>` | exact label, a line count, `fits` or `scrolls` | logs how many lines the field shows and whether its text scrolls with a visible scrollbar, and fails unless both match |
 | `pinned` | none | logs where the thread sits, and fails unless it is scrolled to its end, its last row is in view (wholly, when it fits), and the composer does not cover it |
+| `focused <role> <name>` | ARIA role, exact accessible name | fails unless that element is `document.activeElement` now |
+| `marks <count>` | number | fails unless the ranges in the `find` and `find-current` highlights add up to the count. A missing highlight counts as 0. It reads state and never sets it |
 
 Named states live in the `STATES` table in the helper. Add a state there, not a sleep.
 

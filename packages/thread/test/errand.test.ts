@@ -5,8 +5,9 @@ import { errand, fold, foldWithDrop, type Moment } from '../../hermes/test/suppo
 import { checkThread, outline, threadView } from '../src/thread-view'
 
 const ONLINE: Link = { state: 'online' }
+const CLOCK = { now: 0, timeZone: 'UTC' }
 const story = errand()
-const view = (state: Tracked) => threadView(sessionOf(state, ONLINE, null))
+const view = (state: Tracked) => threadView(sessionOf(state, ONLINE, null), CLOCK)
 
 const moments: Moment[] = []
 fold(story, moment => moments.push(moment))
@@ -66,7 +67,7 @@ describe('the errand as design C', () => {
   it('pauses the live end when the link drops mid-turn', () => {
     const running = momentWhere(state => activityOf(state.content).kind === 'working')
     const dropped = reduce(running, { in: 'link.lost' })
-    expect(outline(threadView(sessionOf(dropped, { state: 'connecting', attempt: 1 }, null))).split('\n').slice(-2)).toEqual([
+    expect(outline(threadView(sessionOf(dropped, { state: 'connecting', attempt: 1 }, null), CLOCK)).split('\n').slice(-2)).toEqual([
       '● Writing `notes.md`',
       '◌ Paused while Highwing is disconnected.'
     ])
@@ -79,7 +80,7 @@ describe('soundness of the errand view', () => {
     const offline = reduce(state, { in: 'link.lost' })
     const catchingUp = reduce(offline, { in: 'attach' })
     expect(checkThread(view(state))).toEqual([])
-    expect(checkThread(threadView(sessionOf(offline, { state: 'connecting', attempt: 1 }, null)))).toEqual([])
+    expect(checkThread(threadView(sessionOf(offline, { state: 'connecting', attempt: 1 }, null), CLOCK))).toEqual([])
     expect(checkThread(view(catchingUp))).toEqual([])
   })
 
