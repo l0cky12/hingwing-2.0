@@ -4,7 +4,7 @@ import {
   type Session, type SettledTurn, type Sync, type ToolItem, type Turn
 } from '@highwing/hermes/domain'
 
-export { proseBlocks, proseText, type ProseBlock, type ProseRun } from './prose'
+export { leafText, parseMarkdown, proseLeaves, type Align, type Block, type Cell, type CodeBlock, type Inline, type ProseLeaf } from './prose'
 export { fieldId, findInThread, type FieldPart, type FindMatch } from './find'
 
 /** Text with literal parts. `code` is set in JetBrains Mono; nothing here is HTML. */

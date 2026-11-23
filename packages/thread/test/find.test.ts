@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { sessionOf } from '../../hermes/src/domain/reduce'
 import type { Link } from '../../hermes/src/domain/session'
 import { errand, fold, type Moment } from '../../hermes/test/support/story'
-import { fieldId, findInThread, outline, proseBlocks, proseText, threadView, type StepView, type ThreadView } from '../src/thread-view'
+import { fieldId, findInThread, leafText, outline, parseMarkdown, proseLeaves, threadView, type StepView, type ThreadView } from '../src/thread-view'
 
 const ONLINE: Link = { state: 'online' }
 const view: ThreadView = threadView(sessionOf(fold(errand()), ONLINE, null))
@@ -103,7 +103,7 @@ describe('the prose a reader sees', () => {
   it('has no backticks in the closing paragraph', () => {
     const closing = nodes.findLast(node => node.kind === 'prose')
     if (closing?.kind !== 'prose') throw new Error('the errand ends without prose')
-    const text = proseBlocks(closing.markdown).map(proseText).join('\n')
+    const text = proseLeaves(parseMarkdown(closing.markdown)).map(leafText).join('\n')
     expect(text).toContain('notes.md')
     expect(text).not.toContain('`')
   })

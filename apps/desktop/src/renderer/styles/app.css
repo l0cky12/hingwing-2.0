@@ -91,6 +91,35 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .prose code { font-size: 0.82em; background: var(--code-bg); padding: 1px 3px; border-radius: 3px; }
 .prose pre { margin: 6px 0 0; padding: 12px 14px; background: var(--sheet); border-radius: 6px; font-size: 13px; line-height: 1.55; overflow-x: auto; }
 .prose pre code { background: none; padding: 0; font-size: inherit; }
+.prose > :not(.code) { max-width: 66ch; }
+.prose :is(h1, h2, h3, h4, h5, h6) { margin: 18px 0 6px; font-weight: 600; line-height: 1.35; }
+.prose :is(h1, h2) { font-size: 20px; }
+.prose :is(h3, h4, h5, h6) { font-size: 16.5px; }
+.prose > :first-child { margin-top: 0; }
+.prose :is(ul, ol) { margin: 0 0 10px; padding-left: 1.6em; }
+.prose li::marker { color: var(--graphite); }
+.prose li + li, .prose li > :is(ul, ol) { margin-top: 2px; }
+.prose li > p { margin-bottom: 6px; }
+.prose li > :is(ul, ol):last-child { margin-bottom: 0; }
+.prose blockquote { margin: 0 0 10px; padding-left: 14px; border-left: 2px solid var(--graphite); }
+.prose hr { margin: 14px 0; border: 0; border-top: 1px solid var(--rule); }
+.prose a { color: inherit; text-decoration: underline; text-decoration-color: var(--graphite); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.prose a:hover { text-decoration-color: var(--ink); }
+.prose .table { width: fit-content; max-width: min(100%, 66ch); margin: 6px 0 10px; overflow-x: auto; scrollbar-width: thin; }
+.prose table { border-collapse: collapse; line-height: 1.45; font-variant-numeric: tabular-nums; }
+.prose :is(th, td) { padding: 5px 18px 5px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+.prose :is(th, td):last-child { padding-right: 0; }
+.prose th { font-weight: 600; border-bottom: 1.5px solid var(--graphite); }
+.prose .code { position: relative; }
+.prose .code:not(:last-child) { margin-bottom: 10px; }
+.prose .chip {
+  position: absolute; top: 6px; right: 6px; display: flex; align-items: center; gap: 8px; padding: 0 2px 0 8px;
+  font: 400 12.5px/24px var(--sans); color: var(--graphite); background: var(--sheet); border-radius: 4px;
+  opacity: 0; transition: opacity .12s ease;
+}
+.prose .code:hover .chip, .prose .code:has(:focus-visible) .chip, .prose .chip:has(.copied) { opacity: 1; }
+.copy { padding: 0 6px; border: 0; border-radius: 4px; background: none; color: var(--graphite); }
+.copy:hover, .copy.copied { color: var(--ink); }
 .caret::after { content: ""; display: inline-block; width: 0.5em; height: 1em; margin-left: 2px; vertical-align: -0.12em; background: var(--signal); animation: blink 1s steps(2) infinite; }
 
 .step > .head, .group > .head {
