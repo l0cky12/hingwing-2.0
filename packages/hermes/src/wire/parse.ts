@@ -539,10 +539,8 @@ const UI_META = { section: 'section', role: 'role', tone: 'color' } as const
 const words = (raw: unknown): string | null => (isString(raw) && raw.trim() !== '' ? raw.trim() : null)
 
 /**
- * `profiles.list` as flat facts, in the reply's order. A row with no name is no bot, and a second
- * row with a name already seen is dropped. A `ui_meta` that is not an object, or holds something
- * other than words under a key, counts as not having that key. A colour is kept only when it is one
- * of Highwing's own tone names, so an avatar's contrast never depends on what Hermes stored.
+ * `profiles.list` as flat facts, in the reply's order. A colour is kept only when it is one of
+ * Highwing's own tone names, so an avatar's contrast never depends on what Hermes stored.
  */
 export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
   const rows: readonly unknown[] = isObject(reply) && Array.isArray(reply.profiles) ? reply.profiles : []

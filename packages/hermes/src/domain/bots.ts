@@ -89,13 +89,7 @@ function painted(rows: readonly BotFacts[]): Bot[] {
   return out
 }
 
-/**
- * The one place that decides where each bot goes and how it is painted. Pure.
- *
- * The first default bot is featured, in ink. Every other bot, a later default bot included, goes
- * under its section. Sections keep the order their first bot has in `facts`, bots keep the order
- * of `facts`, and the bots in no section come last.
- */
+/** The one place that decides where each bot goes and how it is painted. Only the first default bot is featured. */
 export function rosterOf(facts: readonly BotFacts[]): Roster {
   const featured = facts.find(bot => bot.isDefault) ?? null
   const rest = facts.filter(bot => bot !== featured)
