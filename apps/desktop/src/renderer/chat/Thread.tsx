@@ -178,10 +178,10 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScro
     onFindScrolled()
   }, [find, currentRange, onFindScrolled])
 
-  const show = (held: FindState, match: FindMatch, asked: ReadonlySet<string>) => {
+  const show = (held: FindState, match: FindMatch, asked: ReadonlySet<string>, navigate: boolean) => {
     const fresh = match.opens.filter(key => !asked.has(key) && !opened.has(key))
     if (fresh.length > 0) setOpened(rows => new Set([...rows, ...fresh]))
-    navigated.current = match.opens.every(key => opened.has(key) || fresh.includes(key))
+    navigated.current = navigate
     setFind({
       ...held,
       current: { field: match.field, start: match.start, asked: new Set([...asked, ...match.opens]) },
@@ -192,13 +192,13 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScro
   const step = (direction: 1 | -1) => {
     if (find === null || matches.length === 0) return
     const next = current === null ? (direction === 1 ? 0 : matches.length - 1) : (current + direction + matches.length) % matches.length
-    show(find, matches[next]!, new Set())
+    show(find, matches[next]!, new Set(), true)
   }
 
   useLayoutEffect(() => {
     const match = current === null ? undefined : matches[current]
     if (find?.current == null || match === undefined || match.opens.every(key => find.current!.asked.has(key))) return
-    show(find, match, find.current.asked)
+    show(find, match, find.current.asked, false)
   })
 
   const closeFind = () => {
