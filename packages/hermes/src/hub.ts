@@ -9,7 +9,9 @@ import { parseEvent, parseServerRequest, type ParsedEvent } from './wire/parse'
 
 export type { Command, Outcome, Refusal, ResultOf } from './domain/command'
 export type { Clock, Dialer, WireSocket } from './wire/link'
+export { checkTarget, type CheckOptions, type CheckResult } from './wire/check'
 export { DialError, liveDialer } from './wire/link'
+export { remoteRoute, type Route } from './wire/remote'
 
 /** A value that changes. `subscribe` calls back on every change, not for the current value. */
 export interface Feed<T> {

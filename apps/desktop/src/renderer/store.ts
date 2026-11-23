@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react'
+import { createContext, useContext, useSyncExternalStore } from 'react'
 import { applyPush, type Bridge, type Topic, type TopicValue } from '../ipc-contract'
 
 declare global {
@@ -12,7 +12,13 @@ interface Copy {
   stop: (() => void) | null
 }
 
-const copies = new Map<Topic, Copy>()
+/**
+ * The connection a subtree reads from. A copy belongs to one epoch, so a subtree mounted for a new
+ * connection starts empty and never draws what the old connection held.
+ */
+export const Epoch = createContext(0)
+
+const copies = new Map<string, Copy>()
 
 function start(topic: Topic, copy: Copy) {
   copy.stop = window.highwing.watch(topic, push => {
@@ -28,35 +34,36 @@ function start(topic: Topic, copy: Copy) {
   })
 }
 
-function copyOf(topic: Topic): Copy {
-  const held = copies.get(topic)
+function copyOf(key: string): Copy {
+  const held = copies.get(key)
   if (held !== undefined) return held
   const copy: Copy = { value: undefined, rev: 0, listeners: new Set(), stop: null }
-  copies.set(topic, copy)
+  copies.set(key, copy)
   return copy
 }
 
-const subscribers = new Map<Topic, (listener: () => void) => () => void>()
-const subscribe = (topic: Topic) => {
-  const held = subscribers.get(topic)
+const subscribers = new Map<string, (listener: () => void) => () => void>()
+const subscribe = (key: string, topic: Topic) => {
+  const held = subscribers.get(key)
   if (held !== undefined) return held
   const created = (listener: () => void) => {
-    const copy = copyOf(topic)
+    const copy = copyOf(key)
     copy.listeners.add(listener)
     if (copy.stop === null) start(topic, copy)
     return () => {
       copy.listeners.delete(listener)
       if (copy.listeners.size > 0) return
       copy.stop?.()
-      copies.delete(topic)
+      copies.delete(key)
     }
   }
-  subscribers.set(topic, created)
+  subscribers.set(key, created)
   return created
 }
 
 export function useTopic<T extends Topic>(topic: T): TopicValue<T> | undefined {
-  return useSyncExternalStore(subscribe(topic), () => copies.get(topic)?.value as TopicValue<T> | undefined)
+  const key = `${useContext(Epoch)} ${topic}`
+  return useSyncExternalStore(subscribe(key, topic), () => copies.get(key)?.value as TopicValue<T> | undefined)
 }
 
 export const run: Bridge['run'] = command => window.highwing.run(command)

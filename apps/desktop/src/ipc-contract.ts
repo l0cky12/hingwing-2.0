@@ -1,9 +1,39 @@
-import type {
-  Command, CommandOutcome, Item, Link, OpenTurn, PromptReply, ResultOf, Session, SessionId, SettledTurn, Sidebar
+import {
+  targetOf,
+  type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type OpenTurn, type PromptReply, type ResultOf,
+  type Session, type SessionId, type SettledTurn, type Sidebar, type Target
 } from '@highwing/hermes/domain'
 
-export type Topic = 'link' | 'sidebar' | `session:${SessionId}`
-export type TopicValue<T extends Topic> = T extends 'link' ? Link : T extends 'sidebar' ? Sidebar : Session
+/** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
+export interface Live { readonly target: Target; readonly epoch: number }
+
+/**
+ * Which screen a window shows, and what that screen needs. Owned by Electron main. `live` is the
+ * connection the chat keeps while the setup screen is open, or null before the first one is saved.
+ */
+export type Setup =
+  | { readonly at: 'chat'; readonly live: Live }
+  | { readonly at: 'form'; readonly live: Live | null; readonly notice: 'unreadable' | 'newer' | null }
+  | { readonly at: 'checking'; readonly live: Live | null; readonly target: Target; readonly step: CheckStep }
+  | { readonly at: 'failed'; readonly live: Live | null; readonly target: Target; readonly failure: CheckFailure }
+  | { readonly at: 'saved'; readonly live: Live }
+  /** `HIGHWING_FIXTURE` plays a recorded gateway. There is nothing to set up. */
+  | { readonly at: 'pinned' }
+
+export type SetupCommand =
+  /** Check a target and, when it passes, save it and connect to it. */
+  | { readonly do: 'checkTarget'; readonly target: Target }
+  /** Open the setup screen over the chat. */
+  | { readonly do: 'editTarget' }
+  /** Cancel: back to the chat on the connection it has. */
+  | { readonly do: 'keepTarget' }
+  | { readonly do: 'openChat' }
+
+export type AppCommand = Command | SetupCommand
+export type AppResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
+
+export type Topic = 'setup' | 'link' | 'sidebar' | `session:${SessionId}`
+export type TopicValue<T extends Topic> = T extends 'setup' ? Setup : T extends 'link' ? Link : T extends 'sidebar' ? Sidebar : Session
 
 export interface Tail<T> { readonly from: number; readonly items: readonly T[] }
 
@@ -22,7 +52,7 @@ export type Push<T extends Topic = Topic> =
 
 export interface Bridge {
   watch<T extends Topic>(topic: T, onPush: (push: Push<T>) => void): () => void
-  run<C extends Command>(command: C): Promise<CommandOutcome<ResultOf<C>>>
+  run<C extends AppCommand>(command: C): Promise<CommandOutcome<AppResult<C>>>
 }
 
 export const CHANNEL = { watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run' } as const
@@ -54,7 +84,7 @@ const sessionIdOf = (raw: Obj) => (filled(raw.sessionId) ? (raw.sessionId as Ses
 const replyOf = (raw: unknown): PromptReply | null =>
   isObject(raw) && (raw.kind === 'choice' || raw.kind === 'text') && text(raw.value) ? { kind: raw.kind, value: raw.value } : null
 
-type Validators = { readonly [K in Command['do']]: (raw: Obj) => Extract<Command, { do: K }> | null }
+type Validators = { readonly [K in AppCommand['do']]: (raw: Obj) => Extract<AppCommand, { do: K }> | null }
 
 export const validators: Validators = {
   create: raw => (filled(raw.draftId) && (raw.cwd === null || text(raw.cwd)) ? { do: 'create', draftId: raw.draftId, cwd: raw.cwd } : null),
@@ -87,15 +117,22 @@ export const validators: Validators = {
     const sessionId = sessionIdOf(raw)
     return sessionId && { do: 'loadEarlier', sessionId }
   },
-  reconnect: raw => (typeof raw.start === 'boolean' ? { do: 'reconnect', start: raw.start } : null)
+  reconnect: raw => (typeof raw.start === 'boolean' ? { do: 'reconnect', start: raw.start } : null),
+  checkTarget: raw => {
+    const target = targetOf(raw.target)
+    return target && { do: 'checkTarget', target }
+  },
+  editTarget: () => ({ do: 'editTarget' }),
+  keepTarget: () => ({ do: 'keepTarget' }),
+  openChat: () => ({ do: 'openChat' })
 }
 
-export function parseCommand(raw: unknown): Command | null {
+export function parseCommand(raw: unknown): AppCommand | null {
   if (!isObject(raw) || !text(raw.do) || !Object.hasOwn(validators, raw.do)) return null
-  return (validators[raw.do as Command['do']] as (raw: Obj) => Command | null)(raw)
+  return (validators[raw.do as AppCommand['do']] as (raw: Obj) => AppCommand | null)(raw)
 }
 
 export function parseTopic(raw: unknown): Topic | null {
-  if (raw === 'link' || raw === 'sidebar') return raw
+  if (raw === 'setup' || raw === 'link' || raw === 'sidebar') return raw
   return text(raw) && raw.startsWith('session:') && raw.length > 'session:'.length ? (raw as Topic) : null
 }

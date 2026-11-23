@@ -1,0 +1,134 @@
+/**
+ * Where Hermes runs, and what can stop Highwing from reaching it there.
+ * Plain data and pure functions, read by Electron main and by the setup screen alike.
+ */
+
+declare const sshHost: unique symbol
+/** What ssh is given as its destination: `[user@]name`. Only `parseSshHost` makes one. */
+export type SshHost = string & { readonly [sshHost]: true }
+
+export type Target =
+  | { readonly kind: 'local' }
+  | { readonly kind: 'remote'; readonly host: SshHost }
+
+/** A leading "-" would be read by ssh as an option, so no part may start with one. */
+const SSH_HOST = /^(?:[A-Za-z0-9_][A-Za-z0-9._-]*@)?[A-Za-z0-9][A-Za-z0-9._:-]*$/
+const MAX_HOST = 253
+
+export function parseSshHost(raw: string): SshHost | null {
+  const host = raw.trim()
+  return host.length <= MAX_HOST && SSH_HOST.test(host) ? (host as SshHost) : null
+}
+
+/** The one parser of a `Target`, for the settings file and for the window's command alike. */
+export function targetOf(raw: unknown): Target | null {
+  if (raw === null || typeof raw !== 'object') return null
+  const { kind, host } = raw as { readonly kind?: unknown; readonly host?: unknown }
+  if (kind === 'local') return { kind }
+  const parsed = kind === 'remote' && typeof host === 'string' ? parseSshHost(host) : null
+  return parsed === null ? null : { kind: 'remote', host: parsed }
+}
+
+/** The name without any `user@`: what Tailscale lists and what ssh resolves. */
+export const hostPart = (host: SshHost): string => host.slice(host.indexOf('@') + 1)
+
+const ADDRESS = /^[0-9.]+$|:/
+
+/** How the words name a target: "this computer", or the far machine's short name. */
+export function machineOf(target: Target): string {
+  if (target.kind === 'local') return 'this computer'
+  const name = hostPart(target.host)
+  return ADDRESS.test(name) ? name : (name.split('.')[0] as string)
+}
+
+/** In the order a check runs them. `save` belongs to the connection's owner, after the check passed. */
+export type CheckStep = 'tailscale' | 'peer' | 'ssh' | 'hermes' | 'save'
+
+/** ssh's own failures, before any command runs on the far machine. */
+export type SshFailure = 'unreachable' | 'ssh-missing' | 'ssh-denied' | 'ssh-check' | 'host-changed'
+
+export type CheckFailure =
+  | 'tailscale-missing' | 'tailscale-off' | 'tailscale-signed-out'
+  | 'host-not-found' | 'host-offline'
+  | SshFailure
+  | 'hermes-not-found' | 'hermes-too-old'
+  | 'cant-save'
+
+type Words = (machine: string) => string
+
+export const STEP_WORDS: Readonly<Record<CheckStep, Words>> = {
+  tailscale: () => 'Checking Tailscale on this computer',
+  peer: machine => `Looking for ${machine} on your tailnet`,
+  ssh: machine => `Connecting to ${machine}`,
+  hermes: machine => `Looking for Hermes on ${machine}`,
+  save: () => 'Saving this connection'
+}
+
+/** Every way a check can fail: the step it fails at, what to tell the user, and the one thing to try. */
+export const CHECK_FAILURES: Readonly<Record<CheckFailure, { readonly step: CheckStep; readonly words: Words; readonly fix: Words }>> = {
+  'tailscale-missing': {
+    step: 'tailscale',
+    words: () => "Tailscale isn't installed on this computer.",
+    fix: () => 'Install Tailscale and sign in, then try again.'
+  },
+  'tailscale-off': {
+    step: 'tailscale',
+    words: () => "Tailscale isn't running on this computer.",
+    fix: () => 'Start Tailscale, then try again.'
+  },
+  'tailscale-signed-out': {
+    step: 'tailscale',
+    words: () => 'Tailscale is signed out on this computer.',
+    fix: () => 'Sign in to Tailscale, then try again.'
+  },
+  'host-not-found': {
+    step: 'peer',
+    words: machine => `No machine called ${machine} is on your tailnet.`,
+    fix: () => 'Check the name against the machines Tailscale lists.'
+  },
+  'host-offline': {
+    step: 'peer',
+    words: machine => `Your tailnet lists ${machine}, but it is offline.`,
+    fix: () => 'Turn that machine on, or start Tailscale on it.'
+  },
+  unreachable: {
+    step: 'ssh',
+    words: machine => `Highwing can't reach ${machine} over SSH.`,
+    fix: () => 'Check that the machine is on and that SSH is turned on there.'
+  },
+  'ssh-missing': {
+    step: 'ssh',
+    words: () => 'This computer has no ssh command.',
+    fix: () => 'Install OpenSSH, then try again.'
+  },
+  'ssh-denied': {
+    step: 'ssh',
+    words: machine => `The machine ${machine} refused this computer's SSH login.`,
+    fix: () => 'Add your SSH key there, or allow this computer in your Tailscale SSH rules.'
+  },
+  'ssh-check': {
+    step: 'ssh',
+    words: () => 'Tailscale wants you to confirm this connection in a browser.',
+    fix: machine => `Connect to ${machine} with ssh in a terminal once, finish the check, then try again.`
+  },
+  'host-changed': {
+    step: 'ssh',
+    words: machine => `The SSH key of ${machine} has changed since you last connected.`,
+    fix: () => 'If that machine was reinstalled, remove its old key from ~/.ssh/known_hosts, then try again.'
+  },
+  'hermes-not-found': {
+    step: 'hermes',
+    words: machine => `Hermes isn't installed on ${machine}.`,
+    fix: () => 'Install Hermes there, then try again.'
+  },
+  'hermes-too-old': {
+    step: 'hermes',
+    words: machine => `The Hermes on ${machine} is too old for Highwing.`,
+    fix: () => 'Update Hermes there, then try again.'
+  },
+  'cant-save': {
+    step: 'save',
+    words: () => "Highwing couldn't save this connection.",
+    fix: () => "Check that Highwing's settings folder can be written to, then try again."
+  }
+}
