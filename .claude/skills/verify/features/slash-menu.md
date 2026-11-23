@@ -8,6 +8,7 @@ The user types `/` at the start of the message box and a list of Hermes commands
 - `slash-narrow` keeps only the names that start with what follows the `/`.
 - `slash-complete` puts the active name and a space in the box with Tab or Enter.
 - `slash-escape` closes the list and keeps the text.
+- `slash-focus` hides the list while the box does not have focus.
 - `slash-mid-sentence` opens nothing for a `/` after other text.
 - `slash-no-catalog` opens nothing when the gateway refuses the catalog call.
 - `slash-run` shows a command's output under the composer after Send.
@@ -26,6 +27,7 @@ Preconditions:
 - **Open.** Run `$H run --fixture fixtures/slash.jsonl --run slash-open wait live type "Message Hermes" / wait slash-menu count option 35 shot slash-open`. `slash-open.aria.txt` shows `listbox "Commands and skills"` with `group "Commands"` and `group "Skills"`.
 - **Narrow and complete.** Run `$H run --fixture fixtures/slash.jsonl --run slash-narrow wait live type "Message Hermes" / wait slash-menu press c press o count option 3 shot slash-narrowed press Tab value "Message Hermes" "/context " count listbox 0`.
 - **Escape.** Run `$H run --fixture fixtures/slash.jsonl --run slash-escape wait live type "Message Hermes" / wait slash-menu press c press o press Escape count listbox 0 value "Message Hermes" /co press Backspace press Backspace press Backspace press / press c press o count option 3`. Escape closes the list only until the text changes, so typing `/co` again opens it.
+- **Focus.** Run `$H run --fixture fixtures/slash.jsonl --run slash-focus wait live type "Message Hermes" / wait slash-menu press Shift+Tab count listbox 0 click textbox "Message Hermes" count option 35`.
 - **Mid-sentence.** Run `$H run --fixture fixtures/slash.jsonl --run slash-mid wait live type "Message Hermes" "Please run " press / count listbox 0 value "Message Hermes" "Please run /"`.
 - **No catalog.** Run `$H run --fixture fixtures/errand.jsonl --run slash-none wait live type "Message Hermes" / count listbox 0 value "Message Hermes" / shot slash-none`. `slash-none.aria.txt` shows the textbox and Send, and no refusal words.
 - **Wrap.** Run `$H run --fixture fixtures/slash.jsonl --run slash-wrap wait live type "Message Hermes" / wait slash-menu press ArrowUp shot slash-wrapped press Enter value "Message Hermes" "/release-notes " count listbox 0`.

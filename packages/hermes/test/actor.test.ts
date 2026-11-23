@@ -230,6 +230,8 @@ describe('send', () => {
     await answer('session.events.since', replay())
     await answer('session.resume', reconnectSnapshot())
     expect(calls.map(call => call.params)).toEqual([{ session_id: ID, text: '/release-notes', input_id: 'id-1', api_text: 'SKILL BODY' }])
+    await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
+    expect(actor.session.outbox, 'an admitted message no longer carries the model text').toEqual([{ inputId: 'id-1', text: '/release-notes', state: { s: 'queued' } }])
   })
 })
 

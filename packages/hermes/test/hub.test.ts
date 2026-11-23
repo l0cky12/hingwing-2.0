@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Item, PromptId, Session } from '../src/domain/session'
-import { DialError, openHermes, type Dialer, type HermesOptions } from '../src/hub'
+import { DialError, openHermes, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
 import { play, scriptedDialer, type Fixture, type FixtureStep, type Moment, type ScriptOptions } from '../src/testing/fixture'
 import { callsIn, ERRAND, paramsOf, SESSION, SLASH, stepOf, withSudo } from './support/errand'
@@ -353,6 +353,35 @@ describe('sending a slash line', () => {
     ), '/Status')
     expect(outcome).toEqual({ ok: true, value: 'Model: test-model' })
     expect(opened.sent().find(call => call.method === 'command.dispatch')?.params).toEqual({ session_id: SESSION, name: 'status' })
+  })
+
+  it('sends text at once while the catalog read is slow, and a slash line as text once the read gives up', async () => {
+    const clock = manualClock()
+    const script = scriptedDialer(story(
+      { await: 'prompt.submit', params: { session_id: SESSION, text: 'hello', input_id: 'minted' }, reply: RECEIPT },
+      { await: 'prompt.submit', params: { session_id: SESSION, text: '/status', input_id: 'minted' }, reply: RECEIPT }
+    ), { clock })
+    const unanswered: Dialer = async request => {
+      const socket = await script(request)
+      return {
+        send: text => (text.includes('"method":"commands.catalog"') ? undefined : socket.send(text)),
+        close: () => socket.close(),
+        get onText() { return socket.onText },
+        set onText(listener) { socket.onText = listener },
+        get onClose() { return socket.onClose },
+        set onClose(listener) { socket.onClose = listener }
+      } satisfies WireSocket
+    }
+    const hermes = openHermes({ dial: unanswered, clock, client: CLIENT })
+    await clock.advance(0)
+    expect(await hermes.run({ do: 'send', sessionId: SESSION, text: 'hello' })).toEqual({ ok: true, value: null })
+    let settled = false
+    const slashLine = hermes.run({ do: 'send', sessionId: SESSION, text: '/status' }).finally(() => { settled = true })
+    await clock.advance(9_999)
+    expect(settled, 'a slash line waits for the catalog read').toBe(false)
+    await clock.advance(1)
+    expect(await slashLine).toEqual({ ok: true, value: null })
+    expect(callsIn(script.received).filter(call => call.method === 'prompt.submit').map(call => call.params?.text)).toEqual(['hello', '/status'])
   })
 
   it('sends a line whose name is not listed as text', async () => {

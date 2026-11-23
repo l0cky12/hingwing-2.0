@@ -26,10 +26,12 @@ export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
   const [refusal, setRefusal] = useState<string | null>(null)
   const [output, setOutput] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const [focused, setFocused] = useState(false)
   const sending = useRef(false)
   const box = useRef<HTMLTextAreaElement>(null)
   const caretToEnd = useRef(false)
-  const menu = menuOf(draft, catalog, { active, dismissedDraft })
+  const typed = menuOf(draft, catalog, { active, dismissedDraft })
+  const menu = focused ? typed : { open: false as const }
 
   const shownActive = menu.open ? menu.active : null
   useLayoutEffect(() => {
@@ -119,12 +121,13 @@ export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
           aria-autocomplete="list" aria-controls={menu.open ? MENU_ID : undefined}
           aria-activedescendant={menu.open ? optionId(menu.active) : undefined}
           onChange={event => edit(event.target.value)} onKeyDown={onKeyDown}
+          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         />
         {showStop && <button type="button" className="stop" disabled={!canSend} onClick={onStop}>Stop</button>}
         <button type="submit" disabled={!canSend || pending}>Send</button>
       </form>
       {refusal !== null && <p className="err refusal">{refusal}</p>}
-      <pre className="slash-output" role="status" aria-label="Command output">{output}</pre>
+      <pre className="slash-output" role="status" aria-label="Command output" aria-busy={pending}>{output}</pre>
     </footer>
   )
 }

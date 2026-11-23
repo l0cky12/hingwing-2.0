@@ -155,7 +155,7 @@ export function openHermes(options: HermesOptions): Hermes {
 
   const readCatalog = async () => {
     const read = ++catalogReads
-    const catalog = await conn.call('commands.catalog', {}, CATALOG_TIMEOUT_MS).then(parseCatalog, () => [])
+    const catalog = await conn.call('commands.catalog', {}, CATALOG_TIMEOUT_MS).then(parseCatalog).catch(() => [])
     if (read === catalogReads) slash.set(catalog)
   }
 

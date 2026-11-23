@@ -383,7 +383,7 @@ function admission(state: Tracked, row: Pick<Admission, 'inputId' | 'admissionId
     case 'unknown':
       return remembered
     case 'queued':
-      return entry.state.s === 'queued' ? remembered : setEntry(remembered, { ...entry, state: { s: 'queued' } })
+      return entry.state.s === 'queued' ? remembered : setEntry(remembered, { inputId: entry.inputId, text: entry.text, state: { s: 'queued' } })
     case 'terminal':
       return dropEntry(state, row.inputId)
     case 'started': {

@@ -514,6 +514,7 @@ const GATEWAY_RUNS: ReadonlySet<string> = new Set([
 const offered = (meta: unknown) => isObject(meta) && (meta.desktop === null || meta.desktop === undefined)
 
 export function parseCatalog(reply: CommandsCatalogResult): SlashCatalog {
+  if (!isObject(reply)) return []
   const pairs = Array.isArray(reply.pairs) ? reply.pairs : []
   const skills = isObject(reply.skills) ? reply.skills : {}
   const meta = isObject(reply.commands) ? reply.commands : {}
@@ -546,6 +547,7 @@ export type Directive =
  * never does. `null` for a directive Highwing cannot carry out.
  */
 export function parseDirective(reply: CommandDispatchResult, typed: string): Directive | null {
+  if (!isObject(reply)) return null
   switch (reply.type) {
     case 'exec':
       return { do: 'show', text: stripAnsi(reply.output ?? '').trim() }

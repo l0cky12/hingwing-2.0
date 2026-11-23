@@ -31,6 +31,7 @@ export function Chat({ id }: { readonly id: SessionId }) {
         )}
       </main>
       <Composer
+        key={id}
         canSend={session?.sync.state === 'live'}
         showStop={session !== undefined && activityOf(session).kind !== 'idle'}
         onSend={text => run({ do: 'send', sessionId: id, text })}
