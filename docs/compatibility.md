@@ -60,6 +60,9 @@ that attach returned, which serves the profile attach ran in.
 - If Hermes can't start a chat from the desktop app, Highwing refuses the
   command and shows "This Hermes can't start a chat from Highwing." See
   `packages/hermes/src/hub.ts`.
+- If Hermes doesn't answer `profiles.list`, the sidebar says "This Hermes can't
+  list its bots." and the chat works as before. Highwing asks again on the next
+  connection.
 - If Hermes doesn't answer `commands.catalog`, Highwing shows no slash menu
   and no error, and sends a `/` line to the agent as text. See
   `packages/hermes/src/hub.ts`.
@@ -171,3 +174,38 @@ menu lists the 33 of them that the catalog also offers to a desktop app. Update
 Hermes generates the full per-command table at
 `website/docs/developer-guide/gateway-command-parity.md` in its install
 directory. Read the install directory from `hermes --version`.
+
+## Bots
+
+A bot in Highwing's sidebar is a Hermes profile. Highwing reads them with
+`profiles.list`, a canonical method of the vendored contract, on every new
+connection and again when sessions change. Hermes sends no "profiles changed"
+event.
+
+Highwing has not yet read this call from a real Hermes. No Hermes source and
+no recorded reply was at hand when the sidebar was built, so two things here
+are unproven:
+
+- Whether a real Hermes answers `profiles.list` on Highwing's ticket. If it
+  refuses, the sidebar says "Hermes wouldn't list its bots."
+- The names of three `ui_meta` keys. The contract has no field for a bot's
+  section, role or avatar colour, and types `ui_meta` as an open object. The
+  names `section`, `role` and `color` are Highwing's own guess. They live in
+  `UI_META` in `packages/hermes/src/wire/parse.ts` and nowhere else.
+
+Until the names are checked, a real bot shows under "Unassigned" with no role
+and a tone Highwing picks. A colour counts only when it is one of Highwing's
+five tone names. A hex value is painted over.
+
+To check them, record a session against a real Hermes with `HIGHWING_RECORD`.
+The recording keeps the `profiles.list` reply in its header under `profiles`.
+Read the key names there, change `UI_META`, and replace
+`fixtures/profiles/roster.json` with the recorded reply.
+
+What comes from the contract and needs no guess: the name shown is
+`display_name`, or `name` when that is blank. The default bot is the first
+row with `is_default`. The preview is `last_session.preview`.
+
+Highwing can't create a bot. `profiles.create` is not a canonical method, so
+New bot is shown as unavailable. Avatar images are not shown either, because
+`profiles.get_asset` is not canonical.

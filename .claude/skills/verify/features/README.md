@@ -15,6 +15,7 @@ This directory is the maintained source for verifying what a Highwing user sees 
 - Prefer ARIA roles and accessible names (`click button "Send"`) and the named states in the helper's `STATES` table over CSS selectors.
 - Wait on a named state, never on a fixed sleep.
 - Treat every command as literal. Keep quoted names unchanged.
+- A shot shows the whole window, sidebar included. Add `--chat-only` when a shot must show the chat column alone at the reference size.
 
 ## Proof and skip reporting
 
@@ -43,4 +44,5 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Find in chat](./find-in-chat.md) covers Ctrl+F, the match count, stepping, opening closed steps, the highlight marks, and Escape returning focus to the composer.
 - [Forced colors](./forced-colors.md) covers the forced-colors and more-contrast renderings of the thread, the waiting card, diffs and focus, and the pixel checker.
 - [Jump to latest](./jump-to-latest.md) covers the round control that appears when you scroll up, its "New steps below" and "Waiting for your OK" words, and the End key.
+- [Bots sidebar](./bots-sidebar.md) covers the list of Hermes's bots, selecting one, search, a Hermes that cannot list its bots, the unavailable New bot, and pixel parity of the chat column.
 - [Slash menu](./slash-menu.md) covers the `/` list of commands and skills, narrowing, completion, Escape, and a Hermes without the catalog.

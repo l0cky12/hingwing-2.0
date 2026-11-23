@@ -18,11 +18,7 @@ export const UNASSIGNED = 'Unassigned'
 
 const LOADING: ListView = { show: 'loading' }
 
-/**
- * `bots` undefined: Electron main has not pushed the topic yet, drawn as loading.
- * `query` null: search is closed. Otherwise a bot is kept when its name or its role contains the
- * trimmed query, whatever the case. Sections left with no bot are dropped.
- */
+/** `bots` undefined: Electron main has not pushed the topic yet. `query` null: search is closed. */
 export function listOf(bots: Bots | undefined, query: string | null): ListView {
   if (bots === undefined || bots.state === 'loading') return LOADING
   if (bots.state !== 'listed') return { show: 'note', words: NOTES[bots.state] }

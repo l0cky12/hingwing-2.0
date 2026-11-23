@@ -21,13 +21,15 @@ highwing-2.0/
         hub.ts                   public entry "."         openHermes, Hermes, Command, Feed, remoteRoute, Route, checkTarget
         actor.ts                 private                  one session: owns its Tracked state, makes the calls a state asks for
         sidebar.ts               private                  stored rows, the running set, deriveSidebar
+        roster.ts                private                  botList: what Highwing knows about the bots, and when it asks Hermes
         domain/                  public entry "./domain"  browser-safe, imports nothing
           session.ts                                      Session, Run, Turn, Item, Link, Sidebar
           reduce.ts                                       SessionEvent, Gate, SessionInput, reduce, syncOf, activityOf
           command.ts                                      Command, ResultOf, Outcome, Refusal: data the renderer sends and gets back
           slash.ts                                        SlashEntry, SlashCatalog, slashLineOf: the slash menu's rows
+          bots.ts                                         Bots, Roster, Bot, BotFacts, rosterOf: the sidebar's bots, grouped and painted
           reach.ts                                        Target, SshHost, CheckStep, CheckFailure, CHECK_FAILURES: where Hermes runs and what can stop Highwing reaching it
-          index.ts                                        exports the session, command, slash and reach types, activityOf and the reach tables
+          index.ts                                        exports the session, command, slash, bots and reach types, activityOf, rosterOf and the reach tables
         wire/                    private                  the only code that knows gateway shapes
           contract.generated.ts                           copied from Hermes by `pnpm sync:contract`
           contract.openrpc.json                           copied with it; read only by testing/ for key sets
@@ -45,13 +47,13 @@ highwing-2.0/
       src/find.ts                                         findInThread: matches across a view's text
       src/when.ts                                         the words and thresholds for turn times (internal)
   apps/desktop/
-    src/ipc-contract.ts          shared by all three      Topic, Push, Bridge, applyPush, Setup, SetupCommand
+    src/ipc-contract.ts          shared by all three      AppTopics, Topic, Push, Bridge, applyPush, Setup, SetupCommand
     src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows), files.ts (openablePath)
       settings.ts                no Electron              parseSettings, loadSettings, saveSettings: connection.json, the only state on disk
       connection.ts              no Electron              ownConnection, nextSetup, pinnedConnection: the setup state, the saved target, the live Hermes
     src/preload/index.ts         preload                  exposes Bridge: watch, run and file
-    src/renderer/                renderer                 store.ts (useTopic), setup/, sidebar/, chat/, composer/, chrome/, styles/
-  fixtures/                                               *.jsonl, make_fixture.py (run with Hermes's interpreter)
+    src/renderer/                renderer                 store.ts (useTopic), setup/, bots/, chat/, composer/, chrome/, styles/
+  fixtures/                                               *.jsonl, make_fixture.py (run with Hermes's interpreter), profiles/*.json (placeholder `profiles.list` replies)
   scripts/                                                sync-contract.ts, contract-drift.ts
 ```
 
@@ -67,10 +69,13 @@ highwing-2.0/
 | Revision, text position, paging cursor | the same actor, as `Fence` | nobody |
 | Running, asking, settled | derived from `Session.run` by `activityOf` | nobody stores it |
 | Stored list rows and the set of running sessions | `sidebar.ts` | `Sidebar` is derived from them plus each actor's session when published |
+| What Highwing knows about the bots: loading, offline, unsupported, refused, or a roster | `roster.ts`, changed only through its `after` function | read through `Hermes.bots` and the `bots` topic. The hub says when to ask |
+| Where each bot is drawn and its avatar tone | nobody; `rosterOf(facts)` in `domain/bots.ts` computes them from each answer | the renderer draws the roster as given and picks no colour |
 | Where Hermes runs, which screen shows, and which `Hermes` is live | `ownConnection` in `main/connection.ts`, changed only through `nextSetup` | windows read the `setup` topic and send `checkTarget`, `editTarget`, `keepTarget`, `openChat` |
 | The saved connection on disk | `main/settings.ts` | nobody. `ownConnection` gets `loaded` and `save` as arguments |
 | A window's copy of a topic | `renderer/store.ts` in that window, written only by `applyPush` | components read with `useTopic` |
 | Selected session, open rows, composer drafts | React state in that window | not shared; not Hermes's state |
+| The clicked bot and the bot search text | React state in that window's sidebar. The selected bot is derived from the click and the roster on each render | not shared; not Hermes's state |
 | The design C view | nobody; `threadView(session, clock)` recomputes it and memoises settled turns by reference | |
 | When a turn began | `reduce`: the stored request row's time, or the clock reading the hub attaches to a live frame | nobody. The view derives every shown time from it |
 

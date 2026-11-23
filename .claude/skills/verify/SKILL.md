@@ -5,7 +5,7 @@ description: Launch, drive and screenshot the Highwing Electron desktop app (app
 
 # Verify Highwing
 
-Highwing is an Electron viewer for the Hermes agent gateway. The surface a user touches is one desktop window: a chat thread, a composer, approval cards and a connection banner. This skill drives that window through Playwright's Electron driver. Every run happens inside a private Xvfb display, so no window reaches the user's Hyprland desktop and two runs can go side by side.
+Highwing is an Electron viewer for the Hermes agent gateway. The surface a user touches is one desktop window: a bots sidebar, a chat thread, a composer, approval cards and a connection banner. This skill drives that window through Playwright's Electron driver. Every run happens inside a private Xvfb display, so no window reaches the user's Hyprland desktop and two runs can go side by side.
 
 Everything goes through one helper:
 
@@ -33,6 +33,9 @@ Every run names one of two gateways. Hermes, ssh and Tailscale are installed on 
 - `--drop-after <event type>` is verification scaffolding. It writes a copy of the fixture whose gateway closes the socket 50 ms after the first frame of that type, and plays the copy instead. The copy is saved as `fixture-edited.jsonl` in the evidence directory. The client shows the dropped link until its redial lands about 1 s later.
 - `--models <reply.json>` writes a copy of the fixture whose header carries that canned `model.options` reply, and plays the copy. The gateway then lists those models, starts the chat on the reply's `model`, and switches it on a `session.mutate` with operation `model`. Without it the gateway refuses `model.options` as an unknown method, as an older Hermes does. `fixtures/models/three.json` offers three models with `fast-small` current. `fixtures/models/none.json` offers none. It combines with `--drop-after` into one `fixture-edited.jsonl`.
 - `--guarded <model,...>` makes a switch to those models need a second yes, as Hermes's guard does for a costly model. An idle switch answers with a confirmation. A switch held during a turn is asked about when the turn ends.
+- `--profiles <reply.json>` writes a copy of the fixture whose header carries that canned `profiles.list` reply, and plays the copy. The sidebar then lists those bots. Without it the gateway refuses `profiles.list` as an unknown method, as an older Hermes does, and the sidebar says "This Hermes can't list its bots." `fixtures/profiles/roster.json` holds the five bots of the approved layout. `fixtures/profiles/edge.json` holds thirty awkward ones. It combines with `--models` and `--drop-after` into one `fixture-edited.jsonl`.
+- `--size <width>x<height>` sets the window's content size before the first step, and the size every `shot` must have. The default is 1180x860. Xvfb has no window manager, so a size below the window's 680 px minimum still opens.
+- `--chat-only` makes the size above the size of the chat column. The window grows by the width of whatever sits left of the chat, the sidebar's 288 px, and every `shot` is clipped to the chat column. The ARIA snapshot still covers the whole page. Use it for any shot that a tool reads as a chat with no sidebar: the design C references, `forced-colors-check.mjs` and `chat-parity.mjs`.
 - `--forced-colors` emulates the desktop's forced-colors (high-contrast) mode in the first window once it opens, before any step runs, so the window draws only with system colors.
 - `--more-contrast` emulates `prefers-contrast: more`.
 - `--run <name>` names the evidence directory. The default is a timestamp plus the PID.
@@ -42,7 +45,7 @@ Every run sets `HIGHWING_OPEN_LOG` to `opens.jsonl` in the evidence directory. M
 
 Ready means the first window has loaded. Use `wait window` as the first step.
 
-The window's content area is 1180x860, the size of the reference screenshots. `run` passes `--ozone-platform=x11`, `--force-device-scale-factor=1` and `--disable-gpu`, and removes `WAYLAND_DISPLAY`. Electron 45 would otherwise pick Wayland and open the window on the real compositor. `run` also checks that the X server on its display was started by its own `xvfb-run`. Plain `xvfb-run -a` gives two runs started together the same display, and the first teardown would then kill the other run.
+The window's content area is 1180x860, the size of the reference screenshots, unless `--size` or `--chat-only` changes it. `run` passes `--ozone-platform=x11`, `--force-device-scale-factor=1` and `--disable-gpu`, and removes `WAYLAND_DISPLAY`. Electron 45 would otherwise pick Wayland and open the window on the real compositor. `run` also checks that the X server on its display was started by its own `xvfb-run`. Plain `xvfb-run -a` gives two runs started together the same display, and the first teardown would then kill the other run.
 
 Teardown is part of `run`. The app is closed and then killed by PID if it is still alive, whether the steps passed or failed. A `--fake-host` run then fails if a fake tool the app started is still running, because the app must end its own ssh processes when it quits.
 
@@ -76,6 +79,8 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `inview <role> <name>` | ARIA role, exact accessible name | fails unless that element's box lies fully inside the visible area of every scrolling ancestor and of the window |
 | `enabled <role> <name>` | ARIA role, exact accessible name | fails unless that control is enabled now |
 | `checked <role> <name>` | ARIA role, exact accessible name | fails unless that radio or checkbox is checked now |
+| `current <role> <name>` | ARIA role, exact accessible name | fails unless that control carries `aria-current="true"`, as the selected bot does. An ARIA snapshot does not print it |
+| `minwidth <px>` | number | fails unless Electron holds that minimum width for the window. Xvfb has no window manager to enforce it, so this reads the limit a desktop would get |
 | `tally <role> <n>` | ARIA role, number | waits two frames, then waits until exactly n elements of that role are shown, and fails if the count never settles on n |
 | `absent <text>` | text | fails if the text is visible anywhere now |
 | `called <method> <json> <n>` | method, JSON object, number | waits until the gateway was sent n calls of that method whose params contain the JSON (every key, recursively), and fails on any other count. It is checked again when the steps end, so "exactly n" holds for the whole run. `--fixture` runs only |
@@ -96,10 +101,11 @@ Named states live in the `STATES` table in the helper. Add a state there, not a 
 | `settled` | the turn's end is the Done ring (`[data-end="done"]`) |
 | `offline` | the connection banner (`role=status`, name "Connection") is shown |
 | `slash-menu` | the composer's "Commands and skills" listbox is shown |
+| `bots` | the sidebar holds a roster Hermes listed (`aside[data-state="listed"]`) |
 
 `wait` polls with no backoff. The errand's listing step lives about 144 ms at recorded timing. Playwright's own `waitFor` spaces its polls up to 500 ms apart and missed it 3 times out of 3, while this loop caught it 5 times out of 5.
 
-`shot` fails when the image is not 1180x860. After a `wait`, `shot` also fails if that state ended before the screenshot finished. A passing shot therefore shows the moment it was named for. Screenshots disable animations, so the live end's halo pulse never shows.
+`shot` fails when the image is not 1180x860, or the size `--size` names. After a `wait`, `shot` also fails if that state ended before the screenshot finished. A passing shot therefore shows the moment it was named for. Screenshots disable animations, so the live end's halo pulse never shows.
 
 ## Evidence
 
@@ -112,7 +118,9 @@ Each run writes to `/tmp/highwing-verify/<run>/`:
 - `main.log` holds the Electron main process's stdout and stderr. `console.log` holds the renderer console and page errors.
 - `failure.png` is the window when a step failed.
 - `gateway-calls.jsonl` holds every frame the client sent the scripted gateway, one per line, as it arrived (`--fixture` runs). Main writes it when `HIGHWING_FIXTURE_CALLS` names a file, which `run` always sets.
-- `compare-<name>.png` comes from `$H compare <run>`. It puts the reference on the left and the shot on the right. Shots named `tool-running`, `approval`, `settled` and `settled-expanded` pair with `docs/design/reference/tool-running-C.png`, `approval-C.png`, `settled-C.png` and `settled-C-expanded.png`.
+- `compare-<name>.png` comes from `$H compare <run>`. It puts the reference on the left and the shot on the right. Shots named `tool-running`, `approval`, `settled` and `settled-expanded` pair with `docs/design/reference/tool-running-C.png`, `approval-C.png`, `settled-C.png` and `settled-C-expanded.png`. Those four references show the chat with no sidebar, so take their shots with `--chat-only`. A shot named `bots-approved` pairs with `bots-sidebar.png`, the approved sidebar layout, and shows the whole window.
+
+`node .claude/skills/verify/scripts/chat-parity.mjs <before-run-dir> <after-run-dir>` counts the pixels that differ between the shots of two runs, name by name. It ends in `PASS` only when every pair differs by zero. A missing shot, a size mismatch and a run with no shots are `FAIL`. `--self-test` proves it reports each of those.
 
 Proof standards:
 
