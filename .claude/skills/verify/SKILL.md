@@ -60,6 +60,7 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `value <label> <text>` | exact label, text | fails unless the field holds exactly that text now |
 | `focused <role> <name>` | ARIA role, exact accessible name | fails unless that element is `document.activeElement` now |
 | `marks <count>` | number | fails unless the ranges in the `find` and `find-current` highlights add up to the count. A missing highlight counts as 0. It reads state and never sets it |
+| `clipboard <text>` | text | fails unless the main process's clipboard holds exactly that text |
 
 Named states live in the `STATES` table in the helper. Add a state there, not a sleep.
 

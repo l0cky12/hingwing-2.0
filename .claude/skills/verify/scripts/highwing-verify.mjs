@@ -48,6 +48,13 @@ const STEPS = {
   type: { arity: 2, run: async (ctx, label, text) => ctx.page.getByLabel(label, { exact: true }).fill(expand(ctx, text), { timeout: ctx.timeout }) },
   press: { arity: 1, run: async (ctx, key) => ctx.page.keyboard.press(key) },
   shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
+  clipboard: {
+    arity: 1,
+    run: async (ctx, text) => {
+      const held = await ctx.app.evaluate(({ clipboard }) => clipboard.readText())
+      if (held !== text) throw new Error(`the clipboard holds ${JSON.stringify(held)}, not ${JSON.stringify(text)}`)
+    }
+  },
   disabled: {
     arity: 2,
     run: async (ctx, role, name) => {
@@ -266,7 +273,7 @@ async function run(argv) {
   mkdirSync(scratch, { recursive: true })
   const given = options.fixture ? resolve(process.cwd(), options.fixture) : scenario ? ERRAND : null
   const fixture = options['drop-after'] ? withDrop(given, options['drop-after'], join(evidence, 'fixture-with-drop.jsonl')) : given
-  const ctx = { page: null, evidence, fixture, timeout: Number(options.timeout ?? 15_000), holding: null }
+  const ctx = { app: null, page: null, evidence, fixture, timeout: Number(options.timeout ?? 15_000), holding: null }
 
   const userData = join(scratch, 'user-data')
   const saved = SAVED[options.saved ?? 'none']
@@ -299,6 +306,7 @@ async function run(argv) {
     log(ctx, `FAIL evidence in ${evidence}`)
     process.exit(1)
   })
+  ctx.app = app
   const pid = app.process().pid
   writeFileSync(join(scratch, 'pid'), String(pid))
   const mainLog = join(evidence, 'main.log')

@@ -34,5 +34,6 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Replay a fixture](./replay-a-fixture.md) covers `HIGHWING_FIXTURE`, the tool-running, approval and settled moments, open records, and the reference composites.
 - [Send a message](./send-a-message.md) covers the composer's Send button, Enter, and Stop while a turn runs.
 - [Answer an approval](./answer-an-approval.md) covers the approval card and "Run once" releasing the story to Done.
+- [Markdown replies](./markdown.md) covers lists, headings, links, tables and code blocks in a reply, and the code block's Copy button.
 - [Offline banner](./offline-banner.md) covers the blocked banner with Retry, the dropped banner with disabled buttons, and recovery.
 - [Find in chat](./find-in-chat.md) covers Ctrl+F, the match count, stepping, opening closed steps, the highlight marks, and Escape returning focus to the composer.
