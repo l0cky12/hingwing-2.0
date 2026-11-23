@@ -53,6 +53,8 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `press <key>` | Playwright key name | presses it |
 | `shot <name>` | file stem | moves the pointer off the page, then saves `<name>.png` and `<name>.aria.txt` |
 | `disabled <role> <name>` | ARIA role, exact accessible name | fails unless that control is disabled now |
+| `count <role> <n>` | ARIA role, a whole number | waits two frames, then fails unless exactly `n` elements have that role |
+| `value <label> <text>` | exact label, text | waits two frames, then fails unless the field holds exactly that text |
 
 Named states live in the `STATES` table in the helper. Add a state there, not a sleep.
 
@@ -64,6 +66,7 @@ Named states live in the `STATES` table in the helper. Add a state there, not a 
 | `approval` | the "Run this command?" card's "Run once" button is enabled |
 | `settled` | the turn's end is the Done ring (`[data-end="done"]`) |
 | `offline` | the connection banner (`role=status`, name "Connection") is shown |
+| `slash-menu` | the composer's "Commands and skills" listbox is shown |
 
 `wait` polls with no backoff. The errand's listing step lives about 144 ms at recorded timing. Playwright's own `waitFor` spaces its polls up to 500 ms apart and missed it 3 times out of 3, while this loop caught it 5 times out of 5.
 

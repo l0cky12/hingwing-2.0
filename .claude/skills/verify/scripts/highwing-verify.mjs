@@ -20,8 +20,11 @@ const STATES = {
   'tool-running': page => page.locator('.step[data-end="live"]').filter({ hasText: /^Running / }),
   approval: page => page.getByRole('group', { name: 'Run this command?' }).getByRole('button', { name: 'Run once', exact: true, disabled: false }),
   settled: page => page.locator('[data-end="done"]'),
-  offline: page => page.getByRole('status', { name: 'Connection' })
+  offline: page => page.getByRole('status', { name: 'Connection' }),
+  'slash-menu': page => page.getByRole('listbox', { name: 'Commands and skills' })
 }
+
+const rendered = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 
 const STEPS = {
   wait: { arity: 1, run: async (ctx, state) => waitFor(ctx, state) },
@@ -30,6 +33,22 @@ const STEPS = {
   type: { arity: 2, run: async (ctx, label, text) => ctx.page.getByLabel(label, { exact: true }).fill(expand(ctx, text), { timeout: ctx.timeout }) },
   press: { arity: 1, run: async (ctx, key) => ctx.page.keyboard.press(key) },
   shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
+  count: {
+    arity: 2,
+    run: async (ctx, role, expected) => {
+      await rendered(ctx.page)
+      const found = await ctx.page.getByRole(role).count()
+      if (String(found) !== expected) throw new Error(`expected ${expected} ${role}, found ${found}`)
+    }
+  },
+  value: {
+    arity: 2,
+    run: async (ctx, label, expected) => {
+      await rendered(ctx.page)
+      const found = await ctx.page.getByLabel(label, { exact: true }).inputValue({ timeout: ctx.timeout })
+      if (found !== expected) throw new Error(`"${label}" holds ${JSON.stringify(found)}, not ${JSON.stringify(expected)}`)
+    }
+  },
   disabled: {
     arity: 2,
     run: async (ctx, role, name) => {

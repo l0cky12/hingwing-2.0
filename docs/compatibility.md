@@ -23,6 +23,9 @@ version. If this table and that file disagree, the file is right.
 - If Hermes can't start a chat from the desktop app, Highwing refuses the
   command and shows "This Hermes can't start a chat from Highwing." See
   `packages/hermes/src/hub.ts`.
+- If Hermes doesn't answer `commands.catalog`, Highwing shows no slash menu
+  and no error, and sends a `/` line to the agent as text. See
+  `packages/hermes/src/hub.ts`.
 
 ## When a change needs a newer Hermes route
 
@@ -113,10 +116,12 @@ Of the 66 listed commands whose `desktop` is `null`, the gateway runs 33:
 `/autoprune` `/skills` `/memory` `/bundles` `/learn` `/init` `/suggestions`
 `/blueprint` `/help` `/usage` `/topup` `/version` `/debug`
 
-It refuses the other 33, among them `/new`, `/compress`, `/retry`, `/undo`,
-`/resume` and `/stop`. A client runs these as its own actions. The Hermes
-`/stop` stops background processes, not the current turn, so it is not
-Highwing's Stop.
+`GATEWAY_RUNS` in `packages/hermes/src/wire/parse.ts` holds this list, because
+the catalog has no field for it. Update both when Hermes changes
+`command_verdict`. The gateway refuses the other 33, among them `/new`,
+`/compress`, `/retry`, `/undo`, `/resume` and `/stop`. A client runs these as
+its own actions. The Hermes `/stop` stops background processes, not the
+current turn, so it is not Highwing's Stop.
 
 Hermes generates the full per-command table at
 `website/docs/developer-guide/gateway-command-parity.md` in its install
