@@ -152,7 +152,7 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed }: ThreadPr
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isFindKey(event)) return
+      if (!isFindKey(event) || transcript.current?.checkVisibility() !== true) return
       event.preventDefault()
       if (findInput.current === null) setFind(FIND_OPEN)
       else {
