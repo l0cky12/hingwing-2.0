@@ -316,12 +316,12 @@ const DIFF_COPY_MARK = { add: '+', del: '-', ctx: ' ' } as const
 
 /**
  * The full diff, so a created file keeps its first hunk header, which `changeLines` drops for display. The target is
- * always `b/<path>`: a `+0,0` hunk may empty a file rather than delete it, and Hermes's file tools never delete one.
+ * `/dev/null` only when Hermes's header said so: a `+0,0` hunk alone may empty a file rather than delete it.
  */
 function unifiedDiff(diff: FileDiff): string | null {
   if (diff.cut) return null
   const body = diff.lines.map(line => (line.t === 'hunk' ? line.text : `${DIFF_COPY_MARK[line.t]}${line.text}`))
-  return [`--- ${diff.createsFile ? '/dev/null' : `a/${diff.path}`}`, `+++ b/${diff.path}`, ...body].join('\n') + '\n'
+  return [`--- ${diff.createsFile ? '/dev/null' : `a/${diff.path}`}`, `+++ ${diff.deletesFile ? '/dev/null' : `b/${diff.path}`}`, ...body].join('\n') + '\n'
 }
 
 function changeLines(diff: FileDiff): FileDiff['lines'] {

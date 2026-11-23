@@ -375,6 +375,16 @@ describe('parseInlineDiff and parseToolResult', () => {
     expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([true])
   })
 
+  it('reads a /dev/null target as a delete', () => {
+    const raw = ['a/old.txt → /dev/null', '@@ -1 +0,0 @@', '-gone'].join('\n')
+    expect(parseInlineDiff(raw).map(({ path, deletesFile, cut }) => ({ path, deletesFile, cut }))).toEqual([{ path: 'old.txt', deletesFile: true, cut: false }])
+  })
+
+  it('leaves whole files uncut when a note sits between them', () => {
+    const raw = ['a/a.txt → b/a.txt', '@@ -1 +1 @@', '-x', '+y', '# Moved: a.txt -> b.txt', 'a/c.txt → b/c.txt', '@@ -1 +1 @@', '-p', '+q'].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([false, false])
+  })
+
   it('leaves a whole diff uncut', () => {
     const raw = ['  ┊ review diff', 'a/a.txt → b/a.txt', '@@ -1,2 +1,2 @@', ' one', '-two', '+three'].join('\n')
     expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([false])

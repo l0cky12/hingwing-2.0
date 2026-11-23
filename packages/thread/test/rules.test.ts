@@ -33,7 +33,7 @@ function tool(name: string, args: ToolItem['args'], over: { diffs?: readonly Fil
 const runningTool = (name: string, args: ToolItem['args']): ToolItem => ({ kind: 'tool', id: `${name}-run` as ToolId, name, args, status: { s: 'running', note: null } })
 
 function diff(path: string, added: number, removed: number, createsFile = false): FileDiff {
-  return { path, createsFile, cut: false, added, removed, lines: [{ t: 'hunk', text: createsFile ? `@@ -0,0 +1,${added} @@` : '@@ -1 +1 @@' }] }
+  return { path, createsFile, deletesFile: false, cut: false, added, removed, lines: [{ t: 'hunk', text: createsFile ? `@@ -0,0 +1,${added} @@` : '@@ -1 +1 @@' }] }
 }
 
 const command = (output: string, exitCode = 0): ToolResult => ({ kind: 'command', output, exitCode, clipped: 0 })
@@ -214,8 +214,9 @@ describe('checkThread', () => {
 })
 
 describe('what a change copies', () => {
-  const copyOf = (lines: FileDiff['lines'], cut = false) => {
-    const s = session({ history: [settled([tool('patch', { path: '/w/a.md' }, { diffs: [{ path: '/w/a.md', createsFile: false, cut, added: 0, removed: 2, lines }] })])] })
+  const copyOf = (lines: FileDiff['lines'], over: Partial<Pick<FileDiff, 'cut' | 'deletesFile'>> = {}) => {
+    const diff: FileDiff = { path: '/w/a.md', createsFile: false, deletesFile: false, cut: false, added: 0, removed: 2, lines, ...over }
+    const s = session({ history: [settled([tool('patch', { path: '/w/a.md' }, { diffs: [diff] })])] })
     const [section] = stepOf(nodesOf(s)[0]).record?.sections ?? []
     return section?.copy
   }
@@ -225,8 +226,13 @@ describe('what a change copies', () => {
       .toBe('--- a//w/a.md\n+++ b//w/a.md\n@@ -1,2 +0,0 @@\n-one\n-two\n')
   })
 
+  it('copies a file Hermes deleted with /dev/null as its target', () => {
+    expect(copyOf([{ t: 'hunk', text: '@@ -1,2 +0,0 @@' }, { t: 'del', text: 'one' }, { t: 'del', text: 'two' }], { deletesFile: true }))
+      .toBe('--- a//w/a.md\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-one\n-two\n')
+  })
+
   it('copies nothing when Hermes cut the diff short', () => {
-    expect(copyOf([{ t: 'hunk', text: '@@ -1,2 +0,0 @@' }, { t: 'del', text: 'one' }, { t: 'del', text: 'two' }], true)).toBeNull()
+    expect(copyOf([{ t: 'hunk', text: '@@ -1,2 +0,0 @@' }, { t: 'del', text: 'one' }, { t: 'del', text: 'two' }], { cut: true })).toBeNull()
   })
 
   it('copies the whole command a step ran, where the title clips it', () => {

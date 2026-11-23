@@ -33,6 +33,6 @@ Preconditions:
 - The errand waits at `prompt.submit` and again at the approval, so `wait settled` needs the send and the "Run once" click first.
 - The controls are transparent until hover or focus, not hidden, so Tab reaches them. `shot` moves the pointer off the page, so a shot of a settled thread looks as it did before this feature.
 - A closed record is `display: none`, and the record controls render only when the step is open. Either one keeps them out of the accessibility tree.
-- The errand's diffs name an absolute path, `a//tmp/hermes-proto-work/notes.md`, as Hermes wrote it. `patch -p1` applies it. `git apply` refuses any absolute path.
+- The errand's diffs name an absolute path, `a//tmp/hermes-proto-work/notes.md`, as Hermes wrote it. `patch -p1` reads it relative to the folder it runs in, so it reaches the real file only from `/` (`patch -p1 -d /`). `git apply` refuses any absolute path. A file inside Hermes's working folder has a relative path, which both tools apply.
 - After a press, "Copied" stays on screen for two seconds, so a later `see "Copied"` can match the earlier control. Use `clipboard`, which waits for new clipboard text.
 - Two open diffs of the same file carry the same name. `click` needs a unique name, so reach the second one with Tab.
