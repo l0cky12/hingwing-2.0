@@ -16,7 +16,8 @@ const settled = (id: string, began: Began | null): SettledTurn => ({
 })
 
 const session = (history: readonly SettledTurn[], over: Partial<Session> = {}): Session => ({
-  id: 's1' as Session['id'], title: '', cwd: null, history, earlier: 'none', run: { state: 'idle' }, outbox: [], sync: { state: 'live' }, ...over
+  id: 's1' as Session['id'], title: '', cwd: null, history, earlier: 'none', run: { state: 'idle' }, outbox: [],
+  model: { current: null, next: null, ask: null }, sync: { state: 'live' }, ...over
 })
 
 const running = (began: Began | null, items: readonly Item[] = [], history: readonly SettledTurn[] = [], sync: Sync = { state: 'live' }): Session =>
