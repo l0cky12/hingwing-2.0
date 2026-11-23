@@ -161,7 +161,7 @@ export type SessionInput =
 
 /** What this client did. Folded through the same reducer so a second window sees it too. */
 export type LocalAction =
-  | { readonly did: 'send'; readonly inputId: InputId; readonly text: string }
+  | { readonly did: 'send'; readonly inputId: InputId; readonly text: string; readonly apiText?: string }
   | { readonly did: 'send.admitted'; readonly inputId: InputId; readonly admissionId: string; readonly status: Admission['status'] }
   | { readonly did: 'send.failed'; readonly inputId: InputId; readonly message: string }
   | { readonly did: 'send.discarded'; readonly inputId: InputId }
@@ -420,7 +420,7 @@ function admission(state: Tracked, row: Pick<Admission, 'inputId' | 'admissionId
     case 'unknown':
       return remembered
     case 'queued':
-      return entry.state.s === 'queued' ? remembered : setEntry(remembered, { ...entry, state: { s: 'queued' } })
+      return entry.state.s === 'queued' ? remembered : setEntry(remembered, { inputId: entry.inputId, text: entry.text, state: { s: 'queued' } })
     case 'terminal':
       return dropEntry(state, row.inputId)
     case 'started': {
@@ -472,7 +472,9 @@ function act(state: Tracked, action: LocalAction): Tracked {
   switch (action.did) {
     case 'send': {
       const entry = content.outbox.find(held => held.inputId === action.inputId)
-      const sending: OutboxEntry = { inputId: action.inputId, text: action.text, state: { s: 'sending' } }
+      const sending: OutboxEntry = {
+        inputId: action.inputId, text: action.text, ...(action.apiText === undefined ? {} : { apiText: action.apiText }), state: { s: 'sending' }
+      }
       if (entry === undefined) return { ...state, content: { ...content, outbox: [...content.outbox, sending] } }
       return entry.state.s === 'failed' ? setEntry(state, sending) : state
     }

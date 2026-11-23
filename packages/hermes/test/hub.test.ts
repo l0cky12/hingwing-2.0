@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { Item, PromptId, Session } from '../src/domain/session'
-import { DialError, openHermes, type Dialer, type HermesOptions } from '../src/hub'
+import { DialError, openHermes, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { play, scriptedDialer, type Fixture, type Moment, type ScriptOptions } from '../src/testing/fixture'
-import { callsIn, ERRAND, paramsOf, SESSION, withSudo } from './support/errand'
+import { play, scriptedDialer, type Fixture, type FixtureStep, type Moment, type ScriptOptions } from '../src/testing/fixture'
+import { callsIn, ERRAND, paramsOf, SESSION, SLASH, stepOf, withSudo } from './support/errand'
 
 const CLIENT = { name: 'highwing-test', version: '0.0.0' }
 const TEXT = String(paramsOf('prompt.submit').text)
@@ -30,7 +30,7 @@ function open(fixture: Fixture = ERRAND, options: ScriptOptions & Partial<Hermes
 
 async function toApproval(opened: ReturnType<typeof open>) {
   await opened.clock.advance(0)
-  expect(await opened.hermes.run({ do: 'send', sessionId: SESSION, text: TEXT })).toEqual({ ok: true, value: undefined })
+  expect(await opened.hermes.run({ do: 'send', sessionId: SESSION, text: TEXT })).toEqual({ ok: true, value: null })
   await opened.clock.advance(0)
 }
 
@@ -196,7 +196,7 @@ describe('run', () => {
     await opened.clock.advance(0)
     const outcome = opened.hermes.run({ do: 'send', sessionId: SESSION, text: TEXT })
     await opened.clock.advance(0)
-    expect(await outcome).toEqual({ ok: true, value: undefined })
+    expect(await outcome).toEqual({ ok: true, value: null })
     expect(opened.sent().map(call => call.method)).toEqual(expect.arrayContaining(['session.resume', 'prompt.submit']))
   })
 
@@ -252,6 +252,144 @@ describe('starting the gateway', () => {
     await opened.clock.advance(0)
     expect(opened.starts).toEqual([false, true])
     expect(opened.hermes.link.get()).toEqual({ state: 'online' })
+  })
+})
+
+const RECEIPT = (ERRAND.steps[stepOf('prompt.submit')] as Extract<FixtureStep, { await: string }>).reply
+const story = (...steps: readonly Omit<Extract<FixtureStep, { await: string }>, 'at'>[]): Fixture => ({ header: SLASH.header, steps: steps.map(step => ({ at: 0, ...step })) })
+
+describe('the slash catalog', () => {
+  it('is read once the link is online, and lists the commands the gateway runs and the skills', async () => {
+    const opened = open(SLASH)
+    expect(opened.hermes.slash.get()).toEqual([])
+    await opened.clock.advance(0)
+    const names = opened.hermes.slash.get().map(entry => `${entry.kind}:${entry.name}`)
+    expect(names).toHaveLength(35)
+    expect(names.slice(0, 2)).toEqual(['command:title', 'command:goal'])
+    expect(names.slice(-2)).toEqual(['skill:code-review', 'skill:release-notes'])
+    expect(opened.sent().filter(call => call.method === 'commands.catalog')).toEqual([{ method: 'commands.catalog', params: {} }])
+  })
+
+  it('stays empty, with nothing counted, when Hermes does not know the call', async () => {
+    const opened = open(ERRAND)
+    await opened.clock.advance(0)
+    expect(opened.sent().some(call => call.method === 'commands.catalog')).toBe(true)
+    expect(opened.hermes.slash.get()).toEqual([])
+    expect(opened.diagnostics).toEqual([])
+  })
+
+  it('is read again on every new socket', async () => {
+    const opened = open(SLASH, { drop: { afterPush: 5, missed: 0 } })
+    opened.watch()
+    await toApproval(opened)
+    await opened.clock.advance(1_000)
+    expect(opened.sent().filter(call => call.method === 'commands.catalog'), 'once on each of the two sockets').toHaveLength(2)
+    expect(opened.hermes.slash.get()).toHaveLength(35)
+  })
+})
+
+describe('sending a slash line', () => {
+  const send = async (fixture: Fixture, text: string) => {
+    const opened = open(fixture)
+    await opened.clock.advance(0)
+    const outcome = opened.hermes.run({ do: 'send', sessionId: SESSION, text })
+    await opened.clock.advance(0)
+    return { opened, outcome: await outcome }
+  }
+
+  it('runs a listed command with command.dispatch and answers its output', async () => {
+    const { opened, outcome } = await send(story(
+      { await: 'command.dispatch', params: { session_id: SESSION, name: 'status' }, reply: { type: 'exec', output: '\u001b[1mModel:\u001b[0m test-model\n' } }
+    ), '/status')
+    expect(outcome).toEqual({ ok: true, value: 'Model: test-model' })
+    expect(opened.sent().find(call => call.method === 'command.dispatch')?.params).toEqual({ session_id: SESSION, name: 'status' })
+    expect(opened.sent().some(call => call.method === 'prompt.submit')).toBe(false)
+    await expect(opened.script.done).resolves.toBeUndefined()
+  })
+
+  it('submits a skill with the typed line shown and the skill text for the model', async () => {
+    const { opened, outcome } = await send(story(
+      { await: 'command.dispatch', params: { session_id: SESSION, name: 'release-notes', arg: 'since v2' }, reply: { type: 'skill', name: 'release-notes', message: 'SKILL BODY since v2', display: '/release-notes since v2' } },
+      { await: 'prompt.submit', params: { session_id: SESSION, text: '/release-notes since v2', input_id: 'minted', api_text: 'SKILL BODY since v2' }, reply: RECEIPT }
+    ), '/release-notes   since v2')
+    expect(outcome).toEqual({ ok: true, value: null })
+    const submit = opened.sent().find(call => call.method === 'prompt.submit')?.params
+    expect(submit).toMatchObject({ session_id: SESSION, text: '/release-notes since v2', api_text: 'SKILL BODY since v2' })
+    await expect(opened.script.done).resolves.toBeUndefined()
+  })
+
+  it('answers a command Hermes refuses as a value', async () => {
+    const { outcome } = await send(story(
+      { await: 'command.dispatch', params: { session_id: SESSION, name: 'usage', arg: 'reset' }, error: { code: 4001, message: 'unsupported_command', data: { reason: 'unsupported_command' } } }
+    ), '/usage reset')
+    expect(outcome).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "Hermes can't run that command from Highwing." } })
+  })
+
+  it('renames the chat for /title with a name, through Highwing\'s own rename', async () => {
+    const { opened, outcome } = await send(story(
+      { await: 'session.mutate', params: { session_id: SESSION, request_id: 'minted', expected_revision: 0, operation: 'rename', payload: { title: 'Holiday plan' } }, reply: { session_id: SESSION, operation: 'rename', revision: 1, title: 'Holiday plan' } }
+    ), '/title Holiday plan')
+    expect(outcome).toEqual({ ok: true, value: null })
+    expect(opened.sent().some(call => call.method === 'command.dispatch')).toBe(false)
+  })
+
+  it('waits for the catalog of a new connection before it decides a line is text', async () => {
+    const opened = open(story(
+      { await: 'command.dispatch', params: { session_id: SESSION, name: 'status' }, reply: { type: 'exec', output: 'Model: test-model' } }
+    ))
+    const sent: Promise<unknown>[] = []
+    opened.hermes.watch(SESSION, session => {
+      if (session.sync.state !== 'live' || sent.length > 0) return
+      expect(opened.hermes.slash.get(), 'the chat is live before the catalog answers').toEqual([])
+      sent.push(opened.hermes.run({ do: 'send', sessionId: SESSION, text: '/status' }))
+    })
+    await opened.clock.advance(0)
+    expect(await sent[0]).toEqual({ ok: true, value: 'Model: test-model' })
+  })
+
+  it('reads a listed name in any case and runs it by its catalog name', async () => {
+    const { opened, outcome } = await send(story(
+      { await: 'command.dispatch', params: { session_id: SESSION, name: 'status' }, reply: { type: 'exec', output: 'Model: test-model' } }
+    ), '/Status')
+    expect(outcome).toEqual({ ok: true, value: 'Model: test-model' })
+    expect(opened.sent().find(call => call.method === 'command.dispatch')?.params).toEqual({ session_id: SESSION, name: 'status' })
+  })
+
+  it('sends text at once while the catalog read is slow, and a slash line as text once the read gives up', async () => {
+    const clock = manualClock()
+    const script = scriptedDialer(story(
+      { await: 'prompt.submit', params: { session_id: SESSION, text: 'hello', input_id: 'minted' }, reply: RECEIPT },
+      { await: 'prompt.submit', params: { session_id: SESSION, text: '/status', input_id: 'minted' }, reply: RECEIPT }
+    ), { clock })
+    const unanswered: Dialer = async request => {
+      const socket = await script(request)
+      return {
+        send: text => (text.includes('"method":"commands.catalog"') ? undefined : socket.send(text)),
+        close: () => socket.close(),
+        get onText() { return socket.onText },
+        set onText(listener) { socket.onText = listener },
+        get onClose() { return socket.onClose },
+        set onClose(listener) { socket.onClose = listener }
+      } satisfies WireSocket
+    }
+    const hermes = openHermes({ dial: unanswered, clock, client: CLIENT })
+    await clock.advance(0)
+    expect(await hermes.run({ do: 'send', sessionId: SESSION, text: 'hello' })).toEqual({ ok: true, value: null })
+    let settled = false
+    const slashLine = hermes.run({ do: 'send', sessionId: SESSION, text: '/status' }).finally(() => { settled = true })
+    await clock.advance(9_999)
+    expect(settled, 'a slash line waits for the catalog read').toBe(false)
+    await clock.advance(1)
+    expect(await slashLine).toEqual({ ok: true, value: null })
+    expect(callsIn(script.received).filter(call => call.method === 'prompt.submit').map(call => call.params?.text)).toEqual(['hello', '/status'])
+  })
+
+  it('sends a line whose name is not listed as text', async () => {
+    const { opened } = await send(story(
+      { await: 'prompt.submit', params: { session_id: SESSION, text: '/compress', input_id: 'minted' }, reply: RECEIPT }
+    ), '/compress')
+    expect(opened.sent().find(call => call.method === 'prompt.submit')?.params).toMatchObject({ text: '/compress' })
+    expect(opened.sent().some(call => call.method === 'command.dispatch')).toBe(false)
   })
 })
 

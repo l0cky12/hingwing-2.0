@@ -8,8 +8,9 @@ import type {
   Ask, Began, FileDiff, Generation, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PromptId, SessionId, SettledTurn,
   SidebarRow, ToolId, ToolResult, TurnId
 } from '../domain/session'
+import type { SlashCatalog, SlashEntry } from '../domain/slash'
 import type {
-  CanonicalEventsResult, CanonicalPendingAdmission, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
+  CanonicalEventsResult, CanonicalPendingAdmission, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
   CanonicalSnapshot, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
   MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, SessionLiveInfo, SessionMutateResult, SessionTitlePayload, StoredTranscriptResult,
   StoredTranscriptRow, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload
@@ -616,5 +617,71 @@ function decodedJson(text: string): Obj | readonly unknown[] | undefined {
     return isObject(value) || Array.isArray(value) ? value : undefined
   } catch {
     return undefined
+  }
+}
+
+/**
+ * The registry commands the gateway runs for a local chat when typed bare: every `read` and `control`
+ * verdict of `command_verdict` in Hermes 0.23.3's gateway/session_commands.py. The catalog lists every
+ * command and says nothing about this, and `command.dispatch` refuses the rest with `unsupported_command`.
+ */
+const GATEWAY_RUNS: ReadonlySet<string> = new Set([
+  'title', 'approve', 'deny', 'goal', 'heartbeat', 'refine', 'review', 'loop', 'plan', 'moa', 'subgoal', 'status',
+  'egress', 'context', 'whoami', 'profile', 'codex-runtime', 'personality', 'diff', 'verbose', 'footer', 'yolo',
+  'approvals', 'reasoning', 'fast', 'voice', 'busy', 'autoprune', 'toolsets', 'skills', 'memory', 'bundles', 'learn',
+  'init', 'cron', 'suggestions', 'blueprint', 'curator', 'kanban', 'commands', 'help', 'usage', 'login', 'topup',
+  'insights', 'platforms', 'version', 'debug'
+])
+
+/** `desktop` is `null` for a command a desktop app should offer, else the reason it should not. */
+const offered = (meta: unknown) => isObject(meta) && (meta.desktop === null || meta.desktop === undefined)
+
+export function parseCatalog(reply: CommandsCatalogResult): SlashCatalog {
+  if (!isObject(reply)) return []
+  const pairs = Array.isArray(reply.pairs) ? reply.pairs : []
+  const skills = isObject(reply.skills) ? reply.skills : {}
+  const meta = isObject(reply.commands) ? reply.commands : {}
+  const plugins = isObject(reply.plugin_commands) ? reply.plugin_commands : {}
+  const commands: SlashEntry[] = []
+  const skillRows: SlashEntry[] = []
+  const seen = new Set<string>()
+  for (const pair of pairs) {
+    const [key, description] = Array.isArray(pair) ? pair : []
+    if (!isString(key) || !isString(description) || !key.startsWith('/') || seen.has(key)) continue
+    const name = key.slice(1)
+    if (name === '' || /\s/.test(name)) continue
+    seen.add(key)
+    if (Object.hasOwn(skills, key)) {
+      skillRows.push({ kind: 'skill', name, description })
+    } else if ((GATEWAY_RUNS.has(name) || Object.hasOwn(plugins, name)) && offered(meta[key])) {
+      commands.push({ kind: 'command', name, description })
+    }
+  }
+  return [...commands, ...skillRows]
+}
+
+export type Directive =
+  | { readonly do: 'show'; readonly text: string }
+  | { readonly do: 'submit'; readonly text: string; readonly apiText: string; readonly note: string | null }
+
+/**
+ * The canonical runner answers `exec` (a plugin or quick command too), `send` and `skill`
+ * (gateway/session_commands.py:422-533). The client submits `message` with its own input id; the gateway
+ * never does. `null` for a directive Highwing cannot carry out.
+ */
+export function parseDirective(reply: CommandDispatchResult, typed: string): Directive | null {
+  if (!isObject(reply)) return null
+  switch (reply.type) {
+    case 'exec':
+      return { do: 'show', text: stripAnsi(reply.output ?? '').trim() }
+    case 'send':
+    case 'skill': {
+      if (!isString(reply.message) || reply.message.trim() === '') return null
+      const display = isString(reply.display) && reply.display.trim() !== '' ? reply.display.trim() : typed
+      const note = isString(reply.notice) && reply.notice.trim() !== '' ? stripAnsi(reply.notice).trim() : null
+      return { do: 'submit', text: display, apiText: reply.message, note }
+    }
+    default:
+      return null
   }
 }

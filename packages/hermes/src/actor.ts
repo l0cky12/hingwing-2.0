@@ -1,6 +1,6 @@
 import type { ModelConfirm, ModelMenu, Outcome, Refusal } from './domain/command'
 import { emptyTracked, reduce, sessionOf, type Gate, type LocalAction, type ServerRequest, type SessionInput, type Tracked } from './domain/reduce'
-import type { InputId, ModelOption, PromptId, PromptReply, Session, SessionId } from './domain/session'
+import type { InputId, ModelOption, OutboxEntry, PromptId, PromptReply, Session, SessionId } from './domain/session'
 import { Offline, RpcRefusal, type Clock, type Connection } from './wire/link'
 import { parseModelMenu, parseModelReceipt, parseReplay, parseSnapshot, parseTranscript } from './wire/parse'
 
@@ -15,6 +15,7 @@ const REFUSALS: Readonly<Record<string, Refusal>> = {
   session_busy: { kind: 'rejected', message: 'Hermes is busy with this chat. Try again in a moment.' },
   runtime_draining: { kind: 'rejected', message: 'Hermes is restarting. Try again in a moment.' },
   invalid_params: { kind: 'rejected', message: 'Hermes did not accept the request.' },
+  unsupported_command: { kind: 'unsupported', message: "Hermes can't run that command from Highwing." },
   unknown_method: { kind: 'unsupported', message: "This Hermes doesn't support that." }
 }
 const FENCE_REFUSALS: ReadonlySet<string> = new Set(['revision_conflict', 'stale_generation'])
@@ -82,7 +83,7 @@ export class SessionActor {
       void this.runAttach(after, before.at !== 'detached')
     } else if (after.at === 'live' && before.at !== 'live') {
       // A message whose submit died with the last socket. The gateway's duplicate guard makes a second delivery a no-op.
-      for (const entry of this.tracked.content.outbox) if (entry.state.s === 'sending') void this.submit(entry.inputId, entry.text)
+      for (const entry of this.tracked.content.outbox) if (entry.state.s === 'sending') void this.submit(entry)
     }
   }
 
@@ -135,17 +136,19 @@ export class SessionActor {
     return this.tracked.gate.at === 'live' ? null : { ok: false, refusal: NOT_CONNECTED }
   }
 
-  send(text: string): Promise<Outcome> {
+  /** `apiText` is what the model reads when it differs from the `text` the thread and the stored history show. */
+  send(text: string, apiText?: string): Promise<Outcome> {
     const offline = this.offline()
     if (offline !== null) return Promise.resolve(offline)
     const inputId = this.deps.mintId() as InputId
-    this.act({ did: 'send', inputId, text })
-    return this.submit(inputId, text)
+    const sending = { inputId, text, ...(apiText === undefined ? {} : { apiText }) }
+    this.act({ did: 'send', ...sending })
+    return this.submit(sending)
   }
 
-  private async submit(inputId: InputId, text: string): Promise<Outcome> {
+  private async submit({ inputId, text, apiText }: Pick<OutboxEntry, 'inputId' | 'text' | 'apiText'>): Promise<Outcome> {
     try {
-      const receipt = await this.deps.conn.call('prompt.submit', { session_id: this.id, text, input_id: inputId })
+      const receipt = await this.deps.conn.call('prompt.submit', { session_id: this.id, text, input_id: inputId, ...(apiText === undefined ? {} : { api_text: apiText }) })
       if ('admission_id' in receipt) this.act({ did: 'send.admitted', inputId, admissionId: receipt.admission_id, status: receipt.status })
       else this.act({ did: 'send.discarded', inputId })
       return DONE

@@ -96,6 +96,13 @@ type Check = (gateway: ScriptedGateway, socket: Socket, params: Obj) => string |
 const attached: Check = (_gateway, socket, params) => (socket.subscriptions.has(String(params.session_id)) ? null : 'permission_denied')
 const exactly = (...keys: readonly string[]): Check => (_gateway, _socket, params) =>
   Object.keys(params).length === keys.length && keys.every(key => key in params) ? null : 'invalid_params'
+const strings = (allowed: readonly string[]) => (params: Obj) =>
+  Object.entries(params).every(([key, value]) => allowed.includes(key) && typeof value === 'string')
+/** `_parse` in gateway/session_commands.py:148-156: known keys, all strings, and one word for a name. */
+const dispatchable: Check = (_gateway, _socket, params) =>
+  strings(['session_id', 'profile', 'name', 'arg'])(params) && String(params.name ?? '').trim().replace(/^\//, '').split(/\s+/).filter(Boolean).length === 1
+    ? null
+    : 'invalid_params'
 const runningGeneration: Check = (gateway, _socket, params) =>
   isInt(params.execution_generation) && gateway.view.running && gateway.view.generation === params.execution_generation ? null : 'stale_generation'
 
@@ -110,7 +117,9 @@ const STORY_CHECKS: Readonly<Record<string, readonly Check[]>> = {
   /** gateway/session_controls.py:995-998, gateway/session_authority.py:1106-1117 */
   'approval.respond': [exactly('session_id', 'execution_generation', 'prompt_id', 'choice'), attached, runningGeneration],
   'clarify.respond': [exactly('session_id', 'execution_generation', 'prompt_id', 'answer'), attached, runningGeneration],
-  'session.interrupt': [(gateway, _socket, params) => (gateway.view.generation === params.execution_generation ? null : 'stale_generation')]
+  'session.interrupt': [(gateway, _socket, params) => (gateway.view.generation === params.execution_generation ? null : 'stale_generation')],
+  /** gateway/session_commands.py:422-425 */
+  'command.dispatch': [dispatchable]
 }
 
 /** gateway/session_controls.py:386-392 */
@@ -144,6 +153,14 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const { list } = gateway.fixture.header
     const rows = isObject(list) && Array.isArray(list.sessions) ? list.sessions.filter(isObject) : []
     return { sessions: rows.map(row => (row.session_id === gateway.sessionId ? { ...row, running: gateway.view.running } : row)), scope }
+  },
+  /** gateway/session_discovery.py:8-35 */
+  'commands.catalog': (gateway, _socket, params) => {
+    const { catalog } = gateway.fixture.header
+    if (catalog === undefined) throw new Refused('unknown_method', { code: -32601, message: 'unknown method: commands.catalog', data: { reason: 'unknown_method' } })
+    if (!strings(['session_id', 'profile'])(params)) throw new Refused('invalid_params')
+    if (params.session_id !== undefined && params.session_id !== '') gateway.authorize(params)
+    return catalog
   },
   /** gateway/session_controls.py:505-569: a create ends in a resume of the new session. */
   'session.create': (gateway, socket) => gateway.attach(socket, {}),

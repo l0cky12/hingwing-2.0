@@ -176,8 +176,12 @@ export class RpcRefusal extends Error {
 }
 export class Offline extends Error {}
 
-/** The canonical route also serves `model.options` (Hermes's gateway/session_config.py:11-13), though the contract does not list it there. */
-type Served = CanonicalRpcMethods & Pick<RpcMethods, 'model.options'>
+/**
+ * The canonical route also serves three methods the generated contract does not list as canonical:
+ * `commands.catalog` and `command.dispatch` (`AuthorityConnection.handlers`, gateway/session_controls.py:239-247)
+ * and `model.options` (gateway/session_config.py:11-13).
+ */
+type Served = CanonicalRpcMethods & Pick<RpcMethods, 'commands.catalog' | 'command.dispatch' | 'model.options'>
 type Method = keyof Served
 
 export interface Connection {

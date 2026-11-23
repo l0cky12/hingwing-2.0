@@ -3,6 +3,7 @@ import { loadFixture, type Fixture, type FixtureStep } from '../../src/testing/f
 
 export const ERRAND = loadFixture(fileURLToPath(new URL('../../../../fixtures/errand.jsonl', import.meta.url)))
 export const SESSION = ERRAND.header.sessionId
+export const SLASH = loadFixture(fileURLToPath(new URL('../../../../fixtures/slash.jsonl', import.meta.url)))
 
 export const stepOf = (method: string) => ERRAND.steps.findIndex(step => 'await' in step && step.await === method)
 export const paramsOf = (method: string) => (ERRAND.steps[stepOf(method)] as Extract<FixtureStep, { await: string }>).params as Record<string, unknown>

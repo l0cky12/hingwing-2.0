@@ -1,5 +1,5 @@
 import type { Hermes } from '@highwing/hermes'
-import type { Session } from '@highwing/hermes/domain'
+import type { Session, SlashCatalog } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { applyPush, CHANNEL, isWebLink, parseCommand, parseFileRequest, validators, type FileOutcome, type Push, type Topic } from '../src/ipc-contract'
@@ -128,7 +128,16 @@ function harness() {
   })
   let emit: (session: Session) => void = () => {}
   const commands: unknown[] = []
+  let catalog: SlashCatalog = []
+  const catalogListeners = new Set<(value: SlashCatalog) => void>()
   const hermes = {
+    slash: {
+      get: () => catalog,
+      subscribe: (listener: (value: SlashCatalog) => void) => {
+        catalogListeners.add(listener)
+        return () => void catalogListeners.delete(listener)
+      }
+    },
     watch: (_id: unknown, listener: (session: Session) => void) => {
       emit = listener
       listener(moments[0]!)
@@ -145,7 +154,11 @@ function harness() {
     show: async path => (opened.push({ action: 'show', path }), { ok: true })
   }
   const served = serveWindows(pinnedConnection(hermes), ipc, url => url.startsWith('app://'), opener)
-  return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, served }
+  const setCatalog = (next: SlashCatalog) => {
+    catalog = next
+    catalogListeners.forEach(listener => listener(next))
+  }
+  return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, served, setCatalog }
 }
 
 describe('serveWindows', () => {
@@ -174,6 +187,16 @@ describe('serveWindows', () => {
       held = next
     }
     expect(held).toEqual({ value: moments[6], rev: 3 })
+  })
+
+  it('serves the slash catalog as full values, the empty one first', () => {
+    vi.useFakeTimers()
+    const { listeners, pushes, event, setCatalog } = harness()
+    listeners.get(CHANNEL.watch)!(event(), 3, 'slash')
+    const listed: SlashCatalog = [{ kind: 'command', name: 'status', description: 'Show session, model, token, and context info' }]
+    vi.advanceTimersByTime(COALESCE_MS)
+    setCatalog(listed)
+    expect(pushes).toEqual([{ topic: 'slash', rev: 1, full: [] }, { topic: 'slash', rev: 2, full: listed }])
   })
 
   it('stops pushing when the window unwatches or is destroyed', () => {

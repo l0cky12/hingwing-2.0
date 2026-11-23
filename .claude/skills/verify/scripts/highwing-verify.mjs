@@ -38,8 +38,11 @@ const STATES = {
   'tool-running': page => page.locator('.step[data-end="live"]').filter({ hasText: /^Running / }),
   approval: page => page.getByRole('group', { name: 'Run this command?' }).getByRole('button', { name: 'Run once', exact: true, disabled: false }),
   settled: page => page.locator('[data-end="done"]'),
-  offline: page => page.getByRole('status', { name: 'Connection' })
+  offline: page => page.getByRole('status', { name: 'Connection' }),
+  'slash-menu': page => page.getByRole('listbox', { name: 'Commands and skills' })
 }
+
+const rendered = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 
 const STEPS = {
   wait: { arity: 1, run: async (ctx, state) => waitFor(ctx, state) },
@@ -124,6 +127,7 @@ const STEPS = {
   value: {
     arity: 2,
     run: async (ctx, label, text) => {
+      await rendered(ctx.page)
       const held = await ctx.page.getByLabel(label, { exact: true }).inputValue({ timeout: ctx.timeout })
       if (held !== text) throw new Error(`"${label}" holds ${JSON.stringify(held)}, not ${JSON.stringify(text)}`)
     }
@@ -182,6 +186,7 @@ const STEPS = {
   tally: {
     arity: 2,
     run: async (ctx, role, n) => {
+      await rendered(ctx.page)
       const locator = ctx.page.getByRole(role)
       const seen = await poll(ctx, () => locator.count(), held => held === Number(n))
       if (seen !== Number(n)) throw new Error(`${seen} ${role} element(s) are shown, not ${n}`)

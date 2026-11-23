@@ -230,6 +230,24 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .composer form button { height: var(--box-one); padding: 0 20px; border: 0; border-radius: 8px; background: var(--ink); color: var(--sheet); font-weight: 500; }
 .composer form button.stop { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 .composer .refusal { max-width: 760px; margin: 8px auto 0; padding: 0 28px 0 calc(28px + var(--col)); }
+.slash-anchor {
+  position: absolute; bottom: calc(100% - 6px); left: 50%; transform: translateX(-50%); z-index: 2;
+  width: min(760px, 100%); box-sizing: border-box; padding: 0 28px 0 calc(28px + var(--col));
+}
+.slash-menu {
+  max-height: 320px; overflow-y: auto; padding: 4px 0; background: var(--sheet);
+  border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 6px 18px rgb(31 42 38 / 12%);
+}
+.slash-group { margin: 6px 12px 2px; font-size: 12px; color: var(--graphite); }
+.slash-row { display: flex; gap: 14px; align-items: baseline; padding: 5px 12px; cursor: default; }
+.slash-row.active { background: var(--signal-soft); }
+.slash-name { flex: none; font: 13.5px var(--mono); color: var(--ink); }
+.slash-description { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--graphite); font-size: 13.5px; }
+.slash-output {
+  max-width: 760px; max-height: 40vh; overflow: auto; box-sizing: border-box; margin: 10px auto 0;
+  padding: 0 28px 0 calc(28px + var(--col)); font: 12.5px/1.5 var(--mono); color: var(--graphite); white-space: pre-wrap;
+}
+.slash-output:empty { margin: 0; }
 
 .model { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; max-width: 760px; margin: 8px auto 0; padding: 0 28px 0 calc(28px + var(--col)); font: 13px/1.4 var(--sans); color: var(--graphite); }
 .model .readout { display: inline-flex; align-items: center; gap: 9px; padding: 2px 0; border: 0; background: transparent; font: inherit; color: var(--graphite); cursor: pointer; }
@@ -304,7 +322,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .bar { flex-wrap: wrap; gap: 8px; padding: 10px 16px; }
   .banner { padding: 9px 16px; }
   #transcript { padding-left: 16px; padding-right: 16px; }
-  .composer form, .model { padding: 0 16px 0 calc(16px + var(--col)); }
+  .composer form, .model, .slash-anchor, .slash-output { padding: 0 16px 0 calc(16px + var(--col)); }
   .model .list { left: calc(4px + var(--col)); }
   .setup { padding: 36px 16px 40px; }
   textarea { min-width: 0; }

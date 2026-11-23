@@ -25,8 +25,9 @@ highwing-2.0/
           session.ts                                      Session, Run, Turn, Item, Link, Sidebar
           reduce.ts                                       SessionEvent, Gate, SessionInput, reduce, syncOf, activityOf
           command.ts                                      Command, ResultOf, Outcome, Refusal: data the renderer sends and gets back
+          slash.ts                                        SlashEntry, SlashCatalog, slashLineOf: the slash menu's rows
           reach.ts                                        Target, SshHost, CheckStep, CheckFailure, CHECK_FAILURES: where Hermes runs and what can stop Highwing reaching it
-          index.ts                                        exports the session, command and reach types, activityOf and the reach tables
+          index.ts                                        exports the session, command, slash and reach types, activityOf and the reach tables
         wire/                    private                  the only code that knows gateway shapes
           contract.generated.ts                           copied from Hermes by `pnpm sync:contract`
           contract.openrpc.json                           copied with it; read only by testing/ for key sets

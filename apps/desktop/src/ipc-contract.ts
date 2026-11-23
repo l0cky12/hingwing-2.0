@@ -1,7 +1,7 @@
 import {
   targetOf,
   type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenTurn, type PromptReply, type ResultOf,
-  type Session, type SessionId, type SettledTurn, type Sidebar, type Target
+  type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target
 } from '@highwing/hermes/domain'
 
 /** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
@@ -32,8 +32,8 @@ export type SetupCommand =
 export type AppCommand = Command | SetupCommand
 export type AppResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 
-export type Topic = 'setup' | 'link' | 'sidebar' | `session:${SessionId}`
-export type TopicValue<T extends Topic> = T extends 'setup' ? Setup : T extends 'link' ? Link : T extends 'sidebar' ? Sidebar : Session
+export type Topic = 'setup' | 'link' | 'sidebar' | 'slash' | `session:${SessionId}`
+export type TopicValue<T extends Topic> = T extends 'setup' ? Setup : T extends 'link' ? Link : T extends 'sidebar' ? Sidebar : T extends 'slash' ? SlashCatalog : Session
 
 export interface Tail<T> { readonly from: number; readonly items: readonly T[] }
 
@@ -163,6 +163,6 @@ export function parseFileRequest(raw: unknown): FileRequest | null {
 }
 
 export function parseTopic(raw: unknown): Topic | null {
-  if (raw === 'setup' || raw === 'link' || raw === 'sidebar') return raw
+  if (raw === 'setup' || raw === 'link' || raw === 'sidebar' || raw === 'slash') return raw
   return text(raw) && raw.startsWith('session:') && raw.length > 'session:'.length ? (raw as Topic) : null
 }

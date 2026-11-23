@@ -148,6 +148,7 @@ export function Chat({ id }: { readonly id: SessionId }) {
         <span id={words} role="status">{notice}</span>
       </div>
       <Composer
+        key={id}
         inputRef={composer}
         canSend={session?.sync.state === 'live'}
         showStop={session !== undefined && activityOf(session).kind !== 'idle'}

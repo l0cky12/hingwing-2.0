@@ -24,6 +24,7 @@ export interface Fixture {
     readonly list: unknown
     /** The session's stored display rows before the story starts. */
     readonly stored: readonly unknown[]
+    readonly catalog?: unknown
     /**
      * The canned `model.options` reply, whose `model` and `provider` are the session's model at the
      * start. Absent: the gateway refuses `model.options` as an unknown method, as an older Hermes does.
@@ -111,6 +112,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (guarded !== undefined && !(Array.isArray(guarded) && guarded.every(model => typeof model === 'string'))) return '"guarded" must be a list of model names'
   return {
     fixture, hermes, source, sessionId: sessionId as SessionId, describe: value.describe, list: value.list, stored,
+    ...('catalog' in value ? { catalog: value.catalog } : {}),
     ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] })
   }
 }
