@@ -86,7 +86,7 @@ export type RecordBody = { readonly text: string; readonly more: number } | { re
 /**
  * `label` is null when the record has a single section. `copy` is what a Copy control puts on the clipboard:
  * the shown text without the "… N more characters" line, or a unified diff. It is null when the body shows its empty words,
- * or when a hunk arrived cut short, since Hermes caps the diff it sends and a cut hunk would not apply.
+ * or when Hermes cut the diff short, since a copy would then drop lines without saying so.
  */
 export type RecordSection =
   | { readonly kind: 'changes'; readonly label: string | null; readonly path: string; readonly lines: FileDiff['lines']; readonly copy: string | null }
@@ -314,31 +314,12 @@ const copyOf = (body: RecordBody) => ('empty' in body ? null : body.text)
 
 const DIFF_COPY_MARK = { add: '+', del: '-', ctx: ' ' } as const
 
-const HUNK_HEADER = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/
-
-function hunksAreWhole(lines: FileDiff['lines']): boolean {
-  let left = { old: 0, new: 0 }
-  let hunks = 0
-  for (const line of lines) {
-    if (line.t === 'hunk') {
-      const header = HUNK_HEADER.exec(line.text)
-      if (header === null || left.old !== 0 || left.new !== 0) return false
-      left = { old: Number(header[1] ?? 1), new: Number(header[2] ?? 1) }
-      hunks++
-    } else {
-      if (line.t !== 'add') left.old--
-      if (line.t !== 'del') left.new--
-    }
-  }
-  return hunks > 0 && left.old === 0 && left.new === 0
-}
-
 /**
  * The full diff, so a created file keeps its first hunk header, which `changeLines` drops for display. The target is
  * always `b/<path>`: a `+0,0` hunk may empty a file rather than delete it, and Hermes's file tools never delete one.
  */
 function unifiedDiff(diff: FileDiff): string | null {
-  if (!hunksAreWhole(diff.lines)) return null
+  if (diff.cut) return null
   const body = diff.lines.map(line => (line.t === 'hunk' ? line.text : `${DIFF_COPY_MARK[line.t]}${line.text}`))
   return [`--- ${diff.createsFile ? '/dev/null' : `a/${diff.path}`}`, `+++ b/${diff.path}`, ...body].join('\n') + '\n'
 }

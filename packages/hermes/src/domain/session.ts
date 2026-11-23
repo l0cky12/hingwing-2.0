@@ -137,6 +137,11 @@ export interface FileDiff {
   readonly path: string
   /** The first hunk starts at `@@ -0,0`. */
   readonly createsFile: boolean
+  /**
+   * Hermes caps the diff it sends at 80 lines and 6 files, and this file is where it stopped: a hunk is short of its
+   * counts, or the "omitted" summary follows the file. Later lines may be missing even when every hunk is whole.
+   */
+  readonly cut: boolean
   readonly added: number
   readonly removed: number
   readonly lines: readonly { readonly t: 'hunk' | 'add' | 'del' | 'ctx'; readonly text: string }[]

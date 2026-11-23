@@ -150,13 +150,13 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .tip.complete .glyph { width: 14px; height: 14px; left: calc(var(--thread-x) - var(--col) - 6.25px); background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--graphite); }
 .tip.complete .glyph::after { content: ""; position: absolute; left: 4.5px; top: 1.75px; width: 4.5px; height: 8px; border-right: 2px solid var(--graphite); border-bottom: 2px solid var(--graphite); transform: rotate(45deg); box-sizing: border-box; }
 .step, .record section, .copyable { position: relative; }
-.copyable > pre, .record section:has(> .copy) > pre { padding-right: 72px; }
+.copyable > pre, .prose > pre:first-child, .record section:has(> .copy) > :is(.path, pre:not(.diff)) { padding-right: 72px; }
 .step > .head:has(~ .copy) { padding-right: 82px; }
 .copy {
   position: absolute; top: 2px; right: 2px; z-index: 1; padding: 1px 8px; border: 1px solid var(--rule); border-radius: 4px;
   background: var(--sheet); color: var(--ink); font: 500 12px/1.5 var(--sans); opacity: 0; user-select: none;
 }
-:hover > .copy, :focus-within > .copy, .copy:focus-visible { opacity: 1; }
+:hover > .copy, :has(:focus-visible) > .copy, .copy.shown { opacity: 1; }
 .step > .copy { top: 4px; }
 .request > .copy { right: auto; left: calc(100% + 8px); }
 .request > .copy::before { content: ""; position: absolute; right: 100%; top: 0; bottom: 0; width: 9px; }

@@ -448,21 +448,44 @@ const FILE_HEADER = /^(.+) → (.+)$/
  * (`agent/display.py:746-790`). Lines before the first file header and lines with no diff prefix (the
  * banner, the "omitted" summary) are dropped.
  */
+const HUNK_HEADER = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/
+
+function hunksAreWhole(lines: FileDiff['lines']): boolean {
+  let left = { old: 0, new: 0 }
+  let hunks = 0
+  for (const line of lines) {
+    if (line.t === 'hunk') {
+      const header = HUNK_HEADER.exec(line.text)
+      if (header === null || left.old !== 0 || left.new !== 0) return false
+      left = { old: Number(header[1] ?? 1), new: Number(header[2] ?? 1) }
+      hunks++
+    } else {
+      if (line.t !== 'add') left.old--
+      if (line.t !== 'del') left.new--
+    }
+  }
+  return hunks > 0 && left.old === 0 && left.new === 0
+}
+
 export function parseInlineDiff(raw: string): FileDiff[] {
-  const files: { path: string; lines: FileDiff['lines'][number][] }[] = []
+  const files: { path: string; lines: FileDiff['lines'][number][]; summarized: boolean }[] = []
   for (const line of stripAnsi(raw).split('\n')) {
     const t = diffLineKind(line)
     const header = t === null ? FILE_HEADER.exec(line) : null
+    const last = files.at(-1)
     if (header !== null) {
       const [, from = '', to = ''] = header
-      files.push({ path: (to === '/dev/null' ? from : to).replace(/^[ab]\//, ''), lines: [] })
+      files.push({ path: (to === '/dev/null' ? from : to).replace(/^[ab]\//, ''), lines: [], summarized: false })
     } else if (t !== null) {
-      files.at(-1)?.lines.push({ t, text: t === 'hunk' ? line : line.slice(1) })
+      last?.lines.push({ t, text: t === 'hunk' ? line : line.slice(1) })
+    } else if (last !== undefined && line.trim() !== '') {
+      last.summarized = true
     }
   }
-  return files.map(({ path, lines }) => ({
+  return files.map(({ path, lines, summarized }) => ({
     path,
     createsFile: lines.find(line => line.t === 'hunk')?.text.startsWith('@@ -0,0') ?? false,
+    cut: summarized || !hunksAreWhole(lines),
     added: lines.filter(line => line.t === 'add').length,
     removed: lines.filter(line => line.t === 'del').length,
     lines

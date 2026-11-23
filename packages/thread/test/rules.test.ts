@@ -33,7 +33,7 @@ function tool(name: string, args: ToolItem['args'], over: { diffs?: readonly Fil
 const runningTool = (name: string, args: ToolItem['args']): ToolItem => ({ kind: 'tool', id: `${name}-run` as ToolId, name, args, status: { s: 'running', note: null } })
 
 function diff(path: string, added: number, removed: number, createsFile = false): FileDiff {
-  return { path, createsFile, added, removed, lines: [{ t: 'hunk', text: createsFile ? `@@ -0,0 +1,${added} @@` : '@@ -1 +1 @@' }] }
+  return { path, createsFile, cut: false, added, removed, lines: [{ t: 'hunk', text: createsFile ? `@@ -0,0 +1,${added} @@` : '@@ -1 +1 @@' }] }
 }
 
 const command = (output: string, exitCode = 0): ToolResult => ({ kind: 'command', output, exitCode, clipped: 0 })
@@ -214,8 +214,8 @@ describe('checkThread', () => {
 })
 
 describe('what a change copies', () => {
-  const copyOf = (lines: FileDiff['lines']) => {
-    const s = session({ history: [settled([tool('patch', { path: '/w/a.md' }, { diffs: [{ path: '/w/a.md', createsFile: false, added: 0, removed: 2, lines }] })])] })
+  const copyOf = (lines: FileDiff['lines'], cut = false) => {
+    const s = session({ history: [settled([tool('patch', { path: '/w/a.md' }, { diffs: [{ path: '/w/a.md', createsFile: false, cut, added: 0, removed: 2, lines }] })])] })
     const [section] = stepOf(nodesOf(s)[0]).record?.sections ?? []
     return section?.copy
   }
@@ -225,8 +225,8 @@ describe('what a change copies', () => {
       .toBe('--- a//w/a.md\n+++ b//w/a.md\n@@ -1,2 +0,0 @@\n-one\n-two\n')
   })
 
-  it('copies nothing when Hermes cut a hunk short', () => {
-    expect(copyOf([{ t: 'hunk', text: '@@ -1,90 +1,90 @@' }, { t: 'ctx', text: 'one' }, { t: 'del', text: 'two' }, { t: 'add', text: 'three' }])).toBeNull()
+  it('copies nothing when Hermes cut the diff short', () => {
+    expect(copyOf([{ t: 'hunk', text: '@@ -1,2 +0,0 @@' }, { t: 'del', text: 'one' }, { t: 'del', text: 'two' }], true)).toBeNull()
   })
 
   it('copies the whole command a step ran, where the title clips it', () => {

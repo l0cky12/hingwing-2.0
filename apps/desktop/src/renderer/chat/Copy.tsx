@@ -20,7 +20,7 @@ export function CopyButton({ text, name }: { readonly text: string; readonly nam
   }
   return (
     <>
-      <button type="button" className="copy" aria-label={name} onClick={press}>
+      <button type="button" className={outcome === null ? 'copy' : 'copy shown'} aria-label={name} onClick={press}>
         {outcome === null ? 'Copy' : WORDS[outcome]}
       </button>
       <span className="sr" aria-live="polite">{outcome === null ? '' : WORDS[outcome]}</span>

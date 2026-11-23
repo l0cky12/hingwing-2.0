@@ -1,6 +1,6 @@
 # Copy a block
 
-A **Copy** control sits at the top right of your request, of each reply block, of the command on an approval card, of an open command step's row, and of each section of an open step's record. It shows while the pointer is over the block or focus is inside it, and Tab reaches it. A press writes the block's plain text to the clipboard: a reply as its Markdown source, a command whole and with no prompt sign, and a diff as a unified diff. A diff that Hermes cut short would not apply, so it has no control. The control then reads "Copied" for two seconds, and a polite live region says the same word. A closed step shows no control.
+A **Copy** control sits at the top right of your request, of each reply block, of the command on an approval card, of an open command step's row, and of each section of an open step's record. It shows while the pointer is over the block, while keyboard focus is inside it, and for two seconds after a press. Tab reaches it. A press writes the block's plain text to the clipboard: a reply as its Markdown source, a command whole and with no prompt sign, and a diff as a unified diff. Hermes caps the diff it sends, and a diff it cut short has no control, because a copy would drop lines without saying so. The control then reads "Copied" for two seconds, and a polite live region says the same word. A closed step shows no control.
 
 ## Sub-features
 
