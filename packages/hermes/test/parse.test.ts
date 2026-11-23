@@ -394,10 +394,40 @@ describe('parseListRows and parseServerRequest', () => {
 describe('parseInlineDiff and parseToolResult', () => {
   it('keeps one FileDiff per file header and drops the banner and the omitted summary', () => {
     const raw = ['  ┊ review diff', '\u001b[33ma/a.txt → b/a.txt\u001b[0m', '@@ -1 +1 @@', '-x', '+y', 'a/b.txt → b/b.txt', '@@ -0,0 +1 @@', '+new', '… omitted 4 diff line(s)'].join('\n')
-    expect(parseInlineDiff(raw).map(({ path, createsFile, added, removed }): Partial<FileDiff> => ({ path, createsFile, added, removed }))).toEqual([
-      { path: 'a.txt', createsFile: false, added: 1, removed: 1 },
-      { path: 'b.txt', createsFile: true, added: 1, removed: 0 }
+    expect(parseInlineDiff(raw).map(({ path, createsFile, cut, added, removed }): Partial<FileDiff> => ({ path, createsFile, cut, added, removed }))).toEqual([
+      { path: 'a.txt', createsFile: false, cut: false, added: 1, removed: 1 },
+      { path: 'b.txt', createsFile: true, cut: true, added: 1, removed: 0 }
     ])
+  })
+
+  it('marks a file cut when the cap falls between two of its hunks, though every kept hunk is whole', () => {
+    const raw = ['a/a.txt → b/a.txt', '@@ -1 +1 @@', '-x', '+y', '… omitted 4 diff line(s)'].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([true])
+  })
+
+  it('marks a file cut when the cap falls inside a hunk', () => {
+    const raw = ['a/a.txt → b/a.txt', '@@ -1,90 +1,90 @@', ' one', '-two', '+three'].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([true])
+  })
+
+  it('reads a /dev/null target as a delete', () => {
+    const raw = ['a/old.txt → /dev/null', '@@ -1 +0,0 @@', '-gone'].join('\n')
+    expect(parseInlineDiff(raw).map(({ path, deletesFile, cut }) => ({ path, deletesFile, cut }))).toEqual([{ path: 'old.txt', deletesFile: true, cut: false }])
+  })
+
+  it('leaves whole files uncut when a note sits between them', () => {
+    const raw = ['a/a.txt → b/a.txt', '@@ -1 +1 @@', '-x', '+y', '# Moved: a.txt -> b.txt', 'a/c.txt → b/c.txt', '@@ -1 +1 @@', '-p', '+q'].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([false, false])
+  })
+
+  it.each(['# Moved: a.txt -> b.txt', '# Deleted: c.txt'])('leaves a whole file uncut when the patch ends with "%s"', note => {
+    const raw = ['a/a.txt → b/a.txt', '@@ -1 +1 @@', '-x', '+y', note].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([false])
+  })
+
+  it('leaves a whole diff uncut', () => {
+    const raw = ['  ┊ review diff', 'a/a.txt → b/a.txt', '@@ -1,2 +1,2 @@', ' one', '-two', '+three'].join('\n')
+    expect(parseInlineDiff(raw).map(diff => diff.cut)).toEqual([false])
   })
 
   it('strips ANSI from command output and caps text at 256 kB', () => {

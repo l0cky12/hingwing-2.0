@@ -446,27 +446,53 @@ function diffLineKind(line: string): FileDiff['lines'][number]['t'] | null {
 }
 
 const FILE_HEADER = /^(.+) → (.+)$/
+const PATCH_NOTE = /^# (?:Moved|Deleted): /
+
+const HUNK_HEADER = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/
+
+function hunksAreWhole(lines: FileDiff['lines']): boolean {
+  let left = { old: 0, new: 0 }
+  let hunks = 0
+  for (const line of lines) {
+    if (line.t === 'hunk') {
+      const header = HUNK_HEADER.exec(line.text)
+      if (header === null || left.old !== 0 || left.new !== 0) return false
+      left = { old: Number(header[1] ?? 1), new: Number(header[2] ?? 1) }
+      hunks++
+    } else {
+      if (line.t !== 'add') left.old--
+      if (line.t !== 'del') left.new--
+    }
+  }
+  return hunks > 0 && left.old === 0 && left.new === 0
+}
 
 /**
  * Hermes's `inline_diff`: ANSI-coloured, with a "review diff" banner and an "a/x → b/x" line per file
- * (`agent/display.py:746-790`). Lines before the first file header and lines with no diff prefix (the
- * banner, the "omitted" summary) are dropped.
+ * (`agent/display.py:746-790`). Lines before the first file header and lines with no diff prefix are dropped.
+ * Hermes ends a capped diff with an "omitted" summary line, so a last line that is not part of a diff marks the
+ * file before it cut. The patch tool's own `# Moved:` and `# Deleted:` notes are not a summary.
  */
 export function parseInlineDiff(raw: string): FileDiff[] {
-  const files: { path: string; lines: FileDiff['lines'][number][] }[] = []
+  const files: { path: string; deletesFile: boolean; lines: FileDiff['lines'][number][] }[] = []
+  let summarized = false
   for (const line of stripAnsi(raw).split('\n')) {
+    if (line === '') continue
     const t = diffLineKind(line)
     const header = t === null ? FILE_HEADER.exec(line) : null
+    summarized = t === null && header === null && files.length > 0 && !PATCH_NOTE.test(line)
     if (header !== null) {
       const [, from = '', to = ''] = header
-      files.push({ path: (to === '/dev/null' ? from : to).replace(/^[ab]\//, ''), lines: [] })
+      files.push({ path: (to === '/dev/null' ? from : to).replace(/^[ab]\//, ''), deletesFile: to === '/dev/null', lines: [] })
     } else if (t !== null) {
       files.at(-1)?.lines.push({ t, text: t === 'hunk' ? line : line.slice(1) })
     }
   }
-  return files.map(({ path, lines }) => ({
+  return files.map(({ path, deletesFile, lines }, index) => ({
     path,
     createsFile: lines.find(line => line.t === 'hunk')?.text.startsWith('@@ -0,0') ?? false,
+    deletesFile,
+    cut: (summarized && index === files.length - 1) || !hunksAreWhole(lines),
     added: lines.filter(line => line.t === 'add').length,
     removed: lines.filter(line => line.t === 'del').length,
     lines
