@@ -1,4 +1,4 @@
-import { proseBlocks, type Phrase, type ProseBlock } from '@highwing/thread'
+import { proseBlocks, type Phrase, type ProseRun } from '@highwing/thread'
 import { fieldId } from '@highwing/thread/find'
 import { Fragment } from 'react'
 
@@ -6,13 +6,13 @@ export function PhraseText({ words }: { readonly words: Phrase }) {
   return words.map((piece, index) => (piece.t === 'code' ? <code key={index}>{piece.v}</code> : <Fragment key={index}>{piece.v}</Fragment>))
 }
 
-function Pieces({ pieces }: { readonly pieces: ProseBlock['pieces'] }) {
-  return pieces.map((piece, index) => {
-    switch (piece.t) {
+function Runs({ runs }: { readonly runs: readonly ProseRun[] }) {
+  return runs.map((run, index) => {
+    switch (run.t) {
       case 'br': return <br key={index} />
-      case 'code': return <code key={index}>{piece.v}</code>
-      case 'bold': return <b key={index}>{piece.v}</b>
-      case 'text': return <Fragment key={index}>{piece.v}</Fragment>
+      case 'code': return <code key={index}>{run.v}</code>
+      case 'bold': return <b key={index}>{run.v}</b>
+      case 'text': return <Fragment key={index}>{run.v}</Fragment>
     }
   })
 }
@@ -29,7 +29,7 @@ export function Markdown({ source, caret, nodeKey }: MarkdownProps) {
     const tail = caret && index === blocks.length - 1 ? <span className="caret" /> : null
     const find = fieldId(nodeKey, `block ${index}`)
     return block.code
-      ? <pre key={index} data-find={find}><code><Pieces pieces={block.pieces} /></code>{tail}</pre>
-      : <p key={index} data-find={find}><Pieces pieces={block.pieces} />{tail}</p>
+      ? <pre key={index} data-find={find}><code>{block.text}</code>{tail}</pre>
+      : <p key={index} data-find={find}><Runs runs={block.runs} />{tail}</p>
   })
 }

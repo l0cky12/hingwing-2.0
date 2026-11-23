@@ -177,12 +177,12 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed }: ThreadPr
     const fresh = (matches[next]?.opens ?? []).filter(key => !opened.has(key))
     if (fresh.length > 0) setOpened(held => new Set([...held, ...fresh]))
     navigated.current = true
-    setFind({ ...find, current: next, foundOpen: new Set([...find.foundOpen, ...fresh]) })
+    setFind({ ...find, current: next, openedByFind: new Set([...find.openedByFind, ...fresh]) })
   }
 
   const closeFind = () => {
     if (find === null) return
-    setOpened(held => new Set([...held].filter(key => !find.foundOpen.has(key))))
+    setOpened(held => new Set([...held].filter(key => !find.openedByFind.has(key))))
     setFind(null)
     onFindClosed()
   }

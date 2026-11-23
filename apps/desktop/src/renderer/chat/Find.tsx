@@ -2,14 +2,13 @@ import type { ThreadView } from '@highwing/thread'
 import type { FindMatch } from '@highwing/thread/find'
 import { useLayoutEffect, useRef, type KeyboardEvent, type RefObject } from 'react'
 
-/** `null` while the bar is closed. `foundOpen` holds the rows find opened, so closing can shut them again. */
 export interface FindState {
   readonly query: string
   readonly current: number | null
-  readonly foundOpen: ReadonlySet<string>
+  readonly openedByFind: ReadonlySet<string>
 }
 
-export const FIND_OPEN: FindState = { query: '', current: null, foundOpen: new Set() }
+export const FIND_OPEN: FindState = { query: '', current: null, openedByFind: new Set() }
 
 export const isFindKey = (event: globalThis.KeyboardEvent) =>
   event.key.toLowerCase() === 'f' && !event.altKey && !event.shiftKey && (navigator.userAgent.includes('Mac') ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)
@@ -66,7 +65,6 @@ export function FindBar({ query, total, current, earlier, inputRef, onQuery, onS
   )
 }
 
-/** The range of `[start, end)` in the element's text, where a `<br>` counts as one character. */
 function rangeIn(element: Element, start: number, end: number): Range | null {
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_ALL, {
     acceptNode: node => (node instanceof Text || node instanceof HTMLBRElement ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP)
@@ -105,10 +103,6 @@ function paint(name: string, ranges: readonly Range[]) {
   else CSS.highlights.set(name, new Highlight(...ranges))
 }
 
-/**
- * Marks every match with the `find` highlight and the current one with `find-current`, with no
- * wrapper elements. Returns the current match's range, for scrolling to it.
- */
 export function useFindMarks(root: RefObject<HTMLElement | null>, matches: readonly FindMatch[], current: number | null) {
   const currentRange = useRef<Range | null>(null)
   useLayoutEffect(() => {
@@ -125,7 +119,6 @@ export function useFindMarks(root: RefObject<HTMLElement | null>, matches: reado
   return currentRange
 }
 
-/** Scrolls every scrollable ancestor up to `scroller` so the range sits in the middle of each. */
 export function reveal(range: Range, scroller: HTMLElement) {
   const centre = (box: DOMRect) => ({ x: box.left + box.width / 2, y: box.top + box.height / 2 })
   for (let element = range.startContainer.parentElement; element !== null && element !== scroller; element = element.parentElement) {

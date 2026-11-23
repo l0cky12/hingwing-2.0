@@ -1,12 +1,10 @@
 import { proseBlocks, proseText } from './prose'
 import type { Phrase, StepView, ThreadView } from './thread-view'
 
-/** One run of text the window renders in one element, which carries `data-find={id}`. */
 export type FieldPart =
   | 'request' | 'title' | 'heading' | 'command' | 'why' | 'words' | 'text' | 'detail'
   | `block ${number}` | `path ${number}` | `line ${number} ${number}` | `body ${number}`
 
-/** Keys are unique across a view (`checkThread` asserts it), so an id names one element. */
 export const fieldId = (key: string, part: FieldPart) => `${key} ${part}`
 
 export interface FindMatch {
@@ -14,7 +12,6 @@ export interface FindMatch {
   /** UTF-16 offsets into that field's text. */
   readonly start: number
   readonly end: number
-  /** Rows to open so the match shows: its step key, then its group key. Empty when never hidden. */
   readonly opens: readonly string[]
 }
 
@@ -22,10 +19,6 @@ interface Field { readonly id: string; readonly text: string; readonly opens: re
 
 const joined = (words: Phrase) => words.map(piece => piece.v).join('')
 
-/**
- * Every text the window shows, in document order. Each field's text is a prefix of the
- * textContent of its element, with a `<br>` counting as `\n`.
- */
 function fields(view: ThreadView): Field[] {
   const out: Field[] = []
   const add = (key: string, part: FieldPart, text: string, opens: readonly string[] = []) => out.push({ id: fieldId(key, part), text, opens })
@@ -84,7 +77,6 @@ function fields(view: ThreadView): Field[] {
 
 const escaped = (query: string) => query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-/** Case-insensitive matches of `query` across the whole view, in document order. */
 export function findInThread(view: ThreadView, query: string): readonly FindMatch[] {
   if (query === '') return []
   const pattern = new RegExp(escaped(query), 'giu')

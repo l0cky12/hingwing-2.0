@@ -641,5 +641,6 @@ export function checkThread(view: ThreadView): string[] {
         problems.push(`${where}: the live end sits on ${node.kind} ${node.key}`)
     }
   })
+  for (const message of view.pending) claim(message.key)
   return problems
 }
