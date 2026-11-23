@@ -391,10 +391,9 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   :root { --graphite: #434E4A; --rule: #79857E; }
 }
 
-/* The bots sidebar. The tone tokens are for avatars alone. */
 .window { display: grid; grid-template-columns: 288px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; }
 .window[hidden] { display: none; }
-:root { --bots-hover: color-mix(in srgb, var(--sheet) 55%, var(--paper)); --tone-slate: #3E5C7A; --tone-plum: #5A4E7C; --tone-olive: #5B6A34; --tone-mauve: #7A4A5A; --tone-umber: #6E5640; }
+:root { --bots-hover: color-mix(in srgb, var(--sheet) 55%, var(--paper)); --avatar-slate: #3E5C7A; --avatar-plum: #5A4E7C; --avatar-olive: #5B6A34; --avatar-mauve: #7A4A5A; --avatar-umber: #6E5640; }
 .bots { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--rule); background: var(--paper); }
 .bots button { border: 0; background: none; text-align: left; color: inherit; }
 .bots-head { display: flex; align-items: center; gap: 4px; min-height: 56px; padding: 12px 12px 12px 20px; border-bottom: 1px solid var(--rule); }
@@ -425,11 +424,11 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .bot-badge { position: absolute; right: -3px; bottom: -3px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; color: var(--sheet); background: var(--ink); box-shadow: 0 0 0 2px var(--paper); }
 .avatar { display: grid; place-items: center; flex: none; border-radius: 50%; font-weight: 700; color: var(--sheet); text-transform: uppercase; }
 .tone-ink { background: var(--ink); }
-.tone-slate { background: var(--tone-slate); }
-.tone-plum { background: var(--tone-plum); }
-.tone-olive { background: var(--tone-olive); }
-.tone-mauve { background: var(--tone-mauve); }
-.tone-umber { background: var(--tone-umber); }
+.tone-slate { background: var(--avatar-slate); }
+.tone-plum { background: var(--avatar-plum); }
+.tone-olive { background: var(--avatar-olive); }
+.tone-mauve { background: var(--avatar-mauve); }
+.tone-umber { background: var(--avatar-umber); }
 .bots-note { margin: 18px 12px; font-size: 13px; color: var(--graphite); }
 .bot[aria-current]:focus-visible { box-shadow: inset 5px 0 0 var(--ink); }
 @media (forced-colors: active) {
@@ -439,10 +438,9 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .avatar, .bot-badge { border: 1px solid CanvasText; }
   .bot[aria-current]:focus-visible { border-left-width: 5px; padding-left: 7px; }
 }
-/* New bot does nothing yet. It stays focusable through aria-disabled, so `button:disabled` does not reach it. */
 .bots-head button[aria-disabled="true"] { opacity: .45; cursor: default; }
 .bots-head button[aria-disabled="true"]:hover { background: none; color: var(--graphite); }
-/* Below this the chat would be narrower than its compact layout fits, so the chat keeps the whole window. */
+/* 288 px of sidebar plus the narrowest chat its compact layout fits. Below that the chat keeps the whole window. */
 @media (max-width: 679px) {
   .window { grid-template-columns: minmax(0, 1fr); }
   .bots { display: none; }

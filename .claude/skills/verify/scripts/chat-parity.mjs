@@ -17,7 +17,6 @@ import { join } from 'node:path'
 const shots = dir => (existsSync(dir) ? readdirSync(dir).filter(name => name.endsWith('.png') && !name.startsWith('compare-') && name !== 'failure.png') : [])
 const size = path => execFileSync('magick', ['identify', '-format', '%wx%h', path], { encoding: 'utf8' })
 
-/** Pixels that differ, or a string saying why the pair could not be compared. */
 function differing(before, after) {
   if (!existsSync(before) || !existsSync(after)) return 'missing on one side'
   if (size(before) !== size(after)) return `sizes differ: ${size(before)} and ${size(after)}`

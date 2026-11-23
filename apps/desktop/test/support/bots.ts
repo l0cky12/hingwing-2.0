@@ -5,7 +5,6 @@ export const fact = (id: string, name: string, more: Partial<BotFacts> = {}): Bo
 
 export const listed = (...facts: readonly BotFacts[]): Bots => ({ state: 'listed', roster: rosterOf(facts) })
 
-/** The approved layout: the default bot, two bots under Work, two in no section. */
 export const APPROVED = listed(
   fact('default', 'Hermes Agent', { isDefault: true }),
   fact('researcher', 'Researcher', { section: 'Work', preview: 'Three of the five sources agree.' }),

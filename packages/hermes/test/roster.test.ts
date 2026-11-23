@@ -8,7 +8,6 @@ const UNKNOWN_METHOD = new RpcRefusal(-32601, 'unknown_method', 'unknown method:
 const DENIED = new RpcRefusal(4001, 'permission_denied', 'permission_denied')
 const ONE_BOT = { profiles: [{ name: 'solo', path: '/profiles/solo' }] }
 
-/** A Hermes that answers each `profiles.list` only when the test says how. */
 function hermes() {
   const waiting: { resolve(reply: unknown): void; reject(error: Error): void }[] = []
   const state = { asked: 0, changes: 0 }

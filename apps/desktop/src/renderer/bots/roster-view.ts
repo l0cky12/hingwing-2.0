@@ -1,13 +1,13 @@
 import type { Bot, BotId, Bots, BotSection } from '@highwing/hermes/domain'
 
-/** What the list under the header shows. Exactly one of these, so the component checks no state of its own. */
+/** What the list under the header shows. */
 export type ListView =
   | { readonly show: 'loading' }
   | { readonly show: 'note'; readonly words: string }
   /** `sections` holds no empty section, and `featured` and `sections` are not both empty. */
   | { readonly show: 'roster'; readonly featured: Bot | null; readonly sections: readonly BotSection[] }
 
-/** One line for every state with nothing to draw. A new `Bots` state does not compile until it has words. */
+/** One line for every state with nothing to draw. */
 export const NOTES: { readonly [S in Exclude<Bots['state'], 'loading' | 'listed'>]: string } = {
   offline: "Can't reach Hermes.",
   unsupported: "This Hermes can't list its bots.",
@@ -31,10 +31,7 @@ export function listOf(bots: Bots | undefined, query: string | null): ListView {
   return featured === null && sections.length === 0 ? { show: 'note', words: `No bots match “${query}”` } : { show: 'roster', featured, sections }
 }
 
-/**
- * The selected bot: `picked` while the roster still lists it, else the default bot, else none.
- * Derived on every render and never stored, so a roster that arrives late or drops a bot needs no effect to fix the selection.
- */
+/** The selected bot: `picked` while the roster still lists it, else the default bot, else none. */
 export function selectedIn(bots: Bots | undefined, picked: BotId | null): BotId | null {
   if (bots?.state !== 'listed') return null
   const { featured, sections } = bots.roster

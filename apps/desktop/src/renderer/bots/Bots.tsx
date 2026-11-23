@@ -5,10 +5,8 @@ import { useTopic } from '../store'
 import { initialOf, listOf, selectedIn, UNASSIGNED } from './roster-view'
 
 const NO_NEW_BOT = "Highwing can't create bots yet"
-/** The chat pages its thread on these from anywhere outside a field that holds text. In the search box they move the caret. */
-const CARET_KEYS: ReadonlySet<string> = new Set(['PageUp', 'PageDown', 'Home', 'End'])
+const CARET_KEYS: ReadonlySet<string> = new Set(['PageUp', 'PageDown', 'End'])
 
-/** The one line that touches IPC, so a test can draw `BotsPanel` from a value. */
 export function BotsSidebar() {
   return <BotsPanel bots={useTopic('bots')} />
 }
@@ -24,9 +22,7 @@ const Close = () => <svg {...icon}><path d="M6 6l12 12M18 6 6 18" /></svg>
 const Star = () => <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" /></svg>
 
 export function BotsPanel({ bots }: { readonly bots: Bots | undefined }) {
-  /** The bot the user clicked. Selecting opens no chat. */
   const [picked, setPicked] = useState<BotId | null>(null)
-  /** null: search is closed. */
   const [query, setQuery] = useState<string | null>(null)
   const searchButton = useRef<HTMLButtonElement>(null)
   const ids = useId()

@@ -74,7 +74,6 @@ export function recordingDialer(inner: Dialer, path: string, clock: Clock = syst
   const flush = () => {
     const { describe, list, sessionId, stored } = header
     if (describe === undefined || list === undefined || sessionId === undefined || stored === undefined) return
-    // The catalog and the bots are answered after the header's first line is due, so that line is replaced when one arrives.
     const head = line({ ...header, hermes: header.hermes ?? 'unknown' })
     if (written === null) writeFileSync(path, head)
     else if (head !== written) writeFileSync(path, head + readFileSync(path, 'utf8').slice(written.length))

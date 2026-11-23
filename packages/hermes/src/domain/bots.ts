@@ -34,7 +34,6 @@ export interface Bot {
   readonly name: string
   readonly role: string | null
   readonly preview: string | null
-  /** Always set, so the renderer never chooses a colour. */
   readonly tone: AvatarTone
 }
 
@@ -70,10 +69,6 @@ export type Bots =
 
 const shown = ({ id, name, role, preview }: BotFacts, tone: AvatarTone): Bot => ({ id, name, role, preview, tone })
 
-/**
- * Tones go down the list in turn. A bot skips a tone that the bot above has or that the bot below
- * chose, so neighbours match only when the user chose both. Two tones to avoid out of five always leaves one.
- */
 function painted(rows: readonly BotFacts[]): Bot[] {
   const out: Bot[] = []
   let next = 0
@@ -89,7 +84,7 @@ function painted(rows: readonly BotFacts[]): Bot[] {
   return out
 }
 
-/** The one place that decides where each bot goes and how it is painted. Only the first default bot is featured. */
+/** Only the first default bot is featured. */
 export function rosterOf(facts: readonly BotFacts[]): Roster {
   const featured = facts.find(bot => bot.isDefault) ?? null
   const rest = facts.filter(bot => bot !== featured)

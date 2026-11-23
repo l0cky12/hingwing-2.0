@@ -395,12 +395,6 @@ async function checkInView(ctx, role, name) {
   if (problem) throw new Error(`${role} "${name}" is not fully in view: ${problem}`)
 }
 
-/**
- * `--size` sets the size a shot must have. `--chat-only` makes that the size of the chat column:
- * the window grows by whatever sits left of `.screen`, and every shot is clipped to the column. A
- * clipped shot then reads like a shot from before the window had a sidebar, which the design C
- * references, forced-colors-check.mjs and chat-parity.mjs all expect.
- */
 async function sizeWindow(ctx, options) {
   const [width, height] = (options.size ?? `${SIZE.width}x${SIZE.height}`).split('x').map(Number)
   ctx.size = { width, height }

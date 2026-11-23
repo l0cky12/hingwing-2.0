@@ -3,23 +3,15 @@ import type { Link } from './domain/session'
 import { Offline, RpcRefusal, type Connection } from './wire/link'
 import { parseBots } from './wire/parse'
 
-/** What can happen to the bots. The first two come from the link, the rest from Hermes's answer. */
 type News =
   | { readonly is: 'online' }
   | { readonly is: 'offline' }
   | { readonly is: 'listed'; readonly roster: Roster }
-  /** Hermes answered that it has no such method. */
   | { readonly is: 'unsupported' }
-  /** Hermes answered any other refusal. */
   | { readonly is: 'refused' }
 
 const LOADING: Bots = { state: 'loading' }
 
-/**
- * Every move. News that a state has no use for leaves it as it is. That is how a listed roster
- * outlives a dropped socket and a refused refresh, and how `unsupported` holds across a reconnect
- * until the next answer instead of flashing an empty list.
- */
 function after(bots: Bots, news: News): Bots {
   switch (news.is) {
     case 'online': return bots.state === 'offline' ? LOADING : bots
@@ -30,14 +22,12 @@ function after(bots: Bots, news: News): Bots {
   }
 }
 
-/** `connecting` says nothing: a first dial is still `loading`, and a redial keeps what it had. */
 const LINK_NEWS: { readonly [S in Link['state']]: 'online' | 'offline' | null } = { connecting: null, online: 'online', waiting: 'offline', blocked: 'offline' }
 
 const METHOD_NOT_FOUND = -32601
 /** Hermes reads every profile's newest session for this call, so a slow disk can stall it. */
 const ROSTER_TIMEOUT_MS = 10_000
 
-/** `Bots` is plain JSON built by one function, so equal values serialise to equal text. */
 const same = (a: Bots, b: Bots): boolean => a === b || JSON.stringify(a) === JSON.stringify(b)
 
 export interface BotList {

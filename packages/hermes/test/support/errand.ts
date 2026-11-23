@@ -6,7 +6,6 @@ export const ERRAND = loadFixture(fileURLToPath(new URL('../../../../fixtures/er
 export const SESSION = ERRAND.header.sessionId
 export const SLASH = loadFixture(fileURLToPath(new URL('../../../../fixtures/slash.jsonl', import.meta.url)))
 
-/** The placeholder `profiles.list` reply, and the errand played by a Hermes that lists those bots. */
 export const PROFILES: unknown = JSON.parse(readFileSync(fileURLToPath(new URL('../../../../fixtures/profiles/roster.json', import.meta.url)), 'utf8'))
 export const WITH_BOTS: Fixture = { ...ERRAND, header: { ...ERRAND.header, profiles: PROFILES } }
 

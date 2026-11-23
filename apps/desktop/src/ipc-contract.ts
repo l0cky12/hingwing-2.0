@@ -32,7 +32,7 @@ export type SetupCommand =
 export type AppCommand = Command | SetupCommand
 export type AppResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 
-/** Every topic with one value per connection, and what it carries. Add a topic here, and the compiler asks for its entry in `APP_TOPICS` and its source in main. */
+/** Every topic with one value per connection, and what it carries. */
 export interface AppTopics {
   readonly setup: Setup
   readonly link: Link

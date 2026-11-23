@@ -5,7 +5,6 @@ import { BOT_TONES, rosterOf, type Bot, type BotFacts, type Roster } from '../sr
 import type { CanonicalProfileRow, CanonicalProfilesResult } from '../src/wire/contract.generated'
 import { parseBots } from '../src/wire/parse'
 
-/** `pnpm typecheck` fails here when a placeholder stops being a `profiles.list` reply, for example after the contract moves. */
 const ROSTER: CanonicalProfilesResult = rosterReply
 const EDGE: CanonicalProfilesResult = edgeReply
 
