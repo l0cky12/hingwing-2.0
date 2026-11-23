@@ -62,6 +62,11 @@ export interface Bridge {
 
 export const CHANNEL = { watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file' } as const
 
+const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
+
+/** The links a reply may open, in the user's browser. Shared so the renderer draws only links main will open. */
+export const isWebLink = (url: string): boolean => WEB_SCHEMES.has(URL.parse(url)?.protocol ?? '')
+
 export const SESSION_PARAM = 'session'
 
 const splice = <T>(held: readonly T[], tail: Tail<T>): readonly T[] => [...held.slice(0, tail.from), ...tail.items]

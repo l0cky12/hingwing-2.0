@@ -1,4 +1,4 @@
-import { proseBlocks, proseText } from './prose'
+import { leafText, parseMarkdown, proseLeaves } from './prose'
 import type { Phrase, StepView, ThreadView } from './thread-view'
 
 export type FieldPart =
@@ -41,7 +41,7 @@ function fields(view: ThreadView): Field[] {
     for (const node of turn.nodes) {
       switch (node.kind) {
         case 'prose':
-          proseBlocks(node.markdown).forEach((block, index) => add(node.key, `block ${index}`, proseText(block)))
+          proseLeaves(parseMarkdown(node.markdown)).forEach((leaf, index) => add(node.key, `block ${index}`, leafText(leaf)))
           break
         case 'step':
           stepFields(node.step, null)

@@ -8,6 +8,8 @@ The stories are in ``STORIES``:
 - ``long-turn`` writes fixtures/long-turn.jsonl: a turn with enough steps to overflow the window. The
   fixture ends at its ``approval.request``; the script then answers ``deny`` off the record so the
   turn can finish.
+- ``markdown`` writes fixtures/markdown.jsonl: a text-only reply that holds a list, a heading, a
+  link, a table and a fenced block. It asks for no approval.
 
 The script runs the canonical gateway in-process, the way Hermes's own
 tests/gateway/test_authority_complete_persisted_turn.py does: a real ``SessionAuthority`` over a
@@ -73,10 +75,12 @@ class Story:
     seed: int
     # The work dir's files before the turn, by path under WORK.
     files: dict
-    # The folder the story's rm -rf asks to delete.
-    doomed: str
+    # The folder the story's rm -rf asks to delete, or None when it deletes nothing.
+    doomed: str | None
     # The recorded answer to the approval. None ends the fixture at ``approval.request``.
     answer: str | None
+    # False for a turn that never asks for an approval. The fixture then ends with the turn's ``stored`` rows.
+    approves: bool = True
 
 
 NOTES = "# Todo\n\n- [ ] sketch the chat view\n- [ ] wire the gateway socket\n- [ ] review screenshots\n"
@@ -179,7 +183,32 @@ LONG_TURN = Story(
     },
     doomed=f"{APP}/build", answer=None)
 
-STORIES = {"errand": ERRAND, "long-turn": LONG_TURN}
+MARKDOWN_REPLY = """Here is the plan for notes.md.
+
+1. Back up notes.md
+2. Rename the heading
+
+## Details
+
+The [style guide](https://example.com/style-guide) says to keep headings short.
+
+| File | Lines | Changed |
+| --- | --- | --- |
+| notes.md | 42 | yes |
+| todo.md | 7 | no |
+
+Run this first:
+
+```sh
+cp notes.md notes.md.bak
+```"""
+
+MARKDOWN = Story(
+    request="Give me a short plan for backing up notes.md and renaming its heading.",
+    steps=[{"say": MARKDOWN_REPLY, "call": None}],
+    out="markdown.jsonl", seed=20261123, files={}, doomed=None, answer=None, approves=False)
+
+STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN}
 NAME = sys.argv[1] if len(sys.argv) > 1 else "errand"
 if NAME not in STORIES:
     sys.exit(f"no story named {NAME!r}; pick one of: {', '.join(STORIES)}")
@@ -437,13 +466,14 @@ async def main():
     recorder.recording = True
     await story_call("prompt.submit", {"session_id": session_id, "text": REQUEST,
                                        "input_id": "input_" + uuid.uuid4().hex[:16]})
-    try:
-        request = await asyncio.wait_for(recorder.push_of("approval.request"), 60)
-    except TimeoutError:
-        sys.exit("the gateway never asked to approve the rm -rf")
-    prompt = request["params"]["payload"]
-    answer_to = {"session_id": session_id, "execution_generation": prompt["execution_generation"],
-                 "prompt_id": prompt["prompt_id"]}
+    if TALE.approves:
+        try:
+            request = await asyncio.wait_for(recorder.push_of("approval.request"), 60)
+        except TimeoutError:
+            sys.exit("the gateway never asked to approve the rm -rf")
+        prompt = request["params"]["payload"]
+        answer_to = {"session_id": session_id, "execution_generation": prompt["execution_generation"],
+                     "prompt_id": prompt["prompt_id"]}
 
     async def stop_recording():
         pushes = [step["push"] for step in recorder.steps if "push" in step]
@@ -456,7 +486,17 @@ async def main():
             sys.exit("the socket received other frames than the session published")
         return pushes
 
-    if TALE.answer is None:
+    async def record_stored():
+        reader = AuthorityConnection(authority, SimpleNamespace(write=lambda obj: True), {"user_id": USER})
+        snapshot = (await call(reader, "session.resume", {"session_id": session_id, "display_projection": True}))["result"]
+        CLOCK.tick(4)
+        recorder.steps.append({"at": CLOCK.now(), "stored": snapshot["display_messages"]})
+
+    if not TALE.approves:
+        await live.task
+        pushes = await stop_recording()
+        await record_stored()
+    elif TALE.answer is None:
         pushes = await stop_recording()
         await call(socket, "approval.respond", {**answer_to, "choice": "deny"})
         await live.task
@@ -465,10 +505,7 @@ async def main():
         await story_call("approval.respond", {**answer_to, "choice": TALE.answer})
         await live.task
         pushes = await stop_recording()
-        reader = AuthorityConnection(authority, SimpleNamespace(write=lambda obj: True), {"user_id": USER})
-        snapshot = (await call(reader, "session.resume", {"session_id": session_id, "display_projection": True}))["result"]
-        CLOCK.tick(4)
-        recorder.steps.append({"at": CLOCK.now(), "stored": snapshot["display_messages"]})
+        await record_stored()
 
     header = {"fixture": 1, "hermes": HERMES_VERSION, "source": "generated", "sessionId": session_id,
               "describe": describe, "list": listing, "stored": created["messages"]}
@@ -477,7 +514,7 @@ async def main():
             out.write(json.dumps(line, ensure_ascii=False) + "\n")
     db.close()
     print(f"wrote {OUT}: {len(pushes)} pushes, {len(recorder.steps) - len(pushes)} other steps", file=sys.stderr)
-    if os.path.exists(TALE.doomed) != (TALE.answer is None):
+    if TALE.doomed is not None and os.path.exists(TALE.doomed) != (TALE.answer is None):
         sys.exit(f"after the answer to the rm -rf, {TALE.doomed} {'is gone' if TALE.answer is None else 'is still there'}")
 
 

@@ -35,6 +35,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Send a message](./send-a-message.md) covers the composer's Send button, Enter, and Stop while a turn runs.
 - [Answer an approval](./answer-an-approval.md) covers the approval card and "Run once" releasing the story to Done.
 - [Open a file](./open-a-file.md) covers the path button in an open record, Show in folder, and Copy path.
+- [Markdown replies](./markdown.md) covers lists, headings, links, tables and code blocks in a reply, and the code block's Copy button.
 - [Offline banner](./offline-banner.md) covers the blocked banner with Retry, the dropped banner with disabled buttons, and recovery.
 - [Copy a block](./copy-a-block.md) covers the Copy control on the request, a reply, an approval command, a command that ran and an open step's record, its keyboard reach, and the closed thread without controls.
 - [Grow the composer](./grow-the-composer.md) covers the message box growing with its text, its cap and scrollbar, the thread staying pinned, and shrinking back to one line.
