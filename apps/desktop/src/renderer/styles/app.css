@@ -36,7 +36,7 @@ body {
   font: 400 14px/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
 }
-.screen { display: grid; grid-template-rows: auto 1fr auto; height: 100%; }
+.screen { display: grid; grid-template-rows: auto 1fr auto; height: 100%; container-type: inline-size; }
 .screen[hidden] { display: none; }
 button { font: inherit; color: inherit; cursor: pointer; }
 button:disabled { cursor: default; opacity: .45; }
@@ -318,7 +318,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   *, *::before, *::after { animation: none !important; }
   .jump, .jump.shown { transition: none; }
 }
-@media (max-width: 640px) {
+@container (max-width: 640px) {
   .bar { flex-wrap: wrap; gap: 8px; padding: 10px 16px; }
   .banner { padding: 9px 16px; }
   #transcript { padding-left: 16px; padding-right: 16px; }
@@ -347,7 +347,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 ::highlight(find) { background-color: var(--signal-soft); color: var(--ink); text-decoration: underline 2px var(--signal); }
 ::highlight(find-current) { background-color: var(--signal); color: var(--sheet); }
 
-@media (max-width: 640px) {
+@container (max-width: 640px) {
   .find-anchor { padding: 12px 16px 0; }
   .find { width: 100%; }
 }
