@@ -237,3 +237,41 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .find-anchor { padding: 12px 16px 0; }
   .find { width: 100%; }
 }
+
+@media (forced-colors: active) {
+  .thread > *::after { width: 0; background: none; border-left: 2px solid CanvasText; }
+  .thread > .step::before, .thread > .group::before, .thread > .approval::before {
+    left: calc(var(--thread-x) - var(--col) - 4.25px); width: 10px; height: 10px; box-sizing: border-box;
+    background: none; box-shadow: none; border: 5px solid CanvasText;
+  }
+  .thread > .step.running::before, .thread > .approval::before { border-width: 2px; }
+  .thread > .step.live::before, .thread > .group.live::before, .thread > .approval.live::before { box-shadow: none; border: 7px solid Highlight; }
+  .tip .glyph { background: none; border: 7px solid CanvasText; }
+  .tip.thinking .glyph, .tip.streaming .glyph, .tip.working .glyph, .tip.blocked .glyph { border-color: Highlight; }
+  .tip.complete .glyph, .tip.lost .glyph { border-width: 2px; }
+  .tip.complete .glyph::after { left: 2.5px; top: -0.25px; }
+  .caret::after { width: 0; background: none; border-left: 0.5em solid CanvasText; }
+
+  .approval { --card-edge: 1px; border: 1px solid CanvasText; }
+  .approval.live { --card-edge: 4px; border-left: var(--card-edge) solid Highlight; }
+  .approval.answered { --card-edge: 0px; }
+  .approval.answered, .approval.answered pre { border: 0; }
+  .thread > .approval::after { left: calc(var(--thread-x) - var(--col) - var(--card-edge)); }
+  .thread > .approval::before { left: calc(var(--thread-x) - var(--col) - 4.25px - var(--card-edge)); }
+  .thread > .approval.live::before { left: calc(var(--thread-x) - var(--col) - 6.25px - var(--card-edge)); }
+
+  .diff { --line-edge: 3px; }
+  .diff .ln { padding-left: var(--line-edge); }
+  .diff .hunk { padding-left: calc(28px + var(--line-edge)); }
+  .diff .add { padding-left: 0; border-left: var(--line-edge) solid CanvasText; }
+  .diff .del { padding-left: 0; border-left: var(--line-edge) dotted CanvasText; }
+
+  .step.open > .record:not(.bare), .prose pre, .approval pre { border: 1px solid CanvasText; }
+  .banner { border-block: 1px solid CanvasText; }
+  .composer button { border: 1px solid ButtonText; }
+  textarea:focus { outline: 2px solid Highlight; outline-offset: 2px; }
+}
+
+@media (prefers-contrast: more) {
+  :root { --graphite: #434E4A; --rule: #79857E; }
+}
