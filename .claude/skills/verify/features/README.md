@@ -36,3 +36,4 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Answer an approval](./answer-an-approval.md) covers the approval card and "Run once" releasing the story to Done.
 - [Offline banner](./offline-banner.md) covers the blocked banner with Retry, the dropped banner with disabled buttons, and recovery.
 - [Find in chat](./find-in-chat.md) covers Ctrl+F, the match count, stepping, opening closed steps, the highlight marks, and Escape returning focus to the composer.
+- [Forced colors](./forced-colors.md) covers the forced-colors and more-contrast renderings of the thread, the waiting card, diffs and focus, and the pixel checker.
