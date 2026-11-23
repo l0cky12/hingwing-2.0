@@ -30,7 +30,9 @@ Every run names one of two gateways. Hermes, ssh and Tailscale are installed on 
 - `--fake-host <scenario>` starts the fake Hermes machine of `packages/hermes/src/testing/fake-host.ts` and launches the app with the fake machine's bin directory as its whole `PATH`. That directory holds a fake `ssh`, `tailscale` and `hermes`, so the app runs its real setup check and its real remote dial and reaches nothing real. A tool the scenario lacks is a real "command not found". The scenarios are `ok`, `slow` and one per check failure: `tailscale-missing`, `tailscale-off`, `tailscale-signed-out`, `host-not-found`, `host-offline`, `unreachable`, `ssh-missing`, `ssh-denied`, `ssh-check`, `host-changed`, `hermes-not-found`, `hermes-too-old` and `cant-save`. The fake machine is `hermes-host.example-tailnet.ts.net`. Its gateway plays `fixtures/errand.jsonl`, or the file `--fixture` names.
 - `--saved none|local|remote|unreadable|newer` needs `--fake-host`. It writes that `connection.json` into the run's user-data directory before launch. The default is `none`, a first run. `remote` saves the fake machine, and `local` saves this computer, where the fake `hermes` answers.
 - `--hold-at tailscale|ssh|attach|relay` needs `--fake-host`. The fake tool that reaches that moment waits for the rest of the run. `ssh` pins the setup check at "Connecting to hermes-host".
-- `--drop-after <event type>` is verification scaffolding. It writes a copy of the fixture whose gateway closes the socket 50 ms after the first frame of that type, and plays the copy instead. The copy is saved as `fixture-with-drop.jsonl` in the evidence directory. The client shows the dropped link until its redial lands about 1 s later.
+- `--drop-after <event type>` is verification scaffolding. It writes a copy of the fixture whose gateway closes the socket 50 ms after the first frame of that type, and plays the copy instead. The copy is saved as `fixture-edited.jsonl` in the evidence directory. The client shows the dropped link until its redial lands about 1 s later.
+- `--models <reply.json>` writes a copy of the fixture whose header carries that canned `model.options` reply, and plays the copy. The gateway then lists those models, starts the chat on the reply's `model`, and switches it on a `session.mutate` with operation `model`. Without it the gateway refuses `model.options` as an unknown method, as an older Hermes does. `fixtures/models/three.json` offers three models with `fast-small` current. `fixtures/models/none.json` offers none. It combines with `--drop-after` into one `fixture-edited.jsonl`.
+- `--guarded <model,...>` makes a switch to those models need a second yes, as Hermes's guard does for a costly model. An idle switch answers with a confirmation. A switch held during a turn is asked about when the turn ends.
 - `--forced-colors` emulates the desktop's forced-colors (high-contrast) mode in the first window once it opens, before any step runs, so the window draws only with system colors.
 - `--more-contrast` emulates `prefers-contrast: more`.
 - `--run <name>` names the evidence directory. The default is a timestamp plus the PID.
@@ -72,6 +74,12 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `copied <text>` | text | fails unless the system clipboard holds exactly this text |
 | `gone <role> <name>` | ARIA role, exact accessible name | polls until no visible element has that role and name, and fails at the timeout. Waits out a fade |
 | `inview <role> <name>` | ARIA role, exact accessible name | fails unless that element's box lies fully inside the visible area of every scrolling ancestor and of the window |
+| `enabled <role> <name>` | ARIA role, exact accessible name | fails unless that control is enabled now |
+| `checked <role> <name>` | ARIA role, exact accessible name | fails unless that radio or checkbox is checked now |
+| `tally <role> <n>` | ARIA role, number | waits until exactly n elements of that role are shown, and fails if the count never settles on n |
+| `absent <text>` | text | fails if the text is visible anywhere now |
+| `called <method> <json> <n>` | method, JSON object, number | waits until the gateway was sent n calls of that method whose params contain the JSON (every key, recursively), and fails on any other count. It is checked again when the steps end, so "exactly n" holds for the whole run. `--fixture` runs only |
+| `quiet` | none | fails if the window logged a console error or a page error so far |
 
 Named states live in the `STATES` table in the helper. Add a state there, not a sleep.
 
@@ -102,6 +110,7 @@ Each run writes to `/tmp/highwing-verify/<run>/`:
 - `opens.jsonl` holds one JSON line for each open or show call that main accepted.
 - `main.log` holds the Electron main process's stdout and stderr. `console.log` holds the renderer console and page errors.
 - `failure.png` is the window when a step failed.
+- `gateway-calls.jsonl` holds every frame the client sent the scripted gateway, one per line, as it arrived (`--fixture` runs). Main writes it when `HIGHWING_FIXTURE_CALLS` names a file, which `run` always sets.
 - `compare-<name>.png` comes from `$H compare <run>`. It puts the reference on the left and the shot on the right. Shots named `tool-running`, `approval`, `settled` and `settled-expanded` pair with `docs/design/reference/tool-running-C.png`, `approval-C.png`, `settled-C.png` and `settled-C-expanded.png`.
 
 Proof standards:

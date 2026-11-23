@@ -1,5 +1,5 @@
 import type { CommandOutcome } from '@highwing/hermes/domain'
-import { useState, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
+import { useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 
 interface ComposerProps {
   readonly inputRef?: RefObject<HTMLTextAreaElement | null>
@@ -8,9 +8,10 @@ interface ComposerProps {
   readonly onSend: (text: string) => Promise<CommandOutcome>
   readonly onStop: () => void
   readonly onInput: () => void
+  readonly children?: ReactNode
 }
 
-export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput }: ComposerProps) {
+export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput, children }: ComposerProps) {
   const [draft, setDraft] = useState('')
   const [refusal, setRefusal] = useState<string | null>(null)
 
@@ -35,6 +36,7 @@ export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput 
         {showStop && <button type="button" className="stop" disabled={!canSend} onClick={onStop}>Stop</button>}
         <button type="submit" disabled={!canSend}>Send</button>
       </form>
+      {children}
       {refusal !== null && <p className="err refusal">{refusal}</p>}
     </footer>
   )

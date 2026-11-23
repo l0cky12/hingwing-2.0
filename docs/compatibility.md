@@ -60,6 +60,11 @@ that attach returned, which serves the profile attach ran in.
 - If Hermes can't start a chat from the desktop app, Highwing refuses the
   command and shows "This Hermes can't start a chat from Highwing." See
   `packages/hermes/src/hub.ts`.
+- If Hermes answers `model.options` with an unknown-method error, Highwing
+  shows no model readout under the message box and the chat works as before.
+  The model is switched with `session.mutate` operation `model`, never with
+  `config.set`, which Hermes refuses for the model. See
+  `packages/hermes/src/actor.ts`.
 
 ## When a change needs a newer Hermes route
 

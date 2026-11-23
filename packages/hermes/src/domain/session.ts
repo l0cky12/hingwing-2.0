@@ -19,6 +19,23 @@ export type InputId = Brand<string, 'InputId'>
 /** Hermes's `execution_generation`: one run of the agent. Travels on the thing it fences. */
 export type Generation = Brand<number, 'Generation'>
 
+/** A model as Hermes names it, shown as given. */
+export type ModelId = Brand<string, 'ModelId'>
+
+/** `provider` is null when Hermes named the model without one. */
+export interface ModelRef { readonly id: ModelId; readonly provider: string | null }
+
+/** A model Hermes offers. `provider` is the slug Hermes wants back on a pick, `providerName` its label. */
+export interface ModelOption { readonly id: ModelId; readonly provider: string; readonly providerName: string }
+
+export interface SessionModel {
+  /** What this chat runs on, as Hermes last said. null until it says. */
+  readonly current: ModelRef | null
+  readonly next: { readonly model: ModelRef; readonly during: Generation } | null
+  /** A held pick that Hermes will apply only after a second yes, sent back with `token`. */
+  readonly ask: { readonly model: ModelRef; readonly token: string; readonly message: string } | null
+}
+
 export type Json = null | boolean | number | string | readonly Json[] | { readonly [key: string]: Json }
 
 /** What a session holds, apart from how current it is. The reducer writes this and nothing else does. */
@@ -34,6 +51,7 @@ export interface SessionContent {
   readonly run: Run
   /** Messages the user sent that no turn has picked up yet. */
   readonly outbox: readonly OutboxEntry[]
+  readonly model: SessionModel
 }
 
 /** The value a window reads. */

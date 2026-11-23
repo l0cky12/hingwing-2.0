@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { CHECK_FAILURES, type SshFailure } from '../domain/reach'
 import type { BlockedWhy, Link, WaitingWhy } from '../domain/session'
-import type { CanonicalRpcMethods } from './contract.generated'
+import type { CanonicalRpcMethods, RpcMethods } from './contract.generated'
 
 /** The seam under the whole client. Text frames in, text frames out. Fixtures implement it in memory. */
 export interface WireSocket {
@@ -168,18 +168,21 @@ export class RpcRefusal extends Error {
     readonly code: number,
     readonly reason: string | null,
     message: string,
-    readonly revision: number | null = null
+    readonly revision: number | null = null,
+    readonly generation: number | null = null
   ) {
     super(message)
   }
 }
 export class Offline extends Error {}
 
-type Method = keyof CanonicalRpcMethods
+/** The canonical route also serves `model.options` (Hermes's gateway/session_config.py:11-13), though the contract does not list it there. */
+type Served = CanonicalRpcMethods & Pick<RpcMethods, 'model.options'>
+type Method = keyof Served
 
 export interface Connection {
   readonly link: Link
-  call<M extends Method>(method: M, params: CanonicalRpcMethods[M]['params'], timeoutMs?: number): Promise<CanonicalRpcMethods[M]['result']>
+  call<M extends Method>(method: M, params: Served[M]['params'], timeoutMs?: number): Promise<Served[M]['result']>
   /**
    * Answer a server-to-client request with JSON-RPC error -32601, the code Hermes's own client uses for
    * a request it has no handler for (apps/shared/src/json-rpc-channel.ts:94), so the agent stops waiting.
@@ -259,12 +262,13 @@ interface Pending {
 
 function refusalOf(error: unknown): RpcRefusal {
   const { code, message, data } = isObject(error) ? error : {}
-  const { reason, revision } = isObject(data) ? data : {}
+  const { reason, revision, execution_generation: generation } = isObject(data) ? data : {}
   return new RpcRefusal(
     typeof code === 'number' ? code : 0,
     typeof reason === 'string' ? reason : null,
     typeof message === 'string' ? message : 'The gateway refused the call.',
-    typeof revision === 'number' ? revision : null
+    typeof revision === 'number' ? revision : null,
+    typeof generation === 'number' ? generation : null
   )
 }
 
@@ -409,9 +413,9 @@ export function connect(
   return {
     get link() { return link },
     get creation() { return phase.at === 'online' ? phase.creation : null },
-    call: <M extends Method>(method: M, params: CanonicalRpcMethods[M]['params'], timeoutMs?: number) => {
+    call: <M extends Method>(method: M, params: Served[M]['params'], timeoutMs?: number) => {
       if (phase.at !== 'online') return Promise.reject(new Offline(`${method} was not sent: Highwing is not connected to Hermes.`))
-      return request(phase.socket, method, params, timeoutMs) as Promise<CanonicalRpcMethods[M]['result']>
+      return request(phase.socket, method, params, timeoutMs) as Promise<Served[M]['result']>
     },
     decline: (requestId, message) => {
       if (phase.at === 'online') phase.socket.send(JSON.stringify({ jsonrpc: '2.0', id: requestId, error: { code: METHOD_NOT_FOUND, message } }))

@@ -1,7 +1,8 @@
-import { activityOf, type PromptId, type PromptReply, type SessionId } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, type ModelMenu, type ModelOption, type PromptId, type PromptReply, type SessionId } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
+import { ModelPicker } from '../composer/ModelPicker'
 import { run, useTopic } from '../store'
 import { FileCallContext, fileCallFor } from './FilePath'
 import { FOLLOW_WITHIN, FOLLOWING, placeAfter, progressOf, type Place } from './place'
@@ -114,6 +115,21 @@ export function Chat({ id }: { readonly id: SessionId }) {
   const onLoadEarlier = useCallback(() => void run({ do: 'loadEarlier', sessionId: id }), [id])
   const onFindClosed = useCallback(() => composer.current?.focus(), [])
 
+  const [menu, setMenu] = useState<{ readonly id: SessionId; readonly menu: ModelMenu | null }>({ id, menu: null })
+  const live = session?.sync.state === 'live'
+  const asked = useRef(0)
+  const refreshModels = useCallback(async () => {
+    const request = ++asked.current
+    const outcome = await run({ do: 'models', sessionId: id })
+    if (request !== asked.current) return
+    const doesNotList = !outcome.ok && outcome.refusal.kind === 'unsupported'
+    if (outcome.ok || doesNotList) setMenu({ id, menu: outcome.ok ? outcome.value : null })
+  }, [id])
+  useEffect(() => { if (live) void refreshModels() }, [live, refreshModels])
+  const model = modelViewOf(menu.id === id ? menu.menu : null, session)
+  const onPickModel = useCallback((pick: ModelOption, confirm: string | null) =>
+    run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) }), [id])
+
   const fileCall = useMemo(() => fileCallFor(id), [id])
 
   return (
@@ -138,7 +154,9 @@ export function Chat({ id }: { readonly id: SessionId }) {
         onSend={text => run({ do: 'send', sessionId: id, text })}
         onStop={() => void run({ do: 'stop', sessionId: id })}
         onInput={onInput}
-      />
+      >
+        {model.show !== 'hidden' && <ModelPicker key={id} view={model} onOpen={() => void refreshModels()} onPick={onPickModel} />}
+      </Composer>
     </>
   )
 }

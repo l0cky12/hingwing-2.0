@@ -300,6 +300,28 @@ describe('mutate and loadEarlier', () => {
     expect(calls).toEqual([])
   })
 
+  it('retries a model switch refused as stale once, with both fences the refusal carries', async () => {
+    const { actor, open, calls, answer } = stage()
+    await open()
+    const careful = { id: 'careful-large', provider: 'acme', providerName: 'Acme' } as Parameters<typeof actor.pickModel>[0]
+    const picked = actor.pickModel(careful, null)
+    expect(calls[0]).toMatchObject({ params: { expected_revision: 3, expected_generation: 0, operation: 'model' } })
+    await answer('session.mutate', new RpcRefusal(4001, 'stale_generation', 'stale_generation', 5, 2))
+    expect(calls[0]).toMatchObject({ params: { request_id: 'id-1', expected_revision: 5, expected_generation: 2, payload: { model: 'careful-large', provider: 'acme' } } })
+    await answer('session.mutate', { session_id: ID, operation: 'model', revision: 6, execution_generation: 3, model: 'careful-large' })
+    expect(await picked).toEqual({ ok: true, value: null })
+  })
+
+  it('says the chat moved on when a model switch is still stale after its retry', async () => {
+    const { actor, open, answer } = stage()
+    await open()
+    const careful = { id: 'careful-large', provider: 'acme', providerName: 'Acme' } as Parameters<typeof actor.pickModel>[0]
+    const picked = actor.pickModel(careful, null)
+    await answer('session.mutate', new RpcRefusal(4001, 'stale_generation', 'stale_generation', 5, 2))
+    await answer('session.mutate', new RpcRefusal(4001, 'stale_generation', 'stale_generation', 6, 3))
+    expect(await picked).toEqual({ ok: false, refusal: { kind: 'stale', message: 'This chat changed while Highwing was switching its model. Try again.' } })
+  })
+
   it('reads earlier pages until one begins at a user row, and puts the turns above the ones it holds', async () => {
     const { actor, calls, answer } = stage()
     actor.attach()

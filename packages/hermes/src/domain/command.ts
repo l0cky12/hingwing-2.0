@@ -1,4 +1,4 @@
-import type { InputId, PromptId, PromptReply, SessionId } from './session'
+import type { InputId, ModelOption, ModelRef, PromptId, PromptReply, SessionId } from './session'
 
 export type Command =
   /** `draftId` is minted when the empty "new chat" view opens. Retrying with it cannot create a second session. */
@@ -10,10 +10,23 @@ export type Command =
   | { readonly do: 'rename'; readonly sessionId: SessionId; readonly title: string }
   | { readonly do: 'archive'; readonly sessionId: SessionId; readonly archived: boolean }
   | { readonly do: 'loadEarlier'; readonly sessionId: SessionId }
+  | { readonly do: 'models'; readonly sessionId: SessionId }
+  /** `confirm` is the token of a `ModelConfirm`, sent to say yes to it. */
+  | { readonly do: 'pickModel'; readonly sessionId: SessionId; readonly model: ModelOption; readonly confirm?: string }
   /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
   | { readonly do: 'reconnect'; readonly start: boolean }
 
-export type ResultOf<C extends Command> = C extends { do: 'create' } ? SessionId : void
+export type ResultOf<C extends Command> =
+  C extends { do: 'create' } ? SessionId
+  : C extends { do: 'models' } ? ModelMenu
+  : C extends { do: 'pickModel' } ? ModelConfirm | null
+  : void
+
+/** What Hermes offers this chat. `options` empty: nothing is set up. `fallback`: the model Hermes names for it. */
+export interface ModelMenu { readonly options: readonly ModelOption[]; readonly fallback: ModelRef | null }
+
+/** Hermes wants a second yes before it switches, usually for a costly model. Nothing changed yet. */
+export interface ModelConfirm { readonly token: string; readonly message: string }
 
 /** A command that could not be carried out. A value, not an exception, so it crosses IPC unchanged. */
 export interface Refusal {

@@ -87,7 +87,7 @@ export function snapshotAfter(story: Story, published: readonly StampedEvent[], 
   const last = published.at(-1)
   const watermark: Cursor = { epoch: story.epoch, seq: last ? last.stamp.seq : 0 }
   return {
-    id: story.sessionId, title, cwd: null, running, generation: generation as Generation, revision, subscriptionId,
+    id: story.sessionId, title, cwd: null, model: null, running, generation: generation as Generation, revision, subscriptionId,
     watermark, queue, prompts: [...prompts.values()], history, openRequests: []
   }
 }

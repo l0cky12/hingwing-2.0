@@ -2,14 +2,16 @@
  * The only place gateway shapes become domain shapes. Everything past these functions trusts its types.
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
-import type { Admission, HistoryPage, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
+import type { ModelConfirm, ModelMenu } from '../domain/command'
+import type { Admission, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type {
-  Ask, Began, FileDiff, Generation, Item, Json, Outcome, PromptId, SessionId, SettledTurn, SidebarRow, ToolId, ToolResult, TurnId
+  Ask, Began, FileDiff, Generation, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PromptId, SessionId, SettledTurn,
+  SidebarRow, ToolId, ToolResult, TurnId
 } from '../domain/session'
 import type {
   CanonicalEventsResult, CanonicalPendingAdmission, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
   CanonicalSnapshot, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
-  MessageStartPayload, PersistedTurn, SessionLiveInfo, SessionMutateResult, SessionTitlePayload, StoredTranscriptResult,
+  MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, SessionLiveInfo, SessionMutateResult, SessionTitlePayload, StoredTranscriptResult,
   StoredTranscriptRow, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload
 } from './contract.generated'
 
@@ -146,13 +148,51 @@ function admissionOf(value: unknown): Admission {
 
 type Shown = (payload: Obj, envelope: Obj) => SessionEvent
 
-function meta(title: string | null, revision: number | null, queue: readonly Admission[] | null): SessionEvent {
+interface MetaFields {
+  readonly title?: string | null
+  readonly revision?: number | null
+  readonly queue?: readonly Admission[] | null
+  readonly model?: ModelRef | null
+  readonly pick?: PickOutcome | null
+  readonly generation?: number | null
+}
+
+function meta({ title, revision, queue, model, pick, generation }: MetaFields): SessionEvent {
   return {
     type: 'meta',
-    ...(title === null ? {} : { title }),
-    ...(revision === null ? {} : { revision }),
-    ...(queue === null ? {} : { queue })
+    ...(title == null ? {} : { title }),
+    ...(revision == null ? {} : { revision }),
+    ...(queue == null ? {} : { queue }),
+    ...(model == null ? {} : { model }),
+    ...(pick == null ? {} : { pick }),
+    ...(generation == null ? {} : { generation: generation as Generation })
   }
+}
+
+type ModelReceiptFields = SessionMutateResult & {
+  status?: string; model?: string; provider?: string; execution_generation?: number
+  confirm?: string; confirm_message?: string; payload?: unknown; committed_model?: string; committed_provider?: string
+}
+
+/**
+ * A model receipt on the stream (gateway/session_mutations.py:352, gateway/session_deferred_pick.py:126-148).
+ * A held pick that needs a second yes names the committed model as `committed_model` and the pick in `payload`.
+ * A held pick that no longer resolves is `refused` and names the committed model as `model`.
+ */
+function modelReceipt(p: ReturnType<typeof fields<ModelReceiptFields>>): SessionEvent {
+  const revision = p.optInt('revision')
+  if (p.optStr('status') !== 'confirmation_required') {
+    return meta({ revision, model: modelOf(p.optStr('model'), p.optStr('provider')), pick: { is: 'settled' }, generation: p.optInt('execution_generation') })
+  }
+  const asked = fields<{ model?: string; provider?: string }>(p.optObj('payload') ?? {})
+  const model = modelOf(asked.optStr('model'), asked.optStr('provider'))
+  const token = p.optStr('confirm')
+  const ask = model === null || !token ? null : { is: 'asking' as const, ask: { model, token, message: p.optStr('confirm_message') || CONFIRM_ASKED } }
+  return meta({ revision, model: modelOf(p.optStr('committed_model'), p.optStr('committed_provider')), pick: ask })
+}
+
+function modelOf(model: string | null | undefined, provider: string | null | undefined): ModelRef | null {
+  return model ? { id: model as ModelId, provider: provider || null } : null
 }
 
 const promptOpened: Shown = payload => ({ type: 'prompt.opened', ...promptOf(payload) })
@@ -229,13 +269,18 @@ export const SHOWN: { readonly [type: string]: Shown } = {
   'approval.cancelled': payload => ({ type: 'prompts.cancelled', ids: fields<ApprovalCancelledPayload>(payload).strs('request_ids') as PromptId[] }),
   'session.info': payload => {
     const p = fields<CanonicalSessionInfo>(payload)
-    return meta(p.optStr('title'), p.optInt('revision'), p.optList('pending')?.map(admissionOf) ?? null)
+    // Its execution_generation is how an attached viewer learns a generation a policy change moved (gateway/session_authority.py:484-495).
+    return meta({
+      title: p.optStr('title'), revision: p.optInt('revision'), queue: p.optList('pending')?.map(admissionOf) ?? null,
+      model: modelOf(p.optStr('model'), p.optStr('provider')), generation: p.optInt('execution_generation')
+    })
   },
-  'session.title': payload => meta(fields<SessionTitlePayload>(payload).str('title'), null, null),
+  'session.title': payload => meta({ title: fields<SessionTitlePayload>(payload).str('title') }),
   /** A committed `session.mutate` result (`gateway/session_mutations.py:352`). */
   'session.updated': payload => {
-    const p = fields<SessionMutateResult>(payload)
-    return meta(p.optStr('title'), p.optInt('revision'), null)
+    const p = fields<ModelReceiptFields>(payload)
+    if (p.optStr('operation') === 'model' && p.optStr('status') !== 'deferred') return modelReceipt(p)
+    return meta({ title: p.optStr('title'), revision: p.optInt('revision'), generation: p.optInt('execution_generation') })
   },
   error: payload => ({ type: 'notice', tone: 'error', text: stripAnsi(fields<ErrorPayload>(payload).str('message')) })
 }
@@ -318,6 +363,7 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
     id: reply.session_id as SessionId,
     title: reply.info.title ?? '',
     cwd: reply.info.cwd || null,
+    model: modelOf(reply.info.model, reply.info.provider),
     running: reply.running,
     generation: reply.execution_generation as Generation,
     revision: reply.revision,
@@ -332,6 +378,53 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
     openRequests: (reply.open_requests ?? []).map(parseServerRequest)
   }
 }
+
+export function parseModelMenu(reply: ModelOptionsResult): ModelMenu {
+  const options = (Array.isArray(reply.providers) ? reply.providers : []).flatMap(row => usable(() => providerOptions(row)) ?? [])
+  const unique = options.filter((option, index) =>
+    options.findIndex(other => other.id === option.id && other.provider === option.provider) === index)
+  return { options: unique, fallback: modelOf(typeof reply.model === 'string' ? reply.model : null, typeof reply.provider === 'string' ? reply.provider : null) }
+}
+
+function providerOptions(row: unknown): ModelOption[] {
+  const p = fields<ModelOptionProvider>(row)
+  if (p.optBool('authenticated') === false) return []
+  const provider = p.str('slug')
+  const providerName = p.optStr('name') || provider
+  const unavailable = new Set(p.optList('unavailable_models')?.filter(isString) ?? [])
+  return (p.optList('models') ?? [])
+    .filter((model): model is string => isString(model) && model !== '' && !unavailable.has(model))
+    .map(model => ({ id: model as ModelId, provider, providerName }))
+}
+
+export type ModelReceipt =
+  | { readonly status: 'committed' }
+  | { readonly status: 'deferred'; readonly during: Generation | null }
+  | { readonly status: 'confirm'; readonly confirm: ModelConfirm }
+  | { readonly status: 'confirm-without-token'; readonly message: string }
+
+export function parseModelReceipt(reply: SessionMutateResult): ModelReceipt {
+  return usable(() => receiptOf(reply)) ?? COMMITTED
+}
+
+function receiptOf(reply: SessionMutateResult): ModelReceipt {
+  const p = fields<SessionMutateResult & { status?: string; execution_generation?: number; confirm?: string; confirm_message?: string }>(reply)
+  switch (p.optStr('status')) {
+    case 'deferred':
+      return { status: 'deferred', during: p.optInt('execution_generation') as Generation | null }
+    case 'confirmation_required': {
+      const token = p.optStr('confirm')
+      const message = p.optStr('confirm_message') || CONFIRM_ASKED
+      return token ? { status: 'confirm', confirm: { token, message } } : { status: 'confirm-without-token', message }
+    }
+    default:
+      return COMMITTED
+  }
+}
+
+const COMMITTED: ModelReceipt = { status: 'committed' }
+
+const CONFIRM_ASKED = 'Hermes asks you to confirm this model before it switches.'
 
 export function parseReplay(reply: CanonicalEventsResult): Replay {
   const events = reply.events.flatMap((params): StampedEvent[] => {

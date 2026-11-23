@@ -23,6 +23,8 @@ export interface ScriptOptions {
   readonly ringFrames?: number
   /** Paces the story and expires loopback tickets. Default the system clock. */
   readonly clock?: Clock
+  /** Called with every frame the client sends, as it arrives. */
+  readonly onReceived?: (frame: unknown) => void
 }
 
 export interface ScriptedDialer extends Dialer {
@@ -77,8 +79,9 @@ function memorySocket(gateway: ScriptedGateway): WireSocket {
  * - Loopback only: the upgrade is refused when it carries an `Origin` header, a ticket that was
  *   used before or is older than 30 s, or anything but exactly one ticket subprotocol.
  * It answers by itself: gateway.ready, client.capabilities, runtime.describe, gateway.ping,
- * session.list, session.detach, and the attach calls. `session.resume` and `session.events.since`
- * are answered from the frames pushed so far (watermark, running, generation, open prompts, the
+ * session.list, session.detach, the attach calls, `model.options` (from the header's `models`) and a
+ * `session.mutate` that switches the model, which commits at once or, during a turn, when it ends.
+ * `session.resume` and `session.events.since` are answered from the frames pushed so far (watermark, running, generation, open prompts, the
  * ring) and the current stored rows. Frames published between a `since` answer and the resume that
  * follows are written to the socket before the resume reply, as the gateway's catch-up does.
  * It reads the frames it pushes with `parseEvent`, so the envelope's field names stay in `wire/parse.ts`.
@@ -86,7 +89,8 @@ function memorySocket(gateway: ScriptedGateway): WireSocket {
 export function scriptedDialer(fixture: Fixture, options: ScriptOptions = {}): ScriptedDialer {
   const clock = options.clock ?? systemClock
   const gateway = new ScriptedGateway(fixture, {
-    clock, timing: options.timing ?? 'instant', ringFrames: options.ringFrames ?? RING_FRAMES, drop: options.drop ?? null
+    clock, timing: options.timing ?? 'instant', ringFrames: options.ringFrames ?? RING_FRAMES, drop: options.drop ?? null,
+    ...(options.onReceived === undefined ? {} : { onReceived: options.onReceived })
   })
   const { transport = 'memory' } = options
   let listener: Promise<Loopback> | null = null
