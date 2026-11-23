@@ -1,5 +1,4 @@
-import type { ThreadView } from '@highwing/thread'
-import type { FindMatch } from '@highwing/thread/find'
+import type { FindMatch, ThreadView } from '@highwing/thread'
 import { useLayoutEffect, useRef, type KeyboardEvent, type RefObject } from 'react'
 
 export interface FindState {
@@ -12,7 +11,7 @@ export interface FindState {
 export const FIND_OPEN: FindState = { query: '', current: null, openedByFind: new Set() }
 
 export const isFindKey = (event: globalThis.KeyboardEvent) =>
-  event.key.toLowerCase() === 'f' && !event.altKey && !event.shiftKey && (navigator.userAgent.includes('Mac') ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)
+  (/^[a-z]$/i.test(event.key) ? event.key.toLowerCase() === 'f' : event.code === 'KeyF') && !event.altKey && !event.shiftKey && (navigator.userAgent.includes('Mac') ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)
 
 function countWords(query: string, total: number, current: number | null): string {
   if (query === '') return ''
@@ -122,15 +121,17 @@ export function useFindMarks(root: RefObject<HTMLElement | null>, matches: reado
   return currentRange
 }
 
+const SCROLLS = new Set(['auto', 'scroll'])
+
 export function reveal(range: Range, scroller: HTMLElement) {
   const centre = (box: DOMRect) => ({ x: box.left + box.width / 2, y: box.top + box.height / 2 })
   for (let element = range.startContainer.parentElement; element !== null && element !== scroller; element = element.parentElement) {
-    const scrolls = element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth
-    if (!scrolls) continue
+    const { overflowX, overflowY } = getComputedStyle(element)
+    if (!SCROLLS.has(overflowX) && !SCROLLS.has(overflowY)) continue
     const target = centre(range.getBoundingClientRect())
     const view = centre(element.getBoundingClientRect())
-    element.scrollTop += target.y - view.y
-    if (element.scrollWidth > element.clientWidth) element.scrollLeft += target.x - view.x
+    if (SCROLLS.has(overflowY)) element.scrollTop += target.y - view.y
+    if (SCROLLS.has(overflowX)) element.scrollLeft += target.x - view.x
   }
   scroller.scrollTop += centre(range.getBoundingClientRect()).y - centre(scroller.getBoundingClientRect()).y
 }

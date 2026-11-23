@@ -79,7 +79,7 @@ Two windows on one session read the same actor through two IPC subscriptions. Th
 2. `@highwing/thread` imports `@highwing/hermes/domain` and nothing else.
 3. `wire/contract.generated.ts` is imported only inside `packages/hermes/src/wire/` and `testing/`. No public entry exports a type from it.
 4. `packages/hermes` never imports `electron`. It takes a `Dialer` and a `Clock` instead of reaching for globals.
-5. The renderer imports `@highwing/hermes/domain`, `@highwing/thread`, `@highwing/thread/find` and `ipc-contract.ts`. It cannot import `@highwing/hermes` or `./testing`, which need Node.
+5. The renderer imports `@highwing/hermes/domain`, `@highwing/thread` and `ipc-contract.ts`. It cannot import `@highwing/hermes` or `./testing`, which need Node.
 6. Main imports `@highwing/hermes` and `ipc-contract.ts`. Only `main/index.ts` imports `./testing`, to honour `HIGHWING_FIXTURE` and `HIGHWING_RECORD`.
 7. `main/settings.ts` and `main/connection.ts` never import `electron`. They take the settings directory, the check and the route as arguments.
 

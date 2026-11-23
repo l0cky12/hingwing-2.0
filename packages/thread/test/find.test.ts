@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { sessionOf } from '../../hermes/src/domain/reduce'
 import type { Link } from '../../hermes/src/domain/session'
 import { errand, fold, type Moment } from '../../hermes/test/support/story'
-import { fieldId, findInThread } from '../src/find'
-import { outline, proseBlocks, proseText, threadView, type StepView, type ThreadView } from '../src/thread-view'
+import { fieldId, findInThread, outline, proseBlocks, proseText, threadView, type StepView, type ThreadView } from '../src/thread-view'
 
 const ONLINE: Link = { state: 'online' }
 const view: ThreadView = threadView(sessionOf(fold(errand()), ONLINE, null))
@@ -95,7 +94,8 @@ describe('a match while the turn runs', () => {
     const alone = moments.find(moment => opensOf(moment).length === 1)
     const grouped = moments.find(moment => moment.beat > (alone?.beat ?? Infinity) && opensOf(moment).length === 2)
     if (alone === undefined || grouped === undefined) throw new Error('the errand never grouped the first write')
-    expect(opensOf(grouped)[0]).toBe(opensOf(alone)[0])
+    const group = threadView(sessionOf(grouped.state, ONLINE, null)).turns[0]?.nodes.find(node => node.kind === 'group')
+    expect(opensOf(grouped)).toEqual([opensOf(alone)[0], group?.key])
   })
 })
 

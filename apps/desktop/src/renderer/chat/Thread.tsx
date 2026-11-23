@@ -1,6 +1,5 @@
 import type { PromptId, PromptReply } from '@highwing/hermes/domain'
-import type { PromptCard, ThreadEnd, ThreadNode, ThreadView, TurnView } from '@highwing/thread'
-import { fieldId, findInThread, type FindMatch } from '@highwing/thread/find'
+import { fieldId, findInThread, type FindMatch, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { FIND_OPEN, FindBar, isFindKey, reveal, useFindMarks, type FindState } from './Find'
 import { cx, Stat, Step } from './Step'
@@ -130,9 +129,10 @@ interface ThreadProps {
   readonly onAnswer: Answer
   readonly onLoadEarlier: () => void
   readonly onFindClosed: () => void
+  readonly onFindScrolled: () => void
 }
 
-export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed }: ThreadProps) {
+export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScrolled }: ThreadProps) {
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set())
   const [find, setFind] = useState<FindState | null>(null)
   const transcript = useRef<HTMLDivElement>(null)
@@ -173,13 +173,15 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed }: ThreadPr
     if (!navigated.current) return
     navigated.current = false
     const scroller = transcript.current?.closest('main')
-    if (currentRange.current !== null && scroller) reveal(currentRange.current, scroller)
-  }, [find, currentRange])
+    if (currentRange.current === null || !scroller) return
+    reveal(currentRange.current, scroller)
+    onFindScrolled()
+  }, [find, currentRange, onFindScrolled])
 
   const show = (held: FindState, match: FindMatch, asked: ReadonlySet<string>) => {
     const fresh = match.opens.filter(key => !asked.has(key) && !opened.has(key))
     if (fresh.length > 0) setOpened(rows => new Set([...rows, ...fresh]))
-    navigated.current = true
+    navigated.current = match.opens.every(key => opened.has(key) || fresh.includes(key))
     setFind({
       ...held,
       current: { field: match.field, start: match.start, asked: new Set([...asked, ...match.opens]) },
@@ -206,16 +208,21 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed }: ThreadPr
     onFindClosed()
   }
 
+  const close = useRef(closeFind)
+  useLayoutEffect(() => {
+    close.current = closeFind
+  })
+  const finding = find !== null
   useEffect(() => {
-    if (find === null) return
+    if (!finding) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.isComposing || transcript.current?.checkVisibility() !== true) return
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || transcript.current?.checkVisibility() !== true) return
       event.preventDefault()
-      closeFind()
+      close.current()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  })
+  }, [finding])
 
   return (
     <>

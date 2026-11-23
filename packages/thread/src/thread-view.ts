@@ -5,6 +5,7 @@ import {
 } from '@highwing/hermes/domain'
 
 export { proseBlocks, proseText, type ProseBlock, type ProseRun } from './prose'
+export { fieldId, findInThread, type FieldPart, type FindMatch } from './find'
 
 /** Text with literal parts. `code` is set in JetBrains Mono; nothing here is HTML. */
 export type Phrase = readonly { readonly t: 'text' | 'code'; readonly v: string }[]

@@ -1,5 +1,4 @@
-import type { DiffStat, RecordSection, StepView } from '@highwing/thread'
-import { fieldId } from '@highwing/thread/find'
+import { fieldId, type DiffStat, type RecordSection, type StepView } from '@highwing/thread'
 import { PhraseText } from './text'
 
 export const cx = (...names: readonly (string | false | null)[]) => names.filter(Boolean).join(' ')

@@ -1,5 +1,4 @@
-import { proseBlocks, type Phrase, type ProseRun } from '@highwing/thread'
-import { fieldId } from '@highwing/thread/find'
+import { fieldId, proseBlocks, type Phrase, type ProseRun } from '@highwing/thread'
 import { Fragment } from 'react'
 
 export function PhraseText({ words }: { readonly words: Phrase }) {

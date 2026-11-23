@@ -17,10 +17,10 @@ export function Chat({ id }: { readonly id: SessionId }) {
     if (element !== null && stuck.current) element.scrollTop = element.scrollHeight
   }, [view])
 
-  const onScroll = () => {
+  const onScroll = useCallback(() => {
     const element = scroller.current
     if (element !== null) stuck.current = element.scrollHeight - element.scrollTop - element.clientHeight < 60
-  }
+  }, [])
   const onAnswer = useCallback((promptId: PromptId, reply: PromptReply) => void run({ do: 'answer', sessionId: id, promptId, reply }), [id])
   const onLoadEarlier = useCallback(() => void run({ do: 'loadEarlier', sessionId: id }), [id])
   const onFindClosed = useCallback(() => composer.current?.focus(), [])
@@ -29,7 +29,7 @@ export function Chat({ id }: { readonly id: SessionId }) {
     <>
       <main id="scroll" ref={scroller} onScroll={onScroll}>
         {view !== null && (
-          <Thread view={view} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} />
+          <Thread view={view} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll} />
         )}
       </main>
       <Composer
