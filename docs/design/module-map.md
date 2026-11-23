@@ -26,7 +26,7 @@ highwing-2.0/
           reduce.ts                                       SessionEvent, Gate, SessionInput, reduce, syncOf, activityOf
           command.ts                                      Command, ResultOf, Outcome, Refusal: data the renderer sends and gets back
           slash.ts                                        SlashEntry, SlashCatalog, slashLineOf: the slash menu's rows
-          index.ts                                        exports the session and command types and activityOf only
+          index.ts                                        exports the session, command and slash types and activityOf only
         wire/                    private                  the only code that knows gateway shapes
           contract.generated.ts                           copied from Hermes by `pnpm sync:contract`
           contract.openrpc.json                           copied with it; read only by testing/ for key sets

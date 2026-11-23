@@ -116,9 +116,10 @@ Of the 66 listed commands whose `desktop` is `null`, the gateway runs 33:
 `/autoprune` `/skills` `/memory` `/bundles` `/learn` `/init` `/suggestions`
 `/blueprint` `/help` `/usage` `/topup` `/version` `/debug`
 
-`GATEWAY_RUNS` in `packages/hermes/src/wire/parse.ts` holds this list, because
-the catalog has no field for it. Update both when Hermes changes
-`command_verdict`. The gateway refuses the other 33, among them `/new`,
+`GATEWAY_RUNS` in `packages/hermes/src/wire/parse.ts` holds every command that
+`command_verdict` runs, 48 in all, because the catalog has no field for it. The
+menu lists the ones the catalog also offers to a desktop app, which are the 33
+above. Update `GATEWAY_RUNS` when Hermes changes `command_verdict`. The gateway refuses the other 33, among them `/new`,
 `/compress`, `/retry`, `/undo`, `/resume` and `/stop`. A client runs these as
 its own actions. The Hermes `/stop` stops background processes, not the
 current turn, so it is not Highwing's Stop.

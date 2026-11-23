@@ -103,7 +103,7 @@ The hub keeps a session attached while a window watches it, while its own run is
 
 ### Interface depth
 
-`Hermes` is two feeds, `watch`, `run` and `close`. The preload `Bridge` is `watch` and `run`. Behind them sit ticket minting, the handshake, heartbeat, backoff, attach-before-act, parking, replay, gap recovery, generation and revision fencing, idempotency keys, declining requests and attach retention. A caller's one duty is to call the function `watch` returns. `Command` is a data union, so IPC adds no forwarding method per command.
+`Hermes` is three feeds (`link`, `sidebar` and `slash`), `watch`, `run` and `close`. The preload `Bridge` is `watch` and `run`. Behind them sit ticket minting, the handshake, heartbeat, backoff, attach-before-act, parking, replay, gap recovery, generation and revision fencing, idempotency keys, declining requests and attach retention. A caller's one duty is to call the function `watch` returns. `Command` is a data union, so IPC adds no forwarding method per command.
 
 The design has no timer that force-settles a quiet turn, no REST calls, no legacy dialect, no state on disk in the first build, and no sending while offline.
 

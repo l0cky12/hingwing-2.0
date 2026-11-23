@@ -87,6 +87,8 @@ const sameCatalog = (a: SlashCatalog, b: SlashCatalog) =>
     return other !== undefined && entry.kind === other.kind && entry.name === other.name && entry.description === other.description
   })
 
+/** Hermes discovers plugin commands and skills for the catalog, so a slow disk can stall it. */
+const CATALOG_TIMEOUT_MS = 10_000
 const NOTHING_TO_SHOW: Outcome<string | null> = { ok: true, value: null }
 const showing = (outcome: Outcome, words: string | null = null): Outcome<string | null> => (outcome.ok ? { ok: true, value: words } : outcome)
 
@@ -153,7 +155,7 @@ export function openHermes(options: HermesOptions): Hermes {
 
   const readCatalog = async () => {
     const read = ++catalogReads
-    const catalog = await conn.call('commands.catalog', {}).then(parseCatalog, () => [])
+    const catalog = await conn.call('commands.catalog', {}, CATALOG_TIMEOUT_MS).then(parseCatalog, () => [])
     if (read === catalogReads) slash.set(catalog)
   }
 
@@ -236,7 +238,7 @@ export function openHermes(options: HermesOptions): Hermes {
   type Handled<C extends Command> = Outcome<ResultOf<C>> | Promise<Outcome<ResultOf<C>>>
   const sessionCommands: { readonly [K in SessionCommand['do']]: (actor: SessionActor, command: Extract<Command, { do: K }>) => Handled<Extract<Command, { do: K }>> } = {
     send: async (actor, { text }) => {
-      await catalogRead
+      if (text.trimStart().startsWith('/')) await catalogRead
       const line = slashLineOf(text, slash.get())
       return line === null ? showing(await actor.send(text)) : runSlash(actor, line)
     },
@@ -262,7 +264,7 @@ export function openHermes(options: HermesOptions): Hermes {
   }
 
   const runSlash = async (actor: SessionActor, { entry, arg }: SlashLine): Promise<Outcome<string | null>> => {
-    const own = entry.kind === 'command' ? highwingRuns[entry.name]?.(actor, arg) : null
+    const own = entry.kind === 'command' && Object.hasOwn(highwingRuns, entry.name) ? highwingRuns[entry.name]?.(actor, arg) : null
     if (own != null) return showing(await own)
     const typed = `/${entry.name}${arg === '' ? '' : ` ${arg}`}`
     let reply

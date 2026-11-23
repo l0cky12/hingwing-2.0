@@ -25,6 +25,8 @@ export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
   const [dismissedDraft, setDismissedDraft] = useState<string | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
   const [output, setOutput] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
+  const sending = useRef(false)
   const box = useRef<HTMLTextAreaElement>(null)
   const caretToEnd = useRef(false)
   const menu = menuOf(draft, catalog, { active, dismissedDraft })
@@ -54,9 +56,14 @@ export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
   const submit = async (event?: FormEvent) => {
     event?.preventDefault()
     const text = draft.trim()
-    if (!canSend || text === '') return
+    if (!canSend || sending.current || text === '') return
+    sending.current = true
+    setPending(true)
     setOutput(null)
-    const outcome = await onSend(text)
+    const outcome = await onSend(text).finally(() => {
+      sending.current = false
+      setPending(false)
+    })
     setRefusal(outcome.ok ? null : outcome.refusal.message)
     if (!outcome.ok) return
     setOutput(outcome.value)
@@ -66,7 +73,7 @@ export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
   const onMenuKey = (event: KeyboardEvent<HTMLTextAreaElement>, open: Extract<Menu, { open: true }>): boolean => {
     const step = { ArrowDown: 1, ArrowUp: -1 }[event.key]
     if (step !== undefined) setActive(open.active + step)
-    else if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') pick(open.matches[open.active] as SlashEntry)
+    else if ((event.key === 'Enter' || event.key === 'Tab') && !event.shiftKey) pick(open.matches[open.active] as SlashEntry)
     else if (event.key === 'Escape') setDismissedDraft(draft)
     else return false
     event.preventDefault()
@@ -114,10 +121,10 @@ export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
           onChange={event => edit(event.target.value)} onKeyDown={onKeyDown}
         />
         {showStop && <button type="button" className="stop" disabled={!canSend} onClick={onStop}>Stop</button>}
-        <button type="submit" disabled={!canSend}>Send</button>
+        <button type="submit" disabled={!canSend || pending}>Send</button>
       </form>
       {refusal !== null && <p className="err refusal">{refusal}</p>}
-      {output !== null && <pre className="slash-output" role="status" aria-label="Command output">{output}</pre>}
+      <pre className="slash-output" role="status" aria-label="Command output">{output}</pre>
     </footer>
   )
 }

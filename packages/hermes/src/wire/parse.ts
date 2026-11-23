@@ -498,14 +498,16 @@ function decodedJson(text: string): Obj | readonly unknown[] | undefined {
 }
 
 /**
- * The registry commands the gateway runs for a local chat when typed bare: the `read` and `control`
- * verdicts of `command_verdict` in Hermes 0.23.3's gateway/session_commands.py. The catalog lists every
+ * The registry commands the gateway runs for a local chat when typed bare: every `read` and `control`
+ * verdict of `command_verdict` in Hermes 0.23.3's gateway/session_commands.py. The catalog lists every
  * command and says nothing about this, and `command.dispatch` refuses the rest with `unsupported_command`.
  */
 const GATEWAY_RUNS: ReadonlySet<string> = new Set([
-  'title', 'goal', 'heartbeat', 'refine', 'review', 'loop', 'plan', 'moa', 'subgoal', 'status', 'egress', 'context',
-  'whoami', 'profile', 'codex-runtime', 'personality', 'diff', 'yolo', 'approvals', 'reasoning', 'autoprune', 'skills',
-  'memory', 'bundles', 'learn', 'init', 'suggestions', 'blueprint', 'help', 'usage', 'topup', 'version', 'debug'
+  'title', 'approve', 'deny', 'goal', 'heartbeat', 'refine', 'review', 'loop', 'plan', 'moa', 'subgoal', 'status',
+  'egress', 'context', 'whoami', 'profile', 'codex-runtime', 'personality', 'diff', 'verbose', 'footer', 'yolo',
+  'approvals', 'reasoning', 'fast', 'voice', 'busy', 'autoprune', 'toolsets', 'skills', 'memory', 'bundles', 'learn',
+  'init', 'cron', 'suggestions', 'blueprint', 'curator', 'kanban', 'commands', 'help', 'usage', 'login', 'topup',
+  'insights', 'platforms', 'version', 'debug'
 ])
 
 /** `desktop` is `null` for a command a desktop app should offer, else the reason it should not. */
@@ -546,7 +548,6 @@ export type Directive =
 export function parseDirective(reply: CommandDispatchResult, typed: string): Directive | null {
   switch (reply.type) {
     case 'exec':
-    case 'plugin':
       return { do: 'show', text: stripAnsi(reply.output ?? '').trim() }
     case 'send':
     case 'skill': {
