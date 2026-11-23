@@ -15,7 +15,7 @@ function FirstChat() {
   const first = useTopic('sidebar')?.rows[0]?.id
   return first === undefined
     ? <><main id="scroll" /><Composer canSend={false} showStop={false} onSend={NO_CHAT} onStop={() => {}} onInput={() => {}} /></>
-    : <Chat id={first} />
+    : <Chat key={first} id={first} />
 }
 
 function ChatScreen({ target }: { readonly target: Target | null }) {

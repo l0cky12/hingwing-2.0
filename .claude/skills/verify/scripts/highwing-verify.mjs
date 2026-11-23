@@ -47,6 +47,8 @@ const STEPS = {
   click: { arity: 2, run: async (ctx, role, name) => ctx.page.getByRole(role, { name, exact: true }).click({ timeout: ctx.timeout }) },
   type: { arity: 2, run: async (ctx, label, text) => ctx.page.getByLabel(label, { exact: true }).fill(expand(ctx, text), { timeout: ctx.timeout }) },
   press: { arity: 1, run: async (ctx, key) => ctx.page.keyboard.press(key) },
+  gone: { arity: 2, run: async (ctx, role, name) => waitGone(ctx, role, name) },
+  inview: { arity: 2, run: async (ctx, role, name) => checkInView(ctx, role, name) },
   shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
   field: {
     arity: 3,
@@ -287,6 +289,36 @@ async function waitFor(ctx, state) {
     if (Date.now() > deadline) throw new Error(`state "${state}" did not appear within ${ctx.timeout} ms`)
   }
   ctx.holding = state
+}
+
+/** Polls like `waitFor`: the control's fade ends 150 ms after the state changes, and a missed poll is a false pass. */
+async function waitGone(ctx, role, name) {
+  const locator = ctx.page.getByRole(role, { name, exact: true })
+  const deadline = Date.now() + ctx.timeout
+  while ((await locator.count()) > 0 && (await locator.first().isVisible())) {
+    if (Date.now() > deadline) throw new Error(`${role} "${name}" still visible after ${ctx.timeout} ms`)
+  }
+}
+
+async function checkInView(ctx, role, name) {
+  const locator = ctx.page.getByRole(role, { name, exact: true })
+  await locator.first().waitFor({ state: 'visible', timeout: ctx.timeout })
+  const problem = await locator.first().evaluate(element => {
+    const box = element.getBoundingClientRect()
+    const outside = (rect, label) => (box.top < rect.top - 0.5 || box.bottom > rect.bottom + 0.5 || box.left < rect.left - 0.5 || box.right > rect.right + 0.5
+      ? `${label} spans ${Math.round(rect.top)}..${Math.round(rect.bottom)} but the element spans ${Math.round(box.top)}..${Math.round(box.bottom)}`
+      : null)
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      const { overflowX, overflowY } = getComputedStyle(parent)
+      if (/(auto|scroll|hidden|clip)/.test(overflowX + overflowY)) {
+        const rect = parent.getBoundingClientRect()
+        const found = outside({ top: rect.top + parent.clientTop, bottom: rect.top + parent.clientTop + parent.clientHeight, left: rect.left + parent.clientLeft, right: rect.left + parent.clientLeft + parent.clientWidth }, `<${parent.localName}${parent.id ? `#${parent.id}` : ''}>`)
+        if (found) return found
+      }
+    }
+    return outside({ top: 0, bottom: innerHeight, left: 0, right: innerWidth }, 'window')
+  })
+  if (problem) throw new Error(`${role} "${name}" is not fully in view: ${problem}`)
 }
 
 async function shoot(ctx, name) {

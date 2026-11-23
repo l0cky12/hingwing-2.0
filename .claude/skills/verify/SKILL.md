@@ -70,6 +70,8 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `marks <count>` | number | fails unless the ranges in the `find` and `find-current` highlights add up to the count. A missing highlight counts as 0. It reads state and never sets it |
 | `opened <action> <path>` | `open` or `show`, absolute path | fails unless `opens.jsonl` holds exactly one call, and that call is this one |
 | `copied <text>` | text | fails unless the system clipboard holds exactly this text |
+| `gone <role> <name>` | ARIA role, exact accessible name | polls until no visible element has that role and name, and fails at the timeout. Waits out a fade |
+| `inview <role> <name>` | ARIA role, exact accessible name | fails unless that element's box lies fully inside the visible area of every scrolling ancestor and of the window |
 
 Named states live in the `STATES` table in the helper. Add a state there, not a sleep.
 
