@@ -33,7 +33,7 @@ const CLOSING_REPLY = [
   '```'
 ].join('\n')
 
-function applyToPreimage({ copy, lines }: Changes) {
+function applyToPreimage(copy: string, lines: Changes['lines']) {
   const side = (kinds: readonly string[]) => lines.filter(line => kinds.includes(line.t)).map(line => `${line.text}\n`).join('')
   const creates = copy.startsWith('--- /dev/null')
   const dir = mkdtempSync(join(tmpdir(), 'highwing-copy-'))
@@ -62,14 +62,15 @@ describe('what a Copy control puts on the clipboard', () => {
 
   it('copies each change as a unified diff that applies cleanly, with no mark doubled', () => {
     expect(changes.length).toBeGreaterThanOrEqual(2)
-    for (const section of changes) {
-      expect(section.copy).toMatch(/^--- (\/dev\/null|a\/.+)\n\+\+\+ b\/.+\n@@ /)
-      expect(section.copy.endsWith('\n')).toBe(true)
-      expect(section.copy).not.toContain('−')
-      const { expected, actual } = applyToPreimage(section)
+    for (const { copy, lines } of changes) {
+      if (copy === null) throw new Error('a whole diff from the errand copies nothing')
+      expect(copy).toMatch(/^--- (\/dev\/null|a\/.+)\n\+\+\+ b\/.+\n@@ /)
+      expect(copy.endsWith('\n')).toBe(true)
+      expect(copy).not.toContain('−')
+      const { expected, actual } = applyToPreimage(copy, lines)
       expect(actual).toBe(expected)
     }
-    expect(changes.some(section => section.copy.startsWith('--- /dev/null'))).toBe(true)
+    expect(changes.some(section => section.copy?.startsWith('--- /dev/null'))).toBe(true)
   })
 
   it('copies output as its body text and offers nothing for "No output"', () => {

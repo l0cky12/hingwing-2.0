@@ -152,7 +152,7 @@ describe('steps and groups', () => {
   it('reads an empty command output as No output', () => {
     const s = session({ history: [settled([tool('terminal', { command: 'true' }, { result: command('') })])] })
     const step = stepOf(nodesOf(s)[0])
-    expect(step.record).toEqual({ sections: [{ kind: 'output', label: null, body: { empty: 'No output' }, copy: null }] })
+    expect(step.record).toEqual({ sections: [{ kind: 'output', label: null, body: { empty: 'No output' }, copy: null }], command: 'true' })
     expect(lines(s, new Set([step.key])).slice(1, 3)).toEqual(['● Ran `true`', '      No output'])
   })
 
@@ -210,5 +210,34 @@ describe('checkThread', () => {
       'turn t1: only the last turn may be unsettled, this one ends at',
       'turn t1: the end sits on t1/7, which is not a node'
     ])
+  })
+})
+
+describe('what a change copies', () => {
+  const copyOf = (lines: FileDiff['lines']) => {
+    const s = session({ history: [settled([tool('patch', { path: '/w/a.md' }, { diffs: [{ path: '/w/a.md', createsFile: false, added: 0, removed: 2, lines }] })])] })
+    const [section] = stepOf(nodesOf(s)[0]).record?.sections ?? []
+    return section?.copy
+  }
+
+  it('copies a file emptied by its only hunk as an edit, never as a delete', () => {
+    expect(copyOf([{ t: 'hunk', text: '@@ -1,2 +0,0 @@' }, { t: 'del', text: 'one' }, { t: 'del', text: 'two' }]))
+      .toBe('--- a//w/a.md\n+++ b//w/a.md\n@@ -1,2 +0,0 @@\n-one\n-two\n')
+  })
+
+  it('copies nothing when Hermes cut a hunk short', () => {
+    expect(copyOf([{ t: 'hunk', text: '@@ -1,90 +1,90 @@' }, { t: 'ctx', text: 'one' }, { t: 'del', text: 'two' }, { t: 'add', text: 'three' }])).toBeNull()
+  })
+
+  it('copies the whole command a step ran, where the title clips it', () => {
+    const ran = `cd /w && ${'echo long '.repeat(12)}`
+    const step = stepOf(nodesOf(session({ history: [settled([tool('terminal', { command: ran }, { result: command('ok') })])] }))[0])
+    expect(step.title.at(-1)?.v).not.toBe(ran)
+    expect(step.record?.command).toBe(ran)
+  })
+
+  it('offers no command for a tool that is not a command', () => {
+    const step = stepOf(nodesOf(session({ history: [settled([tool('read_file', { path: '/w/a.md' }, { result: { kind: 'text', text: 'hi', isError: false, clipped: 0 } })])] }))[0])
+    expect(step.record?.command).toBeNull()
   })
 })

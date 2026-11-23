@@ -71,6 +71,7 @@ export function Step({ step, live, open, onToggle }: StepProps) {
       <button className="head" aria-expanded={open} onClick={() => onToggle(step.key)}>
         {title}<span className="chev" aria-hidden="true" />{meta}
       </button>
+      {open && step.record.command !== null && <CopyButton text={step.record.command} name="Copy command" />}
       <div className={cx('record', bare && 'bare')}>
         {step.record.sections.map((section, index) => <Section key={index} section={section} open={open} />)}
       </div>

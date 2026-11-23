@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 
 const SHOWN_MS = 2000
 
-type Outcome = 'copied' | 'failed' | null
+const WORDS = { copied: 'Copied', failed: 'Couldn’t copy' } as const
+
+type Outcome = keyof typeof WORDS | null
 
 export function CopyButton({ text, name }: { readonly text: string; readonly name: string }) {
   const [outcome, setOutcome] = useState<Outcome>(null)
@@ -19,9 +21,9 @@ export function CopyButton({ text, name }: { readonly text: string; readonly nam
   return (
     <>
       <button type="button" className="copy" aria-label={name} onClick={press}>
-        {outcome === 'copied' ? 'Copied' : outcome === 'failed' ? 'Couldn’t copy' : 'Copy'}
+        {outcome === null ? 'Copy' : WORDS[outcome]}
       </button>
-      <span className="sr" aria-live="polite">{outcome === 'copied' ? 'Copied' : ''}</span>
+      <span className="sr" aria-live="polite">{outcome === null ? '' : WORDS[outcome]}</span>
     </>
   )
 }
