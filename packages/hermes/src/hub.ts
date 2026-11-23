@@ -211,12 +211,16 @@ export function openHermes(options: HermesOptions): Hermes {
     })
   })
 
-  const sessionCommands: { readonly [K in SessionCommand['do']]: (actor: SessionActor, command: Extract<Command, { do: K }>) => Outcome | Promise<Outcome> } = {
+  const sessionCommands: {
+    readonly [K in SessionCommand['do']]: (actor: SessionActor, command: Extract<Command, { do: K }>) => Outcome<ResultOf<Extract<Command, { do: K }>>> | Promise<Outcome<ResultOf<Extract<Command, { do: K }>>>>
+  } = {
     send: (actor, { text }) => actor.send(text),
     stop: actor => actor.stop(),
     answer: (actor, { promptId, reply }) => actor.answer(promptId, reply),
     discard: (actor, { inputId }) => actor.discard(inputId),
     loadEarlier: actor => actor.loadEarlier(),
+    models: actor => actor.models(),
+    pickModel: (actor, { model, confirm }) => actor.pickModel(model, confirm ?? null),
     rename: async (actor, { title }) => {
       const outcome = await actor.mutate({ title })
       if (outcome.ok) list.retitle(actor.id, title)
@@ -246,14 +250,14 @@ export function openHermes(options: HermesOptions): Hermes {
     }
   }
 
-  const run = async (command: Command): Promise<Outcome<SessionId | void>> => {
+  const run = async (command: Command): Promise<Outcome<unknown>> => {
     if (command.do === 'create') return create(command)
     if (command.do === 'reconnect') {
       conn.retryNow({ start: command.start })
       for (const actor of [...actors.values()]) actor.attach()
       return DONE
     }
-    const handle = sessionCommands[command.do] as (actor: SessionActor, command: SessionCommand) => Outcome | Promise<Outcome>
+    const handle = sessionCommands[command.do] as (actor: SessionActor, command: SessionCommand) => Outcome<unknown> | Promise<Outcome<unknown>>
     return handle(await attached(command.sessionId), command)
   }
 

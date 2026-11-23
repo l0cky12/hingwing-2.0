@@ -213,10 +213,10 @@ describe('calls', () => {
   it('rejects with the gateway\'s reason, and the revision a conflict carries', async () => {
     const { peer, conn } = await online()
     const call = conn.call('session.interrupt', { session_id: 's', execution_generation: 1 }).catch((error: unknown) => error)
-    peer.refuse(peer.sent[0]?.id, { code: 4001, message: 'revision_conflict', data: { reason: 'revision_conflict', revision: 7 } })
+    peer.refuse(peer.sent[0]?.id, { code: 4001, message: 'revision_conflict', data: { reason: 'revision_conflict', revision: 7, execution_generation: 2 } })
     const refusal = await call
     expect(refusal).toBeInstanceOf(RpcRefusal)
-    expect(refusal).toMatchObject({ code: 4001, reason: 'revision_conflict', revision: 7 })
+    expect(refusal).toMatchObject({ code: 4001, reason: 'revision_conflict', revision: 7, generation: 2 })
   })
 
   it('rejects a call made while not online, without writing it', async () => {

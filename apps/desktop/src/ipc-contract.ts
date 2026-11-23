@@ -1,6 +1,6 @@
 import {
   targetOf,
-  type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type OpenTurn, type PromptReply, type ResultOf,
+  type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenTurn, type PromptReply, type ResultOf,
   type Session, type SessionId, type SettledTurn, type Sidebar, type Target
 } from '@highwing/hermes/domain'
 
@@ -81,6 +81,10 @@ const isObject = (value: unknown): value is Obj => value !== null && typeof valu
 const text = (value: unknown): value is string => typeof value === 'string'
 const filled = (value: unknown): value is string => text(value) && value.trim() !== ''
 const sessionIdOf = (raw: Obj) => (filled(raw.sessionId) ? (raw.sessionId as SessionId) : null)
+const modelOptionOf = (raw: unknown): ModelOption | null =>
+  isObject(raw) && filled(raw.id) && filled(raw.provider) && text(raw.providerName)
+    ? { id: raw.id as ModelOption['id'], provider: raw.provider, providerName: raw.providerName }
+    : null
 const replyOf = (raw: unknown): PromptReply | null =>
   isObject(raw) && (raw.kind === 'choice' || raw.kind === 'text') && text(raw.value) ? { kind: raw.kind, value: raw.value } : null
 
@@ -116,6 +120,16 @@ export const validators: Validators = {
   loadEarlier: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && { do: 'loadEarlier', sessionId }
+  },
+  models: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && { do: 'models', sessionId }
+  },
+  pickModel: raw => {
+    const sessionId = sessionIdOf(raw)
+    const model = modelOptionOf(raw.model)
+    if (!sessionId || !model || !(raw.confirm === undefined || filled(raw.confirm))) return null
+    return { do: 'pickModel', sessionId, model, ...(raw.confirm === undefined ? {} : { confirm: raw.confirm }) }
   },
   reconnect: raw => (typeof raw.start === 'boolean' ? { do: 'reconnect', start: raw.start } : null),
   checkTarget: raw => {

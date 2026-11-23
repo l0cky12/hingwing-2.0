@@ -5,9 +5,9 @@
  * its way). Tests feed it event logs.
  */
 import type {
-  Ask, Began, FileDiff, Generation, InputId, Item, Json, Link, NoticeItem, OpenTurn, Outcome, OutboxEntry, PromptId,
-  PromptItem, PromptReply, Request, Run, Session, SessionContent, SessionId, SettledTurn, Sync, TextItem, ToolId,
-  ToolItem, ToolResult, TurnId
+  Ask, Began, FileDiff, Generation, InputId, Item, Json, Link, ModelRef, NoticeItem, OpenTurn, Outcome, OutboxEntry,
+  PromptId, PromptItem, PromptReply, Request, Run, Session, SessionContent, SessionId, SessionModel, SettledTurn, Sync,
+  TextItem, ToolId, ToolItem, ToolResult, TurnId
 } from './session'
 
 /** A gateway event in domain terms. `wire/parse.ts` builds these. Field names are ours, not the wire's. */
@@ -34,7 +34,21 @@ export type SessionEvent =
   | { readonly type: 'prompts.cancelled'; readonly ids: readonly PromptId[] }
   | { readonly type: 'turn.ended'; readonly outcome: Outcome; readonly finalText: string | null; readonly rows: readonly number[] }
   | { readonly type: 'notice'; readonly tone: 'error' | 'info'; readonly text: string }
-  | { readonly type: 'meta'; readonly title?: string; readonly revision?: number; readonly queue?: readonly Admission[] }
+  | {
+      readonly type: 'meta'
+      readonly title?: string
+      readonly revision?: number
+      readonly queue?: readonly Admission[]
+      readonly model?: ModelRef
+      readonly pick?: PickOutcome
+      /** The session's generation now, which a policy change such as a model switch moves without a turn. */
+      readonly generation?: Generation
+    }
+
+/** What became of a model pick, from Hermes's receipt. `settled`: a switch committed or a held pick was dropped. */
+export type PickOutcome =
+  | { readonly is: 'settled' }
+  | { readonly is: 'asking'; readonly ask: NonNullable<SessionModel['ask']> }
 
 /** Position of a delta in the stream. A delta at or before the fence's position is a re-send and is dropped. */
 export interface TextCursor { readonly segment: number; readonly offset: number }
@@ -75,6 +89,7 @@ export interface Snapshot {
   readonly id: SessionId
   readonly title: string
   readonly cwd: string | null
+  readonly model: ModelRef | null
   readonly running: boolean
   readonly generation: Generation
   readonly revision: number
@@ -155,6 +170,7 @@ export type LocalAction =
   | { readonly did: 'answer.resolved'; readonly promptId: PromptId; readonly byUs: boolean }
   | { readonly did: 'answer.failed'; readonly promptId: PromptId; readonly message: string }
   | { readonly did: 'earlier.requested' }
+  | { readonly did: 'model.deferred'; readonly model: ModelRef; readonly during: Generation }
 
 /** Bookkeeping the views never need. Kept beside the content so one reducer guards both. */
 export interface Fence {
@@ -180,7 +196,7 @@ export interface Tracked {
 
 export function emptyTracked(id: SessionId): Tracked {
   return {
-    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, outbox: [] },
+    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, outbox: [], model: NO_MODEL },
     gate: { at: 'detached', why: 'new', cursor: null },
     fence: { revision: 0, text: null, older: null, admissions: {}, settledThrough: null, generation: null, attaches: 0 }
   }
@@ -334,7 +350,17 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
   }
   const seeded: Tracked = {
     ...state,
-    content: { id: content.id, title: snapshot.title, cwd: snapshot.cwd, history, earlier: page.older === null ? 'none' : 'more', run, outbox: content.outbox },
+    content: {
+      id: content.id,
+      title: snapshot.title,
+      cwd: snapshot.cwd,
+      history,
+      earlier: page.older === null ? 'none' : 'more',
+      run,
+      outbox: content.outbox,
+      // Hermes asks a newly attached viewer again about a held pick (gateway/session_deferred_pick.py:46-54).
+      model: { ...modelFrom(content.model, snapshot.model), next: null, ask: null }
+    },
     fence: {
       revision: Math.max(fence.revision, snapshot.revision),
       text: null,
@@ -357,7 +383,7 @@ function markLost(turns: readonly SettledTurn[], settledThrough: number | null):
 function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
   let next: Tracked = {
     ...state,
-    content: patch(state.content, { title: snapshot.title }),
+    content: patch(state.content, { title: snapshot.title, model: modelFrom(state.content.model, snapshot.model) }),
     fence: patch(state.fence, {
       revision: Math.max(state.fence.revision, snapshot.revision),
       generation: newest(state.fence.generation, snapshot.generation)
@@ -477,12 +503,21 @@ function act(state: Tracked, action: LocalAction): Tracked {
         prompt.state.s === 'sending' ? { ...prompt, state: { s: 'waiting', error: action.message } } : prompt)
     case 'earlier.requested':
       return content.earlier === 'more' ? { ...state, content: { ...content, earlier: 'loading' } } : state
+    case 'model.deferred': {
+      const { next } = content.model
+      const { run } = content
+      if (run.state !== 'running' || run.generation !== action.during) return state
+      if (next !== null && next.during === action.during && sameRef(next.model, action.model) && content.model.ask === null) return state
+      // A newer held pick replaces the one Hermes was asking about (persistence/sqlite/authority/_runtime_picks.py:239-248).
+      return { ...state, content: { ...content, model: { ...content.model, next: { model: action.model, during: action.during }, ask: null } } }
+    }
     default:
       return unreachable(action)
   }
 }
 
 const IDLE: Run = { state: 'idle' }
+const NO_MODEL: SessionModel = { current: null, next: null, ask: null }
 const LOST: Outcome = { kind: 'lost' }
 const ANSWERED_ELSEWHERE: PromptItem['state'] = { s: 'answered', reply: null }
 
@@ -564,7 +599,10 @@ function fold(state: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | 's
       return editTurn(ensureRun(state, stamp.generation, seenAt), turn =>
         pushItem(turn, { kind: 'notice', what: 'said', tone: event.tone, text: event.text }))
     case 'meta': {
-      const titled: Tracked = event.title === undefined ? state : { ...state, content: patch(state.content, { title: event.title }) }
+      const named: Tracked = event.model === undefined ? state : { ...state, content: patch(state.content, { model: modelFrom(state.content.model, event.model) }) }
+      const picked: Tracked = event.pick === undefined ? named : afterPick(named, event.pick)
+      const fenced: Tracked = event.generation === undefined ? picked : { ...picked, fence: patch(picked.fence, { generation: newest(picked.fence.generation, event.generation) }) }
+      const titled: Tracked = event.title === undefined ? fenced : { ...fenced, content: patch(fenced.content, { title: event.title }) }
       const revised: Tracked = event.revision === undefined
         ? titled
         : { ...titled, fence: patch(titled.fence, { revision: Math.max(titled.fence.revision, event.revision) }) }
@@ -704,6 +742,27 @@ function newest(held: Generation | null, named: Generation | null): Generation |
 
 function highestRow(through: number | null, rows: readonly number[]): number | null {
   return rows.reduce<number | null>((highest, row) => highest === null || row > highest ? row : highest, through)
+}
+
+function sameRef(a: ModelRef | null, b: ModelRef | null): boolean {
+  return a === b || (a !== null && b !== null && a.id === b.id && a.provider === b.provider)
+}
+
+function afterPick(state: Tracked, outcome: PickOutcome): Tracked {
+  const { model } = state.content
+  if (outcome.is === 'asking') {
+    const { ask } = model
+    if (ask !== null && ask.token === outcome.ask.token) return state
+    return { ...state, content: { ...state.content, model: { ...model, ask: outcome.ask } } }
+  }
+  return model.next === null && model.ask === null ? state : { ...state, content: { ...state.content, model: { ...model, next: null, ask: null } } }
+}
+
+function modelFrom(model: SessionModel, named: ModelRef | null): SessionModel {
+  if (named === null || sameRef(model.current, named)) return model
+  // session.info names no provider (gateway/session_local.py:520): the one already known stays.
+  if (named.provider === null && model.current?.id === named.id) return model
+  return { ...model, current: named }
 }
 
 function patch<T extends object>(value: T, changes: Partial<T>): T {
