@@ -48,6 +48,55 @@ const STEPS = {
   type: { arity: 2, run: async (ctx, label, text) => ctx.page.getByLabel(label, { exact: true }).fill(expand(ctx, text), { timeout: ctx.timeout }) },
   press: { arity: 1, run: async (ctx, key) => ctx.page.keyboard.press(key) },
   shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
+  field: {
+    arity: 3,
+    run: async (ctx, label, lines, outcome) => {
+      if (outcome !== 'fits' && outcome !== 'scrolls') throw new Error(`field outcome must be "fits" or "scrolls", not "${outcome}"`)
+      const m = await ctx.page.getByLabel(label, { exact: true }).evaluate(el => {
+        const style = getComputedStyle(el)
+        return {
+          client: el.clientHeight,
+          content: el.scrollHeight,
+          lineHeight: parseFloat(style.lineHeight),
+          padding: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
+          scrollbar: el.offsetWidth - el.clientWidth - parseFloat(style.borderLeftWidth) - parseFloat(style.borderRightWidth)
+        }
+      }, undefined, { timeout: ctx.timeout })
+      const shown = Math.round((m.client - m.padding) / m.lineHeight)
+      const scrolls = m.content > m.client + 1 && m.scrollbar > 2
+      log(ctx, `  "${label}" shows ${shown} lines in ${m.client}px (content ${m.content}px, scrollbar ${m.scrollbar}px), ${scrolls ? 'scrolls' : 'fits'}`)
+      if (shown !== Number(lines)) throw new Error(`"${label}" shows ${shown} lines, not ${lines}`)
+      if (scrolls !== (outcome === 'scrolls')) throw new Error(`"${label}" ${scrolls ? 'scrolls' : 'fits'}, not ${outcome}`)
+    }
+  },
+  pinned: {
+    arity: 0,
+    run: async ctx => {
+      const m = await ctx.page.evaluate(() => {
+        const scroller = document.querySelector('#scroll')
+        const footer = document.querySelector('footer')
+        if (!scroller || !footer) return null
+        const rows = scroller.querySelectorAll('.request, .thread > *, .turn.pending > *')
+        const last = rows[rows.length - 1] ?? scroller
+        const view = scroller.getBoundingClientRect()
+        const row = last.getBoundingClientRect()
+        return {
+          fromEnd: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight,
+          rowTop: row.top,
+          rowBottom: row.bottom,
+          viewTop: view.top,
+          viewBottom: view.bottom,
+          footerTop: footer.getBoundingClientRect().top
+        }
+      })
+      if (m === null) throw new Error('no #scroll or footer on the page')
+      log(ctx, `  thread ${m.fromEnd.toFixed(1)}px from its end, last row ${m.rowTop.toFixed(1)}-${m.rowBottom.toFixed(1)} in view ${m.viewTop.toFixed(1)}-${m.viewBottom.toFixed(1)}, footer top ${m.footerTop.toFixed(1)}`)
+      if (m.fromEnd > 1) throw new Error(`thread is ${m.fromEnd.toFixed(1)}px short of its end`)
+      const fitsInView = m.rowBottom - m.rowTop <= m.viewBottom - m.viewTop
+      if (m.rowBottom > m.viewBottom + 0.5 || m.rowBottom < m.viewTop || (fitsInView && m.rowTop < m.viewTop - 0.5)) throw new Error('the last row of the thread is not in view')
+      if (m.viewBottom > m.footerTop + 0.5) throw new Error('the composer covers the thread')
+    }
+  },
   disabled: {
     arity: 2,
     run: async (ctx, role, name) => {
@@ -91,6 +140,13 @@ const STEPS = {
       ctx.clipboard = text
       writeFileSync(join(ctx.evidence, `${name}.clip.txt`), text)
       log(ctx, `  saved ${name}.clip.txt (${text.length} characters)`)
+    }
+  },
+  marks: {
+    arity: 1,
+    run: async (ctx, count) => {
+      const found = await ctx.page.evaluate(() => ['find', 'find-current'].reduce((total, name) => total + (CSS.highlights.get(name)?.size ?? 0), 0))
+      if (found !== Number(count)) throw new Error(`${found} ranges are marked, expected ${count}`)
     }
   }
 }

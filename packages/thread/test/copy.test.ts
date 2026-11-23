@@ -11,8 +11,9 @@ import { threadView, type RecordSection, type ThreadNode } from '../src/thread-v
 type Changes = Extract<RecordSection, { kind: 'changes' }>
 
 const ONLINE: Link = { state: 'online' }
+const CLOCK = { now: 0, timeZone: 'UTC' }
 const story = errand()
-const view = (state: Tracked) => threadView(sessionOf(state, ONLINE, null))
+const view = (state: Tracked) => threadView(sessionOf(state, ONLINE, null), CLOCK)
 
 const moments: Moment[] = []
 const settled = view(fold(story, moment => moments.push(moment)))

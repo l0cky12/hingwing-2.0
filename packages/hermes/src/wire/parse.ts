@@ -4,7 +4,7 @@
  */
 import type { Admission, HistoryPage, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type {
-  Ask, FileDiff, Generation, Item, Json, Outcome, PromptId, SessionId, SettledTurn, SidebarRow, ToolId, ToolResult, TurnId
+  Ask, Began, FileDiff, Generation, Item, Json, Outcome, PromptId, SessionId, SettledTurn, SidebarRow, ToolId, ToolResult, TurnId
 } from '../domain/session'
 import type {
   CanonicalEventsResult, CanonicalPendingAdmission, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
@@ -336,7 +336,7 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
 export function parseReplay(reply: CanonicalEventsResult): Replay {
   const events = reply.events.flatMap((params): StampedEvent[] => {
     const parsed = parseEvent(params)
-    return parsed.scope === 'session' ? [{ stamp: parsed.stamp, event: parsed.event }] : []
+    return parsed.scope === 'session' ? [{ stamp: parsed.stamp, event: parsed.event, seenAt: null }] : []
   })
   return { snapshotRequired: reply.snapshot_required, epoch: reply.epoch, events }
 }
@@ -350,6 +350,7 @@ export function parseTranscript(pages: readonly StoredTranscriptResult[]): Histo
 
 interface TurnInProgress {
   readonly request: string | null
+  readonly began: Began | null
   readonly items: Item<'settled'>[]
   readonly rows: number[]
 }
@@ -370,8 +371,8 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   rows.forEach((value, index) => {
     const row = usable(() => storedRow(value, index))
     if (row === null) return
-    if (row.role === 'user') turns.push({ request: row.text, items: [], rows: [] })
-    if (row.item !== null && turns.length === 0) turns.push({ request: null, items: [], rows: [] })
+    if (row.role === 'user') turns.push({ request: row.text, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [] })
+    if (row.item !== null && turns.length === 0) turns.push({ request: null, began: null, items: [], rows: [] })
     const turn = turns.at(-1)
     if (row.item !== null) turn?.items.push(row.item)
     if (row.rowId !== null) turn?.rows.push(row.rowId)
@@ -384,11 +385,12 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
     turns: turns.flatMap((turn, index): SettledTurn[] => turn === open ? [] : [{
       id: `stored:${turn.rows[0] ?? `@${index}`}` as TurnId,
       request: turn.request === null ? null : { text: turn.request, inputId: null },
+      began: turn.began,
       items: turn.items,
       outcome: answered(turn) ? COMPLETE : LOST,
       rows: turn.rows
     }]),
-    unfinished: open === null ? null : { request: open.request, items: open.items }
+    unfinished: open === null ? null : { request: open.request, began: open.began, items: open.items }
   }
 }
 
@@ -397,6 +399,8 @@ function storedRow(value: unknown, index: number) {
   const role = row.optStr('role')
   const text = row.optStr('text') ?? ''
   const rowId = row.optInt('row_id')
+  const seconds = row.optNum('timestamp')
+  const at = seconds !== null && seconds > 0 ? Math.round(seconds * 1000) : null
   const item = ((): Item<'settled'> | null => {
     if (row.optStr('row_kind') === 'compaction') return { kind: 'notice', what: 'said', tone: 'info', text }
     if (role === 'assistant') return text.trim() === '' ? null : { kind: 'text', markdown: text, sealed: true }
@@ -412,7 +416,7 @@ function storedRow(value: unknown, index: number) {
       status: { s: 'done', durationS: null, diffs: [], result: content === undefined ? NO_RESULT : parseToolResult(content, null, false) }
     }
   })()
-  return { role, text, rowId, item }
+  return { role, text, rowId, at, item }
 }
 
 export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<SidebarRow, 'badge'>[] {

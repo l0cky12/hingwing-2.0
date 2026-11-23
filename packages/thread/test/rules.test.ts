@@ -4,6 +4,7 @@ import type {
 } from '../../hermes/src/domain/session'
 import { checkThread, outline, threadView, type StepView, type ThreadNode, type ThreadView } from '../src/thread-view'
 
+const CLOCK = { now: 1_800_000_000_000, timeZone: 'UTC' }
 const COMPLETE: Outcome = { kind: 'complete' }
 const NONE: ToolResult = { kind: 'none' }
 
@@ -15,11 +16,11 @@ function session(over: Partial<Session> = {}): Session {
 }
 
 const settled = (items: readonly Item<'settled'>[], outcome: Outcome = COMPLETE, id = 't1'): SettledTurn =>
-  ({ id: id as TurnId, request: { text: 'Do the errand', inputId: null }, items, outcome, rows: [] })
+  ({ id: id as TurnId, request: { text: 'Do the errand', inputId: null }, began: null, items, outcome, rows: [] })
 
 const running = (items: readonly Item[], sync: Sync = { state: 'live' }, announced: string | null = null): Session => session({
   sync,
-  run: { state: 'running', generation: 1 as Generation, stop: 'none', turn: { id: 't9' as TurnId, request: { text: 'Do the errand', inputId: null }, items, announced } }
+  run: { state: 'running', generation: 1 as Generation, stop: 'none', turn: { id: 't9' as TurnId, request: { text: 'Do the errand', inputId: null }, began: null, items, announced } }
 })
 
 const text = (markdown: string): Item<'settled'> => ({ kind: 'text', markdown, sealed: true })
@@ -42,17 +43,17 @@ function approval<S extends 'open' | 'settled' = 'open'>(state: PromptItem<S>['s
   return { kind: 'prompt', id: 'p1' as PromptId, generation: 1 as Generation, ask: { kind: 'approval', command: cmd, reason: 'delete', choices: ['once', 'deny', 'session', 'always'] }, state }
 }
 
-const turnOf = (s: Session) => threadView(s).turns.at(-1)!
+const turnOf = (s: Session) => threadView(s, CLOCK).turns.at(-1)!
 const nodesOf = (s: Session) => turnOf(s).nodes
 const stepOf = (node: ThreadNode | undefined): StepView => {
   if (node?.kind !== 'step') throw new Error(`expected a step, got ${node?.kind}`)
   return node.step
 }
-const lines = (s: Session, opened?: ReadonlySet<string>) => outline(threadView(s), opened).split('\n')
+const lines = (s: Session, opened?: ReadonlySet<string>) => outline(threadView(s, CLOCK), opened).split('\n')
 
 describe('end marks', () => {
   it('ends a lost turn in words and never with the done check', () => {
-    const view = threadView(session({ history: [settled([text('Working on it.')], { kind: 'lost' })] }))
+    const view = threadView(session({ history: [settled([text('Working on it.')], { kind: 'lost' })] }), CLOCK)
     expect(view.turns[0]!.end).toEqual({ kind: 'lost', words: 'Ended while Highwing was disconnected.' })
     expect(outline(view)).not.toContain('✓')
     expect(outline(view).split('\n').at(-1)).toBe('~ Ended while Highwing was disconnected.')
@@ -83,7 +84,7 @@ describe('end marks', () => {
   it('puts the live end on a group whose last step runs, titled by that step', () => {
     const live = running([tool('write_file', { path: '/w/a.md' }, { diffs: [diff('/w/a.md', 3, 0, true)] }), runningTool('patch', { path: '/w/a.md' })])
     const [group] = nodesOf(live)
-    expect(turnOf(live).end).toEqual({ kind: 'at', nodeKey: group!.key, tone: 'live' })
+    expect(turnOf(live).end).toEqual({ kind: 'at', nodeKey: group!.key, tone: 'live', elapsed: null })
     expect(lines(live).slice(1)).toEqual(['◉ Editing `a.md` · 2 steps', '    ● Created `a.md`  +3', '    ● Editing `a.md`'])
   })
 })
@@ -112,7 +113,7 @@ describe('approvals beside their tool', () => {
   it('holds back the tool while its approval asks', () => {
     const asking = running([ls, runningTool('terminal', { command: 'rm -rf scratch' }), approval({ s: 'waiting', error: null })])
     expect(nodesOf(asking).map(node => node.kind)).toEqual(['step', 'prompt'])
-    expect(checkThread(threadView(asking))).toEqual([])
+    expect(checkThread(threadView(asking, CLOCK))).toEqual([])
   })
 })
 
@@ -183,8 +184,8 @@ describe('steps and groups', () => {
 describe('memoisation', () => {
   it('keeps every settled TurnView when only the open turn changes', () => {
     const history = [settled([text('First.')], COMPLETE, 't1'), settled([text('Second.')], COMPLETE, 't2')]
-    const before = threadView({ ...running([text('Thinking about it')]), history })
-    const after = threadView({ ...running([text('Thinking about it, and more')]), history })
+    const before = threadView({ ...running([text('Thinking about it')]), history }, CLOCK)
+    const after = threadView({ ...running([text('Thinking about it, and more')]), history }, CLOCK)
     expect(after.turns[0]).toBe(before.turns[0])
     expect(after.turns[1]).toBe(before.turns[1])
     expect(after.turns[2]).not.toBe(before.turns[2])
@@ -195,13 +196,13 @@ describe('checkThread', () => {
   it('reports each broken invariant', () => {
     const step: StepView = { key: 't1/0', title: [], state: 'done', stat: null, duration: null, record: null }
     const view: ThreadView = {
-      state: 'ready', pending: [], earlier: 'none',
+      state: 'ready', pending: [], earlier: 'none', changesAt: null,
       turns: [
         {
-          key: 't1', request: null, end: { kind: 'at', nodeKey: 't1/7', tone: 'live' },
+          key: 't1', time: null, request: null, end: { kind: 'at', nodeKey: 't1/7', tone: 'live', elapsed: null },
           nodes: [{ kind: 'group', key: 't1/g0', title: [], count: 1, stat: null, steps: [step] }, { kind: 'prose', key: 't1/0', markdown: 'x', streaming: true }]
         },
-        { key: 't2', request: null, end: { kind: 'done', words: 'Done' }, nodes: [] }
+        { key: 't2', time: null, request: null, end: { kind: 'done', words: 'Done' }, nodes: [] }
       ]
     }
     expect(checkThread(view)).toEqual([
