@@ -137,7 +137,7 @@ export function openHermes(options: HermesOptions): Hermes {
     },
     onOnline: () => {
       list.refresh()
-      void readCatalog()
+      catalogRead = readCatalog()
     },
     onEvent: params => {
       const parsed = parseEvent(params)
@@ -149,6 +149,7 @@ export function openHermes(options: HermesOptions): Hermes {
   const link = feed<Link>(conn.link)
   const slash = feed<SlashCatalog>([], sameCatalog)
   let catalogReads = 0
+  let catalogRead: Promise<void> = Promise.resolve()
 
   const readCatalog = async () => {
     const read = ++catalogReads
@@ -235,6 +236,7 @@ export function openHermes(options: HermesOptions): Hermes {
   type Handled<C extends Command> = Outcome<ResultOf<C>> | Promise<Outcome<ResultOf<C>>>
   const sessionCommands: { readonly [K in SessionCommand['do']]: (actor: SessionActor, command: Extract<Command, { do: K }>) => Handled<Extract<Command, { do: K }>> } = {
     send: async (actor, { text }) => {
+      await catalogRead
       const line = slashLineOf(text, slash.get())
       return line === null ? showing(await actor.send(text)) : runSlash(actor, line)
     },

@@ -333,6 +333,28 @@ describe('sending a slash line', () => {
     expect(opened.sent().some(call => call.method === 'command.dispatch')).toBe(false)
   })
 
+  it('waits for the catalog of a new connection before it decides a line is text', async () => {
+    const opened = open(story(
+      { await: 'command.dispatch', params: { session_id: SESSION, name: 'status' }, reply: { type: 'exec', output: 'Model: test-model' } }
+    ))
+    const sent: Promise<unknown>[] = []
+    opened.hermes.watch(SESSION, session => {
+      if (session.sync.state !== 'live' || sent.length > 0) return
+      expect(opened.hermes.slash.get(), 'the chat is live before the catalog answers').toEqual([])
+      sent.push(opened.hermes.run({ do: 'send', sessionId: SESSION, text: '/status' }))
+    })
+    await opened.clock.advance(0)
+    expect(await sent[0]).toEqual({ ok: true, value: 'Model: test-model' })
+  })
+
+  it('reads a listed name in any case and runs it by its catalog name', async () => {
+    const { opened, outcome } = await send(story(
+      { await: 'command.dispatch', params: { session_id: SESSION, name: 'status' }, reply: { type: 'exec', output: 'Model: test-model' } }
+    ), '/Status')
+    expect(outcome).toEqual({ ok: true, value: 'Model: test-model' })
+    expect(opened.sent().find(call => call.method === 'command.dispatch')?.params).toEqual({ session_id: SESSION, name: 'status' })
+  })
+
   it('sends a line whose name is not listed as text', async () => {
     const { opened } = await send(story(
       { await: 'prompt.submit', params: { session_id: SESSION, text: '/compress', input_id: 'minted' }, reply: RECEIPT }

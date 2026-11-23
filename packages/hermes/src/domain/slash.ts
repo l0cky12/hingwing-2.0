@@ -18,6 +18,7 @@ const LINE = /^\/(\S+)(?:\s+([\s\S]*))?$/
 export function slashLineOf(text: string, catalog: SlashCatalog): SlashLine | null {
   const match = LINE.exec(text.trim())
   if (match === null) return null
-  const entry = catalog.find(held => held.name === match[1])
+  const name = (match[1] as string).toLowerCase()
+  const entry = catalog.find(held => held.name.toLowerCase() === name)
   return entry === undefined ? null : { entry, arg: (match[2] ?? '').trim() }
 }

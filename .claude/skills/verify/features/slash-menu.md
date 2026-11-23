@@ -25,7 +25,7 @@ Preconditions:
 
 - **Open.** Run `$H run --fixture fixtures/slash.jsonl --run slash-open wait live type "Message Hermes" / wait slash-menu count option 35 shot slash-open`. `slash-open.aria.txt` shows `listbox "Commands and skills"` with `group "Commands"` and `group "Skills"`.
 - **Narrow and complete.** Run `$H run --fixture fixtures/slash.jsonl --run slash-narrow wait live type "Message Hermes" / wait slash-menu press c press o count option 3 shot slash-narrowed press Tab value "Message Hermes" "/context " count listbox 0`.
-- **Escape.** Run `$H run --fixture fixtures/slash.jsonl --run slash-escape wait live type "Message Hermes" / wait slash-menu press c press o press Escape count listbox 0 value "Message Hermes" /co`.
+- **Escape.** Run `$H run --fixture fixtures/slash.jsonl --run slash-escape wait live type "Message Hermes" / wait slash-menu press c press o press Escape count listbox 0 value "Message Hermes" /co press Backspace press Backspace press Backspace press / press c press o count option 3`. Escape closes the list only until the text changes, so typing `/co` again opens it.
 - **Mid-sentence.** Run `$H run --fixture fixtures/slash.jsonl --run slash-mid wait live type "Message Hermes" "Please run " press / count listbox 0 value "Message Hermes" "Please run /"`.
 - **No catalog.** Run `$H run --fixture fixtures/errand.jsonl --run slash-none wait live type "Message Hermes" / count listbox 0 value "Message Hermes" / shot slash-none`. `slash-none.aria.txt` shows the textbox and Send, and no refusal words.
 - **Wrap.** Run `$H run --fixture fixtures/slash.jsonl --run slash-wrap wait live type "Message Hermes" / wait slash-menu press ArrowUp shot slash-wrapped press Enter value "Message Hermes" "/release-notes " count listbox 0`.

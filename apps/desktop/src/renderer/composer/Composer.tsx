@@ -44,6 +44,7 @@ export function Composer({ canSend, showStop, onSend, onStop }: ComposerProps) {
   const edit = (next: string) => {
     setDraft(next)
     setActive(0)
+    setDismissedDraft(null)
   }
   const pick = (entry: SlashEntry) => {
     caretToEnd.current = true
