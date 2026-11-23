@@ -1,0 +1,8 @@
+{
+  "model": "fast-small",
+  "provider": "acme",
+  "providers": [
+    { "slug": "acme", "name": "Acme", "models": ["fast-small", "careful-large"], "authenticated": true, "is_current": true },
+    { "slug": "local", "name": "Local", "models": ["local-7b"], "authenticated": true }
+  ]
+}

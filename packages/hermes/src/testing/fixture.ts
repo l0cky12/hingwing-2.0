@@ -24,6 +24,13 @@ export interface Fixture {
     readonly list: unknown
     /** The session's stored display rows before the story starts. */
     readonly stored: readonly unknown[]
+    /**
+     * The canned `model.options` reply, whose `model` and `provider` are the session's model at the
+     * start. Absent: the gateway refuses `model.options` as an unknown method, as an older Hermes does.
+     */
+    readonly models?: unknown
+    /** Models a switch to needs a second yes, as Hermes's guard asks for a costly model. */
+    readonly guarded?: readonly string[]
   }
   readonly steps: readonly FixtureStep[]
 }
@@ -98,7 +105,14 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (typeof sessionId !== 'string' || sessionId === '') return '"sessionId" must be a session id'
   if (!('describe' in value) || !('list' in value)) return 'the header needs "describe" and "list"'
   if (!Array.isArray(stored)) return '"stored" must be an array of rows'
-  return { fixture, hermes, source, sessionId: sessionId as SessionId, describe: value.describe, list: value.list, stored }
+  const { models } = value
+  if (models !== undefined && !(isObject(models) && Array.isArray(models.providers))) return '"models" must be a model.options reply with "providers"'
+  const { guarded } = value
+  if (guarded !== undefined && !(Array.isArray(guarded) && guarded.every(model => typeof model === 'string'))) return '"guarded" must be a list of model names'
+  return {
+    fixture, hermes, source, sessionId: sessionId as SessionId, describe: value.describe, list: value.list, stored,
+    ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] })
+  }
 }
 
 /** Reads a fixture file, checking the header and every step. Throws with the line number of the first bad line. */
