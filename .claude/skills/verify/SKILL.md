@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Launch, drive and screenshot the Highwing Electron desktop app (apps/desktop) headlessly under Xvfb with Playwright, replaying a recorded Hermes fixture through the real client. Use to prove a renderer, IPC or main-process change works in the real window, to capture design screenshots at the reference size, or to compare against the design C references.
+description: Launch, drive and screenshot the Highwing Electron desktop app (apps/desktop) headlessly under Xvfb with Playwright, replaying a recorded Hermes fixture through the real client or connecting through a fake Hermes machine. Use to prove a renderer, IPC or main-process change works in the real window, to drive the setup screen, to capture design screenshots at the reference size, or to compare against the design C references.
 ---
 
 # Verify Highwing
@@ -24,8 +24,12 @@ $H cleanup --run <run> | --all
 
 Options:
 
-- `--fixture <path>` sets `HIGHWING_FIXTURE`. Main then plays that recorded gateway through the real client, and no socket or process outside Electron is touched.
-- `--no-fixture` launches with no fixture and with every `PATH` directory that holds a `hermes` executable removed. Hermes is installed on this machine, and without this the app would dial the user's real gateway. With it, the link ends `blocked` (Hermes missing).
+Every run names one of two gateways. Hermes, ssh and Tailscale are installed on this machine, and a run that named neither would reach the real ones.
+
+- `--fixture <path>` sets `HIGHWING_FIXTURE`. Main then plays that recorded gateway through the real client, and no socket or process outside Electron is touched. The app has no setup screen in this mode.
+- `--fake-host <scenario>` starts the fake Hermes machine of `packages/hermes/src/testing/fake-host.ts` and launches the app with the fake machine's bin directory as its whole `PATH`. That directory holds a fake `ssh`, `tailscale` and `hermes`, so the app runs its real setup check and its real remote dial and reaches nothing real. A tool the scenario lacks is a real "command not found". The scenarios are `ok`, `slow` and one per check failure: `tailscale-missing`, `tailscale-off`, `tailscale-signed-out`, `host-not-found`, `host-offline`, `unreachable`, `ssh-missing`, `ssh-denied`, `ssh-check`, `host-changed`, `hermes-not-found`, `hermes-too-old` and `cant-save`. The fake machine is `hermes-host.example-tailnet.ts.net`. Its gateway plays `fixtures/errand.jsonl`, or the file `--fixture` names.
+- `--saved none|local|remote|unreadable|newer` needs `--fake-host`. It writes that `connection.json` into the run's user-data directory before launch. The default is `none`, a first run. `remote` saves the fake machine, and `local` saves this computer, where the fake `hermes` answers.
+- `--hold-at tailscale|ssh|attach|relay` needs `--fake-host`. The fake tool that reaches that moment waits for the rest of the run. `ssh` pins the setup check at "Connecting to hermes-host".
 - `--drop-after <event type>` is verification scaffolding. It writes a copy of the fixture whose gateway closes the socket 50 ms after the first frame of that type, and plays the copy instead. The copy is saved as `fixture-with-drop.jsonl` in the evidence directory. The client shows the dropped link until its redial lands about 1 s later.
 - `--run <name>` names the evidence directory. The default is a timestamp plus the PID.
 - `--timeout <ms>` is the per-step limit. The default is 15000.
@@ -34,11 +38,11 @@ Ready means the first window has loaded. Use `wait window` as the first step.
 
 The window's content area is 1180x860, the size of the reference screenshots. `run` passes `--ozone-platform=x11`, `--force-device-scale-factor=1` and `--disable-gpu`, and removes `WAYLAND_DISPLAY`. Electron 45 would otherwise pick Wayland and open the window on the real compositor. `run` also checks that the X server on its display was started by its own `xvfb-run`. Plain `xvfb-run -a` gives two runs started together the same display, and the first teardown would then kill the other run.
 
-Teardown is part of `run`. The app is closed and then killed by PID if it is still alive, whether the steps passed or failed.
+Teardown is part of `run`. The app is closed and then killed by PID if it is still alive, whether the steps passed or failed. A `--fake-host` run then fails if a fake tool the app started is still running, because the app must end its own ssh processes when it quits.
 
 ## Doctor
 
-`$H doctor` is read-only. It checks node, `xvfb-run`, `magick`, `playwright-core`, the downloaded electron binary, whether the build is current, and that the `hermes` filter works. It also lists verify instances that are still running. Every line must read `ok` before you trust a run. A `note` about running instances means an earlier run did not tear down; `$H cleanup --all` stops them.
+`$H doctor` is read-only. It checks node, `xvfb-run`, `magick`, `playwright-core`, the downloaded electron binary, whether the build is current, and that `tsx` is installed to run the fake host. It also lists verify instances that are still running. Every line must read `ok` before you trust a run. A `note` about running instances means an earlier run did not tear down; `$H cleanup --all` stops them.
 
 ## Drive
 
@@ -53,6 +57,7 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `press <key>` | Playwright key name | presses it |
 | `shot <name>` | file stem | moves the pointer off the page, then saves `<name>.png` and `<name>.aria.txt` |
 | `disabled <role> <name>` | ARIA role, exact accessible name | fails unless that control is disabled now |
+| `value <label> <text>` | exact label, text | fails unless the field holds exactly that text now |
 | `focused <role> <name>` | ARIA role, exact accessible name | fails unless that control has keyboard focus now |
 | `count <role> <name> <n>` | ARIA role, exact name or `/regex/`, a number | fails unless exactly `n` such controls are in the accessibility tree |
 | `clipboard <name>` | file stem | waits until the system clipboard holds new text, then saves it as `<name>.clip.txt`. Fails when it stays empty or unchanged since the last `clipboard` step |
@@ -61,7 +66,11 @@ Named states live in the `STATES` table in the helper. Add a state there, not a 
 
 | State | Visible while |
 |---|---|
-| `window` | the renderer has mounted |
+| `window` | the renderer has mounted a screen |
+| `setup` | the setup screen's Connect button is enabled, so no check is running |
+| `setup-checking` | the setup screen shows the step a check is at (`role=status`, name "Checking") |
+| `setup-failed` | the setup screen shows a failure (`role=alert`) |
+| `setup-saved` | the saved screen's "Open chat" button is shown |
 | `live` | the composer's Send button is enabled, so the chat is attached and the link is online |
 | `tool-running` | a single step whose title starts with "Running" carries the live end (`[data-end="live"]`) |
 | `approval` | the "Run this command?" card's "Run once" button is enabled |
@@ -87,11 +96,12 @@ Proof standards:
 
 - Drive the real user path. Type into the composer and press Send. Click the approval button. Never call the bridge or set state from the test.
 - Capture the action and the state it caused: a shot before and after, plus the ARIA text that names the change.
-- A fixture is the production boundary for Hermes. Nothing else is mocked.
+- A fixture is the production boundary for Hermes. In a `--fake-host` run the boundary is the three commands the app runs: `ssh`, `tailscale` and `hermes`. Nothing else is mocked.
+- Never launch the app for a check without `--fixture` or `--fake-host`.
 
 ## Cleanup
 
-`$H cleanup --run <name>` or `$H cleanup --all` kills only the PIDs this skill recorded in `/tmp/highwing-verify-scratch/<run>/pid`. It then deletes that scratch directory, which holds the Electron user-data dir. It never touches `/tmp/highwing-verify/`. Never kill Electron by process name, because the user may be running their own.
+`$H cleanup --run <name>` or `$H cleanup --all` kills only the PIDs this skill recorded in `/tmp/highwing-verify-scratch/<run>/pid` and `host-pid`, the app and its fake host. It then deletes that scratch directory, which holds the Electron user-data dir. It never touches `/tmp/highwing-verify/`. Never kill Electron by process name, because the user may be running their own.
 
 ## Feature map
 

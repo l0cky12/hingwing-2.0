@@ -1,6 +1,7 @@
 import type { Hermes } from '@highwing/hermes'
 import type { CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
 import { CHANNEL, parseCommand, parseTopic, type Push, type SessionPatch, type Tail, type Topic } from '../ipc-contract'
+import type { ConnectionOwner } from './connection'
 
 export const COALESCE_MS = 16
 
@@ -22,19 +23,25 @@ export interface IpcMainLike {
 }
 
 type Source = (listener: (value: unknown) => void) => () => void
+type Kind = 'setup' | 'link' | 'sidebar' | 'session'
 
-const SOURCES: { readonly [K in 'link' | 'sidebar' | 'session']: (hermes: Hermes, topic: Topic) => Source } = {
-  link: hermes => listener => {
-    listener(hermes.link.get())
-    return hermes.link.subscribe(listener)
-  },
-  sidebar: hermes => listener => {
-    listener(hermes.sidebar.get())
-    return hermes.sidebar.subscribe(listener)
-  },
-  session: (hermes, topic) => listener => hermes.watch(topic.slice('session:'.length) as SessionId, listener)
+const current = <T>(feed: { get(): T; subscribe(listener: (value: T) => void): () => void }): Source => listener => {
+  listener(feed.get())
+  return feed.subscribe(listener)
 }
-const kindOf = (topic: Topic) => (topic === 'link' || topic === 'sidebar' ? topic : 'session')
+const NEVER: Source = () => () => {}
+
+/** A Hermes topic is bound to the connection that is live when the window asks. A window that sees a new epoch asks again. */
+const onHermes = (source: (hermes: Hermes, topic: Topic) => Source) => (owner: ConnectionOwner, topic: Topic): Source =>
+  owner.hermes === null ? NEVER : source(owner.hermes, topic)
+
+const SOURCES: { readonly [K in Kind]: (owner: ConnectionOwner, topic: Topic) => Source } = {
+  setup: owner => current(owner.setup),
+  link: onHermes(hermes => current(hermes.link)),
+  sidebar: onHermes(hermes => current(hermes.sidebar)),
+  session: onHermes((hermes, topic) => listener => hermes.watch(topic.slice('session:'.length) as SessionId, listener))
+}
+const kindOf = (topic: Topic): Kind => (topic === 'setup' || topic === 'link' || topic === 'sidebar' ? topic : 'session')
 
 function tail<T>(pushed: readonly T[], next: readonly T[]): Tail<T> {
   let from = 0
@@ -78,7 +85,7 @@ function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): (
 
 const REFUSED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Highwing refused a malformed request from its window.' } }
 
-export function serveWindows(hermes: Hermes, ipc: IpcMainLike, isAppUrl: (url: string) => boolean): { dispose(): void } {
+export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean): { dispose(): void } {
   const windows = new Map<number, Map<number, () => void>>()
   const trusted = ({ senderFrame }: IpcEvent) => senderFrame !== null && senderFrame.parent === null && isAppUrl(senderFrame.url)
 
@@ -100,7 +107,7 @@ export function serveWindows(hermes: Hermes, ipc: IpcMainLike, isAppUrl: (url: s
     if (!trusted(event) || topic === null || typeof id !== 'number') return
     const subscriptions = subscriptionsOf(event.sender)
     subscriptions.get(id)?.()
-    subscriptions.set(id, serveTopic(topic, SOURCES[kindOf(topic)](hermes, topic), push => {
+    subscriptions.set(id, serveTopic(topic, SOURCES[kindOf(topic)](owner, topic), push => {
       if (!event.sender.isDestroyed()) event.sender.send(CHANNEL.push, id, push)
     }))
   })
@@ -112,7 +119,7 @@ export function serveWindows(hermes: Hermes, ipc: IpcMainLike, isAppUrl: (url: s
   })
   ipc.handle(CHANNEL.run, async (event, raw) => {
     const command = parseCommand(raw)
-    return trusted(event) && command !== null ? hermes.run(command) : REFUSED
+    return trusted(event) && command !== null ? owner.run(command) : REFUSED
   })
 
   return {

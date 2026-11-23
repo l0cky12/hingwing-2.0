@@ -11,7 +11,7 @@ This directory is the maintained source for verifying what a Highwing user sees 
 
 ## Driving conventions
 
-- Start every recipe from a fresh `run`. The app keeps no state between runs.
+- Start every recipe from a fresh `run`. Each run gets an empty user-data directory, so the app's one saved setting, the connection, is what `--saved` wrote.
 - Prefer ARIA roles and accessible names (`click button "Send"`) and the named states in the helper's `STATES` table over CSS selectors.
 - Wait on a named state, never on a fixed sleep.
 - Treat every command as literal. Keep quoted names unchanged.
@@ -30,6 +30,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 ## Features
 
 - [Open the app](./open-the-app.md) covers launching a window at the reference size.
+- [Set up a connection](./set-up-a-connection.md) covers the first-run setup screen, each check failure, the saved screen, the remote chat, and changing the connection from the top bar.
 - [Replay a fixture](./replay-a-fixture.md) covers `HIGHWING_FIXTURE`, the tool-running, approval and settled moments, open records, and the reference composites.
 - [Send a message](./send-a-message.md) covers the composer's Send button, Enter, and Stop while a turn runs.
 - [Answer an approval](./answer-an-approval.md) covers the approval card and "Run once" releasing the story to Done.
