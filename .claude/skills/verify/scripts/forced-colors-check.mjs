@@ -8,10 +8,15 @@ if (!dir) {
   process.exit(2)
 }
 
-const MIN_NODES = { 'tool-running': 2, approval: 3, settled: 5, 'settled-expanded': 2 }
-const MIN_COVERAGE = 0.95
+const SHOTS = {
+  'tool-running': { nodes: 2, end: 'live' },
+  approval: { nodes: 3, end: 'live' },
+  settled: { nodes: 5, end: 'done' },
+  'settled-expanded': { nodes: 2, end: null }
+}
 const NODE_WIDTH = 7
-const NODE_MAX_WIDTH = 30
+const NODE_REACH = 10
+const END_HEIGHT = { live: 16, done: 10 }
 
 function load(path) {
   const [width, height] = execFileSync('magick', ['identify', '-format', '%w %h', path], { encoding: 'utf8' }).split(' ').map(Number)
@@ -47,20 +52,36 @@ function threadColumn({ width, ink }) {
 function checkThread(shot, image) {
   const cx = threadColumn(image)
   if (cx === null) return [`FAIL ${shot}: no request rule to locate the thread column`]
-  const onLine = y => [-1, 0, 1].some(d => image.ink(Math.floor(cx) + d, y))
-  const onNode = y => runs(image.width, x => image.ink(x, y)).some(([a, b]) => a <= cx && b >= cx && b - a + 1 >= NODE_WIDTH && b - a + 1 <= NODE_MAX_WIDTH)
-  const rowsOnLine = Array.from({ length: image.height - 100 }, (_, y) => y).filter(y => y > 60 && onLine(y))
+  const x0 = Math.floor(cx)
+  const onLine = y => [-1, 0, 1].some(d => image.ink(x0 + d, y))
+  const onNode = y => {
+    const xs = Array.from({ length: 2 * NODE_REACH + 1 }, (_, i) => x0 - NODE_REACH + i).filter(x => image.ink(x, y))
+    return xs.length > 0 && xs.at(-1) - xs[0] + 1 >= NODE_WIDTH
+  }
+  const transcriptEnd = image.height - 100
+  const rowsOnLine = Array.from({ length: transcriptEnd }, (_, y) => y).filter(y => y > 60 && onLine(y))
   const threadRows = rowsOnLine.slice(rowsOnLine.findIndex((y, i) => i > 0 && y !== rowsOnLine[i - 1] + 1))
   if (rowsOnLine.length < 2 || threadRows.length < 2 || threadRows[0] === rowsOnLine[0]) return [`FAIL ${shot}: nothing is drawn on the thread column x=${cx} below the request`]
-  const [top, bottom] = [threadRows[0], threadRows.at(-1)]
-  const coverage = threadRows.length / (bottom - top + 1)
-  const blobs = runs(image.height, y => y >= top && onNode(y))
-  const last = blobs.at(-1)
-  const lines = []
-  lines.push(`${coverage >= MIN_COVERAGE && bottom - top > 100 ? 'ok  ' : 'FAIL'} ${shot}: thread line covers ${(coverage * 100).toFixed(0)}% of rows ${top}-${bottom} at x=${cx}`)
-  lines.push(`${blobs.length >= MIN_NODES[shot] ? 'ok  ' : 'FAIL'} ${shot}: ${blobs.length} node blobs on the thread, at least ${MIN_NODES[shot]} expected`)
-  const endsLine = last && last[1] >= bottom - 30
-  lines.push(`${endsLine ? 'ok  ' : 'FAIL'} ${shot}: last blob ${last ? `at rows ${last[0]}-${last[1]}` : 'missing'}, thread ends at row ${bottom}`)
+  const top = threadRows[0]
+  const blobs = runs(transcriptEnd, y => y >= top && onNode(y))
+  const bottom = Math.max(threadRows.at(-1), blobs.at(-1)?.[1] ?? 0)
+  const gaps = runs(bottom + 1, y => y >= top && !onLine(y) && !onNode(y))
+  const expected = SHOTS[shot]
+  const lines = [
+    `${gaps.length === 0 && bottom - top > 100 ? 'ok  ' : 'FAIL'} ${shot}: thread line unbroken over rows ${top}-${bottom} at x=${cx}${gaps.length ? `, gaps at ${gaps.map(g => g.join('-')).join(', ')}` : ''}`,
+    `${blobs.length === expected.nodes ? 'ok  ' : 'FAIL'} ${shot}: ${blobs.length} nodes on the thread, ${expected.nodes} expected`
+  ]
+  if (expected.end === null) {
+    lines.push(`n/a  ${shot}: the end mark is below the fold in this framing, as in the design C reference`)
+    return lines
+  }
+  const [endTop, endBottom] = blobs.at(-1) ?? [0, -1]
+  const tall = endBottom - endTop + 1 >= END_HEIGHT[expected.end] && endBottom >= bottom - 2
+  const inside = (from, to) => Array.from({ length: Math.max(0, to - from + 1) }, (_, i) => from + i)
+  const hollowTop = !image.ink(x0, endTop + 2)
+  const shortArm = inside(endTop + 4, endBottom - 3).some(y => image.ink(x0 - 2, y) || image.ink(x0 - 3, y))
+  const tick = expected.end !== 'done' || (hollowTop && shortArm)
+  lines.push(`${tall && tick ? 'ok  ' : 'FAIL'} ${shot}: ${expected.end} end mark at rows ${endTop}-${endBottom}, ${endBottom - endTop + 1}px tall${expected.end === 'done' ? `, tick ${tick ? 'drawn' : 'missing'}` : ''}`)
   return lines
 }
 
@@ -91,7 +112,7 @@ function checkDiff(image) {
 }
 
 const results = []
-for (const shot of Object.keys(MIN_NODES)) {
+for (const shot of Object.keys(SHOTS)) {
   try {
     const image = load(join(dir, `${shot}.png`))
     results.push(...checkThread(shot, image))
