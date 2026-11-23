@@ -1,4 +1,5 @@
 import type { DiffStat, RecordSection, StepView } from '@highwing/thread'
+import { FilePath } from './FilePath'
 import { PhraseText } from './text'
 
 export const cx = (...names: readonly (string | false | null)[]) => names.filter(Boolean).join(' ')
@@ -22,7 +23,7 @@ function Section({ section }: { readonly section: RecordSection }) {
     return (
       <section>
         {label}
-        <p className="path">{section.path}</p>
+        <FilePath path={section.path} />
         <pre className="diff">
           {section.lines.map((line, index) => line.t === 'hunk'
             ? <span key={index} className="ln hunk">{line.text}</span>
