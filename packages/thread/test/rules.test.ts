@@ -16,11 +16,11 @@ function session(over: Partial<Session> = {}): Session {
 }
 
 const settled = (items: readonly Item<'settled'>[], outcome: Outcome = COMPLETE, id = 't1'): SettledTurn =>
-  ({ id: id as TurnId, request: { text: 'Do the errand', inputId: null }, began: null, items, outcome, rows: [] })
+  ({ id: id as TurnId, request: { text: 'Do the errand', inputId: null, rowId: null }, began: null, items, outcome, rows: [] })
 
 const running = (items: readonly Item[], sync: Sync = { state: 'live' }, announced: string | null = null): Session => session({
   sync,
-  run: { state: 'running', generation: 1 as Generation, stop: 'none', turn: { id: 't9' as TurnId, request: { text: 'Do the errand', inputId: null }, began: null, items, announced } }
+  run: { state: 'running', generation: 1 as Generation, stop: 'none', turn: { id: 't9' as TurnId, request: { text: 'Do the errand', inputId: null, rowId: null }, began: null, items, announced } }
 })
 
 const text = (markdown: string): Item<'settled'> => ({ kind: 'text', markdown, sealed: true })

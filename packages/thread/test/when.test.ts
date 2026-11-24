@@ -11,7 +11,7 @@ const at = (iso: string) => Date.parse(iso)
 const client = (ms: number): Began => ({ at: ms, clock: 'client' })
 
 const settled = (id: string, began: Began | null): SettledTurn => ({
-  id: id as TurnId, request: { text: `Request ${id}`, inputId: null }, began, items: [{ kind: 'text', markdown: `Answer ${id}`, sealed: true }],
+  id: id as TurnId, request: { text: `Request ${id}`, inputId: null, rowId: null }, began, items: [{ kind: 'text', markdown: `Answer ${id}`, sealed: true }],
   outcome: { kind: 'complete' }, rows: []
 })
 
@@ -23,7 +23,7 @@ const session = (history: readonly SettledTurn[], over: Partial<Session> = {}): 
 const running = (began: Began | null, items: readonly Item[] = [], history: readonly SettledTurn[] = [], sync: Sync = { state: 'live' }): Session =>
   session(history, {
     sync,
-    run: { state: 'running', generation: 1 as Generation, stop: 'none', turn: { id: 't9' as TurnId, request: { text: 'Run the tests', inputId: null }, began, items, announced: null } }
+    run: { state: 'running', generation: 1 as Generation, stop: 'none', turn: { id: 't9' as TurnId, request: { text: 'Run the tests', inputId: null, rowId: null }, began, items, announced: null } }
   })
 
 const tool = (id: string, command: string): ToolItem => ({ kind: 'tool', id: id as ToolItem['id'], name: 'terminal', args: { command }, status: { s: 'running', note: null } })

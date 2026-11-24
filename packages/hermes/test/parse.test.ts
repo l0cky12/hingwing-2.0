@@ -135,7 +135,7 @@ describe('parseEvent on the errand fixture', () => {
 
   it('ends the turn complete with no final text and the receipt rows 1 to 10', () => {
     const complete = only(params.filter(({ type }) => type === 'message.complete'))
-    expect(eventOf(complete)).toEqual({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] })
+    expect(eventOf(complete)).toEqual({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], userRow: 1 })
   })
 
   it('reads the queue, revision and generation from session.info', () => {
@@ -185,7 +185,7 @@ describe('parseEvent outside the happy path', () => {
       return parsed.scope === 'session' ? parsed.event : null
     }
     expect(complete({ text: 'Worker execution is unknown.', outcome: 'unknown', status: 'error' })).toEqual({
-      type: 'turn.ended', outcome: { kind: 'failed', message: 'Worker execution is unknown.', code: null, retryable: false }, finalText: null, rows: []
+      type: 'turn.ended', outcome: { kind: 'failed', message: 'Worker execution is unknown.', code: null, retryable: false }, finalText: null, rows: [], userRow: null
     })
     expect(complete({ status: 'error', error: 'no credentials', error_surface: { layer: 'provider', code: 'auth_permanent', retryable: false } }))
       .toMatchObject({ outcome: { kind: 'failed', message: 'no credentials', code: 'auth_permanent' } })
@@ -246,7 +246,7 @@ describe('parseRows on the stored errand', () => {
     const { turns, unfinished } = parseRows(stored)
     expect(unfinished).toBeNull()
     const turn = only(turns)
-    expect(turn.request).toEqual({ text: REQUEST, inputId: null })
+    expect(turn.request).toEqual({ text: REQUEST, inputId: null, rowId: 1 })
     expect(turn.outcome).toEqual({ kind: 'complete' })
     expect(turn.rows).toEqual(stored.flatMap(row => (typeof row.row_id === 'number' ? [row.row_id] : [])))
     expect(turn.rows).toEqual([1, 2, 6, 10])

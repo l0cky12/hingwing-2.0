@@ -162,6 +162,20 @@ export class SessionActor {
     }
   }
 
+  /** Cuts the chat before the stored row, then sends `text`. The thread is cut only once Hermes has said yes. */
+  async rewind(rowId: number, text: string): Promise<Outcome> {
+    const offline = this.offline()
+    if (offline !== null) return offline
+    if (this.tracked.content.run.state === 'running') return refused('stale', 'Wait for the reply to finish, then try again.')
+    try {
+      await this.mutation('rewind', { target_message_id: rowId }, this.tracked.fence.generation ?? 0)
+    } catch (error) {
+      return { ok: false, refusal: refusalOf(error) }
+    }
+    this.act({ did: 'rewound', rowId })
+    return this.send(text)
+  }
+
   discard(inputId: InputId): Outcome {
     this.act({ did: 'send.discarded', inputId })
     return DONE

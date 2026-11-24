@@ -129,6 +129,12 @@ export const validators: Validators = {
     const sessionId = sessionIdOf(raw)
     return sessionId && filled(raw.text) ? { do: 'send', sessionId, text: raw.text } : null
   },
+  rewind: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && Number.isInteger(raw.rowId) && (raw.rowId as number) > 0 && filled(raw.text)
+      ? { do: 'rewind', sessionId, rowId: raw.rowId as number, text: raw.text }
+      : null
+  },
   stop: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && { do: 'stop', sessionId }

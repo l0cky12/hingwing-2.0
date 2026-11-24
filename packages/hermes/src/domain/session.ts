@@ -132,6 +132,8 @@ export type Turn = OpenTurn | SettledTurn
 export interface Request {
   readonly text: string
   readonly inputId: InputId | null
+  /** The stored row id of this message, the address a rewind cuts before. null until Hermes names it. */
+  readonly rowId: number | null
 }
 
 export type Outcome =

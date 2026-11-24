@@ -231,7 +231,8 @@ export const SHOWN: { readonly [type: string]: Shown } = {
       type: 'turn.ended',
       outcome,
       finalText: outcome.kind === 'failed' ? null : p.optStr('text') || null,
-      rows: receipt === null ? [] : fields<PersistedTurn>(receipt).ints('row_ids')
+      rows: receipt === null ? [] : fields<PersistedTurn>(receipt).ints('row_ids'),
+      userRow: receipt === null ? null : fields<PersistedTurn>(receipt).optInt('user_row_id')
     }
   },
   /** Spinner text while a model request is in flight (`gateway/local_viewer_events.py:44`). */
@@ -445,6 +446,7 @@ export function parseTranscript(pages: readonly StoredTranscriptResult[]): Histo
 
 interface TurnInProgress {
   readonly request: string | null
+  readonly requestRow: number | null
   readonly began: Began | null
   readonly items: Item<'settled'>[]
   readonly rows: number[]
@@ -466,8 +468,8 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   rows.forEach((value, index) => {
     const row = usable(() => storedRow(value, index))
     if (row === null) return
-    if (row.role === 'user') turns.push({ request: row.text, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [] })
-    if (row.item !== null && turns.length === 0) turns.push({ request: null, began: null, items: [], rows: [] })
+    if (row.role === 'user') turns.push({ request: row.text, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [] })
+    if (row.item !== null && turns.length === 0) turns.push({ request: null, requestRow: null, began: null, items: [], rows: [] })
     const turn = turns.at(-1)
     if (row.item !== null) turn?.items.push(row.item)
     if (row.rowId !== null) turn?.rows.push(row.rowId)
@@ -479,7 +481,7 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   return {
     turns: turns.flatMap((turn, index): SettledTurn[] => turn === open ? [] : [{
       id: `stored:${turn.rows[0] ?? `@${index}`}` as TurnId,
-      request: turn.request === null ? null : { text: turn.request, inputId: null },
+      request: turn.request === null ? null : { text: turn.request, inputId: null, rowId: turn.requestRow },
       began: turn.began,
       items: turn.items,
       outcome: answered(turn) ? COMPLETE : LOST,
