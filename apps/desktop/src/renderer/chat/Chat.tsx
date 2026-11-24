@@ -5,6 +5,7 @@ import { Composer } from '../composer/Composer'
 import { ContextMeter } from '../composer/ContextMeter'
 import type { Editing } from '../composer/edit'
 import { ModelPicker } from '../composer/ModelPicker'
+import { YoloPill } from '../composer/YoloPill'
 import { run, useTopic } from '../store'
 import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
 import { ImageSessionContext } from './Image'
@@ -177,6 +178,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   useEffect(() => { if (live) void refreshModels() }, [live, refreshModels])
   const model = modelViewOf(menu.id === id ? menu.menu : null, session)
   const fill = session?.usage.context ?? null
+  const yolo = id !== null && live ? (session?.yolo ?? null) : null
 
   const fileCall = useMemo(() => (id === null ? NO_FILE_CALL : fileCallFor(id)), [id])
 
@@ -211,14 +213,17 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}
       >
-        {id !== null && (model.show !== 'hidden' || fill !== null) && (
+        {id !== null && (model.show !== 'hidden' || yolo !== null || fill !== null) && (
           <div className="under">
-            {model.show !== 'hidden' && (
-              <ModelPicker
-                key={id} view={model} onOpen={() => void refreshModels()}
-                onPick={(pick, confirm) => run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) })}
-              />
-            )}
+            <div className="foot">
+              {model.show !== 'hidden' && (
+                <ModelPicker
+                  key={id} view={model} onOpen={() => void refreshModels()}
+                  onPick={(pick, confirm) => run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) })}
+                />
+              )}
+              {yolo !== null && <YoloPill key={`yolo-${id}`} on={yolo} onSet={on => run({ do: 'setYolo', sessionId: id, on })} />}
+            </div>
             {fill !== null && <ContextMeter key={id} fill={fill} stale={!live} onBreakdown={() => run({ do: 'contextBreakdown', sessionId: id })} />}
           </div>
         )}
