@@ -2,11 +2,11 @@ import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { PromptId } from '../src/domain/session'
+import type { PromptId, RequestId } from '../src/domain/session'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { loadFixture, playToEnd, recordingDialer, scriptedDialer, type FixtureStep } from '../src/testing/fixture'
-import { ERRAND, paramsOf, PROFILES, SESSION, SLASH } from './support/errand'
+import { loadFixture, MASKED, playToEnd, recordingDialer, scriptedDialer, type FixtureStep } from '../src/testing/fixture'
+import { ERRAND, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, SESSION, SLASH, SUDO, SUDO_ASK, withSteps } from './support/errand'
 
 async function record(drop?: { afterPush: number; missed: number }, fixture = ERRAND) {
   const path = join(mkdtempSync(join(tmpdir(), 'highwing-record-')), 'errand.jsonl')
@@ -27,15 +27,16 @@ async function record(drop?: { afterPush: number; missed: number }, fixture = ER
   return path
 }
 
-const kindOf = (step: FixtureStep) => ('push' in step ? 'push' : 'await' in step ? `await ${step.await}` : 'stored' in step ? 'stored' : 'drop')
+const kindOf = (step: FixtureStep) => ('push' in step ? 'push' : 'await' in step ? `await ${step.await}` : 'answer' in step ? 'answer' : 'stored' in step ? 'stored' : 'drop')
 
 describe('recordingDialer', () => {
   it('writes a fixture that plays back to the same session', async () => {
     const recorded = loadFixture(await record())
     expect(recorded.header).toMatchObject({ fixture: 1, source: 'recorded', sessionId: SESSION, stored: [], describe: ERRAND.header.describe })
     expect(recorded.steps.map(kindOf)).toEqual(ERRAND.steps.filter(step => !('stored' in step)).map(kindOf))
-    const calls = (steps: readonly FixtureStep[]) => steps.flatMap(step => ('await' in step ? [{ await: step.await, params: step.params, reply: step.reply }] : []))
-    expect(calls(recorded.steps)).toEqual(calls(ERRAND.steps))
+    const calls = (steps: readonly FixtureStep[], more: object = {}) => steps.flatMap(step =>
+      ('await' in step ? [{ await: step.await, params: step.await === 'prompt.submit' ? { ...(step.params as object), ...more } : step.params, reply: step.reply }] : []))
+    expect(calls(recorded.steps)).toEqual(calls(ERRAND.steps, { clarify_batch: true }))
     expect(await playToEnd(recorded)).toEqual(await playToEnd(ERRAND))
   })
 
@@ -65,5 +66,23 @@ describe('recordingDialer', () => {
   it('writes no handshake, heartbeat or attach call, and nothing that looks like a ticket', async () => {
     const text = readFileSync(await record(), 'utf8')
     expect(text).not.toMatch(/gateway\.ping|client\.capabilities|"await":"session\.resume"|hermes-gateway-ticket/)
+  })
+
+  it('writes an answer to a request as a step, with a typed value masked and a decline as it was sent', async () => {
+    const asks = withSteps(12, SUDO_ASK, { answer: SUDO, result: { value: MASKED } }, PICK_ASK, PICK_DECLINED)
+    const path = join(mkdtempSync(join(tmpdir(), 'highwing-record-')), 'asks.jsonl')
+    const clock = manualClock()
+    const script = scriptedDialer(asks, { clock })
+    const hermes = openHermes({ dial: recordingDialer(script, path, clock), clock, client: { name: 'highwing-test', version: '0' } })
+    hermes.watch(SESSION, () => {})
+    await clock.advance(0)
+    await hermes.run({ do: 'send', sessionId: SESSION, text: String(paramsOf('prompt.submit').text) })
+    await clock.advance(0)
+    await hermes.run({ do: 'answer', sessionId: SESSION, requestId: SUDO as RequestId, reply: { kind: 'secret', value: 'hunter2' } })
+    await clock.advance(0)
+    await hermes.close()
+    expect(readFileSync(path, 'utf8')).not.toContain('hunter2')
+    const answers = loadFixture(path).steps.flatMap(step => ('answer' in step ? [step] : []))
+    expect(answers).toMatchObject([{ answer: SUDO, result: { value: MASKED } }, { answer: PICK, error: PICK_DECLINED.error }])
   })
 })

@@ -1,8 +1,11 @@
 import { DONE, refused, type Mutation, type SessionPort, type Upload } from './actor'
 import type { Bot } from './domain/bots'
 import type { Command, ModelConfirm, Outcome, Refusal, ResultOf } from './domain/command'
-import type { AttachmentId, BranchId, SessionContent, SessionId, TurnId } from './domain/session'
+import type {
+  AttachmentId, BranchId, HermesRequest, PromptId, PromptReply, RecordedReply, RequestId, RequestReply, SessionContent, SessionId, TurnId
+} from './domain/session'
 import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
+import type { Served } from './wire/link'
 import { parseBranched, parseContextBreakdown, parseDirective, parseModelMenu, parseModelReceipt, parsePathMatches, parseShown, parseTranscript } from './wire/parse'
 
 /** `versions` stays with the hub: reading a chat's versions must not attach it. */
@@ -39,6 +42,8 @@ const BRANCH_REFUSALS: Readonly<Record<string, Refusal>> = {
   session_busy: BRANCH_BUSY
 }
 const NO_CHILD: Refusal = { kind: 'rejected', message: "Hermes made the chat but didn't say which one." }
+const NOT_OPEN = refused('stale', 'That question is no longer open.')
+const WRONG_ANSWER = refused('rejected', "That isn't an answer this question takes.")
 const EARLIER = { pageRows: 200, pages: 3 } as const
 const MENTION_WITH_ATTACHMENTS = "A message to another bot can't carry attachments. Remove them, or send it without the mention."
 const UPLOAD_GONE = 'An attachment is no longer available. Remove it and attach it again.'
@@ -127,22 +132,8 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     return stopped.ok || stopped.refusal.kind === 'stale' ? DONE : stopped
   }),
 
-  answer: (port, { promptId, reply }) => port.whenLive(async () => {
-    const { run } = port.content
-    const prompt = run.state === 'running' ? run.turn.items.find(item => item.kind === 'prompt' && item.id === promptId) : undefined
-    if (prompt?.kind !== 'prompt' || prompt.state.s !== 'waiting') return refused('stale', 'That question is no longer open.')
-    port.act({ did: 'answer', promptId, reply })
-    const fence = { session_id: port.id, execution_generation: prompt.generation, prompt_id: promptId }
-    const answered = await (prompt.ask.kind === 'approval'
-      ? port.call('approval.respond', { ...fence, choice: reply.value })
-      : port.call('clarify.respond', { ...fence, answer: reply.value }))
-    if (!answered.ok) {
-      port.act({ did: 'answer.failed', promptId, message: answered.refusal.kind === 'offline' ? DROPPED_ANSWER : answered.refusal.message })
-      return answered
-    }
-    port.act({ did: 'answer.resolved', promptId, byUs: answered.value.status === 'resolved' })
-    return DONE
-  }),
+  answer: (port, command) => port.whenLive(() =>
+    ('requestId' in command ? answerRequest(port, command.requestId, command.reply) : answerPrompt(port, command.promptId, command.reply))),
 
   discard: (port, { inputId }) => {
     port.act({ did: 'send.discarded', inputId })
@@ -239,6 +230,105 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     port.act({ did: 'tuned', tuning: { reasoning: parseShown(set.value) ?? on } })
     return DONE
   })
+}
+
+async function answerPrompt(port: SessionPort, promptId: PromptId, reply: PromptReply): Promise<Outcome> {
+  const { run } = port.content
+  const prompt = run.state === 'running' ? run.turn.items.find(item => item.kind === 'prompt' && item.id === promptId) : undefined
+  if (prompt?.kind !== 'prompt' || prompt.state.s !== 'waiting') return NOT_OPEN
+  port.act({ did: 'answer', promptId, reply })
+  const fence = { session_id: port.id, execution_generation: prompt.generation, prompt_id: promptId }
+  const answered = await (prompt.ask.kind === 'approval'
+    ? port.call('approval.respond', { ...fence, choice: reply.value })
+    : port.call('clarify.respond', { ...fence, answer: reply.value }))
+  if (!answered.ok) {
+    port.act({ did: 'answer.failed', promptId, message: answered.refusal.kind === 'offline' ? DROPPED_ANSWER : answered.refusal.message })
+    return answered
+  }
+  port.act({ did: 'answer.resolved', promptId, byUs: answered.value.status === 'resolved' })
+  return DONE
+}
+
+type Asking<K extends HermesRequest['ask']['kind']> = HermesRequest & { readonly ask: Extract<HermesRequest['ask'], { kind: K }> }
+type Replying<K extends RequestReply['kind']> = Extract<RequestReply, { kind: K }>
+
+/** `sent`: how the answer travels. A result frame gets no reply, so Hermes's `request.cancel` is what closes the request. */
+interface Answer { readonly recorded: RecordedReply; sent(): Outcome | Promise<Outcome<'waits' | 'settles'>> }
+
+type Answers = { readonly [A in HermesRequest['ask']['kind']]: { readonly [R in RequestReply['kind']]?: (port: SessionPort, request: Asking<A>, reply: Replying<R>) => Answer | null } }
+
+const SECRET_METHODS = { sudo: 'sudo', env: 'secret', vault: 'vault.unlock_prompt', login: 'vault.save_login', code: 'vault.code' } as const satisfies
+  Record<Asking<'secret'>['ask']['for']['is'], string>
+const WITHHELD: RecordedReply = { kind: 'withheld' }
+const SKIP: RecordedReply = { kind: 'skip' }
+
+/**
+ * Which reply each ask takes, and what it sends. A pair that is not here, or a row that answers
+ * null, is refused before anything is sent.
+ */
+const ANSWERS: Answers = {
+  secret: {
+    /** Hermes reads an empty value as "skipped", so `skip` is the only way to send one. A login travels as one JSON string (gateway/session_vault_prompt.py:62-69). */
+    secret: (port, { id, ask }, { value, identifier }) => (value === '' ? null : {
+      recorded: WITHHELD,
+      sent: () => port.respond(id, SECRET_METHODS[ask.for.is], { value: ask.for.is === 'login' ? JSON.stringify({ identifier: identifier ?? '', password: value }) : value })
+    }),
+    skip: (port, { id, ask }) => ({ recorded: SKIP, sent: () => port.respond(id, SECRET_METHODS[ask.for.is], { value: '' }) })
+  },
+  questions: {
+    lock: (port, { id, ask }, reply) => {
+      const question = ask.questions.find(asked => asked.id === reply.question)
+      const answer = question === undefined ? undefined : lockedText(reply.answer, question.multi)
+      if (answer === undefined) return null
+      return {
+        recorded: reply,
+        sent: async () => {
+          const locked = await port.call('clarify.lock', { request_id: id, question_id: reply.question, answer })
+          if (!locked.ok) return locked
+          if (locked.value.status === 'expired') return NOT_OPEN
+          return { ok: true, value: (locked.value.remaining ?? []).length === 0 ? 'settles' : 'waits' }
+        }
+      }
+    },
+    /** A result with no `answers` ends the batch and keeps what is locked (tools/clarify_batch.py:17-30). */
+    skip: (port, { id }) => ({ recorded: SKIP, sent: () => port.respond(id, 'clarify', {}) })
+  },
+  connect: {
+    connect: (port, { id }, { target, as, values }) => ({
+      recorded: WITHHELD,
+      sent: () => respondToCard(port, id, { targets: [{ name: target, status: as, ...(values === undefined ? {} : { env: { ...values } }) }] })
+    }),
+    skip: (port, { id }) => ({ recorded: SKIP, sent: () => respondToCard(port, id, { settled_by: 'continue' }) })
+  }
+}
+
+/** One string as `clarify.lock` takes it: several picks are a JSON array of labels (tools/clarify_tool.py:36-47). undefined: not an answer to this question. */
+function lockedText(answer: Replying<'lock'>['answer'], multi: boolean): string | null | undefined {
+  if (answer === null) return null
+  if (multi) return JSON.stringify(answer)
+  return answer.length === 1 ? answer[0] : undefined
+}
+
+/** The card changes by the stream. The reply says only whether that answer settled it (gateway/session_connections.py:103-110). */
+async function respondToCard(port: SessionPort, id: RequestId, result: Served['connection.respond']['params']['result']): Promise<Outcome<'waits' | 'settles'>> {
+  const taken = await port.call('connection.respond', { owner: { type: 'session', session_id: port.id }, op_id: id, result })
+  return taken.ok ? { ok: true, value: taken.value.settled ? 'settles' : 'waits' } : taken
+}
+
+async function answerRequest(port: SessionPort, requestId: RequestId, reply: RequestReply): Promise<Outcome> {
+  const request = port.content.requests.find(held => held.id === requestId)
+  if (request === undefined || request.state.s !== 'waiting') return NOT_OPEN
+  const row = ANSWERS[request.ask.kind][reply.kind] as ((port: SessionPort, request: HermesRequest, reply: RequestReply) => Answer | null) | undefined
+  const answer = row?.(port, request, reply) ?? null
+  if (answer === null) return WRONG_ANSWER
+  port.act({ did: 'answer', requestId, reply: answer.recorded })
+  const sent = await answer.sent()
+  if (!sent.ok) {
+    port.act({ did: 'answer.failed', requestId, message: sent.refusal.kind === 'offline' ? DROPPED_ANSWER : sent.refusal.message })
+    return sent
+  }
+  if (sent.value !== undefined) port.act({ did: 'answer.accepted', requestId, then: sent.value })
+  return DONE
 }
 
 export const runSessionCommand = (port: SessionPort, command: SessionCommand, hub: Hub) =>

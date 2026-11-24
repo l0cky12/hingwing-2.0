@@ -4,10 +4,11 @@
  * gateway events, the attach lifecycle, and this client's own actions (a message sent, an answer on
  * its way). Tests feed it event logs.
  */
+import { accepted, answering, closed, failed, opened, reconciled, type Change, type CloseWhy, type Held } from './requests'
 import type {
   Ask, Attachment, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, MoaItem, ModelRef, OpenTurn, OutboxEntry,
-  Outcome, PlanEntry, PromptId, PromptItem, PromptReply, ReasoningItem, Request, Run, Session, SessionContent, SessionId, SessionModel, SessionUsage,
-  SettledTurn, StatusAbout, StatusItem, Sync, TextItem, Tokens, ToolId, ToolItem, ToolResult, Tuning, TurnId
+  Outcome, PlanEntry, PromptId, PromptItem, PromptReply, ReasoningItem, RecordedReply, Request, RequestAsk, RequestId, Run, Session, SessionContent,
+  SessionId, SessionModel, SessionUsage, SettledTurn, StatusAbout, StatusItem, Sync, TextItem, Tokens, ToolId, ToolItem, ToolResult, Tuning, TurnId
 } from './session'
 
 /** A gateway event in domain terms. `wire/parse.ts` builds these. Field names are ours, not the wire's. */
@@ -59,6 +60,9 @@ export type SessionEvent =
   | { readonly type: 'status'; readonly about: StatusAbout; readonly text: string }
   | { readonly type: 'notice.shown'; readonly notice: ShownNotice }
   | { readonly type: 'notice.cleared'; readonly key: string }
+  | { readonly type: 'request.cancelled'; readonly id: RequestId; readonly why: CloseWhy }
+  /** A connector card as it is now: opened, changed, or settled with `settled` saying how. */
+  | { readonly type: 'connect'; readonly card: CardRequest; readonly settled: CloseWhy | null }
   | {
       readonly type: 'meta'
       readonly title?: string
@@ -128,8 +132,16 @@ export interface Admission {
   readonly status: 'queued' | 'started' | 'unknown' | 'terminal'
 }
 
-/** A server-to-client JSON-RPC request. The first build shows none of them and declines every one. */
-export interface ServerRequest { readonly requestId: string; readonly method: string; readonly sessionId: SessionId | null }
+/** A server-to-client JSON-RPC request, or a connector card, which Hermes opens with an event. */
+export type ServerRequest =
+  /** `waitS`: how long Hermes waits for an answer. null when its config decides. */
+  | { readonly kind: 'card'; readonly requestId: RequestId; readonly sessionId: SessionId; readonly method: string; readonly ask: RequestAsk; readonly waitS: number | null }
+  /** A method with no card here: Hermes Desktop's window bridges, and any method this build does not know. */
+  | { readonly kind: 'bridge'; readonly requestId: RequestId; readonly sessionId: SessionId | null; readonly method: string }
+  /** A method with a card, whose params this build could not read. */
+  | { readonly kind: 'unusable'; readonly requestId: RequestId; readonly method: string }
+export type CardRequest = Extract<ServerRequest, { kind: 'card' }>
+export type BridgeRequest = Extract<ServerRequest, { kind: 'bridge' }>
 
 /** A parsed attach reply (`session.create` / `session.resume`). */
 export interface Snapshot {
@@ -151,7 +163,7 @@ export interface Snapshot {
    * the two never overlap and never leave a hole. null when the resume asked for no rows (a reconnect).
    */
   readonly history: HistoryPage | null
-  /** Server requests that still wait for an answer from some client. */
+  /** Server requests that still wait for an answer from some client, and the open connector card. */
   readonly openRequests: readonly ServerRequest[]
 }
 
@@ -180,14 +192,16 @@ export type Gate =
   /** Not subscribed. Frames are dropped. `cursor` survives so the next attach can replay from it. */
   | { readonly at: 'detached'; readonly why: 'new' | 'link-lost' | { readonly refused: string }; readonly cursor: Cursor | null }
   /**
-   * An attach is in flight. Live frames park here until it settles. A new `attempt` number abandons
-   * the calls of the older one: their replies no longer match and are ignored.
+   * An attach is in flight. Live frames park here until it settles, and so do request frames, in
+   * `asked`. A new `attempt` number abandons the calls of the older one: their replies no longer
+   * match and are ignored.
    */
   | {
       readonly at: 'attaching'
       readonly attempt: number
       readonly plan: { readonly mode: 'open' } | { readonly mode: 'replay'; readonly from: Cursor } | { readonly mode: 'rebuild' }
       readonly parked: readonly StampedEvent[]
+      readonly asked: readonly CardRequest[]
     }
   | { readonly at: 'live'; readonly cursor: Cursor; readonly subscriptionId: string }
 
@@ -205,8 +219,10 @@ export type SessionInput =
   | { readonly in: 'earlier'; readonly page: HistoryPage }
   /** The answer to a read of the session's usage. `asked` is `Fence.totalsEpoch` when the read was sent. */
   | { readonly in: 'usage'; readonly usage: SessionUsage; readonly asked: number }
-  /** A server request was refused because this build cannot show it. */
-  | { readonly in: 'declined'; readonly request: ServerRequest }
+  /** A request frame off the live socket. `seenAt` is this client's clock when it arrived. */
+  | { readonly in: 'request'; readonly request: CardRequest; readonly seenAt: number }
+  /** A request with no card here was refused, because a window was showing the chat. */
+  | { readonly in: 'declined'; readonly request: BridgeRequest }
   /**
    * Answers to reads the actor made because a window watches the chat. `attempt` is the attach they
    * were read under. An answer read under an older attach changes nothing.
@@ -222,8 +238,13 @@ export type LocalAction =
   | { readonly did: 'send.discarded'; readonly inputId: InputId }
   | { readonly did: 'stop' }
   | { readonly did: 'answer'; readonly promptId: PromptId; readonly reply: PromptReply }
+  /** The typed value is not in the action: `RecordedReply` has no place for one. */
+  | { readonly did: 'answer'; readonly requestId: RequestId; readonly reply: RecordedReply }
   | { readonly did: 'answer.resolved'; readonly promptId: PromptId; readonly byUs: boolean }
+  /** Hermes took a request's answer that travelled as a call. `waits`: the request can be answered again. `settles`: Hermes will close it. */
+  | { readonly did: 'answer.accepted'; readonly requestId: RequestId; readonly then: 'waits' | 'settles' }
   | { readonly did: 'answer.failed'; readonly promptId: PromptId; readonly message: string }
+  | { readonly did: 'answer.failed'; readonly requestId: RequestId; readonly message: string }
   | { readonly did: 'earlier.requested' }
   /** Hermes cut the chat before this stored row. The turn that row opens and every later turn are gone. */
   | { readonly did: 'rewound'; readonly rowId: number }
@@ -252,6 +273,8 @@ export interface Fence {
    * was sent, so one sent at an older epoch must not set the totals or the fill.
    */
   readonly totalsEpoch: number
+  /** Requests Hermes closed. See `Held.closed` in requests.ts. */
+  readonly closed: Held['closed']
 }
 
 export interface Tracked {
@@ -262,9 +285,9 @@ export interface Tracked {
 
 export function emptyTracked(id: SessionId): Tracked {
   return {
-    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, yolo: null, tuning: UNTUNED },
+    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], requests: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, yolo: null, tuning: UNTUNED },
     gate: { at: 'detached', why: 'new', cursor: null },
-    fence: { revision: 0, text: null, older: null, admissions: {}, settledThrough: null, generation: null, attaches: 0, totalsEpoch: 0 }
+    fence: { revision: 0, text: null, older: null, admissions: {}, settledThrough: null, generation: null, attaches: 0, totalsEpoch: 0, closed: [] }
   }
 }
 
@@ -276,20 +299,22 @@ export const PARK_LIMIT = 2048
  * - Returns the same `content` reference when nothing visible changed, and keeps the identity of
  *   every turn and item it did not touch. IPC patches and React memoisation rely on this.
  * - Idempotent per id: a tool is upserted by `ToolId`, a prompt by `PromptId`, a helper by `HelperId`,
- *   an outbox entry by `InputId`, a declined notice by `requestId`, the plan by its revision. Applying
- *   the same input twice changes nothing the second time. `attach` on a session that is attaching or
- *   live changes nothing.
+ *   an outbox entry by `InputId`, a request and a declined notice by `requestId`, the plan by its
+ *   revision. Applying the same input twice changes nothing the second time. `attach` on a session
+ *   that is attaching or live changes nothing.
  * - A reply of an older attach attempt changes nothing.
  * - Nothing opens a turn to hold a line Hermes said. A line goes into the running turn, or into the
  *   interlude while none runs.
+ * - A request is opened and closed only by Hermes's word about that request. A turn that starts,
+ *   settles or is lost leaves `requests` as it was.
  */
 export function reduce(state: Tracked, input: SessionInput): Tracked {
   const { gate } = state
   switch (input.in) {
     case 'attach': {
       if (gate.at !== 'detached') return state
-      if (gate.cursor !== null) return beginAttach(state, { mode: 'replay', from: gate.cursor }, [])
-      return beginAttach(state, state.fence.generation === null ? { mode: 'open' } : REBUILD, [])
+      if (gate.cursor !== null) return beginAttach(state, { mode: 'replay', from: gate.cursor }, [], [])
+      return beginAttach(state, state.fence.generation === null ? { mode: 'open' } : REBUILD, [], [])
     }
     case 'attached':
       return gate.at === 'attaching' && gate.attempt === input.attempt ? attached(state, gate, input.snapshot, input.replay) : state
@@ -315,6 +340,11 @@ export function reduce(state: Tracked, input: SessionInput): Tracked {
         context: input.usage.context ?? usage.context
       })
     }
+    case 'request': {
+      if (gate.at === 'detached') return state
+      if (gate.at === 'live') return withRequests(state, opened(heldOf(state), input.request, input.seenAt))
+      return gate.asked.some(parked => parked.requestId === input.request.requestId) ? state : { ...state, gate: { ...gate, asked: [...gate.asked, input.request] } }
+    }
     case 'declined': {
       const { requestId, method } = input.request
       return holdsDeclined(state.content, requestId) ? state : say(state, { kind: 'notice', what: 'declined', requestId, method })
@@ -331,9 +361,21 @@ export function reduce(state: Tracked, input: SessionInput): Tracked {
 type Attaching = Extract<Gate, { at: 'attaching' }>
 const REBUILD: Attaching['plan'] = { mode: 'rebuild' }
 
-function beginAttach(state: Tracked, plan: Attaching['plan'], parked: readonly StampedEvent[]): Tracked {
+function beginAttach(state: Tracked, plan: Attaching['plan'], parked: readonly StampedEvent[], asked: readonly CardRequest[]): Tracked {
   const attempt = state.fence.attaches + 1
-  return { ...state, gate: { at: 'attaching', attempt, plan, parked }, fence: { ...state.fence, attaches: attempt } }
+  return { ...state, gate: { at: 'attaching', attempt, plan, parked, asked }, fence: { ...state.fence, attaches: attempt } }
+}
+
+const heldOf = (state: Tracked): Held => ({ requests: state.content.requests, closed: state.fence.closed })
+
+function withRequests(state: Tracked, next: Held | Change): Tracked {
+  const kept: Tracked = {
+    ...state,
+    content: patch(state.content, { requests: next.requests }),
+    fence: patch(state.fence, { closed: next.closed })
+  }
+  const settled = kept.content === state.content && kept.fence === state.fence ? state : kept
+  return 'notices' in next ? next.notices.reduce((said, notice) => say(said, notice), settled) : settled
 }
 
 function resumePoint(gate: Gate): Cursor | null {
@@ -350,7 +392,7 @@ function resumePoint(gate: Gate): Cursor | null {
 
 function gap(state: Tracked): Tracked {
   const { gate } = state
-  if (gate.at !== 'detached') return beginAttach(state, REBUILD, [])
+  if (gate.at !== 'detached') return beginAttach(state, REBUILD, [], gate.at === 'attaching' ? gate.asked : [])
   return gate.cursor === null ? state : { ...state, gate: { ...gate, cursor: null } }
 }
 
@@ -381,23 +423,26 @@ function admit(state: Tracked, frame: StampedEvent): Tracked {
 }
 
 function attached(state: Tracked, gate: Attaching, snapshot: Snapshot, replay: Replay | null): Tracked {
-  const { plan, parked } = gate
+  const { plan, parked, asked } = gate
   const { watermark } = snapshot
   const liveAt = (cursor: Cursor): Tracked => ({ ...state, gate: { at: 'live', cursor, subscriptionId: snapshot.subscriptionId } })
   const upToWatermark = (frame: StampedEvent) => frame.stamp.seq <= watermark.seq
+  const listed = snapshot.openRequests.filter(request => request.kind === 'card')
+  const cancelled = new Set(parked.flatMap(frame => (frame.event?.type === 'request.cancelled' ? [frame.event.id] : [])))
+  const asking = (attachedState: Tracked) => withRequests(attachedState, reconciled(heldOf(attachedState), listed, asked, cancelled))
 
   if (plan.mode === 'replay' && replay !== null && !replay.snapshotRequired && replay.epoch === watermark.epoch && replay.epoch === plan.from.epoch) {
     // The gateway's catch-up frames sit among the parked ones (gateway/session_events.py:114-124). They
     // go in before the snapshot is compared, so a turn that ended in that window keeps its real outcome.
     const catchUp = parked.filter(upToWatermark).map((frame): StampedEvent => ({ ...frame, seenAt: null }))
     const caughtUp = [...replay.events, ...catchUp].reduce(admit, liveAt(plan.from))
-    if (caughtUp.gate.at !== 'live' || caughtUp.gate.cursor.seq !== watermark.seq) return beginAttach(state, REBUILD, parked)
-    return parked.filter(frame => !upToWatermark(frame)).reduce(admit, reconcile(caughtUp, snapshot))
+    if (caughtUp.gate.at !== 'live' || caughtUp.gate.cursor.seq !== watermark.seq) return beginAttach(state, REBUILD, parked, asked)
+    return parked.filter(frame => !upToWatermark(frame)).reduce(admit, asking(reconcile(caughtUp, snapshot)))
   }
   if (snapshot.history !== null) {
-    return parked.filter(frame => frame.stamp.epoch === watermark.epoch).reduce(admit, seed(liveAt(watermark), snapshot, snapshot.history))
+    return parked.filter(frame => frame.stamp.epoch === watermark.epoch).reduce(admit, asking(seed(liveAt(watermark), snapshot, snapshot.history)))
   }
-  return beginAttach(state, REBUILD, parked)
+  return beginAttach(state, REBUILD, parked, asked)
 }
 
 function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
@@ -438,6 +483,7 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       earlier: page.older === null ? 'none' : 'more',
       run,
       interlude: [],
+      requests: content.requests,
       outbox: content.outbox,
       // Hermes asks a newly attached viewer again about a held pick (gateway/session_deferred_pick.py:46-54).
       model: { ...modelFrom(content.model, snapshot.model), next: null, ask: null },
@@ -453,7 +499,8 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       settledThrough: history.reduce<number | null>((through, turn) => highestRow(through, turn.rows), null),
       generation: newest(fence.generation, snapshot.generation),
       attaches: fence.attaches,
-      totalsEpoch: fence.totalsEpoch + 1
+      totalsEpoch: fence.totalsEpoch + 1,
+      closed: fence.closed
     }
   }
   return snapshot.queue.reduce(admission, seeded)
@@ -577,18 +624,24 @@ function act(state: Tracked, action: LocalAction): Tracked {
       return content.run.state === 'running' && content.run.stop === 'none'
         ? { ...state, content: { ...content, run: { ...content.run, stop: 'requested' } } }
         : state
-    case 'answer':
-      return editPrompt(state, action.promptId, prompt =>
-        prompt.state.s === 'waiting' ? { ...prompt, state: { s: 'sending', reply: action.reply } } : prompt)
+    case 'answer': {
+      if ('requestId' in action) return withRequests(state, answering(heldOf(state), action.requestId, action.reply))
+      const { promptId, reply } = action
+      return editPrompt(state, promptId, prompt => (prompt.state.s === 'waiting' ? { ...prompt, state: { s: 'sending', reply } } : prompt))
+    }
+    case 'answer.accepted':
+      return withRequests(state, accepted(heldOf(state), action.requestId, action.then))
     case 'answer.resolved':
       return editPrompt(state, action.promptId, prompt => {
         if (!isClosed(prompt)) return { ...prompt, state: action.byUs ? answeredFrom(prompt) : ANSWERED_ELSEWHERE }
         // The gateway's settle event can arrive before this receipt and assume the reply was ours.
         return prompt.state.s === 'answered' && prompt.state.reply !== null && !action.byUs ? { ...prompt, state: ANSWERED_ELSEWHERE } : prompt
       })
-    case 'answer.failed':
-      return editPrompt(state, action.promptId, prompt =>
-        prompt.state.s === 'sending' ? { ...prompt, state: { s: 'waiting', error: action.message } } : prompt)
+    case 'answer.failed': {
+      if ('requestId' in action) return withRequests(state, failed(heldOf(state), action.requestId, action.message))
+      const { promptId, message } = action
+      return editPrompt(state, promptId, prompt => (prompt.state.s === 'sending' ? { ...prompt, state: { s: 'waiting', error: message } } : prompt))
+    }
     case 'rewound':
       return cutBefore(state, action.rowId)
     case 'earlier.requested':
@@ -736,6 +789,12 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
     }
     case 'notice.cleared':
       return clearNotice(state, event.key)
+    case 'request.cancelled':
+      return withRequests(state, closed(heldOf(state), event.id, event.why))
+    case 'connect':
+      return withRequests(state, event.settled === null
+        ? opened(heldOf(state), event.card, seenAt)
+        : closed(heldOf(state), event.card.requestId, event.settled))
     case 'meta': {
       const named: Tracked = event.model === undefined ? state : { ...state, content: patch(state.content, { model: modelFrom(state.content.model, event.model) }) }
       const lit: Tracked = event.yolo === undefined ? named : { ...named, content: patch(named.content, { yolo: event.yolo }) }
@@ -1166,12 +1225,11 @@ export function sessionOf(state: Tracked, link: Link, previous: Session | null):
 }
 
 /**
- * What the agent is doing right now, derived from `run` and never stored.
- * The thread's live end, the sidebar badge, the composer's Send/Stop and later the tray all call this.
+ * What the open turn is doing, derived from `run` and never stored.
  * Precedence: stopping, asking, working, writing, reasoning, helping, preparing, thinking.
  * Helpers of settled turns never set it: the run they belong to is over.
  */
-export type Activity =
+export type TurnActivity =
   | { readonly kind: 'idle' }
   | { readonly kind: 'thinking' }
   | { readonly kind: 'preparing'; readonly tool: string }
@@ -1186,8 +1244,23 @@ export type Activity =
   | { readonly kind: 'helping'; readonly item: number }
   | { readonly kind: 'stopping' }
 
+/**
+ * What the chat is doing right now, for the sidebar badge and later the tray: the turn's activity,
+ * or `answering` when Hermes waits on a request and the turn is neither stopping nor asking. A
+ * request can wait while no turn runs, so `answering` does not mean a turn is running.
+ */
+export type Activity =
+  | TurnActivity
+  /** The oldest request Hermes waits on. */
+  | { readonly kind: 'answering'; readonly request: RequestId }
+
 export function activityOf(session: SessionContent): Activity {
-  const { run } = session
+  const turn = turnActivityOf(session.run)
+  const [request] = session.requests
+  return request === undefined || turn.kind === 'stopping' || turn.kind === 'asking' ? turn : { kind: 'answering', request: request.id }
+}
+
+export function turnActivityOf(run: Run): TurnActivity {
   if (run.state === 'idle') return { kind: 'idle' }
   if (run.stop === 'requested') return { kind: 'stopping' }
   const { items, announced } = run.turn

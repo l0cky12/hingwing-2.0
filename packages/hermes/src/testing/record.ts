@@ -1,6 +1,6 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { systemClock, wireSocket, type Clock, type Dialer } from '../wire/link'
-import type { Fixture, FixtureStep } from './fixture'
+import { MASKED, type Fixture, type FixtureStep } from './fixture'
 
 type Obj = Readonly<Record<string, unknown>>
 const isObject = (value: unknown): value is Obj => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -49,6 +49,18 @@ const OWN_ANSWERS: Readonly<Record<string, (header: Header, reply: Obj, params: 
   'session.create': attachReply
 }
 
+const masked = (values: unknown) => (isObject(values) ? Object.fromEntries(Object.keys(values).map(name => [name, MASKED])) : values)
+
+/** The answer to a password, secret or code prompt is `{value}`. An empty one is a skip and says nothing. */
+const maskedResult = (result: unknown) => (isObject(result) && typeof result.value === 'string' && result.value !== '' ? { ...result, value: MASKED } : result)
+
+/** A connector card's answer carries the credentials an install asked for, as `result.targets[].env`. */
+function maskedParams(method: string, params: Obj): Obj {
+  if (method !== 'connection.respond' || !isObject(params.result) || !Array.isArray(params.result.targets)) return params
+  const targets = params.result.targets.map((target: unknown) => (isObject(target) && 'env' in target ? { ...target, env: masked(target.env) } : target))
+  return { ...params, result: { ...params.result, targets } }
+}
+
 function attachReply(header: Header, reply: Obj): readonly Found[] {
   if (typeof reply.session_id !== 'string') return NOTHING
   header.sessionId ??= reply.session_id as Fixture['header']['sessionId']
@@ -64,9 +76,12 @@ function attachReply(header: Header, reply: Obj): readonly Found[] {
 /**
  * Wraps any dialer and appends every frame of one session, in and out, to `path` in fixture format
  * (`HIGHWING_RECORD=out.jsonl pnpm dev`). The session is the first one the client attaches. A
- * `session.resume` reply that carried rows is written as a `stored` step. Recordings hold real
- * paths and commands: they go to a git-ignored folder, and a fixture is committed only after review.
- * No ticket can reach the file: the recorder sits above the dial and sees frames only.
+ * `session.resume` reply that carried rows is written as a `stored` step. An answer to a server
+ * request is written as an `answer` step. Recordings hold real paths and commands: they go to a
+ * git-ignored folder, and a fixture is committed only after review.
+ * No ticket can reach the file: the recorder sits above the dial and sees frames only. No typed
+ * secret can either: a value sent for a password, a secret or a code, and every credential a
+ * connector card sends, is written as `MASKED`.
  */
 export function recordingDialer(inner: Dialer, path: string, clock: Clock = systemClock): Dialer {
   const startedAt = clock.now()
@@ -98,7 +113,13 @@ export function recordingDialer(inner: Dialer, path: string, clock: Clock = syst
     const socket = await inner(request)
     const calls = new Map<unknown, { readonly method: string; readonly params: Obj; readonly at: number; readonly slot: Slot | null }>()
     const sent = (frame: unknown) => {
-      if (!isObject(frame) || typeof frame.method !== 'string' || frame.id === undefined) return
+      if (!isObject(frame) || frame.id === undefined) return
+      if (typeof frame.method !== 'string') {
+        const { code, message } = isObject(frame.error) ? frame.error : {}
+        if (typeof code === 'number' && typeof message === 'string') add({ at: at(), answer: String(frame.id), error: { code, message } })
+        else if ('result' in frame) add({ at: at(), answer: String(frame.id), result: maskedResult(frame.result) })
+        return
+      }
       const own = frame.method in OWN_ANSWERS
       calls.set(frame.id, { method: frame.method, params: isObject(frame.params) ? frame.params : {}, at: at(), slot: own ? null : add(null) })
     }
@@ -114,7 +135,7 @@ export function recordingDialer(inner: Dialer, path: string, clock: Clock = syst
       const { method, params } = call
       if (call.slot !== null) {
         const answer = isObject(frame.error) ? { error: frame.error as NonNullable<Extract<FixtureStep, { await: string }>['error']> } : { reply: frame.result }
-        call.slot.step = { at: call.at, await: method, params, ...answer }
+        call.slot.step = { at: call.at, await: method, params: maskedParams(method, params), ...answer }
       } else if (isObject(frame.result)) {
         for (const found of OWN_ANSWERS[method]?.(header, frame.result, params) ?? NOTHING) add({ at: at(), ...found })
       }

@@ -5,10 +5,11 @@
 import { canonicalBotId, type BotCreated, type BotDetails, type BotFacts, type BotId } from '../domain/bots'
 import type { ContextBreakdown, ModelConfirm, ModelMenu } from '../domain/command'
 import type { PaneAsk } from '../domain/pane'
-import type { Admission, HelperUpdate, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
+import type { Admission, CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
+import type { CloseWhy } from '../domain/requests'
 import type {
-  Ask, Began, FileDiff, Generation, HelperEnd, HelperId, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, PromptId, SessionId,
-  SessionUsage, SettledTurn, SidebarRow, StatusAbout, ToolId, ToolResult, TurnId
+  Answer, Ask, Began, ConnectTarget, FileDiff, Generation, HelperEnd, HelperId, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, PromptId,
+  Question, RequestId, SessionId, SessionUsage, SettledTurn, SidebarRow, StatusAbout, ToolId, ToolResult, TurnId
 } from '../domain/session'
 import type { PathMatch } from '../domain/path'
 import type { RelayState } from '../domain/relay'
@@ -16,14 +17,16 @@ import type { SlashCatalog, SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
 import type {
   AgentPrintPayload, CanonicalBotDeliverResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalPendingPrompt,
-  CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, CommandDispatchResult, CommandsCatalogResult,
-  CompletionItem, CompletionItemsResult, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload,
-  MessageInterimPayload, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload, MoaProgressPayload, MoaReferencePayload, ModelOptionProvider,
-  ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PreviewClosePayload, PreviewOpenPayload,
+  CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
+  CommandDispatchResult, CommandsCatalogResult, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget,
+  ConnectionRequestPayload, ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload,
+  MessageDeltaPayload, MessageInterimPayload, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload, MoaProgressPayload, MoaReferencePayload,
+  ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PreviewClosePayload, PreviewOpenPayload,
   ProfilesConfigureResult, ProfilesCreateResult, ProfilesDescribeResult, ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane,
-  ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult, SessionStats,
-  SessionTitlePayload, SessionUsagePayload, StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload,
-  SubagentEventPayload, TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage
+  ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, RequestCancelPayload, SecretRequestParams, SessionContextBreakdownResult, SessionLiveInfo,
+  SessionMutateResult, SessionStats, SessionTitlePayload, SessionUsagePayload, StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow,
+  StreamDeltaPayload, SubagentEventPayload, SudoRequestParams, TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload,
+  ToolStartPayload, Usage, VaultCodeRequestParams, VaultSaveLoginRequestParams, VaultUnlockRequestParams
 } from './contract.generated'
 
 export type ParsedEvent =
@@ -382,6 +385,23 @@ export const SHOWN: { readonly [type: string]: Shown } = {
   'approval.settled': promptSettled,
   'clarify.settled': promptSettled,
   'approval.cancelled': payload => ({ type: 'prompts.cancelled', ids: fields<ApprovalCancelledPayload>(payload).strs('request_ids') as PromptId[] }),
+  /** A reason outside Hermes's own five reads as withdrawn (`RequestCancelReason`, tui_gateway/contracts/server_requests.py:366-378). */
+  'request.cancel': payload => {
+    const p = fields<RequestCancelPayload>(payload)
+    return { type: 'request.cancelled', id: p.str('id') as RequestId, why: CANCEL_WHY[p.str('reason')] ?? 'withdrawn' }
+  },
+  /** The card of `manage_connections`, opened on the turn that called it (gateway/local_desktop_ui.py:278). */
+  'connection.request': (payload, envelope) => ({ type: 'connect', card: connectCard(payload, envelope), settled: null }),
+  /**
+   * Each change of the card, with the whole card (gateway/local_desktop_ui.py:132-151). The frame
+   * with `settled` is its last. An operation of the account, not of a chat, is not this chat's card.
+   */
+  'connection.update': (payload, envelope) => {
+    const p = fields<ConnectionUpdatePayload>(payload)
+    if (fields<{ type: string }>(p.optObj('owner') ?? {}).optStr('type') !== 'session') return null
+    const settled = p.optBool('settled') === true ? SETTLED_BY[p.optStr('settled_by') ?? ''] ?? 'withdrawn' : null
+    return { type: 'connect', card: connectCard(payload, envelope), settled }
+  },
   'session.info': payload => {
     const p = fields<CanonicalSessionInfo>(payload)
     // Its execution_generation is how an attached viewer learns a generation a policy change moved (gateway/session_authority.py:484-495).
@@ -423,11 +443,11 @@ export const UNSHOWN: ReadonlySet<string> = new Set([
   /** Every canonical turn publishes it (`gateway/run_turn_progress.py:1092`); not in the generated contract. */
   'agent.step',
   'agent.terminal.output', 'background.complete', 'billing.step_up.verification', 'bot_relay.outbox.pending',
-  'browser.progress', 'btw.complete', 'connection.request', 'connection.update', 'cron.changed', 'display.install.done',
+  'browser.progress', 'btw.complete', 'cron.changed', 'display.install.done',
   'display.install.log', 'display.lease', 'display.status', 'free_tier.challenge', 'gateway.ready', 'groups.changed',
   'message.reaction', 'notice', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
   'pet.hatch.progress', 'platforms.changed', 'preview.restart.complete',
-  'preview.restart.progress', 'projects.changed', 'reaction', 'request.cancel',
+  'preview.restart.progress', 'projects.changed', 'reaction',
   'review.summary', 'session.control.update', 'session.reclaimed', 'session.resume_progress',
   'setup.ready', 'skills.changed', 'skin.changed', 'terminal.close', 'tip.show', 'tool.output_risk', 'voice.interrupted', 'voice.partial', 'voice.status', 'voice.transcript', 'wake.detected'
 ])
@@ -539,7 +559,10 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
       ...parseRows(reply.display_messages ?? []),
       older: first?.['archived_truncated'] === true ? { cursor: null } : null
     },
-    openRequests: (reply.open_requests ?? []).map(parseServerRequest)
+    openRequests: [
+      ...(reply.open_requests ?? []).map(parseServerRequest),
+      ...(isObject(reply.pending_connection) ? [parseServerRequest({ id: String(reply.pending_connection.op_id), method: CONNECT, params: { ...reply.pending_connection, session_id: reply.session_id } })] : [])
+    ]
   }
 }
 
@@ -949,10 +972,141 @@ export function parseTitled(reply: CanonicalListResult): SessionId | null {
   return isObject(row) ? titledId(row) : null
 }
 
-/** A server-to-client request frame, or an `open_requests` entry of a snapshot. Its params carry the session (`tui_gateway/server_requests.py:98,103`); an app-level one has `''`. */
+const CANCEL_WHY: { readonly [reason: string]: CloseWhy } = {
+  resolved: 'resolved', timeout: 'timeout', interrupted: 'interrupted', shutdown: 'withdrawn', session_closed: 'withdrawn'
+}
+
+/** `SettleReason` in Hermes's tools/connectors/contract.py. */
+const SETTLED_BY: { readonly [reason: string]: CloseWhy } = { all_resolved: 'done', continue: 'done', deadline: 'timeout', interrupt: 'interrupted' }
+
+const CONNECT = 'connection.request'
+
+type Card = (params: Obj) => Pick<CardRequest, 'ask' | 'waitS'>
+
+/**
+ * The requests Highwing has a card for, by method, each with how long Hermes waits for its answer.
+ * A method that is not here has no card: `parseServerRequest` calls it a bridge. `connection.request`
+ * is an event and the snapshot's `pending_connection`, never a request frame, and is answered by a
+ * call. It is here so one table says what Hermes can ask.
+ */
+export const REQUESTS: { readonly [method: string]: Card } = {
+  /** `SUDO_TIMEOUT_S`, gateway/session_sudo_prompt.py:19. The command is redacted by Hermes. */
+  sudo: params => ({ waitS: 120, ask: { kind: 'secret', for: { is: 'sudo', command: stripAnsi(fields<SudoRequestParams>(params).optStr('command') ?? '') } } }),
+  /** `SECRET_TIMEOUT_S`, gateway/session_secret_prompt.py:19 */
+  secret: params => {
+    const p = fields<SecretRequestParams>(params)
+    return { waitS: 120, ask: { kind: 'secret', for: { is: 'env', name: p.str('env_var'), prompt: stripAnsi(p.str('prompt')) } } }
+  },
+  /** `UNLOCK_TIMEOUT_S`, `SAVE_LOGIN_TIMEOUT_S` and `CODE_TIMEOUT_S`, gateway/session_vault_prompt.py:22-24 */
+  'vault.unlock_prompt': params => {
+    const p = fields<VaultUnlockRequestParams>(params)
+    return { waitS: 120, ask: { kind: 'secret', for: { is: 'vault', backend: p.str('backend'), name: p.str('display_name') } } }
+  },
+  'vault.save_login': params => {
+    const p = fields<VaultSaveLoginRequestParams>(params)
+    return { waitS: 180, ask: { kind: 'secret', for: { is: 'login', site: p.str('site'), origin: p.str('origin') } } }
+  },
+  'vault.code': params => {
+    const p = fields<VaultCodeRequestParams>(params)
+    return { waitS: 180, ask: { kind: 'secret', for: { is: 'code', site: p.optStr('site') || null, hint: p.optStr('hint') || null } } }
+  },
+  /**
+   * The clarify tool's batch (gateway/session_clarify_batch.py) and a plugin command's choice, which
+   * is one question `q0` (gateway/plugin_command_choice.py:71-78). Hermes waits its `clarify_timeout`
+   * config for both (tools/clarify_gateway.py:294-301), which no frame carries.
+   */
+  clarify: params => {
+    const p = fields<ClarifyRequestParams>(params)
+    const questions = (p.optList('questions') ?? []).map(questionOf)
+    if (questions.length === 0) throw new Unusable()
+    const locked = p.optObj('answers') ?? {}
+    const answers = Object.fromEntries(questions.flatMap(question => (question.id in locked ? [[question.id, answerOf(locked[question.id], question.multi)]] : [])))
+    return { waitS: null, ask: { kind: 'questions', questions, answers } }
+  },
+  /** `timeout_seconds` is the operation's whole wait, counted from when it opened (tools/connectors/operation.py:270-281). */
+  [CONNECT]: params => {
+    const p = fields<ConnectionRequestPayload & ConnectionUpdatePayload>(params)
+    const display = p.optObj('display')
+    return {
+      waitS: p.optNum('timeout_seconds'),
+      ask: {
+        kind: 'connect',
+        rev: p.int('seq'),
+        targets: (p.optList('targets') ?? []).flatMap(target => usable(() => targetOf(target)) ?? []),
+        suggested: display === null ? [] : fields<ConnectionDisplay>(display).strs('suggested')
+      }
+    }
+  }
+}
+
+function questionOf(value: unknown): Question {
+  const q = fields<ClarifyQuestion>(value)
+  return { id: q.str('qid'), text: stripAnsi(q.str('question')), choices: q.optList('choices')?.filter(isString) ?? [], multi: q.optBool('multi_select') ?? false }
+}
+
+/** A locked answer as Hermes holds it: null for skipped, else one string, which for several picks is a JSON array of labels (tools/clarify_tool.py:36-47). */
+function answerOf(raw: unknown, multi: boolean): Answer {
+  if (!isString(raw)) return null
+  if (!multi) return [raw]
+  try {
+    const picks: unknown = JSON.parse(raw)
+    return isStrings(picks) ? picks : [raw]
+  } catch {
+    return [raw]
+  }
+}
+
+const TARGET_KINDS: readonly string[] = ['connector', 'mcp', 'plugin', 'skill'] satisfies ConnectTarget['kind'][]
+const TARGET_ACTIONS: readonly string[] = ['authorize', 'connect', 'enable', 'install', 'reconnect'] satisfies ConnectTarget['action'][]
+/** `TargetState` in Hermes's tools/connectors/contract.py. */
+const TARGET_STATES: { readonly [state: string]: ConnectTarget['state'] } = {
+  pending: 'pending', initiated: 'started', connected: 'connected', skipped: 'skipped', failed: 'failed', expired: 'expired', not_connected: 'not-connected'
+}
+const WEB_LINK = /^https?:\/\//i
+
+function targetOf(value: unknown): ConnectTarget {
+  const t = fields<ConnectionOperationTarget>(value)
+  const kind = t.str('kind')
+  const action = t.str('action')
+  const state = TARGET_STATES[t.str('state')]
+  if (!TARGET_KINDS.includes(kind) || !TARGET_ACTIONS.includes(action) || state === undefined) throw new Unusable()
+  const url = t.optStr('connect_url')
+  return {
+    name: t.str('name'),
+    kind: kind as ConnectTarget['kind'],
+    action: action as ConnectTarget['action'],
+    state,
+    resolved: t.optBool('resolved') ?? false,
+    detail: t.optStr('detail') || null,
+    instructions: t.optStr('instructions') || null,
+    url: url !== null && WEB_LINK.test(url) ? url : null,
+    fields: (t.optList('required_env') ?? []).map(value => {
+      const field = fields<ConnectionTargetEnvField>(value)
+      return { name: field.str('name'), prompt: field.optStr('prompt') || null, required: field.optBool('required') ?? false, secret: field.optBool('secret') ?? false, initial: field.optStr('default') ?? '' }
+    })
+  }
+}
+
+function connectCard(payload: Obj, envelope: Obj): CardRequest {
+  const id = fields<ConnectionRequestPayload>(payload).str('op_id')
+  const request = parseServerRequest({ id, method: CONNECT, params: { ...payload, session_id: envelope.session_id } })
+  if (request.kind !== 'card') throw new Unusable()
+  return request
+}
+
+/**
+ * A server-to-client request frame, an `open_requests` entry of a snapshot, or a connector card. Its
+ * params carry the session (`gateway/session_server_requests.py:171`).
+ */
 export function parseServerRequest(request: { readonly id: string; readonly method: string; readonly params: unknown }): ServerRequest {
-  const sessionId = isObject(request.params) ? request.params.session_id : undefined
-  return { requestId: request.id, method: request.method, sessionId: typeof sessionId === 'string' && sessionId !== '' ? sessionId as SessionId : null }
+  const { method, params } = request
+  const requestId = request.id as RequestId
+  const named = isObject(params) ? params.session_id : undefined
+  const sessionId = typeof named === 'string' && named !== '' ? named as SessionId : null
+  const card = Object.hasOwn(REQUESTS, method) ? REQUESTS[method] : undefined
+  if (card === undefined) return { kind: 'bridge', requestId, sessionId, method }
+  const parsed = isObject(params) ? usable(() => card(params)) : null
+  return sessionId === null || parsed === null ? { kind: 'unusable', requestId, method } : { kind: 'card', requestId, sessionId, method, ...parsed }
 }
 
 function diffLineKind(line: string): FileDiff['lines'][number]['t'] | null {

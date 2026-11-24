@@ -1,7 +1,9 @@
 import {
   targetOf,
-  type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type ChatRef, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply,
-  type RelayDesk, type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type Unstarted
+  type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type ChatRef, type CheckFailure,
+  type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptId,
+  type PromptReply, type RelayDesk, type RequestId, type RequestReply, type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar,
+  type SlashCatalog, type Target, type Unstarted
 } from '@highwing/hermes/domain'
 
 /** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
@@ -246,6 +248,29 @@ const attachmentOf = (raw: unknown): Attachment | null =>
 const replyOf = (raw: unknown): PromptReply | null =>
   isObject(raw) && (raw.kind === 'choice' || raw.kind === 'text') && text(raw.value) ? { kind: raw.kind, value: raw.value } : null
 
+const texts = (value: unknown): value is string[] => Array.isArray(value) && value.every(text)
+const valuesOf = (raw: unknown): { readonly [field: string]: string } | null => (isObject(raw) && Object.values(raw).every(text) ? raw as { readonly [field: string]: string } : null)
+
+function requestReplyOf(raw: unknown): RequestReply | null {
+  if (!isObject(raw)) return null
+  switch (raw.kind) {
+    case 'secret':
+      if (!text(raw.value) || !(raw.identifier === undefined || text(raw.identifier))) return null
+      return { kind: 'secret', value: raw.value, ...(raw.identifier === undefined ? {} : { identifier: raw.identifier }) }
+    case 'lock':
+      return filled(raw.question) && (raw.answer === null || texts(raw.answer)) ? { kind: 'lock', question: raw.question, answer: raw.answer } : null
+    case 'skip':
+      return { kind: 'skip' }
+    case 'connect': {
+      const values = raw.values === undefined ? undefined : valuesOf(raw.values)
+      if (!filled(raw.target) || !(raw.as === 'approved' || raw.as === 'skipped') || values === null) return null
+      return { kind: 'connect', target: raw.target, as: raw.as, ...(values === undefined ? {} : { values }) }
+    }
+    default:
+      return null
+  }
+}
+
 type Validators = { readonly [K in WindowCommand['do']]: (raw: Obj) => Extract<WindowCommand, { do: K }> | null }
 
 export const validators: Validators = {
@@ -285,8 +310,13 @@ export const validators: Validators = {
   },
   answer: raw => {
     const sessionId = sessionIdOf(raw)
+    if (sessionId === null) return null
+    if (filled(raw.requestId)) {
+      const reply = requestReplyOf(raw.reply)
+      return reply && { do: 'answer', sessionId, requestId: raw.requestId as RequestId, reply }
+    }
     const reply = replyOf(raw.reply)
-    return sessionId && filled(raw.promptId) && reply ? { do: 'answer', sessionId, promptId: raw.promptId as Extract<Command, { do: 'answer' }>['promptId'], reply } : null
+    return filled(raw.promptId) && reply ? { do: 'answer', sessionId, promptId: raw.promptId as PromptId, reply } : null
   },
   discard: raw => {
     const sessionId = sessionIdOf(raw)

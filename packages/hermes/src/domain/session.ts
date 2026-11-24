@@ -17,6 +17,9 @@ export type ToolId = Brand<string, 'ToolId'>
 export type PromptId = Brand<string, 'PromptId'>
 /** Hermes's `subagent_id`: one helper the agent handed part of the errand to. */
 export type HelperId = Brand<string, 'HelperId'>
+
+/** A request Hermes holds open on the socket. For a connector card it is the operation's id. */
+export type RequestId = Brand<string, 'RequestId'>
 /** Idempotency key of one user message. Minted once when the user presses Send, reused on every retry. */
 export type InputId = Brand<string, 'InputId'>
 /** Idempotency key of one branch. Minted by the window for a message and reused on every retry until Hermes answers. It is the `request_id` Hermes keys the branch's receipt on. */
@@ -81,6 +84,13 @@ export interface SessionContent {
    * is `interlude`. Live only: a rebuild drops them.
    */
   readonly interlude: readonly Item<'settled'>[]
+  /**
+   * What Hermes waits on outside the turn, oldest first: a password, a secret, a batch of questions,
+   * a plugin command's choice, a connector card. A request lives as long as Hermes holds it open, so a
+   * turn that settles leaves it here, and one can wait while no turn runs. A closed one leaves a
+   * `closed` notice where it closed.
+   */
+  readonly requests: readonly HermesRequest[]
   /** Messages the user sent that no turn has picked up yet. */
   readonly outbox: readonly OutboxEntry[]
   readonly model: SessionModel
@@ -330,7 +340,7 @@ export interface PromptItem<S extends 'open' | 'settled' = 'open'> {
    */
   readonly deadline: S extends 'open' ? number | null : null
 }
-/** New kinds (sudo, secret) are added here and nowhere else in the domain. */
+/** A question the turn asks, fenced by its generation. What Hermes asks outside the turn is a `RequestAsk`. */
 export type Ask =
   | { readonly kind: 'approval'; readonly command: string; readonly reason: string | null; readonly choices: readonly string[] }
   | { readonly kind: 'clarify'; readonly question: string; readonly choices: readonly string[]; readonly multi: boolean }
@@ -345,10 +355,109 @@ export type NoticeItem =
   /** Hermes's own words. */
   | { readonly kind: 'notice'; readonly what: 'said'; readonly tone: 'error' | 'info'; readonly text: string }
   /**
-   * Hermes asked this client for something this build cannot show (a sudo password, a secret, a
-   * setup card). The request was refused at once so the agent does not wait. Keyed by `requestId`.
+   * Hermes asked the window for something only Hermes Desktop has (its preview, its terminal pane,
+   * a setup card). A window was showing the chat, so the request was refused at once and the agent
+   * does not wait. Keyed by `requestId`.
    */
   | { readonly kind: 'notice'; readonly what: 'declined'; readonly requestId: string; readonly method: string }
+  /** Where a request closed, and how. Keyed by `requestId`. */
+  | { readonly kind: 'notice'; readonly what: 'closed'; readonly requestId: RequestId; readonly asked: Asked; readonly end: RequestEnd }
+
+export interface HermesRequest {
+  readonly id: RequestId
+  readonly ask: RequestAsk
+  readonly state: RequestState
+  /**
+   * When Hermes stops waiting, on this client's clock: the moment the request came off the live
+   * socket plus Hermes's own wait for it. null when Hermes's config sets the wait (a batch), and for
+   * a request first heard through a snapshot or during an attach.
+   */
+  readonly deadline: number | null
+}
+
+export type RequestAsk =
+  /** One value typed into a masked field. It goes to Hermes once and is kept nowhere in Highwing. */
+  | { readonly kind: 'secret'; readonly for: SecretFor }
+  /**
+   * One to five questions asked together, or a plugin command's one choice. `answers` holds what
+   * Hermes has locked so far, by question id. An answer can be changed until every question is
+   * locked. The last lock submits the batch.
+   */
+  | { readonly kind: 'questions'; readonly questions: readonly Question[]; readonly answers: { readonly [questionId: string]: Answer } }
+  /**
+   * Connectors, MCP servers, plugins or skills to sign in to, install or enable while a tool waits.
+   * Hermes sends the whole card with every change. `rev` orders those: an older one changes nothing.
+   */
+  | { readonly kind: 'connect'; readonly rev: number; readonly targets: readonly ConnectTarget[]; readonly suggested: readonly string[] }
+
+export type SecretFor =
+  | { readonly is: 'sudo'; readonly command: string }
+  /** Saved to the bot's `.env` on the machine Hermes runs on. The model never reads it. */
+  | { readonly is: 'env'; readonly name: string; readonly prompt: string }
+  | { readonly is: 'vault'; readonly backend: string; readonly name: string }
+  /** A login to save for a site. Its reply carries the `identifier` too. */
+  | { readonly is: 'login'; readonly site: string; readonly origin: string }
+  /** A one-time code the user reads from a device. */
+  | { readonly is: 'code'; readonly site: string | null; readonly hint: string | null }
+
+export interface Question {
+  readonly id: string
+  readonly text: string
+  /** Empty: a typed answer only. */
+  readonly choices: readonly string[]
+  readonly multi: boolean
+}
+/** The picked labels, or one typed line. null: skipped. */
+export type Answer = readonly string[] | null
+
+export interface ConnectTarget {
+  readonly name: string
+  readonly kind: 'connector' | 'mcp' | 'plugin' | 'skill'
+  readonly action: 'authorize' | 'connect' | 'enable' | 'install' | 'reconnect'
+  readonly state: 'pending' | 'started' | 'connected' | 'skipped' | 'failed' | 'expired' | 'not-connected'
+  /** Nothing more is needed from the user for it. */
+  readonly resolved: boolean
+  readonly detail: string | null
+  readonly instructions: string | null
+  /** The page to sign in on. Kept only when it is an http or https link. */
+  readonly url: string | null
+  /** Values Hermes needs typed in. A `secret` one is sent once and kept nowhere in Highwing. */
+  readonly fields: readonly { readonly name: string; readonly prompt: string | null; readonly required: boolean; readonly secret: boolean; readonly initial: string }[]
+}
+
+/** No state holds a typed value: `sending` keeps only what `RecordedReply` can say. */
+export type RequestState =
+  | { readonly s: 'waiting'; readonly error: string | null } // error: the last answer did not reach Hermes
+  /** An answer is on its way. A result frame gets no reply, so this lasts until Hermes closes the request. */
+  | { readonly s: 'sending'; readonly reply: RecordedReply }
+
+/** What a window answers a request with. The `answer` command refuses a kind the request does not take, and sends nothing. */
+export type RequestReply =
+  /** For a `secret` ask. `identifier` only for a login. */
+  | { readonly kind: 'secret'; readonly value: string; readonly identifier?: string }
+  /** One answer of a `questions` ask. */
+  | { readonly kind: 'lock'; readonly question: string; readonly answer: Answer }
+  /** A secret: no value, which Hermes reads as "no". Questions: stop here, keeping the locked answers. A connector card: continue with what is connected. */
+  | { readonly kind: 'skip' }
+  /** One target of a `connect` ask. `values` are the fields it asked for, by name. */
+  | { readonly kind: 'connect'; readonly target: string; readonly as: 'approved' | 'skipped'; readonly values?: { readonly [field: string]: string } }
+
+/**
+ * What a session may remember of a reply to a request. It has no member that carries a typed value,
+ * so the reducer cannot store a secret and no push can carry one.
+ */
+export type RecordedReply = Exclude<RequestReply, { kind: 'secret' | 'connect' }> | { readonly kind: 'withheld' }
+
+/** What a closed request had asked for. */
+export type Asked = SecretFor['is'] | Exclude<RequestAsk['kind'], 'secret'>
+export type RequestEnd =
+  | 'answered' //    this client answered it
+  | 'skipped' //     this client skipped it
+  | 'elsewhere' //   another client settled it, or it was gone when this one attached again
+  | 'done' //        a connector card settled: every target resolved, or someone continued
+  | 'timeout' //     nobody answered within Hermes's wait
+  | 'interrupted' // the turn was stopped
+  | 'withdrawn' //   Hermes took it back for another reason
 
 /**
  * One round of mixture-of-agents: several reference models answer, then one model combines their

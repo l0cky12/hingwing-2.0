@@ -2,7 +2,7 @@ import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId } from './bots'
 import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
-import type { AttachmentId, BranchId, ContextFill, InputId, ModelOption, ModelRef, PromptId, PromptReply, SessionId } from './session'
+import type { AttachmentId, BranchId, ContextFill, InputId, ModelOption, ModelRef, PromptId, PromptReply, RequestId, RequestReply, SessionId } from './session'
 
 export type Command =
   /**
@@ -37,7 +37,9 @@ export type Command =
    */
   | { readonly do: 'versions'; readonly sessionId: SessionId }
   | { readonly do: 'stop'; readonly sessionId: SessionId }
+  /** Answers a question of the turn, by `promptId`, or something Hermes asks outside it, by `requestId`. */
   | { readonly do: 'answer'; readonly sessionId: SessionId; readonly promptId: PromptId; readonly reply: PromptReply }
+  | { readonly do: 'answer'; readonly sessionId: SessionId; readonly requestId: RequestId; readonly reply: RequestReply }
   | { readonly do: 'discard'; readonly sessionId: SessionId; readonly inputId: InputId }
   | { readonly do: 'rename'; readonly sessionId: SessionId; readonly title: string }
   | { readonly do: 'archive'; readonly sessionId: SessionId; readonly archived: boolean }

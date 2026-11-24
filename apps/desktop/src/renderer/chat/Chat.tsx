@@ -173,7 +173,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const onFindClosed = useCallback(() => composer.current?.focus(), [])
 
   const live = session?.sync.state === 'live'
-  const idle = session !== undefined && activityOf(session).kind === 'idle'
+  const idle = session?.run.state === 'idle'
   const waiting = view !== null && view.pending.some(message => message.status !== 'failed')
   const [held, setEditing] = useState<(Omit<Editing, 'later'> & { readonly id: SessionId | null }) | null>(null)
   const editedAt = held === null || held.id !== id || view === null ? -1 : view.turns.findIndex(turn => turn.rowId === held.rowId)
@@ -274,7 +274,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         seed={chat.kind === 'branch' ? chat.text : ''}
         canSend={id === null || live}
         canAttach={online}
-        showStop={session !== undefined && activityOf(session).kind !== 'idle'}
+        showStop={session?.run.state === 'running'}
         onSend={onSend}
         editing={editing}
         onCancelEdit={() => setEditing(null)}

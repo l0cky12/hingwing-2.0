@@ -130,17 +130,27 @@ export type FixtureStep =
    * (`input_id`, `request_id`); it does check that the key set matches what the method accepts.
    */
   | { readonly at: number; readonly await: string; readonly params: unknown; readonly reply?: unknown; readonly error?: { readonly code: number; readonly message: string; readonly data?: unknown } }
+  /**
+   * The story waits here until an attached socket answers the server request whose id is `answer`:
+   * with `result`, or with `error` when it declines. A recorded `value` of `MASKED` stands for
+   * whatever was typed, and matches any value that is not empty.
+   */
+  | { readonly at: number; readonly answer: string; readonly result: unknown }
+  | { readonly at: number; readonly answer: string; readonly error: { readonly code: number; readonly message: string } }
   /** From here on the gateway's stored rows for the session are these. A resume that asks for history gets them. */
   | { readonly at: number; readonly stored: readonly unknown[] }
   /** The gateway closes the socket. The story continues on the client's next dial. */
   | { readonly at: number; readonly drop: number }
+
+/** What a recording keeps in place of a typed secret. */
+export const MASKED = '•••'
 
 type Json = { readonly [key: string]: unknown }
 
 const isObject = (value: unknown): value is Json =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
-const STEP_KINDS = ['push', 'await', 'stored', 'drop'] as const
+const STEP_KINDS = ['push', 'await', 'answer', 'stored', 'drop'] as const
 
 function parseStep(value: unknown, previousAt: number): FixtureStep | string {
   if (!isObject(value)) return 'a step must be an object'
@@ -152,7 +162,7 @@ function parseStep(value: unknown, previousAt: number): FixtureStep | string {
   const [kind] = kinds
   if (kind === undefined || kinds.length > 1) return `a step needs exactly one of ${STEP_KINDS.join(', ')}`
   const allowed: Readonly<Record<typeof kind, readonly string[]>> = {
-    push: ['at', 'push'], await: ['at', 'await', 'params', 'reply', 'error'], stored: ['at', 'stored'], drop: ['at', 'drop']
+    push: ['at', 'push'], await: ['at', 'await', 'params', 'reply', 'error'], answer: ['at', 'answer', 'result', 'error'], stored: ['at', 'stored'], drop: ['at', 'drop']
   }
   const extra = Object.keys(value).filter(key => !allowed[kind].includes(key))
   if (extra.length > 0) return `a ${kind} step has unknown keys: ${extra.join(', ')}`
@@ -174,6 +184,14 @@ function parseStep(value: unknown, previousAt: number): FixtureStep | string {
         return '"error" must have a numeric code and a message'
       }
       return { at, await: method, params, error: { code: error.code, message: error.message, ...('data' in error ? { data: error.data } : {}) } }
+    }
+    case 'answer': {
+      const { answer, error } = value
+      if (typeof answer !== 'string' || answer === '') return '"answer" must be the id of a server request'
+      if ('result' in value === 'error' in value) return 'an answer step has a result or an error, not both and not neither'
+      if (!('error' in value)) return { at, answer, result: value.result }
+      if (!isObject(error) || typeof error.code !== 'number' || typeof error.message !== 'string') return '"error" must have a numeric code and a message'
+      return { at, answer, error: { code: error.code, message: error.message } }
     }
     case 'stored':
       return Array.isArray(value.stored) ? { at, stored: value.stored } : '"stored" must be an array of rows'

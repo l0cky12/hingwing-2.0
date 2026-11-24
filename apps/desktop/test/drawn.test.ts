@@ -11,7 +11,7 @@ const turn = (id: string, items: readonly Item<'settled'>[], request: string | n
 })
 
 const session = (history: readonly SettledTurn[]): Session => ({
-  id: 's1' as Session['id'], title: '', cwd: null, history, earlier: 'none', run: { state: 'idle' }, interlude: [], outbox: [],
+  id: 's1' as Session['id'], title: '', cwd: null, history, earlier: 'none', run: { state: 'idle' }, interlude: [], requests: [], outbox: [],
   model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, tuning: { reasoning: null }, sync: { state: 'live' }
 })
 
