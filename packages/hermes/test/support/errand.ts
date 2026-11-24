@@ -16,6 +16,10 @@ export const NO_HOME_CHAT: Fixture = { ...WITH_BOTS, header: { ...WITH_BOTS.head
 export const RESEARCH_CHAT = 'local-0001' as typeof SESSION
 export const RESEARCH_SAID = "In Let's talk about QAing your"
 
+const { chats: SEEDS, ...SEEDED_PROFILES } = JSON.parse(readFileSync(fileURLToPath(new URL('../../../../fixtures/profiles/chats.json', import.meta.url)), 'utf8')) as { chats: NonNullable<Fixture['header']['chats']> }
+export const WITH_CHATS: Fixture = { ...ERRAND, header: { ...ERRAND.header, profiles: SEEDED_PROFILES, chats: SEEDS } }
+export const [REMINDER, INVOICES, DOWNLOADS] = ['local-0101', 'local-0102', 'local-0103'] as (typeof SESSION)[] as [typeof SESSION, typeof SESSION, typeof SESSION]
+
 export const stepOf = (method: string) => ERRAND.steps.findIndex(step => 'await' in step && step.await === method)
 export const paramsOf = (method: string) => (ERRAND.steps[stepOf(method)] as Extract<FixtureStep, { await: string }>).params as Record<string, unknown>
 

@@ -1,0 +1,252 @@
+{
+  "profiles": [
+    {
+      "name": "default",
+      "path": "/tmp/hermes-proto-home",
+      "is_default": true,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Emu",
+          "color": "#f5f5f4",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "dr-eggbot",
+      "path": "/tmp/hermes-proto-home/profiles/dr-eggbot",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0000",
+        "resolved_id": "local-0000",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "the SOUL.md is the same thi",
+        "started_at": 1795164600,
+        "last_active": 1795251000,
+        "message_count": 12
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "dr eggbot",
+          "sectionId": "sec-mh2k9x1a-4f8qz",
+          "sectionName": "New section",
+          "color": "#f43f5e",
+          "shape": "blobatar::organic",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "research",
+      "path": "/tmp/hermes-proto-home/profiles/research",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Research",
+          "color": "#ef4444",
+          "shape": "blobatar::cloud",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "timothy",
+      "path": "/tmp/hermes-proto-home/profiles/timothy",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0002",
+        "resolved_id": "local-0002",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "Should I start building Launch",
+        "started_at": 1795163400,
+        "last_active": 1795249800,
+        "message_count": 12
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Timothy · CEO",
+          "color": "#8b5cf6",
+          "shape": "blobatar::sun",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "hermes-dev",
+      "path": "/tmp/hermes-proto-home/profiles/hermes-dev",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": {
+        "id": "local-0003",
+        "resolved_id": "local-0003",
+        "title": "Use cases",
+        "preview": "Use case 6 is the video's \"aut",
+        "started_at": 1795162800,
+        "last_active": 1795249200,
+        "message_count": 12
+      },
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Hermes",
+          "color": "#f97316",
+          "shape": "blobatar::boxy",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "highwing",
+      "path": "/tmp/hermes-proto-home/profiles/highwing",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0004",
+        "resolved_id": "local-0004",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "The step 1 plan is ready in the",
+        "started_at": 1795162200,
+        "last_active": 1795248600,
+        "message_count": 12
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "highwing",
+          "color": "#22c55e",
+          "shape": "blobatar::hexagon",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    }
+  ],
+  "bot_mode_protocol": true,
+  "install_id": "fixture",
+  "chats": {
+    "research": [
+      {
+        "id": "local-0101",
+        "title": "Send invoice reminder",
+        "last_active": 1795250000,
+        "rows": [
+          {
+            "role": "user",
+            "text": "Email Acme a reminder about invoice 1042."
+          },
+          {
+            "role": "assistant",
+            "text": "I drafted the reminder to Acme and need your OK to send it."
+          }
+        ],
+        "asking": {
+          "command": "send-mail --to billing@acme.example --subject \"Invoice 1042\"",
+          "description": "send an email"
+        }
+      },
+      {
+        "id": "local-0102",
+        "title": "Sort the invoices",
+        "last_active": 1795249000,
+        "rows": [
+          {
+            "role": "user",
+            "text": "Sort the invoices in the inbox folder by due date."
+          },
+          {
+            "role": "assistant",
+            "text": "Sorted fourteen invoices by due date; the oldest is due Friday."
+          }
+        ]
+      },
+      {
+        "id": "local-0103",
+        "title": "Clean up Downloads",
+        "last_active": 1795076200,
+        "rows": [
+          {
+            "role": "user",
+            "text": "Clean up my Downloads folder."
+          },
+          {
+            "role": "assistant",
+            "text": "Moved forty installers to the trash and kept your photos."
+          }
+        ]
+      }
+    ]
+  }
+}

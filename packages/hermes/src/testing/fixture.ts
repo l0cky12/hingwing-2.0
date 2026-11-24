@@ -51,8 +51,23 @@ export interface Fixture {
     readonly homeBotChat?: boolean
     /** Bytes the app's image loader answers with in place of the network and the disk, as base64 under the web URL or absolute path asked for. A key not here is missing. */
     readonly media?: Readonly<Record<string, string>>
+    /** profile -> the chats it has beside its Bot Chat, before the story starts. Not for the home profile, whose list is `list`. */
+    readonly chats?: { readonly [profile: string]: readonly ChatSeed[] }
   }
   readonly steps: readonly FixtureStep[]
+}
+
+/** A chat a bot has before the story starts. */
+export interface ChatSeed {
+  readonly id: string
+  readonly title: string
+  /** Seconds since the epoch, as Hermes stamps a row. Every row of the chat has it. */
+  readonly last_active: number
+  readonly rows: readonly { readonly role: 'user' | 'assistant'; readonly text: string }[]
+  /** Out of `session.list` unless it asks for hidden chats, as a Bot Chat is. */
+  readonly hidden?: boolean
+  /** The approval the chat's running turn waits on. */
+  readonly asking?: { readonly command: string; readonly description: string }
 }
 
 export type FixtureStep =
@@ -116,6 +131,12 @@ function parseStep(value: unknown, previousAt: number): FixtureStep | string {
   }
 }
 
+const isSeed = (value: unknown): value is ChatSeed =>
+  isObject(value) && typeof value.id === 'string' && value.id !== '' && typeof value.title === 'string' && typeof value.last_active === 'number'
+  && Array.isArray(value.rows) && value.rows.every(row => isObject(row) && (row.role === 'user' || row.role === 'assistant') && typeof row.text === 'string')
+  && (value.hidden === undefined || typeof value.hidden === 'boolean')
+  && (value.asking === undefined || (isObject(value.asking) && typeof value.asking.command === 'string' && typeof value.asking.description === 'string'))
+
 function parseHeader(value: unknown): Fixture['header'] | string {
   if (!isObject(value)) return 'the header must be an object'
   const { fixture, hermes, source, sessionId, stored } = value
@@ -141,6 +162,10 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
   const { media } = value
   if (media !== undefined && !(isObject(media) && Object.values(media).every(bytes => typeof bytes === 'string'))) return '"media" must map a url or path to base64 bytes'
+  const { chats } = value
+  if (chats !== undefined && !(isObject(chats) && Object.values(chats).every(seeds => Array.isArray(seeds) && seeds.every(isSeed)))) {
+    return '"chats" must map a profile to its chats, each with id, title, last_active and rows'
+  }
   return {
     fixture, hermes, source, sessionId: sessionId as SessionId, describe: value.describe, list: value.list, stored,
     ...('catalog' in value ? { catalog: value.catalog } : {}),
@@ -148,7 +173,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(usage === undefined ? {} : { usage }),
     ...(profiles === undefined ? {} : { profiles }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
-    ...(media === undefined ? {} : { media: media as Record<string, string> })
+    ...(media === undefined ? {} : { media: media as Record<string, string> }),
+    ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } })
   }
 }
 
