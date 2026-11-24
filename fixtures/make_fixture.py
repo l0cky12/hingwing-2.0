@@ -22,6 +22,11 @@ The stories are in ``STORIES``:
   quoted fields hold a comma and a newline, and a ``.pdf`` that is plain text, all into the work dir's
   ``reports`` folder. Two more steps edit the header of a 20,000-row CSV and of a CSV over the preview's
   10 MB limit, which the story puts in the work dir before the turn. It asks for no approval.
+- ``says`` writes fixtures/says.jsonl: a turn in which Hermes says everything a local viewer hears
+  beside the reply (reasoning, a MoA round, a tool's image, compaction lines, a printed line, a
+  notice shown and cleared), asks to approve an ``rm -rf`` that carries ``timeout_s``, and then, with
+  no turn running, says a ``/goal`` verdict. The story turns the chat's reasoning display on first
+  and the header keeps the ``config.get`` answer for it as ``controls``.
 
 The script runs the canonical gateway in-process, the way Hermes's own
 tests/gateway/test_authority_complete_persisted_turn.py does: a real ``SessionAuthority`` over a
@@ -61,8 +66,25 @@ Scripted, because no AI provider exists on this machine:
 - ids. ``uuid.uuid4`` is seeded per story, so admission, prompt, turn and epoch ids repeat across
   runs and differ between fixtures.
 
+Real in ``says``, from Hermes's own emitters on the same turn:
+- the chat's reasoning display, set by a real ``config.set show_reasoning`` and read back by
+  ``config.get`` (``gateway/session_busy_controls.py``) before the recording starts;
+- ``reasoning.delta`` and ``agent.print`` through the sinks ``local_viewer_events.wire`` installs on
+  the agent (``reasoning_callback``, ``_print_fn``), as ``TurnRunner`` installs them for a Desktop turn;
+- ``reasoning.available`` and the ``moa.*`` events through ``local_viewer_events.publish_progress``,
+  the agent's progress callback, with the kwargs ``agent/moa_loop.py``'s relay passes;
+- ``status.update`` for a compaction through ``TurnRunner._status_callback_sync`` with the agent's own
+  ``COMPACTION_STATUS`` and ``COMPACTION_DONE_STATUS``, and ``notification.show`` / ``.clear``
+  through ``_local_notice_callback_sync`` / ``_local_notice_clear_callback_sync`` with an ``AgentNotice``;
+- ``tool.complete.image_path``, read by ``complete_fields`` from a real PNG in /tmp/hermes-proto-work;
+- the goal verdict while idle, published by ``GatewayRunner._send_goal_status_notice`` for a local
+  source after the turn has ended.
+
+Scripted in ``says`` as well: the reasoning text, the MoA reference answers, and the result of
+``vision_analyze``, which needs a vision provider. A step's ``result`` replaces the tool run.
+
 Not emitted, because only a provider produces them: ``thinking.delta`` (spinner text while a request
-is in flight), ``reasoning.delta`` and ``session.usage`` (token counts).
+is in flight) and ``session.usage`` (token counts).
 """
 import asyncio
 import base64
@@ -107,6 +129,10 @@ class Story:
     approves: bool = True
     # True when the story's turn takes a screenshot, so the script registers the scripted tool.
     screenshots: bool = False
+    # True: the chat shows reasoning and the turn runs with the sinks ``local_viewer_events.wire`` installs.
+    viewer: bool = False
+    # Run on the gateway loop once the turn has ended, while no turn runs: what Hermes says between turns.
+    after: object = None
 
 
 NOTES = "# Todo\n\n- [ ] sketch the chat view\n- [ ] wire the gateway socket\n- [ ] review screenshots\n"
@@ -323,8 +349,75 @@ PREVIEW_FILES = Story(
     files={"reports/big.csv": rows(20000), "reports/huge.csv": rows(200000, 40)},
     doomed=None, answer=None, approves=False)
 
+
+def tiny_png() -> bytes:
+    """A 2x2 PNG, so ``agent.terminal_image.local_image_path`` finds a real image file."""
+    import struct
+    import zlib
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    rows = b"".join(b"\x00" + b"\x3c\x8c\x5a" * 2 for _ in range(2))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+
+
+def moa_round(turn, agent):
+    """One MoA fan-out as ``agent/moa_loop.py`` relays it to the agent's progress callback."""
+    progress = local_viewer_events.publish_progress
+    for done in (1, 2):
+        CLOCK.tick(150)
+        progress(turn, "moa.progress", "advisor", None, {"moa_refs_done": done, "moa_refs_total": 2})
+    for index, (label, text) in enumerate([("fast-small", "It is a bar chart of three weekly totals."),
+                                           ("careful-large", "Three bars: 4, 7 and 5. The second week peaks.")], start=1):
+        progress(turn, "moa.reference", label, text, {"moa_index": index, "moa_count": 2})
+    progress(turn, "moa.phase", "judge-large", None, {"moa_phase": "aggregator", "moa_refs_done": 2, "moa_refs_total": 2})
+    progress(turn, "moa.aggregating", "judge-large", None, {"moa_ref_count": 2})
+
+
+def compaction_and_notice(turn, agent):
+    """A compaction's progress and end, a printed line and a sticky notice."""
+    from agent.conversation_compression import COMPACTION_DONE_STATUS, COMPACTION_STATUS
+    from agent.credits_tracker import AgentNotice
+    turn._status_callback_sync("lifecycle", COMPACTION_STATUS)
+    CLOCK.tick(900)
+    turn._status_callback_sync("compacted", COMPACTION_DONE_STATUS)
+    agent._print_fn("Subagent finished: 3 files checked.")
+    turn._local_notice_callback_sync(AgentNotice(text="Credits are running low.", level="warn", kind="sticky",
+                                                 key="credits.low", id="credits.low"))
+
+
+def clear_notice(turn, agent):
+    turn._local_notice_clear_callback_sync("credits.low")
+
+
+async def goal_verdict(runner, live):
+    from gateway.run_goals import GatewayGoalsMixin
+    await GatewayGoalsMixin._send_goal_status_notice(
+        runner, live.source, "✓ Goal achieved: the chart was read and the scratch folder is gone.")
+
+
+SAYS = Story(
+    request="In /tmp/hermes-proto-work: tell me what chart.png shows, then delete the scratch folder.",
+    steps=[
+        {"hermes": [moa_round],
+         "reasoning": ("stream", ["The user wants the chart read first, ", "then the scratch folder removed. ",
+                                  "The reference models have read it."]),
+         "say": "The models agree it is a bar chart. Looking at it myself.",
+         "call": ("vision_analyze", {"image_url": f"{WORK}/chart.png", "question": "What does this chart show?"}),
+         "result": json.dumps({"success": True, "analysis": "A bar chart of three weekly totals: 4, 7 and 5."}),
+         "ms": 420},
+        {"hermes": [compaction_and_notice], "reasoning": ("whole", ["The chart is read. Only the scratch folder is left."]),
+         "say": "It shows three weekly totals. Now removing the scratch folder.",
+         "call": ("terminal", {"command": f"rm -rf {WORK}/scratch"}), "ms": 95},
+        {"hermes": [clear_notice], "say": "Done. The chart shows weekly totals of 4, 7 and 5, and the scratch folder is gone.",
+         "call": None},
+    ],
+    out="says.jsonl", seed=20261124, files={"chart.png": tiny_png(), "scratch/old.txt": "tmp\n"},
+    doomed=f"{WORK}/scratch", answer="once", viewer=True, after=goal_verdict)
+
 STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN, "images": IMAGES, "preview": PREVIEW,
-           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES}
+           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "says": SAYS}
 NAME = sys.argv[1] if len(sys.argv) > 1 else "errand"
 if NAME not in STORIES:
     sys.exit(f"no story named {NAME!r}; pick one of: {', '.join(STORIES)}")
@@ -348,9 +441,12 @@ OUT = Path(__file__).resolve().parent / TALE.out
 
 for path in (WORK, HOME):
     shutil.rmtree(path, ignore_errors=True)
-for name, text in TALE.files.items():
+for name, content in TALE.files.items():
     Path(WORK, name).parent.mkdir(parents=True, exist_ok=True)
-    Path(WORK, name).write_text(text)
+    if isinstance(content, bytes):
+        Path(WORK, name).write_bytes(content)
+    else:
+        Path(WORK, name).write_text(content)
 os.makedirs(HOME)
 # After the bootstrap: pointed at a new home first, it would prepare a whole runtime there.
 os.environ["HERMES_HOME"] = HOME
@@ -539,12 +635,24 @@ def play_turn(turn, db, history, call_ids):
     key_token = set_current_session_key(session_key)
     register_gateway_notify(session_key, notify)
     window = local_desktop_ui.wire(turn, agent)
+    sinks = local_viewer_events.wire(turn, agent) if TALE.viewer else None
     needs_break = False
     streamed = False
     try:
         for iteration, step in enumerate(STORY, start=1):
             CLOCK.tick(step.get("pause", 0))
             turn._ctx._step_callback_sync(iteration, [])
+            for beat in step.get("hermes", []):
+                beat(turn, agent)
+            # What the provider reasoned for this response: streamed, or handed over whole by a provider that
+            # streams none (``agent/turn_response_intake.py``). The agent keeps it on the assistant message.
+            how, chunks = step.get("reasoning", ("stream", []))
+            if how == "whole":
+                local_viewer_events.publish_progress(turn, "reasoning.available", "_thinking", "".join(chunks), None)
+            for chunk in chunks if how == "stream" else []:
+                CLOCK.tick(20)
+                agent.reasoning_callback(chunk)
+            thought = {"reasoning": "".join(chunks)} if chunks else {}
             words = step["say"]() if callable(step["say"]) else step["say"]
             if words:
                 text = ("\n\n" + words) if needs_break else words
@@ -554,13 +662,13 @@ def play_turn(turn, db, history, call_ids):
                     turn._publish_execution("message.delta", {"text": text[i:i + 24]})
                 streamed = True
             if step["call"] is None:
-                messages.append({"role": "assistant", "content": words or ""})
+                messages.append({"role": "assistant", "content": words or "", **thought})
                 break
             name, args = step["call"]
             call_id = call_ids[iteration - 1]
             CLOCK.tick(60)
             turn._publish_execution("tool.generating", {"name": name})
-            messages.append({"role": "assistant", "content": words or "", "tool_calls": [
+            messages.append({"role": "assistant", "content": words or "", **thought, "tool_calls": [
                 {"id": call_id, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}]})
             agent._flush_messages_to_session_db(messages, history)
             # ``turn_tool_round.py``: the open text box closes before the tool lines.
@@ -568,14 +676,15 @@ def play_turn(turn, db, history, call_ids):
             turn.combined_tool_start_callback(call_id, name, args)
             if "stage" in step:
                 step["stage"]()
-            result = model_tools.handle_function_call(name, args, task_id=session_id, tool_call_id=call_id,
-                                                      session_id=session_id)
+            result = step["result"] if "result" in step else model_tools.handle_function_call(
+                name, args, task_id=session_id, tool_call_id=call_id, session_id=session_id)
             CLOCK.tick(step["ms"])
             turn.combined_tool_complete_callback(call_id, name, args, result)
             messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
             agent._flush_messages_to_session_db(messages, history)
             needs_break = streamed
     finally:
+        local_viewer_events.restore(agent, sinks)
         local_desktop_ui.release(window)
         unregister_gateway_notify(session_key)
         reset_current_session_key(key_token)
@@ -626,11 +735,15 @@ async def main():
         turn = TurnRunner.__new__(TurnRunner)
         turn._runner = runner
         turn._approval_owner = (authority, ref.session_id, row["generation"])
+        # The status fields are what ``_status_callback_sync`` and the notice sinks read; a local turn's
+        # status lines go to the event stream and never reach the adapter they check for.
         turn._ctx = SimpleNamespace(
             source=live.source, session_id=ref.session_id, session_key=live.route,
             _loop_for_step=asyncio.get_running_loop(), _run_still_current=lambda: True,
             _voice_ack_guild=[None], _native_slack_task_cards=False, progress_mode=None, agent_holder=[None],
-            _hooks_ref=SimpleNamespace(loaded_hooks=[]), progress_queue=None)
+            _hooks_ref=SimpleNamespace(loaded_hooks=[]), progress_queue=None,
+            mute_notification_reply=False, _status_adapter=SimpleNamespace(), user_config={},
+            run_generation=row["generation"], _status_chat_id=None, _status_thread_metadata=None, _cleanup_progress=False)
         turn._ctx._step_callback_sync = lambda iteration, prev: TurnRunner._step_callback_sync(turn, iteration, prev)
         result = await asyncio.to_thread(play_turn, turn, db, history, call_ids)
         authority.pending_results[row["admission_id"]] = {"result": result, "usage": {}}
@@ -648,6 +761,12 @@ async def main():
         at, mark = CLOCK.now(), len(recorder.steps)
         reply = await call(socket, method, params)
         recorder.steps.insert(mark, {"at": at, "await": method, "params": params, "reply": reply["result"]})
+
+    controls = {}
+    if TALE.viewer:
+        await call(socket, "config.set", {"session_id": session_id, "key": "show_reasoning", "value": "on"})
+        shown = (await call(socket, "config.get", {"session_id": session_id, "key": "show_reasoning"}))["result"]
+        controls[shown["key"]] = shown["value"]
 
     recorder.recording = True
     await story_call("prompt.submit", {"session_id": session_id, "text": REQUEST,
@@ -690,11 +809,14 @@ async def main():
         CLOCK.tick(1500)
         await story_call("approval.respond", {**answer_to, "choice": TALE.answer})
         await live.task
+        if TALE.after is not None:
+            CLOCK.tick(600)
+            await TALE.after(runner, live)
         pushes = await stop_recording()
         await record_stored()
 
     header = {"fixture": 1, "hermes": HERMES_VERSION, "source": "generated", "sessionId": session_id,
-              "describe": describe, "list": listing, "stored": created["messages"]}
+              "describe": describe, "list": listing, "stored": created["messages"], **({"controls": controls} if controls else {})}
     if TALE.screenshots:
         header["media"] = {path: base64.b64encode(data).decode() for path, data in
                            ((SHOT, Path(SHOT).read_bytes()), (CHART_URL, chart_png()))}
