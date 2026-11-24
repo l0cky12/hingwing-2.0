@@ -295,10 +295,10 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .request > .actions::before { content: ""; position: absolute; right: 100%; top: 0; bottom: 0; width: 9px; }
 .actions > .copy { position: static; }
 .request:hover > .actions > .copy, .request:has(:focus-visible) > .actions > .copy { opacity: 1; }
-.copy.edit { display: grid; place-items: center; padding: 1px 8px; }
-.copy.edit svg { height: 18px; }
-.copy.edit:disabled { opacity: 0; color: var(--graphite); }
-.request:hover > .actions > .copy.edit:disabled { opacity: .45; }
+.copy:is(.edit, .branch) { display: grid; place-items: center; padding: 1px 8px; }
+.copy:is(.edit, .branch) svg { height: 18px; }
+.copy:is(.edit, .branch):disabled { opacity: 0; color: var(--graphite); }
+.request:hover > .actions > .copy:is(.edit, .branch):disabled { opacity: .45; }
 .turn-actions { margin: 10px 0 0 var(--col); }
 .regenerate { padding: 2px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); color: var(--ink); font: 500 13px/1.5 var(--sans); }
 .regenerate:hover:not(:disabled) { background: var(--paper); }

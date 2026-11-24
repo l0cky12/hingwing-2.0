@@ -2,7 +2,7 @@ import type { CommandOutcome, SlashCatalog } from '@highwing/hermes/domain'
 import { useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { Avatar } from '../bots/Bots'
 import { useTopic } from '../store'
-import { draftSent, useDraft, writeDraft, type DraftSlot } from './drafts'
+import { draftSent, seedDraft, useDraft, writeDraft, type DraftSlot } from './drafts'
 import type { Editing } from './edit'
 import { RemoveDialog } from './RemoveDialog'
 import { mentionable, menuOf, picked, type Menu, type MenuItem } from './menu'
@@ -11,6 +11,8 @@ interface ComposerProps {
   readonly slot: DraftSlot
   readonly inputRef?: RefObject<HTMLTextAreaElement | null>
   readonly autoFocus?: boolean
+  /** What the box starts with. Read once, when the pane is made. */
+  readonly seed?: string
   readonly canSend: boolean
   readonly showStop: boolean
   readonly onSend: (text: string) => Promise<CommandOutcome<string | null>>
@@ -54,7 +56,7 @@ function Option({ item, index, active, onPick }: OptionProps) {
   )
 }
 
-export function Composer({ slot, inputRef, autoFocus, canSend, showStop, onSend, onStop, onInput, editing = null, onCancelEdit, children }: ComposerProps) {
+export function Composer({ slot, inputRef, autoFocus, seed = '', canSend, showStop, onSend, onStop, onInput, editing = null, onCancelEdit, children }: ComposerProps) {
   const catalog = useTopic('slash') ?? NO_CATALOG
   const roster = useTopic('bots')
   const relay = useTopic('relay')
@@ -88,6 +90,13 @@ export function Composer({ slot, inputRef, autoFocus, canSend, showStop, onSend,
     element.setSelectionRange(caretTo.current, caretTo.current)
     caretTo.current = null
   }, [draft, caret, press])
+
+  useLayoutEffect(() => {
+    if (seed === '' || slot === null) return
+    caretTo.current = seed.length
+    setCaret(seed.length)
+    seedDraft(slot, seed)
+  }, [])
 
   const wasConfirming = useRef(false)
   useLayoutEffect(() => {

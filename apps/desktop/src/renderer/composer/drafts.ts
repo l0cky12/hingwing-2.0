@@ -65,6 +65,13 @@ export function writeDraft(slot: DraftSlot, text: string) {
   changed()
 }
 
+/** Puts a branch's text in the chat it made. A draft the chat has, or one typed or cleared since the window loaded, wins. */
+export function seedDraft(slot: NonNullable<DraftSlot>, text: string) {
+  if (drafts.has(slot.key) || typed.has(slot.key)) return
+  keep({ ...slot, text }, 'soon')
+  changed()
+}
+
 export function draftSent(slot: DraftSlot, text: string) {
   if (textOf(slot).trim() !== text) return
   if (slot === null) loose = ''
