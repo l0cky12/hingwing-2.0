@@ -53,7 +53,6 @@ function userInputs(method: string, params: Record<string, unknown>, reply: Reco
   }
 }
 
-/** A request frame as the hub hands it on while a window watches the chat: a card is held, and one with no card is declined. */
 function requestInputs(push: { readonly id: string; readonly method: string; readonly params: unknown }): SessionInput[] {
   const request = parseServerRequest(push)
   switch (request.kind) {

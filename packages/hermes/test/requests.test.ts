@@ -32,7 +32,6 @@ const waiting = (requestId: string, deadline: number | null = 121_000, error: st
   ({ id: id(requestId), ask: SUDO_ASK, state: { s: 'waiting', error }, deadline })
 const closedNotice = (requestId: string, end: RequestEnd): Item => ({ kind: 'notice', what: 'closed', requestId: id(requestId), asked: 'sudo', end })
 
-/** Drops the link, attaches again and lands the attach with `listed` as the snapshot's open requests. `during` arrive while it is in flight. */
 function reattached(state: Tracked, listed: readonly CardRequest[], during: readonly SessionInput[] = [], watermark = 0): Tracked {
   const attaching = feed(state, { in: 'link.lost' }, { in: 'attach' }, ...during)
   if (attaching.gate.at !== 'attaching') throw new Error('expected an attach in flight')

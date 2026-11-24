@@ -737,7 +737,6 @@ function ownDisplay() {
   if (parent !== process.ppid) fail(`display ${process.env.DISPLAY} belongs to another run's X server. Start this run again.`)
 }
 
-/** The calls that answer a request, beside the result frames: a batch's locks and a connector card's answer. */
 const ANSWER_CALLS = new Set(['clarify.lock', 'connection.respond'])
 
 /**

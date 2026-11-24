@@ -1,8 +1,3 @@
-/**
- * The life of what Hermes asks outside the turn (`SessionContent.requests`): opened by a request
- * frame or a connector card's event, reconciled with each snapshot, answered by this client, closed
- * by Hermes. Pure rules over the held list. `reduce.ts` applies them and files the notices.
- */
 import type { CardRequest } from './reduce'
 import type { Asked, HermesRequest, NoticeItem, RecordedReply, RequestAsk, RequestEnd, RequestId } from './session'
 
@@ -16,7 +11,6 @@ export interface Held {
 }
 
 export type ClosedNotice = Extract<NoticeItem, { what: 'closed' }>
-/** `notices`: one for each request the change closed, in the order they closed. */
 export interface Change extends Held { readonly notices: readonly ClosedNotice[] }
 
 /** Why Hermes closed a request. `resolved`: some client settled it, and Hermes does not say which. */
@@ -38,7 +32,6 @@ function endOf(request: HermesRequest, why: CloseWhy): RequestEnd {
 const remembered = (closed: readonly RequestId[], id: RequestId): readonly RequestId[] =>
   closed.includes(id) ? closed : [...closed, id].slice(-CLOSED_KEPT)
 
-/** Hermes's newer word on a held request: the locks of a batch, or a later state of a connector card. */
 function refreshed(held: HermesRequest, ask: RequestAsk): HermesRequest {
   if (held.ask.kind === 'connect' && ask.kind === 'connect') return ask.rev > held.ask.rev ? { ...held, ask } : held
   if (held.ask.kind !== 'questions' || ask.kind !== 'questions') return held
@@ -53,10 +46,6 @@ function edit(held: Held, id: RequestId, change: (request: HermesRequest) => Her
   return requests.every((request, index) => request === held.requests[index]) ? held : { ...held, requests }
 }
 
-/**
- * A request that came off the live socket, or a connector card's event. Idempotent per id: a held
- * request keeps its state and its deadline, and a closed one stays closed.
- */
 export function opened(held: Held, { requestId, ask, waitS }: CardRequest, seenAt: number | null): Held {
   if (held.closed.includes(requestId)) return held
   if (held.requests.some(request => request.id === requestId)) return edit(held, requestId, request => refreshed(request, ask))
@@ -64,7 +53,6 @@ export function opened(held: Held, { requestId, ask, waitS }: CardRequest, seenA
   return { ...held, requests: [...held.requests, { id: requestId, ask, state: WAITING, deadline }] }
 }
 
-/** Hermes closed the request. An id that is not held is remembered too, so its request frame cannot open it afterwards. */
 export function closed(held: Held, id: RequestId, why: CloseWhy): Change {
   const request = held.requests.find(open => open.id === id)
   const kept = remembered(held.closed, id)
@@ -76,11 +64,6 @@ export function closed(held: Held, id: RequestId, why: CloseWhy): Change {
   }
 }
 
-/**
- * After an attach. The snapshot's list says what is open as of its watermark: a held request it
- * leaves out is gone, and one it lists is open, whatever this client sent for it. `parked` are the
- * request frames that arrived during the attach. One whose own cancel arrived with it is never opened.
- */
 export function reconciled(held: Held, listed: readonly CardRequest[], parked: readonly CardRequest[], cancelled: ReadonlySet<RequestId>): Change {
   const gone = held.requests.filter(request => !listed.some(open => open.requestId === request.id))
   const after = gone.reduce<Change>((change, request) => {
@@ -103,11 +86,6 @@ export function answering(held: Held, id: RequestId, reply: RecordedReply): Held
   return edit(held, id, request => (request.state.s === 'waiting' ? { ...request, state: { s: 'sending', reply } } : request))
 }
 
-/**
- * Hermes took an answer that travelled as a call. A lock joins the batch's answers. `waits`: the
- * request is still open and can be answered again. `settles`: that was its last answer, and it
- * stays as it is until Hermes closes it.
- */
 export function accepted(held: Held, id: RequestId, then: 'waits' | 'settles'): Held {
   return edit(held, id, request => {
     if (request.state.s !== 'sending') return request

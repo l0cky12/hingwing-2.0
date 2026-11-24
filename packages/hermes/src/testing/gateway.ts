@@ -71,7 +71,7 @@ interface View {
   title: string
   pending: readonly unknown[]
   readonly prompts: Map<string, Obj>
-  /** The server requests still open, by id, as their frames carried them (gateway/session_server_requests.py:50-51). */
+  /** The server requests still open, by id, as their frames carried them (gateway/session_server_requests.py:31-33). */
   readonly requests: Map<string, { readonly method: string; readonly params: unknown }>
   /** The open connector card as `connection.request` carried it, with the targets of its latest update (gateway/session_connections.py:30-34). */
   connection: Obj | null
@@ -172,11 +172,10 @@ const ownCard: Check = (gateway, _socket, params) =>
 
 /**
  * Bridges Hermes does not hand to a reconnecting viewer, because a second delivery would repeat the
- * action (gateway/local_desktop_ui.py:211-216). The two that wait on a card, `theme.pick` and `setup_beat`, are listed.
+ * action (gateway/local_desktop_ui.py:216-218). The two that wait on a card, `theme.pick` and `setup_beat`, are listed.
  */
 const UNREPLAYED: ReadonlySet<string> = new Set(['terminal.read', 'preview.read', 'preview.act', 'window.read', 'theme.apply', 'tour'])
 
-/** What a story call changes in the gateway beside its recorded reply. */
 const AFTER: Readonly<Record<string, (view: View, params: Obj, reply: unknown) => void>> = {
   /** gateway/session_server_requests.py:149-168: a lock is listed with the request until the last one settles it. */
   'clarify.lock': (view, params, reply) => {
@@ -475,7 +474,6 @@ const YOLO_WORDS: Readonly<Record<string, boolean>> = { 1: true, on: true, true:
 
 const tokenFor = ({ model }: Model) => `confirm-${model}`
 
-/** A recorded `MASKED` matches any value that is not empty. Everything else must match as JSON. */
 function sameAnswer(recorded: unknown, sent: unknown): boolean {
   if (recorded === MASKED) return typeof sent === 'string' && sent !== ''
   if (Array.isArray(recorded)) return Array.isArray(sent) && sent.length === recorded.length && recorded.every((item, index) => sameAnswer(item, sent[index]))

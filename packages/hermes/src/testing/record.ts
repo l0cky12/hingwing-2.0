@@ -54,7 +54,6 @@ const masked = (values: unknown) => (isObject(values) ? Object.fromEntries(Objec
 /** The answer to a password, secret or code prompt is `{value}`. An empty one is a skip and says nothing. */
 const maskedResult = (result: unknown) => (isObject(result) && typeof result.value === 'string' && result.value !== '' ? { ...result, value: MASKED } : result)
 
-/** A connector card's answer carries the credentials an install asked for, as `result.targets[].env`. */
 function maskedParams(method: string, params: Obj): Obj {
   if (method !== 'connection.respond' || !isObject(params.result) || !Array.isArray(params.result.targets)) return params
   const targets = params.result.targets.map((target: unknown) => (isObject(target) && 'env' in target ? { ...target, env: masked(target.env) } : target))

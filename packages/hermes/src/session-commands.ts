@@ -252,7 +252,6 @@ async function answerPrompt(port: SessionPort, promptId: PromptId, reply: Prompt
 type Asking<K extends HermesRequest['ask']['kind']> = HermesRequest & { readonly ask: Extract<HermesRequest['ask'], { kind: K }> }
 type Replying<K extends RequestReply['kind']> = Extract<RequestReply, { kind: K }>
 
-/** `sent`: how the answer travels. A result frame gets no reply, so Hermes's `request.cancel` is what closes the request. */
 interface Answer { readonly recorded: RecordedReply; sent(): Outcome | Promise<Outcome<'waits' | 'settles'>> }
 
 type Answers = { readonly [A in HermesRequest['ask']['kind']]: { readonly [R in RequestReply['kind']]?: (port: SessionPort, request: Asking<A>, reply: Replying<R>) => Answer | null } }
@@ -262,10 +261,6 @@ const SECRET_METHODS = { sudo: 'sudo', env: 'secret', vault: 'vault.unlock_promp
 const WITHHELD: RecordedReply = { kind: 'withheld' }
 const SKIP: RecordedReply = { kind: 'skip' }
 
-/**
- * Which reply each ask takes, and what it sends. A pair that is not here, or a row that answers
- * null, is refused before anything is sent.
- */
 const ANSWERS: Answers = {
   secret: {
     /** Hermes reads an empty value as "skipped", so `skip` is the only way to send one. A login travels as one JSON string (gateway/session_vault_prompt.py:62-69). */
@@ -309,7 +304,7 @@ function lockedText(answer: Replying<'lock'>['answer'], multi: boolean): string 
   return answer.length === 1 ? answer[0] : undefined
 }
 
-/** The card changes by the stream. The reply says only whether that answer settled it (gateway/session_connections.py:103-110). */
+/** The card changes by the stream. The reply says only whether that answer settled it (gateway/session_connections.py:92-99). */
 async function respondToCard(port: SessionPort, id: RequestId, result: Served['connection.respond']['params']['result']): Promise<Outcome<'waits' | 'settles'>> {
   const taken = await port.call('connection.respond', { owner: { type: 'session', session_id: port.id }, op_id: id, result })
   return taken.ok ? { ok: true, value: taken.value.settled ? 'settles' : 'waits' } : taken
