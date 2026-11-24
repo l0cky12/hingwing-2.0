@@ -4,7 +4,7 @@ import type { Item, PromptId, Session, SessionId } from '../src/domain/session'
 import { DialError, openHermes, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
 import { play, scriptedDialer, type Fixture, type FixtureStep, type Moment, type ScriptOptions } from '../src/testing/fixture'
-import { BOUND, callsIn, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PROFILES, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, WITH_BOTS, WITH_CHATS, withSudo } from './support/errand'
+import { BOUND, callsIn, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, withSudo } from './support/errand'
 
 const CLIENT = { name: 'highwing-test', version: '0.0.0' }
 const TEXT = String(paramsOf('prompt.submit').text)
@@ -752,5 +752,105 @@ describe('when a turn began', () => {
     const { run } = opened.seen.at(-1) as Session
     if (run.state !== 'running') throw new Error('expected the turn to be running at the approval')
     expect(run.turn.began).toEqual({ at: 4_321, clock: 'client' })
+  })
+})
+
+describe('mentioning another bot', () => {
+  const ASK = 'Ask @Rae for the weekly report'
+  const relays = (opened: ReturnType<typeof open>) => opened.hermes.relay.get().bySession[SESSION] ?? []
+  const states = (opened: ReturnType<typeof open>) => relays(opened).map(relay => relay.state)
+  const delivers = (opened: ReturnType<typeof open>) => opened.sent().filter(call => call.method === 'bot_relay.deliver' && call.params?.id !== undefined)
+  const submits = (opened: ReturnType<typeof open>) => opened.sent().filter(call => call.method === 'prompt.submit')
+  const send = async (opened: ReturnType<typeof open>, text: string) => {
+    await opened.clock.advance(0)
+    const outcome = await opened.hermes.run({ do: 'send', sessionId: SESSION, text })
+    await opened.clock.advance(0)
+    return outcome
+  }
+
+  it('hands the message to that bot alone, and shows it waiting until the one reply comes back', async () => {
+    const opened = open(TEAM)
+    const seen: string[] = []
+    opened.hermes.relay.subscribe(desk => seen.push((desk.bySession[SESSION] ?? []).map(relay => relay.state.s).join()))
+    expect(opened.hermes.relay.get()).toEqual({ supported: false, bySession: {} })
+    expect(await send(opened, ASK), 'the composer clears').toEqual({ ok: true, value: null })
+
+    const [relay] = relays(opened)
+    expect(relays(opened)).toEqual([{ id: expect.stringMatching(/^[0-9a-f]{32}$/) as unknown, to: 'rae', name: 'Rae', tone: 'umber', text: ASK, after: null, state: { s: 'waiting' } }])
+    expect(delivers(opened)).toEqual([{ method: 'bot_relay.deliver', params: { profile: 'rae', id: relay?.id, message: ASK } }])
+    expect(submits(opened), "the chat's own bot is not asked").toEqual([])
+    expect(opened.script.step, 'the story has not moved').toBe(0)
+
+    await opened.clock.advance(1_499)
+    expect(states(opened)).toEqual([{ s: 'waiting' }])
+    await opened.clock.advance(1)
+    expect(states(opened)).toEqual([{ s: 'answered', reply: RAE_SAID }])
+    expect(seen).toEqual(['', 'waiting', 'answered'])
+    expect(delivers(opened)).toHaveLength(1)
+  })
+
+  it('says in words that a bot is offline, and leaves the message sent', async () => {
+    const opened = open(TEAM)
+    expect(await send(opened, '@Sam why does the build fail?')).toEqual({ ok: true, value: null })
+    expect(relays(opened)).toMatchObject([{ to: 'sam', name: 'Sam', text: '@Sam why does the build fail?', state: { s: 'failed', words: "Sam is offline, so it didn't get your message." } }])
+    expect(submits(opened)).toEqual([])
+  })
+
+  it('hands one message to every bot it names, in the order it names them', async () => {
+    const opened = open(TEAM)
+    await send(opened, 'Ask @Sam and @Rae, then @sam again.')
+    expect(relays(opened).map(relay => relay.to)).toEqual(['sam', 'rae'])
+    expect(delivers(opened).map(call => call.params?.profile)).toEqual(['sam', 'rae'])
+    expect(new Set(delivers(opened).map(call => call.params?.id)).size, 'each delivery has its own id').toBe(2)
+  })
+
+  it('files the handed message after the newest turn the chat holds', async () => {
+    const opened = open(TEAM)
+    opened.watch()
+    await toApproval(opened)
+    await approve(opened.hermes)
+    await opened.clock.advance(1_000)
+    const last = opened.seen.at(-1)?.history.at(-1)?.id
+    expect(last).toBeDefined()
+    await send(opened, ASK)
+    expect(relays(opened)).toMatchObject([{ after: last }])
+  })
+
+  it('gives up in words when no reply comes in 25 minutes', async () => {
+    const opened = open({ ...TEAM, header: { ...TEAM.header, relay: { rae: { reply: 'Too late.', delay_ms: 1_500_001 } } } })
+    await send(opened, ASK)
+    await opened.clock.advance(1_499_999)
+    expect(states(opened)).toEqual([{ s: 'waiting' }])
+    await opened.clock.advance(1)
+    expect(states(opened)).toEqual([{ s: 'failed', words: "Rae didn't answer in 25 minutes." }])
+    await opened.clock.advance(1)
+    expect(states(opened), 'a reply after the deadline changes nothing').toEqual([{ s: 'failed', words: "Rae didn't answer in 25 minutes." }])
+  })
+
+  it("sends a message that names only the chat's own bot, or nobody, as a normal message", async () => {
+    const opened = open(TEAM)
+    expect(await send(opened, '@Ada mail me at sam@example')).toEqual({ ok: true, value: null })
+    expect(submits(opened)).toMatchObject([{ params: { session_id: SESSION, text: '@Ada mail me at sam@example' } }])
+    expect(delivers(opened)).toEqual([])
+    expect(relays(opened)).toEqual([])
+  })
+
+  it('sends the text as a normal message on a Hermes that cannot hand a message over, which it asks once per socket', async () => {
+    const opened = open(TEAM_NO_RELAY)
+    expect(await send(opened, ASK)).toEqual({ ok: true, value: null })
+    expect(opened.hermes.relay.get()).toEqual({ supported: false, bySession: {} })
+    expect(submits(opened)).toMatchObject([{ params: { session_id: SESSION, text: ASK } }])
+    expect(opened.sent().filter(call => call.method === 'bot_relay.deliver')).toEqual([{ method: 'bot_relay.deliver', params: {} }])
+  })
+
+  it('keeps what it learned while the socket is gone, and asks the new socket again', async () => {
+    const opened = open(TEAM, { drop: { afterPush: 1, missed: 0 } })
+    opened.watch()
+    await toApproval(opened)
+    expect(opened.hermes.link.get().state).toBe('waiting')
+    expect(opened.hermes.relay.get().supported).toBe(true)
+    await opened.clock.advance(1_000)
+    expect(opened.hermes.link.get().state).toBe('online')
+    expect(opened.sent().filter(call => call.method === 'bot_relay.deliver' && call.params?.id === undefined)).toHaveLength(2)
   })
 })

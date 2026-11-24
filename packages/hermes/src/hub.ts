@@ -1,13 +1,16 @@
 import { randomUUID } from 'node:crypto'
 import { DONE, refusalOf, refused, SessionActor } from './actor'
 import { botModels, createBot } from './bot-admin'
-import type { Bots } from './domain/bots'
+import { botsIn, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
+import { mentionedBots } from './domain/mention'
 import type { OpenChat } from './domain/open'
 import type { ServerRequest } from './domain/reduce'
+import type { RelayDesk } from './domain/relay'
 import type { Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import { chatDesk } from './open'
+import { relayBook } from './relay'
 import { botList } from './roster'
 import { deriveSidebar, sessionList } from './sidebar'
 import { connect, systemClock, type Clock, type Dialer } from './wire/link'
@@ -44,6 +47,12 @@ export interface Hermes {
    * follows the bot to the Bot Chat Hermes names for it.
    */
   readonly open: Feed<OpenChat>
+  /**
+   * Whether this Hermes can hand a message to another bot, asked on every new socket, and the
+   * messages handed over from each chat with what came back. A `send` that mentions another listed
+   * bot (`@Rae`) goes to that bot's Bot Chat instead of the chat's own bot, and its one reply lands here.
+   */
+  readonly relay: Feed<RelayDesk>
   /**
    * Watch one session. The listener gets the current value at once and every later one. A session is
    * kept attached while a window watches it, while the gateway lists it as running, while its own
@@ -165,6 +174,7 @@ export function openHermes(options: HermesOptions): Hermes {
     onOnline: () => {
       list.refresh()
       catalogRead = readCatalog()
+      relayRead = relays.probe()
       roster.ask()
     },
     onEvent: params => {
@@ -183,6 +193,18 @@ export function openHermes(options: HermesOptions): Hermes {
     const read = ++catalogReads
     const catalog = await conn.call('commands.catalog', {}, CATALOG_TIMEOUT_MS).then(parseCatalog).catch(() => [])
     if (read === catalogReads) slash.set(catalog)
+  }
+
+  const relays = relayBook(conn, () => relay.set(relays.desk))
+  const relay = feed<RelayDesk>(relays.desk)
+  let relayRead: Promise<void> = Promise.resolve()
+
+  /** The other bots a message names. None on a Hermes that cannot hand a message over, and none before it listed its bots. */
+  const mentioned = (sessionId: SessionId, text: string): readonly Bot[] => {
+    const listed = bots.get()
+    if (!relay.get().supported || listed.state !== 'listed') return []
+    const own = desk.botOf(sessionId)
+    return mentionedBots(text, botsIn(listed.roster).filter(bot => bot.id !== own))
   }
 
   const publishSidebar = () => {
@@ -284,7 +306,14 @@ export function openHermes(options: HermesOptions): Hermes {
     send: async (actor, { text }) => {
       if (text.trimStart().startsWith('/')) await catalogRead
       const line = slashLineOf(text, slash.get())
-      return line === null ? showing(await actor.send(text)) : runSlash(actor, line)
+      if (line !== null) return runSlash(actor, line)
+      if (text.includes('@')) await relayRead
+      const to = mentioned(actor.id, text)
+      if (to.length === 0) return showing(await actor.send(text))
+      const { run, history } = actor.session
+      const after = run.state === 'running' ? run.turn.id : history.at(-1)?.id ?? null
+      for (const bot of to) relays.send(actor.id, after, bot, text)
+      return NOTHING_TO_SHOW
     },
     rewind: (actor, { rowId, text }) => actor.rewind(rowId, text),
     stop: actor => actor.stop(),
@@ -372,6 +401,7 @@ export function openHermes(options: HermesOptions): Hermes {
     slash,
     bots,
     open,
+    relay,
     watch,
     run: command => run(command) as Promise<Outcome<ResultOf<typeof command>>>,
     close: async () => {
