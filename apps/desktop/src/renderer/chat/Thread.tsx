@@ -3,7 +3,9 @@ import { fieldId, findInThread, type FindMatch, type PromptCard, type ThreadEnd,
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { CopyButton } from './Copy'
 import { isCommandKey } from '../keys'
+import { Helper, Plan, Reasoning } from './Helpers'
 import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find'
+import { isOpen, NONE_OPEN, toggled, type OpenState } from './open'
 import { cx, Elapsed, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
 
@@ -13,8 +15,8 @@ interface NodeProps {
   readonly node: ThreadNode
   readonly endTone: 'live' | 'asking' | null
   readonly elapsed: string | null
-  readonly opened: ReadonlySet<string>
-  readonly onToggle: (key: string) => void
+  readonly open: OpenState
+  readonly onToggle: (key: string, byDefault?: boolean) => void
   readonly onAnswer: Answer
 }
 
@@ -68,7 +70,9 @@ function Prompt({ nodeKey, card, asking, onAnswer }: PromptProps) {
   )
 }
 
-function Node({ node, endTone, elapsed, opened, onToggle, onAnswer }: NodeProps) {
+export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer }: NodeProps) {
+  const { opened } = state
+  const live = endTone === 'live'
   switch (node.kind) {
     case 'prose':
       return (
@@ -78,7 +82,7 @@ function Node({ node, endTone, elapsed, opened, onToggle, onAnswer }: NodeProps)
         </div>
       )
     case 'step':
-      return <Step step={node.step} live={endTone === 'live'} elapsed={elapsed} open={opened.has(node.key)} onToggle={onToggle} />
+      return <Step step={node.step} live={live} elapsed={elapsed} open={opened.has(node.key)} onToggle={onToggle} />
     case 'group': {
       const open = opened.has(node.key)
       return (
@@ -98,6 +102,12 @@ function Node({ node, endTone, elapsed, opened, onToggle, onAnswer }: NodeProps)
     }
     case 'prompt':
       return <Prompt nodeKey={node.key} card={node.card} asking={endTone === 'asking'} onAnswer={onAnswer} />
+    case 'reasoning':
+      return <Reasoning nodeKey={node.key} text={node.text} streaming={node.streaming} duration={node.duration} open={isOpen(state, node.key, false)} live={live} elapsed={elapsed} onToggle={onToggle} />
+    case 'helper':
+      return <Helper nodeKey={node.key} helper={node.helper} open={isOpen(state, node.key, false)} live={live} elapsed={elapsed} onToggle={onToggle} />
+    case 'plan':
+      return <Plan nodeKey={node.key} plan={node.plan} open={isOpen(state, node.key, node.plan.openByDefault)} live={live} elapsed={elapsed} onToggle={onToggle} />
     case 'notice':
       return <p className={node.tone === 'error' ? 'err' : 'notice'} data-find={fieldId(node.key, 'text')}>{node.text}</p>
   }
@@ -126,8 +136,8 @@ function Pencil() {
 
 interface TurnProps {
   readonly turn: TurnView
-  readonly opened: ReadonlySet<string>
-  readonly onToggle: (key: string) => void
+  readonly open: OpenState
+  readonly onToggle: (key: string, byDefault?: boolean) => void
   readonly onAnswer: Answer
   readonly canEdit: boolean
   readonly showsRegenerate: boolean
@@ -136,10 +146,11 @@ interface TurnProps {
   readonly onRegenerate: Rewrite
 }
 
-const Turn = memo(function Turn({ turn, opened, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, onEdit, onRegenerate }: TurnProps) {
+export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, onEdit, onRegenerate }: TurnProps) {
   const { end, rowId, request } = turn
+  const live = end.kind === 'tip' || (end.kind === 'at' && end.tone === 'live')
   return (
-    <article className="turn">
+    <article className={cx('turn', live && 'live-turn')}>
       {turn.time !== null && <p className="when">{turn.time}</p>}
       {request !== null && (
         <p className="request" data-find={fieldId(turn.key, 'request')}>
@@ -152,7 +163,7 @@ const Turn = memo(function Turn({ turn, opened, onToggle, onAnswer, canEdit, sho
       )}
       <div className="thread">
         {turn.nodes.map(node => (
-          <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} elapsed={end.kind === 'at' && end.tone === 'live' && end.nodeKey === node.key ? end.elapsed : null} opened={opened} onToggle={onToggle} onAnswer={onAnswer} />
+          <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} elapsed={end.kind === 'at' && end.tone === 'live' && end.nodeKey === node.key ? end.elapsed : null} open={open} onToggle={onToggle} onAnswer={onAnswer} />
         ))}
         <End turnKey={turn.key} end={end} />
       </div>
@@ -182,18 +193,14 @@ interface ThreadProps {
 }
 
 export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, onEdit, onRegenerate }: ThreadProps) {
-  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set())
+  const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
   const transcript = useRef<HTMLDivElement>(null)
   const findInput = useRef<HTMLInputElement>(null)
   const navigated = useRef(false)
 
-  const onToggle = useCallback((key: string) => {
-    setOpened(held => {
-      const next = new Set(held)
-      if (!next.delete(key)) next.add(key)
-      return next
-    })
+  const onToggle = useCallback((key: string, byDefault = false) => {
+    setOpen(held => toggled(held, key, byDefault))
     setFind(held => (held?.openedByFind.has(key) ? { ...held, openedByFind: new Set([...held.openedByFind].filter(row => row !== key)) } : held))
   }, [])
 
@@ -228,8 +235,8 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScro
   }, [find, currentRange, onFindScrolled])
 
   const show = (held: FindState, match: FindMatch, asked: ReadonlySet<string>, navigate: boolean) => {
-    const fresh = match.opens.filter(key => !asked.has(key) && !opened.has(key))
-    if (fresh.length > 0) setOpened(rows => new Set([...rows, ...fresh]))
+    const fresh = match.opens.filter(key => !asked.has(key) && !open.opened.has(key))
+    if (fresh.length > 0) setOpen(held => ({ ...held, opened: new Set([...held.opened, ...fresh]) }))
     navigated.current = navigate
     setFind({
       ...held,
@@ -252,7 +259,7 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScro
 
   const closeFind = () => {
     if (find === null) return
-    setOpened(held => new Set([...held].filter(key => !find.openedByFind.has(key))))
+    setOpen(held => ({ ...held, opened: new Set([...held.opened].filter(key => !find.openedByFind.has(key))) }))
     setFind(null)
     onFindClosed()
   }
@@ -287,7 +294,7 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScro
         {view.earlier === 'loading' && <p className="earlier">Loading earlier turns</p>}
         {view.turns.map(turn => (
           <Turn
-            key={turn.key} turn={turn} opened={opened} onToggle={onToggle} onAnswer={onAnswer}
+            key={turn.key} turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer}
             canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} onEdit={onEdit} onRegenerate={onRegenerate}
           />
         ))}
