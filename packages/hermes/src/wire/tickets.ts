@@ -3,7 +3,7 @@
  * (website/docs/developer-guide/gateway-ssh-clients.md), for the Hermes on this computer and for
  * one on another machine. Nothing here outlives a dial: the `--serve` run is sent one line and ends.
  */
-import { CHECK_FAILURES, machineOf } from '../domain/reach'
+import { CHECK_FAILURES } from '../domain/reach'
 import { DialError, dialWith, EXIT_KINDS, GATEWAY_PROTOCOL, TICKET_PREFIX, type Clock, type Dialer, type Mint } from './link'
 import { ASK_INTERACTIVE, ATTACH, attachedOf, NOT_FOUND, PROBE, probeOf, runTool, SERVE, servedOf, type HermesArgs, type ProbeFailure, type SshRun } from './ssh'
 
@@ -23,8 +23,8 @@ const SERVE_MS = 20_000
 const ATTACH_ONLY = { windowsServiceSession: false, interactive: false } as const
 
 export interface MintOptions {
-  /** How the words name the gateway's machine. */
-  readonly machine: string
+  /** How the words name the gateway's machine. null: this computer, whose failures keep the link's own words. */
+  readonly machine: string | null
   /** Client rule 4: turns the gateway's loopback url into one this computer can dial. */
   readonly forward: (url: string) => Promise<string>
   /**
@@ -43,7 +43,8 @@ export interface MintOptions {
  * answered, nothing falls back (client rule 1).
  */
 export function mintWith(run: RunHermes, options: MintOptions): Mint {
-  const failed = (failure: ProbeFailure) => new DialError(PROBE_KINDS[failure], CHECK_FAILURES[failure].words(options.machine))
+  const { machine } = options
+  const failed = (failure: ProbeFailure) => new DialError(PROBE_KINDS[failure], machine === null ? undefined : CHECK_FAILURES[failure].words(machine))
   const ran = async (...asked: Parameters<RunHermes>) => {
     const result = await run(...asked)
     if (!result.ok) throw failed(result.why)
@@ -68,8 +69,8 @@ export function mintWith(run: RunHermes, options: MintOptions): Mint {
     const attach = await ran(starts ? ATTACH.start : ATTACH.retry, { deadlineMs: starts ? ATTACH_MS.start : ATTACH_MS.retry })
     if (attach.code !== 0) {
       const kind = EXIT_KINDS[attach.code] ?? 'inaccessible'
-      throw kind === 'not-running' && windowsServiceSession
-        ? new DialError(kind, `Hermes isn't running on ${options.machine}. Start it from a normal window on that machine's desktop.`)
+      throw kind === 'not-running' && windowsServiceSession && machine !== null
+        ? new DialError(kind, `Hermes isn't running on ${machine}. Start it from a normal window on that machine's desktop.`)
         : new DialError(kind)
     }
     const attached = attachedOf(attach.stdout)
@@ -97,5 +98,5 @@ export function liveDialer(options: { readonly hermesBin?: string; readonly cloc
     if (tool.end === 'exit') return { ok: true, code: tool.code, stdout: tool.stdout }
     return { ok: true, code: tool.end === 'missing' ? NOT_FOUND : INACCESSIBLE, stdout: '' }
   }
-  return dialWith(mintWith(run, { machine: machineOf({ kind: 'local' }), forward: async url => url, unprobed: 'attach' }))
+  return dialWith(mintWith(run, { machine: null, forward: async url => url, unprobed: 'attach' }))
 }

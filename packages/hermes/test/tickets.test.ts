@@ -143,7 +143,7 @@ describe('liveDialer, against the fake hermes of this computer', () => {
 
   it('reads a missing hermes command as hermes-missing, and no gateway as not-running', async () => {
     const gone = await host('hermes-not-found')
-    expect(await failureOf(liveDialer({ hermesBin: gone.hermes })({ start: false }))).toEqual({ kind: 'hermes-missing', message: "Hermes isn't installed on this computer." })
+    expect(await failureOf(liveDialer({ hermesBin: gone.hermes })({ start: false })), 'in the words the banner had before the probe').toEqual({ kind: 'hermes-missing', message: "Highwing can't find the hermes command." })
     const idle = await host('ok')
     expect(await failureOf(liveDialer({ hermesBin: idle.hermes })({ start: false }))).toMatchObject({ kind: 'not-running' })
   })
