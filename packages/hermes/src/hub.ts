@@ -37,8 +37,8 @@ export interface Hermes {
   readonly bots: Feed<Bots>
   /**
    * Which chat the window shows. Before any click it is the default bot's chat, or the newest chat
-   * on a Hermes that cannot switch bots. After that only `run({ do: 'open' })` and `run({ do: 'start' })`
-   * move it, and a bot's chat follows the bot to the Bot Chat Hermes names for it.
+   * on a Hermes that cannot switch bots. After that only `run({ do: 'open' })`, `run({ do: 'start' })`
+   * and a `/new` move it, and a bot's chat follows the bot to the Bot Chat Hermes names for it.
    */
   readonly open: Feed<OpenChat>
   /**
@@ -316,7 +316,22 @@ export function openHermes(options: HermesOptions): Hermes {
     return showing(await actor.send(directive.text, directive.apiText), directive.note)
   }
 
+  /** Hermes's `command_verdict` refuses `/new` (gateway/session_commands.py:133-145), so Highwing runs a bare one: a new chat in the bot of the chat it was typed in. */
+  const typedNew = async (command: Extract<Command, { do: 'send' | 'start' }>): Promise<Outcome<string | null> | null> => {
+    if (!command.text.trimStart().startsWith('/')) return null
+    await catalogRead
+    const line = slashLineOf(command.text, slash.get())
+    if (line === null || line.entry.kind !== 'command' || line.entry.name !== 'new' || line.arg !== '') return null
+    const bot = command.do === 'send' ? desk.botOf(command.sessionId) ?? null : command.chat.bot
+    const opened = await desk.ask({ kind: 'new', bot, draftId: mintId() })
+    return opened.ok ? NOTHING_TO_SHOW : opened
+  }
+
   const run = async (command: Command): Promise<Outcome<unknown>> => {
+    if (command.do === 'send' || command.do === 'start') {
+      const opened = await typedNew(command)
+      if (opened !== null) return opened
+    }
     if (command.do === 'open') return desk.ask(command.ref)
     if (command.do === 'start') {
       const started = await desk.start(command.chat)

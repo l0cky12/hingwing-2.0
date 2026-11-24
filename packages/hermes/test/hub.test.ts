@@ -241,8 +241,8 @@ describe('the slash catalog', () => {
     expect(opened.hermes.slash.get()).toEqual([])
     await opened.clock.advance(0)
     const names = opened.hermes.slash.get().map(entry => `${entry.kind}:${entry.name}`)
-    expect(names).toHaveLength(35)
-    expect(names.slice(0, 2)).toEqual(['command:title', 'command:goal'])
+    expect(names).toHaveLength(36)
+    expect(names.slice(0, 2)).toEqual(['command:new', 'command:title'])
     expect(names.slice(-2)).toEqual(['skill:code-review', 'skill:release-notes'])
     expect(opened.sent().filter(call => call.method === 'commands.catalog')).toEqual([{ method: 'commands.catalog', params: {} }])
   })
@@ -261,7 +261,7 @@ describe('the slash catalog', () => {
     await toApproval(opened)
     await opened.clock.advance(1_000)
     expect(opened.sent().filter(call => call.method === 'commands.catalog'), 'once on each of the two sockets').toHaveLength(2)
-    expect(opened.hermes.slash.get()).toHaveLength(35)
+    expect(opened.hermes.slash.get()).toHaveLength(36)
   })
 })
 
@@ -471,6 +471,7 @@ describe('the open chat', () => {
 
   describe('a new chat', () => {
     const fresh = (bot: BotId | null, draftId: string) => ({ kind: 'new', bot, draftId, sessionId: null }) as const
+    const WITH_CATALOG: Fixture = { ...SLASH, header: { ...SLASH.header, profiles: PROFILES } }
     const MADE = 'chat-default-1' as SessionId
 
     it("opens empty with no call, makes its session in the bot's profile on the first message, and stays open after the list and roster refresh", async () => {
@@ -525,6 +526,32 @@ describe('the open chat', () => {
       expect(await noGui.hermes.run({ do: 'start', chat: fresh(null, 'draft-1'), text: 'hello' })).toMatchObject({ ok: false, refusal: { kind: 'unsupported' } })
       expect(calls(noGui, 'session.create')).toEqual([])
     })
+
+    const minting = async (fixture: Fixture) => {
+      let minted = 0
+      const opened = open(fixture, { mintId: () => `minted-${++minted}` })
+      await opened.clock.advance(0)
+      return opened
+    }
+
+    it("opens for a bare /new typed into a chat, in that chat's bot, and asks Hermes nothing", async () => {
+      const opened = await minting(WITH_CATALOG)
+      expect(await opened.hermes.run({ do: 'send', sessionId: SESSION, text: '/new' })).toEqual({ ok: true, value: null })
+      expect(opened.hermes.open.get()).toEqual({ shown: fresh(EMU, 'minted-1'), opening: null })
+      expect(calls(opened, 'session.create')).toEqual([])
+      expect(calls(opened, 'command.dispatch')).toEqual([])
+      expect(calls(opened, 'prompt.submit')).toEqual([])
+    })
+
+    it('opens for a /new typed into a chat that has no session yet, and makes none', async () => {
+      const opened = await minting({ ...WITH_CATALOG, header: { ...WITH_CATALOG.header, homeBotChat: false } })
+      expect(opened.hermes.open.get()).toEqual({ shown: unstarted(EMU), opening: null })
+      expect(await opened.hermes.run({ do: 'start', chat: unstarted(EMU), text: ' /new ' })).toEqual({ ok: true, value: null })
+      expect(opened.hermes.open.get()).toEqual({ shown: fresh(EMU, 'minted-1'), opening: null })
+      expect(await opened.hermes.run({ do: 'start', chat: fresh(EMU, 'minted-1'), text: '/NEW' })).toEqual({ ok: true, value: null })
+      expect(opened.hermes.open.get()).toEqual({ shown: fresh(EMU, 'minted-2'), opening: null })
+      expect(calls(opened, 'session.create')).toEqual([])
+    })
   })
 })
 
@@ -570,6 +597,14 @@ describe('sending a slash line', () => {
       { await: 'command.dispatch', params: { session_id: SESSION, name: 'usage', arg: 'reset' }, error: { code: 4001, message: 'unsupported_command', data: { reason: 'unsupported_command' } } }
     ), '/usage reset')
     expect(outcome).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "Hermes can't run that command from Highwing." } })
+  })
+
+  it('leaves /new with a name to Hermes, and opens no new chat for it', async () => {
+    const { opened, outcome } = await send(story(
+      { await: 'command.dispatch', params: { session_id: SESSION, name: 'new', arg: 'Holiday' }, error: { code: 4001, message: 'unsupported_command', data: { reason: 'unsupported_command' } } }
+    ), '/new Holiday')
+    expect(outcome).toMatchObject({ ok: false, refusal: { kind: 'unsupported' } })
+    expect(opened.hermes.open.get().shown).toMatchObject({ kind: 'chat', sessionId: SESSION })
   })
 
   it('renames the chat for /title with a name, through Highwing\'s own rename', async () => {
