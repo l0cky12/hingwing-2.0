@@ -82,6 +82,12 @@ describe('the open chat', () => {
     expect(desk.chats).toEqual({ [EMU]: HOME, [RESEARCH]: R2, [OPS]: O1 })
   })
 
+  it('looks a bot up by its own name only, so a profile named like an Object method has no chat until Hermes names one', () => {
+    const named = ['constructor', 'toString'] as BotId[]
+    for (const bot of named) expect(after([asked(bot)]).effects, bot).toEqual([[{ find: bot }]])
+    expect(after([asked(named[0]!), found(named[0]!, null)]).desk.open.shown).toEqual({ bot: 'constructor', sessionId: null })
+  })
+
   it('gives back the same value when an event changes nothing, so nothing is published for it', () => {
     expect(nextDesk(LAUNCHED, facts({ [EMU]: HOME, [RESEARCH]: R1 }, { bot: EMU, sessionId: HOME })).desk.open).toBe(LAUNCHED.open)
     expect(nextDesk(LAUNCHED, found(RESEARCH, R1)).desk.open).toBe(LAUNCHED.open)

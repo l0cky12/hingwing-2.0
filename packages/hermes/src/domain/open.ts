@@ -45,6 +45,10 @@ export interface Desk {
 
 export const EMPTY_DESK: Desk = { open: { shown: null, opening: null }, chats: {}, owners: {}, finding: [] }
 
+/** Profile names are any word Hermes allows, `constructor` included, so a lookup reads the desk's own keys only. */
+export const chatOf = (desk: Desk, bot: BotId): SessionId | undefined => Object.hasOwn(desk.chats, bot) ? desk.chats[bot] : undefined
+export const ownerOf = (desk: Desk, sessionId: SessionId): BotId | undefined => Object.hasOwn(desk.owners, sessionId) ? desk.owners[sessionId] : undefined
+
 export type DeskEvent =
   /** Hermes said more: the chat to show when none is, and the Bot Chats its roster names. */
   | { readonly on: 'facts'; readonly launch: Shown | null; readonly named: BotChats }
@@ -64,7 +68,7 @@ function showing(desk: Desk, bot: BotId, sessionId: SessionId | null): Desk {
 
 function learned(desk: Desk, bot: BotId, sessionId: SessionId): Desk {
   const { shown, opening } = desk.open
-  const known: Desk = desk.chats[bot] === sessionId
+  const known: Desk = chatOf(desk, bot) === sessionId
     ? desk
     : { ...desk, chats: { ...desk.chats, [bot]: sessionId }, owners: { ...desk.owners, [sessionId]: bot } }
   const answersLatestClick = opening?.bot === bot
@@ -87,7 +91,7 @@ export function nextDesk(desk: Desk, event: DeskEvent): { readonly desk: Desk; r
     }
     case 'asked': {
       const { bot } = event.ref
-      const known = desk.chats[bot]
+      const known = chatOf(desk, bot)
       if (known !== undefined) return done({ ...desk, open: { shown: { bot, sessionId: known }, opening: null } })
       const asked: Desk = { ...desk, open: { ...desk.open, opening: event.ref } }
       return desk.finding.includes(bot) ? done(asked) : { desk: { ...asked, finding: [...desk.finding, bot] }, effects: [{ find: bot }] }

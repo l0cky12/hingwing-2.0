@@ -1,7 +1,7 @@
 import { refusalOf, refused } from './actor'
 import type { BotId, Bots } from './domain/bots'
 import type { Outcome } from './domain/command'
-import { EMPTY_DESK, launchChat, nextDesk, type BotChats, type ChatRef, type DeskEvent, type OpenChat } from './domain/open'
+import { EMPTY_DESK, chatOf, launchChat, ownerOf, nextDesk, type BotChats, type ChatRef, type DeskEvent, type OpenChat } from './domain/open'
 import type { SessionId } from './domain/session'
 import type { Connection } from './wire/link'
 import { parseTitled } from './wire/parse'
@@ -108,12 +108,12 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
       const unreachable = reachable()
       if (unreachable !== null) return unreachable
       for (const effect of take({ on: 'asked', ref })) find(effect.find)
-      return finds.get(ref.bot) ?? { ok: true, value: desk.chats[ref.bot] ?? null }
+      return finds.get(ref.bot) ?? { ok: true, value: chatOf(desk, ref.bot) ?? null }
     },
     start: bot => {
       const unreachable = reachable()
       if (unreachable !== null) return Promise.resolve(unreachable)
-      const known = desk.chats[bot]
+      const known = chatOf(desk, bot)
       if (known !== undefined) return Promise.resolve({ ok: true, value: known })
       const held = starts.get(bot)
       if (held !== undefined) return held
@@ -121,6 +121,6 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
       starts.set(bot, started)
       return started
     },
-    botOf: id => desk.owners[id]
+    botOf: id => ownerOf(desk, id)
   }
 }
