@@ -3,8 +3,6 @@ import type { ChatRef } from './open'
 import type { InputId, ModelOption, ModelRef, PromptId, PromptReply, SessionId } from './session'
 
 export type Command =
-  /** `draftId` is minted when the empty "new chat" view opens. Retrying with it cannot create a second session. */
-  | { readonly do: 'create'; readonly draftId: string; readonly cwd: string | null }
   /**
    * Show this chat. Answers the session shown, or null for a bot that has no chat yet. It never
    * makes a session, and a refusal leaves the open chat as it was.
@@ -31,8 +29,7 @@ export type Command =
 
 /** `send` and `start` answer the words to show under the composer: a command's output or note, or `null` for none. */
 export type ResultOf<C extends Command> =
-  C extends { do: 'create' } ? SessionId
-  : C extends { do: 'open' } ? SessionId | null
+  C extends { do: 'open' } ? SessionId | null
   : C extends { do: 'send' | 'start' } ? string | null
   : C extends { do: 'models' } ? ModelMenu
   : C extends { do: 'pickModel' } ? ModelConfirm | null

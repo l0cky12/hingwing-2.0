@@ -116,7 +116,6 @@ const replyOf = (raw: unknown): PromptReply | null =>
 type Validators = { readonly [K in AppCommand['do']]: (raw: Obj) => Extract<AppCommand, { do: K }> | null }
 
 export const validators: Validators = {
-  create: raw => (filled(raw.draftId) && (raw.cwd === null || text(raw.cwd)) ? { do: 'create', draftId: raw.draftId, cwd: raw.cwd } : null),
   open: raw => {
     const bot = isObject(raw.ref) && raw.ref.kind === 'bot' ? botIdOf(raw.ref.bot) : null
     return bot && { do: 'open', ref: { kind: 'bot', bot } }

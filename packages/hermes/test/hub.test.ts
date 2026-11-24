@@ -189,7 +189,6 @@ describe('run', () => {
     expect(await opened.hermes.run({ do: 'send', sessionId: SESSION, text: 'hello' })).toEqual({
       ok: false, refusal: { kind: 'offline', message: "Highwing isn't connected to this chat right now." }
     })
-    expect(await opened.hermes.run({ do: 'create', draftId: 'd', cwd: null })).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
   })
 
   it('attaches a session nobody watches before it sends to it', async () => {
@@ -207,29 +206,6 @@ describe('run', () => {
     await opened.clock.advance(0)
     expect(await approve(opened.hermes)).toMatchObject({ ok: false, refusal: { kind: 'stale' } })
     expect(await opened.hermes.run({ do: 'stop', sessionId: SESSION })).toMatchObject({ ok: false, refusal: { kind: 'stale' } })
-  })
-
-  it('creates a session with the gateway\'s default folder unless one is given, then attaches it', async () => {
-    const opened = open()
-    await opened.clock.advance(0)
-    const made = opened.hermes.run({ do: 'create', draftId: 'draft-1', cwd: null })
-    await opened.clock.advance(0)
-    expect(await made).toEqual({ ok: true, value: SESSION })
-    const inFolder = opened.hermes.run({ do: 'create', draftId: 'draft-2', cwd: '/tmp/work' })
-    await opened.clock.advance(0)
-    await inFolder
-    expect(opened.sent().filter(call => call.method === 'session.create').map(call => call.params)).toEqual([
-      { source: 'gui', request_id: 'draft-1', client: CLIENT },
-      { source: 'gui', request_id: 'draft-2', cwd: '/tmp/work', cwd_explicit: true, client: CLIENT }
-    ])
-    expect(opened.sent().filter(call => call.method === 'session.resume'), 'the new session takes the one attach path').toHaveLength(1)
-  })
-
-  it('refuses to create when the gateway offers no gui source', async () => {
-    const header = { ...ERRAND.header, describe: { ...(ERRAND.header.describe as object), session_create: { sources: ['cli'], parameters: [] } } }
-    const opened = open({ ...ERRAND, header })
-    await opened.clock.advance(0)
-    expect(await opened.hermes.run({ do: 'create', draftId: 'd', cwd: null })).toMatchObject({ ok: false, refusal: { kind: 'unsupported' } })
   })
 })
 

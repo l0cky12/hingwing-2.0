@@ -6,7 +6,7 @@ import type { OpenChat } from './domain/open'
 import type { ServerRequest } from './domain/reduce'
 import type { Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
-import { CANT_START, chatDesk, NOT_CONNECTED } from './open'
+import { chatDesk } from './open'
 import { botList } from './roster'
 import { deriveSidebar, sessionList } from './sidebar'
 import { connect, systemClock, type Clock, type Dialer } from './wire/link'
@@ -316,24 +316,7 @@ export function openHermes(options: HermesOptions): Hermes {
     return showing(await actor.send(directive.text, directive.apiText), directive.note)
   }
 
-  const create = async ({ draftId, cwd }: Extract<Command, { do: 'create' }>): Promise<Outcome<SessionId>> => {
-    const { creation } = conn
-    if (creation === null) return NOT_CONNECTED
-    if (!creation.sources.includes('gui')) return CANT_START
-    const asked = { source: 'gui', request_id: draftId, ...(cwd === null ? {} : { cwd, cwd_explicit: true }), client: options.client }
-    const params = Object.fromEntries(Object.entries(asked).filter(([key]) => creation.parameters.includes(key)))
-    try {
-      const id = (await conn.call('session.create', params)).session_id as SessionId
-      actorFor(id)
-      refreshSoon()
-      return { ok: true, value: id }
-    } catch (error) {
-      return { ok: false, refusal: refusalOf(error) }
-    }
-  }
-
   const run = async (command: Command): Promise<Outcome<unknown>> => {
-    if (command.do === 'create') return create(command)
     if (command.do === 'open') return desk.ask(command.ref)
     if (command.do === 'start') {
       const started = await desk.start(command.bot)
