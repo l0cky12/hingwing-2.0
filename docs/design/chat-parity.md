@@ -75,7 +75,7 @@ No call site names a generation, a revision, a stored row id, an admission statu
 
 ### Invariants the types hold
 
-- No state holds a request's answer. `RequestState` is `waiting | sending`, and the `answer` action takes a `RecordedReply`, a type with no `secret` member. The recording dialer masks result frames.
+- No state holds a typed value. `RequestState` is `waiting | sending`, and the `answer` action takes a `RecordedReply`, a type with no `secret` member. The recording dialer masks result frames and a connector card's credentials.
 - `QueuedMessage.state` decides which actions a row offers. `lost` carries the generation that `prompt.resolve_unknown` needs.
 - A rewind in flight lives in `Fence.rewind`: the request id, the target row and the two fences it was sent with. After a lost reply the actor sends exactly that again.
 - `PromptItem.generation` stays required. Requests are not prompts.
@@ -110,7 +110,7 @@ Each unit is one PR, stacked on the one before it. Each ends with:
 |---|---|---|---|
 | B0 | Groundwork, no behaviour change | none | `SessionPatch.changed` with only the changed fields, and the `SessionPort` and `session-commands.ts` with today's commands moved onto it. Every existing test passes unchanged, and `applyPush(a, sessionPatch(a, b))` equals `b` for each pair of consecutive sessions of every fixture. Each later unit adds the scripted gateway handlers its own calls need. |
 | B1 | What Hermes says | #8 (the reasoning switch), #9, #11, #12, #13, #16 | `says.jsonl`: the reasoning switch, MoA, a tool image, status lines, a notice, an approval with `timeout_s`, and a goal verdict while idle. The `declined` phantom turn is gone. |
-| B2 | What Hermes asks | #20, #21, #22 | `asks.jsonl`: sudo answered (the recorded result is masked), a secret skipped, a vault prompt closed by `request.cancel`, a two-question batch, a plugin choice while idle, a connector card, and a Desktop bridge declined only while watched. |
+| B2 | What Hermes asks | #20, #21, #22 | `asks.jsonl`: sudo answered (the recorded result is masked), a secret skipped, a vault code another viewer answers, so it closes by `request.cancel`, a two-question batch, a plugin choice while idle, a connector card, and a Desktop bridge (`theme.pick`) declined only while watched. |
 | B3 | Queue and steer | #3, #4, #6, #17 | `queue.jsonl`: another client's queued row, cancel, send now, edit, a lost row released, steer, redirect, a rejected steer resubmitted, and deny-and-tell. |
 | B4 | Side prompts and chat commands | #30, #32, #33, #35, #36, #38, #45, #55 | `commands.jsonl`: `complete.path`, `/btw` and `/bg` with their answers, effort, fast, the chat's folder, export and compress. |
 | B5 | Session panels | #42, #43, #44, #46 | `panels.jsonl`: processes, a goal card, checkpoints and a reaction. |
@@ -153,14 +153,14 @@ Each limit comes from a backend choice or a gateway fact, and bounds what a wind
 7. A notice's time to live runs on this client's clock. A notice heard through replay after its time is dropped.
 8. Reasoning arrives only when Hermes shows it for the chat. A chat launched from the CLI or a messaging platform streams none until `tune reasoning` turns it on, from the next turn.
 9. A tool image can be read only when Hermes runs on this computer. Otherwise the window has the file's name and `reason: 'remote'`.
-10. A countdown needs `deadline`, which is null for a prompt first heard through a snapshot or a replay. Secret and batch cards have no countdown, though Hermes withdraws them after its own wait.
+10. A countdown needs `deadline`, which is null for a prompt first heard through a snapshot or a replay. A batch card has no countdown, though Hermes withdraws it after its own wait, because that wait is Hermes's config and no frame carries it.
 
 **B2, what Hermes asks**
 
-11. Requests are not placed in the turn. Draw waiting ones at the live end. A closed one leaves a notice in the interlude or the open turn.
-12. A secret is sent once and kept nowhere. The card cannot show what was typed. Its answer has no receipt, so the card reads `sending` until Hermes's `request.cancel` closes it. Any client attached to the chat can answer first.
-13. A batch is answered one question at a time, each answer visible to every client, and the last answer submits it. A "review, then submit" step has to hold the last answer in the window.
-14. A plugin command's question appears while that command's `send` is still pending. The composer must let a card be answered while a send is in flight.
+11. Requests are not placed in the turn. Draw waiting ones at the live end. A closed one leaves a `closed` notice in the interlude or the open turn, saying what was asked and how it ended. A request can wait while no turn runs: `activityOf` then says `answering` and `run` is idle, so Stop follows `run`, and the thread's end mark follows `turnActivityOf`.
+12. A secret is sent once and kept nowhere. The card cannot show what was typed. Its answer has no receipt, so the card reads `sending` until Hermes's `request.cancel` closes it. Any client attached to the chat can answer first, and Hermes does not say which did: a request closed while this client had not answered reads `elsewhere`. A masked prompt has a `deadline` from Hermes's own wait for its method, null for one first heard through a snapshot or during an attach. A login is one reply with an `identifier` and a `value`.
+13. A batch is answered one question at a time, and the last answer submits it. A "review, then submit" step has to hold the last answer in the window. An answer is the picked labels as Hermes showed them, or one typed line. Hermes may add " (Recommended)" to a label, and takes it back with or without that. A lock made in another client shows at the next attach, because Hermes publishes none.
+14. A plugin command's question appears while that command's `send` is still pending. The composer must let a card be answered while a send is in flight. A connector card is answered one target at a time, and `skip` continues with what is connected. Its targets change in place as Hermes reports them, and a sign-in link is kept only when it is an http or https link. A request for part of Hermes Desktop's window (a theme picker, the preview, a setup card) is refused while a window shows the chat, and leaves the `declined` notice the thread already draws.
 
 **B3, queue, steer and rewind**
 
