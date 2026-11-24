@@ -92,7 +92,8 @@ export interface Tail<T> { readonly from: number; readonly items: readonly T[] }
 
 type Running = Extract<Session['run'], { state: 'running' }>
 export interface SessionPatch {
-  readonly rest: Omit<Session, 'history' | 'run'>
+  /** The other fields whose reference changed since the last push. A field left out is the one the window holds. */
+  readonly rest: Partial<Omit<Session, 'history' | 'run'>>
   readonly history: Tail<SettledTurn>
   readonly run:
     | { readonly state: 'idle' }
@@ -178,6 +179,7 @@ export function applyPush<T extends Topic>(current: TopicValue<T> | undefined, c
   const held = current as Session
   const { rest, history, run } = push.patch
   const next: Session = {
+    ...held,
     ...rest,
     history: splice(held.history, history),
     run: run.state === 'idle'
