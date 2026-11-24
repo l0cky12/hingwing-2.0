@@ -52,6 +52,11 @@ describe('a profiles.list reply', () => {
     expect(sections[0]?.bots.map(bot => [bot.id, bot.name])).toEqual([['titled', 'Title'], ['blank-title', 'Display'], ['bare', 'bare'], ['blank', 'blank']])
   })
 
+  it('reads what a bot is for from its description, and a blank one as none', () => {
+    const { sections } = listed({ profiles: [row('sam', { description: ' Finds and fixes bugs ' }), row('rae', { description: ' ' }), row('bare')] })
+    expect(sections[0]?.bots.map(bot => bot.description)).toEqual(['Finds and fixes bugs', null, null])
+  })
+
   it('shows a title that holds a dot as the whole name', () => {
     expect(listed({ profiles: [row('timothy', filed({ title: 'Timothy · CEO' }))] }).sections[0]?.bots[0]?.name).toBe('Timothy · CEO')
   })
@@ -114,7 +119,7 @@ describe('a profiles.list reply', () => {
     ['holding blank words under hermes-bots', { 'hermes-bots': { title: ' ', sectionName: '' } }]
   ])('reads a ui_meta that is %s as saying nothing', (_, ui_meta) => {
     expect(listed({ profiles: [row('plain', { ui_meta: ui_meta as never })] }).sections).toEqual([
-      { name: null, bots: [{ id: 'plain', name: 'plain', preview: null, tone: 'slate' }] }
+      { name: null, bots: [{ id: 'plain', name: 'plain', preview: null, description: null, tone: 'slate' }] }
     ])
   })
 
@@ -184,7 +189,7 @@ describe('avatar tones', () => {
     const random = seeded(23)
     for (let round = 0; round < 200; round++) {
       const facts: BotFacts[] = Array.from({ length: 1 + Math.floor(random() * 24) }, (_, at) => ({
-        id: `bot-${at}` as BotFacts['id'], name: `Bot ${at}`, isDefault: random() < 0.1, preview: null, chat: null,
+        id: `bot-${at}` as BotFacts['id'], name: `Bot ${at}`, isDefault: random() < 0.1, preview: null, description: null, chat: null,
         section: (['Work', 'Home', null] as const)[Math.floor(random() * 3)] ?? null
       }))
       const roster = rosterOf(facts)

@@ -25,6 +25,8 @@ export interface BotFacts {
   readonly section: string | null
   /** One line from the bot's newest chat. null: it has no messages yet. */
   readonly preview: string | null
+  /** What the bot is for, as its owner wrote it. null: nothing written. */
+  readonly description: string | null
   /**
    * The bot's Bot Chat, the one a click on its row opens. null: it has none, or this socket may not
    * read it. It stays out of `Bot`, so a window learns a session only from the open chat.
@@ -36,6 +38,7 @@ export interface Bot {
   readonly id: BotId
   readonly name: string
   readonly preview: string | null
+  readonly description: string | null
   readonly tone: AvatarTone
 }
 
@@ -87,7 +90,10 @@ export interface BotCreated {
 /** The id Hermes gives a typed name: trimmed and lowercased, `default` in any case (hermes_cli/profiles.py:370-396). */
 export const canonicalBotId = (name: string): BotId => name.trim().toLowerCase() as BotId
 
-const shown = ({ id, name, preview }: BotFacts, tone: AvatarTone): Bot => ({ id, name, preview, tone })
+const shown = ({ id, name, preview, description }: BotFacts, tone: AvatarTone): Bot => ({ id, name, preview, description, tone })
+
+/** Every bot of a roster, in the order the sidebar draws them. */
+export const botsIn = ({ featured, sections }: Roster): readonly Bot[] => [...(featured === null ? [] : [featured]), ...sections.flatMap(section => section.bots)]
 
 /** Only the first default bot is featured. */
 export function rosterOf(facts: readonly BotFacts[]): Roster {
