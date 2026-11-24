@@ -1171,6 +1171,18 @@ describe('what Hermes says', () => {
     ])
   })
 
+  it('keeps the reasoning block it is streaming whole when a line is said inside it, and the text after the line', () => {
+    const thought = (text: string): SessionEvent => ({ type: 'reasoning', text, whole: false })
+    const state = feed(live(), event(1, started('t1')), event(2, thought('Look at '), 1, EPOCH, 100), event(3, status('Compacting…', 'compacting')),
+      event(4, thought('the notes.'), 1, EPOCH, 200), event(5, delta('Reading '), 1, EPOCH, 300), event(6, shown('credits')), event(7, delta('them.')))
+    expect(openItems(state)).toEqual([
+      { kind: 'reasoning', text: 'Look at the notes.', sealed: true, startedAt: 100, endedAt: 300 },
+      { kind: 'status', what: 'line', about: 'compacting', text: 'Compacting…' },
+      { kind: 'status', what: 'notice', key: 'credits', level: 'warn', text: 'notice credits', detail: null, ttlMs: null, seenAt: null, state: 'shown' },
+      { kind: 'text', markdown: 'Reading them.', sealed: false }
+    ])
+  })
+
   it('drops the interlude on a rebuild, since Hermes stores none of it', () => {
     const said = feed(live(), event(1, status('Goal met.'), null))
     const rebuilt = feed(said, { in: 'gap' }, { in: 'attached', attempt: 2, snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 1 } }), replay: null })
