@@ -8,7 +8,7 @@ import { PICTURE_MAX_BYTES, pictureTypeOf } from '../domain/bots'
 import type { SessionEvent } from '../domain/reduce'
 import { GATEWAY_PROTOCOL, type Clock, type Reach } from '../wire/link'
 import { parseEvent } from '../wire/parse'
-import type { ChatSeed, Fixture, FixtureStep } from './fixture'
+import { MASKED, type ChatSeed, type Fixture, type FixtureStep } from './fixture'
 import { checkParams } from './params'
 
 export interface Peer {
@@ -71,6 +71,10 @@ interface View {
   title: string
   pending: readonly unknown[]
   readonly prompts: Map<string, Obj>
+  /** The server requests still open, by id, as their frames carried them (gateway/session_server_requests.py:50-51). */
+  readonly requests: Map<string, { readonly method: string; readonly params: unknown }>
+  /** The open connector card as `connection.request` carried it, with the targets of its latest update (gateway/session_connections.py:30-34). */
+  connection: Obj | null
   model: Model | null
   /** A model switch asked for during a turn. It commits when the turn ends (gateway/session_mutations.py:134-143). */
   deferred: Model | null
@@ -91,6 +95,12 @@ const TRACK: { readonly [T in SessionEvent['type']]?: (view: View, event: Extrac
   'prompt.opened': (view, event, payload) => void view.prompts.set(event.id, payload),
   'prompt.settled': (view, event) => void view.prompts.delete(event.id),
   'prompts.cancelled': (view, event) => event.ids.forEach(id => view.prompts.delete(id)),
+  'request.cancelled': (view, event) => void view.requests.delete(event.id),
+  connect: (view, event, payload) => {
+    if (event.settled !== null) view.connection = null
+    else if ('timeout_seconds' in payload) view.connection = payload
+    else if (view.connection?.op_id === payload.op_id) view.connection = { ...view.connection, seq: payload.seq, targets: payload.targets }
+  },
   meta: (view, event, payload) => {
     if (event.title !== undefined) view.title = event.title
     if (event.revision !== undefined) view.revision = event.revision
@@ -154,6 +164,31 @@ function decoded(text: string, max: number): Buffer | null {
   return bytes.byteLength === 0 || bytes.byteLength > max ? null : bytes
 }
 
+/** gateway/session_clarify_lock.py:20-22 */
+const lockable: Check = (_gateway, _socket, params) => (isText(params.request_id) && isText(params.question_id) ? null : 'invalid_params')
+/** gateway/session_connections.py:76-83: the card answers for its own session's operation. */
+const ownCard: Check = (gateway, _socket, params) =>
+  isObject(params.owner) && params.owner.type === 'session' && params.owner.session_id === gateway.sessionId && isText(params.op_id) && isObject(params.result) ? null : 'invalid_params'
+
+/**
+ * Bridges Hermes does not hand to a reconnecting viewer, because a second delivery would repeat the
+ * action (gateway/local_desktop_ui.py:211-216). The two that wait on a card, `theme.pick` and `setup_beat`, are listed.
+ */
+const UNREPLAYED: ReadonlySet<string> = new Set(['terminal.read', 'preview.read', 'preview.act', 'window.read', 'theme.apply', 'tour'])
+
+/** What a story call changes in the gateway beside its recorded reply. */
+const AFTER: Readonly<Record<string, (view: View, params: Obj, reply: unknown) => void>> = {
+  /** gateway/session_server_requests.py:149-168: a lock is listed with the request until the last one settles it. */
+  'clarify.lock': (view, params, reply) => {
+    const id = String(params.request_id)
+    const open = view.requests.get(id)
+    if (open === undefined || !isObject(reply) || reply.status !== 'ok') return
+    if (Array.isArray(reply.remaining) && reply.remaining.length === 0) return void view.requests.delete(id)
+    const held = isObject(open.params) ? open.params : {}
+    view.requests.set(id, { method: open.method, params: { ...held, answers: { ...(isObject(held.answers) ? held.answers : {}), [String(params.question_id)]: params.answer ?? null } } })
+  }
+}
+
 /**
  * The calls a story answers, each with the checks its handler makes first, in the handler's order.
  * A session verb on a socket that has not attached the session is `permission_denied` for a submit
@@ -167,6 +202,8 @@ const STORY_CHECKS: Readonly<Record<string, readonly Check[]>> = {
   'approval.respond': [exactly('session_id', 'execution_generation', 'prompt_id', 'choice'), attached, runningGeneration],
   'clarify.respond': [exactly('session_id', 'execution_generation', 'prompt_id', 'answer'), attached, runningGeneration],
   'session.interrupt': [known, (gateway, _socket, params) => (gateway.view.generation === params.execution_generation ? null : 'stale_generation')],
+  'clarify.lock': [lockable],
+  'connection.respond': [ownCard],
   /** gateway/session_commands.py:422-425 */
   'command.dispatch': [known, dispatchable]
 }
@@ -296,6 +333,7 @@ interface Held extends Stream {
   readonly pending: readonly unknown[]
   readonly prompts: readonly unknown[]
   readonly openRequests: readonly unknown[]
+  readonly connection: Obj | null
 }
 
 /** The snapshot `session.resume` answers (gateway/session_controls.py:659-769), read at the stream's watermark. */
@@ -315,7 +353,7 @@ function snapshotOf(held: Held, subscriptionId: string, params: Obj): Obj {
       ...(held.yolo === null ? {} : { yolo: held.yolo }),
       ...(held.cwd === undefined ? {} : { cwd: held.cwd })
     },
-    pending_connection: null, open_requests: held.openRequests
+    pending_connection: held.connection, open_requests: held.openRequests
   }
 }
 
@@ -436,6 +474,14 @@ function usageView(stats: Obj): Obj {
 const YOLO_WORDS: Readonly<Record<string, boolean>> = { 1: true, on: true, true: true, 0: false, off: false, false: false }
 
 const tokenFor = ({ model }: Model) => `confirm-${model}`
+
+/** A recorded `MASKED` matches any value that is not empty. Everything else must match as JSON. */
+function sameAnswer(recorded: unknown, sent: unknown): boolean {
+  if (recorded === MASKED) return typeof sent === 'string' && sent !== ''
+  if (Array.isArray(recorded)) return Array.isArray(sent) && sent.length === recorded.length && recorded.every((item, index) => sameAnswer(item, sent[index]))
+  if (!isObject(recorded)) return recorded === sent
+  return isObject(sent) && Object.keys(sent).length === Object.keys(recorded).length && Object.entries(recorded).every(([key, value]) => key in sent && sameAnswer(value, sent[key]))
+}
 
 const modelOf = (value: Obj | undefined): Model | null =>
   value !== undefined && isText(value.model) ? { model: value.model, provider: isText(value.provider) ? value.provider : null } : null
@@ -657,7 +703,6 @@ export class ScriptedGateway {
   private readonly storyIsBotChatOf: string | null
   private readonly afterReply: (() => void)[] = []
   private readonly sockets = new Set<Socket>()
-  private readonly openRequests = new Map<string, { readonly method: string; readonly params: unknown }>()
   private readonly stagedImages = new Set<string>()
   private drop: Drop
   private delivered = 0
@@ -673,7 +718,7 @@ export class ScriptedGateway {
     this.drop = options.drop === null ? { at: 'spent' } : { at: 'armed', ...options.drop }
     const { models } = fixture.header
     this.view = {
-      running: false, generation: 0, revision: 0, title: '', pending: [], prompts: new Map(),
+      running: false, generation: 0, revision: 0, title: '', pending: [], prompts: new Map(), requests: new Map(), connection: null,
       model: modelOf(isObject(models) ? models : undefined), deferred: null, switchesCommitted: 0, branchesCommitted: 0, turnsEnded: 0, yolo: fixture.header.yolo ?? null
     }
     this.epoch = fixture.steps.map(epochOf).find(isText) ?? 'fixture-epoch'
@@ -720,13 +765,7 @@ export class ScriptedGateway {
     this.options.onReceived?.(frame)
     if (!isObject(frame)) return
     const { id, method } = frame
-    if (typeof method !== 'string') {
-      // A viewer's answer to a server request settles it only from a socket attached to its session
-      // (gateway/session_server_requests.py:53-75), and gets no reply.
-      const open = typeof id === 'string' ? this.openRequests.get(id) : undefined
-      if (open !== undefined && socket.subscriptions.has(this.sessionId)) this.openRequests.delete(id as string)
-      return
-    }
+    if (typeof method !== 'string') return this.answered(socket, frame)
     // Answered by the read loop, ahead of every handler (tui_gateway/ws.py:710-714).
     if (method === 'gateway.ping') return socket.peer.write({ jsonrpc: '2.0', id, result: { ok: true } })
     const reply = this.dispatch(socket, method, frame.params ?? {})
@@ -811,6 +850,29 @@ export class ScriptedGateway {
       isObject(held) && isText(held.path) && this.stagedImages.has(held.path) && held.path.startsWith(`/hermes/${routed}/`))
   }
 
+  /**
+   * A viewer's answer to a server request. Hermes settles the request only for a socket attached to
+   * its session, sends no reply, and drops an answer nothing waits for
+   * (gateway/session_server_requests.py:53-96). The story fails on one it did not expect, so a client
+   * that answers what it should leave open fails its replay.
+   */
+  private answered(socket: Socket, frame: Obj): void {
+    const step = this.fixture.steps[this.step]
+    const id = String(frame.id)
+    const problem = ((): string | null => {
+      if (step === undefined || !('answer' in step)) return 'it waits for no answer'
+      if (step.answer !== id) return `it waits for the answer to ${step.answer}`
+      if (!socket.subscriptions.has(this.sessionId)) return 'the socket has not attached the session'
+      if (!this.view.requests.has(id)) return 'that request is not open'
+      if ('error' in step) return isObject(frame.error) && frame.error.code === step.error.code ? null : `it waits for error ${step.error.code}`
+      return 'result' in frame && sameAnswer(step.result, frame.result) ? null : `it waits for the result ${JSON.stringify(step.result)}`
+    })()
+    if (problem !== null) return this.settle.reject(new Error(`the story did not expect this answer to ${id} at step ${this.step}: ${problem}`))
+    this.view.requests.delete(id)
+    this.step++
+    this.pump()
+  }
+
   /** Whether the frame is for the story session, on the profile it lives in. */
   plays(params: Obj, routed: string): boolean {
     return params.session_id === this.sessionId && routed === this.home
@@ -850,13 +912,14 @@ export class ScriptedGateway {
     }
     const step = this.fixture.steps[this.step]
     if (step === undefined || !('await' in step) || step.await !== method) {
-      const waiting = step !== undefined && 'await' in step ? `it waits for ${step.await}` : 'it waits for no call'
+      const waiting = step !== undefined && 'await' in step ? `it waits for ${step.await}` : step !== undefined && 'answer' in step ? `it waits for an answer to ${step.answer}` : 'it waits for no call'
       const unexpected = `the story did not expect ${method} at step ${this.step}: ${waiting}`
       this.settle.reject(new Error(unexpected))
       throw new Refused(unexpected, { code: -32603, message: unexpected })
     }
     this.step++
     if (step.error !== undefined) throw new Refused(step.error.message, step.error)
+    AFTER[method]?.(this.view, params, step.reply)
     if (method === 'session.mutate') this.publishReceipt()
     return step.reply
   }
@@ -867,7 +930,7 @@ export class ScriptedGateway {
    * step up to the next awaited call play now. Played after the reply they would race the client's next call.
    */
   private publishReceipt(): void {
-    for (let next = this.fixture.steps[this.step]; next !== undefined && !('await' in next); next = this.fixture.steps[this.step]) this.play(next)
+    for (let next = this.fixture.steps[this.step]; next !== undefined && !('await' in next || 'answer' in next); next = this.fixture.steps[this.step]) this.play(next)
   }
 
   storyParent(): Parent {
@@ -1081,7 +1144,8 @@ export class ScriptedGateway {
     return snapshotOf({
       id: this.sessionId, rows: this.stored, ring: this.ring, epoch: this.epoch, running: view.running, generation: view.generation,
       revision: view.revision, title: view.title, model: view.model, yolo: view.yolo, pending: view.pending, prompts: [...view.prompts.values()],
-      openRequests: this.openRequestList(), ...(this.fixture.header.paths?.cwd === undefined ? {} : { cwd: this.fixture.header.paths.cwd })
+      openRequests: this.openRequestList(), connection: view.connection,
+      ...(this.fixture.header.paths?.cwd === undefined ? {} : { cwd: this.fixture.header.paths.cwd })
     }, socket.subscriptionId, params)
   }
 
@@ -1093,7 +1157,7 @@ export class ScriptedGateway {
     socket.subscriptions.set(chat.id, socket.subscriptionId)
     return snapshotOf({
       id: chat.id, rows: chat.rows, ring: chat.ring, epoch: chat.epoch, running: chat.running, generation: chat.generation,
-      revision: chat.revision, title: chat.title, model: chat.model, yolo: this.yoloAt(chat.yolo), pending: [], prompts: chat.asking === null ? [] : [chat.asking], openRequests: []
+      revision: chat.revision, title: chat.title, model: chat.model, yolo: this.yoloAt(chat.yolo), pending: [], prompts: chat.asking === null ? [] : [chat.asking], openRequests: [], connection: null
     }, socket.subscriptionId, params)
   }
 
@@ -1368,7 +1432,7 @@ export class ScriptedGateway {
 
   /** gateway/session_server_requests.py:125-135 */
   openRequestList(): unknown[] {
-    return [...this.openRequests].map(([id, { method, params }]) => ({ id, method, params }))
+    return [...this.view.requests].flatMap(([id, { method, params }]) => (UNREPLAYED.has(method) ? [] : [{ id, method, params }]))
   }
 
   releaseHeld(): void {
@@ -1389,7 +1453,7 @@ export class ScriptedGateway {
       this.finished = true
       return this.settle.resolve()
     }
-    if ('await' in step || this.viewers().length === 0) return
+    if ('await' in step || 'answer' in step || this.viewers().length === 0) return
     const before = this.fixture.steps[this.step - 1]?.at ?? 0
     this.scheduled = true
     this.options.clock.setTimeout(() => {
@@ -1399,7 +1463,7 @@ export class ScriptedGateway {
     }, this.options.timing === 'recorded' ? step.at - before : 0)
   }
 
-  private play(step: Exclude<FixtureStep, { await: string }>): void {
+  private play(step: Exclude<FixtureStep, { await: string } | { answer: string }>): void {
     this.step++
     if ('stored' in step) {
       this.stored = step.stored
@@ -1439,7 +1503,7 @@ export class ScriptedGateway {
     if (!isObject(push)) return
     const { id, method, params } = push
     if (method !== 'event') {
-      if (typeof id === 'string' && typeof method === 'string') this.openRequests.set(id, { method, params })
+      if (typeof id === 'string' && typeof method === 'string') this.view.requests.set(id, { method, params })
     } else if (isObject(params) && isInt(params.seq)) {
       this.ring.push({ ...params, seq: params.seq })
       this.track(params)

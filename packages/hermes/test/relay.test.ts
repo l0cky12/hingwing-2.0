@@ -37,7 +37,7 @@ describe('a message handed to another bot', () => {
   const RAE: Bot = { id: 'rae' as BotId, name: 'Rae', preview: null, description: null, tone: 'umber', picture: false }
 
   async function failedWith(error: Error, link: Link) {
-    const book = relayBook({ link, call: () => Promise.reject(error), as: () => ({ link, call: () => Promise.reject(error) }) }, () => {})
+    const book = relayBook({ link, call: () => Promise.reject(error), as: () => ({ link, call: () => Promise.reject(error), respond: () => {}, clarifyBatch: false }) }, () => {})
     book.send(SESSION, null, RAE, 'Ask @Rae')
     await settle()
     return book.desk.bySession[SESSION]?.map(relay => relay.state)

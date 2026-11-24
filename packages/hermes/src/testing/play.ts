@@ -1,15 +1,35 @@
 import { randomUUID } from 'node:crypto'
-import type { PromptId, Session, SessionId } from '../domain/session'
+import type { Answer, HermesRequest, PromptId, RequestId, RequestReply, Session, SessionId } from '../domain/session'
 import { openHermes, type Command, type Hermes, type Upload } from '../hub'
 import { systemClock } from '../wire/link'
 import { manualClock } from './clock'
-import type { Fixture, FixtureStep } from './fixture'
+import { MASKED, type Fixture, type FixtureStep } from './fixture'
 import { scriptedDialer, type ScriptedDialer, type ScriptOptions } from './script'
 
 type Recorded = Readonly<Record<string, unknown>>
 type AwaitStep = Extract<FixtureStep, { await: string }>
+type AnswerStep = Extract<FixtureStep, { answer: string }>
 
-const recorded = (step: AwaitStep): Recorded => (step.params !== null && typeof step.params === 'object' ? step.params as Recorded : {})
+const record = (value: unknown): Recorded => (value !== null && typeof value === 'object' ? value as Recorded : {})
+const recorded = (step: AwaitStep): Recorded => record(step.params)
+
+/** A locked answer as the recording holds it, back to what a window sends: several picks are a JSON array of labels. */
+function lockedAnswer(raw: unknown): Answer {
+  if (typeof raw !== 'string') return null
+  try {
+    const picks: unknown = JSON.parse(raw)
+    return Array.isArray(picks) && picks.every(pick => typeof pick === 'string') ? picks : [raw]
+  } catch {
+    return [raw]
+  }
+}
+
+function cardReply(result: Recorded): RequestReply {
+  const [target] = Array.isArray(result.targets) ? result.targets.map(record) : []
+  if (target === undefined) return { kind: 'skip' }
+  const values = target.env === undefined ? {} : { values: record(target.env) as { readonly [field: string]: string } }
+  return { kind: 'connect', target: String(target.name), as: target.status === 'approved' ? 'approved' : 'skipped', ...values }
+}
 
 const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fixture: Fixture, following: FixtureStep | undefined) => Command>> = {
   'prompt.submit': (sessionId, params) => ({ do: 'send', sessionId, text: String(params.text) }),
@@ -22,7 +42,32 @@ const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fix
   },
   'approval.respond': (sessionId, params) => ({ do: 'answer', sessionId, promptId: params.prompt_id as PromptId, reply: { kind: 'choice', value: String(params.choice) } }),
   'clarify.respond': (sessionId, params) => ({ do: 'answer', sessionId, promptId: params.prompt_id as PromptId, reply: { kind: 'text', value: String(params.answer) } }),
-  'session.interrupt': sessionId => ({ do: 'stop', sessionId })
+  'session.interrupt': sessionId => ({ do: 'stop', sessionId }),
+  'clarify.lock': (sessionId, params) => ({
+    do: 'answer', sessionId, requestId: params.request_id as RequestId, reply: { kind: 'lock', question: String(params.question_id), answer: lockedAnswer(params.answer) }
+  }),
+  'connection.respond': (sessionId, params) => ({ do: 'answer', sessionId, requestId: params.op_id as RequestId, reply: cardReply(record(params.result)) })
+}
+
+const TYPED = 'typed by the stand-in user'
+
+/** The reply that writes the recorded result: a value for a masked one, a skip for an empty one or for a batch ended early. */
+function requestReply({ ask }: HermesRequest, result: Recorded): RequestReply {
+  if (ask.kind !== 'secret' || result.value !== MASKED) return { kind: 'skip' }
+  return { kind: 'secret', value: TYPED, ...(ask.for.is === 'login' ? { identifier: TYPED } : {}) }
+}
+
+/** The command for the step the story waits at, or null while there is nothing for the user to do: a request not shown yet, or one the hub declines itself. */
+function commandFor(step: AwaitStep | AnswerStep, session: Session, index: number, fixture: Fixture): Command | null {
+  const { id: sessionId } = session
+  if ('await' in step) {
+    const command = USER[step.await]?.(sessionId, recorded(step), fixture, fixture.steps.slice(index + 1).find(next => 'await' in next))
+    if (command === undefined) throw new Error(`step ${index}: the stand-in user has no command for ${step.await}`)
+    return command
+  }
+  const request = session.requests.find(held => held.id === step.answer)
+  if ('error' in step || request === undefined || request.state.s !== 'waiting') return null
+  return { do: 'answer', sessionId, requestId: request.id, reply: requestReply(request, record(step.result)) }
 }
 
 const mintedIn = (step: AwaitStep): unknown => recorded(step).input_id ?? recorded(step).request_id
@@ -52,9 +97,10 @@ export interface Moment {
 }
 
 /**
- * Plays a fixture through `openHermes` with a stand-in user: when the story awaits `prompt.submit`,
- * `approval.respond`, `clarify.respond` or `session.interrupt`, it issues the matching `Command` with the
- * recorded text or choice. A rewind is one command for the `session.mutate` step and the `prompt.submit` after it. Yields the session after every step that changed it, so a test can assert on
+ * Plays a fixture through `openHermes` with a stand-in user: when the story awaits a call or an
+ * answer to a server request, it issues the matching `Command` with the recorded text or choice.
+ * In place of a masked value it types one of its own. A rewind is one command for the `session.mutate`
+ * step and the `prompt.submit` after it. Yields the session after every step that changed it, so a test can assert on
  * any moment of a turn, not only its end. Ends when the story is over and the session is live.
  * `script` is the gateway's side: what the client sent it, and how often it dialed.
  *
@@ -84,9 +130,9 @@ export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncG
   const user = (session: Session) => {
     const index = script.step
     const step = fixture.steps[index]
-    if (step === undefined || !('await' in step) || session.sync.state !== 'live' || asked.has(index)) return
-    const typed = USER[step.await]?.(sessionId, recorded(step), fixture, fixture.steps.slice(index + 1).find(next => 'await' in next))
-    if (typed === undefined) throw new Error(`step ${index}: the stand-in user has no command for ${step.await}`)
+    if (step === undefined || !('await' in step || 'answer' in step) || session.sync.state !== 'live' || asked.has(index)) return
+    const typed = commandFor(step, session, index, fixture)
+    if (typed === null) return
     const command: Command = typed.do === 'send' && !attached ? { ...typed, attachments: attach.map(upload => upload.id) } : typed
     if (command.do === 'send') attached = true
     asked.add(index)
@@ -113,7 +159,9 @@ export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncG
       if (script.finished && latest !== undefined && ended(latest)) return
       if (clock.now() - progressAt > (virtual === null ? LOOPBACK.stuckMs : STUCK_MS)) {
         const step = fixture.steps[script.step]
-        const waiting = step !== undefined && 'await' in step ? `waiting for ${step.await}` : 'with no viewer attached'
+        const waiting = step === undefined || 'push' in step || 'stored' in step || 'drop' in step
+          ? 'with no viewer attached'
+          : `waiting for ${'await' in step ? step.await : `an answer to ${step.answer}`}`
         throw new Error(`the story is stuck at step ${script.step} of ${fixture.steps.length}, ${waiting}. The session is ${latest?.sync.state ?? 'unseen'}.`)
       }
     }

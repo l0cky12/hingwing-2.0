@@ -369,7 +369,7 @@ describe('parseSnapshot', () => {
       ask: { kind: 'approval', command: 'rm -rf /tmp/hermes-proto-work/scratch', reason: 'delete in root path', choices: ['once', 'deny', 'session', 'always'] }
     }])
     expect(snapshot.queue).toEqual([{ inputId: 'input_990d3cd8381d422f', admissionId: 'e07cb5793e7f497bbcc1c0c8b0cdf20a', text: REQUEST, status: 'started' }])
-    expect(snapshot.openRequests).toEqual([{ requestId: 'req-1', method: 'sudo', sessionId: SESSION }])
+    expect(snapshot.openRequests).toEqual([{ kind: 'card', requestId: 'req-1', method: 'sudo', sessionId: SESSION, waitS: 120, ask: { kind: 'secret', for: { is: 'sudo', command: 'apt install x' } } }])
   })
 
   it('says older rows exist when the first stored row was cut by the byte budget', () => {
@@ -426,8 +426,8 @@ describe('parseListRows and parseServerRequest', () => {
     expect(parseListRows(sessions)).toEqual([{ id: SESSION, title: '', preview: null, lastActiveAt: 1795251600000 }])
   })
 
-  it('reads an app-level request as having no session', () => {
-    expect(parseServerRequest({ id: 'r2', method: 'display.install.sudo', params: { session_id: '' } })).toEqual({ requestId: 'r2', method: 'display.install.sudo', sessionId: null })
+  it('reads an app-level request as a bridge with no session', () => {
+    expect(parseServerRequest({ id: 'r2', method: 'display.install.sudo', params: { session_id: '' } })).toEqual({ kind: 'bridge', requestId: 'r2', method: 'display.install.sudo', sessionId: null })
   })
 })
 
@@ -844,5 +844,92 @@ describe('what Hermes says, parsed', () => {
 
   it('reads the show_reasoning control', () => {
     expect([parseShown({ value: '1' }), parseShown({ value: '0' }), parseShown({ value: 'on' }), parseShown({})]).toEqual([true, false, null, null])
+  })
+})
+
+describe('what Hermes asks, parsed', () => {
+  const frame = (method: string, params: Record<string, unknown>) => parseServerRequest({ id: 'srq-1', method, params: { session_id: SESSION, ...params } })
+  const envelope = (type: string, payload: Record<string, unknown>) => ({ type, session_id: SESSION, replay_epoch: 'e', seq: 4, payload })
+  const TARGET = { name: 'github', kind: 'connector', action: 'connect', state: 'initiated', connect_url: 'https://example.com/oauth', detail: 'Waiting for sign-in' }
+  const CARD = { op_id: 'op1', seq: 2, deadline_at: 1_795_251_900, targets: [TARGET] }
+
+  it.each([
+    ['sudo', { command: 'sudo apt install jq' }, 120, { is: 'sudo', command: 'sudo apt install jq' }],
+    ['secret', { env_var: 'TENOR_API_KEY', prompt: 'Tenor API key' }, 120, { is: 'env', name: 'TENOR_API_KEY', prompt: 'Tenor API key' }],
+    ['vault.unlock_prompt', { backend: 'bitwarden', display_name: 'Bitwarden' }, 120, { is: 'vault', backend: 'bitwarden', name: 'Bitwarden' }],
+    ['vault.save_login', { origin: 'https://example.com', site: 'Example' }, 180, { is: 'login', site: 'Example', origin: 'https://example.com' }],
+    ['vault.code', { site: 'Example', hint: null }, 180, { is: 'code', site: 'Example', hint: null }]
+  ])('reads %s as a masked prompt with the wait Hermes gives it', (method, params, waitS, asks) => {
+    expect(frame(method, params)).toEqual({ kind: 'card', requestId: 'srq-1', sessionId: SESSION, method, waitS, ask: { kind: 'secret', for: asks } })
+  })
+
+  it('reads a clarify request as a batch, with the locks a reconnect lists, and no wait of its own', () => {
+    const questions = [{ qid: 'q0', question: 'Which env?', choices: ['staging', 'prod'] }, { qid: 'q1', question: 'Regions?', choices: ['eu', 'us'], multi_select: true }, { qid: 'q2', question: 'Why?' }]
+    expect(frame('clarify', { questions, answers: { q0: 'prod', q1: '["eu","us"]', q2: null } })).toMatchObject({
+      kind: 'card', waitS: null,
+      ask: {
+        kind: 'questions',
+        questions: [{ id: 'q0', text: 'Which env?', choices: ['staging', 'prod'], multi: false }, { id: 'q1', text: 'Regions?', choices: ['eu', 'us'], multi: true }, { id: 'q2', text: 'Why?', choices: [], multi: false }],
+        answers: { q0: ['prod'], q1: ['eu', 'us'], q2: null }
+      }
+    })
+  })
+
+  it('reads a typed answer to a several-pick question as one line', () => {
+    expect(frame('clarify', { questions: [{ qid: 'q0', question: 'Regions?', choices: ['eu'], multi_select: true }], answers: { q0: 'neither' } })).toMatchObject({ ask: { answers: { q0: ['neither'] } } })
+  })
+
+  it.each(['preview.read', 'preview.act', 'window.read', 'terminal.read', 'theme.apply', 'theme.pick', 'tour', 'setup_beat', 'approval', 'not.a.method'])('reads %s as a bridge: no card', method => {
+    expect(frame(method, {})).toEqual({ kind: 'bridge', requestId: 'srq-1', sessionId: SESSION, method })
+  })
+
+  it('reads a card method whose params it cannot use, or that names no session, as unusable', () => {
+    expect(frame('secret', { prompt: 'no variable' })).toEqual({ kind: 'unusable', requestId: 'srq-1', method: 'secret' })
+    expect(frame('clarify', { questions: [] })).toEqual({ kind: 'unusable', requestId: 'srq-1', method: 'clarify' })
+    expect(parseServerRequest({ id: 'srq-1', method: 'sudo', params: { session_id: '' } })).toEqual({ kind: 'unusable', requestId: 'srq-1', method: 'sudo' })
+  })
+
+  it.each([
+    ['resolved', 'resolved'], ['timeout', 'timeout'], ['interrupted', 'interrupted'], ['shutdown', 'withdrawn'], ['session_closed', 'withdrawn'], ['the user closed the tab', 'withdrawn']
+  ])('reads request.cancel with reason %s as %s', (reason, why) => {
+    expect(parseEvent(envelope('request.cancel', { id: 'srq-1', method: 'sudo', reason }))).toMatchObject({ event: { type: 'request.cancelled', id: 'srq-1', why } })
+  })
+
+  it('reads connection.request as the card opening, with its wait and only a web link kept', () => {
+    const payload = { ...CARD, timeout_seconds: 300, targets: [TARGET, { ...TARGET, name: 'notes', connect_url: 'file:///etc/passwd', state: 'not_connected' }] }
+    expect(parseEvent(envelope('connection.request', payload))).toMatchObject({
+      event: {
+        type: 'connect', settled: null,
+        card: {
+          kind: 'card', requestId: 'op1', sessionId: SESSION, method: 'connection.request', waitS: 300,
+          ask: { kind: 'connect', rev: 2, suggested: [], targets: [{ name: 'github', state: 'started', url: 'https://example.com/oauth', resolved: false }, { name: 'notes', state: 'not-connected', url: null }] }
+        }
+      }
+    })
+  })
+
+  it.each([['all_resolved', 'done'], ['continue', 'done'], ['deadline', 'timeout'], ['interrupt', 'interrupted'], [null, 'withdrawn']])('reads a settled connection.update (%s) as the card closing: %s', (by, why) => {
+    const payload = { ...CARD, owner: { type: 'session', session_id: SESSION }, settled: true, settled_by: by }
+    expect(parseEvent(envelope('connection.update', payload))).toMatchObject({ event: { type: 'connect', settled: why, card: { requestId: 'op1' } } })
+  })
+
+  it('reads an unsettled connection.update as the card as it is now, and leaves out an operation of the account', () => {
+    const update = { ...CARD, seq: 3, owner: { type: 'session', session_id: SESSION }, settled: false, target: 'github', from: 'pending', to: 'initiated' }
+    expect(parseEvent(envelope('connection.update', update))).toMatchObject({ event: { type: 'connect', settled: null, card: { waitS: null, ask: { rev: 3 } } } })
+    expect(parseEvent(envelope('connection.update', { ...update, owner: { type: 'account' } }))).toMatchObject({ event: null, skipped: 'unshown' })
+  })
+
+  it('lists the snapshot\'s open connector card with its open requests', () => {
+    const { header } = fixture
+    const snapshot = parseSnapshot({
+      session_id: SESSION, stored_session_id: SESSION, messages: [], message_count: 0, running: true, authority_epoch: 1, replay_epoch: 'e', last_sequence: 4,
+      subscription_id: 's', revision: 1, execution_generation: 1, pending: [], prompts: [], info: { desktop_protocol: 'hermes-gateway-v1' }, display_messages: header.stored as never,
+      open_requests: [{ id: 'srq-9', method: 'theme.pick', params: { session_id: SESSION, picker: 'accent' } }],
+      pending_connection: { ...CARD, timeout_seconds: 300 } as never
+    })
+    expect(snapshot.openRequests).toMatchObject([
+      { kind: 'bridge', requestId: 'srq-9', method: 'theme.pick' },
+      { kind: 'card', requestId: 'op1', method: 'connection.request', sessionId: SESSION, ask: { kind: 'connect', rev: 2 } }
+    ])
   })
 })

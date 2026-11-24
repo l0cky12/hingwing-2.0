@@ -1,8 +1,8 @@
 import {
-  activityOf,
-  type Activity, type Attachment, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type Item, type MoaItem, type NoticeItem,
-  type Outcome, type PlanEntry, type PlanItem, type PromptId, type PromptItem, type PromptReply, type ReasoningItem, type Session, type SettledTurn,
-  type StatusItem, type Sync, type Tokens, type ToolItem, type Turn, type TurnId
+  turnActivityOf,
+  type Asked, type Attachment, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type Item, type MoaItem, type NoticeItem, type Outcome,
+  type PlanEntry, type PlanItem, type PromptId, type PromptItem, type PromptReply, type ReasoningItem, type RequestEnd, type Session, type SettledTurn,
+  type StatusItem, type Sync, type Tokens, type ToolItem, type Turn, type TurnActivity, type TurnId
 } from '@highwing/hermes/domain'
 import { changesAt, elapsedWords, timeLines, type ViewClock } from './when'
 
@@ -78,6 +78,8 @@ export type ThreadNode =
   | { readonly kind: 'plan'; readonly key: string; readonly plan: PlanView }
   | { readonly kind: 'moa'; readonly key: string; readonly moa: MoaItem }
   | { readonly kind: 'status'; readonly key: string; readonly status: StatusItem }
+  /** Where something Hermes asked outside the turn closed. A waiting one is not in the view yet. */
+  | { readonly kind: 'closed'; readonly key: string; readonly asked: Asked; readonly end: RequestEnd }
 
 /**
  * The turn's single end mark.
@@ -220,7 +222,7 @@ export function threadView(session: Session, clock: ViewClock): ThreadView {
   const lines = timeLines(starts, clock)
   const settled = session.history.map((turn, index) => settledView(turn, lines[index] ?? null))
   const open = run.state === 'running'
-    ? turnView(run.turn, lines.at(-1) ?? null, sync.state === 'live', nodes => openEnd(run.turn, nodes, activityOf(session), sync.state, clock))
+    ? turnView(run.turn, lines.at(-1) ?? null, sync.state === 'live', nodes => openEnd(run.turn, nodes, turnActivityOf(run), sync.state, clock))
     : null
   const interlude = session.interlude.length === 0
     ? null
@@ -276,7 +278,7 @@ function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<Se
       case 'prompt':
         return { kind: 'prompt', key, card: promptCard(item, partner !== null, live) }
       case 'notice':
-        return { kind: 'notice', key, ...noticeWords(item) }
+        return item.what === 'closed' ? { kind: 'closed', key, asked: item.asked, end: item.end } : { kind: 'notice', key, ...noticeWords(item) }
       case 'reasoning':
         return { kind: 'reasoning', key, text: trimBlankLines(item.text), streaming: !item.sealed, duration: thoughtFor(item) }
       case 'helper':
@@ -705,12 +707,10 @@ function answeredWords(prompt: PromptItem, state: Exclude<PromptItem['state'], {
 }
 
 const DECLINED_WORDS: { readonly [method: string]: string } = {
-  sudo: "Hermes asked for your sudo password. Highwing can't show that prompt yet, so it said no.",
-  secret: "Hermes asked for a secret. Highwing can't show that prompt yet, so it said no.",
   setup_beat: "Hermes asked to show a setup step. Highwing can't show that yet, so it said no."
 }
 
-function noticeWords(notice: NoticeItem): { readonly tone: 'error' | 'info'; readonly text: string } {
+function noticeWords(notice: Exclude<NoticeItem, { what: 'closed' }>): { readonly tone: 'error' | 'info'; readonly text: string } {
   if (notice.what === 'said') return { tone: notice.tone, text: notice.text }
   const method = notice.method.split('.')[0] ?? notice.method
   return { tone: 'info', text: DECLINED_WORDS[method] ?? `Hermes sent a request Highwing can't show yet (${notice.method}), so it said no.` }
@@ -729,9 +729,9 @@ const TIP_WORDS = {
   thinking: 'Thinking',
   writing: 'Writing',
   stopping: 'Stopping'
-} as const satisfies Record<Exclude<Activity['kind'], 'preparing' | 'working' | 'asking' | 'reasoning' | 'helping'>, string>
+} as const satisfies Record<Exclude<TurnActivity['kind'], 'preparing' | 'working' | 'asking' | 'reasoning' | 'helping'>, string>
 
-function openEnd(turn: Turn, nodes: readonly ThreadNode[], activity: Activity, sync: Sync['state'], clock: ViewClock): ThreadEnd {
+function openEnd(turn: Turn, nodes: readonly ThreadNode[], activity: TurnActivity, sync: Sync['state'], clock: ViewClock): ThreadEnd {
   if (sync !== 'live') return { kind: 'paused', words: PAUSED_WORDS[sync] }
   const elapsed = elapsedWords(turn.began?.at ?? null, clock.now)
   const tip = (words: string): ThreadEnd => ({ kind: 'tip', words: [{ t: 'text', v: words }], elapsed })
@@ -808,6 +808,7 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
  *   ≋ MoA 2/3 · 2 references · aggregating                     MoA round
  *   · Goal: not done yet ...                                   status line, its kind when not `other`
  *   ※ warn: Credits are low  (cleared)                         keyed notice
+ *   ◇ sudo: answered                                           where a request closed, and how
  *   ✓ Done                                                     end: ✓ done, ✗ failed, ⊘ stopped, ~ lost, each with its words
  *     1,204 in, 380 out                                        what the reply used, when Hermes said
  *
@@ -870,6 +871,8 @@ function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, open
     }
     case 'notice':
       return [`! ${node.text}`]
+    case 'closed':
+      return [`◇ ${node.asked}: ${node.end}`]
     case 'reasoning': {
       const head = `${live ? '◉' : '▸'} Thought${node.streaming ? ' …' : ''}${live ? elapsedSuffix(elapsed) : ''}`
       return opened.has(node.key) ? [head, ...node.text.split('\n').map(line => `    ${line}`)] : [head]

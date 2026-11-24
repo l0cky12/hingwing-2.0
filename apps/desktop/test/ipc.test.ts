@@ -106,6 +106,12 @@ describe('validators', () => {
       .toEqual({ do: 'send', sessionId: 's1', text: 'what is this', attachments: ['a-1', 'a-2'] })
     expect(parseCommand({ do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 'once', x: 1 } }))
       .toEqual({ do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 'once' } })
+    const request = (reply: object) => parseCommand({ do: 'answer', sessionId: 's1', requestId: 'r1', reply: { ...reply, x: 1 } })
+    expect(request({ kind: 'secret', value: 'hunter2', identifier: 'ada' })).toEqual({ do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'secret', value: 'hunter2', identifier: 'ada' } })
+    expect(request({ kind: 'lock', question: 'q0', answer: ['a', 'b'] })).toEqual({ do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'lock', question: 'q0', answer: ['a', 'b'] } })
+    expect(request({ kind: 'lock', question: 'q0', answer: null })).toMatchObject({ reply: { kind: 'lock', answer: null } })
+    expect(request({ kind: 'skip' })).toEqual({ do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'skip' } })
+    expect(request({ kind: 'connect', target: 'github', as: 'approved', values: { TOKEN: 't' } })).toEqual({ do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'connect', target: 'github', as: 'approved', values: { TOKEN: 't' } } })
     expect(parseCommand({ do: 'reconnect', start: true })).toEqual({ do: 'reconnect', start: true })
     expect(parseCommand({ do: 'open', ref: { kind: 'bot', bot: 'research', sessionId: 's9' }, sessionId: 's9' })).toEqual({ do: 'open', ref: { kind: 'bot', bot: 'research' } })
     expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: 'research', draftId: 'd1', sessionId: 's9' } })).toEqual({ do: 'open', ref: { kind: 'new', bot: 'research', draftId: 'd1' } })
@@ -216,6 +222,11 @@ describe('validators', () => {
     ['the picture of a bot with no name', { do: 'botPicture', bot: ' ' }],
     ['a blank first message', { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: '' }],
     ['a reply of the wrong kind', { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 1 } }],
+    ['a prompt answered with a request\'s reply', { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'skip' } }],
+    ['a request answered with a prompt\'s reply', { do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'choice', value: 'once' } }],
+    ['a secret with no value', { do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'secret' } }],
+    ['a lock whose answer is one string', { do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'lock', question: 'q0', answer: 'prod' } }],
+    ['a connector answer with a value that is not text', { do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'connect', target: 'github', as: 'approved', values: { TOKEN: 1 } } }],
     ['a non-boolean start', { do: 'reconnect', start: 'yes' }],
     ['a YOLO switch with a word for on', { do: 'setYolo', sessionId: 's1', on: 'on' }],
     ['a path completion for a word that is not a mention', { do: 'completePath', sessionId: 's1', word: 'not' }],

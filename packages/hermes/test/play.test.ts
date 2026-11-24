@@ -46,7 +46,7 @@ describe('the errand, played through the real client', () => {
     expect(sent[6]?.params).toEqual({})
     expect(sent[7]?.params, 'the relay probe').toEqual({})
     expect(sent[8]?.params).toEqual({ include_sessions: true })
-    expect(sent[11]?.params).toEqual((fixture.steps[stepOf('prompt.submit')] as { params: unknown }).params)
+    expect(sent[11]?.params, 'the gateway sends batches, so the submit asks for them').toEqual({ ...(fixture.steps[stepOf('prompt.submit')] as { params: object }).params, clarify_batch: true })
     expect(sent[12]?.params).toEqual((fixture.steps[stepOf('approval.respond')] as { params: unknown }).params)
   })
 

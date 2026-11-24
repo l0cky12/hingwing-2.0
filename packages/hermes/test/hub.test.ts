@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import type { BotId } from '../src/domain/bots'
-import type { AttachmentId, BranchId, Item, PromptId, Session, SessionId } from '../src/domain/session'
+import type { AttachmentId, BranchId, Item, PromptId, RequestId, Session, SessionId } from '../src/domain/session'
 import { DialError, openHermes, RETAIN_MS, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { play, scriptedDialer, type Fixture, type FixtureStep, type Moment, type ScriptOptions } from '../src/testing/fixture'
-import { BOUND, BRANCH, BRANCH_OLD, callsIn, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, NO_TREE, paramsOf, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, SORTED, SORTED_2, SORTED_3, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, withSudo } from './support/errand'
+import { MASKED, play, scriptedDialer, type Fixture, type FixtureStep, type Moment, type ScriptOptions } from '../src/testing/fixture'
+import {
+  BOUND, BRANCH, BRANCH_OLD, callsIn, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, NO_TREE, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID,
+  SESSION, SLASH, stepOf, SORTED, SORTED_2, SORTED_3, SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, withSteps
+} from './support/errand'
 
 const CLIENT = { name: 'highwing-test', version: '0.0.0' }
 const TEXT = String(paramsOf('prompt.submit').text)
 const PROMPT = paramsOf('approval.respond').prompt_id as PromptId
-const SUDO = 'srq-0123456789ab'
 
 function open(fixture: Fixture = ERRAND, options: ScriptOptions & Partial<HermesOptions> = {}) {
   const clock = manualClock()
@@ -124,36 +126,116 @@ describe('retention', () => {
   })
 })
 
-describe('refuse', () => {
-  const declined = { kind: 'notice', what: 'declined', requestId: SUDO, method: 'sudo' }
-  const declines = (moment: Moment) => moment.script.received.filter(frame => (frame as { id?: unknown }).id === SUDO)
+describe('a request Highwing has no card for', () => {
+  const declined = { kind: 'notice', what: 'declined', requestId: PICK, method: 'theme.pick' }
+  const answersTo = (received: readonly unknown[], id: string) => received.filter(frame => (frame as { id?: unknown }).id === id)
   const last = async (played: AsyncIterable<Moment>) => {
     let moment: Moment | undefined
     for await (moment of played);
     return moment as Moment
   }
 
-  it('answers a server request with JSON-RPC error -32601 and files a notice in the session', async () => {
-    const moment = await last(play(withSudo(12)))
-    expect(declines(moment)).toEqual([{ jsonrpc: '2.0', id: SUDO, error: { code: -32601, message: "Highwing can't show this prompt yet, so it said no." } }])
+  it('is declined with JSON-RPC error -32601 while a window watches the chat, and leaves a notice', async () => {
+    const moment = await last(play(withSteps(12, PICK_ASK, PICK_DECLINED)))
+    expect(answersTo(moment.script.received, PICK)).toEqual([{ jsonrpc: '2.0', id: PICK, error: PICK_DECLINED.error }])
     expect(itemsOf(moment.session).filter(item => item.kind === 'notice')).toEqual([declined])
     expect(moment.session.history[0]?.outcome).toEqual({ kind: 'complete' })
   })
 
-  it('refuses a request that an attach snapshot lists as still open', async () => {
-    const moment = await last(play(withSudo(12), { drop: { afterPush: 12, missed: 3 } }))
+  it('is declined when an attach snapshot lists it as still open, and its notice is filed once', async () => {
+    const moment = await last(play(withSteps(12, PICK_ASK, PICK_DECLINED), { drop: { afterPush: 13, missed: 3 } }))
     expect(moment.script.dials).toBe(2)
-    expect(declines(moment)).toHaveLength(1)
+    expect(answersTo(moment.script.received, PICK)).toHaveLength(1)
     expect(itemsOf(moment.session).filter(item => item.kind === 'notice')).toEqual([declined])
   })
 
+  it('is left open while no window watches the chat', async () => {
+    const opened = open(withSteps(12, PICK_ASK))
+    await toApproval(opened)
+    expect(answersTo(opened.script.received, PICK), 'the story has no answer step, so a decline would also fail it').toEqual([])
+    expect(opened.diagnostics).toContainEqual({ kind: 'unshown', type: 'theme.pick' })
+    expect(opened.diagnostics.filter(what => what.kind === 'declined')).toEqual([])
+    await expect(Promise.race([opened.script.done, Promise.resolve('playing')])).resolves.toBe('playing')
+  })
+
   it('counts what it declined and what it did not show', async () => {
-    const opened = open(withSudo(12))
+    const opened = open(withSteps(12, PICK_ASK, PICK_DECLINED))
     opened.watch()
     await toApproval(opened)
-    expect(opened.diagnostics).toContainEqual({ kind: 'declined', type: 'sudo' })
+    expect(opened.diagnostics).toContainEqual({ kind: 'declined', type: 'theme.pick' })
     expect(opened.diagnostics).toContainEqual({ kind: 'unshown', type: 'agent.step' })
     expect(opened.diagnostics.filter(what => what.kind === 'unrouted' || what.kind === 'invalid')).toEqual([])
+  })
+})
+
+describe('a request Highwing has a card for', () => {
+  const answersTo = (opened: ReturnType<typeof open>) => opened.script.received.filter(frame => (frame as { id?: unknown }).id === SUDO)
+  const sudo = (opened: ReturnType<typeof open>) => opened.hermes.run({ do: 'send', sessionId: SESSION, text: TEXT }).then(async sent => {
+    await opened.clock.advance(0)
+    return sent
+  })
+  const held = (opened: ReturnType<typeof open>) => {
+    let session: Session | undefined
+    opened.hermes.watch(SESSION, next => { session = next })()
+    return session?.requests ?? []
+  }
+
+  it.each([['watched', true], ['unwatched', false]] as const)('is never declined, %s: it waits in the session', async (_name, watched) => {
+    const opened = open(withSteps(12, SUDO_ASK))
+    if (watched) opened.watch()
+    await opened.clock.advance(0)
+    await sudo(opened)
+    expect(answersTo(opened)).toEqual([])
+    expect(held(opened)).toMatchObject([{ id: SUDO, ask: { kind: 'secret', for: { is: 'sudo', command: 'sudo true' } }, state: { s: 'waiting' }, deadline: expect.any(Number) }])
+    expect(opened.diagnostics.filter(what => what.kind === 'declined')).toEqual([])
+  })
+
+  it('keeps the chat attached while Hermes waits on it, and badges it as asking', async () => {
+    const opened = open(withSteps(ERRAND.steps.filter(step => 'push' in step).length, SUDO_ASK))
+    await opened.clock.advance(0)
+    await sudo(opened)
+    await approve(opened.hermes)
+    await opened.clock.advance(120_000)
+    expect(held(opened)).toHaveLength(1)
+    expect(opened.detaches(), 'the turn ended, and the request still holds the chat').toEqual([])
+    expect(opened.hermes.sidebar.get().rows).toMatchObject([{ id: SESSION, badge: 'asking' }])
+  })
+
+  it('is answered with a result frame, and the typed value reaches no published session', async () => {
+    const opened = open(withSteps(12, SUDO_ASK, { answer: SUDO, result: { value: MASKED } }))
+    opened.watch()
+    await opened.clock.advance(0)
+    await sudo(opened)
+    expect(await opened.hermes.run({ do: 'answer', sessionId: SESSION, requestId: SUDO as RequestId, reply: { kind: 'secret', value: 'hunter2' } })).toEqual({ ok: true, value: undefined })
+    await opened.clock.advance(0)
+    expect(answersTo(opened)).toEqual([{ jsonrpc: '2.0', id: SUDO, result: { value: 'hunter2' } }])
+    expect(opened.seen.at(-1)?.requests).toMatchObject([{ id: SUDO, state: { s: 'sending', reply: { kind: 'withheld' } } }])
+    expect(JSON.stringify(opened.seen)).not.toContain('hunter2')
+  })
+
+  it('is skipped with an empty value', async () => {
+    const opened = open(withSteps(12, SUDO_ASK, { answer: SUDO, result: { value: '' } }))
+    opened.watch()
+    await opened.clock.advance(0)
+    await sudo(opened)
+    await opened.hermes.run({ do: 'answer', sessionId: SESSION, requestId: SUDO as RequestId, reply: { kind: 'skip' } })
+    await opened.clock.advance(0)
+    expect(answersTo(opened)).toEqual([{ jsonrpc: '2.0', id: SUDO, result: { value: '' } }])
+  })
+
+  it('refuses a reply the request does not take, an empty secret, and a request that is not open, and sends nothing', async () => {
+    const opened = open(withSteps(12, SUDO_ASK))
+    opened.watch()
+    await opened.clock.advance(0)
+    await sudo(opened)
+    const answer = (requestId: string, reply: Extract<Parameters<typeof opened.hermes.run>[0], { requestId: RequestId }>['reply']) =>
+      opened.hermes.run({ do: 'answer', sessionId: SESSION, requestId: requestId as RequestId, reply })
+    expect(await answer(SUDO, { kind: 'lock', question: 'q0', answer: ['a'] })).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(await answer(SUDO, { kind: 'secret', value: '' })).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(await answer('srq-gone', { kind: 'skip' })).toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    await opened.clock.advance(0)
+    expect(answersTo(opened)).toEqual([])
+    expect(opened.seen.at(-1)?.requests).toMatchObject([{ state: { s: 'waiting', error: null } }])
   })
 })
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type {
-  FileDiff, Generation, HelperId, HelperItem, Item, NoticeItem, Outcome, PlanEntry, PlanItem, PromptId, PromptItem, ReasoningItem, Session, SettledTurn,
-  Sync, ToolId, ToolItem, ToolResult, TurnId
+  FileDiff, Generation, HelperId, HelperItem, HermesRequest, Item, NoticeItem, Outcome, PlanEntry, PlanItem, PromptId, PromptItem, ReasoningItem, RequestId,
+  Session, SettledTurn, Sync, ToolId, ToolItem, ToolResult, TurnId
 } from '../../hermes/src/domain/session'
 import { checkThread, outline, threadView, type HelperView, type PlanView, type StepView, type ThreadNode, type ThreadView } from '../src/thread-view'
 
@@ -11,7 +11,7 @@ const NONE: ToolResult = { kind: 'none' }
 
 function session(over: Partial<Session> = {}): Session {
   return {
-    id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, interlude: [], outbox: [],
+    id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, interlude: [], requests: [], outbox: [],
     model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, tuning: { reasoning: null }, sync: { state: 'live' }, ...over
   }
 }
@@ -143,14 +143,29 @@ describe('approvals beside their tool', () => {
 describe('notices', () => {
   const declined = (method: string): NoticeItem => ({ kind: 'notice', what: 'declined', requestId: 'r1', method })
 
-  it.each(['sudo', 'sudo.request'])('says no to a sudo request (%s) in words', method => {
-    expect(nodesOf(running([declined(method)]))[0]).toMatchObject({
-      kind: 'notice', tone: 'info', text: "Hermes asked for your sudo password. Highwing can't show that prompt yet, so it said no."
+  it('says no to a setup step in words', () => {
+    expect(nodesOf(running([declined('setup_beat')]))[0]).toMatchObject({
+      kind: 'notice', tone: 'info', text: "Hermes asked to show a setup step. Highwing can't show that yet, so it said no."
     })
   })
 
   it('names the method of a request it has no words for', () => {
-    expect(nodesOf(running([declined('vault.unlock')]))[0]).toMatchObject({ text: "Hermes sent a request Highwing can't show yet (vault.unlock), so it said no." })
+    expect(nodesOf(running([declined('preview.read')]))[0]).toMatchObject({ text: "Hermes sent a request Highwing can't show yet (preview.read), so it said no." })
+  })
+
+  it('carries where a request closed as a node of its own, with a line in the outline', () => {
+    const closed: NoticeItem = { kind: 'notice', what: 'closed', requestId: 'srq-1' as RequestId, asked: 'sudo', end: 'answered' }
+    const view = threadView(running([closed]), CLOCK)
+    expect(view.turns[0]?.nodes).toEqual([{ kind: 'closed', key: expect.any(String), asked: 'sudo', end: 'answered' }])
+    expect(outline(view).split('\n')).toContain('◇ sudo: answered')
+    expect(checkThread(view)).toEqual([])
+  })
+
+  it('keeps the live end on the running tool while Hermes waits on a request', () => {
+    const sudo: HermesRequest = { id: 'srq-1' as RequestId, ask: { kind: 'secret', for: { is: 'sudo', command: 'sudo true' } }, state: { s: 'waiting', error: null }, deadline: null }
+    const waiting = { ...running([runningTool('terminal', { command: 'sudo true' })]), requests: [sudo] }
+    expect(threadView(waiting, CLOCK).turns[0]?.end).toMatchObject({ kind: 'at', tone: 'live' })
+    expect(checkThread(threadView(waiting, CLOCK))).toEqual([])
   })
 })
 

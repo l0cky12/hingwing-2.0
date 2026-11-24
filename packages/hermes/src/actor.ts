@@ -1,7 +1,7 @@
 import type { Outcome, Refusal } from './domain/command'
-import { emptyTracked, reduce, sessionOf, type Fence, type Gate, type HistoryPage, type LocalAction, type ServerRequest, type SessionInput, type Tracked } from './domain/reduce'
-import type { Attachment, InputId, OutboxEntry, Session, SessionContent, SessionId } from './domain/session'
-import { Offline, RpcRefusal, type Calls, type Clock, type Method, type Served } from './wire/link'
+import { emptyTracked, reduce, sessionOf, type BridgeRequest, type Fence, type Gate, type HistoryPage, type LocalAction, type SessionInput, type Tracked } from './domain/reduce'
+import type { Attachment, InputId, OutboxEntry, RequestId, Session, SessionContent, SessionId } from './domain/session'
+import { Offline, RpcRefusal, type Calls, type Clock, type Method, type Requested, type RequestMethod, type Served } from './wire/link'
 import { parseReplay, parseShown, parseSnapshot, parseStats } from './wire/parse'
 
 export const DONE: Outcome = { ok: true, value: undefined }
@@ -78,7 +78,8 @@ export interface ActorDeps {
   readonly conn: Calls
   readonly clock: Clock
   readonly publish: (session: Session, previous: Session) => void
-  readonly refuse: (request: ServerRequest) => void
+  /** A request with no card here that the snapshot lists as open. The hub declines it, or leaves it for another client. */
+  readonly bridge: (request: BridgeRequest) => void
   readonly mintId: () => string
   readonly watched: () => boolean
 }
@@ -104,6 +105,8 @@ export interface SessionPort {
     sent: (request: Mutation) => void,
     explain: (reason: string) => Refusal | null
   ): Promise<Outcome<Served['session.mutate']['result']>>
+  /** Answers a request with a result frame. Hermes sends no reply to one, so `ok` means only that the frame was written. */
+  respond<M extends RequestMethod>(requestId: RequestId, method: M, result: Requested[M]['result']): Outcome
   /**
    * `apiText` is what the model reads when it differs from the `text` the thread and the stored history show. Each upload
    * is staged with Hermes first, in order. The message is sent only once every one is, and not at all when Hermes refuses one.
@@ -138,6 +141,14 @@ export class SessionActor {
         () => this.mutation(request, sent),
         error => (error instanceof RpcRefusal ? explain(error.reason ?? '') ?? refusalOf(error) : refusalOf(error))
       ),
+      respond: (requestId, method, result) => {
+        try {
+          deps.conn.respond(requestId, method, result)
+          return DONE
+        } catch (error) {
+          return { ok: false, refusal: refusalOf(error) }
+        }
+      },
       submit: (text, apiText, uploads = []) => this.port.whenLive(() => (uploads.length === 0
         ? this.post(text, apiText, [], null)
         : this.stage(uploads).then(staged => (staged.ok ? this.post(text, apiText, uploads, staged.value) : staged)))),
@@ -152,7 +163,7 @@ export class SessionActor {
   }
 
   /** Whether the input moved the live cursor, as a frame seen for the first time and in order does. */
-  feed(input: Extract<SessionInput, { in: 'event' | 'gap' | 'declined' }>): boolean {
+  feed(input: Extract<SessionInput, { in: 'event' | 'gap' | 'request' | 'declined' }>): boolean {
     const before = this.tracked.gate
     this.step(input)
     const after = this.tracked.gate
@@ -240,7 +251,8 @@ export class SessionActor {
   private attached(attempt: number, snapshot: ReturnType<typeof parseSnapshot>, replay: ReturnType<typeof parseReplay> | null): void {
     this.step({ in: 'attached', attempt, snapshot, replay })
     const { gate } = this.tracked
-    if (gate.at === 'live' && gate.subscriptionId === snapshot.subscriptionId) snapshot.openRequests.forEach(this.deps.refuse)
+    if (gate.at !== 'live' || gate.subscriptionId !== snapshot.subscriptionId) return
+    for (const request of snapshot.openRequests) if (request.kind === 'bridge') this.deps.bridge(request)
   }
 
   private async readUsage(): Promise<void> {
@@ -291,9 +303,11 @@ export class SessionActor {
   private async admit({ inputId, text, apiText }: Pick<OutboxEntry, 'inputId' | 'text' | 'apiText'>): Promise<Outcome> {
     const resubmit = this.resubmits.get(inputId)
     const apiTextSent = resubmit === undefined ? apiText : resubmit.apiText
+    // Asks for the clarify tool's questions as one request, which `requests` can hold. Without it each comes as a prompt of the turn.
+    const batch = this.deps.conn.clarifyBatch ? { clarify_batch: true } : {}
     const receipt = await this.port.call('prompt.submit', {
       session_id: this.id, text, input_id: inputId, ...(apiTextSent === undefined ? {} : { api_text: apiTextSent }),
-      ...(resubmit === undefined || resubmit.attachments.length === 0 ? {} : { attachments: [...resubmit.attachments] })
+      ...(resubmit === undefined || resubmit.attachments.length === 0 ? {} : { attachments: [...resubmit.attachments] }), ...batch
     })
     if (receipt.ok) {
       if ('admission_id' in receipt.value) this.act({ did: 'send.admitted', inputId, admissionId: receipt.value.admission_id, status: receipt.value.status })

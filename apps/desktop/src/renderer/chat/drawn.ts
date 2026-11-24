@@ -1,6 +1,6 @@
 import type { ThreadNode, ThreadView, TurnView } from '@highwing/thread'
 
-const UNDRAWN: ReadonlySet<ThreadNode['kind']> = new Set(['moa', 'status'])
+const UNDRAWN: ReadonlySet<ThreadNode['kind']> = new Set(['moa', 'status', 'closed'])
 
 const drawnTurns = new WeakMap<TurnView, TurnView | null>()
 

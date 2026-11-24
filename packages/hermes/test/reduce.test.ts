@@ -6,7 +6,7 @@ import {
 import type { ModelMenu } from '../src/domain/command'
 import { modelViewOf, sameModel } from '../src/domain/model'
 import type {
-  Ask, ContextFill, Generation, HelperId, HelperItem, InputId, Item, Link, ModelId, ModelRef, OpenTurn, Outcome, PromptId, SessionContent, SessionId,
+  Ask, ContextFill, Generation, HelperId, HelperItem, InputId, Item, Link, ModelId, ModelRef, OpenTurn, Outcome, PromptId, RequestId, SessionContent, SessionId,
   SessionUsage, SettledTurn, StatusAbout, Tokens, ToolId, ToolResult, TurnId
 } from '../src/domain/session'
 
@@ -107,7 +107,7 @@ describe('the seq gate', () => {
 
   it('treats a frame of another epoch as a gap', () => {
     const after = reduce(live(), event(1, started('t1'), 1, 'e2'))
-    expect(after.gate).toEqual({ at: 'attaching', attempt: 2, plan: { mode: 'rebuild' }, parked: [] })
+    expect(after.gate).toEqual({ at: 'attaching', attempt: 2, plan: { mode: 'rebuild' }, parked: [], asked: [] })
   })
 })
 
@@ -213,9 +213,9 @@ describe('the fold', () => {
   })
 
   it('files a declined request once per request id', () => {
-    const declined: SessionInput = { in: 'declined', request: { requestId: 'r1', method: 'sudo.request', sessionId: 's1' as SessionId } }
+    const declined: SessionInput = { in: 'declined', request: { kind: 'bridge', requestId: 'r1' as RequestId, method: 'theme.pick', sessionId: 's1' as SessionId } }
     const once = feed(live(), event(1, started('t1')), declined)
-    expect(openItems(once)).toEqual([{ kind: 'notice', what: 'declined', requestId: 'r1', method: 'sudo.request' }])
+    expect(openItems(once)).toEqual([{ kind: 'notice', what: 'declined', requestId: 'r1', method: 'theme.pick' }])
     expect(reduce(once, declined).content).toBe(once.content)
   })
 
@@ -302,7 +302,7 @@ describe('attached', () => {
 
   it('B: seeds a first open from the snapshot and its history', () => {
     const opening = reduce(emptyTracked('s1' as SessionId), { in: 'attach' })
-    expect(opening.gate).toEqual({ at: 'attaching', attempt: 1, plan: { mode: 'open' }, parked: [] })
+    expect(opening.gate).toEqual({ at: 'attaching', attempt: 1, plan: { mode: 'open' }, parked: [], asked: [] })
 
     const turns = [storedTurn('h1', [1, 2]), storedTurn('h2', [3, 4])]
     const state = reduce(opening, {
@@ -310,7 +310,7 @@ describe('attached', () => {
       snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 9 }, history: { turns, unfinished: null, older: { cursor: 'c1' } } })
     })
     expect(state.gate).toEqual({ at: 'live', cursor: { epoch: EPOCH, seq: 9 }, subscriptionId: 'sub-1' })
-    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, tuning: { reasoning: null } })
+    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, tuning: { reasoning: null } })
   })
 
   it('B: opens the unfinished turn of a running snapshot with its waiting prompts, then the parked frames above the watermark', () => {
@@ -375,7 +375,7 @@ describe('attached', () => {
     const parked = frame(6, delta('!'))
     const before = reduce(reattaching(), { in: 'event', frame: parked })
     const after = reduce(before, { in: 'attached', attempt: 2, ...reply })
-    expect(after.gate).toEqual({ at: 'attaching', attempt: 3, plan: { mode: 'rebuild' }, parked: [parked] })
+    expect(after.gate).toEqual({ at: 'attaching', attempt: 3, plan: { mode: 'rebuild' }, parked: [parked], asked: [] })
     expect(after.content).toBe(before.content)
   })
 
@@ -415,7 +415,7 @@ describe('a lost link and a gap', () => {
     const lost = reduce(before, { in: 'link.lost' })
     expect(lost.gate).toEqual({ at: 'detached', why: 'link-lost', cursor: { epoch: EPOCH, seq: 2 } })
     expect(lost.content).toBe(before.content)
-    expect(reduce(lost, { in: 'attach' }).gate).toEqual({ at: 'attaching', attempt: 2, plan: { mode: 'replay', from: { epoch: EPOCH, seq: 2 } }, parked: [] })
+    expect(reduce(lost, { in: 'attach' }).gate).toEqual({ at: 'attaching', attempt: 2, plan: { mode: 'replay', from: { epoch: EPOCH, seq: 2 } }, parked: [], asked: [] })
   })
 
   it('drops frames while detached', () => {
@@ -432,11 +432,11 @@ describe('a lost link and a gap', () => {
   it('rebuilds on a gap, whether live, attaching or detached', () => {
     const before = feed(live(), event(1, started('t1')))
     const fromLive = reduce(before, { in: 'gap' })
-    expect(fromLive.gate).toEqual({ at: 'attaching', attempt: 2, plan: { mode: 'rebuild' }, parked: [] })
+    expect(fromLive.gate).toEqual({ at: 'attaching', attempt: 2, plan: { mode: 'rebuild' }, parked: [], asked: [] })
     expect(fromLive.content).toBe(before.content)
 
     const fromAttaching = feed(reattaching(), event(3, delta('!')), { in: 'gap' })
-    expect(fromAttaching.gate).toEqual({ at: 'attaching', attempt: 3, plan: { mode: 'rebuild' }, parked: [] })
+    expect(fromAttaching.gate).toEqual({ at: 'attaching', attempt: 3, plan: { mode: 'rebuild' }, parked: [], asked: [] })
 
     const detached = feed(before, { in: 'link.lost' }, { in: 'gap' })
     expect(detached.gate).toEqual({ at: 'detached', why: 'link-lost', cursor: null })
@@ -446,7 +446,7 @@ describe('a lost link and a gap', () => {
 
 describe('syncOf', () => {
   const cursor = { epoch: EPOCH, seq: 1 }
-  const attaching = (plan: Extract<Gate, { at: 'attaching' }>['plan']): Gate => ({ at: 'attaching', attempt: 1, plan, parked: [] })
+  const attaching = (plan: Extract<Gate, { at: 'attaching' }>['plan']): Gate => ({ at: 'attaching', attempt: 1, plan, parked: [], asked: [] })
   it.each<[string, Gate, Link, ReturnType<typeof syncOf>]>([
     ['attaching to open', attaching({ mode: 'open' }), ONLINE, { state: 'opening' }],
     ['attaching to replay', attaching({ mode: 'replay', from: cursor }), ONLINE, { state: 'catching-up' }],
@@ -1114,7 +1114,7 @@ describe('what Hermes says', () => {
   const shown = (key: string, ttlMs: number | null = null): SessionEvent =>
     ({ type: 'notice.shown', notice: { key, level: 'warn', text: `notice ${key}`, detail: null, ttlMs } })
   const moa = (step: MoaStep): SessionEvent => ({ type: 'moa', step })
-  const declined: SessionInput = { in: 'declined', request: { requestId: 'r1', method: 'sudo', sessionId: 's1' as SessionId } }
+  const declined: SessionInput = { in: 'declined', request: { kind: 'bridge', requestId: 'r1' as RequestId, method: 'theme.pick', sessionId: 's1' as SessionId } }
   const verdict = { kind: 'status', what: 'line', about: 'goal', text: 'Goal met.' } as const
 
   it('keeps a line said while no turn runs in the interlude, and never opens a turn for it', () => {
@@ -1127,7 +1127,7 @@ describe('what Hermes says', () => {
   it('files a request declined while idle in the interlude, once, and leaves the run idle', () => {
     const once = feed(live(), declined)
     expect(once.content.run).toEqual({ state: 'idle' })
-    expect(once.content.interlude).toEqual([{ kind: 'notice', what: 'declined', requestId: 'r1', method: 'sudo' }])
+    expect(once.content.interlude).toEqual([{ kind: 'notice', what: 'declined', requestId: 'r1', method: 'theme.pick' }])
     expect(reduce(once, declined).content).toBe(once.content)
   })
 
@@ -1137,7 +1137,7 @@ describe('what Hermes says', () => {
     expect(next.content.interlude).toEqual([])
     expect(next.content.history).toEqual([{
       id: 'interlude:2', request: null, began: null, rows: [], outcome: { kind: 'interlude' }, tokens: null,
-      items: [verdict, { kind: 'notice', what: 'declined', requestId: 'r1', method: 'sudo' }]
+      items: [verdict, { kind: 'notice', what: 'declined', requestId: 'r1', method: 'theme.pick' }]
     }])
     expect(openItems(next)).toEqual([])
   })

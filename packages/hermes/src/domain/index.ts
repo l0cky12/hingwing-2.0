@@ -2,7 +2,7 @@
 export type * from './session'
 export { STORED_ROWS } from './session'
 export type { Command, ContextBreakdown, ModelConfirm, ModelMenu, Outcome as CommandOutcome, Refusal, ResultOf } from './command'
-export { activityOf, type Activity } from './reduce'
+export { activityOf, turnActivityOf, type Activity, type TurnActivity } from './reduce'
 export type { SlashCatalog, SlashEntry } from './slash'
 export { BOT_TONES, botsIn, canonicalBotId, PICTURE_MAX_BYTES, PICTURE_RULE, pictureTypeOf, rosterOf, type AvatarTone, type Bot, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotFacts, type BotId, type Bots, type BotSection, type BotTone, type PictureType, type Roster } from './bots'
 export type { PathMatch } from './path'
