@@ -1,6 +1,6 @@
 import { loadFixture, type Fixture, type FixtureStep } from '../../src/testing/fixture'
 import type { Admission } from '../../src/domain/queue'
-import { parseEvent, parseRows, parseServerRequest } from '../../src/wire/parse'
+import { parseCorrection, parseEvent, parsePending, parseRows, parseServerRequest } from '../../src/wire/parse'
 import {
   emptyTracked, reduce,
   type Cursor, type SessionInput, type Snapshot, type StampedEvent, type Tracked
@@ -21,8 +21,28 @@ export interface Story {
 
 const local = (action: Extract<SessionInput, { in: 'local' }>['action']): SessionInput => ({ in: 'local', action })
 
-function userInputs(method: string, params: Record<string, unknown>, reply: Record<string, unknown> | undefined): SessionInput[] {
+type Call = Extract<FixtureStep, { await: string }>
+
+/** What the client folds for a recorded call. `next` is the story's next call: a steer followed by a denial was that denial's words. */
+function userInputs({ await: method, params: sent, reply: answered }: Call, next: Call | undefined): SessionInput[] {
+  const params = sent as Record<string, unknown>
+  const reply = answered as Record<string, unknown> | undefined
   switch (method) {
+    case 'prompt.cancel':
+    case 'prompt.steer_queued':
+    case 'prompt.resolve_unknown':
+      return []
+    case 'prompt.replace_queued':
+      return [local({ did: 'send', inputId: params.submission_id as InputId, text: params.text as string, attachments: [] })]
+    case 'session.steer':
+    case 'session.redirect': {
+      const text = params.text as string
+      const taken = parseCorrection(answered as Parameters<typeof parseCorrection>[0]) === 'taken'
+        ? [local({ did: 'steered', text, during: params.execution_generation as Generation })]
+        : []
+      const denial = next?.await === 'approval.respond' ? next.params as Record<string, unknown> : null
+      return denial?.choice === 'deny' ? [local({ did: 'answer', promptId: denial.prompt_id as PromptId, reply: { kind: 'deny', tell: text } }), ...taken] : taken
+    }
     case 'prompt.submit': {
       const inputId = params.input_id as InputId
       return [
@@ -86,7 +106,8 @@ export function readStory(path: string): Story {
       epoch ??= parsed.stamp.epoch
       beats.push({ kind: 'frame', frame: { stamp: parsed.stamp, event: parsed.event, seenAt: null } })
     } else if ('await' in step) {
-      beats.push({ kind: 'user', inputs: userInputs(step.await, step.params as Record<string, unknown>, step.reply as Record<string, unknown> | undefined) })
+      const isCall = (other: FixtureStep): other is Call => 'await' in other
+      beats.push({ kind: 'user', inputs: userInputs(step, fixture.steps.slice(fixture.steps.indexOf(step) + 1).find(isCall)) })
     } else if ('answer' in step) {
       beats.push({ kind: 'user', inputs: answerInputs(step) })
     }
@@ -101,7 +122,7 @@ export function snapshotAfter(story: Story, published: readonly StampedEvent[], 
   let generation = 0
   let title = ''
   let revision = 0
-  let queue: readonly Admission[] = []
+  let queue: readonly Admission[] = parsePending(story.fixture.header.pending ?? [])
   let yolo: boolean | null = null
   const prompts = new Map<PromptId, Snapshot['prompts'][number]>()
   for (const { stamp, event } of published) {
@@ -201,6 +222,7 @@ export const errand = () => readStory(new URL('../../../../fixtures/errand.jsonl
 export const delegate = () => readStory(new URL('../../../../fixtures/delegate.jsonl', import.meta.url).pathname)
 export const says = () => readStory(new URL('../../../../fixtures/says.jsonl', import.meta.url).pathname)
 export const asks = () => readStory(new URL('../../../../fixtures/asks.jsonl', import.meta.url).pathname)
+export const queue = () => readStory(new URL('../../../../fixtures/queue.jsonl', import.meta.url).pathname)
 
 export const ignoringClocks = <T extends { readonly history: readonly SettledTurn[]; readonly interlude: SessionContent['interlude'] }>(session: T): T => {
   const unclocked = <I extends Item<'settled'>>(item: I): I =>

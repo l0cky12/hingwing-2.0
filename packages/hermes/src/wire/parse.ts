@@ -565,7 +565,7 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
     revision: reply.revision,
     subscriptionId: reply.subscription_id,
     watermark: { epoch: reply.replay_epoch, seq: reply.last_sequence },
-    queue: reply.pending.flatMap(row => usable(() => admissionOf(row)) ?? []),
+    queue: parsePending(reply.pending),
     prompts: reply.prompts.flatMap(prompt => {
       const parsed = usable(() => promptOf(prompt))
       return parsed === null ? [] : [{ id: parsed.id, generation: parsed.generation, ask: parsed.ask }]
@@ -660,6 +660,11 @@ export function parsePathMatches(reply: CompletionItemsResult): readonly PathMat
     const match = text === null ? null : PATH_ROW.exec(text)
     return match === null ? [] : [{ path: match[2] as string, folder: match[1] === 'folder' || (match[2] as string).endsWith('/') }]
   })
+}
+
+/** The rows of an attach reply's `pending`. A row this build cannot read is left out. */
+export function parsePending(rows: readonly unknown[]): Admission[] {
+  return rows.flatMap(row => usable(() => admissionOf(row)) ?? [])
 }
 
 /** `config.get` and `config.set` of `show_reasoning` answer `'1'` or `'0'` (`gateway/session_busy_controls.py:90-108`). */
