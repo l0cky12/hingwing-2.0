@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, us
 import { Composer } from '../composer/Composer'
 import { ModelPicker } from '../composer/ModelPicker'
 import { run, useTopic } from '../store'
-import { FileCallContext, fileCallFor, type FileCall } from './FilePath'
+import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
 import { FOLLOW_WITHIN, FOLLOWING, placeAfter, progressOf, type Place } from './place'
 import { Thread } from './Thread'
 
@@ -16,8 +16,6 @@ const distanceFrom = (element: HTMLElement) => element.scrollHeight - element.sc
 
 const holdsText = (target: EventTarget | null) =>
   (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) && target.value !== ''
-
-const NO_FILES: FileCall = async () => ({ ok: false, reason: 'refused' })
 
 /** `chat.sessionId` null: the bot's chat is not started. The thread is empty, and the first message makes the session. */
 export function Chat({ chat }: { readonly chat: Shown }) {
@@ -137,7 +135,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   useEffect(() => { if (live) void refreshModels() }, [live, refreshModels])
   const model = modelViewOf(menu.id === id ? menu.menu : null, session)
 
-  const fileCall = useMemo(() => (id === null ? NO_FILES : fileCallFor(id)), [id])
+  const fileCall = useMemo(() => (id === null ? NO_FILE_CALL : fileCallFor(id)), [id])
 
   return (
     <>

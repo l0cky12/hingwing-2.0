@@ -6,7 +6,7 @@ import type { OpenChat } from './domain/open'
 import type { ServerRequest } from './domain/reduce'
 import type { Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
-import { chatDesk } from './open'
+import { CANT_START, chatDesk, NOT_CONNECTED } from './open'
 import { botList } from './roster'
 import { deriveSidebar, sessionList } from './sidebar'
 import { connect, systemClock, type Clock, type Dialer } from './wire/link'
@@ -318,8 +318,8 @@ export function openHermes(options: HermesOptions): Hermes {
 
   const create = async ({ draftId, cwd }: Extract<Command, { do: 'create' }>): Promise<Outcome<SessionId>> => {
     const { creation } = conn
-    if (creation === null) return refused('offline', "Highwing isn't connected to Hermes right now.")
-    if (!creation.sources.includes('gui')) return refused('unsupported', "This Hermes can't start a chat from Highwing.")
+    if (creation === null) return NOT_CONNECTED
+    if (!creation.sources.includes('gui')) return CANT_START
     const asked = { source: 'gui', request_id: draftId, ...(cwd === null ? {} : { cwd, cwd_explicit: true }), client: options.client }
     const params = Object.fromEntries(Object.entries(asked).filter(([key]) => creation.parameters.includes(key)))
     try {

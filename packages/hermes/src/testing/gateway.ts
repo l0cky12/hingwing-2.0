@@ -140,7 +140,7 @@ const PROFILE_IMPLICIT: ReadonlySet<string> = new Set([
 
 /** The title Hermes gives the one chat a bot's row opens (tui_gateway/methods_profiles.py:150-181). */
 const BOT_CHAT = 'Bot Chat'
-/** What `profiles.list` says about a profile's sessions (gateway/session_group_controls.py:401-404). */
+/** What `profiles.list` says about a profile's sessions (gateway/session_group_controls.py:405-406). */
 const SESSION_FIELDS: ReadonlySet<string> = new Set(['last_session', 'worker_session', 'canonical_session'])
 
 interface Stream {
@@ -228,6 +228,15 @@ const tokenFor = ({ model }: Model) => `confirm-${model}`
 const modelOf = (value: Obj | undefined): Model | null =>
   value !== undefined && isText(value.model) ? { model: value.model, provider: isText(value.provider) ? value.provider : null } : null
 
+/** gateway/session_controls.py:779-803. The subscription is looked up on the routed profile's connection. */
+const detach: Handler = (gateway, socket, params, routed) => {
+  const { session_id, subscription_id } = params
+  if (!isText(session_id) || !isText(subscription_id)) throw new Refused('invalid_params')
+  const detached = gateway.profileOf(session_id) === routed && socket.subscriptions.get(session_id) === subscription_id
+  if (detached) socket.subscriptions.delete(session_id)
+  return { session_id, subscription_id, detached }
+}
+
 const HANDLERS: Readonly<Record<string, Handler>> = {
   /** tui_gateway/methods_voice.py:526-545 */
   'client.capabilities': () => ({ server_requests: ['clarify', 'secret', 'sudo'], declines_not_shown: true, canonical_clarify_batch: true }),
@@ -287,14 +296,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'profiles.list': (gateway, socket) => gateway.roster(socket),
   'session.mutate': (gateway, socket, params, routed) =>
     (params.operation === 'model' ? gateway.switchModel(params, routed) : gateway.story(socket, 'session.mutate', params, routed)),
-  /** gateway/session_controls.py:779-803. The subscription is looked up on the routed profile's connection. */
-  'session.detach': (gateway, socket, params, routed) => {
-    const { session_id, subscription_id } = params
-    if (!isText(session_id) || !isText(subscription_id)) throw new Refused('invalid_params')
-    const detached = gateway.profileOf(session_id) === routed && socket.subscriptions.get(session_id) === subscription_id
-    if (detached) socket.subscriptions.delete(session_id)
-    return { session_id, subscription_id, detached }
-  }
+  'session.detach': detach
 }
 
 type ChatHandler = (gateway: ScriptedGateway, socket: Socket, params: Obj, routed: string, chat: BotChat) => unknown
@@ -311,7 +313,7 @@ const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
     return gateway.echo(chat, inputId, String(params.text ?? ''), routed)
   },
   'model.options': (gateway, _socket, _params, _routed, chat) => gateway.modelMenu(chat.model),
-  'session.detach': HANDLERS['session.detach'] as Handler
+  'session.detach': detach
 }
 
 export class ScriptedGateway {
@@ -602,7 +604,7 @@ export class ScriptedGateway {
     return this.botChats.get(profile)?.id ?? (profile === this.home && this.storyIsBotChat ? this.sessionId : undefined)
   }
 
-  /** The reply rows of `session.list {title: 'Bot Chat'}` (gateway/session_controls.py:626-641): the one session with that title, or none. */
+  /** The reply rows of `session.list {title: 'Bot Chat'}` (gateway/session_controls.py:617-638): the one session with that title, or none. */
   titledRows(routed: string): readonly Obj[] {
     const id = this.botChatId(routed)
     if (id === undefined) return []

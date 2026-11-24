@@ -9,9 +9,9 @@ import { parseTitled } from './wire/parse'
 /** The title Hermes gives the one chat a bot's row opens (Hermes's hermes-bots/canonical-chat.ts:50). */
 const BOT_CHAT = 'Bot Chat'
 
-const NOT_CONNECTED = refused('offline', "Highwing isn't connected to Hermes right now.")
+export const NOT_CONNECTED = refused('offline', "Highwing isn't connected to Hermes right now.")
+export const CANT_START = refused('unsupported', "This Hermes can't start a chat from Highwing.")
 const CANT_SWITCH = refused('unsupported', "This Hermes can't switch bots from Highwing yet. Update Hermes on that machine, then reconnect.")
-const CANT_START = refused('unsupported', "This Hermes can't start a chat from Highwing.")
 
 export interface ChatDesk {
   readonly open: OpenChat
@@ -106,12 +106,10 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
     get open() { return desk.open },
     settle: ({ bots, named, list }) => void take({ on: 'facts', named, launch: launchChat(conn.reach, bots, named, list) }),
     ask: async ref => {
-      const { bot } = ref
       const unreachable = reachable()
       if (unreachable !== null) return unreachable
       for (const effect of take({ on: 'asked', ref })) find(effect.find)
-      const known = desk.chats[bot]
-      return known === undefined ? finds.get(bot) ?? { ok: true, value: null } : { ok: true, value: known }
+      return finds.get(ref.bot) ?? { ok: true, value: desk.chats[ref.bot] ?? null }
     },
     start: bot => {
       const unreachable = reachable()

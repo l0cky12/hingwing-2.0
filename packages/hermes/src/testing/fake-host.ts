@@ -215,7 +215,7 @@ export async function fakeHost(name: ScenarioName, gateway: Gateway | null, opti
     return reply(`ws://127.0.0.1:${hidden}/api/ws`)
   }
 
-  /** `_reply` in hermes_cli/gateway_runtime_tickets.py:79-119, for the one purpose Highwing asks for. */
+  /** `_reply` in hermes_cli/gateway_runtime_tickets.py:77-119, for the one purpose Highwing asks for. */
   const ticket = (line: string, purposes: readonly string[]): Said => {
     const { id, purpose } = JSON.parse(line) as { readonly id?: unknown; readonly purpose?: unknown }
     const refuse = (code: string) => ({ id, ok: false, error: { code, message: 'the fake host mints interactive tickets only' } })
