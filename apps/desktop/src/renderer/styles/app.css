@@ -46,6 +46,7 @@ code, pre { font-family: var(--mono); }
 .bar h1 { margin: 0; font-size: 14px; font-weight: 400; color: var(--graphite); }
 .bar h1 .brand { font-weight: 700; color: var(--ink); margin-right: 8px; }
 .bar button { margin-left: auto; padding: 4px 14px; border-radius: 6px; border: 1px solid var(--ink); background: transparent; }
+.bar button + button { margin-left: 0; }
 .bar button:hover { background: var(--sheet); }
 
 .banner { display: flex; align-items: center; gap: 16px; padding: 9px 28px; background: var(--caution-soft); border-bottom: 1px solid var(--rule); }

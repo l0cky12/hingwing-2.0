@@ -154,6 +154,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
       </div>
       <Composer
         inputRef={composer}
+        autoFocus={chat.kind === 'new' && chat.sessionId === null}
         canSend={id === null || live}
         showStop={session !== undefined && activityOf(session).kind !== 'idle'}
         onSend={text => (chat.sessionId === null ? run({ do: 'start', chat, text }) : run({ do: 'send', sessionId: chat.sessionId, text }))}
