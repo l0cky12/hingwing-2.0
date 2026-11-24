@@ -1,4 +1,4 @@
-import type { Target } from '@highwing/hermes/domain'
+import type { Shown, Target } from '@highwing/hermes/domain'
 import type { ReactNode } from 'react'
 import type { Setup } from '../ipc-contract'
 import { BotsSidebar } from './bots/Bots'
@@ -10,12 +10,13 @@ import { Epoch, useTopic } from './store'
 
 const NO_CHAT = async () => ({ ok: false, refusal: { kind: 'rejected', message: 'There is no chat to send to.' } }) as const
 
-/** One pane per bot, so what is typed to a bot survives its first message turning an unstarted chat into a session. */
+const samePaneOnFirstMessage = (shown: Shown): string => shown.bot ?? shown.sessionId
+
 function OpenPane() {
   const shown = useTopic('open')?.shown ?? null
   return shown === null
     ? <><main id="scroll" /><Composer canSend={false} showStop={false} onSend={NO_CHAT} onStop={() => {}} onInput={() => {}} /></>
-    : <Chat key={shown.bot ?? shown.sessionId} chat={shown} />
+    : <Chat key={samePaneOnFirstMessage(shown)} chat={shown} />
 }
 
 function ChatScreen({ target }: { readonly target: Target | null }) {

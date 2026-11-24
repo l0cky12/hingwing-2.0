@@ -57,24 +57,19 @@ export type DeskEvent =
 /** Look this bot's Bot Chat up by its title. */
 export interface DeskEffect { readonly find: BotId }
 
-/** The pane moves to a bot's chat. That answers a click on that bot, and leaves a click on another one waiting. */
 function showing(desk: Desk, bot: BotId, sessionId: SessionId | null): Desk {
   const { opening } = desk.open
   return { ...desk, open: { shown: { bot, sessionId }, opening: opening?.bot === bot ? null : opening } }
 }
 
-/**
- * A bot's Bot Chat is now known. The pane moves to it when it is the answer to the latest click, or
- * when that bot is the one shown: its first message made the chat, or Hermes names another session
- * for it (the chat was compressed, or made on another device).
- */
 function learned(desk: Desk, bot: BotId, sessionId: SessionId): Desk {
   const { shown, opening } = desk.open
   const known: Desk = desk.chats[bot] === sessionId
     ? desk
     : { ...desk, chats: { ...desk.chats, [bot]: sessionId }, owners: { ...desk.owners, [sessionId]: bot } }
-  const wanted = opening?.bot === bot || (shown?.bot === bot && shown.sessionId !== sessionId)
-  return wanted ? showing(known, bot, sessionId) : known
+  const answersLatestClick = opening?.bot === bot
+  const followsShownBot = shown?.bot === bot && shown.sessionId !== sessionId
+  return answersLatestClick || followsShownBot ? showing(known, bot, sessionId) : known
 }
 
 const done = (desk: Desk): { readonly desk: Desk; readonly effects: readonly DeskEffect[] } => ({ desk, effects: [] })

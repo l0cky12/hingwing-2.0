@@ -451,7 +451,7 @@ describe('the open chat', () => {
     expect(calls(opened, 'session.create')).toHaveLength(1)
     expect(await opened.hermes.run({ do: 'open', ref: bot(EMU) })).toEqual({ ok: true, value: SESSION })
     expect(await opened.hermes.run({ do: 'open', ref: bot(HERMES_DEV) }), 'and a click finds it with no call').toEqual({ ok: true, value: MADE })
-    expect(calls(opened, 'session.list').filter(call => 'title' in (call.params ?? {}))).toHaveLength(2)
+    expect(calls(opened, 'session.list').filter(call => 'title' in (call.params ?? {})), 'the titled create finds or makes the chat, so a first message looks nothing up').toHaveLength(1)
   })
 
   it('is the default bot unstarted when it has no Bot Chat, and its first message makes the chat', async () => {

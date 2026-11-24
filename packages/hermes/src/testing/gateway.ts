@@ -92,7 +92,6 @@ type Drop =
   | { readonly at: 'holding'; readonly step: PushStep }
   | { readonly at: 'spent' }
 
-/** `routed` is the profile the frame is for: the one its `profile` names, else the home profile. */
 type Handler = (gateway: ScriptedGateway, socket: Socket, params: Obj, routed: string) => unknown
 type Check = (gateway: ScriptedGateway, socket: Socket, params: Obj, routed: string) => string | null
 
@@ -148,7 +147,6 @@ interface Stream {
   readonly epoch: string
 }
 
-/** A chat of one bot that is not the story. It answers by itself and plays one echo turn per submit. */
 class BotChat implements Stream {
   readonly ring: Params[] = []
   readonly rows: Obj[] = []
@@ -301,7 +299,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 
 type ChatHandler = (gateway: ScriptedGateway, socket: Socket, params: Obj, routed: string, chat: BotChat) => unknown
 
-/** The calls a Bot Chat answers. Any other verb for it is `unsupported_command`. */
 const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
   'session.resume': (gateway, socket, params, _routed, chat) => gateway.open(socket, chat, params),
   'session.events.since': (gateway, _socket, params, _routed, chat) => replayOf(chat, gateway.options.ringFrames, params, []).reply,
@@ -333,8 +330,8 @@ export class ScriptedGateway {
 
   private stored: readonly unknown[]
   private readonly profiles: readonly Obj[]
-  /** profile -> its Bot Chat. The home profile's is the story session, unless the header says `homeBotChat: false`. */
   private readonly botChats = new Map<string, BotChat>()
+  private readonly storyIsBotChatOf: string | null
   private readonly afterReply: (() => void)[] = []
   private readonly sockets = new Set<Socket>()
   private readonly openRequests = new Map<string, { readonly method: string; readonly params: unknown }>()
@@ -360,17 +357,14 @@ export class ScriptedGateway {
     const { profiles } = fixture.header
     this.profiles = isObject(profiles) && Array.isArray(profiles.profiles) ? profiles.profiles.filter(isObject) : []
     this.home = this.profiles.map(row => (row.is_default === true ? row.name : undefined)).find(isText) ?? 'default'
+    this.storyIsBotChatOf = fixture.header.homeBotChat === false ? null : this.home
     for (const { name, canonical_session: named } of this.profiles) {
       const id = isObject(named) ? named.resolved_id || named.id : undefined
-      if (!isText(name) || !isObject(named) || !isText(id) || (name === this.home && this.storyIsBotChat)) continue
+      if (!isText(name) || !isObject(named) || !isText(id) || name === this.storyIsBotChatOf) continue
       const chat = new BotChat(id, name)
       if (isText(named.preview)) chat.rows.push({ role: 'assistant', text: named.preview, timestamp: named.last_active ?? null, row_id: 1 })
       this.botChats.set(name, chat)
     }
-  }
-
-  private get storyIsBotChat(): boolean {
-    return this.fixture.header.homeBotChat !== false
   }
 
   get latest(): number {
@@ -601,7 +595,7 @@ export class ScriptedGateway {
   }
 
   private botChatId(profile: string): string | undefined {
-    return this.botChats.get(profile)?.id ?? (profile === this.home && this.storyIsBotChat ? this.sessionId : undefined)
+    return profile === this.storyIsBotChatOf ? this.sessionId : this.botChats.get(profile)?.id
   }
 
   /** The reply rows of `session.list {title: 'Bot Chat'}` (gateway/session_controls.py:617-638): the one session with that title, or none. */

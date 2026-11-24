@@ -128,8 +128,7 @@ export type Probe =
 type Obj = Readonly<Record<string, unknown>>
 const isObject = (value: unknown): value is Obj => value !== null && typeof value === 'object' && !Array.isArray(value)
 
-/** One JSON object of a command's stdout, or null when that line is missing or is not one. */
-function lineOf(stdout: string, at: number): Obj | null {
+function jsonObjectAt(stdout: string, at: number): Obj | null {
   try {
     const value: unknown = JSON.parse(stdout.trim().split('\n').at(at) ?? '')
     return isObject(value) ? value : null
@@ -144,7 +143,7 @@ function lineOf(stdout: string, at: number): Obj | null {
  */
 export function probeOf(code: number, stdout: string): Probe {
   if (code === NOT_FOUND) return { ok: false, failure: 'hermes-not-found' }
-  const reply = code === 0 ? lineOf(stdout, -1) : null
+  const reply = code === 0 ? jsonObjectAt(stdout, -1) : null
   if (reply === null) return { ok: false, failure: 'hermes-too-old' }
   return {
     ok: true,
@@ -157,7 +156,7 @@ export function probeOf(code: number, stdout: string): Probe {
 export interface Attached { readonly url: string; readonly protocols: readonly string[]; readonly instanceId: string | null }
 
 export function attachedOf(stdout: string): Attached | null {
-  const reply = lineOf(stdout, -1)
+  const reply = jsonObjectAt(stdout, -1)
   if (reply === null) return null
   const { url, protocols, endpoint } = reply
   if (typeof url !== 'string' || !Array.isArray(protocols) || !protocols.every(held => typeof held === 'string')) return null
@@ -179,9 +178,9 @@ export type Served =
  * retry attaches again, as the contract asks after `ticket_unavailable`.
  */
 export function servedOf(code: number, stdout: string): Served {
-  const hello = lineOf(stdout, 0)
+  const hello = jsonObjectAt(stdout, 0)
   if (hello?.type !== 'hello') return { is: 'failed', kind: code === 0 ? 'incompatible' : EXIT_KINDS[code] ?? 'inaccessible' }
-  const reply = lineOf(stdout, 1)
+  const reply = jsonObjectAt(stdout, 1)
   if (reply?.ok === true && typeof reply.ticket === 'string' && reply.ticket !== '') {
     const { endpoint } = hello
     return { is: 'ticket', ticket: reply.ticket, instanceId: isObject(endpoint) && typeof endpoint.instance_id === 'string' ? endpoint.instance_id : null }

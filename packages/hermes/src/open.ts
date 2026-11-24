@@ -89,10 +89,9 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
     const { creation } = conn
     if (creation === null) return NOT_CONNECTED
     try {
-      // Another device may have made the chat since the click that found none.
-      const found = await titled(bot)
-      if (found === null && !(creation.sources.includes('gui') && creation.parameters.includes('title'))) return CANT_START
-      const sessionId = found ?? await create(bot, creation.parameters)
+      const createsTitled = creation.sources.includes('gui') && creation.parameters.includes('title')
+      const sessionId = createsTitled ? await create(bot, creation.parameters) : await titled(bot)
+      if (sessionId === null) return CANT_START
       take({ on: 'found', bot, sessionId })
       return { ok: true, value: sessionId }
     } catch (error) {

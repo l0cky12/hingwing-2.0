@@ -18,7 +18,6 @@ const hello = (instance: string) => JSON.stringify({ type: 'hello', protocol: 1,
 const served = (reply: unknown, instance = 'i-1') => out(`${hello(instance)}\n${JSON.stringify(reply)}\n`)
 const TICKET = served({ id: 1, ok: true, ticket: 'everyone', expires_in: 30 })
 
-/** A machine whose hermes answers each command with the next reply scripted for it. */
 function machine(replies: { readonly probe?: readonly SshRun[]; readonly attach?: readonly SshRun[]; readonly serve?: readonly SshRun[] }, options: Partial<MintOptions> = {}) {
   const left = { probe: [...(replies.probe ?? [PROBED])], attach: [...(replies.attach ?? [ATTACHED])], serve: [...(replies.serve ?? [TICKET])] }
   const ran: { readonly args: string; readonly input: string | undefined }[] = []

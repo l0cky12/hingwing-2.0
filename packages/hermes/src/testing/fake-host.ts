@@ -21,7 +21,6 @@ interface Said {
   readonly exit: number | 'never'
 }
 
-/** A tool that prints, then reads one line of its stdin and goes on with what `then` says to it. */
 interface Asks extends Omit<Said, 'exit'> { then(line: string): Said }
 
 interface Scenario {
@@ -109,17 +108,13 @@ const TOOLS = ['ssh', 'tailscale', 'hermes'] as const
 type Tool = (typeof TOOLS)[number]
 type Order = readonly [verb: 'stdout' | 'stderr' | 'exit' | 'pipe' | 'ask', value: string | number]
 interface Asked { readonly tool: Tool; readonly argv: readonly string[]; readonly pid: number }
+type ToolSaid = { readonly asked: Asked } | { readonly printed: true } | { readonly read: string }
 interface Answer { readonly at: Hold | null; say(): Said | Asks | { readonly pipe: number } }
 
-/**
- * The script of every fake tool. It runs the orders this process sends it over a loopback socket,
- * one JSON line each and one at a time, and answers an empty line when it has printed what an
- * order said. `ask` answers the first line of the tool's stdin instead, as a JSON string.
- */
 const toolScript = (tool: Tool, port: number) => `#!${process.execPath}
 const net = require('node:net')
 const control = net.connect(${port}, '127.0.0.1')
-const printed = () => control.write('\\n')
+const printed = () => control.write(JSON.stringify({ printed: true }) + '\\n')
 const run = {
   stdout: text => new Promise(done => process.stdout.write(text, done)).then(printed),
   stderr: text => new Promise(done => process.stderr.write(text, done)).then(printed),
@@ -140,7 +135,7 @@ const run = {
       held += chunk
       if (held.includes('\\n')) line()
     })
-  }).then(line => control.write(JSON.stringify(line) + '\\n'))
+  }).then(line => control.write(JSON.stringify({ read: line }) + '\\n'))
 }
 let text = ''
 let last = Promise.resolve()
@@ -153,7 +148,7 @@ control.on('data', chunk => {
     last = last.then(() => run[verb](value))
   }
 })
-control.write(JSON.stringify({ tool: ${JSON.stringify(tool)}, argv: process.argv.slice(2), pid: process.pid }) + '\\n')
+control.write(JSON.stringify({ asked: { tool: ${JSON.stringify(tool)}, argv: process.argv.slice(2), pid: process.pid } }) + '\\n')
 `
 
 const probeReply = (purposes: readonly string[]) => `${JSON.stringify({ protocol: 1, purposes, windows_service_session: false })}\n`
@@ -294,12 +289,11 @@ export async function fakeHost(name: ScenarioName, gateway: Gateway | null, opti
     socket.on('data', (chunk: string) => {
       text += chunk
       for (let end = text.indexOf('\n'); end !== -1; end = text.indexOf('\n')) {
-        const line = text.slice(0, end)
+        const said = JSON.parse(text.slice(0, end)) as ToolSaid
         text = text.slice(end + 1)
-        // The first line is what the tool was asked to do. An empty one says it finished printing, and any other is the line it read.
-        if (running === null) running = run(socket, JSON.parse(line) as Asked)
-        else if (line === '') printed++
-        else running = running.then(then => (then === null ? null : order(socket, then(JSON.parse(line) as string))))
+        if ('asked' in said) running = run(socket, said.asked)
+        else if ('printed' in said) printed++
+        else running = (running ?? Promise.resolve(null)).then(then => (then === null ? null : order(socket, then(said.read))))
       }
     })
   })

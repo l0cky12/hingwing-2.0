@@ -19,7 +19,6 @@ const PROBE_MS = 20_000
 /** attach's own `--timeout`, plus ssh's ConnectTimeout and room to exit. */
 const ATTACH_MS = { start: 90_000, retry: 35_000 } as const
 const SERVE_MS = 20_000
-/** What a Hermes with no `tickets` command can do: attach, with a ticket for the profile attach ran in. */
 const ATTACH_ONLY = { windowsServiceSession: false, interactive: false } as const
 
 export interface MintOptions {
@@ -87,8 +86,7 @@ export function mintWith(run: RunHermes, options: MintOptions): Mint {
   }
 }
 
-/** A `hermes` that is not there exits as the far machine's locator does, and one cut at its deadline as a gateway nobody can reach. */
-const INACCESSIBLE = 7
+const EXIT_AS_LOCATOR: Readonly<Record<'missing' | 'cut', number>> = { missing: NOT_FOUND, cut: 7 }
 
 /** The gateway of the Hermes on this computer. */
 export function liveDialer(options: { readonly hermesBin?: string; readonly clock?: Clock } = {}): Dialer {
@@ -96,7 +94,7 @@ export function liveDialer(options: { readonly hermesBin?: string; readonly cloc
   const run: RunHermes = async (args, asked) => {
     const tool = await runTool(options.hermesBin ?? 'hermes', args, { ...asked, signal, ...(options.clock === undefined ? {} : { clock: options.clock }) })
     if (tool.end === 'exit') return { ok: true, code: tool.code, stdout: tool.stdout }
-    return { ok: true, code: tool.end === 'missing' ? NOT_FOUND : INACCESSIBLE, stdout: '' }
+    return { ok: true, code: EXIT_AS_LOCATOR[tool.end], stdout: '' }
   }
   return dialWith(mintWith(run, { machine: null, forward: async url => url, unprobed: 'attach' }))
 }

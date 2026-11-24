@@ -11,7 +11,6 @@ const asked = (bot: BotId): DeskEvent => ({ on: 'asked', ref: { kind: 'bot', bot
 const found = (bot: BotId, sessionId: SessionId | null): DeskEvent => ({ on: 'found', bot, sessionId })
 const facts = (named: Record<string, SessionId>, launch: Shown | null = null): DeskEvent => ({ on: 'facts', named, launch })
 
-/** The desk after every event, and the effects each event asked for. */
 function after(events: readonly DeskEvent[], from: Desk = EMPTY_DESK): { readonly desk: Desk; readonly effects: readonly (readonly DeskEffect[])[] } {
   const effects: (readonly DeskEffect[])[] = []
   const desk = events.reduce((held, event) => {
