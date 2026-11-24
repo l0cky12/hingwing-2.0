@@ -82,29 +82,21 @@ export interface ActorDeps {
   readonly mintId: () => string
 }
 
-/** What a command may do to one chat (session-commands.ts). It cannot reach the gate, the socket or another chat. */
 export interface SessionPort {
   readonly id: SessionId
-  /** The chat as of now. Read it again after an `await`. */
   readonly content: SessionContent
   readonly fence: Fence
-  /** One call in this chat's profile. A refusal or a lost socket answers as a `Refusal`, never as a rejection. */
   call<M extends Method>(method: M, params: Served[M]['params']): Promise<Outcome<Served[M]['result']>>
-  /**
-   * `session.mutate` with a fresh request id and the revision held. `generation` is the
-   * `expected_generation` an operation that needs one sends, as a model switch does. `invalid` replaces
-   * the general refusal when Hermes names that payload field as the invalid one.
-   */
+  /** `invalid` stands in for the general refusal when Hermes names that payload field as the invalid one. */
   mutate(
     operation: string,
     payload: Record<string, unknown>,
-    generation: number | null,
+    expectedGeneration: number | null,
     invalid?: { readonly field: string; readonly refusal: Refusal }
   ): Promise<Outcome<Served['session.mutate']['result']>>
   /**
-   * `session.mutate` with the request exactly as the row built it, and the same one retry on a fence refusal.
-   * `sent` hears each request as it goes. `explain` turns Hermes's refusal reason into the refusal at the
-   * moment it fails, and null leaves the general one. A lost socket answers that Highwing isn't connected.
+   * The request exactly as the row built it, with the same one retry on a fence refusal. `sent` hears each request
+   * as it goes. `explain` turns Hermes's refusal reason into the refusal at the moment it fails, and null keeps the general one.
    */
   resend(
     request: Mutation,
@@ -112,15 +104,12 @@ export interface SessionPort {
     explain: (reason: string) => Refusal | null
   ): Promise<Outcome<Served['session.mutate']['result']>>
   /**
-   * Puts a message in the outbox and submits it. If the socket drops first, the actor submits it
-   * again with the same id when the chat is live. `apiText` is what the model reads when it differs
-   * from the `text` the thread and the stored history show. Each upload is staged with Hermes first, in order.
-   * The message is sent only once every one is, and not at all when Hermes refuses one.
+   * `apiText` is what the model reads when it differs from the `text` the thread and the stored history show. Each upload
+   * is staged with Hermes first, in order. The message is sent only once every one is, and not at all when Hermes refuses one.
    */
   submit(text: string, apiText?: string, uploads?: readonly Upload[]): Promise<Outcome>
   act(action: LocalAction): void
   earlier(page: HistoryPage): void
-  /** Runs `run` while the chat is attached, and otherwise answers that Highwing isn't connected to it. */
   whenLive<T>(run: () => Promise<Outcome<T>>): Promise<Outcome<T>>
 }
 
@@ -140,8 +129,8 @@ export class SessionActor {
       get content() { return tracked().content },
       get fence() { return tracked().fence },
       call: (method, params) => outcomeOf(() => deps.conn.call(method, params)),
-      mutate: (operation, payload, generation, invalid) => outcomeOf(
-        () => this.mutation({ request_id: deps.mintId(), operation, payload, expected_revision: this.tracked.fence.revision, expected_generation: generation }),
+      mutate: (operation, payload, expectedGeneration, invalid) => outcomeOf(
+        () => this.mutation({ request_id: deps.mintId(), operation, payload, expected_revision: this.tracked.fence.revision, expected_generation: expectedGeneration }),
         error => (invalid !== undefined && error instanceof RpcRefusal && error.reason === 'invalid_params' && error.field === invalid.field ? invalid.refusal : refusalOf(error))
       ),
       resend: (request, sent, explain) => outcomeOf(

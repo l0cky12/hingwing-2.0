@@ -314,7 +314,7 @@ export function openHermes(options: HermesOptions): Hermes {
   })
 
   const hub: Hub = {
-    catalog: async () => {
+    settledCatalog: async () => {
       await catalogRead
       return slash.get()
     },

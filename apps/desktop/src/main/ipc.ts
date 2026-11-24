@@ -70,10 +70,10 @@ function tail<T>(pushed: readonly T[], next: readonly T[]): Tail<T> {
 
 export function sessionPatch(pushed: Session, next: Session): SessionPatch {
   const { history, run, ...fields } = next
-  const rest = Object.fromEntries(Object.entries(fields).filter(([key, value]) => pushed[key as keyof Session] !== value)) as SessionPatch['rest']
-  if (run.state === 'idle') return { rest, history: tail(pushed.history, history), run }
+  const changed = Object.fromEntries(Object.entries(fields).filter(([key, value]) => pushed[key as keyof Session] !== value)) as SessionPatch['changed']
+  if (run.state === 'idle') return { changed, history: tail(pushed.history, history), run }
   const { turn: { items, ...turn }, ...head } = run
-  return { rest, history: tail(pushed.history, history), run: { state: 'running', head, turn, items: tail(pushed.run.state === 'running' ? pushed.run.turn.items : [], items) } }
+  return { changed, history: tail(pushed.history, history), run: { state: 'running', head, turn, items: tail(pushed.run.state === 'running' ? pushed.run.turn.items : [], items) } }
 }
 
 interface Served {

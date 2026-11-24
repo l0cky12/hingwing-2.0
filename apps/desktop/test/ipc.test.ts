@@ -93,7 +93,7 @@ describe('applyPush', () => {
       expect(applyPush(before, 0, { topic, rev: 1, patch }), `moment ${index}`).toEqual({ value: after, rev: 1 })
       if (!onlyTextGrew(before, after)) continue
       deltas++
-      expect(patch.rest, `moment ${index}`).toEqual({})
+      expect(patch.changed, `moment ${index}`).toEqual({})
     }
     expect(deltas > 0, 'a text delta sends no changed field whenever the fixture streams text').toBe(streams)
   })

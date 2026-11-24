@@ -41,7 +41,7 @@ function stage() {
   const actor = new SessionActor(ID, { conn, clock, publish: session => published.push(session), refuse: request => refusedRequests.push(request), mintId: () => `id-${++state.ids}` })
   const branched: Parameters<Hub['branched']>[0][] = []
   const hub: Hub = {
-    catalog: async () => [], retitle: () => {}, drop: () => {}, refreshSoon: () => {},
+    settledCatalog: async () => [], retitle: () => {}, drop: () => {}, refreshSoon: () => {},
     settledRelay: async () => {}, mentioned: () => [], relay: () => {}, branchPins: new Map(), branched: made => void branched.push(made),
     uploads: { read: async () => null }
   }

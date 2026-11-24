@@ -11,19 +11,13 @@ export type SessionCommand = Exclude<Extract<Command, { readonly sessionId: Sess
 /** The exact request a branch key last sent, and the words of the message it branches from. */
 export interface BranchPin { readonly request: Mutation; readonly text: string }
 
-/** What a command about one chat may use of the connection around it. */
 export interface Hub {
-  /** The slash catalog, once the read the current connection began has settled. */
-  catalog(): Promise<SlashCatalog>
+  settledCatalog(): Promise<SlashCatalog>
   retitle(id: SessionId, title: string): void
   drop(id: SessionId): void
-  /** Read the chat list and the bots again soon. */
   refreshSoon(): void
-  /** Once the relay probe the current connection began has settled. */
   settledRelay(): Promise<void>
-  /** The listed bots `text` mentions, less the chat's own bot. None when this Hermes can't relay. */
   mentioned(id: SessionId, text: string): readonly Bot[]
-  /** Hands `text` to `to` and files it under chat `id`, after turn `after`. */
   relay(id: SessionId, after: TurnId | null, to: Bot, text: string): void
   /** Branch keys -> their pins. The hub owns it, so a pin outlives an actor that was detached and made again. */
   readonly branchPins: Map<BranchId, BranchPin>
@@ -52,8 +46,7 @@ export const NOTHING_TO_SHOW: Outcome<string | null> = { ok: true, value: null }
 
 const showing = (outcome: Outcome, words: string | null = null): Outcome<string | null> => (outcome.ok ? { ok: true, value: words } : outcome)
 
-/** A page that begins with a user row holds whole turns, so the read can stop there. */
-const startsAtTurn = (page: { readonly rows: readonly { readonly role?: unknown }[] }) => page.rows[0]?.role === 'user'
+const holdsWholeTurns = (page: { readonly rows: readonly { readonly role?: unknown }[] }) => page.rows[0]?.role === 'user'
 
 /** Hermes extends a cut at an assistant row through the tool rows after it (persistence/sqlite/authority/_mutation_publish.py `_branch_boundary`). */
 function branchPoint(content: SessionContent, rowId: number): { readonly through: number; readonly text: string } | null {
@@ -83,7 +76,7 @@ function branchRefusal(port: SessionPort, reason: string, rowId: number): Refusa
 
 const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<SessionCommand, { do: K }>> } = {
   send: async (port, { text, attachments = [] }, hub) => {
-    const line = text.trimStart().startsWith('/') ? slashLineOf(text, await hub.catalog()) : null
+    const line = text.trimStart().startsWith('/') ? slashLineOf(text, await hub.settledCatalog()) : null
     if (line !== null) return runSlash(port, line, hub)
     if (text.includes('@')) await hub.settledRelay()
     const to = hub.mentioned(port.id, text)
@@ -183,7 +176,7 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
         return page
       }
       pages.push(page.value)
-      if (page.value.next_cursor === null || startsAtTurn(page.value)) break
+      if (page.value.next_cursor === null || holdsWholeTurns(page.value)) break
       cursor = page.value.next_cursor
     }
     port.earlier(parseTranscript(pages))
@@ -241,11 +234,9 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
   })
 }
 
-/** Carries out a command about the chat `port` reaches. The hub has waited for the chat to attach. */
 export const runSessionCommand = (port: SessionPort, command: SessionCommand, hub: Hub) =>
   (sessionCommands[command.do] as Row<SessionCommand>)(port, command, hub)
 
-/** Commands Highwing carries out itself rather than sending to Hermes. null lets Hermes have the line. */
 const highwingRuns: { readonly [name: string]: (port: SessionPort, arg: string, hub: Hub) => Outcome | Promise<Outcome> | null } = {
   title: (port, title, hub) => (title === '' ? null : sessionCommands.rename(port, { do: 'rename', sessionId: port.id, title }, hub))
 }
