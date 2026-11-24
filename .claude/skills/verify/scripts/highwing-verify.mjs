@@ -476,7 +476,11 @@ function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, b
   if (models) header.models = JSON.parse(readFileSync(resolve(process.cwd(), models), 'utf8'))
   if (guarded) header.guarded = guarded.split(',')
   if (usage) header.usage = JSON.parse(readFileSync(resolve(process.cwd(), usage), 'utf8'))
-  if (profiles) header.profiles = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
+  if (profiles) {
+    const { chats, ...reply } = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
+    header.profiles = reply
+    if (chats !== undefined) header.chats = chats
+  }
   if (bound) header.reach = 'profile'
   if (noBotChat) header.homeBotChat = false
   if (dropAfter) {
