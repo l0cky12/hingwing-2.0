@@ -11,6 +11,8 @@ export interface ChatRow {
   readonly doing: string | null
   readonly badge: SidebarRow['badge']
   readonly current: boolean
+  /** Holds unsent text. Never the open chat, whose text is in the box. */
+  readonly draft: boolean
 }
 
 /** What the list under the header shows. */
@@ -23,6 +25,7 @@ export type ChatsView =
 export const NO_CHATS = 'No chats yet.'
 export const UNTITLED = 'Untitled chat'
 export const CHATS = 'Chats'
+export const DRAFT = 'Draft'
 
 const LOADING: ChatsView = { show: 'loading' }
 
@@ -47,7 +50,7 @@ const named = (title: string) => (title.trim() === '' ? UNTITLED : title)
  * `sidebar` and `open` undefined: Electron main has not pushed them yet. The rows are drawn only
  * while they are the open chat's bot's, so a switch never shows one bot's chats under another.
  */
-export function chatsOf(sidebar: Sidebar | undefined, open: OpenChat | undefined, now: number): ChatsView {
+export function chatsOf(sidebar: Sidebar | undefined, open: OpenChat | undefined, now: number, drafts: ReadonlySet<SessionId>): ChatsView {
   if (sidebar === undefined || open === undefined || sidebar.status === 'loading' || sidebar.bot !== (open.shown?.bot ?? null)) return LOADING
   if (sidebar.rows.length === 0) return { show: 'note', words: NO_CHATS }
   const shown = open.shown?.sessionId ?? null
@@ -55,7 +58,7 @@ export function chatsOf(sidebar: Sidebar | undefined, open: OpenChat | undefined
     show: 'rows',
     rows: sidebar.rows.map(row => ({
       id: row.id, name: named(row.title), preview: row.preview, when: row.lastActiveAt === null ? '' : agoOf(row.lastActiveAt, now),
-      doing: DOING[row.badge], badge: row.badge, current: row.id === shown
+      doing: DOING[row.badge], badge: row.badge, current: row.id === shown, draft: row.id !== shown && drafts.has(row.id)
     }))
   }
 }
