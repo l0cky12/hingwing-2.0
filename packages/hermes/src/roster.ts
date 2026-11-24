@@ -1,7 +1,7 @@
 import { rosterOf, type Bots, type Roster } from './domain/bots'
 import type { BotChats } from './domain/open'
 import type { Link } from './domain/session'
-import { Offline, RpcRefusal, type Connection } from './wire/link'
+import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
 import { parseBots } from './wire/parse'
 
 type News =
@@ -25,7 +25,6 @@ function after(bots: Bots, news: News): Bots {
 
 const LINK_NEWS: { readonly [S in Link['state']]: 'online' | 'offline' | null } = { connecting: null, online: 'online', waiting: 'offline', blocked: 'offline' }
 
-const METHOD_NOT_FOUND = -32601
 /** Hermes reads every profile's newest session for this call, so a slow disk can stall it. */
 const ROSTER_TIMEOUT_MS = 10_000
 

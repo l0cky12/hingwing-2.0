@@ -2,7 +2,7 @@
  * The bots of one Hermes, as Highwing's sidebar lists them. A bot is a Hermes profile.
  * Plain JSON data only, like `session.ts`, because these values cross Electron IPC.
  */
-import type { SessionId } from './session'
+import type { ModelOption, SessionId } from './session'
 
 declare const brand: unique symbol
 
@@ -68,6 +68,24 @@ export type Bots =
   | { readonly state: 'refused' }
   /** The newest roster Hermes gave. It stays while the connection is down or a later ask is refused. */
   | { readonly state: 'listed'; readonly roster: Roster }
+
+export interface BotDraft {
+  readonly name: string
+  readonly description: string
+  /** null: Hermes's default model. */
+  readonly model: ModelOption | null
+  /** The bot's SOUL.md, its persona. */
+  readonly persona: string
+}
+
+/** What Hermes made. `warnings`: Hermes's own words, e.g. a credential it could not mirror. The bot exists either way. */
+export interface BotCreated {
+  readonly bot: BotId
+  readonly warnings: readonly string[]
+}
+
+/** The id Hermes gives a typed name: trimmed and lowercased, `default` in any case (hermes_cli/profiles.py:370-396). */
+export const canonicalBotId = (name: string): BotId => name.trim().toLowerCase() as BotId
 
 const shown = ({ id, name, preview }: BotFacts, tone: AvatarTone): Bot => ({ id, name, preview, tone })
 

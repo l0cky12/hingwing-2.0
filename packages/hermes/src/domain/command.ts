@@ -1,3 +1,4 @@
+import type { BotCreated, BotDraft, BotId } from './bots'
 import type { ChatRef, Unstarted } from './open'
 import type { ContextFill, InputId, ModelOption, ModelRef, PromptId, PromptReply, SessionId } from './session'
 
@@ -29,6 +30,10 @@ export type Command =
   /** `confirm` is the token of a `ModelConfirm`, sent to say yes to it. */
   | { readonly do: 'pickModel'; readonly sessionId: SessionId; readonly model: ModelOption; readonly confirm?: string }
   | { readonly do: 'contextBreakdown'; readonly sessionId: SessionId }
+  /** Makes the profile, asks for the roster again, then opens the new bot. */
+  | { readonly do: 'createBot'; readonly draft: BotDraft }
+  /** The models a bot's chat could use, with no chat open. null: the socket's own profile, which a new bot copies its credentials from. */
+  | { readonly do: 'botModels'; readonly bot: BotId | null }
   /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
   | { readonly do: 'reconnect'; readonly start: boolean }
 
@@ -36,7 +41,8 @@ export type Command =
 export type ResultOf<C extends Command> =
   C extends { do: 'open' } ? SessionId | null
   : C extends { do: 'send' | 'start' } ? string | null
-  : C extends { do: 'models' } ? ModelMenu
+  : C extends { do: 'models' | 'botModels' } ? ModelMenu
+  : C extends { do: 'createBot' } ? BotCreated
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
   : void
@@ -59,5 +65,7 @@ export interface Refusal {
   readonly kind: 'offline' | 'not-attached' | 'stale' | 'conflict' | 'rejected' | 'unsupported'
   /** Plain words for the user. */
   readonly message: string
+  /** The field of the request Hermes refused, so a form shows the reason under it. */
+  readonly field?: 'name'
 }
 export type Outcome<T = void> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly refusal: Refusal }

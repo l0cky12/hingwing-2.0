@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { DONE, refusalOf, refused, SessionActor } from './actor'
+import { botModels, createBot } from './bot-admin'
 import type { Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
 import type { OpenChat } from './domain/open'
@@ -346,6 +347,14 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'start') {
       const started = await desk.start(command.chat)
       return started.ok ? run({ do: 'send', sessionId: started.value, text: command.text }) : started
+    }
+    if (command.do === 'botModels') return botModels(conn, command.bot)
+    if (command.do === 'createBot') {
+      const made = await createBot(conn, command.draft)
+      // A 5062 may have made the profile, so the roster is read after any attempt.
+      roster.ask()
+      if (made.ok) await desk.ask({ kind: 'bot', bot: made.value.bot })
+      return made
     }
     if (command.do === 'reconnect') {
       conn.retryNow({ start: command.start })

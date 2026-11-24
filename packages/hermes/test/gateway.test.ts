@@ -355,3 +355,69 @@ describe('the scripted gateway makes a new chat on an untitled create', () => {
     expect((await call('prompt.submit', { session_id: 'chat-research-1', text: 'hello', input_id: 'input-2' })).error, 'it lives in its own profile only').toBeDefined()
   })
 })
+
+describe('the scripted gateway creates a profile as Hermes does', () => {
+  const names = (reply: Reply) => (reply.result?.profiles as { name: string }[]).map(row => row.name)
+
+  it('makes the profile under the home path, answers what Hermes does, and lists it from then on', async () => {
+    const { call, script } = await rawSocket({}, WITH_BOTS)
+    const made = await call('profiles.create', { name: ' Rae ', description: ' Writes the weekly report ', soul: 'You write short reports.', model: 'careful-large', provider: 'acme' })
+    expect(made.result).toEqual({
+      ok: true, name: 'Rae', path: '/tmp/hermes-proto-home/profiles/rae', soul_written: true, model_set: true,
+      mirrored: { env: true, auth: 'shared', model_inherited: false, voice: false }, warnings: []
+    })
+    const listed = await call('profiles.list', {})
+    expect(names(listed).at(-1)).toBe('rae')
+    expect((listed.result?.profiles as unknown[]).at(-1)).toEqual({
+      name: 'rae', path: '/tmp/hermes-proto-home/profiles/rae', is_default: false, model: 'careful-large', provider: 'acme',
+      description: 'Writes the weekly report', display_name: '', skill_count: 0, previous_names: [], canonical_session: null
+    })
+    expect(script.step, 'the story has not moved').toBe(0)
+  })
+
+  it('leaves the model to Hermes when it is not given with its provider, and writes no persona for a blank one', async () => {
+    const { call } = await rawSocket({}, WITH_BOTS)
+    const made = await call('profiles.create', { name: 'rae', soul: '  ', model: 'careful-large' })
+    expect(made.result).toMatchObject({ soul_written: false, model_set: false, mirrored: { model_inherited: true } })
+  })
+
+  it('answers the warnings the header names on every create', async () => {
+    const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, createWarnings: ['A credential was not copied.'] } })
+    expect((await call('profiles.create', { name: 'rae' })).result?.warnings).toEqual(['A credential was not copied.'])
+  })
+
+  it.each([
+    ['a blank name', ' ', 4061, 'name required', 'ValueError', 'profile name cannot be empty'],
+    ['default in any case', 'DEFAULT', 4062, "Cannot create a profile named 'default' — it is the built-in profile (~/.hermes).", 'ValueError'],
+    ['a name that is not an id', 'my/bot', 4062,
+      "'my/bot' is not a valid profile name. Use lowercase letters, numbers, '-' or '_', starting with a letter or number, up to 64 characters (for example: my-bot). Then run `hermes profile create my-bot`.", 'ValueError'],
+    ['a reserved name', 'Root', 4062,
+      "Profile name 'root' is reserved — it collides with either the Hermes installation itself or a common system binary.  Pick a different name.", 'ValueError'],
+    ['a name a bot has, in any case', 'Research', 4062,
+      "A profile named 'research' already exists. Switch to it with `hermes profile use research`, see all profiles with `hermes profile list`, or choose a different name.", 'FileExistsError']
+  ])('refuses %s with Hermes\'s reason, and makes nothing', async (_, name, code, message, type, text = message) => {
+    const { call } = await rawSocket({}, WITH_BOTS)
+    const before = names(await call('profiles.list', {}))
+    expect((await call('profiles.create', { name })).error).toEqual({ code, message, data: { type, message_parts: [text] } })
+    expect(names(await call('profiles.list', {}))).toEqual(before)
+  })
+
+  it('refuses a name a create made before', async () => {
+    const { call } = await rawSocket({}, WITH_BOTS)
+    await call('profiles.create', { name: 'rae' })
+    expect((await call('profiles.create', { name: 'RAE' })).error).toMatchObject({ code: 4062, data: { type: 'FileExistsError' } })
+  })
+
+  it('serves the new profile like a listed bot: no Bot Chat, and chats made in it', async () => {
+    const { call } = await rawSocket({}, WITH_BOTS)
+    await call('profiles.create', { name: 'rae' })
+    expect((await call('session.list', { title: 'Bot Chat', include_hidden: true, profile: 'rae' })).result?.sessions).toEqual([])
+    expect((await call('session.create', { source: 'gui', request_id: 'draft-1', profile: 'rae' })).result?.session_id).toBe('chat-rae-1')
+  })
+
+  it('does not know the call without profiles in the header, nor on a socket bound to one profile', async () => {
+    const unknown = { error: { code: -32601, data: { reason: 'unknown_method' } } }
+    expect(await (await rawSocket()).call('profiles.create', { name: 'rae' })).toMatchObject(unknown)
+    expect(await (await rawSocket({}, BOUND)).call('profiles.create', { name: 'rae' })).toMatchObject(unknown)
+  })
+})
