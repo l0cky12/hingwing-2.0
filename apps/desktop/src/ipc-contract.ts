@@ -194,6 +194,10 @@ export const validators: Validators = {
     if (!sessionId || !model || !(raw.confirm === undefined || filled(raw.confirm))) return null
     return { do: 'pickModel', sessionId, model, ...(raw.confirm === undefined ? {} : { confirm: raw.confirm }) }
   },
+  contextBreakdown: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && { do: 'contextBreakdown', sessionId }
+  },
   reconnect: raw => (typeof raw.start === 'boolean' ? { do: 'reconnect', start: raw.start } : null),
   checkTarget: raw => {
     const target = targetOf(raw.target)

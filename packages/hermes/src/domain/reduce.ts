@@ -6,8 +6,8 @@
  */
 import type {
   Ask, Began, FileDiff, Generation, InputId, Item, Json, Link, ModelRef, NoticeItem, OpenTurn, Outcome, OutboxEntry,
-  PromptId, PromptItem, PromptReply, Request, Run, Session, SessionContent, SessionId, SessionModel, SettledTurn, Sync,
-  TextItem, ToolId, ToolItem, ToolResult, TurnId
+  PromptId, PromptItem, PromptReply, Request, Run, Session, SessionContent, SessionId, SessionModel, SessionUsage, SettledTurn, Sync,
+  TextItem, Tokens, ToolId, ToolItem, ToolResult, TurnId
 } from './session'
 
 /** A gateway event in domain terms. `wire/parse.ts` builds these. Field names are ours, not the wire's. */
@@ -33,7 +33,13 @@ export type SessionEvent =
   | { readonly type: 'prompt.opened'; readonly id: PromptId; readonly generation: Generation; readonly ask: Ask }
   | { readonly type: 'prompt.settled'; readonly id: PromptId }
   | { readonly type: 'prompts.cancelled'; readonly ids: readonly PromptId[] }
-  | { readonly type: 'turn.ended'; readonly outcome: Outcome; readonly finalText: string | null; readonly rows: readonly number[]; readonly userRow: number | null }
+  /** `usage`: Hermes's session totals and context fill at the turn's end. null when the frame carries none. */
+  | {
+      readonly type: 'turn.ended'; readonly outcome: Outcome; readonly finalText: string | null; readonly rows: readonly number[]
+      readonly userRow: number | null; readonly usage: SessionUsage | null
+    }
+  /** A tick while a turn runs. Its totals are mid-turn, so only the context fill is read. */
+  | { readonly type: 'usage'; readonly context: SessionUsage['context'] }
   | { readonly type: 'notice'; readonly tone: 'error' | 'info'; readonly text: string }
   | {
       readonly type: 'meta'
@@ -46,6 +52,11 @@ export type SessionEvent =
       readonly generation?: Generation
       /** Hermes cut the chat before this stored row, here or in another client. */
       readonly cutBefore?: number
+      /**
+       * A committed model switch. Hermes drops the chat's agent (gateway/session_mutations.py:362) and the next
+       * one counts its tokens from zero (run_agent.py:402-418).
+       */
+      readonly countsRestart?: true
     }
 
 /** What became of a model pick, from Hermes's receipt. `settled`: a switch committed or a held pick was dropped. */
@@ -158,6 +169,8 @@ export type SessionInput =
   /** `session.replay_gap`: this socket missed frames the gateway cannot replay. It has no seq of its own. */
   | { readonly in: 'gap' }
   | { readonly in: 'earlier'; readonly page: HistoryPage }
+  /** The answer to a read of the session's usage. `asked` is `Fence.totalsEpoch` when the read was sent. */
+  | { readonly in: 'usage'; readonly usage: SessionUsage; readonly asked: number }
   /** A server request was refused because this build cannot show it. */
   | { readonly in: 'declined'; readonly request: ServerRequest }
   | { readonly in: 'local'; readonly action: LocalAction }
@@ -191,6 +204,12 @@ export interface Fence {
   readonly generation: Generation | null
   /** Attach attempts begun so far. The next attempt is this plus one. */
   readonly attaches: number
+  /**
+   * Times the totals held in `content.usage` stopped being the gateway's: a turn settled, the content
+   * was replaced from a snapshot, or a model switch committed. A usage read answers for the moment it
+   * was sent, so one sent at an older epoch must not set the totals or the fill.
+   */
+  readonly totalsEpoch: number
 }
 
 export interface Tracked {
@@ -201,9 +220,9 @@ export interface Tracked {
 
 export function emptyTracked(id: SessionId): Tracked {
   return {
-    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, outbox: [], model: NO_MODEL },
+    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, outbox: [], model: NO_MODEL, usage: NO_USAGE },
     gate: { at: 'detached', why: 'new', cursor: null },
-    fence: { revision: 0, text: null, older: null, admissions: {}, settledThrough: null, generation: null, attaches: 0 }
+    fence: { revision: 0, text: null, older: null, admissions: {}, settledThrough: null, generation: null, attaches: 0, totalsEpoch: 0 }
   }
 }
 
@@ -243,6 +262,14 @@ export function reduce(state: Tracked, input: SessionInput): Tracked {
       return gap(state)
     case 'earlier':
       return earlier(state, input.page)
+    case 'usage': {
+      const { run, usage } = state.content
+      if (input.asked !== state.fence.totalsEpoch) return state
+      return setUsage(state, {
+        totals: run.state === 'idle' ? input.usage.totals ?? usage.totals : usage.totals,
+        context: input.usage.context ?? usage.context
+      })
+    }
     case 'declined': {
       const { requestId, method } = input.request
       if (holdsDeclined(state.content, requestId)) return state
@@ -339,7 +366,8 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
     began: leftOpen.began,
     items: leftOpen.items,
     outcome: LOST,
-    rows: []
+    rows: [],
+    tokens: null
   }]
   const run: Run = !snapshot.running ? IDLE : {
     state: 'running',
@@ -364,7 +392,8 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       run,
       outbox: content.outbox,
       // Hermes asks a newly attached viewer again about a held pick (gateway/session_deferred_pick.py:46-54).
-      model: { ...modelFrom(content.model, snapshot.model), next: null, ask: null }
+      model: { ...modelFrom(content.model, snapshot.model), next: null, ask: null },
+      usage: patch(content.usage, { totals: null })
     },
     fence: {
       revision: Math.max(fence.revision, snapshot.revision),
@@ -373,7 +402,8 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       admissions: {},
       settledThrough: history.reduce<number | null>((through, turn) => highestRow(through, turn.rows), null),
       generation: newest(fence.generation, snapshot.generation),
-      attaches: fence.attaches
+      attaches: fence.attaches,
+      totalsEpoch: fence.totalsEpoch + 1
     }
   }
   return snapshot.queue.reduce(admission, seeded)
@@ -395,7 +425,7 @@ function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
     })
   }
   const { run } = next.content
-  if (run.state === 'running' && !(snapshot.running && snapshot.generation === run.generation)) next = settle(next, LOST, null, [], null)
+  if (run.state === 'running' && !(snapshot.running && snapshot.generation === run.generation)) next = settle(next, LOST, null, [], null, null)
   if (snapshot.running && next.content.run.state === 'idle') {
     next = openRun(next, snapshot.generation, runTurnId(snapshot.generation), startedRequest(snapshot.queue), null)
   }
@@ -527,6 +557,8 @@ function act(state: Tracked, action: LocalAction): Tracked {
 
 const IDLE: Run = { state: 'idle' }
 const NO_MODEL: SessionModel = { current: null, next: null, ask: null }
+const NO_USAGE: SessionUsage = { totals: null, context: null }
+const ZERO_TOKENS: Tokens = { input: 0, output: 0, reasoning: 0 }
 const LOST: Outcome = { kind: 'lost' }
 const ANSWERED_ELSEWHERE: PromptItem['state'] = { s: 'answered', reply: null }
 
@@ -536,7 +568,7 @@ function fold(state: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | 's
       const { run } = state.content
       if (stamp.generation === null || (event.turnId !== null && holdsTurn(state.content, event.turnId))) return state
       if (run.state === 'running' && stamp.generation <= run.generation) return state
-      const settled = settle(state, LOST, null, [], null)
+      const settled = settle(state, LOST, null, [], null, null)
       const claimed = claimEntry(settled, event.admissionId, event.requestText)
       const request = claimed !== null
         ? { text: claimed.text, inputId: claimed.inputId, rowId: null }
@@ -603,7 +635,9 @@ function fold(state: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | 's
     case 'turn.ended':
       // A queued message that is cancelled completes with no generation on its stamp
       // (gateway/session_authority.py:886). That is not the end of the turn running ahead of it.
-      return stamp.generation === null ? state : settle(state, event.outcome, event.finalText, event.rows, event.userRow)
+      return stamp.generation === null ? state : settle(state, event.outcome, event.finalText, event.rows, event.userRow, event.usage)
+    case 'usage':
+      return event.context === null ? state : setUsage(state, { ...state.content.usage, context: event.context })
     case 'notice':
       return editTurn(ensureRun(state, stamp.generation, seenAt), turn =>
         pushItem(turn, { kind: 'notice', what: 'said', tone: event.tone, text: event.text }))
@@ -616,7 +650,8 @@ function fold(state: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | 's
         ? titled
         : { ...titled, fence: patch(titled.fence, { revision: Math.max(titled.fence.revision, event.revision) }) }
       const cut: Tracked = event.cutBefore === undefined ? revised : cutBefore(revised, event.cutBefore)
-      return (event.queue ?? []).reduce(admission, cut)
+      const counted: Tracked = event.countsRestart === undefined ? cut : restartCounts(cut)
+      return (event.queue ?? []).reduce(admission, counted)
     }
     default:
       return unreachable(event)
@@ -670,18 +705,45 @@ function claimEntry(state: Tracked, admissionId: string | null, requestText: str
   return only !== undefined && sending.length === 1 && (requestText === null || requestText === only.text) ? only : null
 }
 
-function settle(state: Tracked, outcome: Outcome, finalText: string | null, rows: readonly number[], userRow: number | null): Tracked {
+function settle(
+  state: Tracked, outcome: Outcome, finalText: string | null, rows: readonly number[], userRow: number | null, usage: SessionUsage | null
+): Tracked {
   const { content, fence } = state
   if (content.run.state !== 'running') return state
   const { id, request, began, items } = content.run.turn
+  const before = content.usage
+  const totals = usage?.totals ?? null
+  const tokens = totals !== null && before.totals !== null ? shareOf(totals, before.totals) : null
   const turn: SettledTurn = {
-    id, request: request === null ? null : { ...request, rowId: userRow ?? request.rowId }, began, items: withFinalText(items, finalText).map(settledItem), outcome, rows
+    id, request: request === null ? null : { ...request, rowId: userRow ?? request.rowId }, began, items: withFinalText(items, finalText).map(settledItem),
+    outcome, rows, tokens
   }
-  return {
+  const settled: Tracked = {
     ...state,
     content: { ...content, history: [...content.history, turn], run: IDLE },
-    fence: patch(fence, { text: null, settledThrough: highestRow(fence.settledThrough, rows) })
+    fence: { ...patch(fence, { text: null, settledThrough: highestRow(fence.settledThrough, rows) }), totalsEpoch: fence.totalsEpoch + 1 }
   }
+  return setUsage(settled, { totals, context: usage?.context ?? before.context })
+}
+
+/**
+ * What one turn added to the session totals. Hermes counts for the life of its agent
+ * (tui_gateway/server.py:1270-1279), so a total below the one before means it built a new agent and
+ * counts from zero again: the totals are then the turn's own.
+ */
+export function shareOf(totals: Tokens, before: Tokens): Tokens {
+  if (totals.input < before.input || totals.output < before.output || totals.reasoning < before.reasoning) return totals
+  return { input: totals.input - before.input, output: totals.output - before.output, reasoning: totals.reasoning - before.reasoning }
+}
+
+function setUsage(state: Tracked, said: SessionUsage): Tracked {
+  const held = state.content.usage
+  const usage = patch(held, { totals: keep(held.totals, said.totals), context: keep(held.context, said.context) })
+  return usage === held ? state : { ...state, content: { ...state.content, usage } }
+}
+
+function keep<T extends object>(held: T | null, said: T | null): T | null {
+  return held === null || said === null ? said : patch(held, said)
 }
 
 function withFinalText(items: readonly Item[], finalText: string | null): readonly Item[] {
@@ -764,6 +826,11 @@ function highestRow(through: number | null, rows: readonly number[]): number | n
 
 function sameRef(a: ModelRef | null, b: ModelRef | null): boolean {
   return a === b || (a !== null && b !== null && a.id === b.id && a.provider === b.provider)
+}
+
+function restartCounts(state: Tracked): Tracked {
+  const { fence } = state
+  return { ...setUsage(state, { ...state.content.usage, totals: ZERO_TOKENS }), fence: { ...fence, totalsEpoch: fence.totalsEpoch + 1 } }
 }
 
 function afterPick(state: Tracked, outcome: PickOutcome): Tracked {

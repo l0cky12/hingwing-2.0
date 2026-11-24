@@ -284,6 +284,7 @@ export function openHermes(options: HermesOptions): Hermes {
     loadEarlier: actor => actor.loadEarlier(),
     models: actor => actor.models(),
     pickModel: (actor, { model, confirm }) => actor.pickModel(model, confirm ?? null),
+    contextBreakdown: actor => actor.contextBreakdown(),
     rename: async (actor, { title }) => {
       const outcome = await actor.mutate({ title })
       if (outcome.ok) list.retitle(actor.id, title)

@@ -1,5 +1,5 @@
 import type { ChatRef, Unstarted } from './open'
-import type { InputId, ModelOption, ModelRef, PromptId, PromptReply, SessionId } from './session'
+import type { ContextFill, InputId, ModelOption, ModelRef, PromptId, PromptReply, SessionId } from './session'
 
 export type Command =
   /**
@@ -28,6 +28,7 @@ export type Command =
   | { readonly do: 'models'; readonly sessionId: SessionId }
   /** `confirm` is the token of a `ModelConfirm`, sent to say yes to it. */
   | { readonly do: 'pickModel'; readonly sessionId: SessionId; readonly model: ModelOption; readonly confirm?: string }
+  | { readonly do: 'contextBreakdown'; readonly sessionId: SessionId }
   /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
   | { readonly do: 'reconnect'; readonly start: boolean }
 
@@ -37,6 +38,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'send' | 'start' } ? string | null
   : C extends { do: 'models' } ? ModelMenu
   : C extends { do: 'pickModel' } ? ModelConfirm | null
+  : C extends { do: 'contextBreakdown' } ? ContextBreakdown
   : void
 
 /** What Hermes offers this chat. `options` empty: nothing is set up. `fallback`: the model Hermes names for it. */
@@ -44,6 +46,13 @@ export interface ModelMenu { readonly options: readonly ModelOption[]; readonly 
 
 /** Hermes wants a second yes before it switches, usually for a costly model. Nothing changed yet. */
 export interface ModelConfirm { readonly token: string; readonly message: string }
+
+/** What fills a chat's context window, read when asked for. `max` is 0 when Hermes has not sized the window yet. */
+export interface ContextBreakdown extends ContextFill {
+  readonly model: string | null
+  /** In Hermes's display order. Their tokens are estimates and need not add up to `used`. */
+  readonly categories: readonly { readonly id: string; readonly label: string; readonly tokens: number }[]
+}
 
 /** A command that could not be carried out. A value, not an exception, so it crosses IPC unchanged. */
 export interface Refusal {

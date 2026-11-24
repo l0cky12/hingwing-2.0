@@ -11,12 +11,12 @@ const NONE: ToolResult = { kind: 'none' }
 function session(over: Partial<Session> = {}): Session {
   return {
     id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, outbox: [],
-    model: { current: null, next: null, ask: null }, sync: { state: 'live' }, ...over
+    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, sync: { state: 'live' }, ...over
   }
 }
 
 const settled = (items: readonly Item<'settled'>[], outcome: Outcome = COMPLETE, id = 't1'): SettledTurn =>
-  ({ id: id as TurnId, request: { text: 'Do the errand', inputId: null, rowId: null }, began: null, items, outcome, rows: [] })
+  ({ id: id as TurnId, request: { text: 'Do the errand', inputId: null, rowId: null }, began: null, items, outcome, rows: [], tokens: null })
 
 const running = (items: readonly Item[], sync: Sync = { state: 'live' }, announced: string | null = null): Session => session({
   sync,

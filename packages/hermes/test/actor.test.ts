@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SessionActor } from '../src/actor'
 import type { ServerRequest, SessionEvent } from '../src/domain/reduce'
-import type { Generation, InputId, Link, PromptId, Session, SessionId } from '../src/domain/session'
+import type { Generation, InputId, Link, PromptId, Session, SessionId, SessionUsage } from '../src/domain/session'
 import { manualClock, settle } from '../src/testing/clock'
 import { Offline, RpcRefusal, type Calls } from '../src/wire/link'
 
@@ -27,13 +27,14 @@ const approval = { kind: 'approval', prompt_id: 'p1', execution_generation: 1, c
 function stage() {
   const clock = manualClock()
   const calls: Call[] = []
+  const usageReads: Call[] = []
   const published: Session[] = []
   const refusedRequests: ServerRequest[] = []
   const state: { link: Link; ids: number } = { link: { state: 'online' }, ids: 0 }
   const conn: Calls = {
     get link() { return state.link },
     call: (method: string, params: unknown) => new Promise<never>((resolve, reject) => {
-      calls.push({ method, params: params as Record<string, unknown>, resolve: resolve as (result: unknown) => void, reject })
+      (method === 'session.stats' ? usageReads : calls).push({ method, params: params as Record<string, unknown>, resolve: resolve as (result: unknown) => void, reject })
     })
   }
   const actor = new SessionActor(ID, { conn, clock, publish: session => published.push(session), refuse: request => refusedRequests.push(request), mintId: () => `id-${++state.ids}` })
@@ -47,8 +48,15 @@ function stage() {
     await settle()
     return call
   }
+  const answerUsageRead = async (result: unknown) => {
+    const call = usageReads.shift()
+    if (call === undefined) throw new Error('no session.stats call is waiting')
+    if (result instanceof Error) call.reject(result)
+    else call.resolve(result)
+    await settle()
+  }
   return {
-    clock, calls, published, refusedRequests, actor, answer,
+    clock, calls, usageReads, published, refusedRequests, actor, answer, answerUsageRead,
     sync: () => actor.session.sync,
     methods: () => calls.map(call => call.method),
     event: (event: SessionEvent | null, generation: number | null = 1) =>
@@ -169,6 +177,85 @@ describe('attach', () => {
     await open()
     void actor.detach()
     expect(calls.map(call => [call.method, call.params])).toEqual([['session.detach', { session_id: ID, subscription_id: 'sub-1' }]])
+  })
+})
+
+describe('usage', () => {
+  const stats = (more: Record<string, unknown> = {}) => ({ input_tokens: 0, output_tokens: 0, reasoning_tokens: 0, last_prompt_tokens: 6000, context_length: 200_000, ...more })
+  const ended = (usage: SessionUsage | null): SessionEvent => ({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: 'Done.', rows: [], userRow: null, usage })
+
+  it('reads the chat\'s usage once it is live, and the first turn then holds what it used', async () => {
+    const { actor, open, usageReads, answerUsageRead, event } = stage()
+    await open()
+    expect(usageReads.map(call => call.params)).toEqual([{ session_id: ID }])
+    await answerUsageRead(stats())
+    expect(actor.session.usage).toEqual({ totals: { input: 0, output: 0, reasoning: 0 }, context: { used: 6000, max: 200_000, percent: 3, estimated: false } })
+
+    event(started)
+    event(ended({ totals: { input: 1204, output: 380, reasoning: 412 }, context: { used: 68_000, max: 200_000, percent: 34, estimated: true } }))
+    expect(actor.session.history.at(-1)?.tokens).toEqual({ input: 1204, output: 380, reasoning: 412 })
+    expect(actor.session.usage.context?.percent).toBe(34)
+  })
+
+  it('reads again when a turn ends, so a turn end that names no usage still moves the meter', async () => {
+    const { actor, open, usageReads, answerUsageRead, event } = stage()
+    await open()
+    await answerUsageRead(stats())
+    event(started)
+    expect(usageReads).toEqual([])
+    event(ended(null))
+    expect(usageReads).toHaveLength(1)
+    await answerUsageRead(stats({ input_tokens: 900, output_tokens: 90, last_prompt_tokens: 90_000 }))
+    expect(actor.session.usage).toEqual({ totals: { input: 900, output: 90, reasoning: 0 }, context: { used: 90_000, max: 200_000, percent: 45, estimated: false } })
+  })
+
+  it('leaves the totals a turn end set when a read sent before that end answers after it', async () => {
+    const { actor, open, answerUsageRead, event } = stage()
+    await open()
+    event(started)
+    event(ended({ totals: { input: 500, output: 50, reasoning: 0 }, context: null }))
+    await answerUsageRead(stats())
+    expect(actor.session.usage.totals).toEqual({ input: 500, output: 50, reasoning: 0 })
+  })
+
+  it('reads the totals again before each message it sends, so an agent Hermes rebuilt while idle counts from zero', async () => {
+    const { actor, open, usageReads, answer, answerUsageRead, event } = stage()
+    await open()
+    await answerUsageRead(stats({ input_tokens: 100, output_tokens: 10 }))
+    const sent = actor.send('hello')
+    expect(usageReads).toHaveLength(1)
+    await answerUsageRead(stats())
+    await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
+    await sent
+    event(started)
+    event(ended({ totals: { input: 2000, output: 100, reasoning: 0 }, context: null }))
+    expect(actor.session.history.at(-1)?.tokens).toEqual({ input: 2000, output: 100, reasoning: 0 })
+  })
+
+  it('shows no figures, and fails nothing, for a Hermes that does not know the read', async () => {
+    const { actor, open, answerUsageRead } = stage()
+    await open()
+    await answerUsageRead(new RpcRefusal(-32601, 'unknown_method', 'unknown method: session.stats'))
+    expect(actor.session.usage).toEqual({ totals: null, context: null })
+    expect(actor.session.sync).toEqual({ state: 'live' })
+  })
+
+  it('answers what fills the context window, and a refusal in plain words', async () => {
+    const { actor, open, calls, answer } = stage()
+    await open()
+    const asked = actor.contextBreakdown()
+    expect(calls[0]).toMatchObject({ method: 'session.context_breakdown', params: { session_id: ID } })
+    await answer('session.context_breakdown', {
+      categories: [{ id: 'system_prompt', label: 'System', tokens: 6000, color: '#888' }], context_used: 68_000, context_max: 200_000,
+      context_percent: 34, context_estimated: true, model: 'fast-small'
+    })
+    expect(await asked).toEqual({
+      ok: true,
+      value: { model: 'fast-small', used: 68_000, max: 200_000, percent: 34, estimated: true, categories: [{ id: 'system_prompt', label: 'System', tokens: 6000 }] }
+    })
+    const refusedRead = actor.contextBreakdown()
+    await answer('session.context_breakdown', new RpcRefusal(-32601, 'unknown_method', 'unknown method'))
+    expect(await refusedRead).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes doesn't support that." } })
   })
 })
 

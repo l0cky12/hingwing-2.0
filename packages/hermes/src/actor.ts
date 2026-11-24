@@ -1,8 +1,8 @@
-import type { ModelConfirm, ModelMenu, Outcome, Refusal } from './domain/command'
+import type { ContextBreakdown, ModelConfirm, ModelMenu, Outcome, Refusal } from './domain/command'
 import { emptyTracked, reduce, sessionOf, type Gate, type LocalAction, type ServerRequest, type SessionInput, type Tracked } from './domain/reduce'
 import type { InputId, ModelOption, OutboxEntry, PromptId, PromptReply, Session, SessionId } from './domain/session'
 import { Offline, RpcRefusal, type Calls, type Clock } from './wire/link'
-import { parseModelMenu, parseModelReceipt, parseReplay, parseSnapshot, parseTranscript } from './wire/parse'
+import { parseContextBreakdown, parseModelMenu, parseModelReceipt, parseReplay, parseSnapshot, parseStats, parseTranscript } from './wire/parse'
 
 export const DONE: Outcome = { ok: true, value: undefined }
 export const refused = (kind: Refusal['kind'], message: string): Outcome<never> => ({ ok: false, refusal: { kind, message } })
@@ -79,14 +79,17 @@ export class SessionActor {
 
   private step(input: SessionInput): void {
     const before = this.tracked.gate
+    const wasRunning = this.tracked.content.run.state === 'running'
     this.tracked = reduce(this.tracked, input)
     const after = this.tracked.gate
     this.publish()
+    const wentLive = after.at === 'live' && before.at !== 'live'
+    if (wentLive || (after.at === 'live' && wasRunning && this.tracked.content.run.state === 'idle')) void this.readUsage()
     if (after.at === 'attaching' && !(before.at === 'attaching' && before.attempt === after.attempt)) {
       void this.runAttach(after, before.at !== 'detached')
-    } else if (after.at === 'live' && before.at !== 'live') {
+    } else if (wentLive) {
       // A message whose submit died with the last socket. The gateway's duplicate guard makes a second delivery a no-op.
-      for (const entry of this.tracked.content.outbox) if (entry.state.s === 'sending') void this.submit(entry)
+      for (const entry of this.tracked.content.outbox) if (entry.state.s === 'sending') void this.admit(entry)
     }
   }
 
@@ -135,6 +138,18 @@ export class SessionActor {
     if (gate.at === 'live' && gate.subscriptionId === snapshot.subscriptionId) snapshot.openRequests.forEach(this.deps.refuse)
   }
 
+  private async readUsage(): Promise<void> {
+    const asked = this.tracked.fence.totalsEpoch
+    await this.deps.conn.call('session.stats', { session_id: this.id })
+      .then(reply => this.step({ in: 'usage', usage: parseStats(reply), asked }), refusalOf)
+  }
+
+  private async submit(entry: Pick<OutboxEntry, 'inputId' | 'text' | 'apiText'>): Promise<Outcome> {
+    // Written before the submit, so the gateway answers it before the turn can build a new agent that counts from zero.
+    void this.readUsage()
+    return this.admit(entry)
+  }
+
   private offline(): Outcome<never> | null {
     return this.tracked.gate.at === 'live' ? null : { ok: false, refusal: NOT_CONNECTED }
   }
@@ -149,7 +164,7 @@ export class SessionActor {
     return this.submit(sending)
   }
 
-  private async submit({ inputId, text, apiText }: Pick<OutboxEntry, 'inputId' | 'text' | 'apiText'>): Promise<Outcome> {
+  private async admit({ inputId, text, apiText }: Pick<OutboxEntry, 'inputId' | 'text' | 'apiText'>): Promise<Outcome> {
     try {
       const receipt = await this.deps.conn.call('prompt.submit', { session_id: this.id, text, input_id: inputId, ...(apiText === undefined ? {} : { api_text: apiText }) })
       if ('admission_id' in receipt) this.act({ did: 'send.admitted', inputId, admissionId: receipt.admission_id, status: receipt.status })
@@ -236,6 +251,16 @@ export class SessionActor {
     try {
       // explicit_only leaves out providers that only look signed in through ambient credentials.
       return { ok: true, value: parseModelMenu(await this.deps.conn.call('model.options', { session_id: this.id, explicit_only: true })) }
+    } catch (error) {
+      return { ok: false, refusal: refusalOf(error) }
+    }
+  }
+
+  async contextBreakdown(): Promise<Outcome<ContextBreakdown>> {
+    const offline = this.offline()
+    if (offline !== null) return offline
+    try {
+      return { ok: true, value: parseContextBreakdown(await this.deps.conn.call('session.context_breakdown', { session_id: this.id })) }
     } catch (error) {
       return { ok: false, refusal: refusalOf(error) }
     }
