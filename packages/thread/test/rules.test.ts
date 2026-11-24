@@ -199,10 +199,10 @@ describe('checkThread', () => {
       state: 'ready', pending: [], earlier: 'none', changesAt: null,
       turns: [
         {
-          key: 't1', time: null, request: null, end: { kind: 'at', nodeKey: 't1/7', tone: 'live', elapsed: null },
+          key: 't1', time: null, request: null, rowId: null, end: { kind: 'at', nodeKey: 't1/7', tone: 'live', elapsed: null },
           nodes: [{ kind: 'group', key: 't1/g0', title: [], count: 1, stat: null, steps: [step] }, { kind: 'prose', key: 't1/0', markdown: 'x', streaming: true }]
         },
-        { key: 't2', time: null, request: null, end: { kind: 'done', words: 'Done' }, nodes: [] }
+        { key: 't2', time: null, request: null, rowId: null, end: { kind: 'done', words: 'Done' }, nodes: [] }
       ]
     }
     expect(checkThread(view)).toEqual([
