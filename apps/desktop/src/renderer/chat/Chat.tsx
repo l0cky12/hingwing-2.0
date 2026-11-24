@@ -2,6 +2,7 @@ import { activityOf, modelViewOf, type CommandOutcome, type ModelMenu, type Prom
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
+import { ContextMeter } from '../composer/ContextMeter'
 import type { Editing } from '../composer/edit'
 import { ModelPicker } from '../composer/ModelPicker'
 import { run, useTopic } from '../store'
@@ -175,6 +176,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   }, [id])
   useEffect(() => { if (live) void refreshModels() }, [live, refreshModels])
   const model = modelViewOf(menu.id === id ? menu.menu : null, session)
+  const fill = session?.usage.context ?? null
 
   const fileCall = useMemo(() => (id === null ? NO_FILE_CALL : fileCallFor(id)), [id])
 
@@ -209,11 +211,16 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}
       >
-        {id !== null && model.show !== 'hidden' && (
-          <ModelPicker
-            key={id} view={model} onOpen={() => void refreshModels()}
-            onPick={(pick, confirm) => run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) })}
-          />
+        {id !== null && (model.show !== 'hidden' || fill !== null) && (
+          <div className="under">
+            {model.show !== 'hidden' && (
+              <ModelPicker
+                key={id} view={model} onOpen={() => void refreshModels()}
+                onPick={(pick, confirm) => run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) })}
+              />
+            )}
+            {fill !== null && <ContextMeter key={id} fill={fill} stale={!live} onBreakdown={() => run({ do: 'contextBreakdown', sessionId: id })} />}
+          </div>
         )}
         {regenerating !== null && regenerating.id === id && <p className="err refusal">{regenerating.refusal}</p>}
       </Composer>

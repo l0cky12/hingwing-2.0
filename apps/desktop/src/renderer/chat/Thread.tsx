@@ -156,6 +156,7 @@ const Turn = memo(function Turn({ turn, opened, onToggle, onAnswer, canEdit, sho
         ))}
         <End turnKey={turn.key} end={end} />
       </div>
+      {turn.tokens !== null && <p className="used">{turn.tokens}</p>}
       {showsRegenerate && rowId !== null && request !== null && (
         <div className="turn-actions">
           <button type="button" className="regenerate" disabled={!canRegenerate} onClick={() => onRegenerate(rowId, request)}>Regenerate</button>
