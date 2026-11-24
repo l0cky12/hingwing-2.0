@@ -416,7 +416,11 @@ function attached(state: Tracked, gate: Attaching, snapshot: Snapshot, replay: R
   const liveAt = (cursor: Cursor): Tracked => ({ ...state, gate: { at: 'live', cursor, subscriptionId: snapshot.subscriptionId } })
   const upToWatermark = (frame: StampedEvent) => frame.stamp.seq <= watermark.seq
   const listed = snapshot.openRequests.filter(request => request.kind === 'card')
-  const cancelled = new Set(parked.flatMap(frame => (frame.event?.type === 'request.cancelled' ? [frame.event.id] : [])))
+  const cancelled = new Map(parked.flatMap(({ event }): [RequestId, CloseWhy][] => {
+    if (event?.type === 'request.cancelled') return [[event.id, event.why]]
+    if (event?.type === 'connect' && event.settled !== null) return [[event.card.requestId, event.settled]]
+    return []
+  }))
   const asking = (attachedState: Tracked) => withRequests(attachedState, reconciled(heldOf(attachedState), listed, asked, cancelled))
 
   if (plan.mode === 'replay' && replay !== null && !replay.snapshotRequired && replay.epoch === watermark.epoch && replay.epoch === plan.from.epoch) {

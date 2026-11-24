@@ -64,10 +64,10 @@ export function closed(held: Held, id: RequestId, why: CloseWhy): Change {
   }
 }
 
-export function reconciled(held: Held, listed: readonly CardRequest[], parked: readonly CardRequest[], cancelled: ReadonlySet<RequestId>): Change {
+export function reconciled(held: Held, listed: readonly CardRequest[], parked: readonly CardRequest[], cancelled: ReadonlyMap<RequestId, CloseWhy>): Change {
   const gone = held.requests.filter(request => !listed.some(open => open.requestId === request.id))
   const after = gone.reduce<Change>((change, request) => {
-    const next = closed(change, request.id, 'resolved')
+    const next = closed(change, request.id, cancelled.get(request.id) ?? 'resolved')
     return { ...next, notices: [...change.notices, ...next.notices] }
   }, { ...held, notices: [] })
   const relisted = listed.reduce<Held>((change, open) => {
