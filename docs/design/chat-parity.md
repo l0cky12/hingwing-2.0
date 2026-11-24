@@ -108,7 +108,7 @@ Each unit is one PR, stacked on the one before it. Each ends with:
 
 | PR | Unit | Rows | Proves it |
 |---|---|---|---|
-| B0 | Groundwork, no behaviour change | none | `SessionPatch.rest` as changed fields, the `SessionPort` and `session-commands.ts` with today's commands moved onto it, the scripted gateway's new handlers that refuse by default. Every existing test passes unchanged, and `applyPush(a, sessionPatch(a, b))` equals `b` for each pair of consecutive sessions of every fixture. |
+| B0 | Groundwork, no behaviour change | none | `SessionPatch.rest` as changed fields, and the `SessionPort` and `session-commands.ts` with today's commands moved onto it. Every existing test passes unchanged, and `applyPush(a, sessionPatch(a, b))` equals `b` for each pair of consecutive sessions of every fixture. Each later unit adds the scripted gateway handlers its own calls need. |
 | B1 | What Hermes says | #8, #9, #11, #12, #13, #16 | `says.jsonl`: reasoning, MoA, a tool image, status lines, a notice, an approval with `timeout_s`, and a goal verdict while idle. The `declined` phantom turn is gone. |
 | B2 | What Hermes asks | #20, #21, #22 | `asks.jsonl`: sudo answered (the recorded result is masked), a secret skipped, a vault prompt closed by `request.cancel`, a two-question batch, a plugin choice while idle, a connector card, and a Desktop bridge declined only while watched. |
 | B3 | Queue, steer and rewind | #3, #4, #6, #17, #23, #24, #25, #26 | `queue.jsonl` and `rewind.jsonl`: another client's queued row, cancel, send now, edit, a lost row released, steer, redirect, a rejected steer resubmitted, deny-and-tell, retry, undo, edit-and-resend, a drop before the rewind reply, and a compression from another window. |
