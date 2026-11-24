@@ -1,4 +1,4 @@
-import { BOT_TONES, type BotId, type Bots, type OpenChat, type SessionId } from '@highwing/hermes/domain'
+import { BOT_TONES, type BotId, type Bots, type Link, type OpenChat, type SessionId } from '@highwing/hermes/domain'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
@@ -6,8 +6,14 @@ import { BotsPanel } from '../src/renderer/bots/Bots'
 import { APPROVED, fact, listed } from './support/bots'
 
 const AT_LAUNCH: OpenChat = { shown: { kind: 'bot', bot: 'default' as BotId, sessionId: 's1' as SessionId }, opening: null }
-const showing = (bots: Bots | undefined, open: OpenChat | undefined) =>
-  renderToStaticMarkup(<BotsPanel bots={bots} open={open} onOpen={async () => ({ ok: true, value: null })} />)
+const ONLINE: Link = { state: 'online' }
+const showing = (bots: Bots | undefined, open: OpenChat | undefined, link: Link | undefined = ONLINE) =>
+  renderToStaticMarkup(
+    <BotsPanel
+      bots={bots} open={open} link={link} onOpen={async () => ({ ok: true, value: null })}
+      onCreate={async () => ({ ok: true, value: { bot: 'rae' as BotId, warnings: [] } })} onModels={async () => ({ ok: true, value: { options: [], fallback: null } })}
+    />
+  )
 const render = (bots: Bots | undefined) => showing(bots, AT_LAUNCH)
 const attr = (tag: string, name: string) => new RegExp(` ${name}="([^"]*)"`).exec(tag)?.[1]
 const buttons = (markup: string) => markup.match(/<button[^>]*>/g) ?? []
@@ -54,11 +60,27 @@ describe('the bots sidebar', () => {
     expect(fresh).toContain(`id="${attr(named(fresh, 'Fresh')!, 'aria-describedby')}">No messages yet<`)
   })
 
-  it('shows New bot as unavailable, still reachable, and says why', () => {
+  it('offers New bot while the link is online and Hermes has listed its bots', () => {
     const tag = named(markup, 'New bot')!
+    expect(tag).not.toMatch(/aria-disabled|aria-describedby/)
+    expect(attr(tag, 'aria-haspopup')).toBe('dialog')
+    expect(markup, 'the dialog is not drawn until the button is pressed').not.toContain('<dialog')
+  })
+
+  it.each([
+    ['Hermes has not listed its bots yet', { state: 'loading' }, ONLINE, "Highwing is still reading this Hermes&#x27;s bots."],
+    ['Hermes cannot list its bots', { state: 'unsupported' }, ONLINE, 'This Hermes can&#x27;t create bots.'],
+    ['Hermes would not list its bots', { state: 'refused' }, ONLINE, 'Highwing can&#x27;t check names until Hermes lists its bots.'],
+    ['the first dial failed', { state: 'offline' }, { state: 'waiting', attempt: 1, retryAt: 0, why: 'not-running', message: '' }, 'Highwing isn&#x27;t connected to Hermes right now.'],
+    ['the link dropped after the bots were listed', APPROVED, { state: 'connecting', attempt: 2 }, 'Highwing isn&#x27;t connected to Hermes right now.'],
+    ['nothing has been pushed yet', undefined, undefined, 'Highwing is still reading this Hermes&#x27;s bots.']
+  ] as [string, Bots | undefined, Link | undefined, string][])('shows New bot as unavailable, still reachable, and says why when %s', (_, bots, link, why) => {
+    const html = showing(bots, AT_LAUNCH, link)
+    const tag = named(html, 'New bot')!
     expect(attr(tag, 'aria-disabled')).toBe('true')
     expect(tag).not.toMatch(/ disabled/)
-    expect(markup).toContain(`id="${attr(tag, 'aria-describedby')}">Highwing can&#x27;t create bots yet<`)
+    expect(attr(tag, 'title')).toBe(why)
+    expect(html).toContain(`id="${attr(tag, 'aria-describedby')}">${why}<`)
   })
 
   it('gives a bot whose profile name holds a space one id to be described by', () => {
