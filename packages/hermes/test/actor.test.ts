@@ -90,7 +90,7 @@ function stage() {
 
 const refusal = (reason: string, revision: number | null = null) => new RpcRefusal(4001, reason, reason, revision)
 const started: SessionEvent = { type: 'turn.started', turnId: null, admissionId: null, requestText: null }
-const asked: SessionEvent = { type: 'prompt.opened', id: 'p1' as PromptId, generation: 1 as Generation, ask: { kind: 'approval', command: 'rm -rf x', reason: null, choices: ['once', 'deny'] } }
+const asked: SessionEvent = { type: 'prompt.opened', id: 'p1' as PromptId, generation: 1 as Generation, ask: { kind: 'approval', command: 'rm -rf x', reason: null, choices: ['once', 'deny'] }, timeoutS: null }
 
 describe('attach', () => {
   it('opens a session it has never seen with one resume that asks for history', async () => {

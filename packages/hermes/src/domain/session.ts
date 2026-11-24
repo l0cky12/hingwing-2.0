@@ -74,6 +74,13 @@ export interface SessionContent {
   readonly earlier: 'none' | 'more' | 'loading'
   /** The one place that says whether the agent is working. */
   readonly run: Run
+  /**
+   * What Hermes said since the last turn ended, while none runs: a goal check's verdict, a notice, a
+   * request this build declined. Oldest first. Empty while a turn runs, because a line said then is an
+   * item of that turn. When the next turn starts, these move into `history` as one entry whose outcome
+   * is `interlude`. Live only: a rebuild drops them.
+   */
+  readonly interlude: readonly Item<'settled'>[]
   /** Messages the user sent that no turn has picked up yet. */
   readonly outbox: readonly OutboxEntry[]
   readonly model: SessionModel
@@ -142,9 +149,9 @@ interface TurnBase<S extends 'open' | 'settled'> {
    */
   readonly began: Began | null
   /**
-   * In arrival order. Append-only while open, except that a tool, a prompt, a helper or a declined
-   * notice is updated in place by id, the plan in place by revision, and streaming reasoning in place.
-   * A helper is updated in place in a settled turn too.
+   * In arrival order. Append-only while open, except that a tool, a prompt, a helper, a declined
+   * notice, a MoA round, a compaction line and a keyed notice are updated in place by id, the plan in
+   * place by revision, and streaming reasoning in place. A helper is updated in place in a settled turn too.
    */
   readonly items: readonly Item<S>[]
 }
@@ -186,10 +193,12 @@ export type Outcome =
    * is unknown, so the thread says so in words and never draws the Done ring for it.
    */
   | { readonly kind: 'lost' }
+  /** Not a run of the agent: what Hermes said between two turns. `request` and `began` are null and `rows` is empty. */
+  | { readonly kind: 'interlude' }
 
 /** `Item<'settled'>` is assignable to `Item<'open'>`, so views take `Item` and handle both. */
 export type Item<S extends 'open' | 'settled' = 'open'> =
-  | TextItem<S> | ReasoningItem<S> | ToolItem<S> | HelperItem | PlanItem | PromptItem<S> | NoticeItem
+  | TextItem<S> | ReasoningItem<S> | ToolItem<S> | HelperItem | PlanItem | PromptItem<S> | MoaItem | NoticeItem | StatusItem
 
 export interface TextItem<S extends 'open' | 'settled' = 'open'> {
   readonly kind: 'text'
@@ -303,6 +312,13 @@ export interface PromptItem<S extends 'open' | 'settled' = 'open'> {
   readonly generation: Generation
   readonly ask: Ask
   readonly state: S extends 'open' ? PromptState : Exclude<PromptState, { s: 'waiting' | 'sending' }>
+  /**
+   * When Hermes stops waiting, on this client's clock: the moment the question came off the live
+   * socket plus Hermes's `timeout_s`. null when Hermes set no limit, when the question was first
+   * heard through a snapshot or a replay, whose arrival says nothing about when it was asked, and
+   * once its turn has settled.
+   */
+  readonly deadline: S extends 'open' ? number | null : null
 }
 /** New kinds (sudo, secret) are added here and nowhere else in the domain. */
 export type Ask =
@@ -323,6 +339,47 @@ export type NoticeItem =
    * setup card). The request was refused at once so the agent does not wait. Keyed by `requestId`.
    */
   | { readonly kind: 'notice'; readonly what: 'declined'; readonly requestId: string; readonly method: string }
+
+/**
+ * One round of mixture-of-agents: several reference models answer, then one model combines their
+ * answers. Updated in place until it aggregates. The next round is a new item.
+ */
+export interface MoaItem {
+  readonly kind: 'moa'
+  /** Reference models that have answered, of how many. null until Hermes counts them. */
+  readonly progress: { readonly done: number; readonly total: number } | null
+  readonly references: readonly { readonly label: string; readonly text: string }[]
+  readonly phase: { readonly is: 'advising' } | { readonly is: 'aggregating'; readonly by: string | null }
+}
+
+/**
+ * A line Hermes showed beside the conversation. Never stored, so a rebuild drops it.
+ * - `line`: a status line. One compaction is one line, updated from `compacting` to `compacted`.
+ * - `notice`: a notice Hermes keyed, such as a credit warning or a sign-in link. One with the same key
+ *   replaces it, wherever it sits. `notification.clear` marks it `cleared` rather than removing it, so
+ *   an open turn stays append-only.
+ */
+export type StatusItem =
+  | { readonly kind: 'status'; readonly what: 'line'; readonly about: StatusAbout; readonly text: string }
+  | {
+      readonly kind: 'status'
+      readonly what: 'notice'
+      readonly key: string
+      readonly level: 'info' | 'warn' | 'error' | 'success'
+      readonly text: string
+      /** The full text behind a short `text`. */
+      readonly detail: string | null
+      /** How long Hermes shows it, counted from `seenAt`. null: until it is cleared. */
+      readonly ttlMs: number | null
+      /**
+       * This client's clock when the notice came off the live socket. null when it was heard through
+       * replay. A notice with a `ttlMs` is kept only when this is known.
+       */
+      readonly seenAt: number | null
+      readonly state: 'shown' | 'cleared'
+    }
+/** `print`: a line the agent printed. `goal`: a goal check's verdict. `warning`: a degraded side path the turn survived. */
+export type StatusAbout = 'compacting' | 'compacted' | 'goal' | 'warning' | 'print' | 'other'
 
 export interface OutboxEntry {
   readonly inputId: InputId

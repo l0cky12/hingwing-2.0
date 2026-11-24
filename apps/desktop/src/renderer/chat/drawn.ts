@@ -1,0 +1,23 @@
+import type { ThreadNode, ThreadView, TurnView } from '@highwing/thread'
+
+/** Kinds the thread view carries that the window does not draw yet. */
+const UNDRAWN: ReadonlySet<ThreadNode['kind']> = new Set(['moa', 'status'])
+
+const drawnTurns = new WeakMap<TurnView, TurnView | null>()
+
+/** The turn without its undrawn nodes, or null when nothing of it would show. Memoised, so a settled turn keeps its identity. */
+function drawnTurn(turn: TurnView): TurnView | null {
+  if (!turn.nodes.some(node => UNDRAWN.has(node.kind))) return turn
+  const held = drawnTurns.get(turn)
+  if (held !== undefined) return held
+  const nodes = turn.nodes.filter(node => !UNDRAWN.has(node.kind))
+  const drawn = nodes.length === 0 && turn.request === null && turn.end.kind === 'none' ? null : { ...turn, nodes }
+  drawnTurns.set(turn, drawn)
+  return drawn
+}
+
+/** The view as the window draws it, so scrolling, find and the thread agree on what is on screen. */
+export function drawnView(view: ThreadView): ThreadView {
+  const turns = view.turns.flatMap(turn => drawnTurn(turn) ?? [])
+  return turns.length === view.turns.length && turns.every((turn, index) => turn === view.turns[index]) ? view : { ...view, turns }
+}

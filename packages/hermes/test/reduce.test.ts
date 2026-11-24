@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   activityOf, emptyTracked, reduce, sessionOf, shareOf, syncOf,
-  type Gate, type HelperUpdate, type SessionEvent, type SessionInput, type Snapshot, type StampedEvent, type Tracked
+  type Gate, type HelperUpdate, type MoaStep, type SessionEvent, type SessionInput, type Snapshot, type StampedEvent, type Tracked
 } from '../src/domain/reduce'
 import type { ModelMenu } from '../src/domain/command'
 import { modelViewOf, sameModel } from '../src/domain/model'
 import type {
   Ask, ContextFill, Generation, HelperId, HelperItem, InputId, Item, Link, ModelId, ModelRef, OpenTurn, Outcome, PromptId, SessionContent, SessionId,
-  SessionUsage, SettledTurn, Tokens, ToolId, ToolResult, TurnId
+  SessionUsage, SettledTurn, StatusAbout, Tokens, ToolId, ToolResult, TurnId
 } from '../src/domain/session'
 
 const EPOCH = 'e1'
@@ -35,7 +35,7 @@ const delta = (text: string): SessionEvent => ({ type: 'text.delta', text, at: n
 const toolStarted = (id: string): SessionEvent => ({ type: 'tool.started', id: toolId(id), name: 'terminal', args: { command: id } })
 const toolFinished = (id: string): SessionEvent =>
   ({ type: 'tool.finished', id: toolId(id), name: 'terminal', args: null, durationS: 2, diffs: [], result: OUTPUT, image: null })
-const promptOpened = (id: string, gen = 1): SessionEvent => ({ type: 'prompt.opened', id: promptId(id), generation: generation(gen), ask: APPROVAL })
+const promptOpened = (id: string, gen = 1): SessionEvent => ({ type: 'prompt.opened', id: promptId(id), generation: generation(gen), ask: APPROVAL, timeoutS: null })
 const ended = (
   outcome: Outcome, finalText: string | null = null, rows: readonly number[] = [], userRow: number | null = null, usage: SessionUsage | null = null
 ): SessionEvent => ({ type: 'turn.ended', outcome, finalText, rows, userRow, usage })
@@ -154,7 +154,7 @@ describe('the fold', () => {
       began: null,
       items: [
         { kind: 'tool', id: 'a', name: 'terminal', args: { command: 'a' }, status: { s: 'cut' } },
-        { kind: 'prompt', id: 'p1', generation: 1, ask: APPROVAL, state: { s: 'withdrawn' } }
+        { kind: 'prompt', id: 'p1', generation: 1, ask: APPROVAL, state: { s: 'withdrawn' }, deadline: null }
       ],
       outcome: failed,
       rows: [11, 12],
@@ -310,7 +310,7 @@ describe('attached', () => {
       snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 9 }, history: { turns, unfinished: null, older: { cursor: 'c1' } } })
     })
     expect(state.gate).toEqual({ at: 'live', cursor: { epoch: EPOCH, seq: 9 }, subscriptionId: 'sub-1' })
-    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null })
+    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null })
   })
 
   it('B: opens the unfinished turn of a running snapshot with its waiting prompts, then the parked frames above the watermark', () => {
@@ -335,7 +335,7 @@ describe('attached', () => {
     expect(state.content.run).toMatchObject({ state: 'running', generation: 3, stop: 'none', turn: { request: { text: 'Fix the build', inputId: null, rowId: null } } })
     expect(openItems(state)).toEqual([
       tool,
-      { kind: 'prompt', id: 'p1', generation: 3, ask: APPROVAL, state: { s: 'waiting', error: null } },
+      { kind: 'prompt', id: 'p1', generation: 3, ask: APPROVAL, state: { s: 'waiting', error: null }, deadline: null },
       { kind: 'text', markdown: 'Next,', sealed: false }
     ])
     expect(activityOf(state.content)).toEqual({ kind: 'asking', item: 1 })
@@ -482,7 +482,7 @@ describe('sessionOf', () => {
 describe('activityOf', () => {
   it('ranks stopping, asking, working, writing, preparing, thinking', () => {
     const tool = { kind: 'tool', id: toolId('a'), name: 'terminal', args: {}, status: { s: 'running', note: null } } as const
-    const prompt = { kind: 'prompt', id: promptId('p1'), generation: generation(1), ask: APPROVAL, state: { s: 'waiting', error: null } } as const
+    const prompt = { kind: 'prompt', id: promptId('p1'), generation: generation(1), ask: APPROVAL, state: { s: 'waiting', error: null }, deadline: null } as const
     const text = { kind: 'text', markdown: 'Wri', sealed: false } as const
     const session = (items: OpenTurn['items'], announced: string | null, stop: 'none' | 'requested'): SessionContent => ({
       ...live().content,
@@ -1106,5 +1106,118 @@ describe('reasoning, the plan and helpers', () => {
   ])('changes nothing when %s arrives a second time', (_, sessionEvent) => {
     const once = feed(live(), event(1, started('t1')), event(2, helper('sa-1', { is: 'working', doing: null })), at(3, sessionEvent, 100))
     expect(reduce(once, at(3, sessionEvent, 100)).content).toBe(once.content)
+  })
+})
+
+describe('what Hermes says', () => {
+  const status = (text: string, about: StatusAbout = 'goal'): SessionEvent => ({ type: 'status', about, text })
+  const shown = (key: string, ttlMs: number | null = null): SessionEvent =>
+    ({ type: 'notice.shown', notice: { key, level: 'warn', text: `notice ${key}`, detail: null, ttlMs } })
+  const moa = (step: MoaStep): SessionEvent => ({ type: 'moa', step })
+  const declined: SessionInput = { in: 'declined', request: { requestId: 'r1', method: 'sudo', sessionId: 's1' as SessionId } }
+  const verdict = { kind: 'status', what: 'line', about: 'goal', text: 'Goal met.' } as const
+
+  it('keeps a line said while no turn runs in the interlude, and never opens a turn for it', () => {
+    const idle = feed(live(), event(1, started('t1')), event(2, ended(COMPLETE)), event(3, status('Goal met.'), null))
+    expect(idle.content.run).toEqual({ state: 'idle' })
+    expect(idle.content.interlude).toEqual([verdict])
+    expect(idle.content.history).toHaveLength(1)
+  })
+
+  it('files a request declined while idle in the interlude, once, and leaves the run idle', () => {
+    const once = feed(live(), declined)
+    expect(once.content.run).toEqual({ state: 'idle' })
+    expect(once.content.interlude).toEqual([{ kind: 'notice', what: 'declined', requestId: 'r1', method: 'sudo' }])
+    expect(reduce(once, declined).content).toBe(once.content)
+  })
+
+  it('seals the interlude into the history as one entry when the next turn starts', () => {
+    const said = feed(live(), event(1, status('Goal met.'), null), declined)
+    const next = reduce(said, event(2, started('t2'), 2))
+    expect(next.content.interlude).toEqual([])
+    expect(next.content.history).toEqual([{
+      id: 'interlude:2', request: null, began: null, rows: [], outcome: { kind: 'interlude' }, tokens: null,
+      items: [verdict, { kind: 'notice', what: 'declined', requestId: 'r1', method: 'sudo' }]
+    }])
+    expect(openItems(next)).toEqual([])
+  })
+
+  it('puts a line said during a turn into that turn, and the turn\'s settle leaves the interlude alone', () => {
+    const running = feed(live(), event(1, started('t1')), event(2, status('Compacting…', 'compacting')))
+    expect(openItems(running)).toEqual([{ kind: 'status', what: 'line', about: 'compacting', text: 'Compacting…' }])
+    const settled = reduce(running, event(3, ended(COMPLETE)))
+    expect(settled.content.interlude).toEqual([])
+    expect(settled.content.history[0]?.items).toEqual([{ kind: 'status', what: 'line', about: 'compacting', text: 'Compacting…' }])
+  })
+
+  it('keeps one line per compaction, from progress to done', () => {
+    const state = feed(live(), event(1, started('t1')),
+      event(2, status('Compacting…', 'compacting')), event(3, status('Still compacting…', 'compacting')), event(4, status('Compacted.', 'compacted')),
+      event(5, status('Compacted.', 'compacted')))
+    expect(openItems(state)).toEqual([
+      { kind: 'status', what: 'line', about: 'compacted', text: 'Compacted.' },
+      { kind: 'status', what: 'line', about: 'compacted', text: 'Compacted.' }
+    ])
+  })
+
+  it('drops the interlude on a rebuild, since Hermes stores none of it', () => {
+    const said = feed(live(), event(1, status('Goal met.'), null))
+    const rebuilt = feed(said, { in: 'gap' }, { in: 'attached', attempt: 2, snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 1 } }), replay: null })
+    expect(rebuilt.content.interlude).toEqual([])
+  })
+
+  it('folds a MoA round into one item until it aggregates, and starts the next round as a new item', () => {
+    const state = feed(live(), event(1, started('t1')),
+      event(2, moa({ is: 'progress', done: 1, total: 2 })), event(3, moa({ is: 'progress', done: 2, total: 2 })),
+      event(4, moa({ is: 'reference', label: 'a', text: 'Use rm.' })), event(5, moa({ is: 'reference', label: 'b', text: 'Use trash.' })),
+      event(6, moa({ is: 'aggregating', by: 'judge' })), event(7, moa({ is: 'aggregating', by: 'judge' })),
+      event(8, moa({ is: 'progress', done: 0, total: 2 })))
+    expect(openItems(state)).toEqual([
+      { kind: 'moa', progress: { done: 2, total: 2 }, references: [{ label: 'a', text: 'Use rm.' }, { label: 'b', text: 'Use trash.' }], phase: { is: 'aggregating', by: 'judge' } },
+      { kind: 'moa', progress: { done: 0, total: 2 }, references: [], phase: { is: 'advising' } }
+    ])
+    expect(reduce(state, event(7, moa({ is: 'aggregating', by: 'judge' }))).content).toBe(state.content)
+  })
+
+  it('replaces a keyed notice wherever it sits and marks it cleared on notification.clear', () => {
+    const first = feed(live(), event(1, started('t1')), event(2, shown('credits'), 1, EPOCH, 1_000), event(3, ended(COMPLETE)))
+    const again = reduce(first, event(4, shown('credits'), null, EPOCH, 2_000))
+    expect(again.content.history[0]?.items).toEqual([
+      { kind: 'status', what: 'notice', key: 'credits', level: 'warn', text: 'notice credits', detail: null, ttlMs: null, seenAt: 1_000, state: 'cleared' }
+    ])
+    expect(again.content.interlude).toEqual([
+      { kind: 'status', what: 'notice', key: 'credits', level: 'warn', text: 'notice credits', detail: null, ttlMs: null, seenAt: 2_000, state: 'shown' }
+    ])
+    const cleared = reduce(again, event(5, { type: 'notice.cleared', key: 'credits' }, null))
+    expect(cleared.content.interlude).toMatchObject([{ key: 'credits', state: 'cleared' }])
+    expect(cleared.content.history[0]).toBe(again.content.history[0])
+    expect(reduce(cleared, event(6, { type: 'notice.cleared', key: 'credits' }, null)).content).toBe(cleared.content)
+  })
+
+  it('drops a notice with a time to live that was heard through replay, and keeps one that stays until cleared', () => {
+    expect(reduce(live(), event(1, shown('slow', 5_000), null)).content.interlude).toEqual([])
+    expect(reduce(live(), event(1, shown('slow', 5_000), null, EPOCH, 10)).content.interlude).toMatchObject([{ key: 'slow', ttlMs: 5_000, seenAt: 10 }])
+    expect(reduce(live(), event(1, shown('sticky'), null)).content.interlude).toMatchObject([{ key: 'sticky', ttlMs: null, seenAt: null }])
+  })
+
+  it('gives a prompt heard live a deadline from Hermes\'s timeout, and one heard through replay none', () => {
+    const asked: SessionEvent = { type: 'prompt.opened', id: promptId('p1'), generation: generation(1), ask: APPROVAL, timeoutS: 60 }
+    expect(openItems(feed(live(), event(1, started('t1')), event(2, asked, 1, EPOCH, 5_000)))).toMatchObject([{ kind: 'prompt', deadline: 65_000 }])
+    expect(openItems(feed(live(), event(1, started('t1')), event(2, asked)))).toMatchObject([{ kind: 'prompt', deadline: null }])
+    const settled = feed(live(), event(1, started('t1')), event(2, asked, 1, EPOCH, 5_000), event(3, ended(COMPLETE)))
+    expect(settled.content.history[0]?.items).toMatchObject([{ kind: 'prompt', state: { s: 'withdrawn' }, deadline: null }])
+  })
+
+  it('gives a prompt found in a snapshot no deadline', () => {
+    const state = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, {
+      in: 'attached', attempt: 1, replay: null,
+      snapshot: snapshot({ running: true, prompts: [{ id: promptId('p1'), generation: generation(1), ask: APPROVAL }, { id: promptId('p2'), generation: generation(1), ask: APPROVAL }] })
+    })
+    expect(openItems(state).map(item => item.kind === 'prompt' && item.deadline)).toEqual([null, null])
+  })
+
+  it('keeps the image a finished tool names', () => {
+    const finished: SessionEvent = { type: 'tool.finished', id: toolId('a'), name: 'vision_analyze', args: null, durationS: 1, diffs: [], result: OUTPUT, image: '/work/chart.png' }
+    expect(openItems(feed(live(), event(1, started('t1')), event(2, finished)))).toMatchObject([{ kind: 'tool', status: { s: 'done', image: '/work/chart.png' } }])
   })
 })
