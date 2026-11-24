@@ -11,6 +11,7 @@ const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 0])
 const GIF = new TextEncoder().encode('GIF89a......')
 const WEBP = new TextEncoder().encode('RIFF\0\0\0\0WEBPVP8 ')
 const AVIF = new TextEncoder().encode('\0\0\0\x1cftypavif\0\0\0\0')
+const MIF1_AVIF = new TextEncoder().encode('\0\0\0\x18ftypmif1\0\0\0\0mif1avif')
 const SVG = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
 const CAP = 64
 const UNDER_CAP = (head: Uint8Array) => Uint8Array.from({ length: CAP }, (_, at) => head[at] ?? 0)
@@ -89,7 +90,8 @@ describe('loading a web image', () => {
     ['JPEG', JPEG, 'image/jpeg'],
     ['GIF', GIF, 'image/gif'],
     ['WebP', WEBP, 'image/webp'],
-    ['AVIF', AVIF, 'image/avif']
+    ['AVIF', AVIF, 'image/avif'],
+    ['AVIF that names avif as a compatible brand', MIF1_AVIF, 'image/avif']
   ])('accepts a %s', async (_, bytes, type) => {
     await expect(load({ fetchWeb: async () => new Response(bytes) })).resolves.toMatchObject({ ok: true, type })
   })

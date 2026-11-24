@@ -79,9 +79,11 @@ function Viewer({ url, alt, onClose }: { readonly url: string; readonly alt: str
 
 export function ImageView({ state, alt }: { readonly state: ImageState; readonly alt: string }) {
   const [viewing, setViewing] = useState(false)
+  const [broken, setBroken] = useState<string | null>(null)
   const opener = useRef<HTMLButtonElement>(null)
   if (state.s === 'loading') return <span className="pic-slot" aria-busy="true" />
-  if (state.s === 'failed') {
+  // Bytes that pass the sniff can still fail to decode, as a truncated PNG does.
+  if (state.s === 'failed' || broken === state.url) {
     return (
       <span className="pic-failed" data-no-find="">
         {alt !== '' && <span className="pic-alt">{alt}</span>}
@@ -91,8 +93,18 @@ export function ImageView({ state, alt }: { readonly state: ImageState; readonly
   }
   return (
     <>
-      <button type="button" className="pic" aria-haspopup="dialog" ref={opener} onClick={() => setViewing(true)}>
-        <img alt={alt} src={state.url} />
+      <button
+        type="button"
+        className="pic"
+        aria-haspopup="dialog"
+        ref={opener}
+        onClick={event => {
+          // An image inside a link would otherwise also send the link to the browser.
+          event.preventDefault()
+          setViewing(true)
+        }}
+      >
+        <img alt={alt} src={state.url} onError={() => setBroken(state.url)} />
       </button>
       {viewing && (
         <Viewer

@@ -29,8 +29,17 @@ export function sniff(bytes: Uint8Array): ImageType | null {
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
   if (startsWith(bytes, 0, 'GIF87a') || startsWith(bytes, 0, 'GIF89a')) return 'image/gif'
   if (startsWith(bytes, 0, 'RIFF') && startsWith(bytes, 8, 'WEBP')) return 'image/webp'
-  if (startsWith(bytes, 4, 'ftyp') && (startsWith(bytes, 8, 'avif') || startsWith(bytes, 8, 'avis'))) return 'image/avif'
+  if (startsWith(bytes, 4, 'ftyp') && ftypBrands(bytes).some(brand => brand === 'avif' || brand === 'avis')) return 'image/avif'
   return null
+}
+
+/** The major brand, then the compatible brands, read only inside the `ftyp` box. An AVIF may name `mif1` first and `avif` after. */
+function ftypBrands(bytes: Uint8Array): string[] {
+  const end = Math.min(bytes.length, ((bytes[0]! << 24) | (bytes[1]! << 16) | (bytes[2]! << 8) | bytes[3]!) >>> 0)
+  const brand = (at: number) => String.fromCharCode(...bytes.subarray(at, at + 4))
+  const brands = end >= 12 ? [brand(8)] : []
+  for (let at = 16; at + 4 <= end; at += 4) brands.push(brand(at))
+  return brands
 }
 
 const outcomeOf = (bytes: Uint8Array): ImageOutcome => {
