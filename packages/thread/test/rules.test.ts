@@ -12,7 +12,7 @@ const NONE: ToolResult = { kind: 'none' }
 function session(over: Partial<Session> = {}): Session {
   return {
     id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, interlude: [], outbox: [],
-    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, sync: { state: 'live' }, ...over
+    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, tuning: { reasoning: null }, sync: { state: 'live' }, ...over
   }
 }
 

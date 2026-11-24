@@ -331,6 +331,9 @@ function pathItems(gateway: ScriptedGateway, params: Obj, authorize: () => void)
   return gateway.fixture.header.paths?.words[word] ?? { items: [] }
 }
 
+/** `_YOLO_WORDS` in gateway/session_busy_controls.py:118 */
+const SWITCH_WORDS: Readonly<Record<string, string>> = { 1: '1', on: '1', true: '1', 0: '0', off: '0', false: '0' }
+
 /** gateway/session_controls.py:386-392 */
 const unknownMethod = (method: string) => new Refused('unknown_method', { code: -32601, message: `unknown method: ${method}`, data: { reason: 'unknown_method' } })
 
@@ -541,7 +544,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const mutation = typeof params.operation === 'string' && Object.hasOwn(MUTATIONS, params.operation) ? MUTATIONS[params.operation] : undefined
     return mutation === undefined ? gateway.story(socket, 'session.mutate', params, routed) : mutation(gateway, params, routed)
   },
-  'config.set': (gateway, _socket, params, routed) => gateway.setYolo(params, routed, null),
+  /** gateway/session_config.py:65-73 hands the session controls to gateway/session_busy_controls.py:30-56. */
+  'config.get': (gateway, _socket, params, routed) => gateway.control(params, routed, false),
+  /** gateway/session_tui_config.py:187-193 */
+  'config.set': (gateway, _socket, params, routed) => (params.key === 'yolo' || gateway.fixture.header.controls === undefined ? gateway.setYolo(params, routed, null) : gateway.control(params, routed, true)),
   'session.detach': detach,
   /**
    * `_delivery_params` (gateway/session_bot.py:804-827), with the id rule of tools/bot_live_delivery.py:131-134,
@@ -638,6 +644,7 @@ export class ScriptedGateway {
   branchesMade = 0
 
   private stored: readonly unknown[]
+  private readonly controls: Record<string, string> | null
   private readonly profiles: Obj[]
   private readonly souls: Map<string, string>
   private readonly pictures = new Map<string, { readonly mime: string; readonly size: number; readonly data: string }>()
@@ -662,6 +669,7 @@ export class ScriptedGateway {
     this.sessionId = fixture.header.sessionId
     this.reach = fixture.header.reach ?? 'host'
     this.stored = fixture.header.stored
+    this.controls = fixture.header.controls === undefined ? null : { ...fixture.header.controls }
     this.drop = options.drop === null ? { at: 'spent' } : { at: 'armed', ...options.drop }
     const { models } = fixture.header
     this.view = {
@@ -1154,6 +1162,22 @@ export class ScriptedGateway {
     const params = { ...stamp, type, session_id: chat.id, payload, replay_epoch: chat.epoch, seq: (chat.ring.at(-1)?.seq ?? 0) + 1 }
     chat.ring.push(params)
     for (const socket of this.viewers(chat.id)) socket.peer.write({ jsonrpc: '2.0', method: 'event', params })
+  }
+
+  /** A session control's read or write (gateway/session_busy_controls.py:30-108): `{key, value, scope}`. */
+  control(params: Obj, routed: string, write: boolean): unknown {
+    const held = this.controls
+    if (held === null) throw unknownMethod(write ? 'config.set' : 'config.get')
+    const { key } = params
+    const allowed = ['session_id', 'profile', 'key', ...(write ? ['value'] : [])]
+    if (!isText(key) || !(key in held) || Object.keys(params).some(name => !allowed.includes(name))) throw new Refused('invalid_params')
+    this.authorize(params, routed)
+    if (write) {
+      const word = SWITCH_WORDS[String(params.value).trim().toLowerCase()]
+      if (word === undefined) throw new Refused('invalid_params')
+      held[key] = word
+    }
+    return { key, value: held[key], scope: 'session' }
   }
 
   modelMenu(current: Model | null): unknown {

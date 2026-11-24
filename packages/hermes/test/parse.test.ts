@@ -9,8 +9,8 @@ import type {
 } from '../src/wire/contract.generated'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 import {
-  parseBranched, parseContextBreakdown, parseEvent, parsePathMatches, parseInlineDiff, parseListRows, parseModelMenu, parseModelReceipt, parseReplay, parseRows, parseServerRequest,
-  parseSnapshot, parseStats, parseToolResult, parseTranscript, FOR_WINDOW, SHOWN, UNSHOWN
+  FOR_WINDOW, parseBranched, parseContextBreakdown, parseEvent, parseInlineDiff, parseListRows, parseModelMenu, parseModelReceipt, parsePathMatches,
+  parseReplay, parseRows, parseServerRequest, parseShown, parseSnapshot, parseStats, parseToolResult, parseTranscript, SHOWN, UNSHOWN
 } from '../src/wire/parse'
 
 const ERRAND = fileURLToPath(new URL('../../../fixtures/errand.jsonl', import.meta.url))
@@ -842,5 +842,9 @@ describe('what Hermes says, parsed', () => {
     const prompt: CanonicalPendingPrompt = { kind: 'approval', prompt_id: 'p1', execution_generation: 2, command: 'rm x', choices: ['once'], timeout_s: 60 }
     expect(said('approval.request', { ...prompt })).toMatchObject({ type: 'prompt.opened', timeoutS: 60 })
     expect(said('approval.request', { ...prompt, timeout_s: null })).toMatchObject({ type: 'prompt.opened', timeoutS: null })
+  })
+
+  it('reads the show_reasoning control', () => {
+    expect([parseShown({ value: '1' }), parseShown({ value: '0' }), parseShown({ value: 'on' }), parseShown({})]).toEqual([true, false, null, null])
   })
 })

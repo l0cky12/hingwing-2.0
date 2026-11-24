@@ -29,14 +29,16 @@ describe('the errand, played through the real client', () => {
     expect(played.history[0]?.began).toEqual({ at: expect.any(Number), clock: 'client' })
   })
 
-  it('opens with the handshake, one resume with history, the three lists, the slash catalog, the relay probe and the bots, then makes the story\'s two calls', async () => {
-    const { script } = (await moments(fixture)).at(-1) as Moment
+  it('opens with the handshake, one resume with history, the three lists, the slash catalog, the relay probe, the bots and the watched chat\'s reasoning switch, then makes the story\'s two calls', async () => {
+    const { script, session } = (await moments(fixture)).at(-1) as Moment
     expect(script.dials).toBe(1)
     const sent = methodsOf(script.received)
     expect(sent.map(call => call.method)).toEqual([
-      'client.capabilities', 'runtime.describe', 'session.resume', 'session.list', 'session.list', 'session.list', 'commands.catalog', 'bot_relay.deliver', 'profiles.list', 'session.stats', 'session.stats',
-      'prompt.submit', 'approval.respond', 'session.stats'
+      'client.capabilities', 'runtime.describe', 'session.resume', 'session.list', 'session.list', 'session.list', 'commands.catalog', 'bot_relay.deliver', 'profiles.list', 'session.stats', 'config.get',
+      'session.stats', 'prompt.submit', 'approval.respond', 'session.stats'
     ])
+    expect(sent.splice(10, 1)[0]?.params).toEqual({ session_id: fixture.header.sessionId, key: 'show_reasoning' })
+    expect(session.tuning, 'the errand\'s Hermes refuses the read, so the switch stays unknown').toEqual({ reasoning: null })
     expect(sent[2]?.params).toEqual({ session_id: fixture.header.sessionId, display_projection: true })
     expect(sent.slice(3, 6).map(call => call.params)).toEqual([
       { scope: 'live', picker: true }, { scope: 'live', include_hidden: true }, { scope: 'stored', limit: 100, include_hidden: true, picker: true }

@@ -2,7 +2,7 @@ import type { Outcome, Refusal } from './domain/command'
 import { emptyTracked, reduce, sessionOf, type Fence, type Gate, type HistoryPage, type LocalAction, type ServerRequest, type SessionInput, type Tracked } from './domain/reduce'
 import type { Attachment, InputId, OutboxEntry, Session, SessionContent, SessionId } from './domain/session'
 import { Offline, RpcRefusal, type Calls, type Clock, type Method, type Served } from './wire/link'
-import { parseReplay, parseSnapshot, parseStats } from './wire/parse'
+import { parseReplay, parseShown, parseSnapshot, parseStats } from './wire/parse'
 
 export const DONE: Outcome = { ok: true, value: undefined }
 export const refused = (kind: Refusal['kind'], message: string): Outcome<never> => ({ ok: false, refusal: { kind, message } })
@@ -80,6 +80,8 @@ export interface ActorDeps {
   readonly publish: (session: Session, previous: Session) => void
   readonly refuse: (request: ServerRequest) => void
   readonly mintId: () => string
+  /** Whether a window watches the chat. Only then does the actor read what Hermes does not push. */
+  readonly watched: () => boolean
 }
 
 export interface SessionPort {
@@ -162,6 +164,11 @@ export class SessionActor {
     if (this.deps.conn.link.state === 'online') this.step({ in: 'attach' })
   }
 
+  /** A window began to watch the chat. An attach in flight reads the facts when it lands. */
+  watchBegan(): void {
+    if (this.tracked.gate.at === 'live') void this.readFacts()
+  }
+
   linkChanged(): void {
     if (this.deps.conn.link.state === 'online') this.attach()
     else this.step({ in: 'link.lost' })
@@ -182,7 +189,15 @@ export class SessionActor {
     } else if (wentLive) {
       // A message whose submit died with the last socket. The gateway's duplicate guard makes a second delivery a no-op.
       for (const entry of this.tracked.content.outbox) if (entry.state.s === 'sending') void this.admit(entry)
+      if (this.deps.watched()) void this.readFacts()
     }
+  }
+
+  private async readFacts(): Promise<void> {
+    const attempt = this.tracked.fence.attaches
+    const shown = await this.port.call('config.get', { session_id: this.id, key: 'show_reasoning' })
+    if (!shown.ok && shown.refusal.kind === 'offline') return
+    this.step({ in: 'facts', attempt, tuning: { reasoning: shown.ok ? parseShown(shown.value) : null } })
   }
 
   private act(action: LocalAction): void {

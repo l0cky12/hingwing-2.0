@@ -399,10 +399,11 @@ describe('the open chat', () => {
     await opened.clock.advance(60_000)
 
     const forResearch = opened.sent().filter(call => call.params?.session_id === RESEARCH_CHAT)
-    expect(forResearch.map(call => call.method), 'one resume for the whole visit').toEqual([
-      'session.resume', 'session.stats', 'session.stats', 'prompt.submit', 'session.stats', 'model.options', 'session.mutate', 'session.detach'
+    expect(forResearch.map(call => call.method), 'one resume for the whole visit, and a read each time a window began to watch it').toEqual([
+      'session.resume', 'session.stats', 'config.get', 'session.stats', 'prompt.submit', 'session.stats', 'config.get', 'model.options', 'session.mutate',
+      'session.detach'
     ])
-    expect(forResearch.map(call => call.params?.profile), 'every call that names the chat names its bot').toEqual(Array(8).fill('research'))
+    expect(forResearch.map(call => call.params?.profile), 'every call that names the chat names its bot').toEqual(Array(10).fill('research'))
     expect(calls(opened, 'session.create')).toEqual([])
   })
 
@@ -588,7 +589,7 @@ describe("a bot's chats", () => {
     expect(await opened.hermes.run({ do: 'send', sessionId: DOWNLOADS, text: 'hello' })).toEqual({ ok: true, value: null })
     await opened.clock.advance(0)
     expect(opened.sent().filter(call => call.params?.session_id === DOWNLOADS && call.method !== 'session.stats').map(call => [call.method, call.params?.profile]), 'a picked chat runs as its bot')
-      .toEqual([['session.resume', 'research'], ['prompt.submit', 'research']])
+      .toEqual([['session.resume', 'research'], ['config.get', 'research'], ['prompt.submit', 'research']])
     expect(rowsOf(opened)[2], 'the badge comes from the attached chat').toEqual([DOWNLOADS, 'Clean up Downloads', 'none'])
 
     expect(opened.sent().filter(call => call.method === 'session.create')).toEqual([])
@@ -1100,5 +1101,48 @@ describe('the pane', () => {
     const opened = await asked(asking('preview.open', { url: '  ' }))
     expect(opened.asks).toEqual([])
     expect(opened.diagnostics).toContainEqual({ kind: 'invalid', type: 'preview.open' })
+  })
+})
+
+describe('the reasoning switch', () => {
+  const SHOWN_OFF: Fixture = { ...ERRAND, header: { ...ERRAND.header, controls: { show_reasoning: '0' } } }
+  const reads = (opened: ReturnType<typeof open>) => opened.sent().filter(call => call.method === 'config.get')
+
+  it('reads it once a window watches the chat, and not for a command that only waits for the attach', async () => {
+    const opened = open(SHOWN_OFF)
+    await opened.clock.advance(0)
+    await opened.hermes.run({ do: 'models', sessionId: SESSION })
+    expect(reads(opened), 'nothing watches yet').toEqual([])
+    opened.watch()
+    await opened.clock.advance(0)
+    expect(reads(opened)).toEqual([{ method: 'config.get', params: { session_id: SESSION, key: 'show_reasoning' } }])
+    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: false })
+  })
+
+  it('reads it again after the chat is attached again', async () => {
+    const opened = open(SHOWN_OFF, { drop: { afterPush: 2, missed: 0 } })
+    opened.watch()
+    await toApproval(opened)
+    await opened.clock.advance(5_000)
+    expect(opened.script.dials).toBe(2)
+    expect(reads(opened)).toHaveLength(2)
+  })
+
+  it('sets it for the chat and takes the value Hermes answers', async () => {
+    const opened = open(SHOWN_OFF)
+    opened.watch()
+    await opened.clock.advance(0)
+    expect(await opened.hermes.run({ do: 'tune', sessionId: SESSION, set: 'reasoning', on: true })).toEqual({ ok: true, value: undefined })
+    expect(opened.sent().filter(call => call.method === 'config.set')).toEqual([{ method: 'config.set', params: { session_id: SESSION, key: 'show_reasoning', value: 'on' } }])
+    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: true })
+  })
+
+  it('stays unknown on a Hermes that refuses the read, and says it cannot set it', async () => {
+    const opened = open()
+    opened.watch()
+    await opened.clock.advance(0)
+    expect(reads(opened)).toHaveLength(1)
+    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: null })
+    expect(await opened.hermes.run({ do: 'tune', sessionId: SESSION, set: 'reasoning', on: true })).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes doesn't support that." } })
   })
 })

@@ -87,6 +87,16 @@ export interface SessionContent {
   readonly usage: SessionUsage
   /** Whether Hermes runs this chat's commands without an approval card. null until Hermes says, which an older Hermes never does. */
   readonly yolo: boolean | null
+  readonly tuning: Tuning
+}
+
+/**
+ * Hermes's switches for this chat, shared with every client that has it open. Each is null until
+ * Hermes answers the read, and stays null on a Hermes that refuses it.
+ */
+export interface Tuning {
+  /** Whether Hermes streams the model's reasoning for this chat. It applies from the next turn. */
+  readonly reasoning: boolean | null
 }
 
 /** The value a window reads. */

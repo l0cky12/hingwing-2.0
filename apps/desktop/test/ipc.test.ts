@@ -253,9 +253,10 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'closePreview', 'completePath', 'contextBreakdown', 'createBot', 'describeBot',
-      'discard', 'editBot', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat', 'openPreview', 'pickModel', 'placePreview', 'preview', 'reconnect',
-      'reloadPreview', 'removeBotPicture', 'rename', 'rewind', 'send', 'setYolo', 'start', 'stop', 'versions'
+      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'closePreview', 'completePath', 'contextBreakdown',
+      'createBot', 'describeBot', 'discard', 'editBot', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat', 'openPreview',
+      'pickModel', 'placePreview', 'preview', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename', 'rewind', 'send', 'setYolo', 'start',
+      'stop', 'tune', 'versions'
     ])
   })
 })

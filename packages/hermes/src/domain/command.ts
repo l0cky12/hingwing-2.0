@@ -65,6 +65,8 @@ export type Command =
   /** The bot's picture as a data URL, or null for none. */
   | { readonly do: 'botPicture'; readonly bot: BotId }
   | { readonly do: 'setYolo'; readonly sessionId: SessionId; readonly on: boolean }
+  /** Sets one of Hermes's switches for the chat, for every client that has it open. */
+  | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'reasoning'; readonly on: boolean }
   /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
   | { readonly do: 'reconnect'; readonly start: boolean }
 
