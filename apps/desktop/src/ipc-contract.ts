@@ -1,7 +1,7 @@
 import {
   targetOf,
-  type BotId, type Bots, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply, type ResultOf,
-  type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target
+  type BotId, type Bots, type ChatRef, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply,
+  type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type Unstarted
 } from '@highwing/hermes/domain'
 
 /** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
@@ -120,20 +120,34 @@ const modelOptionOf = (raw: unknown): ModelOption | null =>
   isObject(raw) && filled(raw.id) && filled(raw.provider) && text(raw.providerName)
     ? { id: raw.id as ModelOption['id'], provider: raw.provider, providerName: raw.providerName }
     : null
+const chatRefOf = (raw: unknown): ChatRef | null => {
+  if (!isObject(raw)) return null
+  if (raw.kind === 'bot') {
+    const bot = botIdOf(raw.bot)
+    return bot && { kind: 'bot', bot }
+  }
+  if (raw.kind !== 'new' || !filled(raw.draftId)) return null
+  if (raw.bot === null) return { kind: 'new', bot: null, draftId: raw.draftId }
+  const bot = botIdOf(raw.bot)
+  return bot && { kind: 'new', bot, draftId: raw.draftId }
+}
+const unstartedOf = (raw: unknown): Unstarted | null => {
+  const ref = isObject(raw) && raw.sessionId === null ? chatRefOf(raw) : null
+  return ref && { ...ref, sessionId: null }
+}
 const replyOf = (raw: unknown): PromptReply | null =>
   isObject(raw) && (raw.kind === 'choice' || raw.kind === 'text') && text(raw.value) ? { kind: raw.kind, value: raw.value } : null
 
 type Validators = { readonly [K in AppCommand['do']]: (raw: Obj) => Extract<AppCommand, { do: K }> | null }
 
 export const validators: Validators = {
-  create: raw => (filled(raw.draftId) && (raw.cwd === null || text(raw.cwd)) ? { do: 'create', draftId: raw.draftId, cwd: raw.cwd } : null),
   open: raw => {
-    const bot = isObject(raw.ref) && raw.ref.kind === 'bot' ? botIdOf(raw.ref.bot) : null
-    return bot && { do: 'open', ref: { kind: 'bot', bot } }
+    const ref = chatRefOf(raw.ref)
+    return ref && { do: 'open', ref }
   },
   start: raw => {
-    const bot = botIdOf(raw.bot)
-    return bot && filled(raw.text) ? { do: 'start', bot, text: raw.text } : null
+    const chat = unstartedOf(raw.chat)
+    return chat && filled(raw.text) ? { do: 'start', chat, text: raw.text } : null
   },
   send: raw => {
     const sessionId = sessionIdOf(raw)

@@ -8,9 +8,9 @@ import { parseCatalog, parseDirective } from '../src/wire/parse'
 const SLASH = loadFixture(fileURLToPath(new URL('../../../fixtures/slash.jsonl', import.meta.url)))
 const CATALOG = SLASH.header.catalog as CommandsCatalogResult
 
-/** The offered commands `command_verdict` runs bare, in registry order (docs/compatibility.md). */
+/** The offered commands `command_verdict` runs bare and `/new`, which Highwing runs, in registry order (docs/compatibility.md). */
 const RUNS = [
-  'title', 'goal', 'heartbeat', 'refine', 'review', 'loop', 'plan', 'moa', 'subgoal', 'status', 'egress', 'context',
+  'new', 'title', 'goal', 'heartbeat', 'refine', 'review', 'loop', 'plan', 'moa', 'subgoal', 'status', 'egress', 'context',
   'whoami', 'profile', 'codex-runtime', 'personality', 'diff', 'yolo', 'approvals', 'reasoning', 'autoprune', 'skills',
   'memory', 'bundles', 'learn', 'init', 'suggestions', 'blueprint', 'help', 'usage', 'topup', 'version', 'debug'
 ]
@@ -26,7 +26,7 @@ describe('parseCatalog', () => {
 
   it('leaves out commands the gateway refuses, terminal and hidden commands, and terminal display rows', () => {
     const names = listed.map(entry => entry.name)
-    for (const name of ['new', 'compress', 'retry', 'undo', 'resume', 'stop', 'model', 'copy', 'quit', 'density', 'logs']) {
+    for (const name of ['compress', 'retry', 'undo', 'resume', 'stop', 'model', 'copy', 'quit', 'density', 'logs']) {
       expect(names).not.toContain(name)
     }
   })

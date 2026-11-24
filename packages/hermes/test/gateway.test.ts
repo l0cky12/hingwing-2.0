@@ -283,3 +283,27 @@ describe("the scripted gateway plays a bot's Bot Chat", () => {
     expect(research).not.toHaveProperty('last_session')
   })
 })
+
+describe('the scripted gateway makes a new chat on an untitled create', () => {
+  const create = { source: 'gui', follow_profile_config: true, request_id: 'draft-1' }
+
+  it('makes an empty chat in the routed profile, and gives a retry with the same request_id the same chat', async () => {
+    const { call, script } = await rawSocket({}, WITH_BOTS)
+    const made = await call('session.create', create)
+    expect(made.result).toMatchObject({ session_id: 'chat-default-1', messages: [] })
+    expect((await call('session.create', create)).result?.session_id, 'a retry').toBe('chat-default-1')
+    expect((await call('session.create', { ...create, request_id: 'draft-2' })).result?.session_id, 'another draft').toBe('chat-default-2')
+    expect((await call('session.create', { ...create, profile: 'research' })).result?.session_id, 'the same draft in another bot').toBe('chat-research-3')
+    expect(canonicalOf(await call('profiles.list', {}), 'default'), 'the Bot Chat is still the story').toMatchObject({ id: SESSION })
+    expect(script.step, 'the story has not moved').toBe(0)
+  })
+
+  it('answers a message there with one turn that echoes it as the routed profile', async () => {
+    const { call, frames } = await rawSocket({}, WITH_BOTS)
+    await call('session.create', { ...create, profile: 'research' })
+    const receipt = await call('prompt.submit', { profile: 'research', session_id: 'chat-research-1', text: 'hello', input_id: 'input-1' })
+    expect(receipt.result).toMatchObject({ status: 'queued', ref: { session_id: 'chat-research-1' } })
+    expect(eventsOf(frames, 'chat-research-1').find(event => event.type === 'message.delta')?.payload).toMatchObject({ text: 'research: hello' })
+    expect((await call('prompt.submit', { session_id: 'chat-research-1', text: 'hello', input_id: 'input-2' })).error, 'it lives in its own profile only').toBeDefined()
+  })
+})

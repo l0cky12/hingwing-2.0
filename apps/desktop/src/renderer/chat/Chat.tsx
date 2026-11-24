@@ -18,7 +18,7 @@ const distanceFrom = (element: HTMLElement) => element.scrollHeight - element.sc
 const holdsText = (target: EventTarget | null) =>
   (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) && target.value !== ''
 
-/** `chat.sessionId` null: the bot's chat is not started. The thread is empty, and the first message makes the session. */
+/** `chat.sessionId` null: the chat is not started. The thread is empty, and the first message makes the session. */
 export function Chat({ chat }: { readonly chat: Shown }) {
   const id = chat.sessionId
   const session = useTopic(id === null ? null : `session:${id}`)
@@ -157,9 +157,10 @@ export function Chat({ chat }: { readonly chat: Shown }) {
       </div>
       <Composer
         inputRef={composer}
+        autoFocus={chat.kind === 'new' && chat.sessionId === null}
         canSend={id === null || live}
         showStop={session !== undefined && activityOf(session).kind !== 'idle'}
-        onSend={text => (chat.sessionId === null ? run({ do: 'start', bot: chat.bot, text }) : run({ do: 'send', sessionId: chat.sessionId, text }))}
+        onSend={text => (chat.sessionId === null ? run({ do: 'start', chat, text }) : run({ do: 'send', sessionId: chat.sessionId, text }))}
         onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}
       >

@@ -669,6 +669,8 @@ const GATEWAY_RUNS: ReadonlySet<string> = new Set([
   'insights', 'platforms', 'version', 'debug'
 ])
 
+const HIGHWING_RUNS: ReadonlySet<string> = new Set(['new'])
+
 /** `desktop` is `null` for a command a desktop app should offer, else the reason it should not. */
 const offered = (meta: unknown) => isObject(meta) && (meta.desktop === null || meta.desktop === undefined)
 
@@ -689,7 +691,7 @@ export function parseCatalog(reply: CommandsCatalogResult): SlashCatalog {
     seen.add(key)
     if (Object.hasOwn(skills, key)) {
       skillRows.push({ kind: 'skill', name, description })
-    } else if ((GATEWAY_RUNS.has(name) || Object.hasOwn(plugins, name)) && offered(meta[key])) {
+    } else if ((GATEWAY_RUNS.has(name) || HIGHWING_RUNS.has(name) || Object.hasOwn(plugins, name)) && offered(meta[key])) {
       commands.push({ kind: 'command', name, description })
     }
   }

@@ -10,9 +10,6 @@ export interface FindState {
 
 export const FIND_OPEN: FindState = { query: '', current: null, openedByFind: new Set() }
 
-export const isFindKey = (event: globalThis.KeyboardEvent) =>
-  (/^[a-z]$/i.test(event.key) ? event.key.toLowerCase() === 'f' : event.code === 'KeyF') && !event.altKey && !event.shiftKey && (navigator.userAgent.includes('Mac') ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)
-
 function countWords(query: string, total: number, current: number | null): string {
   if (query === '') return ''
   if (total === 0) return 'No matches'

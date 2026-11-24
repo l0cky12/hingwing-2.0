@@ -1,20 +1,17 @@
-import type { BotId } from './bots'
-import type { ChatRef } from './open'
+import type { ChatRef, Unstarted } from './open'
 import type { InputId, ModelOption, ModelRef, PromptId, PromptReply, SessionId } from './session'
 
 export type Command =
-  /** `draftId` is minted when the empty "new chat" view opens. Retrying with it cannot create a second session. */
-  | { readonly do: 'create'; readonly draftId: string; readonly cwd: string | null }
   /**
-   * Show this chat. Answers the session shown, or null for a bot that has no chat yet. It never
+   * Show this chat. Answers the session shown, or null for a chat that has none yet. It never
    * makes a session, and a refusal leaves the open chat as it was.
    */
   | { readonly do: 'open'; readonly ref: ChatRef }
   /**
-   * The first message to a bot that has no chat yet: makes its Bot Chat, shows it and sends `text`
-   * there. Messages sent while the chat is being made go to that one chat, in the order sent.
+   * The first message to a chat that has no session yet: makes the session and sends `text` there.
+   * Messages sent while it is being made go to that one session, in the order sent.
    */
-  | { readonly do: 'start'; readonly bot: BotId; readonly text: string }
+  | { readonly do: 'start'; readonly chat: Unstarted; readonly text: string }
   /** A line that starts with a listed `/name` runs that Hermes command or skill instead of going to the agent as text. */
   | { readonly do: 'send'; readonly sessionId: SessionId; readonly text: string }
   | { readonly do: 'stop'; readonly sessionId: SessionId }
@@ -31,8 +28,7 @@ export type Command =
 
 /** `send` and `start` answer the words to show under the composer: a command's output or note, or `null` for none. */
 export type ResultOf<C extends Command> =
-  C extends { do: 'create' } ? SessionId
-  : C extends { do: 'open' } ? SessionId | null
+  C extends { do: 'open' } ? SessionId | null
   : C extends { do: 'send' | 'start' } ? string | null
   : C extends { do: 'models' } ? ModelMenu
   : C extends { do: 'pickModel' } ? ModelConfirm | null

@@ -76,7 +76,12 @@ describe('validators', () => {
       .toEqual({ do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 'once' } })
     expect(parseCommand({ do: 'reconnect', start: true })).toEqual({ do: 'reconnect', start: true })
     expect(parseCommand({ do: 'open', ref: { kind: 'bot', bot: 'research', sessionId: 's9' }, sessionId: 's9' })).toEqual({ do: 'open', ref: { kind: 'bot', bot: 'research' } })
-    expect(parseCommand({ do: 'start', bot: 'research', text: 'hello', sessionId: 's9' })).toEqual({ do: 'start', bot: 'research', text: 'hello' })
+    expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: 'research', draftId: 'd1', sessionId: 's9' } })).toEqual({ do: 'open', ref: { kind: 'new', bot: 'research', draftId: 'd1' } })
+    expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: null, draftId: 'd1' } })).toEqual({ do: 'open', ref: { kind: 'new', bot: null, draftId: 'd1' } })
+    expect(parseCommand({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null, draftId: 'd1' }, text: 'hello', sessionId: 's9' }))
+      .toEqual({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello' })
+    expect(parseCommand({ do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: null }, text: 'hello' }))
+      .toEqual({ do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: null }, text: 'hello' })
     const model = { id: 'careful-large', provider: 'acme', providerName: 'Acme' }
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model: { ...model, price: 9 } })).toEqual({ do: 'pickModel', sessionId: 's1', model })
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })).toEqual({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })
@@ -100,11 +105,15 @@ describe('validators', () => {
     ['an open that names no chat', { do: 'open' }],
     ['an open of a kind of chat Highwing does not know', { do: 'open', ref: { kind: 'session', sessionId: 's1' } }],
     ['an open of a bot with no name', { do: 'open', ref: { kind: 'bot', bot: ' ' } }],
-    ['a first message with no bot', { do: 'start', text: 'hello' }],
-    ['a blank first message', { do: 'start', bot: 'research', text: '' }],
+    ['an open of a new chat with no draft id', { do: 'open', ref: { kind: 'new', bot: 'research', draftId: ' ' } }],
+    ['an open of a new chat whose bot is not a name or null', { do: 'open', ref: { kind: 'new', draftId: 'd1' } }],
+    ['a first message with no chat', { do: 'start', text: 'hello' }],
+    ['a first message to a chat that has a session', { do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: 's1' }, text: 'hello' }],
+    ['a first message to a chat with no session named', { do: 'start', chat: { kind: 'bot', bot: 'research' }, text: 'hello' }],
+    ['a first message to a plain chat', { do: 'start', chat: { kind: 'chat', bot: null, sessionId: null }, text: 'hello' }],
+    ['a blank first message', { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: '' }],
     ['a reply of the wrong kind', { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 1 } }],
     ['a non-boolean start', { do: 'reconnect', start: 'yes' }],
-    ['a missing cwd', { do: 'create', draftId: 'd1' }],
     ['a pick with no provider', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: '', providerName: '' } }],
     ['a pick with a blank confirm token', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: 'p', providerName: 'P' }, confirm: ' ' }]
   ])('refuse %s', (_, raw) => {
@@ -113,7 +122,7 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'checkTarget', 'create', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat', 'pickModel',
+      'answer', 'archive', 'checkTarget', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat', 'pickModel',
       'reconnect', 'rename', 'send', 'start', 'stop'
     ])
   })
@@ -269,12 +278,12 @@ describe('serveWindows', () => {
     const { listeners, handlers, pushes, event, setOpen, commands } = harness()
     listeners.get(CHANNEL.watch)!(event(), 5, 'open')
     vi.advanceTimersByTime(COALESCE_MS)
-    const research = { shown: { bot: 'research', sessionId: 'local-0001' }, opening: null } as OpenChat
+    const research = { shown: { kind: 'bot', bot: 'research', sessionId: 'local-0001' }, opening: null } as OpenChat
     setOpen(research)
     expect(pushes).toEqual([{ topic: 'open', rev: 1, full: NOTHING_OPEN }, { topic: 'open', rev: 2, full: research }])
     await handlers.get(CHANNEL.run)!(event(), { do: 'open', ref: { kind: 'bot', bot: 'research' } })
-    await handlers.get(CHANNEL.run)!(event(), { do: 'start', bot: 'research', text: 'hello' })
-    expect(commands).toEqual([{ do: 'open', ref: { kind: 'bot', bot: 'research' } }, { do: 'start', bot: 'research', text: 'hello' }])
+    await handlers.get(CHANNEL.run)!(event(), { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello' })
+    expect(commands).toEqual([{ do: 'open', ref: { kind: 'bot', bot: 'research' } }, { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello' }])
   })
 
   it('stops pushing when the window unwatches or is destroyed', () => {
