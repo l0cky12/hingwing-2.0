@@ -1,7 +1,7 @@
 /**
  * The gateway a fixture is played from: Hermes's canonical dispatcher and the handlers the client
- * talks to, reduced to one story session and one Bot Chat per bot. Each rule cites the Hermes
- * 0.23.3 source it copies.
+ * talks to, reduced to one story session, one Bot Chat per bot and the chats an untitled create
+ * makes. Each rule cites the Hermes 0.23.3 source it copies.
  */
 import type { SessionEvent } from '../domain/reduce'
 import { GATEWAY_PROTOCOL, type Clock, type Reach } from '../wire/link'
@@ -147,13 +147,13 @@ interface Stream {
   readonly epoch: string
 }
 
-class BotChat implements Stream {
+class EchoChat implements Stream {
   readonly ring: Params[] = []
   readonly rows: Obj[] = []
   readonly epoch: string
   generation = 0
 
-  constructor(readonly id: string, readonly profile: string) {
+  constructor(readonly id: string, readonly profile: string, readonly title: string) {
     this.epoch = `${id}-epoch`
   }
 
@@ -270,7 +270,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
    */
   'session.create': (gateway, socket, params, routed) => {
     if ('hidden' in params && typeof params.hidden !== 'boolean') throw new Refused('invalid_params')
-    if (params.title === undefined && routed === gateway.home) return gateway.attach(socket, {})
+    if (params.title === undefined) return gateway.open(socket, gateway.newChat(routed, params.request_id), {})
     if (params.title !== BOT_CHAT) throw new Refused('unsupported_command')
     return gateway.botChat(socket, routed) ?? gateway.open(socket, gateway.newBotChat(routed), {})
   },
@@ -297,7 +297,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'session.detach': detach
 }
 
-type ChatHandler = (gateway: ScriptedGateway, socket: Socket, params: Obj, routed: string, chat: BotChat) => unknown
+type ChatHandler = (gateway: ScriptedGateway, socket: Socket, params: Obj, routed: string, chat: EchoChat) => unknown
 
 const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
   'session.resume': (gateway, socket, params, _routed, chat) => gateway.open(socket, chat, params),
@@ -330,7 +330,8 @@ export class ScriptedGateway {
 
   private stored: readonly unknown[]
   private readonly profiles: readonly Obj[]
-  private readonly botChats = new Map<string, BotChat>()
+  private readonly botChats = new Map<string, EchoChat>()
+  private readonly newChats = new Map<string, EchoChat>()
   private readonly storyIsBotChatOf: string | null
   private readonly afterReply: (() => void)[] = []
   private readonly sockets = new Set<Socket>()
@@ -361,7 +362,7 @@ export class ScriptedGateway {
     for (const { name, canonical_session: named } of this.profiles) {
       const id = isObject(named) ? named.resolved_id || named.id : undefined
       if (!isText(name) || !isObject(named) || !isText(id) || name === this.storyIsBotChatOf) continue
-      const chat = new BotChat(id, name)
+      const chat = new EchoChat(id, name, BOT_CHAT)
       if (isText(named.preview)) chat.rows.push({ role: 'assistant', text: named.preview, timestamp: named.last_active ?? null, row_id: 1 })
       this.botChats.set(name, chat)
     }
@@ -424,7 +425,7 @@ export class ScriptedGateway {
     const params = named && PROFILE_IMPLICIT.has(method) ? unscoped : raw
     const fields = checkParams(method, params)
     if (fields !== undefined && fields.length > 0) return refusal('invalid_params', { fields })
-    const chat = [...this.botChats.values()].find(held => held.id === params.session_id && held.profile === routed)
+    const chat = this.echoChats().find(held => held.id === params.session_id && held.profile === routed)
     const handler = HANDLERS[method]
     if (handler === undefined && fields === undefined) return { error: { code: -32601, message: `unknown method: ${method}`, data: { reason: 'unknown_method' } } }
     try {
@@ -443,7 +444,11 @@ export class ScriptedGateway {
 
   /** The profile a session lives in, or undefined for a session this gateway does not have. */
   profileOf(sessionId: string): string | undefined {
-    return sessionId === this.sessionId ? this.home : [...this.botChats.values()].find(chat => chat.id === sessionId)?.profile
+    return sessionId === this.sessionId ? this.home : this.echoChats().find(chat => chat.id === sessionId)?.profile
+  }
+
+  private echoChats(): EchoChat[] {
+    return [...this.botChats.values(), ...this.newChats.values()]
   }
 
   /** `authority.authorize` for the story session (gateway/session_authority.py:225-229). */
@@ -451,7 +456,7 @@ export class ScriptedGateway {
     if (!this.plays(params, routed)) throw new Refused('not_found')
   }
 
-  private chat(socket: Socket, method: string, params: Obj, routed: string, chat: BotChat): unknown {
+  private chat(socket: Socket, method: string, params: Obj, routed: string, chat: EchoChat): unknown {
     const handler = CHAT_HANDLERS[method]
     if (handler === undefined) throw new Refused('unsupported_command')
     return handler(this, socket, params, routed, chat)
@@ -572,12 +577,12 @@ export class ScriptedGateway {
     }, socket.subscriptionId, params)
   }
 
-  /** `session.resume` for a Bot Chat. Its turns end before the next frame is read, so it is never running. */
-  open(socket: Socket, chat: BotChat, params: Obj): unknown {
+  /** `session.resume` for a chat beside the story. Its turns end before the next frame is read, so it is never running. */
+  open(socket: Socket, chat: EchoChat, params: Obj): unknown {
     socket.subscriptions.set(chat.id, socket.subscriptionId)
     return snapshotOf({
       id: chat.id, rows: chat.rows, ring: chat.ring, epoch: chat.epoch, running: false, generation: chat.generation,
-      revision: 0, title: BOT_CHAT, model: chat.model, pending: [], prompts: [], openRequests: []
+      revision: 0, title: chat.title, model: chat.model, pending: [], prompts: [], openRequests: []
     }, socket.subscriptionId, params)
   }
 
@@ -588,9 +593,19 @@ export class ScriptedGateway {
     return this.botChatId(routed) === undefined ? undefined : this.attach(socket, {})
   }
 
-  newBotChat(routed: string): BotChat {
-    const chat = new BotChat(`bot-chat-${routed}`, routed)
+  newBotChat(routed: string): EchoChat {
+    const chat = new EchoChat(`bot-chat-${routed}`, routed, BOT_CHAT)
     this.botChats.set(routed, chat)
+    return chat
+  }
+
+  /** An untitled create makes a new, empty chat in the routed profile. A retry with the same `request_id` gets the chat the first one made (gateway/session_local.py:308, :365). */
+  newChat(routed: string, requestId: unknown): EchoChat {
+    const key = isText(requestId) ? JSON.stringify([routed, requestId]) : null
+    const held = key === null ? undefined : this.newChats.get(key)
+    if (held !== undefined) return held
+    const chat = new EchoChat(`chat-${routed}-${this.newChats.size + 1}`, routed, '')
+    this.newChats.set(key ?? chat.id, chat)
     return chat
   }
 
@@ -606,11 +621,11 @@ export class ScriptedGateway {
   }
 
   /**
-   * One turn of a Bot Chat, published after the receipt as `SessionAuthority` publishes a turn
+   * One turn of a chat beside the story, published after the receipt as `SessionAuthority` publishes a turn
    * (gateway/session_authority.py:484-495 for the queue row, :1239 for the start). The reply names
    * the profile the frame was routed by, so a test reads which bot the message ran as.
    */
-  echo(chat: BotChat, inputId: string, text: string, routed: string): unknown {
+  echo(chat: EchoChat, inputId: string, text: string, routed: string): unknown {
     const generation = ++chat.generation
     const admission = {
       admission_id: `${chat.id}-admission-${generation}`, ref: { profile_id: routed, session_id: chat.id }, sequence: generation,
@@ -632,7 +647,7 @@ export class ScriptedGateway {
     return admission
   }
 
-  private say(chat: BotChat, type: string, payload: Obj, stamp: Obj = {}): void {
+  private say(chat: EchoChat, type: string, payload: Obj, stamp: Obj = {}): void {
     const params = { ...stamp, type, session_id: chat.id, payload, replay_epoch: chat.epoch, seq: (chat.ring.at(-1)?.seq ?? 0) + 1 }
     chat.ring.push(params)
     for (const socket of this.viewers(chat.id)) socket.peer.write({ jsonrpc: '2.0', method: 'event', params })

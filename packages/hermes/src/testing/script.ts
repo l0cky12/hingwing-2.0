@@ -88,9 +88,10 @@ function memorySocket(gateway: ScriptedGateway): WireSocket {
  * ring) and the current stored rows. Frames published between a `since` answer and the resume that
  * follows are written to the socket before the resume reply, as the gateway's catch-up does.
  * Beside the story it plays one Bot Chat for each bot of the header's `profiles` that names one, and
- * makes one on a titled `session.create`. A Bot Chat answers each message with one turn that says
- * `<profile>: <text>`, naming the profile the submit was routed by. The story session is the home
- * bot's Bot Chat, unless the header says `homeBotChat: false`.
+ * makes one on a titled `session.create`. An untitled `session.create` makes a new, empty chat in
+ * the routed profile, `chat-<profile>-<n>`, once per `request_id`. Each of these answers each
+ * message with one turn that says `<profile>: <text>`, naming the profile the submit was routed by.
+ * The story session is the home bot's Bot Chat, unless the header says `homeBotChat: false`.
  * It reads the frames it pushes with `parseEvent`, so the envelope's field names stay in `wire/parse.ts`.
  */
 export function scriptedDialer(fixture: Fixture, options: ScriptOptions = {}): ScriptedDialer {
