@@ -163,7 +163,7 @@ export class Offline extends Error {}
  * The canonical route also serves seven methods the generated contract does not list as canonical:
  * `commands.catalog` and `command.dispatch` (`AuthorityConnection.handlers`, gateway/session_controls.py:239-247),
  * `model.options` (gateway/session_config.py:11-13), `session.context_breakdown` (gateway/session_tui_ops.py:33)
- * and `connection.respond` (gateway/session_connections.py:16).
+ * and `connection.respond` (gateway/session_connections.py:10).
  * A sixth, `complete.path`, lists the files under a session's folder (gateway/session_controls.py:286-287).
  * A seventh, `file.attach`, is in gateway/session_ancillary.py:139-180 of a Hermes newer than the vendored contract,
  * and an older one may refuse it.
@@ -179,7 +179,6 @@ export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'profiles.create' | 'profiles.describe' | 'profiles.configure' | 'profiles.set_asset' | 'profiles.get_asset' | 'projects.tree'>
 export type Method = keyof Served
 
-/** The requests Hermes sends a client, each with the result it takes back. */
 export type Requested = ServerRequestMap
 export type RequestMethod = ServerRequestMethod
 

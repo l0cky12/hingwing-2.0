@@ -78,7 +78,6 @@ export type ThreadNode =
   | { readonly kind: 'plan'; readonly key: string; readonly plan: PlanView }
   | { readonly kind: 'moa'; readonly key: string; readonly moa: MoaItem }
   | { readonly kind: 'status'; readonly key: string; readonly status: StatusItem }
-  /** Where something Hermes asked outside the turn closed. A waiting one is not in the view yet. */
   | { readonly kind: 'closed'; readonly key: string; readonly asked: Asked; readonly end: RequestEnd }
 
 /**

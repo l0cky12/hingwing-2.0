@@ -360,7 +360,6 @@ export type NoticeItem =
    * does not wait. Keyed by `requestId`.
    */
   | { readonly kind: 'notice'; readonly what: 'declined'; readonly requestId: string; readonly method: string }
-  /** Where a request closed, and how. Keyed by `requestId`. */
   | { readonly kind: 'notice'; readonly what: 'closed'; readonly requestId: RequestId; readonly asked: Asked; readonly end: RequestEnd }
 
 export interface HermesRequest {
@@ -376,7 +375,6 @@ export interface HermesRequest {
 }
 
 export type RequestAsk =
-  /** One value typed into a masked field. It goes to Hermes once and is kept nowhere in Highwing. */
   | { readonly kind: 'secret'; readonly for: SecretFor }
   /**
    * One to five questions asked together, or a plugin command's one choice. `answers` holds what
@@ -395,9 +393,7 @@ export type SecretFor =
   /** Saved to the bot's `.env` on the machine Hermes runs on. The model never reads it. */
   | { readonly is: 'env'; readonly name: string; readonly prompt: string }
   | { readonly is: 'vault'; readonly backend: string; readonly name: string }
-  /** A login to save for a site. Its reply carries the `identifier` too. */
   | { readonly is: 'login'; readonly site: string; readonly origin: string }
-  /** A one-time code the user reads from a device. */
   | { readonly is: 'code'; readonly site: string | null; readonly hint: string | null }
 
 export interface Question {
@@ -421,11 +417,9 @@ export interface ConnectTarget {
   readonly instructions: string | null
   /** The page to sign in on. Kept only when it is an http or https link. */
   readonly url: string | null
-  /** Values Hermes needs typed in. A `secret` one is sent once and kept nowhere in Highwing. */
   readonly fields: readonly { readonly name: string; readonly prompt: string | null; readonly required: boolean; readonly secret: boolean; readonly initial: string }[]
 }
 
-/** No state holds a typed value: `sending` keeps only what `RecordedReply` can say. */
 export type RequestState =
   | { readonly s: 'waiting'; readonly error: string | null } // error: the last answer did not reach Hermes
   /** An answer is on its way. A result frame gets no reply, so this lasts until Hermes closes the request. */
@@ -435,11 +429,9 @@ export type RequestState =
 export type RequestReply =
   /** For a `secret` ask. `identifier` only for a login. */
   | { readonly kind: 'secret'; readonly value: string; readonly identifier?: string }
-  /** One answer of a `questions` ask. */
   | { readonly kind: 'lock'; readonly question: string; readonly answer: Answer }
   /** A secret: no value, which Hermes reads as "no". Questions: stop here, keeping the locked answers. A connector card: continue with what is connected. */
   | { readonly kind: 'skip' }
-  /** One target of a `connect` ask. `values` are the fields it asked for, by name. */
   | { readonly kind: 'connect'; readonly target: string; readonly as: 'approved' | 'skipped'; readonly values?: { readonly [field: string]: string } }
 
 /**
@@ -448,7 +440,6 @@ export type RequestReply =
  */
 export type RecordedReply = Exclude<RequestReply, { kind: 'secret' | 'connect' }> | { readonly kind: 'withheld' }
 
-/** What a closed request had asked for. */
 export type Asked = SecretFor['is'] | Exclude<RequestAsk['kind'], 'secret'>
 export type RequestEnd =
   | 'answered' //    this client answered it

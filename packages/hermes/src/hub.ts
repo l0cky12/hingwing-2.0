@@ -163,7 +163,6 @@ export function openHermes(options: HermesOptions): Hermes {
     count('declined', request.method)
   }
 
-  /** A request with a card is never refused: it waits in its session for an answer from this client or another. */
   const asked = (request: ServerRequest) => {
     switch (request.kind) {
       case 'card': {

@@ -78,7 +78,6 @@ export interface ActorDeps {
   readonly conn: Calls
   readonly clock: Clock
   readonly publish: (session: Session, previous: Session) => void
-  /** A request with no card here that the snapshot lists as open. The hub declines it, or leaves it for another client. */
   readonly bridge: (request: BridgeRequest) => void
   readonly mintId: () => string
   readonly watched: () => boolean

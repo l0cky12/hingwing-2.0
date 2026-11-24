@@ -13,7 +13,6 @@ type AnswerStep = Extract<FixtureStep, { answer: string }>
 const record = (value: unknown): Recorded => (value !== null && typeof value === 'object' ? value as Recorded : {})
 const recorded = (step: AwaitStep): Recorded => record(step.params)
 
-/** A locked answer as the recording holds it, back to what a window sends: several picks are a JSON array of labels. */
 function lockedAnswer(raw: unknown): Answer {
   if (typeof raw !== 'string') return null
   try {
@@ -51,13 +50,11 @@ const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fix
 
 const TYPED = 'typed by the stand-in user'
 
-/** The reply that writes the recorded result: a value for a masked one, a skip for an empty one or for a batch ended early. */
 function requestReply({ ask }: HermesRequest, result: Recorded): RequestReply {
   if (ask.kind !== 'secret' || result.value !== MASKED) return { kind: 'skip' }
   return { kind: 'secret', value: TYPED, ...(ask.for.is === 'login' ? { identifier: TYPED } : {}) }
 }
 
-/** The command for the step the story waits at, or null while there is nothing for the user to do: a request not shown yet, or one the hub declines itself. */
 function commandFor(step: AwaitStep | AnswerStep, session: Session, index: number, fixture: Fixture): Command | null {
   const { id: sessionId } = session
   if ('await' in step) {

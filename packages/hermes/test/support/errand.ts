@@ -34,14 +34,12 @@ export const paramsOf = (method: string) => (ERRAND.steps[stepOf(method)] as Ext
 
 export const SUDO = 'srq-0123456789ab'
 export const SUDO_ASK = { push: { jsonrpc: '2.0', id: SUDO, method: 'sudo', params: { session_id: SESSION, command: 'sudo true' } } }
-/** A request Highwing has no card for, and one Hermes lists again for a viewer that reconnects. */
 export const PICK = 'srq-ba5eba11cafe'
 export const PICK_ASK = { push: { jsonrpc: '2.0', id: PICK, method: 'theme.pick', params: { session_id: SESSION, picker: 'accent' } } }
 export const PICK_DECLINED = { answer: PICK, error: { code: -32601, message: 'Highwing has no part of its window to answer this with.' } }
 
 export type Added = { readonly push: unknown } | { readonly answer: string; readonly result: unknown } | { readonly answer: string; readonly error: { readonly code: number; readonly message: string } }
 
-/** The errand with `steps` played right after its push number `afterPush`. */
 export function withSteps(afterPush: number, ...steps: readonly Added[]): Fixture {
   const pushes = ERRAND.steps.flatMap((step, index) => ('push' in step ? [index] : []))
   const at = pushes[afterPush - 1] as number

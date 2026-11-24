@@ -90,7 +90,6 @@ describe('the asks story, played through the real client', () => {
 })
 
 describe('a socket drop after every push of the asks story', () => {
-  /** A request another viewer answered while this client was away was never shown here, so it leaves no notice. */
   const seenHere = (session: Session): Session => ({
     ...session,
     history: session.history.map(turn => ({ ...turn, items: turn.items.filter(item => !(item.kind === 'notice' && item.what === 'closed' && item.requestId === CODE)) }))

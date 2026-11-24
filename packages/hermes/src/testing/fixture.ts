@@ -142,7 +142,6 @@ export type FixtureStep =
   /** The gateway closes the socket. The story continues on the client's next dial. */
   | { readonly at: number; readonly drop: number }
 
-/** What a recording keeps in place of a typed secret. */
 export const MASKED = '•••'
 
 type Json = { readonly [key: string]: unknown }

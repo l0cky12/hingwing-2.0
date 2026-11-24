@@ -164,7 +164,6 @@ class Story:
     after: object = None
     # Files under WORK that a tool names as its image. The header's ``media`` carries their bytes, so a replay draws them.
     shows: tuple = ()
-    # What the story's viewer does with each request, in the order Hermes asks: (request method or event type, act).
     asks: tuple = ()
 
 
@@ -455,7 +454,6 @@ MASKED = "•••"
 
 
 def with_window(turn, agent, ask):
-    """Run *ask* with the window bridges ``TurnRunner`` installs for a local viewer's turn."""
     from gateway import local_desktop_ui
     token = local_desktop_ui.wire(turn, agent)
     try:
@@ -530,7 +528,6 @@ async def plugin_choice(runner, live):
 
 
 def typed(value):
-    """Answer with a value. The fixture keeps ``MASKED`` in its place."""
     async def act(viewer, frame):
         await viewer.answer(frame["id"], {"result": {"value": value}}, {"result": {"value": MASKED}})
     return act
@@ -545,7 +542,6 @@ async def declined(viewer, frame):
 
 
 async def elsewhere(viewer, frame):
-    """A second viewer of the chat answers first."""
     other = AuthorityConnection(viewer.authority, SimpleNamespace(write=lambda obj: True), {"user_id": USER, "native_bootstrap": True})
     await viewer.call(other, "session.resume", {"session_id": viewer.session_id})
     await other.dispatch({"jsonrpc": "2.0", "id": frame["id"], "result": {"value": "424242"}})
@@ -779,7 +775,6 @@ class Recorder:
                 return frame
 
     async def asked(self, name):
-        """The next request frame of method *name*, or the next event of that type."""
         while True:
             frame = await self.seen.get()
             if name in (frame.get("method"), frame.get("params", {}).get("type")):
@@ -861,7 +856,6 @@ def play_turn(turn, db, history, call_ids):
             turn.combined_tool_start_callback(call_id, name, args)
             if "stage" in step:
                 step["stage"]()
-            # What the tool asks its viewers while it runs. The last one answers the tool's result.
             asked = [ask(turn, agent) for ask in step.get("during", [])]
             result = asked[-1] if asked else step["result"] if "result" in step else model_tools.handle_function_call(
                 name, args, task_id=session_id, tool_call_id=call_id, session_id=session_id)
@@ -956,7 +950,6 @@ async def main():
         controls[shown["key"]] = shown["value"]
 
     async def answer(request_id, frame, kept=None):
-        """The viewer's response frame to a server request. It gets no reply. *kept* is what the fixture records of it."""
         recorder.steps.append({"at": CLOCK.now(), "answer": request_id, **(kept or frame)})
         await socket.dispatch({"jsonrpc": "2.0", "id": request_id, **frame})
 

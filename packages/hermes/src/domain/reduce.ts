@@ -61,7 +61,6 @@ export type SessionEvent =
   | { readonly type: 'notice.shown'; readonly notice: ShownNotice }
   | { readonly type: 'notice.cleared'; readonly key: string }
   | { readonly type: 'request.cancelled'; readonly id: RequestId; readonly why: CloseWhy }
-  /** A connector card as it is now: opened, changed, or settled with `settled` saying how. */
   | { readonly type: 'connect'; readonly card: CardRequest; readonly settled: CloseWhy | null }
   | {
       readonly type: 'meta'
@@ -136,9 +135,7 @@ export interface Admission {
 export type ServerRequest =
   /** `waitS`: how long Hermes waits for an answer. null when its config decides. */
   | { readonly kind: 'card'; readonly requestId: RequestId; readonly sessionId: SessionId; readonly method: string; readonly ask: RequestAsk; readonly waitS: number | null }
-  /** A method with no card here: Hermes Desktop's window bridges, and any method this build does not know. */
   | { readonly kind: 'bridge'; readonly requestId: RequestId; readonly sessionId: SessionId | null; readonly method: string }
-  /** A method with a card, whose params this build could not read. */
   | { readonly kind: 'unusable'; readonly requestId: RequestId; readonly method: string }
 export type CardRequest = Extract<ServerRequest, { kind: 'card' }>
 export type BridgeRequest = Extract<ServerRequest, { kind: 'bridge' }>
@@ -163,7 +160,6 @@ export interface Snapshot {
    * the two never overlap and never leave a hole. null when the resume asked for no rows (a reconnect).
    */
   readonly history: HistoryPage | null
-  /** Server requests that still wait for an answer from some client, and the open connector card. */
   readonly openRequests: readonly ServerRequest[]
 }
 
@@ -192,9 +188,8 @@ export type Gate =
   /** Not subscribed. Frames are dropped. `cursor` survives so the next attach can replay from it. */
   | { readonly at: 'detached'; readonly why: 'new' | 'link-lost' | { readonly refused: string }; readonly cursor: Cursor | null }
   /**
-   * An attach is in flight. Live frames park here until it settles, and so do request frames, in
-   * `asked`. A new `attempt` number abandons the calls of the older one: their replies no longer
-   * match and are ignored.
+   * An attach is in flight. Live frames park here until it settles. A new `attempt` number abandons
+   * the calls of the older one: their replies no longer match and are ignored.
    */
   | {
       readonly at: 'attaching'
@@ -219,9 +214,7 @@ export type SessionInput =
   | { readonly in: 'earlier'; readonly page: HistoryPage }
   /** The answer to a read of the session's usage. `asked` is `Fence.totalsEpoch` when the read was sent. */
   | { readonly in: 'usage'; readonly usage: SessionUsage; readonly asked: number }
-  /** A request frame off the live socket. `seenAt` is this client's clock when it arrived. */
   | { readonly in: 'request'; readonly request: CardRequest; readonly seenAt: number }
-  /** A request with no card here was refused, because a window was showing the chat. */
   | { readonly in: 'declined'; readonly request: BridgeRequest }
   /**
    * Answers to reads the actor made because a window watches the chat. `attempt` is the attach they
@@ -238,10 +231,8 @@ export type LocalAction =
   | { readonly did: 'send.discarded'; readonly inputId: InputId }
   | { readonly did: 'stop' }
   | { readonly did: 'answer'; readonly promptId: PromptId; readonly reply: PromptReply }
-  /** The typed value is not in the action: `RecordedReply` has no place for one. */
   | { readonly did: 'answer'; readonly requestId: RequestId; readonly reply: RecordedReply }
   | { readonly did: 'answer.resolved'; readonly promptId: PromptId; readonly byUs: boolean }
-  /** Hermes took a request's answer that travelled as a call. `waits`: the request can be answered again. `settles`: Hermes will close it. */
   | { readonly did: 'answer.accepted'; readonly requestId: RequestId; readonly then: 'waits' | 'settles' }
   | { readonly did: 'answer.failed'; readonly promptId: PromptId; readonly message: string }
   | { readonly did: 'answer.failed'; readonly requestId: RequestId; readonly message: string }
@@ -273,7 +264,6 @@ export interface Fence {
    * was sent, so one sent at an older epoch must not set the totals or the fill.
    */
   readonly totalsEpoch: number
-  /** Requests Hermes closed. See `Held.closed` in requests.ts. */
   readonly closed: Held['closed']
 }
 
@@ -305,8 +295,6 @@ export const PARK_LIMIT = 2048
  * - A reply of an older attach attempt changes nothing.
  * - Nothing opens a turn to hold a line Hermes said. A line goes into the running turn, or into the
  *   interlude while none runs.
- * - A request is opened and closed only by Hermes's word about that request. A turn that starts,
- *   settles or is lost leaves `requests` as it was.
  */
 export function reduce(state: Tracked, input: SessionInput): Tracked {
   const { gate } = state

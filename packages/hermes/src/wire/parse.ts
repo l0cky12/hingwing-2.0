@@ -385,7 +385,7 @@ export const SHOWN: { readonly [type: string]: Shown } = {
   'approval.settled': promptSettled,
   'clarify.settled': promptSettled,
   'approval.cancelled': payload => ({ type: 'prompts.cancelled', ids: fields<ApprovalCancelledPayload>(payload).strs('request_ids') as PromptId[] }),
-  /** A reason outside Hermes's own five reads as withdrawn (`RequestCancelReason`, tui_gateway/contracts/server_requests.py:366-378). */
+  /** A reason outside Hermes's own five reads as withdrawn (`RequestCancelReason`, tui_gateway/contracts/server_requests.py:372-377). */
   'request.cancel': payload => {
     const p = fields<RequestCancelPayload>(payload)
     return { type: 'request.cancelled', id: p.str('id') as RequestId, why: CANCEL_WHY[p.str('reason')] ?? 'withdrawn' }
@@ -983,12 +983,6 @@ const CONNECT = 'connection.request'
 
 type Card = (params: Obj) => Pick<CardRequest, 'ask' | 'waitS'>
 
-/**
- * The requests Highwing has a card for, by method, each with how long Hermes waits for its answer.
- * A method that is not here has no card: `parseServerRequest` calls it a bridge. `connection.request`
- * is an event and the snapshot's `pending_connection`, never a request frame, and is answered by a
- * call. It is here so one table says what Hermes can ask.
- */
 export const REQUESTS: { readonly [method: string]: Card } = {
   /** `SUDO_TIMEOUT_S`, gateway/session_sudo_prompt.py:19. The command is redacted by Hermes. */
   sudo: params => ({ waitS: 120, ask: { kind: 'secret', for: { is: 'sudo', command: stripAnsi(fields<SudoRequestParams>(params).optStr('command') ?? '') } } }),
@@ -1096,7 +1090,7 @@ function connectCard(payload: Obj, envelope: Obj): CardRequest {
 
 /**
  * A server-to-client request frame, an `open_requests` entry of a snapshot, or a connector card. Its
- * params carry the session (`gateway/session_server_requests.py:171`).
+ * params carry the session (`gateway/session_server_requests.py:175`).
  */
 export function parseServerRequest(request: { readonly id: string; readonly method: string; readonly params: unknown }): ServerRequest {
   const { method, params } = request
