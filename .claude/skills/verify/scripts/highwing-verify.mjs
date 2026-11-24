@@ -40,7 +40,8 @@ const STATES = {
   settled: page => page.locator('[data-end="done"]'),
   offline: page => page.getByRole('status', { name: 'Connection' }),
   'slash-menu': page => page.getByRole('listbox', { name: 'Commands and skills' }),
-  bots: page => page.locator('aside[data-state="listed"]')
+  bots: page => page.locator('aside[data-state="listed"]'),
+  unstarted: page => page.locator('main#scroll:empty')
 }
 
 const rendered = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
@@ -216,6 +217,14 @@ const STEPS = {
       const seen = await poll(ctx, async () => callsLike(ctx, check), held => held >= check.n)
       if (seen !== check.n) throw new Error(`the gateway saw ${seen} ${method} call(s) containing ${json}, not ${n}`)
       ctx.called.push(check)
+    }
+  },
+  reached: {
+    arity: 3,
+    run: async (ctx, method, json, n) => {
+      const check = { method, expected: JSON.parse(json), n: Number(n) }
+      const seen = await poll(ctx, async () => callsLike(ctx, check), held => held >= check.n)
+      if (seen < check.n) throw new Error(`the gateway saw ${seen} ${method} call(s) containing ${json}, fewer than ${n}`)
     }
   },
   quiet: {
