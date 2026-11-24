@@ -429,6 +429,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .tone-mauve { background: var(--avatar-mauve); }
 .tone-umber { background: var(--avatar-umber); }
 .bots-note { margin: 18px 12px; font-size: 13px; color: var(--graphite); }
+.bots-refused { margin: 0; padding: 10px 20px 14px; font-size: 13px; color: var(--brick); border-top: 1px solid var(--rule); }
 .bot[aria-current]:focus-visible { box-shadow: inset 5px 0 0 var(--ink); }
 @media (forced-colors: active) {
   .bot[aria-current] { border-left: 3px solid Highlight; padding-left: 9px; }

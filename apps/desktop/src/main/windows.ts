@@ -1,8 +1,7 @@
-import type { SessionId } from '@highwing/hermes/domain'
 import { BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { isWebLink, SESSION_PARAM } from '../ipc-contract'
+import { isWebLink } from '../ipc-contract'
 
 const INDEX_HTML = join(import.meta.dirname, '../renderer/index.html')
 const DEV_URL = process.env.ELECTRON_RENDERER_URL
@@ -15,7 +14,7 @@ export const isAppUrl = (url: string) => {
 /** The content size design C was drawn and reviewed at. */
 const DESIGN_SIZE = { width: 1180, height: 860 } as const
 
-export function openWindow(sessionId: SessionId | null): BrowserWindow {
+export function openWindow(): BrowserWindow {
   const window = new BrowserWindow({
     ...DESIGN_SIZE, useContentSize: true,
     title: 'Highwing', backgroundColor: '#E8EBE4',
@@ -26,8 +25,7 @@ export function openWindow(sessionId: SessionId | null): BrowserWindow {
     return { action: 'deny' }
   })
   window.webContents.on('will-navigate', event => event.preventDefault())
-  const query: Record<string, string> = sessionId === null ? {} : { [SESSION_PARAM]: sessionId }
-  if (DEV_URL) void window.loadURL(`${DEV_URL}?${new URLSearchParams(query)}`)
-  else void window.loadFile(INDEX_HTML, { query })
+  if (DEV_URL) void window.loadURL(DEV_URL)
+  else void window.loadFile(INDEX_HTML)
   return window
 }

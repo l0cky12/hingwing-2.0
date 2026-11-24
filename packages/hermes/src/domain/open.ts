@@ -12,8 +12,10 @@ import type { SessionId } from './session'
 export type ChatRef = { readonly kind: 'bot'; readonly bot: BotId }
 
 export type Shown =
-  /** A bot's Bot Chat. `sessionId` null: the bot has none yet, and its first message makes it. */
-  | { readonly bot: BotId; readonly sessionId: SessionId | null }
+  /** A bot's Bot Chat. */
+  | { readonly bot: BotId; readonly sessionId: SessionId }
+  /** The chat of a bot that has none yet. Its first message makes it. */
+  | { readonly bot: BotId; readonly sessionId: null }
   /** The newest chat of the profile the socket runs in, on a Hermes that cannot tell Highwing which bot it belongs to. */
   | { readonly bot: null; readonly sessionId: SessionId }
 

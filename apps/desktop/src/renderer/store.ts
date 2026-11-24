@@ -61,9 +61,12 @@ const subscribe = (key: string, topic: Topic) => {
   return created
 }
 
-export function useTopic<T extends Topic>(topic: T): TopicValue<T> | undefined {
+const NEVER = () => () => {}
+
+/** `topic` null: nothing to read yet, as for the session of a chat that has not been started. */
+export function useTopic<T extends Topic>(topic: T | null): TopicValue<T> | undefined {
   const key = `${useContext(Epoch)} ${topic}`
-  return useSyncExternalStore(subscribe(key, topic), () => copies.get(key)?.value as TopicValue<T> | undefined)
+  return useSyncExternalStore(topic === null ? NEVER : subscribe(key, topic), () => copies.get(key)?.value as TopicValue<T> | undefined)
 }
 
 export const run: Bridge['run'] = command => window.highwing.run(command)

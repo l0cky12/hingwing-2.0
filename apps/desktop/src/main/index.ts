@@ -34,7 +34,7 @@ app.whenReady().then(async () => {
     : ownConnection({ loaded: await loadSettings(settingsDir), save: target => saveSettings(settingsDir, target), check: checkTarget, routeFor, open })
   const opener = HIGHWING_OPEN_LOG ? recordingOpener(HIGHWING_OPEN_LOG) : desktopOpener(shell)
   const served = serveWindows(owner, ipcMain, isAppUrl, opener)
-  openWindow(fixture?.header.sessionId ?? null)
+  openWindow()
   let closed: Promise<void> | null = null
   const close = () => (closed ??= (served.dispose(), owner.close()))
   app.on('window-all-closed', () => void close().finally(() => app.quit()))

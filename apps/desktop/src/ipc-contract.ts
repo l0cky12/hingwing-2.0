@@ -1,6 +1,6 @@
 import {
   targetOf,
-  type BotId, type Bots, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenTurn, type PromptReply, type ResultOf,
+  type BotId, type Bots, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply, type ResultOf,
   type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target
 } from '@highwing/hermes/domain'
 
@@ -39,10 +39,12 @@ export interface AppTopics {
   readonly sidebar: Sidebar
   readonly slash: SlashCatalog
   readonly bots: Bots
+  /** Which chat the window shows. A window keeps no copy of its own choice: it asks with `open` and draws this. */
+  readonly open: OpenChat
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -80,8 +82,6 @@ const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
 
 /** The links a reply may open, in the user's browser. Shared so the renderer draws only links main will open. */
 export const isWebLink = (url: string): boolean => WEB_SCHEMES.has(URL.parse(url)?.protocol ?? '')
-
-export const SESSION_PARAM = 'session'
 
 const splice = <T>(held: readonly T[], tail: Tail<T>): readonly T[] => [...held.slice(0, tail.from), ...tail.items]
 

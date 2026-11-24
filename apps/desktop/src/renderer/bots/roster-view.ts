@@ -1,4 +1,4 @@
-import type { Bot, BotId, Bots, BotSection } from '@highwing/hermes/domain'
+import type { Bot, BotId, Bots, BotSection, OpenChat } from '@highwing/hermes/domain'
 
 /** What the list under the header shows. */
 export type ListView =
@@ -31,12 +31,12 @@ export function listOf(bots: Bots | undefined, query: string | null): ListView {
   return featured === null && sections.length === 0 ? { show: 'note', words: `No bots match “${query}”` } : { show: 'roster', featured, sections }
 }
 
-/** The selected bot: `picked` while the roster still lists it, else the default bot, else none. */
-export function selectedIn(bots: Bots | undefined, picked: BotId | null): BotId | null {
-  if (bots?.state !== 'listed') return null
+/** The highlighted bot: the bot of the open chat while the roster lists it, else none. */
+export function selectedIn(bots: Bots | undefined, open: OpenChat | undefined): BotId | null {
+  const bot = open?.shown?.bot ?? null
+  if (bots?.state !== 'listed' || bot === null) return null
   const { featured, sections } = bots.roster
-  const listed = featured?.id === picked || sections.some(section => section.bots.some(bot => bot.id === picked))
-  return listed ? picked : featured?.id ?? null
+  return featured?.id === bot || sections.some(section => section.bots.some(held => held.id === bot)) ? bot : null
 }
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })

@@ -1,11 +1,13 @@
-import { BOT_TONES, type Bots } from '@highwing/hermes/domain'
+import { BOT_TONES, type BotId, type Bots, type OpenChat, type SessionId } from '@highwing/hermes/domain'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { BotsPanel } from '../src/renderer/bots/Bots'
 import { APPROVED, fact, listed } from './support/bots'
 
-const render = (bots: Bots | undefined) => renderToStaticMarkup(<BotsPanel bots={bots} />)
+const AT_LAUNCH: OpenChat = { shown: { bot: 'default' as BotId, sessionId: 's1' as SessionId }, opening: null }
+const render = (bots: Bots | undefined, ...open: [OpenChat | undefined] | []) =>
+  renderToStaticMarkup(<BotsPanel bots={bots} open={open.length === 0 ? AT_LAUNCH : open[0]} onOpen={async () => ({ ok: true, value: null })} />)
 const attr = (tag: string, name: string) => new RegExp(` ${name}="([^"]*)"`).exec(tag)?.[1]
 const buttons = (markup: string) => markup.match(/<button[^>]*>/g) ?? []
 const named = (markup: string, label: string) => buttons(markup).find(tag => attr(tag, 'aria-label') === label)
@@ -27,8 +29,21 @@ describe('the bots sidebar', () => {
     expect(markup).toMatch(/<h3>New section<\/h3>.*<h3>Unassigned<\/h3>/s)
   })
 
-  it('marks the default bot as the current one at launch, and no other', () => {
-    expect(buttons(markup).filter(tag => attr(tag, 'aria-current') !== undefined).map(tag => attr(tag, 'aria-label'))).toEqual(['Emu, default bot'])
+  const marked = (html: string, name: string) => buttons(html).filter(tag => attr(tag, name) !== undefined).map(tag => attr(tag, 'aria-label'))
+
+  it('marks the bot of the open chat as the current one, and no other', () => {
+    expect(marked(markup, 'aria-current')).toEqual(['Emu, default bot'])
+    const research: OpenChat = { shown: { bot: 'research' as BotId, sessionId: null }, opening: null }
+    expect(marked(render(APPROVED, research), 'aria-current')).toEqual(['Research'])
+    expect(marked(render(APPROVED, { shown: { bot: null, sessionId: 's1' as SessionId }, opening: null }), 'aria-current')).toEqual([])
+    expect(marked(render(APPROVED, undefined), 'aria-current')).toEqual([])
+  })
+
+  it('marks the bot a click is waiting on as busy, and keeps the open chat current meanwhile', () => {
+    const waiting = render(APPROVED, { ...AT_LAUNCH, opening: { kind: 'bot', bot: 'timothy' as BotId } })
+    expect(marked(waiting, 'aria-busy')).toEqual(['Timothy · CEO'])
+    expect(marked(waiting, 'aria-current')).toEqual(['Emu, default bot'])
+    expect(markup, 'no refusal is shown before one happens').not.toMatch(/role="alert"/)
   })
 
   it('describes each row by its preview, or by having no messages', () => {

@@ -1,10 +1,10 @@
-import { activityOf, modelViewOf, type ModelMenu, type ModelOption, type PromptId, type PromptReply, type SessionId } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, type ModelMenu, type PromptId, type PromptReply, type SessionId, type Shown } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
 import { ModelPicker } from '../composer/ModelPicker'
 import { run, useTopic } from '../store'
-import { FileCallContext, fileCallFor } from './FilePath'
+import { FileCallContext, fileCallFor, type FileCall } from './FilePath'
 import { FOLLOW_WITHIN, FOLLOWING, placeAfter, progressOf, type Place } from './place'
 import { Thread } from './Thread'
 
@@ -17,8 +17,12 @@ const distanceFrom = (element: HTMLElement) => element.scrollHeight - element.sc
 const holdsText = (target: EventTarget | null) =>
   (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) && target.value !== ''
 
-export function Chat({ id }: { readonly id: SessionId }) {
-  const session = useTopic(`session:${id}`)
+const NO_FILES: FileCall = async () => ({ ok: false, reason: 'refused' })
+
+/** `chat.sessionId` null: the bot's chat is not started. The thread is empty, and the first message makes the session. */
+export function Chat({ chat }: { readonly chat: Shown }) {
+  const id = chat.sessionId
+  const session = useTopic(id === null ? null : `session:${id}`)
   const [tick, wake] = useReducer((count: number) => count + 1, 0)
   const view = useMemo(() => (session === undefined ? null : threadView(session, { now: Date.now(), timeZone: TIME_ZONE })), [session, tick])
   const progress = useMemo(() => (view === null ? '' : progressOf(view)), [view])
@@ -111,14 +115,19 @@ export function Chat({ id }: { readonly id: SessionId }) {
 
   const notice = place.kind !== 'reading' ? '' : asking ? 'Waiting for your OK' : progress !== place.since ? 'New steps below' : ''
 
-  const onAnswer = useCallback((promptId: PromptId, reply: PromptReply) => void run({ do: 'answer', sessionId: id, promptId, reply }), [id])
-  const onLoadEarlier = useCallback(() => void run({ do: 'loadEarlier', sessionId: id }), [id])
+  const onAnswer = useCallback((promptId: PromptId, reply: PromptReply) => {
+    if (id !== null) void run({ do: 'answer', sessionId: id, promptId, reply })
+  }, [id])
+  const onLoadEarlier = useCallback(() => {
+    if (id !== null) void run({ do: 'loadEarlier', sessionId: id })
+  }, [id])
   const onFindClosed = useCallback(() => composer.current?.focus(), [])
 
-  const [menu, setMenu] = useState<{ readonly id: SessionId; readonly menu: ModelMenu | null }>({ id, menu: null })
+  const [menu, setMenu] = useState<{ readonly id: SessionId | null; readonly menu: ModelMenu | null }>({ id, menu: null })
   const live = session?.sync.state === 'live'
   const asked = useRef(0)
   const refreshModels = useCallback(async () => {
+    if (id === null) return
     const request = ++asked.current
     const outcome = await run({ do: 'models', sessionId: id })
     if (request !== asked.current) return
@@ -127,10 +136,8 @@ export function Chat({ id }: { readonly id: SessionId }) {
   }, [id])
   useEffect(() => { if (live) void refreshModels() }, [live, refreshModels])
   const model = modelViewOf(menu.id === id ? menu.menu : null, session)
-  const onPickModel = useCallback((pick: ModelOption, confirm: string | null) =>
-    run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) }), [id])
 
-  const fileCall = useMemo(() => fileCallFor(id), [id])
+  const fileCall = useMemo(() => (id === null ? NO_FILES : fileCallFor(id)), [id])
 
   return (
     <>
@@ -148,15 +155,19 @@ export function Chat({ id }: { readonly id: SessionId }) {
         <span id={words} role="status">{notice}</span>
       </div>
       <Composer
-        key={id}
         inputRef={composer}
-        canSend={session?.sync.state === 'live'}
+        canSend={id === null || live}
         showStop={session !== undefined && activityOf(session).kind !== 'idle'}
-        onSend={text => run({ do: 'send', sessionId: id, text })}
-        onStop={() => void run({ do: 'stop', sessionId: id })}
+        onSend={text => (chat.sessionId === null ? run({ do: 'start', bot: chat.bot, text }) : run({ do: 'send', sessionId: chat.sessionId, text }))}
+        onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}
       >
-        {model.show !== 'hidden' && <ModelPicker key={id} view={model} onOpen={() => void refreshModels()} onPick={onPickModel} />}
+        {id !== null && model.show !== 'hidden' && (
+          <ModelPicker
+            key={id} view={model} onOpen={() => void refreshModels()}
+            onPick={(pick, confirm) => run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) })}
+          />
+        )}
       </Composer>
     </>
   )
