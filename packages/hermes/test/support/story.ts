@@ -1,10 +1,10 @@
-import { loadFixture, type Fixture } from '../../src/testing/fixture'
-import { parseEvent, parseRows } from '../../src/wire/parse'
+import { loadFixture, type Fixture, type FixtureStep } from '../../src/testing/fixture'
+import { parseEvent, parseRows, parseServerRequest } from '../../src/wire/parse'
 import {
   emptyTracked, reduce,
   type Admission, type Cursor, type SessionInput, type Snapshot, type StampedEvent, type Tracked
 } from '../../src/domain/reduce'
-import type { Generation, InputId, Item, PromptId, SessionContent, SessionId, SettledTurn } from '../../src/domain/session'
+import type { Generation, InputId, Item, PromptId, RequestId, SessionContent, SessionId, SettledTurn } from '../../src/domain/session'
 
 export type Beat =
   | { readonly kind: 'frame'; readonly frame: StampedEvent }
@@ -36,9 +36,37 @@ function userInputs(method: string, params: Record<string, unknown>, reply: Reco
         local({ did: 'answer.resolved', promptId, byUs: true })
       ]
     }
+    case 'clarify.lock': {
+      const requestId = params.request_id as RequestId
+      const answer = typeof params.answer !== 'string' ? null : params.answer.startsWith('[') ? JSON.parse(params.answer) as string[] : [params.answer]
+      return [
+        local({ did: 'answer', requestId, reply: { kind: 'lock', question: params.question_id as string, answer } }),
+        local({ did: 'answer.accepted', requestId, then: (reply?.remaining as unknown[]).length === 0 ? 'settles' : 'waits' })
+      ]
+    }
+    case 'connection.respond': {
+      const requestId = params.op_id as RequestId
+      return [local({ did: 'answer', requestId, reply: { kind: 'withheld' } }), local({ did: 'answer.accepted', requestId, then: reply?.settled === true ? 'settles' : 'waits' })]
+    }
     default:
       throw new Error(`the stand-in user has no command for ${method}`)
   }
+}
+
+/** A request frame as the hub hands it on while a window watches the chat: a card is held, and one with no card is declined. */
+function requestInputs(push: { readonly id: string; readonly method: string; readonly params: unknown }): SessionInput[] {
+  const request = parseServerRequest(push)
+  switch (request.kind) {
+    case 'card': return [{ in: 'request', request, seenAt: 0 }]
+    case 'bridge': return [{ in: 'declined', request }]
+    case 'unusable': return []
+  }
+}
+
+function answerInputs(step: Extract<FixtureStep, { answer: string }>): SessionInput[] {
+  if ('error' in step) return []
+  const { value } = step.result as { value?: string }
+  return [local({ did: 'answer', requestId: step.answer as RequestId, reply: { kind: value === undefined || value === '' ? 'skip' : 'withheld' } })]
 }
 
 export function readStory(path: string): Story {
@@ -47,13 +75,20 @@ export function readStory(path: string): Story {
   let epoch: string | null = null
   for (const step of fixture.steps) {
     if ('push' in step) {
-      const parsed = parseEvent((step.push as { params: unknown }).params)
+      const push = step.push as { id: string; method: string; params: unknown }
+      if (push.method !== 'event') {
+        beats.push({ kind: 'user', inputs: requestInputs(push) })
+        continue
+      }
+      const parsed = parseEvent(push.params)
       if (parsed.scope !== 'session' || parsed.sessionId !== fixture.header.sessionId)
         throw new Error(`push ${JSON.stringify(step.push).slice(0, 120)} is not a frame of the fixture's session`)
       epoch ??= parsed.stamp.epoch
       beats.push({ kind: 'frame', frame: { stamp: parsed.stamp, event: parsed.event, seenAt: null } })
     } else if ('await' in step) {
       beats.push({ kind: 'user', inputs: userInputs(step.await, step.params as Record<string, unknown>, step.reply as Record<string, unknown> | undefined) })
+    } else if ('answer' in step) {
+      beats.push({ kind: 'user', inputs: answerInputs(step) })
     }
   }
   if (epoch === null) throw new Error('fixture has no frames')
@@ -165,6 +200,7 @@ export const ignoringStartTimes = <T extends { readonly history: readonly Settle
 export const errand = () => readStory(new URL('../../../../fixtures/errand.jsonl', import.meta.url).pathname)
 export const delegate = () => readStory(new URL('../../../../fixtures/delegate.jsonl', import.meta.url).pathname)
 export const says = () => readStory(new URL('../../../../fixtures/says.jsonl', import.meta.url).pathname)
+export const asks = () => readStory(new URL('../../../../fixtures/asks.jsonl', import.meta.url).pathname)
 
 export const ignoringClocks = <T extends { readonly history: readonly SettledTurn[]; readonly interlude: SessionContent['interlude'] }>(session: T): T => {
   const unclocked = <I extends Item<'settled'>>(item: I): I =>
