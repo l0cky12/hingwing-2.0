@@ -1,6 +1,6 @@
 import type { BotId } from './domain/bots'
 import { activityOf } from './domain/reduce'
-import type { SessionContent, SessionId, Sidebar, SidebarRow } from './domain/session'
+import { STORED_ROWS, type SessionContent, type SessionId, type Sidebar, type SidebarRow } from './domain/session'
 import { Offline, RpcRefusal, type Connection } from './wire/link'
 import { parseListRows } from './wire/parse'
 
@@ -23,8 +23,6 @@ export interface SessionList {
   drop(id: SessionId): void
   stale(): void
 }
-
-const STORED_ROWS = 100
 
 function merged(live: readonly ListRow[], stored: readonly ListRow[]): readonly ListRow[] {
   const liveIds = new Set(live.map(row => row.id))

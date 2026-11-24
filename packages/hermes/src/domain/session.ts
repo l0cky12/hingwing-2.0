@@ -346,6 +346,9 @@ export type Link =
   /** Retrying will not help until the user acts. Shown with plain words and a Retry button. */
   | { readonly state: 'blocked'; readonly why: BlockedWhy; readonly message: string }
 
+/** The most chats a sidebar lists. A list this long may leave out older chats. */
+export const STORED_ROWS = 100
+
 export interface Sidebar {
   /** Whose chats the rows are: the bot of the open chat. null: the socket's own profile. */
   readonly bot: BotId | null
