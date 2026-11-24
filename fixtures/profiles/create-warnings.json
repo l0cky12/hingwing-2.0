@@ -1,0 +1,1 @@
+["subscription logins not carried over (acme): the profile uses the default profile's; run `hermes -p rae auth add <provider>` to sign it in separately"]
