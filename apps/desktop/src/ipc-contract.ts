@@ -1,6 +1,6 @@
 import {
   targetOf,
-  type Bots, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenTurn, type PromptReply, type ResultOf,
+  type BotId, type Bots, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply, type ResultOf,
   type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target
 } from '@highwing/hermes/domain'
 
@@ -39,10 +39,12 @@ export interface AppTopics {
   readonly sidebar: Sidebar
   readonly slash: SlashCatalog
   readonly bots: Bots
+  /** Which chat the window shows. A window keeps no copy of its own choice: it asks with `open` and draws this. */
+  readonly open: OpenChat
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -81,8 +83,6 @@ const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
 /** The links a reply may open, in the user's browser. Shared so the renderer draws only links main will open. */
 export const isWebLink = (url: string): boolean => WEB_SCHEMES.has(URL.parse(url)?.protocol ?? '')
 
-export const SESSION_PARAM = 'session'
-
 const splice = <T>(held: readonly T[], tail: Tail<T>): readonly T[] => [...held.slice(0, tail.from), ...tail.items]
 
 export function applyPush<T extends Topic>(current: TopicValue<T> | undefined, currentRev: number, push: Push<T>): { readonly value: TopicValue<T>; readonly rev: number } | 'need-full' {
@@ -105,6 +105,7 @@ const isObject = (value: unknown): value is Obj => value !== null && typeof valu
 const text = (value: unknown): value is string => typeof value === 'string'
 const filled = (value: unknown): value is string => text(value) && value.trim() !== ''
 const sessionIdOf = (raw: Obj) => (filled(raw.sessionId) ? (raw.sessionId as SessionId) : null)
+const botIdOf = (raw: unknown) => (filled(raw) ? (raw as BotId) : null)
 const modelOptionOf = (raw: unknown): ModelOption | null =>
   isObject(raw) && filled(raw.id) && filled(raw.provider) && text(raw.providerName)
     ? { id: raw.id as ModelOption['id'], provider: raw.provider, providerName: raw.providerName }
@@ -116,6 +117,14 @@ type Validators = { readonly [K in AppCommand['do']]: (raw: Obj) => Extract<AppC
 
 export const validators: Validators = {
   create: raw => (filled(raw.draftId) && (raw.cwd === null || text(raw.cwd)) ? { do: 'create', draftId: raw.draftId, cwd: raw.cwd } : null),
+  open: raw => {
+    const bot = isObject(raw.ref) && raw.ref.kind === 'bot' ? botIdOf(raw.ref.bot) : null
+    return bot && { do: 'open', ref: { kind: 'bot', bot } }
+  },
+  start: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && filled(raw.text) ? { do: 'start', bot, text: raw.text } : null
+  },
   send: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && filled(raw.text) ? { do: 'send', sessionId, text: raw.text } : null

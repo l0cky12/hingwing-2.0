@@ -18,23 +18,26 @@ highwing-2.0/
   packages/
     hermes/                      @highwing/hermes        Node. No Electron, no DOM.
       src/
-        hub.ts                   public entry "."         openHermes, Hermes, Command, Feed, remoteRoute, Route, checkTarget
+        hub.ts                   public entry "."         openHermes, Hermes, Command, Feed, liveDialer, remoteRoute, Route, checkTarget
         actor.ts                 private                  one session: owns its Tracked state, makes the calls a state asks for
         sidebar.ts               private                  stored rows, the running set, deriveSidebar
-        roster.ts                private                  botList: what Highwing knows about the bots, and when it asks Hermes
+        roster.ts                private                  botList: what Highwing knows about the bots and their Bot Chats, and when it asks Hermes
+        open.ts                  private                  chatDesk: which chat is open, the lookups and the create a change asks for
         domain/                  public entry "./domain"  browser-safe, imports nothing
           session.ts                                      Session, Run, Turn, Item, Link, Sidebar
           reduce.ts                                       SessionEvent, Gate, SessionInput, reduce, syncOf, activityOf
           command.ts                                      Command, ResultOf, Outcome, Refusal: data the renderer sends and gets back
           slash.ts                                        SlashEntry, SlashCatalog, slashLineOf: the slash menu's rows
           bots.ts                                         Bots, Roster, Bot, BotFacts, rosterOf: the sidebar's bots, grouped and painted
+          open.ts                                         OpenChat, Shown, ChatRef, nextDesk, launchChat: the open chat and every move it can make
           reach.ts                                        Target, SshHost, CheckStep, CheckFailure, CHECK_FAILURES: where Hermes runs and what can stop Highwing reaching it
-          index.ts                                        exports the session, command, slash, bots and reach types, activityOf, rosterOf and the reach tables
+          index.ts                                        exports the session, command, slash, bots, open and reach types, activityOf, rosterOf and the reach tables
         wire/                    private                  the only code that knows gateway shapes
           contract.generated.ts                           copied from Hermes by `pnpm sync:contract`
           contract.openrpc.json                           copied with it; read only by testing/ for key sets
-          link.ts                                         ticket, dial, handshake, heartbeat, JSON-RPC, backoff
-          ssh.ts                                          Hermes's SSH client contract: the locator, one hermes command over ssh, the stderr table, the relay
+          link.ts                                         dial, handshake, heartbeat, JSON-RPC, backoff, and `as(bot)`, which adds a bot's profile to a call
+          tickets.ts                                      mintWith: probe, attach and the ticket that reaches every profile, for both routes; liveDialer
+          ssh.ts                                          Hermes's SSH client contract: the locator, one hermes command over ssh, its replies, the stderr table, the relay
           remote.ts                                       remoteRoute: a Dialer to the gateway on another machine, and its processes
           check.ts                                        checkTarget: Tailscale, ssh and Hermes, one step at a time
           parse.ts                                        gateway shapes -> domain shapes
@@ -71,11 +74,13 @@ highwing-2.0/
 | Stored list rows and the set of running sessions | `sidebar.ts` | `Sidebar` is derived from them plus each actor's session when published |
 | What Highwing knows about the bots: loading, offline, unsupported, refused, or a roster | `roster.ts`, changed only through its `after` function | read through `Hermes.bots` and the `bots` topic. The hub says when to ask |
 | Where each bot is drawn and its avatar tone | nobody; `rosterOf(facts)` in `domain/bots.ts` computes them from each answer | the renderer draws the roster as given and picks no colour |
+| Which chat is open, the Bot Chat of each bot, and which bot owns a session | `open.ts`, changed only through `nextDesk` in `domain/open.ts` | windows read the `open` topic and send `open` and `start`. The hub reads `botOf` to build a session's actor |
+| Which profile a call runs in | `Connection.as(bot)` in `wire/link.ts`, which adds `profile` to every call made through it | an actor calls only through the connection it was given |
 | Where Hermes runs, which screen shows, and which `Hermes` is live | `ownConnection` in `main/connection.ts`, changed only through `nextSetup` | windows read the `setup` topic and send `checkTarget`, `editTarget`, `keepTarget`, `openChat` |
 | The saved connection on disk | `main/settings.ts` | nobody. `ownConnection` gets `loaded` and `save` as arguments |
 | A window's copy of a topic | `renderer/store.ts` in that window, written only by `applyPush` | components read with `useTopic` |
-| Selected session, open rows, composer drafts | React state in that window | not shared; not Hermes's state |
-| The clicked bot and the bot search text | React state in that window's sidebar. The selected bot is derived from the click and the roster on each render | not shared; not Hermes's state |
+| Open rows, composer drafts | React state in that window | not shared; not Hermes's state |
+| The bot search text and the last refusal of a click | React state in that window's sidebar. The selected bot is derived from the `open` topic and the roster on each render | not shared; not Hermes's state |
 | The design C view | nobody; `threadView(session, clock)` recomputes it and memoises settled turns by reference | |
 | When a turn began | `reduce`: the stored request row's time, or the clock reading the hub attaches to a live frame | nobody. The view derives every shown time from it |
 
@@ -113,6 +118,9 @@ A `message.delta` frame becomes pixels in four steps.
 | Reconnect | `playToEnd(fixture, { drop })` for a drop after every push, compared with the undisturbed outline | `@highwing/hermes` tests |
 | A gap | the same with `ringFrames` small, so replay answers `snapshot_required` | same |
 | Protocol rules | the scripted gateway refuses a wrong key set, a verb on an unattached socket, and (on loopback) an `Origin` header or a reused ticket | every fixture test |
+| The open chat | `nextDesk` fed a table of event sequences: the launch pick, a click that needs a lookup, two clicks, an answer for an earlier click, a refusal, a switch back | `domain/` tests |
+| Bots and profiles | the scripted gateway routes each frame by its `profile` as Hermes's dispatcher does, plays a Bot Chat per bot and answers `<profile>: <text>`, so a hub test reads which bot a message ran as | `@highwing/hermes` tests |
+| The ticket | `mintWith` fed scripted command replies, and both routes run against the fake `hermes`, which answers `--serve` | same |
 | Contract drift | `pnpm contract:drift` compares the two vendored contract files with the installed Hermes and prints the methods and event types that changed | CI and after each `hermes update` |
 | Illegal states | `tsc -p sketch/.typecheck/tsconfig.json` | CI |
 

@@ -5,11 +5,9 @@
 import { randomBytes } from 'node:crypto'
 import { createServer, type IncomingMessage } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { GATEWAY_PROTOCOL, type Clock, type Endpoint } from '../wire/link'
+import { GATEWAY_PROTOCOL, TICKET_PREFIX, type Clock, type Endpoint, type Reach } from '../wire/link'
 import { ABNORMAL_CLOSE, type ScriptedGateway } from './gateway'
 
-/** Hermes's hermes_cli/gateway_client.py:16 */
-const TICKET_PREFIX = 'hermes-gateway-ticket.'
 /** Hermes's gateway/runtime_bootstrap.py:26 */
 const TICKET_TTL_MS = 30_000
 
@@ -20,7 +18,10 @@ export interface Upgrade {
 }
 
 export interface Loopback {
-  mint(): Endpoint
+  /** Names this gateway process, as `instance_id` does in an attach reply and a `--serve` hello. */
+  readonly instanceId: string
+  /** A single-use ticket and where to redeem it. The socket it opens reaches what the ticket does. */
+  mint(reach: Reach): Endpoint
   readonly upgrades: readonly Upgrade[]
   close(): Promise<void>
 }
@@ -33,7 +34,7 @@ interface Offered {
 
 export async function loopback(gateway: ScriptedGateway, clock: Clock): Promise<Loopback> {
   const { WebSocketServer } = await import('ws')
-  const minted: string[] = []
+  const minted: { readonly ticket: string; readonly reach: Reach }[] = []
   const live = new Map<string, number>()
   const upgrades: Upgrade[] = []
 
@@ -57,7 +58,7 @@ export async function loopback(gateway: ScriptedGateway, clock: Clock): Promise<
     const protocols = String(request.headers['sec-websocket-protocol'] ?? '').split(',').map(value => value.trim()).filter(Boolean)
     const tickets = protocols.filter(value => value.startsWith(TICKET_PREFIX)).map(value => value.slice(TICKET_PREFIX.length))
     const offered: Offered = { origin: request.headers.origin, protocols, tickets }
-    const known = minted.indexOf(tickets[0] ?? '')
+    const known = minted.findIndex(held => held.ticket === tickets[0])
     return { origin: offered.origin ?? null, ticket: known === -1 ? null : known, refused: rules.find(([, broken]) => broken(offered))?.[0] ?? null }
   }
 
@@ -67,11 +68,12 @@ export async function loopback(gateway: ScriptedGateway, clock: Clock): Promise<
     const upgrade = judge(request)
     upgrades.push(upgrade)
     if (upgrade.refused !== null) return void socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
+    const reach = minted[upgrade.ticket ?? -1]?.reach
     wss.handleUpgrade(request, socket, head, ws => {
       const accepted = gateway.accept({
         write: frame => ws.send(JSON.stringify(frame)),
         close: code => (code === ABNORMAL_CLOSE ? ws.terminate() : ws.close(code))
-      })
+      }, reach)
       ws.on('message', data => accepted.text(String(data)))
       ws.on('close', () => accepted.closed())
     })
@@ -80,12 +82,13 @@ export async function loopback(gateway: ScriptedGateway, clock: Clock): Promise<
   const { port } = http.address() as AddressInfo
 
   return {
+    instanceId: randomBytes(16).toString('hex'),
     upgrades,
-    mint: () => {
+    mint: reach => {
       const ticket = randomBytes(24).toString('base64url')
-      minted.push(ticket)
+      minted.push({ ticket, reach })
       live.set(ticket, clock.now() + TICKET_TTL_MS)
-      return { url: `ws://127.0.0.1:${port}/api/ws`, protocols: [GATEWAY_PROTOCOL, TICKET_PREFIX + ticket] }
+      return { url: `ws://127.0.0.1:${port}/api/ws`, protocols: [GATEWAY_PROTOCOL, TICKET_PREFIX + ticket], reach }
     },
     close: () => new Promise(resolve => {
       for (const client of wss.clients) client.terminate()

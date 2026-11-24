@@ -5,7 +5,7 @@ import { playToEnd, play, scriptedDialer } from '../src/testing/fixture'
 import { RING_FRAMES, ScriptedGateway } from '../src/testing/gateway'
 import { loopback, type Loopback } from '../src/testing/loopback'
 import { dialWith, DialError, GATEWAY_PROTOCOL, systemClock, type Clock } from '../src/wire/link'
-import { ERRAND } from './support/errand'
+import { ERRAND, RESEARCH_CHAT, WITH_BOTS } from './support/errand'
 import { errand, fold, ignoringStartTimes } from './support/story'
 
 const closers: (() => Promise<unknown>)[] = []
@@ -13,8 +13,8 @@ afterEach(async () => {
   await Promise.all(closers.splice(0).map(close => close()))
 })
 
-async function listener(clock: Clock = systemClock): Promise<Loopback> {
-  const gateway = new ScriptedGateway(ERRAND, { clock, timing: 'instant', ringFrames: RING_FRAMES, drop: null })
+async function listener(clock: Clock = systemClock, fixture = ERRAND): Promise<Loopback> {
+  const gateway = new ScriptedGateway(fixture, { clock, timing: 'instant', ringFrames: RING_FRAMES, drop: null })
   const held = await loopback(gateway, clock)
   closers.push(() => held.close())
   return held
@@ -61,7 +61,7 @@ describe('the real dial, against a loopback gateway', () => {
 
   it('is refused with a ticket that was used before', async () => {
     const gateway = await listener()
-    const endpoint = gateway.mint()
+    const endpoint = gateway.mint('host')
     const dial = dialWith(async () => endpoint)
     const socket = await dial({ start: false })
     const again = await dial({ start: false }).catch((error: unknown) => error)
@@ -71,11 +71,30 @@ describe('the real dial, against a loopback gateway', () => {
     socket.close()
   })
 
+  it('opens a socket that reaches what its ticket does', async () => {
+    const gateway = await listener(systemClock, WITH_BOTS)
+    const resumed = async (reach: 'host' | 'profile') => {
+      const socket = await dialWith(async () => gateway.mint(reach))({ start: false })
+      const reply = new Promise<{ result?: unknown; error?: { message: string } }>(resolve => {
+        socket.onText = text => {
+          const frame = JSON.parse(text) as { id?: number; result?: unknown; error?: { message: string } }
+          if (frame.id === 1) resolve(frame)
+        }
+      })
+      socket.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session.resume', params: { profile: 'research', session_id: RESEARCH_CHAT } }))
+      const answer = await reply
+      socket.close()
+      return { reach: socket.reach, answer: answer.error?.message ?? 'resumed' }
+    }
+    expect(await resumed('host')).toEqual({ reach: 'host', answer: 'resumed' })
+    expect(await resumed('profile')).toEqual({ reach: 'profile', answer: 'profile_mismatch' })
+  })
+
   it('is refused with a ticket older than 30 s', async () => {
     const clock = manualClock()
     const gateway = await listener(clock)
-    const dial = dialWith(async () => gateway.mint())
-    const stale = gateway.mint()
+    const dial = dialWith(async () => gateway.mint('host'))
+    const stale = gateway.mint('host')
     await clock.advance(30_000)
     await expect(dialWith(async () => stale)({ start: false })).rejects.toBeInstanceOf(DialError)
     expect(gateway.upgrades.at(-1)).toMatchObject({ refused: 'ticket' })
@@ -88,7 +107,7 @@ describe('the real dial, against a loopback gateway', () => {
 describe('the loopback gateway\'s upgrade gate', () => {
   it('refuses an upgrade that carries an Origin header, even with a good ticket', async () => {
     const gateway = await listener()
-    const { url, protocols } = gateway.mint()
+    const { url, protocols } = gateway.mint('host')
     expect(await upgradeWith(url, protocols, { Origin: 'http://127.0.0.1:5173' })).toBe('http 403')
     expect(gateway.upgrades).toEqual([{ origin: 'http://127.0.0.1:5173', ticket: 0, refused: 'origin' }])
     expect(await upgradeWith(url, protocols), 'the refused upgrade did not spend the ticket').toBe('open')
@@ -96,8 +115,8 @@ describe('the loopback gateway\'s upgrade gate', () => {
 
   it('refuses anything but the protocol and exactly one ticket', async () => {
     const gateway = await listener()
-    const [ticket, second] = [gateway.mint(), gateway.mint()].map(endpoint => endpoint.protocols[1] as string)
-    const { url } = gateway.mint()
+    const [ticket, second] = [gateway.mint('host'), gateway.mint('host')].map(endpoint => endpoint.protocols[1] as string)
+    const { url } = gateway.mint('host')
     expect(await upgradeWith(url, [GATEWAY_PROTOCOL])).toBe('http 403')
     expect(await upgradeWith(url, [ticket as string])).toBe('http 403')
     expect(await upgradeWith(url, [GATEWAY_PROTOCOL, ticket as string, second as string])).toBe('http 403')

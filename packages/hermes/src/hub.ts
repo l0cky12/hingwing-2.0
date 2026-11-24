@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { DONE, refusalOf, refused, SessionActor } from './actor'
 import type { Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
+import type { OpenChat } from './domain/open'
 import type { ServerRequest } from './domain/reduce'
 import type { Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
+import { CANT_START, chatDesk, NOT_CONNECTED } from './open'
 import { botList } from './roster'
 import { deriveSidebar, sessionList } from './sidebar'
 import { connect, systemClock, type Clock, type Dialer } from './wire/link'
@@ -13,8 +15,9 @@ import { parseCatalog, parseDirective, parseEvent, parseServerRequest, type Pars
 export type { Command, Outcome, Refusal, ResultOf } from './domain/command'
 export type { Clock, Dialer, WireSocket } from './wire/link'
 export { checkTarget, type CheckOptions, type CheckResult } from './wire/check'
-export { DialError, liveDialer } from './wire/link'
+export { DialError } from './wire/link'
 export { remoteRoute, type Route } from './wire/remote'
+export { liveDialer } from './wire/tickets'
 
 /** A value that changes. `subscribe` calls back on every change, not for the current value. */
 export interface Feed<T> {
@@ -32,6 +35,12 @@ export interface Hermes {
    * on a Hermes with no `profiles.list`. A listed roster stays while the link is down.
    */
   readonly bots: Feed<Bots>
+  /**
+   * Which chat the window shows. Before any click it is the default bot's chat, or the newest chat
+   * on a Hermes that cannot switch bots. After that only `run({ do: 'open' })` and
+   * `run({ do: 'start' })` move it, and it follows a bot to the Bot Chat Hermes names for it.
+   */
+  readonly open: Feed<OpenChat>
   /**
    * Watch one session. The listener gets the current value at once and every later one. A session is
    * kept attached while a window watches it, while the gateway lists it as running, while its own
@@ -89,6 +98,8 @@ function sameSidebar(a: Sidebar, b: Sidebar): boolean {
       && row.lastActiveAt === other.lastActiveAt && row.badge === other.badge
   })
 }
+
+const sameOpen = (a: OpenChat, b: OpenChat) => JSON.stringify(a) === JSON.stringify(b)
 
 const sameCatalog = (a: SlashCatalog, b: SlashCatalog) =>
   a.length === b.length && a.every((entry, index) => {
@@ -177,20 +188,29 @@ export function openHermes(options: HermesOptions): Hermes {
     sidebar.set(deriveSidebar(list, settled))
   }
 
+  const desk = chatDesk({ conn, client: options.client, mintId, changed: () => open.set(desk.open) })
+  const open = feed<OpenChat>(desk.open, sameOpen)
+  const settle = () => desk.settle({ bots: roster.bots, named: roster.chats, list: { status: list.status, newest: list.rows[0]?.id ?? null } })
+
   const list = sessionList(conn, () => {
     publishSidebar()
     retain()
+    settle()
   })
   const sidebar = feed<Sidebar>(deriveSidebar(list, new Map()), sameSidebar)
 
-  const roster = botList(conn, () => bots.set(roster.bots))
+  const roster = botList(conn, () => {
+    bots.set(roster.bots)
+    settle()
+  })
   const bots = feed<Bots>(roster.bots)
 
   const actorFor = (id: SessionId): SessionActor => {
     const held = actors.get(id)
     if (held !== undefined) return held
+    const bot = desk.botOf(id)
     const actor = new SessionActor(id, {
-      conn, clock, mintId, refuse,
+      conn: bot === undefined ? conn : conn.as(bot), clock, mintId, refuse,
       publish: (session, previous) => {
         for (const listener of [...(watchers.get(id) ?? [])]) listener(session)
         if (session.run.state !== previous.run.state) refreshSoon()
@@ -286,7 +306,7 @@ export function openHermes(options: HermesOptions): Hermes {
     const typed = `/${entry.name}${arg === '' ? '' : ` ${arg}`}`
     let reply
     try {
-      reply = await conn.call('command.dispatch', { session_id: actor.id, name: entry.name, ...(arg === '' ? {} : { arg }) })
+      reply = await actor.dispatch(entry.name, arg)
     } catch (error) {
       return { ok: false, refusal: refusalOf(error) }
     }
@@ -298,8 +318,8 @@ export function openHermes(options: HermesOptions): Hermes {
 
   const create = async ({ draftId, cwd }: Extract<Command, { do: 'create' }>): Promise<Outcome<SessionId>> => {
     const { creation } = conn
-    if (creation === null) return refused('offline', "Highwing isn't connected to Hermes right now.")
-    if (!creation.sources.includes('gui')) return refused('unsupported', "This Hermes can't start a chat from Highwing.")
+    if (creation === null) return NOT_CONNECTED
+    if (!creation.sources.includes('gui')) return CANT_START
     const asked = { source: 'gui', request_id: draftId, ...(cwd === null ? {} : { cwd, cwd_explicit: true }), client: options.client }
     const params = Object.fromEntries(Object.entries(asked).filter(([key]) => creation.parameters.includes(key)))
     try {
@@ -314,6 +334,11 @@ export function openHermes(options: HermesOptions): Hermes {
 
   const run = async (command: Command): Promise<Outcome<unknown>> => {
     if (command.do === 'create') return create(command)
+    if (command.do === 'open') return desk.ask(command.ref)
+    if (command.do === 'start') {
+      const started = await desk.start(command.bot)
+      return started.ok ? run({ do: 'send', sessionId: started.value, text: command.text }) : started
+    }
     if (command.do === 'reconnect') {
       conn.retryNow({ start: command.start })
       for (const actor of [...actors.values()]) actor.attach()
@@ -328,6 +353,7 @@ export function openHermes(options: HermesOptions): Hermes {
     sidebar,
     slash,
     bots,
+    open,
     watch,
     run: command => run(command) as Promise<Outcome<ResultOf<typeof command>>>,
     close: async () => {

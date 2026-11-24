@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseSshHost } from '../src/domain/reach'
-import { ATTACH, HERMES_PATHS, PROBE, probeOf, relay, remoteHermes, runTool, SSH_OPTIONS, sshFailureOf } from '../src/wire/ssh'
+import { ASK_INTERACTIVE, ATTACH, attachedOf, HERMES_PATHS, PROBE, probeOf, relay, remoteHermes, runTool, SERVE, servedOf, SSH_OPTIONS, sshFailureOf } from '../src/wire/ssh'
 import { manualClock, settle } from '../src/testing/clock'
 
 describe('sshFailureOf', () => {
@@ -33,9 +33,11 @@ describe('sshFailureOf', () => {
 
 describe('probeOf', () => {
   it.each([
-    [0, '{"protocol": 1, "purposes": ["native-http"], "windows_service_session": false}\n', { ok: true, windowsServiceSession: false }],
-    [0, 'a banner from the shell profile\n{"protocol": 1, "purposes": [], "windows_service_session": true}\n', { ok: true, windowsServiceSession: true }],
-    [0, '{"protocol": 1, "purposes": ["native-http"], "later_key": 1}\n', { ok: true, windowsServiceSession: false }],
+    [0, '{"protocol": 1, "purposes": ["native-http"], "windows_service_session": false}\n', { ok: true, windowsServiceSession: false, interactive: false }],
+    [0, 'a banner from the shell profile\n{"protocol": 1, "purposes": [], "windows_service_session": true}\n', { ok: true, windowsServiceSession: true, interactive: false }],
+    [0, '{"protocol": 1, "purposes": ["native-http", "interactive"], "later_key": 1}\n', { ok: true, windowsServiceSession: false, interactive: true }],
+    [0, '{"protocol": 1, "purposes": "interactive"}\n', { ok: true, windowsServiceSession: false, interactive: false }],
+    [0, '["interactive"]\n', { ok: false, failure: 'hermes-too-old' }],
     [127, '', { ok: false, failure: 'hermes-not-found' }],
     [2, '', { ok: false, failure: 'hermes-too-old' }],
     [1, '{"protocol": 1}\n', { ok: false, failure: 'hermes-too-old' }],
@@ -47,13 +49,56 @@ describe('probeOf', () => {
   })
 })
 
+describe('attachedOf', () => {
+  const reply = { url: 'ws://127.0.0.1:35187/api/ws', protocols: ['hermes-gateway-v1', 'hermes-gateway-ticket.t'], endpoint: { instance_id: 'i-1', profile_id: '/home' }, state: 'ready' }
+
+  it('reads the address, the subprotocols and the gateway instance from the last line', () => {
+    expect(attachedOf(`a banner\n${JSON.stringify(reply)}\n`)).toEqual({ url: reply.url, protocols: reply.protocols, instanceId: 'i-1' })
+  })
+
+  it('reads a reply that names no instance, as a Hermes older than the endpoint field sends', () => {
+    expect(attachedOf(JSON.stringify({ url: reply.url, protocols: reply.protocols }))).toEqual({ url: reply.url, protocols: reply.protocols, instanceId: null })
+  })
+
+  it.each(['ready\n', '', '{"url": 7, "protocols": []}', '{"url": "ws://x", "protocols": [1]}', '{"state":"absent"}'])('reads %j as no reply', stdout => {
+    expect(attachedOf(stdout)).toBeNull()
+  })
+})
+
+describe('servedOf', () => {
+  const hello = '{"type": "hello", "protocol": 1, "endpoint": {"api_origin": "http://127.0.0.1:35187", "instance_id": "i-1"}}'
+  const absent = '{"type": "error", "error": {"code": "absent", "reason_code": null, "message": "gateway absent: not ready"}}'
+
+  it.each([
+    [0, `${hello}\n{"id": 1, "ok": true, "ticket": "t-1", "expires_in": 30}\n`, { is: 'ticket', ticket: 't-1', instanceId: 'i-1' }],
+    [0, `{"type": "hello", "protocol": 1}\n{"id": 1, "ok": true, "ticket": "t-1"}\n`, { is: 'ticket', ticket: 't-1', instanceId: null }],
+    [0, `${hello}\n{"id": 1, "ok": false, "error": {"code": "unsupported_purpose", "message": "purpose must be one of: native-http"}}\n`, { is: 'unsupported' }],
+    [0, `${hello}\n{"id": 1, "ok": false, "error": {"code": "ticket_unavailable", "message": "gateway refused the ticket"}}\n`, { is: 'failed', kind: 'dropped' }],
+    [0, `${hello}\n{"id": null, "ok": false, "error": {"code": "invalid_request", "message": "request line is not JSON"}}\n`, { is: 'failed', kind: 'dropped' }],
+    [0, `${hello}\n`, { is: 'failed', kind: 'dropped' }],
+    [0, `${hello}\n{"id": 1, "ok": true, "ticket": ""}\n`, { is: 'failed', kind: 'dropped' }],
+    [5, `${absent}\n`, { is: 'failed', kind: 'not-running' }],
+    [6, '{"type": "error", "error": {"code": "draining"}}\n', { is: 'failed', kind: 'draining' }],
+    [9, `${absent}\n`, { is: 'failed', kind: 'inaccessible' }],
+    [2, '', { is: 'failed', kind: 'incompatible' }],
+    [0, 'usage: hermes gateway\n', { is: 'failed', kind: 'incompatible' }]
+  ])('reads exit %i with %j', (code, stdout, served) => {
+    expect(servedOf(code, stdout)).toEqual(served)
+  })
+
+  it('asks for the one ticket that takes no profile, on one line', () => {
+    expect(JSON.parse(ASK_INTERACTIVE)).toEqual({ id: 1, purpose: 'interactive' })
+    expect(ASK_INTERACTIVE.endsWith('\n') && ASK_INTERACTIVE.indexOf('\n') === ASK_INTERACTIVE.length - 1).toBe(true)
+  })
+})
+
 describe('the command ssh is given', () => {
   it('names Hermes\'s install locations in its order, after the login shell\'s own hermes', () => {
     expect(HERMES_PATHS).toEqual(['$HOME/.local/bin/hermes', '/usr/local/bin/hermes', '$HOME/.hermes/hermes-agent/venv/bin/hermes'])
     expect(remoteHermes(PROBE)).toContain('for hermes in "$found" "$HOME/.local/bin/hermes" "/usr/local/bin/hermes" "$HOME/.hermes/hermes-agent/venv/bin/hermes";')
   })
 
-  it.each([PROBE, ATTACH.start, ATTACH.retry])('is one single-quoted script and the literal words %j', (...args) => {
+  it.each([PROBE, SERVE, ATTACH.start, ATTACH.retry])('is one single-quoted script and the literal words %j', (...args) => {
     const command = remoteHermes(args as typeof PROBE)
     expect(command).toMatch(new RegExp(`^sh -c '[^'\\\\]+' hermes ${args.join(' ')}$`))
   })
@@ -129,6 +174,12 @@ describe('runTool', () => {
   it('returns the exit code and both streams', async () => {
     expect(await runTool('/bin/sh', ['-c', 'echo out; echo err >&2; exit 3'], { deadlineMs: 5_000, signal: never }))
       .toEqual({ end: 'exit', code: 3, stdout: 'out\n', stderr: 'err\n' })
+  })
+
+  it('writes its input to the command and closes it, and gives a command with none an empty stdin', async () => {
+    expect(await runTool('/bin/sh', ['-c', 'cat; echo end'], { deadlineMs: 5_000, signal: never, input: 'one line\n' })).toMatchObject({ end: 'exit', code: 0, stdout: 'one line\nend\n' })
+    expect(await runTool('/bin/sh', ['-c', 'cat; echo end'], { deadlineMs: 5_000, signal: never })).toMatchObject({ end: 'exit', code: 0, stdout: 'end\n' })
+    expect(await runTool('/bin/sh', ['-c', 'exit 4'], { deadlineMs: 5_000, signal: never, input: 'x'.repeat(1 << 20) }), 'a command that never reads it').toMatchObject({ end: 'exit', code: 4 })
   })
 
   it('reads a command that is not there as missing', async () => {

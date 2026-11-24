@@ -44,5 +44,6 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Find in chat](./find-in-chat.md) covers Ctrl+F, the match count, stepping, opening closed steps, the highlight marks, and Escape returning focus to the composer.
 - [Forced colors](./forced-colors.md) covers the forced-colors and more-contrast renderings of the thread, the waiting card, diffs and focus, and the pixel checker.
 - [Jump to latest](./jump-to-latest.md) covers the round control that appears when you scroll up, its "New steps below" and "Waiting for your OK" words, and the End key.
-- [Bots sidebar](./bots-sidebar.md) covers the list of Hermes's bots, selecting one, search, a Hermes that cannot list its bots, the unavailable New bot, and pixel parity of the chat column.
+- [Bots sidebar](./bots-sidebar.md) covers the list of Hermes's bots, search, a Hermes that cannot list its bots, the unavailable New bot, and pixel parity of the chat column.
+- [Open a bot](./open-a-bot.md) covers opening a bot's chat from the sidebar, a message running as that bot, returning to the same chat, a bot with no chat yet, and a Hermes that cannot switch bots.
 - [Slash menu](./slash-menu.md) covers the `/` list of commands and skills, narrowing, completion, Escape, and a Hermes without the catalog.

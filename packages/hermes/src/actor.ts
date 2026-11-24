@@ -1,7 +1,7 @@
 import type { ModelConfirm, ModelMenu, Outcome, Refusal } from './domain/command'
 import { emptyTracked, reduce, sessionOf, type Gate, type LocalAction, type ServerRequest, type SessionInput, type Tracked } from './domain/reduce'
 import type { InputId, ModelOption, OutboxEntry, PromptId, PromptReply, Session, SessionId } from './domain/session'
-import { Offline, RpcRefusal, type Clock, type Connection } from './wire/link'
+import { Offline, RpcRefusal, type Calls, type Clock } from './wire/link'
 import { parseModelMenu, parseModelReceipt, parseReplay, parseSnapshot, parseTranscript } from './wire/parse'
 
 export const DONE: Outcome = { ok: true, value: undefined }
@@ -16,6 +16,7 @@ const REFUSALS: Readonly<Record<string, Refusal>> = {
   runtime_draining: { kind: 'rejected', message: 'Hermes is restarting. Try again in a moment.' },
   invalid_params: { kind: 'rejected', message: 'Hermes did not accept the request.' },
   unsupported_command: { kind: 'unsupported', message: "Hermes can't run that command from Highwing." },
+  profile_mismatch: { kind: 'rejected', message: "Hermes isn't running that bot right now." },
   unknown_method: { kind: 'unsupported', message: "This Hermes doesn't support that." }
 }
 const FENCE_REFUSALS: ReadonlySet<string> = new Set(['revision_conflict', 'stale_generation'])
@@ -36,7 +37,8 @@ const EARLIER = { pageRows: 200, pages: 3 } as const
 type Attaching = Extract<Gate, { at: 'attaching' }>
 
 export interface ActorDeps {
-  readonly conn: Connection
+  /** The connection for a session of the socket's own profile, `conn.as(bot)` for a bot's. */
+  readonly conn: Calls
   readonly clock: Clock
   readonly publish: (session: Session, previous: Session) => void
   readonly refuse: (request: ServerRequest) => void
@@ -263,6 +265,11 @@ export class SessionActor {
       }
       throw error
     })
+  }
+
+  /** Runs one Hermes command in this chat and answers its directive as Hermes sent it. Rejects with what `refusalOf` reads. */
+  dispatch(name: string, arg: string) {
+    return this.deps.conn.call('command.dispatch', { session_id: this.id, name, ...(arg === '' ? {} : { arg }) })
   }
 
   async loadEarlier(): Promise<Outcome> {

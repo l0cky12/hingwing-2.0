@@ -19,7 +19,7 @@ Routes Hermes has that this design does not use:
 | `hermes serve --isolated` over ssh (Hermes Desktop's "ssh" kind) | Authenticates with a long-lived `?token=`, not a single-use ticket. Needs `python3` on the Hermes machine. |
 | Remote URL with OAuth (`POST /api/auth/ws-ticket`) | Needs a non-loopback Webapp bind (`0.0.0.0` only) and an auth provider on the Hermes machine. |
 | Forwarding the control socket | Not a contract. The socket checks the OS user on the same machine. |
-| `hermes gateway tickets --serve --json` channel | Its `interactive` ticket serves every profile. Highwing uses one profile, the channel never starts a gateway, and `attach` is still needed for the port. Kept as the path for a multi-profile Highwing. |
+| `hermes gateway tickets --serve --json` channel | Its `interactive` ticket serves every profile. Highwing uses one profile, the channel never starts a gateway, and `attach` is still needed for the port. Kept as the path for a multi-profile Highwing. Issue #64 took it. See "Tickets" under "Implementation reconciliation". |
 
 Hermes has no Tailscale integration of its own. Tailscale's part is name resolution and transport for ssh, plus the setup check below.
 
@@ -294,3 +294,12 @@ Where the code differs from the text above. The text above is unchanged, so each
 | The top bar gets a Connection button. | The top bar also says which machine the chat is on. A fixture run shows neither. | The button changes that machine, so the bar names it. A `pinned` run has no connection to name or change. |
 | The verify helper gains `--fake-host` and `--saved none\|local\|remote`. | It also gains `--saved unreadable\|newer`, `--hold-at` and a `value` step, and loses `--no-fixture`. A `--fake-host` run fails at teardown when the app left a fake tool running. `scripts/fake-host.ts` runs the fake machine. | `--no-fixture` now opens the setup screen with the real `ssh` and `tailscale` on `PATH`. Every run without a fixture must use the fake host. The teardown check keeps the quit defect above from coming back. |
 | Nothing about a second Highwing. | `main/index.ts` takes Electron's single-instance lock, which lives in the user-data directory. A second launch exits, and the first window gets the focus. A close while a save runs ends the check, so nothing opens after it, and setup commands are refused after close. | Two instances shared `connection.json.tmp`, and saves at the same moment wrote malformed JSON (sol-loop round 1 on #43). One instance also keeps the design's one socket per gateway. |
+
+### Tickets (issue #64)
+
+| The design said | The code does | Why |
+|---|---|---|
+| Highwing uses one profile and dials with the ticket attach returned. The `--serve` channel is rejected because it adds a second lifecycle. | Each dial runs `hermes gateway tickets --serve --json` once after attach, sends it the one line `{"id":1,"purpose":"interactive"}`, reads the hello and the reply, and lets the command end. It dials attach's address with that ticket. | A bot is a profile, and the attach ticket reaches one. The `interactive` ticket reaches every profile on one socket. A run that ends with the dial keeps no channel, so there is still one lifecycle and `ssh.ts` still holds no process between two calls. |
+| `remoteRoute` has its own `attach`, and `liveDialer` its own `cliMint`. | Both routes share `mintWith` in `wire/tickets.ts`. The route passes how a hermes command runs and how the gateway's port is reached. `endpointOf` became `attachedOf` in `ssh.ts`, beside `probeOf` and `servedOf`. | Client rules 1 to 4 are the same on both routes. Only the transport differs. |
+| A probe that gets no answer fails the dial. | The same on another machine. On this computer the dial goes on with attach alone. | The local route never probed before, so an older local Hermes must keep connecting. Client rule 1 names this fallback. |
+| The fake `hermes` answers the probe and attach. | It also answers `--serve` over its stdin, and the scenario `ok-bound` is a Hermes whose probe lists no `interactive` ticket. The loopback gateway gives a socket the reach of the ticket it redeemed. | The remote dial and the "cannot switch bots" path are driven through the real `ssh` code in tests and in the verify skill. |

@@ -1,6 +1,6 @@
 import type { Link } from '../../src/domain/session'
 import { manualClock } from '../../src/testing/clock'
-import { connect, wireSocket, DialError, type ConnectionEvents, type Dialer, type WireSocket } from '../../src/wire/link'
+import { connect, wireSocket, DialError, type ConnectionEvents, type Dialer, type Reach, type WireSocket } from '../../src/wire/link'
 
 export interface Frame {
   readonly id?: number | string
@@ -28,7 +28,7 @@ const AUTOMATIC: Readonly<Record<string, unknown>> = {
   'gateway.ping': { ok: true }
 }
 
-function peer(ready: unknown): Peer {
+function peer(ready: unknown, reach: Reach): Peer {
   const held: Peer = {
     sent: [],
     mute: new Set(),
@@ -48,7 +48,7 @@ function peer(ready: unknown): Peer {
       }
     },
     close: () => { held.closedByClient = true }
-  })
+  }, reach)
   Object.assign(held, { socket: wire.socket })
   if (ready !== null) held.push({ jsonrpc: '2.0', method: 'event', params: { type: 'gateway.ready', payload: ready } })
   return held
@@ -61,11 +61,11 @@ export function fakeGateway(options: { readonly startOnLaunch?: boolean; readonl
   const links: Link[] = []
   const events: unknown[] = []
   const requests: unknown[] = []
-  const state: { failWith: DialError | null; ready: unknown; online: number } = { failWith: null, ready: { session_authority: true }, online: 0 }
+  const state: { failWith: DialError | null; ready: unknown; online: number; reach: Reach } = { failWith: null, ready: { session_authority: true }, online: 0, reach: 'host' }
   const dial: Dialer = async ({ start }) => {
     dials.push(start)
     if (state.failWith !== null) throw state.failWith
-    const next = peer(state.ready)
+    const next = peer(state.ready, state.reach)
     peers.push(next)
     return next.socket
   }

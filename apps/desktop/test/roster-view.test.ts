@@ -1,13 +1,15 @@
-import type { BotId, Bots } from '@highwing/hermes/domain'
+import type { BotId, Bots, OpenChat, SessionId } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import { initialOf, listOf, selectedIn, type ListView } from '../src/renderer/bots/roster-view'
-import { APPROVED, fact, listed } from './support/bots'
+import { APPROVED, listed } from './support/bots'
 
 const outline = (view: ListView) => (view.show !== 'roster' ? view : [
   ...(view.featured === null ? [] : [`* ${view.featured.name}`]),
   ...view.sections.flatMap(section => [section.name ?? '(no section)', ...section.bots.map(bot => `  ${bot.name}`)])
 ])
 const id = (name: string) => name as BotId
+const showing = (bot: string | null, sessionId: string | null = 's1'): OpenChat =>
+  ({ shown: { bot: bot as BotId | null, sessionId: sessionId as SessionId } as OpenChat['shown'], opening: null })
 
 describe('what the bot list shows', () => {
   it('is empty and busy until Hermes has answered', () => {
@@ -54,23 +56,26 @@ describe('what the bot list shows', () => {
 })
 
 describe('the selected bot', () => {
-  it('is the default bot until a click, then the clicked bot', () => {
-    expect(selectedIn(APPROVED, null)).toBe('default')
-    expect(selectedIn(APPROVED, id('timothy'))).toBe('timothy')
-    expect(selectedIn(APPROVED, id('default'))).toBe('default')
+  it('is the bot of the open chat, started or not', () => {
+    expect(selectedIn(APPROVED, showing('default'))).toBe('default')
+    expect(selectedIn(APPROVED, showing('timothy'))).toBe('timothy')
+    expect(selectedIn(APPROVED, showing('hermes-dev', null))).toBe('hermes-dev')
   })
 
-  it('is the default bot again when the clicked bot is gone, and no bot when there is no default', () => {
-    expect(selectedIn(APPROVED, id('retired'))).toBe('default')
-    const noDefault = listed(fact('a', 'A'), fact('b', 'B'))
-    expect(selectedIn(noDefault, null)).toBeNull()
-    expect(selectedIn(noDefault, id('b'))).toBe('b')
-    expect(selectedIn(noDefault, id('retired'))).toBeNull()
+  it('stays on the open chat while a click on another bot waits for Hermes', () => {
+    expect(selectedIn(APPROVED, { ...showing('default'), opening: { kind: 'bot', bot: id('timothy') } })).toBe('default')
+  })
+
+  it('is no bot when the open chat has none, when its bot is gone, or when nothing is open', () => {
+    expect(selectedIn(APPROVED, showing(null))).toBeNull()
+    expect(selectedIn(APPROVED, showing('retired'))).toBeNull()
+    expect(selectedIn(APPROVED, { shown: null, opening: null })).toBeNull()
+    expect(selectedIn(APPROVED, undefined)).toBeNull()
   })
 
   it('is no bot while there is no roster', () => {
-    expect(selectedIn(undefined, id('timothy'))).toBeNull()
-    expect(selectedIn({ state: 'offline' }, id('timothy'))).toBeNull()
+    expect(selectedIn(undefined, showing('timothy'))).toBeNull()
+    expect(selectedIn({ state: 'offline' }, showing('timothy'))).toBeNull()
   })
 })
 

@@ -1,6 +1,6 @@
-import type { SessionId, Target } from '@highwing/hermes/domain'
+import type { Shown, Target } from '@highwing/hermes/domain'
 import type { ReactNode } from 'react'
-import { SESSION_PARAM, type Setup } from '../ipc-contract'
+import type { Setup } from '../ipc-contract'
 import { BotsSidebar } from './bots/Bots'
 import { Chat } from './chat/Chat'
 import { Banner, TopBar } from './chrome/Chrome'
@@ -8,15 +8,15 @@ import { Composer } from './composer/Composer'
 import { Saved, SetupForm } from './setup/Setup'
 import { Epoch, useTopic } from './store'
 
-const fixed = new URLSearchParams(window.location.search).get(SESSION_PARAM) as SessionId | null
-
 const NO_CHAT = async () => ({ ok: false, refusal: { kind: 'rejected', message: 'There is no chat to send to.' } }) as const
 
-function FirstChat() {
-  const first = useTopic('sidebar')?.rows[0]?.id
-  return first === undefined
+const samePaneOnFirstMessage = (shown: Shown): string => shown.bot ?? shown.sessionId
+
+function OpenPane() {
+  const shown = useTopic('open')?.shown ?? null
+  return shown === null
     ? <><main id="scroll" /><Composer canSend={false} showStop={false} onSend={NO_CHAT} onStop={() => {}} onInput={() => {}} /></>
-    : <Chat key={first} id={first} />
+    : <Chat key={samePaneOnFirstMessage(shown)} chat={shown} />
 }
 
 function ChatScreen({ target }: { readonly target: Target | null }) {
@@ -27,7 +27,7 @@ function ChatScreen({ target }: { readonly target: Target | null }) {
         <TopBar target={target} />
         {link !== undefined && <Banner link={link} />}
       </div>
-      {fixed !== null ? <Chat id={fixed} /> : <FirstChat />}
+      <OpenPane />
     </>
   )
 }

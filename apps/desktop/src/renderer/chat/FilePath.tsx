@@ -4,7 +4,10 @@ import type { FileAction, FileOutcome } from '../../ipc-contract'
 
 export type FileCall = (action: FileAction, path: string) => Promise<FileOutcome>
 
-export const FileCallContext = createContext<FileCall>(async () => ({ ok: false, reason: 'refused' }))
+/** What a path answers where no session is watched. */
+export const NO_FILE_CALL: FileCall = async () => ({ ok: false, reason: 'refused' })
+
+export const FileCallContext = createContext(NO_FILE_CALL)
 
 export const fileCallFor = (sessionId: SessionId): FileCall => (action, path) => window.highwing.file({ action, sessionId, path })
 

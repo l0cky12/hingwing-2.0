@@ -1,5 +1,5 @@
 import type { Hermes } from '@highwing/hermes'
-import type { Bots, Link, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
+import type { Bots, Link, OpenChat, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { applyPush, CHANNEL, isWebLink, parseCommand, parseFileRequest, validators, type AppTopics, type FileOutcome, type Push, type Topic } from '../src/ipc-contract'
@@ -74,6 +74,8 @@ describe('validators', () => {
     expect(parseCommand({ do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 'once', x: 1 } }))
       .toEqual({ do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 'once' } })
     expect(parseCommand({ do: 'reconnect', start: true })).toEqual({ do: 'reconnect', start: true })
+    expect(parseCommand({ do: 'open', ref: { kind: 'bot', bot: 'research', sessionId: 's9' }, sessionId: 's9' })).toEqual({ do: 'open', ref: { kind: 'bot', bot: 'research' } })
+    expect(parseCommand({ do: 'start', bot: 'research', text: 'hello', sessionId: 's9' })).toEqual({ do: 'start', bot: 'research', text: 'hello' })
     const model = { id: 'careful-large', provider: 'acme', providerName: 'Acme' }
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model: { ...model, price: 9 } })).toEqual({ do: 'pickModel', sessionId: 's1', model })
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })).toEqual({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })
@@ -94,6 +96,11 @@ describe('validators', () => {
     ['a verb from the prototype', { do: 'toString' }],
     ['an empty session id', { do: 'stop', sessionId: '' }],
     ['a blank message', { do: 'send', sessionId: 's1', text: '   ' }],
+    ['an open that names no chat', { do: 'open' }],
+    ['an open of a kind of chat Highwing does not know', { do: 'open', ref: { kind: 'session', sessionId: 's1' } }],
+    ['an open of a bot with no name', { do: 'open', ref: { kind: 'bot', bot: ' ' } }],
+    ['a first message with no bot', { do: 'start', text: 'hello' }],
+    ['a blank first message', { do: 'start', bot: 'research', text: '' }],
     ['a reply of the wrong kind', { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 1 } }],
     ['a non-boolean start', { do: 'reconnect', start: 'yes' }],
     ['a missing cwd', { do: 'create', draftId: 'd1' }],
@@ -105,8 +112,8 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'checkTarget', 'create', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'openChat', 'pickModel',
-      'reconnect', 'rename', 'send', 'stop'
+      'answer', 'archive', 'checkTarget', 'create', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat', 'pickModel',
+      'reconnect', 'rename', 'send', 'start', 'stop'
     ])
   })
 })
@@ -115,6 +122,7 @@ const still = <T>(value: T) => ({ get: () => value, subscribe: () => () => {} })
 const LINK: Link = { state: 'blocked', why: 'hermes-missing', message: 'A link of this test.' }
 const SIDEBAR: Sidebar = { status: 'stale', rows: [] }
 const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] } }
+const NOTHING_OPEN: OpenChat = { shown: null, opening: null }
 
 function harness() {
   const listeners = new Map<string, (event: IpcEvent, ...args: unknown[]) => void>()
@@ -137,9 +145,18 @@ function harness() {
   const catalogListeners = new Set<(value: SlashCatalog) => void>()
   let bots: Bots = { state: 'loading' }
   const botsListeners = new Set<(value: Bots) => void>()
+  let open = NOTHING_OPEN
+  const openListeners = new Set<(value: OpenChat) => void>()
   const hermes = {
     link: still(LINK),
     sidebar: still(SIDEBAR),
+    open: {
+      get: () => open,
+      subscribe: (listener: (value: OpenChat) => void) => {
+        openListeners.add(listener)
+        return () => void openListeners.delete(listener)
+      }
+    },
     bots: {
       get: () => bots,
       subscribe: (listener: (value: Bots) => void) => {
@@ -178,7 +195,11 @@ function harness() {
     bots = next
     botsListeners.forEach(listener => listener(next))
   }
-  return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, served, setCatalog, setBots }
+  const setOpen = (next: OpenChat) => {
+    open = next
+    openListeners.forEach(listener => listener(next))
+  }
+  return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, served, setCatalog, setBots, setOpen }
 }
 
 describe('serveWindows', () => {
@@ -221,7 +242,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' } }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))
@@ -239,6 +260,19 @@ describe('serveWindows', () => {
     setBots(NO_BOTS)
     vi.advanceTimersByTime(COALESCE_MS)
     expect(pushes).toEqual([{ topic: 'bots', rev: 1, full: { state: 'loading' } }, { topic: 'bots', rev: 2, full: NO_BOTS }])
+  })
+
+  it('serves the open chat as full values, and passes a click on a bot to the hub', async () => {
+    vi.useFakeTimers()
+    const { listeners, handlers, pushes, event, setOpen, commands } = harness()
+    listeners.get(CHANNEL.watch)!(event(), 5, 'open')
+    vi.advanceTimersByTime(COALESCE_MS)
+    const research = { shown: { bot: 'research', sessionId: 'local-0001' }, opening: null } as OpenChat
+    setOpen(research)
+    expect(pushes).toEqual([{ topic: 'open', rev: 1, full: NOTHING_OPEN }, { topic: 'open', rev: 2, full: research }])
+    await handlers.get(CHANNEL.run)!(event(), { do: 'open', ref: { kind: 'bot', bot: 'research' } })
+    await handlers.get(CHANNEL.run)!(event(), { do: 'start', bot: 'research', text: 'hello' })
+    expect(commands).toEqual([{ do: 'open', ref: { kind: 'bot', bot: 'research' } }, { do: 'start', bot: 'research', text: 'hello' }])
   })
 
   it('stops pushing when the window unwatches or is destroyed', () => {

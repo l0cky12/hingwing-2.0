@@ -3,6 +3,7 @@
  */
 import { readFileSync } from 'node:fs'
 import type { SessionId } from '../domain/session'
+import type { Reach } from '../wire/link'
 
 export { play, playToEnd, type Moment } from './play'
 export { recordingDialer } from './record'
@@ -37,6 +38,10 @@ export interface Fixture {
      * `profiles.list` as an unknown method, as a Hermes older than the call does.
      */
     readonly profiles?: unknown
+    /** `'profile'`: play a Hermes with no `interactive` ticket, whose every socket is bound to the home profile. Default `'host'`. */
+    readonly reach?: Reach
+    /** false: the home bot has no Bot Chat, and the story session is only a chat of the home profile. Default true. */
+    readonly homeBotChat?: boolean
   }
   readonly steps: readonly FixtureStep[]
 }
@@ -117,11 +122,15 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (guarded !== undefined && !(Array.isArray(guarded) && guarded.every(model => typeof model === 'string'))) return '"guarded" must be a list of model names'
   const { profiles } = value
   if (profiles !== undefined && !(isObject(profiles) && Array.isArray(profiles.profiles))) return '"profiles" must be a profiles.list reply with "profiles"'
+  const { reach, homeBotChat } = value
+  if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
+  if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
   return {
     fixture, hermes, source, sessionId: sessionId as SessionId, describe: value.describe, list: value.list, stored,
     ...('catalog' in value ? { catalog: value.catalog } : {}),
     ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] }),
-    ...(profiles === undefined ? {} : { profiles })
+    ...(profiles === undefined ? {} : { profiles }),
+    ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat })
   }
 }
 

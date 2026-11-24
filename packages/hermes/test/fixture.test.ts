@@ -154,6 +154,15 @@ describe('loadFixture', () => {
     expect(loadFixture(write([{ ...header, profiles: { profiles: [] } }])).header.profiles).toEqual({ profiles: [] })
   })
 
+  it('reads what the sockets reach and whether the home bot has a Bot Chat, and refuses any other value', () => {
+    expect(loadFixture(write([{ ...header, reach: 'profile', homeBotChat: false }])).header).toMatchObject({ reach: 'profile', homeBotChat: false })
+    expect(loadFixture(write([header])).header).not.toHaveProperty('reach')
+    const reach = write([{ ...header, reach: 'everything' }])
+    expect(() => loadFixture(reach)).toThrow(`${reach}:1: "reach" must be "host" or "profile"`)
+    const chat = write([{ ...header, homeBotChat: 'no' }])
+    expect(() => loadFixture(chat)).toThrow(`${chat}:1: "homeBotChat" must be true or false`)
+  })
+
   it('names the line of the prototype\'s envelope', () => {
     const path = write([header, { at: 0, push: { kind: 'event', type: 'message.delta', session_id: 's', seq: 1, payload: {} } }])
     expect(() => loadFixture(path)).toThrow(`${path}:2: "push" must be a JSON-RPC 2.0 frame with a method`)

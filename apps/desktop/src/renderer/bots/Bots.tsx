@@ -1,14 +1,20 @@
-import type { Bot, BotId, Bots } from '@highwing/hermes/domain'
+import type { Bot, BotId, Bots, CommandOutcome, OpenChat } from '@highwing/hermes/domain'
 import { useId, useRef, useState, type KeyboardEvent } from 'react'
 import { flushSync } from 'react-dom'
-import { useTopic } from '../store'
+import { run, useTopic } from '../store'
 import { initialOf, listOf, selectedIn, UNASSIGNED } from './roster-view'
 
 const NO_NEW_BOT = "Highwing can't create bots yet"
 const CARET_KEYS: ReadonlySet<string> = new Set(['PageUp', 'PageDown', 'End'])
 
 export function BotsSidebar() {
-  return <BotsPanel bots={useTopic('bots')} />
+  return <BotsPanel bots={useTopic('bots')} open={useTopic('open')} onOpen={bot => run({ do: 'open', ref: { kind: 'bot', bot } })} />
+}
+
+interface BotsPanelProps {
+  readonly bots: Bots | undefined
+  readonly open: OpenChat | undefined
+  readonly onOpen: (bot: BotId) => Promise<CommandOutcome<unknown>>
 }
 
 function Avatar({ bot, size }: { readonly bot: Bot; readonly size: number }) {
@@ -21,12 +27,17 @@ const Plus = () => <svg {...icon}><path d="M12 5v14M5 12h14" /></svg>
 const Close = () => <svg {...icon}><path d="M6 6l12 12M18 6 6 18" /></svg>
 const Star = () => <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" /></svg>
 
-export function BotsPanel({ bots }: { readonly bots: Bots | undefined }) {
-  const [picked, setPicked] = useState<BotId | null>(null)
+export function BotsPanel({ bots, open, onOpen }: BotsPanelProps) {
+  const [refused, setRefused] = useState<string | null>(null)
   const [query, setQuery] = useState<string | null>(null)
   const searchButton = useRef<HTMLButtonElement>(null)
   const ids = useId()
-  const selected = selectedIn(bots, picked)
+  const selected = selectedIn(bots, open)
+  const opening = open?.opening?.bot ?? null
+  const pick = async (bot: BotId) => {
+    const outcome = await onOpen(bot)
+    setRefused(outcome.ok ? null : outcome.refusal.message)
+  }
   const list = listOf(bots, query)
   const { featured, sections } = list.show === 'roster' ? list : { featured: null, sections: [] }
   const closeSearch = () => {
@@ -60,7 +71,7 @@ export function BotsPanel({ bots }: { readonly bots: Bots | undefined }) {
       <div className="bots-list" aria-busy={list.show === 'loading' || undefined}>
         {list.show === 'note' && <p className="bots-note" role="status">{list.words}</p>}
         {featured !== null && (
-          <button type="button" className="bot-feature" aria-label={`${featured.name}, default bot`} aria-current={selected === featured.id || undefined} onClick={() => setPicked(featured.id)}>
+          <button type="button" className="bot-feature" aria-label={`${featured.name}, default bot`} aria-current={selected === featured.id || undefined} aria-busy={opening === featured.id || undefined} onClick={() => void pick(featured.id)}>
             <span className="bot-badged"><Avatar bot={featured} size={48} /><span className="bot-badge" title="Default bot"><Star /></span></span>
             <span className="bot-name">{featured.name}</span>
           </button>
@@ -72,7 +83,7 @@ export function BotsPanel({ bots }: { readonly bots: Bots | undefined }) {
               // A profile name may hold a space, which would split an id list, so the id comes from the row's place.
               const preview = `${ids}-${at}-${row}`
               return (
-                <button key={bot.id} type="button" className="bot" aria-label={bot.name} aria-describedby={preview} aria-current={selected === bot.id || undefined} onClick={() => setPicked(bot.id)}>
+                <button key={bot.id} type="button" className="bot" aria-label={bot.name} aria-describedby={preview} aria-current={selected === bot.id || undefined} aria-busy={opening === bot.id || undefined} onClick={() => void pick(bot.id)}>
                   <Avatar bot={bot} size={32} />
                   <span className="bot-text">
                     <span className="bot-name">{bot.name}</span>
@@ -84,6 +95,7 @@ export function BotsPanel({ bots }: { readonly bots: Bots | undefined }) {
           </section>
         ))}
       </div>
+      {refused !== null && <p className="bots-refused" role="alert">{refused}</p>}
     </aside>
   )
 }

@@ -29,7 +29,7 @@ const OWN_ANSWERS: Readonly<Record<string, (header: Header, reply: Obj, params: 
     return NOTHING
   },
   'session.list': (header, reply, params) => {
-    if (params.scope !== 'stored') header.list ??= reply
+    if (params.scope !== 'stored' && params.title === undefined) header.list ??= reply
     return NOTHING
   },
   'session.events.since': (header, reply) => {
@@ -116,7 +116,7 @@ export function recordingDialer(inner: Dialer, path: string, clock: Clock = syst
         socket.send(text)
       },
       close: () => socket.close()
-    })
+    }, socket.reach)
     socket.onText = text => {
       heard(JSON.parse(text))
       flush()
