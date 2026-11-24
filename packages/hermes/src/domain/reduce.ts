@@ -775,7 +775,11 @@ function say(state: Tracked, line: Item<'settled'>, replaces: (item: Item) => bo
   if (content.run.state === 'running') {
     return editTurn(state, turn => {
       const at = turn.items.findLastIndex(replaces)
-      return at === -1 ? pushItem(turn, line) : { ...turn, items: turn.items.with(at, line) }
+      if (at !== -1) return { ...turn, items: turn.items.with(at, line) }
+      // A line said beside the reply goes above the text still streaming, as Hermes's own TUI
+      // draws it. Sealing that text instead would leave a later interim to replace only its tail.
+      const last = turn.items.at(-1)
+      return last?.kind === 'text' && !last.sealed ? { ...turn, items: turn.items.toSpliced(-1, 0, line) } : pushItem(turn, line)
     })
   }
   const at = content.interlude.findLastIndex(replaces)

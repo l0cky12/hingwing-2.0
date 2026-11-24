@@ -1160,6 +1160,17 @@ describe('what Hermes says', () => {
     ])
   })
 
+  it('keeps the text it is streaming whole when a line is said between deltas, so an interim replaces all of it', () => {
+    const interim: SessionEvent = { type: 'text.sealed', text: 'Reading the notes now.' }
+    const state = feed(live(), event(1, started('t1')), event(2, delta('Reading ')), event(3, status('Compacting…', 'compacting')),
+      event(4, shown('credits')), event(5, delta('the notes')), event(6, interim))
+    expect(openItems(state)).toEqual([
+      { kind: 'status', what: 'line', about: 'compacting', text: 'Compacting…' },
+      { kind: 'status', what: 'notice', key: 'credits', level: 'warn', text: 'notice credits', detail: null, ttlMs: null, seenAt: null, state: 'shown' },
+      { kind: 'text', markdown: 'Reading the notes now.', sealed: true }
+    ])
+  })
+
   it('drops the interlude on a rebuild, since Hermes stores none of it', () => {
     const said = feed(live(), event(1, status('Goal met.'), null))
     const rebuilt = feed(said, { in: 'gap' }, { in: 'attached', attempt: 2, snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 1 } }), replay: null })
