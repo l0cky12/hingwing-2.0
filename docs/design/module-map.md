@@ -19,7 +19,7 @@ highwing-2.0/
     hermes/                      @highwing/hermes        Node. No Electron, no DOM.
       src/
         hub.ts                   public entry "."         openHermes, Hermes, Command, Feed, liveDialer, remoteRoute, Route, checkTarget
-        actor.ts                 private                  one session: owns its Tracked state, makes the calls a state asks for, lends commands a SessionPort
+        actor.ts                 private                  one session: owns its Tracked state, makes the calls a state asks for (attach, resubmit, the facts a watched chat needs), lends commands a SessionPort
         session-commands.ts      private                  one row per command about one chat, over that chat's SessionPort. `versions` stays in hub.ts: it must not attach the chat
         sidebar.ts               private                  stored rows, the running set, deriveSidebar
         roster.ts                private                  botList: what Highwing knows about the bots and their Bot Chats, and when it asks Hermes
@@ -52,13 +52,13 @@ highwing-2.0/
       src/when.ts                                         the words and thresholds for turn times (internal)
   apps/desktop/
     src/ipc-contract.ts          shared by all three      AppTopics, Topic, Push, Bridge, applyPush, Setup, SetupCommand
-    src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows), files.ts (openablePath)
+    src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows), files.ts (openablePath, imagePath, readImage)
       settings.ts                no Electron              parseSettings, loadSettings, saveSettings: connection.json
       drafts.ts                  no Electron              readDraft, draftStore: drafts/, one file per chat's unsent draft
       attachments.ts             no Electron              attachmentStore: attachments/, the files staged for messages; desktopSources: the file dialog and clipboard, or HIGHWING_PICK_FILES
       connection.ts              no Electron              ownConnection, nextSetup, pinnedConnection: the setup state, the saved target, the live Hermes
     src/preload/index.ts         preload                  exposes Bridge: watch, run, file, image, drafts, keepDraft, attachPick, attachPaste and attachDropped
-    src/renderer/                renderer                 store.ts (useTopic), setup/, bots/, chats/, chat/ (Attachments.tsx: chips and sent files), composer/ (drafts.ts: useDraft, useAttachments), chrome/, styles/
+    src/renderer/                renderer                 store.ts (useTopic), setup/, bots/, chats/, chat/ (Attachments.tsx: chips and sent files; drawn.ts: what the window draws of the view), composer/ (drafts.ts: useDraft, useAttachments), chrome/, styles/
   fixtures/                                               *.jsonl, make_fixture.py (run with Hermes's interpreter), profiles/*.json (canned `profiles.list` replies), attach/ (files the attachment recipes stage, from make_attach_files.py)
   scripts/                                                sync-contract.ts, contract-drift.ts
 ```
@@ -74,6 +74,10 @@ highwing-2.0/
 | Whether that session is attached, its stream cursor, its parked frames | the same actor, as the `Gate` value inside its `Tracked` state, changed only through `reduce` | nobody. `Session.sync` is derived from it by `syncOf` at publish time |
 | Revision, text position, paging cursor | the same actor, as `Fence` | nobody |
 | Running, asking, settled | derived from `Session.run` by `activityOf` | nobody stores it |
+| What Hermes said while no turn ran (`interlude`) | the same actor, through `reduce`. The next turn's start seals it into `history` as one entry whose outcome is `interlude` | read through `Hermes.watch`. A rebuild drops it |
+| Hermes's switches for a chat (`tuning`) | the same actor, through `reduce`: a `facts` input tagged with the attach it was read under, and `tuned` after this client's `config.set` | windows send `tune` |
+| Which windows watch a chat | the hub, as a count per chat. A command waiting for an attach watches too and is not counted | the actor asks `watched()` before it reads facts |
+| A tool image's bytes | nobody; main reads the file per request, only when Hermes runs on this computer and only for a path a finished tool of the watched chat named | windows call `file({ action: 'image' })` |
 | Stored list rows and the set of running sessions | `sidebar.ts` | `Sidebar` is derived from them plus each actor's session when published |
 | What Highwing knows about the bots: loading, offline, unsupported, refused, or a roster | `roster.ts`, changed only through its `after` function | read through `Hermes.bots` and the `bots` topic. The hub says when to ask |
 | Where each bot is drawn and its avatar tone | nobody; `rosterOf(facts)` in `domain/bots.ts` computes them from each answer | the renderer draws the roster as given and picks no colour |
@@ -119,6 +123,7 @@ A `message.delta` frame becomes pixels in four steps.
 | Design C | `outline(threadView(session, clock))` compared with a golden text, for each fixture | `@highwing/thread` tests |
 | Soundness at every moment | `checkThread(threadView(session, clock))` on every step of every fixture | same |
 | Find | `findInThread(threadView(session, clock), query)` on the settled errand, counted against `outline` with every row open | same |
+| What Hermes says | `fixtures/says.jsonl`, from Hermes's own emitters: `playToEnd` equals the direct fold, a drop after every push ends in the same session and outline, and `checkThread` holds at every moment | `@highwing/hermes` and `@highwing/thread` tests |
 | The attach order | `reduce` fed the `attached` cases by hand: a catch-up frame that ends the turn, a hole, a new epoch | `domain/` tests |
 | Reconnect | `playToEnd(fixture, { drop })` for a drop after every push, compared with the undisturbed outline | `@highwing/hermes` tests |
 | A gap | the same with `ringFrames` small, so replay answers `snapshot_required` | same |

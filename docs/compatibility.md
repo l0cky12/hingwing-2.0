@@ -131,6 +131,11 @@ machine, then reconnect."
   Hermes refuses either call, the chat shows no version switcher and no error,
   and opens as before. Highwing asks again each time a chat opens. See
   `packages/hermes/src/versions.ts`.
+- If Hermes refuses `config.get` for `show_reasoning`, for any reason,
+  `Session.tuning.reasoning` stays null, so a window shows no reasoning switch.
+  `tune` then answers Hermes's refusal. Reasoning that Hermes streams anyway is
+  still shown. Highwing reads again after the next attach. See "What Hermes
+  says" below.
 
 ## Tokens and the context window
 
@@ -191,6 +196,41 @@ refuses one.
   them alone. The model reads `api_text`.
 - Hermes keeps no record of a message's attachments in its history. A request
   shows its attachments only in the run of Highwing that sent it.
+
+## What Hermes says
+
+Hermes 0.23.3 publishes these events to a local viewer's chat beside the
+reply. Highwing reads each one into the chat's session. A line Hermes says while
+no turn runs goes into `Session.interlude`, and never opens a turn.
+
+| Event | Read as | Source |
+| --- | --- | --- |
+| `reasoning.delta`, `reasoning.available` | A reasoning item: streamed, or one whole block | `gateway/local_viewer_events.py:50-55`, `:129-161` |
+| `moa.progress`, `moa.reference`, `moa.phase`, `moa.aggregating` | One MoA item per round, updated in place | `gateway/local_viewer_events.py:129-161` |
+| `status.update` | A status line, by `kind`: `compacting`, `compacted`, `goal`, `warn`, else other. `process` is not shown yet | `gateway/run_turn_progress.py:1215-1219`, `gateway/run_goals.py:238-246` |
+| `agent.print` | A status line | `gateway/local_viewer_events.py:40-42` |
+| `notification.show`, `notification.clear` | A keyed notice, replaced by a later one with its key, marked cleared by `clear` | `gateway/run_turn_progress.py:1119-1133` |
+| `tool.complete` `image_path` | The image a finished tool names | `gateway/local_viewer_events.py:227-228` |
+| `approval.request`, `clarify.request` `timeout_s` | A prompt's deadline on this client's clock | `gateway/local_viewer_events.py:248-263` |
+
+- Reasoning and MoA progress arrive only while Hermes shows reasoning for the
+  chat. Highwing reads that switch with
+  `config.get {session_id, key: "show_reasoning"}`, which answers `"1"` or `"0"`
+  (`gateway/session_busy_controls.py:90-108`). It reads it when a window starts
+  to watch the chat and after each attach, and sets it with
+  `config.set {session_id, key: "show_reasoning", value: "on" | "off"}`. A
+  change applies from the next turn. A chat launched from the CLI or a
+  messaging platform shows none until it is turned on.
+- A stored reply keeps its reasoning in the display row's `reasoning` key
+  (`tui_gateway/session_history.py:275-281,365`). A rebuild reads it from there. MoA
+  progress, status lines, notices and tool images are not stored, so a rebuild
+  drops them.
+- A notice with a time to live (`kind: "ttl"`) that Highwing hears through
+  replay is dropped, because its time runs on this client's clock.
+- No gateway method returns a tool image's bytes. Main reads the file only when
+  Hermes runs on this computer, and only for a path a finished tool of the
+  watched chat named. With Hermes on another machine the window gets
+  `reason: "remote"`. A fixture replay counts as this computer.
 
 ## When a change needs a newer Hermes route
 
