@@ -1,7 +1,8 @@
-import { activityOf, modelViewOf, type ModelMenu, type PromptId, type PromptReply, type SessionId, type Shown } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type SessionId, type Shown } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
+import type { Editing } from '../composer/edit'
 import { ModelPicker } from '../composer/ModelPicker'
 import { run, useTopic } from '../store'
 import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
@@ -121,8 +122,43 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   }, [id])
   const onFindClosed = useCallback(() => composer.current?.focus(), [])
 
-  const [menu, setMenu] = useState<{ readonly id: SessionId | null; readonly menu: ModelMenu | null }>({ id, menu: null })
   const live = session?.sync.state === 'live'
+  const idle = session !== undefined && activityOf(session).kind === 'idle'
+  const waiting = view !== null && view.pending.some(message => message.status !== 'failed')
+  const [held, setEditing] = useState<(Editing & { readonly id: SessionId | null }) | null>(null)
+  const editing = held !== null && held.id === id ? held : null
+  const [regenerating, setRegenerating] = useState<{ readonly id: SessionId | null; readonly refusal: string } | null>(null)
+  const latestView = useRef(view)
+  latestView.current = view
+  const canEdit = live === true && idle && !waiting
+  const settled = view === null ? 0 : session?.run.state === 'running' ? view.turns.length - 1 : view.turns.length
+  const regenerateTurn = view?.turns[settled - 1]
+  const regenerateKey = regenerateTurn?.rowId == null ? null : regenerateTurn.key
+
+  const onEdit = useCallback((rowId: number, text: string) => {
+    const turns = latestView.current?.turns ?? []
+    const at = turns.findIndex(turn => turn.rowId === rowId)
+    if (at < 0) return
+    setRegenerating(null)
+    setEditing({ id, rowId, later: turns.length - 1 - at, text })
+  }, [id])
+  const onRegenerate = useCallback(async (rowId: number, text: string) => {
+    if (id === null) return
+    setRegenerating(null)
+    const outcome = await run({ do: 'rewind', sessionId: id, rowId, text })
+    if (!outcome.ok) setRegenerating({ id, refusal: outcome.refusal.message })
+  }, [id])
+  const onSend = useCallback(async (text: string): Promise<CommandOutcome<string | null>> => {
+    setRegenerating(null)
+    if (chat.sessionId === null) return run({ do: 'start', bot: chat.bot, text })
+    if (editing === null) return run({ do: 'send', sessionId: chat.sessionId, text })
+    const outcome = await run({ do: 'rewind', sessionId: chat.sessionId, rowId: editing.rowId, text })
+    if (!outcome.ok) return outcome
+    setEditing(null)
+    return { ok: true, value: null }
+  }, [chat, editing])
+
+  const [menu, setMenu] = useState<{ readonly id: SessionId | null; readonly menu: ModelMenu | null }>({ id, menu: null })
   const asked = useRef(0)
   const refreshModels = useCallback(async () => {
     if (id === null) return
@@ -142,7 +178,10 @@ export function Chat({ chat }: { readonly chat: Shown }) {
       <main id="scroll" ref={scroller} onScroll={onScroll}>
         {view !== null && (
           <FileCallContext value={fileCall}>
-            <Thread view={view} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll} />
+            <Thread
+              view={view} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
+              canEdit={canEdit} regenerateKey={regenerateKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
+            />
           </FileCallContext>
         )}
       </main>
@@ -156,7 +195,9 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         inputRef={composer}
         canSend={id === null || live}
         showStop={session !== undefined && activityOf(session).kind !== 'idle'}
-        onSend={text => (chat.sessionId === null ? run({ do: 'start', bot: chat.bot, text }) : run({ do: 'send', sessionId: chat.sessionId, text }))}
+        onSend={onSend}
+        editing={editing}
+        onCancelEdit={() => setEditing(null)}
         onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}
       >
@@ -166,6 +207,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
             onPick={(pick, confirm) => run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) })}
           />
         )}
+        {regenerating !== null && regenerating.id === id && <p className="err refusal">{regenerating.refusal}</p>}
       </Composer>
     </>
   )

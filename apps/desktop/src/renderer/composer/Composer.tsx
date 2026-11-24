@@ -1,6 +1,8 @@
 import type { CommandOutcome, SlashCatalog, SlashEntry } from '@highwing/hermes/domain'
 import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { useTopic } from '../store'
+import type { Editing } from './edit'
+import { RemoveDialog } from './RemoveDialog'
 import { completionOf, menuOf, type Menu } from './slash-menu'
 
 interface ComposerProps {
@@ -10,6 +12,9 @@ interface ComposerProps {
   readonly onSend: (text: string) => Promise<CommandOutcome<string | null>>
   readonly onStop: () => void
   readonly onInput: () => void
+  /** A sent message to send again. Each new object puts its text in the box. null: a new message. */
+  readonly editing?: Editing | null
+  readonly onCancelEdit?: () => void
   readonly children?: ReactNode
 }
 
@@ -21,7 +26,7 @@ const GROUPS = [
   { kind: 'skill', label: 'Skills' }
 ] as const
 
-export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput, children }: ComposerProps) {
+export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput, editing = null, onCancelEdit, children }: ComposerProps) {
   const catalog = useTopic('slash') ?? NO_CATALOG
   const [draft, setDraft] = useState('')
   const [active, setActive] = useState(0)
@@ -30,6 +35,7 @@ export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput,
   const [output, setOutput] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [focused, setFocused] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const sending = useRef(false)
   const ownBox = useRef<HTMLTextAreaElement>(null)
   const box = inputRef ?? ownBox
@@ -47,7 +53,15 @@ export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput,
     if (!caretToEnd.current || element === null) return
     caretToEnd.current = false
     element.setSelectionRange(element.value.length, element.value.length)
-  }, [draft])
+  }, [draft, editing])
+
+  useLayoutEffect(() => {
+    if (editing === null) return
+    caretToEnd.current = true
+    setDraft(editing.text)
+    setRefusal(null)
+    box.current?.focus()
+  }, [editing, box])
 
   const edit = (next: string) => {
     setDraft(next)
@@ -60,8 +74,22 @@ export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput,
     edit(completionOf(entry))
   }
 
-  const submit = async (event?: FormEvent) => {
+  const submit = (event?: FormEvent) => {
     event?.preventDefault()
+    if (!canSend || sending.current || draft.trim() === '') return
+    if (editing !== null && editing.later > 0) setConfirming(true)
+    else void deliver()
+  }
+
+  const cancelEdit = () => {
+    setDraft('')
+    setConfirming(false)
+    onCancelEdit?.()
+    box.current?.focus()
+  }
+
+  const deliver = async () => {
+    setConfirming(false)
     const text = draft.trim()
     if (!canSend || sending.current || text === '') return
     sending.current = true
@@ -89,6 +117,11 @@ export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput,
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.nativeEvent.isComposing) return
     if (menu.open && onMenuKey(event, menu)) return
+    if (event.key === 'Escape' && editing !== null) {
+      event.preventDefault()
+      cancelEdit()
+      return
+    }
     if (event.key !== 'Enter' || event.shiftKey) return
     event.preventDefault()
     void submit()
@@ -120,6 +153,12 @@ export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput,
           </div>
         </div>
       )}
+      {editing !== null && (
+        <div className="editing">
+          <span>Editing a sent message</span>
+          <button type="button" onClick={cancelEdit}>Cancel</button>
+        </div>
+      )}
       <form onSubmit={submit}>
         <textarea
           ref={box} rows={1} placeholder="Ask Hermes to do something" aria-label="Message Hermes" value={draft}
@@ -133,6 +172,13 @@ export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput,
       </form>
       {children}
       {refusal !== null && <p className="err refusal">{refusal}</p>}
+      {confirming && editing !== null && (
+        <RemoveDialog
+          later={editing.later}
+          onCancel={() => { setConfirming(false); box.current?.focus() }}
+          onConfirm={() => void deliver()}
+        />
+      )}
       <pre className="slash-output" role="status" aria-label="Command output" aria-busy={pending}>{output}</pre>
     </footer>
   )
