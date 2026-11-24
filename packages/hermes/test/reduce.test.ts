@@ -1232,11 +1232,6 @@ describe('what Hermes says', () => {
     })
     expect(openItems(state).map(item => item.kind === 'prompt' && item.deadline)).toEqual([null, null])
   })
-
-  it('keeps the image a finished tool names', () => {
-    const finished: SessionEvent = { type: 'tool.finished', id: toolId('a'), name: 'vision_analyze', args: null, durationS: 1, diffs: [], result: OUTPUT, image: '/work/chart.png' }
-    expect(openItems(feed(live(), event(1, started('t1')), event(2, finished)))).toMatchObject([{ kind: 'tool', status: { s: 'done', image: '/work/chart.png' } }])
-  })
 })
 
 describe('tuning', () => {

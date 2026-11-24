@@ -227,10 +227,9 @@ no turn runs goes into `Session.interlude`, and never opens a turn.
   drops them.
 - A notice with a time to live (`kind: "ttl"`) that Highwing hears through
   replay is dropped, because its time runs on this client's clock.
-- No gateway method returns a tool image's bytes. Main reads the file only when
-  Hermes runs on this computer, and only for a path a finished tool of the
-  watched chat named. With Hermes on another machine the window gets
-  `reason: "remote"`. A fixture replay counts as this computer.
+- No gateway method returns a tool image's bytes. Main's one image loader,
+  `apps/desktop/src/main/images.ts`, reads the file only when Hermes runs on
+  this computer, and only for a path a finished tool of the watched chat named.
 
 ## When a change needs a newer Hermes route
 

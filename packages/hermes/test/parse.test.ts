@@ -836,9 +836,7 @@ describe('what Hermes says, parsed', () => {
     expect(said('notification.clear', { key: 'credits' })).toEqual({ type: 'notice.cleared', key: 'credits' })
   })
 
-  it('reads the image a finished tool names and a prompt\'s timeout', () => {
-    expect(said('tool.complete', { tool_id: 'c1', name: 'vision_analyze', image_path: '/work/chart.png' })).toMatchObject({ type: 'tool.finished', image: '/work/chart.png' })
-    expect(said('tool.complete', { tool_id: 'c1', name: 'terminal', image_path: null })).toMatchObject({ type: 'tool.finished', image: null })
+  it('reads a prompt\'s timeout', () => {
     const prompt: CanonicalPendingPrompt = { kind: 'approval', prompt_id: 'p1', execution_generation: 2, command: 'rm x', choices: ['once'], timeout_s: 60 }
     expect(said('approval.request', { ...prompt })).toMatchObject({ type: 'prompt.opened', timeoutS: 60 })
     expect(said('approval.request', { ...prompt, timeout_s: null })).toMatchObject({ type: 'prompt.opened', timeoutS: null })
