@@ -141,7 +141,7 @@ describe('validators', () => {
 
 const still = <T>(value: T) => ({ get: () => value, subscribe: () => () => {} })
 const LINK: Link = { state: 'blocked', why: 'hermes-missing', message: 'A link of this test.' }
-const SIDEBAR: Sidebar = { status: 'stale', rows: [] }
+const SIDEBAR: Sidebar = { bot: null, status: 'stale', rows: [] }
 const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] } }
 const NOTHING_OPEN: OpenChat = { shown: null, opening: null }
 

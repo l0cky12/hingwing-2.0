@@ -29,20 +29,22 @@ describe('the errand, played through the real client', () => {
     expect(played.history[0]?.began).toEqual({ at: expect.any(Number), clock: 'client' })
   })
 
-  it('opens with the handshake, one resume with history, both lists, the slash catalog and the bots, then makes the story\'s two calls', async () => {
+  it('opens with the handshake, one resume with history, the three lists, the slash catalog and the bots, then makes the story\'s two calls', async () => {
     const { script } = (await moments(fixture)).at(-1) as Moment
     expect(script.dials).toBe(1)
     const sent = methodsOf(script.received)
     expect(sent.map(call => call.method)).toEqual([
-      'client.capabilities', 'runtime.describe', 'session.resume', 'session.list', 'session.list', 'commands.catalog', 'profiles.list', 'session.stats', 'session.stats',
+      'client.capabilities', 'runtime.describe', 'session.resume', 'session.list', 'session.list', 'session.list', 'commands.catalog', 'profiles.list', 'session.stats', 'session.stats',
       'prompt.submit', 'approval.respond', 'session.stats'
     ])
     expect(sent[2]?.params).toEqual({ session_id: fixture.header.sessionId, display_projection: true })
-    expect(sent.slice(3, 5).map(call => call.params)).toEqual([{ scope: 'live' }, { scope: 'stored', limit: 100 }])
-    expect(sent[5]?.params).toEqual({})
-    expect(sent[6]?.params).toEqual({ include_sessions: true })
-    expect(sent[9]?.params).toEqual((fixture.steps[stepOf('prompt.submit')] as { params: unknown }).params)
-    expect(sent[10]?.params).toEqual((fixture.steps[stepOf('approval.respond')] as { params: unknown }).params)
+    expect(sent.slice(3, 6).map(call => call.params)).toEqual([
+      { scope: 'live', picker: true }, { scope: 'live', include_hidden: true }, { scope: 'stored', limit: 100, include_hidden: true, picker: true }
+    ])
+    expect(sent[6]?.params).toEqual({})
+    expect(sent[7]?.params).toEqual({ include_sessions: true })
+    expect(sent[10]?.params).toEqual((fixture.steps[stepOf('prompt.submit')] as { params: unknown }).params)
+    expect(sent[11]?.params).toEqual((fixture.steps[stepOf('approval.respond')] as { params: unknown }).params)
   })
 
   it('yields the session at every step that changed it', async () => {

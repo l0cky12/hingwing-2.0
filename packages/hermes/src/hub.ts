@@ -27,6 +27,7 @@ export interface Feed<T> {
 
 export interface Hermes {
   readonly link: Feed<Link>
+  /** The chats of the open chat's bot, or of the socket's own profile when the open chat has no bot. It follows the open chat to another bot. */
   readonly sidebar: Feed<Sidebar>
   /** The commands and skills a `/` line can run, read once per connection. Empty when Hermes has no catalog or refused it. */
   readonly slash: Feed<SlashCatalog>
@@ -37,8 +38,9 @@ export interface Hermes {
   readonly bots: Feed<Bots>
   /**
    * Which chat the window shows. Before any click it is the default bot's chat, or the newest chat
-   * on a Hermes that cannot switch bots. After that only `run({ do: 'open' })`, `run({ do: 'start' })`
-   * and a `/new` move it, and a bot's chat follows the bot to the Bot Chat Hermes names for it.
+   * on a Hermes that cannot switch bots. After that only `run({ do: 'open' })` (a bot, a new chat or
+   * a chat from the sidebar), `run({ do: 'start' })` and a `/new` move it, and a bot's Bot Chat
+   * follows the bot to the Bot Chat Hermes names for it.
    */
   readonly open: Feed<OpenChat>
   /**
@@ -92,7 +94,7 @@ function feed<T>(initial: T, same: (a: T, b: T) => boolean = Object.is): Feed<T>
 }
 
 function sameSidebar(a: Sidebar, b: Sidebar): boolean {
-  return a.status === b.status && a.rows.length === b.rows.length && a.rows.every((row, index) => {
+  return a.bot === b.bot && a.status === b.status && a.rows.length === b.rows.length && a.rows.every((row, index) => {
     const other = b.rows[index]
     return other !== undefined && row.id === other.id && row.title === other.title && row.preview === other.preview
       && row.lastActiveAt === other.lastActiveAt && row.badge === other.badge
@@ -188,11 +190,17 @@ export function openHermes(options: HermesOptions): Hermes {
     sidebar.set(deriveSidebar(list, settled))
   }
 
-  const desk = chatDesk({ conn, client: options.client, mintId, changed: () => open.set(desk.open) })
+  const desk = chatDesk({
+    conn, client: options.client, mintId,
+    changed: () => {
+      open.set(desk.open)
+      list.follow(desk.open.shown?.bot ?? null)
+    }
+  })
   const open = feed<OpenChat>(desk.open, sameOpen)
   const settle = () => desk.settle({ bots: roster.bots, named: roster.chats, list: { status: list.status, newest: list.rows[0]?.id ?? null } })
 
-  const list = sessionList(conn, () => {
+  const list = sessionList(conn, desk.listed, () => {
     publishSidebar()
     retain()
     settle()

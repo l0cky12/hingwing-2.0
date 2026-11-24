@@ -6,6 +6,7 @@
  * Nothing here names a wire field. `wire/parse.ts` is the only producer from gateway data.
  * Entry point: `@highwing/hermes/domain` (browser-safe).
  */
+import type { BotId } from './bots'
 
 declare const brand: unique symbol
 type Brand<T, B extends string> = T & { readonly [brand]: B }
@@ -275,6 +276,8 @@ export type Link =
   | { readonly state: 'blocked'; readonly why: BlockedWhy; readonly message: string }
 
 export interface Sidebar {
+  /** Whose chats the rows are: the bot of the open chat. null: the socket's own profile. */
+  readonly bot: BotId | null
   readonly status: 'loading' | 'ready' | 'stale'
   readonly rows: readonly SidebarRow[]
 }
