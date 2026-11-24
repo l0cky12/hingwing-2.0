@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   activityOf, emptyTracked, reduce, sessionOf, shareOf, syncOf,
-  type Gate, type SessionEvent, type SessionInput, type Snapshot, type StampedEvent, type Tracked
+  type Gate, type HelperUpdate, type SessionEvent, type SessionInput, type Snapshot, type StampedEvent, type Tracked
 } from '../src/domain/reduce'
 import type { ModelMenu } from '../src/domain/command'
 import { modelViewOf, sameModel } from '../src/domain/model'
 import type {
-  Ask, ContextFill, Generation, InputId, Link, ModelId, ModelRef, OpenTurn, Outcome, PromptId, SessionContent, SessionId, SessionUsage, SettledTurn,
-  Tokens, ToolId, ToolResult, TurnId
+  Ask, ContextFill, Generation, HelperId, HelperItem, InputId, Item, Link, ModelId, ModelRef, OpenTurn, Outcome, PromptId, SessionContent, SessionId,
+  SessionUsage, SettledTurn, Tokens, ToolId, ToolResult, TurnId
 } from '../src/domain/session'
 
 const EPOCH = 'e1'
@@ -864,5 +864,226 @@ describe('rewinding', () => {
   it('leaves the row unknown when the receipt names none', () => {
     const state = feed(live(), event(1, started('t1')), event(2, ended(COMPLETE, 'Done', [7, 8])))
     expect(state.content.history[0]?.request?.rowId).toBeNull()
+  })
+})
+
+describe('reasoning, the plan and helpers', () => {
+  const thought = (text: string, whole = false): SessionEvent => ({ type: 'reasoning', text, whole })
+  const plan = (revision: number, ...done: string[]): SessionEvent => ({
+    type: 'plan', revision, entries: ['1', '2'].map(id => ({ id, text: `step ${id}`, status: done.includes(id) ? 'completed' : 'pending', parentId: null }))
+  })
+  const helper = (id: string, update: HelperUpdate, over: { parentId?: string; toolCount?: number } = {}): SessionEvent => ({
+    type: 'helper', id: id as HelperId, parentId: (over.parentId ?? null) as HelperId | null, depth: over.parentId === undefined ? 0 : 1,
+    goal: `goal of ${id}`, toolCount: over.toolCount ?? null, update
+  })
+  const TOOL: HelperUpdate = { is: 'tool', name: 'terminal', preview: 'du -sh' }
+  const DONE: HelperUpdate = { is: 'ended', status: 'completed', durationS: 3, summary: 'Plenty of room.' }
+  const at = (seq: number, sessionEvent: SessionEvent, seenAt: number | null, gen = 1) => event(seq, sessionEvent, gen, EPOCH, seenAt)
+  const helperIn = (items: readonly Item<'open' | 'settled'>[], id: string) => items.find(item => item.kind === 'helper' && item.id === id)
+
+  describe('reasoning', () => {
+    it('streams a block from its first delta, and seals it when the agent moves on to a tool', () => {
+      const streaming = feed(live(), event(1, started('t1')), at(2, thought('Disk '), 100), at(3, thought('full?'), 150))
+      expect(openItems(streaming)).toEqual([{ kind: 'reasoning', text: 'Disk full?', sealed: false, startedAt: 100, endedAt: null }])
+      expect(openItems(reduce(streaming, at(4, toolStarted('ls'), 900)))[0]).toEqual({ kind: 'reasoning', text: 'Disk full?', sealed: true, startedAt: 100, endedAt: 900 })
+    })
+
+    it.each<[string, SessionEvent]>([
+      ['text', delta('So.')], ['a sealed segment', { type: 'text.sealed', text: null }], ['a tool announced', { type: 'tool.announced', name: 'ls' }],
+      ['a tool finished', toolFinished('ls')], ['a prompt', promptOpened('p1')], ['a notice', { type: 'notice', tone: 'info', text: 'Hi' }], ['the plan', plan(1)]
+    ])('seals the block on %s', (_, next) => {
+      const sealed = feed(live(), event(1, started('t1')), at(2, thought('Hmm'), 100), at(3, next, 200))
+      expect(openItems(sealed)[0]).toMatchObject({ kind: 'reasoning', sealed: true, endedAt: 200 })
+    })
+
+    it('keeps one block through a helper\'s frames and the spinner, and appends past the helper they pushed', () => {
+      const state = feed(
+        live(), event(1, started('t1')), event(2, thought('Log says ')), event(3, helper('sa-1', { is: 'queued' })), event(4, { type: 'thinking' }),
+        event(5, helper('sa-1', { is: 'working', doing: 'thinking' })), event(6, thought('disk full.'))
+      )
+      expect(openItems(state).map(item => item.kind)).toEqual(['reasoning', 'helper'])
+      expect(openItems(state)[0]).toMatchObject({ text: 'Log says disk full.', sealed: false })
+    })
+
+    it('shows a block once when Hermes sends it whole after its deltas, sealed or still open', () => {
+      const deltas = feed(live(), event(1, started('t1')), at(2, thought('Plan: '), 100), at(3, thought('check disk'), 110))
+      const wholeWhileOpen = reduce(deltas, at(4, thought('Plan: check disk', true), 120))
+      expect(openItems(wholeWhileOpen)).toEqual([{ kind: 'reasoning', text: 'Plan: check disk', sealed: true, startedAt: 100, endedAt: 120 }])
+      const sealedFirst = feed(deltas, at(4, toolStarted('ls'), 130), at(5, thought('Plan: check disk', true), 140))
+      expect(openItems(sealedFirst).filter(item => item.kind === 'reasoning')).toHaveLength(1)
+      expect(sealedFirst.content.run).toEqual(reduce(deltas, at(4, toolStarted('ls'), 130)).content.run)
+    })
+
+    it('keeps a long streamed block whole when Hermes sends only its first 500 characters', () => {
+      const long = `${'disk '.repeat(150)}full.`
+      const deltas = feed(live(), event(1, started('t1')), at(2, thought(long), 100))
+      const whileOpen = reduce(deltas, at(3, thought(long.slice(0, 500), true), 120))
+      expect(openItems(whileOpen)).toEqual([{ kind: 'reasoning', text: long, sealed: true, startedAt: 100, endedAt: 120 }])
+      const sealedFirst = feed(deltas, at(3, toolStarted('ls'), 130), at(4, thought(long.slice(0, 500), true), 140))
+      expect(openItems(sealedFirst).filter(item => item.kind === 'reasoning')).toEqual([{ kind: 'reasoning', text: long, sealed: true, startedAt: 100, endedAt: 130 }])
+    })
+
+    it('pushes a whole block it has not seen as sealed, with no times', () => {
+      const state = feed(live(), event(1, started('t1')), at(2, thought('All at once.', true), 100))
+      expect(openItems(state)).toEqual([{ kind: 'reasoning', text: 'All at once.', sealed: true, startedAt: null, endedAt: null }])
+    })
+
+    it('opens a run for reasoning that arrives first, and ignores an empty delta', () => {
+      const state = reduce(live(), event(1, thought('First.')))
+      expect(state.content.run).toMatchObject({ state: 'running', generation: 1 })
+      expect(reduce(state, event(2, thought(''))).content).toBe(state.content)
+    })
+
+    it('seals a block left open when the turn ends, with no end time', () => {
+      const state = feed(live(), event(1, started('t1')), at(2, thought('Hmm'), 100), event(3, ended(COMPLETE)))
+      expect(state.content.history[0]?.items).toEqual([{ kind: 'reasoning', text: 'Hmm', sealed: true, startedAt: 100, endedAt: null }])
+    })
+  })
+
+  describe('the plan', () => {
+    it('keeps one plan per turn, replaced in place by a newer revision only', () => {
+      const first = feed(live(), event(1, started('t1')), event(2, plan(1)), event(3, toolStarted('ls')))
+      const newer = reduce(first, event(4, plan(2, '1')))
+      expect(openItems(newer).map(item => item.kind)).toEqual(['plan', 'tool'])
+      expect(openItems(newer)[0]).toMatchObject({ revision: 2, entries: [{ status: 'completed' }, { status: 'pending' }] })
+      expect(openItems(newer)[1]).toBe(openItems(first)[1])
+      expect(reduce(newer, event(5, plan(2))).content).toBe(newer.content)
+      expect(reduce(newer, event(5, plan(1, '1', '2'))).content).toBe(newer.content)
+    })
+
+    it('starts a new plan in the next turn', () => {
+      const state = feed(live(), event(1, started('t1')), event(2, plan(1)), event(3, ended(COMPLETE)), event(4, started('t2'), 2), event(5, plan(3), 2))
+      expect(state.content.history[0]?.items).toMatchObject([{ kind: 'plan', revision: 1 }])
+      expect(openItems(state)).toMatchObject([{ kind: 'plan', revision: 3 }])
+    })
+  })
+
+  describe('helpers', () => {
+    it('puts a helper that starts while the agent writes above the streaming text, and leaves the text open', () => {
+      const writing = feed(live(), event(1, started('t1')), event(2, delta('I will check ')))
+      const nested = feed(writing, event(3, helper('sa-2', TOOL, { parentId: 'sa-1' })), event(4, delta('the logs.')))
+      expect(openItems(nested).map(item => item.kind)).toEqual(['helper', 'text'])
+      expect(openItems(nested)[1]).toEqual({ kind: 'text', markdown: 'I will check the logs.', sealed: false })
+      const interim = feed(writing, event(3, helper('sa-2', TOOL, { parentId: 'sa-1' })), event(4, { type: 'text.sealed', text: 'I will check the logs.' }))
+      expect(openItems(interim).filter(item => item.kind === 'text')).toEqual([{ kind: 'text', markdown: 'I will check the logs.', sealed: true }])
+    })
+
+    it('follows a helper from queued to working, through its tools, to its end, keeping the larger tool count', () => {
+      const queued = feed(live(), event(1, started('t1')), event(2, helper('sa-1', { is: 'queued' }, { toolCount: 0 })))
+      expect(helperIn(openItems(queued), 'sa-1')).toEqual({
+        kind: 'helper', id: 'sa-1', parentId: null, depth: 0, goal: 'goal of sa-1', state: { s: 'queued' }, toolCount: 0, steps: []
+      })
+      const progressed = reduce(queued, event(3, helper('sa-1', { is: 'progress' })))
+      expect(helperIn(openItems(progressed), 'sa-1')).toMatchObject({ state: { s: 'working', doing: null } })
+      const tooled = feed(progressed, event(4, helper('sa-1', TOOL, { toolCount: 2 })), event(5, helper('sa-1', { is: 'progress' }, { toolCount: 1 })))
+      expect(helperIn(openItems(tooled), 'sa-1')).toMatchObject({ state: { s: 'working', doing: 'tool' }, toolCount: 2, steps: [{ kind: 'tool', name: 'terminal', preview: 'du -sh' }] })
+      const done = feed(tooled, event(6, helper('sa-1', DONE)), event(7, helper('sa-1', { is: 'working', doing: 'thinking' })), event(8, helper('sa-1', TOOL)))
+      expect(helperIn(openItems(done), 'sa-1')).toMatchObject({ state: { s: 'ended', status: 'completed', durationS: 3, summary: 'Plenty of room.' }, steps: [{ kind: 'tool' }] })
+    })
+
+    it('starts a helper first heard of mid-tool with that tool as its first step', () => {
+      const state = feed(live(), event(1, started('t1')), event(2, helper('sa-1', TOOL)))
+      expect(helperIn(openItems(state), 'sa-1')).toMatchObject({ state: { s: 'working', doing: 'tool' }, steps: [{ kind: 'tool', name: 'terminal' }] })
+    })
+
+    it('updates a helper in the settled turn that started it, and keeps every other turn\'s identity', () => {
+      const settled = feed(
+        live(), event(1, started('t1')), event(2, ended(COMPLETE)),
+        event(3, started('t2'), 2), event(4, helper('sa-1', { is: 'working', doing: null }), 2), event(5, ended(COMPLETE), 2),
+        event(6, started('t3'), 3), event(7, ended(COMPLETE), 3)
+      )
+      const after = reduce(settled, event(8, helper('sa-1', DONE), null))
+      const [before1, before2, before3] = settled.content.history
+      const [after1, after2, after3] = after.content.history
+      expect(after1).toBe(before1)
+      expect(after3).toBe(before3)
+      expect(after2).not.toBe(before2)
+      expect(helperIn(after2?.items ?? [], 'sa-1')).toMatchObject({ state: { s: 'ended', status: 'completed' } })
+      expect(after.content.run).toBe(settled.content.run)
+      expect(reduce(after, event(9, helper('sa-1', { is: 'progress' }), null)).content).toBe(after.content)
+    })
+
+    it('lands a helper frame of an older generation while a newer run is open', () => {
+      const state = feed(
+        live(), event(1, started('t1')), event(2, helper('sa-1', { is: 'working', doing: null })), event(3, ended(COMPLETE)), event(4, started('t2'), 2)
+      )
+      const after = reduce(state, event(5, helper('sa-1', DONE), 1))
+      expect(helperIn(after.content.history[0]?.items ?? [], 'sa-1')).toMatchObject({ state: { s: 'ended' } })
+      expect(openItems(after)).toEqual([])
+    })
+
+    it('drops a frame for a helper it never saw when no run of its generation is open', () => {
+      const idle = feed(live(), event(1, started('t1')), event(2, ended(COMPLETE)))
+      const unknown = reduce(idle, event(3, helper('sa-9', DONE)))
+      expect(unknown.content).toBe(idle.content)
+      const newer = feed(idle, event(3, started('t2'), 2))
+      expect(reduce(newer, event(4, helper('sa-9', { is: 'queued' }), 1)).content).toBe(newer.content)
+      expect(openItems(reduce(newer, event(4, helper('sa-9', { is: 'queued' }), null))).map(item => item.kind)).toEqual(['helper'])
+    })
+
+    it('lists a helper\'s own helper as its step once, and keeps it in its parent\'s turn after that turn settled', () => {
+      const parent = feed(live(), event(1, started('t1')), event(2, helper('sa-1', { is: 'working', doing: null })))
+      const child = feed(parent, event(3, helper('sa-2', { is: 'queued' }, { parentId: 'sa-1' })), event(4, helper('sa-2', { is: 'progress' }, { parentId: 'sa-1' })))
+      expect(helperIn(openItems(child), 'sa-1')).toMatchObject({ steps: [{ kind: 'helper', id: 'sa-2' }] })
+      expect(helperIn(openItems(child), 'sa-2')).toMatchObject({ parentId: 'sa-1', depth: 1, state: { s: 'working' } })
+
+      const later = feed(parent, event(3, ended(COMPLETE)), event(4, started('t2'), 2), event(5, helper('sa-2', TOOL, { parentId: 'sa-1' }), 2))
+      expect(openItems(later)).toEqual([])
+      expect(later.content.history[0]?.items.map(item => item.kind === 'helper' ? `${item.id}:${item.steps.map(step => step.kind).join(',')}` : item.kind))
+        .toEqual(['sa-1:helper', 'sa-2:tool'])
+    })
+
+    it('settles a turn with a working helper as it is: Hermes runs helpers in the background', () => {
+      const state = feed(live(), event(1, started('t1')), event(2, helper('sa-1', { is: 'working', doing: null })), event(3, ended(COMPLETE)))
+      expect(helperIn(state.content.history[0]?.items ?? [], 'sa-1')).toMatchObject({ state: { s: 'working' } })
+    })
+
+    it('does not repeat the answer when a helper joins the turn while the answer streams', () => {
+      const state = feed(
+        live(), event(1, started('t1')), event(2, helper('sa-1', { is: 'working', doing: null })), event(3, delta('All ')),
+        event(4, helper('sa-2', { is: 'queued' }, { parentId: 'sa-1' })), event(5, delta('done.')), event(6, ended(COMPLETE, 'All done.'))
+      )
+      expect(state.content.history[0]?.items.map(item => item.kind === 'text' ? item.markdown : item.kind)).toEqual(['helper', 'helper', 'All done.'])
+    })
+  })
+
+  describe('activityOf', () => {
+    const tool = { kind: 'tool', id: toolId('a'), name: 'terminal', args: {}, status: { s: 'running', note: null } } as const
+    const text = { kind: 'text', markdown: 'Wri', sealed: false } as const
+    const reasoning = { kind: 'reasoning', text: 'Hmm', sealed: false, startedAt: null, endedAt: null } as const
+    const helping = (id: string, state: HelperItem['state'], parentId: string | null = null): HelperItem =>
+      ({ kind: 'helper', id: id as HelperId, parentId: parentId as HelperId | null, depth: parentId === null ? 0 : 1, goal: id, state, toolCount: null, steps: [] })
+    const WORKS: HelperItem['state'] = { s: 'working', doing: null }
+    const session = (items: OpenTurn['items'], announced: string | null = null): SessionContent => ({
+      ...live().content,
+      run: { state: 'running', generation: generation(1), stop: 'none', turn: { id: turnId('t1'), request: null, began: null, items, announced } }
+    })
+
+    it('ranks working and writing above reasoning, reasoning above helping, and helping above preparing', () => {
+      const helper = helping('sa-1', WORKS)
+      expect(activityOf(session([reasoning, helper, tool]))).toEqual({ kind: 'working', item: 2 })
+      expect(activityOf(session([reasoning, helper, text]))).toEqual({ kind: 'writing' })
+      expect(activityOf(session([reasoning, helper]))).toEqual({ kind: 'reasoning', item: 0 })
+      expect(activityOf(session([helper], 'read_file'))).toEqual({ kind: 'helping', item: 0 })
+      expect(activityOf(session([{ ...reasoning, sealed: true }], 'read_file'))).toEqual({ kind: 'preparing', tool: 'read_file' })
+    })
+
+    it('points helping at the newest helper the agent started that has not ended', () => {
+      const items = [helping('sa-1', WORKS), helping('sa-2', { s: 'queued' }), helping('sa-3', WORKS, 'sa-1'), helping('sa-4', { s: 'ended', status: 'failed', durationS: null, summary: null })]
+      expect(activityOf(session(items))).toEqual({ kind: 'helping', item: 1 })
+    })
+
+    it('is idle with a helper still working in a settled turn', () => {
+      const state = feed(live(), event(1, started('t1')), event(2, helper('sa-1', { is: 'working', doing: null })), event(3, ended(COMPLETE)))
+      expect(activityOf(state.content)).toEqual({ kind: 'idle' })
+    })
+  })
+
+  it.each<[string, SessionEvent]>([
+    ['a reasoning delta', thought('Hmm')], ['a whole reasoning block', thought('Hmm', true)], ['the plan', plan(1)],
+    ['a helper queued', helper('sa-1', { is: 'queued' })], ['a helper tool', helper('sa-1', TOOL)], ['a helper end', helper('sa-1', DONE)]
+  ])('changes nothing when %s arrives a second time', (_, sessionEvent) => {
+    const once = feed(live(), event(1, started('t1')), event(2, helper('sa-1', { is: 'working', doing: null })), at(3, sessionEvent, 100))
+    expect(reduce(once, at(3, sessionEvent, 100)).content).toBe(once.content)
   })
 })

@@ -82,7 +82,8 @@ export function sessionList(conn: Connection, changed: () => void): SessionList 
 }
 
 const BADGES = {
-  idle: 'none', thinking: 'running', preparing: 'running', writing: 'running', working: 'running', stopping: 'running', asking: 'asking'
+  idle: 'none', thinking: 'running', preparing: 'running', writing: 'running', working: 'running', reasoning: 'running', helping: 'running',
+  stopping: 'running', asking: 'asking'
 } as const satisfies Record<ReturnType<typeof activityOf>['kind'], SidebarRow['badge']>
 
 export function deriveSidebar(list: Pick<SessionList, 'status' | 'rows' | 'running'>, attached: ReadonlyMap<SessionId, SessionContent>): Sidebar {

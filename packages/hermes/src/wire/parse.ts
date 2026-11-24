@@ -4,9 +4,9 @@
  */
 import type { BotFacts, BotId } from '../domain/bots'
 import type { ContextBreakdown, ModelConfirm, ModelMenu } from '../domain/command'
-import type { Admission, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
+import type { Admission, HelperUpdate, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type {
-  Ask, Began, FileDiff, Generation, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PromptId, SessionId,
+  Ask, Began, FileDiff, Generation, HelperEnd, HelperId, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, PromptId, SessionId,
   SessionUsage, SettledTurn, SidebarRow, ToolId, ToolResult, TurnId
 } from '../domain/session'
 import type { SlashCatalog, SlashEntry } from '../domain/slash'
@@ -14,17 +14,17 @@ import type {
   CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalProfilesResult, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
   CanonicalSnapshot, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
   MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult,
-  SessionStats, SessionTitlePayload, SessionUsagePayload, StoredTranscriptResult, StoredTranscriptRow, ToolCompletePayload, ToolGeneratingPayload,
-  ToolProgressPayload, ToolStartPayload, Usage
+  SessionStats, SessionTitlePayload, SessionUsagePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload, SubagentEventPayload,
+  TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage
 } from './contract.generated'
 
 export type ParsedEvent =
   /** One shown frame of a session's stream: a session id, a seq and a replay epoch on the envelope, and a payload we use. */
   | { readonly scope: 'session'; readonly sessionId: SessionId; readonly type: string; readonly stamp: Stamp; readonly event: SessionEvent }
   /**
-   * A frame of a session's stream with nothing to show: a type we leave out for now (subagent.*,
-   * todo.updated, reasoning text, status.update), or a payload we could not use. It still reaches the
-   * session, so the cursor moves and the frame is not mistaken for a hole.
+   * A frame of a session's stream with nothing to show: a type we leave out for now (status.update,
+   * session.usage), or a payload we could not use. It still reaches the session, so the cursor moves
+   * and the frame is not mistaken for a hole.
    */
   | { readonly scope: 'session'; readonly sessionId: SessionId; readonly type: string; readonly stamp: Stamp; readonly event: null; readonly skipped: 'unshown' | 'invalid' }
   /**
@@ -208,6 +208,50 @@ function modelOf(model: string | null | undefined, provider: string | null | und
   return model ? { id: model as ModelId, provider: provider || null } : null
 }
 
+const PLAN_STATUSES: readonly string[] = ['pending', 'in_progress', 'completed', 'cancelled'] satisfies PlanEntry['status'][]
+
+const idOf = (raw: unknown): string | null => (isString(raw) && raw !== '' ? raw : isFiniteNumber(raw) ? String(raw) : null)
+
+function planEntryOf(raw: unknown): PlanEntry[] {
+  if (!isObject(raw)) return []
+  const id = idOf(raw.id)
+  const text = words(raw.content)
+  if (id === null || text === null) return []
+  const status = isString(raw.status) && PLAN_STATUSES.includes(raw.status) ? raw.status as PlanEntry['status'] : 'pending'
+  return [{ id, text, status, parentId: idOf(raw.parent) }]
+}
+
+const HELPER_ENDS: { readonly [status: string]: HelperEnd } = {
+  completed: 'completed', failed: 'failed', error: 'failed', timeout: 'timeout', interrupted: 'interrupted'
+}
+
+type SubagentFields = ReturnType<typeof fields<SubagentEventPayload>>
+
+/** A `subagent.*` frame. Older emitters omit `subagent_id`; the delegation and task index name the helper then. */
+const helperFrame = (update: (p: SubagentFields) => HelperUpdate): Shown => payload => {
+  const p = fields<SubagentEventPayload>(payload)
+  return {
+    type: 'helper',
+    id: (p.optStr('subagent_id') || `${p.optStr('delegation_id') ?? 'task'}:${p.int('task_index')}`) as HelperId,
+    parentId: (p.optStr('parent_id') || null) as HelperId | null,
+    depth: p.optInt('depth') ?? 0,
+    goal: p.str('goal'),
+    toolCount: p.optInt('tool_count'),
+    update: update(p)
+  }
+}
+
+function helperEnd(p: SubagentFields): HelperUpdate {
+  const status = p.optStr('status')
+  const summary = stripAnsi(p.optStr('summary') ?? '')
+  return {
+    is: 'ended',
+    status: status === null ? 'completed' : Object.hasOwn(HELPER_ENDS, status) ? HELPER_ENDS[status]! : 'failed',
+    durationS: p.optNum('duration_seconds'),
+    summary: summary.trim() === '' ? null : summary
+  }
+}
+
 const promptOpened: Shown = payload => ({ type: 'prompt.opened', ...promptOf(payload) })
 const promptSettled: Shown = payload => ({ type: 'prompt.settled', id: fields<PromptSettledPayload>(payload).str('prompt_id') as PromptId })
 
@@ -250,6 +294,22 @@ export const SHOWN: { readonly [type: string]: Shown } = {
   },
   /** Spinner text while a model request is in flight (`gateway/local_viewer_events.py:44`). */
   'thinking.delta': () => ({ type: 'thinking' }),
+  'reasoning.delta': payload => ({ type: 'reasoning', text: fields<StreamDeltaPayload>(payload).str('text'), whole: false }),
+  /** The whole block, which may repeat the deltas Hermes already streamed for it. */
+  'reasoning.available': payload => ({ type: 'reasoning', text: fields<StreamDeltaPayload>(payload).str('text'), whole: true }),
+  'todo.updated': payload => {
+    const p = fields<TodoUpdatedPayload>(payload)
+    const todos = p.optList('todos')
+    if (todos === null) throw new Unusable()
+    const entries = todos.flatMap(planEntryOf)
+    return { type: 'plan', revision: p.int('revision'), entries: entries.filter((entry, index) => entries.findIndex(other => other.id === entry.id) === index) }
+  },
+  'subagent.spawn_requested': helperFrame(() => ({ is: 'queued' })),
+  'subagent.start': helperFrame(() => ({ is: 'working', doing: null })),
+  'subagent.thinking': helperFrame(() => ({ is: 'working', doing: 'thinking' })),
+  'subagent.progress': helperFrame(() => ({ is: 'progress' })),
+  'subagent.tool': helperFrame(p => ({ is: 'tool', name: p.optStr('tool_name') || 'tool', preview: p.optStr('tool_preview') || p.optStr('text') || null })),
+  'subagent.complete': helperFrame(helperEnd),
   'tool.generating': payload => ({ type: 'tool.announced', name: fields<ToolGeneratingPayload>(payload).str('name') }),
   'tool.start': payload => {
     const p = fields<ToolStartPayload>(payload)
@@ -318,11 +378,9 @@ export const UNSHOWN: ReadonlySet<string> = new Set([
   'message.reaction', 'moa.aggregating', 'moa.phase', 'moa.progress', 'moa.reference', 'notice', 'notification.clear',
   'notification.show', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
   'pet.hatch.progress', 'platforms.changed', 'preview.close', 'preview.open', 'preview.restart.complete',
-  'preview.restart.progress', 'projects.changed', 'reaction', 'reasoning.available', 'reasoning.delta', 'request.cancel',
+  'preview.restart.progress', 'projects.changed', 'reaction', 'request.cancel',
   'review.summary', 'session.control.update', 'session.reclaimed', 'session.resume_progress',
-  'setup.ready', 'skills.changed', 'skin.changed', 'status.update', 'subagent.complete', 'subagent.progress',
-  'subagent.spawn_requested', 'subagent.start', 'subagent.thinking', 'subagent.tool', 'terminal.close', 'tip.show',
-  'todo.updated', 'tool.output_risk', 'voice.interrupted', 'voice.partial', 'voice.status', 'voice.transcript', 'wake.detected'
+  'setup.ready', 'skills.changed', 'skin.changed', 'status.update', 'terminal.close', 'tip.show', 'tool.output_risk', 'voice.interrupted', 'voice.partial', 'voice.status', 'voice.transcript', 'wake.detected'
 ])
 
 /**
@@ -549,6 +607,7 @@ interface TurnInProgress {
  * compaction rows become its items. Stored rows carry no diff, so a history tool is `done` with
  * `diffs: []`. A turn that ends in an assistant answer is `complete`. A turn with no answer is
  * `unfinished` when it is the last one, else `lost`. Every turn lists the `row_id`s its rows carry.
+ * An assistant row's reasoning becomes a sealed reasoning item above its text, with no times.
  *
  * Display rows come from `tui_gateway/session_history.py:297-373`: a tool row has no `row_id`, carries
  * `content` only for write_file, patch, skill_manage and clarify, and an assistant row with no text is
@@ -560,13 +619,13 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
     const row = usable(() => storedRow(value, index))
     if (row === null) return
     if (row.role === 'user') turns.push({ request: row.text, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [] })
-    if (row.item !== null && turns.length === 0) turns.push({ request: null, requestRow: null, began: null, items: [], rows: [] })
+    if (row.items.length > 0 && turns.length === 0) turns.push({ request: null, requestRow: null, began: null, items: [], rows: [] })
     const turn = turns.at(-1)
-    if (row.item !== null) turn?.items.push(row.item)
+    turn?.items.push(...row.items)
     if (row.rowId !== null) turn?.rows.push(row.rowId)
   })
   // A compaction row sits before the row it was stored on, so it can follow a turn's answer.
-  const answered = (turn: TurnInProgress) => turn.items.findLast(item => item.kind !== 'notice')?.kind === 'text'
+  const answered = (turn: TurnInProgress) => turn.items.findLast(item => item.kind !== 'notice' && item.kind !== 'reasoning')?.kind === 'text'
   const last = turns.at(-1)
   const open = last !== undefined && !answered(last) ? last : null
   return {
@@ -590,22 +649,28 @@ function storedRow(value: unknown, index: number) {
   const rowId = row.optInt('row_id')
   const seconds = row.optNum('timestamp')
   const at = seconds !== null && seconds > 0 ? Math.round(seconds * 1000) : null
-  const item = ((): Item<'settled'> | null => {
-    if (row.optStr('row_kind') === 'compaction') return { kind: 'notice', what: 'said', tone: 'info', text }
-    if (role === 'assistant') return text.trim() === '' ? null : { kind: 'text', markdown: text, sealed: true }
-    if (role !== 'tool') return null
+  const items = ((): Item<'settled'>[] => {
+    if (row.optStr('row_kind') === 'compaction') return [{ kind: 'notice', what: 'said', tone: 'info', text }]
+    if (role === 'assistant') {
+      const reasoning = row.optStr('reasoning') ?? ''
+      return [
+        ...(reasoning.trim() === '' ? [] : [{ kind: 'reasoning', text: reasoning, sealed: true, startedAt: null, endedAt: null } as const]),
+        ...(text.trim() === '' ? [] : [{ kind: 'text', markdown: text, sealed: true } as const])
+      ]
+    }
+    if (role !== 'tool') return []
     const args = row.raw('args') ?? {}
     if (!isJsonObject(args)) throw new Unusable()
     const content = row.raw('content')
-    return {
+    return [{
       kind: 'tool',
       id: (row.optStr('tool_call_id') || `stored-tool:${index}`) as ToolId,
       name: row.optStr('name') || 'tool',
       args,
       status: { s: 'done', durationS: null, diffs: [], image: null, result: content === undefined ? NO_RESULT : parseToolResult(content, null, false) }
-    }
+    }]
   })()
-  return { role, text, rowId, at, item }
+  return { role, text, rowId, at, items }
 }
 
 export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<SidebarRow, 'badge'>[] {

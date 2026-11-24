@@ -65,32 +65,34 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `wait <state>` | a named state | waits until the state's locator is visible |
 | `see <text>` | text | waits until the text is visible anywhere |
 | `said <text>` | text | waits until the text is visible in the thread. A bot's preview in the sidebar does not count |
-| `click <role> <name>` | ARIA role, exact accessible name | clicks it |
+| `click <role> <name>` | ARIA role, exact accessible name or `/regex/` | clicks it. A `/regex/` clicks the first match |
 | `type <label> <text>` | exact label, text or `@request` | fills the field. `@request` is the text of the fixture's first `prompt.submit` step |
 | `press <key>` | Playwright key name | presses it |
 | `click-at <role> <name> <n>` | ARIA role, exact accessible name, a number | clicks the `n`th such control in page order, counting from 1, for a control the thread repeats on every turn |
 | `shot <name>` | file stem | moves the pointer off the page, then saves `<name>.png` and `<name>.aria.txt` |
-| `disabled <role> <name>` | ARIA role, exact accessible name | fails unless that control is disabled now |
+| `disabled <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that control is disabled now |
 | `value <label> <text>` | exact label, text | waits two frames, then fails unless the field holds exactly that text |
 | `field <label> <lines> <fits\|scrolls>` | exact label, a line count, `fits` or `scrolls` | logs how many lines the field shows and whether its text scrolls with a visible scrollbar, and fails unless both match |
 | `pinned` | none | logs where the thread sits, and fails unless it is scrolled to its end, its last row is in view (wholly, when it fits), and the composer does not cover it |
 | `disabled-at <role> <name> <n>` | ARIA role, exact accessible name, a number | fails unless the `n`th such control, counting from 1 in page order, is disabled now |
-| `focused <role> <name>` | ARIA role, exact accessible name | fails unless that control has keyboard focus now |
+| `focused <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that control has keyboard focus now |
 | `count <role> <name> <n>` | ARIA role, exact name or `/regex/`, a number | fails unless exactly `n` such controls are in the accessibility tree |
 | `clipboard <name>` | file stem | waits until the system clipboard holds new text, then saves it as `<name>.clip.txt`. Fails when it stays empty or unchanged since the last `clipboard` step |
 | `marks <count>` | number | fails unless the ranges in the `find` and `find-current` highlights add up to the count. A missing highlight counts as 0. It reads state and never sets it |
 | `opened <action> <path>` | `open` or `show`, absolute path | fails unless `opens.jsonl` holds exactly one call, and that call is this one |
 | `copied <text>` | text | fails unless the system clipboard holds exactly this text |
-| `gone <role> <name>` | ARIA role, exact accessible name | polls until no visible element has that role and name, and fails at the timeout. Waits out a fade |
-| `inview <role> <name>` | ARIA role, exact accessible name | fails unless that element's box lies fully inside the visible area of every scrolling ancestor and of the window |
-| `enabled <role> <name>` | ARIA role, exact accessible name | fails unless that control is enabled now |
-| `checked <role> <name>` | ARIA role, exact accessible name | fails unless that radio or checkbox is checked now |
-| `current <role> <name>` | ARIA role, exact accessible name | waits until that control carries `aria-current="true"`, as the bot of the open chat does, and fails at the timeout. An ARIA snapshot does not print it |
+| `gone <role> <name>` | ARIA role, exact accessible name or `/regex/` | polls until no visible element has that role and name, and fails at the timeout. Waits out a fade |
+| `inview <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that element's box lies fully inside the visible area of every scrolling ancestor and of the window |
+| `enabled <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that control is enabled now |
+| `checked <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that radio or checkbox is checked now |
+| `current <role> <name>` | ARIA role, exact accessible name or `/regex/` | waits until that control carries `aria-current="true"`, as the bot of the open chat does, and fails at the timeout. An ARIA snapshot does not print it |
 | `tally <role> <n>` | ARIA role, number | waits two frames, then waits until exactly n elements of that role are shown, and fails if the count never settles on n |
 | `absent <text>` | text | fails if the text is visible anywhere now |
 | `called <method> <json> <n>` | method, JSON object, number | waits until the gateway was sent n calls of that method whose params contain the JSON (every key, recursively), and fails on any other count. It is checked again when the steps end, so "exactly n" holds for the whole run. `--fixture` runs only |
 | `reached <method> <json> <n>` | method, JSON object, number | waits until the gateway was sent at least n calls of that method whose params contain the JSON, and fails at the timeout. Unlike `called`, later calls do not fail it. Use it to wait for a call the app makes by itself, such as a refresh. `--fixture` runs only |
 | `quiet` | none | fails if the window logged a console error or a page error so far |
+
+A `/regex/` name is any name that starts and ends with a slash, as `count` already takes. It is case-sensitive. A step that finds several matches uses the first, except `count`, `focused` and `gone`, which look at all of them. Use one for a name that holds a time or a goal, such as `button /^Thought/`.
 
 Named states live in the `STATES` table in the helper. Add a state there, not a sleep.
 
@@ -110,6 +112,7 @@ Named states live in the `STATES` table in the helper. Add a state there, not a 
 | `slash-menu` | the composer's "Commands and skills" listbox is shown |
 | `bots` | the sidebar holds a roster Hermes listed (`aside[data-state="listed"]`) |
 | `unstarted` | the chat column holds no thread (`main#scroll:empty`), as a chat no message has made yet shows |
+| `helper-running` | a helper that has started work, not one still waiting to start, carries the live end (`.helper[data-end="live"]` whose hidden state reads "working") |
 
 `wait` polls with no backoff. The errand's listing step lives about 144 ms at recorded timing. Playwright's own `waitFor` spaces its polls up to 500 ms apart and missed it 3 times out of 3, while this loop caught it 5 times out of 5.
 

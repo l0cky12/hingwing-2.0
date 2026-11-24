@@ -5,8 +5,8 @@
  * its way). Tests feed it event logs.
  */
 import type {
-  Ask, Began, FileDiff, Generation, InputId, Item, Json, Link, ModelRef, NoticeItem, OpenTurn, Outcome, OutboxEntry,
-  PromptId, PromptItem, PromptReply, Request, Run, Session, SessionContent, SessionId, SessionModel, SessionUsage, SettledTurn, Sync,
+  Ask, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, ModelRef, OpenTurn, Outcome, OutboxEntry, PlanEntry,
+  PromptId, PromptItem, PromptReply, ReasoningItem, Request, Run, Session, SessionContent, SessionId, SessionModel, SessionUsage, SettledTurn, Sync,
   TextItem, Tokens, ToolId, ToolItem, ToolResult, TurnId
 } from './session'
 
@@ -16,6 +16,20 @@ export type SessionEvent =
   | { readonly type: 'text.delta'; readonly text: string; readonly at: TextCursor | null }
   | { readonly type: 'text.sealed'; readonly text: string | null } // segment boundary; text replaces the segment when given
   | { readonly type: 'thinking' }
+  /** `whole`: Hermes sent the block in one piece (`reasoning.available`), which may repeat the deltas of the same block. */
+  | { readonly type: 'reasoning'; readonly text: string; readonly whole: boolean }
+  /** The whole to-do list as of `revision`. */
+  | { readonly type: 'plan'; readonly revision: number; readonly entries: readonly PlanEntry[] }
+  /** One `subagent.*` frame. Addressed by the helper's id, never by the run, so a helper's frames still land after its turn ends. */
+  | {
+      readonly type: 'helper'
+      readonly id: HelperId
+      readonly parentId: HelperId | null
+      readonly depth: number
+      readonly goal: string
+      readonly toolCount: number | null
+      readonly update: HelperUpdate
+    }
   | { readonly type: 'tool.announced'; readonly name: string }
   | { readonly type: 'tool.started'; readonly id: ToolId; readonly name: string; readonly args: { readonly [k: string]: Json } }
   | { readonly type: 'tool.progress'; readonly id: ToolId; readonly note: string }
@@ -58,6 +72,13 @@ export type SessionEvent =
        */
       readonly countsRestart?: true
     }
+
+export type HelperUpdate =
+  | { readonly is: 'queued' }
+  | { readonly is: 'working'; readonly doing: 'thinking' | null }
+  | { readonly is: 'progress' }
+  | { readonly is: 'tool'; readonly name: string; readonly preview: string | null }
+  | { readonly is: 'ended'; readonly status: HelperEnd; readonly durationS: number | null; readonly summary: string | null }
 
 /** What became of a model pick, from Hermes's receipt. `settled`: a switch committed or a held pick was dropped. */
 export type PickOutcome =
@@ -233,9 +254,10 @@ export const PARK_LIMIT = 2048
  * Invariants:
  * - Returns the same `content` reference when nothing visible changed, and keeps the identity of
  *   every turn and item it did not touch. IPC patches and React memoisation rely on this.
- * - Idempotent per id: a tool is upserted by `ToolId`, a prompt by `PromptId`, an outbox entry by
- *   `InputId`, a declined notice by `requestId`. Applying the same input twice changes nothing the
- *   second time. `attach` on a session that is attaching or live changes nothing.
+ * - Idempotent per id: a tool is upserted by `ToolId`, a prompt by `PromptId`, a helper by `HelperId`,
+ *   an outbox entry by `InputId`, a declined notice by `requestId`, the plan by its revision. Applying
+ *   the same input twice changes nothing the second time. `attach` on a session that is attaching or
+ *   live changes nothing.
  * - A reply of an older attach attempt changes nothing.
  */
 export function reduce(state: Tracked, input: SessionInput): Tracked {
@@ -325,7 +347,8 @@ function admit(state: Tracked, frame: StampedEvent): Tracked {
         fence: patch(fence, { generation: newest(fence.generation, generation) })
       }
       const { run } = state.content
-      const stale = run.state === 'running' && generation !== null && generation < run.generation
+      // A helper is addressed by its id, never by the run: its frames go on after its turn ends.
+      const stale = run.state === 'running' && generation !== null && generation < run.generation && frame.event?.type !== 'helper'
       return frame.event === null || stale ? moved : fold(moved, frame, frame.event)
     }
     default:
@@ -562,7 +585,16 @@ const ZERO_TOKENS: Tokens = { input: 0, output: 0, reasoning: 0 }
 const LOST: Outcome = { kind: 'lost' }
 const ANSWERED_ELSEWHERE: PromptItem['state'] = { s: 'answered', reply: null }
 
-function fold(state: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | 'seenAt'>, event: SessionEvent): Tracked {
+/**
+ * Events that close the reasoning block the agent was streaming, because the agent has moved on. A
+ * helper's frames and the spinner are not among them: they arrive while the agent still reasons.
+ */
+const ENDS_REASONING: ReadonlySet<SessionEvent['type']> = new Set([
+  'text.delta', 'text.sealed', 'tool.announced', 'tool.started', 'tool.finished', 'prompt.opened', 'notice', 'plan'
+] satisfies SessionEvent['type'][])
+
+function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | 'seenAt'>, event: SessionEvent): Tracked {
+  const state = ENDS_REASONING.has(event.type) ? editTurn(before, turn => sealReasoning(turn, seenAt)) : before
   switch (event.type) {
     case 'turn.started': {
       const { run } = state.content
@@ -600,6 +632,20 @@ function fold(state: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | 's
       })
     case 'thinking':
       return ensureRun(state, stamp.generation, seenAt)
+    case 'reasoning': {
+      const open = ensureRun(state, stamp.generation, seenAt)
+      return event.text === '' ? open : editTurn(open, turn => event.whole ? wholeReasoning(turn, event.text, seenAt) : appendReasoning(turn, event.text, seenAt))
+    }
+    case 'plan':
+      return editTurn(ensureRun(state, stamp.generation, seenAt), turn => {
+        const at = turn.items.findIndex(item => item.kind === 'plan')
+        const plan: Item = { kind: 'plan', revision: event.revision, entries: event.entries }
+        if (at === -1) return pushItem(turn, plan)
+        const held = turn.items[at]
+        return held?.kind === 'plan' && event.revision > held.revision ? { ...turn, items: turn.items.with(at, plan) } : turn
+      })
+    case 'helper':
+      return helperFrame(state, stamp.generation, event)
     case 'tool.announced':
       return editTurn(ensureRun(state, stamp.generation, seenAt), turn => patch(turn, { announced: event.name }))
     case 'tool.started':
@@ -748,20 +794,25 @@ function keep<T extends object>(held: T | null, said: T | null): T | null {
 
 function withFinalText(items: readonly Item[], finalText: string | null): readonly Item[] {
   if (finalText === null || finalText === '') return items
-  const tail = items.findLastIndex(item => item.kind !== 'text') + 1
-  const [only, ...rest] = items.slice(tail)
+  const tail = items.findLastIndex(item => item.kind !== 'text' && item.kind !== 'helper') + 1
+  const after = items.slice(tail)
+  const [only, ...rest] = after.filter(item => item.kind === 'text')
   if (only?.kind === 'text' && rest.length === 0 && only.markdown === finalText) return items
-  return [...items.slice(0, tail), { kind: 'text', markdown: finalText, sealed: true }]
+  return [...items.slice(0, tail), ...after.filter(item => item.kind === 'helper'), { kind: 'text', markdown: finalText, sealed: true }]
 }
 
 function settledItem(item: Item): Item<'settled'> {
   switch (item.kind) {
     case 'text':
+    case 'reasoning':
       return isSealed(item) ? item : { ...item, sealed: true }
     case 'tool':
       return isFinished(item) ? item : { ...item, status: { s: 'cut' } }
     case 'prompt':
       return isClosed(item) ? item : { ...item, state: { s: 'withdrawn' } }
+    // A helper may still work after its turn ends: Hermes runs helpers in the background.
+    case 'helper':
+    case 'plan':
     case 'notice':
       return item
     default:
@@ -769,7 +820,7 @@ function settledItem(item: Item): Item<'settled'> {
   }
 }
 
-const isSealed = (item: TextItem): item is TextItem & { readonly sealed: true } => item.sealed
+const isSealed = <I extends TextItem | ReasoningItem>(item: I): item is I & { readonly sealed: true } => item.sealed
 const isFinished = (item: ToolItem): item is ToolItem & { readonly status: ToolItem<'settled'>['status'] } => item.status.s !== 'running'
 const isClosed = (item: PromptItem): item is PromptItem & { readonly state: PromptItem<'settled'>['state'] } =>
   item.state.s === 'answered' || item.state.s === 'withdrawn'
@@ -799,16 +850,119 @@ function mapItems(turn: OpenTurn, change: (item: Item) => Item): OpenTurn {
   return items.every((item, index) => item === turn.items[index]) ? turn : { ...turn, items }
 }
 
-function pushItem(turn: OpenTurn, item: ToolItem | PromptItem | NoticeItem | TextItem): OpenTurn {
+function pushItem(turn: OpenTurn, item: Item): OpenTurn {
   const last = turn.items.at(-1)
   const above = last?.kind === 'text' && !last.sealed ? turn.items.with(-1, { ...last, sealed: true }) : turn.items
   return { ...turn, announced: null, items: [...above, item] }
+}
+
+/** A helper's frames arrive while the agent writes, so a new helper goes above the text that streams and leaves it open. */
+function pushHelper(turn: OpenTurn, helper: HelperItem): OpenTurn {
+  const last = turn.items.at(-1)
+  const at = last?.kind === 'text' && !last.sealed ? turn.items.length - 1 : turn.items.length
+  return { ...turn, items: turn.items.toSpliced(at, 0, helper) }
 }
 
 function appendText(turn: OpenTurn, text: string): OpenTurn {
   const last = turn.items.at(-1)
   if (last?.kind !== 'text' || last.sealed) return pushItem(turn, { kind: 'text', markdown: text, sealed: false })
   return { ...turn, announced: null, items: turn.items.with(-1, { ...last, markdown: last.markdown + text }) }
+}
+
+function sealReasoning(turn: OpenTurn, seenAt: number | null): OpenTurn {
+  const at = turn.items.findIndex(item => item.kind === 'reasoning' && !item.sealed)
+  const open = turn.items[at]
+  return open?.kind === 'reasoning' ? { ...turn, items: turn.items.with(at, { ...open, sealed: true, endedAt: seenAt }) } : turn
+}
+
+function appendReasoning(turn: OpenTurn, text: string, seenAt: number | null): OpenTurn {
+  const at = turn.items.findIndex(item => item.kind === 'reasoning' && !item.sealed)
+  const open = turn.items[at]
+  if (open?.kind !== 'reasoning') return pushItem(turn, { kind: 'reasoning', text, sealed: false, startedAt: seenAt, endedAt: null })
+  return { ...turn, items: turn.items.with(at, { ...open, text: open.text + text }) }
+}
+
+/**
+ * Hermes may send a block whole after streaming its deltas, and sends only its first 500 characters
+ * (agent/turn_response_intake.py:165). A whole block that starts a block already held is that block.
+ */
+function wholeReasoning(turn: OpenTurn, text: string, seenAt: number | null): OpenTurn {
+  const at = turn.items.findIndex(item => item.kind === 'reasoning' && !item.sealed)
+  const open = turn.items[at]
+  if (open?.kind === 'reasoning') {
+    return { ...turn, items: turn.items.with(at, { ...open, text: open.text.startsWith(text) ? open.text : text, sealed: true, endedAt: seenAt }) }
+  }
+  if (turn.items.findLast(item => item.kind === 'reasoning')?.text.startsWith(text)) return turn
+  return pushItem(turn, { kind: 'reasoning', text, sealed: true, startedAt: null, endedAt: null })
+}
+
+type HelperEvent = Extract<SessionEvent, { type: 'helper' }>
+
+const QUEUED: HelperItem['state'] = { s: 'queued' }
+const WORKING: HelperItem['state'] = { s: 'working', doing: null }
+const USING_TOOL: HelperItem['state'] = { s: 'working', doing: 'tool' }
+
+function helperFrame(state: Tracked, generation: Generation | null, event: HelperEvent): Tracked {
+  const isIt = (id: HelperId) => (item: Item) => item.kind === 'helper' && item.id === id
+  const found = editHelperTurn(state, isIt(event.id), items => items.map(item => item.kind === 'helper' && item.id === event.id ? advanced(item, event) : item))
+  if (found !== null) return found
+  const born = advanced({
+    kind: 'helper', id: event.id, parentId: event.parentId, depth: event.depth, goal: event.goal, state: QUEUED, toolCount: null, steps: []
+  }, event)
+  const adopted = (items: readonly Item[]) => items.map(item =>
+    item.kind === 'helper' && item.id === event.parentId && !item.steps.some(step => step.kind === 'helper' && step.id === event.id)
+      ? { ...item, steps: [...item.steps, { kind: 'helper' as const, id: event.id }] }
+      : item)
+  const withParent = event.parentId === null ? null : editHelperTurn(state, isIt(event.parentId), adopted, born)
+  if (withParent !== null) return withParent
+  const { run } = state.content
+  if (run.state !== 'running' || (generation !== null && generation !== run.generation)) return state
+  return editTurn(state, turn => pushHelper(turn, born))
+}
+
+function editHelperTurn(
+  state: Tracked, holds: (item: Item) => boolean, edit: (items: readonly Item[]) => readonly Item[], born: HelperItem | null = null
+): Tracked | null {
+  const { content } = state
+  const { run, history } = content
+  const same = (items: readonly Item[], held: readonly Item[]) => items.length === held.length && items.every((item, index) => item === held[index])
+  if (run.state === 'running' && run.turn.items.some(holds)) {
+    return editTurn(state, turn => {
+      const items = edit(turn.items)
+      const edited = same(items, turn.items) ? turn : { ...turn, items }
+      return born === null ? edited : pushHelper(edited, born)
+    })
+  }
+  const at = history.findLastIndex(turn => turn.items.some(holds))
+  const turn = history[at]
+  if (turn === undefined) return null
+  const items = [...edit(turn.items), ...(born === null ? [] : [born])] as SettledTurn['items']
+  return same(items, turn.items) ? state : { ...state, content: { ...content, history: history.with(at, { ...turn, items }) } }
+}
+
+function advanced(helper: HelperItem, { toolCount, update }: HelperEvent): HelperItem {
+  const counted = toolCount === null || (helper.toolCount !== null && helper.toolCount >= toolCount) ? helper.toolCount : toolCount
+  const moved = movedBy(helper, update)
+  return counted === helper.toolCount && moved === helper ? helper : { ...moved, toolCount: counted }
+}
+
+function movedBy(helper: HelperItem, update: HelperUpdate): HelperItem {
+  const { state } = helper
+  if (state.s === 'ended') return helper
+  switch (update.is) {
+    case 'queued':
+      return helper
+    case 'working':
+      return state.s === 'working' && state.doing === update.doing ? helper : { ...helper, state: update.doing === null ? WORKING : { s: 'working', doing: update.doing } }
+    case 'progress':
+      return state.s === 'queued' ? { ...helper, state: WORKING } : helper
+    case 'tool':
+      return { ...helper, state: USING_TOOL, steps: [...helper.steps, { kind: 'tool', name: update.name, preview: update.preview }] }
+    case 'ended':
+      return { ...helper, state: { s: 'ended', status: update.status, durationS: update.durationS, summary: update.summary } }
+    default:
+      return unreachable(update)
+  }
 }
 
 function isAfter(at: TextCursor, seen: TextCursor): boolean {
@@ -893,7 +1047,8 @@ export function sessionOf(state: Tracked, link: Link, previous: Session | null):
 /**
  * What the agent is doing right now, derived from `run` and never stored.
  * The thread's live end, the sidebar badge, the composer's Send/Stop and later the tray all call this.
- * Precedence: stopping, asking, working, writing, preparing, thinking.
+ * Precedence: stopping, asking, working, writing, reasoning, helping, preparing, thinking.
+ * Helpers of settled turns never set it: the run they belong to is over.
  */
 export type Activity =
   | { readonly kind: 'idle' }
@@ -904,6 +1059,10 @@ export type Activity =
   | { readonly kind: 'working'; readonly item: number }
   /** `item` indexes `run.turn.items`: the oldest prompt still waiting or sending. */
   | { readonly kind: 'asking'; readonly item: number }
+  /** `item` indexes `run.turn.items`: the reasoning block that is streaming. */
+  | { readonly kind: 'reasoning'; readonly item: number }
+  /** `item` indexes `run.turn.items`: the newest helper the agent started that is still working, while the agent itself only waits on the model. */
+  | { readonly kind: 'helping'; readonly item: number }
   | { readonly kind: 'stopping' }
 
 export function activityOf(session: SessionContent): Activity {
@@ -917,5 +1076,9 @@ export function activityOf(session: SessionContent): Activity {
   if (working !== -1) return { kind: 'working', item: working }
   const last = items.at(-1)
   if (last?.kind === 'text' && !last.sealed) return { kind: 'writing' }
+  const reasoning = items.findIndex(item => item.kind === 'reasoning' && !item.sealed)
+  if (reasoning !== -1) return { kind: 'reasoning', item: reasoning }
+  const helping = items.findLastIndex(item => item.kind === 'helper' && item.parentId === null && item.state.s !== 'ended')
+  if (helping !== -1) return { kind: 'helping', item: helping }
   return announced === null ? { kind: 'thinking' } : { kind: 'preparing', tool: announced }
 }

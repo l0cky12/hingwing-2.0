@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type {
-  FileDiff, Generation, Item, NoticeItem, Outcome, PromptId, PromptItem, Session, SettledTurn, Sync, ToolId, ToolItem, ToolResult, TurnId
+  FileDiff, Generation, HelperId, HelperItem, Item, NoticeItem, Outcome, PlanEntry, PlanItem, PromptId, PromptItem, ReasoningItem, Session, SettledTurn,
+  Sync, ToolId, ToolItem, ToolResult, TurnId
 } from '../../hermes/src/domain/session'
-import { checkThread, outline, threadView, type StepView, type ThreadNode, type ThreadView } from '../src/thread-view'
+import { checkThread, outline, threadView, type HelperView, type PlanView, type StepView, type ThreadNode, type ThreadView } from '../src/thread-view'
 
 const CLOCK = { now: 1_800_000_000_000, timeZone: 'UTC' }
 const COMPLETE: Outcome = { kind: 'complete' }
@@ -275,5 +276,286 @@ describe('what a change copies', () => {
   it('offers no command for a tool that is not a command', () => {
     const step = stepOf(nodesOf(session({ history: [settled([tool('read_file', { path: '/w/a.md' }, { result: { kind: 'text', text: 'hi', isError: false, clipped: 0 } })])] }))[0])
     expect(step.record?.command).toBeNull()
+  })
+})
+
+const thought = (text: string, over: Partial<ReasoningItem> = {}): ReasoningItem => ({ kind: 'reasoning', text, sealed: true, startedAt: null, endedAt: null, ...over })
+const sealedThought = (text: string, over: Partial<ReasoningItem<'settled'>> = {}): ReasoningItem<'settled'> =>
+  ({ kind: 'reasoning', text, sealed: true, startedAt: null, endedAt: null, ...over })
+
+function helper(id: string, state: HelperItem['state'], over: Partial<HelperItem> = {}): HelperItem {
+  return { kind: 'helper', id: id as HelperId, parentId: null, depth: 0, goal: `Check ${id}`, state, toolCount: null, steps: [], ...over }
+}
+const WORKING: HelperItem['state'] = { s: 'working', doing: null }
+const ended = (status: 'completed' | 'failed' | 'timeout' | 'interrupted', durationS: number | null = 3.27, summary: string | null = null): HelperItem['state'] =>
+  ({ s: 'ended', status, durationS, summary })
+const ranTool = (name: string, preview: string | null) => ({ kind: 'tool', name, preview }) as const
+const child = (id: string) => ({ kind: 'helper', id: id as HelperId }) as const
+
+const entry = (id: string, status: PlanEntry['status'], parentId: string | null = null): PlanEntry => ({ id, text: `do ${id}`, status, parentId })
+const plan = (...entries: PlanEntry[]): PlanItem => ({ kind: 'plan', revision: 1, entries })
+
+const helperOf = (node: ThreadNode | undefined): HelperView => {
+  if (node?.kind !== 'helper') throw new Error(`expected a helper, got ${node?.kind}`)
+  return node.helper
+}
+const planOf = (node: ThreadNode | undefined): PlanView => {
+  if (node?.kind !== 'plan') throw new Error(`expected a plan, got ${node?.kind}`)
+  return node.plan
+}
+const delegating = runningTool('delegate_task', { tasks: [] })
+const delegated = tool('delegate_task', { tasks: [] })
+
+describe('what another node already shows', () => {
+  it('hides delegate_task once the turn holds the helper it started, and merges the tools around it', () => {
+    const before = [tool('read_file', { path: '/w/a' }), delegated, tool('read_file', { path: '/w/b' })]
+    expect(lines(session({ history: [settled(before)] }))[1]).toBe('■ Used 3 tools · 3 steps')
+    expect(lines(running([...before, helper('sa-1', WORKING)])).slice(1, 3)).toEqual(['■ Used 2 tools · 2 steps', '    ● Read `a`'])
+    expect(nodesOf(running([...before, helper('sa-1', WORKING)])).map(node => node.kind)).toEqual(['group', 'helper'])
+  })
+
+  it.each(['todo', 'todo_list'])('hides the %s tool once the turn holds a plan, and keeps it while there is none', name => {
+    const todo = tool(name, { todos: [] })
+    expect(nodesOf(running([todo])).map(node => node.kind)).toEqual(['step'])
+    expect(nodesOf(running([tool('terminal', { command: 'ls' }), todo, plan(entry('1', 'pending')), tool('terminal', { command: 'pwd' })])).map(node => node.kind))
+      .toEqual(['step', 'plan', 'step'])
+  })
+
+  it('draws a helper of a helper inside its parent, counting the helpers below it', () => {
+    const items = [
+      helper('sa-1', WORKING, { steps: [ranTool('terminal', 'ls'), child('sa-2')] }),
+      helper('sa-2', WORKING, { parentId: 'sa-1' as HelperId, depth: 1, steps: [child('sa-3')] }),
+      helper('sa-3', ended('completed'), { parentId: 'sa-2' as HelperId, depth: 2 })
+    ]
+    const nodes = nodesOf(running(items))
+    expect(nodes.map(node => node.kind)).toEqual(['helper'])
+    expect(helperOf(nodes[0]).steps.at(-1)).toEqual({ kind: 'helper', key: 't9/0/h1', goal: 'Check sa-2', state: 'working', more: 1 })
+  })
+
+  it('shows a helper whose parent is not in the turn as a node of its own', () => {
+    expect(nodesOf(running([helper('sa-2', WORKING, { parentId: 'sa-1' as HelperId, depth: 1 })])).map(node => node.kind)).toEqual(['helper'])
+  })
+
+  it('hides blank reasoning and keeps a reasoning block between tools as its own node', () => {
+    const items = [tool('read_file', { path: '/w/a' }), thought(' \n'), tool('read_file', { path: '/w/b' }), thought('Next, b.'), tool('read_file', { path: '/w/c' })]
+    expect(nodesOf(running(items)).map(node => node.kind)).toEqual(['group', 'reasoning', 'step'])
+  })
+})
+
+describe('reasoning', () => {
+  it.each([
+    [400, 'under a second'], [999, 'under a second'], [1_000, '1.0 s'], [4_200, '4.2 s'], [12_300, '12 s'], [65_000, '1 min 5 s']
+  ])('says a block of %i ms took %s', (ms, words) => {
+    expect(nodesOf(running([thought('Hmm', { startedAt: 1_000, endedAt: 1_000 + ms })]))[0]).toMatchObject({ kind: 'reasoning', duration: words })
+  })
+
+  it('has no duration while it streams or when this client did not see it start', () => {
+    expect(nodesOf(running([thought('Hmm', { sealed: false, startedAt: 1_000 })]))[0]).toMatchObject({ streaming: true, duration: null })
+    expect(nodesOf(running([thought('Hmm', { startedAt: null, endedAt: 5_000 })]))[0]).toMatchObject({ streaming: false, duration: null })
+  })
+
+  it('trims blank lines around the text', () => {
+    expect(nodesOf(running([thought('\n\nFirst.\n\nSecond.\n\n')]))[0]).toMatchObject({ text: 'First.\n\nSecond.' })
+  })
+
+  it('outlines a block as Thought, live and streaming while it streams, with its lines when opened', () => {
+    const streaming = running([thought('One.\nTwo.', { sealed: false })])
+    expect(lines(streaming).slice(1)).toEqual(['◉ Thought …'])
+    expect(turnOf(streaming).end).toMatchObject({ kind: 'at', nodeKey: 't9/0', tone: 'live' })
+    const settledBlock = session({ history: [settled([sealedThought('One.\nTwo.', { startedAt: 0, endedAt: 12_000 })])] })
+    expect(lines(settledBlock).slice(1)).toEqual(['▸ Thought', '✓ Done'])
+    expect(lines(settledBlock, new Set(['t1/0'])).slice(1, 4)).toEqual(['▸ Thought', '    One.', '    Two.'])
+  })
+
+  it('falls back to the Thinking tip while the streaming block is still blank', () => {
+    expect(lines(running([thought('\n', { sealed: false })])).slice(1)).toEqual(['◉ Thinking'])
+  })
+})
+
+describe('helpers', () => {
+  const nodeOf = (item: HelperItem, settledTurn = false) =>
+    helperOf(nodesOf(settledTurn ? session({ history: [settled([item])] }) : running([item]))[0])
+
+  it.each<[HelperItem['state'], string | null]>([
+    [{ s: 'queued' }, 'Waiting to start'],
+    [{ s: 'working', doing: 'thinking' }, 'Thinking'],
+    [{ s: 'working', doing: null }, null],
+    [ended('completed'), null]
+  ])('says what a %o helper does now', (state, now) => {
+    expect(nodeOf(helper('sa-1', state)).now).toEqual(now === null ? null : [{ t: 'text', v: now }])
+  })
+
+  it('says nothing now while an approval card asks for the command the helper started', () => {
+    const using = helper('sa-1', { s: 'working', doing: 'tool' }, { steps: [ranTool('terminal', 'rm old.tar.gz')] })
+    const ask = approval({ s: 'waiting', error: null }, 'rm old.tar.gz')
+    expect(helperOf(nodesOf(running([using, ask]))[0]).now).toBeNull()
+    expect(helperOf(nodesOf(running([using, approval({ s: 'answered', reply: null }, 'rm old.tar.gz')]))[0]).now)
+      .toEqual([{ t: 'text', v: 'Started ' }, { t: 'code', v: 'rm old.tar.gz' }])
+  })
+
+  it('says which tool a working helper started last, skipping delegate_task', () => {
+    const using = helper('sa-1', { s: 'working', doing: 'tool' }, { steps: [ranTool('read_file', 'a.txt'), ranTool('terminal', 'du -sh'), ranTool('delegate_task', null)] })
+    const view = nodeOf(using)
+    expect(view.now).toEqual([{ t: 'text', v: 'Started ' }, { t: 'code', v: 'du -sh' }])
+    expect(view.steps).toEqual([
+      { kind: 'step', key: 't9/0/s0', title: [{ t: 'text', v: 'Read ' }, { t: 'code', v: 'a.txt' }], latest: false },
+      { kind: 'step', key: 't9/0/s1', title: [{ t: 'text', v: 'Started ' }, { t: 'code', v: 'du -sh' }], latest: true }
+    ])
+    expect(view.count).toBe(3)
+  })
+
+  it('titles each tool of an ended helper with its done verb, and a tool it has no words for as Used', () => {
+    const done = nodeOf(helper('sa-1', ended('completed'), { toolCount: 5, steps: [ranTool('terminal', 'du -sh'), ranTool('browser_navigate', 'example.org')] }))
+    expect(done.steps.map(step => step.kind === 'step' && [step.title, step.latest])).toEqual([
+      [[{ t: 'text', v: 'Ran ' }, { t: 'code', v: 'du -sh' }], false],
+      [[{ t: 'text', v: 'Used ' }, { t: 'code', v: 'browser_navigate' }], false]
+    ])
+    expect(done.count).toBe(5)
+  })
+
+  it.each<[HelperItem['state'], string, string | null]>([
+    [ended('completed'), 'done', null], [ended('failed'), 'failed', 'Failed'], [ended('timeout'), 'failed', 'Timed out'],
+    [ended('interrupted'), 'failed', 'Stopped'], [{ s: 'queued' }, 'queued', null], [WORKING, 'working', null]
+  ])('reads a %o helper as %s with the words %s', (state, shown, words) => {
+    expect(nodeOf(helper('sa-1', state))).toMatchObject({ state: shown, ended: words })
+  })
+
+  it('keeps the first line of the goal, clipped at 120 characters', () => {
+    expect(nodeOf(helper('sa-1', WORKING, { goal: 'Short goal\nwith detail' })).goal).toBe('Short goal')
+    const long = nodeOf(helper('sa-1', WORKING, { goal: 'x'.repeat(200) })).goal
+    expect(long).toHaveLength(120)
+    expect(long.endsWith('…')).toBe(true)
+  })
+
+  it('gives a duration of a second or more and the summary only once it ended', () => {
+    expect(nodeOf(helper('sa-1', ended('completed', 3.27, '\n\nAll good.\n'), { toolCount: 1 }))).toMatchObject({ duration: '3.3 s', summary: 'All good.' })
+    expect(nodeOf(helper('sa-1', ended('completed', 0.4, '  \n')))).toMatchObject({ duration: null, summary: null })
+  })
+
+  it('outlines a closed helper with its now line, and an open one with its steps and summary', () => {
+    const items = [
+      helper('sa-1', ended('failed', 75, 'Disk is fine.\nMore.'), { toolCount: 2, steps: [ranTool('terminal', 'du -sh'), child('sa-2')] }),
+      helper('sa-2', { s: 'queued' }, { parentId: 'sa-1' as HelperId, depth: 1, steps: [child('sa-3'), child('sa-4')] }),
+      helper('sa-3', WORKING, { parentId: 'sa-2' as HelperId, depth: 2 }),
+      helper('sa-4', WORKING, { parentId: 'sa-2' as HelperId, depth: 2 }),
+      helper('sa-5', { s: 'working', doing: 'thinking' }, { toolCount: 1 })
+    ]
+    const s = session({ history: [settled(items)] })
+    expect(lines(s).slice(1)).toEqual([
+      '◆ Helper Check sa-1 · 2 steps  (Failed)  1 min 15 s',
+      '◇ Helper Check sa-5 · 1 step',
+      '    Thinking',
+      '✓ Done'
+    ])
+    expect(lines(s, new Set(['t1/0'])).slice(1, 5)).toEqual([
+      '◆ Helper Check sa-1 · 2 steps  (Failed)  1 min 15 s',
+      '    ● Ran `du -sh`',
+      '    ◇ Helper Check sa-2  and 2 helpers of its own',
+      "    Helper's summary: Disk is fine."
+    ])
+  })
+
+  it('puts the live end on the newest helper the agent started while it waits on it', () => {
+    const live = running([helper('sa-1', ended('completed')), helper('sa-2', WORKING), helper('sa-3', { s: 'queued' }, { parentId: 'sa-2' as HelperId })])
+    expect(turnOf(live).end).toEqual({ kind: 'at', nodeKey: 't9/1', tone: 'live', elapsed: null })
+    expect(lines(live).slice(1)).toEqual(['◆ Helper Check sa-1 · 0 steps  3.3 s', '◉ Helper Check sa-2 · 0 steps'])
+  })
+
+  it('leaves a helper working in a settled turn without a live end', () => {
+    const view = threadView(session({ history: [settled([helper('sa-1', WORKING)])] }), CLOCK)
+    expect(view.turns[0]?.end).toEqual({ kind: 'done', words: 'Done' })
+    expect(checkThread(view)).toEqual([])
+  })
+})
+
+describe('plans', () => {
+  it('orders entries as Hermes sent them, each followed by its children, and counts done of what is not cancelled', () => {
+    const view = planOf(nodesOf(running([plan(entry('b', 'completed', 'a'), entry('a', 'in_progress'), entry('c', 'cancelled'), entry('d', 'pending', 'gone'))]))[0])
+    expect(view).toEqual({
+      done: 1, total: 3, cancelled: 1, openByDefault: true,
+      entries: [
+        { key: 't9/0/ea', text: 'do a', state: 'doing', depth: 0 },
+        { key: 't9/0/eb', text: 'do b', state: 'done', depth: 1 },
+        { key: 't9/0/ec', text: 'do c', state: 'cancelled', depth: 0 },
+        { key: 't9/0/ed', text: 'do d', state: 'todo', depth: 0 }
+      ]
+    })
+  })
+
+  it('places entries whose parents form a cycle once each', () => {
+    const view = planOf(nodesOf(running([plan(entry('a', 'pending', 'b'), entry('b', 'pending', 'a'), entry('c', 'pending', 'c'))]))[0])
+    expect(view.entries.map(({ text, depth }) => [text, depth])).toEqual([['do a', 0], ['do b', 1], ['do c', 0]])
+  })
+
+  it('opens by default only while its turn runs', () => {
+    expect(planOf(nodesOf(session({ history: [settled([plan(entry('1', 'pending'))])] }))[0]).openByDefault).toBe(false)
+  })
+
+  it('outlines the plan with a checked box once all is done, and its entries indented by depth when opened', () => {
+    const open = session({ history: [settled([plan(entry('a', 'completed'), entry('b', 'in_progress', 'a'), entry('c', 'cancelled'), entry('d', 'pending'))])] })
+    expect(lines(open, new Set(['t1/0'])).slice(1, 6)).toEqual([
+      '☐ Plan · 1 of 3 done, 1 cancelled',
+      '    [x] do a',
+      '      [>] do b',
+      '    [-] do c',
+      '    [ ] do d'
+    ])
+    expect(lines(session({ history: [settled([plan(entry('a', 'completed'), entry('b', 'cancelled'))])] }))[1]).toBe('☑ Plan · 1 of 1 done, 1 cancelled')
+    expect(lines(session({ history: [settled([plan()])] }))[1]).toBe('☐ Plan · 0 of 0 done')
+  })
+})
+
+describe('the live end while a hidden tool runs', () => {
+  it('sits on the helper delegate_task started', () => {
+    const live = running([helper('sa-1', ended('completed')), delegating, helper('sa-2', { s: 'queued' })])
+    expect(turnOf(live).end).toMatchObject({ kind: 'at', nodeKey: 't9/2', tone: 'live' })
+    expect(lines(live).slice(1)).toEqual(['◆ Helper Check sa-1 · 0 steps  3.3 s', '◉ Helper Check sa-2 · 0 steps', '    Waiting to start'])
+  })
+
+  it('sits on the plan while the to-do tool runs', () => {
+    const live = running([plan(entry('1', 'pending')), runningTool('todo_list', { todos: [] })])
+    expect(turnOf(live).end).toMatchObject({ kind: 'at', nodeKey: 't9/0', tone: 'live' })
+    expect(lines(live)[1]).toBe('◉ Plan · 0 of 1 done')
+  })
+
+  it('opens the Thinking tip when no helper is waiting', () => {
+    const live = running([helper('sa-1', ended('completed')), delegating])
+    expect(turnOf(live).end).toEqual({ kind: 'tip', words: [{ t: 'text', v: 'Thinking' }], elapsed: null })
+  })
+})
+
+describe('checkThread on helpers, plans and reasoning', () => {
+  const turn = (nodes: ThreadNode[], end: ThreadView['turns'][number]['end']): ThreadView => ({
+    state: 'ready', pending: [], earlier: 'none', changesAt: null, turns: [{ key: 't1', time: null, request: null, rowId: null, tokens: null, nodes, end }]
+  })
+  const planNode = (key: string): ThreadNode => ({ kind: 'plan', key, plan: { done: 0, total: 1, cancelled: 0, openByDefault: true, entries: [{ key: `${key}/e1`, text: 'x', state: 'todo', depth: 0 }] } })
+  const reasoningNode = (key: string, streaming: boolean): ThreadNode => ({ kind: 'reasoning', key, text: 'x', streaming, duration: null })
+  const helperNode = (key: string, state: HelperView['state']): ThreadNode => ({
+    kind: 'helper', key, helper: { goal: 'x', state, ended: null, now: null, count: 0, duration: null, steps: [{ kind: 'step', key: `${key}/s0`, title: [], latest: false }], summary: null }
+  })
+  const live = (nodeKey: string) => ({ kind: 'at', nodeKey, tone: 'live', elapsed: null }) as const
+
+  it('reports two plan nodes in one turn', () => {
+    expect(checkThread(turn([planNode('t1/0'), planNode('t1/1')], live('t1/1')))).toEqual(['turn t1: 2 plan nodes'])
+  })
+
+  it('reports two streaming reasoning blocks, and reasoning that streams in a settled turn', () => {
+    expect(checkThread(turn([reasoningNode('t1/0', true), reasoningNode('t1/1', true)], live('t1/1')))).toEqual(['turn t1: 2 reasoning nodes are streaming'])
+    expect(checkThread(turn([reasoningNode('t1/0', true)], { kind: 'done', words: 'Done' }))).toEqual(['turn t1: ends done while reasoning streams'])
+  })
+
+  it('lets the live end sit on a streaming block, a helper at work or a plan, and nowhere else of theirs', () => {
+    expect(checkThread(turn([reasoningNode('t1/0', true)], live('t1/0')))).toEqual([])
+    expect(checkThread(turn([helperNode('t1/0', 'queued')], live('t1/0')))).toEqual([])
+    expect(checkThread(turn([planNode('t1/0')], live('t1/0')))).toEqual([])
+    expect(checkThread(turn([reasoningNode('t1/0', false)], live('t1/0')))).toEqual(['turn t1: the live end sits on reasoning t1/0'])
+    expect(checkThread(turn([helperNode('t1/0', 'done')], live('t1/0')))).toEqual(['turn t1: the live end sits on helper t1/0'])
+  })
+
+  it('claims the keys of helper steps and plan entries', () => {
+    expect(checkThread(turn([helperNode('t1/0', 'working'), { kind: 'prose', key: 't1/0/s0', markdown: 'x', streaming: false }], live('t1/0'))))
+      .toEqual(['key t1/0/s0 is used twice'])
+    expect(checkThread(turn([planNode('t1/0'), { kind: 'notice', key: 't1/0/e1', tone: 'info', text: 'x' }], live('t1/0'))))
+      .toEqual(['key t1/0/e1 is used twice'])
   })
 })

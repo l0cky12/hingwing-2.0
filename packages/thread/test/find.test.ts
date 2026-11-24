@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { sessionOf } from '../../hermes/src/domain/reduce'
 import type { Link } from '../../hermes/src/domain/session'
-import { errand, fold, type Moment } from '../../hermes/test/support/story'
+import { delegate, errand, fold, type Moment } from '../../hermes/test/support/story'
 import { fieldId, findInThread, leafText, outline, parseMarkdown, proseLeaves, threadView, type StepView, type ThreadView } from '../src/thread-view'
 
 const ONLINE: Link = { state: 'online' }
@@ -107,5 +107,38 @@ describe('the prose a reader sees', () => {
     const text = proseLeaves(parseMarkdown(closing.markdown)).map(leafText).join('\n')
     expect(text).toContain('notes.md')
     expect(text).not.toContain('`')
+  })
+})
+
+describe('finding text in the delegating errand', () => {
+  const moments: Moment[] = []
+  fold(delegate(), moment => moments.push(moment))
+  const settled = threadView(sessionOf(fold(delegate()), ONLINE, null), CLOCK)
+  const [first] = settled.turns
+  const node = (kind: string) => first?.nodes.find(candidate => candidate.kind === kind)
+  const helper = node('helper')
+  const reasoning = node('reasoning')
+  if (helper?.kind !== 'helper' || reasoning === undefined) throw new Error('the delegating errand lost its helper or its reasoning')
+
+  it('finds words inside a closed reasoning block and opens it', () => {
+    expect(findInThread(settled, 'Batch: tool_describe')).toEqual([expect.objectContaining({ field: fieldId(reasoning.key, 'text'), opens: [reasoning.key] })])
+  })
+
+  it('finds the helper by its goal, and its steps and summary by opening it', () => {
+    expect(findInThread(settled, 'In the folder').map(match => match.field)).toContain(fieldId(helper.key, 'title'))
+    const [step] = helper.helper.steps
+    expect(findInThread(settled, '+ 1 command')).toEqual([expect.objectContaining({ field: fieldId(step!.key, 'title'), opens: [helper.key] })])
+    expect(findInThread(settled, 'Disk is not the cause')).toEqual([expect.objectContaining({ field: fieldId(helper.key, 'detail'), opens: [helper.key] })])
+  })
+
+  it('opens the plan for an entry, settled or running, so a plan the reader closed opens too', () => {
+    const plans = settled.turns.flatMap(turn => turn.nodes.filter(candidate => candidate.kind === 'plan'))
+    expect(findInThread(settled, 'Correlate findings').map(match => match.opens)).toEqual(plans.map(candidate => [candidate.key]))
+    const running = moments
+      .map(({ state }) => threadView(sessionOf(state, ONLINE, null), CLOCK))
+      .find(view => view.turns.length === 1 && view.turns[0]?.nodes.some(candidate => candidate.kind === 'plan'))
+    const plan = running?.turns[0]?.nodes.find(candidate => candidate.kind === 'plan')
+    if (running === undefined || plan === undefined) throw new Error('the first turn never ran with its plan')
+    expect(findInThread(running, 'Correlate findings').map(match => match.opens)).toEqual([[plan.key]])
   })
 })

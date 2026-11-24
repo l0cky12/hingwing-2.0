@@ -14,6 +14,8 @@ export type SessionId = Brand<string, 'SessionId'>
 export type TurnId = Brand<string, 'TurnId'>
 export type ToolId = Brand<string, 'ToolId'>
 export type PromptId = Brand<string, 'PromptId'>
+/** Hermes's `subagent_id`: one helper the agent handed part of the errand to. */
+export type HelperId = Brand<string, 'HelperId'>
 /** Idempotency key of one user message. Minted once when the user presses Send, reused on every retry. */
 export type InputId = Brand<string, 'InputId'>
 /** Hermes's `execution_generation`: one run of the agent. Travels on the thing it fences. */
@@ -93,8 +95,10 @@ export type Sync =
  * - running            = `run.state === 'running'`
  * - waiting for the user = a prompt item in `run.turn` whose state is `waiting` or `sending`
  * - settled            = `run.state === 'idle'`; every turn in `history` has an `outcome`
- * An open turn has no outcome field and a settled turn requires one. A pending prompt and a running
- * tool can only exist inside `run.turn`, because the settled item types exclude those states.
+ * An open turn has no outcome field and a settled turn requires one. A pending prompt, a running
+ * tool and streaming text or reasoning can only exist inside `run.turn`, because the settled item
+ * types exclude those states. A helper is the exception: Hermes can run helpers in the background,
+ * after the turn that started them ends, so a helper in a settled turn may still be working.
  * There are no busy or needs-input flags to keep in step. `activityOf` in `reduce.ts` derives the rest.
  */
 export type Run =
@@ -127,7 +131,11 @@ interface TurnBase<S extends 'open' | 'settled'> {
    * An open turn's value never moves once a frame has set it.
    */
   readonly began: Began | null
-  /** In arrival order. Append-only while open, except that a tool, a prompt or a declined notice is updated in place by id. */
+  /**
+   * In arrival order. Append-only while open, except that a tool, a prompt, a helper or a declined
+   * notice is updated in place by id, the plan in place by revision, and streaming reasoning in place.
+   * A helper is updated in place in a settled turn too.
+   */
   readonly items: readonly Item<S>[]
 }
 export interface OpenTurn extends TurnBase<'open'> {
@@ -168,13 +176,28 @@ export type Outcome =
   | { readonly kind: 'lost' }
 
 /** `Item<'settled'>` is assignable to `Item<'open'>`, so views take `Item` and handle both. */
-export type Item<S extends 'open' | 'settled' = 'open'> = TextItem<S> | ToolItem<S> | PromptItem<S> | NoticeItem
+export type Item<S extends 'open' | 'settled' = 'open'> =
+  | TextItem<S> | ReasoningItem<S> | ToolItem<S> | HelperItem | PlanItem | PromptItem<S> | NoticeItem
 
 export interface TextItem<S extends 'open' | 'settled' = 'open'> {
   readonly kind: 'text'
   readonly markdown: string
   /** A sealed segment takes no more deltas. The next delta starts a new text item. */
   readonly sealed: S extends 'open' ? boolean : true
+}
+
+/** What the model thought before it acted or answered. One item per block, which is one model call. */
+export interface ReasoningItem<S extends 'open' | 'settled' = 'open'> {
+  readonly kind: 'reasoning'
+  readonly text: string
+  /** A sealed block takes no more deltas. The next reasoning delta starts a new block. */
+  readonly sealed: S extends 'open' ? boolean : true
+  /**
+   * This client's clock when the block's first frame, and the frame that closed it, came off the live
+   * socket. null when that frame was replayed or the block came from history: the wire carries no time.
+   */
+  readonly startedAt: number | null
+  readonly endedAt: number | null
 }
 
 export interface ToolItem<S extends 'open' | 'settled' = 'open'> {
@@ -211,6 +234,52 @@ export type ToolResult =
   | { readonly kind: 'command'; readonly output: string; readonly exitCode: number | null; readonly clipped: number }
   | { readonly kind: 'text'; readonly text: string; readonly isError: boolean; readonly clipped: number }
   | { readonly kind: 'none' }
+
+/**
+ * A helper the agent handed part of the errand to (`delegate_task`), as Hermes's `subagent.*` frames
+ * tell it. Keyed by `id`. A helper of a helper is an item of its own whose `parentId` names its parent.
+ */
+export interface HelperItem {
+  readonly kind: 'helper'
+  readonly id: HelperId
+  /** The helper that started this one. null for a helper the agent itself started. */
+  readonly parentId: HelperId | null
+  /** 0 for a helper the agent started, 1 for that helper's own, and so on. */
+  readonly depth: number
+  readonly goal: string
+  readonly state: HelperState
+  /** Hermes's own count of the tools the helper ran. null until a frame says. */
+  readonly toolCount: number | null
+  /**
+   * In arrival order: each tool the helper started, and each helper of its own. Hermes reports when a
+   * helper's tool starts, never when it ends.
+   */
+  readonly steps: readonly HelperStep[]
+}
+export type HelperState =
+  | { readonly s: 'queued' }
+  | { readonly s: 'working'; readonly doing: 'thinking' | 'tool' | null }
+  | { readonly s: 'ended'; readonly status: HelperEnd; readonly durationS: number | null; readonly summary: string | null }
+/** How a helper ended. Hermes's `error` is `failed` here. */
+export type HelperEnd = 'completed' | 'failed' | 'timeout' | 'interrupted'
+export type HelperStep =
+  | { readonly kind: 'tool'; readonly name: string; readonly preview: string | null }
+  | { readonly kind: 'helper'; readonly id: HelperId }
+
+/** Hermes's to-do list for the turn. One per turn, replaced in place by a newer revision. */
+export interface PlanItem {
+  readonly kind: 'plan'
+  readonly revision: number
+  /** In Hermes's order. */
+  readonly entries: readonly PlanEntry[]
+}
+export interface PlanEntry {
+  readonly id: string
+  readonly text: string
+  readonly status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+  /** The entry this one sits under. null at the top level. */
+  readonly parentId: string | null
+}
 
 export interface PromptItem<S extends 'open' | 'settled' = 'open'> {
   readonly kind: 'prompt'

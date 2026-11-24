@@ -51,3 +51,4 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [New chat](./new-chat.md) covers the top bar's New chat button, Ctrl+N, the first message making the chat in the shown bot, the chat staying open after Hermes's lists refresh, and `/new`.
 - [Slash menu](./slash-menu.md) covers the `/` list of commands and skills, narrowing, completion, Escape, and a Hermes without the catalog.
 - [Edit a message](./edit-a-message.md) covers the pencil on a sent message, the editing line and Escape, the dialog that counts the later messages, Remove and send, Regenerate under the last reply, both disabled while a turn runs, and Hermes refusing the cut.
+- [Helpers and reasoning](./helpers-and-reasoning.md) covers a helper, a plan and a reasoning block on the thread: the helper running with the live end, the plan open while the turn runs, a collapsed "Thought for" button and what opening it, or a helper, shows.

@@ -609,3 +609,127 @@ describe('models', () => {
     expect(parseModelReceipt({ ...base, status: 'deferred', execution_generation: 'two' })).toEqual({ status: 'committed' })
   })
 })
+
+describe('parseEvent on helpers, the plan and reasoning', () => {
+  const recorded = loadFixture(fileURLToPath(new URL('../../../fixtures/delegate.jsonl', import.meta.url)))
+  const frames = recorded.steps.flatMap(step => ('push' in step ? [(step.push as { params: Params }).params] : []))
+  const of = (type: string) => frames.filter(frame => frame.type === type).map(eventOf)
+  const frame = (type: string, payload: unknown) => ({ type, session_id: SESSION, seq: 7, replay_epoch: EPOCH, payload })
+  const parsed = (type: string, payload: unknown) => {
+    const result = parseEvent(frame(type, payload))
+    return result.scope === 'session' ? result.event : null
+  }
+  const GOAL = 'Check the disk'
+
+  it('reads a reasoning delta as a piece of the block and reasoning.available as the whole block', () => {
+    expect(of('reasoning.delta')[0]).toEqual({ type: 'reasoning', text: 'The user wants:', whole: false })
+    expect(parsed('reasoning.available', { text: 'All of it.' })).toEqual({ type: 'reasoning', text: 'All of it.', whole: true })
+    expect(parseEvent(frame('reasoning.delta', {}))).toMatchObject({ event: null, skipped: 'invalid' })
+  })
+
+  it('reads the recorded to-do list in Hermes\'s order with its revision', () => {
+    expect(of('todo.updated').map(event => event.type === 'plan' && [event.revision, event.entries.map(entry => `${entry.id}:${entry.status}`)])).toEqual([
+      [1, ['2:in_progress', '1:pending', '3:pending']],
+      [2, ['2:completed', '1:in_progress', '3:pending']],
+      [3, ['2:completed', '1:completed', '3:completed']]
+    ])
+  })
+
+  it('takes a numeric id as its string, skips an entry with no words or no id, and keeps the first of two with one id', () => {
+    const todos = [
+      { id: 4, content: ' Ship it ', status: 'done-ish', parent: 1 },
+      { id: '5', content: '   ', status: 'pending' },
+      { content: 'No id', status: 'pending' },
+      { id: '6', content: 'Child', status: 'cancelled', parent: '4' },
+      { id: '6', content: 'Again', status: 'completed' },
+      'not an entry'
+    ]
+    expect(parsed('todo.updated', { todos, revision: 7 })).toEqual({
+      type: 'plan', revision: 7, entries: [
+        { id: '4', text: 'Ship it', status: 'pending', parentId: '1' },
+        { id: '6', text: 'Child', status: 'cancelled', parentId: '4' }
+      ]
+    })
+  })
+
+  it('cannot use a to-do list without a list or a revision', () => {
+    expect(parseEvent(frame('todo.updated', { todos: 'none', revision: 1 }))).toMatchObject({ event: null, skipped: 'invalid' })
+    expect(parseEvent(frame('todo.updated', { todos: [] }))).toMatchObject({ event: null, skipped: 'invalid' })
+  })
+
+  it('reads each recorded subagent frame as an update of one helper', () => {
+    const updates = frames.filter(({ type }) => type.startsWith('subagent.')).map(eventOf)
+    for (const update of updates) expect(update).toMatchObject({ type: 'helper', id: 'sa-0-13199361', parentId: null, depth: 0, goal: expect.stringMatching(/^In the folder/) })
+    expect(updates.map(update => update.type === 'helper' && update.update)).toEqual([
+      { is: 'queued' },
+      { is: 'working', doing: null },
+      { is: 'working', doing: 'thinking' },
+      { is: 'tool', name: 'terminal', preview: 'du -sh /tmp/highwing-backup-work/backups + 1 command' },
+      { is: 'working', doing: 'thinking' },
+      { is: 'working', doing: 'thinking' },
+      { is: 'progress' },
+      { is: 'ended', status: 'completed', durationS: 3.27, summary: expect.stringMatching(/^\{"df_output"/) }
+    ])
+    expect(updates.map(update => update.type === 'helper' && update.toolCount)).toEqual([0, 0, 0, 1, 1, 1, 1, 1])
+  })
+
+  it('names a helper Hermes sent no id for by its delegation and task index, and defaults its depth', () => {
+    expect(parsed('subagent.start', { goal: GOAL, task_count: 2, task_index: 1, delegation_id: 'deleg_1' })).toMatchObject({ id: 'deleg_1:1', depth: 0 })
+    expect(parsed('subagent.start', { goal: GOAL, task_count: 1, task_index: 0 })).toMatchObject({ id: 'task:0' })
+    expect(parsed('subagent.start', { goal: GOAL, task_count: 1, task_index: 0, subagent_id: 'sa-2', parent_id: 'sa-1', depth: 1 }))
+      .toMatchObject({ id: 'sa-2', parentId: 'sa-1', depth: 1 })
+    expect(parseEvent(frame('subagent.start', { task_count: 1, task_index: 0, subagent_id: 'sa-1' }))).toMatchObject({ event: null, skipped: 'invalid' })
+  })
+
+  it('falls back to the frame text for a tool preview, and to "tool" for a nameless tool', () => {
+    expect(parsed('subagent.tool', { goal: GOAL, task_count: 1, task_index: 0, subagent_id: 'sa-1', text: 'ls' }))
+      .toMatchObject({ update: { is: 'tool', name: 'tool', preview: 'ls' } })
+    expect(parsed('subagent.tool', { goal: GOAL, task_count: 1, task_index: 0, subagent_id: 'sa-1', tool_name: 'read_file' }))
+      .toMatchObject({ update: { is: 'tool', name: 'read_file', preview: null } })
+  })
+
+  it.each([
+    [undefined, 'completed'], ['completed', 'completed'], ['failed', 'failed'], ['error', 'failed'],
+    ['timeout', 'timeout'], ['interrupted', 'interrupted'], ['running', 'failed']
+  ])('ends a helper whose status is %s as %s', (status, end) => {
+    expect(parsed('subagent.complete', { goal: GOAL, task_count: 1, task_index: 0, subagent_id: 'sa-1', ...(status === undefined ? {} : { status }) }))
+      .toMatchObject({ update: { is: 'ended', status: end, durationS: null, summary: null } })
+  })
+
+  it('strips ANSI from a helper summary and drops a blank one', () => {
+    const ended = (summary: string) => parsed('subagent.complete', { goal: GOAL, task_count: 1, task_index: 0, subagent_id: 'sa-1', summary })
+    expect(ended('\u001b[32mAll good\u001b[0m')).toMatchObject({ update: { summary: 'All good' } })
+    expect(ended('\u001b[0m  \n')).toMatchObject({ update: { summary: null } })
+  })
+})
+
+describe('parseRows and reasoning', () => {
+  const recorded = loadFixture(fileURLToPath(new URL('../../../fixtures/delegate.jsonl', import.meta.url)))
+  const rows = recorded.steps.flatMap(step => ('stored' in step ? [step.stored as TranscriptMessage[]] : [])).at(-1) ?? []
+  const user = (text: string): TranscriptMessage => ({ role: 'user', text })
+  const assistant = (text: string, reasoning?: string): TranscriptMessage => ({ role: 'assistant', text, ...(reasoning === undefined ? {} : { reasoning }) })
+
+  it('puts an assistant row\'s reasoning above its text, sealed and with no times', () => {
+    expect(only(parseRows([user('Why?'), assistant('Because.', 'Let me think.')]).turns).items).toEqual([
+      { kind: 'reasoning', text: 'Let me think.', sealed: true, startedAt: null, endedAt: null },
+      { kind: 'text', markdown: 'Because.', sealed: true }
+    ])
+  })
+
+  it('keeps a row that holds only reasoning, and drops blank reasoning', () => {
+    expect(only(parseRows([user('Why?'), assistant('', 'Thinking first.'), assistant('Because.', ' \n')]).turns).items.map(item => item.kind))
+      .toEqual(['reasoning', 'text'])
+  })
+
+  it('counts a turn whose answer is followed by reasoning as answered', () => {
+    const { turns, unfinished } = parseRows([user('Why?'), assistant('Because.'), assistant('', 'An afterthought.')])
+    expect(unfinished).toBeNull()
+    expect(only(turns).outcome).toEqual({ kind: 'complete' })
+  })
+
+  it('reads the stored delegating errand with each turn\'s reasoning blocks', () => {
+    const { turns } = parseRows(rows)
+    expect(turns.map(turn => turn.items.filter(item => item.kind === 'reasoning').length)).toEqual([2, 2])
+    expect(turns.map(turn => turn.outcome.kind)).toEqual(['complete', 'complete'])
+  })
+})
