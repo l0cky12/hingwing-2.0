@@ -113,15 +113,18 @@ export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer }
       return <Plan nodeKey={node.key} plan={node.plan} open={isOpen(state, node.key, node.plan.openByDefault)} live={live} elapsed={elapsed} onToggle={onToggle} />
     case 'notice':
       return <p className={node.tone === 'error' ? 'err' : 'notice'} data-find={fieldId(node.key, 'text')}>{node.text}</p>
+    case 'moa':
+    case 'status':
+      return null
   }
 }
 
 const END_CLASS = {
   tip: 'working', paused: 'paused', done: 'complete', failed: 'error', stopped: 'interrupted', lost: 'lost'
-} as const satisfies Record<Exclude<ThreadEnd['kind'], 'at'>, string>
+} as const satisfies Record<Exclude<ThreadEnd['kind'], 'at' | 'none'>, string>
 
 function End({ turnKey, end }: { readonly turnKey: string; readonly end: ThreadEnd }) {
-  if (end.kind === 'at') return null
+  if (end.kind === 'at' || end.kind === 'none') return null
   const words = end.kind === 'tip' ? <><span><PhraseText words={end.words} /></span><Elapsed elapsed={end.elapsed} /></> : end.kind === 'done' ? <span className="sr">{end.words}</span> : <span data-find={fieldId(turnKey, 'end')}>{end.words}</span>
   return <div className={`tip ${END_CLASS[end.kind]}`} role="status" data-end={end.kind}><span className="glyph" />{words}</div>
 }

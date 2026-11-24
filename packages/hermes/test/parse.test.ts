@@ -140,7 +140,8 @@ describe('parseEvent on the errand fixture', () => {
       type: 'prompt.opened',
       id: '3c0eea6699184b1dbee7a16b0a6bf830',
       generation: 1,
-      ask: { kind: 'approval', command: 'rm -rf /tmp/hermes-proto-work/scratch', reason: 'delete in root path', choices: ['once', 'deny', 'session', 'always'] }
+      ask: { kind: 'approval', command: 'rm -rf /tmp/hermes-proto-work/scratch', reason: 'delete in root path', choices: ['once', 'deny', 'session', 'always'] },
+      timeoutS: 300
     })
     const settled = only(params.filter(({ type }) => type === 'approval.settled'))
     expect(eventOf(settled)).toEqual({ type: 'prompt.settled', id: '3c0eea6699184b1dbee7a16b0a6bf830' })
@@ -797,5 +798,49 @@ describe('parsePathMatches', () => {
   it('lists nothing for a reply it cannot read', () => {
     expect(parsePathMatches({} as CompletionItemsResult)).toEqual([])
     expect(parsePathMatches({ items: 'no' } as unknown as CompletionItemsResult)).toEqual([])
+  })
+})
+
+describe('what Hermes says, parsed', () => {
+  const said = (type: string, payload: Record<string, unknown>) => {
+    const parsed = parseEvent({ type, session_id: SESSION, seq: 4, replay_epoch: EPOCH, payload })
+    if (parsed.scope !== 'session') throw new Error(`${type} did not reach the session`)
+    return parsed.event === null ? parsed.skipped : parsed.event
+  }
+
+  it('reads the four MoA events as steps of a round, as Hermes publishes them', () => {
+    expect(said('moa.progress', { label: 'a', refs_done: 1, refs_total: 3 })).toEqual({ type: 'moa', step: { is: 'progress', done: 1, total: 3 } })
+    expect(said('moa.reference', { label: 'a', text: '\u001b[1mUse rm.\u001b[0m', index: 1, count: 3 })).toEqual({ type: 'moa', step: { is: 'reference', label: 'a', text: 'Use rm.' } })
+    expect(said('moa.phase', { phase: 'aggregator', aggregator: 'judge', refs_done: 3, refs_total: 3 })).toEqual({ type: 'moa', step: { is: 'aggregating', by: 'judge' } })
+    expect(said('moa.aggregating', { aggregator: '' })).toEqual({ type: 'moa', step: { is: 'aggregating', by: null } })
+    expect(said('moa.phase', { phase: 'references' })).toBe('invalid')
+  })
+
+  it('splits status.update by kind, and leaves a process line unshown', () => {
+    expect(said('status.update', { kind: 'compacting', text: 'Compacting…' })).toEqual({ type: 'status', about: 'compacting', text: 'Compacting…' })
+    expect(said('status.update', { kind: 'compacted', text: 'Done.' })).toEqual({ type: 'status', about: 'compacted', text: 'Done.' })
+    expect(said('status.update', { kind: 'goal', text: 'Goal met.' })).toEqual({ type: 'status', about: 'goal', text: 'Goal met.' })
+    expect(said('status.update', { kind: 'warn', text: 'Memory is off.' })).toEqual({ type: 'status', about: 'warning', text: 'Memory is off.' })
+    expect(said('status.update', { kind: 'lifecycle', text: 'Retrying.' })).toEqual({ type: 'status', about: 'other', text: 'Retrying.' })
+    expect(said('status.update', { kind: 'process', text: 'Resuming.' })).toBe('unshown')
+    expect(said('agent.print', { text: '\u001b[2mSubagent done.\u001b[0m' })).toEqual({ type: 'status', about: 'print', text: 'Subagent done.' })
+  })
+
+  it('keys a notice by its key, then its id, then its words, and keeps a time to live only for a ttl notice', () => {
+    expect(said('notification.show', { text: 'Credits are low.', level: 'warn', kind: 'sticky', key: 'credits', id: 'n1', ttl_ms: null }))
+      .toEqual({ type: 'notice.shown', notice: { key: 'credits', level: 'warn', text: 'Credits are low.', detail: null, ttlMs: null } })
+    expect(said('notification.show', { text: 'Saved.', level: 'success', kind: 'ttl', id: 'n2', ttl_ms: 4000, detail: 'All of it.' }))
+      .toEqual({ type: 'notice.shown', notice: { key: 'n2', level: 'success', text: 'Saved.', detail: 'All of it.', ttlMs: 4000 } })
+    expect(said('notification.show', { text: 'Odd.', level: 'loud', kind: 'sticky', ttl_ms: 4000 }))
+      .toEqual({ type: 'notice.shown', notice: { key: 'Odd.', level: 'info', text: 'Odd.', detail: null, ttlMs: null } })
+    expect(said('notification.clear', { key: 'credits' })).toEqual({ type: 'notice.cleared', key: 'credits' })
+  })
+
+  it('reads the image a finished tool names and a prompt\'s timeout', () => {
+    expect(said('tool.complete', { tool_id: 'c1', name: 'vision_analyze', image_path: '/work/chart.png' })).toMatchObject({ type: 'tool.finished', image: '/work/chart.png' })
+    expect(said('tool.complete', { tool_id: 'c1', name: 'terminal', image_path: null })).toMatchObject({ type: 'tool.finished', image: null })
+    const prompt: CanonicalPendingPrompt = { kind: 'approval', prompt_id: 'p1', execution_generation: 2, command: 'rm x', choices: ['once'], timeout_s: 60 }
+    expect(said('approval.request', { ...prompt })).toMatchObject({ type: 'prompt.opened', timeoutS: 60 })
+    expect(said('approval.request', { ...prompt, timeout_s: null })).toMatchObject({ type: 'prompt.opened', timeoutS: null })
   })
 })

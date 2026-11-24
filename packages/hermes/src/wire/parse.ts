@@ -5,30 +5,34 @@
 import { canonicalBotId, type BotCreated, type BotDetails, type BotFacts, type BotId } from '../domain/bots'
 import type { ContextBreakdown, ModelConfirm, ModelMenu } from '../domain/command'
 import type { PaneAsk } from '../domain/pane'
-import type { Admission, HelperUpdate, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
+import type { Admission, HelperUpdate, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type {
   Ask, Began, FileDiff, Generation, HelperEnd, HelperId, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, PromptId, SessionId,
-  SessionUsage, SettledTurn, SidebarRow, ToolId, ToolResult, TurnId
+  SessionUsage, SettledTurn, SidebarRow, StatusAbout, ToolId, ToolResult, TurnId
 } from '../domain/session'
 import type { PathMatch } from '../domain/path'
 import type { RelayState } from '../domain/relay'
 import type { SlashCatalog, SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
 import type {
-  CanonicalBotDeliverResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalProfilesResult, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
-  CanonicalSnapshot, CompletionItem, CompletionItemsResult, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
-  MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, PreviewClosePayload, PreviewOpenPayload, ProfilesConfigureResult, ProfilesCreateResult, ProfilesDescribeResult, ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult,
-  SessionStats, SessionTitlePayload, SessionUsagePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload, SubagentEventPayload,
-  TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage
+  AgentPrintPayload, CanonicalBotDeliverResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalPendingPrompt,
+  CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, CommandDispatchResult, CommandsCatalogResult,
+  CompletionItem, CompletionItemsResult, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload,
+  MessageInterimPayload, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload, MoaProgressPayload, MoaReferencePayload, ModelOptionProvider,
+  ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PreviewClosePayload, PreviewOpenPayload,
+  ProfilesConfigureResult, ProfilesCreateResult, ProfilesDescribeResult, ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane,
+  ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult, SessionStats,
+  SessionTitlePayload, SessionUsagePayload, StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload,
+  SubagentEventPayload, TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage
 } from './contract.generated'
 
 export type ParsedEvent =
   /** One shown frame of a session's stream: a session id, a seq and a replay epoch on the envelope, and a payload we use. */
   | { readonly scope: 'session'; readonly sessionId: SessionId; readonly type: string; readonly stamp: Stamp; readonly event: SessionEvent }
   /**
-   * A frame of a session's stream with nothing to show: a type we leave out for now (status.update,
-   * session.usage), or a payload we could not use. It still reaches the session, so the cursor moves
-   * and the frame is not mistaken for a hole.
+   * A frame of a session's stream with nothing to show: a type we leave out for now, or a payload we
+   * could not use. It still reaches the session, so the cursor moves and the frame is not mistaken for
+   * a hole.
    */
   | { readonly scope: 'session'; readonly sessionId: SessionId; readonly type: string; readonly stamp: Stamp; readonly event: null; readonly skipped: 'unshown' | 'invalid' }
   /** A frame of a session's stream that asks something of the window, not of the chat. It moves the cursor as an unshown frame does. */
@@ -132,15 +136,17 @@ const LOST: Outcome = { kind: 'lost' }
 const NO_RESULT: ToolResult = { kind: 'none' }
 
 /** An approval or clarify prompt. Event payloads and snapshot entries are the same dict (`gateway/session_pending_controls.py:18-51,74`). */
-function promptOf(value: unknown): { readonly id: PromptId; readonly generation: Generation; readonly ask: Ask } {
+function promptOf(value: unknown): { readonly id: PromptId; readonly generation: Generation; readonly ask: Ask; readonly timeoutS: number | null } {
   const p = fields<CanonicalPendingPrompt>(value)
   const id = p.str('prompt_id') as PromptId
   const generation = p.int('execution_generation') as Generation
+  const seconds = p.optNum('timeout_s')
+  const timeoutS = seconds !== null && seconds > 0 ? seconds : null
   switch (p.str('kind')) {
     case 'approval':
-      return { id, generation, ask: { kind: 'approval', command: p.str('command'), reason: p.optStr('description') || null, choices: p.strs('choices') } }
+      return { id, generation, timeoutS, ask: { kind: 'approval', command: p.str('command'), reason: p.optStr('description') || null, choices: p.strs('choices') } }
     case 'clarify':
-      return { id, generation, ask: { kind: 'clarify', question: p.str('question'), choices: p.strs('choices'), multi: p.optBool('multi_select') ?? false } }
+      return { id, generation, timeoutS, ask: { kind: 'clarify', question: p.str('question'), choices: p.strs('choices'), multi: p.optBool('multi_select') ?? false } }
     default:
       throw new Unusable()
   }
@@ -155,7 +161,8 @@ function admissionOf(value: unknown): Admission {
   return { inputId: row.str('input_id') as Admission['inputId'], admissionId: row.str('admission_id'), text: row.str('text'), status: status as Admission['status'] }
 }
 
-type Shown = (payload: Obj, envelope: Obj) => SessionEvent
+/** null: a frame of a shown type that Highwing still leaves out, such as a process status line. */
+type Shown = (payload: Obj, envelope: Obj) => SessionEvent | null
 
 interface MetaFields {
   readonly title?: string | null
@@ -347,6 +354,31 @@ export const SHOWN: { readonly [type: string]: Shown } = {
       result: parseToolResult(p.raw('result'), p.optStr('result_text'), p.optBool('is_error') ?? false)
     }
   },
+  /** The four MoA facade events, each a step of one round (`gateway/local_viewer_events.py:129-161`). */
+  'moa.progress': payload => {
+    const p = fields<MoaProgressPayload>(payload)
+    return { type: 'moa', step: { is: 'progress', done: p.int('refs_done'), total: p.int('refs_total') } }
+  },
+  'moa.reference': payload => {
+    const p = fields<MoaReferencePayload>(payload)
+    return { type: 'moa', step: { is: 'reference', label: p.str('label'), text: stripAnsi(p.str('text')) } }
+  },
+  'moa.phase': payload => {
+    const p = fields<MoaPhasePayload>(payload)
+    if (p.str('phase') !== 'aggregator') throw new Unusable()
+    return { type: 'moa', step: { is: 'aggregating', by: p.optStr('aggregator') || null } }
+  },
+  'moa.aggregating': payload => ({ type: 'moa', step: { is: 'aggregating', by: fields<MoaAggregatingPayload>(payload).optStr('aggregator') || null } }),
+  /** One wire type for several things, told apart by `kind`. A process line says when to read the process list, which Highwing does not show yet. */
+  'status.update': payload => {
+    const p = fields<StatusUpdatePayload>(payload)
+    const kind = p.str('kind')
+    if (kind === 'process') return null
+    return { type: 'status', about: STATUS_ABOUT[kind] ?? 'other', text: stripAnsi(p.str('text')) }
+  },
+  'agent.print': payload => ({ type: 'status', about: 'print', text: stripAnsi(fields<AgentPrintPayload>(payload).str('text')) }),
+  'notification.show': payload => ({ type: 'notice.shown', notice: noticeOf(payload) }),
+  'notification.clear': payload => ({ type: 'notice.cleared', key: fields<NotificationClearPayload>(payload).str('key') }),
   'approval.request': promptOpened,
   'clarify.request': promptOpened,
   'approval.settled': promptSettled,
@@ -392,16 +424,39 @@ export const FOR_WINDOW: { readonly [type: string]: (payload: unknown) => PaneAs
 export const UNSHOWN: ReadonlySet<string> = new Set([
   /** Every canonical turn publishes it (`gateway/run_turn_progress.py:1092`); not in the generated contract. */
   'agent.step',
-  'agent.print', 'agent.terminal.output', 'background.complete', 'billing.step_up.verification', 'bot_relay.outbox.pending',
+  'agent.terminal.output', 'background.complete', 'billing.step_up.verification', 'bot_relay.outbox.pending',
   'browser.progress', 'btw.complete', 'connection.request', 'connection.update', 'cron.changed', 'display.install.done',
   'display.install.log', 'display.lease', 'display.status', 'free_tier.challenge', 'gateway.ready', 'groups.changed',
-  'message.reaction', 'moa.aggregating', 'moa.phase', 'moa.progress', 'moa.reference', 'notice', 'notification.clear',
-  'notification.show', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
+  'message.reaction', 'notice', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
   'pet.hatch.progress', 'platforms.changed', 'preview.restart.complete',
   'preview.restart.progress', 'projects.changed', 'reaction', 'request.cancel',
   'review.summary', 'session.control.update', 'session.reclaimed', 'session.resume_progress',
-  'setup.ready', 'skills.changed', 'skin.changed', 'status.update', 'terminal.close', 'tip.show', 'tool.output_risk', 'voice.interrupted', 'voice.partial', 'voice.status', 'voice.transcript', 'wake.detected'
+  'setup.ready', 'skills.changed', 'skin.changed', 'terminal.close', 'tip.show', 'tool.output_risk', 'voice.interrupted', 'voice.partial', 'voice.status', 'voice.transcript', 'wake.detected'
 ])
+
+/**
+ * `status.update` kinds: `compacting` is a compaction's progress line, re-tagged by Hermes from its
+ * mark (`agent/conversation_compression.py:157-166`), and `compacted` its end. A goal check's verdict
+ * is `goal` (`gateway/run_goals.py:238-246`). `warn` is `_emit_warning`. The rest read as `other`.
+ */
+const STATUS_ABOUT: { readonly [kind: string]: StatusAbout } = { compacting: 'compacting', compacted: 'compacted', goal: 'goal', warn: 'warning' }
+
+const NOTICE_LEVELS: readonly string[] = ['info', 'warn', 'error', 'success'] satisfies ShownNotice['level'][]
+
+/** `AgentNotice` as `run_turn_progress.py:1119-1127` publishes it. A notice with no key is keyed by its id, then by its words. */
+function noticeOf(payload: Obj): ShownNotice {
+  const p = fields<NotificationShowPayload>(payload)
+  const text = stripAnsi(p.str('text'))
+  const level = p.optStr('level') ?? 'info'
+  const ttl = p.optNum('ttl_ms')
+  return {
+    key: p.optStr('key') || p.optStr('id') || text,
+    level: NOTICE_LEVELS.includes(level) ? level as ShownNotice['level'] : 'info',
+    text,
+    detail: p.optStr('detail') || null,
+    ttlMs: p.optStr('kind') === 'ttl' && ttl !== null && ttl > 0 ? ttl : null
+  }
+}
 
 /**
  * `status` is the contract's TurnStatus. Without one, `outcome` decides the way Hermes derives the
@@ -453,9 +508,10 @@ export function parseEvent(params: unknown): ParsedEvent {
   }
   const shown = Object.hasOwn(SHOWN, type) ? SHOWN[type] : undefined
   if (shown === undefined) return { scope: 'session', sessionId, type, stamp, event: null, skipped: 'unshown' }
-  const event = isObject(payload) ? usable(() => shown(payload, params)) : null
-  if (event === null) return { scope: 'session', sessionId, type, stamp, event: null, skipped: 'invalid' }
-  return { scope: 'session', sessionId, type, stamp, event }
+  const parsed = isObject(payload) ? usable(() => ({ event: shown(payload, params) })) : null
+  if (parsed === null) return { scope: 'session', sessionId, type, stamp, event: null, skipped: 'invalid' }
+  if (parsed.event === null) return { scope: 'session', sessionId, type, stamp, event: null, skipped: 'unshown' }
+  return { scope: 'session', sessionId, type, stamp, event: parsed.event }
 }
 
 /**
@@ -477,7 +533,10 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
     subscriptionId: reply.subscription_id,
     watermark: { epoch: reply.replay_epoch, seq: reply.last_sequence },
     queue: reply.pending.flatMap(row => usable(() => admissionOf(row)) ?? []),
-    prompts: reply.prompts.flatMap(prompt => usable(() => promptOf(prompt)) ?? []),
+    prompts: reply.prompts.flatMap(prompt => {
+      const parsed = usable(() => promptOf(prompt))
+      return parsed === null ? [] : [{ id: parsed.id, generation: parsed.generation, ask: parsed.ask }]
+    }),
     history: reply.messages_omitted === true ? null : {
       ...parseRows(reply.display_messages ?? []),
       older: first?.['archived_truncated'] === true ? { cursor: null } : null

@@ -16,7 +16,7 @@ const settled = (id: string, began: Began | null): SettledTurn => ({
 })
 
 const session = (history: readonly SettledTurn[], over: Partial<Session> = {}): Session => ({
-  id: 's1' as Session['id'], title: '', cwd: null, history, earlier: 'none', run: { state: 'idle' }, outbox: [],
+  id: 's1' as Session['id'], title: '', cwd: null, history, earlier: 'none', run: { state: 'idle' }, interlude: [], outbox: [],
   model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, sync: { state: 'live' }, ...over
 })
 
@@ -125,7 +125,7 @@ describe('the elapsed time on the live end', () => {
   it('keeps it out of the words and off a prompt that waits for the user', () => {
     const view = threadView(running(began), UTC(NOW + 5 * MINUTE))
     expect(view.turns[0]!.end).toEqual({ kind: 'tip', words: [{ t: 'text', v: 'Thinking' }], elapsed: '5 min' })
-    const asking: Item = { kind: 'prompt', id: 'p1' as never, generation: 1 as Generation, ask: { kind: 'approval', command: 'rm x', reason: null, choices: ['once'] }, state: { s: 'waiting', error: null } }
+    const asking: Item = { kind: 'prompt', id: 'p1' as never, generation: 1 as Generation, ask: { kind: 'approval', command: 'rm x', reason: null, choices: ['once'] }, state: { s: 'waiting', error: null }, deadline: null }
     expect(threadView(running(began, [asking]), UTC(NOW + 5 * MINUTE)).turns[0]!.end).toEqual({ kind: 'at', nodeKey: 't9/0', tone: 'asking' })
   })
 

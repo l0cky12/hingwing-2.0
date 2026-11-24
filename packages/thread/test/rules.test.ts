@@ -11,7 +11,7 @@ const NONE: ToolResult = { kind: 'none' }
 
 function session(over: Partial<Session> = {}): Session {
   return {
-    id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, outbox: [],
+    id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, interlude: [], outbox: [],
     model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, sync: { state: 'live' }, ...over
   }
 }
@@ -41,7 +41,7 @@ function diff(path: string, added: number, removed: number, createsFile = false)
 const command = (output: string, exitCode = 0): ToolResult => ({ kind: 'command', output, exitCode, clipped: 0 })
 
 function approval<S extends 'open' | 'settled' = 'open'>(state: PromptItem<S>['state'], cmd = 'rm -rf scratch'): PromptItem<S> {
-  return { kind: 'prompt', id: 'p1' as PromptId, generation: 1 as Generation, ask: { kind: 'approval', command: cmd, reason: 'delete', choices: ['once', 'deny', 'session', 'always'] }, state }
+  return { kind: 'prompt', id: 'p1' as PromptId, generation: 1 as Generation, ask: { kind: 'approval', command: cmd, reason: 'delete', choices: ['once', 'deny', 'session', 'always'] }, state, deadline: null }
 }
 
 const turnOf = (s: Session) => threadView(s, CLOCK).turns.at(-1)!
@@ -577,5 +577,40 @@ describe('attachments', () => {
     const view = threadView(session({ outbox: [{ inputId: 'i1' as never, text: 'Summarise this', attachments: [sent[1]!], state: { s: 'sending' } }] }), CLOCK)
     expect(view.pending[0]?.attachments).toEqual([sent[1]])
     expect(outline(view)).toBe(['+ [file] contract.pdf', '⋯ Summarise this  (sending)'].join('\n'))
+  })
+})
+
+describe('what Hermes says', () => {
+  const goal: Item<'settled'> = { kind: 'status', what: 'line', about: 'goal', text: 'Goal met.\nAll three items are done.' }
+  const notice = (state: 'shown' | 'cleared'): Item<'settled'> =>
+    ({ kind: 'status', what: 'notice', key: 'credits', level: 'warn', text: 'Credits are low.', detail: null, ttlMs: null, seenAt: null, state })
+  const moa: Item<'settled'> = { kind: 'moa', progress: { done: 2, total: 3 }, references: [{ label: 'a', text: 'Use rm.' }], phase: { is: 'aggregating', by: 'judge' } }
+  const interlude = (items: readonly Item<'settled'>[], id = 'interlude:2'): SettledTurn =>
+    ({ id: id as TurnId, request: null, began: null, items, outcome: { kind: 'interlude' }, rows: [], tokens: null })
+
+  it('prints a glyph line for a MoA round, a status line and a notice', () => {
+    const turn = running([moa, goal, notice('shown'), notice('cleared')])
+    expect(lines(turn)).toEqual([
+      '> Do the errand',
+      '≋ MoA 2/3 · 1 references · aggregating with judge',
+      '· goal: Goal met.',
+      '※ warn: Credits are low.',
+      '※ warn: Credits are low.  (cleared)',
+      '◉ Thinking'
+    ])
+    expect(checkThread(threadView(turn, CLOCK))).toEqual([])
+  })
+
+  it('shows the live interlude after the last turn, with no request and no end mark', () => {
+    const view = threadView(session({ history: [settled([text('Done.')])], interlude: [goal] }), CLOCK)
+    expect(view.turns.map(turn => [turn.key, turn.end.kind])).toEqual([['t1', 'done'], ['interlude:live', 'none']])
+    expect(outline(view).split('\n')).toEqual(['> Do the errand', '| Done.', '✓ Done', '', '· goal: Goal met.'])
+    expect(checkThread(view)).toEqual([])
+  })
+
+  it('draws a sealed interlude between turns as settled, with no end mark', () => {
+    const view = threadView(session({ history: [settled([text('Done.')]), interlude([goal]), settled([text('Again.')], COMPLETE, 't3')] }), CLOCK)
+    expect(view.turns.map(turn => turn.end.kind)).toEqual(['done', 'none', 'done'])
+    expect(checkThread(view)).toEqual([])
   })
 })

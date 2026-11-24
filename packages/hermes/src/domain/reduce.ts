@@ -5,9 +5,9 @@
  * its way). Tests feed it event logs.
  */
 import type {
-  Ask, Attachment, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, ModelRef, OpenTurn, Outcome, OutboxEntry, PlanEntry,
-  PromptId, PromptItem, PromptReply, ReasoningItem, Request, Run, Session, SessionContent, SessionId, SessionModel, SessionUsage, SettledTurn, Sync,
-  TextItem, Tokens, ToolId, ToolItem, ToolResult, TurnId
+  Ask, Attachment, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, MoaItem, ModelRef, OpenTurn, OutboxEntry,
+  Outcome, PlanEntry, PromptId, PromptItem, PromptReply, ReasoningItem, Request, Run, Session, SessionContent, SessionId, SessionModel, SessionUsage,
+  SettledTurn, StatusAbout, StatusItem, Sync, TextItem, Tokens, ToolId, ToolItem, ToolResult, TurnId
 } from './session'
 
 /** A gateway event in domain terms. `wire/parse.ts` builds these. Field names are ours, not the wire's. */
@@ -30,6 +30,7 @@ export type SessionEvent =
       readonly toolCount: number | null
       readonly update: HelperUpdate
     }
+  | { readonly type: 'moa'; readonly step: MoaStep }
   | { readonly type: 'tool.announced'; readonly name: string }
   | { readonly type: 'tool.started'; readonly id: ToolId; readonly name: string; readonly args: { readonly [k: string]: Json } }
   | { readonly type: 'tool.progress'; readonly id: ToolId; readonly note: string }
@@ -44,7 +45,7 @@ export type SessionEvent =
       readonly image: string | null
     }
   /** `generation` is the prompt payload's own `execution_generation`, never the envelope's nullable stamp. */
-  | { readonly type: 'prompt.opened'; readonly id: PromptId; readonly generation: Generation; readonly ask: Ask }
+  | { readonly type: 'prompt.opened'; readonly id: PromptId; readonly generation: Generation; readonly ask: Ask; readonly timeoutS: number | null }
   | { readonly type: 'prompt.settled'; readonly id: PromptId }
   | { readonly type: 'prompts.cancelled'; readonly ids: readonly PromptId[] }
   /** `usage`: Hermes's session totals and context fill at the turn's end. null when the frame carries none. */
@@ -55,6 +56,9 @@ export type SessionEvent =
   /** A tick while a turn runs. Its totals are mid-turn, so only the context fill is read. */
   | { readonly type: 'usage'; readonly context: SessionUsage['context'] }
   | { readonly type: 'notice'; readonly tone: 'error' | 'info'; readonly text: string }
+  | { readonly type: 'status'; readonly about: StatusAbout; readonly text: string }
+  | { readonly type: 'notice.shown'; readonly notice: ShownNotice }
+  | { readonly type: 'notice.cleared'; readonly key: string }
   | {
       readonly type: 'meta'
       readonly title?: string
@@ -80,6 +84,13 @@ export type HelperUpdate =
   | { readonly is: 'progress' }
   | { readonly is: 'tool'; readonly name: string; readonly preview: string | null }
   | { readonly is: 'ended'; readonly status: HelperEnd; readonly durationS: number | null; readonly summary: string | null }
+
+export type MoaStep =
+  | { readonly is: 'progress'; readonly done: number; readonly total: number }
+  | { readonly is: 'reference'; readonly label: string; readonly text: string }
+  | { readonly is: 'aggregating'; readonly by: string | null }
+
+export type ShownNotice = Pick<Extract<StatusItem, { what: 'notice' }>, 'key' | 'level' | 'text' | 'detail' | 'ttlMs'>
 
 /** What became of a model pick, from Hermes's receipt. `settled`: a switch committed or a held pick was dropped. */
 export type PickOutcome =
@@ -244,7 +255,7 @@ export interface Tracked {
 
 export function emptyTracked(id: SessionId): Tracked {
   return {
-    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, outbox: [], model: NO_MODEL, usage: NO_USAGE, yolo: null },
+    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, yolo: null },
     gate: { at: 'detached', why: 'new', cursor: null },
     fence: { revision: 0, text: null, older: null, admissions: {}, settledThrough: null, generation: null, attaches: 0, totalsEpoch: 0 }
   }
@@ -262,6 +273,8 @@ export const PARK_LIMIT = 2048
  *   the same input twice changes nothing the second time. `attach` on a session that is attaching or
  *   live changes nothing.
  * - A reply of an older attach attempt changes nothing.
+ * - Nothing opens a turn to hold a line Hermes said. A line goes into the running turn, or into the
+ *   interlude while none runs.
  */
 export function reduce(state: Tracked, input: SessionInput): Tracked {
   const { gate } = state
@@ -297,8 +310,7 @@ export function reduce(state: Tracked, input: SessionInput): Tracked {
     }
     case 'declined': {
       const { requestId, method } = input.request
-      if (holdsDeclined(state.content, requestId)) return state
-      return editTurn(ensureRun(state, state.fence.generation, null), turn => pushItem(turn, { kind: 'notice', what: 'declined', requestId, method }))
+      return holdsDeclined(state.content, requestId) ? state : say(state, { kind: 'notice', what: 'declined', requestId, method })
     }
     case 'local':
       return act(state, input.action)
@@ -403,7 +415,7 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       id: runTurnId(snapshot.generation),
       request: requestOf(page.unfinished?.request ?? null) ?? startedRequest(snapshot.queue),
       began: page.unfinished?.began ?? (before.state === 'running' && sameRun ? before.turn.began : null),
-      items: [...(page.unfinished?.items ?? []), ...snapshot.prompts.map(waitingPrompt)],
+      items: [...(page.unfinished?.items ?? []), ...snapshot.prompts.map(prompt => waitingPrompt(prompt, null))],
       announced: null
     }
   }
@@ -416,6 +428,7 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       history,
       earlier: page.older === null ? 'none' : 'more',
       run,
+      interlude: [],
       outbox: content.outbox,
       // Hermes asks a newly attached viewer again about a held pick (gateway/session_deferred_pick.py:46-54).
       model: { ...modelFrom(content.model, snapshot.model), next: null, ask: null },
@@ -461,7 +474,7 @@ function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
       isPending(item) && !snapshot.prompts.some(prompt => prompt.id === item.id) ? { ...item, state: answeredFrom(item) } : item)
     return snapshot.prompts
       .filter(prompt => !answered.items.some(item => item.kind === 'prompt' && item.id === prompt.id))
-      .reduce((open, prompt) => pushItem(open, waitingPrompt(prompt)), answered)
+      .reduce((open, prompt) => pushItem(open, waitingPrompt(prompt, null)), answered)
   })
   return snapshot.queue.reduce(admission, next)
 }
@@ -590,6 +603,7 @@ const NO_MODEL: SessionModel = { current: null, next: null, ask: null }
 const NO_USAGE: SessionUsage = { totals: null, context: null }
 const ZERO_TOKENS: Tokens = { input: 0, output: 0, reasoning: 0 }
 const LOST: Outcome = { kind: 'lost' }
+const INTERLUDE: Outcome = { kind: 'interlude' }
 const ANSWERED_ELSEWHERE: PromptItem['state'] = { s: 'answered', reply: null }
 
 /**
@@ -653,6 +667,8 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
       })
     case 'helper':
       return helperFrame(state, stamp.generation, event)
+    case 'moa':
+      return editTurn(ensureRun(state, stamp.generation, seenAt), turn => moaStep(turn, event.step))
     case 'tool.announced':
       return editTurn(ensureRun(state, stamp.generation, seenAt), turn => patch(turn, { announced: event.name }))
     case 'tool.started':
@@ -677,9 +693,11 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
             : item)
       })
     }
-    case 'prompt.opened':
+    case 'prompt.opened': {
+      const deadline = seenAt === null || event.timeoutS === null ? null : seenAt + event.timeoutS * 1000
       return editTurn(ensureRun(state, event.generation, seenAt), turn =>
-        turn.items.some(item => item.kind === 'prompt' && item.id === event.id) ? turn : pushItem(turn, waitingPrompt(event)))
+        turn.items.some(item => item.kind === 'prompt' && item.id === event.id) ? turn : pushItem(turn, waitingPrompt(event, deadline)))
+    }
     case 'prompt.settled':
       return editPrompt(state, event.id, prompt => isClosed(prompt) ? prompt : { ...prompt, state: answeredFrom(prompt) })
     case 'prompts.cancelled':
@@ -692,8 +710,19 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
     case 'usage':
       return event.context === null ? state : setUsage(state, { ...state.content.usage, context: event.context })
     case 'notice':
-      return editTurn(ensureRun(state, stamp.generation, seenAt), turn =>
-        pushItem(turn, { kind: 'notice', what: 'said', tone: event.tone, text: event.text }))
+      return say(state, { kind: 'notice', what: 'said', tone: event.tone, text: event.text })
+    case 'status': {
+      const line: StatusItem = { kind: 'status', what: 'line', about: event.about, text: event.text }
+      const compaction = event.about === 'compacting' || event.about === 'compacted'
+      return say(state, line, item => compaction && item.kind === 'status' && item.what === 'line' && item.about === 'compacting')
+    }
+    case 'notice.shown': {
+      // Its time to live runs on this client's clock, which a replayed frame cannot read.
+      if (event.notice.ttlMs !== null && seenAt === null) return state
+      return say(clearNotice(state, event.notice.key), { kind: 'status', what: 'notice', ...event.notice, seenAt, state: 'shown' })
+    }
+    case 'notice.cleared':
+      return clearNotice(state, event.key)
     case 'meta': {
       const named: Tracked = event.model === undefined ? state : { ...state, content: patch(state.content, { model: modelFrom(state.content.model, event.model) }) }
       const lit: Tracked = event.yolo === undefined ? named : { ...named, content: patch(named.content, { yolo: event.yolo }) }
@@ -720,7 +749,65 @@ function cutBefore(state: Tracked, rowId: number): Tracked {
 
 function openRun(state: Tracked, generation: Generation, id: TurnId, request: Request | null, began: Began | null): Tracked {
   const run: Run = { state: 'running', generation, stop: 'none', turn: { id, request, began, items: [], announced: null } }
-  return { ...state, content: { ...state.content, run }, fence: patch(state.fence, { text: null }) }
+  const { history, interlude } = state.content
+  const sealed: SettledTurn = { id: `interlude:${generation}` as TurnId, request: null, began: null, items: interlude, outcome: INTERLUDE, rows: [], tokens: null }
+  return {
+    ...state,
+    content: { ...state.content, run, history: interlude.length === 0 ? history : [...history, sealed], interlude: interlude.length === 0 ? interlude : [] },
+    fence: patch(state.fence, { text: null })
+  }
+}
+
+function say(state: Tracked, line: Item<'settled'>, replaces: (item: Item) => boolean = () => false): Tracked {
+  const { content } = state
+  if (content.run.state === 'running') {
+    return editTurn(state, turn => {
+      const at = turn.items.findLastIndex(replaces)
+      return at === -1 ? pushItem(turn, line) : { ...turn, items: turn.items.with(at, line) }
+    })
+  }
+  const at = content.interlude.findLastIndex(replaces)
+  return { ...state, content: { ...content, interlude: at === -1 ? [...content.interlude, line] : content.interlude.with(at, line) } }
+}
+
+function clearNotice(state: Tracked, key: string): Tracked {
+  const clear = <I extends Item>(item: I): I =>
+    item.kind === 'status' && item.what === 'notice' && item.key === key && item.state === 'shown' ? { ...item, state: 'cleared' } : item
+  const cleared = <I extends Item>(items: readonly I[]): readonly I[] => {
+    const next = items.map(clear)
+    return next.every((item, index) => item === items[index]) ? items : next
+  }
+  const { content } = state
+  const history = content.history.map(turn => patch(turn, { items: cleared(turn.items) }))
+  const edited: Tracked = {
+    ...state,
+    content: patch(content, {
+      history: history.every((turn, index) => turn === content.history[index]) ? content.history : history,
+      interlude: cleared(content.interlude)
+    })
+  }
+  return editTurn(edited, turn => patch(turn, { items: cleared(turn.items) }))
+}
+
+function moaStep(turn: OpenTurn, step: MoaStep): OpenTurn {
+  const at = turn.items.findLastIndex(item => item.kind === 'moa')
+  const held = turn.items[at]
+  const round = held?.kind === 'moa' && (held.phase.is === 'advising' || step.is === 'aggregating') ? held : null
+  const base: MoaItem = round ?? { kind: 'moa', progress: null, references: [], phase: { is: 'advising' } }
+  const next = ((): MoaItem => {
+    switch (step.is) {
+      case 'progress':
+        return base.progress?.done === step.done && base.progress.total === step.total ? base : { ...base, progress: { done: step.done, total: step.total } }
+      case 'reference':
+        return { ...base, references: [...base.references, { label: step.label, text: step.text }] }
+      case 'aggregating':
+        return base.phase.is === 'aggregating' && (step.by === null || base.phase.by === step.by) ? base : { ...base, phase: { is: 'aggregating', by: step.by } }
+      default:
+        return unreachable(step)
+    }
+  })()
+  if (round === null) return pushItem(turn, next)
+  return next === round ? turn : { ...turn, items: turn.items.with(at, next) }
 }
 
 function ensureRun(state: Tracked, generation: Generation | null, seenAt: number | null): Tracked {
@@ -745,7 +832,9 @@ function holdsTurn(content: SessionContent, id: TurnId): boolean {
 
 function holdsDeclined(content: SessionContent, requestId: string): boolean {
   const isIt = (item: Item) => item.kind === 'notice' && item.what === 'declined' && item.requestId === requestId
-  return (content.run.state === 'running' && content.run.turn.items.some(isIt)) || content.history.some(turn => turn.items.some(isIt))
+  return (content.run.state === 'running' && content.run.turn.items.some(isIt))
+    || content.interlude.some(isIt)
+    || content.history.some(turn => turn.items.some(isIt))
 }
 
 function claimEntry(state: Tracked, admissionId: string | null, requestText: string | null): OutboxEntry | null {
@@ -817,11 +906,13 @@ function settledItem(item: Item): Item<'settled'> {
     case 'tool':
       return isFinished(item) ? item : { ...item, status: { s: 'cut' } }
     case 'prompt':
-      return isClosed(item) ? item : { ...item, state: { s: 'withdrawn' } }
+      return { ...item, state: isClosed(item) ? item.state : { s: 'withdrawn' }, deadline: null }
     // A helper may still work after its turn ends: Hermes runs helpers in the background.
     case 'helper':
     case 'plan':
+    case 'moa':
     case 'notice':
+    case 'status':
       return item
     default:
       return unreachable(item)
@@ -838,8 +929,8 @@ function answeredFrom(prompt: PromptItem): PromptItem['state'] {
   return prompt.state.s === 'sending' ? { s: 'answered', reply: prompt.state.reply } : ANSWERED_ELSEWHERE
 }
 
-function waitingPrompt(prompt: { readonly id: PromptId; readonly generation: Generation; readonly ask: Ask }): PromptItem {
-  return { kind: 'prompt', id: prompt.id, generation: prompt.generation, ask: prompt.ask, state: { s: 'waiting', error: null } }
+function waitingPrompt(prompt: { readonly id: PromptId; readonly generation: Generation; readonly ask: Ask }, deadline: number | null): PromptItem {
+  return { kind: 'prompt', id: prompt.id, generation: prompt.generation, ask: prompt.ask, state: { s: 'waiting', error: null }, deadline }
 }
 
 function editTurn(state: Tracked, edit: (turn: OpenTurn) => OpenTurn): Tracked {
