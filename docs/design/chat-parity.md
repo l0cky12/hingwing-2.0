@@ -111,10 +111,29 @@ Each unit is one PR, stacked on the one before it. Each ends with:
 | B0 | Groundwork, no behaviour change | none | `SessionPatch.changed` with only the changed fields, and the `SessionPort` and `session-commands.ts` with today's commands moved onto it. Every existing test passes unchanged, and `applyPush(a, sessionPatch(a, b))` equals `b` for each pair of consecutive sessions of every fixture. Each later unit adds the scripted gateway handlers its own calls need. |
 | B1 | What Hermes says | #8, #9, #11, #12, #13, #16 | `says.jsonl`: reasoning, MoA, a tool image, status lines, a notice, an approval with `timeout_s`, and a goal verdict while idle. The `declined` phantom turn is gone. |
 | B2 | What Hermes asks | #20, #21, #22 | `asks.jsonl`: sudo answered (the recorded result is masked), a secret skipped, a vault prompt closed by `request.cancel`, a two-question batch, a plugin choice while idle, a connector card, and a Desktop bridge declined only while watched. |
-| B3 | Queue, steer and rewind | #3, #4, #6, #17, #23, #24, #25, #26 | `queue.jsonl` and `rewind.jsonl`: another client's queued row, cancel, send now, edit, a lost row released, steer, redirect, a rejected steer resubmitted, deny-and-tell, retry, undo, edit-and-resend, a drop before the rewind reply, and a compression from another window. |
-| B4 | Attachments | #28, #29, #30 | `attach.jsonl`: an image and a file staged and submitted, a drop between staging and submit, and `complete.path`. |
-| B5 | Chats | #27, #38, #45, #53, #54, #55, #56, #57 | `chats.jsonl`: list, search, open another chat, a new chat's first message, branch, pin, folder, compress, export and delete. |
-| B6 | Session panels | #32, #33, #35, #36, #39, #40, #41, #42, #43, #44, #46 | `panels.jsonl`: `/btw`, `/bg`, todos, a subagent, usage, a goal card, processes, checkpoints, a reaction, effort and fast. |
+| B3 | Queue and steer | #3, #4, #6, #17 | `queue.jsonl`: another client's queued row, cancel, send now, edit, a lost row released, steer, redirect, a rejected steer resubmitted, and deny-and-tell. |
+| B4 | Side prompts and chat commands | #30, #32, #33, #35, #36, #38, #45, #55 | `commands.jsonl`: `complete.path`, `/btw` and `/bg` with their answers, effort, fast, the chat's folder, export and compress. |
+| B5 | Session panels | #42, #43, #44, #46 | `panels.jsonl`: processes, a goal card, checkpoints and a reaction. |
+| B6 | Undo, rewrites from other windows, pin and delete | #24, #26, #53, #54 | Builds on #96's rewind and #69's chat list once they merge. |
+
+### Rows that issues own
+
+These rows were in the first plan. Issues #66 and #69 to #78 now cover them, built as one PR each from `main` by another thread, so this plan does not build them:
+
+| Rows | Issue |
+|---|---|
+| #11 tool images | #71, merged as #94 |
+| #57 new chat | #66, merged as #95 |
+| #23 retry, #25 edit and resend | #74, PR #96 |
+| #39 usage and context | #77, PR #98 |
+| #40 todos, #41 subagents, and the drawing of #8 reasoning | #72 |
+| #27 branch | #75 |
+| #28 images, #29 files | #70 |
+| #56 chat list | #69 |
+| #59 drafts | #73 |
+| yolo pill | #78 |
+
+B1 still parses reasoning, because it landed first. Whichever of B1 and #72 merges second keeps one parser.
 
 ## Frontend limits
 

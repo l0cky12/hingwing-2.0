@@ -147,7 +147,7 @@ Class labels: `done`, `frontend only` (packages/hermes already exposes it, so on
 | 54 | Delete | REST DELETE (HD:api/sessions.ts:729) | None | `mutate delete` served. Needs `expected_generation` (H:persistence/authority/runtime.py:74) | backend missing |
 | 55 | Compress | `/compress [focus]` → `mutate compress` (HD:…/slash.ts:855) | None. The gateway refuses `/compress` through dispatch | Served, `{focus?, preview?, partial?, keep_last?}` (H:persistence/authority/runtime.py:205-213,325-330) | backend missing |
 | 56 | Chat list, search, switch | REST list and search; TUI `session.list` (TUI:components/activeSessionSwitcher.tsx:372-388) | `sidebar` feed unused; `ChatRef` is bot-only | `session.list {scope, query, cursor, picker, workspace}` served (TC:canonical_sessions.py:179-226) | backend missing (+ UI) |
-| 57 | New chat | `session.create` (HD:…/session-create-request.ts:52-58) | `create` command exists, but no UI and no way to open the result | Served | backend missing (+ UI) |
+| 57 | New chat | `session.create` (HD:…/session-create-request.ts:52-58) | Done since #95: New chat, Ctrl+N and a bare `/new` open an unstarted chat, and its first message creates the session | Served | done |
 | 58 | Desktop notification when a turn ends | Native notification (HD:app/session/hooks/use-message-stream/index.ts:1184-1193) | None | Client only. Run state is already in `Session` | frontend only |
 | 59 | Composer draft kept per chat | Desktop draft store (HD:app/chat/composer/hooks/use-composer-draft.ts) | Not kept | Client only | frontend only |
 | 60 | Shell `!cmd` (TUI only; Desktop has none) | `shell.exec` | None | Served for local sessions, `session:control` (GW:session_shell.py:25-40) | backend missing (low priority) |
