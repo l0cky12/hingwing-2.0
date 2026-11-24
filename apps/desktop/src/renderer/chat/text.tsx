@@ -16,6 +16,7 @@ function inline(nodes: readonly Inline[]): ReactNode[] {
       case 'em': return <em key={index}>{inline(node.children)}</em>
       case 'del': return <del key={index}>{inline(node.children)}</del>
       case 'break': return <br key={index} />
+      case 'image': return <Fragment key={index}>{node.alt}</Fragment>
       case 'link':
         return isWebLink(node.href)
           ? <a key={index} href={node.href} target="_blank" rel="noreferrer">{inline(node.children)}</a>

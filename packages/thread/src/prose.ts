@@ -3,6 +3,7 @@ export type Inline =
   | { readonly t: 'code'; readonly v: string }
   | { readonly t: 'strong' | 'em' | 'del'; readonly children: readonly Inline[] }
   | { readonly t: 'link'; readonly href: string; readonly children: readonly Inline[] }
+  | { readonly t: 'image'; readonly src: string; readonly alt: string }
   | { readonly t: 'break' }
 
 export type Align = 'left' | 'center' | 'right' | null
@@ -294,7 +295,7 @@ function parseInline(source: string): Inline[] {
         text += char
         at++
       } else {
-        push({ t: 'link', href: link.href, children: image ? [{ t: 'text', v: link.label }] : unlinked(parseInline(link.label)) })
+        push(image ? { t: 'image', src: link.href, alt: inlineText(parseInline(link.label)) } : { t: 'link', href: link.href, children: unlinked(parseInline(link.label)) })
         at = link.end
       }
     } else if (char === '<' && AUTOLINK.test(source.slice(at))) {
@@ -347,7 +348,7 @@ export function proseLeaves(blocks: readonly Block[]): ProseLeaf[] {
 }
 
 const inlineText = (nodes: readonly Inline[]): string =>
-  nodes.map(node => (node.t === 'text' || node.t === 'code' ? node.v : node.t === 'break' ? '\n' : inlineText(node.children))).join('')
+  nodes.map(node => (node.t === 'text' || node.t === 'code' ? node.v : node.t === 'break' ? '\n' : node.t === 'image' ? '' : inlineText(node.children))).join('')
 
 /** A `<br>` counts as one character, `\n`, in this text and in the window's ranges. */
 export const leafText = (leaf: ProseLeaf): string => ('kind' in leaf ? leaf.text : inlineText(leaf))
