@@ -469,12 +469,13 @@ function ownDisplay() {
   if (parent !== process.ppid) fail(`display ${process.env.DISPLAY} belongs to another run's X server. Start this run again.`)
 }
 
-function withEdits(fixturePath, { dropAfter, models, guarded, profiles, bound, noBotChat }, out) {
+function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, bound, noBotChat }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const header = JSON.parse(lines[0])
   const steps = lines.slice(1).map(line => JSON.parse(line))
   if (models) header.models = JSON.parse(readFileSync(resolve(process.cwd(), models), 'utf8'))
   if (guarded) header.guarded = guarded.split(',')
+  if (usage) header.usage = JSON.parse(readFileSync(resolve(process.cwd(), usage), 'utf8'))
   if (profiles) header.profiles = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
   if (bound) header.reach = 'profile'
   if (noBotChat) header.homeBotChat = false
@@ -510,14 +511,14 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', profiles: 'value', bound: 'flag', 'no-bot-chat': 'flag', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', bound: 'flag', 'no-bot-chat': 'flag', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
   if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
-  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, profiles: options.profiles, bound: options.bound, noBotChat: options['no-bot-chat'] }
+  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, bound: options.bound, noBotChat: options['no-bot-chat'] }
   const edited = Object.values(edits).some(Boolean)
-  if (scenario && edited) fail('--drop-after, --models, --guarded, --profiles, --bound and --no-bot-chat edit the fixture a --fixture run replays. They do nothing with --fake-host')
+  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --bound and --no-bot-chat edit the fixture a --fixture run replays. They do nothing with --fake-host')
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
   if (options.size && !/^[1-9]\d*x[1-9]\d*$/.test(options.size)) fail(`--size takes <width>x<height>, not "${options.size}"`)
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')
