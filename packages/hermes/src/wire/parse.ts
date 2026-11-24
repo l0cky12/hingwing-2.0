@@ -261,6 +261,7 @@ export const SHOWN: { readonly [type: string]: Shown } = {
       args,
       durationS: p.optNum('duration_s'),
       diffs: diff === null ? [] : parseInlineDiff(diff),
+      image: p.optStr('image_path') || null,
       result: parseToolResult(p.raw('result'), p.optStr('result_text'), p.optBool('is_error') ?? false)
     }
   },
@@ -508,7 +509,7 @@ function storedRow(value: unknown, index: number) {
       id: (row.optStr('tool_call_id') || `stored-tool:${index}`) as ToolId,
       name: row.optStr('name') || 'tool',
       args,
-      status: { s: 'done', durationS: null, diffs: [], result: content === undefined ? NO_RESULT : parseToolResult(content, null, false) }
+      status: { s: 'done', durationS: null, diffs: [], image: null, result: content === undefined ? NO_RESULT : parseToolResult(content, null, false) }
     }
   })()
   return { role, text, rowId, at, item }

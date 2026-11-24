@@ -118,7 +118,7 @@ describe('the elapsed time on the live end', () => {
   })
 
   it('puts it after the count on a live group, before the meta', () => {
-    const group = [{ ...tool('a', 'ls'), status: { s: 'done', durationS: 1.5, diffs: [], result: { kind: 'none' } } } as ToolItem, tool('b', './run-tests.sh')]
+    const group = [{ ...tool('a', 'ls'), status: { s: 'done', durationS: 1.5, diffs: [], result: { kind: 'none' }, image: null } } as ToolItem, tool('b', './run-tests.sh')]
     expect(lines(running(began, group), UTC(NOW + 3 * MINUTE)).at(-3)).toBe('◉ Running `./run-tests.sh` · 2 steps, 3 min')
   })
 
