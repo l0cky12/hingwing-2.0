@@ -17,7 +17,11 @@ export type Phrase = readonly { readonly t: 'text' | 'code'; readonly v: string 
 export interface ThreadView {
   readonly state: 'opening' | 'ready' | 'unavailable'
   readonly turns: readonly TurnView[]
-  /** Messages sent and not yet picked up, shown under the last turn. */
+  /**
+   * This client's messages that no turn has picked up, shown under the last turn: the ones Hermes
+   * holds in its queue, then the ones it has not listed. Another client's queued messages are not in
+   * the view yet.
+   */
   readonly pending: readonly {
     readonly key: string; readonly text: string; readonly attachments: readonly Attachment[]; readonly status: 'sending' | 'queued' | 'failed'; readonly detail: string | null
   }[]
@@ -78,6 +82,8 @@ export type ThreadNode =
   | { readonly kind: 'plan'; readonly key: string; readonly plan: PlanView }
   | { readonly kind: 'moa'; readonly key: string; readonly moa: MoaItem }
   | { readonly kind: 'status'; readonly key: string; readonly status: StatusItem }
+  /** Words the user put into the turn while it ran. */
+  | { readonly kind: 'steer'; readonly key: string; readonly text: string }
   | { readonly kind: 'closed'; readonly key: string; readonly asked: Asked; readonly end: RequestEnd }
 
 /**
@@ -230,13 +236,12 @@ export function threadView(session: Session, clock: ViewClock): ThreadView {
   return {
     state: VIEW_STATE[sync.state],
     turns: [...settled, ...(interlude === null ? [] : [interlude]), ...(open === null ? [] : [open])],
-    pending: session.outbox.map(entry => ({
-      key: entry.inputId,
-      text: entry.text,
-      attachments: entry.attachments,
-      status: entry.state.s,
-      detail: entry.state.s === 'failed' ? entry.state.message : null
-    })),
+    pending: [
+      ...session.queue.flatMap(row => (row.from === 'here' ? [{ key: row.inputId, text: row.text, attachments: NO_ATTACHMENTS, status: 'queued' as const, detail: null }] : [])),
+      ...session.outbox.map(entry => ({
+        key: entry.inputId, text: entry.text, attachments: entry.attachments, status: entry.state.s, detail: entry.state.s === 'failed' ? entry.state.message : null
+      }))
+    ],
     earlier: session.earlier,
     changesAt: changesAt(starts, lines, elapsing ? starts.at(-1) ?? null : null, clock)
   }
@@ -288,6 +293,8 @@ function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<Se
         return { kind: 'moa', key, moa: item }
       case 'status':
         return { kind: 'status', key, status: item }
+      case 'steer':
+        return { kind: 'steer', key, text: item.text }
     }
   })
   return {
@@ -701,8 +708,9 @@ function answeredWords(prompt: PromptItem, state: Exclude<PromptItem['state'], {
   if (state.s === 'withdrawn') return 'Hermes withdrew this request.'
   const { reply } = state
   if (reply === null) return 'Answered from another window.'
-  const known = prompt.ask.kind === 'approval' && reply.kind === 'choice' ? APPROVAL_CHOICES[reply.value] : undefined
-  return known?.answered ?? `You answered “${reply.value}”.`
+  const value = reply.kind === 'deny' ? 'deny' : reply.value
+  const known = prompt.ask.kind === 'approval' && reply.kind !== 'text' ? APPROVAL_CHOICES[value] : undefined
+  return known?.answered ?? `You answered “${value}”.`
 }
 
 const DECLINED_WORDS: { readonly [method: string]: string } = {
@@ -808,6 +816,7 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
  *   · Goal: not done yet ...                                   status line, its kind when not `other`
  *   ※ warn: Credits are low  (cleared)                         keyed notice
  *   ◇ sudo: answered                                           where a request closed, and how
+ *   » use trash-put instead                                    words the user put into the running turn
  *   ✓ Done                                                     end: ✓ done, ✗ failed, ⊘ stopped, ~ lost, each with its words
  *     1,204 in, 380 out                                        what the reply used, when Hermes said
  *
@@ -885,6 +894,8 @@ function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, open
       if (!opened.has(node.key)) return [head]
       return [head, ...plan.entries.map(entry => `    ${'  '.repeat(entry.depth)}${ENTRY_MARK[entry.state]} ${entry.text}`)]
     }
+    case 'steer':
+      return [`» ${firstLine(node.text)}`]
     case 'moa': {
       const { progress, references, phase } = node.moa
       return [[

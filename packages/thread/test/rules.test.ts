@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type {
-  FileDiff, Generation, HelperId, HelperItem, HermesRequest, Item, NoticeItem, Outcome, PlanEntry, PlanItem, PromptId, PromptItem, ReasoningItem, RequestId,
-  Session, SettledTurn, Sync, ToolId, ToolItem, ToolResult, TurnId
+  AdmissionId, FileDiff, Generation, HelperId, HelperItem, HermesRequest, InputId, Item, NoticeItem, Outcome, PlanEntry, PlanItem, PromptId, PromptItem, QueuedMessage, ReasoningItem,
+  RequestId, Session, SettledTurn, Sync, ToolId, ToolItem, ToolResult, TurnId
 } from '../../hermes/src/domain/session'
 import { checkThread, outline, threadView, type HelperView, type PlanView, type StepView, type ThreadNode, type ThreadView } from '../src/thread-view'
 
@@ -11,8 +11,8 @@ const NONE: ToolResult = { kind: 'none' }
 
 function session(over: Partial<Session> = {}): Session {
   return {
-    id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, interlude: [], requests: [], outbox: [],
-    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, tuning: { reasoning: null }, sync: { state: 'live' }, ...over
+    id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [],
+    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, tuning: { reasoning: null, busy: null }, sync: { state: 'live' }, ...over
   }
 }
 
@@ -627,5 +627,38 @@ describe('what Hermes says', () => {
     const view = threadView(session({ history: [settled([text('Done.')]), interlude([goal]), settled([text('Again.')], COMPLETE, 't3')] }), CLOCK)
     expect(view.turns.map(turn => turn.end.kind)).toEqual(['done', 'none', 'done'])
     expect(checkThread(view)).toEqual([])
+  })
+
+  it('shows this client\'s rows of Hermes\'s queue under the last turn, ahead of what Hermes has not listed, and leaves out another client\'s', () => {
+    const row = (id: string, from: 'here' | 'elsewhere', state: QueuedMessage['state'] = { s: 'queued', can: [] }): QueuedMessage =>
+      ({ admissionId: `a-${id}` as AdmissionId, inputId: id as InputId, text: `message ${id}`, from, state })
+    const view = threadView(session({
+      queue: [row('one', 'here'), row('two', 'elsewhere'), row('three', 'here', { s: 'steering' })],
+      outbox: [{ inputId: 'four' as InputId, text: 'message four', attachments: [], state: { s: 'sending' } }]
+    }), CLOCK)
+    expect(view.pending).toEqual([
+      { key: 'one', text: 'message one', attachments: [], status: 'queued', detail: null },
+      { key: 'three', text: 'message three', attachments: [], status: 'queued', detail: null },
+      { key: 'four', text: 'message four', attachments: [], status: 'sending', detail: null }
+    ])
+    expect(checkThread(view)).toEqual([])
+  })
+
+  it('draws words steered into a turn where they sit in it', () => {
+    const view = threadView(session({ history: [settled([tool('terminal', { command: 'ls' }), { kind: 'steer', text: 'use trash-put instead\nplease' }, text('Done.')])] }), CLOCK)
+    expect(view.turns[0]?.nodes.map(node => node.kind)).toEqual(['step', 'steer', 'prose'])
+    expect(outline(view)).toContain('» use trash-put instead')
+    expect(checkThread(view)).toEqual([])
+  })
+
+  it('words a denial that told Hermes what to do as a denial', () => {
+    const denied: PromptItem<'settled'> = {
+      kind: 'prompt', id: 'p1' as PromptId, generation: 1 as Generation, ask: { kind: 'approval', command: 'rm -rf x', reason: null, choices: ['once', 'deny'] },
+      state: { s: 'answered', reply: { kind: 'deny', tell: 'use trash-put instead' } }, deadline: null
+    }
+    const plain: PromptItem<'settled'> = { ...denied, id: 'p2' as PromptId, state: { s: 'answered', reply: { kind: 'choice', value: 'deny' } } }
+    const cards = threadView(session({ history: [settled([denied, plain])] }), CLOCK).turns[0]?.nodes.flatMap(node => (node.kind === 'prompt' ? [node.card] : []))
+    expect(cards).toHaveLength(2)
+    expect(cards?.[0]).toEqual(cards?.[1])
   })
 })

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { SessionActor, type Upload } from '../src/actor'
+import type { Admission } from '../src/domain/queue'
 import type { CardRequest, ServerRequest, SessionEvent } from '../src/domain/reduce'
 import type {
-  AttachmentId, BranchId, Generation, InputId, Link, ModelOption, PromptId, RequestAsk, RequestId, RequestReply, Session, SessionId, SessionUsage
+  AdmissionId, AttachmentId, BranchId, Generation, InputId, Link, ModelOption, PromptId, RequestAsk, RequestId, RequestReply, Session, SessionId, SessionUsage
 } from '../src/domain/session'
 import { runSessionCommand, type Hub, type SessionCommand } from '../src/session-commands'
 import { manualClock, settle } from '../src/testing/clock'
@@ -97,6 +98,8 @@ function stage() {
 }
 
 const refusal = (reason: string, revision: number | null = null) => new RpcRefusal(4001, reason, reason, revision)
+const queued = (admissionId: string, inputId: string, text: string, state: Admission['state'] = { s: 'queued', can: [] }): Admission =>
+  ({ admissionId: admissionId as AdmissionId, inputId: inputId as InputId, text, state })
 const started: SessionEvent = { type: 'turn.started', turnId: null, admissionId: null, requestText: null }
 const asked: SessionEvent = { type: 'prompt.opened', id: 'p1' as PromptId, generation: 1 as Generation, ask: { kind: 'approval', command: 'rm -rf x', reason: null, choices: ['once', 'deny'] }, timeoutS: null }
 
@@ -299,15 +302,27 @@ describe('completePath', () => {
 })
 
 describe('send', () => {
-  it('shows the message as sending, then as the gateway admitted it', async () => {
-    const { actor, open, calls, answer } = stage()
+  it('shows the message as sending, then as a row of the queue once Hermes lists it', async () => {
+    const { actor, open, calls, answer, event } = stage()
     await open()
     const sent = actor.port.submit('hello')
     expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'hello', attachments: [], state: { s: 'sending' } }])
     expect(calls[0]).toMatchObject({ method: 'prompt.submit', params: { session_id: ID, text: 'hello', input_id: 'id-1' } })
     await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
     expect(await sent).toEqual({ ok: true, value: undefined })
-    expect(actor.session.outbox[0]?.state).toEqual({ s: 'queued' })
+    expect(actor.session.outbox[0]?.state, 'the receipt alone moves nothing').toEqual({ s: 'sending' })
+    event({ type: 'meta', queue: [queued('a1', 'id-1', 'hello')] }, null)
+    expect(actor.session.outbox).toEqual([])
+    expect(actor.session.queue).toEqual([{ admissionId: 'a1', inputId: 'id-1', text: 'hello', from: 'here', state: { s: 'queued', can: [] } }])
+  })
+
+  it('drops a message Hermes says is already done, which no list will name', async () => {
+    const { actor, open, answer } = stage()
+    await open()
+    const sent = actor.port.submit('hello')
+    await answer('prompt.submit', { admission_id: 'a1', status: 'terminal' })
+    await sent
+    expect(actor.session.outbox).toEqual([])
   })
 
   it('refuses while the session is not live, and files nothing', async () => {
@@ -338,11 +353,11 @@ describe('send', () => {
     await answer('session.resume', reconnectSnapshot())
     expect(calls.map(call => [call.method, call.params])).toEqual([['prompt.submit', { session_id: ID, text: 'hello', input_id: 'id-1' }]])
     await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
-    expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'hello', attachments: [], state: { s: 'queued' } }])
+    expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'hello', attachments: [], state: { s: 'sending' } }])
   })
 
   it('shows one text and gives the model another, and sends both again after a drop', async () => {
-    const { actor, open, dropAndRedial, answer, calls } = stage()
+    const { actor, open, dropAndRedial, answer, calls, event } = stage()
     await open()
     const sent = actor.port.submit('/release-notes', 'SKILL BODY')
     expect(calls.map(call => call.params)).toEqual([{ session_id: ID, text: '/release-notes', input_id: 'id-1', api_text: 'SKILL BODY' }])
@@ -353,7 +368,10 @@ describe('send', () => {
     await answer('session.resume', reconnectSnapshot())
     expect(calls.map(call => call.params)).toEqual([{ session_id: ID, text: '/release-notes', input_id: 'id-1', api_text: 'SKILL BODY' }])
     await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
-    expect(actor.session.outbox, 'an admitted message no longer carries the model text').toEqual([{ inputId: 'id-1', text: '/release-notes', attachments: [], state: { s: 'queued' } }])
+    event({ type: 'meta', queue: [queued('a1', 'id-1', '/release-notes')] }, null)
+    expect(actor.session.queue, 'a listed message carries only the text the thread shows').toEqual([
+      { admissionId: 'a1', inputId: 'id-1', text: '/release-notes', from: 'here', state: { s: 'queued', can: [] } }
+    ])
   })
 
   const screenshot: Upload = { id: 'a-1' as AttachmentId, name: 'error.png', kind: 'image', size: 3, mime: 'image/png', bytes: Uint8Array.from([1, 2, 3]) }

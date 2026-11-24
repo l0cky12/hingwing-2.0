@@ -155,9 +155,9 @@ describe('parseEvent on the errand fixture', () => {
   it('reads the queue, revision and generation from session.info', () => {
     const [submitted, running, settled] = params.filter(({ type }) => type === 'session.info')
     expect(eventOf(submitted as Params)).toEqual({
-      type: 'meta', revision: 0, generation: 0, queue: [{ inputId: 'input_990d3cd8381d422f', admissionId: 'e07cb5793e7f497bbcc1c0c8b0cdf20a', text: REQUEST, status: 'queued' }]
+      type: 'meta', revision: 0, generation: 0, queue: [{ inputId: 'input_990d3cd8381d422f', admissionId: 'e07cb5793e7f497bbcc1c0c8b0cdf20a', text: REQUEST, state: { s: 'queued', can: ['sendNow', 'edit'] } }]
     })
-    expect(eventOf(running as Params)).toMatchObject({ type: 'meta', revision: 0, queue: [{ status: 'started' }] })
+    expect(eventOf(running as Params)).toMatchObject({ type: 'meta', revision: 0, queue: [{ state: { s: 'started' } }] })
     expect(eventOf(settled as Params)).toEqual({ type: 'meta', revision: 1, generation: 1, queue: [] })
   })
 })
@@ -368,7 +368,7 @@ describe('parseSnapshot', () => {
       id: '3c0eea6699184b1dbee7a16b0a6bf830', generation: 1,
       ask: { kind: 'approval', command: 'rm -rf /tmp/hermes-proto-work/scratch', reason: 'delete in root path', choices: ['once', 'deny', 'session', 'always'] }
     }])
-    expect(snapshot.queue).toEqual([{ inputId: 'input_990d3cd8381d422f', admissionId: 'e07cb5793e7f497bbcc1c0c8b0cdf20a', text: REQUEST, status: 'started' }])
+    expect(snapshot.queue).toEqual([{ inputId: 'input_990d3cd8381d422f', admissionId: 'e07cb5793e7f497bbcc1c0c8b0cdf20a', text: REQUEST, state: { s: 'started' } }])
     expect(snapshot.openRequests).toEqual([{ kind: 'card', requestId: 'req-1', method: 'sudo', sessionId: SESSION, waitS: 120, ask: { kind: 'secret', for: { is: 'sudo', command: 'apt install x' } } }])
   })
 

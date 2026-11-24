@@ -1,12 +1,17 @@
 import { DONE, refused, type Mutation, type SessionPort, type Upload } from './actor'
 import type { Bot } from './domain/bots'
 import type { Command, ModelConfirm, Outcome, Refusal, ResultOf } from './domain/command'
+import { offeredBy, sendPlan } from './domain/queue'
 import type {
-  AttachmentId, BranchId, HermesRequest, PromptId, PromptReply, RecordedReply, RequestId, RequestReply, SessionContent, SessionId, TurnId
+  AttachmentId, BranchId, Generation, HermesRequest, InputId, PromptId, PromptReply, QueuedMessage, RecordedReply, RequestId, RequestReply, SessionContent,
+  SessionId, Told, TurnId
 } from './domain/session'
 import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import type { Served } from './wire/link'
-import { parseBranched, parseContextBreakdown, parseDirective, parseModelMenu, parseModelReceipt, parsePathMatches, parseShown, parseTranscript } from './wire/parse'
+import {
+  parseBranched, parseBusy, parseContextBreakdown, parseCorrection, parseDirective, parseModelMenu, parseModelReceipt, parsePathMatches, parseShown, parseTranscript,
+  type Correction
+} from './wire/parse'
 
 /** `versions` stays with the hub: reading a chat's versions must not attach it. */
 export type SessionCommand = Exclude<Extract<Command, { readonly sessionId: SessionId }>, { readonly do: 'versions' }>
@@ -44,6 +49,10 @@ const BRANCH_REFUSALS: Readonly<Record<string, Refusal>> = {
 const NO_CHILD: Refusal = { kind: 'rejected', message: "Hermes made the chat but didn't say which one." }
 const NOT_OPEN = refused('stale', 'That question is no longer open.')
 const WRONG_ANSWER = refused('rejected', "That isn't an answer this question takes.")
+const NOT_QUEUED = refused('stale', 'That message is no longer in the queue.')
+const NOT_OFFERED = refused('rejected', "Hermes doesn't offer that for this message.")
+const MAYBE_READ = refused('rejected', "Hermes didn't confirm it took that. It may have read it, so Highwing hasn't sent it again.")
+const ANSWERED: Outcome<undefined> = { ok: true, value: undefined }
 const EARLIER = { pageRows: 200, pages: 3 } as const
 const MENTION_WITH_ATTACHMENTS = "A message to another bot can't carry attachments. Remove them, or send it without the mention."
 const UPLOAD_GONE = 'An attachment is no longer available. Remove it and attach it again.'
@@ -88,7 +97,7 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     if (to.length === 0) {
       const read = await Promise.all(attachments.map(id => hub.uploads.read(id)))
       if (read.includes(null)) return refused('stale', UPLOAD_GONE)
-      return showing(await port.submit(text, undefined, read as Upload[]))
+      return showing(await say(port, text, read as Upload[]))
     }
     if (attachments.length > 0) return refused('rejected', MENTION_WITH_ATTACHMENTS)
     const { run, history } = port.content
@@ -139,6 +148,14 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     port.act({ did: 'send.discarded', inputId })
     return DONE
   },
+
+  queued: (port, command) => port.whenLive(async () => {
+    const row = port.content.queue.find(held => held.admissionId === command.admissionId)
+    if (row === undefined) return NOT_QUEUED
+    if (!offeredBy(row.state).includes(command.action)) return NOT_OFFERED
+    const done = await QUEUED[command.action](port, row, command.action === 'edit' ? command.text : '')
+    return done.ok ? DONE : done
+  }),
 
   rename: (port, { title }, hub) => port.whenLive(async () => {
     const renamed = await port.mutate('rename', { title }, null)
@@ -224,29 +241,90 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     }
   }),
 
-  tune: (port, { on }) => port.whenLive(async () => {
-    const set = await port.call('config.set', { session_id: port.id, key: 'show_reasoning', value: on ? 'on' : 'off' })
+  tune: (port, command) => port.whenLive(async () => {
+    const [key, value] = command.set === 'busy' ? ['busy', command.to] : ['show_reasoning', command.on ? 'on' : 'off']
+    const set = await port.call('config.set', { session_id: port.id, key, value })
     if (!set.ok) return set
-    port.act({ did: 'tuned', tuning: { reasoning: parseShown(set.value) ?? on } })
+    port.act({ did: 'tuned', tuning: command.set === 'busy' ? { busy: parseBusy(set.value) ?? command.to } : { reasoning: parseShown(set.value) ?? command.on } })
     return DONE
   })
 }
 
-async function answerPrompt(port: SessionPort, promptId: PromptId, reply: PromptReply): Promise<Outcome> {
+/**
+ * What each action on a queue row sends. Hermes's next pending list is what changes the row, so no
+ * row writes to the queue. An edit is a new message that takes the old one's place at the back
+ * (gateway/session_queued_controls.py:213-242): it waits in the outbox, as a sent one does, until
+ * that list names it.
+ */
+const QUEUED: { readonly [A in Extract<SessionCommand, { do: 'queued' }>['action']]: (port: SessionPort, row: QueuedMessage, text: string) => Promise<Outcome<unknown>> } = {
+  cancel: (port, row) => port.call('prompt.cancel', { session_id: port.id, admission_id: row.admissionId }),
+  sendNow: (port, row) => port.call('prompt.steer_queued', { session_id: port.id, admission_id: row.admissionId }),
+  edit: async (port, row, text) => {
+    const inputId = port.mint() as InputId
+    port.act({ did: 'send', inputId, text, attachments: [] })
+    const replaced = await port.call('prompt.replace_queued', { session_id: port.id, admission_id: row.admissionId, submission_id: inputId, text })
+    if (!replaced.ok && replaced.refusal.kind !== 'offline') port.act({ did: 'send.discarded', inputId })
+    return replaced
+  },
+  release: (port, row) => (row.state.s === 'lost'
+    ? port.call('prompt.resolve_unknown', { session_id: port.id, admission_id: row.admissionId, execution_generation: row.state.generation })
+    : Promise.resolve(NOT_OFFERED))
+}
+
+/** Hands `text` to the turn of generation `during`. A turn that has ended took nothing, which reads as `unread`. */
+async function correct(port: SessionPort, by: 'steer' | 'redirect', text: string, during: Generation): Promise<Outcome<Correction>> {
+  const reply = await port.call(by === 'steer' ? 'session.steer' : 'session.redirect', { session_id: port.id, text, execution_generation: during })
+  if (!reply.ok) return reply.refusal.kind === 'stale' ? { ok: true, value: 'unread' } : reply
+  const correction = parseCorrection(reply.value)
+  if (correction === 'taken') port.act({ did: 'steered', text, during })
+  return { ok: true, value: correction }
+}
+
+/** Text for the agent: submitted, or handed to the running turn when the chat's busy mode says so (`sendPlan`). */
+async function say(port: SessionPort, text: string, uploads: readonly Upload[]): Promise<Outcome> {
+  const plan = sendPlan(port.content)
+  if (plan.by === 'submit') return port.submit(text, undefined, uploads)
+  return port.whenLive(async () => {
+    const handed = await correct(port, plan.by, text, plan.during)
+    if (!handed.ok) return handed
+    switch (handed.value) {
+      case 'taken':
+        return DONE
+      case 'unread':
+        return port.submit(text)
+      case 'unsure':
+        return MAYBE_READ
+    }
+  })
+}
+
+const TOLD = { taken: 'turn', unread: 'next', unsure: 'unsure' } as const satisfies Record<Correction, Told>
+
+async function answerPrompt(port: SessionPort, promptId: PromptId, reply: PromptReply): Promise<Outcome<Told | undefined>> {
   const { run } = port.content
   const prompt = run.state === 'running' ? run.turn.items.find(item => item.kind === 'prompt' && item.id === promptId) : undefined
   if (prompt?.kind !== 'prompt' || prompt.state.s !== 'waiting') return NOT_OPEN
+  if (reply.kind === 'deny' && (prompt.ask.kind !== 'approval' || reply.tell.trim() === '')) return WRONG_ANSWER
   port.act({ did: 'answer', promptId, reply })
+  const failed = (refusal: Refusal) => port.act({ did: 'answer.failed', promptId, message: refusal.kind === 'offline' ? DROPPED_ANSWER : refusal.message })
+  // The words go first, so they ride on the result of the tool the denial blocks (ui-tui/src/app/useApprovalAnswers.ts:63-84).
+  const told = reply.kind === 'deny' ? await correct(port, 'steer', reply.tell, prompt.generation) : null
+  if (told !== null && !told.ok) {
+    failed(told.refusal)
+    return told
+  }
   const fence = { session_id: port.id, execution_generation: prompt.generation, prompt_id: promptId }
   const answered = await (prompt.ask.kind === 'approval'
-    ? port.call('approval.respond', { ...fence, choice: reply.value })
-    : port.call('clarify.respond', { ...fence, answer: reply.value }))
+    ? port.call('approval.respond', { ...fence, choice: reply.kind === 'deny' ? 'deny' : reply.value })
+    : port.call('clarify.respond', { ...fence, answer: reply.kind === 'deny' ? '' : reply.value }))
   if (!answered.ok) {
-    port.act({ did: 'answer.failed', promptId, message: answered.refusal.kind === 'offline' ? DROPPED_ANSWER : answered.refusal.message })
+    failed(answered.refusal)
     return answered
   }
   port.act({ did: 'answer.resolved', promptId, byUs: answered.value.status === 'resolved' })
-  return DONE
+  if (reply.kind !== 'deny' || told === null) return ANSWERED
+  if (told.value === 'unread') await port.submit(reply.tell)
+  return { ok: true, value: TOLD[told.value] }
 }
 
 type Asking<K extends HermesRequest['ask']['kind']> = HermesRequest & { readonly ask: Extract<HermesRequest['ask'], { kind: K }> }
@@ -310,7 +388,7 @@ async function respondToCard(port: SessionPort, id: RequestId, result: Served['c
   return taken.ok ? { ok: true, value: taken.value.settled ? 'settles' : 'waits' } : taken
 }
 
-async function answerRequest(port: SessionPort, requestId: RequestId, reply: RequestReply): Promise<Outcome> {
+async function answerRequest(port: SessionPort, requestId: RequestId, reply: RequestReply): Promise<Outcome<undefined>> {
   const request = port.content.requests.find(held => held.id === requestId)
   if (request === undefined || request.state.s !== 'waiting') return NOT_OPEN
   const row = ANSWERS[request.ask.kind][reply.kind] as ((port: SessionPort, request: HermesRequest, reply: RequestReply) => Answer | null) | undefined
@@ -323,7 +401,7 @@ async function answerRequest(port: SessionPort, requestId: RequestId, reply: Req
     return sent
   }
   if (sent.value !== undefined) port.act({ did: 'answer.accepted', requestId, then: sent.value })
-  return DONE
+  return ANSWERED
 }
 
 export const runSessionCommand = (port: SessionPort, command: SessionCommand, hub: Hub) =>

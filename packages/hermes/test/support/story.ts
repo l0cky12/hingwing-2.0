@@ -1,8 +1,9 @@
 import { loadFixture, type Fixture, type FixtureStep } from '../../src/testing/fixture'
+import type { Admission } from '../../src/domain/queue'
 import { parseEvent, parseRows, parseServerRequest } from '../../src/wire/parse'
 import {
   emptyTracked, reduce,
-  type Admission, type Cursor, type SessionInput, type Snapshot, type StampedEvent, type Tracked
+  type Cursor, type SessionInput, type Snapshot, type StampedEvent, type Tracked
 } from '../../src/domain/reduce'
 import type { Generation, InputId, Item, PromptId, RequestId, SessionContent, SessionId, SettledTurn } from '../../src/domain/session'
 
@@ -26,7 +27,7 @@ function userInputs(method: string, params: Record<string, unknown>, reply: Reco
       const inputId = params.input_id as InputId
       return [
         local({ did: 'send', inputId, text: params.text as string, attachments: [] }),
-        local({ did: 'send.admitted', inputId, admissionId: reply?.admission_id as string, status: reply?.status as Admission['status'] })
+        local({ did: 'send.admitted', inputId, admissionId: reply?.admission_id as string })
       ]
     }
     case 'approval.respond': {

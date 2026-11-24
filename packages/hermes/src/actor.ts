@@ -2,7 +2,7 @@ import type { Outcome, Refusal } from './domain/command'
 import { emptyTracked, reduce, sessionOf, type BridgeRequest, type Fence, type Gate, type HistoryPage, type LocalAction, type SessionInput, type Tracked } from './domain/reduce'
 import type { Attachment, InputId, OutboxEntry, RequestId, Session, SessionContent, SessionId } from './domain/session'
 import { Offline, RpcRefusal, type Calls, type Clock, type Method, type Requested, type RequestMethod, type Served } from './wire/link'
-import { parseReplay, parseShown, parseSnapshot, parseStats } from './wire/parse'
+import { parseBusy, parseReplay, parseShown, parseSnapshot, parseStats } from './wire/parse'
 
 export const DONE: Outcome = { ok: true, value: undefined }
 export const refused = (kind: Refusal['kind'], message: string): Outcome<never> => ({ ok: false, refusal: { kind, message } })
@@ -112,6 +112,8 @@ export interface SessionPort {
    */
   submit(text: string, apiText?: string, uploads?: readonly Upload[]): Promise<Outcome>
   act(action: LocalAction): void
+  /** A new id for a message this client sends. */
+  mint(): string
   earlier(page: HistoryPage): void
   whenLive<T>(run: () => Promise<Outcome<T>>): Promise<Outcome<T>>
 }
@@ -152,6 +154,7 @@ export class SessionActor {
         ? this.post(text, apiText, [], null)
         : this.stage(uploads).then(staged => (staged.ok ? this.post(text, apiText, uploads, staged.value) : staged)))),
       act: action => this.act(action),
+      mint: deps.mintId,
       earlier: page => this.step({ in: 'earlier', page }),
       whenLive: run => (this.tracked.gate.at === 'live' ? run() : Promise.resolve({ ok: false, refusal: NOT_CONNECTED }))
     }
@@ -203,9 +206,10 @@ export class SessionActor {
 
   private async readFacts(): Promise<void> {
     const attempt = this.tracked.fence.attaches
-    const shown = await this.port.call('config.get', { session_id: this.id, key: 'show_reasoning' })
-    if (!shown.ok && shown.refusal.kind === 'offline') return
-    this.step({ in: 'facts', attempt, tuning: { reasoning: shown.ok ? parseShown(shown.value) : null } })
+    const read = (key: string) => this.port.call('config.get', { session_id: this.id, key })
+    const [shown, busy] = await Promise.all([read('show_reasoning'), read('busy')])
+    if ([shown, busy].some(answer => !answer.ok && answer.refusal.kind === 'offline')) return
+    this.step({ in: 'facts', attempt, tuning: { reasoning: shown.ok ? parseShown(shown.value) : null, busy: busy.ok ? parseBusy(busy.value) : null } })
   }
 
   private act(action: LocalAction): void {
@@ -309,8 +313,9 @@ export class SessionActor {
       ...(resubmit === undefined || resubmit.attachments.length === 0 ? {} : { attachments: [...resubmit.attachments] }), ...batch
     })
     if (receipt.ok) {
-      if ('admission_id' in receipt.value) this.act({ did: 'send.admitted', inputId, admissionId: receipt.value.admission_id, status: receipt.value.status })
-      else this.act({ did: 'send.discarded', inputId })
+      // Hermes's pending list takes the entry of a row it holds. Nothing lists a message that was not admitted, or one that is already done.
+      if (!('admission_id' in receipt.value) || receipt.value.status === 'terminal') this.act({ did: 'send.discarded', inputId })
+      else this.act({ did: 'send.admitted', inputId, admissionId: receipt.value.admission_id })
       return DONE
     }
     if (receipt.refusal.kind === 'offline') return DONE
