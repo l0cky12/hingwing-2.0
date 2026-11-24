@@ -205,7 +205,7 @@ no turn runs goes into `Session.interlude`, and never opens a turn.
 
 | Event | Read as | Source |
 | --- | --- | --- |
-| `reasoning.delta`, `reasoning.available` | A reasoning item: streamed, or one whole block | `gateway/local_viewer_events.py:50-55`, `:129-161` |
+| `reasoning.delta`, `reasoning.available` | One reasoning item per model call, streamed or sent whole. A whole block that starts the streamed one is that block | `gateway/local_viewer_events.py:50-55`, `agent/turn_response_intake.py:139-165` |
 | `moa.progress`, `moa.reference`, `moa.phase`, `moa.aggregating` | One MoA item per round, updated in place | `gateway/local_viewer_events.py:129-161` |
 | `status.update` | A status line, by `kind`: `compacting`, `compacted`, `goal`, `warn`, else other. `process` is not shown yet | `gateway/run_turn_progress.py:1215-1219`, `gateway/run_goals.py:238-246` |
 | `agent.print` | A status line | `gateway/local_viewer_events.py:40-42` |

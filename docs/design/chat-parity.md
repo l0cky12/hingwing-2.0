@@ -69,7 +69,7 @@ No call site names a generation, a revision, a stored row id, an admission statu
 | `tuning` | `reduce`, from `session.info` and the reads below | Busy mode, the reasoning gate, effort and fast. |
 | `panel` | `reduce`, from events and reads (U4) | Usage, todos, subagents, processes, goal and loop state, side answers. |
 
-`Item` gains `reasoning`, `moa`, `steer` and `status`. A tool's `done` status gains `image`. `PromptItem` gains `deadline`. `SettledTurn` gains `anchors`, the stored rows of its request and reply, so a command can name a turn and never a row id.
+`Item` gains `moa`, `steer` and `status`. #99 added `reasoning`, `helper` and `plan`. A tool's `done` status gains `image`. `PromptItem` gains `deadline`. `SettledTurn` gains `anchors`, the stored rows of its request and reply, so a command can name a turn and never a row id.
 
 `Activity` gains `answering`, derived from `requests`. The sidebar's badge table is `satisfies Record<Activity['kind'], …>`, so a missing badge fails the build.
 
@@ -109,7 +109,7 @@ Each unit is one PR, stacked on the one before it. Each ends with:
 | PR | Unit | Rows | Proves it |
 |---|---|---|---|
 | B0 | Groundwork, no behaviour change | none | `SessionPatch.changed` with only the changed fields, and the `SessionPort` and `session-commands.ts` with today's commands moved onto it. Every existing test passes unchanged, and `applyPush(a, sessionPatch(a, b))` equals `b` for each pair of consecutive sessions of every fixture. Each later unit adds the scripted gateway handlers its own calls need. |
-| B1 | What Hermes says | #8, #9, #11, #12, #13, #16 | `says.jsonl`: reasoning, MoA, a tool image, status lines, a notice, an approval with `timeout_s`, and a goal verdict while idle. The `declined` phantom turn is gone. |
+| B1 | What Hermes says | #8 (the reasoning switch), #9, #11, #12, #13, #16 | `says.jsonl`: the reasoning switch, MoA, a tool image, status lines, a notice, an approval with `timeout_s`, and a goal verdict while idle. The `declined` phantom turn is gone. |
 | B2 | What Hermes asks | #20, #21, #22 | `asks.jsonl`: sudo answered (the recorded result is masked), a secret skipped, a vault prompt closed by `request.cancel`, a two-question batch, a plugin choice while idle, a connector card, and a Desktop bridge declined only while watched. |
 | B3 | Queue and steer | #3, #4, #6, #17 | `queue.jsonl`: another client's queued row, cancel, send now, edit, a lost row released, steer, redirect, a rejected steer resubmitted, and deny-and-tell. |
 | B4 | Side prompts and chat commands | #30, #32, #33, #35, #36, #38, #45, #55 | `commands.jsonl`: `complete.path`, `/btw` and `/bg` with their answers, effort, fast, the chat's folder, export and compress. |
@@ -126,14 +126,14 @@ These rows were in the first plan. Issues #66 and #69 to #78 now cover them, bui
 | #57 new chat | #66, merged as #95 |
 | #23 retry, #25 edit and resend | #74, PR #96 |
 | #39 usage and context | #77, PR #98 |
-| #40 todos, #41 subagents, and the drawing of #8 reasoning | #72 |
+| #40 todos, #41 subagents, and #8 reasoning | #72, merged as #99 |
 | #27 branch | #75 |
 | #28 images, #29 files | #70 |
 | #56 chat list | #69, merged as #102 |
 | #59 drafts | #73 |
 | yolo pill | #78, merged as #101 |
 
-B1 still parses reasoning, because it landed first. Whichever of B1 and #72 merges second keeps one parser.
+#99 owns reasoning: it reads `reasoning.delta`, `reasoning.available` and a stored reply's `reasoning` into one reasoning item per model call, and draws it. B1 keeps only the switch that turns it on: `tuning.reasoning` and `tune reasoning`.
 
 ## Frontend limits
 
