@@ -105,6 +105,11 @@ describe('reconciling with a snapshot', () => {
     expect(after.content.interlude).toEqual([closedNotice('r1', 'elsewhere')])
   })
 
+  it('closes a request the snapshot does not list with the reason a cancel parked during the attach gives', () => {
+    const after = reattached(live(asked('r1'), answer('r1')), [], [cancelled(5, 'r1', 'timeout')])
+    expect(after.content.interlude).toEqual([closedNotice('r1', 'timeout')])
+  })
+
   it('reopens a request this client answered that the snapshot still lists, saying Hermes did not get the answer', () => {
     const after = reattached(live(asked('r1'), answer('r1')), [card('r1')])
     expect(after.content.requests).toEqual([waiting('r1', 121_000, UNDELIVERED)])
