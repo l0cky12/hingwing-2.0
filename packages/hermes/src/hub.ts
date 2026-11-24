@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { DONE, refusalOf, refused, SessionActor, type BranchPin, type Upload } from './actor'
+import { DONE, refused, SessionActor, type Upload } from './actor'
 import { botModels, botPicture, createBot, describeBot, editBot, setBotPicture } from './bot-admin'
 import { botsIn, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
@@ -9,14 +9,15 @@ import type { PaneAsk } from './domain/pane'
 import type { ServerRequest } from './domain/reduce'
 import type { RelayDesk } from './domain/relay'
 import type { AttachmentId, BranchId, Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
-import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
+import { slashLineOf, type SlashCatalog } from './domain/slash'
 import { chatDesk } from './open'
 import { relayBook } from './relay'
 import { botList } from './roster'
 import { deriveSidebar, sessionList } from './sidebar'
 import { readVersions } from './versions'
 import { connect, systemClock, type Clock, type Dialer } from './wire/link'
-import { parseCatalog, parseDirective, parseEvent, parseServerRequest, type ParsedEvent } from './wire/parse'
+import { NOTHING_TO_SHOW, runSessionCommand, type BranchPin, type Hub } from './session-commands'
+import { parseCatalog, parseEvent, parseServerRequest, type ParsedEvent } from './wire/parse'
 
 export type { Command, Outcome, Refusal, ResultOf } from './domain/command'
 export type { Upload } from './actor'
@@ -95,8 +96,6 @@ export const RETAIN_MS = 60_000
 const LIST_DEBOUNCE_MS = 300
 const CANT_SHOW = "Highwing can't show this prompt yet, so it said no."
 
-type SessionCommand = Exclude<Extract<Command, { readonly sessionId: SessionId }>, { readonly do: 'versions' }>
-
 function feed<T>(initial: T, same: (a: T, b: T) => boolean = Object.is): Feed<T> & { set(next: T): void } {
   let value = initial
   const listeners = new Set<(value: T) => void>()
@@ -132,14 +131,10 @@ const sameCatalog = (a: SlashCatalog, b: SlashCatalog) =>
 
 /** Hermes discovers plugin commands and skills for the catalog, so a slow disk can stall it. */
 const CATALOG_TIMEOUT_MS = 10_000
-const NOTHING_TO_SHOW: Outcome<string | null> = { ok: true, value: null }
-const showing = (outcome: Outcome, words: string | null = null): Outcome<string | null> => (outcome.ok ? { ok: true, value: words } : outcome)
 
 const ATTACHING: ReadonlySet<Session['sync']['state']> = new Set(['opening', 'catching-up', 'rebuilding'])
 const NO_UPLOADS: NonNullable<HermesOptions['uploads']> = { read: async () => null }
 const COMMAND_WITH_ATTACHMENTS = "A command can't carry attachments. Remove them, or send a message instead."
-const MENTION_WITH_ATTACHMENTS = "A message to another bot can't carry attachments. Remove them, or send it without the mention."
-const UPLOAD_GONE = 'An attachment is no longer available. Remove it and attach it again.'
 
 export function openHermes(options: HermesOptions): Hermes {
   const clock = options.clock ?? systemClock
@@ -258,7 +253,7 @@ export function openHermes(options: HermesOptions): Hermes {
     if (held !== undefined) return held
     const bot = desk.botOf(id)
     const actor = new SessionActor(id, {
-      conn: bot === undefined ? conn : conn.as(bot), clock, mintId, refuse, branches: branchPins,
+      conn: bot === undefined ? conn : conn.as(bot), clock, mintId, refuse,
       publish: (session, previous) => {
         for (const listener of [...(watchers.get(id) ?? [])]) listener(session)
         if (session.run.state !== previous.run.state) refreshSoon()
@@ -318,73 +313,20 @@ export function openHermes(options: HermesOptions): Hermes {
     })
   })
 
-  type Handled<C extends Command> = Outcome<ResultOf<C>> | Promise<Outcome<ResultOf<C>>>
-  const sessionCommands: { readonly [K in SessionCommand['do']]: (actor: SessionActor, command: Extract<Command, { do: K }>) => Handled<Extract<Command, { do: K }>> } = {
-    send: async (actor, { text, attachments = [] }) => {
-      if (text.trimStart().startsWith('/')) await catalogRead
-      const line = slashLineOf(text, slash.get())
-      if (line !== null) return runSlash(actor, line)
-      if (text.includes('@')) await relayRead
-      const to = mentioned(actor.id, text)
-      if (to.length === 0) {
-        const read = await Promise.all(attachments.map(id => uploads.read(id)))
-        if (read.includes(null)) return refused('stale', UPLOAD_GONE)
-        return showing(await actor.send(text, undefined, read as Upload[]))
-      }
-      if (attachments.length > 0) return refused('rejected', MENTION_WITH_ATTACHMENTS)
-      const { run, history } = actor.session
-      const after = run.state === 'running' ? run.turn.id : history.at(-1)?.id ?? null
-      for (const bot of to) relays.send(actor.id, after, bot, text)
-      return NOTHING_TO_SHOW
+  const hub: Hub = {
+    catalog: async () => {
+      await catalogRead
+      return slash.get()
     },
-    rewind: (actor, { rowId, text }) => actor.rewind(rowId, text),
-    branch: async (actor, { rowId, branchId }) => {
-      const made = await actor.branch(rowId, branchId)
-      if (!made.ok) return made
-      desk.branched({ from: actor.id, ...made.value })
-      refreshSoon()
-      return { ok: true, value: made.value.sessionId }
-    },
-    stop: actor => actor.stop(),
-    answer: (actor, { promptId, reply }) => actor.answer(promptId, reply),
-    discard: (actor, { inputId }) => actor.discard(inputId),
-    loadEarlier: actor => actor.loadEarlier(),
-    models: actor => actor.models(),
-    pickModel: (actor, { model, confirm }) => actor.pickModel(model, confirm ?? null),
-    contextBreakdown: actor => actor.contextBreakdown(),
-    completePath: (actor, { word }) => actor.completePath(word),
-    setYolo: (actor, { on }) => actor.setYolo(on),
-    rename: async (actor, { title }) => {
-      const outcome = await actor.mutate({ title })
-      if (outcome.ok) list.retitle(actor.id, title)
-      return outcome
-    },
-    archive: async (actor, { archived }) => {
-      const outcome = await actor.mutate({ archived })
-      if (outcome.ok && archived) list.drop(actor.id)
-      if (outcome.ok) refreshSoon()
-      return outcome
-    }
-  }
-
-  const highwingRuns: { readonly [name: string]: (actor: SessionActor, arg: string) => Outcome | Promise<Outcome> | null } = {
-    title: (actor, title) => (title === '' ? null : sessionCommands.rename(actor, { do: 'rename', sessionId: actor.id, title }))
-  }
-
-  const runSlash = async (actor: SessionActor, { entry, arg }: SlashLine): Promise<Outcome<string | null>> => {
-    const own = entry.kind === 'command' && Object.hasOwn(highwingRuns, entry.name) ? highwingRuns[entry.name]?.(actor, arg) : null
-    if (own != null) return showing(await own)
-    const typed = `/${entry.name}${arg === '' ? '' : ` ${arg}`}`
-    let reply
-    try {
-      reply = await actor.dispatch(entry.name, arg)
-    } catch (error) {
-      return { ok: false, refusal: refusalOf(error) }
-    }
-    const directive = parseDirective(reply, typed)
-    if (directive === null) return refused('unsupported', "Highwing can't carry out what Hermes answered to that command.")
-    if (directive.do === 'show') return directive.text === '' ? NOTHING_TO_SHOW : { ok: true, value: directive.text }
-    return showing(await actor.send(directive.text, directive.apiText), directive.note)
+    retitle: list.retitle,
+    drop: list.drop,
+    refreshSoon,
+    settledRelay: () => relayRead,
+    mentioned,
+    relay: relays.send,
+    branchPins,
+    branched: desk.branched,
+    uploads
   }
 
   /** Hermes's `command_verdict` refuses `/new` (gateway/session_commands.py:133-145), so Highwing runs a bare one: a new chat in the bot of the chat it was typed in. */
@@ -445,8 +387,7 @@ export function openHermes(options: HermesOptions): Hermes {
       for (const actor of [...actors.values()]) actor.attach()
       return DONE
     }
-    const handle = sessionCommands[command.do] as (actor: SessionActor, command: SessionCommand) => Handled<SessionCommand>
-    return handle(await attached(command.sessionId), command)
+    return runSessionCommand((await attached(command.sessionId)).port, command, hub)
   }
 
   return {
