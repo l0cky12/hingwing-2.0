@@ -437,6 +437,7 @@ describe('sending a slash line', () => {
     const unanswered: Dialer = async request => {
       const socket = await script(request)
       return {
+        reach: socket.reach,
         send: text => (text.includes('"method":"commands.catalog"') ? undefined : socket.send(text)),
         close: () => socket.close(),
         get onText() { return socket.onText },

@@ -1,7 +1,7 @@
 import type { ModelConfirm, ModelMenu, Outcome, Refusal } from './domain/command'
 import { emptyTracked, reduce, sessionOf, type Gate, type LocalAction, type ServerRequest, type SessionInput, type Tracked } from './domain/reduce'
 import type { InputId, ModelOption, OutboxEntry, PromptId, PromptReply, Session, SessionId } from './domain/session'
-import { Offline, RpcRefusal, type Clock, type Connection } from './wire/link'
+import { Offline, RpcRefusal, type Calls, type Clock } from './wire/link'
 import { parseModelMenu, parseModelReceipt, parseReplay, parseSnapshot, parseTranscript } from './wire/parse'
 
 export const DONE: Outcome = { ok: true, value: undefined }
@@ -36,7 +36,8 @@ const EARLIER = { pageRows: 200, pages: 3 } as const
 type Attaching = Extract<Gate, { at: 'attaching' }>
 
 export interface ActorDeps {
-  readonly conn: Connection
+  /** The connection for a session of the socket's own profile, `conn.as(bot)` for a bot's. */
+  readonly conn: Calls
   readonly clock: Clock
   readonly publish: (session: Session, previous: Session) => void
   readonly refuse: (request: ServerRequest) => void

@@ -1,9 +1,9 @@
-import { chmodSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { backoffMs, DialError, liveDialer, Offline, RpcRefusal } from '../src/wire/link'
+import type { BotId } from '../src/domain/bots'
+import { backoffMs, DialError, Offline, RpcRefusal } from '../src/wire/link'
 import { DESCRIBE, fakeGateway } from './support/wire'
 
 const NOT_RUNNING = new DialError('not-running')
@@ -210,6 +210,36 @@ describe('calls', () => {
     expect(await resume).toEqual({ which: 'resume' })
   })
 
+  it('stamps every call made for a bot with its profile, and no call made for the socket\'s own', async () => {
+    const { peer, conn } = await online()
+    const research = conn.as('research' as BotId)
+    void research.call('session.resume', { session_id: 's', display_projection: true })
+    void research.call('session.detach', { session_id: 's', subscription_id: 'sub' })
+    void conn.call('session.detach', { session_id: 's', subscription_id: 'sub' })
+    void conn.as('ops' as BotId).call('session.list', { title: 'Bot Chat', include_hidden: true })
+    expect(peer.sent.map(frame => frame.params)).toEqual([
+      { session_id: 's', display_projection: true, profile: 'research' },
+      { session_id: 's', subscription_id: 'sub', profile: 'research' },
+      { session_id: 's', subscription_id: 'sub' },
+      { title: 'Bot Chat', include_hidden: true, profile: 'ops' }
+    ])
+    expect(research.link).toBe(conn.link)
+  })
+
+  it('says what the open socket reaches, and nothing while there is none', async () => {
+    const gateway = fakeGateway()
+    gateway.state.reach = 'profile'
+    expect(gateway.conn.reach).toBeNull()
+    await gateway.clock.advance(0)
+    expect(gateway.conn.reach).toBe('profile')
+    gateway.state.reach = 'host'
+    gateway.last().drop()
+    expect(gateway.conn.reach).toBeNull()
+    await expect(gateway.conn.as('research' as BotId).call('session.list', {}), 'a call for a bot is offline with the socket').rejects.toBeInstanceOf(Offline)
+    await gateway.clock.advance(1_000)
+    expect(gateway.conn.reach).toBe('host')
+  })
+
   it('rejects with the gateway\'s reason, and the revision a conflict carries', async () => {
     const { peer, conn } = await online()
     const call = conn.call('session.interrupt', { session_id: 's', execution_generation: 1 }).catch((error: unknown) => error)
@@ -251,42 +281,6 @@ describe('calls', () => {
     await gateway.clock.advance(600_000)
     expect(gateway.dials).toHaveLength(1)
     await expect(conn.call('session.list', {})).rejects.toBeInstanceOf(Offline)
-  })
-})
-
-describe('liveDialer', () => {
-  const hermes = (code: number, stdout: string) => {
-    const dir = mkdtempSync(join(tmpdir(), 'highwing-hermes-'))
-    const bin = join(dir, 'hermes')
-    writeFileSync(join(dir, 'stdout'), stdout)
-    writeFileSync(bin, `#!/bin/sh\necho "$@" >> "${dir}/args"\ncat "${dir}/stdout"\nexit ${code}\n`)
-    chmodSync(bin, 0o755)
-    return { bin, args: () => readFileSync(join(dir, 'args'), 'utf8').trim().split('\n') }
-  }
-  const kindOf = (dial: Promise<unknown>) => dial.then(() => 'resolved', (error: unknown) => (error instanceof DialError ? error.kind : `threw ${String(error)}`))
-
-  it.each([
-    [2, 'incompatible'], [3, 'incompatible'], [4, 'auth'], [5, 'not-running'], [6, 'draining'], [7, 'inaccessible'], [9, 'inaccessible']
-  ])('reads exit code %i of `hermes gateway attach` as %s', async (code, kind) => {
-    const { bin } = hermes(code, '{"state":"absent","message":"gateway absent"}\n')
-    expect(await kindOf(liveDialer({ hermesBin: bin })({ start: false }))).toBe(kind)
-  })
-
-  it('reads a missing hermes command as hermes-missing', async () => {
-    expect(await kindOf(liveDialer({ hermesBin: join(tmpdir(), 'no-such-hermes') })({ start: false }))).toBe('hermes-missing')
-  })
-
-  it('asks for a start only when told to, and dials the url the command printed', async () => {
-    const { bin, args } = hermes(0, '{"url":"ws://127.0.0.1:1/api/ws","protocols":["hermes-gateway-v1","hermes-gateway-ticket.t"],"ticket":"t"}\n')
-    const dial = liveDialer({ hermesBin: bin })
-    expect(await kindOf(dial({ start: false }))).toBe('dropped')
-    expect(await kindOf(dial({ start: true }))).toBe('dropped')
-    expect(args()).toEqual(['gateway attach --json --timeout 20', 'gateway attach --json --start --timeout 75'])
-  })
-
-  it('reads output that names no url as incompatible', async () => {
-    const { bin } = hermes(0, 'ready\n')
-    expect(await kindOf(liveDialer({ hermesBin: bin })({ start: false }))).toBe('incompatible')
   })
 })
 

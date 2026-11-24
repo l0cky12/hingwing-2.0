@@ -5,7 +5,7 @@
 import { spawn } from 'node:child_process'
 import { createServer, type AddressInfo, type Socket } from 'node:net'
 import type { SshFailure, SshHost } from '../domain/reach'
-import { HANDSHAKE_MS, systemClock, type Clock } from './link'
+import { EXIT_KINDS, HANDSHAKE_MS, systemClock, type Clock, type DialError } from './link'
 
 /** Hermes's own transport (hermes_cli/gateway_connections_ssh_transport.py:183-190), without its ControlMaster. */
 export const SSH_OPTIONS = [
@@ -18,8 +18,11 @@ export const ATTACH = {
   start: ['gateway', 'attach', '--json', '--start', '--timeout', '75'],
   retry: ['gateway', 'attach', '--json', '--timeout', '20']
 } as const
-/** Every hermes command Highwing runs on the far machine. Literal tuples, so no typed value reaches a remote shell. */
-export type HermesArgs = typeof PROBE | (typeof ATTACH)[keyof typeof ATTACH]
+export const SERVE = ['gateway', 'tickets', '--serve', '--json'] as const
+/** Every hermes command Highwing runs. Literal tuples, so no typed value reaches a remote shell. */
+export type HermesArgs = typeof PROBE | typeof SERVE | (typeof ATTACH)[keyof typeof ATTACH]
+/** The only line Highwing writes to a `--serve` channel. A literal too, and it names no profile: an interactive ticket takes none. */
+export const ASK_INTERACTIVE = '{"id":1,"purpose":"interactive"}\n'
 
 /** The installer's command locations (Hermes's scripts/install.sh): per-user, root, and the legacy venv. */
 export const HERMES_PATHS = ['$HOME/.local/bin/hermes', '/usr/local/bin/hermes', '$HOME/.hermes/hermes-agent/venv/bin/hermes'] as const
@@ -51,13 +54,18 @@ export interface ToolOptions {
   readonly deadlineMs: number
   readonly signal: AbortSignal
   readonly clock?: Clock
+  /** Written to the command's stdin, which is then closed. Absent: its stdin is closed at once. */
+  readonly input?: string
 }
 
 /** Runs a command to its end, its deadline or the signal, whichever is first. Its output is returned and never logged. */
-export function runTool(bin: string, args: readonly string[], { deadlineMs, signal, clock = systemClock }: ToolOptions): Promise<ToolRun> {
+export function runTool(bin: string, args: readonly string[], { deadlineMs, signal, clock = systemClock, input }: ToolOptions): Promise<ToolRun> {
   return new Promise(resolve => {
     if (signal.aborted) return resolve({ end: 'cut', stderr: '' })
-    const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(bin, args, { stdio: ['pipe', 'pipe', 'pipe'] })
+    // A command that ends before it reads its stdin closes the pipe under the write. Its exit says what happened.
+    child.stdin.on('error', () => {})
+    child.stdin.end(input)
     let stdout = ''
     let stderr = ''
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk })
@@ -113,8 +121,22 @@ export async function sshExec(host: SshHost, args: HermesArgs, options: SshOptio
 
 export type ProbeFailure = SshFailure | 'hermes-not-found' | 'hermes-too-old'
 export type Probe =
-  | { readonly ok: true; readonly windowsServiceSession: boolean }
+  /** `interactive`: this Hermes mints the ticket that opens one socket for every profile. */
+  | { readonly ok: true; readonly windowsServiceSession: boolean; readonly interactive: boolean }
   | { readonly ok: false; readonly failure: ProbeFailure }
+
+type Obj = Readonly<Record<string, unknown>>
+const isObject = (value: unknown): value is Obj => value !== null && typeof value === 'object' && !Array.isArray(value)
+
+/** One JSON object of a command's stdout, or null when that line is missing or is not one. */
+function lineOf(stdout: string, at: number): Obj | null {
+  try {
+    const value: unknown = JSON.parse(stdout.trim().split('\n').at(at) ?? '')
+    return isObject(value) ? value : null
+  } catch {
+    return null
+  }
+}
 
 /**
  * Reads `hermes gateway tickets --probe --json`. A Hermes that predates the command exits non-zero
@@ -122,13 +144,50 @@ export type Probe =
  */
 export function probeOf(code: number, stdout: string): Probe {
   if (code === NOT_FOUND) return { ok: false, failure: 'hermes-not-found' }
-  try {
-    const reply: unknown = code === 0 ? JSON.parse(stdout.trim().split('\n').at(-1) ?? '') : null
-    if (reply === null || typeof reply !== 'object') return { ok: false, failure: 'hermes-too-old' }
-    return { ok: true, windowsServiceSession: (reply as { readonly windows_service_session?: unknown }).windows_service_session === true }
-  } catch {
-    return { ok: false, failure: 'hermes-too-old' }
+  const reply = code === 0 ? lineOf(stdout, -1) : null
+  if (reply === null) return { ok: false, failure: 'hermes-too-old' }
+  return {
+    ok: true,
+    windowsServiceSession: reply.windows_service_session === true,
+    interactive: Array.isArray(reply.purposes) && reply.purposes.includes('interactive')
   }
+}
+
+/** What `hermes gateway attach --json` printed: where the gateway listens, the ticket's subprotocols, and which gateway process answered. */
+export interface Attached { readonly url: string; readonly protocols: readonly string[]; readonly instanceId: string | null }
+
+export function attachedOf(stdout: string): Attached | null {
+  const reply = lineOf(stdout, -1)
+  if (reply === null) return null
+  const { url, protocols, endpoint } = reply
+  if (typeof url !== 'string' || !Array.isArray(protocols) || !protocols.every(held => typeof held === 'string')) return null
+  const instanceId = isObject(endpoint) && typeof endpoint.instance_id === 'string' ? endpoint.instance_id : null
+  return { url, protocols, instanceId }
+}
+
+export type Served =
+  | { readonly is: 'ticket'; readonly ticket: string; readonly instanceId: string | null }
+  /** `unsupported_purpose`: this Hermes mints no interactive ticket after all. */
+  | { readonly is: 'unsupported' }
+  /** The hello was an error, or no ticket came. `kind` is what the link shows. */
+  | { readonly is: 'failed'; readonly kind: DialError['kind'] }
+
+/**
+ * Reads a run of `hermes gateway tickets --serve --json` that was sent `ASK_INTERACTIVE`: the hello
+ * line, then the one reply. With no gateway to use the first line is an error and the exit code is
+ * the one `attach` gives that verdict. A ticket the gateway would not mint is `dropped`, so the
+ * retry attaches again, as the contract asks after `ticket_unavailable`.
+ */
+export function servedOf(code: number, stdout: string): Served {
+  const hello = lineOf(stdout, 0)
+  if (hello?.type !== 'hello') return { is: 'failed', kind: code === 0 ? 'incompatible' : EXIT_KINDS[code] ?? 'inaccessible' }
+  const reply = lineOf(stdout, 1)
+  if (reply?.ok === true && typeof reply.ticket === 'string' && reply.ticket !== '') {
+    const { endpoint } = hello
+    return { is: 'ticket', ticket: reply.ticket, instanceId: isObject(endpoint) && typeof endpoint.instance_id === 'string' ? endpoint.instance_id : null }
+  }
+  const refusal = isObject(reply?.error) ? reply.error.code : null
+  return refusal === 'unsupported_purpose' ? { is: 'unsupported' } : { is: 'failed', kind: 'dropped' }
 }
 
 export async function probeHermes(host: SshHost, options: SshOptions): Promise<Probe> {

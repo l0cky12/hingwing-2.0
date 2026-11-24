@@ -9,6 +9,7 @@ import { createServer, type AddressInfo, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { hostPart, parseSshHost, type CheckFailure, type SshHost } from '../domain/reach'
+import { TICKET_PREFIX } from '../wire/link'
 import type { Loopback } from './loopback'
 
 export const FAKE_HOST = parseSshHost('hermes-host.example-tailnet.ts.net') as SshHost
@@ -20,13 +21,16 @@ interface Said {
   readonly exit: number | 'never'
 }
 
+/** A tool that prints, then reads one line of its stdin and goes on with what `then` says to it. */
+interface Asks extends Omit<Said, 'exit'> { then(line: string): Said }
+
 interface Scenario {
   /** What `tailscale status --json` says. null: the bin directory has no `tailscale`, a real ENOENT. */
   readonly tailscale: Said | null
   /** What ssh itself says. `through`: it reaches the machine and runs the command. null: no `ssh`. */
   readonly ssh: Said | 'through' | null
-  /** The Hermes of both machines. `old` predates `gateway tickets`. null: none is installed. */
-  readonly hermes: 'current' | 'old' | null
+  /** The Hermes of both machines. `bound` mints no `interactive` ticket. `old` predates `gateway tickets`. null: none is installed. */
+  readonly hermes: 'current' | 'bound' | 'old' | null
   /** What `checkTarget` makes of the far machine. null: it passes. */
   readonly verdict: CheckFailure | null
 }
@@ -45,8 +49,10 @@ const REACHABLE = { tailscale: status('Running', { online: true }), ssh: 'throug
 const refusing = (stderr: string, exit: Said['exit'] = 255) => ({ ...REACHABLE, ssh: { stderr, exit } })
 
 /** One row per way a check can end. A new `CheckFailure` does not compile until it has a row here. */
-export const SCENARIOS: Readonly<Record<CheckFailure | 'ok' | 'slow', Scenario>> = {
+export const SCENARIOS: Readonly<Record<CheckFailure | 'ok' | 'ok-bound' | 'slow', Scenario>> = {
   ok: { ...REACHABLE, verdict: null },
+  /** A Hermes that passes the check and whose sockets reach only the profile attach ran in. */
+  'ok-bound': { ...REACHABLE, hermes: 'bound', verdict: null },
   /** The far machine never answers, so ssh sits silent until its deadline. */
   slow: { ...refusing('', 'never'), verdict: 'unreachable' },
   'tailscale-missing': { ...REACHABLE, tailscale: null, verdict: 'tailscale-missing' },
@@ -92,19 +98,23 @@ export interface FakeHost {
   /** Lets every held tool go on, and holds none from then on. */
   release(): void
   /** The gateway restarted. Its next attach names another port. */
-  moveTo(gateway: Pick<Loopback, 'mint'> | null): void
+  moveTo(gateway: Gateway | null): void
   close(): Promise<void>
 }
 
+/** Where the fake machine's Hermes gets its tickets. */
+export type Gateway = Pick<Loopback, 'mint' | 'instanceId'>
+
 const TOOLS = ['ssh', 'tailscale', 'hermes'] as const
 type Tool = (typeof TOOLS)[number]
-type Order = readonly [verb: 'stdout' | 'stderr' | 'exit' | 'pipe', value: string | number]
+type Order = readonly [verb: 'stdout' | 'stderr' | 'exit' | 'pipe' | 'ask', value: string | number]
 interface Asked { readonly tool: Tool; readonly argv: readonly string[]; readonly pid: number }
-interface Answer { readonly at: Hold | null; say(): Said | { readonly pipe: number } }
+interface Answer { readonly at: Hold | null; say(): Said | Asks | { readonly pipe: number } }
 
 /**
  * The script of every fake tool. It runs the orders this process sends it over a loopback socket,
- * one JSON line each and one at a time, and answers a line when it has printed what an order said.
+ * one JSON line each and one at a time, and answers an empty line when it has printed what an
+ * order said. `ask` answers the first line of the tool's stdin instead, as a JSON string.
  */
 const toolScript = (tool: Tool, port: number) => `#!${process.execPath}
 const net = require('node:net')
@@ -122,7 +132,15 @@ const run = {
     far.on('error', () => process.exit(255))
     far.on('close', () => process.exit(0))
     process.stdin.pipe(far).pipe(process.stdout)
-  }
+  },
+  ask: () => new Promise(done => {
+    let held = ''
+    const line = () => done(held.split('\\n')[0])
+    process.stdin.setEncoding('utf8').on('end', line).on('data', chunk => {
+      held += chunk
+      if (held.includes('\\n')) line()
+    })
+  }).then(line => control.write(JSON.stringify(line) + '\\n'))
 }
 let text = ''
 let last = Promise.resolve()
@@ -138,9 +156,13 @@ control.on('data', chunk => {
 control.write(JSON.stringify({ tool: ${JSON.stringify(tool)}, argv: process.argv.slice(2), pid: process.pid }) + '\\n')
 `
 
-const PROBE_REPLY = '{"protocol": 1, "purposes": ["native-http", "interactive"], "windows_service_session": false}\n'
+const probeReply = (purposes: readonly string[]) => `${JSON.stringify({ protocol: 1, purposes, windows_service_session: false })}\n`
+/** The ticket purposes each Hermes mints (hermes_cli/gateway_runtime_tickets.py:26). An older one lists `native-http` alone. */
+const PURPOSES = { current: ['native-http', 'interactive'], bound: ['native-http'] } as const
 const UNKNOWN_COMMAND: Said = { stderr: "hermes gateway: error: argument gateway_command: invalid choice: 'tickets'\n", exit: 2 }
 const ABSENT: Said = { stdout: '{"state":"absent","message":"gateway absent: not ready"}\n', exit: 5 }
+/** The first line of `--serve` with no gateway to use, and its exit code (gateway-ssh-clients.md, "First line"). */
+const SERVE_ABSENT: Said = { stdout: '{"type":"error","error":{"code":"absent","reason_code":null,"message":"gateway absent: not ready"}}\n', exit: 5 }
 /** The far machine as ssh hands it a command: `sh -c '<a script with no quote in it>' hermes <args>`. */
 const REMOTE_HERMES = /^sh -c '[^']+' hermes (.+)$/
 
@@ -170,7 +192,7 @@ function sshCall(argv: readonly string[]): { readonly host: string | undefined; 
  * `holdAt` keeps every tool that reaches that moment waiting until `release()`, which pins a
  * passing state (a check in flight, a pending attach, a stalled upgrade) without a sleep.
  */
-export async function fakeHost(name: ScenarioName, gateway: Pick<Loopback, 'mint'> | null, options: { readonly holdAt?: Hold } = {}): Promise<FakeHost> {
+export async function fakeHost(name: ScenarioName, gateway: Gateway | null, options: { readonly holdAt?: Hold } = {}): Promise<FakeHost> {
   const scenario = SCENARIOS[name]
   const calls: string[] = []
   const pids = new Set<number>()
@@ -181,19 +203,40 @@ export async function fakeHost(name: ScenarioName, gateway: Pick<Loopback, 'mint
   let printed = 0
   let serving = gateway
 
+  /** The ticket attach returns reaches the profile attach ran in (gateway-ssh-clients.md, "The WebSocket ticket"). */
   const attach = (reach: 'direct' | 'tunnel'): Said => {
     if (serving === null) return ABSENT
-    const endpoint = serving.mint()
-    if (reach === 'direct') return { stdout: `${JSON.stringify(endpoint)}\n`, exit: 0 }
+    const { url, protocols } = serving.mint('profile')
+    const reply = (address: string) => ({ stdout: `${JSON.stringify({ url: address, protocols, endpoint: { instance_id: serving?.instanceId } })}\n`, exit: 0 })
+    if (reach === 'direct') return reply(url)
     // A port only this fake's `ssh -W` can resolve, so a client that skips the tunnel reaches nothing.
     const hidden = tunnels.size + 1
-    tunnels.set(hidden, Number(new URL(endpoint.url).port))
-    return { stdout: `${JSON.stringify({ ...endpoint, url: `ws://127.0.0.1:${hidden}/api/ws` })}\n`, exit: 0 }
+    tunnels.set(hidden, Number(new URL(url).port))
+    return reply(`ws://127.0.0.1:${hidden}/api/ws`)
+  }
+
+  /** `_reply` in hermes_cli/gateway_runtime_tickets.py:79-119, for the one purpose Highwing asks for. */
+  const ticket = (line: string, purposes: readonly string[]): Said => {
+    const { id, purpose } = JSON.parse(line) as { readonly id?: unknown; readonly purpose?: unknown }
+    const refuse = (code: string) => ({ id, ok: false, error: { code, message: 'the fake host mints interactive tickets only' } })
+    const reply = !purposes.includes(String(purpose))
+      ? refuse('unsupported_purpose')
+      : purpose !== 'interactive' || serving === null
+        ? refuse('ticket_unavailable')
+        : { id, ok: true, ticket: (serving.mint('host').protocols[1] as string).slice(TICKET_PREFIX.length), expires_in: 30 }
+    return { stdout: `${JSON.stringify(reply)}\n`, exit: 0 }
+  }
+
+  const serve = (purposes: readonly string[]): Said | Asks => {
+    if (serving === null) return SERVE_ABSENT
+    return { stdout: `${JSON.stringify({ type: 'hello', protocol: 1, endpoint: { instance_id: serving.instanceId } })}\n`, then: line => ticket(line, purposes) }
   }
 
   const hermes = (args: string, reach: 'direct' | 'tunnel'): Answer => {
     calls.push(args)
-    if (args === 'gateway tickets --probe --json') return { at: reach === 'tunnel' ? 'ssh' : null, say: () => (scenario.hermes === 'old' ? UNKNOWN_COMMAND : { stdout: PROBE_REPLY, exit: 0 }) }
+    const purposes = scenario.hermes === 'current' || scenario.hermes === 'bound' ? PURPOSES[scenario.hermes] : null
+    if (args === 'gateway tickets --probe --json') return { at: reach === 'tunnel' ? 'ssh' : null, say: () => (purposes === null ? UNKNOWN_COMMAND : { stdout: probeReply(purposes), exit: 0 }) }
+    if (args === 'gateway tickets --serve --json' && purposes !== null) return { at: null, say: () => serve(purposes) }
     if (args.startsWith('gateway attach --json ')) return { at: 'attach', say: () => attach(reach) }
     return { at: null, say: () => UNKNOWN_COMMAND }
   }
@@ -220,37 +263,43 @@ export async function fakeHost(name: ScenarioName, gateway: Pick<Loopback, 'mint
     hermes: argv => hermes(argv.join(' '), 'direct')
   }
 
-  const ordersOf = (said: Said | { readonly pipe: number }): Order[] => {
+  const ordersOf = (said: Said | Asks | { readonly pipe: number }): Order[] => {
     if ('pipe' in said) return [['pipe', said.pipe]]
     return [
       ...(said.stderr === undefined ? [] : [['stderr', said.stderr] as const]),
       ...(said.stdout === undefined ? [] : [['stdout', said.stdout] as const]),
-      ...(said.exit === 'never' ? [] : [['exit', said.exit] as const])
+      ...('then' in said ? [['ask', 0] as const] : said.exit === 'never' ? [] : [['exit', said.exit] as const])
     ]
   }
 
-  const serve = async (socket: Socket, asked: Asked) => {
+  const order = (socket: Socket, said: ReturnType<Answer['say']>): Asks['then'] | null => {
+    if (!socket.destroyed) for (const next of ordersOf(said)) socket.write(`${JSON.stringify(next)}\n`)
+    return 'then' in said ? said.then : null
+  }
+
+  const run = async (socket: Socket, asked: Asked) => {
     pids.add(asked.pid)
     const answer = answers[asked.tool](asked.argv)
     if (answer.at !== null && answer.at === holding) await new Promise<void>(resolve => waiting.push(resolve))
-    if (!socket.destroyed) for (const order of ordersOf(answer.say())) socket.write(`${JSON.stringify(order)}\n`)
+    return order(socket, answer.say())
   }
 
   const server = createServer(socket => {
     controls.add(socket)
     let text = ''
-    let asked = false
+    let running: Promise<Asks['then'] | null> | null = null
     socket.setEncoding('utf8')
     socket.on('error', () => {})
     socket.on('close', () => void controls.delete(socket))
     socket.on('data', (chunk: string) => {
       text += chunk
       for (let end = text.indexOf('\n'); end !== -1; end = text.indexOf('\n')) {
-        // The first line is what the tool was asked to do. Each later one says it finished printing.
-        if (asked) printed++
-        else void serve(socket, JSON.parse(text.slice(0, end)) as Asked)
-        asked = true
+        const line = text.slice(0, end)
         text = text.slice(end + 1)
+        // The first line is what the tool was asked to do. An empty one says it finished printing, and any other is the line it read.
+        if (running === null) running = run(socket, JSON.parse(line) as Asked)
+        else if (line === '') printed++
+        else running = running.then(then => (then === null ? null : order(socket, then(JSON.parse(line) as string))))
       }
     })
   })

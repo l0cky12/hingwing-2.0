@@ -318,6 +318,8 @@ export class ScriptedGateway {
   readonly sessionId: string
   /** The profile a frame with no `profile` is for, and the one the story session lives in: the `is_default` row of the header's profiles. */
   readonly home: string
+  /** What a socket reaches when nothing says otherwise: the header's `reach`, else every profile. */
+  readonly reach: Reach
   readonly epoch: string
   readonly ring: Params[] = []
   readonly view: View
@@ -342,6 +344,7 @@ export class ScriptedGateway {
 
   constructor(readonly fixture: Fixture, readonly options: GatewayOptions) {
     this.sessionId = fixture.header.sessionId
+    this.reach = fixture.header.reach ?? 'host'
     this.stored = fixture.header.stored
     this.drop = options.drop === null ? { at: 'spent' } : { at: 'armed', ...options.drop }
     const { models } = fixture.header
@@ -372,11 +375,8 @@ export class ScriptedGateway {
     return this.ring.at(-1)?.seq ?? 0
   }
 
-  /**
-   * A new socket. The gateway speaks first (tui_gateway/ws.py:656-664). `reach` is what the ticket
-   * the socket was opened with reaches. Default: the header's.
-   */
-  accept(peer: Peer, reach: Reach = this.fixture.header.reach ?? 'host'): { text(text: string): void; closed(): void } {
+  /** A new socket, opened with a ticket of that reach. The gateway speaks first (tui_gateway/ws.py:656-664). */
+  accept(peer: Peer, reach: Reach = this.reach): { text(text: string): void; closed(): void } {
     const socket: Socket = { peer, reach, subscriptionId: `subscription-${++this.dials}`, subscriptions: new Map(), replayCursors: new Map() }
     this.sockets.add(socket)
     peer.write({

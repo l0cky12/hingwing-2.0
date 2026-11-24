@@ -1,10 +1,18 @@
-import { execFile } from 'node:child_process'
+import type { BotId } from '../domain/bots'
 import { CHECK_FAILURES, type SshFailure } from '../domain/reach'
 import type { BlockedWhy, Link, WaitingWhy } from '../domain/session'
 import type { CanonicalRpcMethods, RpcMethods } from './contract.generated'
 
+/**
+ * What a socket's ticket lets it reach. `host`: every profile the gateway serves, chosen per frame
+ * by `profile`. `profile`: only the profile `attach` ran in, and a frame that names another is
+ * refused `profile_mismatch` (Hermes's gateway/session_controls.py:197-223).
+ */
+export type Reach = 'host' | 'profile'
+
 /** The seam under the whole client. Text frames in, text frames out. Fixtures implement it in memory. */
 export interface WireSocket {
+  readonly reach: Reach
   send(text: string): void
   close(): void
   /** Set by the owner right after the dialer resolves. Frames that arrive earlier are buffered by the socket. */
@@ -52,17 +60,17 @@ export class DialError extends Error {
   }
 }
 
+/** Where to dial, the subprotocols that carry the ticket, and what that ticket reaches. */
+export interface Endpoint { readonly url: string; readonly protocols: readonly string[]; readonly reach: Reach }
 /**
- * What a socket's ticket lets it reach. `host`: every profile the gateway serves, chosen per frame
- * by `profile`. `profile`: only the profile `attach` ran in, and a frame that names another is
- * refused `profile_mismatch` (Hermes's gateway/session_controls.py:197-223).
+ * Each call mints its own ticket, so a reconnect can never reuse one. The ticket lives only in the
+ * `Endpoint` passed from here to the dial. It is never logged, stored, recorded or sent over IPC.
  */
-export type Reach = 'host' | 'profile'
-
-export interface Endpoint { readonly url: string; readonly protocols: readonly string[] }
 export type Mint = (request: { readonly start: boolean }) => Promise<Endpoint>
 
 export const GATEWAY_PROTOCOL = 'hermes-gateway-v1'
+/** Hermes's hermes_cli/gateway_client.py:16 */
+export const TICKET_PREFIX = 'hermes-gateway-ticket.'
 
 /** `ensure_exit_code` in Hermes's `hermes_cli/gateway_runtime_cli.py:11-17`. 2 is an invocation this Hermes does not know. */
 export const EXIT_KINDS: Readonly<Record<number, Why>> = { 2: 'incompatible', 3: 'incompatible', 4: 'auth', 5: 'not-running', 6: 'draining', 7: 'inaccessible' }
@@ -70,41 +78,7 @@ export const EXIT_KINDS: Readonly<Record<number, Why>> = { 2: 'incompatible', 3:
 const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
-export function endpointOf(stdout: string): Endpoint | null {
-  try {
-    const reply: unknown = JSON.parse(stdout.trim().split('\n').at(-1) ?? '')
-    if (!isObject(reply)) return null
-    const { url, protocols } = reply
-    return typeof url === 'string' && Array.isArray(protocols) && protocols.every(held => typeof held === 'string') ? { url, protocols } : null
-  } catch {
-    return null
-  }
-}
-
-function cliMint(options: { readonly hermesBin?: string }): Mint {
-  return ({ start }) => new Promise((resolve, reject) => {
-    const deadline = start ? ['--start', '--timeout', '75'] : ['--timeout', '20']
-    execFile(options.hermesBin ?? 'hermes', ['gateway', 'attach', '--json', ...deadline], { encoding: 'utf8' }, (error, stdout) => {
-      if (error === null) {
-        const endpoint = endpointOf(stdout)
-        return endpoint === null ? reject(new DialError('incompatible')) : resolve(endpoint)
-      }
-      if (error.code === 'ENOENT') return reject(new DialError('hermes-missing'))
-      reject(new DialError((typeof error.code === 'number' ? EXIT_KINDS[error.code] : undefined) ?? 'inaccessible'))
-    })
-  })
-}
-
-/**
- * The real gateway. Each call mints its own ticket, so a reconnect can never reuse one.
- * The ticket lives only in the `Endpoint` this module passes from `Mint` to the dial. It is never
- * logged, stored, recorded or sent over IPC.
- */
-export function liveDialer(options: { hermesBin?: string } = {}): Dialer {
-  return dialWith(cliMint(options))
-}
-
-export function wireSocket(transport: { send(text: string): void; close(): void }): {
+export function wireSocket(transport: { send(text: string): void; close(): void }, reach: Reach): {
   readonly socket: WireSocket
   text(text: string): void
   closed(code: number, reason: string): void
@@ -122,6 +96,7 @@ export function wireSocket(transport: { send(text: string): void; close(): void 
     }
   }
   const socket: WireSocket = {
+    reach,
     send: text => transport.send(text),
     close: () => transport.close(),
     get onText() { return onText },
@@ -141,11 +116,11 @@ const CLOSE_KINDS: Readonly<Record<number, Why>> = { 4403: 'refused', 1013: 'dra
 
 export function dialWith(mint: Mint): Dialer {
   return async ({ start }) => {
-    const { url, protocols } = await mint({ start })
+    const { url, protocols, reach } = await mint({ start })
     return new Promise<WireSocket>((resolve, reject) => {
       // Node's built-in WebSocket sends no Origin header. The gateway refuses an upgrade that carries one.
       const ws = new WebSocket(url, [...protocols])
-      const wire = wireSocket({ send: text => ws.send(text), close: () => ws.close() })
+      const wire = wireSocket({ send: text => ws.send(text), close: () => ws.close() }, reach)
       let open = false
       ws.addEventListener('open', () => {
         if (ws.protocol !== GATEWAY_PROTOCOL) {
@@ -193,7 +168,16 @@ type Method = keyof Served
 
 export interface Connection {
   readonly link: Link
+  /** What the open socket's ticket reaches. null while not online. */
+  readonly reach: Reach | null
   call<M extends Method>(method: M, params: Served[M]['params'], timeoutMs?: number): Promise<Served[M]['result']>
+  /**
+   * The same socket for one bot. Every call made through the result carries `profile: bot`, added
+   * here, where the frame is written, so no caller can forget it or spell it. That matters most for
+   * `session.detach`, which answers `detached: false` and no error when the key is missing. Hermes
+   * Desktop stamps at the same seam (apps/desktop/src/store/gateway.ts:1105-1124).
+   */
+  as(bot: BotId): Calls
   /**
    * Answer a server-to-client request with JSON-RPC error -32601, the code Hermes's own client uses for
    * a request it has no handler for (apps/shared/src/json-rpc-channel.ts:94), so the agent stops waiting.
@@ -204,6 +188,9 @@ export interface Connection {
   retryNow(request: { readonly start: boolean }): void
   close(): void
 }
+
+/** What a session's actor may use of the connection. */
+export type Calls = Pick<Connection, 'link' | 'call'>
 
 export interface ConnectionEvents {
   onLink(link: Link): void
@@ -421,13 +408,17 @@ export function connect(
 
   dialNow(options.startOnLaunch, 1)
 
+  const callAs = (bot: BotId | null): Connection['call'] => <M extends Method>(method: M, params: Served[M]['params'], timeoutMs?: number) => {
+    if (phase.at !== 'online') return Promise.reject(new Offline(`${method} was not sent: Highwing is not connected to Hermes.`))
+    return request(phase.socket, method, bot === null ? params : { ...params, profile: bot }, timeoutMs) as Promise<Served[M]['result']>
+  }
+
   return {
     get link() { return link },
+    get reach() { return phase.at === 'online' ? phase.socket.reach : null },
     get creation() { return phase.at === 'online' ? phase.creation : null },
-    call: <M extends Method>(method: M, params: Served[M]['params'], timeoutMs?: number) => {
-      if (phase.at !== 'online') return Promise.reject(new Offline(`${method} was not sent: Highwing is not connected to Hermes.`))
-      return request(phase.socket, method, params, timeoutMs) as Promise<Served[M]['result']>
-    },
+    call: callAs(null),
+    as: bot => ({ get link() { return link }, call: callAs(bot) }),
     decline: (requestId, message) => {
       if (phase.at === 'online') phase.socket.send(JSON.stringify({ jsonrpc: '2.0', id: requestId, error: { code: METHOD_NOT_FOUND, message } }))
     },

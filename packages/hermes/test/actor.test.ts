@@ -3,7 +3,7 @@ import { SessionActor } from '../src/actor'
 import type { ServerRequest, SessionEvent } from '../src/domain/reduce'
 import type { Generation, InputId, Link, PromptId, Session, SessionId } from '../src/domain/session'
 import { manualClock, settle } from '../src/testing/clock'
-import { Offline, RpcRefusal, type Connection } from '../src/wire/link'
+import { Offline, RpcRefusal, type Calls } from '../src/wire/link'
 
 const ID = 's1' as SessionId
 const EPOCH = 'e1'
@@ -30,15 +30,11 @@ function stage() {
   const published: Session[] = []
   const refusedRequests: ServerRequest[] = []
   const state: { link: Link; ids: number } = { link: { state: 'online' }, ids: 0 }
-  const conn: Connection = {
+  const conn: Calls = {
     get link() { return state.link },
-    creation: null,
     call: (method: string, params: unknown) => new Promise<never>((resolve, reject) => {
       calls.push({ method, params: params as Record<string, unknown>, resolve: resolve as (result: unknown) => void, reject })
-    }),
-    decline: () => {},
-    retryNow: () => {},
-    close: () => {}
+    })
   }
   const actor = new SessionActor(ID, { conn, clock, publish: session => published.push(session), refuse: request => refusedRequests.push(request), mintId: () => `id-${++state.ids}` })
   let seq = 0

@@ -14,6 +14,7 @@ import { errand, fold, ignoringStartTimes } from './support/story'
 const PROBE = 'gateway tickets --probe --json'
 const ATTACH = 'gateway attach --json --timeout 20'
 const ATTACH_START = 'gateway attach --json --start --timeout 75'
+const SERVE = 'gateway tickets --serve --json'
 const ACCEPTED = (ticket: number) => ({ origin: null, ticket, refused: null })
 
 const routeTo = (held: FakeHost, options: Parameters<typeof remoteRoute>[1] = {}): Route =>
@@ -30,7 +31,7 @@ const failureOf = (dial: Promise<unknown>) => dial.then(
 )
 
 describe('remoteRoute, against the fake host and the loopback gateway', () => {
-  it('plays the errand to the session the direct fold gives, through one probe, one attach and one relay', async () => {
+  it('plays the errand to the session the direct fold gives, through one probe, one attach, one ticket and one relay', async () => {
     const want = { ...fold(errand()).content, sync: { state: 'live' } }
     let far: FakeHost | undefined
     let gateway: Loopback | undefined
@@ -43,8 +44,21 @@ describe('remoteRoute, against the fake host and the loopback gateway', () => {
       }
     })
     expect(ignoringStartTimes(last)).toEqual(want)
-    expect(gateway?.upgrades, 'one upgrade, with no Origin and a ticket no dial used before').toEqual([ACCEPTED(0)])
-    expect(far?.calls).toEqual([PROBE, ATTACH_START, 'relay 1'])
+    expect(gateway?.upgrades, 'one upgrade, with no Origin, on the ticket --serve minted after the one attach did').toEqual([ACCEPTED(1)])
+    expect(far?.calls).toEqual([PROBE, ATTACH_START, SERVE, 'relay 1'])
+  })
+
+  it('reaches every profile through the ticket of --serve, and one profile on a Hermes that mints none', async () => {
+    const listening = await listen(errandGateway())
+    const current = await routeTo(await host('ok', listening)).dial({ start: false })
+    expect(current.reach).toBe('host')
+    current.close()
+
+    const older = await host('ok-bound', listening)
+    const bound = await routeTo(older).dial({ start: false })
+    expect(bound.reach).toBe('profile')
+    expect(older.calls, 'no --serve on a Hermes whose probe lists no interactive ticket').toEqual([PROBE, ATTACH, 'relay 1'])
+    bound.close()
   })
 
   it('follows a gateway that restarted on another port, with a new ticket and no start', async () => {
@@ -59,9 +73,9 @@ describe('remoteRoute, against the fake host and the loopback gateway', () => {
     await linkIs(hermes, 'waiting')
     await linkIs(hermes, 'online')
 
-    expect(far.calls).toEqual([PROBE, ATTACH_START, 'relay 1', ATTACH, 'relay 2'])
-    expect(first.upgrades).toEqual([ACCEPTED(0)])
-    expect(second.upgrades).toEqual([ACCEPTED(0)])
+    expect(far.calls).toEqual([PROBE, ATTACH_START, SERVE, 'relay 1', ATTACH, SERVE, 'relay 2'])
+    expect(first.upgrades).toEqual([ACCEPTED(1)])
+    expect(second.upgrades).toEqual([ACCEPTED(1)])
   })
 
   it('asks Hermes to start its gateway on the launch dial and on Start, and never on a retry', async () => {
@@ -77,7 +91,7 @@ describe('remoteRoute, against the fake host and the loopback gateway', () => {
     far.moveTo(await listen(errandGateway()))
     await hermes.run({ do: 'reconnect', start: true })
     await linkIs(hermes, 'online')
-    expect(far.calls).toEqual([PROBE, ATTACH_START, ATTACH, ATTACH_START, 'relay 1'])
+    expect(far.calls).toEqual([PROBE, ATTACH_START, ATTACH, ATTACH_START, SERVE, 'relay 1'])
   })
 
   it('fails a dial whose attach named a port the tunnel does not reach as dropped', async () => {
@@ -85,7 +99,7 @@ describe('remoteRoute, against the fake host and the loopback gateway', () => {
     const route = routeTo(far)
     const socket = await route.dial({ start: false })
     socket.close()
-    far.moveTo({ mint: () => ({ url: 'ws://127.0.0.1:1/api/ws', protocols: ['hermes-gateway-v1', 'hermes-gateway-ticket.forged'] }) })
+    far.moveTo({ instanceId: 'elsewhere', mint: reach => ({ url: 'ws://127.0.0.1:1/api/ws', protocols: ['hermes-gateway-v1', 'hermes-gateway-ticket.forged'], reach }) })
     expect(await failureOf(route.dial({ start: false }))).toMatchObject({ kind: 'dropped' })
   })
 })
@@ -133,7 +147,7 @@ describe('the processes of a route', () => {
     route.dispose()
     await none(far)
     expect(await failureOf(route.dial({ start: true }))).toMatchObject({ kind: 'dropped' })
-    expect(far.calls).toEqual([PROBE, ATTACH_START, 'relay 1'])
+    expect(far.calls).toEqual([PROBE, ATTACH_START, SERVE, 'relay 1'])
   })
 
   it('ends the relay with its socket, with no dispose', async () => {

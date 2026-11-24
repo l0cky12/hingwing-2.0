@@ -52,7 +52,7 @@ function memorySocket(gateway: ScriptedGateway): WireSocket {
       open = false
       queueMicrotask(() => accepted.closed())
     }
-  })
+  }, gateway.reach)
   const accepted = gateway.accept({
     write: frame => {
       const text = JSON.stringify(frame)
@@ -111,7 +111,7 @@ export function scriptedDialer(fixture: Fixture, options: ScriptOptions = {}): S
   const dial: Dialer = transport === 'memory'
     ? async () => memorySocket(gateway)
     : transport === 'loopback'
-      ? dialWith(async () => (await listening()).mint())
+      ? dialWith(async () => (await listening()).mint(gateway.reach))
       : async request => (await (routed ??= listening().then(transport)))(request)
   return Object.defineProperties((request: { readonly start: boolean }) => dial(request), {
     done: { value: gateway.done },
