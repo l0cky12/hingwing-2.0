@@ -2,6 +2,7 @@ import type { Shown, Target } from '@highwing/hermes/domain'
 import type { ReactNode } from 'react'
 import type { Setup } from '../ipc-contract'
 import { BotsSidebar } from './bots/Bots'
+import { ChatsSidebar } from './chats/Chats'
 import { Chat } from './chat/Chat'
 import { Banner, TopBar } from './chrome/Chrome'
 import { Composer } from './composer/Composer'
@@ -63,6 +64,7 @@ export function App() {
         <Epoch key={live?.epoch ?? 0} value={live?.epoch ?? 0}>
           <div className="window" hidden={over !== null}>
             <BotsSidebar />
+            <ChatsSidebar />
             <div className="screen">
               <ChatScreen target={live?.target ?? null} />
             </div>

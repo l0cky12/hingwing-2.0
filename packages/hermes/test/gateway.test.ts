@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { manualClock, settle } from '../src/testing/clock'
 import { scriptedDialer, type Fixture, type ScriptOptions } from '../src/testing/fixture'
-import { BOUND, ERRAND, NO_HOME_CHAT, paramsOf, PROFILES, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, WITH_BOTS } from './support/errand'
+import { BOUND, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PROFILES, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, WITH_BOTS, WITH_CHATS } from './support/errand'
 
 interface Reply {
   readonly id?: number
@@ -294,6 +294,41 @@ describe("the scripted gateway plays a bot's Bot Chat", () => {
     expect(research).toMatchObject({ name: 'research', ui_meta: { 'hermes-bots': { title: 'Research' } } })
     expect(Object.keys(research ?? {})).not.toEqual(expect.arrayContaining(['canonical_session']))
     expect(research).not.toHaveProperty('last_session')
+  })
+})
+
+describe("the scripted gateway lists a bot's chats", () => {
+  const ids = (reply: Reply) => (reply.result?.sessions as Record<string, unknown>[]).map(row => row.session_id)
+
+  it('lists the seeded and made chats of a profile, newest first, and the running ones live', async () => {
+    const { call } = await rawSocket({ clock: manualClock(1_795_260_000_000) }, WITH_CHATS)
+    await call('session.create', { profile: 'research', source: 'gui', follow_profile_config: true, request_id: 'draft-1' })
+    await call('prompt.submit', { profile: 'research', session_id: 'chat-research-1', text: 'hello', input_id: 'input-1' })
+    const stored = await call('session.list', { profile: 'research', scope: 'stored', limit: 100, picker: true })
+    expect(ids(stored)).toEqual(['chat-research-1', REMINDER, INVOICES, DOWNLOADS])
+    expect(stored.result).toMatchObject({ scope: 'stored', next_cursor: null })
+    expect((stored.result?.sessions as unknown[])[2]).toEqual({
+      session_id: INVOICES, id: INVOICES, resolved_id: INVOICES, title: 'Sort the invoices', source: 'gui', started_at: 1795249000, message_count: 2,
+      model: 'research-model', running: false, preview: 'Sorted fourteen invoices by due date; the oldest is due Friday.', last_active_at: 1795249000
+    })
+    expect(await call('session.list', { profile: 'research', scope: 'live', picker: true })).toMatchObject({ result: { scope: 'live', sessions: [{ session_id: REMINDER, running: true }] } })
+    expect((await call('session.list', { profile: 'research', scope: 'stored' })).result?.sessions, 'a picker field only for a picker').not.toContainEqual(expect.objectContaining({ preview: expect.anything() as unknown }))
+  })
+
+  it('lists a hidden Bot Chat only when the call asks for hidden chats', async () => {
+    const { call } = await rawSocket({}, WITH_BOTS)
+    expect(ids(await call('session.list', { profile: 'research', scope: 'stored' }))).toEqual([])
+    expect(ids(await call('session.list', { profile: 'research', scope: 'stored', include_hidden: true }))).toEqual([RESEARCH_CHAT])
+  })
+
+  it('resumes a chat that waits on an approval as running, with the prompt open', async () => {
+    const { call } = await rawSocket({}, WITH_CHATS)
+    const resumed = await call('session.resume', { profile: 'research', session_id: REMINDER, display_projection: true })
+    expect(resumed.result).toMatchObject({
+      running: true, execution_generation: 1, display_messages: [{ role: 'user', timestamp: 1795250000 }, { role: 'assistant', timestamp: 1795250000 }],
+      prompts: [{ kind: 'approval', execution_generation: 1, choices: ['once', 'deny', 'session', 'always'] }]
+    })
+    expect((await call('session.resume', { profile: 'research', session_id: INVOICES })).result).toMatchObject({ running: false, prompts: [] })
   })
 })
 

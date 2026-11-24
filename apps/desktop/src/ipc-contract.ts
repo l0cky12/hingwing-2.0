@@ -126,6 +126,10 @@ const chatRefOf = (raw: unknown): ChatRef | null => {
     const bot = botIdOf(raw.bot)
     return bot && { kind: 'bot', bot }
   }
+  if (raw.kind === 'chat') {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && { kind: 'chat', sessionId }
+  }
   if (raw.kind !== 'new' || !filled(raw.draftId)) return null
   if (raw.bot === null) return { kind: 'new', bot: null, draftId: raw.draftId }
   const bot = botIdOf(raw.bot)
@@ -133,7 +137,7 @@ const chatRefOf = (raw: unknown): ChatRef | null => {
 }
 const unstartedOf = (raw: unknown): Unstarted | null => {
   const ref = isObject(raw) && raw.sessionId === null ? chatRefOf(raw) : null
-  return ref && { ...ref, sessionId: null }
+  return ref === null || ref.kind === 'chat' ? null : { ...ref, sessionId: null }
 }
 const replyOf = (raw: unknown): PromptReply | null =>
   isObject(raw) && (raw.kind === 'choice' || raw.kind === 'text') && text(raw.value) ? { kind: raw.kind, value: raw.value } : null

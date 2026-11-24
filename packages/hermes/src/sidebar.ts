@@ -1,3 +1,4 @@
+import type { BotId } from './domain/bots'
 import { activityOf } from './domain/reduce'
 import type { SessionContent, SessionId, Sidebar, SidebarRow } from './domain/session'
 import { Offline, RpcRefusal, type Connection } from './wire/link'
@@ -6,6 +7,8 @@ import { parseListRows } from './wire/parse'
 type ListRow = Omit<SidebarRow, 'badge'>
 
 export interface SessionList {
+  /** Whose chats the rows are. null: the socket's own profile. */
+  readonly bot: BotId | null
   readonly status: Sidebar['status']
   readonly rows: readonly ListRow[]
   /**
@@ -14,6 +17,8 @@ export interface SessionList {
    */
   readonly running: ReadonlySet<SessionId>
   refresh(): void
+  /** List this bot's chats from now on. A list that answers for the bot it left is dropped. */
+  follow(bot: BotId | null): void
   retitle(id: SessionId, title: string): void
   drop(id: SessionId): void
   stale(): void
@@ -26,7 +31,21 @@ function merged(live: readonly ListRow[], stored: readonly ListRow[]): readonly 
   return [...live, ...stored.filter(row => !liveIds.has(row.id))].sort((a, b) => (b.lastActiveAt ?? 0) - (a.lastActiveAt ?? 0))
 }
 
-export function sessionList(conn: Connection, changed: () => void): SessionList {
+/**
+ * `include_hidden`, because Hermes hides a bot's Bot Chat from its list. `picker`, because only a
+ * picker row carries `preview` and `last_active_at` (gateway/session_picker_fields.py:24-43).
+ */
+const STORED = { scope: 'stored', limit: STORED_ROWS, include_hidden: true, picker: true } as const
+const LIVE = { scope: 'live', picker: true } as const
+/**
+ * Says which hidden chats run, such as a Bot Chat waiting on an approval. Only for `running`: a live
+ * list that includes hidden chats also includes archived ones (gateway/session_controls.py:647-649).
+ */
+const LIVE_HIDDEN = { scope: 'live', include_hidden: true } as const
+
+/** `owned` hears which bot each listed chat lives in before `changed` runs, so an actor made on `changed` reaches the right profile. */
+export function sessionList(conn: Connection, owned: (bot: BotId, sessions: readonly SessionId[]) => void, changed: () => void): SessionList {
+  let bot: BotId | null = null
   let status: Sidebar['status'] = 'loading'
   let rows: readonly ListRow[] = []
   let running: ReadonlySet<SessionId> = new Set()
@@ -35,15 +54,18 @@ export function sessionList(conn: Connection, changed: () => void): SessionList 
 
   const fetch = async () => {
     fetching = true
+    const asked = bot
+    const via = asked === null ? conn : conn.as(asked)
     try {
-      const [live, stored] = await Promise.all([
-        conn.call('session.list', { scope: 'live' }),
-        conn.call('session.list', { scope: 'stored', limit: STORED_ROWS })
-      ])
-      rows = merged(parseListRows(live.sessions), parseListRows(stored.sessions))
-      running = new Set(live.sessions.filter(row => row.running).map(row => row.session_id as SessionId))
-      status = 'ready'
-      changed()
+      const [live, hidden, stored] = await Promise.all([via.call('session.list', LIVE), via.call('session.list', LIVE_HIDDEN), via.call('session.list', STORED)])
+      if (asked === bot) {
+        rows = merged(parseListRows(live.sessions), parseListRows(stored.sessions))
+        const listed = new Set(rows.map(row => row.id))
+        running = new Set(hidden.sessions.filter(row => row.running).map(row => row.session_id as SessionId).filter(id => listed.has(id)))
+        status = 'ready'
+        if (asked !== null) owned(asked, rows.map(row => row.id))
+        changed()
+      }
     } catch (error) {
       if (!(error instanceof Offline) && !(error instanceof RpcRefusal)) throw error
     } finally {
@@ -55,13 +77,25 @@ export function sessionList(conn: Connection, changed: () => void): SessionList 
     }
   }
 
+  const refresh = () => {
+    if (fetching) again = true
+    else void fetch()
+  }
+
   return {
+    get bot() { return bot },
     get status() { return status },
     get rows() { return rows },
     get running() { return running },
-    refresh: () => {
-      if (fetching) again = true
-      else void fetch()
+    refresh,
+    follow: next => {
+      if (next === bot) return
+      bot = next
+      rows = []
+      running = new Set()
+      status = 'loading'
+      changed()
+      refresh()
     },
     retitle: (id, title) => {
       if (!rows.some(row => row.id === id && row.title !== title)) return
@@ -86,8 +120,9 @@ const BADGES = {
   stopping: 'running', asking: 'asking'
 } as const satisfies Record<ReturnType<typeof activityOf>['kind'], SidebarRow['badge']>
 
-export function deriveSidebar(list: Pick<SessionList, 'status' | 'rows' | 'running'>, attached: ReadonlyMap<SessionId, SessionContent>): Sidebar {
+export function deriveSidebar(list: Pick<SessionList, 'bot' | 'status' | 'rows' | 'running'>, attached: ReadonlyMap<SessionId, SessionContent>): Sidebar {
   return {
+    bot: list.bot,
     status: list.status,
     rows: list.rows.map(row => {
       const session = attached.get(row.id)

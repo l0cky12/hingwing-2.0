@@ -13,6 +13,8 @@ export type ChatRef =
   | { readonly kind: 'bot'; readonly bot: BotId }
   /** A new, empty chat in this bot's profile (null: the socket's own profile). The window mints `draftId`. */
   | { readonly kind: 'new'; readonly bot: BotId | null; readonly draftId: string }
+  /** A chat picked from the list of a bot's chats. */
+  | { readonly kind: 'chat'; readonly sessionId: SessionId }
 
 /** A chat no message has made yet. Its first message makes it. */
 export type Unstarted =
@@ -25,8 +27,11 @@ export type Shown =
   | { readonly kind: 'bot'; readonly bot: BotId; readonly sessionId: SessionId }
   /** A new chat the user started, once its first message made it. It stays shown until the user opens another chat. */
   | { readonly kind: 'new'; readonly bot: BotId | null; readonly draftId: string; readonly sessionId: SessionId }
-  /** The newest chat of the socket's own profile, on a Hermes that can't say which bot it belongs to. */
-  | { readonly kind: 'chat'; readonly bot: null; readonly sessionId: SessionId }
+  /**
+   * A chat picked from the list, in the bot whose profile it lives in. Or the newest chat of the
+   * socket's own profile, on a Hermes that can't say which bot it belongs to (bot null).
+   */
+  | { readonly kind: 'chat'; readonly bot: BotId | null; readonly sessionId: SessionId }
 
 /** The one answer to "which chat is open". Owned by the hub, read by every window as the `open` topic. */
 export interface OpenChat {
@@ -45,8 +50,8 @@ export interface Desk {
   readonly chats: BotChats
   /**
    * session -> the bot whose profile it lives in. A session is entered here in the same step that
-   * first puts it in `chats`, or that records the new chat it is, so its owner is known before
-   * `open` can name it to a window.
+   * first puts it in `chats`, records the new chat it is, or lists it among a bot's chats, so its
+   * owner is known before `open` can name it to a window.
    */
   readonly owners: { readonly [sessionId: string]: BotId }
   /** The bots a title lookup is in flight for. Asking for one again starts no second lookup. */
@@ -69,6 +74,8 @@ export type DeskEvent =
   | { readonly on: 'failed'; readonly bot: BotId }
   /** A new chat's first message made its session. */
   | { readonly on: 'made'; readonly bot: BotId | null; readonly draftId: string; readonly sessionId: SessionId }
+  /** Hermes listed these chats in the bot's profile. Records their owner, and opens nothing. */
+  | { readonly on: 'listed'; readonly bot: BotId; readonly sessions: readonly SessionId[] }
 
 /** Look this bot's Bot Chat up by its title. */
 export interface DeskEffect { readonly find: BotId }
@@ -101,6 +108,11 @@ function asked(desk: Desk, ref: ChatRef): { readonly desk: Desk; readonly effect
     }
     case 'new':
       return done({ ...desk, open: { shown: { kind: 'new', bot: ref.bot, draftId: ref.draftId, sessionId: null }, opening: null } })
+    case 'chat': {
+      // The chat shown already keeps its kind, and so its pane and any unsent draft.
+      const { shown } = desk.open
+      return done({ ...desk, open: { shown: shown?.sessionId === ref.sessionId ? shown : { kind: 'chat', bot: ownerOf(desk, ref.sessionId) ?? null, sessionId: ref.sessionId }, opening: null } })
+    }
   }
 }
 
@@ -108,7 +120,8 @@ function asked(desk: Desk, ref: ChatRef): { readonly desk: Desk; readonly effect
  * Every change of the open chat. A click that needs Hermes sets `opening` and leaves `shown` alone
  * until the answer comes, so a refused or slow click never blanks a working chat. Only the latest
  * click's answer moves `shown`: an answer for an earlier one is recorded and shows nothing. Only a
- * Bot Chat follows what Hermes says. A new chat or a plain chat stays until the user opens another.
+ * Bot Chat follows what Hermes says. A new chat or a chat picked from the list stays until the user
+ * opens another.
  */
 export function nextDesk(desk: Desk, event: DeskEvent): { readonly desk: Desk; readonly effects: readonly DeskEffect[] } {
   switch (event.on) {
@@ -134,6 +147,11 @@ export function nextDesk(desk: Desk, event: DeskEvent): { readonly desk: Desk; r
       const owned: Desk = bot === null ? desk : { ...desk, owners: { ...desk.owners, [sessionId]: bot } }
       const { shown } = desk.open
       return done(shown?.kind === 'new' && shown.draftId === draftId ? { ...owned, open: { ...owned.open, shown: { ...shown, sessionId } } } : owned)
+    }
+    case 'listed': {
+      const unowned = event.sessions.filter(sessionId => ownerOf(desk, sessionId) === undefined)
+      if (unowned.length === 0) return done(desk)
+      return done({ ...desk, owners: { ...desk.owners, ...Object.fromEntries(unowned.map(sessionId => [sessionId, event.bot])) } })
     }
   }
 }

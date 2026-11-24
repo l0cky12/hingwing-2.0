@@ -172,6 +172,13 @@ describe('loadFixture', () => {
     }
   })
 
+  it("reads a profile's seeded chats, and refuses a chat with no rows", () => {
+    const chats = { research: [{ id: 'r1', title: 'Sort', last_active: 1, rows: [{ role: 'user', text: 'hi' }], asking: { command: 'ls', description: 'list' } }] }
+    expect(loadFixture(write([{ ...header, chats }])).header.chats).toEqual(chats)
+    const bad = write([{ ...header, chats: { research: [{ id: 'r1', title: 'Sort', last_active: 1 }] } }])
+    expect(() => loadFixture(bad)).toThrow(`${bad}:1: "chats" must map a profile to its chats, each with id, title, last_active and rows`)
+  })
+
   it('names the line of the prototype\'s envelope', () => {
     const path = write([header, { at: 0, push: { kind: 'event', type: 'message.delta', session_id: 's', seq: 1, payload: {} } }])
     expect(() => loadFixture(path)).toThrow(`${path}:2: "push" must be a JSON-RPC 2.0 frame with a method`)

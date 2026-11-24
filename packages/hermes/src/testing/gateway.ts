@@ -1,12 +1,13 @@
 /**
  * The gateway a fixture is played from: Hermes's canonical dispatcher and the handlers the client
- * talks to, reduced to one story session, one Bot Chat per bot and the chats an untitled create
- * makes. Each rule cites the Hermes 0.23.3 source it copies.
+ * talks to, reduced to one story session and several chats per bot: its Bot Chat, the chats the
+ * header seeds, and the chats an untitled create makes. Each rule cites the Hermes 0.23.3 source it
+ * copies.
  */
 import type { SessionEvent } from '../domain/reduce'
 import { GATEWAY_PROTOCOL, type Clock, type Reach } from '../wire/link'
 import { parseEvent } from '../wire/parse'
-import type { Fixture, FixtureStep } from './fixture'
+import type { ChatSeed, Fixture, FixtureStep } from './fixture'
 import { checkParams } from './params'
 
 export interface Peer {
@@ -149,19 +150,58 @@ interface Stream {
   readonly epoch: string
 }
 
+/** The `approval.request` payload a seeded chat's turn waits on. No handler answers it. */
+interface SeededApproval {
+  readonly kind: 'approval'
+  readonly prompt_id: string
+  readonly execution_generation: number
+  readonly command: string
+  readonly description: string
+  readonly choices: readonly string[]
+}
+
 class EchoChat implements Stream {
   readonly ring: Params[] = []
   readonly rows: Obj[] = []
   readonly epoch: string
   generation = 0
+  asking: SeededApproval | null = null
 
-  constructor(readonly id: string, readonly profile: string, readonly title: string) {
+  /** `hidden`: out of `session.list` unless it asks for hidden chats, as a Bot Chat is (hermes-bots/canonical-chat.ts:319). */
+  constructor(readonly id: string, readonly profile: string, readonly title: string, readonly hidden = false) {
     this.epoch = `${id}-epoch`
   }
 
   get model(): Model {
     return { model: `${this.profile}-model`, provider: null }
   }
+
+  /** Only a seeded approval keeps a turn open: an echo turn ends before the next frame is read. */
+  get running(): boolean {
+    return this.asking !== null
+  }
+
+  /** A row of `session.list` (gateway/session_listing.py:67-70). `picker` adds what a picker shows (gateway/session_picker_fields.py:24-43). */
+  listRow(picker: boolean): Obj {
+    const said = (row: Obj | undefined) => (typeof row?.timestamp === 'number' ? row.timestamp : null)
+    return {
+      session_id: this.id, id: this.id, resolved_id: this.id, title: this.title, source: 'gui', started_at: said(this.rows[0]),
+      message_count: this.rows.length, model: this.model.model, running: this.running,
+      ...(picker ? { preview: this.rows.at(-1)?.text ?? null, last_active_at: said(this.rows.at(-1)) } : {})
+    }
+  }
+}
+
+function seeded(profile: string, seed: ChatSeed): EchoChat {
+  const chat = new EchoChat(seed.id, profile, seed.title, seed.hidden === true)
+  seed.rows.forEach(({ role, text }, at) => chat.rows.push({ role, text, timestamp: seed.last_active, row_id: at + 1 }))
+  if (seed.asking === undefined) return chat
+  chat.generation = 1
+  chat.asking = {
+    kind: 'approval', prompt_id: `${seed.id}-approval`, execution_generation: 1, command: seed.asking.command,
+    description: seed.asking.description, choices: ['once', 'deny', 'session', 'always']
+  }
+  return chat
 }
 
 /**
@@ -269,7 +309,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       throw new Refused('invalid_params')
     }
     if ('title' in params) return { sessions: params.title === BOT_CHAT ? gateway.titledRows(routed) : [], scope: 'stored' }
-    if (routed !== gateway.home) return { sessions: [], scope }
+    if (routed !== gateway.home) return gateway.listed(routed, scope, params.include_hidden === true, params.picker === true)
     if (scope === 'stored') return { sessions: [], scope, next_cursor: null }
     const { list } = gateway.fixture.header
     const rows = isObject(list) && Array.isArray(list.sessions) ? list.sessions.filter(isObject) : []
@@ -366,6 +406,7 @@ export class ScriptedGateway {
   private readonly profiles: readonly Obj[]
   private readonly botChats = new Map<string, EchoChat>()
   private readonly newChats = new Map<string, EchoChat>()
+  private readonly seeded: readonly EchoChat[]
   private readonly storyIsBotChatOf: string | null
   private readonly afterReply: (() => void)[] = []
   private readonly sockets = new Set<Socket>()
@@ -396,10 +437,11 @@ export class ScriptedGateway {
     for (const { name, canonical_session: named } of this.profiles) {
       const id = isObject(named) ? named.resolved_id || named.id : undefined
       if (!isText(name) || !isObject(named) || !isText(id) || name === this.storyIsBotChatOf) continue
-      const chat = new EchoChat(id, name, BOT_CHAT)
+      const chat = new EchoChat(id, name, BOT_CHAT, true)
       if (isText(named.preview)) chat.rows.push({ role: 'assistant', text: named.preview, timestamp: named.last_active ?? null, row_id: 1 })
       this.botChats.set(name, chat)
     }
+    this.seeded = Object.entries(fixture.header.chats ?? {}).flatMap(([profile, seeds]) => seeds.map(seed => seeded(profile, seed)))
   }
 
   get latest(): number {
@@ -482,7 +524,14 @@ export class ScriptedGateway {
   }
 
   private echoChats(): EchoChat[] {
-    return [...this.botChats.values(), ...this.newChats.values()]
+    return [...this.botChats.values(), ...this.seeded, ...this.newChats.values()]
+  }
+
+  /** Live lists only running chats, where Hermes lists every open one (gateway/session_live_listing.py:77-100). */
+  listed(routed: string, scope: 'live' | 'stored', hidden: boolean, picker: boolean): Obj {
+    const chats = this.echoChats().filter(chat => chat.profile === routed && (hidden || !chat.hidden) && (scope === 'stored' || chat.running))
+    const rows = chats.map(chat => chat.listRow(picker)).sort((a, b) => Number(b.last_active_at ?? b.started_at ?? 0) - Number(a.last_active_at ?? a.started_at ?? 0))
+    return scope === 'live' ? { sessions: rows, scope } : { sessions: rows.map(row => ({ ...row, running: false })), scope, next_cursor: null }
   }
 
   /** `authority.authorize` for the story session (gateway/session_authority.py:225-229). */
@@ -621,12 +670,15 @@ export class ScriptedGateway {
     }, socket.subscriptionId, params)
   }
 
-  /** `session.resume` for a chat beside the story. Its turns end before the next frame is read, so it is never running. */
+  /**
+   * `session.resume` for a chat beside the story. Its turns end before the next frame is read, so
+   * it runs only while a seeded approval waits.
+   */
   open(socket: Socket, chat: EchoChat, params: Obj): unknown {
     socket.subscriptions.set(chat.id, socket.subscriptionId)
     return snapshotOf({
-      id: chat.id, rows: chat.rows, ring: chat.ring, epoch: chat.epoch, running: false, generation: chat.generation,
-      revision: 0, title: chat.title, model: chat.model, pending: [], prompts: [], openRequests: []
+      id: chat.id, rows: chat.rows, ring: chat.ring, epoch: chat.epoch, running: chat.running, generation: chat.generation,
+      revision: 0, title: chat.title, model: chat.model, pending: [], prompts: chat.asking === null ? [] : [chat.asking], openRequests: []
     }, socket.subscriptionId, params)
   }
 
@@ -638,7 +690,7 @@ export class ScriptedGateway {
   }
 
   newBotChat(routed: string): EchoChat {
-    const chat = new EchoChat(`bot-chat-${routed}`, routed, BOT_CHAT)
+    const chat = new EchoChat(`bot-chat-${routed}`, routed, BOT_CHAT, true)
     this.botChats.set(routed, chat)
     return chat
   }

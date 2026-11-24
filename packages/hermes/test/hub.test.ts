@@ -4,7 +4,7 @@ import type { Item, PromptId, Session, SessionId } from '../src/domain/session'
 import { DialError, openHermes, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
 import { play, scriptedDialer, type Fixture, type FixtureStep, type Moment, type ScriptOptions } from '../src/testing/fixture'
-import { BOUND, callsIn, ERRAND, NO_HOME_CHAT, paramsOf, PROFILES, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, WITH_BOTS, withSudo } from './support/errand'
+import { BOUND, callsIn, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PROFILES, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, WITH_BOTS, WITH_CHATS, withSudo } from './support/errand'
 
 const CLIENT = { name: 'highwing-test', version: '0.0.0' }
 const TEXT = String(paramsOf('prompt.submit').text)
@@ -162,7 +162,7 @@ describe('the sidebar', () => {
     const opened = open()
     const badges: string[] = []
     opened.hermes.sidebar.subscribe(sidebar => badges.push(`${sidebar.status}:${sidebar.rows.map(row => row.badge).join()}`))
-    expect(opened.hermes.sidebar.get()).toEqual({ status: 'loading', rows: [] })
+    expect(opened.hermes.sidebar.get()).toEqual({ bot: null, status: 'loading', rows: [] })
     opened.watch()
     await toApproval(opened)
     await approve(opened.hermes)
@@ -171,7 +171,7 @@ describe('the sidebar', () => {
     expect(opened.hermes.sidebar.get().rows).toEqual([{ id: SESSION, title: '', preview: null, lastActiveAt: 1795251600000, badge: 'none' }])
   })
 
-  it('goes stale while the socket is gone and reads both lists again when it is back', async () => {
+  it('goes stale while the socket is gone and reads the lists again when it is back', async () => {
     const opened = open(ERRAND, { drop: { afterPush: 5, missed: 0 } })
     opened.watch()
     await toApproval(opened)
@@ -179,7 +179,7 @@ describe('the sidebar', () => {
     expect(opened.hermes.sidebar.get().status).toBe('stale')
     await opened.clock.advance(1_000)
     expect(opened.hermes.sidebar.get().status).toBe('ready')
-    expect(opened.sent().filter(call => call.method === 'session.list'), 'both lists, on each of the two sockets').toHaveLength(4)
+    expect(opened.sent().filter(call => call.method === 'session.list'), 'the three lists, on each of the two sockets').toHaveLength(6)
   })
 })
 
@@ -377,7 +377,11 @@ describe('the open chat', () => {
     const before = opened.sent().length
     expect(await opened.hermes.run({ do: 'open', ref: bot(RESEARCH) })).toEqual({ ok: true, value: RESEARCH_CHAT })
     expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: RESEARCH, sessionId: RESEARCH_CHAT }, opening: null })
-    expect(opened.sent().length, 'the roster named the chat, so the click asked Hermes nothing').toBe(before)
+    expect(opened.sent().slice(before), "the roster named the chat, so the click only lists the bot's chats").toEqual([
+      { method: 'session.list', params: { scope: 'live', picker: true, profile: 'research' } },
+      { method: 'session.list', params: { scope: 'live', include_hidden: true, profile: 'research' } },
+      { method: 'session.list', params: { scope: 'stored', limit: 100, include_hidden: true, picker: true, profile: 'research' } }
+    ])
 
     const unwatch = opened.hermes.watch(RESEARCH_CHAT, () => {})
     await opened.clock.advance(0)
@@ -554,6 +558,67 @@ describe('the open chat', () => {
       expect(opened.hermes.open.get()).toEqual({ shown: fresh(EMU, 'minted-2'), opening: null })
       expect(calls(opened, 'session.create')).toEqual([])
     })
+  })
+})
+
+describe("a bot's chats", () => {
+  const [EMU, RESEARCH] = ['default', 'research'] as BotId[] as [BotId, BotId]
+  const picked = (sessionId: SessionId) => ({ do: 'open', ref: { kind: 'chat', sessionId } }) as const
+  const rowsOf = (opened: ReturnType<typeof open>) => opened.hermes.sidebar.get().rows.map(row => [row.id, row.title, row.badge])
+
+  it('follow the open bot, and open a chat picked from them in that bot with no create', async () => {
+    const opened = open(WITH_CHATS)
+    await opened.clock.advance(0)
+    expect(opened.hermes.sidebar.get()).toMatchObject({ bot: EMU, status: 'ready', rows: [{ id: SESSION }] })
+
+    await opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
+    await opened.clock.advance(0)
+    expect(opened.hermes.sidebar.get()).toMatchObject({ bot: RESEARCH, status: 'ready' })
+    expect(rowsOf(opened), 'newest first, and the one that waits on an approval says so').toEqual([
+      [REMINDER, 'Send invoice reminder', 'asking'], [INVOICES, 'Sort the invoices', 'none'], [DOWNLOADS, 'Clean up Downloads', 'none']
+    ])
+
+    expect(await opened.hermes.run(picked(INVOICES))).toEqual({ ok: true, value: INVOICES })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: RESEARCH, sessionId: INVOICES }, opening: null })
+    expect(await opened.hermes.run(picked(DOWNLOADS))).toEqual({ ok: true, value: DOWNLOADS })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: RESEARCH, sessionId: DOWNLOADS }, opening: null })
+
+    opened.hermes.watch(DOWNLOADS, () => {})
+    await opened.clock.advance(0)
+    expect(await opened.hermes.run({ do: 'send', sessionId: DOWNLOADS, text: 'hello' })).toEqual({ ok: true, value: null })
+    await opened.clock.advance(0)
+    expect(opened.sent().filter(call => call.params?.session_id === DOWNLOADS && call.method !== 'session.stats').map(call => [call.method, call.params?.profile]), 'a picked chat runs as its bot')
+      .toEqual([['session.resume', 'research'], ['prompt.submit', 'research']])
+    expect(rowsOf(opened)[2], 'the badge comes from the attached chat').toEqual([DOWNLOADS, 'Clean up Downloads', 'none'])
+
+    expect(opened.sent().filter(call => call.method === 'session.create')).toEqual([])
+    const lists = opened.sent().filter(call => call.method === 'session.list' && !('title' in (call.params ?? {})))
+    expect(lists.map(call => call.params?.profile), "the socket's own profile until the open chat names a bot").toEqual([undefined, undefined, undefined, EMU, EMU, EMU, RESEARCH, RESEARCH, RESEARCH])
+  })
+
+  it('mark a hidden chat that waits on an approval, with no window on it', async () => {
+    const seeds = WITH_CHATS.header.chats ?? {}
+    const hiddenReminder = Object.fromEntries(Object.entries(seeds).map(([profile, chats]) => [profile, chats.map(chat => (chat.id === REMINDER ? { ...chat, hidden: true } : chat))]))
+    const opened = open({ ...WITH_CHATS, header: { ...WITH_CHATS.header, chats: hiddenReminder } })
+    await opened.clock.advance(0)
+    await opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
+    await opened.clock.advance(0)
+    expect(rowsOf(opened)[0]).toEqual([REMINDER, 'Send invoice reminder', 'asking'])
+  })
+
+  it('drop a list that answers after the user left its bot', async () => {
+    const opened = open(WITH_CHATS)
+    await opened.clock.advance(0)
+    await opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
+    await opened.clock.advance(0)
+    const seen: string[] = []
+    opened.hermes.sidebar.subscribe(sidebar => seen.push(`${sidebar.bot}:${sidebar.status}:${sidebar.rows.map(row => row.id).join()}`))
+
+    void opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: EMU } })
+    void opened.hermes.run(picked(INVOICES))
+    await opened.clock.advance(0)
+    expect(seen).toEqual([`${EMU}:loading:`, `${RESEARCH}:loading:`, `${RESEARCH}:ready:${[REMINDER, INVOICES, DOWNLOADS].join()}`])
+    expect(opened.sent().filter(call => call.method === 'session.list' && call.params?.profile === EMU), "Emu's list was asked for, and its answer dropped").toHaveLength(6)
   })
 })
 

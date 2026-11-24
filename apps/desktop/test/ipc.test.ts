@@ -78,6 +78,7 @@ describe('validators', () => {
     expect(parseCommand({ do: 'open', ref: { kind: 'bot', bot: 'research', sessionId: 's9' }, sessionId: 's9' })).toEqual({ do: 'open', ref: { kind: 'bot', bot: 'research' } })
     expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: 'research', draftId: 'd1', sessionId: 's9' } })).toEqual({ do: 'open', ref: { kind: 'new', bot: 'research', draftId: 'd1' } })
     expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: null, draftId: 'd1' } })).toEqual({ do: 'open', ref: { kind: 'new', bot: null, draftId: 'd1' } })
+    expect(parseCommand({ do: 'open', ref: { kind: 'chat', sessionId: 's9', bot: 'research' } })).toEqual({ do: 'open', ref: { kind: 'chat', sessionId: 's9' } })
     expect(parseCommand({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null, draftId: 'd1' }, text: 'hello', sessionId: 's9' }))
       .toEqual({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello' })
     expect(parseCommand({ do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: null }, text: 'hello' }))
@@ -119,6 +120,8 @@ describe('validators', () => {
     ['a first message to a chat that has a session', { do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: 's1' }, text: 'hello' }],
     ['a first message to a chat with no session named', { do: 'start', chat: { kind: 'bot', bot: 'research' }, text: 'hello' }],
     ['a first message to a plain chat', { do: 'start', chat: { kind: 'chat', bot: null, sessionId: null }, text: 'hello' }],
+    ['a first message to a chat picked from the list', { do: 'start', chat: { kind: 'chat', sessionId: 's1' }, text: 'hello' }],
+    ['an open of a picked chat with no session', { do: 'open', ref: { kind: 'chat', sessionId: ' ' } }],
     ['a blank first message', { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: '' }],
     ['a reply of the wrong kind', { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 1 } }],
     ['a non-boolean start', { do: 'reconnect', start: 'yes' }],
@@ -138,7 +141,7 @@ describe('validators', () => {
 
 const still = <T>(value: T) => ({ get: () => value, subscribe: () => () => {} })
 const LINK: Link = { state: 'blocked', why: 'hermes-missing', message: 'A link of this test.' }
-const SIDEBAR: Sidebar = { status: 'stale', rows: [] }
+const SIDEBAR: Sidebar = { bot: null, status: 'stale', rows: [] }
 const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] } }
 const NOTHING_OPEN: OpenChat = { shown: null, opening: null }
 

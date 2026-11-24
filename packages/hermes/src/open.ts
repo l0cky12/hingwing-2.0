@@ -24,7 +24,10 @@ export interface ChatDesk {
    * makes no session.
    */
   settle(facts: { readonly bots: Bots; readonly named: BotChats; readonly list: { readonly status: 'loading' | 'ready' | 'stale'; readonly newest: SessionId | null } }): void
-  /** A click. Looks a bot's chat up when Highwing does not know it, once however often it is asked for. A new chat is shown at once and asks Hermes nothing. */
+  /**
+   * A click. Looks a bot's chat up when Highwing does not know it, once however often it is asked
+   * for. A new chat, or a chat picked from the list, is shown at once and asks Hermes nothing.
+   */
   ask(ref: ChatRef): Promise<Outcome<SessionId | null>>
   /**
    * The session a first message goes to. A bot's: the Bot Chat Hermes has by now, else a new one. A
@@ -33,6 +36,8 @@ export interface ChatDesk {
   start(chat: Unstarted): Promise<Outcome<SessionId>>
   /** The bot whose profile a session lives in. undefined: the socket's own profile, so its calls carry no `profile`. */
   botOf(id: SessionId): BotId | undefined
+  /** Hermes listed these chats in the bot's profile, so a click on one opens it in that bot. */
+  listed(bot: BotId, sessions: readonly SessionId[]): void
 }
 
 export interface DeskDeps {
@@ -156,12 +161,17 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
         take({ on: 'asked', ref })
         return { ok: true, value: null }
       }
+      if (ref.kind === 'chat') {
+        take({ on: 'asked', ref })
+        return { ok: true, value: ref.sessionId }
+      }
       const unreachable = reachable()
       if (unreachable !== null) return unreachable
       for (const effect of take({ on: 'asked', ref })) find(effect.find)
       return finds.get(ref.bot) ?? { ok: true, value: chatOf(desk, ref.bot) ?? null }
     },
     start: chat => (chat.kind === 'bot' ? startBot(chat.bot) : startNew(chat.bot, chat.draftId)),
-    botOf: id => ownerOf(desk, id)
+    botOf: id => ownerOf(desk, id),
+    listed: (bot, sessions) => void take({ on: 'listed', bot, sessions })
   }
 }
