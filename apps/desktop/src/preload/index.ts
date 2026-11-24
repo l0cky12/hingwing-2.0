@@ -16,7 +16,8 @@ const bridge: Bridge = {
     }
   },
   run: command => ipcRenderer.invoke(CHANNEL.run, command),
-  file: request => ipcRenderer.invoke(CHANNEL.file, request)
+  file: request => ipcRenderer.invoke(CHANNEL.file, request),
+  image: request => ipcRenderer.invoke(CHANNEL.image, request)
 }
 
 contextBridge.exposeInMainWorld('highwing', bridge)

@@ -2,9 +2,10 @@ import type { Hermes } from '@highwing/hermes'
 import type { Bots, Link, OpenChat, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyPush, CHANNEL, isWebLink, parseCommand, parseFileRequest, validators, type AppTopics, type FileOutcome, type Push, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, parseCommand, parseFileRequest, validators, type AppTopics, type FileOutcome, type ImageOutcome, type ImageRequest, type Push, type Topic } from '../src/ipc-contract'
 import { pinnedConnection } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
+import type { ImageContext } from '../src/main/images'
 import { COALESCE_MS, serveWindows, sessionPatch, type IpcEvent, type IpcMainLike } from '../src/main/ipc'
 
 const fixture = loadFixture('fixtures/errand.jsonl')
@@ -182,11 +183,12 @@ function harness() {
     }
   } as unknown as Hermes
   const opened: { action: string; path: string }[] = []
+  const loaded: { request: ImageRequest; context: ImageContext }[] = []
   const opener: Opener = {
     open: async path => (opened.push({ action: 'open', path }), { ok: true }),
     show: async path => (opened.push({ action: 'show', path }), { ok: true })
   }
-  const served = serveWindows(pinnedConnection(hermes), ipc, url => url.startsWith('app://'), opener)
+  const served = serveWindows(pinnedConnection(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) })
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
     catalogListeners.forEach(listener => listener(next))
@@ -199,7 +201,7 @@ function harness() {
     open = next
     openListeners.forEach(listener => listener(next))
   }
-  return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, served, setCatalog, setBots, setOpen }
+  return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, served, setCatalog, setBots, setOpen }
 }
 
 describe('serveWindows', () => {
@@ -383,6 +385,42 @@ describe('the file call', () => {
     const { handlers, served } = watching()
     served.dispose()
     expect(handlers.has(CHANNEL.file)).toBe(false)
+  })
+})
+
+describe('the image call', () => {
+  const asked = { kind: 'tool', sessionId: fixture.header.sessionId, path: '/tmp/shot.png' }
+
+  it('judges a tool image against the session this window watches, and says a pinned connection is local', async () => {
+    const rig = harness()
+    rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
+    rig.emit(moments[3]!)
+    const call = rig.handlers.get(CHANNEL.image)!
+    await expect(call(rig.event(), asked)).resolves.toEqual({ ok: false })
+    expect(rig.loaded).toEqual([{ request: asked, context: { session: moments[3], local: true } }])
+  })
+
+  it('gives the loader no session for one this window does not watch', async () => {
+    const rig = harness()
+    await rig.handlers.get(CHANNEL.image)!(rig.event(), asked)
+    expect(rig.loaded[0]?.context.session).toBeUndefined()
+  })
+
+  it('refuses a foreign frame and a malformed request without asking the loader', async () => {
+    const rig = harness()
+    const call = rig.handlers.get(CHANNEL.image)!
+    const refused: ImageOutcome = { ok: false }
+    await expect(call(rig.event('https://example.com/'), { kind: 'web', url: 'https://example.com/c.png' })).resolves.toEqual(refused)
+    for (const raw of [null, 'x', { kind: 'web', url: 'file:///etc/passwd' }, { kind: 'tool', path: '/tmp/shot.png' }]) {
+      await expect(call(rig.event(), raw)).resolves.toEqual(refused)
+    }
+    expect(rig.loaded).toEqual([])
+  })
+
+  it('stops answering once disposed', () => {
+    const { handlers, served } = harness()
+    served.dispose()
+    expect(handlers.has(CHANNEL.image)).toBe(false)
   })
 })
 
