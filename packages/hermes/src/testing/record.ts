@@ -32,6 +32,12 @@ const OWN_ANSWERS: Readonly<Record<string, (header: Header, reply: Obj, params: 
     header.profiles ??= reply
     return NOTHING
   },
+  'config.get': (header, reply) => {
+    if (typeof reply.key === 'string' && typeof reply.value === 'string') header.controls = { [reply.key]: reply.value, ...header.controls }
+    return NOTHING
+  },
+  /** The scripted gateway applies a write to the header's controls itself. */
+  'config.set': () => NOTHING,
   'session.list': (header, reply, params) => {
     if (params.scope !== 'stored' && params.title === undefined) header.list ??= reply
     return NOTHING

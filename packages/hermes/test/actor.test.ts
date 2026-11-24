@@ -38,7 +38,7 @@ function stage() {
       (method === 'session.stats' ? usageReads : calls).push({ method, params: params as Record<string, unknown>, resolve: resolve as (result: unknown) => void, reject })
     })
   }
-  const actor = new SessionActor(ID, { conn, clock, publish: session => published.push(session), refuse: request => refusedRequests.push(request), mintId: () => `id-${++state.ids}` })
+  const actor = new SessionActor(ID, { conn, clock, publish: session => published.push(session), refuse: request => refusedRequests.push(request), mintId: () => `id-${++state.ids}`, watched: () => false })
   const branched: Parameters<Hub['branched']>[0][] = []
   const hub: Hub = {
     settledCatalog: async () => [], retitle: () => {}, drop: () => {}, refreshSoon: () => {},

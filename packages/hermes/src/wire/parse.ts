@@ -626,6 +626,11 @@ export function parsePathMatches(reply: CompletionItemsResult): readonly PathMat
   })
 }
 
+/** `config.get` and `config.set` of `show_reasoning` answer `'1'` or `'0'` (`gateway/session_busy_controls.py:90-108`). */
+export function parseShown(reply: { readonly value?: unknown }): boolean | null {
+  return reply.value === '1' ? true : reply.value === '0' ? false : null
+}
+
 export function parseModelMenu(reply: ModelOptionsResult): ModelMenu {
   const options = (Array.isArray(reply.providers) ? reply.providers : []).flatMap(row => usable(() => providerOptions(row)) ?? [])
   const unique = options.filter((option, index) =>

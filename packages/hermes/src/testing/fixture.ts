@@ -52,11 +52,17 @@ export interface Fixture {
     readonly usage?: { readonly before: Json; readonly after: Json; readonly breakdown: Json }
     /**
      * The story chat's YOLO at the start; every Bot Chat starts off. Absent: attach replies carry no
-     * `info.yolo` until a recorded frame names it, and the gateway refuses `config.set` as an unknown method, as a Hermes without `config.set` does.
+     * `info.yolo` until a recorded frame names it, and the gateway refuses a `config.set` of `yolo` as an unknown method, as a Hermes without `config.set` does.
      */
     readonly yolo?: boolean
     /** Every YOLO set is refused `permission_denied`, as Hermes refuses a viewer without control of the chat. */
     readonly yoloDenied?: boolean
+    /**
+     * The story session's controls as `config.get` answers them, by key: `{ "show_reasoning": "1" }`.
+     * `config.set` changes them, except a set of key `yolo`, which `yolo` serves. Absent: the gateway refuses both as unknown methods, as a Hermes
+     * that serves neither does.
+     */
+    readonly controls?: { readonly [key: string]: string }
     /**
      * The canned `profiles.list` reply, as Hermes sends it. Absent: the gateway refuses
      * `profiles.list` as an unknown method, as a Hermes older than the call does.
@@ -214,6 +220,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   const { yolo, yoloDenied } = value
   if (yolo !== undefined && typeof yolo !== 'boolean') return '"yolo" must be true or false'
   if (yoloDenied !== undefined && typeof yoloDenied !== 'boolean') return '"yoloDenied" must be true or false'
+  const { controls } = value
+  if (controls !== undefined && !(isObject(controls) && Object.values(controls).every(held => typeof held === 'string'))) return '"controls" must map control keys to strings'
   const { profiles } = value
   if (profiles !== undefined && !(isObject(profiles) && Array.isArray(profiles.profiles))) return '"profiles" must be a profiles.list reply with "profiles"'
   const { createWarnings } = value
@@ -253,6 +261,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(usage === undefined ? {} : { usage }),
     ...(yolo === undefined ? {} : { yolo }), ...(yoloDenied === undefined ? {} : { yoloDenied }),
     ...(branches === undefined ? {} : { branches }), ...(tree === undefined ? {} : { tree }),
+    ...(controls === undefined ? {} : { controls: controls as Record<string, string> }),
     ...(profiles === undefined ? {} : { profiles }),
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
     ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash }),

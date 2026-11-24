@@ -7,7 +7,7 @@
 import type {
   Ask, Attachment, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, MoaItem, ModelRef, OpenTurn, OutboxEntry,
   Outcome, PlanEntry, PromptId, PromptItem, PromptReply, ReasoningItem, Request, Run, Session, SessionContent, SessionId, SessionModel, SessionUsage,
-  SettledTurn, StatusAbout, StatusItem, Sync, TextItem, Tokens, ToolId, ToolItem, ToolResult, TurnId
+  SettledTurn, StatusAbout, StatusItem, Sync, TextItem, Tokens, ToolId, ToolItem, ToolResult, Tuning, TurnId
 } from './session'
 
 /** A gateway event in domain terms. `wire/parse.ts` builds these. Field names are ours, not the wire's. */
@@ -207,6 +207,11 @@ export type SessionInput =
   | { readonly in: 'usage'; readonly usage: SessionUsage; readonly asked: number }
   /** A server request was refused because this build cannot show it. */
   | { readonly in: 'declined'; readonly request: ServerRequest }
+  /**
+   * Answers to reads the actor made because a window watches the chat. `attempt` is the attach they
+   * were read under. An answer read under an older attach changes nothing.
+   */
+  | { readonly in: 'facts'; readonly attempt: number; readonly tuning: Partial<Tuning> }
   | { readonly in: 'local'; readonly action: LocalAction }
 
 /** What this client did. Folded through the same reducer so a second window sees it too. */
@@ -224,6 +229,8 @@ export type LocalAction =
   | { readonly did: 'rewound'; readonly rowId: number }
   | { readonly did: 'yolo'; readonly on: boolean }
   | { readonly did: 'model.deferred'; readonly model: ModelRef; readonly during: Generation }
+  /** Hermes confirmed a switch this client set. */
+  | { readonly did: 'tuned'; readonly tuning: Partial<Tuning> }
 
 /** Bookkeeping the views never need. Kept beside the content so one reducer guards both. */
 export interface Fence {
@@ -255,7 +262,7 @@ export interface Tracked {
 
 export function emptyTracked(id: SessionId): Tracked {
   return {
-    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, yolo: null },
+    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, yolo: null, tuning: UNTUNED },
     gate: { at: 'detached', why: 'new', cursor: null },
     fence: { revision: 0, text: null, older: null, admissions: {}, settledThrough: null, generation: null, attaches: 0, totalsEpoch: 0 }
   }
@@ -312,6 +319,8 @@ export function reduce(state: Tracked, input: SessionInput): Tracked {
       const { requestId, method } = input.request
       return holdsDeclined(state.content, requestId) ? state : say(state, { kind: 'notice', what: 'declined', requestId, method })
     }
+    case 'facts':
+      return input.attempt === state.fence.attaches ? tune(state, input.tuning) : state
     case 'local':
       return act(state, input.action)
     default:
@@ -433,7 +442,8 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       // Hermes asks a newly attached viewer again about a held pick (gateway/session_deferred_pick.py:46-54).
       model: { ...modelFrom(content.model, snapshot.model), next: null, ask: null },
       usage: patch(content.usage, { totals: null }),
-      yolo: snapshot.yolo
+      yolo: snapshot.yolo,
+      tuning: content.tuning
     },
     fence: {
       revision: Math.max(fence.revision, snapshot.revision),
@@ -593,6 +603,8 @@ function act(state: Tracked, action: LocalAction): Tracked {
       // A newer held pick replaces the one Hermes was asking about (persistence/sqlite/authority/_runtime_picks.py:239-248).
       return { ...state, content: { ...content, model: { ...content.model, next: { model: action.model, during: action.during }, ask: null } } }
     }
+    case 'tuned':
+      return tune(state, action.tuning)
     default:
       return unreachable(action)
   }
@@ -602,6 +614,7 @@ const IDLE: Run = { state: 'idle' }
 const NO_MODEL: SessionModel = { current: null, next: null, ask: null }
 const NO_USAGE: SessionUsage = { totals: null, context: null }
 const ZERO_TOKENS: Tokens = { input: 0, output: 0, reasoning: 0 }
+const UNTUNED: Tuning = { reasoning: null }
 const LOST: Outcome = { kind: 'lost' }
 const INTERLUDE: Outcome = { kind: 'interlude' }
 const ANSWERED_ELSEWHERE: PromptItem['state'] = { s: 'answered', reply: null }
@@ -808,6 +821,11 @@ function moaStep(turn: OpenTurn, step: MoaStep): OpenTurn {
   })()
   if (round === null) return pushItem(turn, next)
   return next === round ? turn : { ...turn, items: turn.items.with(at, next) }
+}
+
+function tune(state: Tracked, tuning: Partial<Tuning>): Tracked {
+  const next = patch(state.content.tuning, tuning)
+  return next === state.content.tuning ? state : { ...state, content: { ...state.content, tuning: next } }
 }
 
 function ensureRun(state: Tracked, generation: Generation | null, seenAt: number | null): Tracked {

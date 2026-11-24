@@ -310,7 +310,7 @@ describe('attached', () => {
       snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 9 }, history: { turns, unfinished: null, older: { cursor: 'c1' } } })
     })
     expect(state.gate).toEqual({ at: 'live', cursor: { epoch: EPOCH, seq: 9 }, subscriptionId: 'sub-1' })
-    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null })
+    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, tuning: { reasoning: null } })
   })
 
   it('B: opens the unfinished turn of a running snapshot with its waiting prompts, then the parked frames above the watermark', () => {
@@ -1219,5 +1219,25 @@ describe('what Hermes says', () => {
   it('keeps the image a finished tool names', () => {
     const finished: SessionEvent = { type: 'tool.finished', id: toolId('a'), name: 'vision_analyze', args: null, durationS: 1, diffs: [], result: OUTPUT, image: '/work/chart.png' }
     expect(openItems(feed(live(), event(1, started('t1')), event(2, finished)))).toMatchObject([{ kind: 'tool', status: { s: 'done', image: '/work/chart.png' } }])
+  })
+})
+
+describe('tuning', () => {
+  it('takes facts read under the current attach, and drops facts read under an older one', () => {
+    const state = live()
+    expect(state.content.tuning).toEqual({ reasoning: null })
+    const read = reduce(state, { in: 'facts', attempt: 1, tuning: { reasoning: true } })
+    expect(read.content.tuning).toEqual({ reasoning: true })
+    const reattached = feed(read, { in: 'link.lost' }, { in: 'attach' })
+    expect(reduce(reattached, { in: 'facts', attempt: 1, tuning: { reasoning: false } }).content).toBe(reattached.content)
+    expect(reduce(reattached, { in: 'facts', attempt: 2, tuning: { reasoning: false } }).content.tuning).toEqual({ reasoning: false })
+  })
+
+  it('takes a switch this client set, keeps it through a rebuild, and changes nothing when it is the same', () => {
+    const tuned = reduce(live(), { in: 'local', action: { did: 'tuned', tuning: { reasoning: true } } })
+    expect(tuned.content.tuning).toEqual({ reasoning: true })
+    expect(reduce(tuned, { in: 'local', action: { did: 'tuned', tuning: { reasoning: true } } }).content).toBe(tuned.content)
+    const rebuilt = feed(tuned, { in: 'gap' }, { in: 'attached', attempt: 2, snapshot: snapshot(), replay: null })
+    expect(rebuilt.content.tuning).toEqual({ reasoning: true })
   })
 })

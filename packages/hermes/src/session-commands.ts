@@ -3,7 +3,7 @@ import type { Bot } from './domain/bots'
 import type { Command, ModelConfirm, Outcome, Refusal, ResultOf } from './domain/command'
 import type { AttachmentId, BranchId, SessionContent, SessionId, TurnId } from './domain/session'
 import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
-import { parseBranched, parseContextBreakdown, parseDirective, parseModelMenu, parseModelReceipt, parsePathMatches, parseTranscript } from './wire/parse'
+import { parseBranched, parseContextBreakdown, parseDirective, parseModelMenu, parseModelReceipt, parsePathMatches, parseShown, parseTranscript } from './wire/parse'
 
 /** `versions` stays with the hub: reading a chat's versions must not attach it. */
 export type SessionCommand = Exclude<Extract<Command, { readonly sessionId: SessionId }>, { readonly do: 'versions' }>
@@ -231,6 +231,13 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
       case 'committed':
         return { ok: true, value: null }
     }
+  }),
+
+  tune: (port, { on }) => port.whenLive(async () => {
+    const set = await port.call('config.set', { session_id: port.id, key: 'show_reasoning', value: on ? 'on' : 'off' })
+    if (!set.ok) return set
+    port.act({ did: 'tuned', tuning: { reasoning: parseShown(set.value) ?? on } })
+    return DONE
   })
 }
 

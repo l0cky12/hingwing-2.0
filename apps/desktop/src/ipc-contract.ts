@@ -352,6 +352,10 @@ export const validators: Validators = {
     const sessionId = sessionIdOf(raw)
     return sessionId && typeof raw.on === 'boolean' ? { do: 'setYolo', sessionId, on: raw.on } : null
   },
+  tune: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && raw.set === 'reasoning' && typeof raw.on === 'boolean' ? { do: 'tune', sessionId, set: 'reasoning', on: raw.on } : null
+  },
   reconnect: raw => (typeof raw.start === 'boolean' ? { do: 'reconnect', start: raw.start } : null),
   checkTarget: raw => {
     const target = targetOf(raw.target)

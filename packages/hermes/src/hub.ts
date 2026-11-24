@@ -144,6 +144,8 @@ export function openHermes(options: HermesOptions): Hermes {
 
   const actors = new Map<SessionId, SessionActor>()
   const watchers = new Map<SessionId, Set<(session: Session) => void>>()
+  /** How many windows watch each chat. A command waiting for an attach watches too, and is not counted. */
+  const windows = new Map<SessionId, number>()
   const releases = new Map<SessionId, () => void>()
   const branchPins = new Map<BranchId, BranchPin>()
   let cancelRefresh: (() => void) | null = null
@@ -254,6 +256,7 @@ export function openHermes(options: HermesOptions): Hermes {
     const bot = desk.botOf(id)
     const actor = new SessionActor(id, {
       conn: bot === undefined ? conn : conn.as(bot), clock, mintId, refuse,
+      watched: () => windows.has(id),
       publish: (session, previous) => {
         for (const listener of [...(watchers.get(id) ?? [])]) listener(session)
         if (session.run.state !== previous.run.state) refreshSoon()
@@ -291,7 +294,7 @@ export function openHermes(options: HermesOptions): Hermes {
     }
   }
 
-  const watch: Hermes['watch'] = (id, listener) => {
+  const follow = (id: SessionId, listener: (session: Session) => void): (() => void) => {
     const actor = actorFor(id)
     const listeners = watchers.get(id) ?? new Set()
     watchers.set(id, listeners.add(listener))
@@ -304,9 +307,25 @@ export function openHermes(options: HermesOptions): Hermes {
     }
   }
 
+  const watch: Hermes['watch'] = (id, listener) => {
+    const before = windows.get(id) ?? 0
+    windows.set(id, before + 1)
+    const stop = follow(id, listener)
+    if (before === 0) actorFor(id).watchBegan()
+    let watching = true
+    return () => {
+      if (!watching) return
+      watching = false
+      const left = (windows.get(id) ?? 1) - 1
+      if (left === 0) windows.delete(id)
+      else windows.set(id, left)
+      stop()
+    }
+  }
+
   const attached = (id: SessionId): Promise<SessionActor> => new Promise(resolve => {
     const unwatch: { stop?: () => void } = {}
-    unwatch.stop = watch(id, session => {
+    unwatch.stop = follow(id, session => {
       if (ATTACHING.has(session.sync.state)) return
       queueMicrotask(() => unwatch.stop?.())
       resolve(actorFor(id))
