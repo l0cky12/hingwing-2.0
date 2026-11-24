@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { manualClock, settle } from '../src/testing/clock'
 import { scriptedDialer, type Fixture, type ScriptOptions } from '../src/testing/fixture'
-import { BOUND, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PROFILES, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, WITH_BOTS, WITH_CHATS } from './support/errand'
+import { BOUND, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS } from './support/errand'
 
 interface Reply {
   readonly id?: number
@@ -12,20 +12,25 @@ interface Reply {
 }
 
 async function rawSocket(options: ScriptOptions = {}, fixture: Fixture = ERRAND) {
-  const script = scriptedDialer(fixture, { clock: manualClock(), ...options })
+  const clock = manualClock()
+  const script = scriptedDialer(fixture, { clock, ...options })
   const socket = await script({ start: false })
   const frames: Reply[] = []
   socket.onText = text => frames.push(JSON.parse(text) as Reply)
   let ids = 0
+  /** Sends a call and answers its id, for a reply that comes later. */
+  const post = (method: string, params?: unknown): number => {
+    socket.send(JSON.stringify({ jsonrpc: '2.0', id: ++ids, method, params }))
+    return ids
+  }
   const call = async (method: string, params?: unknown): Promise<Reply> => {
-    const id = ++ids
-    socket.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }))
+    const id = post(method, params)
     await settle()
     const reply = frames.find(frame => frame.id === id)
     if (reply === undefined) throw new Error(`${method} got no reply`)
     return reply
   }
-  return { script, call, frames }
+  return { script, call, post, frames, clock }
 }
 
 const without = (params: Record<string, unknown>, key: string) => Object.fromEntries(Object.entries(params).filter(([held]) => held !== key))
@@ -464,5 +469,48 @@ describe('the scripted gateway answers config.set for YOLO as Hermes does', () =
     const { call } = await rawSocket({}, WITH_BOTS)
     expect(await call('config.set', ON)).toMatchObject({ error: { code: -32601, data: { reason: 'unknown_method' } } })
     expect((await call('session.resume', { session_id: SESSION })).result?.info).not.toHaveProperty('yolo')
+  })
+})
+
+describe('the scripted gateway hands a message to another bot', () => {
+  const ID = 'a1'.repeat(16)
+  const deliver = { profile: 'rae', id: ID, message: 'Ask @Rae for the weekly report' }
+  const unknown = { error: { code: -32601, data: { reason: 'unknown_method' } } }
+
+  it('knows no bot_relay method when the header has no relay, whatever the params', async () => {
+    const { call } = await rawSocket({}, TEAM_NO_RELAY)
+    expect(await call('bot_relay.deliver', {})).toMatchObject(unknown)
+    expect(await call('bot_relay.deliver', deliver)).toMatchObject(unknown)
+    expect(await call('bot_relay.deliver', 'rae')).toMatchObject(unknown)
+    expect(await call('bot_relay.outbox.drain', {})).toMatchObject(unknown)
+  })
+
+  it('refuses a delivery with no id, a bad id or a blank message before it reaches the bot', async () => {
+    const { call } = await rawSocket({}, TEAM)
+    expect(await call('bot_relay.deliver', {}), 'the probe').toMatchObject(refusal('invalid_params'))
+    for (const id of ['a1'.repeat(15), 'A1'.repeat(16), 'g1'.repeat(16), 'a1'.repeat(33)]) {
+      expect(await call('bot_relay.deliver', { ...deliver, id }), id).toMatchObject(refusal('invalid_params'))
+    }
+    expect(await call('bot_relay.deliver', { ...deliver, message: ' \n' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('bot_relay.deliver', { ...deliver, from: 'ada' })).toMatchObject(refusal('invalid_params', { fields: ['from'] }))
+  })
+
+  it('answers with the settled receipt and the reply once the delay has passed, and not before', async () => {
+    const { post, frames, clock } = await rawSocket({}, TEAM)
+    const id = post('bot_relay.deliver', deliver)
+    await clock.advance(1_499)
+    expect(frames.filter(frame => frame.id === id)).toEqual([])
+    await clock.advance(1)
+    expect(frames.find(frame => frame.id === id)?.result).toEqual({
+      status: 'settled', delivery_id: ID, profile_home: '/fixture/profiles/rae', session_id: 'bot-chat-rae', message: deliver.message,
+      admission_id: 'bot-chat-rae-admission-a1a1a1a1', reply: RAE_SAID
+    })
+  })
+
+  it('refuses for a bot the header refuses for, and for a bot with no entry as one that is not running', async () => {
+    const { call, script } = await rawSocket({}, { ...TEAM, header: { ...TEAM.header, relay: { ...TEAM.header.relay, sam: { refuse: 'queue_full' } } } })
+    expect(await call('bot_relay.deliver', { ...deliver, profile: 'sam' })).toMatchObject(refusal('queue_full'))
+    expect(await call('bot_relay.deliver', { ...deliver, profile: 'default' })).toMatchObject(refusal('runtime_unavailable'))
+    expect(script.step, 'the story has not moved').toBe(0)
   })
 })

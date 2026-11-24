@@ -62,9 +62,18 @@ export interface Fixture {
     readonly media?: Readonly<Record<string, string>>
     /** profile -> the chats it has beside its Bot Chat, before the story starts. Not for the home profile, whose list is `list`. */
     readonly chats?: { readonly [profile: string]: readonly ChatSeed[] }
+    /**
+     * profile -> what its bot does with a message handed to it by `bot_relay.deliver`. A profile with
+     * no entry is not running. Absent: the gateway refuses every `bot_relay.*` call as an unknown
+     * method, as a Hermes without the bot relay does.
+     */
+    readonly relay?: { readonly [profile: string]: RelayScript }
   }
   readonly steps: readonly FixtureStep[]
 }
+
+/** `reply`: the bot's one answer, sent `delay_ms` after the call (default 0). `refuse`: the reason Hermes refuses the delivery with. */
+export type RelayScript = { readonly reply: string; readonly delay_ms?: number } | { readonly refuse: string }
 
 /** A chat a bot has before the story starts. */
 export interface ChatSeed {
@@ -146,6 +155,12 @@ const isSeed = (value: unknown): value is ChatSeed =>
   && (value.hidden === undefined || typeof value.hidden === 'boolean')
   && (value.asking === undefined || (isObject(value.asking) && typeof value.asking.command === 'string' && typeof value.asking.description === 'string'))
 
+const isRelayScript = (value: unknown): value is RelayScript =>
+  isObject(value) && ('refuse' in value
+    ? typeof value.refuse === 'string' && value.refuse !== '' && Object.keys(value).length === 1
+    : typeof value.reply === 'string' && (value.delay_ms === undefined || (typeof value.delay_ms === 'number' && value.delay_ms >= 0))
+      && Object.keys(value).every(key => key === 'reply' || key === 'delay_ms'))
+
 function parseHeader(value: unknown): Fixture['header'] | string {
   if (!isObject(value)) return 'the header must be an object'
   const { fixture, hermes, source, sessionId, stored } = value
@@ -180,6 +195,10 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (chats !== undefined && !(isObject(chats) && Object.values(chats).every(seeds => Array.isArray(seeds) && seeds.every(isSeed)))) {
     return '"chats" must map a profile to its chats, each with id, title, last_active and rows'
   }
+  const { relay } = value
+  if (relay !== undefined && !(isObject(relay) && Object.values(relay).every(isRelayScript))) {
+    return '"relay" must map a profile to { reply, delay_ms? } or { refuse }'
+  }
   return {
     fixture, hermes, source, sessionId: sessionId as SessionId, describe: value.describe, list: value.list, stored,
     ...('catalog' in value ? { catalog: value.catalog } : {}),
@@ -190,7 +209,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
-    ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } })
+    ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),
+    ...(relay === undefined ? {} : { relay: relay as { readonly [profile: string]: RelayScript } })
   }
 }
 

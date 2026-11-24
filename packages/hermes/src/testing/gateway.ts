@@ -47,6 +47,11 @@ class Refused extends Error {
   }
 }
 
+/** A result the gateway writes `ms` from now, as a call that waits on another bot's turn answers. Dropped when the socket closed first. */
+class Later {
+  constructor(readonly ms: number, readonly result: unknown) {}
+}
+
 /** A socket's `AuthorityConnection` (gateway/session_controls.py:157-190). */
 interface Socket {
   readonly peer: Peer
@@ -420,7 +425,23 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'session.mutate': (gateway, socket, params, routed) =>
     (params.operation === 'model' ? gateway.switchModel(params, routed) : gateway.story(socket, 'session.mutate', params, routed)),
   'config.set': (gateway, _socket, params, routed) => gateway.setYolo(params, routed, null),
-  'session.detach': detach
+  'session.detach': detach,
+  /**
+   * `_delivery_params` (gateway/session_bot.py:804-827), with the id rule of tools/bot_live_delivery.py:131-134,
+   * then the target: a profile that is not running refuses `runtime_unavailable` (tui_gateway/methods_bot_relay.py:122).
+   * The call answers once the target's turn ends, with the receipt of gateway/session_bot.py:830-832.
+   */
+  'bot_relay.deliver': (gateway, _socket, params, routed) => {
+    const { id, message } = params
+    if (typeof id !== 'string' || !/^[0-9a-f]{32,64}$/.test(id) || typeof message !== 'string' || message.trim() === '') throw new Refused('invalid_params')
+    const script = gateway.fixture.header.relay?.[routed] ?? { refuse: 'runtime_unavailable' }
+    if ('refuse' in script) throw new Refused(script.refuse)
+    const sessionId = `bot-chat-${routed}`
+    return new Later(script.delay_ms ?? 0, {
+      status: 'settled', delivery_id: id, profile_home: `/fixture/profiles/${routed}`, session_id: sessionId, message,
+      admission_id: `${sessionId}-admission-${id.slice(0, 8)}`, reply: script.reply
+    })
+  }
 }
 
 type ChatHandler = (gateway: ScriptedGateway, socket: Socket, params: Obj, routed: string, chat: EchoChat) => unknown
@@ -533,7 +554,14 @@ export class ScriptedGateway {
     // Answered by the read loop, ahead of every handler (tui_gateway/ws.py:710-714).
     if (method === 'gateway.ping') return socket.peer.write({ jsonrpc: '2.0', id, result: { ok: true } })
     const reply = this.dispatch(socket, method, frame.params ?? {})
-    socket.peer.write({ jsonrpc: '2.0', id, ...reply })
+    if ('result' in reply && reply.result instanceof Later) {
+      const { ms, result } = reply.result
+      this.options.clock.setTimeout(() => {
+        if (this.sockets.has(socket)) socket.peer.write({ jsonrpc: '2.0', id, result })
+      }, ms)
+    } else {
+      socket.peer.write({ jsonrpc: '2.0', id, ...reply })
+    }
     for (const publish of this.afterReply.splice(0)) publish()
     this.pump()
   }
@@ -545,6 +573,8 @@ export class ScriptedGateway {
    */
   private dispatch(socket: Socket, method: string, raw: unknown): { result: unknown } | { error: WireError } {
     const refusal = (reason: string, data: Obj = {}): { error: WireError } => ({ error: { code: 4001, message: reason, data: { reason, ...data } } })
+    // A Hermes without the bot relay declares none of its methods, so no param check is reached.
+    if (method.startsWith('bot_relay.') && this.fixture.header.relay === undefined) return { error: unknownMethod(method).wire }
     if (!isObject(raw)) return refusal('invalid_params')
     const { profile, ...unscoped } = raw
     const named = isText(profile)
