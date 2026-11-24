@@ -730,8 +730,9 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
       return say(state, line, item => compaction && item.kind === 'status' && item.what === 'line' && item.about === 'compacting')
     }
     case 'notice.shown': {
-      if (event.notice.ttlMs !== null && seenAt === null) return state
-      return say(clearNotice(state, event.notice.key), { kind: 'status', what: 'notice', ...event.notice, seenAt, state: 'shown' })
+      const cleared = clearNotice(state, event.notice.key)
+      if (event.notice.ttlMs !== null && seenAt === null) return cleared
+      return say(cleared, { kind: 'status', what: 'notice', ...event.notice, seenAt, state: 'shown' })
     }
     case 'notice.cleared':
       return clearNotice(state, event.key)

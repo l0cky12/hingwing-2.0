@@ -1205,6 +1205,12 @@ describe('what Hermes says', () => {
     expect(reduce(cleared, event(6, { type: 'notice.cleared', key: 'credits' }, null)).content).toBe(cleared.content)
   })
 
+  it('clears an older notice of the same key when its replacement, heard through replay, has outlived its time', () => {
+    const sticky = reduce(live(), event(1, shown('credits'), null, EPOCH, 1_000))
+    const replaced = reduce(sticky, event(2, shown('credits', 5_000), null))
+    expect(replaced.content.interlude).toMatchObject([{ key: 'credits', ttlMs: null, state: 'cleared' }])
+  })
+
   it('drops a notice with a time to live that was heard through replay, and keeps one that stays until cleared', () => {
     expect(reduce(live(), event(1, shown('slow', 5_000), null)).content.interlude).toEqual([])
     expect(reduce(live(), event(1, shown('slow', 5_000), null, EPOCH, 10)).content.interlude).toMatchObject([{ key: 'slow', ttlMs: 5_000, seenAt: 10 }])
