@@ -331,7 +331,7 @@ function pathItems(gateway: ScriptedGateway, params: Obj, authorize: () => void)
   return gateway.fixture.header.paths?.words[word] ?? { items: [] }
 }
 
-/** `_YOLO_WORDS` in gateway/session_busy_controls.py:118 */
+/** `_YOLO_WORDS` in gateway/session_busy_controls.py:134 */
 const SWITCH_WORDS: Readonly<Record<string, string>> = { 1: '1', on: '1', true: '1', 0: '0', off: '0', false: '0' }
 
 /** gateway/session_controls.py:386-392 */

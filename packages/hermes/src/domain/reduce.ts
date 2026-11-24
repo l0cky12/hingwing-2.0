@@ -730,7 +730,6 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
       return say(state, line, item => compaction && item.kind === 'status' && item.what === 'line' && item.about === 'compacting')
     }
     case 'notice.shown': {
-      // Its time to live runs on this client's clock, which a replayed frame cannot read.
       if (event.notice.ttlMs !== null && seenAt === null) return state
       return say(clearNotice(state, event.notice.key), { kind: 'status', what: 'notice', ...event.notice, seenAt, state: 'shown' })
     }
