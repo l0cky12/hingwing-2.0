@@ -37,8 +37,8 @@ export interface Hermes {
   readonly bots: Feed<Bots>
   /**
    * Which chat the window shows. Before any click it is the default bot's chat, or the newest chat
-   * on a Hermes that cannot switch bots. After that only `run({ do: 'open' })` and
-   * `run({ do: 'start' })` move it, and it follows a bot to the Bot Chat Hermes names for it.
+   * on a Hermes that cannot switch bots. After that only `run({ do: 'open' })` and `run({ do: 'start' })`
+   * move it, and a bot's chat follows the bot to the Bot Chat Hermes names for it.
    */
   readonly open: Feed<OpenChat>
   /**
@@ -319,7 +319,7 @@ export function openHermes(options: HermesOptions): Hermes {
   const run = async (command: Command): Promise<Outcome<unknown>> => {
     if (command.do === 'open') return desk.ask(command.ref)
     if (command.do === 'start') {
-      const started = await desk.start(command.bot)
+      const started = await desk.start(command.chat)
       return started.ok ? run({ do: 'send', sessionId: started.value, text: command.text }) : started
     }
     if (command.do === 'reconnect') {

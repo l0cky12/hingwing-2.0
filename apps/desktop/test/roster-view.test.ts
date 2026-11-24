@@ -9,7 +9,9 @@ const outline = (view: ListView) => (view.show !== 'roster' ? view : [
 ])
 const id = (name: string) => name as BotId
 const showing = (bot: string | null, sessionId: string | null = 's1'): OpenChat =>
-  ({ shown: { bot: bot as BotId | null, sessionId: sessionId as SessionId } as OpenChat['shown'], opening: null })
+  ({ shown: (bot === null ? { kind: 'chat', bot, sessionId } : { kind: 'bot', bot, sessionId }) as OpenChat['shown'], opening: null })
+const drafting = (bot: string | null, sessionId: string | null = null): OpenChat =>
+  ({ shown: { kind: 'new', bot: bot as BotId | null, draftId: 'd1', sessionId: sessionId as SessionId }, opening: null })
 
 describe('what the bot list shows', () => {
   it('is empty and busy until Hermes has answered', () => {
@@ -60,6 +62,12 @@ describe('the selected bot', () => {
     expect(selectedIn(APPROVED, showing('default'))).toBe('default')
     expect(selectedIn(APPROVED, showing('timothy'))).toBe('timothy')
     expect(selectedIn(APPROVED, showing('hermes-dev', null))).toBe('hermes-dev')
+  })
+
+  it("is the bot of a new chat, before and after its first message, and none for a new chat in the socket's own profile", () => {
+    expect(selectedIn(APPROVED, drafting('timothy'))).toBe('timothy')
+    expect(selectedIn(APPROVED, drafting('timothy', 's2'))).toBe('timothy')
+    expect(selectedIn(APPROVED, drafting(null))).toBeNull()
   })
 
   it('stays on the open chat while a click on another bot waits for Hermes', () => {
