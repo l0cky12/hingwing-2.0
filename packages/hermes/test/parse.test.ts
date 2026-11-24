@@ -147,7 +147,7 @@ describe('parseEvent on the errand fixture', () => {
 
   it('ends the turn complete with no final text and the receipt rows 1 to 10', () => {
     const complete = only(params.filter(({ type }) => type === 'message.complete'))
-    expect(eventOf(complete)).toEqual({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] })
+    expect(eventOf(complete)).toEqual({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], userRow: 1 })
   })
 
   it('reads the queue, revision and generation from session.info', () => {
@@ -197,7 +197,7 @@ describe('parseEvent outside the happy path', () => {
       return parsed.scope === 'session' ? parsed.event : null
     }
     expect(complete({ text: 'Worker execution is unknown.', outcome: 'unknown', status: 'error' })).toEqual({
-      type: 'turn.ended', outcome: { kind: 'failed', message: 'Worker execution is unknown.', code: null, retryable: false }, finalText: null, rows: []
+      type: 'turn.ended', outcome: { kind: 'failed', message: 'Worker execution is unknown.', code: null, retryable: false }, finalText: null, rows: [], userRow: null
     })
     expect(complete({ status: 'error', error: 'no credentials', error_surface: { layer: 'provider', code: 'auth_permanent', retryable: false } }))
       .toMatchObject({ outcome: { kind: 'failed', message: 'no credentials', code: 'auth_permanent' } })
@@ -241,6 +241,19 @@ describe('parseRows and when a turn began', () => {
     expect(only(parseRows([user('First', timestamp), answer('Done.', 1_795_251_700)]).turns).began).toBeNull()
   })
 
+  it('gives each turn the row id of its own request row', () => {
+    const rows: TranscriptMessage[] = [
+      { role: 'user', text: 'First', row_id: 4 }, { role: 'assistant', text: 'One.', row_id: 5 },
+      { role: 'user', text: 'Second', row_id: 9 }, { role: 'assistant', text: 'Two.', row_id: 10 }
+    ]
+    expect(parseRows(rows).turns.map(turn => turn.request?.rowId)).toEqual([4, 9])
+  })
+
+  it('leaves a request with no stored id unaddressed, and a turn that begins with a reply without a request', () => {
+    const { turns } = parseRows([answer('The tail of an older turn.'), user('Next'), answer('Done.')])
+    expect(turns.map(turn => turn.request?.rowId ?? null)).toEqual([null, null])
+  })
+
   it('gives a turn whose request sits on an older page no start, whatever its other rows say', () => {
     const { turns } = parseRows([answer('The tail of an older turn.', 1_795_251_500), user('Next', 1_795_251_600), answer('Done.', 1_795_251_700)])
     expect(turns.map(turn => turn.began)).toEqual([null, { at: 1_795_251_600_000, clock: 'hermes' }])
@@ -258,7 +271,7 @@ describe('parseRows on the stored errand', () => {
     const { turns, unfinished } = parseRows(stored)
     expect(unfinished).toBeNull()
     const turn = only(turns)
-    expect(turn.request).toEqual({ text: REQUEST, inputId: null })
+    expect(turn.request).toEqual({ text: REQUEST, inputId: null, rowId: 1 })
     expect(turn.outcome).toEqual({ kind: 'complete' })
     expect(turn.rows).toEqual(stored.flatMap(row => (typeof row.row_id === 'number' ? [row.row_id] : [])))
     expect(turn.rows).toEqual([1, 2, 6, 10])
@@ -481,6 +494,13 @@ describe('models', () => {
       .toMatchObject({ event: { model: { id: 'fast-small' }, pick: { is: 'settled' } } })
     expect(parseEvent(frame('session.updated', { session_id: SESSION, operation: 'rename', revision: 5, title: 'Notes' })))
       .not.toMatchObject({ event: { pick: expect.anything() } })
+  })
+
+  it('reads the row a rewind receipt cut before, and no cut from any other receipt', () => {
+    const rewind = { session_id: SESSION, operation: 'rewind', revision: 6, execution_generation: 4, rewound_count: 4, target_message: { id: 3, role: 'user', content: 'Add a line' } }
+    expect(parseEvent(frame('session.updated', rewind))).toMatchObject({ event: { type: 'meta', revision: 6, generation: 4, cutBefore: 3 } })
+    expect(parseEvent(frame('session.updated', { session_id: SESSION, operation: 'rename', revision: 5, title: 'Notes', target_message: { id: 3 } })))
+      .not.toMatchObject({ event: { cutBefore: expect.anything() } })
   })
 
   it('asks for a held pick Hermes wants confirmed at the turn boundary', () => {

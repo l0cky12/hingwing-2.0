@@ -157,9 +157,10 @@ interface MetaFields {
   readonly model?: ModelRef | null
   readonly pick?: PickOutcome | null
   readonly generation?: number | null
+  readonly cutBefore?: number | null
 }
 
-function meta({ title, revision, queue, model, pick, generation }: MetaFields): SessionEvent {
+function meta({ title, revision, queue, model, pick, generation, cutBefore }: MetaFields): SessionEvent {
   return {
     type: 'meta',
     ...(title == null ? {} : { title }),
@@ -167,13 +168,15 @@ function meta({ title, revision, queue, model, pick, generation }: MetaFields): 
     ...(queue == null ? {} : { queue }),
     ...(model == null ? {} : { model }),
     ...(pick == null ? {} : { pick }),
-    ...(generation == null ? {} : { generation: generation as Generation })
+    ...(generation == null ? {} : { generation: generation as Generation }),
+    ...(cutBefore == null ? {} : { cutBefore })
   }
 }
 
 type ModelReceiptFields = SessionMutateResult & {
   status?: string; model?: string; provider?: string; execution_generation?: number
   confirm?: string; confirm_message?: string; payload?: unknown; committed_model?: string; committed_provider?: string
+  target_message?: unknown
 }
 
 /**
@@ -231,7 +234,8 @@ export const SHOWN: { readonly [type: string]: Shown } = {
       type: 'turn.ended',
       outcome,
       finalText: outcome.kind === 'failed' ? null : p.optStr('text') || null,
-      rows: receipt === null ? [] : fields<PersistedTurn>(receipt).ints('row_ids')
+      rows: receipt === null ? [] : fields<PersistedTurn>(receipt).ints('row_ids'),
+      userRow: receipt === null ? null : fields<PersistedTurn>(receipt).optInt('user_row_id')
     }
   },
   /** Spinner text while a model request is in flight (`gateway/local_viewer_events.py:44`). */
@@ -283,7 +287,12 @@ export const SHOWN: { readonly [type: string]: Shown } = {
   'session.updated': payload => {
     const p = fields<ModelReceiptFields>(payload)
     if (p.optStr('operation') === 'model' && p.optStr('status') !== 'deferred') return modelReceipt(p)
-    return meta({ title: p.optStr('title'), revision: p.optInt('revision'), generation: p.optInt('execution_generation') })
+    // A rewind receipt names the row it cut before as `target_message.id` (persistence/sqlite/authority/_mutation.py:192-198).
+    const target = p.optStr('operation') === 'rewind' ? p.optObj('target_message') : null
+    return meta({
+      title: p.optStr('title'), revision: p.optInt('revision'), generation: p.optInt('execution_generation'),
+      cutBefore: target === null ? null : fields<{ id?: number }>(target).optInt('id')
+    })
   },
   error: payload => ({ type: 'notice', tone: 'error', text: stripAnsi(fields<ErrorPayload>(payload).str('message')) })
 }
@@ -446,6 +455,7 @@ export function parseTranscript(pages: readonly StoredTranscriptResult[]): Histo
 
 interface TurnInProgress {
   readonly request: string | null
+  readonly requestRow: number | null
   readonly began: Began | null
   readonly items: Item<'settled'>[]
   readonly rows: number[]
@@ -467,8 +477,8 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   rows.forEach((value, index) => {
     const row = usable(() => storedRow(value, index))
     if (row === null) return
-    if (row.role === 'user') turns.push({ request: row.text, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [] })
-    if (row.item !== null && turns.length === 0) turns.push({ request: null, began: null, items: [], rows: [] })
+    if (row.role === 'user') turns.push({ request: row.text, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [] })
+    if (row.item !== null && turns.length === 0) turns.push({ request: null, requestRow: null, began: null, items: [], rows: [] })
     const turn = turns.at(-1)
     if (row.item !== null) turn?.items.push(row.item)
     if (row.rowId !== null) turn?.rows.push(row.rowId)
@@ -480,7 +490,7 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   return {
     turns: turns.flatMap((turn, index): SettledTurn[] => turn === open ? [] : [{
       id: `stored:${turn.rows[0] ?? `@${index}`}` as TurnId,
-      request: turn.request === null ? null : { text: turn.request, inputId: null },
+      request: turn.request === null ? null : { text: turn.request, inputId: null, rowId: turn.requestRow },
       began: turn.began,
       items: turn.items,
       outcome: answered(turn) ? COMPLETE : LOST,

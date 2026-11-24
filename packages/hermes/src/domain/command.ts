@@ -14,6 +14,11 @@ export type Command =
   | { readonly do: 'start'; readonly chat: Unstarted; readonly text: string }
   /** A line that starts with a listed `/name` runs that Hermes command or skill instead of going to the agent as text. */
   | { readonly do: 'send'; readonly sessionId: SessionId; readonly text: string }
+  /**
+   * Cut this chat before the stored row `rowId` (the message it names and everything after it, in the thread and in
+   * Hermes's history), then send `text` as a new message. Nothing is sent when Hermes refuses the cut.
+   */
+  | { readonly do: 'rewind'; readonly sessionId: SessionId; readonly rowId: number; readonly text: string }
   | { readonly do: 'stop'; readonly sessionId: SessionId }
   | { readonly do: 'answer'; readonly sessionId: SessionId; readonly promptId: PromptId; readonly reply: PromptReply }
   | { readonly do: 'discard'; readonly sessionId: SessionId; readonly inputId: InputId }

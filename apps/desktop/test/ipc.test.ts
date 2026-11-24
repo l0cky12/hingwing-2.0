@@ -87,6 +87,10 @@ describe('validators', () => {
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })).toEqual({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })
   })
 
+  it('keep a rewind to a stored row and the text to send there', () => {
+    expect(parseCommand({ do: 'rewind', sessionId: 's1', rowId: 7, text: 'again', extra: 1 })).toEqual({ do: 'rewind', sessionId: 's1', rowId: 7, text: 'again' })
+  })
+
   it('read a target with the parser the settings file uses', () => {
     expect(parseCommand({ do: 'checkTarget', target: { kind: 'remote', host: ' hermes-host.example-tailnet.ts.net ', port: 22 } }))
       .toEqual({ do: 'checkTarget', target: { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' } })
@@ -102,6 +106,10 @@ describe('validators', () => {
     ['a verb from the prototype', { do: 'toString' }],
     ['an empty session id', { do: 'stop', sessionId: '' }],
     ['a blank message', { do: 'send', sessionId: 's1', text: '   ' }],
+    ['a rewind to row zero', { do: 'rewind', sessionId: 's1', rowId: 0, text: 'again' }],
+    ['a rewind to a fractional row', { do: 'rewind', sessionId: 's1', rowId: 1.5, text: 'again' }],
+    ['a rewind to a row named as text', { do: 'rewind', sessionId: 's1', rowId: '7', text: 'again' }],
+    ['a rewind with a blank message', { do: 'rewind', sessionId: 's1', rowId: 7, text: ' ' }],
     ['an open that names no chat', { do: 'open' }],
     ['an open of a kind of chat Highwing does not know', { do: 'open', ref: { kind: 'session', sessionId: 's1' } }],
     ['an open of a bot with no name', { do: 'open', ref: { kind: 'bot', bot: ' ' } }],
@@ -123,7 +131,7 @@ describe('validators', () => {
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'answer', 'archive', 'checkTarget', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat', 'pickModel',
-      'reconnect', 'rename', 'send', 'start', 'stop'
+      'reconnect', 'rename', 'rewind', 'send', 'start', 'stop'
     ])
   })
 })

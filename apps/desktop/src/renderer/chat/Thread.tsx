@@ -113,25 +113,54 @@ function End({ turnKey, end }: { readonly turnKey: string; readonly end: ThreadE
   return <div className={`tip ${END_CLASS[end.kind]}`} role="status" data-end={end.kind}><span className="glyph" />{words}</div>
 }
 
+/** Acts on a sent message by its stored row and text: `onEdit` puts it in the composer, `onRegenerate` asks again for its reply. */
+export type Rewrite = (rowId: number, text: string) => void
+
+function Pencil() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 12 12" width="12" height="12">
+      <path d="M2 10 2.6 7.6 8.2 2a1 1 0 0 1 1.4 0l.4.4a1 1 0 0 1 0 1.4L4.4 9.4Z M7.4 2.8l1.8 1.8" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 interface TurnProps {
   readonly turn: TurnView
   readonly opened: ReadonlySet<string>
   readonly onToggle: (key: string) => void
   readonly onAnswer: Answer
+  readonly canEdit: boolean
+  readonly showsRegenerate: boolean
+  readonly canRegenerate: boolean
+  readonly onEdit: Rewrite
+  readonly onRegenerate: Rewrite
 }
 
-const Turn = memo(function Turn({ turn, opened, onToggle, onAnswer }: TurnProps) {
-  const { end } = turn
+const Turn = memo(function Turn({ turn, opened, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, onEdit, onRegenerate }: TurnProps) {
+  const { end, rowId, request } = turn
   return (
     <article className="turn">
       {turn.time !== null && <p className="when">{turn.time}</p>}
-      {turn.request !== null && <p className="request" data-find={fieldId(turn.key, 'request')}>{turn.request}<CopyButton text={turn.request} name="Copy request" /></p>}
+      {request !== null && (
+        <p className="request" data-find={fieldId(turn.key, 'request')}>
+          {request}
+          <span className="actions">
+            <CopyButton text={request} name="Copy request" />
+            {rowId !== null && <button type="button" className="copy edit" aria-label="Edit message" disabled={!canEdit} onClick={() => onEdit(rowId, request)}><Pencil /></button>}
+          </span>
+        </p>
+      )}
       <div className="thread">
         {turn.nodes.map(node => (
           <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} elapsed={end.kind === 'at' && end.tone === 'live' && end.nodeKey === node.key ? end.elapsed : null} opened={opened} onToggle={onToggle} onAnswer={onAnswer} />
         ))}
         <End turnKey={turn.key} end={end} />
       </div>
+      {showsRegenerate && rowId !== null && request !== null && (
+        <div className="turn-actions">
+          <button type="button" className="regenerate" disabled={!canRegenerate} onClick={() => onRegenerate(rowId, request)}>Regenerate</button>
+        </div>
+      )}
     </article>
   )
 })
@@ -144,9 +173,14 @@ interface ThreadProps {
   readonly onLoadEarlier: () => void
   readonly onFindClosed: () => void
   readonly onFindScrolled: () => void
+  readonly canEdit: boolean
+  readonly regenerateTurnKey: string | null
+  readonly canRegenerate: boolean
+  readonly onEdit: Rewrite
+  readonly onRegenerate: Rewrite
 }
 
-export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScrolled }: ThreadProps) {
+export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, onEdit, onRegenerate }: ThreadProps) {
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set())
   const [find, setFind] = useState<FindState | null>(null)
   const transcript = useRef<HTMLDivElement>(null)
@@ -250,7 +284,12 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScro
       <div id="transcript" ref={transcript}>
         {view.earlier === 'more' && <button className="earlier" onClick={onLoadEarlier}>Show earlier turns</button>}
         {view.earlier === 'loading' && <p className="earlier">Loading earlier turns</p>}
-        {view.turns.map(turn => <Turn key={turn.key} turn={turn} opened={opened} onToggle={onToggle} onAnswer={onAnswer} />)}
+        {view.turns.map(turn => (
+          <Turn
+            key={turn.key} turn={turn} opened={opened} onToggle={onToggle} onAnswer={onAnswer}
+            canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} onEdit={onEdit} onRegenerate={onRegenerate}
+          />
+        ))}
         {view.pending.map(message => (
           <article key={message.key} className="turn pending">
             <p className="request" data-find={fieldId(message.key, 'text')}>{message.text}</p>

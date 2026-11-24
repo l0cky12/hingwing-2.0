@@ -39,6 +39,7 @@ const STATES = {
   approval: page => page.getByRole('group', { name: 'Run this command?' }).getByRole('button', { name: 'Run once', exact: true, disabled: false }),
   settled: page => page.locator('[data-end="done"]'),
   offline: page => page.getByRole('status', { name: 'Connection' }),
+  regenerate: page => page.getByRole('button', { name: 'Regenerate', exact: true, disabled: false }),
   'slash-menu': page => page.getByRole('listbox', { name: 'Commands and skills' }),
   bots: page => page.locator('aside[data-state="listed"]'),
   unstarted: page => page.locator('main#scroll:empty')
@@ -46,11 +47,14 @@ const STATES = {
 
 const rendered = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 
+const nth = (ctx, role, name, n) => ctx.page.getByRole(role, { name, exact: true }).nth(Number(n) - 1)
+
 const STEPS = {
   wait: { arity: 1, run: async (ctx, state) => waitFor(ctx, state) },
   see: { arity: 1, run: async (ctx, text) => ctx.page.getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout: ctx.timeout }) },
   said: { arity: 1, run: async (ctx, text) => ctx.page.locator('#scroll').getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout: ctx.timeout }) },
   click: { arity: 2, run: async (ctx, role, name) => ctx.page.getByRole(role, { name, exact: true }).click({ timeout: ctx.timeout }) },
+  'click-at': { arity: 3, run: async (ctx, role, name, n) => nth(ctx, role, name, n).click({ timeout: ctx.timeout }) },
   type: { arity: 2, run: async (ctx, label, text) => ctx.page.getByLabel(label, { exact: true }).fill(expand(ctx, text), { timeout: ctx.timeout }) },
   press: { arity: 1, run: async (ctx, key) => ctx.page.keyboard.press(key) },
   gone: { arity: 2, run: async (ctx, role, name) => waitGone(ctx, role, name) },
@@ -103,6 +107,12 @@ const STEPS = {
       const fitsInView = m.rowBottom - m.rowTop <= m.viewBottom - m.viewTop
       if (m.rowBottom > m.viewBottom + 0.5 || m.rowBottom < m.viewTop || (fitsInView && m.rowTop < m.viewTop - 0.5)) throw new Error('the last row of the thread is not in view')
       if (m.viewBottom > m.footerTop + 0.5) throw new Error('the composer covers the thread')
+    }
+  },
+  'disabled-at': {
+    arity: 3,
+    run: async (ctx, role, name, n) => {
+      if (!(await nth(ctx, role, name, n).isDisabled({ timeout: ctx.timeout }))) throw new Error(`${role} "${name}" number ${n} is enabled`)
     }
   },
   disabled: {

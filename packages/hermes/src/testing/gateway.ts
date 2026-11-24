@@ -476,7 +476,17 @@ export class ScriptedGateway {
     }
     this.step++
     if (step.error !== undefined) throw new Refused(step.error.message, step.error)
+    if (method === 'session.mutate') this.publishReceipt()
     return step.reply
+  }
+
+  /**
+   * A committed mutation publishes its receipt as `session.updated` before the reply goes out
+   * (gateway/session_mutations.py:347-352, as `commitModel` does), so the steps after a `session.mutate`
+   * step up to the next awaited call play now. Played after the reply they would race the client's next call.
+   */
+  private publishReceipt(): void {
+    for (let next = this.fixture.steps[this.step]; next !== undefined && !('await' in next); next = this.fixture.steps[this.step]) this.play(next)
   }
 
   /**

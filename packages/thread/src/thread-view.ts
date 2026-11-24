@@ -32,6 +32,8 @@ export interface TurnView {
   /** The quiet line above the request: "Today 14:05". null draws nothing. Never the empty string. */
   readonly time: string | null
   readonly request: string | null
+  /** The stored row id of the request, the address an edit or a regenerate cuts before. null for a turn with no request, and for a running turn's until it settles. */
+  readonly rowId: number | null
   /** Top to bottom along the thread. */
   readonly nodes: readonly ThreadNode[]
   readonly end: ThreadEnd
@@ -201,7 +203,7 @@ function turnView(turn: Turn, time: string | null, live: boolean, end: (nodes: r
         return { kind: 'notice', key, ...noticeWords(item) }
     }
   })
-  return { key: turn.id, time, request: turn.request?.text ?? null, nodes, end: end(nodes) }
+  return { key: turn.id, time, request: turn.request?.text ?? null, rowId: turn.request?.rowId ?? null, nodes, end: end(nodes) }
 }
 
 interface Placed<I extends Item = Item> {

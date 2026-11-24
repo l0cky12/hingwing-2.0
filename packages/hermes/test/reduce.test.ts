@@ -35,8 +35,8 @@ const toolStarted = (id: string): SessionEvent => ({ type: 'tool.started', id: t
 const toolFinished = (id: string): SessionEvent =>
   ({ type: 'tool.finished', id: toolId(id), name: 'terminal', args: null, durationS: 2, diffs: [], result: OUTPUT, image: null })
 const promptOpened = (id: string, gen = 1): SessionEvent => ({ type: 'prompt.opened', id: promptId(id), generation: generation(gen), ask: APPROVAL })
-const ended = (outcome: Outcome, finalText: string | null = null, rows: readonly number[] = []): SessionEvent =>
-  ({ type: 'turn.ended', outcome, finalText, rows })
+const ended = (outcome: Outcome, finalText: string | null = null, rows: readonly number[] = [], userRow: number | null = null): SessionEvent =>
+  ({ type: 'turn.ended', outcome, finalText, rows, userRow })
 
 function snapshot(over: Partial<Snapshot> = {}): Snapshot {
   return {
@@ -58,7 +58,7 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
 }
 
 function storedTurn(id: string, rows: readonly number[]): SettledTurn {
-  return { id: turnId(id), request: { text: `request ${id}`, inputId: null }, items: [{ kind: 'text', markdown: `answer ${id}`, sealed: true }], began: null, outcome: COMPLETE, rows }
+  return { id: turnId(id), request: { text: `request ${id}`, inputId: null, rowId: rows[0] ?? null }, items: [{ kind: 'text', markdown: `answer ${id}`, sealed: true }], began: null, outcome: COMPLETE, rows }
 }
 
 const feed = (state: Tracked, ...inputs: SessionInput[]): Tracked => inputs.reduce(reduce, state)
@@ -144,7 +144,7 @@ describe('the fold', () => {
     expect(state.content.run).toEqual({ state: 'idle' })
     expect(state.content.history).toEqual([{
       id: 't1',
-      request: { text: 'Tidy the notes', inputId: null },
+      request: { text: 'Tidy the notes', inputId: null, rowId: null },
       began: null,
       items: [
         { kind: 'tool', id: 'a', name: 'terminal', args: { command: 'a' }, status: { s: 'cut' } },
@@ -174,7 +174,7 @@ describe('the fold', () => {
       state: 'running',
       generation: 2,
       stop: 'none',
-      turn: { id: 't2', request: { text: 'Next errand', inputId: null }, began: null, items: [], announced: null }
+      turn: { id: 't2', request: { text: 'Next errand', inputId: null, rowId: null }, began: null, items: [], announced: null }
     })
   })
 
@@ -250,7 +250,7 @@ describe('attached', () => {
     expect(state.content.run).toEqual({ state: 'idle' })
     expect(state.content.history).toEqual([{
       id: 't1',
-      request: { text: 'Tidy the notes', inputId: null },
+      request: { text: 'Tidy the notes', inputId: null, rowId: null },
       began: null,
       items: [{ kind: 'text', markdown: 'Hello world', sealed: true }],
       outcome: COMPLETE,
@@ -324,7 +324,7 @@ describe('attached', () => {
       }
     )
     expect(state.content.history).toEqual([storedTurn('h1', [1, 2])])
-    expect(state.content.run).toMatchObject({ state: 'running', generation: 3, stop: 'none', turn: { request: { text: 'Fix the build', inputId: null } } })
+    expect(state.content.run).toMatchObject({ state: 'running', generation: 3, stop: 'none', turn: { request: { text: 'Fix the build', inputId: null, rowId: null } } })
     expect(openItems(state)).toEqual([
       tool,
       { kind: 'prompt', id: 'p1', generation: 3, ask: APPROVAL, state: { s: 'waiting', error: null } },
@@ -345,7 +345,7 @@ describe('attached', () => {
     expect(state.content.run).toEqual({ state: 'idle' })
     expect(state.content.history).toMatchObject([
       { id: 'h1', outcome: COMPLETE },
-      { request: { text: 'Fix the build', inputId: null }, items: [], outcome: { kind: 'lost' } }
+      { request: { text: 'Fix the build', inputId: null, rowId: null }, items: [], outcome: { kind: 'lost' } }
     ])
   })
 
@@ -720,5 +720,43 @@ describe('modelViewOf', () => {
   it('matches a model with no provider to an option of any provider', () => {
     expect(sameModel({ id: fast.id, provider: null }, fast)).toBe(true)
     expect(sameModel({ id: fast.id, provider: 'other' }, fast)).toBe(false)
+  })
+})
+
+describe('rewinding', () => {
+  const held = () => feed(
+    emptyTracked('s1' as SessionId), { in: 'attach' },
+    { in: 'attached', attempt: 1, snapshot: snapshot({ history: { turns: [storedTurn('a', [1, 2]), storedTurn('b', [3, 4]), storedTurn('c', [5, 6])], unfinished: null, older: null } }), replay: null }
+  )
+  const rewound = (state: Tracked, rowId: number) => reduce(state, { in: 'local', action: { did: 'rewound', rowId } })
+
+  it('keeps only the turns before the one whose request sits at the row', () => {
+    expect(rewound(held(), 3).content.history.map(turn => turn.id)).toEqual(['a'])
+    expect(rewound(held(), 1).content.history).toEqual([])
+    expect(rewound(held(), 5).content.history.map(turn => turn.id)).toEqual(['a', 'b'])
+  })
+
+  it('cuts on a rewind receipt from the stream, so a cut made elsewhere or replayed after a drop shows too', () => {
+    const cut = reduce(held(), event(9, { type: 'meta', revision: 2, cutBefore: 3 }, null))
+    expect(cut.content.history.map(turn => turn.id)).toEqual(['a'])
+    expect(cut.fence.revision).toBe(2)
+    expect(reduce(cut, event(10, { type: 'meta', cutBefore: 3 }, null)).content).toBe(cut.content)
+  })
+
+  it('does nothing for a row no turn opens', () => {
+    const before = held()
+    expect(rewound(before, 4)).toBe(before)
+    expect(rewound(before, 99)).toBe(before)
+  })
+
+  it('learns the row of a request that settled live from the completion receipt', () => {
+    const state = feed(live(), event(1, started('t1')), event(2, ended(COMPLETE, 'Done', [7, 8], 7)))
+    expect(state.content.history[0]?.request?.rowId).toBe(7)
+    expect(rewound(state, 7).content.history).toEqual([])
+  })
+
+  it('leaves the row unknown when the receipt names none', () => {
+    const state = feed(live(), event(1, started('t1')), event(2, ended(COMPLETE, 'Done', [7, 8])))
+    expect(state.content.history[0]?.request?.rowId).toBeNull()
   })
 })

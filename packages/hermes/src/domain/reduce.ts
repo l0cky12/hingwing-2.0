@@ -33,7 +33,7 @@ export type SessionEvent =
   | { readonly type: 'prompt.opened'; readonly id: PromptId; readonly generation: Generation; readonly ask: Ask }
   | { readonly type: 'prompt.settled'; readonly id: PromptId }
   | { readonly type: 'prompts.cancelled'; readonly ids: readonly PromptId[] }
-  | { readonly type: 'turn.ended'; readonly outcome: Outcome; readonly finalText: string | null; readonly rows: readonly number[] }
+  | { readonly type: 'turn.ended'; readonly outcome: Outcome; readonly finalText: string | null; readonly rows: readonly number[]; readonly userRow: number | null }
   | { readonly type: 'notice'; readonly tone: 'error' | 'info'; readonly text: string }
   | {
       readonly type: 'meta'
@@ -44,6 +44,8 @@ export type SessionEvent =
       readonly pick?: PickOutcome
       /** The session's generation now, which a policy change such as a model switch moves without a turn. */
       readonly generation?: Generation
+      /** Hermes cut the chat before this stored row, here or in another client. */
+      readonly cutBefore?: number
     }
 
 /** What became of a model pick, from Hermes's receipt. `settled`: a switch committed or a held pick was dropped. */
@@ -171,6 +173,8 @@ export type LocalAction =
   | { readonly did: 'answer.resolved'; readonly promptId: PromptId; readonly byUs: boolean }
   | { readonly did: 'answer.failed'; readonly promptId: PromptId; readonly message: string }
   | { readonly did: 'earlier.requested' }
+  /** Hermes cut the chat before this stored row. The turn that row opens and every later turn are gone. */
+  | { readonly did: 'rewound'; readonly rowId: number }
   | { readonly did: 'model.deferred'; readonly model: ModelRef; readonly during: Generation }
 
 /** Bookkeeping the views never need. Kept beside the content so one reducer guards both. */
@@ -391,7 +395,7 @@ function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
     })
   }
   const { run } = next.content
-  if (run.state === 'running' && !(snapshot.running && snapshot.generation === run.generation)) next = settle(next, LOST, null, [])
+  if (run.state === 'running' && !(snapshot.running && snapshot.generation === run.generation)) next = settle(next, LOST, null, [], null)
   if (snapshot.running && next.content.run.state === 'idle') {
     next = openRun(next, snapshot.generation, runTurnId(snapshot.generation), startedRequest(snapshot.queue), null)
   }
@@ -407,7 +411,7 @@ function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
 
 function startedRequest(queue: readonly Admission[]): Request | null {
   const started = queue.find(row => row.status === 'started')
-  return started === undefined ? null : { text: started.text, inputId: started.inputId }
+  return started === undefined ? null : { text: started.text, inputId: started.inputId, rowId: null }
 }
 
 function admission(state: Tracked, row: Pick<Admission, 'inputId' | 'admissionId' | 'status'>): Tracked {
@@ -429,7 +433,7 @@ function admission(state: Tracked, row: Pick<Admission, 'inputId' | 'admissionId
       if (run.state !== 'running') return remembered
       const { request } = run.turn
       if (request !== null && request.inputId !== null && request.inputId !== row.inputId) return remembered
-      const claimed = editTurn(state, turn => ({ ...turn, request: { text: request?.text ?? entry.text, inputId: entry.inputId } }))
+      const claimed = editTurn(state, turn => ({ ...turn, request: { text: request?.text ?? entry.text, inputId: entry.inputId, rowId: null } }))
       return dropEntry(claimed, row.inputId)
     }
     default:
@@ -504,6 +508,8 @@ function act(state: Tracked, action: LocalAction): Tracked {
     case 'answer.failed':
       return editPrompt(state, action.promptId, prompt =>
         prompt.state.s === 'sending' ? { ...prompt, state: { s: 'waiting', error: action.message } } : prompt)
+    case 'rewound':
+      return cutBefore(state, action.rowId)
     case 'earlier.requested':
       return content.earlier === 'more' ? { ...state, content: { ...content, earlier: 'loading' } } : state
     case 'model.deferred': {
@@ -530,10 +536,10 @@ function fold(state: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | 's
       const { run } = state.content
       if (stamp.generation === null || (event.turnId !== null && holdsTurn(state.content, event.turnId))) return state
       if (run.state === 'running' && stamp.generation <= run.generation) return state
-      const settled = settle(state, LOST, null, [])
+      const settled = settle(state, LOST, null, [], null)
       const claimed = claimEntry(settled, event.admissionId, event.requestText)
       const request = claimed !== null
-        ? { text: claimed.text, inputId: claimed.inputId }
+        ? { text: claimed.text, inputId: claimed.inputId, rowId: null }
         : requestOf(event.requestText)
       return openRun(
         claimed === null ? settled : dropEntry(settled, claimed.inputId),
@@ -597,7 +603,7 @@ function fold(state: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | 's
     case 'turn.ended':
       // A queued message that is cancelled completes with no generation on its stamp
       // (gateway/session_authority.py:886). That is not the end of the turn running ahead of it.
-      return stamp.generation === null ? state : settle(state, event.outcome, event.finalText, event.rows)
+      return stamp.generation === null ? state : settle(state, event.outcome, event.finalText, event.rows, event.userRow)
     case 'notice':
       return editTurn(ensureRun(state, stamp.generation, seenAt), turn =>
         pushItem(turn, { kind: 'notice', what: 'said', tone: event.tone, text: event.text }))
@@ -609,11 +615,18 @@ function fold(state: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | 's
       const revised: Tracked = event.revision === undefined
         ? titled
         : { ...titled, fence: patch(titled.fence, { revision: Math.max(titled.fence.revision, event.revision) }) }
-      return (event.queue ?? []).reduce(admission, revised)
+      const cut: Tracked = event.cutBefore === undefined ? revised : cutBefore(revised, event.cutBefore)
+      return (event.queue ?? []).reduce(admission, cut)
     }
     default:
       return unreachable(event)
   }
+}
+
+function cutBefore(state: Tracked, rowId: number): Tracked {
+  const { content } = state
+  const at = content.history.findIndex(turn => turn.request?.rowId === rowId)
+  return at < 0 ? state : { ...state, content: { ...content, history: content.history.slice(0, at) } }
 }
 
 function openRun(state: Tracked, generation: Generation, id: TurnId, request: Request | null, began: Began | null): Tracked {
@@ -634,7 +647,7 @@ function runTurnId(generation: Generation): TurnId {
 }
 
 function requestOf(text: string | null): Request | null {
-  return text === null ? null : { text, inputId: null }
+  return text === null ? null : { text, inputId: null, rowId: null }
 }
 
 function holdsTurn(content: SessionContent, id: TurnId): boolean {
@@ -657,11 +670,13 @@ function claimEntry(state: Tracked, admissionId: string | null, requestText: str
   return only !== undefined && sending.length === 1 && (requestText === null || requestText === only.text) ? only : null
 }
 
-function settle(state: Tracked, outcome: Outcome, finalText: string | null, rows: readonly number[]): Tracked {
+function settle(state: Tracked, outcome: Outcome, finalText: string | null, rows: readonly number[], userRow: number | null): Tracked {
   const { content, fence } = state
   if (content.run.state !== 'running') return state
   const { id, request, began, items } = content.run.turn
-  const turn: SettledTurn = { id, request, began, items: withFinalText(items, finalText).map(settledItem), outcome, rows }
+  const turn: SettledTurn = {
+    id, request: request === null ? null : { ...request, rowId: userRow ?? request.rowId }, began, items: withFinalText(items, finalText).map(settledItem), outcome, rows
+  }
   return {
     ...state,
     content: { ...content, history: [...content.history, turn], run: IDLE },

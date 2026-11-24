@@ -277,6 +277,7 @@ export function openHermes(options: HermesOptions): Hermes {
       const line = slashLineOf(text, slash.get())
       return line === null ? showing(await actor.send(text)) : runSlash(actor, line)
     },
+    rewind: (actor, { rowId, text }) => actor.rewind(rowId, text),
     stop: actor => actor.stop(),
     answer: (actor, { promptId, reply }) => actor.answer(promptId, reply),
     discard: (actor, { inputId }) => actor.discard(inputId),

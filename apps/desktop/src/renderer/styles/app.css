@@ -220,8 +220,18 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 }
 :hover > .copy, :has(:focus-visible) > .copy, .copy.shown { opacity: 1; }
 .step > .copy { top: 4px; }
-.request > .copy { right: auto; left: calc(100% + 8px); }
-.request > .copy::before { content: ""; position: absolute; right: 100%; top: 0; bottom: 0; width: 9px; }
+.request > .actions { position: absolute; left: calc(100% + 8px); top: 2px; display: flex; gap: 6px; }
+.request > .actions::before { content: ""; position: absolute; right: 100%; top: 0; bottom: 0; width: 9px; }
+.actions > .copy { position: static; }
+.request:hover > .actions > .copy, .request:has(:focus-visible) > .actions > .copy { opacity: 1; }
+.copy.edit { display: grid; place-items: center; padding: 1px 8px; }
+.copy.edit svg { height: 18px; }
+.copy.edit:disabled { opacity: 0; color: var(--graphite); }
+.request:hover > .actions > .copy.edit:disabled { opacity: .45; }
+.turn-actions { margin: 10px 0 0 var(--col); }
+.regenerate { padding: 2px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); color: var(--ink); font: 500 13px/1.5 var(--sans); }
+.regenerate:hover:not(:disabled) { background: var(--paper); }
+.regenerate:disabled { color: var(--graphite); }
 .chip > .copy { position: static; padding: 0 6px; border: 0; background: none; color: var(--graphite); font: inherit; opacity: 1; }
 .chip > .copy:hover, .chip > .copy.shown { color: var(--ink); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -242,6 +252,15 @@ textarea::placeholder { color: var(--graphite); }
 textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
 .composer form button { height: var(--box-one); padding: 0 20px; border: 0; border-radius: 8px; background: var(--ink); color: var(--sheet); font-weight: 500; }
 .composer form button.stop { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.editing { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; max-width: 760px; margin: 0 auto 8px; padding: 0 28px 0 calc(28px + var(--col)); font: 500 13px/1.4 var(--sans); color: var(--graphite); }
+.editing button { padding: 0; border: 0; background: none; color: var(--signal); font: inherit; text-decoration: underline; }
+.remove { width: min(360px, calc(100% - 32px)); padding: 20px 22px 18px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); color: var(--ink); box-shadow: 0 12px 32px rgb(31 42 38 / 22%); }
+.remove::backdrop { background: rgb(31 42 38 / 38%); }
+.remove p { margin: 0; line-height: 1.5; }
+.remove .remove-count { margin-bottom: 4px; font-weight: 700; }
+.remove-choices { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.remove-choices button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--ink); background: transparent; color: var(--ink); }
+.remove-choices button.primary { background: var(--ink); color: var(--sheet); }
 .composer .refusal { max-width: 760px; margin: 8px auto 0; padding: 0 28px 0 calc(28px + var(--col)); }
 .slash-anchor {
   position: absolute; bottom: calc(100% - 6px); left: 50%; transform: translateX(-50%); z-index: 2;
@@ -335,7 +354,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .bar { flex-wrap: wrap; gap: 8px; padding: 10px 16px; }
   .banner { padding: 9px 16px; }
   #transcript { padding-left: 16px; padding-right: 16px; }
-  .composer form, .model, .slash-anchor, .slash-output { padding: 0 16px 0 calc(16px + var(--col)); }
+  .composer form, .model, .slash-anchor, .slash-output, .editing { padding: 0 16px 0 calc(16px + var(--col)); }
   .model .list { left: calc(4px + var(--col)); }
   .setup { padding: 36px 16px 40px; }
   textarea { min-width: 0; }
@@ -398,6 +417,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 
   .step.open > .record:not(.bare), .prose pre, .approval pre { border: 1px solid CanvasText; }
   .composer button { border: 1px solid ButtonText; }
+  .editing button, .remove-choices button { border: 1px solid ButtonText; }
+  .remove { border: 2px solid CanvasText; }
   textarea:focus { outline: 2px solid Highlight; outline-offset: 2px; }
 }
 
