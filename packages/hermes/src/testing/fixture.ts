@@ -25,6 +25,11 @@ export interface Fixture {
     readonly list: unknown
     /** The session's stored display rows before the story starts. */
     readonly stored: readonly unknown[]
+    /**
+     * The session's pending list before the story starts, as an attach reply's `pending` carries it:
+     * what a chat holds when it is opened after Hermes restarted. Absent: nothing is pending.
+     */
+    readonly pending?: readonly unknown[]
     readonly catalog?: unknown
     /**
      * The canned `model.options` reply, whose `model` and `provider` are the session's model at the
@@ -223,6 +228,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (typeof sessionId !== 'string' || sessionId === '') return '"sessionId" must be a session id'
   if (!('describe' in value) || !('list' in value)) return 'the header needs "describe" and "list"'
   if (!Array.isArray(stored)) return '"stored" must be an array of rows'
+  const { pending } = value
+  if (pending !== undefined && !Array.isArray(pending)) return '"pending" must be an array of pending rows'
   const { models } = value
   if (models !== undefined && !(isObject(models) && Array.isArray(models.providers))) return '"models" must be a model.options reply with "providers"'
   const { guarded, branches, tree } = value
@@ -273,6 +280,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   return {
     fixture, hermes, source, sessionId: sessionId as SessionId, describe: value.describe, list: value.list, stored,
+    ...(pending === undefined ? {} : { pending }),
     ...('catalog' in value ? { catalog: value.catalog } : {}),
     ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] }),
     ...(usage === undefined ? {} : { usage }),

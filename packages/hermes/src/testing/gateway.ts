@@ -131,6 +131,19 @@ const dispatchable: Check = (_gateway, _socket, params) =>
     : 'invalid_params'
 const runningGeneration: Check = (gateway, _socket, params) =>
   isInt(params.execution_generation) && gateway.view.running && gateway.view.generation === params.execution_generation ? null : 'stale_generation'
+/** gateway/session_busy_controls.py:182-186: the closed key set, words that are not blank, and a whole-number generation. */
+const correction: Check = (_gateway, _socket, params) =>
+  Object.keys(params).every(key => ['session_id', 'profile', 'text', 'execution_generation'].includes(key)) && isText(params.text) && params.text.trim() !== '' && isInt(params.execution_generation)
+    ? null
+    : 'invalid_params'
+const pendingRow = (gateway: ScriptedGateway, params: Obj) => gateway.view.pending.filter(isObject).find(row => row.admission_id === params.admission_id)
+/** gateway/session_authority.py:817-821: a receipt is read only for a row of this session. The story knows the rows of its latest pending list. */
+const listed: Check = (gateway, _socket, params) => (pendingRow(gateway, params) === undefined ? 'not_found' : null)
+/** persistence/sqlite/authority/_admission_store.py:418-419: only an unknown row, and only by the generation it ran as. */
+const lostGeneration: Check = (gateway, _socket, params) => {
+  const row = pendingRow(gateway, params)
+  return row?.status === 'unknown' && row.execution_generation === params.execution_generation ? null : 'stale_generation'
+}
 
 const submissionId: Check = (_gateway, _socket, params) => (isText(params.submission_id || params.input_id) ? null : 'invalid_params')
 const stagedOnly: Check = (gateway, _socket, params, routed) => (gateway.staged(params.attachments, routed) ? null : 'invalid_params')
@@ -204,7 +217,18 @@ const STORY_CHECKS: Readonly<Record<string, readonly Check[]>> = {
   'clarify.lock': [lockable],
   'connection.respond': [ownCard],
   /** gateway/session_commands.py:422-425 */
-  'command.dispatch': [known, dispatchable]
+  'command.dispatch': [known, dispatchable],
+  /** gateway/session_busy_controls.py:181-200 */
+  'session.steer': [correction, known, runningGeneration],
+  'session.redirect': [correction, known, runningGeneration],
+  /** gateway/session_authority.py:831-841 */
+  'prompt.cancel': [known, listed],
+  /** gateway/session_queued_controls.py:128-131 */
+  'prompt.steer_queued': [known, listed],
+  /** gateway/session_queued_controls.py:213-220: the edit is a submission, read before the row it replaces. */
+  'prompt.replace_queued': [attached, submissionId, listed],
+  /** gateway/session_authority.py:907-914 */
+  'prompt.resolve_unknown': [known, listed, lostGeneration]
 }
 const ANY_STORY_CALL: readonly Check[] = [known]
 
@@ -370,6 +394,8 @@ function pathItems(gateway: ScriptedGateway, params: Obj, authorize: () => void)
 
 /** `_YOLO_WORDS` in gateway/session_busy_controls.py:134 */
 const SWITCH_WORDS: Readonly<Record<string, string>> = { 1: '1', on: '1', true: '1', 0: '0', off: '0', false: '0' }
+/** gateway/session_busy_controls.py:45-46 */
+const BUSY_MODES: readonly unknown[] = ['interrupt', 'steer', 'queue']
 
 /** gateway/session_controls.py:386-392 */
 const unknownMethod = (method: string) => new Refused('unknown_method', { code: -32601, message: `unknown method: ${method}`, data: { reason: 'unknown_method' } })
@@ -716,7 +742,7 @@ export class ScriptedGateway {
     this.drop = options.drop === null ? { at: 'spent' } : { at: 'armed', ...options.drop }
     const { models } = fixture.header
     this.view = {
-      running: false, generation: 0, revision: 0, title: '', pending: [], prompts: new Map(), requests: new Map(), connection: null,
+      running: false, generation: 0, revision: 0, title: '', pending: fixture.header.pending ?? [], prompts: new Map(), requests: new Map(), connection: null,
       model: modelOf(isObject(models) ? models : undefined), deferred: null, switchesCommitted: 0, branchesCommitted: 0, turnsEnded: 0, yolo: fixture.header.yolo ?? null
     }
     this.epoch = fixture.steps.map(epochOf).find(isText) ?? 'fixture-epoch'
@@ -1235,8 +1261,8 @@ export class ScriptedGateway {
     if (!isText(key) || !(key in held) || Object.keys(params).some(name => !allowed.includes(name))) throw new Refused('invalid_params')
     this.authorize(params, routed)
     if (write) {
-      const word = SWITCH_WORDS[String(params.value).trim().toLowerCase()]
-      if (word === undefined) throw new Refused('invalid_params')
+      const word = key === 'busy' ? BUSY_MODES.find(mode => mode === params.value) : SWITCH_WORDS[String(params.value).trim().toLowerCase()]
+      if (!isText(word)) throw new Refused('invalid_params')
       held[key] = word
     }
     return { key, value: held[key], scope: 'session' }

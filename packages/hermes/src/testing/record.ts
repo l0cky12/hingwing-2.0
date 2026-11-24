@@ -69,6 +69,7 @@ function attachReply(header: Header, reply: Obj): readonly Found[] {
   const rows = Array.isArray(reply.display_messages) ? reply.display_messages : undefined
   if (header.stored !== undefined) return rows === undefined ? NOTHING : [{ stored: rows }]
   header.stored = rows ?? []
+  if (Array.isArray(reply.pending) && reply.pending.length > 0) header.pending = reply.pending
   return NOTHING
 }
 
