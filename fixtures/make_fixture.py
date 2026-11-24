@@ -28,6 +28,14 @@ The stories are in ``STORIES``:
   no turn running, says a ``/goal`` verdict. The story turns the chat's reasoning display on first
   and the header keeps the ``config.get`` answer for it as ``controls`` and the tool image's bytes as
   ``media``.
+- ``asks`` writes fixtures/asks.jsonl: a turn in which Hermes asks its viewers for things outside
+  the turn's own prompts, then one more question while no turn runs. In order: a ``sudo`` password,
+  answered (the recorded result is masked); a skill's ``secret``, skipped; a ``vault.code``, answered
+  by a second viewer, so this one only hears ``request.cancel``; a two-question ``clarify`` batch,
+  answered by two ``clarify.lock`` calls; the ``manage_connections`` card, whose one target is
+  skipped with ``connection.respond`` and which then settles; a ``theme.pick`` window request, which
+  the story declines as a client with a window on the chat and no picker does; and, after the turn,
+  a plugin command's choice.
 
 The script runs the canonical gateway in-process, the way Hermes's own
 tests/gateway/test_authority_complete_persisted_turn.py does: a real ``SessionAuthority`` over a
@@ -84,6 +92,28 @@ Real in ``says``, from Hermes's own emitters on the same turn:
 Scripted in ``says`` as well: the reasoning text, the MoA reference answers, and the result of
 ``vision_analyze``, which needs a vision provider. A step's ``result`` replaces the tool run.
 
+Real in ``asks``: every request frame, every ``request.cancel``, and the ``connection.request`` and
+``connection.update`` events. Each request goes out through ``gateway/session_server_requests._ask``
+to the story's socket, which answers it with a JSON-RPC response frame through
+``AuthorityConnection.dispatch`` (``_resolve_response``), with ``clarify.lock`` or with
+``connection.respond``, as a viewer does. What asks is the callback the turn's own scope installs:
+- ``sudo``: ``sudo_prompt_scope``, then the terminal tool's ``_prompt_for_sudo_password``;
+- ``secret``: ``secret_prompt_scope``, then the skills tool's ``_capture_required_environment_variables``;
+- ``vault.code``: ``vault_prompt_scope``, then the vault's own code-prompt callback. The second viewer is
+  a second ``AuthorityConnection`` attached to the session;
+- the ``clarify`` batch: the real ``clarify`` tool over ``ask_clarify_batch``;
+- the card: a ``ConnectionOperation`` opened in ``tools/connectors/live`` and published by the
+  ``connection_callback`` that ``local_desktop_ui.wire`` installs. ``connection.respond`` runs
+  ``tools.connectors.run.respond``, and the operation's own change hook publishes each update;
+- ``theme.pick``: the ``theme_callback`` that ``local_desktop_ui.wire`` installs;
+- the plugin choice: ``hermes_cli.plugin_choices.ask_choice`` under ``viewer_choices``, the asker
+  ``command.dispatch`` binds around a plugin command's handler.
+
+Scripted in ``asks``: the tool around each request. No ``sudo`` runs, no skill is loaded, no site is
+opened and no connector directory is read: each step's tool result is written by the story, except
+the ``clarify`` tool's, which is real. The plugin command itself is not dispatched, so the fixture
+has no ``command.dispatch`` call held open around its choice. The typed values are the story's.
+
 Not emitted, because only a provider produces them: ``thinking.delta`` (spinner text while a request
 is in flight) and ``session.usage`` (token counts).
 """
@@ -134,6 +164,8 @@ class Story:
     after: object = None
     # Files under WORK that a tool names as its image. The header's ``media`` carries their bytes, so a replay draws them.
     shows: tuple = ()
+    # What the story's viewer does with each request, in the order Hermes asks: (request method or event type, act).
+    asks: tuple = ()
 
 
 NOTES = "# Todo\n\n- [ ] sketch the chat view\n- [ ] wire the gateway socket\n- [ ] review screenshots\n"
@@ -415,8 +447,150 @@ SAYS = Story(
     out="says.jsonl", seed=20261124, files={"chart.png": tiny_png(), "scratch/old.txt": "tmp\n"},
     doomed=f"{WORK}/scratch", answer="once", viewer=True, after=goal_verdict, shows=("chart.png",))
 
+SUDO_COMMAND = "sudo apt-get install -y jq"
+BATCH = [{"question": "Which environment should I deploy to?", "choices": ["staging", "production"]},
+         {"question": "Which regions?", "choices": ["eu-west", "us-east", "ap-south"], "multi_select": True}]
+NO_PICKER = {"code": -32601, "message": "Highwing has no part of its window to answer this with."}
+MASKED = "•••"
+
+
+def with_window(turn, agent, ask):
+    """Run *ask* with the window bridges ``TurnRunner`` installs for a local viewer's turn."""
+    from gateway import local_desktop_ui
+    token = local_desktop_ui.wire(turn, agent)
+    try:
+        return ask()
+    finally:
+        local_desktop_ui.release(token)
+
+
+def sudo_password(turn, agent):
+    from gateway.session_sudo_prompt import sudo_prompt_scope
+    from tools.terminal_tool_sudo import _prompt_for_sudo_password
+    with sudo_prompt_scope(turn, agent):
+        typed = _prompt_for_sudo_password(command=SUDO_COMMAND)
+    return json.dumps({"output": "jq is already the newest version (1.7.1-3)." if typed else "sudo: a password is required",
+                       "exit_code": 0 if typed else 1, "error": None, "cwd": WORK})
+
+
+def skill_secret(turn, agent):
+    from gateway.session_secret_prompt import secret_prompt_scope
+    from tools.skills_tool_setup import _capture_required_environment_variables
+    with secret_prompt_scope(turn, agent):
+        captured = _capture_required_environment_variables("gif-search", [
+            {"name": "TENOR_API_KEY", "prompt": "Tenor API key", "help": "https://developers.google.com/tenor"}])
+    return json.dumps({"success": True, "name": "gif-search", "setup_needed": bool(captured["missing_names"]),
+                       "missing_required_environment_variables": captured["missing_names"]})
+
+
+def vault_code(turn, agent):
+    from agent.vault_backends import unlock
+    from gateway.session_vault_prompt import vault_prompt_scope
+    with vault_prompt_scope(turn, agent):
+        code = unlock.get_code_prompt_callback()("example.com", "the 6-digit code from your authenticator app")
+    return json.dumps({"success": bool(code), "url": "https://example.com/account"})
+
+
+def clarify_batch(turn, agent):
+    from gateway.session_clarify_batch import ask_clarify_batch
+    from tools.clarify_tool import clarify_tool
+    return clarify_tool(BATCH, callback=lambda questions: ask_clarify_batch(turn, questions))
+
+
+def connector_card(turn, agent):
+    from tools.connectors import live as open_operations
+    from tools.connectors.operation import ConnectionOperation, Target
+
+    def ask():
+        # ``created_at`` defaults to the clock the module bound at import, before the story's virtual one.
+        operation = ConnectionOperation(session_key=turn._ctx.session_key, created_at=time.time(), targets=[Target(
+            name="github", kind="connector", action="connect", connect_url="https://example.com/connect/github",
+            instructions="Sign in to GitHub in your browser, then come back here.")])
+        open_operations.open(operation)
+        agent.connection_callback(operation.request_payload())
+        while not operation.settled:
+            operation.wake.wait(0.05)
+        return json.dumps(operation.result())
+    return with_window(turn, agent, ask)
+
+
+def theme_picker(turn, agent):
+    return with_window(turn, agent, lambda: json.dumps(agent.theme_callback({"picker": "accent"})))
+
+
+async def plugin_choice(runner, live):
+    from gateway.plugin_command_choice import viewer_choices
+    from hermes_cli.plugin_choices import ask_choice
+    session_id = next(sid for sid, held in runner.session_authority.sessions.items() if held is live)
+
+    def ask():
+        with viewer_choices(live, session_id):
+            return ask_choice("Which notes should /tidy clean up?", ["Today's", "This week's", "All of them"])
+    await asyncio.to_thread(ask)
+
+
+def typed(value):
+    """Answer with a value. The fixture keeps ``MASKED`` in its place."""
+    async def act(viewer, frame):
+        await viewer.answer(frame["id"], {"result": {"value": value}}, {"result": {"value": MASKED}})
+    return act
+
+
+async def skipped(viewer, frame):
+    await viewer.answer(frame["id"], {"result": {"value": ""}})
+
+
+async def declined(viewer, frame):
+    await viewer.answer(frame["id"], {"error": NO_PICKER})
+
+
+async def elsewhere(viewer, frame):
+    """A second viewer of the chat answers first."""
+    other = AuthorityConnection(viewer.authority, SimpleNamespace(write=lambda obj: True), {"user_id": USER, "native_bootstrap": True})
+    await viewer.call(other, "session.resume", {"session_id": viewer.session_id})
+    await other.dispatch({"jsonrpc": "2.0", "id": frame["id"], "result": {"value": "424242"}})
+
+
+def locks(*answers):
+    async def act(viewer, frame):
+        for question, answer in zip(frame["params"]["questions"], answers):
+            CLOCK.tick(900)
+            await viewer.story_call("clarify.lock", {"request_id": frame["id"], "question_id": question["qid"], "answer": answer})
+    return act
+
+
+async def skip_target(viewer, frame):
+    card = frame["params"]["payload"]
+    await viewer.story_call("connection.respond", {
+        "owner": {"type": "session", "session_id": viewer.session_id}, "op_id": card["op_id"],
+        "result": {"targets": [{"name": card["targets"][0]["name"], "status": "skipped"}]}})
+
+
+ASKS = Story(
+    request="Install jq, find me a celebration gif, check my example.com account, then deploy the notes site.",
+    steps=[
+        {"say": "I'll install jq first. That needs your sudo password.",
+         "call": ("terminal", {"command": SUDO_COMMAND}), "during": [sudo_password], "ms": 2400},
+        {"say": "Now the gif. The gif-search skill needs a Tenor key.",
+         "call": ("skill_view", {"name": "gif-search"}), "during": [skill_secret], "ms": 40},
+        {"say": "No key, so I'll skip the gif. Signing in to example.com.",
+         "call": ("browser_navigate", {"url": "https://example.com/account"}), "during": [vault_code], "ms": 1800},
+        {"say": "You're signed in. Before I deploy, two questions.",
+         "call": ("clarify", {"questions": BATCH}), "during": [clarify_batch], "ms": 30},
+        {"say": "Production in two regions. The deploy needs GitHub connected.",
+         "call": ("manage_connections", {"action": "connect", "connectors": ["github"]}), "during": [connector_card], "ms": 60},
+        {"say": "Skipped, so I'll deploy from the local checkout. Offering an accent colour while it runs.",
+         "call": ("set_theme", {"picker": "accent"}), "during": [theme_picker], "ms": 25},
+        {"say": "Done. jq is installed, the gif was skipped for want of a Tenor key, and the notes site is deployed to production.",
+         "call": None},
+    ],
+    out="asks.jsonl", seed=20261125, files={}, doomed=None, answer=None, approves=False, after=plugin_choice,
+    asks=(("sudo", typed("correct horse battery staple")), ("secret", skipped), ("vault.code", elsewhere),
+          ("clarify", locks("production", json.dumps(["eu-west (Recommended)", "us-east"], separators=(",", ":")))), ("connection.request", skip_target),
+          ("theme.pick", declined), ("clarify", locks("This week's"))))
+
 STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN, "images": IMAGES, "preview": PREVIEW,
-           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "says": SAYS}
+           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "says": SAYS, "asks": ASKS}
 NAME = sys.argv[1] if len(sys.argv) > 1 else "errand"
 if NAME not in STORIES:
     sys.exit(f"no story named {NAME!r}; pick one of: {', '.join(STORIES)}")
@@ -579,8 +753,14 @@ class Recorder:
         self.loop = loop
 
     def write(self, obj):
-        if self.recording:
-            self.written.append(wire(obj))
+        if not self.recording:
+            return True
+        self.written.append(wire(obj))
+        if obj.get("method") != "event" and "id" in obj:
+            # A server request is written to the session's sockets and never published, so no observer sees it.
+            CLOCK.tick(4)
+            self.steps.append({"at": CLOCK.now(), "push": wire(obj)})
+            self.loop.call_soon_threadsafe(self.seen.put_nowait, obj)
         return True
 
     def observe(self, frame):
@@ -596,6 +776,13 @@ class Recorder:
         while True:
             frame = await self.seen.get()
             if frame.get("method") == "event" and frame["params"]["type"] == event_type:
+                return frame
+
+    async def asked(self, name):
+        """The next request frame of method *name*, or the next event of that type."""
+        while True:
+            frame = await self.seen.get()
+            if name in (frame.get("method"), frame.get("params", {}).get("type")):
                 return frame
 
 
@@ -674,7 +861,9 @@ def play_turn(turn, db, history, call_ids):
             turn.combined_tool_start_callback(call_id, name, args)
             if "stage" in step:
                 step["stage"]()
-            result = step["result"] if "result" in step else model_tools.handle_function_call(
+            # What the tool asks its viewers while it runs. The last one answers the tool's result.
+            asked = [ask(turn, agent) for ask in step.get("during", [])]
+            result = asked[-1] if asked else step["result"] if "result" in step else model_tools.handle_function_call(
                 name, args, task_id=session_id, tool_call_id=call_id, session_id=session_id)
             CLOCK.tick(step["ms"])
             turn.combined_tool_complete_callback(call_id, name, args, result)
@@ -766,9 +955,23 @@ async def main():
         shown = (await call(socket, "config.get", {"session_id": session_id, "key": "show_reasoning"}))["result"]
         controls[shown["key"]] = shown["value"]
 
+    async def answer(request_id, frame, kept=None):
+        """The viewer's response frame to a server request. It gets no reply. *kept* is what the fixture records of it."""
+        recorder.steps.append({"at": CLOCK.now(), "answer": request_id, **(kept or frame)})
+        await socket.dispatch({"jsonrpc": "2.0", "id": request_id, **frame})
+
+    viewer = SimpleNamespace(authority=authority, session_id=session_id, call=call, story_call=story_call, answer=answer)
+
+    async def attend():
+        for name, act in TALE.asks:
+            frame = wire(await recorder.asked(name))
+            CLOCK.tick(1500)
+            await act(viewer, frame)
+
     recorder.recording = True
-    await story_call("prompt.submit", {"session_id": session_id, "text": REQUEST,
-                                       "input_id": "input_" + uuid.uuid4().hex[:16]})
+    # A viewer that takes the clarify tool's questions as one request says so with each message.
+    await story_call("prompt.submit", {"session_id": session_id, "text": REQUEST, "input_id": "input_" + uuid.uuid4().hex[:16],
+                                       **({"clarify_batch": True} if TALE.asks else {})})
     if TALE.approves:
         try:
             request = await asyncio.wait_for(recorder.push_of("approval.request"), 60)
@@ -796,7 +999,12 @@ async def main():
         recorder.steps.append({"at": CLOCK.now(), "stored": snapshot["display_messages"]})
 
     if not TALE.approves:
+        attending = asyncio.create_task(attend())
         await live.task
+        if TALE.after is not None:
+            CLOCK.tick(600)
+            await TALE.after(runner, live)
+        await attending
         pushes = await stop_recording()
         await record_stored()
     elif TALE.answer is None:
