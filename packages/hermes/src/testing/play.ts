@@ -81,7 +81,8 @@ export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncG
     const command = USER[step.await]?.(sessionId, recorded(step), fixture, fixture.steps.slice(index + 1).find(next => 'await' in next))
     if (command === undefined) throw new Error(`step ${index}: the stand-in user has no command for ${step.await}`)
     asked.add(index)
-    if (command.do === 'rewind') asked.add(fixture.steps.findIndex((next, at) => at > index && 'await' in next))
+    const sendAfter = command.do === 'rewind' ? fixture.steps.findIndex((next, at) => at > index && 'await' in next) : -1
+    if (sendAfter >= 0) asked.add(sendAfter)
     void hermes.run(command).then(outcome => {
       options.answered?.(command, outcome)
       if (!outcome.ok) asked.delete(index)

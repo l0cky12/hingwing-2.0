@@ -112,7 +112,7 @@ function End({ turnKey, end }: { readonly turnKey: string; readonly end: ThreadE
   return <div className={`tip ${END_CLASS[end.kind]}`} role="status" data-end={end.kind}><span className="glyph" />{words}</div>
 }
 
-/** Sends a sent message, by its stored row, back to the composer (`onEdit`) or asks again for its reply (`onRegenerate`). */
+/** Acts on a sent message by its stored row and text: `onEdit` puts it in the composer, `onRegenerate` asks again for its reply. */
 export type Rewrite = (rowId: number, text: string) => void
 
 function Pencil() {

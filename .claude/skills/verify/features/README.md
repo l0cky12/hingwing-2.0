@@ -47,3 +47,4 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Bots sidebar](./bots-sidebar.md) covers the list of Hermes's bots, search, a Hermes that cannot list its bots, the unavailable New bot, and pixel parity of the chat column.
 - [Open a bot](./open-a-bot.md) covers opening a bot's chat from the sidebar, a message running as that bot, returning to the same chat, a bot with no chat yet, and a Hermes that cannot switch bots.
 - [Slash menu](./slash-menu.md) covers the `/` list of commands and skills, narrowing, completion, Escape, and a Hermes without the catalog.
+- [Edit a message](./edit-a-message.md) covers the pencil on a sent message, the editing line and Escape, the dialog that counts the later messages, Remove and send, Regenerate under the last reply, both disabled while a turn runs, and Hermes refusing the cut.

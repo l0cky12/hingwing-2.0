@@ -8,7 +8,7 @@ as a `stored` step, then waits for the `prompt.submit` that follows and plays on
 holds a two second tool step, so a live run can see it running. Its `message.complete` carries the
 `persisted_turn` receipt with `row_ids` and `user_row_id`, and a last `stored` step holds the rows after it.
 
-- `edit` cuts before the first user row (two later turns go) and sends the corrected text.
+- `edit` cuts before the second user row (one later turn goes) and sends the corrected text.
 - `regenerate` cuts before the last user row and sends the same text again.
 - `edit-refused` answers the rewind with Hermes's refusal for a row that is gone (`invalid_params`, field
   `target_message_id`) and has no step after it.
@@ -35,10 +35,14 @@ TURNS = [
     ("Add a line about the deadline under it", "Added \"Due Friday\" under the heading."),
     ("List the folder", "The folder holds `notes.md` and a `scratch` folder."),
 ]
-EDITED = "Rename the heading in notes.md to Plan for Friday"
+EDITED = "Add a line about the Friday deadline under it"
+EDITED_REPLY = "Added \"Due Friday\" under the heading, as a new line."
 REGENERATED_REPLY = "Here is the folder:\n\n- `notes.md`\n- `scratch/`"
-EDITED_REPLY = "I renamed the heading in `notes.md` to \"Plan for Friday\"."
-LISTING = "total 4\n-rw-r--r--  1 liam liam   42 Jan  1  2026 notes.md\ndrwxr-xr-x  2 liam liam   60 Jan  1  2026 scratch"
+APPEND = {"command": "printf '\\n- Due Friday\\n' >> notes.md", "context": "append to notes.md", "said": "I'll add the line to notes.md first.", "output": ""}
+LISTING = {
+    "command": "ls -la", "context": "ls -la", "said": "I'll check the folder first.",
+    "output": "total 4\n-rw-r--r--  1 liam liam   42 Jan  1  2026 notes.md\ndrwxr-xr-x  2 liam liam   60 Jan  1  2026 scratch",
+}
 TOOL_MS = 2000
 
 
@@ -103,7 +107,7 @@ def info(pending_rows, running, generation, revision):
     }
 
 
-def story_for(cut_row, kept_turns, text, reply, slug):
+def story_for(cut_row, kept_turns, text, reply, slug, tool_call):
     story = Story()
     kept = rows_of(kept_turns)
     params, receipt = rewind(story, cut_row, kept, 2 * (len(TURNS) - len(kept_turns)))
@@ -129,19 +133,19 @@ def story_for(cut_row, kept_turns, text, reply, slug):
     story.event("session.info", info([started], True, 2, 1), 2, admission)
     story.event("agent.step", {"iteration": 1}, 2, admission)
 
-    first_words = "I'll check the folder first."
+    first_words = tool_call["said"]
     for index in range(0, len(first_words), 14):
         story.after(30)
         story.event("message.delta", {"text": first_words[index:index + 14], "turn_id": f"{slug}-turn", "segment": 0, "offset": index}, 2, admission)
-    call_id = f"call_{slug}_ls"
-    command = {"command": "ls -la"}
-    tool = {"tool_id": call_id, "name": "terminal", "context": "ls -la", "tool_call_id": call_id, "tool_name": "terminal", "args": command}
+    call_id = f"call_{slug}_terminal"
+    command = {"command": tool_call["command"]}
+    tool = {"tool_id": call_id, "name": "terminal", "context": tool_call["context"], "tool_call_id": call_id, "tool_name": "terminal", "args": command}
     story.after(40)
     story.event("tool.generating", {"name": "terminal"}, 2, admission)
     story.event("message.delta", {"text": None}, 2, admission)
     story.event("tool.start", tool, 2, admission)
     story.after(TOOL_MS)
-    result = json.dumps({"output": LISTING, "exit_code": 0, "error": None, "cwd": "/tmp/hermes-proto-work"})
+    result = json.dumps({"output": tool_call["output"], "exit_code": 0, "error": None, "cwd": "/tmp/hermes-proto-work"})
     story.event("tool.complete", {**tool, "is_error": False, "result": result, "duration_s": TOOL_MS / 1000, "inline_diff": None, "image_path": None}, 2, admission)
     story.event("agent.step", {"iteration": 2}, 2, admission)
     offset = len(first_words)
@@ -170,7 +174,7 @@ def story_for(cut_row, kept_turns, text, reply, slug):
         *kept,
         {"role": "user", "text": text, "timestamp": at, "row_id": row_ids[0]},
         {"role": "assistant", "text": first_words, "timestamp": at + 1, "row_id": row_ids[1]},
-        {"role": "tool", "name": "terminal", "context": "ls -la", "content": result, "tool_call_id": call_id, "timestamp": at + 2, "args": command},
+        {"role": "tool", "name": "terminal", "context": tool_call["context"], "content": result, "tool_call_id": call_id, "timestamp": at + 2, "args": command},
         {"role": "assistant", "text": reply, "timestamp": at + 3, "row_id": row_ids[3]},
     ]})
     return story.steps
@@ -195,6 +199,6 @@ def write(name, steps):
     print(f"wrote {path}: {len(steps)} steps")
 
 
-write("edit", story_for(1, [], EDITED, EDITED_REPLY, "edit"))
-write("regenerate", story_for(5, TURNS[:2], TURNS[2][0], REGENERATED_REPLY, "regenerate"))
-write("edit-refused", refused_story(1))
+write("edit", story_for(3, TURNS[:1], EDITED, EDITED_REPLY, "edit", APPEND))
+write("regenerate", story_for(5, TURNS[:2], TURNS[2][0], REGENERATED_REPLY, "regenerate", LISTING))
+write("edit-refused", refused_story(3))

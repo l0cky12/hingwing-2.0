@@ -32,21 +32,23 @@ describe('editing a sent message through the scripted gateway', () => {
     const { last } = await playAll(EDIT)
     const calls = callsIn(last.script.received).filter(call => call.method === 'session.mutate' || call.method === 'prompt.submit')
     expect(calls.map(call => call.method)).toEqual(['session.mutate', 'prompt.submit'])
-    expect(calls[0]?.params).toMatchObject({ operation: 'rewind', payload: { target_message_id: 1 }, expected_revision: 0, expected_generation: 0 })
-    expect(calls[1]?.params).toMatchObject({ session_id: SESSION, text: 'Rename the heading in notes.md to Plan for Friday' })
-    expect(requests(last.session)).toEqual(['Rename the heading in notes.md to Plan for Friday'])
-    expect(answers(last.session)).toEqual([expect.stringContaining('Plan for Friday')])
-    expect(last.session.history[0]?.outcome).toEqual({ kind: 'complete' })
+    expect(calls[0]?.params).toMatchObject({ operation: 'rewind', payload: { target_message_id: 3 }, expected_revision: 0, expected_generation: 0 })
+    expect(calls[1]?.params).toMatchObject({ session_id: SESSION, text: 'Add a line about the Friday deadline under it' })
+    expect(requests(last.session)).toEqual(['Rename the heading in notes.md to Plan', 'Add a line about the Friday deadline under it'])
+    expect(answers(last.session).at(-1)).toContain('Due Friday')
+    expect(answers(last.session).join('\n')).not.toContain('The folder holds')
+    expect(last.session.history.at(-1)?.outcome).toEqual({ kind: 'complete' })
   })
 
   it('names the new message by the row Hermes stored it in, so it can be edited in turn', async () => {
     const { last } = await playAll(EDIT)
-    expect(last.session.history[0]?.request?.rowId).toBe(7)
+    expect(last.session.history.map(turn => turn.request?.rowId)).toEqual([1, 7])
   })
 
-  it('keeps the earlier turns when a later message is cut', async () => {
-    const { last } = await playAll(REGENERATE)
-    expect(requests(last.session)).toEqual(['Rename the heading in notes.md to Plan', 'Add a line about the deadline under it', 'List the folder'])
+  it('shows the cut before the new reply arrives', async () => {
+    const { seen } = await playAll(EDIT)
+    const running = seen.find(session => session.run.state === 'running')
+    expect(running && requests(running)).toEqual(['Rename the heading in notes.md to Plan'])
   })
 })
 

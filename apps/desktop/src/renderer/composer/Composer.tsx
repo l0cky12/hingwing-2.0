@@ -55,6 +55,12 @@ export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput,
     element.setSelectionRange(element.value.length, element.value.length)
   }, [draft, editing])
 
+  const wasConfirming = useRef(false)
+  useLayoutEffect(() => {
+    if (wasConfirming.current && !confirming) box.current?.focus()
+    wasConfirming.current = confirming
+  }, [confirming, box])
+
   useLayoutEffect(() => {
     if (editing === null) return
     caretToEnd.current = true
@@ -175,7 +181,7 @@ export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput,
       {confirming && editing !== null && (
         <RemoveDialog
           later={editing.later}
-          onCancel={() => { setConfirming(false); box.current?.focus() }}
+          onCancel={() => setConfirming(false)}
           onConfirm={() => void deliver()}
         />
       )}

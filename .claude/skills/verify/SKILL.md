@@ -67,11 +67,13 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `click <role> <name>` | ARIA role, exact accessible name | clicks it |
 | `type <label> <text>` | exact label, text or `@request` | fills the field. `@request` is the text of the fixture's first `prompt.submit` step |
 | `press <key>` | Playwright key name | presses it |
+| `click-at <role> <name> <n>` | ARIA role, exact accessible name, a number | clicks the `n`th such control in page order, counting from 1, for a control the thread repeats on every turn |
 | `shot <name>` | file stem | moves the pointer off the page, then saves `<name>.png` and `<name>.aria.txt` |
 | `disabled <role> <name>` | ARIA role, exact accessible name | fails unless that control is disabled now |
 | `value <label> <text>` | exact label, text | waits two frames, then fails unless the field holds exactly that text |
 | `field <label> <lines> <fits\|scrolls>` | exact label, a line count, `fits` or `scrolls` | logs how many lines the field shows and whether its text scrolls with a visible scrollbar, and fails unless both match |
 | `pinned` | none | logs where the thread sits, and fails unless it is scrolled to its end, its last row is in view (wholly, when it fits), and the composer does not cover it |
+| `disabled-at <role> <name> <n>` | ARIA role, exact accessible name, a number | fails unless the `n`th such control, counting from 1 in page order, is disabled now |
 | `focused <role> <name>` | ARIA role, exact accessible name | fails unless that control has keyboard focus now |
 | `count <role> <name> <n>` | ARIA role, exact name or `/regex/`, a number | fails unless exactly `n` such controls are in the accessibility tree |
 | `clipboard <name>` | file stem | waits until the system clipboard holds new text, then saves it as `<name>.clip.txt`. Fails when it stays empty or unchanged since the last `clipboard` step |
@@ -102,6 +104,7 @@ Named states live in the `STATES` table in the helper. Add a state there, not a 
 | `approval` | the "Run this command?" card's "Run once" button is enabled |
 | `settled` | the turn's end is the Done ring (`[data-end="done"]`) |
 | `offline` | the connection banner (`role=status`, name "Connection") is shown |
+| `regenerate` | the thread's "Regenerate" button is enabled, so the chat is idle and its last turn has a stored message to cut before |
 | `slash-menu` | the composer's "Commands and skills" listbox is shown |
 | `bots` | the sidebar holds a roster Hermes listed (`aside[data-state="listed"]`) |
 
