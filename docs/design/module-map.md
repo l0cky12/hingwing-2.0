@@ -26,7 +26,8 @@ highwing-2.0/
         open.ts                  private                  chatDesk: which chat is open, the lookups and the create a change asks for
         domain/                  public entry "./domain"  browser-safe, imports nothing
           session.ts                                      Session, Run, Turn, Item, Link, Sidebar
-          reduce.ts                                       SessionEvent, Gate, SessionInput, reduce, syncOf, activityOf
+          reduce.ts                                       SessionEvent, Gate, SessionInput, reduce, syncOf, activityOf, turnActivityOf
+          requests.ts                                     the life of what Hermes asks outside the turn: opened, reconciled with a snapshot, answered, closed
           command.ts                                      Command, ResultOf, Outcome, Refusal: data the renderer sends and gets back
           slash.ts                                        SlashEntry, SlashCatalog, slashLineOf: the slash menu's rows
           bots.ts                                         Bots, Roster, Bot, BotFacts, rosterOf: the sidebar's bots, grouped and painted
@@ -75,6 +76,8 @@ highwing-2.0/
 | Revision, text position, paging cursor | the same actor, as `Fence` | nobody |
 | Running, asking, settled | derived from `Session.run` by `activityOf` | nobody stores it |
 | What Hermes said while no turn ran (`interlude`) | the same actor, through `reduce`. The next turn's start seals it into `history` as one entry whose outcome is `interlude` | read through `Hermes.watch`. A rebuild drops it |
+| What Hermes waits on outside the turn (`requests`), and which request ids it has closed | the same actor, through `reduce`, by the rules in `domain/requests.ts`: a request frame or a connector card's event opens one, each snapshot's `open_requests` and `pending_connection` reconcile them, `request.cancel` or the card's settlement closes one | windows send `answer` with a `requestId`. A turn that starts or settles never touches them. No state holds a typed value |
+| Whether a request with no card is refused | the hub's `bridge`: refused only while a window watches the chat | nobody. A request with a card is never refused |
 | Hermes's switches for a chat (`tuning`) | the same actor, through `reduce`: a `facts` input tagged with the attach it was read under, and `tuned` after this client's `config.set` | windows send `tune` |
 | Which windows watch a chat | the hub, as a count per chat. A command waiting for an attach watches too and is not counted | the actor asks `watched()` before it reads facts |
 | Stored list rows and the set of running sessions | `sidebar.ts` | `Sidebar` is derived from them plus each actor's session when published |
@@ -123,6 +126,7 @@ A `message.delta` frame becomes pixels in four steps.
 | Soundness at every moment | `checkThread(threadView(session, clock))` on every step of every fixture | same |
 | Find | `findInThread(threadView(session, clock), query)` on the settled errand, counted against `outline` with every row open | same |
 | What Hermes says | `fixtures/says.jsonl`, from Hermes's own emitters: `playToEnd` equals the direct fold, a drop after every push ends in the same session and outline, and `checkThread` holds at every moment | `@highwing/hermes` and `@highwing/thread` tests |
+| What Hermes asks | `fixtures/asks.jsonl`, from Hermes's own request paths: `playToEnd` equals the direct fold, a drop after every push ends in the same session and outline, and `checkThread` holds at every moment. The scripted gateway fails a replay on an answer the story does not wait for | `@highwing/hermes` and `@highwing/thread` tests |
 | The attach order | `reduce` fed the `attached` cases by hand: a catch-up frame that ends the turn, a hole, a new epoch | `domain/` tests |
 | Reconnect | `playToEnd(fixture, { drop })` for a drop after every push, compared with the undisturbed outline | `@highwing/hermes` tests |
 | A gap | the same with `ringFrames` small, so replay answers `snapshot_required` | same |
@@ -153,5 +157,5 @@ A `message.delta` frame becomes pixels in four steps.
 | Model picker, settings | new `Command` members, `Session` fields fed by `meta` events | the reducer's turn logic |
 | Attachments | a field on the `send` command and on `Request` | view grouping |
 | Subagents, todos | new `Item` kinds, parse table rows moved from unshown to shown, new `ThreadNode` kinds | attach lifecycle |
-| Sudo and secret prompts | new `Ask` kinds answered through the same `answer` command, and the hub's `refuse` stops declining those methods | card plumbing |
+| Cards for what Hermes asks | views of `Session.requests` at the thread's live end, and of the `closed` notices. They send `answer` with a `requestId` | the reducer, the hub's decline rule |
 | Core in a `utilityProcess` | a new composition root in `apps/desktop/src/main/` that hosts `openHermes` there and serves windows over ports | `@highwing/hermes`, `@highwing/thread`, renderer |

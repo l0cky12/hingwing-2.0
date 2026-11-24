@@ -231,6 +231,71 @@ no turn runs goes into `Session.interlude`, and never opens a turn.
   `apps/desktop/src/main/images.ts`, reads the file only when Hermes runs on
   this computer, and only for a path a finished tool of the watched chat named.
 
+## What Hermes asks
+
+Hermes 0.23.3 asks a local viewer for some things outside the turn's own
+prompts. Each is a JSON-RPC request with a string id (`srq-…`), written to
+every socket attached to the chat (`gateway/session_server_requests.py`). The
+first client to answer settles it for all of them. Highwing holds each one it
+has a card for in `Session.requests`, whether or not a turn runs.
+
+| Request | Held as | Hermes waits | Answered with |
+| --- | --- | --- | --- |
+| `sudo` | A masked prompt for the sudo password, with the command | 120 s (`gateway/session_sudo_prompt.py:19`) | A result frame `{value}` |
+| `secret` | A masked prompt for a named variable of the bot's `.env` | 120 s (`gateway/session_secret_prompt.py:19`) | A result frame `{value}` |
+| `vault.unlock_prompt` | A masked prompt for a password manager's master password | 120 s (`gateway/session_vault_prompt.py:22`) | A result frame `{value}` |
+| `vault.save_login` | A login to save for a site | 180 s (`:23`) | A result frame whose `value` is the JSON `{identifier, password}` |
+| `vault.code` | A one-time code | 180 s (`:24`) | A result frame `{value}` |
+| `clarify` | One to five questions asked together, or a plugin command's one choice (`gateway/session_clarify_batch.py`, `gateway/plugin_command_choice.py`) | Hermes's `clarify_timeout`, 90 s unless configured. No frame carries it | `clarify.lock {request_id, question_id, answer}` once per question. The last lock submits. A result frame `{}` ends the batch early and keeps the locks |
+| `connection.request` event, `connection.update` events, the snapshot's `pending_connection` | The connector card: its targets, each with its state and sign-in link | The card's own `timeout_seconds` | `connection.respond {owner: {type: "session", session_id}, op_id, result}` |
+
+- A result frame gets no reply. An empty `value` means skipped. The request
+  reads as sending until Hermes publishes `request.cancel {id, method, reason}`,
+  which closes it. The reasons are `resolved` (some client settled it),
+  `timeout`, `interrupted`, `shutdown` and `session_closed`
+  (`tui_gateway/contracts/server_requests.py:366-378`). Any other reason reads
+  as withdrawn.
+- A typed value goes to Hermes once. No session, no push to a window and no
+  recording holds it: `RecordedReply` has no member for one, and
+  `recordingDialer` writes `•••` in its place.
+- Several picks for one question go as a JSON array of labels in one string,
+  the form Hermes decodes (`tools/clarify_tool.py:36-47`).
+- Hermes sends the clarify tool's questions as one request only to a client
+  that asks, with `clarify_batch: true` on `prompt.submit`
+  (`gateway/session_cli_turn.py:54-61`). Highwing asks when
+  `client.capabilities` answered `canonical_clarify_batch: true`. Without it
+  each question comes as a `clarify.request` prompt of the turn, as before.
+- A request frame has no place in the event stream. Each `session.resume`
+  lists the ones still open as `open_requests`, with a batch's locks so far
+  (`gateway/session_server_requests.py:125-135`). After each attach Highwing
+  closes a held request the list leaves out, and opens one it lists. A
+  request this client answered that is still listed opens again with "Hermes
+  didn't get your answer."
+- Another client's lock of a batch question is published nowhere. Highwing
+  learns of it at its next attach.
+
+### Requests Highwing has no card for
+
+`preview.read`, `preview.act`, `window.read`, `terminal.read`, `theme.apply`,
+`theme.pick`, `tour` and `setup_beat` ask for parts of Hermes Desktop's
+window (`gateway/local_desktop_ui.py`). Highwing has none of them, and treats
+a method it does not know the same way.
+
+- While a Highwing window shows the chat, Highwing answers such a request
+  with JSON-RPC error `-32601`, so the tool stops waiting, and the thread says
+  so. Hermes reads any error frame as "skipped" for every viewer
+  (`gateway/session_server_requests.py:89-96`).
+- While no window shows the chat, Highwing leaves the request open. The hub
+  stays attached to every running chat, and a refusal from it would cancel a
+  request that Hermes Desktop, attached to the same chat, could answer.
+- A request Highwing has a card for is never refused. Until the window draws
+  the cards, such a request waits for another client or for Hermes's own
+  timeout.
+
+Before this, Highwing refused every request, in every chat it was attached
+to. That cancelled a sudo prompt someone could have answered in Hermes's own
+terminal.
+
 ## When a change needs a newer Hermes route
 
 1. Install the newer Hermes, then run `pnpm contract:drift` to see which
