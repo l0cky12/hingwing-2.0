@@ -165,7 +165,7 @@ export interface ToolItem<S extends 'open' | 'settled' = 'open'> {
 }
 export type ToolStatus =
   | { readonly s: 'running'; readonly note: string | null }
-  | { readonly s: 'done'; readonly durationS: number | null; readonly diffs: readonly FileDiff[]; readonly result: ToolResult }
+  | { readonly s: 'done'; readonly durationS: number | null; readonly diffs: readonly FileDiff[]; readonly result: ToolResult; readonly image: string | null }
   | { readonly s: 'cut' } // the turn ended first, or history holds no result for it
 
 /** A unified diff for one file, parsed at the boundary. ANSI colour and Hermes's header lines are gone. */

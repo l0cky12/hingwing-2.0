@@ -1,7 +1,7 @@
 import {
   targetOf,
-  type BotId, type Bots, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply, type ResultOf,
-  type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target
+  type BotId, type Bots, type ChatRef, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply,
+  type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type Unstarted
 } from '@highwing/hermes/domain'
 
 /** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
@@ -70,15 +70,25 @@ export type FileAction = 'open' | 'show'
 export interface FileRequest { readonly action: FileAction; readonly sessionId: SessionId; readonly path: string }
 export type FileOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: 'refused' | 'missing' | 'failed' }
 
+export type ImageRequest =
+  | { readonly kind: 'web'; readonly url: string }
+  | { readonly kind: 'tool'; readonly sessionId: SessionId; readonly path: string }
+export type ImageType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' | 'image/avif'
+/** Every refusal looks the same to the window: the loader says nothing about why. */
+export type ImageOutcome = { readonly ok: true; readonly type: ImageType; readonly bytes: Uint8Array } | { readonly ok: false }
+
 export interface Bridge {
   watch<T extends Topic>(topic: T, onPush: (push: Push<T>) => void): () => void
   run<C extends AppCommand>(command: C): Promise<CommandOutcome<AppResult<C>>>
   file(request: FileRequest): Promise<FileOutcome>
+  image(request: ImageRequest): Promise<ImageOutcome>
 }
 
-export const CHANNEL = { watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file' } as const
+export const CHANNEL = { watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image' } as const
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
+const ABSOLUTE = /^(?:\/|[A-Za-z]:[\\/]|\\\\)/
+const IMAGE_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:'])
 
 /** The links a reply may open, in the user's browser. Shared so the renderer draws only links main will open. */
 export const isWebLink = (url: string): boolean => WEB_SCHEMES.has(URL.parse(url)?.protocol ?? '')
@@ -110,20 +120,34 @@ const modelOptionOf = (raw: unknown): ModelOption | null =>
   isObject(raw) && filled(raw.id) && filled(raw.provider) && text(raw.providerName)
     ? { id: raw.id as ModelOption['id'], provider: raw.provider, providerName: raw.providerName }
     : null
+const chatRefOf = (raw: unknown): ChatRef | null => {
+  if (!isObject(raw)) return null
+  if (raw.kind === 'bot') {
+    const bot = botIdOf(raw.bot)
+    return bot && { kind: 'bot', bot }
+  }
+  if (raw.kind !== 'new' || !filled(raw.draftId)) return null
+  if (raw.bot === null) return { kind: 'new', bot: null, draftId: raw.draftId }
+  const bot = botIdOf(raw.bot)
+  return bot && { kind: 'new', bot, draftId: raw.draftId }
+}
+const unstartedOf = (raw: unknown): Unstarted | null => {
+  const ref = isObject(raw) && raw.sessionId === null ? chatRefOf(raw) : null
+  return ref && { ...ref, sessionId: null }
+}
 const replyOf = (raw: unknown): PromptReply | null =>
   isObject(raw) && (raw.kind === 'choice' || raw.kind === 'text') && text(raw.value) ? { kind: raw.kind, value: raw.value } : null
 
 type Validators = { readonly [K in AppCommand['do']]: (raw: Obj) => Extract<AppCommand, { do: K }> | null }
 
 export const validators: Validators = {
-  create: raw => (filled(raw.draftId) && (raw.cwd === null || text(raw.cwd)) ? { do: 'create', draftId: raw.draftId, cwd: raw.cwd } : null),
   open: raw => {
-    const bot = isObject(raw.ref) && raw.ref.kind === 'bot' ? botIdOf(raw.ref.bot) : null
-    return bot && { do: 'open', ref: { kind: 'bot', bot } }
+    const ref = chatRefOf(raw.ref)
+    return ref && { do: 'open', ref }
   },
   start: raw => {
-    const bot = botIdOf(raw.bot)
-    return bot && filled(raw.text) ? { do: 'start', bot, text: raw.text } : null
+    const chat = unstartedOf(raw.chat)
+    return chat && filled(raw.text) ? { do: 'start', chat, text: raw.text } : null
   },
   send: raw => {
     const sessionId = sessionIdOf(raw)
@@ -189,6 +213,14 @@ export function parseFileRequest(raw: unknown): FileRequest | null {
   if (!isObject(raw) || (raw.action !== 'open' && raw.action !== 'show')) return null
   const sessionId = sessionIdOf(raw)
   return sessionId && filled(raw.path) ? { action: raw.action, sessionId, path: raw.path } : null
+}
+
+export function parseImageRequest(raw: unknown): ImageRequest | null {
+  if (!isObject(raw)) return null
+  if (raw.kind === 'web') return text(raw.url) && IMAGE_SCHEMES.has(URL.parse(raw.url)?.protocol ?? '') ? { kind: 'web', url: raw.url } : null
+  if (raw.kind !== 'tool') return null
+  const sessionId = sessionIdOf(raw)
+  return sessionId && text(raw.path) && ABSOLUTE.test(raw.path) ? { kind: 'tool', sessionId, path: raw.path } : null
 }
 
 export function parseTopic(raw: unknown): Topic | null {

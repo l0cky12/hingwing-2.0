@@ -2,7 +2,8 @@ import type { PromptId, PromptReply } from '@highwing/hermes/domain'
 import { fieldId, findInThread, type FindMatch, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { CopyButton } from './Copy'
-import { FIND_OPEN, FindBar, isFindKey, reveal, useFindMarks, type FindState } from './Find'
+import { isCommandKey } from '../keys'
+import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find'
 import { cx, Elapsed, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
 
@@ -204,7 +205,7 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScro
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isFindKey(event) || transcript.current?.checkVisibility() !== true) return
+      if (!isCommandKey(event, 'f') || transcript.current?.checkVisibility() !== true) return
       event.preventDefault()
       if (findInput.current === null) setFind(FIND_OPEN)
       else {

@@ -6,6 +6,7 @@ import type { Editing } from '../composer/edit'
 import { ModelPicker } from '../composer/ModelPicker'
 import { run, useTopic } from '../store'
 import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
+import { ImageSessionContext } from './Image'
 import { FOLLOW_WITHIN, FOLLOWING, placeAfter, progressOf, type Place } from './place'
 import { Thread } from './Thread'
 
@@ -18,7 +19,7 @@ const distanceFrom = (element: HTMLElement) => element.scrollHeight - element.sc
 const holdsText = (target: EventTarget | null) =>
   (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) && target.value !== ''
 
-/** `chat.sessionId` null: the bot's chat is not started. The thread is empty, and the first message makes the session. */
+/** `chat.sessionId` null: the chat is not started. The thread is empty, and the first message makes the session. */
 export function Chat({ chat }: { readonly chat: Shown }) {
   const id = chat.sessionId
   const session = useTopic(id === null ? null : `session:${id}`)
@@ -153,7 +154,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   }, [id, rewrite])
   const onSend = useCallback(async (text: string): Promise<CommandOutcome<string | null>> => {
     setRegenerating(null)
-    if (chat.sessionId === null) return run({ do: 'start', bot: chat.bot, text })
+    if (chat.sessionId === null) return run({ do: 'start', chat, text })
     if (editing === null) return run({ do: 'send', sessionId: chat.sessionId, text })
     const { press } = editing
     const outcome = await rewrite(chat.sessionId, editing.rowId, text)
@@ -182,10 +183,12 @@ export function Chat({ chat }: { readonly chat: Shown }) {
       <main id="scroll" ref={scroller} onScroll={onScroll}>
         {view !== null && (
           <FileCallContext value={fileCall}>
-            <Thread
-              view={view} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
-              canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
-            />
+            <ImageSessionContext value={id}>
+              <Thread
+                view={view} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
+                canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
+              />
+            </ImageSessionContext>
           </FileCallContext>
         )}
       </main>
@@ -197,6 +200,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
       </div>
       <Composer
         inputRef={composer}
+        autoFocus={chat.kind === 'new' && chat.sessionId === null}
         canSend={id === null || live}
         showStop={session !== undefined && activityOf(session).kind !== 'idle'}
         onSend={onSend}

@@ -10,7 +10,13 @@ import { Epoch, useTopic } from './store'
 
 const NO_CHAT = async () => ({ ok: false, refusal: { kind: 'rejected', message: 'There is no chat to send to.' } }) as const
 
-const samePaneOnFirstMessage = (shown: Shown): string => shown.bot ?? shown.sessionId
+function samePaneOnFirstMessage(shown: Shown): string {
+  switch (shown.kind) {
+    case 'bot': return `bot:${shown.bot}`
+    case 'new': return `new:${shown.draftId}`
+    case 'chat': return `chat:${shown.sessionId}`
+  }
+}
 
 function OpenPane() {
   const shown = useTopic('open')?.shown ?? null

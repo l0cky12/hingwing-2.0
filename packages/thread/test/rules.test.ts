@@ -25,10 +25,10 @@ const running = (items: readonly Item[], sync: Sync = { state: 'live' }, announc
 
 const text = (markdown: string): Item<'settled'> => ({ kind: 'text', markdown, sealed: true })
 
-function tool(name: string, args: ToolItem['args'], over: { diffs?: readonly FileDiff[]; result?: ToolResult; durationS?: number | null } = {}): ToolItem<'settled'> {
+function tool(name: string, args: ToolItem['args'], over: { diffs?: readonly FileDiff[]; result?: ToolResult; durationS?: number | null; image?: string | null } = {}): ToolItem<'settled'> {
   return {
     kind: 'tool', id: `${name}-${JSON.stringify(args)}` as ToolId, name, args,
-    status: { s: 'done', durationS: over.durationS ?? null, diffs: over.diffs ?? [], result: over.result ?? NONE }
+    status: { s: 'done', durationS: over.durationS ?? null, diffs: over.diffs ?? [], result: over.result ?? NONE, image: over.image ?? null }
   }
 }
 const runningTool = (name: string, args: ToolItem['args']): ToolItem => ({ kind: 'tool', id: `${name}-run` as ToolId, name, args, status: { s: 'running', note: null } })
@@ -137,6 +137,12 @@ describe('steps and groups', () => {
       .toEqual([{ t: 'text', v: 'Used ' }, { t: 'code', v: 'browser_navigate' }])
   })
 
+  it('carries a done step\'s image path, with no record needed', () => {
+    const step = stepOf(nodesOf(session({ history: [settled([tool('screenshot', {}, { image: '/tmp/shot.png' })])] }))[0])
+    expect(step).toMatchObject({ image: '/tmp/shot.png', record: null })
+    expect(stepOf(nodesOf(running([runningTool('screenshot', {})]))[0]).image).toBeNull()
+  })
+
   it('drops a leading cd from a command subject', () => {
     expect(lines(session({ history: [settled([tool('terminal', { command: 'cd "/tmp/my work" && make test' })])] }))[1]).toBe('● Ran `make test`')
   })
@@ -194,7 +200,7 @@ describe('memoisation', () => {
 
 describe('checkThread', () => {
   it('reports each broken invariant', () => {
-    const step: StepView = { key: 't1/0', title: [], state: 'done', stat: null, duration: null, record: null }
+    const step: StepView = { key: 't1/0', title: [], state: 'done', stat: null, duration: null, record: null, image: null }
     const view: ThreadView = {
       state: 'ready', pending: [], earlier: 'none', changesAt: null,
       turns: [

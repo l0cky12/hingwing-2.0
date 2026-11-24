@@ -198,8 +198,10 @@ Of the 66 listed commands whose `desktop` is `null`, the gateway runs 33:
 
 The gateway refuses the other 33 offered commands, among them `/new`,
 `/compress`, `/retry`, `/undo`, `/resume` and `/stop`. A client runs these as
-its own actions. The Hermes `/stop` stops background processes, not the
-current turn, so it is not Highwing's Stop.
+its own actions. Highwing runs a bare `/new` itself: it opens a new chat in the
+bot of the chat it was typed in. The menu lists it with the 33 the gateway runs.
+The Hermes `/stop` stops background processes, not the current turn, so it is
+not Highwing's Stop.
 
 `GATEWAY_RUNS` in `packages/hermes/src/wire/parse.ts` holds every command that
 `command_verdict` runs, 48 in all, because the catalog has no field for it. The

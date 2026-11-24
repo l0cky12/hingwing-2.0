@@ -2,6 +2,7 @@ import { fieldId, parseMarkdown, proseLeaves, type Block, type Inline, type Phra
 import { Fragment, useMemo, type ReactNode } from 'react'
 import { isWebLink } from '../../ipc-contract'
 import { CopyButton } from './Copy'
+import { ThreadImage } from './Image'
 
 export function PhraseText({ words }: { readonly words: Phrase }) {
   return words.map((piece, index) => (piece.t === 'code' ? <code key={index}>{piece.v}</code> : <Fragment key={index}>{piece.v}</Fragment>))
@@ -16,6 +17,7 @@ function inline(nodes: readonly Inline[]): ReactNode[] {
       case 'em': return <em key={index}>{inline(node.children)}</em>
       case 'del': return <del key={index}>{inline(node.children)}</del>
       case 'break': return <br key={index} />
+      case 'image': return <ThreadImage key={index} request={{ kind: 'web', url: node.src }} alt={node.alt} />
       case 'link':
         return isWebLink(node.href)
           ? <a key={index} href={node.href} target="_blank" rel="noreferrer">{inline(node.children)}</a>

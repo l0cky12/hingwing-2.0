@@ -265,6 +265,7 @@ export const SHOWN: { readonly [type: string]: Shown } = {
       args,
       durationS: p.optNum('duration_s'),
       diffs: diff === null ? [] : parseInlineDiff(diff),
+      image: p.optStr('image_path') || null,
       result: parseToolResult(p.raw('result'), p.optStr('result_text'), p.optBool('is_error') ?? false)
     }
   },
@@ -518,7 +519,7 @@ function storedRow(value: unknown, index: number) {
       id: (row.optStr('tool_call_id') || `stored-tool:${index}`) as ToolId,
       name: row.optStr('name') || 'tool',
       args,
-      status: { s: 'done', durationS: null, diffs: [], result: content === undefined ? NO_RESULT : parseToolResult(content, null, false) }
+      status: { s: 'done', durationS: null, diffs: [], image: null, result: content === undefined ? NO_RESULT : parseToolResult(content, null, false) }
     }
   })()
   return { role, text, rowId, at, item }
@@ -678,6 +679,8 @@ const GATEWAY_RUNS: ReadonlySet<string> = new Set([
   'insights', 'platforms', 'version', 'debug'
 ])
 
+const HIGHWING_RUNS: ReadonlySet<string> = new Set(['new'])
+
 /** `desktop` is `null` for a command a desktop app should offer, else the reason it should not. */
 const offered = (meta: unknown) => isObject(meta) && (meta.desktop === null || meta.desktop === undefined)
 
@@ -698,7 +701,7 @@ export function parseCatalog(reply: CommandsCatalogResult): SlashCatalog {
     seen.add(key)
     if (Object.hasOwn(skills, key)) {
       skillRows.push({ kind: 'skill', name, description })
-    } else if ((GATEWAY_RUNS.has(name) || Object.hasOwn(plugins, name)) && offered(meta[key])) {
+    } else if ((GATEWAY_RUNS.has(name) || HIGHWING_RUNS.has(name) || Object.hasOwn(plugins, name)) && offered(meta[key])) {
       commands.push({ kind: 'command', name, description })
     }
   }

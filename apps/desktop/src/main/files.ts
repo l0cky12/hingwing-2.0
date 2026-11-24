@@ -5,7 +5,7 @@ import type { FileAction, FileOutcome } from '../ipc-contract'
 
 const URL_SCHEME = /^[a-z][a-z0-9+.-]*:/i
 
-function* itemsOf(session: Session): Iterable<Item> {
+export function* itemsOf(session: Session): Iterable<Item> {
   for (const turn of session.history) yield* turn.items
   if (session.run.state === 'running') yield* session.run.turn.items
 }

@@ -1,10 +1,11 @@
 import { checkTarget, liveDialer, openHermes, remoteRoute, type Dialer, type Route } from '@highwing/hermes'
 import type { Target } from '@highwing/hermes/domain'
 import { loadFixture, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, net, shell } from 'electron'
 import { appendFileSync } from 'node:fs'
 import { ownConnection, pinnedConnection } from './connection'
 import { desktopOpener, recordingOpener } from './files'
+import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
 import { serveWindows } from './ipc'
 import { loadSettings, saveSettings } from './settings'
 import { isAppUrl, openWindow } from './windows'
@@ -33,7 +34,7 @@ app.whenReady().then(async () => {
     })))
     : ownConnection({ loaded: await loadSettings(settingsDir), save: target => saveSettings(settingsDir, target), check: checkTarget, routeFor, open })
   const opener = HIGHWING_OPEN_LOG ? recordingOpener(HIGHWING_OPEN_LOG) : desktopOpener(shell)
-  const served = serveWindows(owner, ipcMain, isAppUrl, opener)
+  const served = serveWindows(owner, ipcMain, isAppUrl, opener, imageLoader(fixture ? fixtureImageDeps(fixture.header.media) : desktopImageDeps(net)))
   openWindow()
   let closed: Promise<void> | null = null
   const close = () => (closed ??= (served.dispose(), owner.close()))

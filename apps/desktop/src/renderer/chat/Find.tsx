@@ -10,9 +10,6 @@ export interface FindState {
 
 export const FIND_OPEN: FindState = { query: '', current: null, openedByFind: new Set() }
 
-export const isFindKey = (event: globalThis.KeyboardEvent) =>
-  (/^[a-z]$/i.test(event.key) ? event.key.toLowerCase() === 'f' : event.code === 'KeyF') && !event.altKey && !event.shiftKey && (navigator.userAgent.includes('Mac') ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)
-
 function countWords(query: string, total: number, current: number | null): string {
   if (query === '') return ''
   if (total === 0) return 'No matches'
@@ -64,7 +61,10 @@ export function FindBar({ query, total, current, earlier, inputRef, onQuery, onS
 
 function rangeIn(element: Element, start: number, end: number): Range | null {
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_ALL, {
-    acceptNode: node => (node instanceof Text || node instanceof HTMLBRElement ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP)
+    // A failed image's words are not in the reply's text, so they take no place in its offsets (`leafText` gives an image '').
+    acceptNode: node => (
+      (node instanceof Text && node.parentElement?.closest('[data-no-find]') == null) || node instanceof HTMLBRElement ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
+    )
   })
   const range = document.createRange()
   let began = false

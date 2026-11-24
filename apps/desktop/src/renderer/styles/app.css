@@ -46,6 +46,7 @@ code, pre { font-family: var(--mono); }
 .bar h1 { margin: 0; font-size: 14px; font-weight: 400; color: var(--graphite); }
 .bar h1 .brand { font-weight: 700; color: var(--ink); margin-right: 8px; }
 .bar button { margin-left: auto; padding: 4px 14px; border-radius: 6px; border: 1px solid var(--ink); background: transparent; }
+.bar button + button { margin-left: 0; }
 .bar button:hover { background: var(--sheet); }
 
 .banner { display: flex; align-items: center; gap: 16px; padding: 9px 28px; background: var(--caution-soft); border-bottom: 1px solid var(--rule); }
@@ -159,6 +160,19 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .file-menu button { padding: 5px 10px; border: 0; border-radius: 4px; background: none; text-align: left; font-size: 13px; }
 .file-menu button:hover { background: var(--signal-soft); }
 .file-note { margin: 4px 0 0; font-size: 13px; color: var(--caution); }
+/* A picture draws at most the thread's width. Its slot holds a 16:9 block until the bytes arrive. */
+.pic, .pic-slot { display: block; width: fit-content; max-width: 100%; }
+.pic { padding: 0; border: 0; border-radius: 6px; background: none; line-height: 0; cursor: zoom-in; }
+.pic img { display: block; max-width: 100%; max-height: 420px; border-radius: 6px; }
+.pic-slot { width: min(100%, 480px); aspect-ratio: 16 / 9; border-radius: 6px; background: var(--sheet); }
+.pic-failed { display: block; margin: 4px 0; padding: 8px 12px; border-radius: 6px; background: var(--sheet); color: var(--graphite); font: 400 13px/1.45 var(--sans); }
+.pic-alt { display: block; color: var(--ink); }
+.step-image { margin: 2px 0 4px; }
+.pic-viewer { display: none; width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; padding: 24px; border: 0; background: none; }
+.pic-viewer[open] { display: grid; place-items: center; }
+.pic-viewer::backdrop { background: rgb(31 42 38 / .78); }
+.pic-viewer img { max-width: 100%; max-height: calc(100vh - 96px); border-radius: 6px; background: var(--sheet); }
+.pic-viewer button { position: absolute; top: 16px; right: 16px; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--ink); background: var(--sheet); }
 .record .empty { margin: 0; color: var(--graphite); font-size: 13px; }
 .diff .ln { display: block; padding-right: 8px; }
 .diff .ln.add::before, .diff .ln.del::before, .diff .ln.ctx::before { display: inline-block; width: 20px; margin-right: 8px; text-align: center; font: 500 13px var(--sans); color: var(--graphite); }
@@ -465,4 +479,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 @media (max-width: 679px) {
   .window { grid-template-columns: minmax(0, 1fr); }
   .bots { display: none; }
+}
+@media (forced-colors: active) {
+  .pic-slot, .pic-failed { border: 1px solid CanvasText; }
+  .pic-viewer button { border-color: ButtonText; }
 }

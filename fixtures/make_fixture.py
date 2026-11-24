@@ -10,6 +10,9 @@ The stories are in ``STORIES``:
   turn can finish.
 - ``markdown`` writes fixtures/markdown.jsonl: a text-only reply that holds a list, a heading, a
   link, a table and a fenced block. It asks for no approval.
+- ``images`` writes fixtures/images.jsonl: a tool step whose ``tool.complete`` carries ``image_path``
+  and a reply whose Markdown holds an image. It asks for no approval. Its header also carries
+  ``media``, the bytes of both images by the path or URL the thread asks for.
 
 The script runs the canonical gateway in-process, the way Hermes's own
 tests/gateway/test_authority_complete_persisted_turn.py does: a real ``SessionAuthority`` over a
@@ -37,6 +40,10 @@ Scripted, because no AI provider exists on this machine:
   is replaced, as the Hermes test above replaces it, by a turn that plays the model's part and
   calls the same ``TurnRunner`` sinks a provider-backed turn calls, in the agent loop's order
   (``agent/turn_iteration_prep.py``, ``agent/turn_tool_round.py``, ``agent/stream_delivery.py``);
+- the ``screenshot`` tool of the ``images`` story. Hermes ships no tool that returns an ``image_path``
+  without a browser, so the script registers one in ``tools.registry`` that draws a PNG into the work
+  dir. ``image_path`` on its ``tool.complete`` is still Hermes's own (``tool_image_path``), read from
+  that result when the file exists;
 - the clock. ``at`` and ``tool.complete.duration_s`` come from a virtual clock so a rerun diffs
   cleanly; tool durations, and any pause before a step, are fixed per call in the story's ``steps``;
 - ids. ``uuid.uuid4`` is seeded per story, so admission, prompt, turn and epoch ids repeat across
@@ -46,6 +53,7 @@ Not emitted, because only a provider produces them: ``thinking.delta`` (spinner 
 is in flight), ``reasoning.delta`` and ``session.usage`` (token counts).
 """
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -55,8 +63,10 @@ import shutil
 import subprocess
 import sys
 import threading
+import struct
 import time
 import uuid
+import zlib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -65,6 +75,8 @@ from types import SimpleNamespace
 WORK = "/tmp/hermes-proto-work"
 HOME = "/tmp/hermes-proto-home"
 USER = "highwing-fixture"
+SHOT = f"{WORK}/dashboard.png"
+CHART_URL = "https://example.com/signups-chart.png"
 
 
 @dataclass(frozen=True)
@@ -81,6 +93,8 @@ class Story:
     answer: str | None
     # False for a turn that never asks for an approval. The fixture then ends with the turn's ``stored`` rows.
     approves: bool = True
+    # True when the story's turn takes a screenshot, so the script registers the scripted tool.
+    screenshots: bool = False
 
 
 NOTES = "# Todo\n\n- [ ] sketch the chat view\n- [ ] wire the gateway socket\n- [ ] review screenshots\n"
@@ -208,7 +222,15 @@ MARKDOWN = Story(
     steps=[{"say": MARKDOWN_REPLY, "call": None}],
     out="markdown.jsonl", seed=20261123, files={}, doomed=None, answer=None, approves=False)
 
-STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN}
+IMAGES = Story(
+    request="Take a screenshot of the dashboard and chart last week's signups.",
+    steps=[
+        {"say": "I'll capture the dashboard first.", "call": ("screenshot", {}), "ms": 420},
+        {"say": f"Here is the chart you asked for.\n\n![a chart]({CHART_URL})", "call": None},
+    ],
+    out="images.jsonl", seed=20261124, files={}, doomed=None, answer=None, approves=False, screenshots=True)
+
+STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN, "images": IMAGES}
 NAME = sys.argv[1] if len(sys.argv) > 1 else "errand"
 if NAME not in STORIES:
     sys.exit(f"no story named {NAME!r}; pick one of: {', '.join(STORIES)}")
@@ -254,6 +276,74 @@ from tools.approval_context import reset_current_session_key, set_current_sessio
 from tui_gateway.transport import serialize_frame  # noqa: E402
 
 logging.basicConfig(level=logging.ERROR)
+
+
+def png(width, height, paint):
+    """A stdlib PNG: ``paint(x, y)`` returns the (r, g, b) of each pixel."""
+    rows = b"".join(b"\0" + bytes(c for x in range(width) for c in paint(x, y)) for y in range(height))
+
+    def chunk(kind, data):
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b""))
+
+
+def inside(x, y, box):
+    left, top, right, bottom = box
+    return left <= x < right and top <= y < bottom
+
+
+def layers(layout, background):
+    """A painter from a back-to-front list of (box, color)."""
+    def paint(x, y):
+        color = background
+        for box, fill in layout:
+            if inside(x, y, box):
+                color = fill
+        return color
+    return paint
+
+
+def dashboard_png():
+    ink, card, accent = (31, 41, 55), (255, 255, 255), (59, 130, 246)
+    layout = [((0, 0, 640, 48), ink), ((16, 14, 120, 34), (156, 163, 175)), ((560, 12, 628, 36), accent),
+              ((0, 48, 140, 400), (243, 244, 246))]
+    layout += [((12, 64 + 36 * i, 128, 88 + 36 * i), accent if i == 0 else (209, 213, 219)) for i in range(5)]
+    for i, tint in enumerate([accent, (16, 185, 129), (245, 158, 11), (239, 68, 68)]):
+        left = 156 + 120 * i
+        layout += [((left, 64, left + 108, 136), card), ((left, 64, left + 6, 136), tint),
+                   ((left + 18, 80, left + 76, 90), (156, 163, 175)), ((left + 18, 104, left + 88, 124), ink)]
+    layout += [((156, 152, 628, 384), card), ((176, 168, 300, 178), (156, 163, 175))]
+    layout += [((196 + 52 * i, 368 - h, 232 + 52 * i, 368), accent)
+               for i, h in enumerate([60, 90, 70, 120, 100, 150, 130, 170])]
+    layout += [((176, 368, 612, 370), (209, 213, 219))]
+    return png(640, 400, layers(layout, (229, 231, 235)))
+
+
+def chart_png():
+    ink = (31, 41, 55)
+    layout = [((48, 24, 50, 280), ink), ((48, 278, 616, 280), ink)]
+    layout += [((48, 24 + 50 * i, 616, 25 + 50 * i), (229, 231, 235)) for i in range(5)]
+    for i, h in enumerate([80, 110, 95, 150, 135, 190, 165]):
+        left = 72 + 78 * i
+        layout.append(((left, 278 - h, left + 48, 278), (59, 130, 246) if i < 6 else (16, 185, 129)))
+    return png(640, 320, layers(layout, (249, 250, 251)))
+
+
+def take_screenshot(args, **kwargs):
+    Path(SHOT).parent.mkdir(parents=True, exist_ok=True)
+    Path(SHOT).write_bytes(dashboard_png())
+    return json.dumps({"image_path": SHOT, "width": 640, "height": 400})
+
+
+if TALE.screenshots:
+    from tools.registry import registry  # noqa: E402
+    registry.register(
+        "screenshot", "fixture", {"name": "screenshot", "description": "Take a screenshot of the dashboard.",
+                                  "parameters": {"type": "object", "properties": {}}},
+        lambda args, **kwargs: take_screenshot(args))
 
 class Clock:
     """Virtual milliseconds since the story began. ``monotonic`` stands in for ``time.monotonic``
@@ -509,6 +599,9 @@ async def main():
 
     header = {"fixture": 1, "hermes": HERMES_VERSION, "source": "generated", "sessionId": session_id,
               "describe": describe, "list": listing, "stored": created["messages"]}
+    if TALE.screenshots:
+        header["media"] = {path: base64.b64encode(data).decode() for path, data in
+                           ((SHOT, Path(SHOT).read_bytes()), (CHART_URL, chart_png()))}
     with OUT.open("w") as out:
         for line in [header, *recorder.steps]:
             out.write(json.dumps(line, ensure_ascii=False) + "\n")

@@ -37,6 +37,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Answer an approval](./answer-an-approval.md) covers the approval card and "Run once" releasing the story to Done.
 - [Open a file](./open-a-file.md) covers the path button in an open record, Show in folder, and Copy path.
 - [Markdown replies](./markdown.md) covers lists, headings, links, tables and code blocks in a reply, and the code block's Copy button.
+- [Images in the thread](./images.md) covers a reply image, a tool image, the larger view and what main refuses.
 - [Choose the model](./choose-the-model.md) covers the model readout under the composer, the list of models, a switch, a switch during a turn, "No model set up", and a Hermes that does not list its models.
 - [Offline banner](./offline-banner.md) covers the blocked banner with Retry, the dropped banner with disabled buttons, and recovery.
 - [Copy a block](./copy-a-block.md) covers the Copy control on the request, a reply, an approval command, a command that ran and an open step's record, its keyboard reach, and the closed thread without controls.
@@ -46,5 +47,6 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Jump to latest](./jump-to-latest.md) covers the round control that appears when you scroll up, its "New steps below" and "Waiting for your OK" words, and the End key.
 - [Bots sidebar](./bots-sidebar.md) covers the list of Hermes's bots, search, a Hermes that cannot list its bots, the unavailable New bot, and pixel parity of the chat column.
 - [Open a bot](./open-a-bot.md) covers opening a bot's chat from the sidebar, a message running as that bot, returning to the same chat, a bot with no chat yet, and a Hermes that cannot switch bots.
+- [New chat](./new-chat.md) covers the top bar's New chat button, Ctrl+N, the first message making the chat in the shown bot, the chat staying open after Hermes's lists refresh, and `/new`.
 - [Slash menu](./slash-menu.md) covers the `/` list of commands and skills, narrowing, completion, Escape, and a Hermes without the catalog.
 - [Edit a message](./edit-a-message.md) covers the pencil on a sent message, the editing line and Escape, the dialog that counts the later messages, Remove and send, Regenerate under the last reply, both disabled while a turn runs, and Hermes refusing the cut.

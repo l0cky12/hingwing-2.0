@@ -163,6 +163,15 @@ describe('loadFixture', () => {
     expect(() => loadFixture(chat)).toThrow(`${chat}:1: "homeBotChat" must be true or false`)
   })
 
+  it('reads the media an image loader answers with, and refuses a value that is not base64 text', () => {
+    expect(loadFixture(write([{ ...header, media: { 'https://example.com/c.png': 'iVBORw0K' } }])).header.media).toEqual({ 'https://example.com/c.png': 'iVBORw0K' })
+    expect(loadFixture(write([header])).header).not.toHaveProperty('media')
+    for (const media of [['x'], 'x', { '/tmp/a.png': 1 }]) {
+      const path = write([{ ...header, media }])
+      expect(() => loadFixture(path)).toThrow(`${path}:1: "media" must map a url or path to base64 bytes`)
+    }
+  })
+
   it('names the line of the prototype\'s envelope', () => {
     const path = write([header, { at: 0, push: { kind: 'event', type: 'message.delta', session_id: 's', seq: 1, payload: {} } }])
     expect(() => loadFixture(path)).toThrow(`${path}:2: "push" must be a JSON-RPC 2.0 frame with a method`)

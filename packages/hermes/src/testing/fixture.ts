@@ -42,6 +42,8 @@ export interface Fixture {
     readonly reach?: Reach
     /** false: the home bot has no Bot Chat, and the story session is only a chat of the home profile. Default true. */
     readonly homeBotChat?: boolean
+    /** Bytes the app's image loader answers with in place of the network and the disk, as base64 under the web URL or absolute path asked for. A key not here is missing. */
+    readonly media?: Readonly<Record<string, string>>
   }
   readonly steps: readonly FixtureStep[]
 }
@@ -125,12 +127,15 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
+  const { media } = value
+  if (media !== undefined && !(isObject(media) && Object.values(media).every(bytes => typeof bytes === 'string'))) return '"media" must map a url or path to base64 bytes'
   return {
     fixture, hermes, source, sessionId: sessionId as SessionId, describe: value.describe, list: value.list, stored,
     ...('catalog' in value ? { catalog: value.catalog } : {}),
     ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] }),
     ...(profiles === undefined ? {} : { profiles }),
-    ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat })
+    ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
+    ...(media === undefined ? {} : { media: media as Record<string, string> })
   }
 }
 

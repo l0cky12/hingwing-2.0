@@ -7,6 +7,7 @@ import { completionOf, menuOf, type Menu } from './slash-menu'
 
 interface ComposerProps {
   readonly inputRef?: RefObject<HTMLTextAreaElement | null>
+  readonly autoFocus?: boolean
   readonly canSend: boolean
   readonly showStop: boolean
   readonly onSend: (text: string) => Promise<CommandOutcome<string | null>>
@@ -25,7 +26,7 @@ const GROUPS = [
   { kind: 'skill', label: 'Skills' }
 ] as const
 
-export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput, editing = null, onCancelEdit, children }: ComposerProps) {
+export function Composer({ inputRef, autoFocus, canSend, showStop, onSend, onStop, onInput, editing = null, onCancelEdit, children }: ComposerProps) {
   const catalog = useTopic('slash') ?? NO_CATALOG
   const [draft, setDraft] = useState('')
   const [active, setActive] = useState(0)
@@ -168,7 +169,7 @@ export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput,
       )}
       <form onSubmit={submit}>
         <textarea
-          ref={box} rows={1} placeholder="Ask Hermes to do something" aria-label="Message Hermes" value={draft}
+          ref={box} autoFocus={autoFocus} rows={1} placeholder="Ask Hermes to do something" aria-label="Message Hermes" value={draft}
           aria-autocomplete="list" aria-controls={menu.open ? MENU_ID : undefined}
           aria-activedescendant={menu.open ? optionId(menu.active) : undefined}
           onChange={event => edit(event.target.value)} onKeyDown={onKeyDown}

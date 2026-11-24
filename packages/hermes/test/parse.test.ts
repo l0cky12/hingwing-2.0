@@ -86,6 +86,18 @@ describe('parseEvent on the errand fixture', () => {
     for (const seal of seals) expect(eventOf(seal)).toEqual({ type: 'text.sealed', text: null })
   })
 
+  it('reads image_path off a finished tool, and null when it is empty or absent', () => {
+    const [frame] = params.filter(f => f.type === 'tool.complete')
+    if (frame === undefined) throw new Error('the errand fixture has no tool.complete')
+    const imageOf = (payload: Params['payload']) => {
+      const event = eventOf({ ...frame, payload })
+      return event.type === 'tool.finished' ? event.image : 'not a tool.finished'
+    }
+    expect(imageOf({ ...frame.payload, image_path: '/tmp/shot.png' })).toBe('/tmp/shot.png')
+    expect(imageOf({ ...frame.payload, image_path: '' })).toBeNull()
+    expect(imageOf({ ...frame.payload, image_path: null })).toBeNull()
+  })
+
   it('reads the write_file diff as a new notes.md with five lines added', () => {
     const { diffs, result, durationS } = only(finished('write_file'))
     const diff = only(diffs)

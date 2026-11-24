@@ -1,8 +1,9 @@
 import type { Hermes } from '@highwing/hermes'
 import type { CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
-import { CHANNEL, isAppTopic, parseCommand, parseFileRequest, parseTopic, type AppTopic, type FileOutcome, type Push, type SessionPatch, type Tail, type Topic } from '../ipc-contract'
+import { CHANNEL, isAppTopic, parseCommand, parseFileRequest, parseImageRequest, parseTopic, type AppTopic, type FileOutcome, type ImageOutcome, type Push, type SessionPatch, type Setup, type Tail, type Topic } from '../ipc-contract'
 import type { ConnectionOwner } from './connection'
 import { openablePath, type Opener } from './files'
+import type { ImageLoader } from './images'
 
 export const COALESCE_MS = 16
 
@@ -99,8 +100,11 @@ function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): S
 
 const REFUSED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Highwing refused a malformed request from its window.' } }
 const FILE_REFUSED: FileOutcome = { ok: false, reason: 'refused' }
+const IMAGE_REFUSED: ImageOutcome = { ok: false }
 
-export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener): { dispose(): void } {
+const isLocal = (setup: Setup) => setup.at === 'pinned' || setup.live?.target.kind === 'local'
+
+export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader): { dispose(): void } {
   const windows = new Map<number, Map<number, Served>>()
   const trusted = ({ senderFrame }: IpcEvent) => senderFrame !== null && senderFrame.parent === null && isAppUrl(senderFrame.url)
 
@@ -146,6 +150,13 @@ export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl:
     return target === null ? FILE_REFUSED : opener[request.action](target)
   })
 
+  ipc.handle(CHANNEL.image, async (event, raw) => {
+    const request = parseImageRequest(raw)
+    if (!trusted(event) || request === null) return IMAGE_REFUSED
+    const watched = request.kind === 'tool' ? [...(windows.get(event.sender.id)?.values() ?? [])].find(served => served.topic === `session:${request.sessionId}`) : undefined
+    return images.load(request, { session: watched?.current() as Session | undefined, local: isLocal(owner.setup.get()) })
+  })
+
   return {
     dispose() {
       for (const windowId of [...windows.keys()]) stopWindow(windowId)
@@ -153,6 +164,7 @@ export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl:
       ipc.removeAllListeners(CHANNEL.unwatch)
       ipc.removeHandler(CHANNEL.run)
       ipc.removeHandler(CHANNEL.file)
+      ipc.removeHandler(CHANNEL.image)
     }
   }
 }
