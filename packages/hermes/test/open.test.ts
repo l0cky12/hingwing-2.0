@@ -12,6 +12,8 @@ const found = (bot: BotId, sessionId: SessionId | null): DeskEvent => ({ on: 'fo
 const facts = (named: Record<string, SessionId>, launch: Shown | null = null): DeskEvent => ({ on: 'facts', named, launch })
 const askedNew = (bot: BotId | null, draftId: string): DeskEvent => ({ on: 'asked', ref: { kind: 'new', bot, draftId } })
 const made = (bot: BotId | null, draftId: string, sessionId: SessionId): DeskEvent => ({ on: 'made', bot, draftId, sessionId })
+const picked = (sessionId: SessionId): DeskEvent => ({ on: 'asked', ref: { kind: 'chat', sessionId } })
+const listed = (bot: BotId, sessions: readonly SessionId[]): DeskEvent => ({ on: 'listed', bot, sessions })
 const draft = (bot: BotId | null, draftId: string, sessionId: SessionId | null = null): Shown => ({ kind: 'new', bot, draftId, sessionId } as Shown)
 
 function after(events: readonly DeskEvent[], from: Desk = EMPTY_DESK): { readonly desk: Desk; readonly effects: readonly (readonly DeskEffect[])[] } {
@@ -77,7 +79,21 @@ describe('the open chat', () => {
     ["keeps a new chat when the roster names its bot's Bot Chat",
       [askedNew(EMU, 'd1'), made(EMU, 'd1', R1), facts({ [EMU]: HOME, [RESEARCH]: R2 })], { shown: draft(EMU, 'd1', R1), opening: null }, [[], [], []]],
     ["keeps a new chat in the socket's own profile when Hermes says more",
-      [askedNew(null, 'd1'), made(null, 'd1', R1), facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME })], { shown: draft(null, 'd1', R1), opening: null }, [[], [], []]]
+      [askedNew(null, 'd1'), made(null, 'd1', R1), facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME })], { shown: draft(null, 'd1', R1), opening: null }, [[], [], []]],
+    ['opens a chat picked from the list in the bot that listed it, with no call',
+      [facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME }), listed(RESEARCH, [R1, R2]), picked(R2)], { shown: { kind: 'chat', bot: RESEARCH, sessionId: R2 }, opening: null }, [[], [], []]],
+    ["opens a picked chat no bot listed in the socket's own profile",
+      [picked(R2)], { shown: { kind: 'chat', bot: null, sessionId: R2 }, opening: null }, [[]]],
+    ['lets an earlier click go when a chat is picked',
+      [listed(RESEARCH, [R1, R2]), asked(OPS), picked(R1), found(OPS, O1)], { shown: { kind: 'chat', bot: RESEARCH, sessionId: R1 }, opening: null }, [[], [{ find: OPS }], [], []]],
+    ['keeps a picked chat when the roster names its bot another Bot Chat',
+      [listed(RESEARCH, [R2]), picked(R2), facts({ [RESEARCH]: R1 })], { shown: { kind: 'chat', bot: RESEARCH, sessionId: R2 }, opening: null }, [[], [], []]],
+    ["keeps the shown Bot Chat's pane when its own row is picked, and lets an earlier click go",
+      [facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME }), asked(OPS), listed(EMU, [HOME]), picked(HOME)], { shown: { kind: 'bot', bot: EMU, sessionId: HOME }, opening: null }, [[], [{ find: OPS }], [], []]],
+    ["keeps a new chat's pane when its own row is picked",
+      [askedNew(RESEARCH, 'd1'), made(RESEARCH, 'd1', R1), listed(RESEARCH, [R1]), picked(R1)], { shown: draft(RESEARCH, 'd1', R1), opening: null }, [[], [], [], []]],
+    ['opens nothing when a list comes',
+      [facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME }), listed(RESEARCH, [R1, R2])], { shown: { kind: 'bot', bot: EMU, sessionId: HOME }, opening: null }, [[], []]]
   ])('%s', (_name, events, open, effects) => {
     const reached = after(events)
     expect(reached.desk.open).toEqual(open)
@@ -102,6 +118,11 @@ describe('the open chat', () => {
     expect(desk.chats, 'a new chat is no Bot Chat').toEqual({ [EMU]: HOME, [RESEARCH]: R2, [OPS]: O1 })
   })
 
+  it("keeps a session's first owner when another bot's list names it", () => {
+    const { desk } = after([facts({ [EMU]: HOME }), listed(RESEARCH, [R1, HOME]), listed(OPS, [R1])])
+    expect(desk.owners).toEqual({ [HOME]: EMU, [R1]: RESEARCH })
+  })
+
   it('looks a bot up by its own name only, so a profile named like an Object method has no chat until Hermes names one', () => {
     const named = ['constructor', 'toString'] as BotId[]
     for (const bot of named) expect(after([asked(bot)]).effects, bot).toEqual([[{ find: bot }]])
@@ -112,6 +133,7 @@ describe('the open chat', () => {
     expect(nextDesk(LAUNCHED, facts({ [EMU]: HOME, [RESEARCH]: R1 }, { kind: 'bot', bot: EMU, sessionId: HOME })).desk.open).toBe(LAUNCHED.open)
     expect(nextDesk(LAUNCHED, found(RESEARCH, R1)).desk.open).toBe(LAUNCHED.open)
     expect(nextDesk(LAUNCHED, { on: 'failed', bot: OPS }).desk.open).toBe(LAUNCHED.open)
+    expect(nextDesk(LAUNCHED, listed(RESEARCH, [R1])).desk, 'a list of chats whose owners are known').toBe(LAUNCHED)
   })
 })
 
