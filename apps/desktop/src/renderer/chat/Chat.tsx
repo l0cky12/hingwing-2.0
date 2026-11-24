@@ -2,6 +2,7 @@ import { activityOf, modelViewOf, type CommandOutcome, type ModelMenu, type Prom
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
+import { slotOf } from '../composer/drafts'
 import { ContextMeter } from '../composer/ContextMeter'
 import type { Editing } from '../composer/edit'
 import { ModelPicker } from '../composer/ModelPicker'
@@ -203,6 +204,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         <span id={words} role="status">{notice}</span>
       </div>
       <Composer
+        slot={slotOf(chat)}
         inputRef={composer}
         autoFocus={chat.kind === 'new' && chat.sessionId === null}
         canSend={id === null || live}
