@@ -42,7 +42,8 @@ const STATES = {
   regenerate: page => page.getByRole('button', { name: 'Regenerate', exact: true, disabled: false }),
   'slash-menu': page => page.getByRole('listbox', { name: 'Commands and skills' }),
   bots: page => page.locator('aside[data-state="listed"]'),
-  unstarted: page => page.locator('main#scroll:empty')
+  unstarted: page => page.locator('main#scroll:empty'),
+  'helper-running': page => page.locator('.helper[data-end="live"]').filter({ has: page.locator('> .head > .sr', { hasText: /^working$/ }) })
 }
 
 const rendered = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
@@ -53,7 +54,7 @@ const STEPS = {
   wait: { arity: 1, run: async (ctx, state) => waitFor(ctx, state) },
   see: { arity: 1, run: async (ctx, text) => ctx.page.getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout: ctx.timeout }) },
   said: { arity: 1, run: async (ctx, text) => ctx.page.locator('#scroll').getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout: ctx.timeout }) },
-  click: { arity: 2, run: async (ctx, role, name) => ctx.page.getByRole(role, { name, exact: true }).click({ timeout: ctx.timeout }) },
+  click: { arity: 2, run: async (ctx, role, name) => byRole(ctx.page, role, name).click({ timeout: ctx.timeout }) },
   'click-at': { arity: 3, run: async (ctx, role, name, n) => nth(ctx, role, name, n).click({ timeout: ctx.timeout }) },
   type: { arity: 2, run: async (ctx, label, text) => ctx.page.getByLabel(label, { exact: true }).fill(expand(ctx, text), { timeout: ctx.timeout }) },
   press: { arity: 1, run: async (ctx, key) => ctx.page.keyboard.press(key) },
@@ -118,7 +119,7 @@ const STEPS = {
   disabled: {
     arity: 2,
     run: async (ctx, role, name) => {
-      if (!(await ctx.page.getByRole(role, { name, exact: true }).isDisabled({ timeout: ctx.timeout }))) throw new Error(`${role} "${name}" is enabled`)
+      if (!(await byRole(ctx.page, role, name).isDisabled({ timeout: ctx.timeout }))) throw new Error(`${role} "${name}" is enabled`)
     }
   },
   opened: {
@@ -148,7 +149,7 @@ const STEPS = {
   focused: {
     arity: 2,
     run: async (ctx, role, name) => {
-      const found = ctx.page.getByRole(role, { name, exact: true })
+      const found = matching(ctx.page, role, name)
       if (!(await found.evaluateAll(nodes => nodes.includes(document.activeElement)))) {
         const now = await ctx.page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent ?? 'nothing')
         throw new Error(`${role} "${name}" does not have focus; "${now}" does`)
@@ -158,7 +159,7 @@ const STEPS = {
   count: {
     arity: 3,
     run: async (ctx, role, name, n) => {
-      const found = await ctx.page.getByRole(role, { name: nameMatcher(name), exact: true }).count()
+      const found = await matching(ctx.page, role, name).count()
       if (found !== Number(n)) throw new Error(`${found} ${role}(s) named ${name}, not ${n}`)
     }
   },
@@ -187,19 +188,19 @@ const STEPS = {
   enabled: {
     arity: 2,
     run: async (ctx, role, name) => {
-      if (!(await ctx.page.getByRole(role, { name, exact: true }).isEnabled({ timeout: ctx.timeout }))) throw new Error(`${role} "${name}" is disabled`)
+      if (!(await byRole(ctx.page, role, name).isEnabled({ timeout: ctx.timeout }))) throw new Error(`${role} "${name}" is disabled`)
     }
   },
   checked: {
     arity: 2,
     run: async (ctx, role, name) => {
-      if (!(await ctx.page.getByRole(role, { name, exact: true }).isChecked({ timeout: ctx.timeout }))) throw new Error(`${role} "${name}" is not checked`)
+      if (!(await byRole(ctx.page, role, name).isChecked({ timeout: ctx.timeout }))) throw new Error(`${role} "${name}" is not checked`)
     }
   },
   current: {
     arity: 2,
     run: async (ctx, role, name) => {
-      const locator = ctx.page.getByRole(role, { name, exact: true })
+      const locator = byRole(ctx.page, role, name)
       const value = await poll(ctx, () => locator.getAttribute('aria-current', { timeout: ctx.timeout }), held => held === 'true')
       if (value !== 'true') throw new Error(`${role} "${name}" is not the current one`)
     }
@@ -264,7 +265,10 @@ function callsLike(ctx, { method, expected }) {
     .filter(frame => frame.method === method && contains(frame.params, expected)).length
 }
 
-const nameMatcher = name => (/^\/.+\/$/.test(name) ? new RegExp(name.slice(1, -1)) : name)
+const isPattern = name => /^\/.+\/$/.test(name)
+const nameMatcher = name => (isPattern(name) ? new RegExp(name.slice(1, -1)) : name)
+const matching = (page, role, name) => page.getByRole(role, { name: nameMatcher(name), exact: true })
+const byRole = (page, role, name) => (isPattern(name) ? matching(page, role, name).first() : matching(page, role, name))
 
 const fail = message => {
   console.error(`highwing-verify: ${message}`)
@@ -388,7 +392,7 @@ async function waitFor(ctx, state) {
 
 /** Polls like `waitFor`: the control's fade ends 150 ms after the state changes, and a missed poll is a false pass. */
 async function waitGone(ctx, role, name) {
-  const locator = ctx.page.getByRole(role, { name, exact: true })
+  const locator = matching(ctx.page, role, name)
   const deadline = Date.now() + ctx.timeout
   while ((await locator.count()) > 0 && (await locator.first().isVisible())) {
     if (Date.now() > deadline) throw new Error(`${role} "${name}" still visible after ${ctx.timeout} ms`)
@@ -396,7 +400,7 @@ async function waitGone(ctx, role, name) {
 }
 
 async function checkInView(ctx, role, name) {
-  const locator = ctx.page.getByRole(role, { name, exact: true })
+  const locator = byRole(ctx.page, role, name)
   await locator.first().waitFor({ state: 'visible', timeout: ctx.timeout })
   const problem = await locator.first().evaluate(element => {
     const box = element.getBoundingClientRect()
