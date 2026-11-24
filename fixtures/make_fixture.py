@@ -26,7 +26,8 @@ The stories are in ``STORIES``:
   beside the reply (reasoning, a MoA round, a tool's image, compaction lines, a printed line, a
   notice shown and cleared), asks to approve an ``rm -rf`` that carries ``timeout_s``, and then, with
   no turn running, says a ``/goal`` verdict. The story turns the chat's reasoning display on first
-  and the header keeps the ``config.get`` answer for it as ``controls``.
+  and the header keeps the ``config.get`` answer for it as ``controls`` and the tool image's bytes as
+  ``media``.
 
 The script runs the canonical gateway in-process, the way Hermes's own
 tests/gateway/test_authority_complete_persisted_turn.py does: a real ``SessionAuthority`` over a
@@ -131,6 +132,8 @@ class Story:
     screenshots: bool = False
     viewer: bool = False
     after: object = None
+    # Files under WORK that a tool names as its image. The header's ``media`` carries their bytes, so a replay draws them.
+    shows: tuple = ()
 
 
 NOTES = "# Todo\n\n- [ ] sketch the chat view\n- [ ] wire the gateway socket\n- [ ] review screenshots\n"
@@ -410,7 +413,7 @@ SAYS = Story(
          "call": None},
     ],
     out="says.jsonl", seed=20261124, files={"chart.png": tiny_png(), "scratch/old.txt": "tmp\n"},
-    doomed=f"{WORK}/scratch", answer="once", viewer=True, after=goal_verdict)
+    doomed=f"{WORK}/scratch", answer="once", viewer=True, after=goal_verdict, shows=("chart.png",))
 
 STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN, "images": IMAGES, "preview": PREVIEW,
            "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "says": SAYS}
@@ -812,9 +815,11 @@ async def main():
 
     header = {"fixture": 1, "hermes": HERMES_VERSION, "source": "generated", "sessionId": session_id,
               "describe": describe, "list": listing, "stored": created["messages"], **({"controls": controls} if controls else {})}
+    media = {f"{WORK}/{name}": Path(WORK, name).read_bytes() for name in TALE.shows}
     if TALE.screenshots:
-        header["media"] = {path: base64.b64encode(data).decode() for path, data in
-                           ((SHOT, Path(SHOT).read_bytes()), (CHART_URL, chart_png()))}
+        media |= {SHOT: Path(SHOT).read_bytes(), CHART_URL: chart_png()}
+    if media:
+        header["media"] = {path: base64.b64encode(data).decode() for path, data in media.items()}
     with OUT.open("w") as out:
         for line in [header, *recorder.steps]:
             out.write(json.dumps(line, ensure_ascii=False) + "\n")

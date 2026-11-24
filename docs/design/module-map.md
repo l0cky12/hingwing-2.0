@@ -52,7 +52,7 @@ highwing-2.0/
       src/when.ts                                         the words and thresholds for turn times (internal)
   apps/desktop/
     src/ipc-contract.ts          shared by all three      AppTopics, Topic, Push, Bridge, applyPush, Setup, SetupCommand
-    src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows), files.ts (openablePath, imagePath, readImage)
+    src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows), files.ts (openablePath)
       settings.ts                no Electron              parseSettings, loadSettings, saveSettings: connection.json
       drafts.ts                  no Electron              readDraft, draftStore: drafts/, one file per chat's unsent draft
       attachments.ts             no Electron              attachmentStore: attachments/, the files staged for messages; desktopSources: the file dialog and clipboard, or HIGHWING_PICK_FILES
@@ -77,7 +77,6 @@ highwing-2.0/
 | What Hermes said while no turn ran (`interlude`) | the same actor, through `reduce`. The next turn's start seals it into `history` as one entry whose outcome is `interlude` | read through `Hermes.watch`. A rebuild drops it |
 | Hermes's switches for a chat (`tuning`) | the same actor, through `reduce`: a `facts` input tagged with the attach it was read under, and `tuned` after this client's `config.set` | windows send `tune` |
 | Which windows watch a chat | the hub, as a count per chat. A command waiting for an attach watches too and is not counted | the actor asks `watched()` before it reads facts |
-| A tool image's bytes | nobody; main reads the file per request, only when Hermes runs on this computer and only for a path a finished tool of the watched chat named | windows call `file({ action: 'image' })` |
 | Stored list rows and the set of running sessions | `sidebar.ts` | `Sidebar` is derived from them plus each actor's session when published |
 | What Highwing knows about the bots: loading, offline, unsupported, refused, or a roster | `roster.ts`, changed only through its `after` function | read through `Hermes.bots` and the `bots` topic. The hub says when to ask |
 | Where each bot is drawn and its avatar tone | nobody; `rosterOf(facts)` in `domain/bots.ts` computes them from each answer | the renderer draws the roster as given and picks no colour |
