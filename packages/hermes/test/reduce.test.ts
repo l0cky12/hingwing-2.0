@@ -46,6 +46,7 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
     title: 'Errand',
     cwd: '/home/u',
     model: null,
+    yolo: null,
     running: false,
     generation: generation(1),
     revision: 1,
@@ -309,7 +310,7 @@ describe('attached', () => {
       snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 9 }, history: { turns, unfinished: null, older: { cursor: 'c1' } } })
     })
     expect(state.gate).toEqual({ at: 'live', cursor: { epoch: EPOCH, seq: 9 }, subscriptionId: 'sub-1' })
-    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null } })
+    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null })
   })
 
   it('B: opens the unfinished turn of a running snapshot with its waiting prompts, then the parked frames above the watermark', () => {
@@ -609,6 +610,26 @@ describe('when a turn began', () => {
       snapshot: snapshot({ history: { turns: [], unfinished: { request: 'Fix the build', began: hermesAt(5_000), items: [] }, older: null } })
     })
     expect(state.content.history.map(turn => turn.began)).toEqual([hermesAt(5_000)])
+  })
+})
+
+describe('the session YOLO', () => {
+  it('starts unknown and takes what a snapshot, a session.info and the user\'s own switch say', () => {
+    expect(emptyTracked('s1' as SessionId).content.yolo).toBeNull()
+    const seeded = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, { in: 'attached', attempt: 1, snapshot: snapshot({ yolo: false }), replay: null })
+    expect(seeded.content.yolo).toBe(false)
+    const elsewhere = reduce(seeded, event(1, { type: 'meta', yolo: true }, null))
+    expect(elsewhere.content.yolo).toBe(true)
+    expect(reduce(elsewhere, event(2, { type: 'meta', title: 'Renamed' }, null)).content.yolo).toBe(true)
+    const off = reduce(elsewhere, { in: 'local', action: { did: 'yolo', on: false } })
+    expect(off.content.yolo).toBe(false)
+    expect(reduce(off, { in: 'local', action: { did: 'yolo', on: false } })).toBe(off)
+  })
+
+  it('lets a reattach snapshot overwrite what the chat held', () => {
+    const on = reduce(live(), { in: 'local', action: { did: 'yolo', on: true } })
+    const after = feed(on, { in: 'link.lost' }, { in: 'attach' }, { in: 'attached', attempt: 2, snapshot: snapshot({ yolo: false }), replay: null })
+    expect(after.content.yolo).toBe(false)
   })
 })
 

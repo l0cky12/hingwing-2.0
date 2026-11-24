@@ -61,6 +61,7 @@ export type SessionEvent =
       readonly revision?: number
       readonly queue?: readonly Admission[]
       readonly model?: ModelRef
+      readonly yolo?: boolean
       readonly pick?: PickOutcome
       /** The session's generation now, which a policy change such as a model switch moves without a turn. */
       readonly generation?: Generation
@@ -125,6 +126,7 @@ export interface Snapshot {
   readonly title: string
   readonly cwd: string | null
   readonly model: ModelRef | null
+  readonly yolo: boolean | null
   readonly running: boolean
   readonly generation: Generation
   readonly revision: number
@@ -209,6 +211,7 @@ export type LocalAction =
   | { readonly did: 'earlier.requested' }
   /** Hermes cut the chat before this stored row. The turn that row opens and every later turn are gone. */
   | { readonly did: 'rewound'; readonly rowId: number }
+  | { readonly did: 'yolo'; readonly on: boolean }
   | { readonly did: 'model.deferred'; readonly model: ModelRef; readonly during: Generation }
 
 /** Bookkeeping the views never need. Kept beside the content so one reducer guards both. */
@@ -241,7 +244,7 @@ export interface Tracked {
 
 export function emptyTracked(id: SessionId): Tracked {
   return {
-    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, outbox: [], model: NO_MODEL, usage: NO_USAGE },
+    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, outbox: [], model: NO_MODEL, usage: NO_USAGE, yolo: null },
     gate: { at: 'detached', why: 'new', cursor: null },
     fence: { revision: 0, text: null, older: null, admissions: {}, settledThrough: null, generation: null, attaches: 0, totalsEpoch: 0 }
   }
@@ -416,7 +419,8 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       outbox: content.outbox,
       // Hermes asks a newly attached viewer again about a held pick (gateway/session_deferred_pick.py:46-54).
       model: { ...modelFrom(content.model, snapshot.model), next: null, ask: null },
-      usage: patch(content.usage, { totals: null })
+      usage: patch(content.usage, { totals: null }),
+      yolo: snapshot.yolo
     },
     fence: {
       revision: Math.max(fence.revision, snapshot.revision),
@@ -441,7 +445,7 @@ function markLost(turns: readonly SettledTurn[], settledThrough: number | null):
 function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
   let next: Tracked = {
     ...state,
-    content: patch(state.content, { title: snapshot.title, model: modelFrom(state.content.model, snapshot.model) }),
+    content: patch(state.content, { title: snapshot.title, model: modelFrom(state.content.model, snapshot.model), yolo: snapshot.yolo }),
     fence: patch(state.fence, {
       revision: Math.max(state.fence.revision, snapshot.revision),
       generation: newest(state.fence.generation, snapshot.generation)
@@ -565,6 +569,8 @@ function act(state: Tracked, action: LocalAction): Tracked {
       return cutBefore(state, action.rowId)
     case 'earlier.requested':
       return content.earlier === 'more' ? { ...state, content: { ...content, earlier: 'loading' } } : state
+    case 'yolo':
+      return content.yolo === action.on ? state : { ...state, content: { ...content, yolo: action.on } }
     case 'model.deferred': {
       const { next } = content.model
       const { run } = content
@@ -689,7 +695,8 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
         pushItem(turn, { kind: 'notice', what: 'said', tone: event.tone, text: event.text }))
     case 'meta': {
       const named: Tracked = event.model === undefined ? state : { ...state, content: patch(state.content, { model: modelFrom(state.content.model, event.model) }) }
-      const picked: Tracked = event.pick === undefined ? named : afterPick(named, event.pick)
+      const lit: Tracked = event.yolo === undefined ? named : { ...named, content: patch(named.content, { yolo: event.yolo }) }
+      const picked: Tracked = event.pick === undefined ? lit : afterPick(lit, event.pick)
       const fenced: Tracked = event.generation === undefined ? picked : { ...picked, fence: patch(picked.fence, { generation: newest(picked.fence.generation, event.generation) }) }
       const titled: Tracked = event.title === undefined ? fenced : { ...fenced, content: patch(fenced.content, { title: event.title }) }
       const revised: Tracked = event.revision === undefined

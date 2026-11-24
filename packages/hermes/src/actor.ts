@@ -292,6 +292,24 @@ export class SessionActor {
     }
   }
 
+  /**
+   * Hermes sends no session.info after this set, so the reply is the only word on the new state. Leaving out `scope`
+   * keeps the change to this chat: any scope but "global" is refused, and "global" flips the whole profile
+   * (gateway/session_tui_config.py:187-193,357-377, gateway/session_busy_controls.py:30-44,134-166). An explicit word, because a missing
+   * value toggles.
+   */
+  async setYolo(on: boolean): Promise<Outcome> {
+    const offline = this.offline()
+    if (offline !== null) return offline
+    try {
+      const { value } = await this.deps.conn.call('config.set', { session_id: this.id, key: 'yolo', value: on ? 'on' : 'off' })
+      this.act({ did: 'yolo', on: value === '1' || value === true })
+      return DONE
+    } catch (error) {
+      return { ok: false, refusal: refusalOf(error) }
+    }
+  }
+
   /** `generation`: the `expected_generation` an operation that needs one sends, as a model switch does. */
   private mutation(operation: string, payload: Record<string, unknown>, generation: number | null) {
     const request_id = this.deps.mintId()

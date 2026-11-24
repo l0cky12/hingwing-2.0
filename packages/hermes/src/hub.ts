@@ -293,6 +293,7 @@ export function openHermes(options: HermesOptions): Hermes {
     models: actor => actor.models(),
     pickModel: (actor, { model, confirm }) => actor.pickModel(model, confirm ?? null),
     contextBreakdown: actor => actor.contextBreakdown(),
+    setYolo: (actor, { on }) => actor.setYolo(on),
     rename: async (actor, { title }) => {
       const outcome = await actor.mutate({ title })
       if (outcome.ok) list.retitle(actor.id, title)
