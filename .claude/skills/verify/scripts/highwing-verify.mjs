@@ -416,6 +416,15 @@ const STEPS = {
       if (held.length !== Number(n)) throw new Error(`the drafts folder holds ${held.length} draft file(s), not ${n}`)
     }
   },
+  answered: {
+    arity: 3,
+    run: async (ctx, method, json, n) => {
+      const check = { method, expected: JSON.parse(json), n: Number(n) }
+      const seen = await poll(ctx, async () => answersLike(ctx, check), held => held >= check.n)
+      if (seen !== check.n) throw new Error(`the gateway saw ${seen} answer(s) to a ${method} request containing ${json}, not ${n}`)
+      ctx.answered.push(check)
+    }
+  },
   quiet: {
     arity: 0,
     run: async ctx => {
@@ -466,6 +475,14 @@ function callsLike(ctx, { method, expected }) {
   if (!existsSync(ctx.calls)) return 0
   return readFileSync(ctx.calls, 'utf8').split('\n').filter(line => line.trim() !== '').map(line => JSON.parse(line))
     .filter(frame => frame.method === method && contains(frame.params, expected)).length
+}
+
+/** A result or error frame names only the id of the request it answers. The fixture's request frames say which method that id is. */
+function answersLike(ctx, { method, expected }) {
+  if (!existsSync(ctx.calls)) return 0
+  const lines = path => readFileSync(path, 'utf8').split('\n').filter(line => line.trim() !== '').map(line => JSON.parse(line))
+  const asked = new Set(lines(ctx.fixture).filter(step => step.push?.method === method && step.push.id !== undefined).map(step => step.push.id))
+  return lines(ctx.calls).filter(frame => frame.method === undefined && asked.has(frame.id) && contains(frame, expected)).length
 }
 
 const isPattern = name => /^\/.+\/$/.test(name)
@@ -720,6 +737,9 @@ function ownDisplay() {
   if (parent !== process.ppid) fail(`display ${process.env.DISPLAY} belongs to another run's X server. Start this run again.`)
 }
 
+/** The calls that answer a request, beside the result frames: a batch's locks and a connector card's answer. */
+const ANSWER_CALLS = new Set(['clarify.lock', 'connection.respond'])
+
 /**
  * Hermes streams a reply in pieces and may cut the dev server's URL in two. Each segment's pieces are
  * joined, the origin is put in, and the text is cut again where it was, a cut inside the URL moving to
@@ -754,10 +774,11 @@ function serveInDeltas(steps, origin) {
   }
 }
 
-function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, paths, createWarnings, configureClash, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, origin, attachLimit }, out) {
+function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, paths, createWarnings, configureClash, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, answeredElsewhere, origin, attachLimit }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const header = JSON.parse(lines[0])
-  const steps = lines.slice(1).map(line => JSON.parse(line))
+  const recorded = lines.slice(1).map(line => JSON.parse(line))
+  const steps = answeredElsewhere ? recorded.filter(step => !('result' in step && 'answer' in step) && !ANSWER_CALLS.has(step.await)) : recorded
   if (origin) {
     serveInDeltas(steps, origin)
     steps.splice(0, steps.length, ...steps.map(step => JSON.parse(JSON.stringify(step).replaceAll(DEV_ORIGIN, origin))))
@@ -824,18 +845,18 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
   if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
   const site = options.serve ? await serve(options.serve) : null
-  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], origin: site?.origin, attachLimit: options['attach-limit'] }
+  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], answeredElsewhere: options['answered-elsewhere'], origin: site?.origin, attachLimit: options['attach-limit'] }
   const edited = Object.values(edits).some(Boolean)
   if (options.yolo && options.yolo !== 'on' && options.yolo !== 'off') fail(`--yolo takes on or off, not "${options.yolo}"`)
   if (!options.yolo && (options['yolo-denied'] || options['yolo-elsewhere-after'])) fail('--yolo-denied and --yolo-elsewhere-after need --yolo, because a Hermes with no YOLO answers neither')
   if (options.tree && !options.profiles) fail('--tree needs --profiles, because the tree lists the chats that file seeds')
-  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host')
+  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --answered-elsewhere, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host')
   if (options['configure-clash'] && !options.profiles) fail('--configure-clash needs --profiles: without it Hermes has no bots to rename')
   if (options['attach-limit'] && !/^[1-9]\d*$/.test(options['attach-limit'])) fail(`--attach-limit takes a number of bytes, not "${options['attach-limit']}"`)
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
@@ -851,7 +872,7 @@ async function run(argv) {
   const calls = join(evidence, 'gateway-calls.jsonl')
   rmSync(calls, { force: true })
   const userData = join(scratch, 'user-data')
-  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [] }
+  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [] }
   const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
   const saved = SAVED[options.saved ?? 'none']
@@ -929,6 +950,10 @@ async function run(argv) {
     for (const check of ctx.called) {
       const seen = callsLike(ctx, check)
       if (seen !== check.n) throw new Error(`by the end of the run the gateway saw ${seen} ${check.method} call(s) containing ${JSON.stringify(check.expected)}, not ${check.n}`)
+    }
+    for (const check of ctx.answered) {
+      const seen = answersLike(ctx, check)
+      if (seen !== check.n) throw new Error(`by the end of the run the gateway saw ${seen} answer(s) to a ${check.method} request containing ${JSON.stringify(check.expected)}, not ${check.n}`)
     }
   } catch (error) {
     failed = error
