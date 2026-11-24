@@ -77,14 +77,29 @@ export type ImageType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' 
 /** Every refusal looks the same to the window: the loader says nothing about why. */
 export type ImageOutcome = { readonly ok: true; readonly type: ImageType; readonly bytes: Uint8Array } | { readonly ok: false }
 
+/**
+ * One place to type a message: a chat that has a session, a bot's unstarted chat, or the one
+ * new-chat view.
+ */
+export type DraftKey = `chat:${SessionId}` | `bot:${BotId}` | 'new'
+/** `bot` is the bot of the chat the draft was typed in, so it can be matched to that bot's list. Empty `text`: no draft. */
+export interface Draft { readonly key: DraftKey; readonly bot: BotId | null; readonly text: string }
+
 export interface Bridge {
   watch<T extends Topic>(topic: T, onPush: (push: Push<T>) => void): () => void
   run<C extends AppCommand>(command: C): Promise<CommandOutcome<AppResult<C>>>
   file(request: FileRequest): Promise<FileOutcome>
   image(request: ImageRequest): Promise<ImageOutcome>
+  /** Every draft kept on disk. */
+  drafts(): Promise<readonly Draft[]>
+  /** Keeps the draft on disk, or deletes it when its text is empty. Applied in the order a window sends them. */
+  keepDraft(draft: Draft): void
 }
 
-export const CHANNEL = { watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image' } as const
+export const CHANNEL = {
+  watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image',
+  drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft'
+} as const
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
 const ABSOLUTE = /^(?:\/|[A-Za-z]:[\\/]|\\\\)/
@@ -225,6 +240,15 @@ export function parseFileRequest(raw: unknown): FileRequest | null {
   if (!isObject(raw) || (raw.action !== 'open' && raw.action !== 'show')) return null
   const sessionId = sessionIdOf(raw)
   return sessionId && filled(raw.path) ? { action: raw.action, sessionId, path: raw.path } : null
+}
+
+const draftKeyOf = (raw: unknown): DraftKey | null =>
+  raw === 'new' || (text(raw) && /^(?:chat|bot):/.test(raw) && filled(raw.slice(raw.indexOf(':') + 1))) ? (raw as DraftKey) : null
+
+export function parseDraft(raw: unknown): Draft | null {
+  if (!isObject(raw) || !text(raw.text) || !(raw.bot === null || filled(raw.bot))) return null
+  const key = draftKeyOf(raw.key)
+  return key && { key, bot: botIdOf(raw.bot), text: raw.text }
 }
 
 export function parseImageRequest(raw: unknown): ImageRequest | null {

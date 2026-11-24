@@ -2,7 +2,7 @@ import { targetOf, type Target } from '@highwing/hermes/domain'
 import { mkdir, open, readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 
-/** The only state Highwing keeps on disk: where Hermes runs. Session state stays with the gateway. */
+/** Where Hermes runs. Session state stays with the gateway. The other file Highwing keeps is each chat's unsent draft (`drafts.ts`). */
 export const SETTINGS_FILE = 'connection.json'
 const VERSION = 1
 

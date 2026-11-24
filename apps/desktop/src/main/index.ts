@@ -3,9 +3,11 @@ import type { Target } from '@highwing/hermes/domain'
 import { loadFixture, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
 import { app, BrowserWindow, ipcMain, net, shell } from 'electron'
 import { appendFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { ownConnection, pinnedConnection } from './connection'
 import { desktopOpener, recordingOpener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
+import { draftStore, DRAFTS_DIR } from './drafts'
 import { serveWindows } from './ipc'
 import { loadSettings, saveSettings } from './settings'
 import { isAppUrl, openWindow } from './windows'
@@ -34,10 +36,11 @@ app.whenReady().then(async () => {
     })))
     : ownConnection({ loaded: await loadSettings(settingsDir), save: target => saveSettings(settingsDir, target), check: checkTarget, routeFor, open })
   const opener = HIGHWING_OPEN_LOG ? recordingOpener(HIGHWING_OPEN_LOG) : desktopOpener(shell)
-  const served = serveWindows(owner, ipcMain, isAppUrl, opener, imageLoader(fixture ? fixtureImageDeps(fixture.header.media) : desktopImageDeps(net)))
+  const drafts = draftStore(join(settingsDir, DRAFTS_DIR))
+  const served = serveWindows(owner, ipcMain, isAppUrl, opener, imageLoader(fixture ? fixtureImageDeps(fixture.header.media) : desktopImageDeps(net)), drafts)
   openWindow()
   let closed: Promise<void> | null = null
-  const close = () => (closed ??= (served.dispose(), owner.close()))
+  const close = () => (closed ??= (served.dispose(), Promise.all([owner.close(), drafts.settled()]).then(() => {})))
   app.on('window-all-closed', () => void close().finally(() => app.quit()))
   // A quit from the menu or the session never emits window-all-closed, and a check or an attach still running would outlive the app.
   app.on('will-quit', () => void close())
