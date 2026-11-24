@@ -160,11 +160,11 @@ export class RpcRefusal extends Error {
 export class Offline extends Error {}
 
 /**
- * The canonical route also serves three methods the generated contract does not list as canonical:
- * `commands.catalog` and `command.dispatch` (`AuthorityConnection.handlers`, gateway/session_controls.py:239-247)
- * and `model.options` (gateway/session_config.py:11-13).
+ * The canonical route also serves four methods the generated contract does not list as canonical:
+ * `commands.catalog` and `command.dispatch` (`AuthorityConnection.handlers`, gateway/session_controls.py:239-247),
+ * `model.options` (gateway/session_config.py:11-13) and `session.context_breakdown` (gateway/session_tui_ops.py:33).
  */
-type Served = CanonicalRpcMethods & Pick<RpcMethods, 'commands.catalog' | 'command.dispatch' | 'model.options'>
+type Served = CanonicalRpcMethods & Pick<RpcMethods, 'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown'>
 type Method = keyof Served
 
 export interface Connection {

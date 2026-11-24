@@ -106,6 +106,38 @@ machine, then reconnect."
   The model is switched with `session.mutate` operation `model`, never with
   `config.set`, which Hermes refuses for the model. See
   `packages/hermes/src/actor.ts`.
+- If Hermes answers `session.stats` with an unknown-method error, or any
+  refusal, Highwing shows no error. The context meter then appears only once a
+  turn end or a `session.usage` event carries the context figures, and a reply
+  shows its token counts only from the second turn that carries usage. If
+  Hermes sends no usage at all, Highwing shows no meter and no token line.
+- If Hermes refuses `session.context_breakdown`, the meter's panel shows the
+  refusal in one line and the meter keeps working.
+
+## Tokens and the context window
+
+Highwing reads token counts and the context fill from three places. It reads
+no cache, plan, rate-limit or money field from any of them.
+
+| Source | What Highwing takes |
+| --- | --- |
+| `usage` on `message.complete` | The session's token totals and the context fill at the turn's end. Hermes attaches it only for a local viewer's turn (`gateway/session_settlement_recovery.py:84-88`). |
+| The `session.usage` event | The context fill, after each model call of a turn. |
+| The `session.stats` method | The totals and the fill, read when a chat opens and after each turn. |
+
+- The canonical route has no `session.usage` method, although the contract
+  lists one for the legacy route. `session.stats` returns the same counters
+  (`gateway/session_usage.py:265-274`). Highwing builds the context fill from
+  them the way Hermes's `tui_usage` does: `last_prompt_tokens` over
+  `context_length`, estimated unless `context_source` is `provider_usage`.
+- The token counts are running totals of the session's agent, not one reply's
+  count. Highwing shows a reply the difference between the totals at its end
+  and the totals before it. Hermes starts the totals again when it builds a new
+  agent for the session. Highwing then takes the new totals as the reply's own
+  when any of them is lower than before. It cannot tell a restart whose first
+  reply uses more than the whole session did before.
+- `session.context_breakdown` is served on the canonical route
+  (`gateway/session_tui_ops.py:33`). Highwing ignores each category's `color`.
 
 ## When a change needs a newer Hermes route
 

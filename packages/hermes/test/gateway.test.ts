@@ -191,6 +191,19 @@ describe('the scripted gateway routes a frame by the profile it names, as the di
     expect(await bound.call('session.resume', { profile: 'default', session_id: SESSION })).toMatchObject({ result: { session_id: SESSION } })
   })
 
+  it('answers the usage a fixture cans, and refuses both reads as unknown methods without it', async () => {
+    const usage = { before: { input_tokens: 0, last_prompt_tokens: 6000, context_length: 200_000 }, after: { input_tokens: 1204 }, breakdown: { categories: [], model: 'fast-small' } }
+    const { call } = await rawSocket({}, { ...ERRAND, header: { ...ERRAND.header, usage } })
+    expect(await call('session.stats', { session_id: SESSION })).toMatchObject({ result: usage.before })
+    expect(await call('session.context_breakdown', { session_id: SESSION })).toMatchObject({ result: usage.breakdown })
+    expect(await call('session.stats', { session_id: 'someone-else' })).toMatchObject(refusal('not_found'))
+
+    const older = await rawSocket()
+    const unknown = { error: { code: -32601, data: { reason: 'unknown_method' } } }
+    expect(await older.call('session.stats', { session_id: SESSION })).toMatchObject(unknown)
+    expect(await older.call('session.context_breakdown', { session_id: SESSION })).toMatchObject(unknown)
+  })
+
   it("answers for a bot's session only on a frame that names the bot", async () => {
     const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, models: { providers: [] } } })
     expect(await call('session.resume', { session_id: RESEARCH_CHAT })).toMatchObject(refusal('not_found'))

@@ -4,12 +4,13 @@ import type { SessionEvent } from '../src/domain/reduce'
 import type { FileDiff, ToolResult } from '../src/domain/session'
 import { loadFixture } from '../src/testing/fixture'
 import type {
-  CanonicalEventsResult, CanonicalPendingPrompt, CanonicalSessionListRow, CanonicalSnapshot, StoredTranscriptResult, TranscriptMessage
+  CanonicalEventsResult, CanonicalPendingPrompt, CanonicalSessionListRow, CanonicalSnapshot, SessionContextBreakdownResult, SessionStats,
+  StoredTranscriptResult, TranscriptMessage
 } from '../src/wire/contract.generated'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 import {
-  parseEvent, parseInlineDiff, parseListRows, parseModelMenu, parseModelReceipt, parseReplay, parseRows, parseServerRequest, parseSnapshot, parseToolResult,
-  parseTranscript, SHOWN, UNSHOWN
+  parseContextBreakdown, parseEvent, parseInlineDiff, parseListRows, parseModelMenu, parseModelReceipt, parseReplay, parseRows, parseServerRequest,
+  parseSnapshot, parseStats, parseToolResult, parseTranscript, SHOWN, UNSHOWN
 } from '../src/wire/parse'
 
 const ERRAND = fileURLToPath(new URL('../../../fixtures/errand.jsonl', import.meta.url))
@@ -147,7 +148,7 @@ describe('parseEvent on the errand fixture', () => {
 
   it('ends the turn complete with no final text and the receipt rows 1 to 10', () => {
     const complete = only(params.filter(({ type }) => type === 'message.complete'))
-    expect(eventOf(complete)).toEqual({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], userRow: 1 })
+    expect(eventOf(complete)).toEqual({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], userRow: 1, usage: null })
   })
 
   it('reads the queue, revision and generation from session.info', () => {
@@ -197,7 +198,7 @@ describe('parseEvent outside the happy path', () => {
       return parsed.scope === 'session' ? parsed.event : null
     }
     expect(complete({ text: 'Worker execution is unknown.', outcome: 'unknown', status: 'error' })).toEqual({
-      type: 'turn.ended', outcome: { kind: 'failed', message: 'Worker execution is unknown.', code: null, retryable: false }, finalText: null, rows: [], userRow: null
+      type: 'turn.ended', outcome: { kind: 'failed', message: 'Worker execution is unknown.', code: null, retryable: false }, finalText: null, rows: [], userRow: null, usage: null
     })
     expect(complete({ status: 'error', error: 'no credentials', error_surface: { layer: 'provider', code: 'auth_permanent', retryable: false } }))
       .toMatchObject({ outcome: { kind: 'failed', message: 'no credentials', code: 'auth_permanent' } })
@@ -472,6 +473,62 @@ describe('parseInlineDiff and parseToolResult', () => {
 })
 
 
+describe('usage', () => {
+  const frame = (type: string, payload: Record<string, unknown>) => ({ type, session_id: SESSION, seq: 9, replay_epoch: EPOCH, execution_generation: 1, payload })
+  const VIEW = {
+    model: 'fast-small', input: 1204, output: 380, reasoning: 412, prompt: 2404, completion: 380, total: 2784, calls: 4,
+    context_used: 68_000, context_max: 200_000, context_percent: 34, context_source: 'rough_estimate', context_estimated: true,
+    cache_read: 900, cache_write: 300, cache_hit_pct: 37, cost_usd: 0.42, cost_status: 'estimated'
+  }
+  const FILL = { used: 68_000, max: 200_000, percent: 34, estimated: true }
+
+  it('reads the token totals and the context fill off a turn\'s end, and nothing else', () => {
+    expect(parseEvent(frame('message.complete', { text: null, status: 'complete', usage: VIEW }))).toMatchObject({
+      event: { type: 'turn.ended', usage: { totals: { input: 1204, output: 380, reasoning: 412 }, context: FILL } }
+    })
+    const parsed = parseEvent(frame('message.complete', { text: null, status: 'complete', usage: VIEW }))
+    expect(JSON.stringify(parsed)).not.toMatch(/cache|cost|0\.42/)
+  })
+
+  it('reads a view with no context figures as totals only, and one with no counters as a fill only', () => {
+    expect(parseEvent(frame('message.complete', { status: 'complete', usage: { input: 9, output: 1 } })))
+      .toMatchObject({ event: { usage: { totals: { input: 9, output: 1, reasoning: 0 }, context: null } } })
+    expect(parseEvent(frame('message.complete', { status: 'complete', usage: { context_used: 10, context_max: 40 } })))
+      .toMatchObject({ event: { usage: { totals: null, context: { used: 10, max: 40, percent: 25, estimated: false } } } })
+  })
+
+  it('still ends the turn when the usage is not usable', () => {
+    expect(parseEvent(frame('message.complete', { status: 'complete', usage: { input: 'many', output: 1 } })))
+      .toMatchObject({ event: { type: 'turn.ended', outcome: { kind: 'complete' }, usage: { totals: null, context: null } } })
+  })
+
+  it('reads the context fill off a session.usage tick', () => {
+    expect(parseEvent(frame('session.usage', { usage: VIEW, input_tokens: 1204 }))).toMatchObject({ event: { type: 'usage', context: FILL } })
+    expect(parseEvent(frame('session.usage', { input_tokens: 1204 }))).toMatchObject({ event: { type: 'usage', context: null } })
+  })
+
+  it('reads session.stats the way Hermes builds its view from it', () => {
+    const stats = (more: Record<string, unknown>) => parseStats({ input_tokens: 1204, output_tokens: 380, reasoning_tokens: 412, ...more } as unknown as SessionStats)
+    expect(stats({ last_prompt_tokens: 68_000, context_length: 200_000, context_source: 'rough_estimate', cache_read_tokens: 900 }))
+      .toEqual({ totals: { input: 1204, output: 380, reasoning: 412 }, context: FILL })
+    expect(stats({ last_prompt_tokens: 250_000, context_length: 200_000, context_source: 'provider_usage' }).context)
+      .toEqual({ used: 200_000, max: 200_000, percent: 100, estimated: false })
+    expect(stats({ last_prompt_tokens: 0, context_length: null }).context).toBeNull()
+  })
+
+  it('reads a context breakdown, leaving out a category it cannot use and every colour', () => {
+    const reply = {
+      categories: [{ id: 'system_prompt', label: 'System', tokens: 6000, color: '#888' }, { id: 'broken', tokens: 'lots' }, { id: 'conversation', tokens: 51_000 }],
+      context_used: 68_000, context_max: 200_000, context_percent: 34, context_estimated: true, model: 'fast-small', prompt_cache: { tier: '5m' }
+    } as unknown as SessionContextBreakdownResult
+    expect(parseContextBreakdown(reply)).toEqual({
+      model: 'fast-small', used: 68_000, max: 200_000, percent: 34, estimated: true,
+      categories: [{ id: 'system_prompt', label: 'System', tokens: 6000 }, { id: 'conversation', label: 'conversation', tokens: 51_000 }]
+    })
+    expect(parseContextBreakdown({} as SessionContextBreakdownResult)).toEqual({ model: null, used: 0, max: 0, percent: 0, estimated: false, categories: [] })
+  })
+})
+
 describe('models', () => {
   const frame = (type: string, payload: Record<string, unknown>) => ({ type, session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload })
 
@@ -489,9 +546,10 @@ describe('models', () => {
   it('settles a pick on a committed or refused receipt, carrying the generation the switch moved to', () => {
     const base = { session_id: SESSION, operation: 'model', revision: 4 }
     expect(parseEvent(frame('session.updated', { ...base, model: 'careful-large', provider: 'acme', execution_generation: 3 })))
-      .toMatchObject({ event: { type: 'meta', revision: 4, model: { id: 'careful-large' }, pick: { is: 'settled' }, generation: 3 } })
-    expect(parseEvent(frame('session.updated', { ...base, status: 'refused', reason: 'model_resolution_failed', target_model: 'careful-large', model: 'fast-small' })))
-      .toMatchObject({ event: { model: { id: 'fast-small' }, pick: { is: 'settled' } } })
+      .toMatchObject({ event: { type: 'meta', revision: 4, model: { id: 'careful-large' }, pick: { is: 'settled' }, generation: 3, countsRestart: true } })
+    const refused = parseEvent(frame('session.updated', { ...base, status: 'refused', reason: 'model_resolution_failed', target_model: 'careful-large', model: 'fast-small' }))
+    expect(refused).toMatchObject({ event: { model: { id: 'fast-small' }, pick: { is: 'settled' } } })
+    expect(refused).not.toMatchObject({ event: { countsRestart: expect.anything() } })
     expect(parseEvent(frame('session.updated', { session_id: SESSION, operation: 'rename', revision: 5, title: 'Notes' })))
       .not.toMatchObject({ event: { pick: expect.anything() } })
   })

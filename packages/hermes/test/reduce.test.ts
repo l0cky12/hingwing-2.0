@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
-  activityOf, emptyTracked, reduce, sessionOf, syncOf,
+  activityOf, emptyTracked, reduce, sessionOf, shareOf, syncOf,
   type Gate, type SessionEvent, type SessionInput, type Snapshot, type StampedEvent, type Tracked
 } from '../src/domain/reduce'
 import type { ModelMenu } from '../src/domain/command'
 import { modelViewOf, sameModel } from '../src/domain/model'
 import type {
-  Ask, Generation, InputId, Link, ModelId, ModelRef, OpenTurn, Outcome, PromptId, SessionContent, SessionId, SettledTurn, ToolId, ToolResult, TurnId
+  Ask, ContextFill, Generation, InputId, Link, ModelId, ModelRef, OpenTurn, Outcome, PromptId, SessionContent, SessionId, SessionUsage, SettledTurn,
+  Tokens, ToolId, ToolResult, TurnId
 } from '../src/domain/session'
 
 const EPOCH = 'e1'
@@ -35,8 +36,9 @@ const toolStarted = (id: string): SessionEvent => ({ type: 'tool.started', id: t
 const toolFinished = (id: string): SessionEvent =>
   ({ type: 'tool.finished', id: toolId(id), name: 'terminal', args: null, durationS: 2, diffs: [], result: OUTPUT, image: null })
 const promptOpened = (id: string, gen = 1): SessionEvent => ({ type: 'prompt.opened', id: promptId(id), generation: generation(gen), ask: APPROVAL })
-const ended = (outcome: Outcome, finalText: string | null = null, rows: readonly number[] = [], userRow: number | null = null): SessionEvent =>
-  ({ type: 'turn.ended', outcome, finalText, rows, userRow })
+const ended = (
+  outcome: Outcome, finalText: string | null = null, rows: readonly number[] = [], userRow: number | null = null, usage: SessionUsage | null = null
+): SessionEvent => ({ type: 'turn.ended', outcome, finalText, rows, userRow, usage })
 
 function snapshot(over: Partial<Snapshot> = {}): Snapshot {
   return {
@@ -58,7 +60,10 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
 }
 
 function storedTurn(id: string, rows: readonly number[]): SettledTurn {
-  return { id: turnId(id), request: { text: `request ${id}`, inputId: null, rowId: rows[0] ?? null }, items: [{ kind: 'text', markdown: `answer ${id}`, sealed: true }], began: null, outcome: COMPLETE, rows }
+  return {
+    id: turnId(id), request: { text: `request ${id}`, inputId: null, rowId: rows[0] ?? null }, items: [{ kind: 'text', markdown: `answer ${id}`, sealed: true }],
+    began: null, outcome: COMPLETE, rows, tokens: null
+  }
 }
 
 const feed = (state: Tracked, ...inputs: SessionInput[]): Tracked => inputs.reduce(reduce, state)
@@ -151,7 +156,8 @@ describe('the fold', () => {
         { kind: 'prompt', id: 'p1', generation: 1, ask: APPROVAL, state: { s: 'withdrawn' } }
       ],
       outcome: failed,
-      rows: [11, 12]
+      rows: [11, 12],
+      tokens: null
     }])
     expect(activityOf(state.content)).toEqual({ kind: 'idle' })
   })
@@ -254,7 +260,8 @@ describe('attached', () => {
       began: null,
       items: [{ kind: 'text', markdown: 'Hello world', sealed: true }],
       outcome: COMPLETE,
-      rows: [7]
+      rows: [7],
+      tokens: null
     }])
   })
 
@@ -302,7 +309,7 @@ describe('attached', () => {
       snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 9 }, history: { turns, unfinished: null, older: { cursor: 'c1' } } })
     })
     expect(state.gate).toEqual({ at: 'live', cursor: { epoch: EPOCH, seq: 9 }, subscriptionId: 'sub-1' })
-    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, outbox: [], model: { current: null, next: null, ask: null } })
+    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null } })
   })
 
   it('B: opens the unfinished turn of a running snapshot with its waiting prompts, then the parked frames above the watermark', () => {
@@ -683,6 +690,105 @@ describe('the session model', () => {
   it('keeps the same content when Hermes repeats the model it already named', () => {
     const named = reduce(live(), event(1, { type: 'meta', model: fast }, null))
     expect(reduce(named, event(2, { type: 'meta', model: { ...fast } }, null)).content).toBe(named.content)
+  })
+})
+
+describe('token usage', () => {
+  const tokens = (input: number, output: number, reasoning = 0): Tokens => ({ input, output, reasoning })
+  const fill = (percent: number, estimated = false): ContextFill => ({ used: percent * 2000, max: 200_000, percent, estimated })
+  const read = (state: Tracked, usage: SessionUsage): SessionInput => ({ in: 'usage', usage, asked: state.fence.totalsEpoch })
+  const turn = (seq: number, gen: number, usage: SessionUsage | null): SessionInput[] =>
+    [event(seq, started(`t${gen}`), gen), event(seq + 1, ended(COMPLETE, 'Done.', [], null, usage), gen)]
+  const idle = () => {
+    const opened = live()
+    return reduce(opened, read(opened, { totals: tokens(0, 0), context: fill(3) }))
+  }
+
+  it('starts with nothing known', () => {
+    expect(live().content.usage).toEqual({ totals: null, context: null })
+  })
+
+  it('gives the first turn the counts its end names when the totals before it were read as zero', () => {
+    const after = feed(idle(), ...turn(1, 1, { totals: tokens(1204, 380, 412), context: fill(34, true) }))
+    expect(after.content.history.at(-1)?.tokens).toEqual(tokens(1204, 380, 412))
+    expect(after.content.usage).toEqual({ totals: tokens(1204, 380, 412), context: fill(34, true) })
+  })
+
+  it('gives a later turn only what it added to the session totals', () => {
+    const after = feed(idle(), ...turn(1, 1, { totals: tokens(1204, 380, 412), context: fill(34) }), ...turn(3, 2, { totals: tokens(2000, 500, 412), context: fill(40) }))
+    expect(after.content.history.map(settled => settled.tokens)).toEqual([tokens(1204, 380, 412), tokens(796, 120, 0)])
+  })
+
+  it('holds no counts for a turn whose end names no usage, and none for the turn after it', () => {
+    const silent = feed(idle(), ...turn(1, 1, null))
+    expect(silent.content.history.at(-1)?.tokens).toBeNull()
+    expect(silent.content.usage).toEqual({ totals: null, context: fill(3) })
+    const next = feed(silent, ...turn(3, 2, { totals: tokens(900, 90), context: null }))
+    expect(next.content.history.at(-1)?.tokens).toBeNull()
+    expect(next.content.usage).toEqual({ totals: tokens(900, 90), context: fill(3) })
+  })
+
+  it('holds no counts for a turn that began before the totals were known', () => {
+    const after = feed(live(), ...turn(1, 1, { totals: tokens(1204, 380), context: fill(34) }))
+    expect(after.content.history.at(-1)?.tokens).toBeNull()
+  })
+
+  it('takes the new totals as the turn\'s own when Hermes started counting again', () => {
+    expect(shareOf(tokens(300, 40, 0), tokens(1204, 380, 412))).toEqual(tokens(300, 40, 0))
+  })
+
+  it('moves the context fill on a mid-turn tick and leaves the totals the turn is measured from', () => {
+    const running = feed(idle(), event(1, started('t1')), event(2, { type: 'usage', context: fill(20) }))
+    expect(running.content.usage).toEqual({ totals: tokens(0, 0), context: fill(20) })
+    const after = reduce(running, event(3, ended(COMPLETE, 'Done.', [], null, { totals: tokens(700, 70), context: fill(21) })))
+    expect(after.content.history.at(-1)?.tokens).toEqual(tokens(700, 70))
+  })
+
+  it('takes only the context fill from a read answered while a turn runs', () => {
+    const running = feed(idle(), event(1, started('t1')))
+    const after = reduce(running, read(running, { totals: tokens(500, 50), context: fill(12) }))
+    expect(after.content.usage).toEqual({ totals: tokens(0, 0), context: fill(12) })
+  })
+
+  it('does not let a read sent before a turn ended replace the totals or the fill that end set', () => {
+    const before = idle()
+    const early = read(before, { totals: tokens(0, 0), context: fill(3) })
+    const after = reduce(feed(before, ...turn(1, 1, { totals: tokens(1204, 380), context: fill(34) })), early)
+    expect(after.content.usage).toEqual({ totals: tokens(1204, 380), context: fill(34) })
+  })
+
+  it('measures the turn after a committed model switch from zero, even one queued before the switch', () => {
+    const fast = { id: 'fast-small' as ModelId, provider: 'acme' }
+    const careful = { id: 'careful-large' as ModelId, provider: 'acme' }
+    const before = feed(idle(), event(1, { type: 'meta', model: fast }, null), ...turn(2, 1, { totals: tokens(100, 10), context: fill(5) }))
+    const early = read(before, { totals: tokens(100, 10), context: fill(5) })
+    const switched = reduce(before, event(4, { type: 'meta', model: careful, pick: { is: 'settled' }, countsRestart: true }, null))
+    expect(switched.content.usage.totals).toEqual(tokens(0, 0))
+    expect(reduce(switched, early).content.usage.totals).toEqual(tokens(0, 0))
+    const after = feed(switched, ...turn(5, 2, { totals: tokens(2000, 100), context: fill(6) }))
+    expect(after.content.history.at(-1)?.tokens).toEqual(tokens(2000, 100))
+  })
+
+  it('keeps the totals when session.info names another model without a committed switch', () => {
+    const before = feed(idle(), ...turn(1, 1, { totals: tokens(100, 10), context: fill(5) }))
+    const named = reduce(before, event(3, { type: 'meta', model: { id: 'fallback' as ModelId, provider: null } }, null))
+    expect(named.content.usage.totals).toEqual(tokens(100, 10))
+  })
+
+  it('forgets the totals when the content is replaced from a snapshot, and keeps the last fill', () => {
+    const held = feed(idle(), ...turn(1, 1, { totals: tokens(1204, 380), context: fill(34) }))
+    const early = read(held, { totals: tokens(1204, 380), context: fill(34) })
+    const rebuilt = feed(held, { in: 'gap' }, { in: 'attached', attempt: 2, snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 9 } }), replay: null })
+    expect(rebuilt.content.usage).toEqual({ totals: null, context: fill(34) })
+    expect(reduce(rebuilt, early).content.usage.totals).toBeNull()
+  })
+
+  it('keeps the same content when a read or a tick repeats what is held', () => {
+    const before = idle()
+    expect(reduce(before, read(before, { totals: tokens(0, 0), context: fill(3) })).content).toBe(before.content)
+    const running = feed(before, event(1, started('t1')))
+    expect(reduce(running, event(2, { type: 'usage', context: fill(3) })).content).toBe(running.content)
+    expect(reduce(running, event(3, { type: 'usage', context: null })).content).toBe(running.content)
   })
 })
 

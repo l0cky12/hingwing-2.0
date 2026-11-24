@@ -130,8 +130,8 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'checkTarget', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat', 'pickModel',
-      'reconnect', 'rename', 'rewind', 'send', 'start', 'stop'
+      'answer', 'archive', 'checkTarget', 'contextBreakdown', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat',
+      'pickModel', 'reconnect', 'rename', 'rewind', 'send', 'start', 'stop'
     ])
   })
 })

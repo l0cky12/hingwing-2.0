@@ -1,0 +1,23 @@
+{
+  "before": {
+    "input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0, "prompt_tokens": 0,
+    "completion_tokens": 0, "total_tokens": 0, "reasoning_tokens": 0, "api_calls": 0,
+    "last_prompt_tokens": 6000, "context_tokens": 6000, "context_length": 200000, "context_source": "rough_estimate",
+    "compression_count": 0, "last_turn_tokens": 0, "active_subagents": 0, "model": "fast-small", "provider": "acme"
+  },
+  "after": {
+    "input_tokens": 1204, "output_tokens": 380, "cache_read_tokens": 900, "cache_write_tokens": 300, "prompt_tokens": 2404,
+    "completion_tokens": 380, "total_tokens": 2784, "reasoning_tokens": 0, "api_calls": 4,
+    "last_prompt_tokens": 174000, "context_tokens": 174000, "context_length": 200000, "context_source": "provider_usage",
+    "compression_count": 0, "last_turn_tokens": 380, "active_subagents": 0, "model": "fast-small", "provider": "acme"
+  },
+  "breakdown": {
+    "categories": [
+      { "color": "#8a8a8a", "id": "system_prompt", "label": "System", "tokens": 6000 },
+      { "color": "#5b8def", "id": "tool_definitions", "label": "Tools", "tokens": 11000 },
+      { "color": "#3fb27f", "id": "conversation", "label": "Messages", "tokens": 157000 }
+    ],
+    "context_max": 200000, "context_percent": 87, "context_used": 174000, "estimated_total": 174000,
+    "context_estimated": false, "context_source": "provider_usage", "model": "fast-small"
+  }
+}

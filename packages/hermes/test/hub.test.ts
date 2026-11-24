@@ -395,8 +395,10 @@ describe('the open chat', () => {
     await opened.clock.advance(60_000)
 
     const forResearch = opened.sent().filter(call => call.params?.session_id === RESEARCH_CHAT)
-    expect(forResearch.map(call => call.method), 'one resume for the whole visit').toEqual(['session.resume', 'prompt.submit', 'model.options', 'session.mutate', 'session.detach'])
-    expect(forResearch.map(call => call.params?.profile), 'every call that names the chat names its bot').toEqual(Array(5).fill('research'))
+    expect(forResearch.map(call => call.method), 'one resume for the whole visit').toEqual([
+      'session.resume', 'session.stats', 'session.stats', 'prompt.submit', 'session.stats', 'model.options', 'session.mutate', 'session.detach'
+    ])
+    expect(forResearch.map(call => call.params?.profile), 'every call that names the chat names its bot').toEqual(Array(8).fill('research'))
     expect(calls(opened, 'session.create')).toEqual([])
   })
 

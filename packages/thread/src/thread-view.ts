@@ -1,7 +1,7 @@
 import {
   activityOf,
   type Activity, type FileDiff, type Item, type NoticeItem, type Outcome, type PromptId, type PromptItem, type PromptReply,
-  type Session, type SettledTurn, type Sync, type ToolItem, type Turn
+  type Session, type SettledTurn, type Sync, type Tokens, type ToolItem, type Turn
 } from '@highwing/hermes/domain'
 import { changesAt, elapsedWords, timeLines, type ViewClock } from './when'
 
@@ -37,6 +37,8 @@ export interface TurnView {
   /** Top to bottom along the thread. */
   readonly nodes: readonly ThreadNode[]
   readonly end: ThreadEnd
+  /** What the reply used, under its end: "1,204 in, 380 out". null draws nothing: a turn still running, or one Hermes named no counts for. */
+  readonly tokens: string | null
 }
 
 export type ThreadNode =
@@ -203,7 +205,18 @@ function turnView(turn: Turn, time: string | null, live: boolean, end: (nodes: r
         return { kind: 'notice', key, ...noticeWords(item) }
     }
   })
-  return { key: turn.id, time, request: turn.request?.text ?? null, rowId: turn.request?.rowId ?? null, nodes, end: end(nodes) }
+  return {
+    key: turn.id, time, request: turn.request?.text ?? null, rowId: turn.request?.rowId ?? null, nodes, end: end(nodes),
+    tokens: 'tokens' in turn ? tokenWords(turn.tokens) : null
+  }
+}
+
+const COUNT = new Intl.NumberFormat('en-US')
+
+function tokenWords(tokens: Tokens | null): string | null {
+  if (tokens === null) return null
+  const reasoning = tokens.reasoning > 0 ? `, ${COUNT.format(tokens.reasoning)} reasoning` : ''
+  return `${COUNT.format(tokens.input)} in, ${COUNT.format(tokens.output)} out${reasoning}`
 }
 
 interface Placed<I extends Item = Item> {
@@ -566,6 +579,7 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
  *   ◆ Run this command?                                        asking prompt, its command, reason and buttons indented
  *   ! Hermes asked for your sudo password. ...                 notice
  *   ✓ Done                                                     end: ✓ done, ✗ failed, ⊘ stopped, ~ lost, each with its words
+ *     1,204 in, 380 out                                        what the reply used, when Hermes said
  *
  * `◉` replaces the glyph of the step or group that carries the live end, or opens a tip line
  * ("◉ Thinking"). Once a minute has passed the live end adds `, 3 min` after its words. `◌` is a
@@ -584,6 +598,7 @@ export function outline(view: ThreadView, opened: ReadonlySet<string> = new Set(
     for (const node of turn.nodes) lines.push(...nodeLines(node, node.key === liveKey, elapsed, opened))
     const end = endLine(turn.end)
     if (end !== null) lines.push(end)
+    if (turn.tokens !== null) lines.push(`  ${turn.tokens}`)
   })
   for (const message of view.pending) lines.push(`⋯ ${firstLine(message.text)}  (${message.status}${message.detail ? `: ${message.detail}` : ''})`)
   return lines.join('\n')
@@ -674,6 +689,7 @@ export function checkThread(view: ThreadView): string[] {
     const settled = SETTLED_ENDS.has(turn.end.kind)
     claim(turn.key)
     if (turn.time === '') problems.push(`${where}: the time line is an empty string`)
+    if (turn.tokens !== null && !settled) problems.push(`${where}: shows token counts before it ended`)
     for (const node of turn.nodes) {
       claim(node.key)
       if (node.kind === 'group') {

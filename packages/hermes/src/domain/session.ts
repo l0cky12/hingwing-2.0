@@ -36,6 +36,21 @@ export interface SessionModel {
   readonly ask: { readonly model: ModelRef; readonly token: string; readonly message: string } | null
 }
 
+export interface Tokens { readonly input: number; readonly output: number; readonly reasoning: number }
+
+/** How full the chat's context window is, as Hermes last said. `percent` is Hermes's own rounding of `used` over `max`. */
+export interface ContextFill { readonly used: number; readonly max: number; readonly percent: number; readonly estimated: boolean }
+
+export interface SessionUsage {
+  /**
+   * Hermes's session-wide token totals as of the last turn end, or as read while the chat was idle.
+   * The next turn's share is measured from here. null: unknown.
+   */
+  readonly totals: Tokens | null
+  /** null until Hermes says. Hermes names no fill before the chat's first model call. */
+  readonly context: ContextFill | null
+}
+
 export type Json = null | boolean | number | string | readonly Json[] | { readonly [key: string]: Json }
 
 /** What a session holds, apart from how current it is. The reducer writes this and nothing else does. */
@@ -52,6 +67,7 @@ export interface SessionContent {
   /** Messages the user sent that no turn has picked up yet. */
   readonly outbox: readonly OutboxEntry[]
   readonly model: SessionModel
+  readonly usage: SessionUsage
 }
 
 /** The value a window reads. */
@@ -126,6 +142,11 @@ export interface SettledTurn extends TurnBase<'settled'> {
    * that is already covered here.
    */
   readonly rows: readonly number[]
+  /**
+   * What this turn added to Hermes's session totals. null for a turn read from history, a turn whose
+   * end named no totals, and a turn that began while the totals before it were unknown.
+   */
+  readonly tokens: Tokens | null
 }
 export type Turn = OpenTurn | SettledTurn
 

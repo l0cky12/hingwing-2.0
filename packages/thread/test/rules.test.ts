@@ -11,12 +11,12 @@ const NONE: ToolResult = { kind: 'none' }
 function session(over: Partial<Session> = {}): Session {
   return {
     id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, outbox: [],
-    model: { current: null, next: null, ask: null }, sync: { state: 'live' }, ...over
+    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, sync: { state: 'live' }, ...over
   }
 }
 
 const settled = (items: readonly Item<'settled'>[], outcome: Outcome = COMPLETE, id = 't1'): SettledTurn =>
-  ({ id: id as TurnId, request: { text: 'Do the errand', inputId: null, rowId: null }, began: null, items, outcome, rows: [] })
+  ({ id: id as TurnId, request: { text: 'Do the errand', inputId: null, rowId: null }, began: null, items, outcome, rows: [], tokens: null })
 
 const running = (items: readonly Item[], sync: Sync = { state: 'live' }, announced: string | null = null): Session => session({
   sync,
@@ -86,6 +86,28 @@ describe('end marks', () => {
     const [group] = nodesOf(live)
     expect(turnOf(live).end).toEqual({ kind: 'at', nodeKey: group!.key, tone: 'live', elapsed: null })
     expect(lines(live).slice(1)).toEqual(['◉ Editing `a.md` · 2 steps', '    ● Created `a.md`  +3', '    ● Editing `a.md`'])
+  })
+})
+
+describe('what a reply used', () => {
+  const used = (tokens: SettledTurn['tokens']) => threadView(session({ history: [{ ...settled([text('Done.')]), tokens }] }), CLOCK).turns[0]?.tokens
+
+  it('says the counts in and out, grouped by thousands', () => {
+    expect(used({ input: 1204, output: 380, reasoning: 0 })).toBe('1,204 in, 380 out')
+  })
+
+  it('adds the reasoning count only when the model reasoned', () => {
+    expect(used({ input: 1204, output: 380, reasoning: 412 })).toBe('1,204 in, 380 out, 412 reasoning')
+  })
+
+  it('says nothing for a turn Hermes named no counts for, and nothing while a turn runs', () => {
+    expect(used(null)).toBeNull()
+    expect(threadView(running([text('Working')]), CLOCK).turns[0]?.tokens).toBeNull()
+  })
+
+  it('prints the counts under the turn\'s end in the outline', () => {
+    const view = threadView(session({ history: [{ ...settled([text('Done.')]), tokens: { input: 12, output: 3, reasoning: 0 } }] }), CLOCK)
+    expect(outline(view).split('\n').slice(-2)).toEqual(['✓ Done', '  12 in, 3 out'])
   })
 })
 
@@ -205,13 +227,14 @@ describe('checkThread', () => {
       state: 'ready', pending: [], earlier: 'none', changesAt: null,
       turns: [
         {
-          key: 't1', time: null, request: null, rowId: null, end: { kind: 'at', nodeKey: 't1/7', tone: 'live', elapsed: null },
+          key: 't1', time: null, request: null, rowId: null, end: { kind: 'at', nodeKey: 't1/7', tone: 'live', elapsed: null }, tokens: '9 in, 1 out',
           nodes: [{ kind: 'group', key: 't1/g0', title: [], count: 1, stat: null, steps: [step] }, { kind: 'prose', key: 't1/0', markdown: 'x', streaming: true }]
         },
-        { key: 't2', time: null, request: null, rowId: null, end: { kind: 'done', words: 'Done' }, nodes: [] }
+        { key: 't2', time: null, request: null, rowId: null, end: { kind: 'done', words: 'Done' }, nodes: [], tokens: null }
       ]
     }
     expect(checkThread(view)).toEqual([
+      'turn t1: shows token counts before it ended',
       'turn t1: group t1/g0 has 1 step',
       'key t1/0 is used twice',
       'turn t1: only the last turn may be unsettled, this one ends at',

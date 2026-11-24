@@ -69,12 +69,14 @@ interface View {
   /** A model switch asked for during a turn. It commits when the turn ends (gateway/session_mutations.py:134-143). */
   deferred: Model | null
   switchesCommitted: number
+  turnsEnded: number
 }
 
 const TRACK: { readonly [T in SessionEvent['type']]?: (view: View, event: Extract<SessionEvent, { type: T }>, payload: Obj) => void } = {
   'turn.started': view => { view.running = true },
   'turn.ended': view => {
     view.running = false
+    view.turnsEnded++
     view.prompts.clear()
   },
   'prompt.opened': (view, event, payload) => void view.prompts.set(event.id, payload),
@@ -221,6 +223,23 @@ function offered(models: Obj): Model[] {
   return rows.flatMap(row => (Array.isArray(row.models) ? row.models.filter(isText) : []).map(model => ({ model, provider: isText(row.slug) ? row.slug : null })))
 }
 
+/** `tui_usage` (gateway/session_usage.py:130-147): the status-bar view of a `session.stats` dict, less what Highwing never reads. */
+function usageView(stats: Obj): Obj {
+  const count = (key: string) => (isInt(stats[key]) ? stats[key] : 0)
+  const max = count('context_length')
+  const used = Math.min(count('last_prompt_tokens'), max)
+  const source = isText(stats.context_source) ? stats.context_source : 'provider_usage'
+  return {
+    model: isText(stats.model) ? stats.model : '', input: count('input_tokens') || count('prompt_tokens'),
+    output: count('output_tokens') || count('completion_tokens'), reasoning: count('reasoning_tokens'),
+    prompt: count('prompt_tokens'), completion: count('completion_tokens'), total: count('total_tokens'), calls: count('api_calls'),
+    ...(used === 0 ? {} : {
+      context_used: used, context_max: max, context_percent: Math.max(0, Math.min(100, Math.round(used / max * 100))),
+      context_source: source, context_estimated: source !== 'provider_usage'
+    })
+  }
+}
+
 const tokenFor = ({ model }: Model) => `confirm-${model}`
 
 const modelOf = (value: Obj | undefined): Model | null =>
@@ -290,6 +309,20 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (params.session_id !== undefined && params.session_id !== null) gateway.authorize(params, routed)
     return gateway.modelMenu(gateway.view.model)
   },
+  /** gateway/session_usage.py:265-274 */
+  'session.stats': (gateway, _socket, params, routed) => {
+    const { usage } = gateway.fixture.header
+    if (usage === undefined) throw unknownMethod('session.stats')
+    gateway.authorize(params, routed)
+    return gateway.view.turnsEnded === 0 ? usage.before : usage.after
+  },
+  /** gateway/session_tui_reads.py:135-149 */
+  'session.context_breakdown': (gateway, _socket, params, routed) => {
+    const { usage } = gateway.fixture.header
+    if (usage === undefined) throw unknownMethod('session.context_breakdown')
+    gateway.authorize(params, routed)
+    return usage.breakdown
+  },
   /** tui_gateway/methods_profiles.py:271-290 */
   'profiles.list': (gateway, socket) => gateway.roster(socket),
   'session.mutate': (gateway, socket, params, routed) =>
@@ -300,6 +333,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 type ChatHandler = (gateway: ScriptedGateway, socket: Socket, params: Obj, routed: string, chat: EchoChat) => unknown
 
 const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
+  'session.stats': () => { throw unknownMethod('session.stats') },
   'session.resume': (gateway, socket, params, _routed, chat) => gateway.open(socket, chat, params),
   'session.events.since': (gateway, _socket, params, _routed, chat) => replayOf(chat, gateway.options.ringFrames, params, []).reply,
   /** gateway/session_controls.py:884-895 */
@@ -350,7 +384,7 @@ export class ScriptedGateway {
     const { models } = fixture.header
     this.view = {
       running: false, generation: 0, revision: 0, title: '', pending: [], prompts: new Map(),
-      model: modelOf(isObject(models) ? models : undefined), deferred: null, switchesCommitted: 0
+      model: modelOf(isObject(models) ? models : undefined), deferred: null, switchesCommitted: 0, turnsEnded: 0
     }
     this.epoch = fixture.steps.map(epochOf).find(isText) ?? 'fixture-epoch'
     this.done = new Promise((resolve, reject) => { this.settle = { resolve, reject } })
@@ -763,7 +797,7 @@ export class ScriptedGateway {
    * (gateway/session_events.py:76-112).
    */
   private publish(step: PushStep): void {
-    const push = this.restamp(step.push)
+    const push = this.withUsage(this.restamp(step.push))
     if (!isObject(push)) return
     const { id, method, params } = push
     if (method !== 'event') {
@@ -776,6 +810,15 @@ export class ScriptedGateway {
     for (const socket of to) socket.peer.write(push)
     if (to.length > 0) this.delivered++
     if (!this.view.running && this.view.deferred !== null) this.landDeferred(this.view.deferred)
+  }
+
+  /** A turn's end carries the session's usage view for a local viewer (gateway/session_settlement_recovery.py:84-88). */
+  private withUsage(push: unknown): unknown {
+    const { usage } = this.fixture.header
+    if (usage === undefined || !isObject(push) || !isObject(push.params)) return push
+    const { params } = push
+    if (params.type !== 'message.complete' || !isInt(params.execution_generation) || !isObject(params.payload)) return push
+    return { ...push, params: { ...params, payload: { ...params.payload, usage: usageView(usage.after) } } }
   }
 
   private restamp(push: unknown): unknown {

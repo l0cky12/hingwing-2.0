@@ -34,6 +34,13 @@ export interface Fixture {
     /** Models a switch to needs a second yes, as Hermes's guard asks for a costly model. */
     readonly guarded?: readonly string[]
     /**
+     * Canned usage. `before` and `after` are `session.stats` replies: the gateway answers `before` until the
+     * story's first turn ends and `after` from then on, and every turn end carries `after` as Hermes's usage
+     * view. `breakdown` is the `session.context_breakdown` reply. Absent: the gateway refuses both calls as
+     * unknown methods, as a Hermes older than them does, and no frame carries usage.
+     */
+    readonly usage?: { readonly before: Json; readonly after: Json; readonly breakdown: Json }
+    /**
      * The canned `profiles.list` reply, as Hermes sends it. Absent: the gateway refuses
      * `profiles.list` as an unknown method, as a Hermes older than the call does.
      */
@@ -122,6 +129,11 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (models !== undefined && !(isObject(models) && Array.isArray(models.providers))) return '"models" must be a model.options reply with "providers"'
   const { guarded } = value
   if (guarded !== undefined && !(Array.isArray(guarded) && guarded.every(model => typeof model === 'string'))) return '"guarded" must be a list of model names'
+  const { before, after, breakdown } = isObject(value.usage) ? value.usage : {}
+  const usage = isObject(before) && isObject(after) && isObject(breakdown) ? { before, after, breakdown } : undefined
+  if (value.usage !== undefined && usage === undefined) {
+    return '"usage" must hold "before" and "after" session.stats replies and a "breakdown" session.context_breakdown reply'
+  }
   const { profiles } = value
   if (profiles !== undefined && !(isObject(profiles) && Array.isArray(profiles.profiles))) return '"profiles" must be a profiles.list reply with "profiles"'
   const { reach, homeBotChat } = value
@@ -133,6 +145,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     fixture, hermes, source, sessionId: sessionId as SessionId, describe: value.describe, list: value.list, stored,
     ...('catalog' in value ? { catalog: value.catalog } : {}),
     ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] }),
+    ...(usage === undefined ? {} : { usage }),
     ...(profiles === undefined ? {} : { profiles }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> })

@@ -16,6 +16,8 @@ const OWN_ANSWERS: Readonly<Record<string, (header: Header, reply: Obj, params: 
   'client.capabilities': () => NOTHING,
   'gateway.ping': () => NOTHING,
   'session.detach': () => NOTHING,
+  'session.stats': () => NOTHING,
+  'session.context_breakdown': () => NOTHING,
   'runtime.describe': (header, reply) => {
     header.describe ??= reply
     return NOTHING

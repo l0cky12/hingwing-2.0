@@ -3,18 +3,19 @@
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
 import type { BotFacts, BotId } from '../domain/bots'
-import type { ModelConfirm, ModelMenu } from '../domain/command'
+import type { ContextBreakdown, ModelConfirm, ModelMenu } from '../domain/command'
 import type { Admission, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type {
-  Ask, Began, FileDiff, Generation, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PromptId, SessionId, SettledTurn,
-  SidebarRow, ToolId, ToolResult, TurnId
+  Ask, Began, FileDiff, Generation, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PromptId, SessionId,
+  SessionUsage, SettledTurn, SidebarRow, ToolId, ToolResult, TurnId
 } from '../domain/session'
 import type { SlashCatalog, SlashEntry } from '../domain/slash'
 import type {
   CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalProfilesResult, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
-  CanonicalSnapshot, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
-  MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, SessionLiveInfo, SessionMutateResult, SessionTitlePayload, StoredTranscriptResult,
-  StoredTranscriptRow, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload
+  CanonicalSnapshot, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
+  MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult,
+  SessionStats, SessionTitlePayload, SessionUsagePayload, StoredTranscriptResult, StoredTranscriptRow, ToolCompletePayload, ToolGeneratingPayload,
+  ToolProgressPayload, ToolStartPayload, Usage
 } from './contract.generated'
 
 export type ParsedEvent =
@@ -158,9 +159,10 @@ interface MetaFields {
   readonly pick?: PickOutcome | null
   readonly generation?: number | null
   readonly cutBefore?: number | null
+  readonly countsRestart?: true
 }
 
-function meta({ title, revision, queue, model, pick, generation, cutBefore }: MetaFields): SessionEvent {
+function meta({ title, revision, queue, model, pick, generation, cutBefore, countsRestart }: MetaFields): SessionEvent {
   return {
     type: 'meta',
     ...(title == null ? {} : { title }),
@@ -169,7 +171,8 @@ function meta({ title, revision, queue, model, pick, generation, cutBefore }: Me
     ...(model == null ? {} : { model }),
     ...(pick == null ? {} : { pick }),
     ...(generation == null ? {} : { generation: generation as Generation }),
-    ...(cutBefore == null ? {} : { cutBefore })
+    ...(cutBefore == null ? {} : { cutBefore }),
+    ...(countsRestart === undefined ? {} : { countsRestart })
   }
 }
 
@@ -186,8 +189,13 @@ type ModelReceiptFields = SessionMutateResult & {
  */
 function modelReceipt(p: ReturnType<typeof fields<ModelReceiptFields>>): SessionEvent {
   const revision = p.optInt('revision')
-  if (p.optStr('status') !== 'confirmation_required') {
-    return meta({ revision, model: modelOf(p.optStr('model'), p.optStr('provider')), pick: { is: 'settled' }, generation: p.optInt('execution_generation') })
+  const status = p.optStr('status')
+  if (status !== 'confirmation_required') {
+    const switched = status !== 'refused' && status !== 'noop'
+    return meta({
+      revision, model: modelOf(p.optStr('model'), p.optStr('provider')), pick: { is: 'settled' }, generation: p.optInt('execution_generation'),
+      ...(switched ? { countsRestart: true } : {})
+    })
   }
   const asked = fields<{ model?: string; provider?: string }>(p.optObj('payload') ?? {})
   const model = modelOf(asked.optStr('model'), asked.optStr('provider'))
@@ -230,12 +238,14 @@ export const SHOWN: { readonly [type: string]: Shown } = {
     const p = fields<CanonicalComplete>(payload)
     const outcome = outcomeOf(p)
     const receipt = p.optObj('persisted_turn')
+    const usage = p.optObj('usage')
     return {
       type: 'turn.ended',
       outcome,
       finalText: outcome.kind === 'failed' ? null : p.optStr('text') || null,
       rows: receipt === null ? [] : fields<PersistedTurn>(receipt).ints('row_ids'),
-      userRow: receipt === null ? null : fields<PersistedTurn>(receipt).optInt('user_row_id')
+      userRow: receipt === null ? null : fields<PersistedTurn>(receipt).optInt('user_row_id'),
+      usage: usage === null ? null : parseUsage(usage)
     }
   },
   /** Spinner text while a model request is in flight (`gateway/local_viewer_events.py:44`). */
@@ -282,6 +292,8 @@ export const SHOWN: { readonly [type: string]: Shown } = {
       model: modelOf(p.optStr('model'), p.optStr('provider')), generation: p.optInt('execution_generation')
     })
   },
+  /** A tick after each model call of a turn (`gateway/session_usage.py:176-186`). */
+  'session.usage': payload => ({ type: 'usage', context: parseUsage(fields<SessionUsagePayload>(payload).optObj('usage') ?? {}).context }),
   'session.title': payload => meta({ title: fields<SessionTitlePayload>(payload).str('title') }),
   /** A committed `session.mutate` result (`gateway/session_mutations.py:352`). */
   'session.updated': payload => {
@@ -307,7 +319,7 @@ export const UNSHOWN: ReadonlySet<string> = new Set([
   'notification.show', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
   'pet.hatch.progress', 'platforms.changed', 'preview.close', 'preview.open', 'preview.restart.complete',
   'preview.restart.progress', 'projects.changed', 'reaction', 'reasoning.available', 'reasoning.delta', 'request.cancel',
-  'review.summary', 'session.control.update', 'session.reclaimed', 'session.resume_progress', 'session.usage',
+  'review.summary', 'session.control.update', 'session.reclaimed', 'session.resume_progress',
   'setup.ready', 'skills.changed', 'skin.changed', 'status.update', 'subagent.complete', 'subagent.progress',
   'subagent.spawn_requested', 'subagent.start', 'subagent.thinking', 'subagent.tool', 'terminal.close', 'tip.show',
   'todo.updated', 'tool.output_risk', 'voice.interrupted', 'voice.partial', 'voice.status', 'voice.transcript', 'wake.detected'
@@ -390,6 +402,76 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
     openRequests: (reply.open_requests ?? []).map(parseServerRequest)
   }
 }
+
+/**
+ * Hermes's status-bar view of a session's usage, as `usage` on `message.complete` and on a `session.usage` tick.
+ * Its counters are the running totals of the session's agent (`tui_gateway/server.py:1270-1279`). Only the token
+ * counts and the context fill are read. Hermes leaves the fill out until a model call has sized it
+ * (`gateway/session_usage.py:139-146`).
+ */
+export function parseUsage(view: Usage): SessionUsage {
+  return usable(() => {
+    const p = fields<Usage>(view)
+    const input = p.optInt('input')
+    const output = p.optInt('output')
+    const used = p.optInt('context_used')
+    const max = p.optInt('context_max')
+    return {
+      totals: input === null || output === null ? null : { input, output, reasoning: p.optInt('reasoning') ?? 0 },
+      context: used === null || !max ? null : {
+        used, max, percent: p.optNum('context_percent') ?? percentOf(used, max), estimated: p.optBool('context_estimated') ?? false
+      }
+    }
+  }) ?? NO_USAGE
+}
+
+/**
+ * `session.stats`: the counters that view is built from, read the way Hermes builds it
+ * (`tui_usage`, `gateway/session_usage.py:130-147`). The canonical gateway has no `session.usage` method.
+ */
+export function parseStats(reply: SessionStats): SessionUsage {
+  return usable(() => {
+    const p = fields<SessionStats>(reply)
+    const used = p.optInt('last_prompt_tokens')
+    const max = p.optInt('context_length')
+    return {
+      totals: {
+        input: p.optInt('input_tokens') || p.optInt('prompt_tokens') || 0,
+        output: p.optInt('output_tokens') || p.optInt('completion_tokens') || 0,
+        reasoning: p.optInt('reasoning_tokens') ?? 0
+      },
+      context: !used || !max ? null : {
+        used: Math.min(used, max), max, percent: percentOf(Math.min(used, max), max),
+        estimated: (p.optStr('context_source') ?? 'provider_usage') !== 'provider_usage'
+      }
+    }
+  }) ?? NO_USAGE
+}
+
+const NO_USAGE: SessionUsage = { totals: null, context: null }
+const percentOf = (used: number, max: number) => Math.max(0, Math.min(100, Math.round(used / max * 100)))
+
+export function parseContextBreakdown(reply: SessionContextBreakdownResult): ContextBreakdown {
+  return usable(() => {
+    const p = fields<SessionContextBreakdownResult>(reply)
+    return {
+      model: p.optStr('model') || null,
+      used: p.optNum('context_used') ?? 0,
+      max: p.optNum('context_max') ?? 0,
+      percent: p.optNum('context_percent') ?? 0,
+      estimated: p.optBool('context_estimated') ?? false,
+      categories: (p.optList('categories') ?? []).flatMap(row => usable(() => categoryOf(row)) ?? [])
+    }
+  }) ?? NO_BREAKDOWN
+}
+
+function categoryOf(row: unknown): ContextBreakdown['categories'][number] {
+  const c = fields<ContextCategory>(row)
+  const id = c.str('id')
+  return { id, label: c.optStr('label') || id, tokens: c.int('tokens') }
+}
+
+const NO_BREAKDOWN: ContextBreakdown = { model: null, used: 0, max: 0, percent: 0, estimated: false, categories: [] }
 
 export function parseModelMenu(reply: ModelOptionsResult): ModelMenu {
   const options = (Array.isArray(reply.providers) ? reply.providers : []).flatMap(row => usable(() => providerOptions(row)) ?? [])
@@ -494,7 +576,8 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
       began: turn.began,
       items: turn.items,
       outcome: answered(turn) ? COMPLETE : LOST,
-      rows: turn.rows
+      rows: turn.rows,
+      tokens: null
     }]),
     unfinished: open === null ? null : { request: open.request, began: open.began, items: open.items }
   }
