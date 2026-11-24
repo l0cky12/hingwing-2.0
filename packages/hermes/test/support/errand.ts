@@ -4,6 +4,9 @@ import { loadFixture, type Fixture, type FixtureStep } from '../../src/testing/f
 
 export const ERRAND = loadFixture(fileURLToPath(new URL('../../../../fixtures/errand.jsonl', import.meta.url)))
 export const SESSION = ERRAND.header.sessionId
+/** A chat with three stored turns (rows 1 to 6) on a Hermes that branches, and the same on one that does not. */
+export const BRANCH = loadFixture(fileURLToPath(new URL('../../../../fixtures/branch.jsonl', import.meta.url)))
+export const BRANCH_OLD = loadFixture(fileURLToPath(new URL('../../../../fixtures/branch-old.jsonl', import.meta.url)))
 export const SLASH = loadFixture(fileURLToPath(new URL('../../../../fixtures/slash.jsonl', import.meta.url)))
 
 export const PROFILES: unknown = JSON.parse(readFileSync(fileURLToPath(new URL('../../../../fixtures/profiles/roster.json', import.meta.url)), 'utf8'))

@@ -74,6 +74,7 @@ interface View {
   /** A model switch asked for during a turn. It commits when the turn ends (gateway/session_mutations.py:134-143). */
   deferred: Model | null
   switchesCommitted: number
+  branchesCommitted: number
   turnsEnded: number
   /** null until the header or a recorded frame names it. */
   yolo: boolean | null
@@ -172,6 +173,8 @@ class EchoChat implements Stream {
   readonly rows: Obj[] = []
   readonly epoch: string
   generation = 0
+  /** Moved by each branch made from this chat, as it moves the story's. */
+  revision = 0
   asking: SeededApproval | null = null
   yolo = false
 
@@ -182,6 +185,11 @@ class EchoChat implements Stream {
 
   get model(): Model {
     return { model: `${this.profile}-model`, provider: null }
+  }
+
+  /** A branch copies a tool row with no id, so the next id is not the row count. */
+  get nextRowId(): number {
+    return Math.max(0, ...this.rows.map(row => (isInt(row.row_id) ? row.row_id : 0))) + 1
   }
 
   /** Only a seeded approval keeps a turn open: an echo turn ends before the next frame is read. */
@@ -310,6 +318,38 @@ function nameRefusal(canon: string, taken: (name: string) => boolean): Refused |
   return null
 }
 
+/** What a branch reads of its parent and moves in it: the story session, or a chat beside it. */
+interface Parent {
+  readonly id: string
+  readonly profile: string
+  readonly title: string
+  readonly rows: readonly Obj[]
+  readonly generation: number
+  readonly busy: boolean
+  readonly revision: number
+  /** Moves the parent's revision and publishes the receipt. Answers the new revision. */
+  commit(result: Obj): number
+}
+
+/** JSON with every object's keys in order, so two requests that mean the same thing digest the same. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+  if (!isObject(value)) return JSON.stringify(value) ?? 'null'
+  return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
+}
+
+/**
+ * The rows a branch through `through` copies: every row up to it, and the tool rows that follow an assistant row.
+ * null: no row has that id.
+ */
+function rowsThrough(rows: readonly Obj[], through: number): readonly Obj[] | null {
+  const at = rows.findIndex(row => row.row_id === through)
+  if (at < 0) return null
+  let end = at + 1
+  if (rows[at]?.role === 'assistant') while (rows[end]?.role === 'tool') end++
+  return rows.slice(0, end)
+}
+
 function offered(models: Obj): Model[] {
   const rows = Array.isArray(models.providers) ? models.providers.filter(isObject) : []
   return rows.flatMap(row => (Array.isArray(row.models) ? row.models.filter(isText) : []).map(model => ({ model, provider: isText(row.slug) ? row.slug : null })))
@@ -348,6 +388,15 @@ const detach: Handler = (gateway, socket, params, routed) => {
   return { session_id, subscription_id, detached }
 }
 
+/** The operations of `session.mutate` the gateway answers itself, as the story does not await them. */
+const MUTATIONS: Readonly<Record<string, (gateway: ScriptedGateway, params: Obj, routed: string) => unknown>> = {
+  model: (gateway, params, routed) => gateway.switchModel(params, routed),
+  branch: (gateway, params, routed) => {
+    gateway.authorize(params, routed)
+    return gateway.branch(gateway.storyParent(), params, routed)
+  }
+}
+
 const HANDLERS: Readonly<Record<string, Handler>> = {
   /** tui_gateway/methods_voice.py:526-545 */
   'client.capabilities': () => ({ server_requests: ['clarify', 'secret', 'sudo'], declines_not_shown: true, canonical_clarify_batch: true }),
@@ -364,7 +413,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     }
     if ('title' in params) return { sessions: params.title === BOT_CHAT ? gateway.titledRows(routed) : [], scope: 'stored' }
     if (routed !== gateway.home) return gateway.listed(routed, scope, params.include_hidden === true, params.picker === true)
-    if (scope === 'stored') return { sessions: [], scope, next_cursor: null }
+    if (scope === 'stored') return { sessions: gateway.branchRows(routed, params.picker === true), scope, next_cursor: null }
     const { list } = gateway.fixture.header
     const rows = isObject(list) && Array.isArray(list.sessions) ? list.sessions.filter(isObject) : []
     return { sessions: rows.map(row => (row.session_id === gateway.sessionId ? { ...row, running: gateway.view.running } : row)), scope }
@@ -421,8 +470,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'profiles.list': (gateway, socket) => gateway.roster(socket),
   /** tui_gateway/methods_profiles.py:296-347 */
   'profiles.create': (gateway, socket, params) => gateway.create(socket, params),
-  'session.mutate': (gateway, socket, params, routed) =>
-    (params.operation === 'model' ? gateway.switchModel(params, routed) : gateway.story(socket, 'session.mutate', params, routed)),
+  'session.mutate': (gateway, socket, params, routed) => {
+    const mutation = typeof params.operation === 'string' && Object.hasOwn(MUTATIONS, params.operation) ? MUTATIONS[params.operation] : undefined
+    return mutation === undefined ? gateway.story(socket, 'session.mutate', params, routed) : mutation(gateway, params, routed)
+  },
   'config.set': (gateway, _socket, params, routed) => gateway.setYolo(params, routed, null),
   'session.detach': detach,
   /**
@@ -458,6 +509,10 @@ const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
   },
   'model.options': (gateway, _socket, _params, _routed, chat) => gateway.modelMenu(chat.model),
   'config.set': (gateway, _socket, params, routed, chat) => gateway.setYolo(params, routed, chat),
+  'session.mutate': (gateway, _socket, params, routed, chat) => {
+    if (params.operation !== 'branch') throw new Refused('unsupported_command')
+    return gateway.branch(gateway.chatParent(chat), params, routed)
+  },
   'session.detach': detach
 }
 
@@ -475,11 +530,15 @@ export class ScriptedGateway {
   dials = 0
   step = 0
   finished = false
+  /** Chats a `branch` made. A retry that Hermes answers from its receipt makes none. */
+  branchesMade = 0
 
   private stored: readonly unknown[]
   private readonly profiles: Obj[]
   private readonly botChats = new Map<string, EchoChat>()
   private readonly newChats = new Map<string, EchoChat>()
+  private readonly branchChats: EchoChat[] = []
+  private readonly receipts = new Map<string, { readonly digest: string; readonly result: Obj }>()
   private readonly seeded: readonly EchoChat[]
   private readonly storyIsBotChatOf: string | null
   private readonly afterReply: (() => void)[] = []
@@ -499,7 +558,7 @@ export class ScriptedGateway {
     const { models } = fixture.header
     this.view = {
       running: false, generation: 0, revision: 0, title: '', pending: [], prompts: new Map(),
-      model: modelOf(isObject(models) ? models : undefined), deferred: null, switchesCommitted: 0, turnsEnded: 0, yolo: fixture.header.yolo ?? null
+      model: modelOf(isObject(models) ? models : undefined), deferred: null, switchesCommitted: 0, branchesCommitted: 0, turnsEnded: 0, yolo: fixture.header.yolo ?? null
     }
     this.epoch = fixture.steps.map(epochOf).find(isText) ?? 'fixture-epoch'
     this.done = new Promise((resolve, reject) => { this.settle = { resolve, reject } })
@@ -607,7 +666,7 @@ export class ScriptedGateway {
   }
 
   private echoChats(): EchoChat[] {
-    return [...this.botChats.values(), ...this.seeded, ...this.newChats.values()]
+    return [...this.botChats.values(), ...this.seeded, ...this.newChats.values(), ...this.branchChats]
   }
 
   /** Live lists only running chats, where Hermes lists every open one (gateway/session_live_listing.py:77-100). */
@@ -653,6 +712,91 @@ export class ScriptedGateway {
    */
   private publishReceipt(): void {
     for (let next = this.fixture.steps[this.step]; next !== undefined && !('await' in next); next = this.fixture.steps[this.step]) this.play(next)
+  }
+
+  storyParent(): Parent {
+    const { view } = this
+    return {
+      id: this.sessionId, profile: this.home, title: view.title || this.listedTitle(), rows: this.stored.filter(isObject),
+      generation: view.generation, busy: view.running || view.pending.length > 0, revision: view.revision,
+      commit: result => {
+        view.revision++
+        view.branchesCommitted++
+        this.branchesMade++
+        this.emit('session.info', { revision: view.revision, title: view.title, running: view.running })
+        this.emit('session.updated', { ...result, revision: view.revision })
+        return view.revision
+      }
+    }
+  }
+
+  chatParent(chat: EchoChat): Parent {
+    return {
+      id: chat.id, profile: chat.profile, title: chat.title, rows: chat.rows, generation: chat.generation, busy: chat.running, revision: chat.revision,
+      commit: result => {
+        chat.revision++
+        this.branchesMade++
+        this.say(chat, 'session.info', { revision: chat.revision, title: chat.title, running: chat.running })
+        this.say(chat, 'session.updated', { ...result, revision: chat.revision })
+        return chat.revision
+      }
+    }
+  }
+
+  private listedTitle(): string {
+    const { list } = this.fixture.header
+    const rows = isObject(list) && Array.isArray(list.sessions) ? list.sessions.filter(isObject) : []
+    const title = rows.find(row => row.session_id === this.sessionId)?.title
+    return typeof title === 'string' ? title : ''
+  }
+
+  /**
+   * `session.mutate` with operation `branch` (persistence/authority/runtime.py:299-310, persistence/sqlite/authority/_mutation_publish.py:60-79),
+   * checked in the handler's order: the params, the receipt, the fences, an idle session, then the cut. The child is a chat
+   * of the parent's profile that holds the copied rows. It is named the next title in the parent's lineage.
+   */
+  branch(parent: Parent, params: Obj, routed: string): unknown {
+    const { request_id: requestId, expected_revision: revision, expected_generation: generation, payload } = params
+    if (this.fixture.header.branches !== true) throw new Refused('invalid_params')
+    if (!isText(requestId) || !isInt(revision) || !isInt(generation) || !isObject(payload)) throw new Refused('invalid_params')
+    const { through_message_id: through, title, ...others } = payload
+    const wrongThrough = through !== undefined && !(isInt(through) && through > 0)
+    if (Object.keys(others).length > 0 || wrongThrough || (title !== undefined && !isText(title))) throw new Refused('invalid_params')
+    // runtime.py:90-96: the digest covers both fences, so a resend under the same id with other fences is not a retry.
+    const key = JSON.stringify([routed, parent.id, requestId])
+    const digest = canonical({ operation: 'branch', payload, expected_revision: revision, expected_generation: generation })
+    const receipt = this.receipts.get(key)
+    if (receipt !== undefined) {
+      if (receipt.digest !== digest) throw new Refused('admission_conflict')
+      return receipt.result
+    }
+    const fenced = (reason: string) => new Refused(reason, { code: 4001, message: reason, data: { reason, revision: parent.revision, execution_generation: parent.generation } })
+    if (revision !== parent.revision) throw fenced('revision_conflict')
+    if (generation !== parent.generation) throw fenced('stale_generation')
+    if (parent.busy) throw new Refused('session_busy')
+    const copied = through === undefined ? parent.rows : rowsThrough(parent.rows, through)
+    if (copied === null) throw new Refused('invalid_params')
+    const child = new EchoChat(`branch-${routed}-${this.branchChats.length + 1}`, routed, isText(title) ? title : this.nextTitle(parent.title, routed))
+    let next = 0
+    child.rows.push(...copied.map(row => (isInt(row.row_id) ? { ...row, row_id: ++next } : row)))
+    this.branchChats.push(child)
+    const result = { session_id: parent.id, operation: 'branch', branched_session_id: child.id, copied_messages: copied.length }
+    const committed = { ...result, revision: parent.commit(result) }
+    this.receipts.set(key, { digest, result: committed })
+    return committed
+  }
+
+  /** "Sort the invoices" is followed by "Sort the invoices #2", then "#3", skipping a title the profile already has. */
+  private nextTitle(parent: string, routed: string): string {
+    if (parent === '') return ''
+    const taken = new Set(this.echoChats().filter(chat => chat.profile === routed).map(chat => chat.title))
+    const [, base = parent, n = '1'] = /^(.*) #(\d+)$/.exec(parent) ?? []
+    for (let at = Number(n) + 1; ; at++) if (!taken.has(`${base} #${at}`)) return `${base} #${at}`
+  }
+
+  /** The branch children of a profile, as `session.list {scope: 'stored'}` lists them. */
+  branchRows(routed: string, picker: boolean): Obj[] {
+    return this.branchChats.filter(chat => chat.profile === routed).map(chat => ({ ...chat.listRow(picker), running: false }))
   }
 
   /**
@@ -793,7 +937,7 @@ export class ScriptedGateway {
     socket.subscriptions.set(chat.id, socket.subscriptionId)
     return snapshotOf({
       id: chat.id, rows: chat.rows, ring: chat.ring, epoch: chat.epoch, running: chat.running, generation: chat.generation,
-      revision: 0, title: chat.title, model: chat.model, yolo: this.yoloAt(chat.yolo), pending: [], prompts: chat.asking === null ? [] : [chat.asking], openRequests: []
+      revision: chat.revision, title: chat.title, model: chat.model, yolo: this.yoloAt(chat.yolo), pending: [], prompts: chat.asking === null ? [] : [chat.asking], openRequests: []
     }, socket.subscriptionId, params)
   }
 
@@ -845,9 +989,9 @@ export class ScriptedGateway {
     const turn = { authority_epoch: 1, execution_generation: generation, admission_id: admission.admission_id }
     const said = `${routed}: ${text}`
     const timestamp = this.options.clock.now() / 1000
-    const first = chat.rows.length + 1
+    const first = chat.nextRowId
     this.afterReply.push(() => {
-      this.say(chat, 'session.info', { pending: [{ ...admission, input_id: inputId, text }], running: false, execution_generation: generation - 1, revision: 0 })
+      this.say(chat, 'session.info', { pending: [{ ...admission, input_id: inputId, text }], running: false, execution_generation: generation - 1, revision: chat.revision })
       this.say(chat, 'message.start', {}, turn)
       this.say(chat, 'message.delta', { text: said, segment: 0, offset: 0 }, turn)
       chat.rows.push({ role: 'user', text, timestamp, row_id: first }, { role: 'assistant', text: said, timestamp, row_id: first + 1 })
@@ -1021,9 +1165,10 @@ export class ScriptedGateway {
     const { params } = push
     if (!isInt(params.seq)) return push
     const shift = this.view.switchesCommitted
+    const revisions = shift + this.view.branchesCommitted
     const moved = (fields: Obj): Obj => ({
       ...fields,
-      ...(isInt(fields.revision) ? { revision: fields.revision + shift } : {}),
+      ...(isInt(fields.revision) ? { revision: fields.revision + revisions } : {}),
       ...(isInt(fields.execution_generation) ? { execution_generation: fields.execution_generation + shift } : {})
     })
     const payload = isObject(params.payload) ? moved(params.payload) : params.payload
