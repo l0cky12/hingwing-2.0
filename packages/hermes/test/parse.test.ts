@@ -9,7 +9,7 @@ import type {
 } from '../src/wire/contract.generated'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 import {
-  parseContextBreakdown, parseEvent, parseInlineDiff, parseListRows, parseModelMenu, parseModelReceipt, parseReplay, parseRows, parseServerRequest,
+  parseBranched, parseContextBreakdown, parseEvent, parseInlineDiff, parseListRows, parseModelMenu, parseModelReceipt, parseReplay, parseRows, parseServerRequest,
   parseSnapshot, parseStats, parseToolResult, parseTranscript, FOR_WINDOW, SHOWN, UNSHOWN
 } from '../src/wire/parse'
 
@@ -761,5 +761,15 @@ describe('parseRows and reasoning', () => {
     const { turns } = parseRows(rows)
     expect(turns.map(turn => turn.items.filter(item => item.kind === 'reasoning').length)).toEqual([2, 2])
     expect(turns.map(turn => turn.outcome.kind)).toEqual(['complete', 'complete'])
+  })
+})
+
+describe('the chat a branch made', () => {
+  it('is the session the receipt names, and none when it names none', () => {
+    const receipt = { session_id: 's1', operation: 'branch', revision: 2, copied_messages: 4 }
+    expect(parseBranched({ ...receipt, branched_session_id: 'child' })).toBe('child')
+    expect(parseBranched(receipt)).toBeNull()
+    expect(parseBranched({ ...receipt, branched_session_id: ' ' })).toBeNull()
+    expect(parseBranched({ ...receipt, branched_session_id: 7 })).toBeNull()
   })
 })

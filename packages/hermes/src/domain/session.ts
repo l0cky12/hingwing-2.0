@@ -19,6 +19,8 @@ export type PromptId = Brand<string, 'PromptId'>
 export type HelperId = Brand<string, 'HelperId'>
 /** Idempotency key of one user message. Minted once when the user presses Send, reused on every retry. */
 export type InputId = Brand<string, 'InputId'>
+/** Idempotency key of one branch. Minted by the window for a message and reused on every retry until Hermes answers. It is the `request_id` Hermes keys the branch's receipt on. */
+export type BranchId = Brand<string, 'BranchId'>
 /** Hermes's `execution_generation`: one run of the agent. Travels on the thing it fences. */
 export type Generation = Brand<number, 'Generation'>
 

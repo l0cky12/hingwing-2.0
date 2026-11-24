@@ -1,6 +1,6 @@
 import {
   targetOf,
-  type BotDraft, type BotId, type Bots, type ChatRef, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply,
+  type BotDraft, type BotId, type Bots, type BranchId, type ChatRef, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply,
   type RelayDesk, type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type Unstarted
 } from '@highwing/hermes/domain'
 
@@ -217,6 +217,12 @@ export const validators: Validators = {
     const sessionId = sessionIdOf(raw)
     return sessionId && Number.isInteger(raw.rowId) && (raw.rowId as number) > 0 && filled(raw.text)
       ? { do: 'rewind', sessionId, rowId: raw.rowId as number, text: raw.text }
+      : null
+  },
+  branch: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && Number.isInteger(raw.rowId) && (raw.rowId as number) > 0 && filled(raw.branchId)
+      ? { do: 'branch', sessionId, rowId: raw.rowId as number, branchId: raw.branchId as BranchId }
       : null
   },
   stop: raw => {

@@ -1,6 +1,6 @@
 import type { BotCreated, BotDraft, BotId } from './bots'
 import type { ChatRef, Unstarted } from './open'
-import type { ContextFill, InputId, ModelOption, ModelRef, PromptId, PromptReply, SessionId } from './session'
+import type { BranchId, ContextFill, InputId, ModelOption, ModelRef, PromptId, PromptReply, SessionId } from './session'
 
 export type Command =
   /**
@@ -20,6 +20,12 @@ export type Command =
    * Hermes's history), then send `text` as a new message. Nothing is sent when Hermes refuses the cut.
    */
   | { readonly do: 'rewind'; readonly sessionId: SessionId; readonly rowId: number; readonly text: string }
+  /**
+   * Make a new chat holding this one through the reply to the message stored at row `rowId`, and show it with that
+   * message in its box. The same `branchId` names the same new chat however often it is sent. This chat is unchanged.
+   * Answers the new chat. Refused while a reply runs or a message waits to be sent.
+   */
+  | { readonly do: 'branch'; readonly sessionId: SessionId; readonly rowId: number; readonly branchId: BranchId }
   | { readonly do: 'stop'; readonly sessionId: SessionId }
   | { readonly do: 'answer'; readonly sessionId: SessionId; readonly promptId: PromptId; readonly reply: PromptReply }
   | { readonly do: 'discard'; readonly sessionId: SessionId; readonly inputId: InputId }
@@ -38,10 +44,11 @@ export type Command =
   /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
   | { readonly do: 'reconnect'; readonly start: boolean }
 
-/** `send` and `start` answer the words to show under the composer: a command's output or note, or `null` for none. */
+/** `send` and `start` answer the words to show under the composer: a command's output or note, or `null` for none. `branch` answers the new chat. */
 export type ResultOf<C extends Command> =
   C extends { do: 'open' } ? SessionId | null
   : C extends { do: 'send' | 'start' } ? string | null
+  : C extends { do: 'branch' } ? SessionId
   : C extends { do: 'models' | 'botModels' } ? ModelMenu
   : C extends { do: 'createBot' } ? BotCreated
   : C extends { do: 'pickModel' } ? ModelConfirm | null

@@ -1,8 +1,8 @@
 import type { ContextBreakdown, ModelConfirm, ModelMenu, Outcome, Refusal } from './domain/command'
 import { emptyTracked, reduce, sessionOf, type Gate, type LocalAction, type ServerRequest, type SessionInput, type Tracked } from './domain/reduce'
-import type { InputId, ModelOption, OutboxEntry, PromptId, PromptReply, Session, SessionId } from './domain/session'
+import type { BranchId, InputId, ModelOption, OutboxEntry, PromptId, PromptReply, Session, SessionContent, SessionId } from './domain/session'
 import { Offline, RpcRefusal, type Calls, type Clock } from './wire/link'
-import { parseContextBreakdown, parseModelMenu, parseModelReceipt, parseReplay, parseSnapshot, parseStats, parseTranscript } from './wire/parse'
+import { parseBranched, parseContextBreakdown, parseModelMenu, parseModelReceipt, parseReplay, parseSnapshot, parseStats, parseTranscript } from './wire/parse'
 
 export const DONE: Outcome = { ok: true, value: undefined }
 export const refused = (kind: Refusal['kind'], message: string): Outcome<never> => ({ ok: false, refusal: { kind, message } })
@@ -23,12 +23,47 @@ const FENCE_REFUSALS: ReadonlySet<string> = new Set(['revision_conflict', 'stale
 const MOVED_ON: Refusal = { kind: 'stale', message: 'This chat changed while Highwing was switching its model. Try again.' }
 const GONE: Refusal = { kind: 'rejected', message: 'That message is no longer in this chat.' }
 const NOT_CONNECTED: Refusal = { kind: 'offline', message: "Highwing isn't connected to this chat right now." }
+const CANT_BRANCH: Refusal = { kind: 'unsupported', message: "This Hermes can't branch a chat." }
+const BRANCH_REFUSALS: Readonly<Record<string, Refusal>> = {
+  unknown_method: CANT_BRANCH,
+  runtime_coordination_required: { kind: 'unsupported', message: "Hermes can't branch this chat." },
+  // Hermes also counts a helper still running after its turn as busy.
+  session_busy: { kind: 'stale', message: 'Wait for the reply to finish, then branch.' }
+}
+const BRANCH_BUSY = BRANCH_REFUSALS.session_busy as Refusal
+const NO_CHILD: Refusal = { kind: 'rejected', message: "Hermes made the chat but didn't say which one." }
 const DROPPED_ANSWER = 'The connection dropped before Hermes confirmed your answer.'
 
 export function refusalOf(error: unknown): Refusal {
   if (error instanceof Offline) return NOT_CONNECTED
   if (error instanceof RpcRefusal) return REFUSALS[error.reason ?? ''] ?? { kind: 'rejected', message: `Hermes refused: ${error.message}` }
   throw error
+}
+
+/** The chat a branch made and the message it was made from, which its box starts with. */
+export interface Branched { readonly sessionId: SessionId; readonly text: string }
+
+/**
+ * The exact `session.mutate` a request sends. Hermes answers a resend of all of it from its receipt, and refuses
+ * any other resend under the same `request_id`, because the receipt's digest covers both fences.
+ */
+interface Mutation {
+  readonly request_id: string
+  readonly operation: string
+  readonly payload: Record<string, unknown>
+  readonly expected_revision: number
+  /** null: the operation needs none. */
+  readonly expected_generation: number | null
+}
+
+/**
+ * Where a branch from the message at `rowId` cuts, and the message's words. The cut is the last stored row of its turn,
+ * so the child holds the reply. Hermes adds the tool rows right after an assistant row itself. null: no settled turn
+ * began with that row.
+ */
+function branchPoint(content: SessionContent, rowId: number): { readonly through: number; readonly text: string } | null {
+  const turn = content.history.find(held => held.request?.rowId === rowId)
+  return turn?.request == null ? null : { through: Math.max(rowId, ...turn.rows), text: turn.request.text }
 }
 
 export const RESTART_LIMIT = { count: 4, withinMs: 60_000 } as const
@@ -53,6 +88,8 @@ export class SessionActor {
   private tracked: Tracked
   private published: Session
   private restarts: readonly number[] = []
+  /** branchId -> the exact request last sent for it. Kept after a success and after a dropped reply. Dropped when Hermes refuses, since a refusal commits nothing. */
+  private readonly branches = new Map<BranchId, Mutation>()
 
   constructor(readonly id: SessionId, private readonly deps: ActorDeps) {
     this.tracked = emptyTracked(id)
@@ -188,7 +225,7 @@ export class SessionActor {
     if (offline !== null) return offline
     if (this.tracked.content.run.state === 'running') return refused('stale', 'Wait for the reply to finish, then try again.')
     try {
-      await this.mutation('rewind', { target_message_id: rowId }, this.tracked.fence.generation ?? 0)
+      await this.mutation(this.request('rewind', { target_message_id: rowId }, this.tracked.fence.generation ?? 0))
     } catch (error) {
       const vanished = error instanceof RpcRefusal && error.reason === 'invalid_params' && error.field === 'target_message_id'
       return { ok: false, refusal: vanished ? GONE : refusalOf(error) }
@@ -242,7 +279,7 @@ export class SessionActor {
     const offline = this.offline()
     if (offline !== null) return offline
     try {
-      await this.mutation('title' in change ? 'rename' : 'archive', { ...change }, null)
+      await this.mutation(this.request('title' in change ? 'rename' : 'archive', { ...change }, null))
       return DONE
     } catch (error) {
       return { ok: false, refusal: refusalOf(error) }
@@ -275,7 +312,7 @@ export class SessionActor {
     if (offline !== null) return offline
     const payload = { model: model.id, provider: model.provider, ...(confirm === null ? {} : { confirm }) }
     try {
-      const receipt = parseModelReceipt(await this.mutation('model', payload, this.tracked.fence.generation ?? 0))
+      const receipt = parseModelReceipt(await this.mutation(this.request('model', payload, this.tracked.fence.generation ?? 0)))
       switch (receipt.status) {
         case 'confirm':
           return { ok: true, value: receipt.confirm }
@@ -314,17 +351,57 @@ export class SessionActor {
     }
   }
 
-  /** `generation`: the `expected_generation` an operation that needs one sends, as a model switch does. */
-  private mutation(operation: string, payload: Record<string, unknown>, generation: number | null) {
-    const request_id = this.deps.mintId()
-    const commit = (expected_revision: number, expected_generation: number | null) => this.deps.conn.call('session.mutate', {
-      session_id: this.id, request_id, expected_revision, operation, payload,
-      ...(expected_generation === null ? {} : { expected_generation })
-    })
-    return commit(this.tracked.fence.revision, generation).catch((error: unknown) => {
+  /**
+   * Branch through the reply to the message at `rowId`. Asks for no title: Hermes names the child next in the
+   * parent's lineage ("Sort the invoices #2"), as its TUI does. `branchId` is the `request_id`, so a retry resends
+   * the request pinned for it and Hermes answers with the chat the first one made.
+   */
+  async branch(rowId: number, branchId: BranchId): Promise<Outcome<Branched>> {
+    const offline = this.offline()
+    if (offline !== null) return offline
+    const { content, fence } = this.tracked
+    if (content.run.state === 'running' || content.outbox.length > 0) return { ok: false, refusal: BRANCH_BUSY }
+    const point = branchPoint(content, rowId)
+    if (point === null) return { ok: false, refusal: GONE }
+    const sent = this.branches.get(branchId) ?? {
+      request_id: branchId, operation: 'branch', payload: { through_message_id: point.through },
+      expected_revision: fence.revision, expected_generation: fence.generation ?? 0
+    }
+    try {
+      const sessionId = parseBranched(await this.mutation(sent, latest => void this.branches.set(branchId, latest)))
+      return sessionId === null ? { ok: false, refusal: NO_CHILD } : { ok: true, value: { sessionId, text: point.text } }
+    } catch (error) {
+      if (error instanceof Offline) return { ok: false, refusal: NOT_CONNECTED }
+      this.branches.delete(branchId)
+      return { ok: false, refusal: this.branchRefusal(error, rowId) }
+    }
+  }
+
+  /** A branch and a metadata edit share `invalid_params`, and so does a row that is gone, so only the actor's own history can tell them apart. */
+  private branchRefusal(error: unknown, rowId: number): Refusal {
+    const reason = error instanceof RpcRefusal ? error.reason ?? '' : ''
+    if (Object.hasOwn(BRANCH_REFUSALS, reason)) return BRANCH_REFUSALS[reason] as Refusal
+    if (reason === 'invalid_params') return branchPoint(this.tracked.content, rowId) === null ? GONE : CANT_BRANCH
+    return refusalOf(error)
+  }
+
+  private request(operation: string, payload: Record<string, unknown>, generation: number | null): Mutation {
+    return { request_id: this.deps.mintId(), operation, payload, expected_revision: this.tracked.fence.revision, expected_generation: generation }
+  }
+
+  /** `sent` hears each request as it goes out, so a caller can pin the exact one. */
+  private mutation(request: Mutation, sent?: (request: Mutation) => void) {
+    const commit = (asked: Mutation) => {
+      sent?.(asked)
+      const { expected_generation, ...rest } = asked
+      return this.deps.conn.call('session.mutate', { session_id: this.id, ...rest, ...(expected_generation === null ? {} : { expected_generation }) })
+    }
+    return commit(request).catch((error: unknown) => {
       // The refusal carries both fresh fences (Hermes's gateway/session_controls.py:915-920), so one retry needs no read.
+      // Hermes checks the receipt before the fences, so a fence refusal means this request committed nothing.
       if (error instanceof RpcRefusal && FENCE_REFUSALS.has(error.reason ?? '') && error.revision !== null) {
-        return commit(error.revision, generation === null ? null : error.generation ?? generation)
+        const { expected_generation: held } = request
+        return commit({ ...request, expected_revision: error.revision, expected_generation: held === null ? null : error.generation ?? held })
       }
       throw error
     })

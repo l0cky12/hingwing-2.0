@@ -17,6 +17,7 @@ function samePaneOnFirstMessage(shown: Shown): string {
     case 'bot': return `bot:${shown.bot}`
     case 'new': return `new:${shown.draftId}`
     case 'chat': return `chat:${shown.sessionId}`
+    case 'branch': return `branch:${shown.sessionId}`
   }
 }
 

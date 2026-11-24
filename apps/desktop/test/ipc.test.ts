@@ -102,6 +102,10 @@ describe('validators', () => {
     expect(parseCommand({ do: 'rewind', sessionId: 's1', rowId: 7, text: 'again', extra: 1 })).toEqual({ do: 'rewind', sessionId: 's1', rowId: 7, text: 'again' })
   })
 
+  it('keep a branch from a stored row with the key that names it', () => {
+    expect(parseCommand({ do: 'branch', sessionId: 's1', rowId: 3, branchId: 'b1', extra: 1 })).toEqual({ do: 'branch', sessionId: 's1', rowId: 3, branchId: 'b1' })
+  })
+
   it('read a target with the parser the settings file uses', () => {
     expect(parseCommand({ do: 'checkTarget', target: { kind: 'remote', host: ' hermes-host.example-tailnet.ts.net ', port: 22 } }))
       .toEqual({ do: 'checkTarget', target: { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' } })
@@ -121,6 +125,10 @@ describe('validators', () => {
     ['a rewind to a fractional row', { do: 'rewind', sessionId: 's1', rowId: 1.5, text: 'again' }],
     ['a rewind to a row named as text', { do: 'rewind', sessionId: 's1', rowId: '7', text: 'again' }],
     ['a rewind with a blank message', { do: 'rewind', sessionId: 's1', rowId: 7, text: ' ' }],
+    ['a branch from row zero', { do: 'branch', sessionId: 's1', rowId: 0, branchId: 'b1' }],
+    ['a branch from a row named as text', { do: 'branch', sessionId: 's1', rowId: '3', branchId: 'b1' }],
+    ['a branch with no key', { do: 'branch', sessionId: 's1', rowId: 3 }],
+    ['a branch with a blank key', { do: 'branch', sessionId: 's1', rowId: 3, branchId: ' ' }],
     ['an open that names no chat', { do: 'open' }],
     ['an open of a kind of chat Highwing does not know', { do: 'open', ref: { kind: 'session', sessionId: 's1' } }],
     ['an open of a bot with no name', { do: 'open', ref: { kind: 'bot', bot: ' ' } }],
@@ -176,7 +184,7 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'botModels', 'browse', 'checkTarget', 'closePreview', 'contextBreakdown', 'createBot', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat',
+      'answer', 'archive', 'botModels', 'branch', 'browse', 'checkTarget', 'closePreview', 'contextBreakdown', 'createBot', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat',
       'pickModel', 'placePreview', 'preview', 'reconnect', 'reloadPreview', 'rename', 'rewind', 'send', 'setYolo', 'start', 'stop'
     ])
   })

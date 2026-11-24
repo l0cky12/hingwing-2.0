@@ -323,6 +323,13 @@ export function openHermes(options: HermesOptions): Hermes {
       return NOTHING_TO_SHOW
     },
     rewind: (actor, { rowId, text }) => actor.rewind(rowId, text),
+    branch: async (actor, { rowId, branchId }) => {
+      const made = await actor.branch(rowId, branchId)
+      if (!made.ok) return made
+      desk.branched({ from: actor.id, ...made.value })
+      refreshSoon()
+      return { ok: true, value: made.value.sessionId }
+    },
     stop: actor => actor.stop(),
     answer: (actor, { promptId, reply }) => actor.answer(promptId, reply),
     discard: (actor, { inputId }) => actor.discard(inputId),
