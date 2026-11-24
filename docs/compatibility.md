@@ -12,6 +12,7 @@ server doesn't support something.
 | Gateway subprotocol | `hermes-gateway-v1` |
 | Attach command | `hermes gateway attach --json` |
 | Probe command | `hermes gateway tickets --probe --json` |
+| Ticket command | `hermes gateway tickets --serve --json` |
 | SSH client contract | Hermes's `website/docs/developer-guide/gateway-ssh-clients.md` |
 
 `packages/hermes/src/wire/contract.version.json` holds the vendored contract's
@@ -20,7 +21,7 @@ version. If this table and that file disagree, the file is right.
 ## Hermes on another machine
 
 Highwing reaches a Hermes on another machine through the system `ssh`, as Hermes's
-SSH client contract describes. It runs two Hermes commands on that machine and
+SSH client contract describes. It runs three Hermes commands on that machine and
 forwards one port. The Hermes machine needs `hermes` and an SSH server. This
 computer needs `ssh`.
 
@@ -29,7 +30,11 @@ computer needs `ssh`.
 | Probe | `hermes gateway tickets --probe --json` | In the setup check, and before the first dial of a connection |
 | Attach | `hermes gateway attach --json --timeout 20` | Before every dial |
 | Attach and start | `hermes gateway attach --json --start --timeout 75` | Before the first dial after launch, and when you press Start Hermes |
+| Ticket | `hermes gateway tickets --serve --json` | After each attach, when the probe lists `interactive` |
 | Forward | `ssh -W 127.0.0.1:<port>` to the port that attach named | For each dial |
+
+Highwing runs the same probe, attach and ticket commands for the Hermes on this
+computer, with no ssh and no forward. See `packages/hermes/src/wire/tickets.ts`.
 
 Highwing finds `hermes` on the far machine the way Hermes's own SSH client does. It
 asks the login shell first, then tries `~/.local/bin/hermes`,
@@ -40,8 +45,38 @@ Highwing departs from the contract in one place. The contract's rule 3 runs
 dial after launch and on Start Hermes, the rule the local route already follows.
 See `docs/design/remote.md`.
 
-Highwing does not use `hermes gateway tickets --serve`. It dials with the ticket
-that attach returned, which serves the profile attach ran in.
+## The socket's ticket
+
+The ticket that attach returns reaches one profile, the one attach ran in. On that
+socket Hermes refuses every call that names another profile with
+`profile_mismatch`. A bot is a profile, so Highwing asks for the ticket that
+reaches every profile the gateway serves:
+
+- After attach, Highwing runs `hermes gateway tickets --serve --json`, writes the
+  one line `{"id":1,"purpose":"interactive"}` to it and closes its input. The
+  command prints a hello line and one reply, then ends. Highwing keeps no
+  `--serve` channel open between dials.
+- Highwing dials the address attach named with the ticket from that reply.
+- The hello names the gateway process. If it is not the one attach found, the
+  gateway was replaced in between. The dial fails as a dropped link and the
+  retry attaches again.
+
+What Highwing does when it can't get that ticket:
+
+| What happens | What Highwing does |
+| --- | --- |
+| The probe lists no `interactive` purpose | Dials with the ticket attach returned. Runs no `--serve`. |
+| `--serve` answers `unsupported_purpose` | Dials with the ticket attach returned. |
+| On this computer, the probe exits with a code other than 0 or prints no JSON | Dials with attach alone, as it did before it ran the probe. |
+| On another machine, the probe gets no answer | The dial fails with the words the setup check shows. This is unchanged. |
+| The first line of `--serve` is an error | The dial fails with that exit code's words, as a failed attach does. It retries when the gateway is absent or draining. |
+| `--serve` answers `ticket_unavailable` or prints no reply | The dial fails as a dropped link and the retry attaches again. |
+
+A socket dialed with the ticket attach returned reaches one profile. Highwing
+then opens the newest chat of that profile at launch, as it did before it knew
+bots, and highlights no bot. A click on a bot changes nothing and the sidebar
+says "This Hermes can't switch bots from Highwing yet. Update Hermes on that
+machine, then reconnect."
 
 ## When Hermes is too old or too new
 
@@ -207,10 +242,41 @@ a click on the row opens: `canonical_session.preview` when Hermes reports a
 Bot Chat, else `last_session.preview`, as the plugin's `bot-row.tsx:144`
 picks it.
 
-Whether a real Hermes answers `profiles.list` on Highwing's ticket is not yet
-proven. If it refuses, the sidebar says "Hermes wouldn't list its bots." A
-recording made with `HIGHWING_RECORD` keeps the real reply in its header under
-`profiles`.
+On a socket that reaches one profile, Hermes leaves the session fields out of
+every other profile's row (`gateway/session_group_controls.py:366-384`). Those
+bots then show "No messages yet". If Hermes refuses `profiles.list`, the sidebar
+says "Hermes wouldn't list its bots." A recording made with `HIGHWING_RECORD`
+keeps the real reply in its header under `profiles`.
+
+### Opening a bot's chat
+
+A click on a bot opens its Bot Chat, the session of that profile titled exactly
+"Bot Chat". This is the chat Hermes's own desktop opens for a bot
+(`apps/desktop/src/plugins/hermes-bots/canonical-chat.ts`).
+
+- Highwing takes the session from the roster's `canonical_session`, as
+  `resolved_id`, else `id`. `resolved_id` is the session the chat moved to
+  after a compression.
+- When the roster names none, Highwing asks
+  `session.list {title: "Bot Chat", include_hidden: true}` for that profile.
+- A click never creates a session. A bot with no Bot Chat gets an empty chat.
+  Its first message creates one with
+  `session.create {source: "gui", title: "Bot Chat", hidden: true, follow_profile_config: true}`.
+  `hidden` is in no `runtime.describe`. The gateway takes it off before its
+  field check (`gateway/session_controls.py:527`). A titled create answers the
+  session that already has the title, if one does.
+- Every call for a bot's session carries `profile`, the bot's profile name.
+  Without it Hermes answers `not_found` or `permission_denied`, and
+  `session.detach` answers `detached: false` with no error. `Connection.as` in
+  `packages/hermes/src/wire/link.ts` adds the key to every call of that
+  session.
+- If Hermes answers `profile_mismatch` for a bot on a socket that reaches every
+  profile, the gateway does not serve that profile. The sidebar says "Hermes
+  isn't running that bot right now."
+
+The slash menu lists the commands of the profile Highwing connected through, in
+every bot's chat. `commands.catalog` is read once per connection. A command
+still runs in the chat's own profile.
 
 Highwing can't create a bot. `profiles.create` is not a canonical method, so
 New bot is shown as unavailable. Avatar images are not shown either, because
