@@ -229,6 +229,19 @@ describe('parseRows and when a turn began', () => {
     expect(only(parseRows([user('First', timestamp), answer('Done.', 1_795_251_700)]).turns).began).toBeNull()
   })
 
+  it('gives each turn the row id of its own request row', () => {
+    const rows: TranscriptMessage[] = [
+      { role: 'user', text: 'First', row_id: 4 }, { role: 'assistant', text: 'One.', row_id: 5 },
+      { role: 'user', text: 'Second', row_id: 9 }, { role: 'assistant', text: 'Two.', row_id: 10 }
+    ]
+    expect(parseRows(rows).turns.map(turn => turn.request?.rowId)).toEqual([4, 9])
+  })
+
+  it('leaves a request with no stored id unaddressed, and a turn that begins with a reply without a request', () => {
+    const { turns } = parseRows([answer('The tail of an older turn.'), user('Next'), answer('Done.')])
+    expect(turns.map(turn => turn.request?.rowId ?? null)).toEqual([null, null])
+  })
+
   it('gives a turn whose request sits on an older page no start, whatever its other rows say', () => {
     const { turns } = parseRows([answer('The tail of an older turn.', 1_795_251_500), user('Next', 1_795_251_600), answer('Done.', 1_795_251_700)])
     expect(turns.map(turn => turn.began)).toEqual([null, { at: 1_795_251_600_000, clock: 'hermes' }])

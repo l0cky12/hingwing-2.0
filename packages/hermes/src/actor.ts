@@ -21,6 +21,7 @@ const REFUSALS: Readonly<Record<string, Refusal>> = {
 }
 const FENCE_REFUSALS: ReadonlySet<string> = new Set(['revision_conflict', 'stale_generation'])
 const MOVED_ON: Refusal = { kind: 'stale', message: 'This chat changed while Highwing was switching its model. Try again.' }
+const GONE: Refusal = { kind: 'rejected', message: 'That message is no longer in this chat.' }
 const NOT_CONNECTED: Refusal = { kind: 'offline', message: "Highwing isn't connected to this chat right now." }
 const DROPPED_ANSWER = 'The connection dropped before Hermes confirmed your answer.'
 
@@ -170,7 +171,8 @@ export class SessionActor {
     try {
       await this.mutation('rewind', { target_message_id: rowId }, this.tracked.fence.generation ?? 0)
     } catch (error) {
-      return { ok: false, refusal: refusalOf(error) }
+      const vanished = error instanceof RpcRefusal && error.reason === 'invalid_params' && error.field === 'target_message_id'
+      return { ok: false, refusal: vanished ? GONE : refusalOf(error) }
     }
     this.act({ did: 'rewound', rowId })
     return this.send(text)

@@ -11,8 +11,15 @@ type AwaitStep = Extract<FixtureStep, { await: string }>
 
 const recorded = (step: AwaitStep): Recorded => (step.params !== null && typeof step.params === 'object' ? step.params as Recorded : {})
 
-const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded) => Command>> = {
+const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fixture: Fixture, following: FixtureStep | undefined) => Command>> = {
   'prompt.submit': (sessionId, params) => ({ do: 'send', sessionId, text: String(params.text) }),
+  'session.mutate': (sessionId, params, fixture, following) => {
+    const rowId = (params.payload as { target_message_id?: unknown } | undefined)?.target_message_id
+    if (params.operation !== 'rewind' || typeof rowId !== 'number') throw new Error(`the stand-in user has no command for session.mutate ${String(params.operation)}`)
+    const sends = following !== undefined && 'await' in following && following.await === 'prompt.submit'
+    const stored = fixture.header.stored.find(row => (row as { row_id?: unknown }).row_id === rowId) as { text?: unknown } | undefined
+    return { do: 'rewind', sessionId, rowId, text: String(sends ? recorded(following).text : stored?.text) }
+  },
   'approval.respond': (sessionId, params) => ({ do: 'answer', sessionId, promptId: params.prompt_id as PromptId, reply: { kind: 'choice', value: String(params.choice) } }),
   'clarify.respond': (sessionId, params) => ({ do: 'answer', sessionId, promptId: params.prompt_id as PromptId, reply: { kind: 'text', value: String(params.answer) } }),
   'session.interrupt': sessionId => ({ do: 'stop', sessionId })
@@ -30,6 +37,8 @@ export interface PlayOptions extends Omit<ScriptOptions, 'timing' | 'clock'> {
    * reads the final session passes the session it waits for.
    */
   readonly ended?: (session: Session) => boolean
+  /** Called with each command the stand-in user ran and what the hub answered. */
+  readonly answered?: (command: Command, outcome: Awaited<ReturnType<Hermes['run']>>) => void
 }
 
 export interface Moment {
@@ -43,7 +52,7 @@ export interface Moment {
 /**
  * Plays a fixture through `openHermes` with a stand-in user: when the story awaits `prompt.submit`,
  * `approval.respond`, `clarify.respond` or `session.interrupt`, it issues the matching `Command` with the
- * recorded text or choice. Yields the session after every step that changed it, so a test can assert on
+ * recorded text or choice. A rewind is one command for the `session.mutate` step and the `prompt.submit` after it. Yields the session after every step that changed it, so a test can assert on
  * any moment of a turn, not only its end. Ends when the story is over and the session is live.
  * `script` is the gateway's side: what the client sent it, and how often it dialed.
  *
@@ -69,10 +78,14 @@ export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncG
     const index = script.step
     const step = fixture.steps[index]
     if (step === undefined || !('await' in step) || session.sync.state !== 'live' || asked.has(index)) return
-    const command = USER[step.await]?.(sessionId, recorded(step))
+    const command = USER[step.await]?.(sessionId, recorded(step), fixture, fixture.steps.slice(index + 1).find(next => 'await' in next))
     if (command === undefined) throw new Error(`step ${index}: the stand-in user has no command for ${step.await}`)
     asked.add(index)
-    void hermes.run(command).then(outcome => { if (!outcome.ok) asked.delete(index) })
+    if (command.do === 'rewind') asked.add(fixture.steps.findIndex((next, at) => at > index && 'await' in next))
+    void hermes.run(command).then(outcome => {
+      options.answered?.(command, outcome)
+      if (!outcome.ok) asked.delete(index)
+    })
   }
 
   try {

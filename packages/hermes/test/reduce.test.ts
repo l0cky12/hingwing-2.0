@@ -722,3 +722,34 @@ describe('modelViewOf', () => {
     expect(sameModel({ id: fast.id, provider: 'other' }, fast)).toBe(false)
   })
 })
+
+describe('rewinding', () => {
+  const held = () => feed(
+    emptyTracked('s1' as SessionId), { in: 'attach' },
+    { in: 'attached', attempt: 1, snapshot: snapshot({ history: { turns: [storedTurn('a', [1, 2]), storedTurn('b', [3, 4]), storedTurn('c', [5, 6])], unfinished: null, older: null } }), replay: null }
+  )
+  const rewound = (state: Tracked, rowId: number) => reduce(state, { in: 'local', action: { did: 'rewound', rowId } })
+
+  it('keeps only the turns before the one whose request sits at the row', () => {
+    expect(rewound(held(), 3).content.history.map(turn => turn.id)).toEqual(['a'])
+    expect(rewound(held(), 1).content.history).toEqual([])
+    expect(rewound(held(), 5).content.history.map(turn => turn.id)).toEqual(['a', 'b'])
+  })
+
+  it('does nothing for a row no turn opens', () => {
+    const before = held()
+    expect(rewound(before, 4)).toBe(before)
+    expect(rewound(before, 99)).toBe(before)
+  })
+
+  it('learns the row of a request that settled live from the completion receipt', () => {
+    const state = feed(live(), event(1, started('t1')), event(2, ended(COMPLETE, 'Done', [7, 8], 7)))
+    expect(state.content.history[0]?.request?.rowId).toBe(7)
+    expect(rewound(state, 7).content.history).toEqual([])
+  })
+
+  it('leaves the row unknown when the receipt names none', () => {
+    const state = feed(live(), event(1, started('t1')), event(2, ended(COMPLETE, 'Done', [7, 8])))
+    expect(state.content.history[0]?.request?.rowId).toBeNull()
+  })
+})
