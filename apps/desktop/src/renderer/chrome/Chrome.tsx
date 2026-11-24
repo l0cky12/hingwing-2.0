@@ -1,13 +1,14 @@
 import { machineOf, type Link, type Target } from '@highwing/hermes/domain'
 import { useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { isCommandKey } from '../keys'
+import { botNameOf, openChatName } from '../chats/chat-list'
 import { run, useTopic } from '../store'
 
 /** The bar every screen has. `children` is what the screen puts at its right end. */
 export function Bar({ where, children }: { readonly where: string | null; readonly children?: ReactNode }) {
   return (
     <header className="bar">
-      <h1><span className="brand">Hermes</span>{where}</h1>
+      <h1><span className="brand">Hermes</span>{where === null ? null : ` ${where}`}</h1>
       {children}
     </header>
   )
@@ -30,10 +31,19 @@ function NewChat() {
   return <button ref={button} type="button" aria-keyshortcuts={shortcut} onClick={start}>New chat</button>
 }
 
+function useOpenChatName(): string | null {
+  const shown = useTopic('open')?.shown ?? null
+  const bot = botNameOf(useTopic('bots'), shown?.bot ?? null)
+  const title = useTopic(shown?.sessionId == null ? null : `session:${shown.sessionId}`)?.title ?? null
+  return openChatName(bot, title)
+}
+
 /** `target` is null in a fixture run, which has no connection to name or to change. */
 export function TopBar({ target }: { readonly target: Target | null }) {
+  const chat = useOpenChatName()
+  const where = [chat, target === null ? null : `on ${machineOf(target)}`].filter(part => part !== null).join(' ')
   return (
-    <Bar where={target === null ? null : `on ${machineOf(target)}`}>
+    <Bar where={where === '' ? null : where}>
       <NewChat />
       {target !== null && <button onClick={() => void run({ do: 'editTarget' })}>Connection</button>}
     </Bar>
