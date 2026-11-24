@@ -110,4 +110,21 @@ describe('what Highwing knows about the bots', () => {
     expect(state.changes).toBe(2)
     expect(list.bots).toMatchObject({ state: 'listed', roster: { featured: null, sections: [{ name: null, bots: [{ id: 'solo' }] }] } })
   })
+
+  it('knows the Bot Chat of each bot that has one, and reports a change when only a chat changed', async () => {
+    const { list, state, answer } = hermes()
+    expect(list.chats).toEqual({})
+    await answer(ask => ask.resolve(PROFILES))
+    expect(list.chats).toEqual({ 'dr-eggbot': 'local-0000', research: 'local-0001', timothy: 'local-0002', highwing: 'local-0004' })
+    const moved = structuredClone(PROFILES) as { profiles: { canonical_session: { id: string; resolved_id: string } | null }[] }
+    moved.profiles[2]!.canonical_session!.resolved_id = 'local-0001-compressed'
+    moved.profiles[4]!.canonical_session = { id: 'local-0009', resolved_id: '' }
+    list.refresh()
+    await answer(ask => ask.resolve(moved))
+    expect(state.changes, 'the same bots, drawn the same').toBe(2)
+    expect(list.chats).toMatchObject({ research: 'local-0001-compressed', 'hermes-dev': 'local-0009' })
+    list.refresh()
+    await answer(ask => ask.reject(DENIED))
+    expect(list.chats, 'kept through a refusal, as the roster is').toMatchObject({ research: 'local-0001-compressed' })
+  })
 })

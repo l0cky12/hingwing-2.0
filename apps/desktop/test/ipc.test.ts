@@ -74,6 +74,8 @@ describe('validators', () => {
     expect(parseCommand({ do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 'once', x: 1 } }))
       .toEqual({ do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 'once' } })
     expect(parseCommand({ do: 'reconnect', start: true })).toEqual({ do: 'reconnect', start: true })
+    expect(parseCommand({ do: 'open', ref: { kind: 'bot', bot: 'research', sessionId: 's9' }, sessionId: 's9' })).toEqual({ do: 'open', ref: { kind: 'bot', bot: 'research' } })
+    expect(parseCommand({ do: 'start', bot: 'research', text: 'hello', sessionId: 's9' })).toEqual({ do: 'start', bot: 'research', text: 'hello' })
     const model = { id: 'careful-large', provider: 'acme', providerName: 'Acme' }
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model: { ...model, price: 9 } })).toEqual({ do: 'pickModel', sessionId: 's1', model })
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })).toEqual({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })
@@ -94,6 +96,11 @@ describe('validators', () => {
     ['a verb from the prototype', { do: 'toString' }],
     ['an empty session id', { do: 'stop', sessionId: '' }],
     ['a blank message', { do: 'send', sessionId: 's1', text: '   ' }],
+    ['an open that names no chat', { do: 'open' }],
+    ['an open of a kind of chat Highwing does not know', { do: 'open', ref: { kind: 'session', sessionId: 's1' } }],
+    ['an open of a bot with no name', { do: 'open', ref: { kind: 'bot', bot: ' ' } }],
+    ['a first message with no bot', { do: 'start', text: 'hello' }],
+    ['a blank first message', { do: 'start', bot: 'research', text: '' }],
     ['a reply of the wrong kind', { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 1 } }],
     ['a non-boolean start', { do: 'reconnect', start: 'yes' }],
     ['a missing cwd', { do: 'create', draftId: 'd1' }],
@@ -105,8 +112,8 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'checkTarget', 'create', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'openChat', 'pickModel',
-      'reconnect', 'rename', 'send', 'stop'
+      'answer', 'archive', 'checkTarget', 'create', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat', 'pickModel',
+      'reconnect', 'rename', 'send', 'start', 'stop'
     ])
   })
 })

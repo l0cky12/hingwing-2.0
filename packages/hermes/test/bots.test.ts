@@ -3,7 +3,7 @@ import edgeReply from '../../../fixtures/profiles/edge.json' with { type: 'json'
 import rosterReply from '../../../fixtures/profiles/roster.json' with { type: 'json' }
 import { BOT_TONES, rosterOf, type Bot, type BotFacts, type Roster } from '../src/domain/bots'
 import type { CanonicalProfileRow, CanonicalProfilesResult } from '../src/wire/contract.generated'
-import { parseBots } from '../src/wire/parse'
+import { parseBots, parseTitled } from '../src/wire/parse'
 
 const ROSTER: CanonicalProfilesResult = rosterReply
 const EDGE: CanonicalProfilesResult = edgeReply
@@ -67,6 +67,21 @@ describe('a profiles.list reply', () => {
     expect(sections[0]?.bots.map(bot => [bot.id, bot.preview])).toEqual([
       ['canonical', 'Bot Chat line.'], ['quiet-canonical', null], ['newest', 'Hello.'], ['blank', null], ['silent', null], ['new', null], ['older', null]
     ])
+  })
+
+  it('names the session a click opens only for a bot with a Bot Chat, and its latest session after a compression', () => {
+    const chats = parseBots({ profiles: [
+      row('chatty', { canonical_session: { id: 'root', resolved_id: 'tip' } }), row('plain', { canonical_session: { id: 'root-2', resolved_id: '' } }),
+      row('other-chat', { canonical_session: null, last_session: { id: 'newest', resolved_id: 'newest' } }), row('bound')
+    ] } as CanonicalProfilesResult).map(bot => [bot.id, bot.chat])
+    expect(chats).toEqual([['chatty', 'tip'], ['plain', 'root-2'], ['other-chat', null], ['bound', null]])
+  })
+
+  it('reads the session a title lookup answers, or none', () => {
+    const found = { session_id: 'tip', id: 'root', resolved_id: 'tip', title: 'Bot Chat', source: 'gui', started_at: null, message_count: 3, running: false }
+    expect(parseTitled({ sessions: [found], scope: 'stored' })).toBe('tip')
+    expect(parseTitled({ sessions: [{ ...found, resolved_id: null }], scope: 'stored' })).toBe('root')
+    expect(parseTitled({ sessions: [], scope: 'stored' })).toBeNull()
   })
 
   it('groups bots by section name, in the order each section first arrives, with the bots in no section last', () => {
@@ -169,7 +184,7 @@ describe('avatar tones', () => {
     const random = seeded(23)
     for (let round = 0; round < 200; round++) {
       const facts: BotFacts[] = Array.from({ length: 1 + Math.floor(random() * 24) }, (_, at) => ({
-        id: `bot-${at}` as BotFacts['id'], name: `Bot ${at}`, isDefault: random() < 0.1, preview: null,
+        id: `bot-${at}` as BotFacts['id'], name: `Bot ${at}`, isDefault: random() < 0.1, preview: null, chat: null,
         section: (['Work', 'Home', null] as const)[Math.floor(random() * 3)] ?? null
       }))
       const roster = rosterOf(facts)

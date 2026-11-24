@@ -1,4 +1,5 @@
 import { rosterOf, type Bots, type Roster } from './domain/bots'
+import type { BotChats } from './domain/open'
 import type { Link } from './domain/session'
 import { Offline, RpcRefusal, type Connection } from './wire/link'
 import { parseBots } from './wire/parse'
@@ -32,6 +33,8 @@ const same = (a: Bots, b: Bots): boolean => a === b || JSON.stringify(a) === JSO
 
 export interface BotList {
   readonly bots: Bots
+  /** The Bot Chat Hermes last named for each bot that has one. */
+  readonly chats: BotChats
   linked(state: Link['state']): void
   /** Asks Hermes for its bots. For a new socket: whatever the last one said, this Hermes may know more. */
   ask(): void
@@ -41,26 +44,28 @@ export interface BotList {
 
 /**
  * Owns what Highwing knows about the bots. Hermes sends no "profiles changed" event, so the hub
- * says when to ask. `changed` runs after every change of `bots`, and never for an answer that
- * changed nothing. One ask is in flight at a time, and asking during it runs one more after it.
+ * says when to ask. `changed` runs after every change of `bots` or `chats`, and never for an answer
+ * that changed neither. One ask is in flight at a time, and asking during it runs one more after it.
  */
 export function botList(conn: Pick<Connection, 'call'>, changed: () => void): BotList {
   let bots = LOADING
+  let chats: BotChats = {}
   let asking = false
   let again = false
 
-  const take = (news: News) => {
+  const take = (news: News, named: BotChats = chats) => {
     const next = after(bots, news)
-    if (same(next, bots)) return
+    if (same(next, bots) && JSON.stringify(named) === JSON.stringify(chats)) return
     bots = next
+    chats = named
     changed()
   }
 
   const fetch = async () => {
     asking = true
     try {
-      const reply = await conn.call('profiles.list', { include_sessions: true }, ROSTER_TIMEOUT_MS)
-      take({ is: 'listed', roster: rosterOf(parseBots(reply)) })
+      const facts = parseBots(await conn.call('profiles.list', { include_sessions: true }, ROSTER_TIMEOUT_MS))
+      take({ is: 'listed', roster: rosterOf(facts) }, Object.fromEntries(facts.flatMap(bot => (bot.chat === null ? [] : [[bot.id, bot.chat]]))))
     } catch (error) {
       if (error instanceof RpcRefusal) take({ is: error.code === METHOD_NOT_FOUND ? 'unsupported' : 'refused' })
       else if (!(error instanceof Offline)) throw error
@@ -83,6 +88,7 @@ export function botList(conn: Pick<Connection, 'call'>, changed: () => void): Bo
 
   return {
     get bots() { return bots },
+    get chats() { return chats },
     linked: state => {
       const is = LINK_NEWS[state]
       if (is !== null) take({ is })

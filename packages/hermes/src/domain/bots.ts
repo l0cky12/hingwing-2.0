@@ -2,6 +2,7 @@
  * The bots of one Hermes, as Highwing's sidebar lists them. A bot is a Hermes profile.
  * Plain JSON data only, like `session.ts`, because these values cross Electron IPC.
  */
+import type { SessionId } from './session'
 
 declare const brand: unique symbol
 
@@ -24,6 +25,11 @@ export interface BotFacts {
   readonly section: string | null
   /** One line from the bot's newest chat. null: it has no messages yet. */
   readonly preview: string | null
+  /**
+   * The bot's Bot Chat, the one a click on its row opens. null: it has none, or this socket may not
+   * read it. It stays out of `Bot`, so a window learns a session only from the open chat.
+   */
+  readonly chat: SessionId | null
 }
 
 export interface Bot {

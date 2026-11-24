@@ -11,7 +11,7 @@ import type {
 } from '../domain/session'
 import type { SlashCatalog, SlashEntry } from '../domain/slash'
 import type {
-  CanonicalEventsResult, CanonicalPendingAdmission, CanonicalProfilesResult, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
+  CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalProfilesResult, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
   CanonicalSnapshot, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
   MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, SessionLiveInfo, SessionMutateResult, SessionTitlePayload, StoredTranscriptResult,
   StoredTranscriptRow, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload
@@ -545,9 +545,19 @@ export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
       name: words(meta.title) ?? words(row.display_name) ?? row.name,
       isDefault: row.is_default === true,
       section: words(meta.sectionName),
-      preview: isObject(session) ? words(session.preview) : null
+      preview: isObject(session) ? words(session.preview) : null,
+      chat: isObject(row.canonical_session) ? titledId(row.canonical_session) : null
     }]
   })
+}
+
+/** The session a Bot Chat is now: `resolved_id` once a compression moved it, as Hermes's Bots plugin opens it (hermes-bots/canonical-chat.ts:530). */
+const titledId = (row: Obj): SessionId | null => (words(row.resolved_id) ?? words(row.id)) as SessionId | null
+
+/** The reply to `session.list {title}`: the one session with that title (gateway/session_controls.py:626-641), or null. */
+export function parseTitled(reply: CanonicalListResult): SessionId | null {
+  const [row]: readonly unknown[] = isObject(reply) && Array.isArray(reply.sessions) ? reply.sessions : []
+  return isObject(row) ? titledId(row) : null
 }
 
 /** A server-to-client request frame, or an `open_requests` entry of a snapshot. Its params carry the session (`tui_gateway/server_requests.py:98,103`); an app-level one has `''`. */

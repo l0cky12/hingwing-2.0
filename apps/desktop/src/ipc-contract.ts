@@ -1,6 +1,6 @@
 import {
   targetOf,
-  type Bots, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenTurn, type PromptReply, type ResultOf,
+  type BotId, type Bots, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenTurn, type PromptReply, type ResultOf,
   type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target
 } from '@highwing/hermes/domain'
 
@@ -105,6 +105,7 @@ const isObject = (value: unknown): value is Obj => value !== null && typeof valu
 const text = (value: unknown): value is string => typeof value === 'string'
 const filled = (value: unknown): value is string => text(value) && value.trim() !== ''
 const sessionIdOf = (raw: Obj) => (filled(raw.sessionId) ? (raw.sessionId as SessionId) : null)
+const botIdOf = (raw: unknown) => (filled(raw) ? (raw as BotId) : null)
 const modelOptionOf = (raw: unknown): ModelOption | null =>
   isObject(raw) && filled(raw.id) && filled(raw.provider) && text(raw.providerName)
     ? { id: raw.id as ModelOption['id'], provider: raw.provider, providerName: raw.providerName }
@@ -116,6 +117,14 @@ type Validators = { readonly [K in AppCommand['do']]: (raw: Obj) => Extract<AppC
 
 export const validators: Validators = {
   create: raw => (filled(raw.draftId) && (raw.cwd === null || text(raw.cwd)) ? { do: 'create', draftId: raw.draftId, cwd: raw.cwd } : null),
+  open: raw => {
+    const bot = isObject(raw.ref) && raw.ref.kind === 'bot' ? botIdOf(raw.ref.bot) : null
+    return bot && { do: 'open', ref: { kind: 'bot', bot } }
+  },
+  start: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && filled(raw.text) ? { do: 'start', bot, text: raw.text } : null
+  },
   send: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && filled(raw.text) ? { do: 'send', sessionId, text: raw.text } : null
