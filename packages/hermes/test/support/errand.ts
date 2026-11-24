@@ -8,6 +8,13 @@ export const SLASH = loadFixture(fileURLToPath(new URL('../../../../fixtures/sla
 
 export const PROFILES: unknown = JSON.parse(readFileSync(fileURLToPath(new URL('../../../../fixtures/profiles/roster.json', import.meta.url)), 'utf8'))
 export const WITH_BOTS: Fixture = { ...ERRAND, header: { ...ERRAND.header, profiles: PROFILES } }
+/** A Hermes whose sockets reach only the profile attach ran in. */
+export const BOUND: Fixture = { ...WITH_BOTS, header: { ...WITH_BOTS.header, reach: 'profile' } }
+/** A Hermes whose default bot has no Bot Chat yet. */
+export const NO_HOME_CHAT: Fixture = { ...WITH_BOTS, header: { ...WITH_BOTS.header, homeBotChat: false } }
+/** The Bot Chat `roster.json` names for the bot `research`, and the line it previews. */
+export const RESEARCH_CHAT = 'local-0001' as typeof SESSION
+export const RESEARCH_SAID = "In Let's talk about QAing your"
 
 export const stepOf = (method: string) => ERRAND.steps.findIndex(step => 'await' in step && step.await === method)
 export const paramsOf = (method: string) => (ERRAND.steps[stepOf(method)] as Extract<FixtureStep, { await: string }>).params as Record<string, unknown>

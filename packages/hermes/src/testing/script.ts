@@ -76,6 +76,9 @@ function memorySocket(gateway: ScriptedGateway): WireSocket {
  *   `wire/contract.openrpc.json` (`checkParams`), and each handler adds its own.
  * - Attach before act. A submit or an answer on a socket that has not created or resumed the
  *   session gets `permission_denied`.
+ * - One profile per frame. A session answers only on a frame routed to the profile it lives in: the
+ *   one `profile` names, else the home profile. A socket whose fixture `reach` is `'profile'` is
+ *   refused `profile_mismatch` for every profile but its own, as an attach ticket is.
  * - Loopback only: the upgrade is refused when it carries an `Origin` header, a ticket that was
  *   used before or is older than 30 s, or anything but exactly one ticket subprotocol.
  * It answers by itself: gateway.ready, client.capabilities, runtime.describe, gateway.ping,
@@ -84,6 +87,10 @@ function memorySocket(gateway: ScriptedGateway): WireSocket {
  * `session.resume` and `session.events.since` are answered from the frames pushed so far (watermark, running, generation, open prompts, the
  * ring) and the current stored rows. Frames published between a `since` answer and the resume that
  * follows are written to the socket before the resume reply, as the gateway's catch-up does.
+ * Beside the story it plays one Bot Chat for each bot of the header's `profiles` that names one, and
+ * makes one on a titled `session.create`. A Bot Chat answers each message with one turn that says
+ * `<profile>: <text>`, naming the profile the submit was routed by. The story session is the home
+ * bot's Bot Chat, unless the header says `homeBotChat: false`.
  * It reads the frames it pushes with `parseEvent`, so the envelope's field names stay in `wire/parse.ts`.
  */
 export function scriptedDialer(fixture: Fixture, options: ScriptOptions = {}): ScriptedDialer {

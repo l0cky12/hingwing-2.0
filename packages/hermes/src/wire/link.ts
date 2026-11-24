@@ -52,6 +52,13 @@ export class DialError extends Error {
   }
 }
 
+/**
+ * What a socket's ticket lets it reach. `host`: every profile the gateway serves, chosen per frame
+ * by `profile`. `profile`: only the profile `attach` ran in, and a frame that names another is
+ * refused `profile_mismatch` (Hermes's gateway/session_controls.py:197-223).
+ */
+export type Reach = 'host' | 'profile'
+
 export interface Endpoint { readonly url: string; readonly protocols: readonly string[] }
 export type Mint = (request: { readonly start: boolean }) => Promise<Endpoint>
 

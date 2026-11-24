@@ -56,7 +56,7 @@ describe('recordingDialer', () => {
 
   it('keeps the bots and the slash catalog in the header, out of the story, so the recording plays to the end', async () => {
     const { catalog } = SLASH.header
-    const recorded = loadFixture(await record(undefined, { ...ERRAND, header: { ...ERRAND.header, profiles: PROFILES, catalog } }))
+    const recorded = loadFixture(await record(undefined, { ...ERRAND, header: { ...ERRAND.header, profiles: PROFILES, homeBotChat: false, catalog } }))
     expect(recorded.header).toMatchObject({ profiles: PROFILES, catalog })
     expect(recorded.steps.map(kindOf)).toEqual(ERRAND.steps.filter(step => !('stored' in step)).map(kindOf))
     expect(await playToEnd(recorded)).toEqual(await playToEnd(ERRAND))

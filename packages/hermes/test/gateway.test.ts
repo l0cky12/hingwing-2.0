@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { manualClock, settle } from '../src/testing/clock'
 import { scriptedDialer, type Fixture, type ScriptOptions } from '../src/testing/fixture'
-import { ERRAND, paramsOf, PROFILES, SESSION, SLASH, WITH_BOTS } from './support/errand'
+import { BOUND, ERRAND, NO_HOME_CHAT, paramsOf, PROFILES, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, WITH_BOTS } from './support/errand'
 
 interface Reply {
   readonly id?: number
+  readonly method?: string
+  readonly params?: { readonly type: string; readonly session_id?: string; readonly payload: Record<string, unknown> }
   readonly result?: Record<string, unknown>
   readonly error?: { readonly code: number; readonly message: string; readonly data?: Record<string, unknown> }
 }
@@ -148,7 +150,7 @@ describe('the scripted gateway answers the slash catalog and command calls as He
   })
 
   it('answers profiles.list from the fixture, and refuses a key the contract does not declare', async () => {
-    const { script, call } = await rawSocket({}, WITH_BOTS)
+    const { script, call } = await rawSocket({}, NO_HOME_CHAT)
     expect((await call('profiles.list', {})).result).toEqual(PROFILES)
     expect((await call('profiles.list', { include_sessions: true })).result).toEqual(PROFILES)
     expect(await call('profiles.list', { session_id: SESSION })).toMatchObject(refusal('invalid_params', { fields: ['session_id'] }))
@@ -168,5 +170,116 @@ describe('the scripted gateway answers the slash catalog and command calls as He
     expect(await call('command.dispatch', { ...dispatch, arg: 3 })).toMatchObject(refusal('invalid_params'))
     expect(await call('command.dispatch', { ...dispatch, name: 'status now' })).toMatchObject(refusal('invalid_params'))
     expect(await call('command.dispatch', { ...dispatch, session_id: 'someone-else' })).toMatchObject(refusal('not_found'))
+  })
+})
+
+const RESEARCH = { profile: 'research', session_id: RESEARCH_CHAT }
+const canonicalOf = (reply: Reply, name: string) =>
+  (reply.result?.profiles as { name: string; canonical_session?: { id: string } | null }[]).find(row => row.name === name)?.canonical_session
+const eventsOf = (frames: readonly Reply[], sessionId: string) =>
+  frames.flatMap(frame => (frame.method === 'event' && frame.params?.session_id === sessionId ? [frame.params] : []))
+
+describe('the scripted gateway routes a frame by the profile it names, as the dispatcher does', () => {
+  it('refuses a profile nobody serves, and on a profile-bound socket every profile but its own', async () => {
+    const host = await rawSocket({}, WITH_BOTS)
+    expect(await host.call('session.list', { profile: 'nobody', title: 'Bot Chat' })).toMatchObject(refusal('profile_mismatch'))
+    expect(await host.call('session.resume', RESEARCH)).toMatchObject({ result: { session_id: RESEARCH_CHAT } })
+
+    const bound = await rawSocket({}, BOUND)
+    expect(await bound.call('session.resume', RESEARCH)).toMatchObject(refusal('profile_mismatch'))
+    expect(await bound.call('session.create', { profile: 'research', title: 'Bot Chat', hidden: true })).toMatchObject(refusal('profile_mismatch'))
+    expect(await bound.call('session.resume', { profile: 'default', session_id: SESSION })).toMatchObject({ result: { session_id: SESSION } })
+  })
+
+  it("answers for a bot's session only on a frame that names the bot", async () => {
+    const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, models: { providers: [] } } })
+    expect(await call('session.resume', { session_id: RESEARCH_CHAT })).toMatchObject(refusal('not_found'))
+    expect(await call('session.resume', { profile: 'timothy', session_id: RESEARCH_CHAT })).toMatchObject(refusal('not_found'))
+    expect(await call('session.events.since', { session_id: RESEARCH_CHAT, last_seen: 0 })).toMatchObject(refusal('not_found'))
+    expect(await call('model.options', { session_id: RESEARCH_CHAT })).toMatchObject(refusal('not_found'))
+
+    const { result } = await call('session.resume', RESEARCH)
+    const submit = { session_id: RESEARCH_CHAT, text: 'hello', input_id: 'input-1' }
+    expect(await call('prompt.submit', submit)).toMatchObject(refusal('permission_denied'))
+    const detach = { session_id: RESEARCH_CHAT, subscription_id: result?.subscription_id }
+    expect(await call('session.detach', detach), 'a forgotten profile detaches nothing and says so only in the reply').toMatchObject({ result: { detached: false } })
+    expect(await call('prompt.submit', { ...submit, profile: 'research' })).toMatchObject({ result: { status: 'queued' } })
+    expect(await call('model.options', { ...RESEARCH })).toMatchObject({ result: { model: 'research-model' } })
+    expect(await call('session.detach', { ...detach, profile: 'research' })).toMatchObject({ result: { detached: true } })
+  })
+
+  it('drops the profile of a strict session verb before its key check, and of no other call', async () => {
+    const { call } = await rawSocket({}, WITH_BOTS)
+    const home = { profile: 'default', session_id: SESSION }
+    const { result } = await call('session.resume', home)
+    expect(await call('clarify.respond', { ...home, execution_generation: 1, prompt_id: 'p', answer: 'yes' })).toMatchObject(refusal('stale_generation'))
+    expect(await call('clarify.respond', { ...home, execution_generation: 1, prompt_id: 'p', answer: 'yes', bogus: 1 })).toMatchObject(refusal('invalid_params', { fields: ['bogus'] }))
+    expect(await call('session.detach', { ...home, subscription_id: result?.subscription_id })).toMatchObject({ result: { detached: true } })
+    expect(await call('runtime.describe', { profile: 'default' })).toMatchObject(refusal('invalid_params', { fields: ['profile'] }))
+  })
+})
+
+describe("the scripted gateway plays a bot's Bot Chat", () => {
+  it('resumes it with the line its row previews, and answers a message as the bot the frame names', async () => {
+    const { call, frames } = await rawSocket({}, WITH_BOTS)
+    const opened = await call('session.resume', { ...RESEARCH, display_projection: true })
+    expect(opened.result).toMatchObject({ session_id: RESEARCH_CHAT, running: false, display_messages: [{ role: 'assistant', text: RESEARCH_SAID }], info: { model: 'research-model' } })
+
+    const receipt = await call('prompt.submit', { ...RESEARCH, text: 'hello', input_id: 'input-1' })
+    expect(receipt.result).toMatchObject({ status: 'queued', ref: { session_id: RESEARCH_CHAT } })
+    const turn = eventsOf(frames, RESEARCH_CHAT)
+    expect(turn.map(event => event.type)).toEqual(['session.info', 'message.start', 'message.delta', 'message.complete'])
+    expect(turn[0]?.payload).toMatchObject({ pending: [{ admission_id: receipt.result?.admission_id, input_id: 'input-1', text: 'hello' }] })
+    expect(turn[2]?.payload).toMatchObject({ text: 'research: hello' })
+    expect(frames.indexOf(receipt), 'the receipt comes before the turn').toBeLessThan(frames.findIndex(frame => frame.params?.type === 'message.start'))
+
+    const again = await call('session.resume', { ...RESEARCH, display_projection: true })
+    expect(again.result?.display_messages).toMatchObject([{ text: RESEARCH_SAID }, { role: 'user', text: 'hello' }, { role: 'assistant', text: 'research: hello' }])
+    expect(await call('session.events.since', { ...RESEARCH, last_seen: 2, replay_epoch: again.result?.replay_epoch })).toMatchObject({ result: { count: 2, snapshot_required: false } })
+    expect(await call('session.mutate', { ...RESEARCH, request_id: 'r', expected_revision: 0, operation: 'rename', payload: { title: 'x' } })).toMatchObject(refusal('unsupported_command'))
+  })
+
+  it('finds a Bot Chat by its title, and creates one once for a bot that has none', async () => {
+    const { call } = await rawSocket({}, WITH_BOTS)
+    const titled = { title: 'Bot Chat', include_hidden: true }
+    expect(await call('session.list', { profile: 'research', ...titled })).toMatchObject({ result: { scope: 'stored', sessions: [{ session_id: RESEARCH_CHAT, resolved_id: RESEARCH_CHAT }] } })
+    expect(await call('session.list', titled)).toMatchObject({ result: { sessions: [{ session_id: SESSION }] } })
+    expect(await call('session.list', { profile: 'hermes-dev', ...titled })).toMatchObject({ result: { scope: 'stored', sessions: [] } })
+    expect(await call('session.list', { ...titled, scope: 'stored' })).toMatchObject(refusal('invalid_params'))
+
+    const create = { profile: 'hermes-dev', source: 'gui', title: 'Bot Chat', hidden: true, follow_profile_config: true, request_id: 'r-1' }
+    expect(await call('session.create', { ...create, hidden: 'yes' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.create', { ...create, hide: true })).toMatchObject(refusal('invalid_params', { fields: ['hide'] }))
+    const made = await call('session.create', create)
+    expect(made.result).toMatchObject({ session_id: 'bot-chat-hermes-dev', messages: [] })
+    expect((await call('session.create', { ...create, request_id: 'r-2' })).result?.session_id, 'a titled create is get-or-create').toBe('bot-chat-hermes-dev')
+    expect(await call('session.list', { profile: 'hermes-dev', ...titled })).toMatchObject({ result: { sessions: [{ session_id: 'bot-chat-hermes-dev' }] } })
+    expect(canonicalOf(await call('profiles.list', {}), 'hermes-dev')).toMatchObject({ id: 'bot-chat-hermes-dev', resolved_id: 'bot-chat-hermes-dev' })
+    expect((await call('session.create', { ...create, profile: 'research' })).result?.session_id, 'a bot that has one gets it').toBe(RESEARCH_CHAT)
+  })
+
+  it('names the story as the Bot Chat of the home bot, unless the fixture says it has none', async () => {
+    const { call } = await rawSocket({}, WITH_BOTS)
+    const listed = await call('profiles.list', {})
+    expect(canonicalOf(listed, 'default')).toMatchObject({ id: SESSION, resolved_id: SESSION })
+    expect(canonicalOf(listed, 'research')).toMatchObject({ id: RESEARCH_CHAT, preview: RESEARCH_SAID })
+    expect(canonicalOf(listed, 'hermes-dev')).toBeNull()
+
+    const none = await rawSocket({}, NO_HOME_CHAT)
+    expect(canonicalOf(await none.call('profiles.list', {}), 'default')).toBeNull()
+    expect(await none.call('session.list', { title: 'Bot Chat', include_hidden: true })).toMatchObject({ result: { sessions: [] } })
+    const made = await none.call('session.create', { profile: 'default', source: 'gui', title: 'Bot Chat', hidden: true })
+    expect(made.result?.session_id).toBe('bot-chat-default')
+    expect(none.script.step, 'the story has not moved').toBe(0)
+  })
+
+  it("gives a profile-bound socket the other bots' rows with no session fields", async () => {
+    const { call } = await rawSocket({}, BOUND)
+    const listed = await call('profiles.list', { include_sessions: true })
+    expect(canonicalOf(listed, 'default')).toMatchObject({ id: SESSION })
+    const research = (listed.result?.profiles as Record<string, unknown>[]).find(row => row.name === 'research')
+    expect(research).toMatchObject({ name: 'research', ui_meta: { 'hermes-bots': { title: 'Research' } } })
+    expect(Object.keys(research ?? {})).not.toEqual(expect.arrayContaining(['canonical_session']))
+    expect(research).not.toHaveProperty('last_session')
   })
 })
