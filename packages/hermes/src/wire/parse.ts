@@ -157,9 +157,10 @@ interface MetaFields {
   readonly model?: ModelRef | null
   readonly pick?: PickOutcome | null
   readonly generation?: number | null
+  readonly cutBefore?: number | null
 }
 
-function meta({ title, revision, queue, model, pick, generation }: MetaFields): SessionEvent {
+function meta({ title, revision, queue, model, pick, generation, cutBefore }: MetaFields): SessionEvent {
   return {
     type: 'meta',
     ...(title == null ? {} : { title }),
@@ -167,13 +168,15 @@ function meta({ title, revision, queue, model, pick, generation }: MetaFields): 
     ...(queue == null ? {} : { queue }),
     ...(model == null ? {} : { model }),
     ...(pick == null ? {} : { pick }),
-    ...(generation == null ? {} : { generation: generation as Generation })
+    ...(generation == null ? {} : { generation: generation as Generation }),
+    ...(cutBefore == null ? {} : { cutBefore })
   }
 }
 
 type ModelReceiptFields = SessionMutateResult & {
   status?: string; model?: string; provider?: string; execution_generation?: number
   confirm?: string; confirm_message?: string; payload?: unknown; committed_model?: string; committed_provider?: string
+  target_message?: unknown
 }
 
 /**
@@ -283,7 +286,12 @@ export const SHOWN: { readonly [type: string]: Shown } = {
   'session.updated': payload => {
     const p = fields<ModelReceiptFields>(payload)
     if (p.optStr('operation') === 'model' && p.optStr('status') !== 'deferred') return modelReceipt(p)
-    return meta({ title: p.optStr('title'), revision: p.optInt('revision'), generation: p.optInt('execution_generation') })
+    // A rewind receipt names the row it cut before as `target_message.id` (persistence/sqlite/authority/_mutation.py:192-198).
+    const target = p.optStr('operation') === 'rewind' ? p.optObj('target_message') : null
+    return meta({
+      title: p.optStr('title'), revision: p.optInt('revision'), generation: p.optInt('execution_generation'),
+      cutBefore: target === null ? null : fields<{ id?: number }>(target).optInt('id')
+    })
   },
   error: payload => ({ type: 'notice', tone: 'error', text: stripAnsi(fields<ErrorPayload>(payload).str('message')) })
 }

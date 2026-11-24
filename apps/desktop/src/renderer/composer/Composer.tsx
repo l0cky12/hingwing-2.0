@@ -35,6 +35,7 @@ export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput,
   const [pending, setPending] = useState(false)
   const [focused, setFocused] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const press = editing?.press ?? null
   const sending = useRef(false)
   const ownBox = useRef<HTMLTextAreaElement>(null)
   const box = inputRef ?? ownBox
@@ -52,7 +53,7 @@ export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput,
     if (!caretToEnd.current || element === null) return
     caretToEnd.current = false
     element.setSelectionRange(element.value.length, element.value.length)
-  }, [draft, editing])
+  }, [draft, press])
 
   const wasConfirming = useRef(false)
   useLayoutEffect(() => {
@@ -65,8 +66,9 @@ export function Composer({ inputRef, canSend, showStop, onSend, onStop, onInput,
     caretToEnd.current = true
     setDraft(editing.text)
     setRefusal(null)
+    setConfirming(false)
     box.current?.focus()
-  }, [editing, box])
+  }, [press, box])
 
   const edit = (next: string) => {
     setDraft(next)

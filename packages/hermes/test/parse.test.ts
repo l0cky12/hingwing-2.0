@@ -484,6 +484,13 @@ describe('models', () => {
       .not.toMatchObject({ event: { pick: expect.anything() } })
   })
 
+  it('reads the row a rewind receipt cut before, and no cut from any other receipt', () => {
+    const rewind = { session_id: SESSION, operation: 'rewind', revision: 6, execution_generation: 4, rewound_count: 4, target_message: { id: 3, role: 'user', content: 'Add a line' } }
+    expect(parseEvent(frame('session.updated', rewind))).toMatchObject({ event: { type: 'meta', revision: 6, generation: 4, cutBefore: 3 } })
+    expect(parseEvent(frame('session.updated', { session_id: SESSION, operation: 'rename', revision: 5, title: 'Notes', target_message: { id: 3 } })))
+      .not.toMatchObject({ event: { cutBefore: expect.anything() } })
+  })
+
   it('asks for a held pick Hermes wants confirmed at the turn boundary', () => {
     const asked = {
       session_id: SESSION, operation: 'model', status: 'confirmation_required', confirm_required: true, confirm: 'tok',

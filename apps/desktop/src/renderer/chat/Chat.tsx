@@ -125,38 +125,42 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const live = session?.sync.state === 'live'
   const idle = session !== undefined && activityOf(session).kind === 'idle'
   const waiting = view !== null && view.pending.some(message => message.status !== 'failed')
-  const [held, setEditing] = useState<(Editing & { readonly id: SessionId | null }) | null>(null)
-  const editing = held !== null && held.id === id ? held : null
+  const [held, setEditing] = useState<(Omit<Editing, 'later'> & { readonly id: SessionId | null }) | null>(null)
+  const editedAt = held === null || held.id !== id || view === null ? -1 : view.turns.findIndex(turn => turn.rowId === held.rowId)
+  const later = view === null ? 0 : view.turns.length - 1 - editedAt
+  const editing = useMemo(() => (held === null || editedAt < 0 ? null : { ...held, later }), [held, editedAt, later])
   const [regenerating, setRegenerating] = useState<{ readonly id: SessionId | null; readonly refusal: string } | null>(null)
-  const latestView = useRef(view)
-  latestView.current = view
-  const canEdit = live === true && idle && !waiting
+  const [rewriting, setRewriting] = useState(false)
+  const presses = useRef(0)
+  const canEdit = live === true && idle && !waiting && !rewriting
   const settled = view === null ? 0 : session?.run.state === 'running' ? view.turns.length - 1 : view.turns.length
   const regenerateTurn = view?.turns[settled - 1]
   const regenerateTurnKey = regenerateTurn?.rowId == null ? null : regenerateTurn.key
 
+  const rewrite = useCallback(async (sessionId: SessionId, rowId: number, text: string) => {
+    setRewriting(true)
+    return run({ do: 'rewind', sessionId, rowId, text }).finally(() => setRewriting(false))
+  }, [])
   const onEdit = useCallback((rowId: number, text: string) => {
-    const turns = latestView.current?.turns ?? []
-    const at = turns.findIndex(turn => turn.rowId === rowId)
-    if (at < 0) return
     setRegenerating(null)
-    setEditing({ id, rowId, later: turns.length - 1 - at, text })
+    setEditing({ id, press: ++presses.current, rowId, text })
   }, [id])
   const onRegenerate = useCallback(async (rowId: number, text: string) => {
     if (id === null) return
     setRegenerating(null)
-    const outcome = await run({ do: 'rewind', sessionId: id, rowId, text })
+    const outcome = await rewrite(id, rowId, text)
     if (!outcome.ok) setRegenerating({ id, refusal: outcome.refusal.message })
-  }, [id])
+  }, [id, rewrite])
   const onSend = useCallback(async (text: string): Promise<CommandOutcome<string | null>> => {
     setRegenerating(null)
     if (chat.sessionId === null) return run({ do: 'start', bot: chat.bot, text })
     if (editing === null) return run({ do: 'send', sessionId: chat.sessionId, text })
-    const outcome = await run({ do: 'rewind', sessionId: chat.sessionId, rowId: editing.rowId, text })
+    const { press } = editing
+    const outcome = await rewrite(chat.sessionId, editing.rowId, text)
     if (!outcome.ok) return outcome
-    setEditing(null)
+    setEditing(current => (current?.press === press ? null : current))
     return { ok: true, value: null }
-  }, [chat, editing])
+  }, [chat, editing, rewrite])
 
   const [menu, setMenu] = useState<{ readonly id: SessionId | null; readonly menu: ModelMenu | null }>({ id, menu: null })
   const asked = useRef(0)

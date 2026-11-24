@@ -43,6 +43,8 @@ export type SessionEvent =
       readonly pick?: PickOutcome
       /** The session's generation now, which a policy change such as a model switch moves without a turn. */
       readonly generation?: Generation
+      /** Hermes cut the chat before this stored row, here or in another client. */
+      readonly cutBefore?: number
     }
 
 /** What became of a model pick, from Hermes's receipt. `settled`: a switch committed or a held pick was dropped. */
@@ -505,10 +507,8 @@ function act(state: Tracked, action: LocalAction): Tracked {
     case 'answer.failed':
       return editPrompt(state, action.promptId, prompt =>
         prompt.state.s === 'sending' ? { ...prompt, state: { s: 'waiting', error: action.message } } : prompt)
-    case 'rewound': {
-      const at = content.history.findIndex(turn => turn.request?.rowId === action.rowId)
-      return at < 0 ? state : { ...state, content: { ...content, history: content.history.slice(0, at) } }
-    }
+    case 'rewound':
+      return cutBefore(state, action.rowId)
     case 'earlier.requested':
       return content.earlier === 'more' ? { ...state, content: { ...content, earlier: 'loading' } } : state
     case 'model.deferred': {
@@ -614,11 +614,18 @@ function fold(state: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | 's
       const revised: Tracked = event.revision === undefined
         ? titled
         : { ...titled, fence: patch(titled.fence, { revision: Math.max(titled.fence.revision, event.revision) }) }
-      return (event.queue ?? []).reduce(admission, revised)
+      const cut: Tracked = event.cutBefore === undefined ? revised : cutBefore(revised, event.cutBefore)
+      return (event.queue ?? []).reduce(admission, cut)
     }
     default:
       return unreachable(event)
   }
+}
+
+function cutBefore(state: Tracked, rowId: number): Tracked {
+  const { content } = state
+  const at = content.history.findIndex(turn => turn.request?.rowId === rowId)
+  return at < 0 ? state : { ...state, content: { ...content, history: content.history.slice(0, at) } }
 }
 
 function openRun(state: Tracked, generation: Generation, id: TurnId, request: Request | null, began: Began | null): Tracked {

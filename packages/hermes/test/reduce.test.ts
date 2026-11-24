@@ -736,6 +736,13 @@ describe('rewinding', () => {
     expect(rewound(held(), 5).content.history.map(turn => turn.id)).toEqual(['a', 'b'])
   })
 
+  it('cuts on a rewind receipt from the stream, so a cut made elsewhere or replayed after a drop shows too', () => {
+    const cut = reduce(held(), event(9, { type: 'meta', revision: 2, cutBefore: 3 }, null))
+    expect(cut.content.history.map(turn => turn.id)).toEqual(['a'])
+    expect(cut.fence.revision).toBe(2)
+    expect(reduce(cut, event(10, { type: 'meta', cutBefore: 3 }, null)).content).toBe(cut.content)
+  })
+
   it('does nothing for a row no turn opens', () => {
     const before = held()
     expect(rewound(before, 4)).toBe(before)
