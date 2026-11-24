@@ -70,7 +70,6 @@ interface StepProps {
 export const Elapsed = ({ elapsed }: { readonly elapsed: string | null }) =>
   elapsed === null ? null : <span className="elapsed"><span className="sr">, </span>{elapsed}</span>
 
-
 function StepImage({ path, sessionId }: { readonly path: string; readonly sessionId: SessionId | null }) {
   return (
     <div className="step-image">

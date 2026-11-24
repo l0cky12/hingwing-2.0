@@ -1,5 +1,8 @@
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { parseMarkdown } from '../src/thread-view'
+import type { Session } from '@highwing/hermes/domain'
+import { loadFixture, play } from '@highwing/hermes/testing'
+import { parseMarkdown, proseLeaves, threadView } from '../src/thread-view'
 
 const inlineOf = (source: string) => {
   const block = parseMarkdown(source)[0]
@@ -29,5 +32,20 @@ describe('Markdown images', () => {
     expect(inlineOf('[![logo](l.png)](https://example.com)')).toEqual([
       { t: 'link', href: 'https://example.com', children: [{ t: 'image', src: 'l.png', alt: 'logo' }] }
     ])
+  })
+})
+
+describe('the images fixture played through the real client', () => {
+  it('settles with the reply image and the tool image as image nodes', async () => {
+    const fixture = loadFixture(fileURLToPath(new URL('../../../fixtures/images.jsonl', import.meta.url)))
+    let last: Session | undefined
+    for await (const { session } of play(fixture)) last = session
+    const turn = threadView(last as Session, { now: 0, timeZone: 'UTC' }).turns.at(-1)
+    expect(turn?.end.kind).toBe('done')
+    const images = (turn?.nodes ?? []).flatMap(node => (node.kind === 'prose' ? proseLeaves(parseMarkdown(node.markdown)) : []))
+      .flatMap(leaf => ('kind' in leaf ? [] : leaf.filter(inline => inline.t === 'image')))
+    expect(images).toEqual([{ t: 'image', src: 'https://example.com/signups-chart.png', alt: 'a chart' }])
+    const steps = (turn?.nodes ?? []).flatMap(node => (node.kind === 'step' ? [node.step] : node.kind === 'group' ? node.steps : []))
+    expect(steps.map(step => step.image)).toEqual(['/tmp/hermes-proto-work/dashboard.png'])
   })
 })
