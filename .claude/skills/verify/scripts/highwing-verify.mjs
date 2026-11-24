@@ -247,6 +247,14 @@ const STEPS = {
       if (held !== value) throw new Error(`${role} "${name}" has aria-pressed ${JSON.stringify(held)}, not ${value}`)
     }
   },
+  drafts: {
+    arity: 1,
+    run: async (ctx, n) => {
+      const held = await poll(ctx, async () => draftsOnDisk(ctx), files => files.length === Number(n))
+      for (const { name, body } of held) log(ctx, `  ${name}: ${body}`)
+      if (held.length !== Number(n)) throw new Error(`the drafts folder holds ${held.length} draft file(s), not ${n}`)
+    }
+  },
   quiet: {
     arity: 0,
     run: async ctx => {
@@ -372,6 +380,20 @@ function log(ctx, line) {
   const stamped = `${new Date().toISOString()} ${line}`
   console.log(stamped)
   appendFileSync(join(ctx.evidence, 'steps.log'), `${stamped}\n`)
+}
+
+function draftsOnDisk(ctx) {
+  const dir = join(ctx.userData, 'drafts')
+  if (!existsSync(dir)) return []
+  return readdirSync(dir).filter(name => name.endsWith('.json')).sort().map(name => {
+    const raw = readFileSync(join(dir, name), 'utf8')
+    try {
+      const { key, text } = JSON.parse(raw)
+      return { name, body: `key ${JSON.stringify(key)} text ${JSON.stringify(text)}` }
+    } catch {
+      return { name, body: `unreadable ${JSON.stringify(raw)}` }
+    }
+  })
 }
 
 const opensRecorded = ctx => existsSync(ctx.opens)
@@ -563,10 +585,10 @@ async function run(argv) {
   const fixture = edited ? withEdits(given, edits, join(evidence, 'fixture-edited.jsonl')) : given
   const calls = join(evidence, 'gateway-calls.jsonl')
   rmSync(calls, { force: true })
-  const ctx = { app: null, page: null, evidence, fixture, calls, called: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null, size: SIZE, clip: null }
+  const userData = join(scratch, 'user-data')
+  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null, size: SIZE, clip: null }
   const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
-  const userData = join(scratch, 'user-data')
   const saved = SAVED[options.saved ?? 'none']
   if (scenario) {
     rmSync(userData, { recursive: true, force: true })

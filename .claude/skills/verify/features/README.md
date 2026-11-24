@@ -11,7 +11,7 @@ This directory is the maintained source for verifying what a Highwing user sees 
 
 ## Driving conventions
 
-- Start every recipe from a fresh `run`. Each run gets an empty user-data directory, so the app's one saved setting, the connection, is what `--saved` wrote.
+- Start every recipe from a fresh `run` name. A `--fake-host` run empties its user-data directory, so the saved connection is what `--saved` wrote. A `--fixture` run keeps the directory, and the drafts in it, for the next run with the same name. `$H cleanup --run <name>` empties it.
 - Prefer ARIA roles and accessible names (`click button "Send"`) and the named states in the helper's `STATES` table over CSS selectors.
 - Wait on a named state, never on a fixed sleep.
 - Treat every command as literal. Keep quoted names unchanged.
@@ -54,3 +54,4 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Slash menu](./slash-menu.md) covers the `/` list of commands and skills, narrowing, completion, Escape, and a Hermes without the catalog.
 - [Edit a message](./edit-a-message.md) covers the pencil on a sent message, the editing line and Escape, the dialog that counts the later messages, Remove and send, Regenerate under the last reply, both disabled while a turn runs, and Hermes refusing the cut.
 - [Helpers and reasoning](./helpers-and-reasoning.md) covers a helper, a plan and a reasoning block on the thread: the helper running with the live end, the plan open while the turn runs, a collapsed "Thought for" button and what opening it, or a helper, shows.
+- [Drafts](./drafts.md) covers unsent text kept per chat across a switch and a restart, its deletion on Send, the "Draft" row in the Chats column, the sweep of drafts whose chat is gone, and no draft text reaching the gateway before Send.
