@@ -129,14 +129,13 @@ interface TurnProps {
   readonly onToggle: (key: string) => void
   readonly onAnswer: Answer
   readonly canEdit: boolean
-  /** This turn is the last one that is not running, so its reply carries the Regenerate button. */
-  readonly regenerate: boolean
+  readonly showsRegenerate: boolean
   readonly canRegenerate: boolean
   readonly onEdit: Rewrite
   readonly onRegenerate: Rewrite
 }
 
-const Turn = memo(function Turn({ turn, opened, onToggle, onAnswer, canEdit, regenerate, canRegenerate, onEdit, onRegenerate }: TurnProps) {
+const Turn = memo(function Turn({ turn, opened, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, onEdit, onRegenerate }: TurnProps) {
   const { end, rowId, request } = turn
   return (
     <article className="turn">
@@ -156,7 +155,7 @@ const Turn = memo(function Turn({ turn, opened, onToggle, onAnswer, canEdit, reg
         ))}
         <End turnKey={turn.key} end={end} />
       </div>
-      {regenerate && rowId !== null && request !== null && (
+      {showsRegenerate && rowId !== null && request !== null && (
         <div className="turn-actions">
           <button type="button" className="regenerate" disabled={!canRegenerate} onClick={() => onRegenerate(rowId, request)}>Regenerate</button>
         </div>
@@ -174,14 +173,13 @@ interface ThreadProps {
   readonly onFindClosed: () => void
   readonly onFindScrolled: () => void
   readonly canEdit: boolean
-  /** The key of the turn that shows Regenerate, or null for none. */
-  readonly regenerateKey: string | null
+  readonly regenerateTurnKey: string | null
   readonly canRegenerate: boolean
   readonly onEdit: Rewrite
   readonly onRegenerate: Rewrite
 }
 
-export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateKey, canRegenerate, onEdit, onRegenerate }: ThreadProps) {
+export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, onEdit, onRegenerate }: ThreadProps) {
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set())
   const [find, setFind] = useState<FindState | null>(null)
   const transcript = useRef<HTMLDivElement>(null)
@@ -288,7 +286,7 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScro
         {view.turns.map(turn => (
           <Turn
             key={turn.key} turn={turn} opened={opened} onToggle={onToggle} onAnswer={onAnswer}
-            canEdit={canEdit} regenerate={turn.key === regenerateKey} canRegenerate={canRegenerate} onEdit={onEdit} onRegenerate={onRegenerate}
+            canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} onEdit={onEdit} onRegenerate={onRegenerate}
           />
         ))}
         {view.pending.map(message => (

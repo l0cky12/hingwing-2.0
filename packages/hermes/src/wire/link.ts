@@ -152,7 +152,6 @@ export class RpcRefusal extends Error {
     message: string,
     readonly revision: number | null = null,
     readonly generation: number | null = null,
-    /** The request field the refusal names, as Hermes's `error.data.field`. */
     readonly field: string | null = null
   ) {
     super(message)

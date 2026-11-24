@@ -12,7 +12,6 @@ interface ComposerProps {
   readonly onSend: (text: string) => Promise<CommandOutcome<string | null>>
   readonly onStop: () => void
   readonly onInput: () => void
-  /** A sent message to send again. Each new object puts its text in the box. null: a new message. */
   readonly editing?: Editing | null
   readonly onCancelEdit?: () => void
   readonly children?: ReactNode

@@ -13,7 +13,6 @@ const REFUSED = fixture('edit-refused')
 const requests = (session: Session) => session.history.map(turn => turn.request?.text)
 const answers = (session: Session) => session.history.map(turn => turn.items.filter(item => item.kind === 'text').map(item => item.markdown.trim()).join('\n'))
 
-/** The turns a fresh attach reads from the fixture's stored rows. */
 const loadedHistory = (story: typeof EDIT) => parseRows(story.header.stored).turns
 
 async function playAll(story: typeof EDIT) {

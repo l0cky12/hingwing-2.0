@@ -133,7 +133,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const canEdit = live === true && idle && !waiting
   const settled = view === null ? 0 : session?.run.state === 'running' ? view.turns.length - 1 : view.turns.length
   const regenerateTurn = view?.turns[settled - 1]
-  const regenerateKey = regenerateTurn?.rowId == null ? null : regenerateTurn.key
+  const regenerateTurnKey = regenerateTurn?.rowId == null ? null : regenerateTurn.key
 
   const onEdit = useCallback((rowId: number, text: string) => {
     const turns = latestView.current?.turns ?? []
@@ -180,7 +180,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
           <FileCallContext value={fileCall}>
             <Thread
               view={view} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
-              canEdit={canEdit} regenerateKey={regenerateKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
+              canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
             />
           </FileCallContext>
         )}

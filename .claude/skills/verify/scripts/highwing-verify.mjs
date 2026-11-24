@@ -46,7 +46,6 @@ const STATES = {
 
 const rendered = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 
-/** The `n`th (counting from 1, in page order) element with this role and name, for a control a thread repeats. */
 const nth = (ctx, role, name, n) => ctx.page.getByRole(role, { name, exact: true }).nth(Number(n) - 1)
 
 const STEPS = {
