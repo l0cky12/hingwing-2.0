@@ -166,7 +166,6 @@ export const errand = () => readStory(new URL('../../../../fixtures/errand.jsonl
 export const delegate = () => readStory(new URL('../../../../fixtures/delegate.jsonl', import.meta.url).pathname)
 export const says = () => readStory(new URL('../../../../fixtures/says.jsonl', import.meta.url).pathname)
 
-/** A live frame stamps a notice and a reasoning block with this client's clock, and a replayed one cannot. Neither belongs in a comparison. */
 export const ignoringClocks = <T extends { readonly history: readonly SettledTurn[]; readonly interlude: SessionContent['interlude'] }>(session: T): T => {
   const unclocked = <I extends Item<'settled'>>(item: I): I =>
     item.kind === 'status' && item.what === 'notice' ? { ...item, seenAt: null }

@@ -80,7 +80,6 @@ export interface ActorDeps {
   readonly publish: (session: Session, previous: Session) => void
   readonly refuse: (request: ServerRequest) => void
   readonly mintId: () => string
-  /** Whether a window watches the chat. Only then does the actor read what Hermes does not push. */
   readonly watched: () => boolean
 }
 
@@ -164,7 +163,6 @@ export class SessionActor {
     if (this.deps.conn.link.state === 'online') this.step({ in: 'attach' })
   }
 
-  /** A window began to watch the chat. An attach in flight reads the facts when it lands. */
   watchBegan(): void {
     if (this.tracked.gate.at === 'live') void this.readFacts()
   }

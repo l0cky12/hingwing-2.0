@@ -129,9 +129,7 @@ class Story:
     approves: bool = True
     # True when the story's turn takes a screenshot, so the script registers the scripted tool.
     screenshots: bool = False
-    # True: the chat shows reasoning and the turn runs with the sinks ``local_viewer_events.wire`` installs.
     viewer: bool = False
-    # Run on the gateway loop once the turn has ended, while no turn runs: what Hermes says between turns.
     after: object = None
 
 
@@ -351,7 +349,6 @@ PREVIEW_FILES = Story(
 
 
 def tiny_png() -> bytes:
-    """A 2x2 PNG, so ``agent.terminal_image.local_image_path`` finds a real image file."""
     import struct
     import zlib
 
@@ -376,7 +373,6 @@ def moa_round(turn, agent):
 
 
 def compaction_and_notice(turn, agent):
-    """A compaction's progress and end, a printed line and a sticky notice."""
     from agent.conversation_compression import COMPACTION_DONE_STATUS, COMPACTION_STATUS
     from agent.credits_tracker import AgentNotice
     turn._status_callback_sync("lifecycle", COMPACTION_STATUS)
@@ -644,8 +640,7 @@ def play_turn(turn, db, history, call_ids):
             turn._ctx._step_callback_sync(iteration, [])
             for beat in step.get("hermes", []):
                 beat(turn, agent)
-            # What the provider reasoned for this response: streamed, or handed over whole by a provider that
-            # streams none (``agent/turn_response_intake.py``). The agent keeps it on the assistant message.
+            # The agent keeps the reasoning on the assistant message.
             how, chunks = step.get("reasoning", ("stream", []))
             if how == "whole":
                 local_viewer_events.publish_progress(turn, "reasoning.available", "_thinking", "".join(chunks), None)

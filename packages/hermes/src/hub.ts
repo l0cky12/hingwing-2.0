@@ -144,7 +144,6 @@ export function openHermes(options: HermesOptions): Hermes {
 
   const actors = new Map<SessionId, SessionActor>()
   const watchers = new Map<SessionId, Set<(session: Session) => void>>()
-  /** How many windows watch each chat. A command waiting for an attach watches too, and is not counted. */
   const windows = new Map<SessionId, number>()
   const releases = new Map<SessionId, () => void>()
   const branchPins = new Map<BranchId, BranchPin>()

@@ -76,7 +76,6 @@ export type ThreadNode =
   | { readonly kind: 'helper'; readonly key: string; readonly helper: HelperView }
   /** The turn's to-do list. At most one per turn. */
   | { readonly kind: 'plan'; readonly key: string; readonly plan: PlanView }
-  /** The next two are not drawn yet. They carry the domain item as it is. */
   | { readonly kind: 'moa'; readonly key: string; readonly moa: MoaItem }
   | { readonly kind: 'status'; readonly key: string; readonly status: StatusItem }
 
@@ -223,7 +222,6 @@ export function threadView(session: Session, clock: ViewClock): ThreadView {
   const open = run.state === 'running'
     ? turnView(run.turn, lines.at(-1) ?? null, sync.state === 'live', nodes => openEnd(run.turn, nodes, activityOf(session), sync.state, clock))
     : null
-  // Empty while a turn runs: the reducer seals it into the history when one starts.
   const interlude = session.interlude.length === 0
     ? null
     : turnView({ id: LIVE_INTERLUDE, request: null, items: session.interlude }, null, false, () => NO_END)

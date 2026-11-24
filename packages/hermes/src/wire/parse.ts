@@ -161,7 +161,6 @@ function admissionOf(value: unknown): Admission {
   return { inputId: row.str('input_id') as Admission['inputId'], admissionId: row.str('admission_id'), text: row.str('text'), status: status as Admission['status'] }
 }
 
-/** null: a frame of a shown type that Highwing still leaves out, such as a process status line. */
 type Shown = (payload: Obj, envelope: Obj) => SessionEvent | null
 
 interface MetaFields {
@@ -369,7 +368,6 @@ export const SHOWN: { readonly [type: string]: Shown } = {
     return { type: 'moa', step: { is: 'aggregating', by: p.optStr('aggregator') || null } }
   },
   'moa.aggregating': payload => ({ type: 'moa', step: { is: 'aggregating', by: fields<MoaAggregatingPayload>(payload).optStr('aggregator') || null } }),
-  /** One wire type for several things, told apart by `kind`. A process line says when to read the process list, which Highwing does not show yet. */
   'status.update': payload => {
     const p = fields<StatusUpdatePayload>(payload)
     const kind = p.str('kind')
@@ -437,13 +435,13 @@ export const UNSHOWN: ReadonlySet<string> = new Set([
 /**
  * `status.update` kinds: `compacting` is a compaction's progress line, re-tagged by Hermes from its
  * mark (`agent/conversation_compression.py:157-166`), and `compacted` its end. A goal check's verdict
- * is `goal` (`gateway/run_goals.py:238-246`). `warn` is `_emit_warning`. The rest read as `other`.
+ * is `goal` (`gateway/run_goals.py:238-246`). `warn` is `_emit_warning`.
  */
 const STATUS_ABOUT: { readonly [kind: string]: StatusAbout } = { compacting: 'compacting', compacted: 'compacted', goal: 'goal', warn: 'warning' }
 
 const NOTICE_LEVELS: readonly string[] = ['info', 'warn', 'error', 'success'] satisfies ShownNotice['level'][]
 
-/** `AgentNotice` as `run_turn_progress.py:1119-1127` publishes it. A notice with no key is keyed by its id, then by its words. */
+/** `AgentNotice` as `run_turn_progress.py:1119-1127` publishes it. */
 function noticeOf(payload: Obj): ShownNotice {
   const p = fields<NotificationShowPayload>(payload)
   const text = stripAnsi(p.str('text'))
