@@ -161,3 +161,4 @@ export const ignoringStartTimes = <T extends { readonly history: readonly Settle
   ({ ...session, history: session.history.map(turn => ({ ...turn, began: null })) })
 
 export const errand = () => readStory(new URL('../../../../fixtures/errand.jsonl', import.meta.url).pathname)
+export const delegate = () => readStory(new URL('../../../../fixtures/delegate.jsonl', import.meta.url).pathname)

@@ -1,7 +1,7 @@
 import {
   activityOf,
-  type Activity, type FileDiff, type Item, type NoticeItem, type Outcome, type PromptId, type PromptItem, type PromptReply,
-  type Session, type SettledTurn, type Sync, type Tokens, type ToolItem, type Turn
+  type Activity, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type Item, type NoticeItem, type Outcome, type PlanEntry, type PlanItem,
+  type PromptId, type PromptItem, type PromptReply, type ReasoningItem, type Session, type SettledTurn, type Sync, type Tokens, type ToolItem, type Turn
 } from '@highwing/hermes/domain'
 import { changesAt, elapsedWords, timeLines, type ViewClock } from './when'
 
@@ -58,6 +58,19 @@ export type ThreadNode =
     }
   | { readonly kind: 'prompt'; readonly key: string; readonly card: PromptCard }
   | { readonly kind: 'notice'; readonly key: string; readonly tone: 'error' | 'info'; readonly text: string }
+  /** One reasoning block, collapsed until pressed. The text is plain, never Markdown. */
+  | {
+      readonly kind: 'reasoning'
+      readonly key: string
+      readonly text: string
+      readonly streaming: boolean
+      /** "12 s", "under a second". null while it streams, or when this client did not see it start and end. */
+      readonly duration: string | null
+    }
+  /** A helper the agent started. Its own steps and helpers render on an indented thread when it is open. */
+  | { readonly kind: 'helper'; readonly key: string; readonly helper: HelperView }
+  /** The turn's to-do list. At most one per turn. */
+  | { readonly kind: 'plan'; readonly key: string; readonly plan: PlanView }
 
 /**
  * The turn's single end mark.
@@ -84,6 +97,50 @@ export type ThreadEnd =
   | { readonly kind: 'lost'; readonly words: string }
 
 export interface DiffStat { readonly added: number; readonly removed: number }
+
+export type HelperState = 'queued' | 'working' | 'done' | 'failed'
+
+export interface HelperView {
+  /** Hermes's words for the work, first line only. */
+  readonly goal: string
+  /** `failed` covers every end but `completed`. */
+  readonly state: HelperState
+  /** Brick words beside a helper that did not complete: "Failed", "Timed out", "Stopped". */
+  readonly ended: string | null
+  /** What a working helper does now, for its closed row: "Waiting to start", "Thinking", "Started `du -sh`". */
+  readonly now: Phrase | null
+  /** Hermes's tool count, else the tools seen. */
+  readonly count: number
+  /** Formatted, once it ended, and only when it took 1 s or more. */
+  readonly duration: string | null
+  readonly steps: readonly HelperStepView[]
+  /** The helper's own words when it ended. */
+  readonly summary: string | null
+}
+
+export type HelperStepView =
+  /** A tool the helper started. `latest`: its newest tool while it works, which may still run. */
+  | { readonly kind: 'step'; readonly key: string; readonly title: Phrase; readonly latest: boolean }
+  /** A helper of the helper. `more` counts the helpers below it, which are not drawn. */
+  | { readonly kind: 'helper'; readonly key: string; readonly goal: string; readonly state: HelperState; readonly more: number }
+
+export interface PlanView {
+  /** Completed entries. Cancelled ones count in neither `done` nor `total`. */
+  readonly done: number
+  readonly total: number
+  readonly cancelled: number
+  readonly entries: readonly PlanEntryView[]
+  /** A plan opens by itself while its turn runs, and starts closed once the turn has settled. */
+  readonly openByDefault: boolean
+}
+
+export interface PlanEntryView {
+  readonly key: string
+  readonly text: string
+  readonly state: 'todo' | 'doing' | 'done' | 'cancelled'
+  /** 0 at the top level, 1 under another entry, and so on. */
+  readonly depth: number
+}
 
 export interface StepView {
   readonly key: string
@@ -179,7 +236,9 @@ function settledView(turn: SettledTurn, time: string | null): TurnView {
 
 function turnView(turn: Turn, time: string | null, live: boolean, end: (nodes: readonly ThreadNode[]) => ThreadEnd): TurnView {
   const at = (index: number) => `${turn.id}/${index}`
-  const nodes = groupRuns(placeApprovals(turn.items).filter(isShown)).map((run): ThreadNode => {
+  const helpers = new Map(turn.items.flatMap(item => (item.kind === 'helper' ? [[item.id, item] as const] : [])))
+  const asked = new Set(turn.items.flatMap(item => (item.kind === 'prompt' && item.ask.kind === 'approval' && (item.state.s === 'waiting' || item.state.s === 'sending') ? [item.ask.command] : [])))
+  const nodes = groupRuns(placeApprovals(turn.items).filter(placed => isShown(placed, turn.items, helpers))).map((run): ThreadNode => {
     if ('tools' in run) {
       const steps = run.tools.map(placed => stepView(placed.item, at(placed.at), placed.partner !== null))
       const [first] = steps
@@ -203,6 +262,12 @@ function turnView(turn: Turn, time: string | null, live: boolean, end: (nodes: r
         return { kind: 'prompt', key, card: promptCard(item, partner !== null, live) }
       case 'notice':
         return { kind: 'notice', key, ...noticeWords(item) }
+      case 'reasoning':
+        return { kind: 'reasoning', key, text: trimBlankLines(item.text), streaming: !item.sealed, duration: thoughtFor(item) }
+      case 'helper':
+        return { kind: 'helper', key, helper: helperView(item, key, helpers, asked) }
+      case 'plan':
+        return { kind: 'plan', key, plan: planView(item, key, !('outcome' in turn)) }
     }
   })
   return {
@@ -260,11 +325,37 @@ function placeApprovals(items: readonly Item[]): readonly Placed[] {
   return order
 }
 
-function isShown({ item, partner }: Placed): boolean {
-  if (item.kind === 'text') return trimBlankLines(item.markdown) !== ''
-  if (item.kind === 'tool' && partner?.kind === 'prompt') return !isPending(partner)
-  return true
+type Helpers = ReadonlyMap<HelperId, HelperItem>
+
+function isShown({ item, partner }: Placed, items: readonly Item[], helpers: Helpers): boolean {
+  switch (item.kind) {
+    case 'text':
+      return trimBlankLines(item.markdown) !== ''
+    case 'reasoning':
+      return item.text.trim() !== ''
+    case 'tool':
+      if (SHOWN_ELSEWHERE.get(item.name)?.showsTool(items)) return false
+      return partner?.kind !== 'prompt' || !isPending(partner)
+    case 'helper':
+      return item.parentId === null || !helpers.has(item.parentId)
+    default:
+      return true
+  }
 }
+
+interface ShownElsewhere {
+  readonly showsTool: (items: readonly Item[]) => boolean
+  readonly liveEndNode: (nodes: readonly ThreadNode[]) => ThreadNode | undefined
+}
+const IN_HELPERS: ShownElsewhere = {
+  showsTool: items => items.some(item => item.kind === 'helper' && item.parentId === null),
+  liveEndNode: nodes => nodes.findLast(node => node.kind === 'helper' && (node.helper.state === 'queued' || node.helper.state === 'working'))
+}
+const IN_PLAN: ShownElsewhere = {
+  showsTool: items => items.some(item => item.kind === 'plan'),
+  liveEndNode: nodes => nodes.find(node => node.kind === 'plan')
+}
+const SHOWN_ELSEWHERE: ReadonlyMap<string, ShownElsewhere> = new Map([['delegate_task', IN_HELPERS], ['todo', IN_PLAN], ['todo_list', IN_PLAN]])
 
 const isPending = (prompt: PromptItem) => prompt.state.s === 'waiting' || prompt.state.s === 'sending'
 
@@ -350,7 +441,7 @@ function stepView(tool: ToolItem, key: string, waited: boolean): StepView {
   }
 }
 
-const clip = (subject: string) => (subject.length > SUBJECT_LIMIT ? `${subject.slice(0, SUBJECT_LIMIT - 1)}…` : subject)
+const clip = (subject: string, limit = SUBJECT_LIMIT) => (subject.length > limit ? `${subject.slice(0, limit - 1)}…` : subject)
 
 const copyOf = (body: RecordBody) => ('empty' in body ? null : body.text)
 
@@ -390,6 +481,109 @@ function formatDuration(seconds: number | null): string | null {
   if (seconds < 60) return `${Math.round(seconds)} s`
   const whole = Math.round(seconds)
   return `${Math.floor(whole / 60)} min ${whole % 60} s`
+}
+
+function thoughtFor({ sealed, startedAt, endedAt }: ReasoningItem): string | null {
+  if (!sealed || startedAt === null || endedAt === null) return null
+  const ms = endedAt - startedAt
+  return ms < 1000 ? 'under a second' : formatDuration(ms / 1000)
+}
+
+const GOAL_LIMIT = 120
+
+const HELPER_ENDS = {
+  completed: { state: 'done', words: null },
+  failed: { state: 'failed', words: 'Failed' },
+  timeout: { state: 'failed', words: 'Timed out' },
+  interrupted: { state: 'failed', words: 'Stopped' }
+} as const satisfies Record<HelperEnd, { readonly state: HelperState; readonly words: string | null }>
+
+const helperState = ({ state }: HelperItem): HelperState => (state.s === 'ended' ? HELPER_ENDS[state.status].state : state.s)
+
+type ToolStep = Extract<HelperItem['steps'][number], { kind: 'tool' }>
+
+const started = (step: ToolStep): Phrase => [{ t: 'text', v: 'Started ' }, { t: 'code', v: clip(step.preview ?? step.name) }]
+
+function toolStepTitle(step: ToolStep): Phrase {
+  const words = TOOL_WORDS[step.name]
+  if (words === undefined) return [{ t: 'text', v: 'Used ' }, { t: 'code', v: clip(step.name) }]
+  return [{ t: 'text', v: `${words.done} ` }, { t: 'code', v: clip(step.preview ?? step.name) }]
+}
+
+/** `asked`: commands an approval card waits on. A helper whose newest tool is one of them shows no now line, since it is not running yet. */
+function helperView(helper: HelperItem, key: string, helpers: Helpers, asked: ReadonlySet<string>): HelperView {
+  const { state } = helper
+  const tools = helper.steps.flatMap((step, index) => (step.kind === 'tool' && step.name !== 'delegate_task' ? [{ step, index }] : []))
+  const latest = state.s === 'working' ? tools.at(-1)?.index ?? null : null
+  return {
+    goal: clip(firstLine(helper.goal), GOAL_LIMIT),
+    state: helperState(helper),
+    ended: state.s === 'ended' ? HELPER_ENDS[state.status].words : null,
+    now: asked.has(tools.at(-1)?.step.preview ?? '') ? null : nowOf(state, tools.at(-1)?.step),
+    count: helper.toolCount ?? helper.steps.filter(step => step.kind === 'tool').length,
+    duration: state.s === 'ended' ? formatDuration(state.durationS) : null,
+    steps: helper.steps.flatMap((step, index): HelperStepView[] => {
+      if (step.kind === 'tool') {
+        if (step.name === 'delegate_task') return []
+        return [{ kind: 'step', key: `${key}/s${index}`, title: index === latest ? started(step) : toolStepTitle(step), latest: index === latest }]
+      }
+      const child = helpers.get(step.id)
+      if (child === undefined) return []
+      return [{ kind: 'helper', key: `${key}/h${index}`, goal: clip(firstLine(child.goal), GOAL_LIMIT), state: helperState(child), more: helpersUnder(child, helpers) }]
+    }),
+    summary: state.s === 'ended' && state.summary !== null ? trimBlankLines(state.summary) || null : null
+  }
+}
+
+function nowOf(state: HelperItem['state'], last: ToolStep | undefined): Phrase | null {
+  if (state.s === 'queued') return [{ t: 'text', v: 'Waiting to start' }]
+  if (state.s !== 'working') return null
+  if (state.doing === 'thinking') return [{ t: 'text', v: 'Thinking' }]
+  return state.doing === 'tool' && last !== undefined ? started(last) : null
+}
+
+function helpersUnder(helper: HelperItem, helpers: Helpers): number {
+  const seen = new Set<HelperId>([helper.id])
+  const visit = (parent: HelperItem): void => {
+    for (const step of parent.steps) {
+      const child = step.kind === 'helper' ? helpers.get(step.id) : undefined
+      if (child === undefined || seen.has(child.id)) continue
+      seen.add(child.id)
+      visit(child)
+    }
+  }
+  visit(helper)
+  return seen.size - 1
+}
+
+const PLAN_STATES = {
+  pending: 'todo', in_progress: 'doing', completed: 'done', cancelled: 'cancelled'
+} as const satisfies Record<PlanEntry['status'], PlanEntryView['state']>
+
+function planView(plan: PlanItem, key: string, open: boolean): PlanView {
+  const cancelled = plan.entries.filter(entry => entry.status === 'cancelled').length
+  return {
+    done: plan.entries.filter(entry => entry.status === 'completed').length,
+    total: plan.entries.length - cancelled,
+    cancelled,
+    entries: parentsFirst(plan.entries).map(({ entry, depth }) => ({ key: `${key}/e${entry.id}`, text: entry.text, state: PLAN_STATES[entry.status], depth })),
+    openByDefault: open
+  }
+}
+
+function parentsFirst(entries: readonly PlanEntry[]): readonly { readonly entry: PlanEntry; readonly depth: number }[] {
+  const ids = new Set(entries.map(entry => entry.id))
+  const placed = new Set<string>()
+  const out: { entry: PlanEntry; depth: number }[] = []
+  const visit = (entry: PlanEntry, depth: number): void => {
+    if (placed.has(entry.id)) return
+    placed.add(entry.id)
+    out.push({ entry, depth })
+    for (const child of entries) if (child.parentId === entry.id) visit(child, depth + 1)
+  }
+  for (const entry of entries) if (entry.parentId === null || !ids.has(entry.parentId)) visit(entry, 0)
+  for (const entry of entries) visit(entry, 0)
+  return out
 }
 
 function sumStat(diffs: readonly FileDiff[]): DiffStat | null {
@@ -514,23 +708,32 @@ const TIP_WORDS = {
   thinking: 'Thinking',
   writing: 'Writing',
   stopping: 'Stopping'
-} as const satisfies Record<Exclude<Activity['kind'], 'preparing' | 'working' | 'asking'>, string>
+} as const satisfies Record<Exclude<Activity['kind'], 'preparing' | 'working' | 'asking' | 'reasoning' | 'helping'>, string>
 
 function openEnd(turn: Turn, nodes: readonly ThreadNode[], activity: Activity, sync: Sync['state'], clock: ViewClock): ThreadEnd {
   if (sync !== 'live') return { kind: 'paused', words: PAUSED_WORDS[sync] }
   const elapsed = elapsedWords(turn.began?.at ?? null, clock.now)
+  const tip = (words: string): ThreadEnd => ({ kind: 'tip', words: [{ t: 'text', v: words }], elapsed })
+  const liveOn = (node: ThreadNode | undefined): ThreadEnd => (node === undefined ? tip(TIP_WORDS.thinking) : { kind: 'at', nodeKey: node.key, tone: 'live', elapsed })
+  const nodeOf = (item: number) => {
+    const key = `${turn.id}/${item}`
+    return nodes.find(n => n.key === key || (n.kind === 'group' && n.steps.some(step => step.key === key)))
+  }
   switch (activity.kind) {
     case 'asking':
+      return { kind: 'at', nodeKey: nodeOf(activity.item)?.key ?? `${turn.id}/${activity.item}`, tone: 'asking' }
     case 'working': {
-      const key = `${turn.id}/${activity.item}`
-      const node = nodes.find(n => n.key === key || (n.kind === 'group' && n.steps.some(step => step.key === key)))
-      const nodeKey = node?.key ?? key
-      return activity.kind === 'asking' ? { kind: 'at', nodeKey, tone: 'asking' } : { kind: 'at', nodeKey, tone: 'live', elapsed }
+      const tool = turn.items[activity.item]
+      const shownIn = tool?.kind === 'tool' ? SHOWN_ELSEWHERE.get(tool.name) : undefined
+      return liveOn(nodeOf(activity.item) ?? shownIn?.liveEndNode(nodes))
     }
+    case 'reasoning':
+    case 'helping':
+      return liveOn(nodeOf(activity.item))
     case 'preparing':
       return { kind: 'tip', words: [{ t: 'text', v: 'Preparing ' }, { t: 'code', v: activity.tool }], elapsed }
     default:
-      return { kind: 'tip', words: [{ t: 'text', v: TIP_WORDS[activity.kind] }], elapsed }
+      return tip(TIP_WORDS[activity.kind])
   }
 }
 
@@ -581,9 +784,15 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
  *   ✓ Done                                                     end: ✓ done, ✗ failed, ⊘ stopped, ~ lost, each with its words
  *     1,204 in, 380 out                                        what the reply used, when Hermes said
  *
- * `◉` replaces the glyph of the step or group that carries the live end, or opens a tip line
- * ("◉ Thinking"). Once a minute has passed the live end adds `, 3 min` after its words. `◌` is a
- * paused end. `⋯` is a pending message. Keys in `opened` print that row's record sections under it.
+ *   ▸ Thought                                                  reasoning, ` …` after it while it streams
+ *   ◆ Helper Check disk usage · 1 step  3.3 s                  helper: ◆ done or failed, ◇ queued or working,
+ *       Started `du -sh`                                       its now line while closed and working
+ *   ☐ Plan · 1 of 3 done                                       plan: ☑ once every entry is done
+ *
+ * `◉` replaces the glyph of the node that carries the live end, or opens a tip line ("◉ Thinking").
+ * Once a minute has passed the live end adds `, 3 min` after its words. `◌` is a paused end. `⋯` is a
+ * pending message. Keys in `opened` print what that row holds under it: a step's record sections,
+ * a reasoning block's text, a helper's steps and summary, a plan's entries.
  */
 export function outline(view: ThreadView, opened: ReadonlySet<string> = new Set()): string {
   const lines: string[] = []
@@ -628,7 +837,38 @@ function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, open
     }
     case 'notice':
       return [`! ${node.text}`]
+    case 'reasoning': {
+      const head = `${live ? '◉' : '▸'} Thought${node.streaming ? ' …' : ''}${live ? elapsedSuffix(elapsed) : ''}`
+      return opened.has(node.key) ? [head, ...node.text.split('\n').map(line => `    ${line}`)] : [head]
+    }
+    case 'helper':
+      return helperLines(node.key, node.helper, live, elapsed, opened)
+    case 'plan': {
+      const { plan } = node
+      const glyph = live ? '◉' : plan.total > 0 && plan.done === plan.total ? '☑' : '☐'
+      const head = `${glyph} Plan · ${plan.done} of ${plan.total} done${plan.cancelled > 0 ? `, ${plan.cancelled} cancelled` : ''}${live ? elapsedSuffix(elapsed) : ''}`
+      if (!opened.has(node.key)) return [head]
+      return [head, ...plan.entries.map(entry => `    ${'  '.repeat(entry.depth)}${ENTRY_MARK[entry.state]} ${entry.text}`)]
+    }
   }
+}
+
+const ENTRY_MARK = { todo: '[ ]', doing: '[>]', done: '[x]', cancelled: '[-]' } as const satisfies Record<PlanEntryView['state'], string>
+
+const isEnded = (state: HelperState) => state === 'done' || state === 'failed'
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`
+
+function helperLines(key: string, helper: HelperView, live: boolean, elapsed: string | null, opened: ReadonlySet<string>): string[] {
+  const glyph = live ? '◉' : isEnded(helper.state) ? '◆' : '◇'
+  const head = `${glyph} Helper ${helper.goal} · ${plural(helper.count, 'step')}${live ? elapsedSuffix(elapsed) : ''}${helper.ended === null ? '' : `  (${helper.ended})`}${meta(null, helper.duration)}`
+  if (!opened.has(key)) return helper.now === null ? [head] : [head, `    ${phrase(helper.now)}`]
+  return [
+    head,
+    ...helper.steps.map(step => step.kind === 'step'
+      ? `    ${step.latest ? '○' : '●'} ${phrase(step.title)}`
+      : `    ${isEnded(step.state) ? '◆' : '◇'} Helper ${step.goal}${step.more > 0 ? `  and ${plural(step.more, 'helper')} of its own` : ''}`),
+    ...(helper.summary === null ? [] : [`    Helper's summary: ${firstLine(helper.summary)}`])
+  ]
 }
 
 function stepLines(step: StepView, glyph: string, indent: string, elapsed: string | null, opened: ReadonlySet<string>): string[] {
@@ -692,6 +932,8 @@ export function checkThread(view: ThreadView): string[] {
     if (turn.tokens !== null && !settled) problems.push(`${where}: shows token counts before it ended`)
     for (const node of turn.nodes) {
       claim(node.key)
+      if (node.kind === 'helper') node.helper.steps.forEach(step => claim(step.key))
+      if (node.kind === 'plan') node.plan.entries.forEach(entry => claim(entry.key))
       if (node.kind === 'group') {
         node.steps.forEach(step => claim(step.key))
         if (node.steps.length < 2) problems.push(`${where}: group ${node.key} has ${node.steps.length} step`)
@@ -702,9 +944,15 @@ export function checkThread(view: ThreadView): string[] {
     const streaming = turn.nodes.filter(node => node.kind === 'prose' && node.streaming)
     if (streaming.length > 1) problems.push(`${where}: ${streaming.length} prose nodes are streaming`)
     if (streaming.length === 1 && turn.nodes.at(-1) !== streaming[0]) problems.push(`${where}: streaming prose is not the last node`)
+    const plans = turn.nodes.filter(node => node.kind === 'plan')
+    if (plans.length > 1) problems.push(`${where}: ${plans.length} plan nodes`)
+    const thinking = turn.nodes.filter(node => node.kind === 'reasoning' && node.streaming)
+    if (thinking.length > 1) problems.push(`${where}: ${thinking.length} reasoning nodes are streaming`)
     if (!last && !settled) problems.push(`${where}: only the last turn may be unsettled, this one ends ${turn.end.kind}`)
+    // A settled turn may hold a working helper: Hermes runs helpers in the background.
     if (settled) {
       if (streaming.length > 0) problems.push(`${where}: ends ${turn.end.kind} while prose streams`)
+      if (thinking.length > 0) problems.push(`${where}: ends ${turn.end.kind} while reasoning streams`)
       const steps = turn.nodes.flatMap(node => (node.kind === 'step' ? [node.step] : node.kind === 'group' ? node.steps : []))
       if (steps.some(step => step.state === 'running')) problems.push(`${where}: ends ${turn.end.kind} while a step runs`)
       if (turn.nodes.some(node => node.kind === 'prompt' && node.card.state === 'asking')) problems.push(`${where}: ends ${turn.end.kind} while a prompt asks`)
@@ -715,10 +963,25 @@ export function checkThread(view: ThreadView): string[] {
       if (!node) problems.push(`${where}: the end sits on ${end.nodeKey}, which is not a node`)
       else if (end.tone === 'asking' && !(node.kind === 'prompt' && node.card.state === 'asking'))
         problems.push(`${where}: the asking end sits on ${node.kind} ${node.key}`)
-      else if (end.tone === 'live' && node.kind !== 'step' && node.kind !== 'group')
+      else if (end.tone === 'live' && !carriesLiveEnd(node))
         problems.push(`${where}: the live end sits on ${node.kind} ${node.key}`)
     }
   })
   for (const message of view.pending) claim(message.key)
   return problems
+}
+
+function carriesLiveEnd(node: ThreadNode): boolean {
+  switch (node.kind) {
+    case 'step':
+    case 'group':
+    case 'plan':
+      return true
+    case 'reasoning':
+      return node.streaming
+    case 'helper':
+      return !isEnded(node.helper.state)
+    default:
+      return false
+  }
 }

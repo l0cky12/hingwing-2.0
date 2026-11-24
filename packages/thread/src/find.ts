@@ -66,6 +66,19 @@ function fields(view: ThreadView): Field[] {
         case 'notice':
           add(node.key, 'text', node.text)
           break
+        case 'reasoning':
+          add(node.key, 'text', node.text, [node.key])
+          break
+        case 'helper': {
+          const { helper } = node
+          add(node.key, 'title', helper.goal)
+          for (const step of helper.steps) add(step.key, 'title', step.kind === 'step' ? joined(step.title) : step.goal, [node.key])
+          if (helper.summary !== null) add(node.key, 'detail', helper.summary, [node.key])
+          break
+        }
+        case 'plan':
+          for (const entry of node.plan.entries) add(entry.key, 'text', entry.text, [node.key])
+          break
       }
     }
     const { end } = turn
