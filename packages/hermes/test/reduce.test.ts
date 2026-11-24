@@ -33,7 +33,7 @@ const started = (id: string, requestText: string | null = 'Tidy the notes'): Ses
 const delta = (text: string): SessionEvent => ({ type: 'text.delta', text, at: null })
 const toolStarted = (id: string): SessionEvent => ({ type: 'tool.started', id: toolId(id), name: 'terminal', args: { command: id } })
 const toolFinished = (id: string): SessionEvent =>
-  ({ type: 'tool.finished', id: toolId(id), name: 'terminal', args: null, durationS: 2, diffs: [], result: OUTPUT })
+  ({ type: 'tool.finished', id: toolId(id), name: 'terminal', args: null, durationS: 2, diffs: [], result: OUTPUT, image: null })
 const promptOpened = (id: string, gen = 1): SessionEvent => ({ type: 'prompt.opened', id: promptId(id), generation: generation(gen), ask: APPROVAL })
 const ended = (outcome: Outcome, finalText: string | null = null, rows: readonly number[] = []): SessionEvent =>
   ({ type: 'turn.ended', outcome, finalText, rows })
@@ -113,7 +113,7 @@ describe('the fold', () => {
     const bDone = reduce(both, event(4, toolFinished('b')))
     expect(openItems(bDone)).toEqual([
       { kind: 'tool', id: 'a', name: 'terminal', args: { command: 'a' }, status: { s: 'running', note: null } },
-      { kind: 'tool', id: 'b', name: 'terminal', args: { command: 'b' }, status: { s: 'done', durationS: 2, diffs: [], result: OUTPUT } }
+      { kind: 'tool', id: 'b', name: 'terminal', args: { command: 'b' }, status: { s: 'done', durationS: 2, diffs: [], result: OUTPUT, image: null } }
     ])
     expect(openItems(bDone)[0]).toBe(openItems(both)[0])
     expect(activityOf(bDone.content)).toEqual({ kind: 'working', item: 0 })
@@ -306,7 +306,7 @@ describe('attached', () => {
   })
 
   it('B: opens the unfinished turn of a running snapshot with its waiting prompts, then the parked frames above the watermark', () => {
-    const tool = { kind: 'tool', id: toolId('a'), name: 'terminal', args: {}, status: { s: 'done', durationS: null, diffs: [], result: OUTPUT } } as const
+    const tool = { kind: 'tool', id: toolId('a'), name: 'terminal', args: {}, status: { s: 'done', durationS: null, diffs: [], result: OUTPUT, image: null } } as const
     const state = feed(
       emptyTracked('s1' as SessionId),
       { in: 'attach' },

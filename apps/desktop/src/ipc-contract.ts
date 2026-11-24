@@ -70,15 +70,25 @@ export type FileAction = 'open' | 'show'
 export interface FileRequest { readonly action: FileAction; readonly sessionId: SessionId; readonly path: string }
 export type FileOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: 'refused' | 'missing' | 'failed' }
 
+export type ImageRequest =
+  | { readonly kind: 'web'; readonly url: string }
+  | { readonly kind: 'tool'; readonly sessionId: SessionId; readonly path: string }
+export type ImageType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' | 'image/avif'
+/** Every refusal looks the same to the window: the loader says nothing about why. */
+export type ImageOutcome = { readonly ok: true; readonly type: ImageType; readonly bytes: Uint8Array } | { readonly ok: false }
+
 export interface Bridge {
   watch<T extends Topic>(topic: T, onPush: (push: Push<T>) => void): () => void
   run<C extends AppCommand>(command: C): Promise<CommandOutcome<AppResult<C>>>
   file(request: FileRequest): Promise<FileOutcome>
+  image(request: ImageRequest): Promise<ImageOutcome>
 }
 
-export const CHANNEL = { watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file' } as const
+export const CHANNEL = { watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image' } as const
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
+const ABSOLUTE = /^(?:\/|[A-Za-z]:[\\/]|\\\\)/
+const IMAGE_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:'])
 
 /** The links a reply may open, in the user's browser. Shared so the renderer draws only links main will open. */
 export const isWebLink = (url: string): boolean => WEB_SCHEMES.has(URL.parse(url)?.protocol ?? '')
@@ -183,6 +193,14 @@ export function parseFileRequest(raw: unknown): FileRequest | null {
   if (!isObject(raw) || (raw.action !== 'open' && raw.action !== 'show')) return null
   const sessionId = sessionIdOf(raw)
   return sessionId && filled(raw.path) ? { action: raw.action, sessionId, path: raw.path } : null
+}
+
+export function parseImageRequest(raw: unknown): ImageRequest | null {
+  if (!isObject(raw)) return null
+  if (raw.kind === 'web') return text(raw.url) && IMAGE_SCHEMES.has(URL.parse(raw.url)?.protocol ?? '') ? { kind: 'web', url: raw.url } : null
+  if (raw.kind !== 'tool') return null
+  const sessionId = sessionIdOf(raw)
+  return sessionId && text(raw.path) && ABSOLUTE.test(raw.path) ? { kind: 'tool', sessionId, path: raw.path } : null
 }
 
 export function parseTopic(raw: unknown): Topic | null {

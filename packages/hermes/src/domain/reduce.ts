@@ -27,6 +27,7 @@ export type SessionEvent =
       readonly durationS: number | null
       readonly diffs: readonly FileDiff[]
       readonly result: ToolResult
+      readonly image: string | null
     }
   /** `generation` is the prompt payload's own `execution_generation`, never the envelope's nullable stamp. */
   | { readonly type: 'prompt.opened'; readonly id: PromptId; readonly generation: Generation; readonly ask: Ask }
@@ -574,7 +575,7 @@ function fold(state: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | 's
           ? { ...item, status: { s: 'running', note: event.note } }
           : item))
     case 'tool.finished': {
-      const status: ToolItem['status'] = { s: 'done', durationS: event.durationS, diffs: event.diffs, result: event.result }
+      const status: ToolItem['status'] = { s: 'done', durationS: event.durationS, diffs: event.diffs, result: event.result, image: event.image }
       return editTurn(ensureRun(state, stamp.generation, seenAt), turn => {
         if (!turn.items.some(item => item.kind === 'tool' && item.id === event.id)) {
           return pushItem(turn, { kind: 'tool', id: event.id, name: event.name, args: event.args ?? {}, status })

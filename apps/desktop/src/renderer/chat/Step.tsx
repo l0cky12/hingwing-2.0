@@ -1,6 +1,9 @@
+import type { SessionId } from '@highwing/hermes/domain'
 import { fieldId, type DiffStat, type RecordSection, type StepView } from '@highwing/thread'
+import { useContext } from 'react'
 import { CopyButton } from './Copy'
-import { FilePath } from './FilePath'
+import { baseName, FilePath } from './FilePath'
+import { ImageSessionContext, ThreadImage } from './Image'
 import { PhraseText } from './text'
 
 export const cx = (...names: readonly (string | false | null)[]) => names.filter(Boolean).join(' ')
@@ -67,12 +70,22 @@ interface StepProps {
 export const Elapsed = ({ elapsed }: { readonly elapsed: string | null }) =>
   elapsed === null ? null : <span className="elapsed"><span className="sr">, </span>{elapsed}</span>
 
+function StepImage({ path, sessionId }: { readonly path: string; readonly sessionId: SessionId | null }) {
+  return (
+    <div className="step-image">
+      <ThreadImage request={sessionId === null ? null : { kind: 'tool', sessionId, path }} alt={baseName(path)} />
+    </div>
+  )
+}
+
 export function Step({ step, live, elapsed, open, onToggle }: StepProps) {
+  const sessionId = useContext(ImageSessionContext)
+  const image = step.image === null ? null : <StepImage path={step.image} sessionId={sessionId} />
   const title = <span className="title" data-find={fieldId(step.key, 'title')}><PhraseText words={step.title} /></span>
   const meta = <span className="meta"><Stat stat={step.stat} />{step.duration !== null && <span className="dur">{step.duration}</span>}</span>
   const end = live ? { 'data-end': 'live' } : {}
   if (step.record === null) {
-    return <div className={cx('step', step.state, live && 'live')} {...end}><div className="head">{title}<Elapsed elapsed={elapsed} />{meta}</div></div>
+    return <div className={cx('step', step.state, live && 'live')} {...end}><div className="head">{title}<Elapsed elapsed={elapsed} />{meta}</div>{image}</div>
   }
   const [only] = step.record.sections
   const bare = step.record.sections.length === 1 && only !== undefined && only.kind !== 'changes' && 'empty' in only.body
@@ -82,6 +95,7 @@ export function Step({ step, live, elapsed, open, onToggle }: StepProps) {
         {title}<Elapsed elapsed={elapsed} /><span className="chev" aria-hidden="true" />{meta}
       </button>
       {open && step.record.command !== null && <CopyButton text={step.record.command} name="Copy command" />}
+      {image}
       <div className={cx('record', bare && 'bare')}>
         {step.record.sections.map((section, index) => <Section key={index} section={section} stepKey={step.key} index={index} open={open} />)}
       </div>

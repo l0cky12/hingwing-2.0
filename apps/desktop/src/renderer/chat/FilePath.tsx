@@ -11,7 +11,7 @@ export const FileCallContext = createContext(NO_FILE_CALL)
 
 export const fileCallFor = (sessionId: SessionId): FileCall => (action, path) => window.highwing.file({ action, sessionId, path })
 
-const baseName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
+export const baseName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
 
 const WORDS = {
   missing: "This file isn't there any more.",

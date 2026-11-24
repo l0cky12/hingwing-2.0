@@ -37,6 +37,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Answer an approval](./answer-an-approval.md) covers the approval card and "Run once" releasing the story to Done.
 - [Open a file](./open-a-file.md) covers the path button in an open record, Show in folder, and Copy path.
 - [Markdown replies](./markdown.md) covers lists, headings, links, tables and code blocks in a reply, and the code block's Copy button.
+- [Images in the thread](./images.md) covers a reply image, a tool image, the larger view and what main refuses.
 - [Choose the model](./choose-the-model.md) covers the model readout under the composer, the list of models, a switch, a switch during a turn, "No model set up", and a Hermes that does not list its models.
 - [Offline banner](./offline-banner.md) covers the blocked banner with Retry, the dropped banner with disabled buttons, and recovery.
 - [Copy a block](./copy-a-block.md) covers the Copy control on the request, a reply, an approval command, a command that ran and an open step's record, its keyboard reach, and the closed thread without controls.

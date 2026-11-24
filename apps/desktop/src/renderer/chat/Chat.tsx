@@ -5,6 +5,7 @@ import { Composer } from '../composer/Composer'
 import { ModelPicker } from '../composer/ModelPicker'
 import { run, useTopic } from '../store'
 import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
+import { ImageSessionContext } from './Image'
 import { FOLLOW_WITHIN, FOLLOWING, placeAfter, progressOf, type Place } from './place'
 import { Thread } from './Thread'
 
@@ -142,7 +143,9 @@ export function Chat({ chat }: { readonly chat: Shown }) {
       <main id="scroll" ref={scroller} onScroll={onScroll}>
         {view !== null && (
           <FileCallContext value={fileCall}>
-            <Thread view={view} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll} />
+            <ImageSessionContext value={id}>
+              <Thread view={view} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll} />
+            </ImageSessionContext>
           </FileCallContext>
         )}
       </main>

@@ -91,6 +91,8 @@ export interface StepView {
   readonly duration: string | null
   /** null means nothing to show: the row is not a button, has no chevron and no hover. */
   readonly record: RecordView | null
+  /** The path of the image the tool made, on the machine Hermes runs on. */
+  readonly image: string | null
 }
 
 export interface RecordView {
@@ -323,6 +325,7 @@ function stepView(tool: ToolItem, key: string, waited: boolean): StepView {
     state: status.s,
     stat: sumStat(diffs),
     duration: status.s === 'done' && !waited ? formatDuration(status.durationS) : null,
+    image: status.s === 'done' ? status.image : null,
     record: sections.length === 0
       ? null
       : {
