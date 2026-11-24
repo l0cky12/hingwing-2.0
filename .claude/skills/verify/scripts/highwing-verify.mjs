@@ -238,6 +238,15 @@ const STEPS = {
       if (seen < check.n) throw new Error(`the gateway saw ${seen} ${method} call(s) containing ${json}, fewer than ${n}`)
     }
   },
+  pressed: {
+    arity: 3,
+    run: async (ctx, role, name, value) => {
+      if (value !== 'true' && value !== 'false') throw new Error(`pressed takes "true" or "false", not "${value}"`)
+      const locator = byRole(ctx.page, role, name)
+      const held = await poll(ctx, () => locator.getAttribute('aria-pressed', { timeout: ctx.timeout }), found => found === value)
+      if (held !== value) throw new Error(`${role} "${name}" has aria-pressed ${JSON.stringify(held)}, not ${value}`)
+    }
+  },
   quiet: {
     arity: 0,
     run: async ctx => {
@@ -473,7 +482,7 @@ function ownDisplay() {
   if (parent !== process.ppid) fail(`display ${process.env.DISPLAY} belongs to another run's X server. Start this run again.`)
 }
 
-function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, bound, noBotChat }, out) {
+function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, bound, noBotChat, yolo, yoloDenied, yoloElsewhereAfter }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const header = JSON.parse(lines[0])
   const steps = lines.slice(1).map(line => JSON.parse(line))
@@ -487,6 +496,19 @@ function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, b
   }
   if (bound) header.reach = 'profile'
   if (noBotChat) header.homeBotChat = false
+  if (yolo) header.yolo = yolo === 'on'
+  if (yoloDenied) header.yoloDenied = true
+  if (yoloElsewhereAfter) {
+    const at = steps.findIndex(step => step.push?.params?.type === yoloElsewhereAfter)
+    if (at === -1) fail(`${fixturePath} pushes no ${yoloElsewhereAfter} frame`)
+    const { session_id, replay_epoch, seq } = steps[at].push.params
+    const turnedOnAt = Math.min(steps[at].at + 50, steps[at + 1]?.at ?? Infinity)
+    for (const step of steps.slice(at + 1)) {
+      if (step.push?.method === 'event' && step.push.params?.session_id === session_id && Number.isInteger(step.push.params.seq)) step.push.params.seq++
+    }
+    const info = { jsonrpc: '2.0', method: 'event', params: { type: 'session.info', session_id, replay_epoch, seq: seq + 1, payload: { yolo: true } } }
+    steps.splice(at + 1, 0, { at: turnedOnAt, push: info })
+  }
   if (dropAfter) {
     const at = steps.findIndex(step => step.push?.params?.type === dropAfter)
     if (at === -1) fail(`${fixturePath} pushes no ${dropAfter} frame`)
@@ -519,14 +541,16 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', bound: 'flag', 'no-bot-chat': 'flag', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', bound: 'flag', 'no-bot-chat': 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
   if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
-  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, bound: options.bound, noBotChat: options['no-bot-chat'] }
+  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, bound: options.bound, noBotChat: options['no-bot-chat'], yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'] }
   const edited = Object.values(edits).some(Boolean)
-  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --bound and --no-bot-chat edit the fixture a --fixture run replays. They do nothing with --fake-host')
+  if (options.yolo && options.yolo !== 'on' && options.yolo !== 'off') fail(`--yolo takes on or off, not "${options.yolo}"`)
+  if (!options.yolo && (options['yolo-denied'] || options['yolo-elsewhere-after'])) fail('--yolo-denied and --yolo-elsewhere-after need --yolo, because a Hermes with no YOLO answers neither')
+  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --bound, --no-bot-chat, --yolo, --yolo-denied and --yolo-elsewhere-after edit the fixture a --fixture run replays. They do nothing with --fake-host')
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
   if (options.size && !/^[1-9]\d*x[1-9]\d*$/.test(options.size)) fail(`--size takes <width>x<height>, not "${options.size}"`)
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')
