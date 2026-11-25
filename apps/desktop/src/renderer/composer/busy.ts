@@ -6,6 +6,5 @@ const BUSY_WORDS = {
   redirect: 'Hermes is working. It stops this step to read this.'
 } as const satisfies Record<SendPlan['by'], string | null>
 
-/** The line under the composer while a send would reach the running turn. A command is never steered, so its line has none. */
 export const busyHint = (by: SendPlan['by'], draft: string, catalog: SlashCatalog): string | null =>
   slashLineOf(draft, catalog) === null ? BUSY_WORDS[by] : null

@@ -28,7 +28,6 @@ interface ComposerProps {
   readonly onSend: (text: string, attachments: readonly AttachmentId[]) => Promise<CommandOutcome<string | null>>
   readonly onStop: () => void
   readonly onInput: () => void
-  /** How a send would reach Hermes now. */
   readonly plan?: SendPlan['by']
   readonly editing?: Editing | null
   readonly onCancelEdit?: () => void

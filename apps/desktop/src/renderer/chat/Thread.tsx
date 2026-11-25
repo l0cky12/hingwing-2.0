@@ -12,7 +12,6 @@ import { placeRelays } from './relays'
 import { cx, Elapsed, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
 
-/** Answers the denial's `Told`, where its words went. */
 type Answer = (promptId: PromptId, reply: PromptReply) => Promise<Told | undefined>
 export type SecretAnswer = (requestId: RequestId, reply: Extract<RequestReply, { kind: 'secret' | 'skip' }>) => void
 
@@ -415,10 +414,8 @@ const ACTION_WORDS = {
   release: { label: 'Discard', pressed: 'Discarding…' }
 } as const satisfies Record<QueuedAction, { label: string; pressed: string }>
 
-/** A row of Hermes's queue. */
 export type QueuedRow = Extract<PendingRow, { readonly admissionId: AdmissionId }>
 
-/** `pressed`: the action sent for each row that Hermes has not listed differently since. */
 export interface QueueControls {
   readonly canAct: boolean
   readonly pressed: ReadonlyMap<AdmissionId, QueuedAction>
