@@ -3,17 +3,22 @@ import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { BotsPanel } from '../src/renderer/bots/Bots'
+import type { LookCalls } from '../src/renderer/bots/LookPicker'
 import { APPROVED, fact, listed } from './support/bots'
 
 const AT_LAUNCH: OpenChat = { shown: { kind: 'bot', bot: 'default' as BotId, sessionId: 's1' as SessionId }, opening: null, missing: null }
 const ONLINE: Link = { state: 'online' }
+const NO_LOOKS: LookCalls = {
+  canGenerate: async () => ({ ok: true, value: false }), generate: async () => ({ ok: true, value: '' }), choose: async () => ({ ok: true, value: 'cancelled' }),
+  pets: async () => ({ ok: true, value: [] }), petPicture: async () => ({ ok: true, value: null })
+}
 const showing = (bots: Bots | undefined, open: OpenChat | undefined, link: Link | undefined = ONLINE) =>
   renderToStaticMarkup(
     <BotsPanel
       bots={bots} open={open} link={link} onOpen={async () => ({ ok: true, value: null })}
       onCreate={async () => ({ ok: true, value: { bot: 'rae' as BotId, warnings: [] } })} onModels={async () => ({ ok: true, value: { options: [], fallback: null } })}
       onDescribe={async bot => ({ ok: true, value: { bot, name: 'Rae', description: '', persona: '', revision: 2 } })} onEdit={async () => ({ ok: true, value: undefined })}
-      onPickPicture={async () => ({ ok: true, value: 'cancelled' })} onRemovePicture={async () => ({ ok: true, value: undefined })}
+      onPickPicture={async () => ({ ok: true, value: 'cancelled' })} onRemovePicture={async () => ({ ok: true, value: undefined })} looks={NO_LOOKS}
     />
   )
 const render = (bots: Bots | undefined) => showing(bots, AT_LAUNCH)

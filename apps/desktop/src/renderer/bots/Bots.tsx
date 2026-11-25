@@ -4,23 +4,33 @@ import { flushSync } from 'react-dom'
 import { run, useTopic } from '../store'
 import { Avatar } from './Avatar'
 import { BotEditor, type BotEditorProps } from './BotEditor'
-import { BotForm } from './BotForm'
-import { EMPTY_DRAFT, nameProblem } from './bot-form'
+import { nameProblem } from './bot-form'
+import type { LookCalls } from './LookPicker'
+import { NewBotForm } from './NewBotForm'
 import { botIn, listOf, newBotBlock, selectedIn, UNASSIGNED } from './roster-view'
 
 const CARET_KEYS: ReadonlySet<string> = new Set(['PageUp', 'PageDown', 'End'])
+
+const LOOKS: LookCalls = {
+  canGenerate: () => run({ do: 'canGeneratePicture' }),
+  generate: prompt => run({ do: 'generatePicture', prompt }),
+  choose: () => window.highwing.choosePicture(),
+  pets: () => run({ do: 'pets' }),
+  petPicture: ({ slug, url }) => run({ do: 'petPicture', slug, url })
+}
 
 export function BotsSidebar({ head }: { readonly head: ReactNode }) {
   return (
     <BotsPanel
       head={head} bots={useTopic('bots')} open={useTopic('open')} link={useTopic('link')}
       onOpen={bot => run({ do: 'open', ref: { kind: 'bot', bot } })}
-      onCreate={draft => run({ do: 'createBot', draft, picture: null })}
+      onCreate={(draft, picture) => run({ do: 'createBot', draft, picture })}
       onModels={() => run({ do: 'botModels', bot: null })}
       onDescribe={bot => run({ do: 'describeBot', bot })}
       onEdit={(bot, edit, revision) => run({ do: 'editBot', bot, edit, revision })}
       onPickPicture={bot => window.highwing.pickBotPicture(bot)}
       onRemovePicture={bot => run({ do: 'removeBotPicture', bot })}
+      looks={LOOKS}
     />
   )
 }
@@ -33,8 +43,9 @@ interface BotsPanelProps extends EditorCalls {
   readonly open: OpenChat | undefined
   readonly link: Link | undefined
   readonly onOpen: (bot: BotId) => Promise<CommandOutcome<unknown>>
-  readonly onCreate: (draft: BotDraft) => Promise<CommandOutcome<BotCreated>>
+  readonly onCreate: (draft: BotDraft, picture: string) => Promise<CommandOutcome<BotCreated>>
   readonly onModels: () => Promise<CommandOutcome<ModelMenu>>
+  readonly looks: LookCalls
 }
 
 const icon = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 } as const
@@ -49,7 +60,7 @@ function DetailsButton({ bot, onClick }: { readonly bot: Bot; readonly onClick: 
   return <button type="button" className="bot-details" aria-label={label} aria-haspopup="dialog" title={label} onClick={onClick}><Pencil /></button>
 }
 
-export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, onOpen, onCreate, onModels, ...editor }: BotsPanelProps) {
+export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, onOpen, onCreate, onModels, looks, ...editor }: BotsPanelProps) {
   const [refused, setRefused] = useState<string | null>(null)
   const [form, setForm] = useState<{ readonly models: ModelMenu | 'loading' } | null>(null)
   const [made, setMade] = useState<BotCreated | null>(null)
@@ -69,9 +80,9 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, onOpen, onCr
     setForm({ models: 'loading' })
     void onModels().then(outcome => { if (outcome.ok) setForm(held => held && { models: outcome.value }) })
   }
-  const create = async (draft: BotDraft) => {
+  const create = async (draft: BotDraft, picture: string) => {
     setMade(null)
-    const outcome = await onCreate(draft)
+    const outcome = await onCreate(draft, picture)
     if (outcome.ok) setMade(outcome.value)
     return outcome
   }
@@ -157,10 +168,7 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, onOpen, onCr
         )}
       </aside>
       {form !== null && (
-        <BotForm
-          title="New bot" submitLabel="Create" initial={EMPTY_DRAFT} problemOf={name => nameProblem(name, bots)}
-          models={form.models} onSubmit={create} onClose={() => setForm(null)}
-        />
+        <NewBotForm problemOf={name => nameProblem(name, bots)} models={form.models} looks={looks} onCreate={create} onClose={() => setForm(null)} />
       )}
       {editing !== null && (
         <BotEditor
