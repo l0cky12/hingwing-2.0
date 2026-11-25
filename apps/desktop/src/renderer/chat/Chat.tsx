@@ -6,6 +6,8 @@ import { slotOf } from '../composer/drafts'
 import { ContextMeter } from '../composer/ContextMeter'
 import { editingOf, type EditTarget } from '../composer/edit'
 import { ModelPicker } from '../composer/ModelPicker'
+import { ThinkingPill } from '../composer/ThinkingPill'
+import { thinkingShown } from '../composer/tuning'
 import { YoloPill } from '../composer/YoloPill'
 import { run, useTopic } from '../store'
 import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
@@ -282,6 +284,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const yolo = id !== null && live ? (session?.tuning.yolo ?? null) : null
   const online = useTopic('link')?.state === 'online'
   const planFor = (held: readonly Attachment[]) => (session !== undefined && live ? sendPlan(session, held).by : 'submit')
+  const tuning = session !== undefined && thinkingShown(session.tuning) ? session.tuning : null
 
   const closed = useClosedSides(id)
   const cards = useMemo(() => sideCards(session?.sides ?? [], closed), [session?.sides, closed])
@@ -339,7 +342,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}
       >
-        {id !== null && (model.show !== 'hidden' || yolo !== null || fill !== null) && (
+        {id !== null && (model.show !== 'hidden' || tuning !== null || yolo !== null || fill !== null) && (
           <div className="under">
             <div className="foot">
               {model.show !== 'hidden' && (
@@ -347,6 +350,9 @@ export function Chat({ chat }: { readonly chat: Shown }) {
                   key={id} view={model} onOpen={() => void refreshModels()}
                   onPick={(pick, confirm) => run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) })}
                 />
+              )}
+              {tuning !== null && (
+                <ThinkingPill key={`thinking-${id}`} tuning={tuning} disabled={!live} running={!idle} onTune={change => run({ do: 'tune', sessionId: id, ...change })} />
               )}
               {yolo !== null && <YoloPill key={`yolo-${id}`} on={yolo} onSet={on => run({ do: 'tune', sessionId: id, set: 'yolo', on })} />}
             </div>

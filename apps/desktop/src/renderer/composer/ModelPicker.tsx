@@ -7,7 +7,7 @@ interface ModelPickerProps {
   readonly onPick: (model: ModelOption, confirm: string | null) => Promise<CommandOutcome<ModelConfirm | null>>
 }
 
-const LATER = 'Applies to the next message.'
+export const LATER = 'Applies to the next message.'
 
 const optionFor = (options: readonly ModelOption[], model: ModelRef): ModelOption =>
   options.find(option => sameModel(model, option)) ?? { id: model.id, provider: model.provider ?? '', providerName: model.provider ?? '' }
