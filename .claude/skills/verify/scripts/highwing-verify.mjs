@@ -812,15 +812,10 @@ function ownDisplay() {
 }
 
 const ANSWER_CALLS = new Set(['clarify.lock', 'connection.respond'])
-const ALWAYS = () => true
-const ACTED_CALLS = {
-  'prompt.resolve_unknown': ALWAYS, 'prompt.replace_queued': ALWAYS, 'prompt.cancel': ALWAYS, 'prompt.steer_queued': ALWAYS, 'session.steer': ALWAYS, 'session.redirect': ALWAYS,
-  'session.export': ALWAYS,
-  'process.kill': ALWAYS, 'session.control': ALWAYS, 'rollback.list': ALWAYS, 'rollback.diff': ALWAYS, 'rollback.restore': ALWAYS, 'message.react': ALWAYS,
-  'config.set': params => params?.key === 'fast',
-  'session.mutate': params => params?.operation === 'reasoning' || params?.operation === 'workspace'
-}
-const isActedElsewhere = step => Object.hasOwn(ACTED_CALLS, step.await ?? '') && ACTED_CALLS[step.await](step.params)
+const ACTED_CALLS = new Set([
+  'prompt.resolve_unknown', 'prompt.replace_queued', 'prompt.cancel', 'prompt.steer_queued', 'session.steer', 'session.redirect', 'session.export',
+  'process.kill', 'session.control', 'rollback.list', 'rollback.diff', 'rollback.restore', 'message.react'
+])
 
 /**
  * Hermes streams a reply in pieces and may cut the dev server's URL in two. Each segment's pieces are
@@ -866,7 +861,7 @@ function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, pr
   const here = new Set((answerHere ?? '').split(',').filter(Boolean))
   const wanted = step => 'answer' in step && 'result' in step && here.has(methods.get(step.answer))
   const answered = answeredElsewhere ? recorded.filter(step => wanted(step) || (!('result' in step && 'answer' in step) && !ANSWER_CALLS.has(step.await))) : recorded
-  let steps = actedElsewhere ? answered.filter(step => !isActedElsewhere(step)) : answered
+  let steps = actedElsewhere ? answered.filter(step => !ACTED_CALLS.has(step.await)) : answered
   if (origin) {
     serveInDeltas(steps, origin)
     steps.splice(0, steps.length, ...steps.map(step => JSON.parse(JSON.stringify(step).replaceAll(DEV_ORIGIN, origin))))
