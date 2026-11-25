@@ -2,6 +2,7 @@ import type { BotId, OpenChat, SessionId, Sidebar, SidebarRow } from '@highwing/
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { agoOf, botNameOf, chatsOf, openChatName } from '../src/renderer/chats/chat-list'
+import { menuStep } from '../src/renderer/chat/menu'
 import { ChatsPanel } from '../src/renderer/chats/Chats'
 import { APPROVED } from './support/bots'
 
@@ -89,10 +90,16 @@ describe('the names of the open chat', () => {
 })
 
 describe('the chat list', () => {
-  const render = (sidebar: Sidebar | undefined, open: OpenChat | undefined, drafts = NO_DRAFTS) =>
-    renderToStaticMarkup(<ChatsPanel sidebar={sidebar} open={open} bots={APPROVED} now={NOW} drafts={drafts} onOpen={() => {}} />)
+  const render = (sidebar: Sidebar | undefined, open: OpenChat | undefined, drafts = NO_DRAFTS, live = true) =>
+    renderToStaticMarkup(
+      <ChatsPanel
+        sidebar={sidebar} open={open} bots={APPROVED} now={NOW} drafts={drafts} live={live} onOpen={() => {}}
+        onRename={async () => ({ ok: true, value: undefined })} onExport={async () => ({ ok: true, value: null })}
+      />
+    )
   const attr = (tag: string, name: string) => new RegExp(` ${name}="([^"]*)"`).exec(tag)?.[1]
-  const buttons = (markup: string) => markup.match(/<button[^>]*>/g) ?? []
+  const buttons = (markup: string) => (markup.match(/<button[^>]*>/g) ?? []).filter(tag => tag.includes('class="chat-row"'))
+  const mores = (markup: string) => (markup.match(/<button[^>]*>/g) ?? []).filter(tag => attr(tag, 'aria-haspopup') === 'menu')
 
   it('is a landmark named Chats, headed by the open bot, with one button per chat named by its title', () => {
     const markup = render(listing(RESEARCH), showing(RESEARCH))
@@ -112,7 +119,7 @@ describe('the chat list', () => {
   it('says Draft under a chat with unsent text in place of its preview, and what a running chat is doing over its draft', () => {
     const rows = [row('s1', 'Sort the invoices', { preview: 'Sorted fourteen invoices.' }), row('s2', 'Rename the photos', { badge: 'running', preview: 'Renaming.' }), row('s3', 'Open', { preview: 'Here.' })]
     const markup = render(listing(RESEARCH, rows), showing(RESEARCH, 's3'), new Set(['s1', 's2', 's3'] as SessionId[]))
-    const shown = (markup.match(/<button.*?<\/button>/gs) ?? []).map(button =>
+    const shown = (markup.match(/<button[^>]*class="chat-row".*?<\/button>/gs) ?? []).map(button =>
       [...button.matchAll(/class="chat-(doing|preview)"([^>]*)>([^<]*)</g)].filter(([, , attrs]) => !attrs!.includes('hidden')).map(([, , , words]) => words).filter(Boolean))
     expect(shown).toEqual([['Draft'], ['Working'], ['Here.']])
   })
@@ -121,5 +128,32 @@ describe('the chat list', () => {
     expect(render(listing(null, []), showing(null))).toMatch(/<h2>Chats<\/h2>.*No chats yet\./s)
     expect(render(undefined, showing(RESEARCH))).toMatch(/aria-busy="true"/)
     expect(buttons(render(listing(null), showing(RESEARCH)))).toEqual([])
+  })
+
+  it('gives each chat a More button beside its row, named for the chat, that opens a menu', () => {
+    const more = mores(render(listing(RESEARCH), showing(RESEARCH)))
+    expect(more.map(tag => attr(tag, 'aria-label'))).toEqual(['More for Send invoice reminder', 'More for Sort the invoices', 'More for Untitled chat', 'More for Clean up Downloads'])
+    expect(more.every(tag => attr(tag, 'aria-expanded') === 'false' && !tag.includes('disabled'))).toBe(true)
+  })
+
+  it('turns every More button off while the connection is not online, and leaves the rows to open', () => {
+    const markup = render(listing(RESEARCH), showing(RESEARCH), NO_DRAFTS, false)
+    expect(mores(markup).every(tag => tag.includes(' disabled'))).toBe(true)
+    expect(buttons(markup).some(tag => tag.includes('disabled'))).toBe(false)
+  })
+
+  it('keeps an empty status line under the list for the name of a saved chat', () => {
+    expect(render(listing(RESEARCH), showing(RESEARCH))).toMatch(/<p class="chats-note chats-saved" role="status"><\/p><\/nav>$/)
+  })
+})
+
+describe('the keys of a small menu', () => {
+  it('move down and up a step, wrapping at either end, and to the first or last item', () => {
+    expect([menuStep('ArrowDown', 0, 4), menuStep('ArrowDown', 3, 4), menuStep('ArrowUp', 0, 4), menuStep('ArrowUp', 2, 4)]).toEqual([1, 0, 3, 1])
+    expect([menuStep('Home', 2, 4), menuStep('End', 0, 4)]).toEqual([0, 3])
+  })
+
+  it('leave every other key to the item', () => {
+    expect([menuStep('Enter', 1, 4), menuStep('a', 1, 4), menuStep('Tab', 1, 4)]).toEqual([null, null, null])
   })
 })

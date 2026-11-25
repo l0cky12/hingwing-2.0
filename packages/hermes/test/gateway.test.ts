@@ -256,7 +256,7 @@ describe("the scripted gateway plays a bot's Bot Chat", () => {
     const again = await call('session.resume', { ...RESEARCH, display_projection: true })
     expect(again.result?.display_messages).toMatchObject([{ text: RESEARCH_SAID }, { role: 'user', text: 'hello' }, { role: 'assistant', text: 'research: hello' }])
     expect(await call('session.events.since', { ...RESEARCH, last_seen: 2, replay_epoch: again.result?.replay_epoch })).toMatchObject({ result: { count: 2, snapshot_required: false } })
-    expect(await call('session.mutate', { ...RESEARCH, request_id: 'r', expected_revision: 0, operation: 'rename', payload: { title: 'x' } })).toMatchObject(refusal('unsupported_command'))
+    expect(await call('session.mutate', { ...RESEARCH, request_id: 'r', expected_revision: 0, operation: 'archive', payload: { archived: true } })).toMatchObject(refusal('unsupported_command'))
   })
 
   it('finds a Bot Chat by its title, and creates one once for a bot that has none', async () => {
@@ -653,9 +653,31 @@ describe('the scripted gateway branches a chat as Hermes does', () => {
     expect(rowsOf(child)).toEqual([['user', 1], ['assistant', 2]])
   })
 
-  it('refuses any other operation on a chat beside the story', async () => {
+  it('renames a chat beside the story, tells its viewers, and lists it by the new title', async () => {
+    const { call, frames } = await rawSocket({}, WITH_CHATS)
+    const chat = { profile: 'research', session_id: INVOICES }
+    await call('session.resume', { ...chat, display_projection: true })
+    const renamed = await call('session.mutate', { ...chat, request_id: 'r', expected_revision: 0, operation: 'rename', payload: { title: 'Invoices by date' } })
+    expect(renamed.result).toMatchObject({ operation: 'rename', revision: 1 })
+    expect(eventsOf(frames, INVOICES).at(-1)).toMatchObject({ type: 'session.info', payload: { title: 'Invoices by date', revision: 1 } })
+    const stored = await call('session.list', { profile: 'research', scope: 'stored', limit: 100, picker: true })
+    expect(stored.result?.sessions).toContainEqual(expect.objectContaining({ session_id: INVOICES, title: 'Invoices by date' }))
+  })
+
+  it('refuses a rename with a key Hermes does not take, and any other operation on a chat beside the story', async () => {
     const { call } = await rawSocket({}, WITH_CHATS)
-    expect(await call('session.mutate', { profile: 'research', session_id: INVOICES, request_id: 'r', expected_revision: 0, operation: 'rename', payload: { title: 'x' } })).toMatchObject(refusal('unsupported_command'))
+    const rename = { profile: 'research', session_id: INVOICES, request_id: 'r', expected_revision: 0, operation: 'rename', payload: { title: 'x' } }
+    expect(await call('session.mutate', { ...rename, payload: { title: 'x', color: 'red' } })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.mutate', { ...rename, operation: 'archive', payload: { archived: true } })).toMatchObject(refusal('unsupported_command'))
+  })
+
+  it('exports a chat beside the story under the file name Hermes gives it, and refuses a format it does not know', async () => {
+    const { call } = await rawSocket({}, WITH_CHATS)
+    const chat = { profile: 'research', session_id: INVOICES }
+    const saved = await call('session.export', { ...chat, format: 'md' })
+    expect(saved.result).toMatchObject({ format: 'md', filename: `hermes_session_${INVOICES}.md`, content: expect.stringContaining('# Sort the invoices') })
+    expect(await call('session.export', { ...chat, format: 'pdf' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.export', { ...chat, format: 'md', redact: 'no' })).toMatchObject(refusal('invalid_params'))
   })
 })
 

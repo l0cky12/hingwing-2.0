@@ -148,6 +148,8 @@ const isBoolean = (value: unknown): value is boolean => typeof value === 'boolea
 const closed = (keys: Readonly<Record<string, (value: unknown) => boolean>>): Check => (_gateway, _socket, params) =>
   Object.entries(params).every(([key, value]) => Object.hasOwn(keys, key) && keys[key]!(value)) ? null : 'invalid_params'
 const isWords = (value: unknown): value is string => typeof value === 'string' && value.trim() !== ''
+const escapeHtml = (text: string) => text.replace(/[&<>]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[char]!)
+const exportParams = closed({ session_id: isString, profile: isString, format: isString, redact: isBoolean })
 /** gateway/session_tui_side.py:33-38 */
 const sideText: Check = (gateway, socket, params, routed) =>
   closed({ session_id: isString, profile: isString, text: isString })(gateway, socket, params, routed) ?? (String(params.text).trim() === '' ? 'invalid_params' : null)
@@ -288,7 +290,7 @@ const STORY_CHECKS: Readonly<Record<string, readonly Check[]>> = {
   'prompt.btw': [sideText, known, attached],
   'prompt.background': [sideText, known, attached],
   /** gateway/session_tui_ops.py:89-101 */
-  'session.export': [closed({ session_id: isString, profile: isString, format: isString, redact: isBoolean }), known],
+  'session.export': [exportParams, known],
   /** gateway/session_tui_config.py:187-199: a set the story records, with no `scope`. */
   'config.set': [closed({ session_id: isString, profile: isString, key: isString, value: () => true }), known],
   'session.mutate': [mutation, known],
@@ -353,7 +355,7 @@ class EchoChat implements Stream {
   startedAt = 0
 
   /** `hidden`: out of `session.list` unless it asks for hidden chats, as a Bot Chat is (hermes-bots/canonical-chat.ts:319). */
-  constructor(readonly id: string, readonly profile: string, readonly title: string, readonly hidden = false) {
+  constructor(readonly id: string, readonly profile: string, public title: string, readonly hidden = false) {
     this.epoch = `${id}-epoch`
   }
 
@@ -378,6 +380,12 @@ class EchoChat implements Stream {
       message_count: this.rows.length, model: this.model.model, running: this.running,
       ...(picker ? { preview: this.rows.at(-1)?.text ?? null, last_active_at: said(this.rows.at(-1)) } : {})
     }
+  }
+
+  exported(format: string): string {
+    if (format === 'json') return JSON.stringify({ id: this.id, title: this.title, messages: this.rows }, null, 2)
+    const markdown = [`# ${this.title}`, ...this.rows.map(row => `## ${String(row.role)}\n\n${String(row.text ?? '')}`)].join('\n\n')
+    return format === 'md' ? markdown : `<!doctype html><title>${escapeHtml(this.title)}</title><pre>${escapeHtml(markdown)}</pre>`
   }
 
   /** A row of `projects.tree` (tui_gateway/methods_projects.py:335-350, stamped by tui_gateway/project_tree.py `stamp_profile`). A branch names its parent twice. */
@@ -771,9 +779,16 @@ const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
   'model.options': (gateway, _socket, _params, _routed, chat) => gateway.modelMenu(chat.model),
   'complete.path': (gateway, _socket, params) => pathItems(gateway, params, () => {}),
   'config.set': (gateway, _socket, params, routed, chat) => gateway.setYolo(params, routed, chat),
-  'session.mutate': (gateway, _socket, params, routed, chat) => {
+  'session.mutate': (gateway, socket, params, routed, chat) => {
+    if (params.operation === 'rename') return gateway.rename(socket, params, routed, chat)
     if (params.operation !== 'branch') throw new Refused('unsupported_command')
     return gateway.branch(gateway.chatParent(chat), params, routed)
+  },
+  /** gateway/session_tui_ops.py:89-122, named by `default_save_filename` (hermes_cli/session_export.py:373-376). */
+  'session.export': (gateway, socket, params, routed, chat) => {
+    const { format = 'json' } = params
+    if (exportParams(gateway, socket, params, routed) !== null || !['json', 'md', 'html'].includes(String(format))) throw new Refused('invalid_params')
+    return { format, filename: `hermes_session_${chat.id}.${String(format)}`, content: chat.exported(String(format)) }
   },
   'session.detach': detach,
   'image.attach_bytes': (gateway, socket, params, routed, chat) => {
@@ -1092,6 +1107,16 @@ export class ScriptedGateway {
         return chat.revision
       }
     }
+  }
+
+  /** `rename`, a metadata write: no busy gate and no generation (gateway/session_mutations.py:18,212). */
+  rename(socket: Socket, params: Obj, routed: string, chat: EchoChat): unknown {
+    const reason = mutation(this, socket, params, routed)
+    if (reason !== null) throw new Refused(reason)
+    chat.title = String((params.payload as Obj).title)
+    chat.revision++
+    this.say(chat, 'session.info', { revision: chat.revision, title: chat.title, running: chat.running })
+    return { session_id: chat.id, operation: 'rename', revision: chat.revision }
   }
 
   private listedTitle(): string {

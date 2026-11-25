@@ -24,3 +24,12 @@ export function useMenu<H extends HTMLElement, T extends HTMLElement>() {
 
   return { open, setOpen, holder, toggle, onKeyDown }
 }
+
+const STEPS: Readonly<Record<string, (at: number, count: number) => number>> = {
+  ArrowDown: (at, count) => (at + 1) % count,
+  ArrowUp: (at, count) => (at + count - 1) % count,
+  Home: () => 0,
+  End: (_at, count) => count - 1
+}
+
+export const menuStep = (key: string, at: number, count: number): number | null => STEPS[key]?.(at, count) ?? null
