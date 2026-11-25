@@ -62,7 +62,8 @@ const CATALOG: SlashCatalog = [
   { kind: 'command', name: 'bg', description: 'Run a prompt in the background' },
   { kind: 'command', name: 'busy', description: 'Control how messages behave while Hermes is working' },
   { kind: 'command', name: 'fast', description: 'Fast mode' },
-  { kind: 'command', name: 'reasoning', description: 'Manage reasoning effort and display' }
+  { kind: 'command', name: 'reasoning', description: 'Manage reasoning effort and display' },
+  { kind: 'command', name: 'rollback', description: 'List or restore filesystem checkpoints' }
 ]
 
 describe('side', () => {
@@ -153,6 +154,33 @@ describe('the slash commands Highwing runs itself', () => {
     const { sent } = await typed('/busy status')
     await settle()
     expect(sent()).toEqual([['command.dispatch', { session_id: ID, name: 'busy', arg: 'status' }]])
+  })
+
+  it('lists the checkpoints with /rollback, under the composer', async () => {
+    const { done, sent, answer } = await typed('/rollback')
+    await settle()
+    expect(sent()).toEqual([['rollback.list', { session_id: ID }]])
+    await answer('rollback.list', { enabled: true, checkpoints: [{ hash: '4f1c2a9e0b7d', timestamp: '2026-11-24T10:05:00+00:00', message: 'before write_file notes.md' }] })
+    expect(await done).toMatchObject({ ok: true, value: expect.stringContaining('1. 4f1c2a9e  2026-11-24T10:05:00+00:00  before write_file notes.md') })
+  })
+
+  it('refuses a whole-folder /rollback while a turn runs, and restores one file then', async () => {
+    const { command, sent, answer, event } = await stage({ hub: { settledCatalog: async () => CATALOG } })
+    event(started)
+    expect(await command({ do: 'send', sessionId: ID, text: '/rollback 2' })).toEqual({ ok: false, refusal: { kind: 'stale', message: 'Wait for the reply to finish, then try again.' } })
+    expect(sent()).toEqual([])
+    const done = command({ do: 'send', sessionId: ID, text: '/rollback 2 notes.md' })
+    await settle()
+    expect(sent()).toEqual([['rollback.restore', { session_id: ID, hash: '2', file_path: 'notes.md' }]])
+    await answer('rollback.restore', { success: true, restored_to: '4f1c2a9e', file: 'notes.md' })
+    expect(await done).toEqual({ ok: true, value: 'Restored notes.md from checkpoint 2.' })
+  })
+
+  it('shows Hermes\'s reason when it cannot restore a /rollback number', async () => {
+    const { done, answer } = await typed('/rollback 9')
+    await settle()
+    await answer('rollback.restore', { success: false, error: 'Invalid checkpoint number. Use 1-3.' })
+    expect(await done).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'Invalid checkpoint number. Use 1-3.' } })
   })
 
   it('renames with /title, and leaves a bare /title to Hermes', async () => {

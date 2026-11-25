@@ -1,5 +1,5 @@
-import type { Command, Outcome, ResultOf } from './command'
-import { EFFORTS, type BusyMode, type SessionId } from './session'
+import type { CheckpointDiff, Checkpoints, Command, Outcome, Restored, RestoreScope, ResultOf } from './command'
+import { EFFORTS, type BusyMode, type CheckpointId, type SessionId } from './session'
 
 export interface SlashEntry {
   readonly kind: 'command' | 'skill'
@@ -40,7 +40,8 @@ export const OWN_COMMANDS = {
   compress: compressCommand,
   busy: busyCommand,
   fast: fastCommand,
-  reasoning: reasoningCommand
+  reasoning: reasoningCommand,
+  rollback: rollbackCommand
 } as const satisfies { readonly [name: string]: (sessionId: SessionId, arg: string) => Own }
 
 const COMPRESS_FLAGS: ReadonlySet<string> = new Set(['--preview', '--dry-run', '--dryrun', '--aggressive'])
@@ -94,6 +95,57 @@ function reasoningCommand(sessionId: SessionId, arg: string): Own {
   if (word === 'reset') return tuned({ do: 'tune', sessionId, set: 'effort', to: 'default' }, 'Session reasoning override cleared; falling back to global config.')
   const on = REASONING_SHOWN.get(word)
   return on === undefined ? null : tuned({ do: 'tune', sessionId, set: 'reasoning', on }, `reasoning: ${on ? 'show' : 'hide'}`)
+}
+
+const ROLLBACK_USAGE = '/rollback [list] | diff <n|hash> | <n|hash> [file] [--all]'
+const OVERWRITE_FLAGS: ReadonlySet<string> = new Set(['--all', '--force'])
+
+/**
+ * `/rollback` read as Hermes Desktop reads it (apps/desktop/src/app/session/hooks/use-prompt-actions/slash-desktop-commands.ts:116-140),
+ * with the TUI's and CLI's `--force` for `--all` (ui-tui/src/app/slash/commands/ops.ts:307-315). A list number goes to Hermes as typed,
+ * since Hermes reads a number or a hash the same way on every surface (agent/checkpoints/refs.py).
+ */
+function rollbackCommand(sessionId: SessionId, arg: string): Own {
+  const words = arg.split(/\s+/).filter(word => word !== '')
+  const rest = words.filter(word => !OVERWRITE_FLAGS.has(word.toLowerCase()))
+  const overwrite = rest.length < words.length
+  const [first = '', ...more] = rest
+  const head = first.toLowerCase()
+  if (head === '' || head === 'list' || head === 'ls') {
+    return more.length > 0 || overwrite ? { usage: ROLLBACK_USAGE } : { answer: async run => saying(await run({ do: 'checkpoints', sessionId }), listed) }
+  }
+  if (head === 'diff') {
+    const [checkpoint, ...extra] = more
+    if (checkpoint === undefined || extra.length > 0 || overwrite) return { usage: '/rollback diff <n|hash>' }
+    return { answer: async run => saying(await run({ do: 'checkpointDiff', sessionId, checkpoint: checkpoint as CheckpointId }), diffed) }
+  }
+  const path = more.join(' ')
+  const scope: RestoreScope = path === '' ? { kind: 'folder', edits: overwrite ? 'overwrite' : 'keep' } : { kind: 'file', path }
+  return { answer: async run => saying(await run({ do: 'restore', sessionId, checkpoint: first as CheckpointId, scope }), done => restored(first, scope, done)) }
+}
+
+function listed(checkpoints: Checkpoints): string {
+  if (checkpoints.kept === 'off') return 'Checkpoints are not enabled for this session (set checkpoints.enabled in config.yaml).'
+  if (checkpoints.items.length === 0) return 'No checkpoints yet for this working directory.'
+  return [
+    'Checkpoints (newest first):',
+    ...checkpoints.items.map((item, index) => `${index + 1}. ${item.id.slice(0, 8)}  ${item.at ?? ''}  ${item.reason}`.trimEnd()),
+    '',
+    'Restore with /rollback <n> [file] (add --all to also overwrite your own edits); preview with /rollback diff <n>.'
+  ].join('\n')
+}
+
+const diffed = ({ stat, patch }: CheckpointDiff): string => [stat, patch].filter(part => part !== '').join('\n') || 'No changes since that checkpoint.'
+
+/** The first five names, as Hermes's CLI lists what a restore left alone (hermes_cli/cli_commands_session_tools.py `_rollback_kept`). */
+const named = (files: readonly string[]) => files.slice(0, 5).join(', ') + (files.length > 5 ? ` (+${files.length - 5} more)` : '')
+
+function restored(checkpoint: string, scope: RestoreScope, { kept, lastTurn }: Restored): string {
+  return [
+    scope.kind === 'file' ? `Restored ${scope.path} from checkpoint ${checkpoint}.` : `Restored checkpoint ${checkpoint}.`,
+    ...(kept.length > 0 ? [`Kept your hand-edits: ${named(kept)}`, 'Use /rollback <N> --all to restore those too.'] : []),
+    ...(lastTurn === 'removed' ? ['Chat turn undone to match restored file state.'] : [])
+  ].join('\n')
 }
 
 export function ownCommand({ entry, arg }: SlashLine, sessionId: SessionId): Own {
