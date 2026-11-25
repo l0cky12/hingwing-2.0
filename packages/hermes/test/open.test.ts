@@ -163,7 +163,7 @@ describe('the open chat', () => {
 })
 
 describe('the chat a connection shows before any click', () => {
-  const fact = (id: BotId, isDefault: boolean) => ({ id, name: id, isDefault, section: null, preview: null, description: null, chat: null })
+  const fact = (id: BotId, isDefault: boolean) => ({ id, name: id, isDefault, section: null, preview: null, description: null, chat: null, picture: false })
   const WITH_DEFAULT: Bots = { state: 'listed', roster: rosterOf([fact(EMU, true), fact(RESEARCH, false)]) }
   const NO_DEFAULT: Bots = { state: 'listed', roster: rosterOf([fact(RESEARCH, false)]) }
   const READY = { status: 'ready', newest: HOME } as const

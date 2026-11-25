@@ -1,6 +1,6 @@
 import {
   targetOf,
-  type BotDraft, type BotId, type Bots, type BranchId, type ChatRef, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply,
+  type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type ChatRef, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply,
   type RelayDesk, type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type Unstarted
 } from '@highwing/hermes/domain'
 
@@ -57,6 +57,8 @@ const PREVIEW_VERBS: { readonly [K in PreviewCommand['do']]: true } = { preview:
 export const isPreviewCommand = (command: AppCommand): command is PreviewCommand => Object.hasOwn(PREVIEW_VERBS, command.do)
 
 export type AppCommand = Command | SetupCommand | PreviewCommand
+/** A new picture's bytes come only from main's file picker. */
+export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' }>
 export type AppResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 
 /** Every topic with one value per connection, and what it carries. */
@@ -116,19 +118,24 @@ export type DraftKey = `chat:${SessionId}` | `bot:${BotId}` | 'new'
 /** `bot` is the bot of the chat the draft was typed in, so it can be matched to that bot's list. Empty `text`: no draft. */
 export interface Draft { readonly key: DraftKey; readonly bot: BotId | null; readonly text: string }
 
+/** `set`: the picture was sent and Hermes kept it. `cancelled`: the user closed the file picker, and nothing was sent. */
+export type PictureChoice = 'set' | 'cancelled'
+
 export interface Bridge {
   watch<T extends Topic>(topic: T, onPush: (push: Push<T>) => void): () => void
-  run<C extends AppCommand>(command: C): Promise<CommandOutcome<AppResult<C>>>
+  run<C extends WindowCommand>(command: C): Promise<CommandOutcome<AppResult<C>>>
   file(request: FileRequest): Promise<FileOutcome>
   image(request: ImageRequest): Promise<ImageOutcome>
   drafts(): Promise<readonly Draft[]>
   /** Keeps the draft on disk, or deletes it when its text is empty. Applied in the order a window sends them. */
   keepDraft(draft: Draft): void
+  /** Main shows a file picker, checks the picked file and sends it as the bot's picture. */
+  pickBotPicture(bot: BotId): Promise<CommandOutcome<PictureChoice>>
 }
 
 export const CHANNEL = {
   watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image',
-  drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft'
+  drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft', pickPicture: 'highwing:pick-picture'
 } as const
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
@@ -172,6 +179,15 @@ const draftOf = (raw: unknown): BotDraft | null => {
   const model = raw.model === null ? null : modelOptionOf(raw.model)
   return raw.model !== null && model === null ? null : { name: raw.name, description: raw.description, model, persona: raw.persona }
 }
+const editOf = (raw: unknown): BotEdit | null => {
+  if (!isObject(raw)) return null
+  const { name, description, persona } = raw
+  if (!(name === undefined || filled(name)) || !(description === undefined || text(description)) || !(persona === undefined || text(persona))) return null
+  const edit = { ...(name === undefined ? {} : { name }), ...(description === undefined ? {} : { description }), ...(persona === undefined ? {} : { persona }) }
+  return Object.keys(edit).length > 0 ? edit : null
+}
+const revisionOf = (raw: unknown): number | null | undefined =>
+  raw === null ? null : Number.isInteger(raw) && (raw as number) >= 0 ? (raw as number) : undefined
 const chatRefOf = (raw: unknown): ChatRef | null => {
   if (!isObject(raw)) return null
   if (raw.kind === 'bot') {
@@ -198,7 +214,7 @@ const rectOf = (raw: unknown): Rect | null =>
 const replyOf = (raw: unknown): PromptReply | null =>
   isObject(raw) && (raw.kind === 'choice' || raw.kind === 'text') && text(raw.value) ? { kind: raw.kind, value: raw.value } : null
 
-type Validators = { readonly [K in AppCommand['do']]: (raw: Obj) => Extract<AppCommand, { do: K }> | null }
+type Validators = { readonly [K in WindowCommand['do']]: (raw: Obj) => Extract<WindowCommand, { do: K }> | null }
 
 export const validators: Validators = {
   open: raw => {
@@ -280,6 +296,24 @@ export const validators: Validators = {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     return raw.bot !== null && bot === null ? null : { do: 'botModels', bot }
   },
+  describeBot: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && { do: 'describeBot', bot }
+  },
+  editBot: raw => {
+    const bot = botIdOf(raw.bot)
+    const edit = editOf(raw.edit)
+    const revision = revisionOf(raw.revision)
+    return bot && edit && revision !== undefined ? { do: 'editBot', bot, edit, revision } : null
+  },
+  removeBotPicture: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && { do: 'removeBotPicture', bot }
+  },
+  botPicture: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && { do: 'botPicture', bot }
+  },
   setYolo: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && typeof raw.on === 'boolean' ? { do: 'setYolo', sessionId, on: raw.on } : null
@@ -303,10 +337,12 @@ export const validators: Validators = {
   }
 }
 
-export function parseCommand(raw: unknown): AppCommand | null {
+export function parseCommand(raw: unknown): WindowCommand | null {
   if (!isObject(raw) || !text(raw.do) || !Object.hasOwn(validators, raw.do)) return null
-  return (validators[raw.do as AppCommand['do']] as (raw: Obj) => AppCommand | null)(raw)
+  return (validators[raw.do as WindowCommand['do']] as (raw: Obj) => WindowCommand | null)(raw)
 }
+
+export const parseBotId = botIdOf
 
 export function parseFileRequest(raw: unknown): FileRequest | null {
   if (!isObject(raw) || (raw.action !== 'open' && raw.action !== 'show' && raw.action !== 'preview')) return null

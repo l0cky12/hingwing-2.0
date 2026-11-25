@@ -1,6 +1,9 @@
 import type { Hermes } from '@highwing/hermes'
-import type { CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
-import { CHANNEL, isAppTopic, isPreviewCommand, parseCommand, parseDraft, parseFileRequest, parseImageRequest, parseTopic, type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type Push, type SessionPatch, type Setup, type Tail, type Topic } from '../ipc-contract'
+import type { BotId, CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
+import {
+  CHANNEL, isAppTopic, isPreviewCommand, parseBotId, parseCommand, parseDraft, parseFileRequest, parseImageRequest, parseTopic,
+  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type PictureChoice, type Push, type SessionPatch, type Setup, type Tail, type Topic
+} from '../ipc-contract'
 import type { ConnectionOwner } from './connection'
 import type { DraftStore } from './drafts'
 import { openablePath, type Opener } from './files'
@@ -128,7 +131,10 @@ function fileActions(opener: Opener, pane: PreviewOwner): FileActions {
   }
 }
 
-export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>, pane: PreviewOwner): { dispose(): void } {
+export function serveWindows(
+  owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>,
+  pane: PreviewOwner, pickPicture: (bot: BotId) => Promise<CommandOutcome<PictureChoice>>
+): { dispose(): void } {
   const windows = new Map<number, Map<number, Served>>()
   const owners: Owners = { owner, pane }
   const files = fileActions(opener, pane)
@@ -189,6 +195,11 @@ export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl:
     if (trusted(event) && draft !== null) drafts.keep(draft)
   })
 
+  ipc.handle(CHANNEL.pickPicture, async (event, raw) => {
+    const bot = parseBotId(raw)
+    return trusted(event) && bot !== null ? pickPicture(bot) : REFUSED
+  })
+
   return {
     dispose() {
       for (const windowId of [...windows.keys()]) stopWindow(windowId)
@@ -199,6 +210,7 @@ export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl:
       ipc.removeHandler(CHANNEL.image)
       ipc.removeHandler(CHANNEL.drafts)
       ipc.removeAllListeners(CHANNEL.keepDraft)
+      ipc.removeHandler(CHANNEL.pickPicture)
     }
   }
 }

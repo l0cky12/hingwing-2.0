@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { DONE, refusalOf, refused, SessionActor, type BranchPin } from './actor'
-import { botModels, createBot } from './bot-admin'
+import { botModels, botPicture, createBot, describeBot, editBot, setBotPicture } from './bot-admin'
 import { botsIn, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
 import { mentionedBots } from './domain/mention'
@@ -410,6 +410,15 @@ export function openHermes(options: HermesOptions): Hermes {
       roster.ask()
       if (made.ok) await desk.ask({ kind: 'bot', bot: made.value.bot })
       return made
+    }
+    if (command.do === 'describeBot') return describeBot(conn, command.bot)
+    if (command.do === 'botPicture') return botPicture(conn, command.bot)
+    if (command.do === 'editBot' || command.do === 'setBotPicture' || command.do === 'removeBotPicture') {
+      const done = command.do === 'editBot' ? await editBot(conn, command.bot, command.edit, command.revision)
+        : await setBotPicture(conn, command.bot, command.do === 'setBotPicture' ? command.data : null)
+      // A refused edit may still have saved some sections, so the roster is read after any attempt.
+      roster.ask()
+      return done
     }
     if (command.do === 'reconnect') {
       conn.retryNow({ start: command.start })

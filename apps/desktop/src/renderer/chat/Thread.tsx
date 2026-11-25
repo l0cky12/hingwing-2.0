@@ -1,7 +1,7 @@
 import { versionLabel, type ChatVersions, type Landing, type PromptId, type PromptReply, type Relay, type Version, type Versions } from '@highwing/hermes/domain'
 import { fieldId, findInThread, type FindMatch, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Avatar } from '../bots/Bots'
+import { Avatar } from '../bots/Avatar'
 import { CopyButton } from './Copy'
 import { isCommandKey } from '../keys'
 import { Helper, Plan, Reasoning } from './Helpers'

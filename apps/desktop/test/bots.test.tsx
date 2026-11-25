@@ -12,6 +12,8 @@ const showing = (bots: Bots | undefined, open: OpenChat | undefined, link: Link 
     <BotsPanel
       bots={bots} open={open} link={link} onOpen={async () => ({ ok: true, value: null })}
       onCreate={async () => ({ ok: true, value: { bot: 'rae' as BotId, warnings: [] } })} onModels={async () => ({ ok: true, value: { options: [], fallback: null } })}
+      onDescribe={async bot => ({ ok: true, value: { bot, name: 'Rae', description: '', persona: '', revision: 2 } })} onEdit={async () => ({ ok: true, value: undefined })}
+      onPickPicture={async () => ({ ok: true, value: 'cancelled' })} onRemovePicture={async () => ({ ok: true, value: undefined })}
     />
   )
 const render = (bots: Bots | undefined) => showing(bots, AT_LAUNCH)
@@ -29,14 +31,28 @@ describe('the bots sidebar', () => {
     expect(markup).not.toMatch(/<footer|id="scroll"/)
   })
 
-  it('names each row by its bot, and the default bot as the default bot', () => {
+  it("names each row by its bot, and the default bot as the default bot, each followed by its details button", () => {
     expect(buttons(markup).map(tag => attr(tag, 'aria-label'))).toEqual([
-      'Search bots', 'New bot', 'Emu, default bot', 'dr eggbot', 'Research', 'Timothy · CEO', 'Hermes', 'highwing'
+      'Search bots', 'New bot', 'Emu, default bot', 'Details for Emu', 'dr eggbot', 'Details for dr eggbot', 'Research', 'Details for Research',
+      'Timothy · CEO', 'Details for Timothy · CEO', 'Hermes', 'Details for Hermes', 'highwing', 'Details for highwing'
     ])
     expect(markup).toMatch(/<h3>New section<\/h3>.*<h3>Unassigned<\/h3>/s)
   })
 
   const marked = (html: string, name: string) => buttons(html).filter(tag => attr(tag, name) !== undefined).map(tag => attr(tag, 'aria-label'))
+
+  it('keeps each details button beside its row, never inside it, so each is its own control', () => {
+    expect(markup).not.toMatch(/<button(?:(?!<\/button>)[\s\S])*<button/)
+    const details = buttons(markup).filter(tag => attr(tag, 'class') === 'bot-details')
+    expect(details).toHaveLength(6)
+    expect(details.every(tag => attr(tag, 'aria-haspopup') === 'dialog')).toBe(true)
+  })
+
+  it("draws a bot's letter while its picture has not loaded", () => {
+    const pictured = render(listed(fact('rae', 'Rae', { picture: true })))
+    expect(pictured).toMatch(/<span class="avatar tone-slate"[^>]*>R<\/span>/)
+    expect(pictured).not.toContain('<img')
+  })
 
   it('marks the bot of the open chat as the current one, and no other', () => {
     expect(marked(markup, 'aria-current')).toEqual(['Emu, default bot'])

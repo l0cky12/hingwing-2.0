@@ -64,6 +64,13 @@ export interface Fixture {
     readonly profiles?: unknown
     /** The `warnings` every successful `profiles.create` answers with, as Hermes words a step that failed after it made the profile. Default none. */
     readonly createWarnings?: readonly string[]
+    /** profile -> its SOUL.md, the persona `profiles.describe` answers. A profile not here has none. */
+    readonly souls?: { readonly [profile: string]: string }
+    /**
+     * The first `profiles.configure` that writes `ui_meta` finds another client renamed the bot to this title just before,
+     * one revision on, as Hermes's revision check would.
+     */
+    readonly configureClash?: string
     /** `'profile'`: play a Hermes with no `interactive` ticket, whose every socket is bound to the home profile. Default `'host'`. */
     readonly reach?: Reach
     /** false: the home bot has no Bot Chat, and the story session is only a chat of the home profile. Default true. */
@@ -209,6 +216,9 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (profiles !== undefined && !(isObject(profiles) && Array.isArray(profiles.profiles))) return '"profiles" must be a profiles.list reply with "profiles"'
   const { createWarnings } = value
   if (createWarnings !== undefined && !(Array.isArray(createWarnings) && createWarnings.every(warning => typeof warning === 'string'))) return '"createWarnings" must be a list of strings'
+  const { souls, configureClash } = value
+  if (souls !== undefined && !(isObject(souls) && Object.values(souls).every(soul => typeof soul === 'string'))) return '"souls" must map a profile to its persona'
+  if (configureClash !== undefined && (typeof configureClash !== 'string' || configureClash.trim() === '')) return '"configureClash" must be the title another client writes'
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
@@ -238,6 +248,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(branches === undefined ? {} : { branches }), ...(tree === undefined ? {} : { tree }),
     ...(profiles === undefined ? {} : { profiles }),
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
+    ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),

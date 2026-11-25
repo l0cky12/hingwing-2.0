@@ -1,8 +1,9 @@
-import type { Bots, ModelOption, Refusal } from '@highwing/hermes/domain'
+import type { BotDetails, BotId, Bots, ModelOption, Refusal } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { BotEditor } from '../src/renderer/bots/BotEditor'
 import { BotForm } from '../src/renderer/bots/BotForm'
-import { canSubmit, EMPTY_DRAFT, groupModels, nameProblem, nextForm, startForm } from '../src/renderer/bots/bot-form'
+import { canSubmit, draftOf, editOf, EMPTY_DRAFT, groupModels, nameProblem, nextForm, saveEdit, startForm, type EditCalls } from '../src/renderer/bots/bot-form'
 import { APPROVED, fact, listed } from './support/bots'
 
 const model = (id: string, provider: string, providerName: string) => ({ id, provider, providerName }) as ModelOption
@@ -128,5 +129,104 @@ describe('the bot form', () => {
     expect(started).toContain('value="Writes the report"')
     expect(started).toContain('>You write.</textarea>')
     expect(started).toContain('<option value="1" selected="">careful-large</option>')
+  })
+})
+
+const RAE: BotDetails = { bot: 'rae' as BotId, name: 'Rae', description: 'Writes the weekly report', persona: 'You write short, plain reports.', revision: 2 }
+
+describe('an edit of a bot', () => {
+  const draft = draftOf(RAE)
+
+  it('starts from the details with no model', () => {
+    expect(draft).toEqual({ name: 'Rae', description: 'Writes the weekly report', model: null, persona: 'You write short, plain reports.' })
+  })
+
+  it('holds only the fields that changed, or nothing', () => {
+    expect(editOf(RAE, draft)).toBeNull()
+    expect(editOf(RAE, { ...draft, persona: 'You write plainly.' })).toEqual({ persona: 'You write plainly.' })
+    expect(editOf(RAE, { ...draft, name: ' Ray ', description: '' })).toEqual({ name: 'Ray', description: '' })
+    expect(editOf(RAE, { ...draft, name: ' Rae ' }), 'spaces around the same name are no rename').toBeNull()
+  })
+
+  it('takes the fresh draft a clash answers with, and shows the clash until the next edit', () => {
+    const fresh = { ...draft, name: 'Robin' }
+    const clash: Refusal = { kind: 'conflict', message: 'This bot changed elsewhere.' }
+    const sent = nextForm(startForm({ ...draft, name: 'Ray' }), { on: 'sent' })
+    const reloaded = nextForm(sent, { on: 'refused', refusal: clash, draft: fresh })
+    expect(reloaded).toEqual({ draft: fresh, send: { at: 'refused', refusal: clash } })
+    expect(nextForm(reloaded, { on: 'typed', draft: { ...fresh, name: 'Ray' } }).send).toEqual({ at: 'editing' })
+  })
+})
+
+describe('a Save of the details dialog', () => {
+  const draft = draftOf(RAE)
+  const CLASH: Refusal = { kind: 'conflict', message: 'This bot changed elsewhere.' }
+  const ROBIN: BotDetails = { ...RAE, name: 'Robin', revision: 3 }
+  function calls(edited: Awaited<ReturnType<EditCalls['onEdit']>>) {
+    const sent: unknown[][] = []
+    const described: string[] = []
+    const held: EditCalls = {
+      onEdit: async (...args) => (sent.push(args), edited),
+      onDescribe: async bot => (described.push(bot), { ok: true, value: ROBIN })
+    }
+    return { held, sent, described }
+  }
+
+  it('sends nothing and closes when nothing changed', async () => {
+    const { held, sent } = calls({ ok: true, value: undefined })
+    expect(await saveEdit(RAE, draft, held)).toEqual({ submitted: { ok: true }, details: RAE })
+    expect(sent).toEqual([])
+  })
+
+  it('sends only the changed persona, at the revision the dialog was loaded at', async () => {
+    const { held, sent, described } = calls({ ok: true, value: undefined })
+    expect((await saveEdit(RAE, { ...draft, persona: 'Plain.' }, held)).submitted).toEqual({ ok: true, value: undefined })
+    expect(sent).toEqual([['rae', { persona: 'Plain.' }, 2]])
+    expect(described).toEqual([])
+  })
+
+  it('reads the details again after a clash, and hands the form the fresh fields and the next Save the fresh revision', async () => {
+    const { held, described } = calls({ ok: false, refusal: CLASH })
+    const saved = await saveEdit(RAE, { ...draft, name: 'Ray' }, held)
+    expect(saved).toEqual({ submitted: { ok: false, refusal: CLASH, draft: draftOf(ROBIN) }, details: ROBIN })
+    expect(described).toEqual(['rae'])
+  })
+
+  it('keeps what was typed after any other refusal', async () => {
+    const refusal: Refusal = { kind: 'rejected', message: "Hermes didn't save the persona." }
+    const { held, described } = calls({ ok: false, refusal })
+    expect(await saveEdit(RAE, { ...draft, persona: 'Plain.' }, held)).toEqual({ submitted: { ok: false, refusal }, details: RAE })
+    expect(described).toEqual([])
+  })
+})
+
+describe('the details dialog', () => {
+  const shown = (picture: boolean) => renderToStaticMarkup(
+    <BotEditor
+      bot={{ id: 'rae' as BotId, name: 'Rae', preview: null, description: null, tone: 'plum', picture }} details={RAE}
+      onDescribe={async () => ({ ok: true, value: RAE })} onEdit={async () => ({ ok: true, value: undefined })}
+      onPickPicture={async () => ({ ok: true, value: 'cancelled' })} onRemovePicture={async () => ({ ok: true, value: undefined })} onClose={() => {}}
+    />
+  )
+  const markup = shown(true)
+
+  it("is a dialog named by the bot's name, with Name, Description and Persona filled in and no Model field", () => {
+    const [, title] = /aria-labelledby="([^"]+)"/.exec(markup)!
+    expect(markup).toContain(`<h2 id="${title}">Rae</h2>`)
+    expect(Array.from(markup.matchAll(/<label for="[^"]+">([^<]*)<\/label>/g), ([, name]) => name)).toEqual(['Name', 'Description', 'Persona'])
+    expect(markup).not.toContain('<select')
+    expect(markup).toContain('value="Rae"')
+    expect(markup).toContain('value="Writes the weekly report"')
+    expect(markup).toContain('>You write short, plain reports.</textarea>')
+  })
+
+  it('offers Upload picture, and Remove picture only for a bot that has one, ahead of Cancel and Save', () => {
+    expect(Array.from(markup.matchAll(/<button[^>]*>([^<]*)<\/button>/g), ([, name]) => name)).toEqual(['Upload picture', 'Remove picture', 'Cancel', 'Save'])
+    expect(shown(false)).not.toContain('Remove picture')
+    expect(submitTag(markup)).not.toMatch(/ disabled/)
+  })
+
+  it("draws the bot's letter where it has no picture loaded", () => {
+    expect(markup).toMatch(/<span class="avatar tone-plum"[^>]*>R<\/span>/)
   })
 })

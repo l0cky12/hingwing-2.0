@@ -46,9 +46,13 @@ export function newBotBlock(link: Link | undefined, bots: Bots | undefined): str
 /** The highlighted bot: the bot of the open chat while the roster lists it, else none. */
 export function selectedIn(bots: Bots | undefined, open: OpenChat | undefined): BotId | null {
   const bot = open?.shown?.bot ?? null
-  if (bots?.state !== 'listed' || bot === null) return null
+  return bot !== null && botIn(bots, bot) !== null ? bot : null
+}
+
+export function botIn(bots: Bots | undefined, bot: BotId): Bot | null {
+  if (bots?.state !== 'listed') return null
   const { featured, sections } = bots.roster
-  return featured?.id === bot || sections.some(section => section.bots.some(held => held.id === bot)) ? bot : null
+  return [featured, ...sections.flatMap(section => section.bots)].find(held => held?.id === bot) ?? null
 }
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })

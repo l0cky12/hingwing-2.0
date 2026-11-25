@@ -119,7 +119,7 @@ describe('a profiles.list reply', () => {
     ['holding blank words under hermes-bots', { 'hermes-bots': { title: ' ', sectionName: '' } }]
   ])('reads a ui_meta that is %s as saying nothing', (_, ui_meta) => {
     expect(listed({ profiles: [row('plain', { ui_meta: ui_meta as never })] }).sections).toEqual([
-      { name: null, bots: [{ id: 'plain', name: 'plain', preview: null, description: null, tone: 'slate' }] }
+      { name: null, bots: [{ id: 'plain', name: 'plain', preview: null, description: null, tone: 'slate', picture: false }] }
     ])
   })
 
@@ -189,7 +189,7 @@ describe('avatar tones', () => {
     const random = seeded(23)
     for (let round = 0; round < 200; round++) {
       const facts: BotFacts[] = Array.from({ length: 1 + Math.floor(random() * 24) }, (_, at) => ({
-        id: `bot-${at}` as BotFacts['id'], name: `Bot ${at}`, isDefault: random() < 0.1, preview: null, description: null, chat: null,
+        id: `bot-${at}` as BotFacts['id'], name: `Bot ${at}`, isDefault: random() < 0.1, preview: null, description: null, chat: null, picture: false,
         section: (['Work', 'Home', null] as const)[Math.floor(random() * 3)] ?? null
       }))
       const roster = rosterOf(facts)

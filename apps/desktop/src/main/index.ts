@@ -1,7 +1,7 @@
 import { checkTarget, liveDialer, openHermes, remoteRoute, type Dialer, type Route } from '@highwing/hermes'
-import type { Target } from '@highwing/hermes/domain'
+import type { BotId, Target } from '@highwing/hermes/domain'
 import { loadFixture, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
-import { app, BrowserWindow, ipcMain, net, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, net, shell, type OpenDialogOptions } from 'electron'
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ownConnection, pinnedConnection } from './connection'
@@ -9,13 +9,25 @@ import { desktopOpener, recordingOpener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
 import { draftStore, DRAFTS_DIR } from './drafts'
 import { serveWindows } from './ipc'
+import { pickPicture, readHead } from './picture'
 import { previewPane, registerPageScheme } from './preview'
 import { reachOf } from './preview-page'
 import { loadSettings, saveSettings } from './settings'
 import { isAppUrl, openWindow } from './windows'
 
-const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_RECORD, HIGHWING_OPEN_LOG } = process.env
+const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_RECORD, HIGHWING_OPEN_LOG, HIGHWING_PICK_FILE } = process.env
 const fixture = HIGHWING_FIXTURE ? loadFixture(HIGHWING_FIXTURE) : null
+
+const PICTURE_DIALOG: OpenDialogOptions = {
+  title: 'Choose a picture', properties: ['openFile'], filters: [{ name: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+}
+
+async function choosePicture(): Promise<string | null> {
+  if (HIGHWING_PICK_FILE) return HIGHWING_PICK_FILE
+  const window = BrowserWindow.getFocusedWindow()
+  const { canceled, filePaths: [path] } = await (window === null ? dialog.showOpenDialog(PICTURE_DIALOG) : dialog.showOpenDialog(window, PICTURE_DIALOG))
+  return canceled ? null : path ?? null
+}
 
 const recorded = (dial: Dialer): Dialer => (HIGHWING_RECORD ? recordingDialer(dial, HIGHWING_RECORD) : dial)
 
@@ -43,7 +55,10 @@ app.whenReady().then(async () => {
     : ownConnection({ loaded: await loadSettings(settingsDir), save: target => saveSettings(settingsDir, target), check: checkTarget, routeFor, open })
   const drafts = draftStore(join(settingsDir, DRAFTS_DIR))
   pane.follow(owner.setup)
-  const served = serveWindows(owner, ipcMain, isAppUrl, opener, imageLoader(fixture ? fixtureImageDeps(fixture.header.media) : desktopImageDeps(net)), drafts, pane)
+  const pictures = { choose: choosePicture, read: readHead, set: (bot: BotId, data: string) => owner.run({ do: 'setBotPicture', bot, data }) }
+  const served = serveWindows(
+    owner, ipcMain, isAppUrl, opener, imageLoader(fixture ? fixtureImageDeps(fixture.header.media) : desktopImageDeps(net)), drafts, pane, bot => pickPicture(pictures, bot)
+  )
   openWindow(opener, pane)
   let closed: Promise<void> | null = null
   const close = () => (closed ??= (served.dispose(), Promise.all([owner.close(), drafts.settled()]).then(() => {})))

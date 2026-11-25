@@ -1,4 +1,4 @@
-import type { BotCreated, BotDraft, BotId } from './bots'
+import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId } from './bots'
 import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
@@ -49,6 +49,18 @@ export type Command =
   | { readonly do: 'createBot'; readonly draft: BotDraft }
   /** The models a bot's chat could use, with no chat open. null: the socket's own profile, which a new bot copies its credentials from. */
   | { readonly do: 'botModels'; readonly bot: BotId | null }
+  | { readonly do: 'describeBot'; readonly bot: BotId }
+  /**
+   * One save of the details dialog, then the roster is asked for again. `revision` is the one `describeBot` answered:
+   * a rename refused because the name changed elsewhere since is a `conflict`.
+   */
+  | { readonly do: 'editBot'; readonly bot: BotId; readonly edit: BotEdit; readonly revision: number | null }
+  /** `data`: a PNG, JPEG or WebP as a data URL. The roster is asked for again after. */
+  | { readonly do: 'setBotPicture'; readonly bot: BotId; readonly data: string }
+  /** The roster is asked for again after. */
+  | { readonly do: 'removeBotPicture'; readonly bot: BotId }
+  /** The bot's picture as a data URL, or null for none. */
+  | { readonly do: 'botPicture'; readonly bot: BotId }
   | { readonly do: 'setYolo'; readonly sessionId: SessionId; readonly on: boolean }
   /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
   | { readonly do: 'reconnect'; readonly start: boolean }
@@ -61,6 +73,8 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'versions' } ? ChatVersions
   : C extends { do: 'models' | 'botModels' } ? ModelMenu
   : C extends { do: 'createBot' } ? BotCreated
+  : C extends { do: 'describeBot' } ? BotDetails
+  : C extends { do: 'botPicture' } ? string | null
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
   : C extends { do: 'completePath' } ? readonly PathMatch[]
