@@ -18,6 +18,7 @@ export type Setup =
   | { readonly at: 'form'; readonly live: Live | null; readonly notice: 'unreadable' | 'newer' | null }
   | { readonly at: 'checking'; readonly live: Live | null; readonly target: Target; readonly step: CheckStep }
   | { readonly at: 'failed'; readonly live: Live | null; readonly target: Target; readonly failure: SetupFailure }
+  /** A check passed and `live` is its target. `from`: `first-run` when nothing was live before, which shows the first run's Saved screen, or `settings`, which keeps Settings open. */
   | { readonly at: 'saved'; readonly live: Live; readonly from: 'first-run' | 'settings' }
   /** `HIGHWING_FIXTURE` plays a recorded gateway. There is nothing to set up. */
   | { readonly at: 'pinned' }
@@ -25,8 +26,11 @@ export type Setup =
 export type SetupCommand =
   /** Check a target and, when it passes, save it and connect to it. */
   | { readonly do: 'checkTarget'; readonly target: Target }
+  /** Open Settings over the chat. */
   | { readonly do: 'editTarget' }
+  /** Leave setup for the chat on the live connection, aborting any running check. Close, Esc and Open chat send it, and main applies it before an open from Settings. With no live connection it is a first run's Stop waiting, which ends the wait for a sign-in as a failure. Refused while the check writes its target to disk. */
   | { readonly do: 'keepTarget' }
+  /** Abort the running check, or drop the failed one, and stay in Settings on the form. Cancel sends it. Refused while the check writes its target to disk. */
   | { readonly do: 'stopCheck' }
 
 /** How a page main draws in its own view is doing. `failed` hides the view, so the window shows the reason in its place. */
