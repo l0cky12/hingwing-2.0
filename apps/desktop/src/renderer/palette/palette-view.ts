@@ -11,9 +11,8 @@ export type PaletteItem =
   | { readonly kind: 'bot'; readonly key: string; readonly title: string; readonly command: WindowCommand; readonly bot: Bot }
   | { readonly kind: 'action'; readonly key: string; readonly title: string; readonly command: WindowCommand; readonly keys: string | null }
 
-export const GRADE = { titleStart: 0, previewStart: 1, titleInside: 2, previewInside: 3 } as const
+export const GRADE = { wordStart: 0, inside: 1 } as const
 export type Grade = (typeof GRADE)[keyof typeof GRADE]
-const IN_PREVIEW: ReadonlySet<Grade> = new Set([GRADE.previewStart, GRADE.previewInside])
 
 export interface Row {
   readonly item: PaletteItem
@@ -39,28 +38,28 @@ export type PaletteView =
 
 const HEADINGS: { readonly [K in PaletteItem['kind']]: Heading } = { chat: 'Chats', bot: 'Bots', action: 'Actions' }
 const KIND_ORDER: { readonly [K in PaletteItem['kind']]: number } = { action: 0, bot: 1, chat: 2 }
-const CAPS: { readonly [K in PaletteItem['kind']]: number } = { chat: 8, bot: 6, action: Infinity }
+const SHOWN_UNTYPED = { chats: 8, bots: 6 } as const
 
 const WORD = /[\p{L}\p{N}]/u
 const previewOf = (item: PaletteItem) => (item.kind === 'chat' ? item.preview : null)
 const lastActiveOf = (item: PaletteItem) => (item.kind === 'chat' ? item.lastActiveAt : null)
 
-function placeIn(text: string, term: string): 'start' | 'inside' | null {
-  let best: 'inside' | null = null
+function gradeIn(text: string, term: string): Grade | null {
+  let best: Grade | null = null
   for (let at = text.indexOf(term); at !== -1; at = text.indexOf(term, at + 1)) {
-    if (at === 0 || !WORD.test(text[at - 1] as string)) return 'start'
-    best = 'inside'
+    if (at === 0 || !WORD.test(text[at - 1] as string)) return GRADE.wordStart
+    best = GRADE.inside
   }
   return best
 }
 
-function gradeOf(term: string, title: string, preview: string | null): Grade | null {
-  const inTitle = placeIn(title, term)
-  const inPreview = preview === null ? null : placeIn(preview, term)
-  if (inTitle === 'start') return GRADE.titleStart
-  if (inPreview === 'start') return GRADE.previewStart
-  if (inTitle === 'inside') return GRADE.titleInside
-  return inPreview === 'inside' ? GRADE.previewInside : null
+const better = (a: Grade | null, b: Grade | null) => a !== null && (b === null || a < b)
+
+function matchOf(term: string, title: string, preview: string | null): { readonly grade: Grade; readonly byPreview: boolean } | null {
+  const inTitle = gradeIn(title, term)
+  const inPreview = preview === null ? null : gradeIn(preview, term)
+  if (better(inPreview, inTitle)) return { grade: inPreview as Grade, byPreview: true }
+  return inTitle === null ? null : { grade: inTitle, byPreview: false }
 }
 
 const newestFirst = (a: number | null, b: number | null) => (a === null ? (b === null ? 0 : 1) : b === null ? -1 : b - a)
@@ -71,9 +70,10 @@ export function rank(query: string, items: readonly PaletteItem[]): readonly Ran
   for (const item of items) {
     const title = item.title.toLocaleLowerCase()
     const preview = previewOf(item)?.toLocaleLowerCase() ?? null
-    const grades = terms.map(term => gradeOf(term, title, preview))
-    if (!grades.every(grade => grade !== null)) continue
-    ranked.push({ item, grade: Math.max(GRADE.titleStart, ...grades) as Grade, excerpt: grades.some(grade => IN_PREVIEW.has(grade)) ? previewOf(item) : null })
+    const matches = terms.map(term => matchOf(term, title, preview))
+    if (!matches.every(match => match !== null)) continue
+    const grade = Math.max(GRADE.wordStart, ...matches.map(match => match.grade)) as Grade
+    ranked.push({ item, grade, excerpt: matches.some(match => match.byPreview) ? previewOf(item) : null })
   }
   return ranked.sort((a, b) => a.grade - b.grade || KIND_ORDER[a.item.kind] - KIND_ORDER[b.item.kind] || newestFirst(lastActiveOf(a.item), lastActiveOf(b.item)))
 }
@@ -98,7 +98,7 @@ function itemsOf(scene: Scene): { readonly chats: readonly ChatItem[]; readonly 
 
 function sectionsOf(rows: readonly Row[]): Section[] {
   const kinds = [...new Set(rows.map(row => row.item.kind))]
-  return kinds.map(kind => ({ heading: HEADINGS[kind], rows: rows.filter(row => row.item.kind === kind).slice(0, CAPS[kind]) }))
+  return kinds.map(kind => ({ heading: HEADINGS[kind], rows: rows.filter(row => row.item.kind === kind) }))
 }
 
 const plain = (item: PaletteItem): Row => ({ item, excerpt: null })
@@ -111,7 +111,8 @@ export function paletteOf(scene: Scene, query: string): PaletteView {
     const recent = chats
       .filter(item => shown === null || item.key !== chatKey(shown))
       .sort((a, b) => askingFirst(a, b) || newestFirst(a.lastActiveAt, b.lastActiveAt))
-    return { show: 'rows', sections: sectionsOf([...recent, ...bots, ...actions].map(plain)) }
+      .slice(0, SHOWN_UNTYPED.chats)
+    return { show: 'rows', sections: sectionsOf([...recent, ...bots.slice(0, SHOWN_UNTYPED.bots), ...actions].map(plain)) }
   }
   const sections = sectionsOf(rank(query, [...actions, ...bots, ...chats]))
   return sections.length === 0 ? { show: 'note', words: NO_MATCHES } : { show: 'rows', sections }

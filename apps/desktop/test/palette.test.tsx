@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { ACTIONS, type ActionRow, type Scene } from '../src/renderer/palette/actions'
 import { Results } from '../src/renderer/palette/Palette'
-import { activeIn, paletteOf, rank, step, type PaletteItem, type PaletteView } from '../src/renderer/palette/palette-view'
+import { activeIn, GRADE, paletteOf, rank, step, type PaletteItem, type PaletteView } from '../src/renderer/palette/palette-view'
 import { APPROVED } from './support/bots'
 
 const NOW = Date.UTC(2026, 10, 24, 12)
@@ -30,10 +30,15 @@ describe('ranking what the palette lists', () => {
   it('puts a match at the start of a word above one inside a word, and breaks ties by the newest', () => {
     const items = [chatItem('Reinvoice the audit', NOW), chatItem('Invoices for March', NOW - DAY), chatItem('Send invoice reminder', NOW - 60_000)]
     expect(rank('inv', items).map(({ item, grade }) => [item.title, grade])).toEqual([
-      ['Send invoice reminder', 0],
-      ['Invoices for March', 0],
-      ['Reinvoice the audit', 2]
+      ['Send invoice reminder', GRADE.wordStart],
+      ['Invoices for March', GRADE.wordStart],
+      ['Reinvoice the audit', GRADE.inside]
     ])
+  })
+
+  it('ranks a word start in a preview with one in a title, so the newer chat comes first', () => {
+    const items = [chatItem('Invoices for March', NOW - DAY), chatItem('Tidy the scans', NOW, 'Filed the invoices.')]
+    expect(rank('invoice', items).map(({ item }) => item.title)).toEqual(['Tidy the scans', 'Invoices for March'])
   })
 
   it('puts New chat first for "new", above a chat titled with it and one whose preview says it', () => {
@@ -70,6 +75,7 @@ describe('ranking what the palette lists', () => {
     ])
     const many = Array.from({ length: 10 }, (_, at) => row(`m${at}`, `Chat ${at}`, { lastActiveAt: NOW - at * DAY }))
     expect(paletteOf(sceneOf(many), '  '), 'at most eight chats').toMatchObject({ sections: [{ heading: 'Chats', rows: { length: 8 } }, {}, {}] })
+    expect(paletteOf(sceneOf(many), 'chat'), 'every chat that matches').toMatchObject({ sections: [{ heading: 'Actions' }, { heading: 'Chats', rows: { length: 10 } }] })
   })
 
   it('moves the selection down and up, wrapping at both ends', () => {
