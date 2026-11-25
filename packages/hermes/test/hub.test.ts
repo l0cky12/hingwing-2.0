@@ -5,7 +5,7 @@ import { DialError, openHermes, RETAIN_MS, type Dialer, type HermesOptions, type
 import { manualClock } from '../src/testing/clock'
 import { MASKED, play, scriptedDialer, type Fixture, type FixtureStep, type Moment, type ScriptOptions } from '../src/testing/fixture'
 import {
-  BOUND, BRANCH, BRANCH_OLD, callsIn, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, NO_TREE, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID,
+  BOUND, BRANCH, BRANCH_COMPACTED, BRANCH_OLD, callsIn, DOWNLOADS, EDIT_COMPACTED, ERRAND, INVOICES, NO_HOME_CHAT, NO_TREE, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID,
   SESSION, SLASH, stepOf, SORTED, SORTED_2, SORTED_3, SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, withSteps
 } from './support/errand'
 
@@ -1030,6 +1030,34 @@ describe('branching a chat', () => {
     expect(mutations(opened)).toHaveLength(2)
   })
 
+  describe('in a chat Hermes compacted', () => {
+    const CANT_BRANCH_COMPACTED = { ok: false, refusal: { kind: 'rejected', message: "Hermes compacted this part of the chat, so it can't branch from here." } }
+    const reads = (opened: ReturnType<typeof open>) => opened.sent().filter(call => call.method === 'session.transcript')
+
+    it('says Hermes compacted a message from before the compaction, which the chat as opened does not show', async () => {
+      const { opened, outcome } = await branched(BRANCH_COMPACTED, branch(1, B1))
+      let shown: Session | undefined
+      opened.hermes.watch(SESSION, session => { shown = session })()
+      expect(shown?.history.flatMap(turn => turn.items).filter(item => item.kind === 'notice')).toEqual([])
+      expect(outcome).toEqual(CANT_BRANCH_COMPACTED)
+      expect(mutations(opened)).toHaveLength(1)
+      expect(reads(opened)).toHaveLength(1)
+      expect(reads(opened)[0]?.params).toMatchObject({ session_id: SESSION, order: 'latest' })
+      expect(opened.script.branchesMade).toBe(0)
+      expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: null, sessionId: SESSION }, opening: null, missing: null })
+    })
+
+    it('branches from a message after the compaction', async () => {
+      const { outcome } = await branched(BRANCH_COMPACTED, branch(4, B1))
+      expect(outcome).toEqual({ ok: true, value: CHILD })
+    })
+
+    it("says a Hermes that can't branch can't, from a message after the compaction", async () => {
+      const { outcome } = await branched({ ...BRANCH_OLD, header: { ...BRANCH_OLD.header, stored: BRANCH_COMPACTED.header.stored } }, branch(4, B1))
+      expect(outcome).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't branch a chat." } })
+    })
+  })
+
   it('refuses a message that is not in the chat without asking Hermes', async () => {
     const { opened, outcome } = await branched(BRANCH, branch(99, B1))
     expect(outcome).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'That message is no longer in this chat.' } })
@@ -1065,6 +1093,21 @@ describe('branching a chat', () => {
     expect(await sent).toEqual({ ok: true, value: null })
     expect(opened.sent().filter(call => call.params?.session_id === child && call.method !== 'session.stats').map(call => [call.method, call.params?.profile]))
       .toEqual([['session.resume', 'research'], ['prompt.submit', 'research']])
+  })
+})
+
+describe('editing a message from before a compaction', () => {
+  it('says Hermes compacted it, sends nothing and keeps every turn', async () => {
+    const opened = open(EDIT_COMPACTED)
+    await opened.clock.advance(0)
+    const outcome = opened.hermes.run({ do: 'rewind', sessionId: SESSION, rowId: 1, text: 'Rename the heading in notes.md to Goals' })
+    await opened.clock.advance(0)
+    expect(await outcome).toEqual({ ok: false, refusal: { kind: 'rejected', message: "Hermes compacted this part of the chat, so it can't edit this message." } })
+    expect(opened.sent().filter(call => call.method === 'session.mutate')).toHaveLength(1)
+    expect(opened.sent().map(call => call.method)).not.toContain('prompt.submit')
+    let shown: Session | undefined
+    opened.hermes.watch(SESSION, session => { shown = session })()
+    expect(shown?.history.map(turn => turn.request?.text)).toEqual(['Rename the heading in notes.md to Plan', 'Add a line about the deadline under it', 'List the folder'])
   })
 })
 

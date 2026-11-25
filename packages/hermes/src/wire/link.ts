@@ -152,7 +152,8 @@ export class RpcRefusal extends Error {
     message: string,
     readonly revision: number | null = null,
     readonly generation: number | null = null,
-    readonly field: string | null = null
+    readonly field: string | null = null,
+    readonly detail: string | null = null
   ) {
     super(message)
   }
@@ -292,14 +293,15 @@ interface Pending {
 
 function refusalOf(error: unknown): RpcRefusal {
   const { code, message, data } = isObject(error) ? error : {}
-  const { reason, revision, execution_generation: generation, field } = isObject(data) ? data : {}
+  const { reason, revision, execution_generation: generation, field, detail } = isObject(data) ? data : {}
   return new RpcRefusal(
     typeof code === 'number' ? code : 0,
     typeof reason === 'string' ? reason : null,
     typeof message === 'string' ? message : 'The gateway refused the call.',
     typeof revision === 'number' ? revision : null,
     typeof generation === 'number' ? generation : null,
-    typeof field === 'string' ? field : null
+    typeof field === 'string' ? field : null,
+    typeof detail === 'string' ? detail : null
   )
 }
 

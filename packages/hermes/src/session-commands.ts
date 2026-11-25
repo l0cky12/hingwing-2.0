@@ -10,7 +10,7 @@ import { ownCommand, slashLineOf, type SlashCatalog, type SlashLine } from './do
 import type { Served } from './wire/link'
 import {
   beginsAtTurn, parseBranched, parseBusy, parseCheckpointDiff, parseCheckpoints, parseCompressed, parseContextBreakdown, parseCorrection, parseDirective, parseFast,
-  parseModelMenu, parseModelReceipt, parsePathMatches, parseReactions, parseRestored, parseShown, parseTranscript, type Correction, type Directive
+  parseModelMenu, parseModelReceipt, parsePathMatches, parseReactions, parseRestored, parseShown, parseTranscript, placeOfRow, type Correction, type Directive
 } from './wire/parse'
 
 /** `versions` stays with the hub: reading a chat's versions must not attach it. */
@@ -40,6 +40,8 @@ const MOVED_ON: Refusal = { kind: 'stale', message: 'This chat changed while Hig
 const MID_TURN = refused('stale', 'Wait for the reply to finish, then try again.')
 const NO_FOLDER: Refusal = { kind: 'rejected', message: "That folder isn't on the machine Hermes runs on." }
 const GONE: Refusal = { kind: 'rejected', message: 'That message is no longer in this chat.' }
+const EDIT_COMPACTED: Refusal = { kind: 'rejected', message: "Hermes compacted this part of the chat, so it can't edit this message." }
+const BRANCH_COMPACTED: Refusal = { kind: 'rejected', message: "Hermes compacted this part of the chat, so it can't branch from here." }
 const DROPPED_ANSWER = 'The connection dropped before Hermes confirmed your answer.'
 const CANT_BRANCH: Refusal = { kind: 'unsupported', message: "This Hermes can't branch a chat." }
 const BRANCH_BUSY: Refusal = { kind: 'stale', message: 'Wait for the reply to finish, then branch.' }
@@ -85,11 +87,32 @@ function branchPin(port: SessionPort, rowId: number, branchId: BranchId): Branch
   return { request, text: point.text }
 }
 
-/** A gone row, a bad branch payload and a Hermes without `branch` all refuse `invalid_params` (persistence/authority/runtime.py `parse_mutation` reads an unknown operation as a metadata edit), so only the chat's own history can tell them apart. */
-function branchRefusal(port: SessionPort, reason: string, rowId: number): Refusal | null {
+/**
+ * A gone row, a row a compaction archived, a bad branch payload and a Hermes without `branch` all refuse a bare `invalid_params`
+ * (persistence/authority/runtime.py `parse_mutation` reads an unknown operation as a metadata edit).
+ */
+async function branchRefusal(port: SessionPort, reason: string, rowId: number): Promise<Refusal | null> {
   if (Object.hasOwn(BRANCH_REFUSALS, reason)) return BRANCH_REFUSALS[reason] as Refusal
-  if (reason === 'invalid_params') return branchPoint(port.content, rowId) === null ? GONE : CANT_BRANCH
+  if (reason === 'invalid_params') return branchPoint(port.content, rowId) === null ? GONE : await compactedAway(port, rowId) ? BRANCH_COMPACTED : CANT_BRANCH
   return null
+}
+
+/**
+ * Hermes refuses a branch through a row compaction archived with a bare `invalid_params`
+ * (persistence/sqlite/authority/_mutation_publish.py:60-71), and the chat as opened shows no compaction: the display
+ * projection strips each handoff (gateway/session_controls.py:122-129, agent/compaction_display.py:14-29). Only
+ * `session.transcript` gives them back, each just before the row it was stored on (gateway/session_transcript_rows.py:1-12).
+ */
+async function compactedAway(port: SessionPort, rowId: number): Promise<boolean> {
+  for (let cursor = null as string | null, pages = 0; pages < EARLIER.pages; pages++) {
+    const page = await port.call('session.transcript', { session_id: port.id, order: 'latest', limit: EARLIER.pageRows, ...(cursor === null ? {} : { cursor }) })
+    if (!page.ok) return false
+    const place = placeOfRow(page.value, rowId)
+    if (place !== 'not-on-page') return place === 'before-a-compaction'
+    if (page.value.next_cursor === null) return false
+    cursor = page.value.next_cursor
+  }
+  return false
 }
 
 const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<SessionCommand, { do: K }>> } = {
@@ -112,7 +135,10 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
 
   rewind: (port, { rowId, text }) => port.whenLive(async () => {
     if (port.content.run.state === 'running') return MID_TURN
-    const cut = await port.mutate('rewind', { target_message_id: rowId }, port.fence.generation ?? 0, { field: 'target_message_id', refusal: GONE })
+    // Hermes names a row compaction archived with a `compacted:` detail (persistence/authority/runtime.py:68-69).
+    const cut = await port.mutate('rewind', { target_message_id: rowId }, port.fence.generation ?? 0, {
+      field: 'target_message_id', refusal: detail => (detail?.startsWith('compacted:') === true ? EDIT_COMPACTED : GONE)
+    })
     if (!cut.ok) return cut
     port.act({ did: 'rewound', rowId })
     return port.submit(text)
@@ -148,7 +174,7 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
   move: (port, { cwd }) => port.whenLive(async () => {
     if (port.content.run.state === 'running') return MID_TURN
     // Hermes names no field when the folder is not there (gateway/session_mutation_policy.py:45-49). It pushes the new folder in a session.info.
-    const moved = await port.mutate('workspace', { cwd }, port.fence.generation ?? 0, { field: null, refusal: NO_FOLDER })
+    const moved = await port.mutate('workspace', { cwd }, port.fence.generation ?? 0, { field: null, refusal: () => NO_FOLDER })
     return moved.ok ? DONE : moved
   }),
 

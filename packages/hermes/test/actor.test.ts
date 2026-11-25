@@ -570,6 +570,7 @@ describe('mutate and loadEarlier', () => {
       const again = command({ do: 'branch', sessionId: ID, rowId: 3, branchId: B1 })
       expect(calls[0]?.params, 'the same request again').toEqual(sent)
       await answer('session.mutate', refusal('invalid_params'))
+      await answer('session.transcript', { session_id: ID, rows: rows.map(row => ({ ...row, row_kind: 'message' })), next_cursor: null, reset: false })
       expect(await again).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't branch a chat." } })
       const fresh = command({ do: 'branch', sessionId: ID, rowId: 3, branchId: B1 })
       expect(calls[0]?.params).toEqual(sent)

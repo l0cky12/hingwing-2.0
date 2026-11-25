@@ -971,6 +971,18 @@ export function parseTranscript(pages: readonly StoredTranscriptResult[]): Histo
 /** Whether the page's first row opens a turn, as `parseRows` reads it. If not, the turn its first rows belong to began on an older page. */
 export const beginsAtTurn = (page: StoredTranscriptResult): boolean => usable(() => storedRow(page.rows[0], 0))?.opensTurn === true
 
+export type RowPlace = 'before-a-compaction' | 'after-every-compaction' | 'not-on-page'
+
+export function placeOfRow(page: StoredTranscriptResult, rowId: number): RowPlace {
+  const rows: readonly unknown[] = Array.isArray(page.rows) ? page.rows : []
+  for (const row of rows.toReversed()) {
+    if (!isObject(row)) continue
+    if (row.row_kind === 'compaction') return 'before-a-compaction'
+    if (row.row_id === rowId) return 'after-every-compaction'
+  }
+  return 'not-on-page'
+}
+
 interface TurnInProgress {
   readonly request: string | null
   readonly requestRow: number | null
@@ -1028,13 +1040,16 @@ function storedRow(value: unknown, index: number) {
   const row = fields<StoredTranscriptRow>(value)
   const role = row.optStr('role')
   const text = row.optStr('text') ?? ''
-  const rowId = row.optInt('row_id')
+  // A handoff carries the id of the row it was stored on, which is the compacted chat's continuation, not the turn before it
+  // (gateway/session_transcript_rows.py:25-31).
+  const handoff = row.optStr('row_kind') === 'compaction'
+  const rowId = handoff ? null : row.optInt('row_id')
   const seconds = row.optNum('timestamp')
   const at = seconds !== null && seconds > 0 ? Math.round(seconds * 1000) : null
   // Words steered into a turn are stored as a user row of their own, among the turn's rows (agent/prompt_builder.py:585-592).
   const steers = role === 'user' && row.optStr('display_kind') === 'steer'
   const items = ((): Item<'settled'>[] => {
-    if (row.optStr('row_kind') === 'compaction') return [{ kind: 'notice', what: 'said', tone: 'info', text }]
+    if (handoff) return [{ kind: 'notice', what: 'said', tone: 'info', text }]
     if (steers) return [{ kind: 'steer', text }]
     if (role === 'assistant') {
       const reasoning = row.optStr('reasoning') ?? ''
