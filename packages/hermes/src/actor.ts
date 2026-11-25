@@ -112,7 +112,6 @@ export interface SessionPort {
    */
   submit(text: string, apiText?: string, uploads?: readonly Upload[]): Promise<Outcome>
   act(action: LocalAction): void
-  /** A new id for a message this client sends. */
   mint(): string
   earlier(page: HistoryPage): void
   whenLive<T>(run: () => Promise<Outcome<T>>): Promise<Outcome<T>>

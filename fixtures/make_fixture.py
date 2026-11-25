@@ -654,7 +654,6 @@ def gate(name):
 
 
 def hold(name):
-    """A beat that stops the turn until the story opens the gate. It is the model taking its time."""
     def beat(turn, agent):
         gate(name).reached.set()
         gate(name).opened.wait()
@@ -662,13 +661,11 @@ def hold(name):
 
 
 def adopt(turn, agent):
-    """The turn installs its agent for the claim, as ``TurnRunner`` does once it has built one."""
     authority, session_id, generation = turn._approval_owner
     authority.adopt_agent(session_id, generation, SEAM)
 
 
 def held_tool(name, result):
-    """A tool that returns *result* once the story opens the gate, for a call that arrives while it runs."""
     def during(turn, agent):
         hold(name)(turn, agent)
         return result
@@ -686,7 +683,6 @@ USE_TRASH = "Move it to the trash instead of deleting it."
 THREE_LINES = "Keep them to three lines."
 DRAFTS = f"{WORK}/drafts"
 QUEUE_TURNS = {
-    # The turn Hermes loses: the story restarts the owner while it waits at ``crash``, which never opens.
     RENAME: [
         {"hermes": [adopt], "say": "Renaming the notes to kebab-case.", "call": ("terminal", {"command": f"ls {WORK}/notes"}), "ms": 40},
         {"hermes": [hold("crash")], "say": "", "call": None},
@@ -697,13 +693,11 @@ QUEUE_TURNS = {
          "call": ("terminal", {"command": f"cat {WORK}/CHANGELOG.md"}), "ms": 30},
         {"hermes": [hold("steer")], "reads": SEAM.read, "say": "Using ISO dates. Tagging the release next.",
          "call": ("terminal", {"command": "git tag --list"}), "during": [held_tool("redirect", "v1\n")], "ms": 900},
-        # The denied tool waits for the story to hear ``approval.settled``, so the two threads never race for the clock.
         {"reads": SEAM.read, "say": "Skipping the tag. Clearing the old drafts.", "call": ("terminal", {"command": f"rm -rf {DRAFTS}"}),
          "after": hold("denied"), "ms": 20},
         {"reads": SEAM.read, "say": "I left the drafts in place and moved nothing: there is no trash command here. The changelog is updated with ISO dates.",
          "call": None},
     ],
-    # ``build`` is the window before the turn has an agent, where a redirect has nobody to reach.
     RELEASE_NOTES: [{"hermes": [hold("build"), adopt], "say": "Release notes: notes renamed to kebab-case, changelog updated under Unreleased, no tag yet.", "call": None}],
     THREE_LINES: [{"hermes": [adopt], "say": "Renamed the notes.\nUpdated the changelog.\nNo tag yet.", "call": None}],
 }
@@ -926,8 +920,6 @@ def flushing_agent(db, session_id):
 
 
 def play_turn(turn, db, history, call_ids, request=None, steps=None, kept=None):
-    """Plays the model's part of one turn. *kept* is handed the turn's messages as they are stored, so a
-    turn that never returns still leaves them for the next one's history."""
     authority, session_id, generation = turn._approval_owner
     agent = flushing_agent(db, session_id)
     messages = list(history) + [{"role": "user", "content": REQUEST if request is None else request}]
@@ -961,7 +953,6 @@ def play_turn(turn, db, history, call_ids, request=None, steps=None, kept=None):
             turn._ctx._step_callback_sync(iteration, [])
             for beat in step.get("hermes", []):
                 beat(turn, agent)
-            # What the user put into the turn since the last step, as the agent's steer drain stores it.
             messages.extend(step["reads"]() if "reads" in step else [])
             # The agent keeps the reasoning on the assistant message.
             how, chunks = step.get("reasoning", ("stream", []))
@@ -1033,7 +1024,6 @@ def owner(db, instance_id, epoch):
 
 
 def turn_of(runner, live, authority, ref, row):
-    """A ``TurnRunner`` for the claimed row, with the sinks a provider-backed turn calls."""
     turn = TurnRunner.__new__(TurnRunner)
     turn._runner = runner
     turn._approval_owner = (authority, ref.session_id, row["generation"])
@@ -1224,7 +1214,6 @@ async def queue_main():
     def submit(session_id, text):
         return {"session_id": session_id, "text": text, "input_id": "input_" + uuid.uuid4().hex[:16]}
 
-    # Before the restart: one owner, a turn that runs, and a message queued behind it.
     runner, first = owner(db, "fixture", db.runtime.begin_epoch(instance_id="fixture"))
     session_finite.execute_finite_admission = execution_of(runner)
     before = AuthorityConnection(first, quiet, client)
@@ -1233,9 +1222,6 @@ async def queue_main():
     await reached("crash")
     await call(before, "prompt.submit", submit(session_id, LIST_CHANGES))
 
-    # The restart, as Hermes's own tests start a second gateway over the same state.db
-    # (tests/tui_gateway/test_legacy_submit_forwards_to_owner.py): a new epoch, then the recovery that
-    # marks what the old owner was running as unknown. The first owner is left where it stopped.
     CLOCK.tick(42_000)
     epoch = db.runtime.begin_epoch(instance_id="fixture-restarted")
     db.admissions.recover(epoch=epoch)
@@ -1250,7 +1236,6 @@ async def queue_main():
     live.event_stream.observers.add(recorder.observe)
     describe = await call(socket, "runtime.describe", {})
     listing = await call(socket, "session.list", {})
-    # The stand-in runner has no launch policy to default the mode from, so the story sets one first.
     await call(socket, "config.set", {"session_id": session_id, "key": "busy", "value": "queue"})
     busy = await call(socket, "config.get", {"session_id": session_id, "key": "busy"})
     other = AuthorityConnection(authority, quiet, client)
@@ -1271,7 +1256,6 @@ async def queue_main():
         gate(name).opened.set()
 
     recorder.recording = True
-    # A step's ``at`` counts from here, not from the first owner's start.
     began = CLOCK.now()
     await story_call("prompt.resolve_unknown", {**row(lost), "execution_generation": lost_generation(opened)})
 

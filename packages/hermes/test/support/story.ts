@@ -23,7 +23,6 @@ const local = (action: Extract<SessionInput, { in: 'local' }>['action']): Sessio
 
 type Call = Extract<FixtureStep, { await: string }>
 
-/** What the client folds for a recorded call. `next` is the story's next call: a steer followed by a denial was that denial's words. */
 function userInputs({ await: method, params: sent, reply: answered }: Call, next: Call | undefined): SessionInput[] {
   const params = sent as Record<string, unknown>
   const reply = answered as Record<string, unknown> | undefined

@@ -33,7 +33,6 @@ function cardReply(result: Recorded): RequestReply {
 const queued = (action: 'cancel' | 'sendNow' | 'release') => (sessionId: SessionId, params: Recorded): Command =>
   ({ do: 'queued', sessionId, admissionId: params.admission_id as AdmissionId, action })
 
-/** `next` is the story's next call, which says what a rewind sends and what the words of a steer were for. */
 const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fixture: Fixture, next: AwaitStep | undefined) => Command>> = {
   'prompt.submit': (sessionId, params) => ({ do: 'send', sessionId, text: String(params.text) }),
   'session.mutate': (sessionId, params, fixture, next) => {
@@ -63,17 +62,12 @@ type CallOf<M extends string> = AwaitStep & { readonly await: M }
 const denies = (step: AwaitStep | undefined): step is CallOf<'approval.respond'> => step?.await === 'approval.respond' && recorded(step).choice === 'deny'
 const corrects = (step: AwaitStep | undefined): step is CallOf<'session.steer' | 'session.redirect'> => step?.await === 'session.steer' || step?.await === 'session.redirect'
 
-/**
- * A call the command of the call before it makes by itself: the denial that follows its words, and
- * the submit of words no agent saw.
- */
 function follows(step: AwaitStep, before: AwaitStep | undefined): boolean {
   if (!corrects(before)) return false
   if (denies(step)) return before.await === 'session.steer'
   return step.await === 'prompt.submit' && recorded(step).text === recorded(before).text && record(before.reply).delivered === false
 }
 
-/** The busy mode a window is in when it makes the recorded call, or null when the call does not depend on it. */
 function busyFor(step: AwaitStep, next: AwaitStep | undefined, held: BusyMode | null): BusyMode | null {
   if (step.await === 'session.redirect') return 'interrupt'
   if (step.await === 'session.steer') return denies(next) ? null : 'steer'
@@ -87,11 +81,6 @@ function requestReply({ ask }: HermesRequest, result: Recorded): RequestReply {
   return { kind: 'secret', value: TYPED, ...(ask.for.is === 'login' ? { identifier: TYPED } : {}) }
 }
 
-/**
- * The command for the step the story waits at, or null while there is nothing for the user to do: a
- * request not shown yet, one the hub declines itself, or a call an earlier command makes. A call that
- * depends on the chat's busy mode is preceded by the `tune` that sets it.
- */
 function commandFor(step: AwaitStep | AnswerStep, session: Session, index: number, fixture: Fixture): Command | null {
   const { id: sessionId } = session
   if ('await' in step) {

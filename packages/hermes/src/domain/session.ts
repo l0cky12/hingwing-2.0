@@ -530,7 +530,6 @@ export interface QueuedMessage {
   readonly state: QueuedState
 }
 
-/** What a row is doing decides what it offers. `offeredBy` in queue.ts is the table. */
 export type QueuedState =
   /** Waits its turn. It can always be cancelled. `can` is what else Hermes allows for it. */
   | { readonly s: 'queued'; readonly can: readonly ('sendNow' | 'edit')[] }

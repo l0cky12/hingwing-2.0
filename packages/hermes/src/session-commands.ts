@@ -280,7 +280,6 @@ async function correct(port: SessionPort, by: 'steer' | 'redirect', text: string
   return { ok: true, value: correction }
 }
 
-/** Text for the agent: submitted, or handed to the running turn when the chat's busy mode says so (`sendPlan`). */
 async function say(port: SessionPort, text: string, uploads: readonly Upload[]): Promise<Outcome> {
   const plan = sendPlan(port.content)
   if (plan.by === 'submit') return port.submit(text, undefined, uploads)

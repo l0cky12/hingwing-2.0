@@ -10,7 +10,6 @@ const pushes = fixture.steps.filter(step => 'push' in step).length
 const calls = fixture.steps.flatMap(step => ('await' in step ? [step] : []))
 const paramsOf = (method: string) => calls.filter(step => step.await === method).map(step => step.params as Record<string, unknown>)
 const replyOf = (method: string, nth = 0) => calls.filter(step => step.await === method)[nth]?.reply as Record<string, unknown>
-/** The stand-in user sets the busy mode as it goes, and the fold has no window to set one. */
 const comparable = (session: Session | typeof want) => ignoringClocks({ ...session, tuning: null, sync: null })
 
 interface Played { readonly seen: readonly Moment[]; readonly outcomes: readonly (readonly [string, CommandOutcome<unknown>])[] }

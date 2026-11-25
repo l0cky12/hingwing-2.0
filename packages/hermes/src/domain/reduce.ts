@@ -220,12 +220,10 @@ export type SessionInput =
 /** What this client did. Folded through the same reducer so a second window sees it too. */
 export type LocalAction =
   | { readonly did: 'send'; readonly inputId: InputId; readonly text: string; readonly apiText?: string; readonly attachments: readonly Attachment[] }
-  /** Hermes's receipt: the row of its queue that holds the message. */
   | { readonly did: 'send.admitted'; readonly inputId: InputId; readonly admissionId: string }
   | { readonly did: 'send.failed'; readonly inputId: InputId; readonly message: string }
   | { readonly did: 'send.discarded'; readonly inputId: InputId }
   | { readonly did: 'stop' }
-  /** Hermes handed `text` to the turn of generation `during`. */
   | { readonly did: 'steered'; readonly text: string; readonly during: Generation }
   | { readonly did: 'answer'; readonly promptId: PromptId; readonly reply: PromptReply }
   | { readonly did: 'answer'; readonly requestId: RequestId; readonly reply: RecordedReply }
@@ -248,13 +246,7 @@ export interface Fence {
   readonly text: TextCursor | null
   /** Where `loadEarlier` continues. null when the gateway holds nothing older. */
   readonly older: HistoryPage['older']
-  /** The rows of Hermes's latest pending list, by admission id, as the request each starts a turn with. `turn.started` names its row. */
   readonly admissions: { readonly [admissionId: string]: Request }
-  /**
-   * admissionId -> inputId for this client's outbox, learned from receipts. Hermes's lists name a
-   * message by the id it was sent with. A replayed fixture's name the recorded one, so there the
-   * receipt is the only link.
-   */
   readonly sent: { readonly [admissionId: string]: InputId }
   /** Highest stored row id among the turns held as settled. See the `lost` rule in the seed below. */
   readonly settledThrough: number | null
@@ -295,9 +287,6 @@ export const PARK_LIMIT = 2048
  *   an outbox entry by `InputId`, a request and a declined notice by `requestId`, the plan by its
  *   revision. Applying the same input twice changes nothing the second time. `attach` on a session
  *   that is attaching or live changes nothing.
- * - `queue` is whatever Hermes's latest pending list says, for every client's rows, less the row a
- *   turn has started with since. No local action edits it. A message is in `outbox` or in `queue`,
- *   never both.
  * - A reply of an older attach attempt changes nothing.
  * - Nothing opens a turn to hold a line Hermes said. A line goes into the running turn, or into the
  *   interlude while none runs.
@@ -541,11 +530,6 @@ function startedRequest(queue: readonly Admission[]): Request | null {
   return started === undefined ? null : { text: started.text, inputId: started.inputId, rowId: null, attachments: [] }
 }
 
-/**
- * One of Hermes's pending lists, which is its whole queue for the chat. A message the list names has
- * left this client's outbox. A row in transfer to the turn is not `started`, so it is never taken
- * for the running turn's request.
- */
 function listed(state: Tracked, rows: readonly Admission[]): Tracked {
   const { content, fence } = state
   const entryOf = (row: Admission) => content.outbox.find(entry => entry.inputId === row.inputId || entry.inputId === fence.sent[row.admissionId])
@@ -565,7 +549,6 @@ function listed(state: Tracked, rows: readonly Admission[]): Tracked {
     : turn))
 }
 
-/** A row that Hermes's list newly shows on its way into the running turn is words that turn was handed. */
 function handedOver(state: Tracked, before: readonly QueuedMessage[]): Tracked {
   const wasSteering = new Set(before.flatMap(row => (row.state.s === 'steering' ? [row.admissionId] : [])))
   return state.content.queue
@@ -920,10 +903,6 @@ function holdsDeclined(content: SessionContent, requestId: string): boolean {
     || content.history.some(turn => turn.items.some(isIt))
 }
 
-/**
- * What the turn that starts answers: the row Hermes's list named, else the message a receipt tied to
- * that row, else the one message this client is still sending with no receipt yet.
- */
 function requestFor(state: Tracked, admissionId: string | null, requestText: string | null): Request | null {
   const { admissions, sent } = state.fence
   const { outbox } = state.content

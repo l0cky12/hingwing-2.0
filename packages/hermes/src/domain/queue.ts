@@ -1,13 +1,5 @@
-/**
- * The rules of Hermes's queue for one chat: how one of its pending lists becomes `queue`, what a row
- * offers, and where a message sent during a turn goes. Pure.
- */
 import type { AdmissionId, BusyMode, Generation, InputId, QueuedAction, QueuedMessage, QueuedState, SessionContent } from './session'
 
-/**
- * A row of one of Hermes's pending lists, any client's. `started` is the message the running turn
- * answers, and `terminal` one that is done. Neither is in `queue`.
- */
 export interface Admission {
   readonly admissionId: AdmissionId
   readonly inputId: InputId
@@ -15,11 +7,6 @@ export interface Admission {
   readonly state: QueuedState | { readonly s: 'started' } | { readonly s: 'terminal' }
 }
 
-/**
- * `held` with Hermes's list in its place. A row is `here` when it is `sent`, one this client's outbox
- * held as the list named it, and stays so for as long as Hermes lists it. Rows that did not change
- * keep their identity, and so does the list when none did.
- */
 export function queueOf(held: readonly QueuedMessage[], sent: (row: Admission) => boolean, rows: readonly Admission[]): readonly QueuedMessage[] {
   const next = rows.flatMap((row): QueuedMessage[] => {
     const { state } = row
@@ -55,7 +42,6 @@ export function offeredBy(state: QueuedState): readonly QueuedAction[] {
   }
 }
 
-/** Where text sent now goes. `during` is the running turn it would go into. */
 export type SendPlan = { readonly by: 'submit' } | { readonly by: 'steer' | 'redirect'; readonly during: Generation }
 
 const SUBMIT: SendPlan = { by: 'submit' }

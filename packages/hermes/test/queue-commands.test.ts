@@ -58,7 +58,6 @@ async function stage({ watched = false }: { readonly watched?: boolean } = {}) {
     command: (command: SessionCommand) => runSessionCommand(actor.port, command, hub),
     list: (...queue: Admission[]) => event({ type: 'meta', queue }, null),
     tune: (busy: BusyMode) => actor.port.act({ did: 'tuned', tuning: { busy } }),
-    /** The calls that wait for an answer, apart from the usage read every command and turn makes. */
     sent: () => calls.filter(call => call.method !== 'session.stats').map(call => [call.method, call.params] as const),
     items: () => (actor.session.run.state === 'running' ? actor.session.run.turn.items : [])
   }

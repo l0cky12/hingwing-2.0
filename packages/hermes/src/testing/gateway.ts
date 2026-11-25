@@ -223,7 +223,6 @@ const STORY_CHECKS: Readonly<Record<string, readonly Check[]>> = {
   'session.redirect': [correction, known, runningGeneration],
   /** gateway/session_authority.py:831-841 */
   'prompt.cancel': [known, listed],
-  /** gateway/session_queued_controls.py:128-131 */
   'prompt.steer_queued': [known, listed],
   /** gateway/session_queued_controls.py:213-220: the edit is a submission, read before the row it replaces. */
   'prompt.replace_queued': [attached, submissionId, listed],

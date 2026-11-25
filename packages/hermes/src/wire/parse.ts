@@ -662,7 +662,6 @@ export function parsePathMatches(reply: CompletionItemsResult): readonly PathMat
   })
 }
 
-/** The rows of an attach reply's `pending`. A row this build cannot read is left out. */
 export function parsePending(rows: readonly unknown[]): Admission[] {
   return rows.flatMap(row => usable(() => admissionOf(row)) ?? [])
 }
@@ -681,7 +680,6 @@ export function parseBusy(reply: { readonly value?: unknown }): BusyMode | null 
 
 /** What `session.steer` or `session.redirect` did with the words (`CanonicalCorrectionAck`, tui_gateway/contracts/canonical_sessions.py:306-321). */
 export type Correction =
-  /** The running turn has them. */
   | 'taken'
   /** No agent saw them (`delivered: false`), so they are safe to send as a message. A bare stop phrase that ended a voice chat reads so too: a submit of it is dropped the same way. */
   | 'unread'

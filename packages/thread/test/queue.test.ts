@@ -19,7 +19,6 @@ async function sessions(options?: Parameters<typeof play>[1]): Promise<Session[]
 
 const unsound = (seen: readonly Session[]) =>
   seen.flatMap((session, index) => checkThread(threadView(session, AT_PLAY_START)).map(problem => `moment ${index}: ${problem}`))
-/** A played turn begins on this client's clock, so its time line is not the fold's, which has none. */
 const outlined = (session: Session) => outline(threadView(session, AT_PLAY_START)).split('\n').filter(line => !line.startsWith('@ ')).join('\n')
 const pendingOf = (seen: readonly Session[]) => seen.map(session => threadView(session, AT_PLAY_START).pending.map(message => `${message.text} (${message.status})`))
 
