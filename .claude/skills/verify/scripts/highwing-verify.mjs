@@ -742,6 +742,7 @@ const ALWAYS = () => true
 const ACTED_CALLS = {
   'prompt.resolve_unknown': ALWAYS, 'prompt.replace_queued': ALWAYS, 'prompt.cancel': ALWAYS, 'prompt.steer_queued': ALWAYS, 'session.steer': ALWAYS, 'session.redirect': ALWAYS,
   'session.export': ALWAYS,
+  'process.kill': ALWAYS, 'session.control': ALWAYS, 'rollback.list': ALWAYS, 'rollback.diff': ALWAYS, 'rollback.restore': ALWAYS, 'message.react': ALWAYS,
   'config.set': params => params?.key === 'fast',
   'session.mutate': params => params?.operation === 'reasoning' || params?.operation === 'workspace'
 }
