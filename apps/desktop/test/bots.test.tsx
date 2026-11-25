@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { BotsPanel } from '../src/renderer/bots/Bots'
 import { APPROVED, fact, listed } from './support/bots'
 
-const AT_LAUNCH: OpenChat = { shown: { kind: 'bot', bot: 'default' as BotId, sessionId: 's1' as SessionId }, opening: null }
+const AT_LAUNCH: OpenChat = { shown: { kind: 'bot', bot: 'default' as BotId, sessionId: 's1' as SessionId }, opening: null, missing: null }
 const ONLINE: Link = { state: 'online' }
 const showing = (bots: Bots | undefined, open: OpenChat | undefined, link: Link | undefined = ONLINE) =>
   renderToStaticMarkup(
@@ -56,9 +56,9 @@ describe('the bots sidebar', () => {
 
   it('marks the bot of the open chat as the current one, and no other', () => {
     expect(marked(markup, 'aria-current')).toEqual(['Emu, default bot'])
-    const research: OpenChat = { shown: { kind: 'bot', bot: 'research' as BotId, sessionId: null }, opening: null }
+    const research: OpenChat = { shown: { kind: 'bot', bot: 'research' as BotId, sessionId: null }, opening: null, missing: null }
     expect(marked(showing(APPROVED, research), 'aria-current')).toEqual(['Research'])
-    expect(marked(showing(APPROVED, { shown: { kind: 'chat', bot: null, sessionId: 's1' as SessionId }, opening: null }), 'aria-current')).toEqual([])
+    expect(marked(showing(APPROVED, { shown: { kind: 'chat', bot: null, sessionId: 's1' as SessionId }, opening: null, missing: null }), 'aria-current')).toEqual([])
     expect(marked(showing(APPROVED, undefined), 'aria-current')).toEqual([])
   })
 

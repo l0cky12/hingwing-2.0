@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { BotId, Bots } from '../src/domain/bots'
 import { rosterOf } from '../src/domain/bots'
-import { EMPTY_DESK, launchChat, nextDesk, type Desk, type DeskEffect, type DeskEvent, type Shown } from '../src/domain/open'
+import { EMPTY_DESK, launchChat, nextDesk, type Desk, type DeskEffect, type DeskEvent, type OpenChat, type Shown } from '../src/domain/open'
 import type { SessionId } from '../src/domain/session'
+import { chatDesk, type DeskDeps } from '../src/open'
+import { Offline, RpcRefusal } from '../src/wire/link'
 
 const [EMU, RESEARCH, OPS] = ['default', 'research', 'ops'] as BotId[] as [BotId, BotId, BotId]
 const [HOME, R1, R2, O1] = ['local-home', 'local-r1', 'local-r2', 'local-o1'] as SessionId[] as [SessionId, SessionId, SessionId, SessionId]
@@ -15,6 +17,9 @@ const made = (bot: BotId | null, draftId: string, sessionId: SessionId): DeskEve
 const picked = (sessionId: SessionId): DeskEvent => ({ on: 'asked', ref: { kind: 'chat', sessionId } })
 const listed = (bot: BotId, sessions: readonly SessionId[]): DeskEvent => ({ on: 'listed', bot, sessions })
 const branched = (from: SessionId, sessionId: SessionId, text: string): DeskEvent => ({ on: 'branched', from, sessionId, text })
+const linked = (sessionId: SessionId): DeskEvent => ({ on: 'asked', ref: { kind: 'link', sessionId } })
+const sought = (sessionId: SessionId, bot: BotId | null): DeskEvent => ({ on: 'sought', sessionId, found: bot === null ? { in: 'own' } : { in: 'bot', bot } })
+const nowhere = (sessionId: SessionId): DeskEvent => ({ on: 'sought', sessionId, found: { in: 'none' } })
 const [B1, B2] = ['local-b1', 'local-b2'] as SessionId[] as [SessionId, SessionId]
 const draft = (bot: BotId | null, draftId: string, sessionId: SessionId | null = null): Shown => ({ kind: 'new', bot, draftId, sessionId } as Shown)
 
@@ -30,8 +35,10 @@ function after(events: readonly DeskEvent[], from: Desk = EMPTY_DESK): { readonl
 
 const LAUNCHED = after([facts({ [EMU]: HOME, [RESEARCH]: R1 }, { kind: 'bot', bot: EMU, sessionId: HOME })]).desk
 
+type Expected = Omit<OpenChat, 'missing'> & Partial<Pick<OpenChat, 'missing'>>
+
 describe('the open chat', () => {
-  it.each<[string, readonly DeskEvent[], Desk['open'], readonly (readonly DeskEffect[])[]]>([
+  it.each<[string, readonly DeskEvent[], Expected, readonly (readonly DeskEffect[])[]]>([
     ['shows the launch chat while nothing is shown',
       [facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME })], { shown: { kind: 'bot', bot: EMU, sessionId: HOME }, opening: null }, [[]]],
     ['keeps what is shown when Hermes says more later',
@@ -113,17 +120,52 @@ describe('the open chat', () => {
     ['shows a branch of a branch',
       [listed(RESEARCH, [R1]), picked(R1), branched(R1, B1, 'again'), branched(B1, B2, 'once more')], { shown: { kind: 'branch', bot: RESEARCH, sessionId: B2, text: 'once more' }, opening: null }, [[], [], [], []]],
     ['opens nothing when a list comes',
-      [facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME }), listed(RESEARCH, [R1, R2])], { shown: { kind: 'bot', bot: EMU, sessionId: HOME }, opening: null }, [[], []]]
+      [facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME }), listed(RESEARCH, [R1, R2])], { shown: { kind: 'bot', bot: EMU, sessionId: HOME }, opening: null }, [[], []]],
+    ['opens a linked chat whose bot the roster named at once, with no call',
+      [facts({ [EMU]: HOME, [RESEARCH]: R1 }, { kind: 'bot', bot: EMU, sessionId: HOME }), linked(R1)], { shown: { kind: 'chat', bot: RESEARCH, sessionId: R1 }, opening: null }, [[], []]],
+    ['opens a linked chat a list named at once, with no call',
+      [listed(RESEARCH, [R2]), linked(R2)], { shown: { kind: 'chat', bot: RESEARCH, sessionId: R2 }, opening: null }, [[], []]],
+    ['looks for a linked chat no one has named, and keeps the chat shown meanwhile',
+      [facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME }), linked(R2)], { shown: { kind: 'bot', bot: EMU, sessionId: HOME }, opening: { kind: 'link', sessionId: R2 } }, [[], [{ seek: R2 }]]],
+    ['opens a linked chat in the bot it was found in',
+      [facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME }), linked(R2), sought(R2, RESEARCH)], { shown: { kind: 'chat', bot: RESEARCH, sessionId: R2 }, opening: null }, [[], [{ seek: R2 }], []]],
+    ["opens a linked chat found in the socket's own profile with no bot",
+      [linked(R2), sought(R2, null)], { shown: { kind: 'chat', bot: null, sessionId: R2 }, opening: null }, [[{ seek: R2 }], []]],
+    ['keeps the chat shown and says so when Hermes has no chat by that id',
+      [facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME }), linked(R2), nowhere(R2)], { shown: { kind: 'bot', bot: EMU, sessionId: HOME }, opening: null, missing: R2 }, [[], [{ seek: R2 }], []]],
+    ['keeps the chat shown and says nothing when the search is refused',
+      [facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME }), linked(R2), { on: 'unsought', sessionId: R2 }], { shown: { kind: 'bot', bot: EMU, sessionId: HOME }, opening: null }, [[], [{ seek: R2 }], []]],
+    ['stops saying a linked chat is missing on the next click',
+      [listed(RESEARCH, [R1]), picked(R1), linked(R2), nowhere(R2), picked(R1)], { shown: { kind: 'chat', bot: RESEARCH, sessionId: R1 }, opening: null }, [[], [], [{ seek: R2 }], [], []]],
+    ['stops saying a linked chat is missing when a bot is clicked',
+      [linked(R2), nowhere(R2), asked(OPS)], { shown: null, opening: { kind: 'bot', bot: OPS } }, [[{ seek: R2 }], [], [{ find: OPS }]]],
+    ['stops saying a linked chat is missing when a new chat starts',
+      [linked(R2), nowhere(R2), askedNew(EMU, 'd1')], { shown: draft(EMU, 'd1'), opening: null }, [[{ seek: R2 }], [], []]],
+    ['stops saying a linked chat is missing when another link is followed',
+      [linked(R2), nowhere(R2), linked(O1)], { shown: null, opening: { kind: 'link', sessionId: O1 } }, [[{ seek: R2 }], [], [{ seek: O1 }]]],
+    ['shows nothing for a linked chat found after a later click',
+      [facts({ [RESEARCH]: R1 }), linked(R2), asked(RESEARCH), sought(R2, RESEARCH)], { shown: { kind: 'bot', bot: RESEARCH, sessionId: R1 }, opening: null }, [[], [{ seek: R2 }], [], []]],
+    ['says nothing about a missing link after a later click',
+      [listed(RESEARCH, [R1]), linked(R2), picked(R1), nowhere(R2)], { shown: { kind: 'chat', bot: RESEARCH, sessionId: R1 }, opening: null }, [[], [{ seek: R2 }], [], []]],
+    ['keeps a later click waiting when a linked chat is found first',
+      [linked(R2), asked(OPS), sought(R2, RESEARCH)], { shown: null, opening: { kind: 'bot', bot: OPS } }, [[{ seek: R2 }], [{ find: OPS }], []]],
+    ["keeps a link waiting when an earlier bot's lookup answers",
+      [asked(OPS), linked(R2), found(OPS, O1)], { shown: null, opening: { kind: 'link', sessionId: R2 } }, [[{ find: OPS }], [{ seek: R2 }], []]],
+    ["keeps the shown chat's pane when a link names it, with no call",
+      [askedNew(RESEARCH, 'd1'), made(RESEARCH, 'd1', R1), linked(R1)], { shown: draft(RESEARCH, 'd1', R1), opening: null }, [[], [], []]],
+    ['keeps the shown chat when a link names it though no bot is known for it, and lets an earlier click go',
+      [picked(R2), asked(OPS), linked(R2)], { shown: { kind: 'chat', bot: null, sessionId: R2 }, opening: null }, [[], [{ find: OPS }], []]]
   ])('%s', (_name, events, open, effects) => {
     const reached = after(events)
-    expect(reached.desk.open).toEqual(open)
+    expect(reached.desk.open).toEqual({ missing: null, ...open })
     expect(reached.effects).toEqual(effects)
   })
 
   it('knows the owner of every session before it names one, and keeps the owner of a session a bot has moved on from', () => {
     const events = [
       facts({ [EMU]: HOME, [RESEARCH]: R1 }, { kind: 'bot', bot: EMU, sessionId: HOME }), asked(OPS), found(OPS, O1), facts({ [RESEARCH]: R2 }), asked(RESEARCH),
-      askedNew(OPS, 'd1'), made(OPS, 'd1', 'local-o2' as SessionId), askedNew(EMU, 'd2'), askedNew(null, 'd3'), made(EMU, 'd2', 'local-e2' as SessionId), made(null, 'd3', 'local-n1' as SessionId)
+      askedNew(OPS, 'd1'), made(OPS, 'd1', 'local-o2' as SessionId), askedNew(EMU, 'd2'), askedNew(null, 'd3'), made(EMU, 'd2', 'local-e2' as SessionId), made(null, 'd3', 'local-n1' as SessionId),
+      linked('local-l1' as SessionId), sought('local-l1' as SessionId, OPS), linked('local-l2' as SessionId), sought('local-l2' as SessionId, null)
     ]
     events.reduce((desk, event) => {
       const next = nextDesk(desk, event).desk
@@ -133,7 +175,7 @@ describe('the open chat', () => {
     }, EMPTY_DESK)
     const { desk } = after(events)
     expect(desk.owners, "a new chat's session is owned by its bot, and one in the socket's own profile by none").toEqual({
-      [HOME]: EMU, [R1]: RESEARCH, [R2]: RESEARCH, [O1]: OPS, 'local-o2': OPS, 'local-e2': EMU
+      [HOME]: EMU, [R1]: RESEARCH, [R2]: RESEARCH, [O1]: OPS, 'local-o2': OPS, 'local-e2': EMU, 'local-l1': OPS
     })
     expect(desk.chats, 'a new chat is no Bot Chat').toEqual({ [EMU]: HOME, [RESEARCH]: R2, [OPS]: O1 })
   })
@@ -141,6 +183,11 @@ describe('the open chat', () => {
   it("records the owner of a branch's chat even when the branch shows nothing", () => {
     const { desk } = after([listed(RESEARCH, [R1, R2]), picked(R1), picked(R2), branched(R1, B1, 'again'), picked(R2), branched(R2, B2, 'more')])
     expect(desk.owners).toEqual({ [R1]: RESEARCH, [R2]: RESEARCH, [B1]: RESEARCH, [B2]: RESEARCH })
+  })
+
+  it('records the bot a linked chat was found in even when the user has moved on', () => {
+    const { desk } = after([linked(R2), picked(R1), sought(R2, RESEARCH)])
+    expect(desk.owners).toEqual({ [R2]: RESEARCH })
   })
 
   it("keeps a session's first owner when another bot's list names it", () => {
@@ -159,6 +206,7 @@ describe('the open chat', () => {
     expect(nextDesk(LAUNCHED, found(RESEARCH, R1)).desk.open).toBe(LAUNCHED.open)
     expect(nextDesk(LAUNCHED, { on: 'failed', bot: OPS }).desk.open).toBe(LAUNCHED.open)
     expect(nextDesk(LAUNCHED, listed(RESEARCH, [R1])).desk, 'a list of chats whose owners are known').toBe(LAUNCHED)
+    expect(nextDesk(LAUNCHED, nowhere(R2)).desk.open, 'an answer for a link no one is waiting on').toBe(LAUNCHED.open)
   })
 })
 
@@ -185,5 +233,112 @@ describe('the chat a connection shows before any click', () => {
     ['is none when there is no chat at all', ['profile', { state: 'unsupported' }, {}, EMPTY], null]
   ])('%s', (_name, args, shown) => {
     expect(launchChat(...args)).toEqual(shown)
+  })
+})
+
+describe("a linked chat's search", () => {
+  type Page = readonly SessionId[]
+  const fact = (id: BotId) => ({ id, name: id, isDefault: id === EMU, section: null, preview: null, description: null, chat: null, picture: false })
+  const LISTED: Bots = { state: 'listed', roster: rosterOf([fact(EMU), fact(RESEARCH), fact(OPS)]) }
+  const NOTHING = { status: 'ready', newest: null } as const
+  const R3 = 'local-r3' as SessionId
+  const OWN_PROFILE = ''
+
+  function desk(reach: 'host' | 'profile', pages: { readonly [profile: string]: readonly Page[] }, refusing: readonly string[] = [], dropped = 0) {
+    const sent: { readonly profile: string; readonly cursor: unknown }[] = []
+    const callAs = (profile: string) => (_method: string, params: { readonly cursor?: string }) => {
+      sent.push({ profile, cursor: params.cursor })
+      if (sent.length <= dropped) return Promise.reject(new Offline())
+      if (refusing.includes(profile)) return Promise.reject(new RpcRefusal(4030, 'permission_denied', 'no'))
+      const book = pages[profile] ?? [[]]
+      const at = params.cursor === undefined ? 0 : Number(params.cursor)
+      const rows = (book[at] ?? []).map(sessionId => ({ session_id: sessionId, id: sessionId }))
+      return Promise.resolve({ sessions: rows, scope: 'stored', next_cursor: at + 1 < book.length ? String(at + 1) : null })
+    }
+    const conn = { reach, creation: null, call: callAs(OWN_PROFILE), as: (bot: BotId) => ({ call: callAs(bot) }) } as unknown as DeskDeps['conn']
+    const opened = chatDesk({ conn, client: { name: 'test', version: '0' }, mintId: () => 'id', changed: () => {} })
+    return { opened, sent, settle: (bots: Bots) => opened.settle({ bots, named: {}, list: NOTHING }) }
+  }
+
+  it('pages through each profile until one lists the chat, then opens it in that bot', async () => {
+    const { opened, sent, settle } = desk('host', { [RESEARCH]: [[R1], [R2], [R3]] })
+    settle(LISTED)
+    expect(await opened.ask({ kind: 'link', sessionId: R3 })).toEqual({ ok: true, value: R3 })
+    expect(opened.open).toEqual({ shown: { kind: 'chat', bot: RESEARCH, sessionId: R3 }, opening: null, missing: null })
+    expect(opened.botOf(R3)).toBe(RESEARCH)
+    expect(sent.filter(call => call.profile === RESEARCH).map(call => call.cursor)).toEqual([undefined, '1', '2'])
+  })
+
+  it('reads as missing once every page of every profile went by', async () => {
+    const { opened, sent, settle } = desk('host', { [EMU]: [[HOME]], [RESEARCH]: [[R1], [R2]] })
+    settle(LISTED)
+    expect(await opened.ask({ kind: 'link', sessionId: R3 })).toEqual({ ok: true, value: null })
+    expect(opened.open, 'the launch chat stays').toEqual({ shown: { kind: 'bot', bot: EMU, sessionId: null }, opening: null, missing: R3 })
+    expect(sent.map(call => call.profile).sort()).toEqual([EMU, OPS, RESEARCH, RESEARCH])
+  })
+
+  it('waits to search until Hermes has answered about its bots', async () => {
+    const { opened, sent, settle } = desk('host', { [OPS]: [[O1]] })
+    const outcome = opened.ask({ kind: 'link', sessionId: O1 })
+    settle({ state: 'loading' })
+    settle({ state: 'offline' })
+    await Promise.resolve()
+    expect(sent).toEqual([])
+    expect(opened.open.opening).toEqual({ kind: 'link', sessionId: O1 })
+    settle(LISTED)
+    expect(await outcome).toEqual({ ok: true, value: O1 })
+    expect(opened.open.shown).toEqual({ kind: 'chat', bot: OPS, sessionId: O1 })
+  })
+
+  it("searches the socket's own profile when it cannot list bots, or reaches one profile", async () => {
+    for (const [reach, bots] of [['host', { state: 'unsupported' }], ['profile', LISTED]] as const) {
+      const { opened, sent, settle } = desk(reach, { [OWN_PROFILE]: [[R1]] })
+      settle(bots)
+      expect(await opened.ask({ kind: 'link', sessionId: R1 }), reach).toEqual({ ok: true, value: R1 })
+      expect(opened.open.shown, reach).toEqual({ kind: 'chat', bot: null, sessionId: R1 })
+      expect(sent.map(call => call.profile), reach).toEqual([OWN_PROFILE])
+    }
+  })
+
+  it('makes one search for two links to the same chat', async () => {
+    const { opened, sent, settle } = desk('host', { [OPS]: [[O1]] })
+    settle(LISTED)
+    const outcomes = await Promise.all([opened.ask({ kind: 'link', sessionId: O1 }), opened.ask({ kind: 'link', sessionId: O1 })])
+    expect(outcomes).toEqual([{ ok: true, value: O1 }, { ok: true, value: O1 }])
+    expect(sent).toHaveLength(3)
+  })
+
+  it('opens the chat when one profile lists it though another refused, and says why when none lists it', async () => {
+    const found = desk('host', { [OPS]: [[O1]] }, [RESEARCH])
+    found.settle(LISTED)
+    expect(await found.opened.ask({ kind: 'link', sessionId: O1 })).toEqual({ ok: true, value: O1 })
+
+    const refused = desk('host', {}, [RESEARCH])
+    refused.settle(LISTED)
+    expect(await refused.opened.ask({ kind: 'link', sessionId: O1 })).toEqual({ ok: false, refusal: { kind: 'not-attached', message: "Hermes won't let Highwing do that in this chat." } })
+    expect(refused.opened.open, 'a refused search names nothing missing').toEqual({ shown: { kind: 'bot', bot: EMU, sessionId: null }, opening: null, missing: null })
+  })
+
+  it('searches again once the socket is back when the drop cut the search short', async () => {
+    const { opened, sent, settle } = desk('host', { [OPS]: [[O1]] }, [], 3)
+    settle(LISTED)
+    const outcome = opened.ask({ kind: 'link', sessionId: O1 })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(sent, 'every bot was asked and none answered').toHaveLength(3)
+    expect(opened.open.opening, 'the link still waits').toEqual({ kind: 'link', sessionId: O1 })
+    opened.online()
+    expect(await outcome).toEqual({ ok: true, value: O1 })
+    expect(opened.open.shown).toEqual({ kind: 'chat', bot: OPS, sessionId: O1 })
+  })
+
+  it('gives a dropped search up once the user opened another chat', async () => {
+    const { opened, sent, settle } = desk('host', { [OPS]: [[O1]] }, [], 3)
+    settle(LISTED)
+    const outcome = opened.ask({ kind: 'link', sessionId: O1 })
+    await opened.ask({ kind: 'chat', sessionId: R1 })
+    expect(await outcome).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    opened.online()
+    expect(sent).toHaveLength(3)
+    expect(opened.open.shown).toEqual({ kind: 'chat', bot: null, sessionId: R1 })
   })
 })

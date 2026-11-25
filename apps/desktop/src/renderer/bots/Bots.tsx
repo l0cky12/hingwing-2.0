@@ -58,7 +58,7 @@ export function BotsPanel({ bots, open, link, onOpen, onCreate, onModels, ...edi
   const searchButton = useRef<HTMLButtonElement>(null)
   const ids = useId()
   const selected = selectedIn(bots, open)
-  const opening = open?.opening?.bot ?? null
+  const opening = open?.opening?.kind === 'bot' ? open.opening.bot : null
   const block = newBotBlock(link, bots)
   const online = link?.state === 'online'
   useEffect(() => {

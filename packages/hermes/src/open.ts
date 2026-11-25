@@ -1,10 +1,10 @@
 import { refusalOf, refused } from './actor'
-import type { BotId, Bots } from './domain/bots'
+import { botsIn, type BotId, type Bots } from './domain/bots'
 import type { Outcome } from './domain/command'
-import { EMPTY_DESK, chatOf, launchChat, ownerOf, nextDesk, type BotChats, type ChatRef, type DeskEvent, type OpenChat, type Unstarted } from './domain/open'
+import { EMPTY_DESK, chatOf, launchChat, ownerOf, nextDesk, type BotChats, type ChatRef, type DeskEvent, type OpenChat, type Unstarted, type Whereabouts } from './domain/open'
 import type { SessionId } from './domain/session'
-import type { Connection } from './wire/link'
-import { parseTitled } from './wire/parse'
+import { Offline, type Calls, type Connection } from './wire/link'
+import { parseListPage, parseTitled } from './wire/parse'
 
 /** The title Hermes gives the one chat a bot's row opens (Hermes's hermes-bots/canonical-chat.ts:50). */
 const BOT_CHAT = 'Bot Chat'
@@ -12,6 +12,11 @@ const BOT_CHAT = 'Bot Chat'
 export const NOT_CONNECTED = refused('offline', "Highwing isn't connected to Hermes right now.")
 const CANT_START = refused('unsupported', "This Hermes can't start a chat from Highwing.")
 const CANT_SWITCH = refused('unsupported', "This Hermes can't switch bots from Highwing yet. Update Hermes on that machine, then reconnect.")
+
+/** The largest `session.list` page the gateway serves. */
+const SEEK_ROWS = 200
+
+class NotListed extends Error {}
 
 const offered = (asked: { readonly [key: string]: unknown }, parameters: readonly string[]) =>
   Object.fromEntries(Object.entries(asked).filter(([key]) => parameters.includes(key)))
@@ -39,6 +44,8 @@ export interface ChatDesk {
   /** Hermes listed these chats in the bot's profile, so a click on one opens it in that bot. */
   listed(bot: BotId, sessions: readonly SessionId[]): void
   branched(made: { readonly from: SessionId; readonly sessionId: SessionId; readonly text: string }): void
+  /** The socket is online again. A linked chat whose search the drop cut short, and that is still the latest ask, is searched again. */
+  online(): void
 }
 
 export interface DeskDeps {
@@ -62,6 +69,12 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
   const draftSessions = new Map<string, Promise<Outcome<SessionId>>>()
   /** One per bot for the whole connection, so a create that is retried names the session the first one made. */
   const requestIds = new Map<BotId, string>()
+  const seeks = new Map<SessionId, Promise<Outcome<SessionId | null>>>()
+  let bots: Bots = { state: 'loading' }
+  let rosterKnown = () => {}
+  const firstRoster = new Promise<void>(resolve => { rosterKnown = resolve })
+  let backOnline: readonly (() => void)[] = []
+  const nextOnline = () => new Promise<void>(resolve => { backOnline = [...backOnline, resolve] })
 
   const take = (event: DeskEvent) => {
     const before = desk.open
@@ -87,6 +100,64 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
       }
     )
     finds.set(bot, found)
+  }
+
+  /**
+   * Every stored row, hidden ones included, and not only the user's chats: a link to a scheduled job's
+   * chat opens it, though the list shows it no row. A session `session.list` never names, such as a
+   * helper's, reads as missing.
+   */
+  const lists = async (via: Pick<Calls, 'call'>, sessionId: SessionId): Promise<void> => {
+    for (let cursor: string | null = null; ;) {
+      const page = parseListPage(await via.call('session.list', { scope: 'stored', include_hidden: true, limit: SEEK_ROWS, ...(cursor === null ? {} : { cursor }) }))
+      if (page.sessions.includes(sessionId)) return
+      cursor = page.next
+      if (cursor === null || page.sessions.length === 0) throw new NotListed()
+    }
+  }
+
+  const whereIs = async (sessionId: SessionId): Promise<Whereabouts> => {
+    const known = ownerOf(desk, sessionId)
+    if (known !== undefined) return { in: 'bot', bot: known }
+    const places = conn.reach === 'host' && bots.state === 'listed' ? botsIn(bots.roster).map(bot => bot.id) : [null]
+    try {
+      return await Promise.any(places.map(bot => lists(bot === null ? conn : conn.as(bot), sessionId).then((): Whereabouts => (bot === null ? { in: 'own' } : { in: 'bot', bot }))))
+    } catch (error) {
+      const failure = (error as AggregateError).errors.find(each => !(each instanceof NotListed))
+      if (failure === undefined) return { in: 'none' }
+      throw failure
+    }
+  }
+
+  const stillAsked = (sessionId: SessionId) => desk.open.opening?.kind === 'link' && desk.open.opening.sessionId === sessionId
+
+  const search = async (sessionId: SessionId): Promise<Whereabouts> => {
+    await firstRoster
+    for (;;) {
+      try {
+        return await whereIs(sessionId)
+      } catch (error) {
+        if (!(error instanceof Offline) || !stillAsked(sessionId)) throw error
+      }
+      await nextOnline()
+    }
+  }
+
+  const seek = (sessionId: SessionId) => {
+    if (seeks.has(sessionId)) return
+    const sought = search(sessionId).then(
+      (found): Outcome<SessionId | null> => {
+        seeks.delete(sessionId)
+        take({ on: 'sought', sessionId, found })
+        return { ok: true, value: found.in === 'none' ? null : sessionId }
+      },
+      (error: unknown): Outcome<never> => {
+        seeks.delete(sessionId)
+        take({ on: 'unsought', sessionId })
+        return { ok: false, refusal: refusalOf(error) }
+      }
+    )
+    seeks.set(sessionId, sought)
   }
 
   /** As Hermes Desktop makes one (hermes-bots/canonical-chat.ts:538-556). A titled create is get-or-create on the gateway (gateway/session_controls.py:505-531). */
@@ -156,7 +227,11 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
 
   return {
     get open() { return desk.open },
-    settle: ({ bots, named, list }) => void take({ on: 'facts', named, launch: launchChat(conn.reach, bots, named, list) }),
+    settle: facts => {
+      bots = facts.bots
+      take({ on: 'facts', named: facts.named, launch: launchChat(conn.reach, bots, facts.named, facts.list) })
+      if (bots.state !== 'loading' && bots.state !== 'offline') rosterKnown()
+    },
     ask: async ref => {
       if (ref.kind === 'new') {
         take({ on: 'asked', ref })
@@ -166,14 +241,23 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
         take({ on: 'asked', ref })
         return { ok: true, value: ref.sessionId }
       }
+      if (ref.kind === 'link') {
+        for (const effect of take({ on: 'asked', ref })) if ('seek' in effect) seek(effect.seek)
+        return seeks.get(ref.sessionId) ?? { ok: true, value: ref.sessionId }
+      }
       const unreachable = reachable()
       if (unreachable !== null) return unreachable
-      for (const effect of take({ on: 'asked', ref })) find(effect.find)
+      for (const effect of take({ on: 'asked', ref })) if ('find' in effect) find(effect.find)
       return finds.get(ref.bot) ?? { ok: true, value: chatOf(desk, ref.bot) ?? null }
     },
     start: chat => (chat.kind === 'bot' ? startBot(chat.bot) : startNew(chat.bot, chat.draftId)),
     botOf: id => ownerOf(desk, id),
     listed: (bot, sessions) => void take({ on: 'listed', bot, sessions }),
-    branched: made => void take({ on: 'branched', ...made })
+    branched: made => void take({ on: 'branched', ...made }),
+    online: () => {
+      const waiting = backOnline
+      backOnline = []
+      for (const wake of waiting) wake()
+    }
   }
 }

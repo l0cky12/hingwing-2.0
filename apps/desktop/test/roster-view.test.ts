@@ -9,9 +9,9 @@ const outline = (view: ListView) => (view.show !== 'roster' ? view : [
 ])
 const id = (name: string) => name as BotId
 const showing = (bot: string | null, sessionId: string | null = 's1'): OpenChat =>
-  ({ shown: (bot === null ? { kind: 'chat', bot, sessionId } : { kind: 'bot', bot, sessionId }) as OpenChat['shown'], opening: null })
+  ({ shown: (bot === null ? { kind: 'chat', bot, sessionId } : { kind: 'bot', bot, sessionId }) as OpenChat['shown'], opening: null, missing: null })
 const drafting = (bot: string | null, sessionId: string | null = null): OpenChat =>
-  ({ shown: { kind: 'new', bot: bot as BotId | null, draftId: 'd1', sessionId: sessionId as SessionId }, opening: null })
+  ({ shown: { kind: 'new', bot: bot as BotId | null, draftId: 'd1', sessionId: sessionId as SessionId }, opening: null, missing: null })
 
 describe('what the bot list shows', () => {
   it('is empty and busy until Hermes has answered', () => {
@@ -77,7 +77,7 @@ describe('the selected bot', () => {
   it('is no bot when the open chat has none, when its bot is gone, or when nothing is open', () => {
     expect(selectedIn(APPROVED, showing(null))).toBeNull()
     expect(selectedIn(APPROVED, showing('retired'))).toBeNull()
-    expect(selectedIn(APPROVED, { shown: null, opening: null })).toBeNull()
+    expect(selectedIn(APPROVED, { shown: null, opening: null, missing: null })).toBeNull()
     expect(selectedIn(APPROVED, undefined)).toBeNull()
   })
 

@@ -1241,6 +1241,12 @@ export function parseBranched(reply: SessionMutateResult): SessionId | null {
   return (isObject(reply) ? words(reply.branched_session_id) : null) as SessionId | null
 }
 
+export function parseListPage(reply: CanonicalListResult): { readonly sessions: readonly SessionId[]; readonly next: string | null } {
+  const rows: readonly unknown[] = isObject(reply) && Array.isArray(reply.sessions) ? reply.sessions : []
+  const sessions = rows.flatMap(row => (isObject(row) && isString(row.session_id) ? [row.session_id as SessionId] : []))
+  return { sessions, next: isObject(reply) ? words(reply.next_cursor) : null }
+}
+
 /** The reply to `session.list {title}`: the one session with that title (gateway/session_controls.py:617-638), or null. */
 export function parseTitled(reply: CanonicalListResult): SessionId | null {
   const [row]: readonly unknown[] = isObject(reply) && Array.isArray(reply.sessions) ? reply.sessions : []

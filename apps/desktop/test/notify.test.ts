@@ -81,7 +81,7 @@ function changing<T>(initial: T): Feed<T> & { set(next: T): void } {
   }
 }
 
-const showing = (sessionId: SessionId | null): OpenChat => ({ shown: sessionId === null ? null : { kind: 'chat', bot: null, sessionId }, opening: null })
+const showing = (sessionId: SessionId | null): OpenChat => ({ shown: sessionId === null ? null : { kind: 'chat', bot: null, sessionId }, opening: null, missing: null })
 
 function stubHermes(first: Session) {
   const open = changing(showing(first.id))
