@@ -1049,7 +1049,9 @@ export class ScriptedGateway {
     this.step++
     if (step.error !== undefined) throw new Refused(step.error.message, step.error)
     AFTER[method]?.(this.view, params, step.reply)
-    if (method === 'session.mutate') this.publishReceipt()
+    if (method === 'session.mutate' || method === 'rollback.restore') this.publishReceipt()
+    // A read right after a call says what that call left, so it holds before the reply goes out.
+    for (let next = this.fixture.steps[this.step]; next !== undefined && 'reads' in next; next = this.fixture.steps[this.step]) this.play(next)
     return step.reply
   }
 
@@ -1057,6 +1059,7 @@ export class ScriptedGateway {
    * A committed mutation publishes its receipt as `session.updated` before the reply goes out
    * (gateway/session_mutations.py:347-352, as `commitModel` does), so the steps after a `session.mutate`
    * step up to the next awaited call play now. Played after the reply they would race the client's next call.
+   * A whole-folder restore commits its rewind the same way before it answers (gateway/session_tui_ops.py:350-375).
    */
   private publishReceipt(): void {
     for (let next = this.fixture.steps[this.step]; next !== undefined && !('await' in next || 'answer' in next); next = this.fixture.steps[this.step]) this.play(next)

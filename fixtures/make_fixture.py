@@ -54,6 +54,13 @@ The stories are in ``STORIES``:
   (``config.set``), a move to ``docs`` (``session.mutate workspace``) and ``session.export`` as Markdown. The header
   carries the real ``commands.catalog`` reply, the attach reply's ``cwd``, ``reasoning_effort``, ``fast`` and ``yolo``
   as ``info``, and the real ``complete.path`` reply for ``@no`` as ``paths``, which the scripted gateway answers from.
+- ``panels`` writes fixtures/panels.jsonl: a chat in /tmp/hermes-proto-work whose first turn starts a docs server in the
+  background and writes release.md, and whose second turn patches it. The story then reacts 👍 to the first turn's answer
+  (``message.react``), kills the server (``process.kill``), sets a goal, adds a criterion and pauses the goal
+  (``session.control``), lists the checkpoints (``rollback.list``), reads the diff since the first one (``rollback.diff``)
+  and restores the folder to the second one (``rollback.restore``), which takes back the second turn. The header's
+  ``reads`` and each ``reads`` step are what ``process.list`` and ``session.control.read`` answer from there on, read
+  where Hermes's state changed: before each turn's end frame, after each call, and before the goal's first update.
 
 The script runs the canonical gateway in-process, the way Hermes's own
 tests/gateway/test_authority_complete_persisted_turn.py does: a real ``SessionAuthority`` over a
@@ -164,6 +171,20 @@ Scripted in ``commands``: the model's part, because no provider exists here. The
 stories above; ``/btw``'s answer (``agent.side_question.answer_side_question``); ``/bg``'s agent, which answers its
 prompt at once in place of ``AIAgent``; and the compression's summary (``ContextCompressor.compress``), which keeps
 the last turn as it was.
+
+Real in ``panels``: every call and frame of the story through ``AuthorityConnection.dispatch``, on the same
+``GatewayRunner`` as ``commands``. The server is a real ``terminal(background=true)`` process in Hermes's process
+registry, listed and killed by its owner. Each checkpoint is the agent's own ``_ensure_file_checkpoint``
+(agent/tool_executor.py) on a ``CheckpointManager`` built from the session's frozen policy, in a profile whose config turns
+checkpoints on. The reaction, the criterion, the pause, the list, the diff, the restore and its rewind are Hermes's
+handlers over its store; each ``session.control.update`` is ``session_control_actions.publish``. The rows after the
+restore are a real ``session.resume {display_projection: true}``, and carry the reaction in ``display_metadata``.
+
+Scripted in ``panels``: the model's part, as above; the goal, set by ``GoalManager.set`` with a one-line contract, where
+``/goal`` itself would have a model draft the contract and start a turn; and each checkpoint's git dates, taken from the
+story's clock so its hash repeats. The server's pid in the ``terminal`` result differs between runs. Hermes's canonical
+route sends no ``status.update {kind: 'process'}`` (only ``tui_gateway`` does), so a process is read again at a turn's
+end and after a kill.
 
 Not emitted, because only a provider produces them: ``thinking.delta`` (spinner text while a request
 is in flight) and ``session.usage`` (token counts).
@@ -740,8 +761,39 @@ COMMANDS = Story(
     files={"notes.md": NOTES, "docs/plan.md": "# Plan\n\n- date: next week\n- sign-off: the owner\n"},
     doomed=None, answer=None, approves=False)
 
+SERVE = "echo 'serving the docs on :8000'; exec sleep 600"
+
+
+def serving(turn, agent):
+    """Waits for the server's first line, so every list read after the step holds it."""
+    from tools.process_registry import process_registry
+    for _ in range(1000):
+        if any("serving the docs" in held.output_buffer for held in list(process_registry._running.values())):
+            return
+        threading.Event().wait(0.01)
+    stop("the docs server printed nothing")
+RELEASE_NOTES = "# Release notes\n\n- the chat view\n- the gateway socket\n"
+DATED = "- date: next Friday\n"
+GOAL = "Ship the release notes"
+GOAL_OUTCOME = "release.md lists every change in the release"
+CRITERION = "each change names its pull request"
+PANELS_REQUEST = "Start the docs server, then write the release notes in release.md."
+DATE_REQUEST = "Add the release date to release.md."
+PANELS_TURNS = {
+    PANELS_REQUEST: [
+        {"say": "Starting the docs server first.", "call": ("terminal", {"command": SERVE, "background": True}), "ms": 40, "after": serving},
+        {"say": "", "call": ("write_file", {"path": f"{WORK}/release.md", "content": RELEASE_NOTES}), "ms": 12, "checkpoint": True},
+        {"say": "The docs server is running, and release.md lists the two changes.", "call": None}],
+    DATE_REQUEST: [
+        {"say": "", "call": ("patch", {"mode": "replace", "path": f"{WORK}/release.md", "old_string": "- the gateway socket\n",
+                                         "new_string": "- the gateway socket\n" + DATED}), "ms": 15, "checkpoint": True},
+        {"say": "release.md now says the release is next Friday.", "call": None}]}
+PANELS = Story(
+    request=PANELS_REQUEST, steps=[], out="panels.jsonl", seed=20261124, files={"notes.md": NOTES}, doomed=None, answer=None, approves=False)
+
 STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN, "images": IMAGES, "preview": PREVIEW,
-           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "says": SAYS, "asks": ASKS, "queue": QUEUE, "commands": COMMANDS}
+           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "says": SAYS, "asks": ASKS, "queue": QUEUE, "commands": COMMANDS,
+           "panels": PANELS}
 NAME = sys.argv[1] if len(sys.argv) > 1 else "errand"
 if NAME not in STORIES:
     sys.exit(f"no story named {NAME!r}; pick one of: {', '.join(STORIES)}")
@@ -1509,6 +1561,166 @@ async def commands_main():
     stop(None)
 
 
+async def panels_main():
+    # Hermes keeps no checkpoints unless the profile says so (hermes_cli/config_defaults.py:486-487); the session freezes it at launch.
+    Path(HOME, "config.yaml").write_text("checkpoints:\n  enabled: true\n")
+    db = open_persistence(profile_scope(home=HOME))
+    loop = asyncio.get_running_loop()
+    client = {"user_id": USER, "native_bootstrap": True}
+    history = []
+    rpc_id = 0
+
+    async def call(connection, method, params):
+        nonlocal rpc_id
+        rpc_id += 1
+        reply = await connection.dispatch({"jsonrpc": "2.0", "id": rpc_id, "method": method, "params": params})
+        if "error" in reply:
+            stop(f"{method} refused: {reply['error']}")
+        return reply["result"]
+
+    runner, authority = policy_owner(db, "fixture", db.runtime.begin_epoch(instance_id="fixture"))
+    from agent.checkpoints import manager as checkpoint_store
+    from agent.checkpoints.manager import CheckpointManager
+    git = checkpoint_store._run_git
+
+    def dated_git(*args, extra_env=None, **kwargs):
+        """A checkpoint's commit dated on the story's clock, so its hash and time repeat across runs."""
+        when = f"@{int(time.time())} +0000"
+        return git(*args, extra_env={**(extra_env or {}), "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}, **kwargs)
+    checkpoint_store._run_git = dated_git
+    from agent.tool_executor import _ensure_file_checkpoint
+    from gateway import session_control_actions
+    from gateway.run import _checkpoint_agent_kwargs
+    from gateway.session_policy import policy_for_source
+    receipts = []
+
+    async def scripted_execution(authority, ref, row):
+        text = row["payload"]["text"]
+        live = authority.sessions[ref.session_id]
+        turn = turn_of(runner, live, authority, ref, row)
+        call_ids = ["call_" + uuid.uuid4().hex[:24] for _ in PANELS_TURNS[text]]
+        # The agent's own checkpoint before a file tool (agent/tool_executor.py:95-114), from the session's frozen policy.
+        kwargs = _checkpoint_agent_kwargs(policy_for_source(runner, live.source).config(authority, secrets=False))
+        checkpoints = SimpleNamespace(_checkpoint_mgr=CheckpointManager(enabled=bool(kwargs["checkpoints_enabled"]), **{
+            key[len("checkpoint_"):]: value for key, value in kwargs.items() if key.startswith("checkpoint_")}))
+        steps = [{**step, "stage": (lambda step=step: _ensure_file_checkpoint(checkpoints, step["call"][0], step["call"][1], ref.session_id))}
+                 if step.get("checkpoint") else step for step in PANELS_TURNS[text]]
+        result = await asyncio.to_thread(play_turn, turn, db, list(history), call_ids, text, steps, history)
+        receipts.append(result["persisted_turn"])
+        authority.pending_results[row["admission_id"]] = {"result": result, "usage": {}}
+        return None
+
+    session_finite.execute_finite_admission = scripted_execution
+    recorder = Recorder(loop)
+    socket = AuthorityConnection(authority, recorder, client)
+    opened = await call(socket, "session.create", {"source": "gui", "cwd": WORK, "model": "gpt-5.4", "provider": "openai"})
+    session_id = opened["session_id"]
+    live = authority.sessions[session_id]
+    live.event_stream.observers.add(recorder.observe)
+    describe = await call(socket, "runtime.describe", {})
+    listing = await call(socket, "session.list", {})
+    reader = AuthorityConnection(authority, SimpleNamespace(write=lambda obj: True), client)
+
+    async def reads():
+        return {"process.list": await call(reader, "process.list", {"session_id": session_id}),
+                "session.control.read": await call(reader, "session.control.read", {"session_id": session_id})}
+
+    held = {}
+
+    async def read_at(index):
+        """A ``reads`` step at ``index`` with each read whose answer changed: from there on a reader gets Hermes's state then."""
+        now = await reads()
+        changed = {method: reply for method, reply in now.items() if held.get(method) != reply}
+        held.update(now)
+        if changed:
+            recorder.steps.insert(index, {"at": recorder.steps[index - 1]["at"], "reads": changed})
+
+    async def story_call(method, params, pause=1500):
+        CLOCK.tick(pause)
+        at, mark = CLOCK.now(), len(recorder.steps)
+        reply = await call(socket, method, params)
+        recorder.steps.insert(mark, {"at": at, "await": method, "params": params, "reply": reply})
+        # Right after the call: what it changed holds before anything it published.
+        await read_at(mark + 1)
+        return reply
+
+    async def settled(text):
+        await story_call("prompt.submit", {"session_id": session_id, "text": text, "input_id": "input_" + uuid.uuid4().hex[:16]})
+        await asyncio.wait_for(recorder.push_of("message.complete"), 60)
+        for _ in range(1200):
+            if not authority._pending_rows(live_ref(authority, session_id)):
+                break
+            await asyncio.sleep(0.01)
+        else:
+            stop(f"the turn of {text!r} never left the queue")
+        # What a reader gets once the turn has ended: before the end frame, which is what tells a viewer to read the processes.
+        await read_at(next(at for at in range(len(recorder.steps) - 1, -1, -1)
+                           if recorder.steps[at].get("push", {}).get("params", {}).get("type") == "message.complete"))
+
+    async def stored_rows():
+        fresh = AuthorityConnection(authority, SimpleNamespace(write=lambda obj: True), client)
+        return (await call(fresh, "session.resume", {"session_id": session_id, "display_projection": True}))["display_messages"]
+
+    start_reads = await reads()
+    held.update(start_reads)
+    recorder.recording = True
+    began = CLOCK.now()
+    await settled(PANELS_REQUEST)
+    await settled(DATE_REQUEST)
+    [server] = (await reads())["process.list"]["processes"]
+    reply_row = receipts[0]["final_assistant_row_id"]
+    await story_call("message.react", {"session_id": session_id, "row_id": reply_row, "emoji": "👍"})
+    await story_call("process.kill", {"session_id": session_id, "process_id": server["session_id"]})
+
+    # /goal's own handler drafts the contract with a model and kicks off a turn; the goal it sets is GoalManager.set's.
+    from hermes_cli.goals import GoalContract, GoalManager
+    CLOCK.tick(1500)
+    GoalManager(session_id).set(GOAL, contract=GoalContract(outcome=GOAL_OUTCOME))
+    mark = len(recorder.steps)
+    session_control_actions.publish(authority, session_id)
+    await asyncio.wait_for(recorder.push_of("session.control.update"), 60)
+    await read_at(mark)
+    await story_call("session.control", {"session_id": session_id, "action": "subgoal.add", "args": {"text": CRITERION}})
+    await asyncio.wait_for(recorder.push_of("session.control.update"), 60)
+    await story_call("session.control", {"session_id": session_id, "action": "goal.pause", "args": {}})
+    await asyncio.wait_for(recorder.push_of("session.control.update"), 60)
+
+    listed = await story_call("rollback.list", {"session_id": session_id})
+    before_date, before_notes = listed["checkpoints"][0]["hash"], listed["checkpoints"][-1]["hash"]
+    await story_call("rollback.diff", {"session_id": session_id, "hash": before_notes})
+    restored = await story_call("rollback.restore", {"session_id": session_id, "hash": before_date})
+    if not restored.get("history_removed"):
+        stop(f"the restore took back no turn: {restored}")
+    # The rows a rebuild reads once the restore has rewound the chat, which it does before it answers.
+    at = next(index for index, step in enumerate(recorder.steps) if step.get("await") == "rollback.restore")
+    recorder.steps.insert(at, {"at": recorder.steps[at]["at"], "stored": await stored_rows()})
+
+    pushes = [step["push"] for step in recorder.steps if "push" in step]
+    for _ in range(100):
+        if len(recorder.written) >= len(pushes):
+            break
+        await asyncio.sleep(0.05)
+    recorder.recording = False
+    if recorder.written != pushes:
+        stop("the socket received other frames than the session published")
+    header = {"fixture": 1, "hermes": HERMES_VERSION, "source": "generated", "sessionId": session_id, "describe": describe, "list": listing,
+              "stored": opened["display_messages"] if "display_messages" in opened else opened["messages"], "reads": start_reads}
+    with OUT.open("w") as out:
+        for line in [header, *({**step, "at": step["at"] - began} for step in recorder.steps)]:
+            out.write(json.dumps(line, ensure_ascii=False) + "\n")
+        out.flush()
+    print(f"wrote {OUT}: {len(pushes)} pushes, {len(recorder.steps) - len(pushes)} other steps", file=sys.stderr)
+    stop(None)
+
+
+async def panels_story():
+    try:
+        await panels_main()
+    except Exception:
+        import traceback
+        stop(traceback.format_exc())
+
+
 async def commands_story():
     try:
         await commands_main()
@@ -1525,4 +1737,4 @@ async def queue_story():
         stop(traceback.format_exc())
 
 
-asyncio.run({"queue": queue_story, "commands": commands_story}.get(NAME, main)())
+asyncio.run({"queue": queue_story, "commands": commands_story, "panels": panels_story}.get(NAME, main)())

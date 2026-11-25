@@ -1,6 +1,6 @@
-import { loadFixture, type Fixture, type FixtureStep } from '../../src/testing/fixture'
+import { loadFixture, type Fixture, type FixtureStep, type Reads } from '../../src/testing/fixture'
 import type { Admission } from '../../src/domain/queue'
-import { parseCorrection, parseEvent, parseFast, parsePending, parseRows, parseServerRequest } from '../../src/wire/parse'
+import { parseControl, parseCorrection, parseEvent, parseFast, parsePending, parseProcesses, parseReactions, parseRows, parseServerRequest } from '../../src/wire/parse'
 import {
   emptyTracked, reduce,
   type Cursor, type SessionInput, type Snapshot, type StampedEvent, type Tracked
@@ -11,6 +11,7 @@ export type Beat =
   | { readonly kind: 'frame'; readonly frame: StampedEvent }
   | { readonly kind: 'user'; readonly inputs: readonly SessionInput[] }
   | { readonly kind: 'stored'; readonly rows: readonly unknown[] }
+  | { readonly kind: 'reads'; readonly reads: Reads }
 
 export interface Story {
   readonly fixture: Fixture
@@ -74,7 +75,16 @@ function userInputs({ await: method, params: sent, reply: answered }: Call, next
       if (params.operation === 'rewind') throw new Error('the direct fold has no rewind')
       return []
     case 'session.export':
+    case 'session.control':
+    case 'rollback.list':
+    case 'rollback.diff':
       return []
+    case 'process.kill':
+      return [local({ did: 'killed' })]
+    case 'message.react':
+      return [local({ did: 'reacted', rowId: reply?.row_id as number, reactions: parseReactions(reply?.reactions) })]
+    case 'rollback.restore':
+      return Number(reply?.history_removed ?? 0) > 0 ? [local({ did: 'rewritten' })] : []
     case 'connection.respond': {
       const requestId = params.op_id as RequestId
       return [local({ did: 'answer', requestId, reply: { kind: 'withheld' } }), local({ did: 'answer.accepted', requestId, then: reply?.settled === true ? 'settles' : 'waits' })]
@@ -122,6 +132,8 @@ export function readStory(path: string): Story {
       beats.push({ kind: 'user', inputs: answerInputs(step) })
     } else if ('stored' in step) {
       beats.push({ kind: 'stored', rows: step.stored })
+    } else if ('reads' in step) {
+      beats.push({ kind: 'reads', reads: step.reads })
     }
   }
   if (epoch === null) throw new Error('fixture has no frames')
@@ -171,11 +183,21 @@ function attempt(state: Tracked): number {
   return state.gate.attempt
 }
 
+/** What a watched chat learns from the panel reads Hermes answers now. */
+function read(state: Tracked, reads: Reads): Tracked {
+  const listed = reads['process.list'] as Parameters<typeof parseProcesses>[0] | undefined
+  const control = reads['session.control.read'] as { control?: unknown } | undefined
+  return reduce(state, {
+    in: 'facts', attempt: state.fence.attaches, heard: state.fence.heard,
+    ...(listed === undefined ? {} : { processes: parseProcesses(listed) }), ...(control === undefined ? {} : { control: parseControl(control.control) })
+  })
+}
+
 function open(story: Story): Tracked {
   const attaching = reduce(emptyTracked(story.sessionId), { in: 'attach' })
   const rows = parseRows(story.fixture.header.stored)
   const snapshot = snapshotAfter(story, [], 'sub-1', { ...rows, older: null })
-  return reduce(attaching, { in: 'attached', attempt: attempt(attaching), snapshot, replay: null })
+  return read(reduce(attaching, { in: 'attached', attempt: attempt(attaching), snapshot, replay: null }), story.fixture.header.reads ?? {})
 }
 
 export interface Moment { readonly beat: number; readonly state: Tracked }
@@ -190,6 +212,8 @@ export function fold(story: Story, onMoment?: (moment: Moment) => void): Tracked
       state = reduce(state, { in: 'event', frame: beat.frame })
     } else if (beat.kind === 'stored') {
       stored = beat.rows
+    } else if (beat.kind === 'reads') {
+      state = read(state, beat.reads)
     } else {
       state = beat.inputs.reduce(reduce, state)
     }
@@ -214,6 +238,8 @@ export function foldWithDrop(story: Story, afterFrame: number, missed: number): 
       seen++
     } else if (beat.kind === 'user') {
       state = beat.inputs.reduce(reduce, state)
+    } else if (beat.kind === 'reads') {
+      state = read(state, beat.reads)
     }
   }
   for (; index < story.beats.length && seen < afterFrame; index++) play(story.beats[index]!)
@@ -251,6 +277,7 @@ export const says = () => readStory(new URL('../../../../fixtures/says.jsonl', i
 export const asks = () => readStory(new URL('../../../../fixtures/asks.jsonl', import.meta.url).pathname)
 export const queue = () => readStory(new URL('../../../../fixtures/queue.jsonl', import.meta.url).pathname)
 export const commands = () => readStory(new URL('../../../../fixtures/commands.jsonl', import.meta.url).pathname)
+export const panels = () => readStory(new URL('../../../../fixtures/panels.jsonl', import.meta.url).pathname)
 
 export const ignoringClocks = <T extends { readonly history: readonly SettledTurn[]; readonly interlude: SessionContent['interlude'] }>(session: T): T => {
   const unclocked = <I extends Item<'settled'>>(item: I): I =>
