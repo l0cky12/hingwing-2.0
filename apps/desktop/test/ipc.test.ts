@@ -1,5 +1,5 @@
 import type { Hermes } from '@highwing/hermes'
-import type { Bots, Link, OpenChat, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
+import type { Bots, Link, OpenChat, RelayDesk, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { applyPush, CHANNEL, isWebLink, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Push, type Topic } from '../src/ipc-contract'
@@ -164,6 +164,7 @@ const LINK: Link = { state: 'blocked', why: 'hermes-missing', message: 'A link o
 const SIDEBAR: Sidebar = { bot: null, status: 'stale', rows: [] }
 const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] } }
 const NOTHING_OPEN: OpenChat = { shown: null, opening: null }
+const NO_RELAYS: RelayDesk = { supported: false, bySession: {} }
 
 function harness() {
   const listeners = new Map<string, (event: IpcEvent, ...args: unknown[]) => void>()
@@ -205,6 +206,7 @@ function harness() {
         return () => void botsListeners.delete(listener)
       }
     },
+    relay: still(NO_RELAYS),
     slash: {
       get: () => catalog,
       subscribe: (listener: (value: SlashCatalog) => void) => {
@@ -289,7 +291,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))

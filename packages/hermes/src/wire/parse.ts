@@ -9,9 +9,10 @@ import type {
   Ask, Began, FileDiff, Generation, HelperEnd, HelperId, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, PromptId, SessionId,
   SessionUsage, SettledTurn, SidebarRow, ToolId, ToolResult, TurnId
 } from '../domain/session'
+import type { RelayState } from '../domain/relay'
 import type { SlashCatalog, SlashEntry } from '../domain/slash'
 import type {
-  CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalProfilesResult, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
+  CanonicalBotDeliverResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalProfilesResult, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
   CanonicalSnapshot, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
   MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, ProfilesCreateResult, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult,
   SessionStats, SessionTitlePayload, SessionUsagePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload, SubagentEventPayload,
@@ -708,6 +709,7 @@ export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
       isDefault: row.is_default === true,
       section: words(meta.sectionName),
       preview: isObject(session) ? words(session.preview) : null,
+      description: words(row.description),
       chat: isObject(row.canonical_session) ? titledId(row.canonical_session) : null
     }]
   })
@@ -723,6 +725,31 @@ export function parseCreated(reply: ProfilesCreateResult): BotCreated {
     bot: (leaf ?? canonicalBotId(isString(reply.name) ? reply.name : '')) as BotId,
     warnings: Array.isArray(reply.warnings) ? reply.warnings.flatMap(warning => words(warning) ?? []) : []
   }
+}
+
+/** A target that is not running answers with one of these, as a refusal or in a failed receipt (tui_gateway/methods_bot_relay.py:122). */
+const NOT_RUNNING: ReadonlySet<string> = new Set(['runtime_unavailable', 'runtime_offline'])
+
+/** What to say when `name` never got the message because of `reason`, or null for a reason with no words of its own. */
+export function undeliveredWords(reason: string | null, name: string): string | null {
+  if (reason === 'unknown_profile') return `${name} isn't on this Hermes any more, so it didn't get your message.`
+  return NOT_RUNNING.has(reason ?? '') ? `${name} is offline, so it didn't get your message.` : null
+}
+
+const RECEIPT_WORDS: { readonly [status: string]: (name: string, receipt: Obj) => RelayState } = {
+  settled: (name, { reply }) => (isString(reply) && reply.trim() !== '' ? { s: 'answered', reply } : { s: 'failed', words: `${name} sent back an empty reply.` }),
+  failed: (name, { error, reason }) => {
+    const said = words(error) ?? words(reason)
+    return { s: 'failed', words: undeliveredWords(words(reason), name) ?? undeliveredWords(words(error), name) ?? (said === null ? `${name} couldn't answer.` : `${name} couldn't answer: ${said}`) }
+  },
+  cancelled: name => ({ s: 'failed', words: `${name}'s turn was stopped before it answered.` })
+}
+
+/** The receipt of `bot_relay.deliver` as the one answer of `name`. A receipt that is not final when the call returns carries no answer. */
+export function parseDelivery(reply: CanonicalBotDeliverResult, name: string): RelayState {
+  const receipt: Obj = isObject(reply) ? reply : {}
+  const read = isString(receipt.status) && Object.hasOwn(RECEIPT_WORDS, receipt.status) ? RECEIPT_WORDS[receipt.status] : undefined
+  return read?.(name, receipt) ?? { s: 'failed', words: `${name} got your message, but Hermes didn't pass back an answer.` }
 }
 
 /** The session a Bot Chat is now: `resolved_id` once a compression moved it, as Hermes's Bots plugin opens it (hermes-bots/canonical-chat.ts:530). */

@@ -195,6 +195,16 @@ describe('loadFixture', () => {
     expect(() => loadFixture(denied)).toThrow(`${denied}:1: "yoloDenied" must be true or false`)
   })
 
+  it('reads what each bot does with a message handed to it, and refuses an entry that is neither a reply nor a refusal', () => {
+    const relay = { rae: { reply: 'Done.', delay_ms: 1500 }, sam: { refuse: 'runtime_unavailable' }, ada: { reply: 'Yes.' } }
+    expect(loadFixture(write([{ ...header, relay }])).header.relay).toEqual(relay)
+    expect(loadFixture(write([header])).header).not.toHaveProperty('relay')
+    for (const entry of [{}, { reply: 7 }, { reply: 'Done.', delay_ms: -1 }, { reply: 'Done.', refuse: 'busy' }, { refuse: '' }, 'Done.']) {
+      const bad = write([{ ...header, relay: { rae: entry } }])
+      expect(() => loadFixture(bad), JSON.stringify(entry)).toThrow(`${bad}:1: "relay" must map a profile to { reply, delay_ms? } or { refuse }`)
+    }
+  })
+
   it('names the line of the prototype\'s envelope', () => {
     const path = write([header, { at: 0, push: { kind: 'event', type: 'message.delta', session_id: 's', seq: 1, payload: {} } }])
     expect(() => loadFixture(path)).toThrow(`${path}:2: "push" must be a JSON-RPC 2.0 frame with a method`)

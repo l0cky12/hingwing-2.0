@@ -28,7 +28,7 @@ interface BotsPanelProps {
   readonly onModels: () => Promise<CommandOutcome<ModelMenu>>
 }
 
-function Avatar({ bot, size }: { readonly bot: Bot; readonly size: number }) {
+export function Avatar({ bot, size }: { readonly bot: Pick<Bot, 'name' | 'tone'>; readonly size: number }) {
   return <span className={`avatar tone-${bot.tone}`} style={{ width: size, height: size, fontSize: size * 0.42 }} aria-hidden>{initialOf(bot.name)}</span>
 }
 

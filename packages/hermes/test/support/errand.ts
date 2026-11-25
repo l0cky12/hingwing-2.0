@@ -20,7 +20,14 @@ const { chats: SEEDS, ...SEEDED_PROFILES } = JSON.parse(readFileSync(fileURLToPa
 export const WITH_CHATS: Fixture = { ...ERRAND, header: { ...ERRAND.header, profiles: SEEDED_PROFILES, chats: SEEDS } }
 export const [REMINDER, INVOICES, DOWNLOADS] = ['local-0101', 'local-0102', 'local-0103'] as (typeof SESSION)[] as [typeof SESSION, typeof SESSION, typeof SESSION]
 
-export const stepOf = (method: string) => ERRAND.steps.findIndex(step => 'await' in step && step.await === method)
+const { relay: RELAY, ...TEAM_PROFILES } = JSON.parse(readFileSync(fileURLToPath(new URL('../../../../fixtures/profiles/team.json', import.meta.url)), 'utf8')) as { relay: NonNullable<Fixture['header']['relay']> }
+/** Ada, the default bot, with Sam and Rae, on a Hermes that cannot hand a message to another bot. */
+export const TEAM_NO_RELAY: Fixture = { ...ERRAND, header: { ...ERRAND.header, profiles: TEAM_PROFILES } }
+/** The same three on a Hermes that can: Rae answers after 1500 ms and Sam is not running. */
+export const TEAM: Fixture = { ...TEAM_NO_RELAY, header: { ...TEAM_NO_RELAY.header, relay: RELAY } }
+export const RAE_SAID = (RELAY.rae as { reply: string }).reply
+
+export const stepOf =(method: string) => ERRAND.steps.findIndex(step => 'await' in step && step.await === method)
 export const paramsOf = (method: string) => (ERRAND.steps[stepOf(method)] as Extract<FixtureStep, { await: string }>).params as Record<string, unknown>
 
 export function withSudo(afterPush: number): Fixture {

@@ -1,4 +1,4 @@
-import { activityOf, modelViewOf, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type SessionId, type Shown } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type Relay, type SessionId, type Shown } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
@@ -16,6 +16,7 @@ import { Thread } from './Thread'
 const PAGE = 0.875
 const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 const LONGEST_WAIT_MS = 60_000
+const NO_RELAYS: readonly Relay[] = []
 
 const distanceFrom = (element: HTMLElement) => element.scrollHeight - element.scrollTop - element.clientHeight
 
@@ -26,6 +27,7 @@ const holdsText = (target: EventTarget | null) =>
 export function Chat({ chat }: { readonly chat: Shown }) {
   const id = chat.sessionId
   const session = useTopic(id === null ? null : `session:${id}`)
+  const relays = useTopic('relay')?.bySession[id ?? ''] ?? NO_RELAYS
   const [tick, wake] = useReducer((count: number) => count + 1, 0)
   const view = useMemo(() => (session === undefined ? null : threadView(session, { now: Date.now(), timeZone: TIME_ZONE })), [session, tick])
   const progress = useMemo(() => (view === null ? '' : progressOf(view)), [view])
@@ -51,7 +53,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     if (element === null) return
     if (following.current) element.scrollTop = element.scrollHeight
     else setPlace(held => placeAfter(held, distanceFrom(element), progress))
-  }, [view, progress])
+  }, [view, progress, relays])
 
   useLayoutEffect(() => {
     const element = scroller.current
@@ -190,7 +192,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
           <FileCallContext value={fileCall}>
             <ImageSessionContext value={id}>
               <Thread
-                view={view} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
+                view={view} relays={relays} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
                 canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
               />
             </ImageSessionContext>

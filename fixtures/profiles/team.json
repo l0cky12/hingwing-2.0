@@ -1,0 +1,91 @@
+{
+  "profiles": [
+    {
+      "name": "default",
+      "path": "/tmp/hermes-proto-home",
+      "is_default": true,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Ada",
+          "color": "#f5f5f4",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "sam",
+      "path": "/tmp/hermes-proto-home/profiles/sam",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "Finds and fixes bugs",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Sam",
+          "color": "#0ea5e9",
+          "shape": "blobatar::round",
+          "created": 1793000000001
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "rae",
+      "path": "/tmp/hermes-proto-home/profiles/rae",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "Writes the weekly report",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Rae",
+          "color": "#f43f5e",
+          "shape": "blobatar::round",
+          "created": 1793000000002
+        }
+      },
+      "has_avatar": false
+    }
+  ],
+  "relay": {
+    "rae": {
+      "reply": "The weekly report is drafted. **Three** items need your eye.",
+      "delay_ms": 1500
+    },
+    "sam": {
+      "refuse": "runtime_unavailable"
+    }
+  }
+}

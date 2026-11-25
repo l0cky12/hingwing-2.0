@@ -1,7 +1,7 @@
 import { rosterOf, type BotFacts, type BotId, type Bots } from '@highwing/hermes/domain'
 
 export const fact = (id: string, name: string, more: Partial<BotFacts> = {}): BotFacts =>
-  ({ id: id as BotId, name, isDefault: false, section: null, preview: null, chat: null, ...more })
+  ({ id: id as BotId, name, isDefault: false, section: null, preview: null, description: null, chat: null, ...more })
 
 export const listed = (...facts: readonly BotFacts[]): Bots => ({ state: 'listed', roster: rosterOf(facts) })
 

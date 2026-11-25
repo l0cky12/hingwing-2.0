@@ -1,11 +1,13 @@
-import type { PromptId, PromptReply } from '@highwing/hermes/domain'
+import type { PromptId, PromptReply, Relay } from '@highwing/hermes/domain'
 import { fieldId, findInThread, type FindMatch, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Avatar } from '../bots/Bots'
 import { CopyButton } from './Copy'
 import { isCommandKey } from '../keys'
 import { Helper, Plan, Reasoning } from './Helpers'
 import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find'
 import { isOpen, NONE_OPEN, toggled, type OpenState } from './open'
+import { placeRelays } from './relays'
 import { cx, Elapsed, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
 
@@ -177,10 +179,30 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit
   )
 })
 
+export const RelayTurn = memo(function RelayTurn({ relay }: { readonly relay: Relay }) {
+  const { name, state } = relay
+  return (
+    <article className="turn relay">
+      <p className="request">
+        {relay.text}
+        <span className="actions"><CopyButton text={relay.text} name="Copy request" /></span>
+      </p>
+      <div className="relay-reply" role="group" aria-label={name}>
+        <p className="relay-from"><Avatar bot={relay} size={22} /><span>{name}</span></p>
+        {state.s === 'waiting' && <p className="notice" role="status">Waiting for {name}</p>}
+        {state.s === 'answered' && <div className="prose"><Markdown source={state.reply} caret={false} nodeKey={relay.id} /><CopyButton text={state.reply} name="Copy reply" /></div>}
+        {state.s === 'failed' && <p className="err">{state.words}</p>}
+      </div>
+    </article>
+  )
+})
+
 const PENDING_WORDS = { sending: 'Sending', queued: 'Queued' } as const
 
 interface ThreadProps {
   readonly view: ThreadView
+  /** The messages handed to other bots from this chat, oldest first. */
+  readonly relays: readonly Relay[]
   readonly onAnswer: Answer
   readonly onLoadEarlier: () => void
   readonly onFindClosed: () => void
@@ -192,7 +214,7 @@ interface ThreadProps {
   readonly onRegenerate: Rewrite
 }
 
-export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, onEdit, onRegenerate }: ThreadProps) {
+export function Thread({ view, relays, onAnswer, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, onEdit, onRegenerate }: ThreadProps) {
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
   const transcript = useRef<HTMLDivElement>(null)
@@ -203,6 +225,9 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScro
     setOpen(held => toggled(held, key, byDefault))
     setFind(held => (held?.openedByFind.has(key) ? { ...held, openedByFind: new Set([...held.openedByFind].filter(row => row !== key)) } : held))
   }, [])
+
+  const relayed = useMemo(() => placeRelays(relays, view.turns.map(turn => turn.key)), [relays, view.turns])
+  const relayTurns = (held: readonly Relay[] = []) => held.map(relay => <RelayTurn key={relay.id} relay={relay} />)
 
   const query = find?.query ?? ''
   const matches = useMemo(() => findInThread(view, query), [view, query])
@@ -292,12 +317,17 @@ export function Thread({ view, onAnswer, onLoadEarlier, onFindClosed, onFindScro
       <div id="transcript" ref={transcript}>
         {view.earlier === 'more' && <button className="earlier" onClick={onLoadEarlier}>Show earlier turns</button>}
         {view.earlier === 'loading' && <p className="earlier">Loading earlier turns</p>}
+        {relayTurns(relayed.first)}
         {view.turns.map(turn => (
-          <Turn
-            key={turn.key} turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer}
-            canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} onEdit={onEdit} onRegenerate={onRegenerate}
-          />
+          <Fragment key={turn.key}>
+            <Turn
+              turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer}
+              canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} onEdit={onEdit} onRegenerate={onRegenerate}
+            />
+            {relayTurns(relayed.after.get(turn.key))}
+          </Fragment>
         ))}
+        {relayTurns(relayed.last)}
         {view.pending.map(message => (
           <article key={message.key} className="turn pending">
             <p className="request" data-find={fieldId(message.key, 'text')}>{message.text}</p>
