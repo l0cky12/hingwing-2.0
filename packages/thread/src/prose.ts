@@ -4,6 +4,7 @@ export type Inline =
   | { readonly t: 'strong' | 'em' | 'del'; readonly children: readonly Inline[] }
   | { readonly t: 'link'; readonly href: string; readonly children: readonly Inline[] }
   | { readonly t: 'image'; readonly src: string; readonly alt: string }
+  | { readonly t: 'math'; readonly tex: string; readonly display: boolean }
   | { readonly t: 'break' }
 
 export type Align = 'left' | 'center' | 'right' | null
@@ -58,6 +59,21 @@ const fence: Starter = (lines, at) => {
 }
 const code = (info: string, body: readonly string[], open: boolean): Block =>
   ({ kind: 'code', lang: info.trim().split(/\s+/)[0] || null, text: body.join('\n'), open })
+
+const MATH_BLOCK = /^ {0,3}(\$\$|\\\[)/
+const mathBlock: Starter = (lines, at) => {
+  const open = MATH_BLOCK.exec(lines[at]!)
+  if (open === null) return null
+  const source = lines.slice(at).join('\n')
+  const closer = open[1] === '$$' ? '$$' : '\\]'
+  const close = closerOf(source, open[0].length, closer)
+  if (close === -1) return null
+  const lineEnd = source.indexOf('\n', close)
+  const end = lineEnd === -1 ? source.length : lineEnd
+  const tex = source.slice(open[0].length, close).trim()
+  if (tex === '' || source.slice(close + closer.length, end).trim() !== '') return null
+  return { block: { kind: 'paragraph', inline: [{ t: 'math', tex, display: true }] }, next: at + source.slice(0, end).split('\n').length }
+}
 
 const HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/
 const heading: Starter = (lines, at) => {
@@ -141,7 +157,7 @@ const table: Starter = (lines, at) => {
   return { block: { kind: 'table', align, head: names.map(name => parseInline(name)), rows }, next }
 }
 
-const STARTERS: readonly Starter[] = [fence, heading, rule, quote, list, table]
+const STARTERS: readonly Starter[] = [fence, mathBlock, heading, rule, quote, list, table]
 
 function startsBlock(lines: readonly string[], at: number, interrupting: boolean, except?: Starter): Read | null {
   for (const starter of STARTERS) {
@@ -194,6 +210,26 @@ function codeSpanEnd(source: string, at: number): { readonly end: number; readon
   return { end: match.index + run, content }
 }
 
+function closerOf(source: string, from: number, close: string): number {
+  for (let scan = from; scan < source.length;) {
+    if (source.startsWith(close, scan)) return scan
+    if (source[scan] === '`') scan = codeSpanEnd(source, scan)?.end ?? scan + runLength(source, scan)
+    else scan += source[scan] === '\\' ? 2 : 1
+  }
+  return -1
+}
+
+function mathAt(source: string, at: number): { readonly tex: string; readonly display: boolean; readonly end: number } | null {
+  const [open, close] = source.startsWith('$$', at) ? ['$$', '$$'] : source.startsWith('\\(', at) ? ['\\(', '\\)'] : source[at] === '$' ? ['$', '$'] : ['', '']
+  if (open === '') return null
+  const from = at + open.length
+  if (open === '$' && (from >= source.length || SPACE.test(source[from]!))) return null
+  const end = closerOf(source, from, close)
+  if (end === -1 || (open === '$' && (SPACE.test(source[end - 1]!) || /\d/.test(source[end + 1] ?? '')))) return null
+  const tex = source.slice(from, end).trim()
+  return tex === '' ? null : { tex, display: open === '$$', end: end + close.length }
+}
+
 function runLength(source: string, at: number): number {
   let end = at
   while (source[end] === source[at]) end++
@@ -205,7 +241,9 @@ function emphasisEnd(source: string, at: number, mark: string, size: number): { 
   if (after === undefined || SPACE.test(after) || (mark === '_' && WORD.test(source[at - 1] ?? ''))) return null
   for (let scan = at + size; scan < source.length;) {
     const char = source[scan]!
-    if (char === '\\') scan += 2
+    const math = mathAt(source, scan)
+    if (math !== null) scan = math.end
+    else if (char === '\\') scan += 2
     else if (char === '`') scan = codeSpanEnd(source, scan)?.end ?? scan + runLength(source, scan)
     else if (char === mark) {
       const run = runLength(source, scan)
@@ -221,7 +259,9 @@ function labelEnd(source: string, at: number): number {
   let depth = 0
   for (let scan = at; scan < source.length; scan++) {
     const char = source[scan]
-    if (char === '\\') scan++
+    const math = mathAt(source, scan)
+    if (math !== null) scan = math.end - 1
+    else if (char === '\\') scan++
     else if (char === '`') scan = (codeSpanEnd(source, scan)?.end ?? scan + runLength(source, scan)) - 1
     else if (char === '[') depth++
     else if (char === ']' && --depth === 0) return scan
@@ -269,7 +309,15 @@ function parseInline(source: string): Inline[] {
   for (let at = 0; at < source.length;) {
     const char = source[at]!
     const next = source[at + 1]
-    if (char === '\\' && next === '\n') {
+    const math = mathAt(source, at)
+    if (math !== null) {
+      push({ t: 'math', tex: math.tex, display: math.display })
+      at = math.end
+    } else if (char === '$') {
+      const run = runLength(source, at)
+      text += source.slice(at, at + run)
+      at += run
+    } else if (char === '\\' && next === '\n') {
       push({ t: 'break' })
       at += 2
     } else if (char === '\\' && next !== undefined && PUNCTUATION.test(next)) {
@@ -348,7 +396,7 @@ export function proseLeaves(blocks: readonly Block[]): ProseLeaf[] {
 }
 
 const inlineText = (nodes: readonly Inline[]): string =>
-  nodes.map(node => (node.t === 'text' || node.t === 'code' ? node.v : node.t === 'break' ? '\n' : node.t === 'image' ? '' : inlineText(node.children))).join('')
+  nodes.map(node => (node.t === 'text' || node.t === 'code' ? node.v : node.t === 'math' ? node.tex : node.t === 'break' ? '\n' : node.t === 'image' ? '' : inlineText(node.children))).join('')
 
 /** A `<br>` counts as one character, `\n`, in this text and in the window's ranges. */
 export const leafText = (leaf: ProseLeaf): string => ('kind' in leaf ? leaf.text : inlineText(leaf))
