@@ -1,4 +1,4 @@
-import { activityOf, modelViewOf, type BranchId, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type Relay, type SessionId, type Shown } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type Relay, type SessionId, type Shown, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
@@ -10,6 +10,7 @@ import { YoloPill } from '../composer/YoloPill'
 import { run, useTopic } from '../store'
 import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
 import { ImageSessionContext } from './Image'
+import { landAt, landed, landingFor } from './landing'
 import { FOLLOW_WITHIN, FOLLOWING, placeAfter, progressOf, type Place } from './place'
 import { Thread } from './Thread'
 
@@ -17,6 +18,7 @@ const PAGE = 0.875
 const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 const LONGEST_WAIT_MS = 60_000
 const NO_RELAYS: readonly Relay[] = []
+const NO_VERSIONS: ChatVersions = []
 
 const distanceFrom = (element: HTMLElement) => element.scrollHeight - element.scrollTop - element.clientHeight
 
@@ -48,12 +50,44 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     return () => clearTimeout(id)
   }, [view])
 
+  // Read from Hermes each time a chat opens, and kept nowhere else: a refusal or an older answer shows no switcher.
+  const [read, setRead] = useState<{ readonly id: SessionId; readonly versions: ChatVersions } | null>(null)
+  useEffect(() => {
+    if (id === null) return
+    let open = true
+    void run({ do: 'versions', sessionId: id }).then(outcome => {
+      if (open && outcome.ok) setRead({ id, versions: outcome.value })
+    })
+    return () => {
+      open = false
+      landed(id)
+    }
+  }, [id])
+  const versions = read !== null && read.id === id ? read.versions : NO_VERSIONS
+  const onVersion = useCallback((version: Version) => {
+    landAt(version)
+    void run({ do: 'open', ref: { kind: 'chat', sessionId: version.sessionId } })
+  }, [])
+
   useLayoutEffect(() => {
     const element = scroller.current
     if (element === null) return
     if (following.current) element.scrollTop = element.scrollHeight
     else setPlace(held => placeAfter(held, distanceFrom(element), progress))
-  }, [view, progress, relays])
+  }, [view, progress, relays, versions])
+
+  // A press on a version lands at the same message of the chat it opens. A chat that stops before that message is followed to its end, as any chat is.
+  useLayoutEffect(() => {
+    const element = scroller.current
+    const landing = id === null ? null : landingFor(id)
+    if (element === null || id === null || landing === null || view === null || view.turns.length === 0) return
+    if (landing === 'end') return landed(id)
+    const request = element.querySelector(`.turn[data-row="${landing}"] > .request`)
+    if (request === null) return
+    landed(id)
+    request.scrollIntoView({ block: 'center', behavior: 'instant' })
+    setPlace(held => placeAfter(held, distanceFrom(element), progress))
+  }, [id, view, progress])
 
   useLayoutEffect(() => {
     const element = scroller.current
@@ -208,7 +242,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
               <Thread
                 view={view} relays={relays} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
                 canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
-                canBranch={canBranch} onBranch={onBranch}
+                canBranch={canBranch} onBranch={onBranch} versions={versions} onVersion={onVersion}
               />
             </ImageSessionContext>
           </FileCallContext>

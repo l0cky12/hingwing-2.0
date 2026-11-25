@@ -189,7 +189,7 @@ describe('a plan node', () => {
 describe('a turn', () => {
   const turn = (end: TurnView['end']): TurnView => ({ key: 't1', time: null, request: 'Check the servers', rowId: null, tokens: null, nodes: [plan(true)], end })
   const draw = (end: TurnView['end']) => renderToStaticMarkup((
-    <Turn turn={turn(end)} open={NONE_OPEN} onToggle={() => {}} onAnswer={() => {}} canEdit={false} showsRegenerate={false} canRegenerate={false} canBranch={false} onEdit={() => {}} onRegenerate={() => {}} onBranch={() => {}} />
+    <Turn turn={turn(end)} open={NONE_OPEN} onToggle={() => {}} onAnswer={() => {}} canEdit={false} showsRegenerate={false} canRegenerate={false} canBranch={false} onEdit={() => {}} onRegenerate={() => {}} onBranch={() => {}} versions={null} onVersion={() => {}} />
   ))
 
   it('is a live turn while its end is live, and not once it is done', () => {

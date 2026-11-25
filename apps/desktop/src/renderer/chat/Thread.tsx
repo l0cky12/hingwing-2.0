@@ -1,4 +1,4 @@
-import type { PromptId, PromptReply, Relay } from '@highwing/hermes/domain'
+import { versionLabel, type ChatVersions, type PromptId, type PromptReply, type Relay, type Version, type Versions } from '@highwing/hermes/domain'
 import { fieldId, findInThread, type FindMatch, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Avatar } from '../bots/Bots'
@@ -147,6 +147,16 @@ function Pencil() {
   )
 }
 
+/** Always shown, unlike the actions beside it: it says the message has other tries before the pointer is on it. */
+export function VersionSwitch({ versions, onVersion }: { readonly versions: Versions; readonly onVersion: (version: Version) => void }) {
+  const { versions: all, current } = versions
+  const step = (by: 1 | -1) => {
+    const target = all[current + by]
+    return <button type="button" aria-label={by === 1 ? 'Next version' : 'Previous version'} disabled={target === undefined} onClick={() => target !== undefined && onVersion(target)}><span aria-hidden="true">{by === 1 ? '›' : '‹'}</span></button>
+  }
+  return <span className="versions" role="group" aria-label="Versions">{step(-1)}<span>{versionLabel(versions)}</span>{step(1)}</span>
+}
+
 interface TurnProps {
   readonly turn: TurnView
   readonly open: OpenState
@@ -159,18 +169,22 @@ interface TurnProps {
   readonly onEdit: Rewrite
   readonly onRegenerate: Rewrite
   readonly onBranch: (rowId: number) => void
+  /** The tries of this turn's message, when it has more than one. */
+  readonly versions: Versions | null
+  readonly onVersion: (version: Version) => void
 }
 
-export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch }: TurnProps) {
+export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, versions, onVersion }: TurnProps) {
   const { end, rowId, request } = turn
   const live = end.kind === 'tip' || (end.kind === 'at' && end.tone === 'live')
   return (
-    <article className={cx('turn', live && 'live-turn')}>
+    <article className={cx('turn', live && 'live-turn')} data-row={rowId ?? undefined}>
       {turn.time !== null && <p className="when">{turn.time}</p>}
       {request !== null && (
         <p className="request" data-find={fieldId(turn.key, 'request')}>
           {request}
           <span className="actions">
+            {versions !== null && <VersionSwitch versions={versions} onVersion={onVersion} />}
             <CopyButton text={request} name="Copy request" />
             {rowId !== null && <button type="button" className="copy edit" aria-label="Edit message" disabled={!canEdit} onClick={() => onEdit(rowId, request)}><Pencil /></button>}
             {rowId !== null && <button type="button" className="copy branch" aria-label="Branch from here" disabled={!canBranch} onClick={() => onBranch(rowId)}><Fork /></button>}
@@ -228,9 +242,14 @@ interface ThreadProps {
   readonly onEdit: Rewrite
   readonly onRegenerate: Rewrite
   readonly onBranch: (rowId: number) => void
+  /** The messages of this chat that have versions. One whose landing is 'end' is a try this chat has not made yet, and shows after its last turn. */
+  readonly versions: ChatVersions
+  readonly onVersion: (version: Version) => void
 }
 
-export function Thread({ view, relays, onAnswer, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch }: ThreadProps) {
+const landingOf = ({ versions, current }: Versions) => versions[current]?.landing
+
+export function Thread({ view, relays, onAnswer, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, versions, onVersion }: ThreadProps) {
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
   const transcript = useRef<HTMLDivElement>(null)
@@ -241,6 +260,9 @@ export function Thread({ view, relays, onAnswer, onLoadEarlier, onFindClosed, on
     setOpen(held => toggled(held, key, byDefault))
     setFind(held => (held?.openedByFind.has(key) ? { ...held, openedByFind: new Set([...held.openedByFind].filter(row => row !== key)) } : held))
   }, [])
+
+  const atEnd = versions.find(group => landingOf(group) === 'end')
+  const versionsAt = (rowId: number | null) => (rowId === null ? null : versions.find(group => landingOf(group) === rowId) ?? null)
 
   const relayed = useMemo(() => placeRelays(relays, view.turns.map(turn => turn.key)), [relays, view.turns])
   const relayTurns = (held: readonly Relay[] = []) => held.map(relay => <RelayTurn key={relay.id} relay={relay} />)
@@ -339,12 +361,13 @@ export function Thread({ view, relays, onAnswer, onLoadEarlier, onFindClosed, on
             <Turn
               turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer}
               canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} canBranch={canBranch}
-              onEdit={onEdit} onRegenerate={onRegenerate} onBranch={onBranch}
+              onEdit={onEdit} onRegenerate={onRegenerate} onBranch={onBranch} versions={versionsAt(turn.rowId)} onVersion={onVersion}
             />
             {relayTurns(relayed.after.get(turn.key))}
           </Fragment>
         ))}
         {relayTurns(relayed.last)}
+        {atEnd !== undefined && <p className="versions-end"><VersionSwitch versions={atEnd} onVersion={onVersion} /></p>}
         {view.pending.map(message => (
           <article key={message.key} className="turn pending">
             <p className="request" data-find={fieldId(message.key, 'text')}>{message.text}</p>

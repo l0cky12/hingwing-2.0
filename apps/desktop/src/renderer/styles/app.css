@@ -300,6 +300,13 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .copy:is(.edit, .branch) svg { height: 18px; }
 .copy:is(.edit, .branch):disabled { opacity: 0; color: var(--graphite); }
 .request:hover > .actions > .copy:is(.edit, .branch):disabled { opacity: .45; }
+.versions { display: inline-flex; align-items: center; gap: 2px; color: var(--graphite); font: 500 12px/1.5 var(--sans); font-variant-numeric: tabular-nums; white-space: nowrap; user-select: none; }
+.versions > button { padding: 1px 7px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); color: var(--ink); }
+.versions > button:hover:not(:disabled) { background: var(--paper); }
+.versions > span { padding: 0 4px; }
+/* The switcher takes its place in the margin beside the three actions. */
+.request:has(.versions) { max-width: min(62ch, 100% - 188px); }
+.versions-end { margin: 22px 0 0 var(--col); }
 .turn-actions { margin: 10px 0 0 var(--col); }
 .regenerate { padding: 2px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); color: var(--ink); font: 500 13px/1.5 var(--sans); }
 .regenerate:hover:not(:disabled) { background: var(--paper); }
