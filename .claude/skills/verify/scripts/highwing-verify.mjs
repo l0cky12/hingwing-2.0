@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process'
+import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, appendFileSync, openSync, readSync, closeSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
@@ -16,6 +17,8 @@ const QUIT_MS = 5_000
 const requireDesktop = createRequire(join(DESKTOP, 'package.json'))
 
 const FAKE_HOST = 'hermes-host.example-tailnet.ts.net'
+/** The dev server a fixture names. `--serve` puts its own origin in its place. */
+const DEV_ORIGIN = 'http://localhost:5173'
 const ERRAND = join(REPO, 'fixtures/errand.jsonl')
 const SETTINGS_FILE = 'connection.json'
 
@@ -45,7 +48,8 @@ const STATES = {
   'relay-waiting': page => page.locator('.turn.relay [role="status"]'),
   bots: page => page.locator('aside[data-state="listed"]'),
   unstarted: page => page.locator('main#scroll:empty'),
-  'helper-running': page => page.locator('.helper[data-end="live"]').filter({ has: page.locator('> .head > .sr', { hasText: /^working$/ }) })
+  'helper-running': page => page.locator('.helper[data-end="live"]').filter({ has: page.locator('> .head > .sr', { hasText: /^working$/ }) }),
+  preview: page => page.getByRole('region', { name: 'Preview', exact: true })
 }
 
 const rendered = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
@@ -161,11 +165,43 @@ const STEPS = {
   },
   opened: {
     arity: 2,
-    run: async (ctx, action, path) => {
+    run: async (ctx, action, target) => {
+      const call = action === 'browse' ? { action, url: served(ctx, target) } : { action, path: target }
       const calls = await pollUntil(ctx, () => opensRecorded(ctx), recorded => recorded.length > 0).catch(() => [])
-      if (calls.length !== 1 || calls[0].action !== action || calls[0].path !== path) {
-        throw new Error(`expected exactly one open call ${JSON.stringify({ action, path })}, recorded ${JSON.stringify(calls)}`)
+      if (calls.length !== 1 || JSON.stringify(calls[0]) !== JSON.stringify(call)) {
+        throw new Error(`expected exactly one open call ${JSON.stringify(call)}, recorded ${JSON.stringify(calls)}`)
       }
+    }
+  },
+  'nothing-opened': {
+    arity: 0,
+    run: async ctx => {
+      const calls = opensRecorded(ctx)
+      if (calls.length > 0) throw new Error(`main opened ${calls.length} thing(s) on the desktop: ${JSON.stringify(calls)}`)
+    }
+  },
+  previewing: {
+    arity: 1,
+    run: async (ctx, url) => {
+      const wanted = isPattern(url) ? nameMatcher(url) : served(ctx, url)
+      const matches = state => state !== null && !state.loading && (typeof wanted === 'string' ? state.url === wanted : wanted.test(state.url))
+      const state = await poll(ctx, () => inPreview(ctx, 'state'), matches)
+      if (!matches(state)) throw new Error(`the preview is ${state === null ? 'not open' : `on ${state.url}${state.loading ? ', still loading' : ''}`}, not on ${url}`)
+      log(ctx, `  the preview shows ${state.url} at ${JSON.stringify(state.bounds)}, ${state.visible ? 'visible' : 'hidden'}`)
+    }
+  },
+  'page-says': {
+    arity: 1,
+    run: async (ctx, text) => {
+      const said = await poll(ctx, () => inPreview(ctx, 'text'), held => held?.includes(text) === true)
+      if (said?.includes(text) !== true) throw new Error(`the previewed page does not say ${JSON.stringify(text)}: ${JSON.stringify(said?.slice(0, 200) ?? 'no page')}`)
+    }
+  },
+  home: {
+    arity: 0,
+    run: async ctx => {
+      const windows = await ctx.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map(window => window.webContents.getURL()))
+      if (windows.length !== 1 || windows[0] !== ctx.home) throw new Error(`the app's windows are at ${JSON.stringify(windows)}, not only at ${ctx.home}`)
     }
   },
   copied: {
@@ -322,6 +358,21 @@ const STEPS = {
     }
   }
 }
+
+/** The fixture's dev server, as this run serves it. */
+const served = (ctx, text) => (ctx.origin === null ? text : text.replaceAll(DEV_ORIGIN, ctx.origin))
+
+/** Reads the pane's page in main: the view main drew over the window, beside the window's own. null while there is none. */
+const inPreview = (ctx, what) => ctx.app.evaluate(async ({ BrowserWindow }, what) => {
+  const window = BrowserWindow.getAllWindows()[0]
+  const view = window?.contentView.children.find(child => child.webContents !== undefined && child.webContents !== window.webContents)
+  if (view === undefined || view.webContents.isDestroyed()) return null
+  const contents = view.webContents
+  if (what === 'text') return contents.executeJavaScript('document.body ? document.body.innerText : ""')
+  const state = { url: contents.getURL(), loading: contents.isLoading(), visible: view.getVisible(), bounds: view.getBounds() }
+  if (what === 'state' || !state.visible) return state
+  return { ...state, png: (await contents.capturePage()).toPNG().toString('base64') }
+}, what)
 
 async function poll(ctx, read, done) {
   const deadline = Date.now() + ctx.timeout
@@ -533,6 +584,7 @@ async function shoot(ctx, name) {
   const path = join(ctx.evidence, `${name}.png`)
   await ctx.page.mouse.move(0, 0)
   await ctx.page.screenshot({ path, animations: 'disabled', caret: 'hide', ...(ctx.clip && { clip: ctx.clip }) })
+  await drawPreview(ctx, path)
   writeFileSync(join(ctx.evidence, `${name}.aria.txt`), await ctx.page.locator('body').ariaSnapshot())
   const size = pngSize(path)
   if (size.width !== ctx.size.width || size.height !== ctx.size.height) throw new Error(`${name}.png is ${size.width}x${size.height}, not ${ctx.size.width}x${ctx.size.height}`)
@@ -540,6 +592,34 @@ async function shoot(ctx, name) {
     throw new Error(`state "${ctx.holding}" ended before ${name}.png was taken, so the shot may show a later moment`)
   }
   log(ctx, `  saved ${path} (state "${ctx.holding ?? 'none'}" still held)`)
+}
+
+/** A page screenshot cannot see the view main draws the previewed page in, so the view's own capture goes on top at its place. */
+async function drawPreview(ctx, path) {
+  const view = await inPreview(ctx, 'capture')
+  if (view?.png === undefined) return
+  const page = join(ctx.evidence, '.preview-capture.png')
+  writeFileSync(page, Buffer.from(view.png, 'base64'))
+  const at = `+${view.bounds.x - (ctx.clip?.x ?? 0)}+${view.bounds.y - (ctx.clip?.y ?? 0)}`
+  const result = spawnSync('magick', [path, page, '-geometry', at, '-composite', path], { stdio: 'inherit' })
+  rmSync(page, { force: true })
+  if (result.status !== 0) throw new Error(`magick could not draw the previewed page onto ${path}`)
+  log(ctx, `  drew the previewed page ${view.url} at ${at}`)
+}
+
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' }
+
+/** Serves `dir` on a port of the loopback for the run, as the fixture's dev server. Resolves with its origin. */
+function serve(dir) {
+  const root = resolve(process.cwd(), dir)
+  if (!existsSync(root) || !statSync(root).isDirectory()) fail(`--serve needs a folder, and ${root} is not one`)
+  const server = createServer((request, response) => {
+    const path = decodeURIComponent(new URL(request.url ?? '/', 'http://x').pathname)
+    const file = join(root, path.endsWith('/') ? `${path}index.html` : path)
+    if (!file.startsWith(`${root}${sep}`) || !existsSync(file) || !statSync(file).isFile()) return void response.writeHead(404).end()
+    response.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' }).end(readFileSync(file))
+  })
+  return new Promise(done => server.listen(0, '127.0.0.1', () => done({ server, origin: `http://127.0.0.1:${server.address().port}` })))
 }
 
 function parseSteps(words) {
@@ -564,10 +644,48 @@ function ownDisplay() {
   if (parent !== process.ppid) fail(`display ${process.env.DISPLAY} belongs to another run's X server. Start this run again.`)
 }
 
-function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, createWarnings, bound, noBotChat, yolo, yoloDenied, yoloElsewhereAfter }, out) {
+/**
+ * Hermes streams a reply in pieces and may cut the dev server's URL in two. Each segment's pieces are
+ * joined, the origin is put in, and the text is cut again where it was, a cut inside the URL moving to
+ * its end. The offsets follow the new lengths.
+ */
+function serveInDeltas(steps, origin) {
+  const segments = Map.groupBy(
+    steps.map(step => step.push?.params).filter(params => params?.type === 'message.delta' && typeof params.payload?.text === 'string'),
+    params => `${params.admission_id} ${params.payload.turn_id} ${params.payload.segment}`
+  )
+  const grown = origin.length - DEV_ORIGIN.length
+  for (const pieces of segments.values()) {
+    const old = pieces.map(params => params.payload.text).join('')
+    const matches = []
+    for (let at = old.indexOf(DEV_ORIGIN); at !== -1; at = old.indexOf(DEV_ORIGIN, at + 1)) matches.push({ start: at, end: at + DEV_ORIGIN.length })
+    const moved = cut => {
+      const inside = matches.find(({ start, end }) => start < cut && cut < end)
+      const at = inside?.end ?? cut
+      return at + grown * matches.filter(({ end }) => end <= at).length
+    }
+    const text = old.replaceAll(DEV_ORIGIN, origin)
+    const first = pieces[0].payload.offset
+    let from = 0
+    let read = 0
+    for (const params of pieces) {
+      read += params.payload.text.length
+      const to = moved(read)
+      params.payload.text = text.slice(from, to)
+      if (typeof first === 'number') params.payload.offset = first + from
+      from = to
+    }
+  }
+}
+
+function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, createWarnings, bound, noBotChat, yolo, yoloDenied, yoloElsewhereAfter, origin }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const header = JSON.parse(lines[0])
   const steps = lines.slice(1).map(line => JSON.parse(line))
+  if (origin) {
+    serveInDeltas(steps, origin)
+    steps.splice(0, steps.length, ...steps.map(step => JSON.parse(JSON.stringify(step).replaceAll(DEV_ORIGIN, origin))))
+  }
   if (models) header.models = JSON.parse(readFileSync(resolve(process.cwd(), models), 'utf8'))
   if (guarded) header.guarded = guarded.split(',')
   if (usage) header.usage = JSON.parse(readFileSync(resolve(process.cwd(), usage), 'utf8'))
@@ -625,16 +743,17 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', 'create-warnings': 'value', bound: 'flag', 'no-bot-chat': 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', 'create-warnings': 'value', bound: 'flag', 'no-bot-chat': 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
   if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
-  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, createWarnings: options['create-warnings'], bound: options.bound, noBotChat: options['no-bot-chat'], yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'] }
+  const site = options.serve ? await serve(options.serve) : null
+  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, createWarnings: options['create-warnings'], bound: options.bound, noBotChat: options['no-bot-chat'], yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], origin: site?.origin }
   const edited = Object.values(edits).some(Boolean)
   if (options.yolo && options.yolo !== 'on' && options.yolo !== 'off') fail(`--yolo takes on or off, not "${options.yolo}"`)
   if (!options.yolo && (options['yolo-denied'] || options['yolo-elsewhere-after'])) fail('--yolo-denied and --yolo-elsewhere-after need --yolo, because a Hermes with no YOLO answers neither')
-  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --create-warnings, --bound, --no-bot-chat, --yolo, --yolo-denied and --yolo-elsewhere-after edit the fixture a --fixture run replays. They do nothing with --fake-host')
+  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --create-warnings, --bound, --no-bot-chat, --yolo, --yolo-denied, --yolo-elsewhere-after and --serve edit the fixture a --fixture run replays. They do nothing with --fake-host')
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
   if (options.size && !/^[1-9]\d*x[1-9]\d*$/.test(options.size)) fail(`--size takes <width>x<height>, not "${options.size}"`)
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')
@@ -648,7 +767,7 @@ async function run(argv) {
   const calls = join(evidence, 'gateway-calls.jsonl')
   rmSync(calls, { force: true })
   const userData = join(scratch, 'user-data')
-  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null, size: SIZE, clip: null }
+  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null }
   const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
   const saved = SAVED[options.saved ?? 'none']
@@ -703,6 +822,8 @@ async function run(argv) {
       ctx.errors.push(String(error.message ?? error))
     })
     await ctx.page.waitForLoadState('domcontentloaded')
+    ctx.home = ctx.page.url()
+    if (site) log(ctx, `serving ${options.serve} at ${site.origin} in place of ${DEV_ORIGIN}`)
     await sizeWindow(ctx, options)
     for (const { verb, args } of steps) {
       log(ctx, `${verb} ${args.map(arg => JSON.stringify(arg)).join(' ')}`)
@@ -722,6 +843,7 @@ async function run(argv) {
     await Promise.race([app.close().catch(() => {}), new Promise(done => setTimeout(done, QUIT_MS))])
     if (alive(pid)) process.kill(pid, 'SIGKILL')
     rmSync(join(scratch, 'pid'), { force: true })
+    site?.server.close()
     if (host) {
       const deadline = Date.now() + QUIT_MS
       while (toolsRunning(host.bin).length > 0 && Date.now() < deadline) await new Promise(done => setTimeout(done, 50))
