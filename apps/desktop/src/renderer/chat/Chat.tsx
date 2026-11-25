@@ -1,4 +1,4 @@
-import { activityOf, modelViewOf, type AttachmentId, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type Relay, type SessionId, type Shown, type SideId, type Version } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, type AdmissionId, type AttachmentId, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
@@ -15,7 +15,7 @@ import { forget, landAt, landed, pressFor } from './landing'
 import { FOLLOW_WITHIN, FOLLOWING, placeAfter, progressOf, type Place } from './place'
 import { Sides } from './Sides'
 import { closeSide, sideCards, useClosedSides } from './sides'
-import { Thread, type SecretAnswer } from './Thread'
+import { Thread, type QueueControls, type QueuedRow, type SecretAnswer } from './Thread'
 
 const PAGE = 0.875
 const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -24,6 +24,13 @@ const NO_RELAYS: readonly Relay[] = []
 const NO_VERSIONS: ChatVersions = []
 
 const distanceFrom = (element: HTMLElement) => element.scrollHeight - element.scrollTop - element.clientHeight
+
+type Held = { readonly id: SessionId | null; readonly press: number; readonly text: string } & (
+  | { readonly kind: 'sent'; readonly rowId: number }
+  | { readonly kind: 'queued'; readonly admissionId: AdmissionId }
+)
+
+const sameRow = (a: QueuedRow, b: QueuedRow) => JSON.stringify(a) === JSON.stringify(b)
 
 const holdsText = (target: EventTarget | null) =>
   (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) && target.value !== ''
@@ -181,10 +188,26 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const live = session?.sync.state === 'live'
   const idle = session?.run.state === 'idle'
   const waiting = view !== null && view.pending.some(message => message.status !== 'failed')
-  const [held, setEditing] = useState<(Omit<Editing, 'later'> & { readonly id: SessionId | null }) | null>(null)
-  const editedAt = held === null || held.id !== id || view === null ? -1 : view.turns.findIndex(turn => turn.rowId === held.rowId)
-  const later = view === null ? 0 : view.turns.length - 1 - editedAt
-  const editing = useMemo(() => (held === null || editedAt < 0 ? null : { ...held, later }), [held, editedAt, later])
+  const listed = useMemo(() => new Map((view?.pending ?? []).flatMap(row => ('admissionId' in row ? [[row.admissionId, row] as const] : []))), [view])
+  const [held, setEditing] = useState<Held | null>(null)
+  const editing = useMemo((): Editing | null => {
+    if (held === null || held.id !== id || view === null) return null
+    const { press, text } = held
+    if (held.kind === 'queued') return listed.get(held.admissionId)?.actions.includes('edit') === true ? { kind: 'queued', press, admissionId: held.admissionId, text } : null
+    const at = view.turns.findIndex(turn => turn.rowId === held.rowId)
+    return at < 0 ? null : { kind: 'sent', press, rowId: held.rowId, later: view.turns.length - 1 - at, text }
+  }, [held, id, view, listed])
+  const [sent, setSent] = useState<ReadonlyMap<AdmissionId, { readonly action: QueuedAction; readonly row: QueuedRow }>>(new Map())
+  const pressed = useMemo(() => new Map([...sent].flatMap(([admissionId, { action, row }]) => {
+    const now = listed.get(admissionId)
+    return now !== undefined && sameRow(now, row) ? [[admissionId, action] as const] : []
+  })), [sent, listed])
+  const mark = useCallback((row: QueuedRow, action: QueuedAction | null) => setSent(marks => {
+    const next = new Map(marks)
+    if (action === null) next.delete(row.admissionId)
+    else next.set(row.admissionId, { action, row })
+    return next
+  }), [])
   const [refused, setRefused] = useState<{ readonly id: SessionId | null; readonly message: string } | null>(null)
   const [rewriting, setRewriting] = useState(false)
   const [branching, setBranching] = useState(false)
@@ -202,8 +225,22 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   }, [])
   const onEdit = useCallback((rowId: number, text: string) => {
     setRefused(null)
-    setEditing({ id, press: ++presses.current, rowId, text })
+    setEditing({ id, kind: 'sent', press: ++presses.current, rowId, text })
   }, [id])
+  const onQueued = useCallback(async (row: QueuedRow, action: QueuedAction) => {
+    if (id === null) return
+    setRefused(null)
+    if (action === 'edit') {
+      setEditing({ id, kind: 'queued', press: ++presses.current, admissionId: row.admissionId, text: row.text })
+      return
+    }
+    mark(row, action)
+    const outcome = await run({ do: 'queued', sessionId: id, admissionId: row.admissionId, action })
+    if (!outcome.ok) {
+      mark(row, null)
+      setRefused({ id, message: outcome.refusal.message })
+    }
+  }, [id, mark])
   const onRegenerate = useCallback(async (rowId: number, text: string) => {
     if (id === null) return
     setRefused(null)
@@ -226,11 +263,22 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     if (chat.sessionId === null) return run({ do: 'start', chat, text, attachments })
     if (editing === null) return run({ do: 'send', sessionId: chat.sessionId, text, attachments })
     const { press } = editing
-    const outcome = await rewrite(chat.sessionId, editing.rowId, text)
-    if (!outcome.ok) return outcome
+    if (editing.kind === 'sent') {
+      const outcome = await rewrite(chat.sessionId, editing.rowId, text)
+      if (!outcome.ok) return outcome
+    } else {
+      const row = listed.get(editing.admissionId)
+      if (row !== undefined) mark(row, 'edit')
+      const outcome = await run({ do: 'queued', sessionId: chat.sessionId, admissionId: editing.admissionId, action: 'edit', text })
+      if (!outcome.ok) {
+        if (row !== undefined) mark(row, null)
+        return outcome
+      }
+    }
     setEditing(current => (current?.press === press ? null : current))
     return { ok: true, value: null }
-  }, [chat, editing, rewrite])
+  }, [chat, editing, rewrite, listed, mark])
+  const queue = useMemo((): QueueControls => ({ canAct: live, pressed, onAct: onQueued }), [live, pressed, onQueued])
 
   const [menu, setMenu] = useState<{ readonly id: SessionId | null; readonly menu: ModelMenu | null }>({ id, menu: null })
   const asked = useRef(0)
@@ -273,7 +321,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
               <Thread
                 view={view} relays={relays} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
                 canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
-                canBranch={canBranch} onBranch={onBranch} versions={versions} onVersion={onVersion}
+                canBranch={canBranch} onBranch={onBranch} versions={versions} onVersion={onVersion} queue={queue}
               />
             </ImageSessionContext>
           </FileCallContext>

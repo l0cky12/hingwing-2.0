@@ -691,17 +691,36 @@ describe('what Hermes says', () => {
     expect(checkThread(view)).toEqual([])
   })
 
-  it('shows this client\'s rows of Hermes\'s queue under the last turn, ahead of what Hermes has not listed, and leaves out another client\'s', () => {
-    const row = (id: string, from: 'here' | 'elsewhere', state: QueuedMessage['state'] = { s: 'queued', can: [] }): QueuedMessage =>
+  it('shows every row of Hermes\'s queue under the last turn with its sender and what it offers, ahead of what Hermes has not listed', () => {
+    const row = (id: string, from: 'here' | 'elsewhere', state: QueuedMessage['state']): QueuedMessage =>
       ({ admissionId: `a-${id}` as AdmissionId, inputId: id as InputId, text: `message ${id}`, from, attachments: [], state })
     const view = threadView(session({
-      queue: [row('one', 'here'), row('two', 'elsewhere'), row('three', 'here', { s: 'steering' })],
-      outbox: [{ inputId: 'four' as InputId, text: 'message four', attachments: [], state: { s: 'sending' } }]
+      queue: [
+        row('lost', 'elsewhere', { s: 'lost', generation: 1 as Generation }),
+        row('one', 'here', { s: 'queued', can: ['edit', 'sendNow'] }),
+        row('two', 'elsewhere', { s: 'queued', can: [] }),
+        row('three', 'here', { s: 'steering' })
+      ],
+      outbox: [
+        { inputId: 'four' as InputId, text: 'message four', attachments: [], state: { s: 'sending' } },
+        { inputId: 'five' as InputId, text: 'message five', attachments: [], state: { s: 'failed', message: 'Hermes refused it.' } }
+      ]
     }), CLOCK)
     expect(view.pending).toEqual([
-      { key: 'one', text: 'message one', attachments: [], status: 'queued', detail: null },
-      { key: 'three', text: 'message three', attachments: [], status: 'queued', detail: null },
-      { key: 'four', text: 'message four', attachments: [], status: 'sending', detail: null }
+      { status: 'lost', key: 'lost', text: 'message lost', attachments: [], admissionId: 'a-lost', from: 'elsewhere', actions: ['release'] },
+      { status: 'queued', key: 'one', text: 'message one', attachments: [], admissionId: 'a-one', from: 'here', actions: ['sendNow', 'edit', 'cancel'] },
+      { status: 'queued', key: 'two', text: 'message two', attachments: [], admissionId: 'a-two', from: 'elsewhere', actions: ['cancel'] },
+      { status: 'steering', key: 'three', text: 'message three', attachments: [], admissionId: 'a-three', from: 'here', actions: [] },
+      { status: 'sending', key: 'four', text: 'message four', attachments: [] },
+      { status: 'failed', key: 'five', text: 'message five', attachments: [], detail: 'Hermes refused it.' }
+    ])
+    expect(outline(view).split('\n').slice(-6)).toEqual([
+      '⋯ message lost  (lost, from elsewhere, release)',
+      '⋯ message one  (queued, sendNow, edit, cancel)',
+      '⋯ message two  (queued, from elsewhere, cancel)',
+      '⋯ message three  (steering)',
+      '⋯ message four  (sending)',
+      '⋯ message five  (failed: Hermes refused it.)'
     ])
     expect(checkThread(view)).toEqual([])
   })

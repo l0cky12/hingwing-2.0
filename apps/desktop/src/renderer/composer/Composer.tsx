@@ -5,7 +5,7 @@ import { Avatar } from '../bots/Avatar'
 import { Chips } from '../chat/Attachments'
 import { useTopic } from '../store'
 import { attachTo, detach, draftSent, moveAttachment, moveDraft, seedDraft, stagingFor, useAttachments, useDraft, useStaging, writeDraft, type DraftSlot } from './drafts'
-import type { Editing } from './edit'
+import { EDITING_WORDS, type Editing } from './edit'
 import { RemoveDialog } from './RemoveDialog'
 import { mentionable, mentionWord, menuOf, picked, type Menu, type MenuItem } from './menu'
 import { usePathFiles } from './paths'
@@ -255,7 +255,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   const submit = (event?: FormEvent) => {
     event?.preventDefault()
     if (!canSend || sending.current || staging > 0 || draft.trim() === '') return
-    if (editing !== null && editing.later > 0) setConfirming(true)
+    if (editing?.kind === 'sent' && editing.later > 0) setConfirming(true)
     else void deliver()
   }
 
@@ -340,7 +340,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
       )}
       {editing !== null && (
         <div className="editing">
-          <span>Editing a sent message</span>
+          <span>{EDITING_WORDS[editing.kind]}</span>
           <button type="button" onClick={cancelEdit}>Cancel</button>
         </div>
       )}
@@ -370,7 +370,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
       </form>
       {children}
       {refusal !== null && <p className="err refusal">{refusal}</p>}
-      {confirming && editing !== null && (
+      {confirming && editing?.kind === 'sent' && (
         <RemoveDialog
           later={editing.later}
           onCancel={() => setConfirming(false)}

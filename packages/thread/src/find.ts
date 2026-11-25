@@ -109,7 +109,7 @@ function fields(view: ThreadView): Field[] {
   }
   for (const message of view.pending) {
     add(message.key, 'text', message.text)
-    if (message.detail !== null) add(message.key, 'detail', message.detail)
+    if (message.status === 'failed') add(message.key, 'detail', message.detail)
   }
   return out
 }

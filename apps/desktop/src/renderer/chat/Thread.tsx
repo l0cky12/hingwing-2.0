@@ -1,5 +1,5 @@
-import { versionLabel, type ChatVersions, type Landing, type PromptId, type PromptReply, type Relay, type RequestId, type RequestReply, type Version, type Versions } from '@highwing/hermes/domain'
-import { fieldId, findInThread, multiReply, type AskCard, type FindMatch, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
+import { versionLabel, type AdmissionId, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Relay, type RequestId, type RequestReply, type Version, type Versions } from '@highwing/hermes/domain'
+import { fieldId, findInThread, multiReply, type AskCard, type FindMatch, type PendingRow, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Avatar } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
@@ -372,7 +372,55 @@ export const RelayTurn = memo(function RelayTurn({ relay }: { readonly relay: Re
   )
 })
 
-const PENDING_WORDS = { sending: 'Sending', queued: 'Queued' } as const
+const LISTED_WORDS = {
+  queued: 'Queued',
+  steering: 'On its way into this turn',
+  lost: "Hermes restarted during this message and can't finish it. Messages behind it wait until you discard it."
+} as const satisfies Record<QueuedRow['status'], string>
+
+const ACTION_WORDS = {
+  sendNow: { label: 'Send now', pressed: 'Sending…' },
+  edit: { label: 'Edit', pressed: 'Saving…' },
+  cancel: { label: 'Cancel', pressed: 'Cancelling…' },
+  release: { label: 'Discard', pressed: 'Discarding…' }
+} as const satisfies Record<QueuedAction, { label: string; pressed: string }>
+
+/** A row of Hermes's queue. */
+export type QueuedRow = Extract<PendingRow, { readonly admissionId: AdmissionId }>
+
+/** `pressed`: the action sent for each row that Hermes has not listed differently since. */
+export interface QueueControls {
+  readonly canAct: boolean
+  readonly pressed: ReadonlyMap<AdmissionId, QueuedAction>
+  readonly onAct: (row: QueuedRow, action: QueuedAction) => void
+}
+
+function Listed({ row, queue }: { readonly row: QueuedRow; readonly queue: QueueControls }) {
+  const sent = queue.pressed.get(row.admissionId)
+  return (
+    <div className="queued">
+      <p className="notice">{LISTED_WORDS[row.status]}</p>
+      {row.status === 'queued' && row.from === 'elsewhere' && <p className="notice">From another app</p>}
+      {row.actions.map(action => (
+        <button key={action} type="button" disabled={!queue.canAct || sent !== undefined} onClick={() => queue.onAct(row, action)}>
+          {sent === action ? ACTION_WORDS[action].pressed : ACTION_WORDS[action].label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+export function Pending({ row, queue }: { readonly row: PendingRow; readonly queue: QueueControls }) {
+  return (
+    <article className="turn pending">
+      <SentAttachments attachments={row.attachments} />
+      <p className="request" data-find={fieldId(row.key, 'text')}>{row.text}</p>
+      {row.status === 'failed'
+        ? <p className="err" data-find={fieldId(row.key, 'detail')}>{row.detail}</p>
+        : row.status === 'sending' ? <p className="notice">Sending</p> : <Listed row={row} queue={queue} />}
+    </article>
+  )
+}
 
 interface ThreadProps {
   readonly view: ThreadView
@@ -392,12 +440,13 @@ interface ThreadProps {
   readonly onBranch: (rowId: number) => void
   readonly versions: ChatVersions
   readonly onVersion: (version: Version) => void
+  readonly queue: QueueControls
 }
 
 const landingOf = ({ versions, current }: Versions) => versions[current]?.landing
 const NO_GROUPS: readonly Versions[] = []
 
-export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, versions, onVersion }: ThreadProps) {
+export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, versions, onVersion, queue }: ThreadProps) {
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
   const transcript = useRef<HTMLDivElement>(null)
@@ -521,15 +570,7 @@ export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier,
         {relayTurns(relayed.last)}
         {atEnd.length > 0 && <p className="versions-end">{atEnd.map(group => <VersionSwitch key={group.versions[0]?.sessionId} versions={group} onVersion={onVersion} />)}</p>}
         {view.asks.map(card => <SecretCard key={card.key} card={card} onAnswer={onAnswerRequest} />)}
-        {view.pending.map(message => (
-          <article key={message.key} className="turn pending">
-            <SentAttachments attachments={message.attachments} />
-            <p className="request" data-find={fieldId(message.key, 'text')}>{message.text}</p>
-            {message.status === 'failed'
-              ? <p className="err" data-find={fieldId(message.key, 'detail')}>{message.detail}</p>
-              : <p className="notice">{PENDING_WORDS[message.status]}</p>}
-          </article>
-        ))}
+        {view.pending.map(row => <Pending key={row.key} row={row} queue={queue} />)}
       </div>
     </>
   )
