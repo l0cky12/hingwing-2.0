@@ -139,6 +139,13 @@ export function pictureDataUrlOf(raw: unknown, limit: number): string | null {
   return type && `data:${type};base64,${base64}`
 }
 
+/**
+ * A slug Hermes's `_safe_slug` keeps as it is (agent/pet/store.py:93-96): one path segment with no separator, `.` or `..`.
+ * `pet.thumb` names its cache file `pets/.thumbs/<slug>.png` from the slug unchecked (agent/pet/store.py:68-70, :233), so any
+ * other slug could read or write a file outside that folder.
+ */
+export const isPetSlug = (slug: string): boolean => slug !== '' && slug === slug.trim() && slug !== '.' && slug !== '..' && !/[/\\]/.test(slug)
+
 /** A pet Hermes lists, whose idle frame a new bot can take as its picture. `url`: where Hermes fetches its sprites, or null for one Hermes holds. */
 export interface PetChoice {
   readonly slug: string

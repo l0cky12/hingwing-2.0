@@ -156,6 +156,7 @@ describe('validators', () => {
     expect(parseCommand({ do: 'pets', extra: 1 })).toEqual({ do: 'pets' })
     expect(parseCommand({ do: 'petPicture', slug: 'tabby', url: 'https://petdex.example/tabby.webp', name: 'Tabby' })).toEqual({ do: 'petPicture', slug: 'tabby', url: 'https://petdex.example/tabby.webp' })
     expect(parseCommand({ do: 'petPicture', slug: 'mochi', url: null })).toEqual({ do: 'petPicture', slug: 'mochi', url: null })
+    expect(parseCommand({ do: 'petPicture', slug: 'mr.whiskers', url: null })).toEqual({ do: 'petPicture', slug: 'mr.whiskers', url: null })
   })
 
   it('keep a path completion to a chat and the mention typed', () => {
@@ -264,6 +265,13 @@ describe('validators', () => {
     ['a pet picture with no slug', { do: 'petPicture', slug: '', url: null }],
     ['a pet picture whose sheet is not a web address', { do: 'petPicture', slug: 'tabby', url: 'file:///etc/passwd' }],
     ['a pet picture with no sheet named', { do: 'petPicture', slug: 'tabby' }],
+    ['a pet picture whose slug climbs out of the pets folder', { do: 'petPicture', slug: '../../x', url: null }],
+    ['a pet picture whose slug is a full path', { do: 'petPicture', slug: '/abs', url: null }],
+    ['a pet picture whose slug holds a slash', { do: 'petPicture', slug: 'pets/tabby', url: null }],
+    ['a pet picture whose slug holds a backslash', { do: 'petPicture', slug: 'a\\b', url: null }],
+    ['a pet picture whose slug is the folder itself', { do: 'petPicture', slug: '.', url: null }],
+    ['a pet picture whose slug is the folder above', { do: 'petPicture', slug: '..', url: null }],
+    ['a pet picture whose slug has spaces Hermes would trim', { do: 'petPicture', slug: ' tabby', url: null }],
     ['a model list for a bot with no name', { do: 'botModels', bot: ' ' }],
     ['a model list that names no bot', { do: 'botModels' }],
     ['details of a bot with no name', { do: 'describeBot', bot: '' }],

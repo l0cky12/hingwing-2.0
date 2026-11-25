@@ -2,7 +2,7 @@
  * The only place gateway shapes become domain shapes. Everything past these functions trusts its types.
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
-import { canonicalBotId, GENERATED_MAX_BYTES, PICTURE_MAX_BYTES, pictureDataUrlOf, type BotCreated, type BotDetails, type BotFacts, type BotId, type PetChoice } from '../domain/bots'
+import { canonicalBotId, GENERATED_MAX_BYTES, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, type BotCreated, type BotDetails, type BotFacts, type BotId, type PetChoice } from '../domain/bots'
 import type { CheckpointDiff, Checkpoints, ContextBreakdown, ModelConfirm, ModelMenu, Outcome as CommandOutcome, Restored } from '../domain/command'
 import type { PaneAsk } from '../domain/pane'
 import type { Admission } from '../domain/queue'
@@ -1254,13 +1254,14 @@ export function parseGenerated(reply: ImageGenerateResult): CommandOutcome<strin
 /**
  * `pet.gallery`'s entries, each slug once, with the ones petdex hand-picks first (tui_gateway/methods_session.py:1467-1495).
  * A pet Hermes holds that petdex no longer lists has an empty `spritesheetUrl`, since Hermes reads its sheet from disk.
+ * A slug Highwing would refuse to ask a thumb for is left out.
  */
 export function parsePets(reply: PetGalleryResult): readonly PetChoice[] {
   const rows = isObject(reply) && Array.isArray(reply.pets) ? reply.pets.filter(isObject) : []
   const seen = new Set<string>()
   const listed = rows.flatMap(row => {
     const slug = words(row.slug)
-    if (slug === null || seen.has(slug)) return []
+    if (slug === null || !isPetSlug(slug) || seen.has(slug)) return []
     seen.add(slug)
     const url = words(row.spritesheetUrl)
     return [{ pet: { slug, name: words(row.displayName) ?? slug, url: url !== null && /^https?:\/\//.test(url) ? url : null }, curated: row.curated === true }]

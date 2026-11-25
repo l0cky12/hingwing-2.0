@@ -1,5 +1,5 @@
 import {
-  EFFORTS, EXPORT_FORMATS, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
+  EFFORTS, EXPORT_FORMATS, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckFailure, type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type HelperId, type Item, type Link, type ModelOption,
   type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
@@ -415,7 +415,7 @@ export const validators: Validators = {
   canGeneratePicture: () => ({ do: 'canGeneratePicture' }),
   generatePicture: raw => (filled(raw.prompt) ? { do: 'generatePicture', prompt: raw.prompt } : null),
   pets: () => ({ do: 'pets' }),
-  petPicture: raw => (filled(raw.slug) && (raw.url === null || webPage(raw.url)) ? { do: 'petPicture', slug: raw.slug, url: raw.url } : null),
+  petPicture: raw => (text(raw.slug) && isPetSlug(raw.slug) && (raw.url === null || webPage(raw.url)) ? { do: 'petPicture', slug: raw.slug, url: raw.url } : null),
   botModels: raw => {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     return raw.bot !== null && bot === null ? null : { do: 'botModels', bot }

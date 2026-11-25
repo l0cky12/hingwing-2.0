@@ -105,6 +105,11 @@ describe('parsePets', () => {
     expect(parsePets({ enabled: true, pets: [{ slug: 'x', displayName: 'X', installed: false, spritesheetUrl: 'file:///etc/passwd' }] })).toEqual([{ slug: 'x', name: 'X', url: null }])
     expect(parsePets({ enabled: false })).toEqual([])
   })
+
+  it('leaves out a pet whose slug would name a folder outside the pets one', () => {
+    const rows = ['../../x', '/abs', '..', 'a\\b', 'tabby'].map(slug => ({ slug, displayName: slug, installed: false, spritesheetUrl: '' }))
+    expect(parsePets({ enabled: false, pets: rows }).map(pet => pet.slug)).toEqual(['tabby'])
+  })
 })
 
 describe('parsePetPicture', () => {

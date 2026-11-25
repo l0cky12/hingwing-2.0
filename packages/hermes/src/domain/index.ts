@@ -9,7 +9,7 @@ export { activityOf, turnActivityOf, type Activity, type TurnActivity } from './
 export { offeredBy, sendPlan, type SendPlan } from './queue'
 export { slashLineOf, type SlashCatalog, type SlashEntry } from './slash'
 export {
-  BOT_TONES, botsIn, canonicalBotId, GENERATED_MAX_BYTES, PICTURE_MAX_BYTES, PICTURE_RULE, pictureDataUrlOf, pictureTypeOf, rosterOf, type AvatarTone, type Bot, type BotCreated,
+  BOT_TONES, botsIn, canonicalBotId, GENERATED_MAX_BYTES, isPetSlug, PICTURE_MAX_BYTES, PICTURE_RULE, pictureDataUrlOf, pictureTypeOf, rosterOf, type AvatarTone, type Bot, type BotCreated,
   type BotDetails, type BotDraft, type BotEdit, type BotFacts, type BotId, type Bots, type BotSection, type BotTone, type PetChoice, type PictureType, type Roster
 } from './bots'
 export type { PathMatch } from './path'
