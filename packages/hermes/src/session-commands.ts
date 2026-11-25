@@ -295,6 +295,8 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     if (scope.kind === 'folder' && port.content.run.state === 'running') return MID_TURN
     const how = scope.kind === 'file' ? { file_path: scope.path } : scope.edits === 'overwrite' ? { all: true } : {}
     const reply = await port.call('rollback.restore', { session_id: port.id, hash: checkpoint, ...how })
+    // A whole folder whose answer was lost may have taken back the last turn, so the chat is read again either way.
+    if (!reply.ok && reply.refusal.kind === 'offline' && scope.kind === 'folder') port.act({ did: 'rewritten' })
     if (!reply.ok) return reply
     const restored = parseRestored(reply.value)
     if ('failed' in restored) return refused('rejected', restored.failed)

@@ -59,6 +59,10 @@ export async function stage({ watched = false, hub: over = {} }: { readonly watc
   await answer('session.resume', SNAPSHOT)
   return {
     actor, calls, answer, event, drop,
+    online: () => {
+      state.link = { state: 'online' }
+      actor.linkChanged()
+    },
     redial: async (held: Record<string, unknown> = {}, replay: 'kept' | 'lost' = 'kept') => {
       drop()
       state.link = { state: 'online' }

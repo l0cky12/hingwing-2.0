@@ -196,6 +196,16 @@ describe('the checkpoints', () => {
     expect(actor.session.sync.state).toBe('live')
   })
 
+  it('read the chat again when the socket drops before Hermes answers a whole folder, since it may have taken back the last turn', async () => {
+    const { command, sent, drop, online } = await stage()
+    const done = command({ do: 'restore', sessionId: ID, checkpoint: HASH, scope: { kind: 'folder', edits: 'keep' } })
+    expect(sent()).toEqual([['rollback.restore', { session_id: ID, hash: HASH }]])
+    drop()
+    expect(await done).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    online()
+    expect(sent(), 'no replay: the whole chat with its rows').toEqual([['session.resume', { session_id: ID, display_projection: true }]])
+  })
+
   it('say why Hermes could not restore', async () => {
     const { command, answer } = await stage()
     const done = command({ do: 'restore', sessionId: ID, checkpoint: HASH, scope: { kind: 'folder', edits: 'keep' } })
