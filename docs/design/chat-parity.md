@@ -115,6 +115,7 @@ Each unit is one PR, stacked on the one before it. Each ends with:
 | B4 | Side prompts and chat commands | #30, #32, #33, #35, #36, #38, #45, #55 | `commands.jsonl`: `complete.path` as a header the gateway answers from (#112's `completePath`), `/btw` and `/bg` with their answers, effort, fast, the chat's folder, export and compress. |
 | B5 | Session panels | #42, #43, #44, #46 | `panels.jsonl`: processes, a goal card, checkpoints and a reaction. |
 | B6 | Undo, rewrites from other windows, pin and delete | #24, #26, #53, #54 | Builds on #96's rewind and #69's chat list once they merge. |
+| B-ui | What the frontend units need first | #44, and the typed forms of #4, #8, #35 and #36 | `sendPlan` and `offeredBy` exported from `@highwing/hermes/domain` and compiled from the renderer's tsconfig. A typed `/busy`, `/fast` or `/reasoning` that sets a switch Highwing models runs `tune`, so `tuning` takes Hermes's reply, and every other form still goes to Hermes. A typed `/rollback` lists, diffs and restores checkpoints with B5's commands and answers in words under the composer. Tests over each typed form, and the slash-menu and chat-commands recipes. |
 
 ### Rows that issues own
 
