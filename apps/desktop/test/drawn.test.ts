@@ -12,7 +12,7 @@ const turn = (id: string, items: readonly Item<'settled'>[], request: string | n
 
 const session = (history: readonly SettledTurn[]): Session => ({
   id: 's1' as Session['id'], title: '', cwd: null, history, earlier: 'none', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [],
-  model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sync: { state: 'live' }
+  model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [], sync: { state: 'live' }
 })
 
 const goal: Item<'settled'> = { kind: 'status', what: 'line', about: 'goal', text: 'Goal met.' }

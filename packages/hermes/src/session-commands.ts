@@ -4,9 +4,9 @@ import type { Command, ModelConfirm, Outcome, Refusal, ResultOf } from './domain
 import { offeredBy, sendPlan } from './domain/queue'
 import type {
   AttachmentId, BranchId, Generation, HermesRequest, PromptId, PromptReply, QueuedMessage, RecordedReply, RequestId, RequestReply, SessionContent, SessionId,
-  Told, Tuning, TurnId
+  SideId, Told, Tuning, TurnId
 } from './domain/session'
-import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
+import { ownCommand, slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import type { Served } from './wire/link'
 import {
   beginsAtTurn, parseBranched, parseBusy, parseContextBreakdown, parseCorrection, parseDirective, parseFast, parseModelMenu, parseModelReceipt, parsePathMatches,
@@ -129,6 +129,13 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     hub.branched({ from: port.id, sessionId, text })
     hub.refreshSoon()
     return { ok: true, value: sessionId }
+  }),
+
+  side: (port, { kind, text }) => port.whenLive(async () => {
+    const asked = await port.call(kind === 'btw' ? 'prompt.btw' : 'prompt.background', { session_id: port.id, text })
+    if (!asked.ok) return asked
+    port.act({ did: 'side.started', id: asked.value.task_id as SideId, kind, asked: text })
+    return DONE
   }),
 
   stop: port => port.whenLive(async () => {
@@ -424,13 +431,14 @@ async function answerRequest(port: SessionPort, requestId: RequestId, reply: Req
 export const runSessionCommand = (port: SessionPort, command: SessionCommand, hub: Hub) =>
   (sessionCommands[command.do] as Row<SessionCommand>)(port, command, hub)
 
-const highwingRuns: { readonly [name: string]: (port: SessionPort, arg: string, hub: Hub) => Outcome | Promise<Outcome> | null } = {
-  title: (port, title, hub) => (title === '' ? null : sessionCommands.rename(port, { do: 'rename', sessionId: port.id, title }, hub))
-}
-
-async function runSlash(port: SessionPort, { entry, arg }: SlashLine, hub: Hub): Promise<Outcome<string | null>> {
-  const own = entry.kind === 'command' && Object.hasOwn(highwingRuns, entry.name) ? highwingRuns[entry.name]?.(port, arg, hub) : null
-  if (own != null) return showing(await own)
+async function runSlash(port: SessionPort, line: SlashLine, hub: Hub): Promise<Outcome<string | null>> {
+  const own = ownCommand(line, port.id)
+  if (own !== null && 'usage' in own) return refused('rejected', `Type it as ${own.usage}.`)
+  if (own !== null) {
+    const done: Outcome<unknown> = await runSessionCommand(port, own, hub)
+    return done.ok ? { ok: true, value: typeof done.value === 'string' ? done.value : null } : done
+  }
+  const { entry, arg } = line
   const typed = `/${entry.name}${arg === '' ? '' : ` ${arg}`}`
   const reply = await port.call('command.dispatch', { session_id: port.id, name: entry.name, ...(arg === '' ? {} : { arg }) })
   if (!reply.ok) return reply

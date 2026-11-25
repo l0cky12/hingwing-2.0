@@ -4,7 +4,7 @@ import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
 import type {
   AdmissionId, AttachmentId, BranchId, BusyMode, ContextFill, Effort, InputId, ModelOption, ModelRef, PromptId, PromptReply, QueuedAction, RequestId,
-  RequestReply, SessionId, Told
+  RequestReply, SessionId, SideTask, Told
 } from './session'
 
 export type Command =
@@ -25,6 +25,8 @@ export type Command =
    * none. A command line with any is refused.
    */
   | { readonly do: 'send'; readonly sessionId: SessionId; readonly text: string; readonly attachments?: readonly AttachmentId[] }
+  /** Asks beside the chat (`btw`) or runs a prompt apart from it (`background`). The answer lands in `sides`. Needs the chat attached. */
+  | { readonly do: 'side'; readonly sessionId: SessionId; readonly kind: SideTask['kind']; readonly text: string }
   /**
    * Cut this chat before the stored row `rowId` (the message it names and everything after it, in the thread and in
    * Hermes's history), then send `text` as a new message. Nothing is sent when Hermes refuses the cut.

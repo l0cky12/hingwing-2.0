@@ -9,8 +9,8 @@ import { accepted, answering, closed, failed, opened, reconciled, type Change, t
 import type {
   AdmissionId, Ask, Attachment, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, MoaItem, ModelRef, OpenTurn,
   OutboxEntry, Outcome, PlanEntry, PromptId, PromptItem, PromptReply, QueuedMessage, ReasoningItem, RecordedReply, Request, RequestAsk, RequestId, Run,
-  Session, SessionContent, SessionId, SessionModel, SessionUsage, SettledTurn, StatusAbout, StatusItem, Sync, TextItem, Tokens, Told, ToolId, ToolItem,
-  ToolResult, Tuning, TurnId
+  Session, SessionContent, SessionId, SessionModel, SessionUsage, SettledTurn, SideId, SideTask, StatusAbout, StatusItem, Sync, TextItem, Tokens, Told, ToolId,
+  ToolItem, ToolResult, Tuning, TurnId
 } from './session'
 
 /** A gateway event in domain terms. `wire/parse.ts` builds these. Field names are ours, not the wire's. */
@@ -63,6 +63,8 @@ export type SessionEvent =
   | { readonly type: 'notice.shown'; readonly notice: ShownNotice }
   | { readonly type: 'notice.cleared'; readonly key: string }
   | { readonly type: 'request.cancelled'; readonly id: RequestId; readonly why: CloseWhy }
+  /** A side question's or a background prompt's answer, by any client's task. */
+  | { readonly type: 'side.answered'; readonly id: SideId; readonly kind: SideTask['kind']; readonly asked: string | null; readonly text: string }
   | { readonly type: 'connect'; readonly card: CardRequest; readonly settled: CloseWhy | null }
   | {
       readonly type: 'meta'
@@ -245,6 +247,7 @@ export type LocalAction =
   /** Hermes cut the chat before this stored row. The turn that row opens and every later turn are gone. */
   | { readonly did: 'rewound'; readonly rowId: number }
   | { readonly did: 'model.deferred'; readonly model: ModelRef; readonly during: Generation }
+  | { readonly did: 'side.started'; readonly id: SideId; readonly kind: SideTask['kind']; readonly asked: string }
   /** Hermes confirmed a switch this client set. */
   | { readonly did: 'tuned'; readonly tuning: Partial<Tuning> }
 
@@ -285,7 +288,7 @@ export interface Tracked {
 
 export function emptyTracked(id: SessionId): Tracked {
   return {
-    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], requests: [], queue: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, tuning: UNTUNED },
+    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], requests: [], queue: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, tuning: UNTUNED, sides: [] },
     gate: { at: 'detached', why: 'new', cursor: null },
     fence: { revision: 0, text: null, older: null, admissions: {}, sent: {}, settledThrough: null, generation: null, attaches: 0, totalsEpoch: 0, closed: [], told: {} }
   }
@@ -491,7 +494,8 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       // Hermes asks a newly attached viewer again about a held pick (gateway/session_deferred_pick.py:46-54).
       model: { ...modelFrom(content.model, snapshot.model), next: null, ask: null },
       usage: patch(content.usage, { totals: null }),
-      tuning: patch(content.tuning, snapshot.tuning)
+      tuning: patch(content.tuning, snapshot.tuning),
+      sides: content.sides.some(side => side.state.s === 'running') ? content.sides.map(side => (side.state.s === 'running' ? { ...side, state: LOST_SIDE } : side)) : content.sides
     },
     fence: {
       revision: Math.max(fence.revision, snapshot.revision),
@@ -683,6 +687,11 @@ function act(state: Tracked, action: LocalAction): Tracked {
     }
     case 'tuned':
       return tune(state, action.tuning)
+    case 'side.started':
+      // The answer can come before the reply that names its task.
+      return content.sides.some(side => side.id === action.id)
+        ? state
+        : { ...state, content: { ...content, sides: [...content.sides, { id: action.id, kind: action.kind, asked: action.asked, state: RUNNING_SIDE }] } }
     default:
       return unreachable(action)
   }
@@ -694,6 +703,8 @@ const NO_USAGE: SessionUsage = { totals: null, context: null }
 const ZERO_TOKENS: Tokens = { input: 0, output: 0, reasoning: 0 }
 const UNTUNED: Tuning = { reasoning: null, busy: null, effort: null, fast: null, yolo: null }
 const LOST: Outcome = { kind: 'lost' }
+const RUNNING_SIDE: SideTask['state'] = { s: 'running' }
+const LOST_SIDE: SideTask['state'] = { s: 'lost' }
 const INTERLUDE: Outcome = { kind: 'interlude' }
 const ANSWERED_ELSEWHERE: PromptItem['state'] = { s: 'answered', reply: null }
 
@@ -811,6 +822,13 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
       return clearNotice(state, event.key)
     case 'request.cancelled':
       return withRequests(state, closed(heldOf(state), event.id, event.why))
+    case 'side.answered': {
+      const { sides } = state.content
+      const done: SideTask['state'] = { s: 'done', text: event.text }
+      const at = sides.findIndex(side => side.id === event.id)
+      if (at === -1) return { ...state, content: { ...state.content, sides: [...sides, { id: event.id, kind: event.kind, asked: event.asked, state: done }] } }
+      return sides[at]?.state.s === 'done' ? state : { ...state, content: { ...state.content, sides: sides.with(at, { ...sides[at]!, state: done }) } }
+    }
     case 'connect':
       return withRequests(state, event.settled === null
         ? opened(heldOf(state), event.card, seenAt)

@@ -124,6 +124,10 @@ describe('validators', () => {
     const model = { id: 'careful-large', provider: 'acme', providerName: 'Acme' }
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model: { ...model, price: 9 } })).toEqual({ do: 'pickModel', sessionId: 's1', model })
     expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'yolo', on: false, extra: 1 })).toEqual({ do: 'tune', sessionId: 's1', set: 'yolo', on: false })
+    expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'fast', on: true })).toEqual({ do: 'tune', sessionId: 's1', set: 'fast', on: true })
+    expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'effort', to: 'xhigh', on: true })).toEqual({ do: 'tune', sessionId: 's1', set: 'effort', to: 'xhigh' })
+    expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'effort', to: 'default' })).toEqual({ do: 'tune', sessionId: 's1', set: 'effort', to: 'default' })
+    expect(parseCommand({ do: 'side', sessionId: 's1', kind: 'background', text: 'tidy the notes', extra: 1 })).toEqual({ do: 'side', sessionId: 's1', kind: 'background', text: 'tidy the notes' })
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })).toEqual({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })
   })
 
@@ -242,6 +246,10 @@ describe('validators', () => {
     ['an edit with no text', { do: 'queued', sessionId: 's1', admissionId: 'a1', action: 'edit', text: '' }],
     ['a busy mode Hermes does not have', { do: 'tune', sessionId: 's1', set: 'busy', to: 'drop' }],
     ['a non-boolean start', { do: 'reconnect', start: 'yes' }],
+    ['a side prompt of no kind Hermes has', { do: 'side', sessionId: 's1', kind: 'aside', text: 'why?' }],
+    ['a side question with no words', { do: 'side', sessionId: 's1', kind: 'btw', text: ' ' }],
+    ['an effort Hermes does not take', { do: 'tune', sessionId: 's1', set: 'effort', to: 'turbo' }],
+    ['a fast switch with a word for on', { do: 'tune', sessionId: 's1', set: 'fast', on: 'on' }],
     ['a YOLO switch with a word for on', { do: 'tune', sessionId: 's1', set: 'yolo', on: 'on' }],
     ['a path completion for a word that is not a mention', { do: 'completePath', sessionId: 's1', word: 'not' }],
     ['a path completion with no word', { do: 'completePath', sessionId: 's1' }],
@@ -280,7 +288,7 @@ describe('validators', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'closePreview', 'completePath', 'contextBreakdown',
       'createBot', 'describeBot', 'discard', 'editBot', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat', 'openPreview',
-      'pickModel', 'placePreview', 'preview', 'queued', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename', 'rewind', 'send', 'start',
+      'pickModel', 'placePreview', 'preview', 'queued', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename', 'rewind', 'send', 'side', 'start',
       'stop', 'tune', 'versions'
     ])
   })
