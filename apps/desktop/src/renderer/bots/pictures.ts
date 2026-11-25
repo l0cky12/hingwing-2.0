@@ -42,8 +42,8 @@ function load(key: string, bot: BotId) {
   changed()
   void run({ do: 'botPicture', bot }).then(outcome => {
     if (entries.get(key) !== loading) return
-    if (outcome.ok) entries.set(key, { state: 'loaded', url: outcome.value === null ? null : blobUrlOf(outcome.value) })
-    else entries.delete(key)
+    // A refusal draws the letter until this window changes the picture or the connection changes, rather than asking again at once.
+    entries.set(key, { state: 'loaded', url: outcome.ok && outcome.value !== null ? blobUrlOf(outcome.value) : null })
     changed()
   })
 }
