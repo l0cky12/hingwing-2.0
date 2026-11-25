@@ -19,7 +19,6 @@ const TOO_BIG = PICTURE_MAX_BYTES + 1
 const UNREADABLE: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: "Highwing couldn't read that file." } }
 const NOT_A_PICTURE: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: PICTURE_RULE } }
 
-/** The picked file as a data URL, once its bytes and size are checked. It goes nowhere: the caller decides what to do with it. */
 export async function choosePicture(deps: Pick<PictureDeps, 'choose' | 'read'>): Promise<CommandOutcome<PictureFile>> {
   const path = await deps.choose()
   if (path === null) return { ok: true, value: 'cancelled' }

@@ -14,7 +14,6 @@ const SCRATCH_ROOT = '/tmp/highwing-verify-scratch'
 const REFERENCE = join(REPO, 'docs/design/reference')
 const SIZE = { width: 1180, height: 860 }
 const QUIT_MS = 5_000
-/** With --video, how long the window stays still after each step, so a viewer can follow what the step did. */
 const VIDEO_HOLD_MS = 700
 const requireDesktop = createRequire(join(DESKTOP, 'package.json'))
 

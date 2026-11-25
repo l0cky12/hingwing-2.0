@@ -145,7 +145,6 @@ function fileActions(opener: Opener, pane: PreviewOwner): FileActions {
 
 export interface Attaching { readonly store: Pick<AttachmentStore, 'stage' | 'read'>; readonly sources: AttachSources }
 
-/** Main's file picker for a picture: `pick` sends the picture as a bot's, `choose` answers it to the window. */
 export interface Pictures {
   pick(bot: BotId): Promise<CommandOutcome<PictureChoice>>
   choose(): Promise<CommandOutcome<PictureFile>>

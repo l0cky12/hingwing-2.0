@@ -13,34 +13,28 @@ export const FACE_COLOR_NAMES = Object.keys(FACE_COLORS) as readonly FaceColor[]
 
 export type Face = { readonly from: 'face'; readonly shape: FaceShape | 'auto'; readonly color: FaceColor }
 
-/** What the New bot dialog will save as the bot's picture. Every `picture` is a data URL. */
 export type Look =
   | Face
-  /** As main checked it. */
   | { readonly from: 'upload'; readonly picture: string }
   | { readonly from: 'generate'; readonly picture: string }
   | { readonly from: 'pet'; readonly slug: string; readonly name: string; readonly picture: string }
 
-/** Every new bot gets a face unless the user picks otherwise. */
 export const DEFAULT_LOOK: Face = { from: 'face', shape: 'auto', color: 'slate' }
 
 export const titleOf = (word: string) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`
 
-/** The shape `auto` stands for: picked from the name Hermes keeps, so a name always gets the same shape. */
 export function shapeFor(shape: FaceShape | 'auto', name: string): FaceShape {
   if (shape !== 'auto') return shape
   const hash = [...canonicalBotId(name)].reduce((held, char) => (held * 31 + char.charCodeAt(0)) >>> 0, 7)
   return FACE_SHAPES[hash % FACE_SHAPES.length] as FaceShape
 }
 
-/** Surprise me: a shape and a color other than the ones the face shows, so it always changes. `random` answers in [0, 1). */
 export function surpriseFor(face: Face, name: string, random: () => number = Math.random): Face {
   const pick = <T,>(items: readonly T[]) => items[Math.floor(random() * items.length)] as T
   const shown = shapeFor(face.shape, name)
   return { from: 'face', shape: pick(FACE_SHAPES.filter(shape => shape !== shown)), color: pick(FACE_COLOR_NAMES.filter(color => color !== face.color)) }
 }
 
-/** What is picked, in words: the face's color and shape, or where the picture came from. */
 export function lookWords(look: Look, name: string): string {
   switch (look.from) {
     case 'face': return `${titleOf(look.color)} ${shapeFor(look.shape, name)}, picked ${look.shape === 'auto' ? 'from the name' : 'by you'}`
@@ -52,7 +46,6 @@ export function lookWords(look: Look, name: string): string {
 
 const at = (value: number) => value.toFixed(2)
 
-/** A closed path around the centre of the 100-unit box, `radius` units out at each angle from the top. */
 function polar(radius: (angle: number) => number, steps = 180): string {
   const points = Array.from({ length: steps + 1 }, (_, step) => {
     const angle = (step / steps) * Math.PI * 2
@@ -77,7 +70,6 @@ const PETALS = Array.from({ length: 6 }, (_, petal) => `<circle cx="${at(50 + 22
 const rounded = (points: string, fill: string, width: number, more = '') =>
   `<polygon points="${points}" fill="${fill}" stroke="${fill}" stroke-width="${width}" stroke-linejoin="round"${more}/>`
 
-/** Each shape's body, and how far its eyes move from the centre, if at all. */
 const SHAPES: { readonly [S in FaceShape]: { readonly body: (fill: string) => string; readonly eyes?: readonly [number, number] } } = {
   circle: { body: fill => `<circle cx="50" cy="50" r="40" fill="${fill}"/>` },
   squircle: { body: fill => `<path fill="${fill}" d="${SQUIRCLE}"/>` },
@@ -95,7 +87,6 @@ const SHAPES: { readonly [S in FaceShape]: { readonly body: (fill: string) => st
 
 const EYES = '<rect x="38" y="40" width="7.5" height="17" rx="3.75" transform="rotate(8 41 48)"/><rect x="54.5" y="40" width="7.5" height="17" rx="3.75" transform="rotate(8 58 48)"/>'
 
-/** A face as SVG markup, for the picker, the preview and the stored picture alike. Its eyes are dark, and light on ink. */
 export function faceSvg(shape: FaceShape, color: FaceColor, size: number): string {
   const { body, eyes: [dx, dy] = [0, 0] } = SHAPES[shape]
   const eye = color === 'ink' ? '#F6F7F3' : FACE_COLORS.ink
@@ -123,7 +114,6 @@ async function drawn(url: string | null, draw: (context: CanvasRenderingContext2
   }
 }
 
-/** The PNG data URL Hermes stores for a look: a picture is drawn onto a 512 px square, and an upload is sent as main checked it. */
 export async function pictureOf(look: Look, name: string): Promise<string> {
   switch (look.from) {
     case 'upload':
@@ -134,7 +124,6 @@ export async function pictureOf(look: Look, name: string): Promise<string> {
     }
     case 'pet':
       return drawn(blobUrlOf(look.picture), (context, image) => {
-        // Pixel art scaled by a whole number with no smoothing keeps every pixel square and sharp.
         const scale = Math.max(1, Math.floor(SIDE / Math.max(image.naturalWidth, image.naturalHeight)))
         const [width, height] = [image.naturalWidth * scale, image.naturalHeight * scale]
         context.imageSmoothingEnabled = false

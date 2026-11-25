@@ -1254,7 +1254,6 @@ export function parseGenerated(reply: ImageGenerateResult): CommandOutcome<strin
 /**
  * `pet.gallery`'s entries, each slug once, with the ones petdex hand-picks first (tui_gateway/methods_session.py:1467-1495).
  * A pet Hermes holds that petdex no longer lists has an empty `spritesheetUrl`, since Hermes reads its sheet from disk.
- * A slug Highwing would refuse to ask a thumb for is left out.
  */
 export function parsePets(reply: PetGalleryResult): readonly PetChoice[] {
   const rows = isObject(reply) && Array.isArray(reply.pets) ? reply.pets.filter(isObject) : []

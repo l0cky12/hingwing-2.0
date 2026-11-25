@@ -877,7 +877,6 @@ export class ScriptedGateway {
   private readonly profiles: Obj[]
   private readonly souls: Map<string, string>
   private readonly pictures = new Map<string, { readonly mime: string; readonly size: number; readonly data: string }>()
-  /** The slugs of `pets.refused_once` whose one refusal is spent. */
   private readonly thumbsRefused = new Set<string>()
   /**
    * `<profile> <slug>` for each thumb `pet.thumb` answered with a picture. Hermes keeps it on disk under the profile it ran as

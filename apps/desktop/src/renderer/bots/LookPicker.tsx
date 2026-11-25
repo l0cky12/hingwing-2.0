@@ -4,7 +4,6 @@ import type { PictureFile } from '../../ipc-contract'
 import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_COLORS, FACE_SHAPES, faceSvg, lookWords, shapeFor, surpriseFor, titleOf, type Face, type FaceColor, type FaceShape, type Look } from './look'
 import { blobUrlOf, decodes } from './pictures'
 
-/** What the picker asks Hermes and main for. */
 export interface LookCalls {
   readonly canGenerate: () => Promise<CommandOutcome<boolean>>
   readonly generate: (prompt: string) => Promise<CommandOutcome<string>>
@@ -15,21 +14,17 @@ export interface LookCalls {
 
 interface LookPickerProps {
   readonly look: Look
-  /** The typed name, which an Auto shape follows. */
   readonly name: string
   readonly calls: LookCalls
   readonly onLook: (look: Look) => void
-  /** What Create waits on, in words, while a picture that will become the look is on its way. Null once it lands or a pick lets it go. Read at mount only. */
   readonly onWaiting: (words: string | null) => void
 }
 
 const TABS = [['shape', 'Shape'], ['generate', 'Generate'], ['upload', 'Upload'], ['pet', 'Pet']] as const
 type Tab = typeof TABS[number][0]
 
-/** `none`: Hermes has no image model. `busy`: Hermes is drawing. `words`: why the last ask failed. */
 type Drawing = { readonly at: 'unknown' | 'checking' | 'none' | 'ready'; readonly words: string | null } | { readonly at: 'busy' }
 type PetList = { readonly at: 'unread' | 'reading' } | { readonly at: 'read'; readonly pets: readonly PetChoice[] } | { readonly at: 'refused'; readonly words: string }
-/** A pet's idle frame. `missing`: none came, so it is asked for again when the tile is next shown. */
 type Thumb = { readonly at: 'loading' | 'missing' } | { readonly at: 'read'; readonly picture: string }
 
 /**
@@ -49,10 +44,6 @@ const UNREADABLE: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejecte
 type Source = 'generate' | 'upload'
 const WAITING: { readonly [S in Source]: string } = { generate: 'Drawing a picture…', upload: 'Reading the picture…' }
 
-/**
- * The one source whose picture becomes the look when it lands. A newer source, or a pick let go with `letGo`, wins over it,
- * so its late result is not wanted. A call that throws settles as `failed`, so the wait always ends.
- */
 export function pendingLook(onAwaiting: (source: Source | null) => void) {
   let held: symbol | null = null
   return {
@@ -86,7 +77,6 @@ const Pencil = () => <svg {...icon} aria-hidden="true"><path d="M4 20h4L19 9l-4-
 const Dice = () => <svg {...icon} aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M9 9h.01M15 15h.01M15 9h.01M9 15h.01" /></svg>
 const Spark = () => <svg {...icon} aria-hidden="true"><path d="m12 3 2 5 5 2-5 2-2 5-2-5-5-2 5-2z" /></svg>
 
-/** A blob URL for a data URL, revoked when the data URL changes or the component goes. */
 function useBlobUrl(data: string | null): string | null {
   const url = useMemo(() => (data === null ? null : blobUrlOf(data)), [data])
   useEffect(() => () => {
@@ -96,7 +86,6 @@ function useBlobUrl(data: string | null): string | null {
 }
 
 function FaceArt({ shape, color, size }: { readonly shape: FaceShape; readonly color: FaceColor; readonly size: number }) {
-  // The markup is built from the fixed shape and color tables alone, never from anything typed or received.
   return <span className="look-face" dangerouslySetInnerHTML={{ __html: faceSvg(shape, color, size) }} />
 }
 
@@ -110,14 +99,12 @@ interface PetTileProps {
   readonly pet: PetChoice
   readonly thumb: Thumb | undefined
   readonly pressed: boolean
-  /** Called each time the tile scrolls into view. */
   readonly onShown: () => void
   readonly onPick: (picture: string) => void
 }
 
 const titleOfTile = (pet: PetChoice, thumb: Thumb | undefined) => (thumb?.at === 'missing' ? `No picture of ${pet.name} yet` : pet.name)
 
-/** A pet is picked by its picture, so a tile is disabled until Hermes sends one. */
 export function PetTile({ pet, thumb, pressed, onShown, onPick }: PetTileProps) {
   const picture = thumb?.at === 'read' ? thumb.picture : null
   const url = useBlobUrl(picture)
@@ -159,12 +146,11 @@ export function LookPicker({ look, name, calls, onLook, onWaiting }: LookPickerP
   const [query, setQuery] = useState('')
   const [thumbs, setThumbs] = useState<ReadonlyMap<string, Thumb>>(new Map())
   const [awaiting, setAwaiting] = useState<Source | null>(null)
-  /** Main is showing the file dialog or reading the file. Create waits, though only a picture main hands back takes over the look. */
   const [choosing, setChoosing] = useState(false)
   const [pending] = useState(() => pendingLook(setAwaiting))
   const waiting = awaiting !== null ? WAITING[awaiting] : choosing ? WAITING.upload : null
-  // Before paint, so Create is never shown enabled between a click and its wait.
-  useLayoutEffect(() => onWaiting(waiting), [waiting])
+  // React runs a plain effect after paint, which would show Create enabled for a frame between a click and its wait.
+  useLayoutEffect(() => onWaiting(waiting), [waiting, onWaiting])
   const root = useRef<HTMLDivElement>(null)
   const button = useRef<HTMLButtonElement>(null)
   const pop = useRef<HTMLDivElement>(null)
@@ -234,7 +220,6 @@ export function LookPicker({ look, name, calls, onLook, onWaiting }: LookPickerP
     setFace(next)
     take(next)
   }
-  // The button that was pressed leaves with its panel, so focus goes to the tab whose panel takes its place.
   const backToFace = () => {
     take(face)
     show('shape')
@@ -246,7 +231,6 @@ export function LookPicker({ look, name, calls, onLook, onWaiting }: LookPickerP
     setDrawing({ at: 'ready', words: wanted && !result.ok ? result.refusal.message : null })
     if (wanted && result.ok) onLook({ from: 'generate', picture: result.value })
   }
-  // A cancel or a refused file is no pick, so it leaves a drawing on its way be.
   const choose = async () => {
     setUpload({ busy: true, words: null })
     setChoosing(true)

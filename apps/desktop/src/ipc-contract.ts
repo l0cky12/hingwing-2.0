@@ -69,7 +69,6 @@ export type ModeCommand = { readonly do: 'setMode'; readonly mode: Mode }
 export const isMode = (raw: unknown): raw is Mode => raw === 'bots' || raw === 'chats'
 
 export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand
-/** A picture for a bot that exists comes only from main's file picker. A new bot's picture is checked as `createBot` crosses. */
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
@@ -145,7 +144,6 @@ export const MAX_ATTACHMENTS = 64
 
 /** `set`: the picture was sent and Hermes kept it. `cancelled`: the user closed the file picker, and nothing was sent. */
 export type PictureChoice = 'set' | 'cancelled'
-/** A picked picture as a data URL main checked, or `cancelled` when the user closed the file picker. */
 export type PictureFile = string | 'cancelled'
 
 export interface Bridge {

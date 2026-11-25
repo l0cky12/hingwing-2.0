@@ -56,10 +56,7 @@ function createParams({ name, description, model, persona }: BotDraft) {
   }
 }
 
-/**
- * Hermes copies the launch profile's credentials into the new bot unless told not to, so a new bot has a provider. The bot
- * exists once Hermes made it, so a picture it then refuses is one more warning rather than a refusal of the create.
- */
+/** Hermes copies the launch profile's credentials into the new bot unless told not to, so a new bot has a provider. */
 export async function createBot(conn: Wire, draft: BotDraft, picture: string | null): Promise<Outcome<BotCreated>> {
   const made = await guarded(CREATE_REASONS, async () => ({ ok: true, value: parseCreated(await conn.call('profiles.create', createParams(draft))) }))
   if (!made.ok || picture === null) return made
@@ -130,7 +127,6 @@ export const canGeneratePicture = (conn: Wire): Promise<Outcome<boolean>> =>
     try {
       return { ok: true, value: parseImageProbe(await conn.call('image.generate', { probe: true })) }
     } catch (error) {
-      // A Hermes without the call has no image model to offer, which is no refusal.
       if (error instanceof RpcRefusal && error.code === METHOD_NOT_FOUND) return { ok: true, value: false }
       throw error
     }

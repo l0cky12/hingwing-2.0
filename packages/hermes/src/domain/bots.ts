@@ -121,7 +121,6 @@ const hexAt = (bytes: Uint8Array, start: number, length: number) =>
 export const pictureTypeOf = (bytes: Uint8Array): PictureType | null =>
   MAGIC.find(([, marks]) => marks.every(([start, hex]) => hexAt(bytes, start, hex.length / 2) === hex))?.[0] ?? null
 
-/** The most bytes of a picture Hermes's image model draws that Highwing asks for. The window shrinks it before it is stored. */
 export const GENERATED_MAX_BYTES = 8_000_000
 
 const DATA_URL = /^data:image\/[\w.+-]+;base64,([A-Za-z0-9+/]*={0,2})$/

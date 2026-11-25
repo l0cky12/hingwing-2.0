@@ -10,11 +10,8 @@ interface BotFormProps {
   readonly models: ModelMenu | 'loading' | 'none'
   readonly onSubmit: (draft: BotDraft) => Promise<Submitted>
   readonly onClose: () => void
-  /** Name has focus when the dialog opens, rather than the first control. */
   readonly focusName?: boolean
-  /** Drawn above the fields. A function is handed the draft as typed. */
   readonly children?: ReactNode | ((draft: BotDraft) => ReactNode)
-  /** What the form waits on before it can be sent, in words beside the buttons. The submit button is disabled while set. */
   readonly waitingFor?: string | null
 }
 
