@@ -4,25 +4,29 @@ import type { SessionEvent } from '../../src/domain/reduce'
 import type { BusyMode, Generation, Link, SessionId } from '../../src/domain/session'
 import { runSessionCommand, type Hub, type SessionCommand } from '../../src/session-commands'
 import { manualClock, settle } from '../../src/testing/clock'
-import { RpcRefusal, type Calls } from '../../src/wire/link'
+import { Offline, RpcRefusal, type Calls } from '../../src/wire/link'
 
 export const ID = 's1' as SessionId
 export const EPOCH = 'e1'
 
-export interface Call { readonly method: string; readonly params: Record<string, unknown>; resolve(result: unknown): void; reject(error: Error): void }
+interface Call { readonly method: string; readonly params: Record<string, unknown>; resolve(result: unknown): void; reject(error: Error): void }
 
 export const refusal = (reason: string, field: string | null = null) => new RpcRefusal(4001, reason, reason, null, null, field)
-
 export const started: SessionEvent = { type: 'turn.started', turnId: null, admissionId: null, requestText: null }
+const SNAPSHOT = {
+  session_id: ID, stored_session_id: ID, messages: [], display_messages: [], message_count: 0, running: false, authority_epoch: 1, replay_epoch: EPOCH,
+  last_sequence: 0, subscription_id: 'sub-1', revision: 3, execution_generation: 0, pending: [], prompts: [], info: {}, open_requests: []
+}
 
 /** One actor, attached, whose calls wait until the test answers them. */
 export async function stage({ watched = false, hub: over = {} }: { readonly watched?: boolean; readonly hub?: Partial<Hub> } = {}) {
   const calls: Call[] = []
-  const link: Link = { state: 'online' }
+  const state: { link: Link } = { link: { state: 'online' } }
   let ids = 0
   let seq = 0
   const conn: Calls = {
-    link, clarifyBatch: false,
+    get link() { return state.link },
+    clarifyBatch: false,
     call: (method: string, params: unknown) => new Promise<never>((resolve, reject) => {
       calls.push({ method, params: params as Record<string, unknown>, resolve: resolve as (result: unknown) => void, reject })
     }),
@@ -45,16 +49,32 @@ export async function stage({ watched = false, hub: over = {} }: { readonly watc
   }
   const event = (sessionEvent: SessionEvent, generation: number | null = 1) =>
     actor.feed({ in: 'event', frame: { stamp: { epoch: EPOCH, seq: ++seq, generation: generation as Generation | null }, event: sessionEvent, seenAt: null } })
+  const drop = () => {
+    state.link = { state: 'waiting', attempt: 1, retryAt: 1_000, why: 'dropped', message: 'Reconnecting to Hermes.' }
+    actor.linkChanged()
+    for (const call of calls.splice(0)) call.reject(new Offline('socket closed'))
+  }
   actor.attach()
-  await answer('session.resume', {
-    session_id: ID, stored_session_id: ID, messages: [], display_messages: [], message_count: 0, running: false, authority_epoch: 1, replay_epoch: EPOCH,
-    last_sequence: 0, subscription_id: 'sub-1', revision: 3, execution_generation: 0, pending: [], prompts: [], info: {}, open_requests: []
-  })
+  await answer('session.resume', SNAPSHOT)
   return {
-    actor, calls, answer, event,
+    actor, calls, answer, event, drop,
+    /**
+     * The socket drops with every call unanswered. Hermes then answers the attach on the next socket with `held`.
+     * `replay: 'lost'` is a Hermes that no longer has the missed frames, so the chat is read again whole.
+     */
+    redial: async (held: Record<string, unknown> = {}, replay: 'kept' | 'lost' = 'kept') => {
+      drop()
+      state.link = { state: 'online' }
+      actor.linkChanged()
+      const lost = replay === 'lost'
+      await answer('session.events.since', { events: [], latest_seq: seq, last_sequence: seq, epoch: EPOCH, replay_epoch: EPOCH, truncated: lost, snapshot_required: lost, count: 0 })
+      await answer('session.resume', { ...SNAPSHOT, display_messages: undefined, messages_omitted: true, subscription_id: 'sub-2', last_sequence: seq, ...held })
+      if (lost) await answer('session.resume', { ...SNAPSHOT, subscription_id: 'sub-2', last_sequence: seq, ...held })
+    },
     command: (command: SessionCommand) => runSessionCommand(actor.port, command, hub),
     list: (...queue: Admission[]) => event({ type: 'meta', queue }, null),
     tune: (busy: BusyMode) => actor.port.act({ did: 'tuned', tuning: { busy } }),
-    sent: () => calls.filter(call => call.method !== 'session.stats').map(call => [call.method, call.params] as const)
+    sent: () => calls.filter(call => call.method !== 'session.stats').map(call => [call.method, call.params] as const),
+    items: () => (actor.session.run.state === 'running' ? actor.session.run.turn.items : [])
   }
 }
