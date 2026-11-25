@@ -3,7 +3,7 @@ import type { TurnView } from '@highwing/thread'
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { landAt, landed, landingFor } from '../src/renderer/chat/landing'
+import { forget, landAt, landed, landingFor, pressFor } from '../src/renderer/chat/landing'
 import { NONE_OPEN } from '../src/renderer/chat/open'
 import { Turn, VersionSwitch } from '../src/renderer/chat/Thread'
 
@@ -74,5 +74,16 @@ describe('the landing a press asks for', () => {
     landAt({ sessionId: SECOND, landing: 3 })
     landAt({ sessionId: THIRD, landing: 'end' })
     expect([landingFor(SECOND), landingFor(THIRD)]).toEqual([null, 'end'])
+  })
+
+  it('is not cleared by a late answer to an earlier press of the same chat', () => {
+    landAt({ sessionId: SECOND, landing: 3 })
+    const earlier = pressFor(SECOND)
+    landAt({ sessionId: SECOND, landing: 3 })
+    if (earlier !== null) forget(earlier)
+    expect(landingFor(SECOND)).toBe(3)
+    const current = pressFor(SECOND)
+    if (current !== null) forget(current)
+    expect(landingFor(SECOND)).toBeNull()
   })
 })

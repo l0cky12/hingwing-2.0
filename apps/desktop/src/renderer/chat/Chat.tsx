@@ -10,7 +10,7 @@ import { YoloPill } from '../composer/YoloPill'
 import { run, useTopic } from '../store'
 import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
 import { ImageSessionContext } from './Image'
-import { landAt, landed, landingFor } from './landing'
+import { forget, landAt, landed, pressFor } from './landing'
 import { FOLLOW_WITHIN, FOLLOWING, placeAfter, progressOf, type Place } from './place'
 import { Thread } from './Thread'
 
@@ -78,16 +78,16 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const [paging, setPaging] = useState(false)
   useLayoutEffect(() => {
     const element = scroller.current
-    const landing = id === null ? null : landingFor(id)
-    if (element === null || id === null || landing === null || view === null || view.turns.length === 0) return
-    if (landing === 'end') return landed(id)
-    const request = element.querySelector(`.turn[data-row="${landing}"] > .request`)
+    const press = id === null ? null : pressFor(id)
+    if (element === null || id === null || press === null || view === null || view.turns.length === 0) return
+    if (press.landing === 'end') return landed(id)
+    const request = element.querySelector(`.turn[data-row="${press.landing}"] > .request`)
     if (request === null) {
       if (view.earlier === 'none') landed(id)
       else if (view.earlier === 'more' && !paging) {
         setPaging(true)
         void run({ do: 'loadEarlier', sessionId: id }).then(outcome => {
-          if (!outcome.ok) landed(id)
+          if (!outcome.ok) forget(press)
           setPaging(false)
         })
       }
