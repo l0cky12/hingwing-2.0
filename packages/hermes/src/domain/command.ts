@@ -44,6 +44,17 @@ export type Command =
    */
   | { readonly do: 'versions'; readonly sessionId: SessionId }
   | { readonly do: 'stop'; readonly sessionId: SessionId }
+  /** Paths under the chat's folder that complete `word`, for an `@` mention. Empty for a folder Hermes cannot list here, such as a remote terminal's. */
+  | { readonly do: 'complete'; readonly sessionId: SessionId; readonly word: string }
+  /** Moves the chat to another folder on the machine Hermes runs on. Refused while a turn runs. */
+  | { readonly do: 'move'; readonly sessionId: SessionId; readonly cwd: string }
+  /**
+   * Summarises the older turns to free context, keeping `focus` in detail. Answers Hermes's report. Hermes then
+   * rewrites the stored rows, so the chat is read again. Refused while a turn runs.
+   */
+  | { readonly do: 'compress'; readonly sessionId: SessionId; readonly focus: string | null }
+  /** The chat rendered as a file for the user to save. Hermes writes nothing. */
+  | { readonly do: 'export'; readonly sessionId: SessionId; readonly format: ExportFormat }
   /** Answers a question of the turn, by `promptId`, or something Hermes asks outside it, by `requestId`. */
   | { readonly do: 'answer'; readonly sessionId: SessionId; readonly promptId: PromptId; readonly reply: PromptReply }
   | { readonly do: 'answer'; readonly sessionId: SessionId; readonly requestId: RequestId; readonly reply: RequestReply }
@@ -94,12 +105,14 @@ export type Command =
   | { readonly do: 'reconnect'; readonly start: boolean }
 
 /**
- * `send` and `start` answer the words to show under the composer: a command's output or note, or
+ * `send`, `start` and `compress` answer the words to show under the composer: a command's output or note, or
  * `null` for none. `answer` says where the words of a denial went, and nothing for any other reply.
  */
 export type ResultOf<C extends Command> =
   C extends { do: 'open' } ? SessionId | null
-  : C extends { do: 'send' | 'start' } ? string | null
+  : C extends { do: 'send' | 'start' | 'compress' } ? string | null
+  : C extends { do: 'complete' } ? readonly PathCompletion[]
+  : C extends { do: 'export' } ? Exported
   : C extends { do: 'branch' } ? SessionId
   : C extends { do: 'versions' } ? ChatVersions
   : C extends { do: 'answer' } ? Told | undefined
@@ -111,6 +124,16 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
   : C extends { do: 'completePath' } ? readonly PathMatch[]
   : void
+
+/** One row of an `@` completion. `text` replaces the word typed. `detail` is Hermes's note, such as `dir`. */
+export interface PathCompletion { readonly text: string; readonly label: string; readonly detail: string | null }
+
+/** `md` is Markdown. */
+export type ExportFormat = 'md' | 'json' | 'html'
+export const EXPORT_FORMATS: readonly ExportFormat[] = ['md', 'json', 'html']
+
+/** A rendered chat and the file name Hermes suggests for it. */
+export interface Exported { readonly filename: string; readonly content: string }
 
 /** What Hermes offers this chat. `options` empty: nothing is set up. `fallback`: the model Hermes names for it. */
 export interface ModelMenu { readonly options: readonly ModelOption[]; readonly fallback: ModelRef | null }

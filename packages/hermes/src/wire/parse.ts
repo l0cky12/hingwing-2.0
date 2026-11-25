@@ -3,7 +3,7 @@
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
 import { canonicalBotId, type BotCreated, type BotDetails, type BotFacts, type BotId } from '../domain/bots'
-import type { ContextBreakdown, ModelConfirm, ModelMenu } from '../domain/command'
+import type { ContextBreakdown, ModelConfirm, ModelMenu, PathCompletion } from '../domain/command'
 import type { PaneAsk } from '../domain/pane'
 import type { Admission } from '../domain/queue'
 import type { CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, Said as SaidTuning, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
@@ -199,10 +199,11 @@ interface MetaFields {
   readonly pick?: PickOutcome | null
   readonly generation?: number | null
   readonly cutBefore?: number | null
+  readonly rewritten?: true
   readonly countsRestart?: true
 }
 
-function meta({ title, revision, queue, model, cwd, tuning, pick, generation, cutBefore, countsRestart }: MetaFields): SessionEvent {
+function meta({ title, revision, queue, model, cwd, tuning, pick, generation, cutBefore, rewritten, countsRestart }: MetaFields): SessionEvent {
   return {
     type: 'meta',
     ...(title == null ? {} : { title }),
@@ -214,6 +215,7 @@ function meta({ title, revision, queue, model, cwd, tuning, pick, generation, cu
     ...(pick == null ? {} : { pick }),
     ...(generation == null ? {} : { generation: generation as Generation }),
     ...(cutBefore == null ? {} : { cutBefore }),
+    ...(rewritten === undefined ? {} : { rewritten }),
     ...(countsRestart === undefined ? {} : { countsRestart })
   }
 }
@@ -449,7 +451,8 @@ export const SHOWN: { readonly [type: string]: Shown } = {
     const target = p.optStr('operation') === 'rewind' ? p.optObj('target_message') : null
     return meta({
       title: p.optStr('title'), revision: p.optInt('revision'), generation: p.optInt('execution_generation'),
-      cutBefore: target === null ? null : fields<{ id?: number }>(target).optInt('id')
+      cutBefore: target === null ? null : fields<{ id?: number }>(target).optInt('id'),
+      ...(REWRITES.has(p.optStr('operation') ?? '') ? { rewritten: true } : {})
     })
   },
   error: payload => ({ type: 'notice', tone: 'error', text: stripAnsi(fields<ErrorPayload>(payload).str('message')) })
@@ -466,6 +469,9 @@ export const FOR_WINDOW: { readonly [type: string]: (payload: unknown) => PaneAs
   },
   'preview.close': payload => ({ do: 'close', url: nonBlank(fields<PreviewClosePayload>(payload).optStr('url')) })
 }
+
+/** The receipts of operations that replace the chat's stored rows (gateway/session_mutations.py:383-397). A rewind names its cut instead. */
+const REWRITES: ReadonlySet<string> = new Set(['compress', 'reset'])
 
 export const UNSHOWN: ReadonlySet<string> = new Set([
   /** Every canonical turn publishes it (`gateway/run_turn_progress.py:1092`); not in the generated contract. */
@@ -698,6 +704,19 @@ export function parsePending(rows: readonly unknown[]): Admission[] {
 /** `config.get` and `config.set` of `show_reasoning` answer `'1'` or `'0'` (`gateway/session_busy_controls.py:90-108`). */
 export function parseShown(reply: { readonly value?: unknown }): boolean | null {
   return reply.value === '1' ? true : reply.value === '0' ? false : null
+}
+
+export function parseCompletions(reply: CompletionItemsResult): readonly PathCompletion[] {
+  return (Array.isArray(reply.items) ? reply.items : []).flatMap(item => (isObject(item) && isString(item.text) && item.text !== ''
+    ? [{ text: item.text, label: isString(item.display) && item.display !== '' ? item.display : item.text, detail: isString(item.meta) && item.meta !== '' ? item.meta : null }]
+    : []))
+}
+
+/** The report of a compression, committed or with nothing to remove: Hermes's headline, size line and note (agent/manual_compression_feedback.py:88-96). */
+export function parseCompressed(reply: SessionMutateResult): string | null {
+  const summary = isObject(reply.summary) ? reply.summary : {}
+  const lines = [summary.headline, summary.token_line, summary.note].filter((line): line is string => isString(line) && line.trim() !== '')
+  return lines.length === 0 ? null : lines.map(line => stripAnsi(line).trim()).join('\n')
 }
 
 /** `config.set` of `fast` answers the tier by its word: `fast` or `ultrafast` for a fast one, `normal` for none (agent/fast_mode.py:54-56). */

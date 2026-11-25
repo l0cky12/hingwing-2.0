@@ -9,8 +9,8 @@ import type {
 import { ownCommand, slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import type { Served } from './wire/link'
 import {
-  beginsAtTurn, parseBranched, parseBusy, parseContextBreakdown, parseCorrection, parseDirective, parseFast, parseModelMenu, parseModelReceipt, parsePathMatches,
-  parseShown, parseTranscript, type Correction
+  beginsAtTurn, type Correction, parseBranched, parseBusy, parseCompletions, parseCompressed, parseContextBreakdown, parseCorrection, parseDirective,
+  parseFast, parseModelMenu, parseModelReceipt, parsePathMatches, parseShown, parseTranscript
 } from './wire/parse'
 
 /** `versions` stays with the hub: reading a chat's versions must not attach it. */
@@ -37,6 +37,8 @@ export interface Hub {
 type Row<C extends SessionCommand> = (port: SessionPort, command: C, hub: Hub) => Outcome<ResultOf<C>> | Promise<Outcome<ResultOf<C>>>
 
 const MOVED_ON: Refusal = { kind: 'stale', message: 'This chat changed while Highwing was switching its model. Try again.' }
+const MID_TURN = refused('stale', 'Wait for the reply to finish, then try again.')
+const NO_FOLDER: Refusal = { kind: 'rejected', message: "That folder isn't on the machine Hermes runs on." }
 const GONE: Refusal = { kind: 'rejected', message: 'That message is no longer in this chat.' }
 const DROPPED_ANSWER = 'The connection dropped before Hermes confirmed your answer.'
 const CANT_BRANCH: Refusal = { kind: 'unsupported', message: "This Hermes can't branch a chat." }
@@ -105,7 +107,7 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
   },
 
   rewind: (port, { rowId, text }) => port.whenLive(async () => {
-    if (port.content.run.state === 'running') return refused('stale', 'Wait for the reply to finish, then try again.')
+    if (port.content.run.state === 'running') return MID_TURN
     const cut = await port.mutate('rewind', { target_message_id: rowId }, port.fence.generation ?? 0, { field: 'target_message_id', refusal: GONE })
     if (!cut.ok) return cut
     port.act({ did: 'rewound', rowId })
@@ -136,6 +138,29 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     if (!asked.ok) return asked
     port.act({ did: 'side.started', id: asked.value.task_id as SideId, kind, asked: text })
     return DONE
+  }),
+
+  complete: (port, { word }) => port.whenLive(async () => {
+    const listed = await port.call('complete.path', { session_id: port.id, word })
+    return listed.ok ? { ok: true, value: parseCompletions(listed.value) } : listed
+  }),
+
+  move: (port, { cwd }) => port.whenLive(async () => {
+    if (port.content.run.state === 'running') return MID_TURN
+    // Hermes names no field when the folder is not there (gateway/session_mutation_policy.py:45-49). It pushes the new folder in a session.info.
+    const moved = await port.mutate('workspace', { cwd }, port.fence.generation ?? 0, { field: null, refusal: NO_FOLDER })
+    return moved.ok ? DONE : moved
+  }),
+
+  compress: (port, { focus }) => port.whenLive<string | null>(async () => {
+    if (port.content.run.state === 'running') return MID_TURN
+    const compressed = await port.mutate('compress', focus === null ? {} : { focus }, port.fence.generation ?? 0)
+    return compressed.ok ? { ok: true, value: parseCompressed(compressed.value) } : compressed
+  }),
+
+  export: (port, { format }) => port.whenLive(async () => {
+    const rendered = await port.call('session.export', { session_id: port.id, format })
+    return rendered.ok ? { ok: true, value: { filename: rendered.value.filename, content: rendered.value.content } } : rendered
   }),
 
   stop: port => port.whenLive(async () => {

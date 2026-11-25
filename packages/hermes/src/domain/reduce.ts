@@ -80,6 +80,8 @@ export type SessionEvent =
       readonly generation?: Generation
       /** Hermes cut the chat before this stored row, here or in another client. */
       readonly cutBefore?: number
+      /** Hermes rewrote the chat's stored rows (a compression or a reset, from any client), so it is read again. */
+      readonly rewritten?: true
       /**
        * A committed model switch. Hermes drops the chat's agent (gateway/session_mutations.py:362) and the next
        * one counts its tokens from zero (run_agent.py:402-418).
@@ -845,7 +847,8 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
         : { ...titled, fence: patch(titled.fence, { revision: Math.max(titled.fence.revision, event.revision) }) }
       const cut: Tracked = event.cutBefore === undefined ? revised : cutBefore(revised, event.cutBefore)
       const counted: Tracked = event.countsRestart === undefined ? cut : restartCounts(cut)
-      return event.queue === undefined ? counted : handedOver(listed(counted, event.queue), counted.content.queue)
+      const queued: Tracked = event.queue === undefined ? counted : handedOver(listed(counted, event.queue), counted.content.queue)
+      return event.rewritten === undefined ? queued : gap(queued)
     }
     default:
       return unreachable(event)

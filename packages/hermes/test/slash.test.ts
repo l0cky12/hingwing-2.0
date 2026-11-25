@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { slashLineOf, type SlashCatalog } from '../src/domain/slash'
+import type { SessionId } from '../src/domain/session'
+import { ownCommand, slashLineOf, type SlashCatalog } from '../src/domain/slash'
 import { loadFixture } from '../src/testing/fixture'
 import type { CommandsCatalogResult } from '../src/wire/contract.generated'
 import { parseCatalog, parseDirective } from '../src/wire/parse'
@@ -10,7 +11,7 @@ const CATALOG = SLASH.header.catalog as CommandsCatalogResult
 
 /** The offered commands `command_verdict` runs bare, and `/new` and `OWN_COMMANDS`, which Highwing runs, in registry order (docs/compatibility.md). */
 const RUNS = [
-  'new', 'title', 'bg', 'btw', 'goal', 'heartbeat', 'refine', 'review', 'loop', 'plan', 'moa', 'subgoal', 'status', 'egress', 'context',
+  'new', 'title', 'compress', 'bg', 'btw', 'goal', 'heartbeat', 'refine', 'review', 'loop', 'plan', 'moa', 'subgoal', 'status', 'egress', 'context',
   'whoami', 'profile', 'codex-runtime', 'personality', 'diff', 'yolo', 'approvals', 'reasoning', 'autoprune', 'skills',
   'memory', 'bundles', 'learn', 'init', 'suggestions', 'blueprint', 'help', 'usage', 'topup', 'version', 'debug'
 ]
@@ -26,7 +27,7 @@ describe('parseCatalog', () => {
 
   it('leaves out commands the gateway refuses, terminal and hidden commands, and terminal display rows', () => {
     const names = listed.map(entry => entry.name)
-    for (const name of ['compress', 'retry', 'undo', 'resume', 'stop', 'model', 'copy', 'quit', 'density', 'logs']) {
+    for (const name of ['compact', 'retry', 'undo', 'resume', 'stop', 'model', 'copy', 'quit', 'density', 'logs']) {
       expect(names).not.toContain(name)
     }
   })
@@ -45,6 +46,28 @@ describe('parseCatalog', () => {
     expect(plugin).toEqual([{ kind: 'command', name: 'deploy', description: 'Deploy the site' }])
     expect(parseCatalog({ pairs: 'nope' } as unknown as CommandsCatalogResult)).toEqual([])
     expect(parseCatalog({})).toEqual([])
+  })
+})
+
+describe('OWN_COMMANDS', () => {
+  const own = (text: string) => ownCommand(slashLineOf(text, parseCatalog(CATALOG))!, 's1' as SessionId)
+
+  it.each([
+    ['/title Notes cleanup', { do: 'rename', sessionId: 's1', title: 'Notes cleanup' }],
+    ['/btw   which file was it? ', { do: 'side', sessionId: 's1', kind: 'btw', text: 'which file was it?' }],
+    ['/BG tidy the notes', { do: 'side', sessionId: 's1', kind: 'background', text: 'tidy the notes' }],
+    ['/compress', { do: 'compress', sessionId: 's1', focus: null }],
+    ['/compress the release plan', { do: 'compress', sessionId: 's1', focus: 'the release plan' }]
+  ])('turns %s into its command', (text, command) => {
+    expect(own(text)).toEqual(command)
+  })
+
+  it.each([['/btw', '/btw <question>'], ['/bg', '/bg <prompt>']])('says how to type %s with nothing after it', (text, usage) => {
+    expect(own(text)).toEqual({ usage })
+  })
+
+  it.each(['/title', '/compress here 3', '/compress --preview', '/goal ship it'])('leaves %s to Hermes', text => {
+    expect(own(text)).toBeNull()
   })
 })
 

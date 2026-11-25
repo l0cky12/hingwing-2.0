@@ -323,7 +323,7 @@ describe('the slash catalog', () => {
     expect(opened.hermes.slash.get()).toEqual([])
     await opened.clock.advance(0)
     const names = opened.hermes.slash.get().map(entry => `${entry.kind}:${entry.name}`)
-    expect(names).toHaveLength(38)
+    expect(names).toHaveLength(39)
     expect(names.slice(0, 2)).toEqual(['command:new', 'command:title'])
     expect(names.slice(-2)).toEqual(['skill:code-review', 'skill:release-notes'])
     expect(opened.sent().filter(call => call.method === 'commands.catalog')).toEqual([{ method: 'commands.catalog', params: {} }])
@@ -343,7 +343,7 @@ describe('the slash catalog', () => {
     await toApproval(opened)
     await opened.clock.advance(1_000)
     expect(opened.sent().filter(call => call.method === 'commands.catalog'), 'once on each of the two sockets').toHaveLength(2)
-    expect(opened.hermes.slash.get()).toHaveLength(38)
+    expect(opened.hermes.slash.get()).toHaveLength(39)
   })
 })
 
@@ -819,9 +819,9 @@ describe('sending a slash line', () => {
 
   it('sends a line whose name is not listed as text', async () => {
     const { opened } = await send(story(
-      { await: 'prompt.submit', params: { session_id: SESSION, text: '/compress', input_id: 'minted' }, reply: RECEIPT }
-    ), '/compress')
-    expect(opened.sent().find(call => call.method === 'prompt.submit')?.params).toMatchObject({ text: '/compress' })
+      { await: 'prompt.submit', params: { session_id: SESSION, text: '/undo', input_id: 'minted' }, reply: RECEIPT }
+    ), '/undo')
+    expect(opened.sent().find(call => call.method === 'prompt.submit')?.params).toMatchObject({ text: '/undo' })
     expect(opened.sent().some(call => call.method === 'command.dispatch')).toBe(false)
   })
 })
