@@ -164,6 +164,22 @@ describe('loadFixture', () => {
     expect(() => loadFixture(clash)).toThrow(`${clash}:1: "configureClash" must be the title another client writes`)
   })
 
+  it('reads what image.generate and the pet calls answer and the words a picture write fails with, and refuses any other shape', () => {
+    const images = { available: true, picture: 'data:image/png;base64,iVBORw0K', delay_ms: 1200 }
+    const pets = { pets: [{ slug: 'tabby' }], thumbs: { tabby: 'data:image/png;base64,iVBORw0K' } }
+    expect(loadFixture(write([{ ...header, images, pets, assetFails: 'disk full' }])).header).toMatchObject({ images, pets, assetFails: 'disk full' })
+    expect(Object.keys(loadFixture(write([header])).header)).not.toContain('images')
+    for (const [key, value, words] of [
+      ['images', { picture: 'x' }, '"images" must be { available, picture?, error?, delay_ms? }'],
+      ['images', { available: true, delay_ms: -1 }, '"images" must be { available, picture?, error?, delay_ms? }'],
+      ['pets', { pets: [], thumbs: { tabby: 7 } }, '"pets" must be { pets, thumbs, delay_ms? } with "thumbs" mapping a slug to a data URL'],
+      ['assetFails', ' ', '"assetFails" must be the words a failed write gives']
+    ] as const) {
+      const path = write([{ ...header, [key]: value }])
+      expect(() => loadFixture(path)).toThrow(`${path}:1: ${words}`)
+    }
+  })
+
   it('refuses a header whose profiles are not a profiles.list reply', () => {
     const path = write([{ ...header, profiles: [{ name: 'default' }] }])
     expect(() => loadFixture(path)).toThrow(`${path}:1: "profiles" must be a profiles.list reply with "profiles"`)

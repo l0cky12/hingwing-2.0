@@ -52,6 +52,8 @@ class Later {
   constructor(readonly ms: number, readonly result: unknown) {}
 }
 
+const after = (ms: number | undefined, result: unknown) => (ms === undefined || ms === 0 ? result : new Later(ms, result))
+
 /** A socket's `AuthorityConnection` (gateway/session_controls.py:157-190). */
 interface Socket {
   readonly peer: Peer
@@ -591,6 +593,8 @@ const refusedProfile = (code: number, message: string) => new Refused(message, {
 
 /** utils/env.py:8 */
 const TRUTHY: ReadonlySet<string> = new Set(['1', 'true', 'yes', 'on'])
+/** `is_truthy_value` (utils/env.py:11-17) */
+const truthy = (value: unknown) => (typeof value === 'string' ? TRUTHY.has(value.trim().toLowerCase()) : Boolean(value))
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
 function offered(models: Obj): Model[] {
@@ -729,6 +733,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'profiles.set_asset': (gateway, socket, params) => gateway.setAsset(socket, params),
   /** tui_gateway/methods_profiles.py:451-465 */
   'profiles.get_asset': (gateway, socket, params) => gateway.getAsset(socket, params),
+  /** tui_gateway/methods_images.py:57-96 */
+  'image.generate': (gateway, socket, params) => gateway.generate(socket, params),
+  /** tui_gateway/methods_session.py:1467-1495 */
+  'pet.gallery': (gateway, socket) => gateway.petGallery(socket),
+  /** tui_gateway/methods_session.py:1557-1563 */
+  'pet.thumb': (gateway, socket, params) => gateway.petThumb(socket, params),
   'session.mutate': (gateway, socket, params, routed) => {
     const mutation = typeof params.operation === 'string' && Object.hasOwn(MUTATIONS, params.operation) ? MUTATIONS[params.operation] : undefined
     return mutation === undefined ? gateway.story(socket, 'session.mutate', params, routed) : mutation(gateway, params, routed)
@@ -1594,7 +1604,7 @@ export class ScriptedGateway {
     if (asset !== 'avatar') throw refusedProfile(4066, `unknown asset '${asset}' (supported: avatar)`)
     const at = this.profileAt(socket, 'profiles.set_asset', params)
     const name = this.profiles[at]?.name as string
-    if (params.clear === true || (typeof params.clear === 'string' && TRUTHY.has(params.clear.trim().toLowerCase()))) {
+    if (truthy(params.clear)) {
       const removed = Number(this.pictures.delete(name))
       this.patchRow(at, { has_avatar: false })
       return { ok: true, asset, size: 0, removed }
@@ -1607,9 +1617,44 @@ export class ScriptedGateway {
     if (blob.length > PICTURE_MAX_BYTES) throw refusedProfile(4069, `asset too large (${blob.length} bytes; max 2MB)`)
     const mime = pictureTypeOf(blob)
     if (mime === null) throw refusedProfile(4070, 'unsupported image format (PNG/JPEG/WebP only)')
+    const { assetFails } = this.fixture.header
+    if (assetFails !== undefined) throw refusedProfile(5065, assetFails)
     this.pictures.set(name, { mime, size: blob.length, data: `data:${mime};base64,${blob.toString('base64')}` })
     this.patchRow(at, { has_avatar: true })
     return { ok: true, asset, size: blob.length }
+  }
+
+  /**
+   * `image.generate` (tui_gateway/methods_images.py:57-96). It is no canonical method, so like `profiles.create` only a socket with
+   * the interactive grant reaches it. `image_data` is left out when the picture is over `max_bytes`, as Hermes leaves out a download over it.
+   */
+  generate(socket: Socket, params: Obj): unknown {
+    const { images } = this.fixture.header
+    if (images === undefined || socket.reach === 'profile') throw unknownMethod('image.generate')
+    if (truthy(params.probe)) return { available: images.available }
+    if (!images.available) return { available: false, success: false, error: 'No image generation backend configured (run `hermes tools` to enable one).' }
+    if ((typeof params.prompt === 'string' ? params.prompt : '').trim() === '') throw refusedProfile(4071, 'prompt required')
+    if (images.error !== undefined) return after(images.delay_ms, { available: true, success: false, error: images.error })
+    const cap = Math.min(isInt(params.max_bytes) && params.max_bytes > 0 ? params.max_bytes : 8_000_000, 16_000_000)
+    const fits = images.picture !== undefined && Buffer.from(images.picture.slice(images.picture.indexOf(',') + 1), 'base64').byteLength <= cap
+    return after(images.delay_ms, { available: true, success: true, image: '/hermes-home/cache/images/generated.png', ...(fits ? { image_data: images.picture } : {}) })
+  }
+
+  /** `pet.gallery` (tui_gateway/methods_session.py:1467-1495), which a socket with no interactive grant does not reach. */
+  petGallery(socket: Socket): unknown {
+    const { pets } = this.fixture.header
+    if (pets === undefined || socket.reach === 'profile') throw unknownMethod('pet.gallery')
+    return after(pets.delay_ms, { enabled: false, active: '', pets: pets.pets })
+  }
+
+  /** `pet.thumb` (tui_gateway/methods_session.py:1557-1563): a slug with no thumb fails open to `{ ok: false }`. */
+  petThumb(socket: Socket, params: Obj): unknown {
+    const { pets } = this.fixture.header
+    if (pets === undefined || socket.reach === 'profile') throw unknownMethod('pet.thumb')
+    const slug = typeof params.slug === 'string' ? params.slug.trim() : ''
+    if (slug === '') throw refusedProfile(4004, 'missing slug')
+    const thumb = Object.hasOwn(pets.thumbs, slug) ? pets.thumbs[slug] : undefined
+    return after(pets.delay_ms, thumb === undefined ? { ok: false, slug } : { ok: true, slug, dataUri: thumb })
   }
 
   getAsset(socket: Socket, params: Obj): unknown {
