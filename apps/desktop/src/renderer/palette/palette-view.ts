@@ -1,4 +1,4 @@
-import { botsIn, type Bot, type SidebarRow } from '@highwing/hermes/domain'
+import { botsIn, shownUnasked, type Bot, type SidebarRow } from '@highwing/hermes/domain'
 import type { WindowCommand } from '../../ipc-contract'
 import { DOING, listedRows, named } from '../chats/chat-list'
 import { ACTIONS, type Scene } from './actions'
@@ -79,14 +79,15 @@ export function rank(query: string, items: readonly PaletteItem[]): readonly Ran
 }
 
 type ChatItem = Extract<PaletteItem, { kind: 'chat' }>
+type BotItem = Extract<PaletteItem, { kind: 'bot' }>
 const chatKey = (id: string) => `chat:${id}`
 
-function itemsOf(scene: Scene): { readonly chats: readonly ChatItem[]; readonly bots: readonly PaletteItem[]; readonly actions: readonly PaletteItem[] } {
+function itemsOf(scene: Scene): { readonly chats: readonly ChatItem[]; readonly bots: readonly BotItem[]; readonly actions: readonly PaletteItem[] } {
   const chats = (listedRows(scene.sidebar, scene.open) ?? []).map((row): ChatItem => ({
     kind: 'chat', key: chatKey(row.id), title: named(row.title), command: { do: 'open', ref: { kind: 'chat', sessionId: row.id } },
     preview: row.preview, doing: DOING[row.badge], badge: row.badge, lastActiveAt: row.lastActiveAt
   }))
-  const bots = (scene.bots?.state === 'listed' ? botsIn(scene.bots.roster) : []).map((bot): PaletteItem => ({
+  const bots = (scene.bots?.state === 'listed' ? botsIn(scene.bots.roster) : []).map((bot): BotItem => ({
     kind: 'bot', key: `bot:${bot.id}`, title: bot.name, command: { do: 'open', ref: { kind: 'bot', bot: bot.id } }, bot
   }))
   const actions = ACTIONS.flatMap((action): PaletteItem[] => {
@@ -112,7 +113,7 @@ export function paletteOf(scene: Scene, query: string): PaletteView {
       .filter(item => shown === null || item.key !== chatKey(shown))
       .sort((a, b) => askingFirst(a, b) || newestFirst(a.lastActiveAt, b.lastActiveAt))
       .slice(0, SHOWN_UNTYPED.chats)
-    return { show: 'rows', sections: sectionsOf([...recent, ...bots.slice(0, SHOWN_UNTYPED.bots), ...actions].map(plain)) }
+    return { show: 'rows', sections: sectionsOf([...recent, ...bots.filter(item => shownUnasked(item.bot)).slice(0, SHOWN_UNTYPED.bots), ...actions].map(plain)) }
   }
   const sections = sectionsOf(rank(query, [...actions, ...bots, ...chats]))
   return sections.length === 0 ? { show: 'note', words: NO_MATCHES } : { show: 'rows', sections }

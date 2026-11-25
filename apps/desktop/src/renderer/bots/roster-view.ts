@@ -1,4 +1,4 @@
-import type { Bot, BotId, Bots, BotSection, Link, OpenChat } from '@highwing/hermes/domain'
+import { shownUnasked, type Bot, type BotId, type Bots, type BotSection, type Link, type OpenChat } from '@highwing/hermes/domain'
 
 /** What the list under the header shows. */
 export type ListView =
@@ -35,6 +35,14 @@ export function listOf(bots: Bots | undefined, query: string | null): ListView {
   const featured = roster.featured !== null && kept(roster.featured) ? roster.featured : null
   const sections = roster.sections.map(section => ({ ...section, bots: section.bots.filter(kept) })).filter(section => section.bots.length > 0)
   return featured === null && sections.length === 0 ? { show: 'note', words: `No bots match “${query}”` } : { show: 'roster', featured, sections }
+}
+
+export function pickerOf(list: ListView, chosen: BotId | null): ListView {
+  if (list.show !== 'roster') return list
+  const offered = (bot: Bot) => shownUnasked(bot) || bot.id === chosen
+  const featured = list.featured !== null && offered(list.featured) ? list.featured : null
+  const sections = list.sections.map(section => ({ ...section, bots: section.bots.filter(offered) })).filter(section => section.bots.length > 0)
+  return featured === null && sections.length === 0 ? { show: 'note', words: NO_BOTS } : { show: 'roster', featured, sections }
 }
 
 export function newBotBlock(link: Link | undefined, bots: Bots | undefined): string | null {

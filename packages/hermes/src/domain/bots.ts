@@ -171,6 +171,8 @@ export const canonicalBotId = (name: string): BotId => name.trim().toLowerCase()
 
 const shown = ({ id, name, preview, description, picture, pinned, hidden }: BotFacts, tone: AvatarTone): Bot => ({ id, name, preview, description, tone, picture, pinned, hidden })
 
+export const shownUnasked = (bot: Bot): boolean => !bot.hidden
+
 /** Every bot of a roster, hidden ones included, in the roster's order. */
 export const botsIn = ({ featured, sections }: Roster): readonly Bot[] => [...(featured === null ? [] : [featured]), ...sections.flatMap(section => section.bots)]
 

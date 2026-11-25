@@ -1,13 +1,19 @@
 import type { BotId, Bots, OpenChat, SessionId } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
-import { initialOf, listOf, selectedIn, type ListView } from '../src/renderer/bots/roster-view'
-import { APPROVED, listed } from './support/bots'
+import { initialOf, listOf, NO_BOTS, pickerOf, selectedIn, type ListView } from '../src/renderer/bots/roster-view'
+import { APPROVED, fact, listed } from './support/bots'
 
 const outline = (view: ListView) => (view.show !== 'roster' ? view : [
   ...(view.featured === null ? [] : [`* ${view.featured.name}`]),
   ...view.sections.flatMap(section => [section.name ?? '(no section)', ...section.bots.map(bot => `  ${bot.name}`)])
 ])
 const id = (name: string) => name as BotId
+const MARKED = listed(
+  fact('default', 'Emu', { isDefault: true, hidden: true }),
+  fact('research', 'Research', { section: 'Work' }),
+  fact('old', 'Old Helper', { section: 'Work', hidden: true }),
+  fact('scout', 'Scout', { pinned: true })
+)
 const showing = (bot: string | null, sessionId: string | null = 's1'): OpenChat =>
   ({ shown: (bot === null ? { kind: 'chat', bot, sessionId } : { kind: 'bot', bot, sessionId }) as OpenChat['shown'], opening: null, missing: null })
 const drafting = (bot: string | null, sessionId: string | null = null): OpenChat =>
@@ -43,6 +49,11 @@ describe('what the bot list shows', () => {
     expect(outline(listOf(APPROVED, 'emu'))).toEqual(['* Emu'])
   })
 
+  it('keeps hidden bots, so a search finds one', () => {
+    expect(outline(listOf(MARKED, null))).toEqual(['* Emu', 'Work', '  Research', '  Old Helper', '(no section)', '  Scout'])
+    expect(outline(listOf(MARKED, 'old'))).toEqual(['Work', '  Old Helper'])
+  })
+
   it('says so, with the search as typed, when no bot matches', () => {
     expect(listOf(APPROVED, ' Zzz ')).toEqual({ show: 'note', words: 'No bots match “ Zzz ”' })
   })
@@ -54,6 +65,23 @@ describe('what the bot list shows', () => {
     const highwing = full.sections.flatMap(section => section.bots).find(bot => bot.name === 'highwing')
     expect(narrowed.sections[0]?.bots).toEqual([highwing])
     expect(highwing?.tone).toBe('mauve')
+  })
+})
+
+describe("the chat-mode picker's list", () => {
+  it('leaves out every hidden bot, the default bot included', () => {
+    expect(outline(pickerOf(listOf(MARKED, null), null))).toEqual(['Work', '  Research', '(no section)', '  Scout'])
+  })
+
+  it('keeps the hidden bot already chosen, in its place', () => {
+    expect(outline(pickerOf(listOf(MARKED, null), id('old')))).toEqual(['Work', '  Research', '  Old Helper', '(no section)', '  Scout'])
+    expect(outline(pickerOf(listOf(MARKED, null), id('default')))).toEqual(['* Emu', 'Work', '  Research', '(no section)', '  Scout'])
+  })
+
+  it('says there are no bots when every bot is hidden, and passes every other note through', () => {
+    expect(pickerOf(listOf(listed(fact('a', 'A', { hidden: true })), null), null)).toEqual({ show: 'note', words: NO_BOTS })
+    expect(pickerOf(listOf({ state: 'offline' }, null), null)).toEqual(listOf({ state: 'offline' }, null))
+    expect(pickerOf(listOf(undefined, null), null)).toEqual({ show: 'loading' })
   })
 })
 
