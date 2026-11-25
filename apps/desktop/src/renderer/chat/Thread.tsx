@@ -443,7 +443,6 @@ interface ThreadProps {
   readonly queue: QueueControls
   readonly canReact: boolean
   readonly onReact: ReactOn
-  /** null while the chat is not live. */
   readonly helpers: HelperControls | null
 }
 

@@ -5,8 +5,8 @@ Run with any Python 3:  python3 fixtures/make_stop_helper_fixture.py
 
 - `stop-helper` is the delegate story up to the helper's first `subagent.tool` frame. There the story waits for the
   client's `subagent.interrupt {session_id, subagent_id}` and answers `{found: true, subagent_id}`, as Hermes does when
-  the chat's agent runs that helper (gateway/session_ancillary.py `subagent_control`). 1.5 s later, the time a
-  helper takes to unwind, comes the helper's `subagent.complete` with status `interrupted`: the recorded complete frame with Hermes's interrupted fields
+  the chat's agent runs that helper (gateway/session_ancillary.py `subagent_control`). 1.5 s later
+  comes the helper's `subagent.complete` with status `interrupted`: the recorded complete frame with Hermes's interrupted fields
   (tools/delegate_tool_child_run.py `_build_result_entry`: the summary is the loop's "Operation interrupted."
   placeholder when the helper wrote nothing yet, and no tool output came back). The rest of the first turn follows
   without that helper's other `subagent.*` frames, and without the second turn Hermes starts itself when a helper
@@ -43,7 +43,7 @@ COMPLETE = next(step for step in STEPS if of_type(step, "subagent.complete") and
 STORED = [step for step in STEPS if "stored" in step][-1]["stored"]
 SECOND_REQUEST = [index for index, row in enumerate(STORED) if row["role"] == "user"][1]
 TOOL_AT = STEPS[FIRST_TOOL]["at"]
-STOP_MS = 1500
+INTERRUPT_TO_COMPLETE_MS = 1500
 
 
 def interrupt(found):
@@ -53,10 +53,10 @@ def interrupt(found):
 
 def interrupted():
     step = copy.deepcopy(COMPLETE)
-    step["at"] = TOOL_AT + STOP_MS
+    step["at"] = TOOL_AT + INTERRUPT_TO_COMPLETE_MS
     step["push"]["params"]["payload"].update({
         "status": "interrupted", "summary": "Operation interrupted.", "text": "Operation interrupted.", "output_tail": [],
-        "duration_seconds": round((TOOL_AT + STOP_MS - STARTED["at"]) / 1000, 2),
+        "duration_seconds": round((TOOL_AT + INTERRUPT_TO_COMPLETE_MS - STARTED["at"]) / 1000, 2),
     })
     return step
 
@@ -67,7 +67,7 @@ def first_turn_rest():
     while end < len(STEPS) and frame(STEPS[end]) is not None and frame(STEPS[end]).get("execution_generation") == 1:
         end += 1
     helpers = lambda step: frame(step)["type"].startswith("subagent.") and frame(step)["payload"].get("subagent_id") == HELPER
-    return [{**step, "at": step["at"] + STOP_MS} for step in STEPS[FIRST_TOOL + 1:end] if frame(step) is None or not helpers(step)]
+    return [{**step, "at": step["at"] + INTERRUPT_TO_COMPLETE_MS} for step in STEPS[FIRST_TOOL + 1:end] if frame(step) is None or not helpers(step)]
 
 
 def renumbered(steps):
