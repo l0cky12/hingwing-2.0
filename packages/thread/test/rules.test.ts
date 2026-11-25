@@ -156,8 +156,8 @@ describe('notices', () => {
   it('carries where a request closed as a node of its own, with a line in the outline', () => {
     const closed: NoticeItem = { kind: 'notice', what: 'closed', requestId: 'srq-1' as RequestId, asked: 'sudo', end: 'answered' }
     const view = threadView(running([closed]), CLOCK)
-    expect(view.turns[0]?.nodes).toEqual([{ kind: 'closed', key: expect.any(String), asked: 'sudo', end: 'answered' }])
-    expect(outline(view).split('\n')).toContain('◇ sudo: answered')
+    expect(view.turns[0]?.nodes).toEqual([{ kind: 'closed', key: expect.any(String), asked: 'sudo', end: 'answered', words: 'You sent a password.' }])
+    expect(outline(view).split('\n')).toContain('○ You sent a password.')
     expect(checkThread(view)).toEqual([])
   })
 
@@ -240,7 +240,7 @@ describe('checkThread', () => {
   it('reports each broken invariant', () => {
     const step: StepView = { key: 't1/0', title: [], state: 'done', stat: null, duration: null, record: null, image: null }
     const view: ThreadView = {
-      state: 'ready', pending: [], earlier: 'none', changesAt: null,
+      state: 'ready', pending: [], asks: [], earlier: 'none', changesAt: null,
       turns: [
         {
           key: 't1', time: null, request: null, attachments: [], rowId: null, end: { kind: 'at', nodeKey: 't1/7', tone: 'live', elapsed: null }, tokens: '9 in, 1 out',
@@ -541,7 +541,7 @@ describe('the live end while a hidden tool runs', () => {
 
 describe('checkThread on helpers, plans and reasoning', () => {
   const turn = (nodes: ThreadNode[], end: ThreadView['turns'][number]['end']): ThreadView => ({
-    state: 'ready', pending: [], earlier: 'none', changesAt: null, turns: [{ key: 't1', time: null, request: null, attachments: [], rowId: null, tokens: null, nodes, end }]
+    state: 'ready', pending: [], asks: [], earlier: 'none', changesAt: null, turns: [{ key: 't1', time: null, request: null, attachments: [], rowId: null, tokens: null, nodes, end }]
   })
   const planNode = (key: string): ThreadNode => ({ kind: 'plan', key, plan: { done: 0, total: 1, cancelled: 0, openByDefault: true, entries: [{ key: `${key}/e1`, text: 'x', state: 'todo', depth: 0 }] } })
   const reasoningNode = (key: string, streaming: boolean): ThreadNode => ({ kind: 'reasoning', key, text: 'x', streaming, duration: null })

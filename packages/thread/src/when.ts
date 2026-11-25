@@ -62,6 +62,11 @@ function timeWords(wall: Wall, today: Wall): string {
   return `${weekday} ${wall.day} ${MONTHS[wall.month - 1]}${year} ${clockTime}`
 }
 
+export function timeOfDay(at: number, timeZone: string): string {
+  const { hour, minute } = wallClock(at, zoneOf(timeZone))
+  return `${two(hour)}:${two(minute)}`
+}
+
 export function timeLines(starts: readonly (number | null)[], clock: ViewClock): readonly (string | null)[] {
   const zone = zoneOf(clock.timeZone)
   const today = wallClock(clock.now, zone)
