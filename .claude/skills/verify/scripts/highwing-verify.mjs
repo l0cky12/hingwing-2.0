@@ -21,6 +21,8 @@ const FAKE_HOST = 'hermes-host.example-tailnet.ts.net'
 const DEV_ORIGIN = 'http://localhost:5173'
 const ERRAND = join(REPO, 'fixtures/errand.jsonl')
 const SETTINGS_FILE = 'connection.json'
+const MODE_FILE = 'mode.json'
+const MODES = ['bots', 'chats']
 
 /** What `--saved` leaves in the user-data directory before launch. null: no file. */
 const SAVED = {
@@ -47,7 +49,7 @@ const STATES = {
   'slash-menu': page => page.getByRole('listbox', { name: 'Commands and skills' }),
   mentions: page => page.getByRole('listbox', { name: 'Mentions' }),
   'relay-waiting': page => page.locator('.turn.relay [role="status"]'),
-  bots: page => page.locator('aside[data-state="listed"]'),
+  bots: page => page.locator('aside[data-state="listed"], .bot-pick[data-state="listed"]'),
   unstarted: page => page.locator('main#scroll:empty'),
   'helper-running': page => page.locator('.helper[data-end="live"]').filter({ has: page.locator('> .head > .sr', { hasText: /^working$/ }) }),
   preview: page => page.getByRole('region', { name: 'Preview', exact: true })
@@ -1008,7 +1010,7 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', mode: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
@@ -1026,6 +1028,7 @@ async function run(argv) {
   if (options['configure-clash'] && !options.profiles) fail('--configure-clash needs --profiles: without it Hermes has no bots to rename')
   if (options['attach-limit'] && !/^[1-9]\d*$/.test(options['attach-limit'])) fail(`--attach-limit takes a number of bytes, not "${options['attach-limit']}"`)
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
+  if (options.mode && !MODES.includes(options.mode)) fail(`unknown --mode "${options.mode}". Known: ${MODES.join(', ')}`)
   if (options.size && !/^[1-9]\d*x[1-9]\d*$/.test(options.size)) fail(`--size takes <width>x<height>, not "${options.size}"`)
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')
   const runId = options.run ?? `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`
@@ -1048,6 +1051,10 @@ async function run(argv) {
     if (saved !== null) writeFileSync(join(userData, SETTINGS_FILE), saved)
     // The check of this scenario passes. The save after it fails, because its temp file cannot be opened.
     if (scenario === 'cant-save') mkdirSync(join(userData, `${SETTINGS_FILE}.tmp`))
+  }
+  if (options.mode) {
+    mkdirSync(userData, { recursive: true })
+    writeFileSync(join(userData, MODE_FILE), JSON.stringify({ version: 1, mode: options.mode }))
   }
   const host = scenario ? await startFakeHost(scenario, fixture, options['hold-at'], scratch) : null
 

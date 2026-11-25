@@ -4,8 +4,8 @@ import type { Hermes, Route } from '@highwing/hermes'
 import type { AttachmentId, Bots, CommandOutcome, Exported, Link, OpenChat, RelayDesk, Session, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Preview, type PreviewCommand, type Push, type Topic } from '../src/ipc-contract'
-import { ownConnection, pinnedConnection, type ConnectionOwner } from '../src/main/connection'
+import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type Preview, type PreviewCommand, type Push, type Topic } from '../src/ipc-contract'
+import { feed, ownConnection, pinnedConnection, type ConnectionOwner } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
 import type { AttachSources, StageSource } from '../src/main/attachments'
@@ -289,7 +289,9 @@ describe('validators', () => {
     ['a restore of a scope Hermes does not have', { do: 'restore', sessionId: 's1', checkpoint: 'abc123', scope: { kind: 'folder', edits: 'merge' } }],
     ['a restore of a file with no path', { do: 'restore', sessionId: 's1', checkpoint: 'abc123', scope: { kind: 'file', path: ' ' } }],
     ['a blank emoji', { do: 'react', sessionId: 's1', turn: 't1', emoji: ' ' }],
-    ['a reaction on no turn', { do: 'react', sessionId: 's1', emoji: '👍' }]
+    ['a reaction on no turn', { do: 'react', sessionId: 's1', emoji: '👍' }],
+    ['a mode Highwing does not have', { do: 'setMode', mode: 'inbox' }],
+    ['a mode switch that names no mode', { do: 'setMode' }]
   ])('refuse %s', (_, raw) => {
     expect(parseCommand(raw)).toBeNull()
   })
@@ -300,6 +302,11 @@ describe('validators', () => {
     expect(parseCommand({ do: 'placePreview', rect: { x: 600, y: 56, width: 580, height: 804, z: 1 } })).toEqual({ do: 'placePreview', rect: { x: 600, y: 56, width: 580, height: 804 } })
     expect(parseCommand({ do: 'placePreview', rect: null })).toEqual({ do: 'placePreview', rect: null })
     expect(parseCommand({ do: 'openPreview', path: '/etc/passwd' })).toEqual({ do: 'openPreview' })
+  })
+
+  it('keep a mode switch', () => {
+    expect(parseCommand({ do: 'setMode', mode: 'chats', extra: 1 })).toEqual({ do: 'setMode', mode: 'chats' })
+    expect(parseCommand({ do: 'setMode', mode: 'bots' })).toEqual({ do: 'setMode', mode: 'bots' })
   })
 
   it.each([
@@ -323,7 +330,7 @@ describe('validators', () => {
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'checkpointDiff', 'checkpoints', 'closePreview', 'completePath',
       'compress', 'contextBreakdown', 'control', 'createBot', 'describeBot', 'discard', 'editBot', 'editTarget', 'export', 'keepTarget', 'killProcess',
       'loadEarlier', 'models', 'move', 'open', 'openChat', 'openPreview', 'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect',
-      'reloadPreview', 'removeBotPicture', 'rename', 'restore', 'rewind', 'send', 'side', 'start', 'stop', 'stopHelper', 'tune', 'versions'
+      'reloadPreview', 'removeBotPicture', 'rename', 'restore', 'rewind', 'send', 'setMode', 'side', 'start', 'stop', 'stopHelper', 'tune', 'versions'
     ])
   })
 })
@@ -423,11 +430,12 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
     },
     read: async id => (id === HELD.id ? HELD : null)
   }
+  const mode = feed<Mode>('chats')
   const sources: AttachSources = { pick: async () => ['/home/me/error.png', '/home/me/big.zip'], pasted: async () => ({ name: 'Pasted image 1.png', bytes: PNG }) }
   const served = serveWindows(
     ownerOf(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
-    async bot => (picked.push(bot), { ok: true, value: 'cancelled' }), { store, sources }, saver
+    async bot => (picked.push(bot), { ok: true, value: 'cancelled' }), { store, sources }, saver, { mode, set: next => mode.set(next) }
   )
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
@@ -447,7 +455,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   }
   return {
     listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, stored, previewed, toPane, staged, served,
-    saves, exportsAs, setCatalog, setBots, setOpen
+    saves, exportsAs, setCatalog, setBots, setOpen, mode
   }
 }
 
@@ -491,7 +499,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, preview: { state: 'closed' } }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, preview: { state: 'closed' }, mode: 'chats' }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))
@@ -545,6 +553,21 @@ describe('serveWindows', () => {
     listeners.get(CHANNEL.watch)!(event(), 3, 'setup')
     expect(pushes).toEqual([{ topic: 'setup', rev: 1, full: { at: 'pinned' } }])
     await expect(handlers.get(CHANNEL.run)!(event(), { do: 'editTarget' })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(commands).toEqual([])
+  })
+
+  it('sets the mode a trusted window picks and pushes it, and never passes it to Hermes', async () => {
+    vi.useFakeTimers()
+    const { listeners, handlers, pushes, event, commands, mode } = harness()
+    listeners.get(CHANNEL.watch)!(event(), 6, 'mode')
+    vi.advanceTimersByTime(COALESCE_MS)
+    const run = handlers.get(CHANNEL.run)!
+    await expect(run(event('https://example.com/'), { do: 'setMode', mode: 'bots' })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    await expect(run(event(), { do: 'setMode', mode: 'inbox' })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(mode.get()).toBe('chats')
+    await expect(run(event(), { do: 'setMode', mode: 'bots' })).resolves.toEqual({ ok: true, value: undefined })
+    expect(mode.get()).toBe('bots')
+    expect(pushes).toEqual([{ topic: 'mode', rev: 1, full: 'chats' }, { topic: 'mode', rev: 2, full: 'bots' }])
     expect(commands).toEqual([])
   })
 

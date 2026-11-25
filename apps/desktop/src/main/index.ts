@@ -12,6 +12,7 @@ import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
 import { draftStore, DRAFTS_DIR } from './drafts'
 import { serveWindows } from './ipc'
 import { chatLinks } from './links'
+import { modeStore } from './mode'
 import { desktopNotifier, notifyTurnEnds, recordingNotifier } from './notify'
 import { pickPicture, readHead } from './picture'
 import { previewPane, registerPageScheme } from './preview'
@@ -72,6 +73,7 @@ app.whenReady().then(async () => {
   const settingsDir = app.getPath('userData')
   const attachments = attachmentStore(join(settingsDir, ATTACHMENTS_DIR), { ...HERMES_LIMITS, ...fixture?.header.attachLimits })
   const drafts = draftStore(join(settingsDir, DRAFTS_DIR))
+  const mode = await modeStore(settingsDir)
   await attachments.sweep(new Set((await drafts.load()).flatMap(draft => draft.attachments.map(held => held.id))))
   const open = (dial: Dialer) => openHermes({ dial, client: { name: 'highwing', version: app.getVersion() }, onPane: pane.ask, uploads: attachments })
   const owner = fixture
@@ -86,7 +88,7 @@ app.whenReady().then(async () => {
   const images = imageLoader(fixture ? fixtureImageDeps(fixture.header.media) : desktopImageDeps(net))
   const saver = HIGHWING_SAVE_DIR ? folderSaver(HIGHWING_SAVE_DIR) : dialogSaver(dialog, () => app.getPath('downloads'))
   const served = serveWindows(
-    owner, ipcMain, isAppUrl, opener, images, drafts, pane, bot => pickPicture(pictures, bot), { store: attachments, sources }, saver
+    owner, ipcMain, isAppUrl, opener, images, drafts, pane, bot => pickPicture(pictures, bot), { store: attachments, sources }, saver, mode
   )
   const stopNotices = notifyTurnEnds(owner, {
     notifier: HIGHWING_NOTIFY_LOG ? recordingNotifier(HIGHWING_NOTIFY_LOG) : desktopNotifier(Notification),
@@ -96,10 +98,10 @@ app.whenReady().then(async () => {
   openWindow(opener, pane, HIGHWING_MENU_LOG ? recordingMenus(HIGHWING_MENU_LOG, HIGHWING_MENU_PICK) : desktopMenus(Menu))
   const stopLinks = links.serve(owner, raise)
   let closed: Promise<void> | null = null
-  const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), Promise.all([owner.close(), drafts.settled()]).then(() => {})))
+  const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), Promise.all([owner.close(), drafts.settled(), mode.settled()]).then(() => {})))
   app.on('window-all-closed', () => void close().finally(() => app.quit()))
   // A quit from the menu or the session never emits window-all-closed, and a check or an attach still running would outlive the app.
-  // Electron does not wait for a will-quit listener, so the quit is held until a draft still being written is on disk.
+  // Electron does not wait for a will-quit listener, so the quit is held until a draft or the mode still being written is on disk.
   let settled = false
   app.on('will-quit', event => {
     if (settled) return

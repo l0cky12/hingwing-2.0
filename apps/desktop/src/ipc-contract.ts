@@ -63,13 +63,18 @@ export type PreviewCommand =
 const PREVIEW_VERBS: { readonly [K in PreviewCommand['do']]: true } = { preview: true, browse: true, reloadPreview: true, closePreview: true, openPreview: true, placePreview: true }
 export const isPreviewCommand = (command: AppCommand): command is PreviewCommand => Object.hasOwn(PREVIEW_VERBS, command.do)
 
-export type AppCommand = Command | SetupCommand | PreviewCommand
+/** Which column sits left of the chat: the bots, or the open bot's chats in the bots' place. Owned by Electron main and kept on disk. */
+export type Mode = 'bots' | 'chats'
+export type ModeCommand = { readonly do: 'setMode'; readonly mode: Mode }
+export const isMode = (raw: unknown): raw is Mode => raw === 'bots' || raw === 'chats'
+
+export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand
 /** A new picture's bytes come only from main's file picker. */
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
 
-/** Every topic with one value per connection, and what it carries. */
+/** Every topic and what it carries. Each has one value per connection, except `preview` and `mode`, which belong to the window. */
 export interface AppTopics {
   readonly setup: Setup
   readonly link: Link
@@ -81,10 +86,11 @@ export interface AppTopics {
   /** Whether Hermes can hand a message to another bot, and the messages handed over from each chat. */
   readonly relay: RelayDesk
   readonly preview: Preview
+  readonly mode: Mode
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, preview: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, preview: true, mode: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -490,7 +496,8 @@ export const validators: Validators = {
     if (raw.rect === null) return { do: 'placePreview', rect: null }
     const rect = rectOf(raw.rect)
     return rect && { do: 'placePreview', rect }
-  }
+  },
+  setMode: raw => (isMode(raw.mode) ? { do: 'setMode', mode: raw.mode } : null)
 }
 
 export function parseCommand(raw: unknown): WindowCommand | null {

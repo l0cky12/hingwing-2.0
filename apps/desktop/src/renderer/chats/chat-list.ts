@@ -23,7 +23,6 @@ export type ChatsView =
 
 export const NO_CHATS = 'No chats yet.'
 export const UNTITLED = 'Untitled chat'
-export const CHATS = 'Chats'
 export const DRAFT = 'Draft'
 
 const LOADING: ChatsView = { show: 'loading' }
