@@ -105,6 +105,16 @@ export function moveAttachment(slot: DraftSlot, id: AttachmentId, by: -1 | 1) {
   put(slot, { attachments }, 'now')
 }
 
+/** Moves a draft to another slot that holds none. */
+export function moveDraft(from: DraftSlot, to: DraftSlot) {
+  const { text, attachments } = heldOf(from)
+  if (from?.key === to?.key || (text === '' && attachments.length === 0)) return
+  const there = heldOf(to)
+  if (there.text !== '' || there.attachments.length > 0) return
+  put(to, { text, attachments }, 'now')
+  put(from, EMPTY, 'now')
+}
+
 /** Clears what was sent: the text, unless it changed while the message was on its way, and exactly the attachments sent with it. */
 export function draftSent(slot: DraftSlot, text: string, sent: ReadonlySet<AttachmentId>) {
   const held = heldOf(slot)

@@ -1,10 +1,10 @@
 import type { Attachment, AttachmentId, CommandOutcome, PathMatch, SessionId, SlashCatalog } from '@highwing/hermes/domain'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
-import type { StageResult } from '../../ipc-contract'
+import { MAX_ATTACHMENTS, type StageResult } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
 import { Chips } from '../chat/Attachments'
 import { useTopic } from '../store'
-import { attachTo, detach, draftSent, moveAttachment, seedDraft, useAttachments, useDraft, writeDraft, type DraftSlot } from './drafts'
+import { attachTo, detach, draftSent, moveAttachment, moveDraft, seedDraft, useAttachments, useDraft, writeDraft, type DraftSlot } from './drafts'
 import type { Editing } from './edit'
 import { RemoveDialog } from './RemoveDialog'
 import { mentionable, mentionWord, menuOf, picked, type Menu, type MenuItem } from './menu'
@@ -96,6 +96,7 @@ export function admitted(results: readonly StageResult[], held: readonly Attachm
   const refused: string[] = []
   for (const result of results) {
     if (!result.ok) refused.push(result.reason)
+    else if (held.length + added.length >= MAX_ATTACHMENTS) refused.push(`A message holds up to ${MAX_ATTACHMENTS} attachments, so ${result.attachment.name} wasn't attached.`)
     else if (result.attachment.kind === 'image' && images >= IMAGES_PER_MESSAGE) refused.push(`Hermes takes up to ${IMAGES_PER_MESSAGE} images in one message, so ${result.attachment.name} wasn't attached.`)
     else {
       if (result.attachment.kind === 'image') images++
@@ -176,6 +177,8 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
     box.current?.focus()
   }, [press, box])
 
+  const shownSlot = useRef(slot)
+  shownSlot.current = slot
   const latestAttachments = useRef(attachments)
   latestAttachments.current = attachments
   const take = async (staging: Promise<readonly StageResult[]>) => {
@@ -273,7 +276,11 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
       setPending(false)
     })
     setRefusal(outcome.ok ? null : outcome.refusal.message)
-    if (!outcome.ok) return
+    if (!outcome.ok) {
+      // A first message makes its chat before Hermes can refuse it, and the window has moved to that chat.
+      moveDraft(slot, shownSlot.current)
+      return
+    }
     setOutput(outcome.value)
     setAttachRefusals([])
     draftSent(slot, text, new Set(sent))

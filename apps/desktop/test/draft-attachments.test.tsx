@@ -1,6 +1,6 @@
 import type { Attachment, AttachmentId } from '@highwing/hermes/domain'
 import { beforeAll, describe, expect, it } from 'vitest'
-import type { Bridge, Draft, DraftKey, StageResult } from '../src/ipc-contract'
+import { MAX_ATTACHMENTS, parseDraft, type Bridge, type Draft, type DraftKey, type StageResult } from '../src/ipc-contract'
 import { admitted } from '../src/renderer/composer/Composer'
 
 const saved: Draft[] = []
@@ -39,6 +39,20 @@ describe('a draft with attachments', () => {
     expect(last()).toEqual({ key: 'chat:s2', bot: null, text: '', attachments: [later] })
   })
 
+  it('moves a draft to the chat its refused first message made, and never over a draft that chat holds', async () => {
+    const { attachTo, moveDraft, writeDraft } = await drafts()
+    const [fresh, made] = [slot('new'), slot('chat:s5')]
+    const shot = attachment('shot')
+    writeDraft(fresh, 'what is this')
+    attachTo(fresh, [shot])
+    moveDraft(fresh, made)
+    expect(saved.filter(draft => draft.key === made.key).at(-1)).toEqual({ key: 'chat:s5', bot: null, text: 'what is this', attachments: [shot] })
+    expect(saved.filter(draft => draft.key === fresh.key).at(-1)).toEqual({ key: 'new', bot: null, text: '', attachments: [] })
+    attachTo(fresh, [attachment('other')])
+    moveDraft(fresh, made)
+    expect(saved.filter(draft => draft.key === made.key).at(-1)?.attachments, 'the chat keeps its own').toEqual([shot])
+  })
+
   it('keeps the attachments of one chat out of another', async () => {
     const { attachTo } = await drafts()
     attachTo(slot('chat:s3'), [attachment('mine')])
@@ -60,5 +74,13 @@ describe('what a batch of staged files adds', () => {
     const { added, refused } = admitted([ok(attachment('tenth')), ok(attachment('eleventh')), ok(attachment('notes', 'file'))], held)
     expect(added.map(item => item.id)).toEqual(['tenth', 'notes'])
     expect(refused).toEqual(["Hermes takes up to 10 images in one message, so eleventh.png wasn't attached."])
+  })
+
+  it('stops at the most attachments a message can carry, so the draft and the send stay valid', () => {
+    const held = Array.from({ length: MAX_ATTACHMENTS - 1 }, (_, index) => attachment(`held-${index}`, 'file'))
+    const { added, refused } = admitted([ok(attachment('last', 'file')), ok(attachment('over', 'file'))], held)
+    expect(added.map(item => item.id)).toEqual(['last'])
+    expect(refused).toEqual([`A message holds up to ${MAX_ATTACHMENTS} attachments, so over.pdf wasn't attached.`])
+    expect(parseDraft({ key: 'chat:s6', bot: null, text: '', attachments: [...held, ...added] })).not.toBeNull()
   })
 })
