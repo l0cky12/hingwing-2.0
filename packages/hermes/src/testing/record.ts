@@ -1,6 +1,6 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { systemClock, wireSocket, type Clock, type Dialer } from '../wire/link'
-import { MASKED, type Fixture, type FixtureStep } from './fixture'
+import { MASKED, type Fixture, type FixtureStep, type Reads } from './fixture'
 
 type Obj = Readonly<Record<string, unknown>>
 const isObject = (value: unknown): value is Obj => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -9,7 +9,7 @@ type Header = { -readonly [K in keyof Fixture['header']]?: Fixture['header'][K] 
 
 interface Slot { step: FixtureStep | null }
 
-type Found = { readonly push: unknown } | { readonly stored: readonly unknown[] }
+type Found = { readonly push: unknown } | { readonly stored: readonly unknown[] } | { readonly reads: Reads }
 const NOTHING: readonly Found[] = []
 
 const OWN_ANSWERS: Readonly<Record<string, (header: Header, reply: Obj, params: Obj) => readonly Found[]>> = {
@@ -46,7 +46,9 @@ const OWN_ANSWERS: Readonly<Record<string, (header: Header, reply: Obj, params: 
     return events.filter(params => isObject(params) && params.session_id === header.sessionId).map(params => ({ push: { jsonrpc: '2.0', method: 'event', params } }))
   },
   'session.resume': attachReply,
-  'session.create': attachReply
+  'session.create': attachReply,
+  'process.list': readReply('process.list'),
+  'session.control.read': readReply('session.control.read')
 }
 
 const masked = (values: unknown) => (isObject(values) ? Object.fromEntries(Object.keys(values).map(name => [name, MASKED])) : values)
@@ -58,6 +60,15 @@ function maskedParams(method: string, params: Obj): Obj {
   if (method !== 'connection.respond' || !isObject(params.result) || !Array.isArray(params.result.targets)) return params
   const targets = params.result.targets.map((target: unknown) => (isObject(target) && 'env' in target ? { ...target, env: masked(target.env) } : target))
   return { ...params, result: { ...params.result, targets } }
+}
+
+/** The first answer to a read is the header's. A later one is a step, from where it was heard. */
+function readReply(method: keyof Reads) {
+  return (header: Header, reply: Obj): readonly Found[] => {
+    if (header.reads?.[method] !== undefined) return [{ reads: { [method]: reply } }]
+    header.reads = { ...header.reads, [method]: reply }
+    return NOTHING
+  }
 }
 
 function attachReply(header: Header, reply: Obj): readonly Found[] {

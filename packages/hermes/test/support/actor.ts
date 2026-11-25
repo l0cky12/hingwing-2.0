@@ -7,6 +7,8 @@ import { manualClock, settle } from '../../src/testing/clock'
 import { Offline, RpcRefusal, type Calls } from '../../src/wire/link'
 
 export const ID = 's1' as SessionId
+/** What the actor reads by itself, apart from a command. */
+const READS: ReadonlySet<string> = new Set(['session.stats', 'process.list', 'session.control.read'])
 export const EPOCH = 'e1'
 
 interface Call { readonly method: string; readonly params: Record<string, unknown>; resolve(result: unknown): void; reject(error: Error): void }
@@ -69,7 +71,7 @@ export async function stage({ watched = false, hub: over = {} }: { readonly watc
     command: (command: SessionCommand) => runSessionCommand(actor.port, command, hub),
     list: (...queue: Admission[]) => event({ type: 'meta', queue }, null),
     tune: (busy: BusyMode) => actor.port.act({ did: 'tuned', tuning: { busy } }),
-    sent: () => calls.filter(call => call.method !== 'session.stats').map(call => [call.method, call.params] as const),
+    sent: () => calls.filter(call => !READS.has(call.method)).map(call => [call.method, call.params] as const),
     items: () => (actor.session.run.state === 'running' ? actor.session.run.turn.items : [])
   }
 }

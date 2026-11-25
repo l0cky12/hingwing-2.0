@@ -8,7 +8,7 @@ import { PICTURE_MAX_BYTES, pictureTypeOf } from '../domain/bots'
 import type { SessionEvent } from '../domain/reduce'
 import { GATEWAY_PROTOCOL, type Clock, type Reach } from '../wire/link'
 import { parseEvent } from '../wire/parse'
-import { MASKED, type ChatSeed, type Fixture, type FixtureStep } from './fixture'
+import { MASKED, type ChatSeed, type Fixture, type FixtureStep, type Reads } from './fixture'
 import { checkParams } from './params'
 
 export interface Peer {
@@ -147,6 +147,7 @@ const isString = (value: unknown): value is string => typeof value === 'string'
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
 const closed = (keys: Readonly<Record<string, (value: unknown) => boolean>>): Check => (_gateway, _socket, params) =>
   Object.entries(params).every(([key, value]) => Object.hasOwn(keys, key) && keys[key]!(value)) ? null : 'invalid_params'
+const isWords = (value: unknown): value is string => typeof value === 'string' && value.trim() !== ''
 /** gateway/session_tui_side.py:33-38 */
 const sideText: Check = (gateway, socket, params, routed) =>
   closed({ session_id: isString, profile: isString, text: isString })(gateway, socket, params, routed) ?? (String(params.text).trim() === '' ? 'invalid_params' : null)
@@ -243,6 +244,31 @@ const AFTER: Readonly<Record<string, (view: View, params: Obj, reply: unknown) =
   }
 }
 
+/** `_ACTION_COMMANDS` and `_SUBGOAL_ACTIONS` in gateway/session_control_actions.py:15-22. */
+const CONTROL_ACTIONS: ReadonlySet<string> = new Set([
+  'goal.pause', 'goal.resume', 'goal.clear', 'goal.unwait', 'loop.pause', 'loop.resume', 'loop.stop', 'heartbeat.pause', 'heartbeat.resume', 'heartbeat.clear',
+  'subgoal.add', 'subgoal.remove', 'subgoal.clear'
+])
+/** gateway/session_control_actions.py:26-35,136-143: the closed key sets of the call and of `args`, an action Hermes serves, and the argument it needs. */
+const controlAction: Check = (gateway, socket, params, routed) => {
+  const { action, args = {} } = params
+  if (closed({ session_id: isString, profile: isString, action: isString, args: value => value === null || isObject(value) })(gateway, socket, params, routed) !== null) return 'invalid_params'
+  const given = isObject(args) ? args : {}
+  if (!isString(action) || !CONTROL_ACTIONS.has(action.trim()) || !Object.keys(given).every(key => key === 'text' || key === 'index')) return 'invalid_params'
+  if (action === 'subgoal.remove' && !(isInt(given.index) && given.index >= 1)) return 'invalid_params'
+  return action === 'subgoal.add' && !isWords(given.text) ? 'invalid_params' : null
+}
+/** `_ROLLBACK_FIELDS` and their types in gateway/session_tui_ops.py:203-230. A diff and a restore name a checkpoint. */
+const rollback = (fields: Readonly<Record<string, (value: unknown) => boolean>>): Check => (gateway, socket, params, routed) =>
+  closed({ session_id: isString, profile: isString, ...fields })(gateway, socket, params, routed) ?? ('hash' in fields && !isText(params.hash) ? 'invalid_params' : null)
+/** `_parse` in gateway/session_reactions.py:13-24: a row by id or the newest of a role, an emoji that is not blank or none, and an author. */
+const reaction: Check = (_gateway, _socket, params) => {
+  const { row_id: row, newest_role: role, emoji, author = 'user' } = params
+  const known = Object.keys(params).every(key => ['session_id', 'profile', 'row_id', 'newest_role', 'emoji', 'author'].includes(key))
+  const addressed = row === undefined || row === null ? role === 'user' || role === 'assistant' : isInt(row)
+  return known && addressed && (emoji === undefined || emoji === null || isWords(emoji)) && (author === 'user' || author === 'agent') ? null : 'invalid_params'
+}
+
 /**
  * The calls a story answers, each with the checks its handler makes first, in the handler's order.
  * A session verb on a socket that has not attached the session is `permission_denied` for a submit
@@ -277,7 +303,14 @@ const STORY_CHECKS: Readonly<Record<string, readonly Check[]>> = {
   /** gateway/session_queued_controls.py:213-220: the edit is a submission, read before the row it replaces. */
   'prompt.replace_queued': [attached, submissionId, listed],
   /** gateway/session_authority.py:907-914 */
-  'prompt.resolve_unknown': [known, listed, lostGeneration]
+  'prompt.resolve_unknown': [known, listed, lostGeneration],
+  /** gateway/session_ancillary.py:294-305 */
+  'process.kill': [closed({ session_id: isString, profile: isString, process_id: isText }), known],
+  'session.control': [controlAction, known],
+  'rollback.list': [rollback({ undo_since: value => typeof value === 'number', undo_message_id: isInt }), known],
+  'rollback.diff': [rollback({ hash: isString }), known],
+  'rollback.restore': [rollback({ hash: isString, file_path: isString, all: isBoolean }), known],
+  'message.react': [reaction, known]
 }
 const ANY_STORY_CALL: readonly Check[] = [known]
 
@@ -672,6 +705,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     return params.key === 'yolo' || gateway.fixture.header.controls === undefined ? gateway.setYolo(params, routed, null) : gateway.control(params, routed, true)
   },
   'session.detach': detach,
+  /** gateway/session_ancillary.py:226-237: the session's own projection, which the story names. */
+  'process.list': (gateway, _socket, params, routed) => gateway.read('process.list', params, routed),
+  'session.control.read': (gateway, _socket, params, routed) => gateway.read('session.control.read', params, routed),
   /**
    * `_delivery_params` (gateway/session_bot.py:804-827), with the id rule of tools/bot_live_delivery.py:131-134,
    * then the target: a profile that is not running refuses `runtime_unavailable` (tui_gateway/methods_bot_relay.py:122).
@@ -767,6 +803,7 @@ export class ScriptedGateway {
   branchesMade = 0
 
   private stored: readonly unknown[]
+  private reads: Reads
   private readonly controls: Record<string, string> | null
   private readonly profiles: Obj[]
   private readonly souls: Map<string, string>
@@ -791,6 +828,7 @@ export class ScriptedGateway {
     this.sessionId = fixture.header.sessionId
     this.reach = fixture.header.reach ?? 'host'
     this.stored = fixture.header.stored
+    this.reads = fixture.header.reads ?? {}
     this.controls = fixture.header.controls === undefined ? null : { ...fixture.header.controls }
     this.drop = options.drop === null ? { at: 'spent' } : { at: 'armed', ...options.drop }
     const { models } = fixture.header
@@ -954,6 +992,14 @@ export class ScriptedGateway {
   awaits(method: string): boolean {
     const step = this.fixture.steps[this.step]
     return step !== undefined && 'await' in step && step.await === method
+  }
+
+  /** A read of the story session, answered as the story's latest `reads` say. One they never name is an unknown method. */
+  read(method: keyof Reads, params: Obj, routed: string): unknown {
+    if (!Object.hasOwn(this.reads, method)) throw unknownMethod(method)
+    if (!strings(['session_id', 'profile'])(params)) throw new Refused('invalid_params')
+    this.authorize(params, routed)
+    return this.reads[method]
   }
 
   /** Whether the frame is for the story session, on the profile it lives in. */
@@ -1550,6 +1596,8 @@ export class ScriptedGateway {
     this.step++
     if ('stored' in step) {
       this.stored = step.stored
+    } else if ('reads' in step) {
+      this.reads = { ...this.reads, ...step.reads }
     } else if ('drop' in step) {
       this.closeAll(step.drop)
     } else {
@@ -1568,6 +1616,7 @@ export class ScriptedGateway {
     const lost: PushStep[] = []
     for (let next = this.fixture.steps[this.step]; next !== undefined && lost.length < missed; next = this.fixture.steps[this.step]) {
       if ('stored' in next) this.stored = next.stored
+      else if ('reads' in next) this.reads = { ...this.reads, ...next.reads }
       else if ('push' in next) lost.push(next)
       else break
       this.step++

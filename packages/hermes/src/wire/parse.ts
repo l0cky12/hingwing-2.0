@@ -3,15 +3,16 @@
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
 import { canonicalBotId, type BotCreated, type BotDetails, type BotFacts, type BotId } from '../domain/bots'
-import type { ContextBreakdown, ModelConfirm, ModelMenu } from '../domain/command'
+import type { CheckpointDiff, Checkpoints, ContextBreakdown, ModelConfirm, ModelMenu, Restored } from '../domain/command'
 import type { PaneAsk } from '../domain/pane'
 import type { Admission } from '../domain/queue'
 import type { CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, Said as SaidTuning, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type { CloseWhy } from '../domain/requests'
 import { EFFORTS } from '../domain/session'
 import type {
-  AdmissionId, Answer, Ask, Began, BusyMode, ConnectTarget, FileDiff, Generation, HelperEnd, HelperId, InputId, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, PromptId,
-  Question, RequestId, SessionId, SessionUsage, SettledTurn, SideId, SidebarRow, SideTask, StatusAbout, ToolId, ToolResult, TurnId
+  AdmissionId, Answer, Ask, BackgroundProcess, Began, BusyMode, CheckpointId, ConnectTarget, FileDiff, Generation, Goal, GoalPart, GoalVerdict, GoalWait, Heartbeat, HelperEnd,
+  HelperId, InputId, Item, Json, Loop, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, ProcessId, PromptId, Question, Reaction, RequestId, SessionControl, SessionId,
+  SessionUsage, SettledTurn, SideId, SidebarRow, SideTask, StatusAbout, ToolId, ToolResult, TurnId
 } from '../domain/session'
 import type { PathMatch } from '../domain/path'
 import type { RelayState } from '../domain/relay'
@@ -21,12 +22,14 @@ import type {
   AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
   CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
   CommandDispatchResult, CommandsCatalogResult, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
-  ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload,
-  MessageInterimPayload, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload, MoaProgressPayload, MoaReferencePayload, ModelOptionProvider,
-  ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PreviewClosePayload, PreviewOpenPayload, ProfilesConfigureResult,
-  ProfilesCreateResult, ProfilesDescribeResult, ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo,
-  ProjectTreeSession, RequestCancelPayload, SecretRequestParams, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult, SessionStats,
-  SessionTitlePayload, SessionUsagePayload, SideAgentCompletePayload, StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload,
+  ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, LoopSnapshot,
+  MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
+  MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn,
+  PreviewClosePayload, PreviewOpenPayload, ProcessEntry, ProcessListResult, ProfilesConfigureResult, ProfilesCreateResult, ProfilesDescribeResult,
+  ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, RequestCancelPayload, RollbackCheckpoint,
+  RollbackDiffResult, RollbackListResult, RollbackRestoreResult, SecretRequestParams, SessionContextBreakdownResult, SessionControlDispatch,
+  SessionControlSnapshot, SessionLiveInfo, SessionMutateResult, SessionStats, SessionTitlePayload, SessionUsagePayload, SideAgentCompletePayload,
+  StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload,
   SubagentEventPayload, SudoRequestParams, TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage,
   VaultCodeRequestParams, VaultSaveLoginRequestParams, VaultUnlockRequestParams
 } from './contract.generated'
@@ -333,6 +336,7 @@ export const SHOWN: { readonly [type: string]: Shown } = {
       finalText: outcome.kind === 'failed' ? null : p.optStr('text') || null,
       rows: receipt === null ? [] : fields<PersistedTurn>(receipt).ints('row_ids'),
       userRow: receipt === null ? null : fields<PersistedTurn>(receipt).optInt('user_row_id'),
+      replyRow: receipt === null ? null : fields<PersistedTurn>(receipt).optInt('final_assistant_row_id'),
       usage: usage === null ? null : parseUsage(usage)
     }
   },
@@ -401,7 +405,8 @@ export const SHOWN: { readonly [type: string]: Shown } = {
   'status.update': payload => {
     const p = fields<StatusUpdatePayload>(payload)
     const kind = p.str('kind')
-    if (kind === 'process') return null
+    // A process ended or matched a watch (tui_gateway/session_notifications.py:613,723). Its words repeat what the list says.
+    if (kind === 'process') return { type: 'processes.changed' }
     return { type: 'status', about: STATUS_ABOUT[kind] ?? 'other', text: stripAnsi(p.str('text')) }
   },
   'agent.print': payload => ({ type: 'status', about: 'print', text: stripAnsi(fields<AgentPrintPayload>(payload).str('text')) }),
@@ -455,7 +460,13 @@ export const SHOWN: { readonly [type: string]: Shown } = {
       ...(REWRITES.has(p.optStr('operation') ?? '') ? { rewritten: true } : {})
     })
   },
-  error: payload => ({ type: 'notice', tone: 'error', text: stripAnsi(fields<ErrorPayload>(payload).str('message')) })
+  error: payload => ({ type: 'notice', tone: 'error', text: stripAnsi(fields<ErrorPayload>(payload).str('message')) }),
+  /** gateway/session_control_actions.py:107-115: the whole snapshot, on every change from any client. */
+  'session.control.update': payload => {
+    const snapshot = fields<{ control: SessionControlSnapshot }>(payload).optObj('control')
+    if (snapshot === null) throw new Unusable()
+    return { type: 'control', control: parseControl(snapshot) }
+  }
 }
 
 const nonBlank = (text: string | null) => (text === null || text.trim() === '' ? null : text)
@@ -482,7 +493,7 @@ export const UNSHOWN: ReadonlySet<string> = new Set([
   'message.reaction', 'notice', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
   'pet.hatch.progress', 'platforms.changed', 'preview.restart.complete',
   'preview.restart.progress', 'projects.changed', 'reaction',
-  'review.summary', 'session.control.update', 'session.reclaimed', 'session.resume_progress',
+  'review.summary', 'session.reclaimed', 'session.resume_progress',
   'setup.ready', 'skills.changed', 'skin.changed', 'terminal.close', 'tip.show', 'tool.output_risk', 'voice.interrupted', 'voice.partial', 'voice.status', 'voice.transcript', 'wake.detected'
 ])
 
@@ -642,6 +653,149 @@ export function parseUsage(view: Usage): SessionUsage {
  * `session.stats`: the counters that view is built from, read the way Hermes builds it
  * (`tui_usage`, `gateway/session_usage.py:130-147`). The canonical gateway has no `session.usage` method.
  */
+/** `process.list` (gateway/session_ancillary.py:655-671). A row it cannot use is left out. */
+export function parseProcesses(reply: ProcessListResult): readonly BackgroundProcess[] {
+  return (Array.isArray(reply.processes) ? reply.processes : []).flatMap(row => usable(() => processOf(row)) ?? [])
+}
+
+function processOf(row: unknown): BackgroundProcess {
+  const p = fields<ProcessEntry>(row)
+  const exited = p.optStr('status') === 'exited'
+  return {
+    id: p.str('session_id') as ProcessId,
+    command: stripAnsi(p.optStr('command') ?? ''),
+    state: exited
+      ? { s: 'exited', code: p.optNum('exit_code'), why: p.optStr('completion_reason') || null, at: unixMs(p.optNum('exited_at')) }
+      : { s: 'running' },
+    startedAt: unixMs(p.optNum('started_epoch')),
+    tail: stripAnsi(p.optStr('output_tail') ?? '')
+  }
+}
+
+/** Hermes's seconds since the epoch, where 0 means never. */
+const unixMs = (seconds: number | null): number | null => (seconds === null || seconds <= 0 ? null : Math.round(seconds * 1000))
+
+/** A part Hermes says in a way Highwing cannot read is left out, as if the chat had none. */
+export function parseControl(snapshot: unknown): SessionControl {
+  const p = usable(() => fields<SessionControlSnapshot>(snapshot))
+  const part = <T>(key: 'goal' | 'loop' | 'heartbeat', parse: (raw: Obj) => T): T | null => {
+    const raw = p?.optObj(key) ?? null
+    return raw === null ? null : usable(() => parse(raw))
+  }
+  return { goal: part('goal', goalOf), loop: part('loop', loopOf), heartbeat: part('heartbeat', heartbeatOf) }
+}
+
+const GOAL_STATUSES: readonly string[] = ['active', 'paused', 'done'] satisfies Goal['status'][]
+const GOAL_VERDICTS: readonly string[] = ['done', 'blocked', 'continue', 'wait', 'skipped'] satisfies GoalVerdict[]
+const GOAL_PARTS: { readonly [P in GoalPart]: string } = { outcome: 'outcome', verification: 'verification', constraints: 'constraints', boundaries: 'boundaries', stopWhen: 'stop_when' }
+
+function oneOf<T extends string>(raw: string | null, allowed: readonly string[]): T {
+  if (raw === null || !allowed.includes(raw)) throw new Unusable()
+  return raw as T
+}
+
+const said = (text: string | null): string | null => (text === null || text.trim() === '' ? null : text)
+
+/** tui_gateway/methods_session_control.py:49-95 */
+function goalOf(raw: Obj): Goal {
+  const g = fields<GoalSnapshot>(raw)
+  const contract = g.optObj('contract') ?? {}
+  const verdict = g.optStr('last_verdict')
+  return {
+    title: g.str('title'),
+    status: oneOf(g.str('status'), GOAL_STATUSES),
+    turns: { used: g.int('turns_used'), max: g.int('max_turns') },
+    contract: Object.fromEntries(Object.entries(GOAL_PARTS).map(([part, key]) => [part, said(isString(contract[key]) ? contract[key] : null)])) as Goal['contract'],
+    subgoals: (g.optList('subgoals') ?? []).filter(isString),
+    gates: (g.optList('gates') ?? []).flatMap(gate => usable(() => {
+      const r = fields<{ command: string; attempts: number; max_retries: number; last_exit_code: number | null }>(gate)
+      return [{ command: r.str('command'), attempts: r.int('attempts'), maxRetries: r.int('max_retries'), lastExit: r.optNum('last_exit_code') }]
+    }) ?? []),
+    pausedWhy: said(g.optStr('paused_reason')),
+    verdict: verdict === null || !GOAL_VERDICTS.includes(verdict) ? null : { is: verdict as GoalVerdict, why: said(g.optStr('last_reason')) },
+    waiting: usable(() => waitOf(g.optObj('wait_barrier')))
+  }
+}
+
+function waitOf(raw: Obj | null): GoalWait | null {
+  if (raw === null) return null
+  const w = fields<{ type: string; until_at: number; target: string | number; reason: string }>(raw)
+  const why = said(w.optStr('reason'))
+  const target = w.raw('target')
+  switch (w.str('type')) {
+    case 'until': {
+      const until = unixMs(w.optNum('until_at'))
+      if (until === null) throw new Unusable()
+      return { on: 'time', until, why }
+    }
+    case 'session':
+      if (!isString(target)) throw new Unusable()
+      return { on: 'session', session: target, why }
+    case 'pid':
+      if (!isCount(target)) throw new Unusable()
+      return { on: 'process', pid: target, why }
+    default:
+      throw new Unusable()
+  }
+}
+
+const LOOP_MODES: { readonly [mode: string]: Loop['mode'] } = { interval: 'interval', self_paced: 'self-paced' }
+
+/** tui_gateway/methods_session_control.py:98-122 */
+function loopOf(raw: Obj): Loop {
+  const l = fields<LoopSnapshot>(raw)
+  const mode = LOOP_MODES[l.str('mode')]
+  if (mode === undefined) throw new Unusable()
+  return {
+    prompt: l.str('prompt'),
+    status: oneOf(l.str('status'), GOAL_STATUSES),
+    mode,
+    everyS: l.optNum('interval_seconds') ?? 0,
+    ticks: { fired: l.int('ticks_fired'), max: l.int('max_ticks') },
+    nextAt: unixMs(l.optNum('next_due_at')),
+    heldByGoal: l.optBool('deferred_by_goal') ?? false,
+    pausedWhy: said(l.optStr('paused_reason')),
+    stoppedWhy: said(l.optStr('last_stop_reason'))
+  }
+}
+
+/** tui_gateway/methods_session_control.py:125-136 */
+function heartbeatOf(raw: Obj): Heartbeat {
+  const h = fields<HeartbeatSnapshot>(raw)
+  return {
+    prompt: h.str('prompt'),
+    status: oneOf(h.str('status'), ['active', 'paused']),
+    everyS: h.optNum('interval_seconds') ?? 0,
+    fired: h.int('fire_count'),
+    lastAt: unixMs(h.optNum('last_fired_at'))
+  }
+}
+
+/** `rollback.list` (gateway/session_tui_ops.py:254-258). */
+export function parseCheckpoints(reply: RollbackListResult): Checkpoints {
+  if (reply.enabled !== true) return { kept: 'off' }
+  const items = (Array.isArray(reply.checkpoints) ? reply.checkpoints : []).flatMap(row => usable(() => {
+    const c = fields<RollbackCheckpoint>(row)
+    return [{ id: c.str('hash') as CheckpointId, at: said(c.optStr('timestamp')), reason: c.optStr('message') ?? '' }]
+  }) ?? [])
+  return { kept: 'on', items }
+}
+
+export function parseCheckpointDiff(reply: RollbackDiffResult): CheckpointDiff {
+  return { stat: stripAnsi(isString(reply.stat) ? reply.stat : ''), patch: stripAnsi(isString(reply.diff) ? reply.diff : '') }
+}
+
+/** `rollback.restore` (agent/checkpoints/manager.py:1242-1500, gateway/session_tui_ops.py:310-313). A failed one names its reason in `error`. */
+export function parseRestored(reply: RollbackRestoreResult): Restored | { readonly failed: string } {
+  if (reply.success !== true) return { failed: isString(reply.error) && reply.error.trim() !== '' ? reply.error : 'Hermes could not restore that checkpoint.' }
+  const names = (raw: unknown): readonly string[] | null => (Array.isArray(raw) ? raw.filter(isString) : null)
+  return {
+    files: names(reply.restored_files),
+    kept: names(reply.skipped_user_edits) ?? [],
+    lastTurn: (reply.history_removed ?? 0) > 0 ? 'removed' : 'kept'
+  }
+}
+
 export function parseStats(reply: SessionStats): SessionUsage {
   return usable(() => {
     const p = fields<SessionStats>(reply)
@@ -810,6 +964,7 @@ interface TurnInProgress {
   readonly began: Began | null
   readonly items: Item<'settled'>[]
   readonly rows: number[]
+  reply: SettledTurn['reply']
 }
 
 /**
@@ -830,11 +985,12 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   rows.forEach((value, index) => {
     const row = usable(() => storedRow(value, index))
     if (row === null) return
-    if (row.opensTurn) turns.push({ request: row.text, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [] })
-    if (row.items.length > 0 && turns.length === 0) turns.push({ request: null, requestRow: null, began: null, items: [], rows: [] })
+    if (row.opensTurn) turns.push({ request: row.text, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [], reply: null })
+    if (row.items.length > 0 && turns.length === 0) turns.push({ request: null, requestRow: null, began: null, items: [], rows: [], reply: null })
     const turn = turns.at(-1)
     turn?.items.push(...row.items)
     if (row.rowId !== null) turn?.rows.push(row.rowId)
+    if (turn !== undefined && row.answers && row.rowId !== null) turn.reply = { rowId: row.rowId, reactions: row.reactions }
   })
   // A compaction row sits before the row it was stored on, so it can follow a turn's answer.
   const answered = (turn: TurnInProgress) => turn.items.findLast(item => item.kind !== 'notice' && item.kind !== 'reasoning')?.kind === 'text'
@@ -848,7 +1004,8 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
       items: turn.items,
       outcome: answered(turn) ? COMPLETE : LOST,
       rows: turn.rows,
-      tokens: null
+      tokens: null,
+      reply: answered(turn) ? turn.reply : null
     }]),
     unfinished: open === null ? null : { request: open.request, began: open.began, items: open.items }
   }
@@ -885,7 +1042,23 @@ function storedRow(value: unknown, index: number) {
       status: { s: 'done', durationS: null, diffs: [], image: null, result: content === undefined ? NO_RESULT : parseToolResult(content, null, false) }
     }]
   })()
-  return { opensTurn: role === 'user' && !steers, text, rowId, at, items }
+  const metadata = row.raw('display_metadata')
+  return {
+    opensTurn: role === 'user' && !steers, text, rowId, at, items,
+    answers: role === 'assistant' && text.trim() !== '',
+    reactions: parseReactions(isObject(metadata) ? metadata.reactions : undefined)
+  }
+}
+
+/** `display_metadata.reactions` of a stored row, and the list `message.react` answers (persistence/sqlite/conversation/_store/messages.py:450-472). */
+export function parseReactions(raw: unknown): readonly Reaction[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((value): Reaction[] => {
+    const reaction = usable(() => fields<MessageReaction>(value))
+    const emoji = reaction?.optStr('emoji')?.trim() ?? ''
+    const by = reaction?.optStr('author')
+    return emoji !== '' && (by === 'user' || by === 'agent') ? [{ emoji, by }] : []
+  })
 }
 
 export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<SidebarRow, 'badge'>[] {
@@ -1337,7 +1510,7 @@ export type Directive =
  * (gateway/session_commands.py:422-533). The client submits `message` with its own input id; the gateway
  * never does. `null` for a directive Highwing cannot carry out.
  */
-export function parseDirective(reply: CommandDispatchResult, typed: string): Directive | null {
+export function parseDirective(reply: CommandDispatchResult | SessionControlDispatch, typed: string): Directive | null {
   if (!isObject(reply)) return null
   switch (reply.type) {
     case 'exec':

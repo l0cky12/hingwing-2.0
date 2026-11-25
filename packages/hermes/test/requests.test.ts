@@ -16,7 +16,7 @@ const event = (seq: number, sessionEvent: SessionEvent, generation: number | nul
   ({ in: 'event', frame: { stamp: { epoch: EPOCH, seq, generation: generation as Generation | null }, event: sessionEvent, seenAt: null } })
 const cancelled = (seq: number, requestId: string, why: CloseWhy = 'resolved') => event(seq, { type: 'request.cancelled', id: id(requestId), why })
 const started = (seq: number, generation = 1) => event(seq, { type: 'turn.started', turnId: `t${generation}` as TurnId, admissionId: null, requestText: 'Install it' }, generation)
-const ended = (seq: number) => event(seq, { type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [], userRow: null, usage: null }, 1)
+const ended = (seq: number) => event(seq, { type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [], userRow: null, replyRow: null, usage: null }, 1)
 const answer = (requestId: string, kind: 'withheld' | 'skip' = 'withheld'): SessionInput => ({ in: 'local', action: { did: 'answer', requestId: id(requestId), reply: { kind } } })
 
 function snapshot(over: Partial<Snapshot> = {}): Snapshot {

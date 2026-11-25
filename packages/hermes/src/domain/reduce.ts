@@ -7,9 +7,10 @@
 import { queueOf, type Admission } from './queue'
 import { accepted, answering, closed, failed, opened, reconciled, type Change, type CloseWhy, type Held } from './requests'
 import type {
-  AdmissionId, Ask, Attachment, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, MoaItem, ModelRef, OpenTurn,
-  OutboxEntry, Outcome, PlanEntry, PromptId, PromptItem, PromptReply, QueuedMessage, ReasoningItem, RecordedReply, Request, RequestAsk, RequestId, Run,
-  Session, SessionContent, SessionId, SessionModel, SessionUsage, SettledTurn, SideId, SideTask, StatusAbout, StatusItem, Sync, TextItem, Tokens, Told, ToolId,
+  AdmissionId, Ask, Attachment, BackgroundProcess, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, MoaItem, ModelRef,
+  OpenTurn, OutboxEntry, Outcome, PlanEntry, PromptId, PromptItem, PromptReply, QueuedMessage, Reaction, ReasoningItem, RecordedReply, Request, RequestAsk,
+  RequestId, Run, Session, SessionContent, SessionControl, SessionId, SessionModel, SessionUsage, SettledTurn, SideId, SideTask, StatusAbout, StatusItem, Sync,
+  TextItem, Tokens, Told, ToolId,
   ToolItem, ToolResult, Tuning, TurnId
 } from './session'
 
@@ -51,10 +52,10 @@ export type SessionEvent =
   | { readonly type: 'prompt.opened'; readonly id: PromptId; readonly generation: Generation; readonly ask: Ask; readonly timeoutS: number | null }
   | { readonly type: 'prompt.settled'; readonly id: PromptId }
   | { readonly type: 'prompts.cancelled'; readonly ids: readonly PromptId[] }
-  /** `usage`: Hermes's session totals and context fill at the turn's end. null when the frame carries none. */
+  /** `usage`: Hermes's session totals and context fill at the turn's end. null when the frame carries none. `replyRow`: the stored row of its answer. */
   | {
       readonly type: 'turn.ended'; readonly outcome: Outcome; readonly finalText: string | null; readonly rows: readonly number[]
-      readonly userRow: number | null; readonly usage: SessionUsage | null
+      readonly userRow: number | null; readonly replyRow: number | null; readonly usage: SessionUsage | null
     }
   /** A tick while a turn runs. Its totals are mid-turn, so only the context fill is read. */
   | { readonly type: 'usage'; readonly context: SessionUsage['context'] }
@@ -65,6 +66,10 @@ export type SessionEvent =
   | { readonly type: 'request.cancelled'; readonly id: RequestId; readonly why: CloseWhy }
   | { readonly type: 'side.answered'; readonly id: SideId; readonly kind: SideTask['kind']; readonly asked: string | null; readonly text: string }
   | { readonly type: 'connect'; readonly card: CardRequest; readonly settled: CloseWhy | null }
+  /** The chat's goal, loop and heartbeat now, which Hermes publishes on every change. */
+  | { readonly type: 'control'; readonly control: SessionControl }
+  /** A background process ended or matched what the agent watches for, so the list Hermes last gave is old. */
+  | { readonly type: 'processes.changed' }
   | {
       readonly type: 'meta'
       readonly title?: string
@@ -217,9 +222,14 @@ export type SessionInput =
   | { readonly in: 'declined'; readonly request: BridgeRequest }
   /**
    * Answers to reads the actor made because a window watches the chat. `attempt` is the attach they
-   * were read under. An answer read under an older attach changes nothing.
+   * were read under, and `heard` the fence's `heard` when they were asked. An answer read under an
+   * older attach changes nothing, and a part Hermes said more about since it was asked is left as it is.
+   * A part that was not read is absent. null: Hermes refused the read.
    */
-  | { readonly in: 'facts'; readonly attempt: number; readonly tuning: Partial<Tuning> }
+  | {
+      readonly in: 'facts'; readonly attempt: number; readonly heard: Heard
+      readonly tuning?: Partial<Tuning>; readonly processes?: readonly BackgroundProcess[] | null; readonly control?: SessionControl | null
+    }
   | { readonly in: 'local'; readonly action: LocalAction }
 
 /** What this client did. Folded through the same reducer so a second window sees it too. */
@@ -248,6 +258,18 @@ export type LocalAction =
   | { readonly did: 'side.started'; readonly id: SideId; readonly kind: SideTask['kind']; readonly asked: string }
   /** Hermes confirmed a switch this client set. */
   | { readonly did: 'tuned'; readonly tuning: Partial<Tuning> }
+  /** This client asked Hermes to stop a background process, so the list it last gave is old. */
+  | { readonly did: 'killed' }
+  /** The reactions on the stored row `rowId` now, as Hermes answered a reaction of this client. Hermes tells no other client. */
+  | { readonly did: 'reacted'; readonly rowId: number; readonly reactions: readonly Reaction[] }
+  /** This client rewrote the chat's stored rows, so it is read again. */
+  | { readonly did: 'rewritten' }
+
+/**
+ * How many times Hermes said a part of the panel changed. A read answers for the moment it was asked,
+ * so one asked before the count moved must not undo what Hermes said since.
+ */
+export interface Heard { readonly control: number; readonly processes: number }
 
 /** Bookkeeping the views never need. Kept beside the content so one reducer guards both. */
 export interface Fence {
@@ -276,6 +298,7 @@ export interface Fence {
    * carries no id Hermes could know a repeat by. Emptied when the turn ends.
    */
   readonly told: { readonly [promptId: string]: { readonly [text: string]: Exclude<Told, 'next'> } }
+  readonly heard: Heard
 }
 
 export interface Tracked {
@@ -286,9 +309,15 @@ export interface Tracked {
 
 export function emptyTracked(id: SessionId): Tracked {
   return {
-    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], requests: [], queue: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, tuning: UNTUNED, sides: [] },
+    content: {
+      id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], requests: [], queue: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, tuning: UNTUNED,
+      sides: [], processes: null, control: null
+    },
     gate: { at: 'detached', why: 'new', cursor: null },
-    fence: { revision: 0, text: null, older: null, admissions: {}, sent: {}, settledThrough: null, generation: null, attaches: 0, totalsEpoch: 0, closed: [], told: {} }
+    fence: {
+      revision: 0, text: null, older: null, admissions: {}, sent: {}, settledThrough: null, generation: null, attaches: 0, totalsEpoch: 0, closed: [], told: {},
+      heard: { control: 0, processes: 0 }
+    }
   }
 }
 
@@ -349,7 +378,7 @@ export function reduce(state: Tracked, input: SessionInput): Tracked {
       return holdsDeclined(state.content, requestId) ? state : say(state, { kind: 'notice', what: 'declined', requestId, method })
     }
     case 'facts':
-      return input.attempt === state.fence.attaches ? tune(state, input.tuning) : state
+      return input.attempt === state.fence.attaches ? facts(state, input) : state
     case 'local':
       return act(state, input.action)
     default:
@@ -462,7 +491,8 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
     items: leftOpen.items,
     outcome: LOST,
     rows: [],
-    tokens: null
+    tokens: null,
+    reply: null
   }]
   const run: Run = !snapshot.running ? IDLE : {
     state: 'running',
@@ -493,7 +523,9 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       model: { ...modelFrom(content.model, snapshot.model), next: null, ask: null },
       usage: patch(content.usage, { totals: null }),
       tuning: patch(content.tuning, snapshot.tuning),
-      sides: content.sides.some(side => side.state.s === 'running') ? content.sides.map(side => (side.state.s === 'running' ? { ...side, state: LOST_SIDE } : side)) : content.sides
+      sides: content.sides.some(side => side.state.s === 'running') ? content.sides.map(side => (side.state.s === 'running' ? { ...side, state: LOST_SIDE } : side)) : content.sides,
+      processes: content.processes,
+      control: content.control
     },
     fence: {
       revision: Math.max(fence.revision, snapshot.revision),
@@ -506,7 +538,8 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       attaches: fence.attaches,
       totalsEpoch: fence.totalsEpoch + 1,
       closed: fence.closed,
-      told: fence.told
+      told: fence.told,
+      heard: fence.heard
     }
   }
   return listed(seeded, snapshot.queue)
@@ -528,7 +561,7 @@ function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
     })
   }
   const { run } = next.content
-  if (run.state === 'running' && !(snapshot.running && snapshot.generation === run.generation)) next = settle(next, LOST, null, [], null, null)
+  if (run.state === 'running' && !(snapshot.running && snapshot.generation === run.generation)) next = settle(next, LOST, null, [], null, null, null)
   if (snapshot.running && next.content.run.state === 'idle') {
     next = openRun(next, snapshot.generation, runTurnId(snapshot.generation), startedRequest(next, snapshot.queue), null)
   }
@@ -685,6 +718,12 @@ function act(state: Tracked, action: LocalAction): Tracked {
     }
     case 'tuned':
       return tune(state, action.tuning)
+    case 'killed':
+      return heard(state, 'processes')
+    case 'reacted':
+      return react(state, action.rowId, action.reactions)
+    case 'rewritten':
+      return gap(state)
     case 'side.started': {
       const { sides } = content
       const at = sides.findIndex(side => side.id === action.id)
@@ -724,7 +763,7 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
       const { run } = state.content
       if (stamp.generation === null || (event.turnId !== null && holdsTurn(state.content, event.turnId))) return state
       if (run.state === 'running' && stamp.generation <= run.generation) return state
-      const settled = settle(state, LOST, null, [], null, null)
+      const settled = settle(state, LOST, null, [], null, null, null)
       const request = requestFor(settled, event.admissionId, event.requestText)
       const opened = openRun(dropEntry(settled, request?.inputId ?? null), stamp.generation, event.turnId ?? runTurnId(stamp.generation), request, seenBy(seenAt))
       // Hermes says the turn started before it lists the row as started (gateway/session_authority.py:1237-1240), and the row is no longer waiting.
@@ -804,7 +843,8 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
     case 'turn.ended':
       // A queued message that is cancelled completes with no generation on its stamp
       // (gateway/session_authority.py:886). That is not the end of the turn running ahead of it.
-      return stamp.generation === null ? state : settle(state, event.outcome, event.finalText, event.rows, event.userRow, event.usage)
+      // A turn is where the agent starts and stops background processes, so its end makes the list old.
+      return stamp.generation === null ? state : heard(settle(state, event.outcome, event.finalText, event.rows, event.userRow, event.usage, event.replyRow), 'processes')
     case 'usage':
       return event.context === null ? state : setUsage(state, { ...state.content.usage, context: event.context })
     case 'notice':
@@ -834,6 +874,10 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
       return withRequests(state, event.settled === null
         ? opened(heldOf(state), event.card, seenAt)
         : closed(heldOf(state), event.card.requestId, event.settled))
+    case 'control':
+      return heard({ ...state, content: patch(state.content, { control: same(state.content.control, event.control) }) }, 'control')
+    case 'processes.changed':
+      return heard(state, 'processes')
     case 'meta': {
       const named: Tracked = event.model === undefined ? state : { ...state, content: patch(state.content, { model: modelFrom(state.content.model, event.model) }) }
       const moved: Tracked = event.cwd === undefined ? named : { ...named, content: patch(named.content, { cwd: event.cwd }) }
@@ -863,7 +907,7 @@ function cutBefore(state: Tracked, rowId: number): Tracked {
 function openRun(state: Tracked, generation: Generation, id: TurnId, request: Request | null, began: Began | null): Tracked {
   const run: Run = { state: 'running', generation, stop: 'none', turn: { id, request, began, items: [], announced: null } }
   const { history, interlude } = state.content
-  const sealed: SettledTurn = { id: `interlude:${generation}` as TurnId, request: null, began: null, items: interlude, outcome: INTERLUDE, rows: [], tokens: null }
+  const sealed: SettledTurn = { id: `interlude:${generation}` as TurnId, request: null, began: null, items: interlude, outcome: INTERLUDE, rows: [], tokens: null, reply: null }
   return {
     ...state,
     content: { ...state.content, run, history: interlude.length === 0 ? history : [...history, sealed], interlude: interlude.length === 0 ? interlude : [] },
@@ -927,6 +971,36 @@ function moaStep(turn: OpenTurn, step: MoaStep): OpenTurn {
   return next === round ? turn : { ...turn, items: turn.items.with(at, next) }
 }
 
+function facts(state: Tracked, input: Extract<SessionInput, { in: 'facts' }>): Tracked {
+  const { heard } = state.fence
+  const fresh = (part: keyof Heard) => input.heard[part] === heard[part]
+  const tuned = input.tuning === undefined ? state : tune(state, input.tuning)
+  const { processes, control } = tuned.content
+  const listed = input.processes === undefined || !fresh('processes') ? {} : { processes: same(processes, input.processes) }
+  const controlled = input.control === undefined || !fresh('control') ? {} : { control: same(control, input.control) }
+  const content = patch(tuned.content, { ...listed, ...controlled })
+  return content === tuned.content ? tuned : { ...tuned, content }
+}
+
+/** A read that says what is already held keeps the held value, so a push does not carry it again. */
+const same = <T>(held: T, said: T): T => (JSON.stringify(held) === JSON.stringify(said) ? held : said)
+
+function heard(state: Tracked, part: keyof Heard): Tracked {
+  const { fence } = state
+  return { ...state, fence: { ...fence, heard: { ...fence.heard, [part]: fence.heard[part] + 1 } } }
+}
+
+function react(state: Tracked, rowId: number, reactions: readonly Reaction[]): Tracked {
+  const { history } = state.content
+  const at = history.findIndex(turn => turn.reply?.rowId === rowId)
+  const turn = history[at]
+  if (turn?.reply == null || sameReactions(turn.reply.reactions, reactions)) return state
+  return { ...state, content: { ...state.content, history: history.with(at, { ...turn, reply: { ...turn.reply, reactions } }) } }
+}
+
+const sameReactions = (held: readonly Reaction[], said: readonly Reaction[]) =>
+  held.length === said.length && held.every((reaction, index) => reaction.emoji === said[index]?.emoji && reaction.by === said[index]?.by)
+
 function tune(state: Tracked, tuning: Partial<Tuning>): Tracked {
   const next = patch(state.content.tuning, tuning)
   return next === state.content.tuning ? state : { ...state, content: { ...state.content, tuning: next } }
@@ -975,7 +1049,7 @@ function requestFor(state: Tracked, admissionId: string | null, requestText: str
 }
 
 function settle(
-  state: Tracked, outcome: Outcome, finalText: string | null, rows: readonly number[], userRow: number | null, usage: SessionUsage | null
+  state: Tracked, outcome: Outcome, finalText: string | null, rows: readonly number[], userRow: number | null, usage: SessionUsage | null, replyRow: number | null
 ): Tracked {
   const { content, fence } = state
   if (content.run.state !== 'running') return state
@@ -985,7 +1059,7 @@ function settle(
   const tokens = totals !== null && before.totals !== null ? shareOf(totals, before.totals) : null
   const turn: SettledTurn = {
     id, request: request === null ? null : { ...request, rowId: userRow ?? request.rowId }, began, items: withFinalText(items, finalText).map(settledItem),
-    outcome, rows, tokens
+    outcome, rows, tokens, reply: replyRow === null ? null : { rowId: replyRow, reactions: [] }
   }
   const settled: Tracked = {
     ...state,

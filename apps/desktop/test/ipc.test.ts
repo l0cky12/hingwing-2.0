@@ -156,6 +156,20 @@ describe('validators', () => {
     expect(parseCommand({ do: 'botPicture', bot: 'rae' })).toEqual({ do: 'botPicture', bot: 'rae' })
   })
 
+  it('keep the panel commands: a process, a control button with what it takes, a checkpoint and its scope, and an emoji or none on a turn', () => {
+    expect(parseCommand({ do: 'killProcess', sessionId: 's1', processId: 'proc_1', extra: 1 })).toEqual({ do: 'killProcess', sessionId: 's1', processId: 'proc_1' })
+    expect(parseCommand({ do: 'control', sessionId: 's1', action: { act: 'goal.pause', text: 'ignored' } })).toEqual({ do: 'control', sessionId: 's1', action: { act: 'goal.pause' } })
+    expect(parseCommand({ do: 'control', sessionId: 's1', action: { act: 'subgoal.add', text: 'tests pass' } })).toEqual({ do: 'control', sessionId: 's1', action: { act: 'subgoal.add', text: 'tests pass' } })
+    expect(parseCommand({ do: 'control', sessionId: 's1', action: { act: 'subgoal.remove', index: 2 } })).toEqual({ do: 'control', sessionId: 's1', action: { act: 'subgoal.remove', index: 2 } })
+    expect(parseCommand({ do: 'checkpoints', sessionId: 's1' })).toEqual({ do: 'checkpoints', sessionId: 's1' })
+    expect(parseCommand({ do: 'checkpointDiff', sessionId: 's1', checkpoint: 'abc123' })).toEqual({ do: 'checkpointDiff', sessionId: 's1', checkpoint: 'abc123' })
+    const folder = { do: 'restore', sessionId: 's1', checkpoint: 'abc123', scope: { kind: 'folder', edits: 'keep' } }
+    expect(parseCommand({ ...folder, scope: { ...folder.scope, path: 'ignored' } })).toEqual(folder)
+    expect(parseCommand({ ...folder, scope: { kind: 'file', path: 'notes.md' } })).toEqual({ ...folder, scope: { kind: 'file', path: 'notes.md' } })
+    expect(parseCommand({ do: 'react', sessionId: 's1', turn: 't1', emoji: '👍' })).toEqual({ do: 'react', sessionId: 's1', turn: 't1', emoji: '👍' })
+    expect(parseCommand({ do: 'react', sessionId: 's1', turn: 't1', emoji: null })).toEqual({ do: 'react', sessionId: 's1', turn: 't1', emoji: null })
+  })
+
   it('keep a rewind to a stored row and the text to send there', () => {
     expect(parseCommand({ do: 'rewind', sessionId: 's1', rowId: 7, text: 'again', extra: 1 })).toEqual({ do: 'rewind', sessionId: 's1', rowId: 7, text: 'again' })
   })
@@ -261,7 +275,16 @@ describe('validators', () => {
     ['a path completion with no word', { do: 'completePath', sessionId: 's1' }],
     ['a YOLO switch with no chat', { do: 'tune', set: 'yolo', on: true }],
     ['a pick with no provider', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: '', providerName: '' } }],
-    ['a pick with a blank confirm token', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: 'p', providerName: 'P' }, confirm: ' ' }]
+    ['a pick with a blank confirm token', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: 'p', providerName: 'P' }, confirm: ' ' }],
+    ['a kill that names no process', { do: 'killProcess', sessionId: 's1', processId: ' ' }],
+    ['a button Hermes does not serve', { do: 'control', sessionId: 's1', action: { act: 'goal.delete' } }],
+    ['a criterion with no words', { do: 'control', sessionId: 's1', action: { act: 'subgoal.add', text: ' ' } }],
+    ['a criterion removed at place zero', { do: 'control', sessionId: 's1', action: { act: 'subgoal.remove', index: 0 } }],
+    ['a diff of no checkpoint', { do: 'checkpointDiff', sessionId: 's1', checkpoint: '' }],
+    ['a restore of a scope Hermes does not have', { do: 'restore', sessionId: 's1', checkpoint: 'abc123', scope: { kind: 'folder', edits: 'merge' } }],
+    ['a restore of a file with no path', { do: 'restore', sessionId: 's1', checkpoint: 'abc123', scope: { kind: 'file', path: ' ' } }],
+    ['a blank emoji', { do: 'react', sessionId: 's1', turn: 't1', emoji: ' ' }],
+    ['a reaction on no turn', { do: 'react', sessionId: 's1', emoji: '👍' }]
   ])('refuse %s', (_, raw) => {
     expect(parseCommand(raw)).toBeNull()
   })
@@ -292,10 +315,10 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'closePreview', 'completePath', 'compress',
-      'contextBreakdown', 'createBot', 'describeBot', 'discard', 'editBot', 'editTarget', 'export', 'keepTarget', 'loadEarlier', 'models', 'move', 'open',
-      'openChat', 'openPreview', 'pickModel', 'placePreview', 'preview', 'queued', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename', 'rewind', 'send',
-      'side', 'start', 'stop', 'tune', 'versions'
+      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'checkpointDiff', 'checkpoints', 'closePreview', 'completePath',
+      'compress', 'contextBreakdown', 'control', 'createBot', 'describeBot', 'discard', 'editBot', 'editTarget', 'export', 'keepTarget', 'killProcess',
+      'loadEarlier', 'models', 'move', 'open', 'openChat', 'openPreview', 'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect',
+      'reloadPreview', 'removeBotPicture', 'rename', 'restore', 'rewind', 'send', 'side', 'start', 'stop', 'tune', 'versions'
     ])
   })
 })

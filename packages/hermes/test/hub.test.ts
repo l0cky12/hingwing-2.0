@@ -509,11 +509,11 @@ describe('the open chat', () => {
     await opened.clock.advance(60_000)
 
     const forResearch = opened.sent().filter(call => call.params?.session_id === RESEARCH_CHAT)
-    expect(forResearch.map(call => call.method), 'one resume for the whole visit, and a read each time a window began to watch it').toEqual([
-      'session.resume', 'session.stats', 'config.get', 'config.get', 'session.stats', 'prompt.submit', 'session.stats', 'config.get', 'config.get', 'model.options',
-      'session.mutate', 'session.detach'
+    expect(forResearch.map(call => call.method), 'one resume for the whole visit, a read each time a window began to watch it, and the processes again after the turn').toEqual([
+      'session.resume', 'session.stats', 'config.get', 'config.get', 'session.control.read', 'process.list', 'session.stats', 'prompt.submit', 'session.stats', 'process.list',
+      'config.get', 'config.get', 'session.control.read', 'process.list', 'model.options', 'session.mutate', 'session.detach'
     ])
-    expect(forResearch.map(call => call.params?.profile), 'every call that names the chat names its bot').toEqual(Array(12).fill('research'))
+    expect(forResearch.map(call => call.params?.profile), 'every call that names the chat names its bot').toEqual(Array(17).fill('research'))
     expect(calls(opened, 'session.create')).toEqual([])
   })
 
@@ -699,7 +699,10 @@ describe("a bot's chats", () => {
     expect(await opened.hermes.run({ do: 'send', sessionId: DOWNLOADS, text: 'hello' })).toEqual({ ok: true, value: null })
     await opened.clock.advance(0)
     expect(opened.sent().filter(call => call.params?.session_id === DOWNLOADS && call.method !== 'session.stats').map(call => [call.method, call.params?.profile]), 'a picked chat runs as its bot')
-      .toEqual([['session.resume', 'research'], ['config.get', 'research'], ['config.get', 'research'], ['prompt.submit', 'research']])
+      .toEqual([
+        ['session.resume', 'research'], ['config.get', 'research'], ['config.get', 'research'], ['session.control.read', 'research'], ['process.list', 'research'],
+        ['prompt.submit', 'research'], ['process.list', 'research']
+      ])
     expect(rowsOf(opened)[2], 'the badge comes from the attached chat').toEqual([DOWNLOADS, 'Clean up Downloads', 'none'])
 
     expect(opened.sent().filter(call => call.method === 'session.create')).toEqual([])

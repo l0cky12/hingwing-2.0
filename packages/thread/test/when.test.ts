@@ -12,12 +12,12 @@ const client = (ms: number): Began => ({ at: ms, clock: 'client' })
 
 const settled = (id: string, began: Began | null): SettledTurn => ({
   id: id as TurnId, request: { text: `Request ${id}`, inputId: null, rowId: null, attachments: [] }, began, items: [{ kind: 'text', markdown: `Answer ${id}`, sealed: true }],
-  outcome: { kind: 'complete' }, rows: [], tokens: null
+  outcome: { kind: 'complete' }, rows: [], tokens: null, reply: null
 })
 
 const session = (history: readonly SettledTurn[], over: Partial<Session> = {}): Session => ({
   id: 's1' as Session['id'], title: '', cwd: null, history, earlier: 'none', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [],
-  model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [], sync: { state: 'live' }, ...over
+  model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [], processes: null, control: null, sync: { state: 'live' }, ...over
 })
 
 const running = (began: Began | null, items: readonly Item[] = [], history: readonly SettledTurn[] = [], sync: Sync = { state: 'live' }): Session =>

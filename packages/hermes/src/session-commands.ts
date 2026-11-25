@@ -1,6 +1,6 @@
 import { DONE, refused, type Mutation, type SessionPort, type Upload } from './actor'
 import type { Bot } from './domain/bots'
-import type { Command, ModelConfirm, Outcome, Refusal, ResultOf } from './domain/command'
+import type { Command, ModelConfirm, Outcome, Refusal, Restored, ResultOf } from './domain/command'
 import { offeredBy, sendPlan } from './domain/queue'
 import type {
   AttachmentId, BranchId, Generation, HermesRequest, PromptId, PromptReply, QueuedMessage, RecordedReply, RequestId, RequestReply, SessionContent, SessionId,
@@ -9,8 +9,8 @@ import type {
 import { ownCommand, slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import type { Served } from './wire/link'
 import {
-  beginsAtTurn, type Correction, parseBranched, parseBusy, parseCompressed, parseContextBreakdown, parseCorrection, parseDirective,
-  parseFast, parseModelMenu, parseModelReceipt, parsePathMatches, parseShown, parseTranscript
+  beginsAtTurn, parseBranched, parseBusy, parseCheckpointDiff, parseCheckpoints, parseCompressed, parseContextBreakdown, parseCorrection, parseDirective, parseFast,
+  parseModelMenu, parseModelReceipt, parsePathMatches, parseReactions, parseRestored, parseShown, parseTranscript, type Correction, type Directive
 } from './wire/parse'
 
 /** `versions` stays with the hub: reading a chat's versions must not attach it. */
@@ -54,6 +54,9 @@ const WRONG_ANSWER = refused('rejected', "That isn't an answer this question tak
 const NOT_QUEUED = refused('stale', 'That message is no longer in the queue.')
 const NOT_OFFERED = refused('rejected', "Hermes doesn't offer that for this message.")
 const MAYBE_READ = refused('rejected', "Hermes didn't confirm it took that. It may have read it, so Highwing hasn't sent it again.")
+const NOT_STORED = refused('rejected', "That answer isn't stored, so it can't take a reaction.")
+/** `message.react` answers `not_found` for a row the chat no longer shows, such as one a rewind took back (gateway/session_reactions.py:50-51). */
+const ROW_GONE = { not_found: GONE } as const
 const ANSWERED: Outcome<undefined> = { ok: true, value: undefined }
 const EARLIER = { pageRows: 200, pages: 3 } as const
 const MENTION_WITH_ATTACHMENTS = "A message to another bot can't carry attachments. Remove them, or send it without the mention."
@@ -252,6 +255,60 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
       case 'committed':
         return { ok: true, value: null }
     }
+  }),
+
+  killProcess: (port, { processId }) => port.whenLive(async () => {
+    const killed = await port.call('process.kill', { session_id: port.id, process_id: processId })
+    if (killed.ok || killed.refusal.kind === 'stale') port.act({ did: 'killed' })
+    if (!killed.ok) return killed
+    // A process that died before the kill, or after Hermes listed it, still ends the call (tools/process_registry.py:2120-2190).
+    switch (killed.value.status) {
+      case 'killed':
+      case 'already_exited':
+        return DONE
+      case 'not_found':
+        return refused('stale', 'That process is no longer in this chat.')
+      case 'error':
+        return refused('rejected', killed.value.error ? `Hermes couldn't stop it: ${killed.value.error}` : "Hermes couldn't stop it.")
+    }
+  }),
+
+  /** Hermes publishes the new state to every viewer as `session.control.update`, so the reply's own copy is not read. */
+  control: (port, { action }) => port.whenLive(async () => {
+    const { act, ...args } = action
+    const pressed = await port.call('session.control', { session_id: port.id, action: act, args })
+    return pressed.ok ? carryOut(port, parseDirective(pressed.value.dispatch, `/${act.replace('.', ' ')}`)) : pressed
+  }),
+
+  checkpoints: port => port.whenLive(async () => {
+    const listed = await port.call('rollback.list', { session_id: port.id })
+    return listed.ok ? { ok: true, value: parseCheckpoints(listed.value) } : listed
+  }),
+
+  checkpointDiff: (port, { checkpoint }) => port.whenLive(async () => {
+    const diff = await port.call('rollback.diff', { session_id: port.id, hash: checkpoint })
+    return diff.ok ? { ok: true, value: parseCheckpointDiff(diff.value) } : diff
+  }),
+
+  restore: (port, { checkpoint, scope }) => port.whenLive<Restored>(async () => {
+    // Hermes takes back the last turn with a whole folder, and refuses that mid-turn. One file only touches the disk (gateway/session_tui_ops.py:235-238).
+    if (scope.kind === 'folder' && port.content.run.state === 'running') return MID_TURN
+    const how = scope.kind === 'file' ? { file_path: scope.path } : scope.edits === 'overwrite' ? { all: true } : {}
+    const reply = await port.call('rollback.restore', { session_id: port.id, hash: checkpoint, ...how })
+    if (!reply.ok) return reply
+    const restored = parseRestored(reply.value)
+    if ('failed' in restored) return refused('rejected', restored.failed)
+    if (restored.lastTurn === 'removed') port.act({ did: 'rewritten' })
+    return { ok: true, value: restored }
+  }),
+
+  react: (port, { turn, emoji }) => port.whenLive(async () => {
+    const reply = port.content.history.find(held => held.id === turn)?.reply ?? null
+    if (reply === null) return NOT_STORED
+    const reacted = await port.call('message.react', { session_id: port.id, row_id: reply.rowId, emoji }, ROW_GONE)
+    if (!reacted.ok) return reacted
+    port.act({ did: 'reacted', rowId: reacted.value.row_id, reactions: parseReactions(reacted.value.reactions) })
+    return DONE
   }),
 
   tune: (port, command) => port.whenLive(async () => {
@@ -461,8 +518,11 @@ async function runSlash(port: SessionPort, line: SlashLine, hub: Hub): Promise<O
   const { entry, arg } = line
   const typed = `/${entry.name}${arg === '' ? '' : ` ${arg}`}`
   const reply = await port.call('command.dispatch', { session_id: port.id, name: entry.name, ...(arg === '' ? {} : { arg }) })
-  if (!reply.ok) return reply
-  const directive = parseDirective(reply.value, typed)
+  return reply.ok ? carryOut(port, parseDirective(reply.value, typed)) : reply
+}
+
+/** What Hermes answered a command or a control button: words to show, or a message the client submits with its own input id. */
+async function carryOut(port: SessionPort, directive: Directive | null): Promise<Outcome<string | null>> {
   if (directive === null) return refused('unsupported', "Highwing can't carry out what Hermes answered to that command.")
   if (directive.do === 'show') return directive.text === '' ? NOTHING_TO_SHOW : { ok: true, value: directive.text }
   return showing(await port.submit(directive.text, directive.apiText), directive.note)

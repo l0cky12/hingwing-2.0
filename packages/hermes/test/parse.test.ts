@@ -149,7 +149,7 @@ describe('parseEvent on the errand fixture', () => {
 
   it('ends the turn complete with no final text and the receipt rows 1 to 10', () => {
     const complete = only(params.filter(({ type }) => type === 'message.complete'))
-    expect(eventOf(complete)).toEqual({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], userRow: 1, usage: null })
+    expect(eventOf(complete)).toEqual({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], userRow: 1, replyRow: 10, usage: null })
   })
 
   it('reads the queue, revision and generation from session.info', () => {
@@ -199,7 +199,7 @@ describe('parseEvent outside the happy path', () => {
       return parsed.scope === 'session' ? parsed.event : null
     }
     expect(complete({ text: 'Worker execution is unknown.', outcome: 'unknown', status: 'error' })).toEqual({
-      type: 'turn.ended', outcome: { kind: 'failed', message: 'Worker execution is unknown.', code: null, retryable: false }, finalText: null, rows: [], userRow: null, usage: null
+      type: 'turn.ended', outcome: { kind: 'failed', message: 'Worker execution is unknown.', code: null, retryable: false }, finalText: null, rows: [], userRow: null, replyRow: null, usage: null
     })
     expect(complete({ status: 'error', error: 'no credentials', error_surface: { layer: 'provider', code: 'auth_permanent', retryable: false } }))
       .toMatchObject({ outcome: { kind: 'failed', message: 'no credentials', code: 'auth_permanent' } })
@@ -849,13 +849,13 @@ describe('what Hermes says, parsed', () => {
     expect(said('moa.phase', { phase: 'references' })).toBe('invalid')
   })
 
-  it('splits status.update by kind, and leaves a process line unshown', () => {
+  it('splits status.update by kind, and reads a process line as the signal to list the processes again', () => {
     expect(said('status.update', { kind: 'compacting', text: 'Compacting…' })).toEqual({ type: 'status', about: 'compacting', text: 'Compacting…' })
     expect(said('status.update', { kind: 'compacted', text: 'Done.' })).toEqual({ type: 'status', about: 'compacted', text: 'Done.' })
     expect(said('status.update', { kind: 'goal', text: 'Goal met.' })).toEqual({ type: 'status', about: 'goal', text: 'Goal met.' })
     expect(said('status.update', { kind: 'warn', text: 'Memory is off.' })).toEqual({ type: 'status', about: 'warning', text: 'Memory is off.' })
     expect(said('status.update', { kind: 'lifecycle', text: 'Retrying.' })).toEqual({ type: 'status', about: 'other', text: 'Retrying.' })
-    expect(said('status.update', { kind: 'process', text: 'Resuming.' })).toBe('unshown')
+    expect(said('status.update', { kind: 'process', text: 'npm test finished.' })).toEqual({ type: 'processes.changed' })
     expect(said('agent.print', { text: '\u001b[2mSubagent done.\u001b[0m' })).toEqual({ type: 'status', about: 'print', text: 'Subagent done.' })
   })
 

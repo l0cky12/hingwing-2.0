@@ -1,7 +1,10 @@
 /** `@highwing/hermes/domain`: what the renderer and `@highwing/thread` may import. Types, one selector, and the tables that name a target and its failures. */
 export type * from './session'
-export { EFFORTS, STORED_ROWS } from './session'
-export { EXPORT_FORMATS, type Command, type ContextBreakdown, type ExportFormat, type Exported, type ModelConfirm, type ModelMenu, type Outcome as CommandOutcome, type Refusal, type ResultOf } from './command'
+export { EFFORTS, PLAIN_CONTROLS, STORED_ROWS } from './session'
+export {
+  EXPORT_FORMATS, type Checkpoint, type CheckpointDiff, type Checkpoints, type Command, type ContextBreakdown, type ExportFormat, type Exported, type ModelConfirm, type ModelMenu, type Outcome as CommandOutcome, type Refusal, type Restored, type RestoreScope,
+  type ResultOf
+} from './command'
 export { activityOf, turnActivityOf, type Activity, type TurnActivity } from './reduce'
 export type { SlashCatalog, SlashEntry } from './slash'
 export { BOT_TONES, botsIn, canonicalBotId, PICTURE_MAX_BYTES, PICTURE_RULE, pictureTypeOf, rosterOf, type AvatarTone, type Bot, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotFacts, type BotId, type Bots, type BotSection, type BotTone, type PictureType, type Roster } from './bots'

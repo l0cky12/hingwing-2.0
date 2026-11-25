@@ -7,12 +7,12 @@ const CLOCK = { now: 0, timeZone: 'UTC' }
 
 const turn = (id: string, items: readonly Item<'settled'>[], request: string | null = 'Do it'): SettledTurn => ({
   id: id as TurnId, request: request === null ? null : { text: request, inputId: null, rowId: null, attachments: [] }, began: null, items,
-  outcome: request === null ? { kind: 'interlude' } : { kind: 'complete' }, rows: [], tokens: null
+  outcome: request === null ? { kind: 'interlude' } : { kind: 'complete' }, rows: [], tokens: null, reply: null
 })
 
 const session = (history: readonly SettledTurn[]): Session => ({
   id: 's1' as Session['id'], title: '', cwd: null, history, earlier: 'none', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [],
-  model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [], sync: { state: 'live' }
+  model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [], processes: null, control: null, sync: { state: 'live' }
 })
 
 const goal: Item<'settled'> = { kind: 'status', what: 'line', about: 'goal', text: 'Goal met.' }

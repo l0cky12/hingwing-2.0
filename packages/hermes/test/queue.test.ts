@@ -158,7 +158,7 @@ describe('Hermes\'s queue', () => {
     const running = feed(live(), event(started(null)))
     const steered: SessionInput = { in: 'local', action: { did: 'steered', text: 'use trash-put', during: 1 as Generation } }
     expect(openTurn(feed(running, steered))?.items).toEqual([{ kind: 'steer', text: 'use trash-put' }])
-    const next = feed(running, event({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [], userRow: null, usage: null }), event(started(null), 2))
+    const next = feed(running, event({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [], userRow: null, replyRow: null, usage: null }), event(started(null), 2))
     expect(feed(next, steered).content).toBe(next.content)
   })
 })

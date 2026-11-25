@@ -3,8 +3,8 @@ import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
 import type {
-  AdmissionId, AttachmentId, BranchId, BusyMode, ContextFill, Effort, InputId, ModelOption, ModelRef, PromptId, PromptReply, QueuedAction, RequestId,
-  RequestReply, SessionId, SideTask, Told
+  AdmissionId, AttachmentId, BranchId, BusyMode, CheckpointId, ContextFill, ControlAction, Effort, InputId, ModelOption, ModelRef, ProcessId, PromptId,
+  PromptReply, QueuedAction, RequestId, RequestReply, SessionId, SideTask, Told, TurnId
 } from './session'
 
 export type Command =
@@ -99,6 +99,27 @@ export type Command =
   /** Set during a turn, it applies from the next. The new level shows in `tuning` when Hermes says it. */
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'effort'; readonly to: Effort | 'default' }
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'busy'; readonly to: BusyMode }
+  /** Stops a background process of the chat. Hermes lists it as exited on the next read. */
+  | { readonly do: 'killProcess'; readonly sessionId: SessionId; readonly processId: ProcessId }
+  /**
+   * Presses a goal, loop, heartbeat or criterion button. Answers the words to show under the composer. An
+   * action that starts a turn sends its message, as a slash command does.
+   */
+  | { readonly do: 'control'; readonly sessionId: SessionId; readonly action: ControlAction }
+  /** The checkpoints Hermes took of the chat's folder before the agent changed it, newest first. */
+  | { readonly do: 'checkpoints'; readonly sessionId: SessionId }
+  /** What changed in the folder since `checkpoint`. */
+  | { readonly do: 'checkpointDiff'; readonly sessionId: SessionId; readonly checkpoint: CheckpointId }
+  /**
+   * Puts the folder, or one file in it, back as it was at `checkpoint`. A whole folder also takes back the chat's
+   * last turn, so the chat is read again, and is refused while a turn runs.
+   */
+  | { readonly do: 'restore'; readonly sessionId: SessionId; readonly checkpoint: CheckpointId; readonly scope: RestoreScope }
+  /**
+   * Puts this client's emoji on a settled turn's answer, for every client. The same emoji again, or `null`,
+   * takes it off, and another emoji replaces it.
+   */
+  | { readonly do: 'react'; readonly sessionId: SessionId; readonly turn: TurnId; readonly emoji: string | null }
   /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
   | { readonly do: 'reconnect'; readonly start: boolean }
 
@@ -108,7 +129,7 @@ export type Command =
  */
 export type ResultOf<C extends Command> =
   C extends { do: 'open' } ? SessionId | null
-  : C extends { do: 'send' | 'start' | 'compress' } ? string | null
+  : C extends { do: 'send' | 'start' | 'compress' | 'control' } ? string | null
   : C extends { do: 'export' } ? Exported
   : C extends { do: 'branch' } ? SessionId
   : C extends { do: 'versions' } ? ChatVersions
@@ -120,6 +141,9 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
   : C extends { do: 'completePath' } ? readonly PathMatch[]
+  : C extends { do: 'checkpoints' } ? Checkpoints
+  : C extends { do: 'checkpointDiff' } ? CheckpointDiff
+  : C extends { do: 'restore' } ? Restored
   : void
 
 export type ExportFormat = 'md' | 'json' | 'html'
@@ -140,6 +164,23 @@ export interface ContextBreakdown extends ContextFill {
   /** In Hermes's display order. Their tokens are estimates and need not add up to `used`. */
   readonly categories: readonly { readonly id: string; readonly label: string; readonly tokens: number }[]
 }
+
+/** `off`: Hermes keeps no checkpoints for this chat. */
+export type Checkpoints = { readonly kept: 'off' } | { readonly kept: 'on'; readonly items: readonly Checkpoint[] }
+/** `at`: when it was taken, as git's ISO 8601 date. `reason`: why Hermes took it, such as the tool about to change the folder. */
+export interface Checkpoint { readonly id: CheckpointId; readonly at: string | null; readonly reason: string }
+
+/** Patch text as git prints it, which Hermes cuts at 4000 characters, and git's summary of it. */
+export interface CheckpointDiff { readonly stat: string; readonly patch: string }
+
+/** `folder` keeps files the user edited since the checkpoint unless `edits` is `overwrite`. */
+export type RestoreScope = { readonly kind: 'folder'; readonly edits: 'keep' | 'overwrite' } | { readonly kind: 'file'; readonly path: string }
+
+/**
+ * What a restore did. `files`: what it put back, null when Hermes did not list them. `kept`: files the user edited
+ * since the checkpoint, left as they are. `lastTurn`: whether the chat's last turn was taken back with it.
+ */
+export interface Restored { readonly files: readonly string[] | null; readonly kept: readonly string[]; readonly lastTurn: 'removed' | 'kept' }
 
 /** A command that could not be carried out. A value, not an exception, so it crosses IPC unchanged. */
 export interface Refusal {
