@@ -26,7 +26,7 @@ Options:
 
 Every run names one gateway: `--fixture`, `--fake-host`, `--fake-webapp` or `--webapp-url`. Hermes, ssh and Tailscale are installed on this machine, and a run that named none would reach the real ones.
 
-- `--fixture <path>` sets `HIGHWING_FIXTURE`. Main then plays that recorded gateway through the real client, and no socket or process outside Electron is touched. The app has no setup screen in this mode.
+- `--fixture <path>` sets `HIGHWING_FIXTURE`. Main then plays that recorded gateway through the real client, and no socket or process outside Electron is touched. The app has no setup screen and no Settings in this mode.
 - `--fake-host <scenario>` starts the fake Hermes machine of `packages/hermes/src/testing/fake-host.ts` and launches the app with the fake machine's bin directory as its whole `PATH`. That directory holds a fake `ssh`, `tailscale` and `hermes`, so the app runs its real setup check and its real remote dial and reaches nothing real. A tool the scenario lacks is a real "command not found". The scenarios are `ok`, `ok-bound`, `slow` and one per check failure: `tailscale-missing`, `tailscale-off`, `tailscale-signed-out`, `host-not-found`, `host-offline`, `unreachable`, `ssh-missing`, `ssh-denied`, `ssh-check`, `host-changed`, `hermes-not-found`, `hermes-too-old` and `cant-save`. The fake machine is `hermes-host.example-tailnet.ts.net`. Its gateway plays `fixtures/errand.jsonl`, or the file `--fixture` names. The Hermes of `ok` mints the ticket that reaches every bot, so the app can switch bots. The Hermes of `ok-bound` passes the same check and mints none, as an older Hermes does, so the app reaches one profile and refuses to switch.
 - `--fake-webapp <scenario>` starts the fake Hermes Webapp of `packages/hermes/src/testing/fake-webapp.ts` in front of a gateway that plays `fixtures/errand.jsonl`, or the file `--fixture` names. The app is launched with an empty directory as its whole `PATH`, so it runs its real check, sign-in and dial by address and can run no real tool. The scenarios are `ok`, `too-old`, `ungated` and one per failure of a check by address: `url-unreachable`, `url-certificate`, `not-hermes`, `no-sign-in`, `dashboard`, `sign-in-cancelled`, `sign-in-timed-out`, `sign-in-refused`, `url-no-socket` and `url-legacy`. The run stands in for the user's browser: it reads each sign-in page main asked for from `opens.jsonl` and has the fake's user follow it. That user signs in at once, except in `sign-in-cancelled` and `sign-in-timed-out`, where the page is left open.
 - `--login-form` needs `--fake-webapp`. The fake's `/login` then serves the form of Hermes's own sign-in page, and signs in only the username and password in the files that `HIGHWING_VERIFY_USER_FILE` and `HIGHWING_VERIFY_PASSWORD_FILE` name. The run opens each sign-in page in a browser window of its own, types the two into the form and submits it. It saves the page as `sign-in-page-<n>.png` before it types, and never writes either value.
@@ -166,10 +166,11 @@ Named states live in the `STATES` table in the helper. Add a state there, not a 
 | State | Visible while |
 |---|---|
 | `window` | the renderer has mounted a screen |
-| `setup` | the setup screen's Connect button is enabled, so no check is running |
-| `setup-checking` | the setup screen shows the step a check is at (`role=status`, name "Checking") |
-| `setup-failed` | the setup screen shows a failure (`role=alert`) |
-| `setup-saved` | the saved screen's "Open chat" button is shown |
+| `setup` | the connection card's Connect button is enabled, so no check is running. The card is the first-run screen's, or the one Change opens in Settings |
+| `setup-checking` | the connection card shows the step a check is at (`role=status`, name "Checking") |
+| `setup-failed` | the connection card shows a failure (`role=alert`) |
+| `setup-saved` | the first run's saved screen's "Open chat" button is shown |
+| `settings` | the Settings page's heading is shown |
 | `live` | the composer's Send button is enabled, so the chat is attached and the link is online |
 | `tool-running` | a single step whose title starts with "Running" carries the live end (`[data-end="live"]`) |
 | `approval` | the "Run this command?" card's "Run once" button is enabled |

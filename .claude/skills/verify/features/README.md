@@ -32,8 +32,9 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 ## Features
 
 - [Open the app](./open-the-app.md) covers launching a window at the reference size.
-- [Set up a connection](./set-up-a-connection.md) covers the first-run setup screen, each check failure, the saved screen, the remote chat, and changing the connection from the top bar.
-- [Connect by URL](./connect-by-url.md) covers the setup screen's web-address choice, the words for a bad address, the plain http warning, the sign-in in the browser with Stop waiting, each failure of the check, the chat through the fake Webapp, the restart with and without a keyring, the Sign in banner, and a run against a real gateway.
+- [Set up a connection](./set-up-a-connection.md) covers the first-run setup screen, each check failure, the saved screen, the remote chat, and changing the connection from Settings.
+- [Connect by URL](./connect-by-url.md) covers the connection card's Web address choice, the words for a bad address, the plain http warning, the sign-in in the browser with Stop waiting, each failure of the check, the chat through the fake Webapp, the restart with and without a keyring, the Sign in banner, and a run against a real gateway.
+- [Settings](./settings.md) covers Settings in the chat column: opening and closing it with focus, the connection card's failed, running, cancelled and passed checks, a blocked link, the sidebar and palette picks that close it, the Sidebar card, a narrow window and forced colors.
 - [Replay a fixture](./replay-a-fixture.md) covers `HIGHWING_FIXTURE`, the tool-running, approval and settled moments, open records, and the reference composites.
 - [Send a message](./send-a-message.md) covers the composer's Send button, Enter, and Stop while a turn runs.
 - [Answer an approval](./answer-an-approval.md) covers the approval card, "Run once" releasing the story to Done, the second yes "Always allow" asks for, and a question that takes several answers.

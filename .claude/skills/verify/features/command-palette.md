@@ -1,6 +1,6 @@
 # Command palette
 
-Ctrl+K (Cmd+K on a Mac) opens a sheet at the top centre of the chat window: a "Search chats, bots and actions" field over a list in three groups, Chats, Bots and Actions. With nothing typed, the list holds the open bot's chats that wait on an approval, then its newest chats without the open one, then every bot, then the actions on offer now. Typing narrows it to the chats whose title or preview holds every typed word, the bots whose name does, and the actions whose label does. A word at the start of a word ranks above one inside a word, and ties go to the newest chat. A chat found by its preview shows the preview under its title. Up and Down move through the list and wrap at both ends. Enter opens the chat, opens the bot, or runs the action, and closes the sheet. A chat row says "Working" or "Waiting for your OK" at its right, or when it was last used. Nothing matching reads "No matches". Escape, Ctrl+K again or a click outside the sheet closes it and gives focus back to where it was. The actions are New chat, Stop (while the open chat runs), Open Connection (with a saved connection), Reconnect (while the connection is blocked) and Start Hermes (while Hermes is not running).
+Ctrl+K (Cmd+K on a Mac) opens a sheet at the top centre of the chat window: a "Search chats, bots and actions" field over a list in three groups, Chats, Bots and Actions. With nothing typed, the list holds the open bot's chats that wait on an approval, then its newest chats without the open one, then every bot, then the actions on offer now. Typing narrows it to the chats whose title or preview holds every typed word, the bots whose name does, and the actions whose label does. A word at the start of a word ranks above one inside a word, and ties go to the newest chat. A chat found by its preview shows the preview under its title. Up and Down move through the list and wrap at both ends. Enter opens the chat, opens the bot, or runs the action, and closes the sheet. A chat row says "Working" or "Waiting for your OK" at its right, or when it was last used. Nothing matching reads "No matches". Escape, Ctrl+K again or a click outside the sheet closes it and gives focus back to where it was. The actions are New chat, Stop (while the open chat runs), Open Settings (with a saved connection, while Settings is closed), Reconnect (while the connection is blocked) and Start Hermes (while Hermes is not running).
 
 ## Sub-features
 
@@ -15,7 +15,7 @@ Ctrl+K (Cmd+K on a Mac) opens a sheet at the top centre of the chat window: a "S
 
 ## How to get to it (user POV)
 
-- Press Ctrl+K (Cmd+K on a Mac) anywhere in the chat window. It does nothing while a setup screen or another dialog is open.
+- Press Ctrl+K (Cmd+K on a Mac) anywhere in the chat window. It does nothing while the first-run screen or another dialog is open. It works in Settings, as [Settings](./settings.md) shows.
 - Type a few letters, move with Up and Down, and press Enter. A click on a row picks it too.
 
 ## Driving it with highwing-verify
@@ -35,4 +35,4 @@ Preconditions:
 - An option's name is its title alone. The ARIA snapshot prints the rest of the row after the name: the state words or the time, an action's keys, and a matched preview.
 - `wait unstarted` passes on Research's own empty Bot Chat too, since the fixture gives Research none. `called session.create '{}' 0` and the top bar's heading tell the new chat apart.
 - With words typed, the open chat is listed like any other. Only the empty field leaves it out.
-- Stop, Open Connection, Reconnect and Start Hermes are not in these runs: a fixture run has no saved connection, and its chat is not running when the palette opens. `apps/desktop/test/palette.test.tsx` covers when each is offered.
+- Stop, Open Settings, Reconnect and Start Hermes are not in these runs: a fixture run has no saved connection, and its chat is not running when the palette opens. `apps/desktop/test/palette.test.tsx` covers when each is offered.
