@@ -226,6 +226,8 @@ const STEPS = {
       ctx.notified.push({ title, n: Number(n) })
     }
   },
+  menu: { arity: 2, run: async (ctx, key, label) => pressForMenu(ctx, key, label, true) },
+  'menu-without': { arity: 2, run: async (ctx, key, label) => pressForMenu(ctx, key, label, false) },
   second: {
     arity: 1,
     run: async (ctx, arg) => {
@@ -714,6 +716,28 @@ const jsonLines = file => existsSync(file)
   : []
 const opensRecorded = ctx => jsonLines(ctx.opens)
 const noticesRecorded = ctx => jsonLines(ctx.notices)
+const menusRecorded = ctx => jsonLines(ctx.menus)
+
+const MENU_RETRY_MS = 200
+
+/** The spellchecker marks a word some time after it is typed, so the key is pressed again until a menu shows the label, or stops showing it. */
+async function pressForMenu(ctx, key, label, wanted) {
+  const deadline = Date.now() + ctx.timeout
+  let last = null
+  for (let presses = 1; Date.now() <= deadline; presses++) {
+    const before = menusRecorded(ctx).length
+    await ctx.page.keyboard.press(key)
+    const menus = await poll(ctx, async () => menusRecorded(ctx), menus => menus.length > before)
+    if (menus.length === before) throw new Error(`main recorded no menu within ${ctx.timeout} ms of pressing ${key}`)
+    last = menus.at(-1)
+    if (last.items.includes(label) === wanted) {
+      log(ctx, `  menu ${wanted ? 'with' : 'without'} "${label}" after ${presses} press(es): ${JSON.stringify(last)}`)
+      return
+    }
+    await new Promise(resolve => setTimeout(resolve, MENU_RETRY_MS))
+  }
+  throw new Error(`no menu ${wanted ? 'held' : 'left out'} "${label}" within ${ctx.timeout} ms. The last one: ${JSON.stringify(last)}`)
+}
 
 async function pollUntil(ctx, read, done) {
   const deadline = Date.now() + ctx.timeout
@@ -984,7 +1008,7 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
@@ -1014,7 +1038,7 @@ async function run(argv) {
   const calls = join(evidence, 'gateway-calls.jsonl')
   rmSync(calls, { force: true })
   const userData = join(scratch, 'user-data')
-  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set(), exposed: [] }
+  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), menus: join(evidence, 'menus.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set(), exposed: [] }
   const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
   const saved = SAVED[options.saved ?? 'none']
@@ -1043,6 +1067,10 @@ async function run(argv) {
   env.HIGHWING_SAVE_DIR = join(evidence, 'saves')
   rmSync(ctx.notices, { force: true })
   env.HIGHWING_NOTIFY_LOG = ctx.notices
+  rmSync(ctx.menus, { force: true })
+  env.HIGHWING_MENU_LOG = ctx.menus
+  delete env.HIGHWING_MENU_PICK
+  if (options['menu-pick']) env.HIGHWING_MENU_PICK = options['menu-pick']
 
   const { _electron } = requireDesktop('playwright-core')
   log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"` : `HIGHWING_FIXTURE=${fixture}`}${Object.keys(media).length > 0 ? `, emulating ${JSON.stringify(media)}` : ''}${options.arg === undefined ? '' : `, with the argument ${JSON.stringify(options.arg)}`}`)
