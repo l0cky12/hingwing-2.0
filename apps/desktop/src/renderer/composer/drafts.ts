@@ -51,6 +51,9 @@ function flush() {
   saving.clear()
 }
 
+/** Files still being staged into each draft. Kept here, not in the composer, so a switch away and back still sees them. */
+const staging = new Map<DraftKey | null, number>()
+
 const heldOf = (slot: DraftSlot): Held => (slot === null ? loose : drafts.get(slot.key) ?? EMPTY)
 
 function put(slot: DraftSlot, change: Partial<Held>, when: 'soon' | 'now') {
@@ -138,6 +141,24 @@ const subscribe = (listener: () => void) => {
 }
 
 export const useDraft = (slot: DraftSlot): string => useSyncExternalStore(subscribe, () => heldOf(slot).text)
+
+export async function stagingFor<T>(slot: DraftSlot, pending: Promise<T>): Promise<T> {
+  const key = slot?.key ?? null
+  staging.set(key, (staging.get(key) ?? 0) + 1)
+  changed()
+  try {
+    return await pending
+  } finally {
+    const left = (staging.get(key) ?? 1) - 1
+    if (left === 0) staging.delete(key)
+    else staging.set(key, left)
+    changed()
+  }
+}
+
+export const stagingIn = (slot: DraftSlot): number => staging.get(slot?.key ?? null) ?? 0
+
+export const useStaging = (slot: DraftSlot): number => useSyncExternalStore(subscribe, () => stagingIn(slot))
 
 export const useAttachments = (slot: DraftSlot): readonly Attachment[] => useSyncExternalStore(subscribe, () => heldOf(slot).attachments)
 

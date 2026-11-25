@@ -53,6 +53,17 @@ describe('a draft with attachments', () => {
     expect(saved.filter(draft => draft.key === made.key).at(-1)?.attachments, 'the chat keeps its own').toEqual([shot])
   })
 
+  it('counts the files still staging into each draft, whichever composer started them', async () => {
+    const { stagingFor, stagingIn } = await drafts()
+    const [a, b] = [slot('chat:s7'), slot('chat:s8')]
+    const finish: { done?: (results: readonly StageResult[]) => void } = {}
+    const pending = stagingFor(a, new Promise<readonly StageResult[]>(resolve => (finish.done = resolve)))
+    expect([stagingIn(a), stagingIn(b)]).toEqual([1, 0])
+    finish.done?.([])
+    await pending
+    expect(stagingIn(a)).toBe(0)
+  })
+
   it('keeps the attachments of one chat out of another', async () => {
     const { attachTo } = await drafts()
     attachTo(slot('chat:s3'), [attachment('mine')])

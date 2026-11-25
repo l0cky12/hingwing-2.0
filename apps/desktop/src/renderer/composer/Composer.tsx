@@ -4,7 +4,7 @@ import { MAX_ATTACHMENTS, type StageResult } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
 import { Chips } from '../chat/Attachments'
 import { useTopic } from '../store'
-import { attachTo, detach, draftSent, moveAttachment, moveDraft, seedDraft, useAttachments, useDraft, writeDraft, type DraftSlot } from './drafts'
+import { attachTo, detach, draftSent, moveAttachment, moveDraft, seedDraft, stagingFor, useAttachments, useDraft, useStaging, writeDraft, type DraftSlot } from './drafts'
 import type { Editing } from './edit'
 import { RemoveDialog } from './RemoveDialog'
 import { mentionable, mentionWord, menuOf, picked, type Menu, type MenuItem } from './menu'
@@ -121,7 +121,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   const attachments = useAttachments(slot)
   const [attachRefusals, setAttachRefusals] = useState<readonly string[]>([])
   const [dragging, setDragging] = useState(false)
-  const [staging, setStaging] = useState(0)
+  const staging = useStaging(slot)
   const [active, setActive] = useState(0)
   const [dismissed, setDismissed] = useState<string | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -182,9 +182,8 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   shownSlot.current = slot
   const latestAttachments = useRef(attachments)
   latestAttachments.current = attachments
-  const take = async (staging: Promise<readonly StageResult[]>) => {
-    setStaging(count => count + 1)
-    const results = await staging.finally(() => setStaging(count => count - 1))
+  const take = async (pending: Promise<readonly StageResult[]>) => {
+    const results = await stagingFor(slot, pending)
     if (results.length === 0) return
     const { added, refused } = admitted(results, latestAttachments.current)
     attachTo(slot, added)
