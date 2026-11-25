@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Demo page</title>
+<style>
+  body { margin: 0; padding: 32px; font: 16px/1.5 sans-serif; color: #1d2320; background: #fbfaf5; }
+  h1 { margin: 0 0 12px; font-size: 32px; }
+  #bridge { font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>Preview works</h1>
+<p>A page Hermes built, shown beside the chat.</p>
+<p id="bridge">Checking for a Highwing API</p>
+<p id="escape">Trying to leave the pane</p>
+<p id="disk">Trying to read a file outside the page</p>
+<script>
+  document.getElementById('bridge').textContent = typeof window.highwing === 'undefined' ? 'No Highwing API' : 'Highwing API reachable'
+  const opened = window.open('https://example.invalid/escaped', '_blank')
+  let left = false
+  try {
+    if (window.top !== window) {
+      window.top.location.href = 'https://example.invalid/escaped'
+      left = true
+    }
+  } catch {
+    left = false
+  }
+  document.getElementById('escape').textContent = opened === null && !left ? 'No way out of the pane' : 'Left the pane'
+  const disk = document.getElementById('disk')
+  fetch('file:///etc/hostname').then(
+    reply => reply.text().then(() => { disk.textContent = 'Read a file outside the page' }),
+    () => { disk.textContent = 'No file outside the page' }
+  )
+</script>
+</body>
+</html>
