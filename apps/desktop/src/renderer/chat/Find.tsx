@@ -108,11 +108,20 @@ function paint(name: string, ranges: readonly Range[]) {
 export function useFindMarks(root: RefObject<HTMLElement | null>, matches: readonly FindMatch[], current: number | null) {
   const currentRange = useRef<Range | null>(null)
   useLayoutEffect(() => {
-    const ranges = root.current === null ? [] : rangesOf(root.current, matches)
-    const here = current === null ? null : ranges[current] ?? null
-    currentRange.current = here
-    paint('find', ranges.filter((range): range is Range => range !== null && range !== here))
-    paint('find-current', here === null ? [] : [here])
+    const element = root.current
+    const mark = () => {
+      const ranges = element === null ? [] : rangesOf(element, matches)
+      const here = current === null ? null : ranges[current] ?? null
+      currentRange.current = here
+      paint('find', ranges.filter((range): range is Range => range !== null && range !== here))
+      paint('find-current', here === null ? [] : [here])
+    }
+    mark()
+    if (element === null || matches.length === 0) return
+    // A code block that colors in replaces the text nodes its ranges sit in, which collapses them.
+    const observer = new MutationObserver(mark)
+    observer.observe(element, { childList: true, subtree: true })
+    return () => observer.disconnect()
   }, [root, matches, current])
   useLayoutEffect(() => () => {
     CSS.highlights.delete('find')

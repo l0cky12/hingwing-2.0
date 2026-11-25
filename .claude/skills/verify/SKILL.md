@@ -83,7 +83,9 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `focused <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that control has keyboard focus now |
 | `count <role> <name> <n>` | ARIA role, exact name or `/regex/`, a number | fails unless exactly `n` such controls are in the accessibility tree |
 | `clipboard <name>` | file stem | waits until the system clipboard holds new text, then saves it as `<name>.clip.txt`. Fails when it stays empty or unchanged since the last `clipboard` step |
-| `marks <count>` | number | fails unless the ranges in the `find` and `find-current` highlights add up to the count. A missing highlight counts as 0. It reads state and never sets it |
+| `marks <count>` | number | fails unless the ranges in the `find` and `find-current` highlights add up to the count. A missing highlight counts as 0, and so does a collapsed range, which marks nothing. It reads state and never sets it |
+| `hues <n>` | number | waits until the last code block in the thread draws its text in exactly n distinct computed colors, and fails at the timeout. It logs the colors it saw |
+| `steady <lang>` | a fence language, such as `ts` | put it right after Send. It samples the last code block labelled `lang` after every change to the page until the block shows more than one color. It fails if the block showed colors while its fence was open (`data-open`), if it was never plain with its fence closed before the colors, or if the block's height or the thread's scroll height differ between the last closed plain sample and the first colored one. It logs the sample count and both heights |
 | `opened <action> <path>` | `open` or `show`, absolute path | fails unless `opens.jsonl` holds exactly one call, and that call is this one |
 | `copied <text>` | text | fails unless the system clipboard holds exactly this text |
 | `gone <role> <name>` | ARIA role, exact accessible name or `/regex/` | polls until no visible element has that role and name, and fails at the timeout. Waits out a fade |

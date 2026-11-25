@@ -9,7 +9,7 @@ The stories are in ``STORIES``:
   fixture ends at its ``approval.request``; the script then answers ``deny`` off the record so the
   turn can finish.
 - ``markdown`` writes fixtures/markdown.jsonl: a text-only reply that holds a list, a heading, a
-  link, a table and a fenced block. It asks for no approval.
+  link, a table, an ``sh`` block and a ``ts`` block. It asks for no approval.
 - ``images`` writes fixtures/images.jsonl: a tool step whose ``tool.complete`` carries ``image_path``
   and a reply whose Markdown holds an image. It asks for no approval. Its header also carries
   ``media``, the bytes of both images by the path or URL the thread asks for.
@@ -215,6 +215,14 @@ Run this first:
 
 ```sh
 cp notes.md notes.md.bak
+```
+
+```ts
+// Keep each backup for a week.
+const days: number = 7
+function backupName(file: string): string {
+  return file + ".bak"
+}
 ```"""
 
 MARKDOWN = Story(
