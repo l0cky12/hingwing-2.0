@@ -149,7 +149,6 @@ const closed = (keys: Readonly<Record<string, (value: unknown) => boolean>>): Ch
   Object.entries(params).every(([key, value]) => Object.hasOwn(keys, key) && keys[key]!(value)) ? null : 'invalid_params'
 const isWords = (value: unknown): value is string => typeof value === 'string' && value.trim() !== ''
 const escapeHtml = (text: string) => text.replace(/[&<>]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[char]!)
-/** gateway/session_tui_ops.py:89-101 */
 const exportParams = closed({ session_id: isString, profile: isString, format: isString, redact: isBoolean })
 /** gateway/session_tui_side.py:33-38 */
 const sideText: Check = (gateway, socket, params, routed) =>
@@ -383,7 +382,6 @@ class EchoChat implements Stream {
     }
   }
 
-  /** What `session.export` renders, cut down to the title and the messages. */
   exported(format: string): string {
     if (format === 'json') return JSON.stringify({ id: this.id, title: this.title, messages: this.rows }, null, 2)
     const markdown = [`# ${this.title}`, ...this.rows.map(row => `## ${String(row.role)}\n\n${String(row.text ?? '')}`)].join('\n\n')
@@ -1111,7 +1109,7 @@ export class ScriptedGateway {
     }
   }
 
-  /** `rename`, a metadata write: no busy gate and no generation (gateway/session_mutations.py:18,212), checked as the story checks it. */
+  /** `rename`, a metadata write: no busy gate and no generation (gateway/session_mutations.py:18,212). */
   rename(socket: Socket, params: Obj, routed: string, chat: EchoChat): unknown {
     const reason = mutation(this, socket, params, routed)
     if (reason !== null) throw new Refused(reason)

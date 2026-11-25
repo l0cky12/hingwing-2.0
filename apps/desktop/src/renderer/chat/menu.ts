@@ -32,5 +32,4 @@ const STEPS: Readonly<Record<string, (at: number, count: number) => number>> = {
   End: (_at, count) => count - 1
 }
 
-/** The item a key moves to from item `at` of a menu of `count`, wrapping at either end. null: a key that moves nothing. */
 export const menuStep = (key: string, at: number, count: number): number | null => STEPS[key]?.(at, count) ?? null

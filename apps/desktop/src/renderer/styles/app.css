@@ -722,7 +722,6 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .chat-doing[data-badge="running"] { color: var(--signal); font-weight: 500; }
 .chat-doing[data-badge="asking"] { color: var(--caution); font-weight: 500; }
 .chats-note { margin: 18px 12px; font-size: 13px; color: var(--graphite); }
-/* On hover or focus the row's time gives way to its More button. */
 .chat-item { position: relative; }
 .chat-more { position: absolute; top: 9px; right: 10px; opacity: 0; }
 .chat-item:is(:hover, :focus-within) .chat-more { opacity: 1; }

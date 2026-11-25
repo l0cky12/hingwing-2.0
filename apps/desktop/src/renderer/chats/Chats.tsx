@@ -41,7 +41,6 @@ export function ChatsSidebar() {
 interface RowActions {
   readonly onOpen: (sessionId: SessionId) => void
   readonly onRename: (sessionId: SessionId, title: string) => Promise<CommandOutcome<unknown>>
-  /** Answers the path the chat was saved at, or null when the user cancelled the save. */
   readonly onExport: (sessionId: SessionId, format: ExportFormat) => Promise<CommandOutcome<string | null>>
 }
 
@@ -51,14 +50,12 @@ interface ChatsPanelProps extends RowActions {
   readonly bots: Bots | undefined
   readonly now: number
   readonly drafts: ReadonlySet<SessionId>
-  /** Whether the connection the list came over is online, so a row's More menu can act. */
   readonly live: boolean
 }
 
 export function ChatsPanel({ sidebar, open, bots, now, drafts, live, ...actions }: ChatsPanelProps) {
   const ids = useId()
   const view = chatsOf(sidebar, open, now, drafts)
-  // An object, so saving the same file twice shows the line again for the whole time.
   const [saved, setSaved] = useState<{ readonly name: string } | null>(null)
   useEffect(() => {
     if (saved === null) return
