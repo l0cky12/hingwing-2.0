@@ -1,6 +1,6 @@
 import type { CommandOutcome, PathMatch, SessionId, SlashCatalog } from '@highwing/hermes/domain'
 import { useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
-import { Avatar } from '../bots/Bots'
+import { Avatar } from '../bots/Avatar'
 import { useTopic } from '../store'
 import { draftSent, seedDraft, useDraft, writeDraft, type DraftSlot } from './drafts'
 import type { Editing } from './edit'

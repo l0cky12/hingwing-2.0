@@ -1,10 +1,12 @@
-import type { Bot, BotCreated, BotDraft, BotId, Bots, CommandOutcome, Link, ModelMenu, OpenChat } from '@highwing/hermes/domain'
+import type { Bot, BotCreated, BotDetails, BotDraft, BotId, Bots, CommandOutcome, Link, ModelMenu, OpenChat } from '@highwing/hermes/domain'
 import { useId, useRef, useState, type KeyboardEvent } from 'react'
 import { flushSync } from 'react-dom'
 import { run, useTopic } from '../store'
+import { Avatar } from './Avatar'
+import { BotEditor, type BotEditorProps } from './BotEditor'
 import { BotForm } from './BotForm'
 import { EMPTY_DRAFT, nameProblem } from './bot-form'
-import { initialOf, listOf, newBotBlock, selectedIn, UNASSIGNED } from './roster-view'
+import { botIn, listOf, newBotBlock, selectedIn, UNASSIGNED } from './roster-view'
 
 const CARET_KEYS: ReadonlySet<string> = new Set(['PageUp', 'PageDown', 'End'])
 
@@ -15,11 +17,17 @@ export function BotsSidebar() {
       onOpen={bot => run({ do: 'open', ref: { kind: 'bot', bot } })}
       onCreate={draft => run({ do: 'createBot', draft })}
       onModels={() => run({ do: 'botModels', bot: null })}
+      onDescribe={bot => run({ do: 'describeBot', bot })}
+      onEdit={(bot, edit, revision) => run({ do: 'editBot', bot, edit, revision })}
+      onPickPicture={bot => window.highwing.pickBotPicture(bot)}
+      onRemovePicture={bot => run({ do: 'removeBotPicture', bot })}
     />
   )
 }
 
-interface BotsPanelProps {
+type EditorCalls = Pick<BotEditorProps, 'onDescribe' | 'onEdit' | 'onPickPicture' | 'onRemovePicture'>
+
+interface BotsPanelProps extends EditorCalls {
   readonly bots: Bots | undefined
   readonly open: OpenChat | undefined
   readonly link: Link | undefined
@@ -28,20 +36,23 @@ interface BotsPanelProps {
   readonly onModels: () => Promise<CommandOutcome<ModelMenu>>
 }
 
-export function Avatar({ bot, size }: { readonly bot: Pick<Bot, 'name' | 'tone'>; readonly size: number }) {
-  return <span className={`avatar tone-${bot.tone}`} style={{ width: size, height: size, fontSize: size * 0.42 }} aria-hidden>{initialOf(bot.name)}</span>
-}
-
 const icon = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 } as const
 const Search = () => <svg {...icon}><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
 const Plus = () => <svg {...icon}><path d="M12 5v14M5 12h14" /></svg>
 const Close = () => <svg {...icon}><path d="M6 6l12 12M18 6 6 18" /></svg>
+const Pencil = () => <svg {...icon}><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="m13.5 6.5 4 4" /></svg>
 const Star = () => <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" /></svg>
 
-export function BotsPanel({ bots, open, link, onOpen, onCreate, onModels }: BotsPanelProps) {
+function DetailsButton({ bot, onClick }: { readonly bot: Bot; readonly onClick: () => void }) {
+  const label = `Details for ${bot.name}`
+  return <button type="button" className="bot-details" aria-label={label} aria-haspopup="dialog" title={label} onClick={onClick}><Pencil /></button>
+}
+
+export function BotsPanel({ bots, open, link, onOpen, onCreate, onModels, ...editor }: BotsPanelProps) {
   const [refused, setRefused] = useState<string | null>(null)
-  const [form, setForm] = useState<{ readonly models: ModelMenu | null } | null>(null)
+  const [form, setForm] = useState<{ readonly models: ModelMenu | 'loading' } | null>(null)
   const [made, setMade] = useState<BotCreated | null>(null)
+  const [editing, setEditing] = useState<BotDetails | null>(null)
   const [query, setQuery] = useState<string | null>(null)
   const searchButton = useRef<HTMLButtonElement>(null)
   const ids = useId()
@@ -54,7 +65,7 @@ export function BotsPanel({ bots, open, link, onOpen, onCreate, onModels }: Bots
     setRefused(outcome.ok ? null : outcome.refusal.message)
   }
   const openForm = () => {
-    setForm({ models: null })
+    setForm({ models: 'loading' })
     void onModels().then(outcome => { if (outcome.ok) setForm(held => held && { models: outcome.value }) })
   }
   const create = async (draft: BotDraft) => {
@@ -63,6 +74,12 @@ export function BotsPanel({ bots, open, link, onOpen, onCreate, onModels }: Bots
     if (outcome.ok) setMade(outcome.value)
     return outcome
   }
+  const describe = async (bot: BotId) => {
+    const outcome = await editor.onDescribe(bot)
+    setRefused(outcome.ok ? null : outcome.refusal.message)
+    if (outcome.ok) setEditing(outcome.value)
+  }
+  const edited = editing === null ? null : botIn(bots, editing.bot)
   const list = listOf(bots, query)
   const { featured, sections } = list.show === 'roster' ? list : { featured: null, sections: [] }
   const closeSearch = () => {
@@ -101,10 +118,13 @@ export function BotsPanel({ bots, open, link, onOpen, onCreate, onModels }: Bots
         <div className="bots-list" aria-busy={list.show === 'loading' || undefined}>
           {list.show === 'note' && <p className="bots-note" role="status">{list.words}</p>}
           {featured !== null && (
-            <button type="button" className="bot-feature" aria-label={`${featured.name}, default bot`} aria-current={selected === featured.id || undefined} aria-busy={opening === featured.id || undefined} onClick={() => void pick(featured.id)}>
-              <span className="bot-badged"><Avatar bot={featured} size={48} /><span className="bot-badge" title="Default bot"><Star /></span></span>
-              <span className="bot-name">{featured.name}</span>
-            </button>
+            <div className="bot-row bot-row-feature">
+              <button type="button" className="bot-feature" aria-label={`${featured.name}, default bot`} aria-current={selected === featured.id || undefined} aria-busy={opening === featured.id || undefined} onClick={() => void pick(featured.id)}>
+                <span className="bot-badged"><Avatar bot={featured} size={48} /><span className="bot-badge" title="Default bot"><Star /></span></span>
+                <span className="bot-name">{featured.name}</span>
+              </button>
+              <DetailsButton bot={featured} onClick={() => void describe(featured.id)} />
+            </div>
           )}
           {sections.map((section, at) => (
             <section key={section.name ?? ''}>
@@ -113,13 +133,16 @@ export function BotsPanel({ bots, open, link, onOpen, onCreate, onModels }: Bots
                 // A profile name may hold a space, which would split an id list, so the id comes from the row's place.
                 const preview = `${ids}-${at}-${row}`
                 return (
-                  <button key={bot.id} type="button" className="bot" aria-label={bot.name} aria-describedby={preview} aria-current={selected === bot.id || undefined} aria-busy={opening === bot.id || undefined} onClick={() => void pick(bot.id)}>
-                    <Avatar bot={bot} size={32} />
-                    <span className="bot-text">
-                      <span className="bot-name">{bot.name}</span>
-                      <span className="bot-preview" id={preview}>{bot.preview ?? 'No messages yet'}</span>
-                    </span>
-                  </button>
+                  <div key={bot.id} className="bot-row">
+                    <button type="button" className="bot" aria-label={bot.name} aria-describedby={preview} aria-current={selected === bot.id || undefined} aria-busy={opening === bot.id || undefined} onClick={() => void pick(bot.id)}>
+                      <Avatar bot={bot} size={32} />
+                      <span className="bot-text">
+                        <span className="bot-name">{bot.name}</span>
+                        <span className="bot-preview" id={preview}>{bot.preview ?? 'No messages yet'}</span>
+                      </span>
+                    </button>
+                    <DetailsButton bot={bot} onClick={() => void describe(bot.id)} />
+                  </div>
                 )
               })}
             </section>
@@ -136,6 +159,12 @@ export function BotsPanel({ bots, open, link, onOpen, onCreate, onModels }: Bots
         <BotForm
           title="New bot" submitLabel="Create" initial={EMPTY_DRAFT} problemOf={name => nameProblem(name, bots)}
           models={form.models} onSubmit={create} onClose={() => setForm(null)}
+        />
+      )}
+      {editing !== null && (
+        <BotEditor
+          key={editing.bot} bot={edited ?? { id: editing.bot, name: editing.name, preview: null, description: null, tone: 'slate', picture: false }} details={editing}
+          {...editor} onClose={() => setEditing(null)}
         />
       )}
     </>
