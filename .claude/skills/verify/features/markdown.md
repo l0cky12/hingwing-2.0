@@ -38,7 +38,7 @@ The reply holds two code blocks: an `sh` block, then a `ts` block. `click-at but
 
 ## Gotchas
 
-- Never `click` a link in a run. The window's open handler passes a web link to the user's real browser.
+- A press on a web link opens a menu with Preview and Open in browser. Open in browser goes to `opens.jsonl` in a run, never to the user's browser. See [Preview pane](./preview.md).
 - The language and Copy are at opacity 0 until hover or focus, so they are in the ARIA tree at rest. `shot` moves the pointer off the page, so a shot after a hover shows them hidden again. Shoot after "Copied" or with keyboard focus instead.
 - `click button "Copy code"` fails in strict mode, because the reply has two. Use `click-at`.
 - `hues` reads the last code block in the thread. `steady` reads the last one labelled with its language. A frame sampler would miss the closed, still plain block, because the grammar often loads inside one frame, so `steady` samples after every change to the page.

@@ -60,7 +60,13 @@ describe('Markdown', () => {
       { kind: 'code', lang: 'sh', text: 'cp notes.md notes.md.bak', open: false },
       { kind: 'code', lang: 'ts', text: TS_BLOCK, open: false }
     ])
-    expect(render(reply)).toContain('<a href="https://example.com/style-guide" target="_blank" rel="noreferrer">style guide</a>')
+    expect(render(reply)).toContain('<a href="https://example.com/style-guide" target="_blank" rel="noreferrer" aria-expanded="false">style guide</a>')
+  })
+
+  it('draws a web page link as one that asks where to open it, and keeps a mail link a plain one', () => {
+    expect(render('[the demo](http://localhost:5173/)')).toContain('<span class="web-link"><a href="http://localhost:5173/" target="_blank" rel="noreferrer" aria-expanded="false">the demo</a></span>')
+    expect(render('[write](mailto:someone@example.com)')).toContain('<a href="mailto:someone@example.com" target="_blank" rel="noreferrer">write</a>')
+    expect(render('[run](javascript:alert(1))')).not.toContain('<a')
   })
 
   it('shows an unclosed fence as code from its first line, with the caret inside it', () => {

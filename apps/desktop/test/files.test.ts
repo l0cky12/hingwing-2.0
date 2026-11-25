@@ -43,7 +43,11 @@ describe('desktopOpener', () => {
   })
   afterAll(() => rm(folder, { recursive: true, force: true }))
 
-  const shell = (opened = '') => ({ openPath: vi.fn<(path: string) => Promise<string>>(async () => opened), showItemInFolder: vi.fn<(path: string) => void>() })
+  const shell = (opened = '') => ({
+    openPath: vi.fn<(path: string) => Promise<string>>(async () => opened),
+    showItemInFolder: vi.fn<(path: string) => void>(),
+    openExternal: vi.fn<(url: string) => Promise<void>>(async () => {})
+  })
 
   it('reports a missing file and never calls the desktop', async () => {
     const fake = shell()

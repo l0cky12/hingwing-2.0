@@ -171,6 +171,10 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .file-menu button { padding: 5px 10px; border: 0; border-radius: 4px; background: none; text-align: left; font-size: 13px; }
 .file-menu button:hover { background: var(--signal-soft); }
 .file-note { margin: 4px 0 0; font-size: 13px; color: var(--caution); }
+.web-link { position: relative; }
+.link-menu { position: absolute; z-index: 1; top: calc(100% + 2px); left: 0; display: flex; flex-direction: column; min-width: 150px; padding: 3px; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); box-shadow: 0 2px 8px rgb(31 42 38 / .12); font: 400 13px/1.5 var(--sans); white-space: nowrap; }
+.link-menu button { padding: 5px 10px; border: 0; border-radius: 4px; background: none; text-align: left; }
+.link-menu button:hover { background: var(--signal-soft); }
 /* A picture draws at most the thread's width. Its slot holds a 16:9 block until the bytes arrive. */
 .pic, .pic-slot { display: block; width: fit-content; max-width: 100%; }
 .pic { padding: 0; border: 0; border-radius: 6px; background: none; line-height: 0; cursor: zoom-in; }
@@ -641,4 +645,36 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 @media (forced-colors: active) {
   .pic-slot, .pic-failed { border: 1px solid CanvasText; }
   .pic-viewer button { border-color: ButtonText; }
+}
+/* The pane beside the chat. Main draws the page itself over .preview-page, so this box only holds what shows when there is no page. */
+.window[data-preview] { grid-template-columns: 288px minmax(0, 1fr) minmax(0, 1fr); }
+.window[data-preview] .chats { display: none; }
+.preview { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--rule); background: var(--paper); }
+.preview-head { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 12px 12px 12px 20px; border-bottom: 1px solid var(--rule); }
+.preview-head h2 { flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.preview-head button, .preview-failed button { flex: none; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--ink); background: transparent; }
+.preview-head button:hover, .preview-failed button:hover { background: var(--sheet); }
+.preview-head .preview-close { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: 0; color: var(--graphite); }
+.preview-head .preview-close:hover { color: var(--ink); }
+.preview-head .preview-back { display: none; }
+.preview-page { flex: 1; min-height: 0; display: grid; place-items: center; background: var(--sheet); }
+.preview-note { margin: 0; color: var(--graphite); }
+.preview-failed { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 360px; padding: 24px; text-align: center; }
+.preview-failed p { margin: 0; color: var(--caution); font-weight: 500; }
+/* Two columns of chat and page no longer fit: the pane covers the chat, and Back to chat gives it back. */
+@media (max-width: 899px) {
+  .window[data-preview] { grid-template-columns: 288px minmax(0, 1fr); }
+  .window[data-preview] .screen { display: none; }
+  .preview { border-left: 0; }
+  .preview-head .preview-back { display: block; }
+  .preview-head .preview-close { display: none; }
+}
+@media (max-width: 679px) {
+  .window[data-preview] { grid-template-columns: minmax(0, 1fr); }
+}
+@media (forced-colors: active) {
+  .preview { border-left: 1px solid CanvasText; }
+  .preview-head { border-bottom: 1px solid CanvasText; }
+  .preview-head button, .preview-failed button { border: 1px solid ButtonText; }
+  .link-menu { border: 1px solid CanvasText; }
 }

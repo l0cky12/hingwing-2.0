@@ -4,6 +4,7 @@
  */
 import { canonicalBotId, type BotCreated, type BotFacts, type BotId } from '../domain/bots'
 import type { ContextBreakdown, ModelConfirm, ModelMenu } from '../domain/command'
+import type { PaneAsk } from '../domain/pane'
 import type { Admission, HelperUpdate, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type {
   Ask, Began, FileDiff, Generation, HelperEnd, HelperId, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, PromptId, SessionId,
@@ -14,7 +15,7 @@ import type { SlashCatalog, SlashEntry } from '../domain/slash'
 import type {
   CanonicalBotDeliverResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalProfilesResult, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
   CanonicalSnapshot, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
-  MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, ProfilesCreateResult, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult,
+  MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, PreviewClosePayload, PreviewOpenPayload, ProfilesCreateResult, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult,
   SessionStats, SessionTitlePayload, SessionUsagePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload, SubagentEventPayload,
   TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage
 } from './contract.generated'
@@ -28,6 +29,8 @@ export type ParsedEvent =
    * and the frame is not mistaken for a hole.
    */
   | { readonly scope: 'session'; readonly sessionId: SessionId; readonly type: string; readonly stamp: Stamp; readonly event: null; readonly skipped: 'unshown' | 'invalid' }
+  /** A frame of a session's stream that asks something of the window, not of the chat. It moves the cursor as an unshown frame does. */
+  | { readonly scope: 'session'; readonly sessionId: SessionId; readonly type: string; readonly stamp: Stamp; readonly event: null; readonly skipped: 'window'; readonly ask: PaneAsk }
   /**
    * `session.replay_gap`. Its own kind because its `latest_seq` and `replay_epoch` sit in the
    * payload, not on the envelope (gateway/session_events.py:93-100), so it cannot pass a seq gate.
@@ -372,6 +375,18 @@ export const SHOWN: { readonly [type: string]: Shown } = {
   error: payload => ({ type: 'notice', tone: 'error', text: stripAnsi(fields<ErrorPayload>(payload).str('message')) })
 }
 
+const nonBlank = (text: string | null) => (text === null || text.trim() === '' ? null : text)
+
+export const FOR_WINDOW: { readonly [type: string]: (payload: unknown) => PaneAsk } = {
+  'preview.open': payload => {
+    const p = fields<PreviewOpenPayload>(payload)
+    const url = nonBlank(p.str('url'))
+    if (url === null) throw new Unusable()
+    return { do: 'open', url, label: nonBlank(p.optStr('label')) }
+  },
+  'preview.close': payload => ({ do: 'close', url: nonBlank(fields<PreviewClosePayload>(payload).optStr('url')) })
+}
+
 export const UNSHOWN: ReadonlySet<string> = new Set([
   /** Every canonical turn publishes it (`gateway/run_turn_progress.py:1092`); not in the generated contract. */
   'agent.step',
@@ -380,7 +395,7 @@ export const UNSHOWN: ReadonlySet<string> = new Set([
   'display.install.log', 'display.lease', 'display.status', 'free_tier.challenge', 'gateway.ready', 'groups.changed',
   'message.reaction', 'moa.aggregating', 'moa.phase', 'moa.progress', 'moa.reference', 'notice', 'notification.clear',
   'notification.show', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
-  'pet.hatch.progress', 'platforms.changed', 'preview.close', 'preview.open', 'preview.restart.complete',
+  'pet.hatch.progress', 'platforms.changed', 'preview.restart.complete',
   'preview.restart.progress', 'projects.changed', 'reaction', 'request.cancel',
   'review.summary', 'session.control.update', 'session.reclaimed', 'session.resume_progress',
   'setup.ready', 'skills.changed', 'skin.changed', 'status.update', 'terminal.close', 'tip.show', 'tool.output_risk', 'voice.interrupted', 'voice.partial', 'voice.status', 'voice.transcript', 'wake.detected'
@@ -430,6 +445,10 @@ export function parseEvent(params: unknown): ParsedEvent {
   if (type === 'session.replay_gap') return { scope: 'gap', sessionId }
   const stamp = stampOf(params)
   if (stamp === null) return { scope: 'unrouted', type, why: 'no stream position' }
+  if (Object.hasOwn(FOR_WINDOW, type)) {
+    const ask = usable(() => FOR_WINDOW[type]!(payload))
+    return ask === null ? { scope: 'session', sessionId, type, stamp, event: null, skipped: 'invalid' } : { scope: 'session', sessionId, type, stamp, event: null, skipped: 'window', ask }
+  }
   const shown = Object.hasOwn(SHOWN, type) ? SHOWN[type] : undefined
   if (shown === undefined) return { scope: 'session', sessionId, type, stamp, event: null, skipped: 'unshown' }
   const event = isObject(payload) ? usable(() => shown(payload, params)) : null

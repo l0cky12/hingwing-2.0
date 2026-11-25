@@ -5,6 +5,7 @@ import { BotsSidebar } from './bots/Bots'
 import { ChatsSidebar } from './chats/Chats'
 import { Chat } from './chat/Chat'
 import { Banner, TopBar } from './chrome/Chrome'
+import { Preview } from './preview/Preview'
 import { Composer } from './composer/Composer'
 import { Saved, SetupForm } from './setup/Setup'
 import { Epoch, useTopic } from './store'
@@ -39,6 +40,21 @@ function ChatScreen({ target }: { readonly target: Target | null }) {
   )
 }
 
+/** The pane sits beside the chat, or over it in a narrow window. `data-preview` lays the columns out for it. */
+function ChatWindow({ hidden, target }: { readonly hidden: boolean; readonly target: Target | null }) {
+  const preview = useTopic('preview')
+  return (
+    <div className="window" hidden={hidden} data-preview={preview?.state === 'open' || undefined}>
+      <BotsSidebar />
+      <ChatsSidebar />
+      <div className="screen">
+        <ChatScreen target={target} />
+      </div>
+      {preview?.state === 'open' && <Preview preview={preview} />}
+    </div>
+  )
+}
+
 const SCREENS: { readonly [A in Setup['at']]: (setup: Extract<Setup, { at: A }>) => ReactNode } = {
   chat: () => null,
   pinned: () => null,
@@ -62,13 +78,7 @@ export function App() {
     <>
       {(setup.at === 'pinned' || live !== null) && (
         <Epoch key={live?.epoch ?? 0} value={live?.epoch ?? 0}>
-          <div className="window" hidden={over !== null}>
-            <BotsSidebar />
-            <ChatsSidebar />
-            <div className="screen">
-              <ChatScreen target={live?.target ?? null} />
-            </div>
-          </div>
+          <ChatWindow hidden={over !== null} target={live?.target ?? null} />
         </Epoch>
       )}
       {over}

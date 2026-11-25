@@ -13,6 +13,11 @@ The stories are in ``STORIES``:
 - ``images`` writes fixtures/images.jsonl: a tool step whose ``tool.complete`` carries ``image_path``
   and a reply whose Markdown holds an image. It asks for no approval. Its header also carries
   ``media``, the bytes of both images by the path or URL the thread asks for.
+- ``preview`` writes fixtures/preview.jsonl: a step writes fixtures/preview/index.html into the work
+  dir, Hermes's own ``desktop_preview`` tool opens ``http://localhost:5173/`` labelled ``demo``, and
+  the reply links to that page and to an address that never resolves. It asks for no approval.
+- ``preview-close`` writes fixtures/preview-close.jsonl: the same page opens, and after a 2 s pause
+  ``desktop_preview`` closes the pane.
 
 The script runs the canonical gateway in-process, the way Hermes's own
 tests/gateway/test_authority_complete_persisted_turn.py does: a real ``SessionAuthority`` over a
@@ -40,6 +45,9 @@ Scripted, because no AI provider exists on this machine:
   is replaced, as the Hermes test above replaces it, by a turn that plays the model's part and
   calls the same ``TurnRunner`` sinks a provider-backed turn calls, in the agent loop's order
   (``agent/turn_iteration_prep.py``, ``agent/turn_tool_round.py``, ``agent/stream_delivery.py``);
+- the window events: each turn is wired with ``gateway.local_desktop_ui.wire``, as
+  ``local_viewer_events`` wires a local viewer's turn, so ``desktop_preview`` publishes its real
+  ``preview.open`` and ``preview.close`` on the turn's stream;
 - the ``screenshot`` tool of the ``images`` story. Hermes ships no tool that returns an ``image_path``
   without a browser, so the script registers one in ``tools.registry`` that draws a PNG into the work
   dir. ``image_path`` on its ``tool.complete`` is still Hermes's own (``tool_image_path``), read from
@@ -238,7 +246,31 @@ IMAGES = Story(
     ],
     out="images.jsonl", seed=20261124, files={}, doomed=None, answer=None, approves=False, screenshots=True)
 
-STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN, "images": IMAGES}
+SITE = f"{WORK}/site"
+DEV_URL = "http://localhost:5173/"
+PAGE = (Path(__file__).resolve().parent / "preview/index.html").read_text()
+BUILD_PAGE = [
+    {"say": "I'll write the page first.", "call": ("write_file", {"path": f"{SITE}/index.html", "content": PAGE}), "ms": 14},
+    {"say": "Opening it beside the chat.",
+     "call": ("desktop_preview", {"action": "open", "url": DEV_URL, "label": "demo"}), "ms": 6},
+]
+
+PREVIEW = Story(
+    request="Build a small demo page in /tmp/hermes-proto-work/site and show it to me.",
+    steps=[*BUILD_PAGE,
+           {"say": (f"Preview ready at [the demo]({DEV_URL}). The page is saved as `{SITE}/index.html`, and it "
+                    "replaces [the old docs](http://unreachable.invalid/)."), "call": None}],
+    out="preview.jsonl", seed=20261125, files={}, doomed=None, answer=None, approves=False)
+
+PREVIEW_CLOSE = Story(
+    request="Show me the demo page in /tmp/hermes-proto-work/site, then close it.",
+    steps=[*BUILD_PAGE,
+           {"say": "Closing the preview now.", "call": ("desktop_preview", {"action": "close"}), "ms": 6, "pause": 2000},
+           {"say": "Closed.", "call": None}],
+    out="preview-close.jsonl", seed=20261126, files={}, doomed=None, answer=None, approves=False)
+
+STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN, "images": IMAGES, "preview": PREVIEW,
+           "preview-close": PREVIEW_CLOSE}
 NAME = sys.argv[1] if len(sys.argv) > 1 else "errand"
 if NAME not in STORIES:
     sys.exit(f"no story named {NAME!r}; pick one of: {', '.join(STORIES)}")
@@ -270,7 +302,7 @@ os.makedirs(HOME)
 os.environ["HERMES_HOME"] = HOME
 
 import model_tools  # noqa: E402
-from gateway import local_viewer_events, session_finite, session_lifecycle  # noqa: E402
+from gateway import local_desktop_ui, local_viewer_events, session_finite, session_lifecycle  # noqa: E402
 from gateway.config import GatewayConfig, Platform  # noqa: E402
 from gateway.run_turn_runner import TurnRunner, _persisted_turn  # noqa: E402
 from gateway.session import SessionStore  # noqa: E402
@@ -452,6 +484,7 @@ def play_turn(turn, db, history, call_ids):
                               user_id=USER, cwd=WORK)
     key_token = set_current_session_key(session_key)
     register_gateway_notify(session_key, notify)
+    window = local_desktop_ui.wire(turn, agent)
     needs_break = False
     streamed = False
     try:
@@ -489,6 +522,7 @@ def play_turn(turn, db, history, call_ids):
             agent._flush_messages_to_session_db(messages, history)
             needs_break = streamed
     finally:
+        local_desktop_ui.release(window)
         unregister_gateway_notify(session_key)
         reset_current_session_key(key_token)
         clear_session_vars(tokens)

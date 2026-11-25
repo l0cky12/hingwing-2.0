@@ -854,3 +854,51 @@ describe('mentioning another bot', () => {
     expect(opened.sent().filter(call => call.method === 'bot_relay.deliver' && call.params?.id === undefined)).toHaveLength(2)
   })
 })
+
+describe('the pane', () => {
+  /** The errand with its first `agent.step` frame turned into `type`, on the same stream position. */
+  const asking = (type: string, payload: object, sessionId: string = SESSION): Fixture => {
+    const at = ERRAND.steps.findIndex(step => 'push' in step && (step.push as { params: { type: string } }).params.type === 'agent.step')
+    const step = ERRAND.steps[at] as { at: number; push: { params: object } }
+    const push = { ...step.push, params: { ...step.push.params, type, session_id: sessionId, payload } }
+    return { ...ERRAND, steps: ERRAND.steps.with(at, { ...step, push }) }
+  }
+  const OPEN = { url: 'http://localhost:5173/', label: 'demo' }
+
+  async function asked(fixture: Fixture, before: (opened: ReturnType<typeof open>) => Promise<unknown> = async () => {}) {
+    const asks: { ask: unknown; from: SessionId }[] = []
+    const opened = open(fixture, { onPane: (ask, from) => asks.push({ ask, from: from.id }) })
+    opened.watch()
+    await opened.clock.advance(0)
+    await before(opened)
+    await toApproval(opened)
+    return { ...opened, asks }
+  }
+
+  it('hears the open chat ask to open a page, and to close one, counting neither as unshown', async () => {
+    const opened = await asked(asking('preview.open', OPEN))
+    expect(opened.asks).toEqual([{ ask: { do: 'open', url: OPEN.url, label: 'demo' }, from: SESSION }])
+    expect(opened.diagnostics.filter(what => what.type.startsWith('preview.'))).toEqual([])
+    expect((await asked(asking('preview.close', { url: '' }))).asks).toEqual([{ ask: { do: 'close', url: null }, from: SESSION }])
+  })
+
+  it('hears a frame the gateway sends twice once', async () => {
+    const once = asking('preview.open', OPEN)
+    const at = once.steps.findIndex(step => 'push' in step && (step.push as { params: { type: string } }).params.type === 'preview.open')
+    const twice = { ...once, steps: once.steps.toSpliced(at + 1, 0, once.steps[at]!) }
+    expect((await asked(twice)).asks).toHaveLength(1)
+  })
+
+  it('drops an ask from a chat the window does not show', async () => {
+    const hidden = await asked(asking('preview.open', OPEN), opened => opened.hermes.run({ do: 'open', ref: { kind: 'new', bot: null, draftId: 'draft-1' } }))
+    expect(hidden.hermes.open.get().shown?.sessionId).toBeNull()
+    expect(hidden.asks).toEqual([])
+    expect((await asked(asking('preview.open', OPEN, 'local-elsewhere'))).asks).toEqual([])
+  })
+
+  it('counts an ask it cannot read as invalid', async () => {
+    const opened = await asked(asking('preview.open', { url: '  ' }))
+    expect(opened.asks).toEqual([])
+    expect(opened.diagnostics).toContainEqual({ kind: 'invalid', type: 'preview.open' })
+  })
+})

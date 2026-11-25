@@ -5,6 +5,7 @@ import { botsIn, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
 import { mentionedBots } from './domain/mention'
 import type { OpenChat } from './domain/open'
+import type { PaneAsk } from './domain/pane'
 import type { ServerRequest } from './domain/reduce'
 import type { RelayDesk } from './domain/relay'
 import type { Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
@@ -75,6 +76,12 @@ export interface HermesOptions {
   readonly mintId?: () => string
   /** Counts for a debug panel: frames not shown, unusable, or with no session to go to, and requests declined. No payloads, no tickets. */
   readonly onDiagnostic?: (what: { readonly kind: 'unshown' | 'invalid' | 'unrouted' | 'declined'; readonly type: string }) => void
+  /**
+   * What Hermes asked of the pane beside the chat, with the session it asked from. Only the chat the
+   * window shows may ask: Hermes never steals focus for a background session. Only a live frame seen
+   * for the first time asks. A replay would reopen every page an old chat ever showed.
+   */
+  readonly onPane?: (ask: PaneAsk, from: Session) => void
   /** Name sent as `client` on `session.create` when the gateway accepts it. */
   readonly client: { readonly name: string; readonly version: string }
 }
@@ -153,11 +160,12 @@ export function openHermes(options: HermesOptions): Hermes {
 
   const routes: { readonly [S in ParsedEvent['scope']]: (parsed: Extract<ParsedEvent, { scope: S }>) => void } = {
     session: parsed => {
-      if (parsed.event === null) count(parsed.skipped, parsed.type)
-      else if (parsed.event.type === 'meta' && parsed.event.title !== undefined) list.retitle(parsed.sessionId, parsed.event.title)
+      if (parsed.event === null && parsed.skipped !== 'window') count(parsed.skipped, parsed.type)
+      else if (parsed.event?.type === 'meta' && parsed.event.title !== undefined) list.retitle(parsed.sessionId, parsed.event.title)
       const actor = actors.get(parsed.sessionId)
       if (actor === undefined) return count('unrouted', parsed.type)
-      actor.feed({ in: 'event', frame: { stamp: parsed.stamp, event: parsed.event, seenAt: clock.now() } })
+      const fresh = actor.feed({ in: 'event', frame: { stamp: parsed.stamp, event: parsed.event, seenAt: clock.now() } })
+      if ('ask' in parsed && fresh && desk.open.shown?.sessionId === parsed.sessionId) options.onPane?.(parsed.ask, actor.session)
     },
     gap: parsed => actors.get(parsed.sessionId)?.feed({ in: 'gap' }),
     app: refreshSoon,

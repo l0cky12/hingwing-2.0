@@ -1,6 +1,7 @@
 import type { SessionId } from '@highwing/hermes/domain'
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useState } from 'react'
 import type { FileAction, FileOutcome } from '../../ipc-contract'
+import { useMenu } from './menu'
 
 export type FileCall = (action: FileAction, path: string) => Promise<FileOutcome>
 
@@ -13,6 +14,8 @@ export const fileCallFor = (sessionId: SessionId): FileCall => (action, path) =>
 
 export const baseName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
 
+const PAGE = /\.html?$/i
+
 const WORDS = {
   missing: "This file isn't there any more.",
   failed: "Highwing couldn't open this file.",
@@ -22,20 +25,9 @@ const WORDS = {
 
 export function FilePath({ path, findId }: { readonly path: string; readonly findId: string }) {
   const fileCall = useContext(FileCallContext)
-  const [menu, setMenu] = useState(false)
+  const { open: menu, setOpen: setMenu, holder: row, toggle, onKeyDown } = useMenu<HTMLDivElement, HTMLButtonElement>()
   const [note, setNote] = useState<string | null>(null)
-  const row = useRef<HTMLDivElement>(null)
-  const toggle = useRef<HTMLButtonElement>(null)
   const name = baseName(path)
-
-  useEffect(() => {
-    if (!menu) return
-    const away = (event: PointerEvent) => {
-      if (!row.current?.contains(event.target as Node)) setMenu(false)
-    }
-    document.addEventListener('pointerdown', away)
-    return () => document.removeEventListener('pointerdown', away)
-  }, [menu])
 
   const act = async (action: FileAction) => {
     setMenu(false)
@@ -53,16 +45,7 @@ export function FilePath({ path, findId }: { readonly path: string; readonly fin
   }
 
   return (
-    <div
-      className="file"
-      ref={row}
-      onKeyDown={event => {
-        if (event.key !== 'Escape' || !menu) return
-        event.stopPropagation()
-        setMenu(false)
-        toggle.current?.focus()
-      }}
-    >
+    <div className="file" ref={row} onKeyDown={onKeyDown}>
       <div className="file-row">
         <button className="file-open" aria-label={`Open ${name}`} title={path} data-find={findId} onClick={() => void act('open')}>{path}</button>
         <span className="file-side">
@@ -71,6 +54,7 @@ export function FilePath({ path, findId }: { readonly path: string; readonly fin
           </button>
           {menu && (
             <div className="file-menu">
+              {PAGE.test(path) && <button onClick={() => void act('preview')}>Preview</button>}
               <button onClick={() => void act('show')}>Show in folder</button>
               <button onClick={() => void copy()}>Copy path</button>
             </div>

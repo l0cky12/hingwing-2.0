@@ -29,7 +29,34 @@ export type SetupCommand =
   | { readonly do: 'keepTarget' }
   | { readonly do: 'openChat' }
 
-export type AppCommand = Command | SetupCommand
+/** How a page main draws in its own view is doing. `failed` hides the view, so the window shows the reason in its place. */
+export type PageLoad = { readonly at: 'loading' } | { readonly at: 'shown' } | { readonly at: 'failed'; readonly reason: string }
+
+/** What the pane shows. One kind per body the window draws. */
+export type PreviewContent = { readonly kind: 'page'; readonly load: PageLoad }
+
+/**
+ * The pane beside the chat. Owned by Electron main, one per window, and kept across chats.
+ * `address` is the web URL or the absolute path shown. `title` is Hermes's label, else the page's own title, else the address.
+ */
+export type Preview =
+  | { readonly state: 'closed' }
+  | { readonly state: 'open'; readonly title: string; readonly address: string; readonly content: PreviewContent }
+
+export interface Rect { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+
+export type PreviewCommand =
+  | { readonly do: 'preview'; readonly url: string }
+  | { readonly do: 'browse'; readonly url: string }
+  | { readonly do: 'reloadPreview' }
+  | { readonly do: 'closePreview' }
+  /** Where the page's body sits in the window, in CSS pixels. null: nowhere to draw it, so main hides the page. */
+  | { readonly do: 'placePreview'; readonly rect: Rect | null }
+
+const PREVIEW_VERBS: { readonly [K in PreviewCommand['do']]: true } = { preview: true, browse: true, reloadPreview: true, closePreview: true, placePreview: true }
+export const isPreviewCommand = (command: AppCommand): command is PreviewCommand => Object.hasOwn(PREVIEW_VERBS, command.do)
+
+export type AppCommand = Command | SetupCommand | PreviewCommand
 export type AppResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 
 /** Every topic with one value per connection, and what it carries. */
@@ -43,10 +70,11 @@ export interface AppTopics {
   readonly open: OpenChat
   /** Whether Hermes can hand a message to another bot, and the messages handed over from each chat. */
   readonly relay: RelayDesk
+  readonly preview: Preview
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, preview: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -68,7 +96,8 @@ export type Push<T extends Topic = Topic> =
   | { readonly topic: T; readonly rev: number; readonly full: TopicValue<T> }
   | (T extends `session:${string}` ? { readonly topic: T; readonly rev: number; readonly patch: SessionPatch } : never)
 
-export type FileAction = 'open' | 'show'
+/** `preview` shows the file in the pane beside the chat. */
+export type FileAction = 'open' | 'show' | 'preview'
 export interface FileRequest { readonly action: FileAction; readonly sessionId: SessionId; readonly path: string }
 export type FileOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: 'refused' | 'missing' | 'failed' }
 
@@ -104,10 +133,12 @@ export const CHANNEL = {
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
 const ABSOLUTE = /^(?:\/|[A-Za-z]:[\\/]|\\\\)/
-const IMAGE_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:'])
+const PAGE_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:'])
 
 /** The links a reply may open, in the user's browser. Shared so the renderer draws only links main will open. */
 export const isWebLink = (url: string): boolean => WEB_SCHEMES.has(URL.parse(url)?.protocol ?? '')
+/** A link the pane may show and Open in browser may open: http and https only. */
+export const isWebPage = (url: string): boolean => PAGE_SCHEMES.has(URL.parse(url)?.protocol ?? '')
 
 const splice = <T>(held: readonly T[], tail: Tail<T>): readonly T[] => [...held.slice(0, tail.from), ...tail.items]
 
@@ -160,6 +191,10 @@ const unstartedOf = (raw: unknown): Unstarted | null => {
   const ref = isObject(raw) && raw.sessionId === null ? chatRefOf(raw) : null
   return ref === null || ref.kind === 'chat' ? null : { ...ref, sessionId: null }
 }
+const webPage = (raw: unknown): raw is string => text(raw) && isWebPage(raw)
+const place = (raw: unknown): raw is number => typeof raw === 'number' && Number.isFinite(raw) && raw >= 0
+const rectOf = (raw: unknown): Rect | null =>
+  isObject(raw) && place(raw.x) && place(raw.y) && place(raw.width) && place(raw.height) ? { x: raw.x, y: raw.y, width: raw.width, height: raw.height } : null
 const replyOf = (raw: unknown): PromptReply | null =>
   isObject(raw) && (raw.kind === 'choice' || raw.kind === 'text') && text(raw.value) ? { kind: raw.kind, value: raw.value } : null
 
@@ -242,7 +277,16 @@ export const validators: Validators = {
   },
   editTarget: () => ({ do: 'editTarget' }),
   keepTarget: () => ({ do: 'keepTarget' }),
-  openChat: () => ({ do: 'openChat' })
+  openChat: () => ({ do: 'openChat' }),
+  preview: raw => (webPage(raw.url) ? { do: 'preview', url: raw.url } : null),
+  browse: raw => (webPage(raw.url) ? { do: 'browse', url: raw.url } : null),
+  reloadPreview: () => ({ do: 'reloadPreview' }),
+  closePreview: () => ({ do: 'closePreview' }),
+  placePreview: raw => {
+    if (raw.rect === null) return { do: 'placePreview', rect: null }
+    const rect = rectOf(raw.rect)
+    return rect && { do: 'placePreview', rect }
+  }
 }
 
 export function parseCommand(raw: unknown): AppCommand | null {
@@ -251,7 +295,7 @@ export function parseCommand(raw: unknown): AppCommand | null {
 }
 
 export function parseFileRequest(raw: unknown): FileRequest | null {
-  if (!isObject(raw) || (raw.action !== 'open' && raw.action !== 'show')) return null
+  if (!isObject(raw) || (raw.action !== 'open' && raw.action !== 'show' && raw.action !== 'preview')) return null
   const sessionId = sessionIdOf(raw)
   return sessionId && filled(raw.path) ? { action: raw.action, sessionId, path: raw.path } : null
 }
@@ -267,7 +311,7 @@ export function parseDraft(raw: unknown): Draft | null {
 
 export function parseImageRequest(raw: unknown): ImageRequest | null {
   if (!isObject(raw)) return null
-  if (raw.kind === 'web') return text(raw.url) && IMAGE_SCHEMES.has(URL.parse(raw.url)?.protocol ?? '') ? { kind: 'web', url: raw.url } : null
+  if (raw.kind === 'web') return text(raw.url) && isWebPage(raw.url) ? { kind: 'web', url: raw.url } : null
   if (raw.kind !== 'tool') return null
   const sessionId = sessionIdOf(raw)
   return sessionId && text(raw.path) && ABSOLUTE.test(raw.path) ? { kind: 'tool', sessionId, path: raw.path } : null
