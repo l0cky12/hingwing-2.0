@@ -6,7 +6,7 @@ import {
 import type { ModelMenu } from '../src/domain/command'
 import { modelViewOf, sameModel } from '../src/domain/model'
 import type {
-  Ask, ContextFill, Generation, HelperId, HelperItem, InputId, Item, Link, ModelId, ModelRef, OpenTurn, Outcome, PromptId, RequestId, SessionContent, SessionId,
+  AdmissionId, Ask, ContextFill, Generation, HelperId, HelperItem, InputId, Item, Link, ModelId, ModelRef, OpenTurn, Outcome, PromptId, RequestId, SessionContent, SessionId,
   SessionUsage, SettledTurn, StatusAbout, Tokens, ToolId, ToolResult, TurnId
 } from '../src/domain/session'
 
@@ -204,9 +204,9 @@ describe('the fold', () => {
     const state = feed(
       live(),
       { in: 'local', action: { did: 'send', inputId: inputId('i1'), text: 'first', attachments: [] } },
-      { in: 'local', action: { did: 'send.admitted', inputId: inputId('i1'), admissionId: 'adm-1', status: 'queued' } },
+      event(1, { type: 'meta', queue: [{ admissionId: 'adm-1' as AdmissionId, inputId: inputId('i1'), text: 'first', state: { s: 'queued', can: [] } }] }, null),
       { in: 'local', action: { did: 'send', inputId: inputId('i2'), text: 'second', attachments: [] } },
-      event(1, { type: 'turn.started', turnId: turnId('t1'), admissionId: 'adm-1', requestText: 'first' })
+      event(2, { type: 'turn.started', turnId: turnId('t1'), admissionId: 'adm-1', requestText: 'first' })
     )
     expect(state.content.outbox).toEqual([{ inputId: 'i2', text: 'second', attachments: [], state: { s: 'sending' } }])
     expect(state.content.run).toMatchObject({ turn: { request: { text: 'first', inputId: 'i1' } } })
@@ -310,7 +310,7 @@ describe('attached', () => {
       snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 9 }, history: { turns, unfinished: null, older: { cursor: 'c1' } } })
     })
     expect(state.gate).toEqual({ at: 'live', cursor: { epoch: EPOCH, seq: 9 }, subscriptionId: 'sub-1' })
-    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, tuning: { reasoning: null } })
+    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, tuning: { reasoning: null, busy: null } })
   })
 
   it('B: opens the unfinished turn of a running snapshot with its waiting prompts, then the parked frames above the watermark', () => {
@@ -1249,19 +1249,19 @@ describe('what Hermes says', () => {
 describe('tuning', () => {
   it('takes facts read under the current attach, and drops facts read under an older one', () => {
     const state = live()
-    expect(state.content.tuning).toEqual({ reasoning: null })
+    expect(state.content.tuning).toEqual({ reasoning: null, busy: null })
     const read = reduce(state, { in: 'facts', attempt: 1, tuning: { reasoning: true } })
-    expect(read.content.tuning).toEqual({ reasoning: true })
+    expect(read.content.tuning).toEqual({ reasoning: true, busy: null })
     const reattached = feed(read, { in: 'link.lost' }, { in: 'attach' })
     expect(reduce(reattached, { in: 'facts', attempt: 1, tuning: { reasoning: false } }).content).toBe(reattached.content)
-    expect(reduce(reattached, { in: 'facts', attempt: 2, tuning: { reasoning: false } }).content.tuning).toEqual({ reasoning: false })
+    expect(reduce(reattached, { in: 'facts', attempt: 2, tuning: { reasoning: false } }).content.tuning).toEqual({ reasoning: false, busy: null })
   })
 
   it('takes a switch this client set, keeps it through a rebuild, and changes nothing when it is the same', () => {
     const tuned = reduce(live(), { in: 'local', action: { did: 'tuned', tuning: { reasoning: true } } })
-    expect(tuned.content.tuning).toEqual({ reasoning: true })
+    expect(tuned.content.tuning).toEqual({ reasoning: true, busy: null })
     expect(reduce(tuned, { in: 'local', action: { did: 'tuned', tuning: { reasoning: true } } }).content).toBe(tuned.content)
     const rebuilt = feed(tuned, { in: 'gap' }, { in: 'attached', attempt: 2, snapshot: snapshot(), replay: null })
-    expect(rebuilt.content.tuning).toEqual({ reasoning: true })
+    expect(rebuilt.content.tuning).toEqual({ reasoning: true, busy: null })
   })
 })

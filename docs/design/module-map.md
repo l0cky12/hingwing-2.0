@@ -28,6 +28,7 @@ highwing-2.0/
           session.ts                                      Session, Run, Turn, Item, Link, Sidebar
           reduce.ts                                       SessionEvent, Gate, SessionInput, reduce, syncOf, activityOf, turnActivityOf
           requests.ts                                     the life of what Hermes asks outside the turn: opened, reconciled with a snapshot, answered, closed
+          queue.ts                                        Hermes's queue: queueOf (a pending list becomes `queue`), offeredBy (what a row's state offers), sendPlan (submit, steer or redirect)
           command.ts                                      Command, ResultOf, Outcome, Refusal: data the renderer sends and gets back
           slash.ts                                        SlashEntry, SlashCatalog, slashLineOf: the slash menu's rows
           bots.ts                                         Bots, Roster, Bot, BotFacts, rosterOf: the sidebar's bots, grouped and painted
@@ -72,12 +73,15 @@ highwing-2.0/
 |---|---|---|
 | The socket, pending calls, heartbeat, backoff, `Link` | `connect()` in `wire/link.ts`, in Electron main | read `Link` through `Hermes.link` |
 | One session's content (`history`, `run`, `outbox`) | that session's `SessionActor`, changed only through `reduce` | read through `Hermes.watch`; change by `Hermes.run(command)` |
+| Hermes's queue for a chat (`queue`), every client's rows | Hermes. The same actor replaces it whole from each pending list, by `queueOf` in `domain/queue.ts`, and takes out the row a turn starts with. No local action edits it | windows send `queued` with an `admissionId`. The row's state decides what is offered, and a row changes only by Hermes's next list |
+| This client's messages Hermes has not listed (`outbox`) | the same actor, from `send`, an edit's replacement, a receipt and a refusal. An entry leaves when a pending list or a turn's start names it | windows send `send` and `discard`. A message is in `outbox` or in `queue`, never both |
 | Whether that session is attached, its stream cursor, its parked frames | the same actor, as the `Gate` value inside its `Tracked` state, changed only through `reduce` | nobody. `Session.sync` is derived from it by `syncOf` at publish time |
 | Revision, text position, paging cursor | the same actor, as `Fence` | nobody |
 | Running, asking, settled | derived from `Session.run` by `activityOf` | nobody stores it |
 | What Hermes said while no turn ran (`interlude`) | the same actor, through `reduce`. The next turn's start seals it into `history` as one entry whose outcome is `interlude` | read through `Hermes.watch`. A rebuild drops it |
 | What Hermes waits on outside the turn (`requests`), and which request ids it has closed | the same actor, through `reduce`, by the rules in `domain/requests.ts`: a request frame or a connector card's event opens one, each snapshot's `open_requests` and `pending_connection` reconcile them, `request.cancel` or the card's settlement closes one | windows send `answer` with a `requestId`. A turn that starts or settles never touches them. No state holds a typed value |
 | Whether a request with no card is refused | the hub's `bridge`: refused only while a window watches the chat | nobody. A request with a card is never refused |
+| Where a message sent during a turn goes | nobody stores it. `sendPlan` derives it from `run`, `requests` and `tuning.busy` each time | the `send` row asks it. A window can ask it too, to label its button |
 | Hermes's switches for a chat (`tuning`) | the same actor, through `reduce`: a `facts` input tagged with the attach it was read under, and `tuned` after this client's `config.set` | windows send `tune` |
 | Which windows watch a chat | the hub, as a count per chat. A command waiting for an attach watches too and is not counted | the actor asks `watched()` before it reads facts |
 | Stored list rows and the set of running sessions | `sidebar.ts` | `Sidebar` is derived from them plus each actor's session when published |

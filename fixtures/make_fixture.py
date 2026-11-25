@@ -36,6 +36,17 @@ The stories are in ``STORIES``:
   skipped with ``connection.respond`` and which then settles; a ``theme.pick`` window request, which
   the story declines as a client with a window on the chat and no picker does; and, after the turn,
   a plugin command's choice.
+- ``queue`` writes fixtures/queue.jsonl: a chat opened after Hermes restarted in the middle of a turn.
+  The header's ``pending`` lists that turn as ``unknown`` with a message queued behind it. The story
+  releases the lost turn (``prompt.resolve_unknown``), so the queued message runs. While it runs the
+  story queues a message, a second viewer queues another, and the story edits its own
+  (``prompt.replace_queued``), cancels the other viewer's (``prompt.cancel``) and sends its own now
+  (``prompt.steer_queued``). It then steers the turn (``session.steer``, answered ``queued``), queues
+  a third message, redirects the turn (``session.redirect``, answered ``redirected``), and denies an
+  ``rm -rf`` after telling Hermes what to do instead (``session.steer`` with the prompt's
+  generation, then ``approval.respond``). The third message's turn is redirected before it has an
+  agent, which Hermes answers ``rejected`` with ``delivered: false``, so the story submits those
+  words as a message, and they run as the last turn.
 
 The script runs the canonical gateway in-process, the way Hermes's own
 tests/gateway/test_authority_complete_persisted_turn.py does: a real ``SessionAuthority`` over a
@@ -113,6 +124,28 @@ Scripted in ``asks``: the tool around each request. No ``sudo`` runs, no skill i
 opened and no connector directory is read: each step's tool result is written by the story, except
 the ``clarify`` tool's, which is real. The plugin command itself is not dispatched, so the fixture
 has no ``command.dispatch`` call held open around its choice. The typed values are the story's.
+
+Real in ``queue``: both owners, the restart between them, and every call and frame of the story.
+The restart is how Hermes's own tests start a second gateway over one state.db
+(``tests/tui_gateway/test_legacy_submit_forwards_to_owner.py``): ``runtime.begin_epoch`` and
+``admissions.recover``, which marks the row the first owner was running ``unknown``. The recording
+starts at the second owner's ``session.resume``, whose ``pending`` and ``display_messages`` are the
+header's. Every queue call goes through ``AuthorityConnection.dispatch`` to the admission store, so
+each pending list (``controls``, ``steering``), each cancelled or steered row's completion frame, and
+each correction verdict is Hermes's. The busy mode in ``controls`` is set by a real ``config.set``
+and read back by ``config.get``. The stored rows of steered words are the agent's own
+``agent.prompt_builder.steer_user_row``, and Hermes's display projection marks them
+``display_kind: "steer"``.
+
+Scripted in ``queue``: the agent's steer seam. ``Seam`` stands for the ``AIAgent`` the turn adopts
+(``SessionAuthority.adopt_agent``): it accepts every steer and redirect, treats a redirect that
+arrives during a tool as a steer, as ``agent/interrupt_control.py`` does, and says at settlement that
+the turn read the queued message it was handed. The turn waits at named gates so each call lands at
+a known point, and it appends the steered rows where the agent's drain would. The stand-in runner has
+no launch policy to default the busy mode from, so the story sets ``queue`` before it reads it.
+Hermes answers a steer in the window before a turn has an agent by holding it for that agent, so the
+``delivered: false`` verdict in this fixture is a redirect's. The first owner is never shut down: its
+turn waits at a gate that never opens, as a killed process leaves it.
 
 Not emitted, because only a provider produces them: ``thinking.delta`` (spinner text while a request
 is in flight) and ``session.usage`` (token counts).
@@ -585,8 +618,97 @@ ASKS = Story(
           ("clarify", locks("production", json.dumps(["eu-west (Recommended)", "us-east"], separators=(",", ":")))), ("connection.request", skip_target),
           ("theme.pick", declined), ("clarify", locks("This week's"))))
 
+class Seam:
+    """The half of the turn's agent that ``session.steer``, ``session.redirect`` and
+    ``prompt.steer_queued`` reach (``agent/interrupt_control.py``). It takes every text. A redirect
+    that arrives while a tool runs is delivered as a steer, as the agent's own ``redirect`` does then."""
+
+    def __init__(self):
+        self.taken = []
+
+    def steer(self, text, ticket=None):
+        self.taken.append(text)
+        return True
+
+    def redirect(self, text):
+        return self.steer(text)
+
+    def withdraw_steer(self, ticket):
+        # Asked at settlement whether a queued message handed to the turn went unread. The turn read each one.
+        return False
+
+    def read(self):
+        """What the agent's steer drain appends once the running tool returns: one user row per text."""
+        from agent.prompt_builder import steer_user_row
+        rows = [steer_user_row(text) for text in self.taken]
+        self.taken.clear()
+        return rows
+
+
+SEAM = Seam()
+GATES = {}
+
+
+def gate(name):
+    return GATES.setdefault(name, SimpleNamespace(reached=threading.Event(), opened=threading.Event()))
+
+
+def hold(name):
+    def beat(turn, agent):
+        gate(name).reached.set()
+        gate(name).opened.wait()
+    return beat
+
+
+def adopt(turn, agent):
+    authority, session_id, generation = turn._approval_owner
+    authority.adopt_agent(session_id, generation, SEAM)
+
+
+def held_tool(name, result):
+    def during(turn, agent):
+        hold(name)(turn, agent)
+        return result
+    return during
+
+
+RENAME = "Rename every note to kebab-case."
+LIST_CHANGES = "Then list what changed."
+CHANGELOG, CHANGELOG_EDITED = "Also update the changelog.", "Also update the changelog, under Unreleased."
+TAG = "And tag the release as v2."
+ISO_DATES = "Use ISO dates in the changelog."
+RELEASE_NOTES = "Now draft the release notes."
+NO_TAG = "Skip the tag for now."
+USE_TRASH = "Move it to the trash instead of deleting it."
+THREE_LINES = "Keep them to three lines."
+DRAFTS = f"{WORK}/drafts"
+QUEUE_TURNS = {
+    RENAME: [
+        {"hermes": [adopt], "say": "Renaming the notes to kebab-case.", "call": ("terminal", {"command": f"ls {WORK}/notes"}), "ms": 40},
+        {"hermes": [hold("crash")], "say": "", "call": None},
+    ],
+    LIST_CHANGES: [
+        {"hermes": [adopt], "say": "Listing what changed in the notes folder.", "call": ("terminal", {"command": f"ls {WORK}/notes"}), "ms": 35},
+        {"hermes": [hold("queue")], "reads": SEAM.read, "say": "Three notes were renamed. I'll update the changelog under Unreleased as well.",
+         "call": ("terminal", {"command": f"cat {WORK}/CHANGELOG.md"}), "ms": 30},
+        {"hermes": [hold("steer")], "reads": SEAM.read, "say": "Using ISO dates. Tagging the release next.",
+         "call": ("terminal", {"command": "git tag --list"}), "during": [held_tool("redirect", "v1\n")], "ms": 900},
+        {"reads": SEAM.read, "say": "Skipping the tag. Clearing the old drafts.", "call": ("terminal", {"command": f"rm -rf {DRAFTS}"}),
+         "after": hold("denied"), "ms": 20},
+        {"reads": SEAM.read, "say": "I left the drafts in place and moved nothing: there is no trash command here. The changelog is updated with ISO dates.",
+         "call": None},
+    ],
+    RELEASE_NOTES: [{"hermes": [hold("build"), adopt], "say": "Release notes: notes renamed to kebab-case, changelog updated under Unreleased, no tag yet.", "call": None}],
+    THREE_LINES: [{"hermes": [adopt], "say": "Renamed the notes.\nUpdated the changelog.\nNo tag yet.", "call": None}],
+}
+QUEUE = Story(
+    request=RENAME, steps=[], out="queue.jsonl", seed=20261126,
+    files={"notes/First Note.md": "one\n", "notes/Second Note.md": "two\n", "notes/Third Note.md": "three\n",
+           "CHANGELOG.md": "# Changelog\n\n## Unreleased\n", "drafts/old.md": "draft\n"},
+    doomed=None, answer=None, approves=False)
+
 STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN, "images": IMAGES, "preview": PREVIEW,
-           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "says": SAYS, "asks": ASKS}
+           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "says": SAYS, "asks": ASKS, "queue": QUEUE}
 NAME = sys.argv[1] if len(sys.argv) > 1 else "errand"
 if NAME not in STORIES:
     sys.exit(f"no story named {NAME!r}; pick one of: {', '.join(STORIES)}")
@@ -797,10 +919,16 @@ def flushing_agent(db, session_id):
     return agent
 
 
-def play_turn(turn, db, history, call_ids):
+def play_turn(turn, db, history, call_ids, request=None, steps=None, kept=None):
     authority, session_id, generation = turn._approval_owner
     agent = flushing_agent(db, session_id)
-    messages = list(history) + [{"role": "user", "content": REQUEST}]
+    messages = list(history) + [{"role": "user", "content": REQUEST if request is None else request}]
+
+    def flush():
+        agent._flush_messages_to_session_db(messages, history)
+        if kept is not None:
+            kept[:] = messages
+
     agent._persist_user_message_idx = len(history)
     session_key = turn._ctx.session_key
 
@@ -820,11 +948,12 @@ def play_turn(turn, db, history, call_ids):
     needs_break = False
     streamed = False
     try:
-        for iteration, step in enumerate(STORY, start=1):
+        for iteration, step in enumerate(STORY if steps is None else steps, start=1):
             CLOCK.tick(step.get("pause", 0))
             turn._ctx._step_callback_sync(iteration, [])
             for beat in step.get("hermes", []):
                 beat(turn, agent)
+            messages.extend(step["reads"]() if "reads" in step else [])
             # The agent keeps the reasoning on the assistant message.
             how, chunks = step.get("reasoning", ("stream", []))
             if how == "whole":
@@ -850,7 +979,7 @@ def play_turn(turn, db, history, call_ids):
             turn._publish_execution("tool.generating", {"name": name})
             messages.append({"role": "assistant", "content": words or "", **thought, "tool_calls": [
                 {"id": call_id, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}]})
-            agent._flush_messages_to_session_db(messages, history)
+            flush()
             # ``turn_tool_round.py``: the open text box closes before the tool lines.
             turn._publish_execution("message.delta", {"text": None})
             turn.combined_tool_start_callback(call_id, name, args)
@@ -859,10 +988,12 @@ def play_turn(turn, db, history, call_ids):
             asked = [ask(turn, agent) for ask in step.get("during", [])]
             result = asked[-1] if asked else step["result"] if "result" in step else model_tools.handle_function_call(
                 name, args, task_id=session_id, tool_call_id=call_id, session_id=session_id)
+            if "after" in step:
+                step["after"](turn, agent)
             CLOCK.tick(step["ms"])
             turn.combined_tool_complete_callback(call_id, name, args, result)
             messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
-            agent._flush_messages_to_session_db(messages, history)
+            flush()
             needs_break = streamed
     finally:
         local_viewer_events.restore(agent, sinks)
@@ -870,7 +1001,7 @@ def play_turn(turn, db, history, call_ids):
         unregister_gateway_notify(session_key)
         reset_current_session_key(key_token)
         clear_session_vars(tokens)
-    agent._flush_messages_to_session_db(messages, history)
+    flush()
     final = messages[-1]["content"]
     result = {"final_response": final, "messages": messages}
     receipt = _persisted_turn(agent, history, result, 0)
@@ -879,18 +1010,39 @@ def play_turn(turn, db, history, call_ids):
             "last_reasoning": None, "response_previewed": False, "response_transformed": False}
 
 
-async def main():
-    db = open_persistence(profile_scope(home=HOME))
-    # Hermes's own `owner` test fixture (tests/gateway/conftest.py): the routing store and the
-    # authority share the profile's state.db. The runner is a stand-in with no adapters and no agent.
+def owner(db, instance_id, epoch):
+    """Hermes's own `owner` test fixture (tests/gateway/conftest.py): the routing store and the
+    authority share the profile's state.db. The runner is a stand-in with no adapters and no agent."""
     store = SessionStore(config=GatewayConfig(), sessions_dir=Path(HOME) / "sessions")
     store._db, store._persistence_beside = db, lambda pinned: pinned
     runner = SimpleNamespace(_draining=False, session_store=store, adapters={},
                              _adapter_for_source=lambda source: None, _evict_cached_agent=lambda route: None,
                              _cached_agent_for=lambda route: None)
-    authority = SessionAuthority(runner, profile_id=HOME, instance_id="fixture",
-                                 epoch=db.runtime.begin_epoch(instance_id="fixture"), persistence=db)
+    authority = SessionAuthority(runner, profile_id=HOME, instance_id=instance_id, epoch=epoch, persistence=db)
     runner.session_authority = authority
+    return runner, authority
+
+
+def turn_of(runner, live, authority, ref, row):
+    turn = TurnRunner.__new__(TurnRunner)
+    turn._runner = runner
+    turn._approval_owner = (authority, ref.session_id, row["generation"])
+    # The status fields are what ``_status_callback_sync`` and the notice sinks read; a local turn's
+    # status lines go to the event stream and never reach the adapter they check for.
+    turn._ctx = SimpleNamespace(
+        source=live.source, session_id=ref.session_id, session_key=live.route,
+        _loop_for_step=asyncio.get_running_loop(), _run_still_current=lambda: True,
+        _voice_ack_guild=[None], _native_slack_task_cards=False, progress_mode=None, agent_holder=[None],
+        _hooks_ref=SimpleNamespace(loaded_hooks=[]), progress_queue=None,
+        mute_notification_reply=False, _status_adapter=SimpleNamespace(), user_config={},
+        run_generation=row["generation"], _status_chat_id=None, _status_thread_metadata=None, _cleanup_progress=False)
+    turn._ctx._step_callback_sync = lambda iteration, prev: TurnRunner._step_callback_sync(turn, iteration, prev)
+    return turn
+
+
+async def main():
+    db = open_persistence(profile_scope(home=HOME))
+    runner, authority = owner(db, "fixture", db.runtime.begin_epoch(instance_id="fixture"))
     recorder = Recorder(asyncio.get_running_loop())
     socket = AuthorityConnection(authority, recorder, {"user_id": USER, "native_bootstrap": True})
     rpc_id = 0
@@ -913,19 +1065,7 @@ async def main():
     call_ids = ["call_" + uuid.uuid4().hex[:24] for _ in STORY]
 
     async def scripted_execution(authority, ref, row):
-        turn = TurnRunner.__new__(TurnRunner)
-        turn._runner = runner
-        turn._approval_owner = (authority, ref.session_id, row["generation"])
-        # The status fields are what ``_status_callback_sync`` and the notice sinks read; a local turn's
-        # status lines go to the event stream and never reach the adapter they check for.
-        turn._ctx = SimpleNamespace(
-            source=live.source, session_id=ref.session_id, session_key=live.route,
-            _loop_for_step=asyncio.get_running_loop(), _run_still_current=lambda: True,
-            _voice_ack_guild=[None], _native_slack_task_cards=False, progress_mode=None, agent_holder=[None],
-            _hooks_ref=SimpleNamespace(loaded_hooks=[]), progress_queue=None,
-            mute_notification_reply=False, _status_adapter=SimpleNamespace(), user_config={},
-            run_generation=row["generation"], _status_chat_id=None, _status_thread_metadata=None, _cleanup_progress=False)
-        turn._ctx._step_callback_sync = lambda iteration, prev: TurnRunner._step_callback_sync(turn, iteration, prev)
+        turn = turn_of(runner, live, authority, ref, row)
         result = await asyncio.to_thread(play_turn, turn, db, history, call_ids)
         authority.pending_results[row["admission_id"]] = {"result": result, "usage": {}}
         # The event stream delivered the reply, so the handler answers None and ``message.complete``
@@ -1030,4 +1170,177 @@ async def main():
         sys.exit(f"after the answer to the rm -rf, {TALE.doomed} {'is gone' if TALE.answer is None else 'is still there'}")
 
 
-asyncio.run(main())
+def stop(problem):
+    """Ends the script. The lost turn still waits at its gate, on a thread the interpreter would wait for."""
+    if problem is not None:
+        print(problem, file=sys.stderr, flush=True)
+    os._exit(0 if problem is None else 1)
+
+
+async def queue_main():
+    db = open_persistence(profile_scope(home=HOME))
+    loop = asyncio.get_running_loop()
+    client = {"user_id": USER, "native_bootstrap": True}
+    quiet = SimpleNamespace(write=lambda obj: True)
+    rpc_id = 0
+    history = []
+
+    async def call(connection, method, params):
+        nonlocal rpc_id
+        rpc_id += 1
+        reply = await connection.dispatch({"jsonrpc": "2.0", "id": rpc_id, "method": method, "params": params})
+        if "error" in reply:
+            stop(f"{method} refused: {reply['error']}")
+        return reply["result"]
+
+    def execution_of(runner):
+        async def scripted_execution(authority, ref, row):
+            text = row["payload"]["text"]
+            steps = QUEUE_TURNS[text]
+            turn = turn_of(runner, authority.sessions[ref.session_id], authority, ref, row)
+            call_ids = ["call_" + uuid.uuid4().hex[:24] for _ in steps]
+            result = await asyncio.to_thread(play_turn, turn, db, list(history), call_ids, text, steps, history)
+            authority.pending_results[row["admission_id"]] = {"result": result, "usage": {}}
+            return None
+        return scripted_execution
+
+    async def reached(name):
+        for _ in range(1200):
+            if gate(name).reached.is_set():
+                return
+            await asyncio.sleep(0.01)
+        stop(f"the turn never reached {name}")
+
+    def submit(session_id, text):
+        return {"session_id": session_id, "text": text, "input_id": "input_" + uuid.uuid4().hex[:16]}
+
+    runner, first = owner(db, "fixture", db.runtime.begin_epoch(instance_id="fixture"))
+    session_finite.execute_finite_admission = execution_of(runner)
+    before = AuthorityConnection(first, quiet, client)
+    session_id = (await call(before, "session.create", {}))["session_id"]
+    lost = await call(before, "prompt.submit", submit(session_id, RENAME))
+    await reached("crash")
+    await call(before, "prompt.submit", submit(session_id, LIST_CHANGES))
+
+    CLOCK.tick(42_000)
+    epoch = db.runtime.begin_epoch(instance_id="fixture-restarted")
+    db.admissions.recover(epoch=epoch)
+    runner, authority = owner(db, "fixture-restarted", epoch)
+    session_finite.execute_finite_admission = execution_of(runner)
+    recorder = Recorder(loop)
+    socket = AuthorityConnection(authority, recorder, client)
+    opened = await call(socket, "session.resume", {"session_id": session_id, "display_projection": True})
+    if [row["status"] for row in opened["pending"]] != ["unknown", "queued"]:
+        stop(f"after the restart Hermes lists {opened['pending']}")
+    live = authority.sessions[session_id]
+    live.event_stream.observers.add(recorder.observe)
+    describe = await call(socket, "runtime.describe", {})
+    listing = await call(socket, "session.list", {})
+    await call(socket, "config.set", {"session_id": session_id, "key": "busy", "value": "queue"})
+    busy = await call(socket, "config.get", {"session_id": session_id, "key": "busy"})
+    other = AuthorityConnection(authority, quiet, client)
+    await call(other, "session.resume", {"session_id": session_id})
+
+    async def story_call(method, params, pause=1500):
+        CLOCK.tick(pause)
+        at, mark = CLOCK.now(), len(recorder.steps)
+        reply = await call(socket, method, params)
+        recorder.steps.insert(mark, {"at": at, "await": method, "params": params, "reply": reply})
+        return reply
+
+    def row(admission):
+        return {"session_id": session_id, "admission_id": admission["admission_id"]}
+
+    def open_gate(name):
+        CLOCK.tick(400)
+        gate(name).opened.set()
+
+    recorder.recording = True
+    began = CLOCK.now()
+    await story_call("prompt.resolve_unknown", {**row(lost), "execution_generation": lost_generation(opened)})
+
+    await reached("queue")
+    mine = await story_call("prompt.submit", submit(session_id, CHANGELOG))
+    CLOCK.tick(700)
+    theirs = await call(other, "prompt.submit", submit(session_id, TAG))
+    edited = await story_call("prompt.replace_queued", {**row(mine), "submission_id": "input_" + uuid.uuid4().hex[:16], "text": CHANGELOG_EDITED})
+    await story_call("prompt.cancel", row(theirs))
+    await story_call("prompt.steer_queued", row(edited))
+    open_gate("queue")
+
+    await reached("steer")
+    running = authority._handle(live_ref(authority, session_id)).execution_generation
+    await story_call("session.steer", {"session_id": session_id, "text": ISO_DATES, "execution_generation": running})
+    await story_call("prompt.submit", submit(session_id, RELEASE_NOTES))
+    open_gate("steer")
+
+    await reached("redirect")
+    await story_call("session.redirect", {"session_id": session_id, "text": NO_TAG, "execution_generation": running})
+    open_gate("redirect")
+
+    try:
+        prompt = (await asyncio.wait_for(recorder.push_of("approval.request"), 60))["params"]["payload"]
+    except TimeoutError:
+        stop("the gateway never asked to approve the rm -rf")
+    held = {"session_id": session_id, "execution_generation": prompt["execution_generation"]}
+    await story_call("session.steer", {**held, "text": USE_TRASH})
+    await story_call("approval.respond", {**held, "prompt_id": prompt["prompt_id"], "choice": "deny"}, pause=0)
+    await asyncio.wait_for(recorder.push_of("approval.settled"), 60)
+    open_gate("denied")
+
+    await reached("build")
+    building = authority._handle(live_ref(authority, session_id)).execution_generation
+    unread = await story_call("session.redirect", {"session_id": session_id, "text": THREE_LINES, "execution_generation": building})
+    if unread != {**unread, "status": "rejected", "delivered": False}:
+        stop(f"a redirect before the turn had an agent answered {unread}")
+    await story_call("prompt.submit", submit(session_id, THREE_LINES), pause=0)
+    open_gate("build")
+
+    for _ in range(1200):
+        if not authority._pending_rows(live_ref(authority, session_id)):
+            break
+        await asyncio.sleep(0.01)
+    else:
+        stop("the queue never emptied")
+    pushes = [step["push"] for step in recorder.steps if "push" in step]
+    for _ in range(100):
+        if len(recorder.written) >= len(pushes):
+            break
+        await asyncio.sleep(0.05)
+    recorder.recording = False
+    if recorder.written != pushes:
+        stop("the socket received other frames than the session published")
+    stored = (await call(AuthorityConnection(authority, quiet, client), "session.resume", {"session_id": session_id, "display_projection": True}))["display_messages"]
+    CLOCK.tick(4)
+    recorder.steps.append({"at": CLOCK.now(), "stored": stored})
+
+    header = {"fixture": 1, "hermes": HERMES_VERSION, "source": "generated", "sessionId": session_id, "describe": describe, "list": listing,
+              "stored": opened["display_messages"], "pending": opened["pending"], "controls": {busy["key"]: busy["value"]}}
+    with OUT.open("w") as out:
+        for line in [header, *({**step, "at": step["at"] - began} for step in recorder.steps)]:
+            out.write(json.dumps(line, ensure_ascii=False) + "\n")
+        out.flush()
+    print(f"wrote {OUT}: {len(pushes)} pushes, {len(recorder.steps) - len(pushes)} other steps", file=sys.stderr)
+    if not os.path.exists(DRAFTS):
+        stop(f"the rm -rf was denied, and {DRAFTS} is gone")
+    stop(None)
+
+
+def lost_generation(snapshot):
+    return next(row["execution_generation"] for row in snapshot["pending"] if row["status"] == "unknown")
+
+
+def live_ref(authority, session_id):
+    from gateway.session_contract import SessionRef
+    return SessionRef(authority.profile_id, session_id)
+
+
+async def queue_story():
+    try:
+        await queue_main()
+    except Exception:
+        import traceback
+        stop(traceback.format_exc())
+
+
+asyncio.run(queue_story() if NAME == "queue" else main())

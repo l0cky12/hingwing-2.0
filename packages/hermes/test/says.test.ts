@@ -7,7 +7,7 @@ import { fold, ignoringClocks, says } from './support/story'
 const fixture = loadFixture(fileURLToPath(new URL('../../../fixtures/says.jsonl', import.meta.url)))
 const want = fold(says()).content
 const pushes = fixture.steps.filter(step => 'push' in step).length
-const LIVE: Session = { ...want, tuning: { reasoning: true }, sync: { state: 'live' } }
+const LIVE: Session = { ...want, tuning: { reasoning: true, busy: null }, sync: { state: 'live' } }
 
 async function moments(options?: Parameters<typeof play>[1]): Promise<Moment[]> {
   const seen: Moment[] = []
@@ -39,9 +39,10 @@ describe('the says story, played through the real client', () => {
     expect(ignoringClocks(await playToEnd(fixture))).toEqual(ignoringClocks(LIVE))
   })
 
-  it('reads the reasoning switch once, for the window that watches', async () => {
+  it('reads the chat\'s switches once, for the window that watches', async () => {
     const seen = await moments()
-    expect(sentOf(seen.at(-1)!).filter(call => call.method === 'config.get')).toEqual([{ method: 'config.get', params: { session_id: fixture.header.sessionId, key: 'show_reasoning' } }])
+    expect(sentOf(seen.at(-1)!).filter(call => call.method === 'config.get')).toEqual(
+      ['show_reasoning', 'busy'].map(key => ({ method: 'config.get', params: { session_id: fixture.header.sessionId, key } })))
   })
 
   it('counts the approval down from when it came off the socket, and keeps the notice\'s arrival time', async () => {

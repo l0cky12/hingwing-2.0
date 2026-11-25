@@ -1,9 +1,9 @@
 import {
   targetOf,
-  type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type ChatRef, type CheckFailure,
-  type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptId,
-  type PromptReply, type RelayDesk, type RequestId, type RequestReply, type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar,
-  type SlashCatalog, type Target, type Unstarted
+  type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type BusyMode, type ChatRef,
+  type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptId,
+  type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply, type ResultOf, type Session, type SessionId, type SettledTurn,
+  type Sidebar, type SlashCatalog, type Target, type Unstarted
 } from '@highwing/hermes/domain'
 
 /** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
@@ -245,8 +245,14 @@ const attachmentOf = (raw: unknown): Attachment | null =>
   isObject(raw) && filled(raw.id) && filled(raw.name) && (raw.kind === 'image' || raw.kind === 'file') && Number.isSafeInteger(raw.size) && (raw.size as number) >= 0
     ? { id: raw.id as AttachmentId, name: raw.name, kind: raw.kind, size: raw.size as number }
     : null
-const replyOf = (raw: unknown): PromptReply | null =>
-  isObject(raw) && (raw.kind === 'choice' || raw.kind === 'text') && text(raw.value) ? { kind: raw.kind, value: raw.value } : null
+function replyOf(raw: unknown): PromptReply | null {
+  if (!isObject(raw)) return null
+  if (raw.kind === 'deny') return filled(raw.tell) ? { kind: 'deny', tell: raw.tell } : null
+  return (raw.kind === 'choice' || raw.kind === 'text') && text(raw.value) ? { kind: raw.kind, value: raw.value } : null
+}
+
+const BUSY_MODES: readonly string[] = ['queue', 'steer', 'interrupt'] satisfies BusyMode[]
+const ROW_ACTIONS: readonly string[] = ['cancel', 'sendNow', 'release'] satisfies Exclude<QueuedAction, 'edit'>[]
 
 const texts = (value: unknown): value is string[] => Array.isArray(value) && value.every(text)
 const valuesOf = (raw: unknown): { readonly [field: string]: string } | null => (isObject(raw) && Object.values(raw).every(text) ? raw as { readonly [field: string]: string } : null)
@@ -322,6 +328,13 @@ export const validators: Validators = {
     const sessionId = sessionIdOf(raw)
     return sessionId && filled(raw.inputId) ? { do: 'discard', sessionId, inputId: raw.inputId as Extract<Command, { do: 'discard' }>['inputId'] } : null
   },
+  queued: raw => {
+    const sessionId = sessionIdOf(raw)
+    if (!sessionId || !filled(raw.admissionId)) return null
+    const row = { do: 'queued', sessionId, admissionId: raw.admissionId as AdmissionId } as const
+    if (raw.action === 'edit') return filled(raw.text) ? { ...row, action: 'edit', text: raw.text } : null
+    return text(raw.action) && ROW_ACTIONS.includes(raw.action) ? { ...row, action: raw.action as Exclude<QueuedAction, 'edit'> } : null
+  },
   rename: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && filled(raw.title) ? { do: 'rename', sessionId, title: raw.title } : null
@@ -384,7 +397,9 @@ export const validators: Validators = {
   },
   tune: raw => {
     const sessionId = sessionIdOf(raw)
-    return sessionId && raw.set === 'reasoning' && typeof raw.on === 'boolean' ? { do: 'tune', sessionId, set: 'reasoning', on: raw.on } : null
+    if (!sessionId) return null
+    if (raw.set === 'busy') return text(raw.to) && BUSY_MODES.includes(raw.to) ? { do: 'tune', sessionId, set: 'busy', to: raw.to as BusyMode } : null
+    return raw.set === 'reasoning' && typeof raw.on === 'boolean' ? { do: 'tune', sessionId, set: 'reasoning', on: raw.on } : null
   },
   reconnect: raw => (typeof raw.start === 'boolean' ? { do: 'reconnect', start: raw.start } : null),
   checkTarget: raw => {

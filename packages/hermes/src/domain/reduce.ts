@@ -4,11 +4,13 @@
  * gateway events, the attach lifecycle, and this client's own actions (a message sent, an answer on
  * its way). Tests feed it event logs.
  */
+import { queueOf, type Admission } from './queue'
 import { accepted, answering, closed, failed, opened, reconciled, type Change, type CloseWhy, type Held } from './requests'
 import type {
-  Ask, Attachment, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, MoaItem, ModelRef, OpenTurn, OutboxEntry,
-  Outcome, PlanEntry, PromptId, PromptItem, PromptReply, ReasoningItem, RecordedReply, Request, RequestAsk, RequestId, Run, Session, SessionContent,
-  SessionId, SessionModel, SessionUsage, SettledTurn, StatusAbout, StatusItem, Sync, TextItem, Tokens, ToolId, ToolItem, ToolResult, Tuning, TurnId
+  AdmissionId, Ask, Attachment, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, MoaItem, ModelRef, OpenTurn,
+  OutboxEntry, Outcome, PlanEntry, PromptId, PromptItem, PromptReply, QueuedMessage, ReasoningItem, RecordedReply, Request, RequestAsk, RequestId, Run,
+  Session, SessionContent, SessionId, SessionModel, SessionUsage, SettledTurn, StatusAbout, StatusItem, Sync, TextItem, Tokens, Told, ToolId, ToolItem,
+  ToolResult, Tuning, TurnId
 } from './session'
 
 /** A gateway event in domain terms. `wire/parse.ts` builds these. Field names are ours, not the wire's. */
@@ -123,14 +125,6 @@ export interface StampedEvent {
   readonly seenAt: number | null
 }
 
-/** A user message as the gateway's queue sees it. */
-export interface Admission {
-  readonly inputId: InputId
-  readonly admissionId: string
-  readonly text: string
-  readonly status: 'queued' | 'started' | 'unknown' | 'terminal'
-}
-
 /** A server-to-client JSON-RPC request, or a connector card, which Hermes opens with an event. */
 export type ServerRequest =
   /** `waitS`: how long Hermes waits for an answer. null when its config decides. */
@@ -225,11 +219,17 @@ export type SessionInput =
 
 /** What this client did. Folded through the same reducer so a second window sees it too. */
 export type LocalAction =
-  | { readonly did: 'send'; readonly inputId: InputId; readonly text: string; readonly apiText?: string; readonly attachments: readonly Attachment[] }
-  | { readonly did: 'send.admitted'; readonly inputId: InputId; readonly admissionId: string; readonly status: Admission['status'] }
+  | {
+    readonly did: 'send'; readonly inputId: InputId; readonly text: string; readonly apiText?: string; readonly attachments: readonly Attachment[]
+    readonly replaces?: AdmissionId
+  }
+  | { readonly did: 'send.admitted'; readonly inputId: InputId; readonly admissionId: string }
   | { readonly did: 'send.failed'; readonly inputId: InputId; readonly message: string }
   | { readonly did: 'send.discarded'; readonly inputId: InputId }
   | { readonly did: 'stop' }
+  | { readonly did: 'steered'; readonly text: string; readonly during: Generation }
+  /** A denial's words went to Hermes, which has them (`turn`) or may have them (`unsure`). */
+  | { readonly did: 'told'; readonly promptId: PromptId; readonly text: string; readonly went: Exclude<Told, 'next'> }
   | { readonly did: 'answer'; readonly promptId: PromptId; readonly reply: PromptReply }
   | { readonly did: 'answer'; readonly requestId: RequestId; readonly reply: RecordedReply }
   | { readonly did: 'answer.resolved'; readonly promptId: PromptId; readonly byUs: boolean }
@@ -251,8 +251,8 @@ export interface Fence {
   readonly text: TextCursor | null
   /** Where `loadEarlier` continues. null when the gateway holds nothing older. */
   readonly older: HistoryPage['older']
-  /** admissionId -> inputId, learned from receipts and queue rows. Lets `turn.started` claim its outbox entry. */
-  readonly admissions: { readonly [admissionId: string]: InputId }
+  readonly admissions: { readonly [admissionId: string]: Pick<Admission, 'text' | 'inputId'> }
+  readonly sent: { readonly [admissionId: string]: InputId }
   /** Highest stored row id among the turns held as settled. See the `lost` rule in the seed below. */
   readonly settledThrough: number | null
   readonly generation: Generation | null
@@ -265,6 +265,12 @@ export interface Fence {
    */
   readonly totalsEpoch: number
   readonly closed: Held['closed']
+  /**
+   * The words of a denial that Hermes has or may have, by the prompt they answer. A denial that is
+   * tried again, because its own confirmation was lost, must not hand them over twice, and a steer
+   * carries no id Hermes could know a repeat by. Emptied when the turn ends.
+   */
+  readonly told: { readonly [promptId: string]: { readonly [text: string]: Exclude<Told, 'next'> } }
 }
 
 export interface Tracked {
@@ -275,9 +281,9 @@ export interface Tracked {
 
 export function emptyTracked(id: SessionId): Tracked {
   return {
-    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], requests: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, yolo: null, tuning: UNTUNED },
+    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], requests: [], queue: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, yolo: null, tuning: UNTUNED },
     gate: { at: 'detached', why: 'new', cursor: null },
-    fence: { revision: 0, text: null, older: null, admissions: {}, settledThrough: null, generation: null, attaches: 0, totalsEpoch: 0, closed: [] }
+    fence: { revision: 0, text: null, older: null, admissions: {}, sent: {}, settledThrough: null, generation: null, attaches: 0, totalsEpoch: 0, closed: [], told: {} }
   }
 }
 
@@ -459,7 +465,7 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
     stop: sameRun ? before.stop : 'none',
     turn: {
       id: runTurnId(snapshot.generation),
-      request: requestOf(page.unfinished?.request ?? null) ?? startedRequest(snapshot.queue),
+      request: requestOf(page.unfinished?.request ?? null) ?? startedRequest(state, snapshot.queue),
       began: page.unfinished?.began ?? (before.state === 'running' && sameRun ? before.turn.began : null),
       items: [...(page.unfinished?.items ?? []), ...snapshot.prompts.map(prompt => waitingPrompt(prompt, null))],
       announced: null
@@ -476,6 +482,7 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       run,
       interlude: [],
       requests: content.requests,
+      queue: content.queue,
       outbox: content.outbox,
       // Hermes asks a newly attached viewer again about a held pick (gateway/session_deferred_pick.py:46-54).
       model: { ...modelFrom(content.model, snapshot.model), next: null, ask: null },
@@ -488,14 +495,16 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       text: null,
       older: page.older,
       admissions: {},
+      sent: fence.sent,
       settledThrough: history.reduce<number | null>((through, turn) => highestRow(through, turn.rows), null),
       generation: newest(fence.generation, snapshot.generation),
       attaches: fence.attaches,
       totalsEpoch: fence.totalsEpoch + 1,
-      closed: fence.closed
+      closed: fence.closed,
+      told: fence.told
     }
   }
-  return snapshot.queue.reduce(admission, seeded)
+  return listed(seeded, snapshot.queue)
 }
 
 function markLost(turns: readonly SettledTurn[], settledThrough: number | null): readonly SettledTurn[] {
@@ -516,7 +525,7 @@ function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
   const { run } = next.content
   if (run.state === 'running' && !(snapshot.running && snapshot.generation === run.generation)) next = settle(next, LOST, null, [], null, null)
   if (snapshot.running && next.content.run.state === 'idle') {
-    next = openRun(next, snapshot.generation, runTurnId(snapshot.generation), startedRequest(snapshot.queue), null)
+    next = openRun(next, snapshot.generation, runTurnId(snapshot.generation), startedRequest(next, snapshot.queue), null)
   }
   next = editTurn(next, turn => {
     const answered = mapItems(turn, item =>
@@ -525,55 +534,66 @@ function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
       .filter(prompt => !answered.items.some(item => item.kind === 'prompt' && item.id === prompt.id))
       .reduce((open, prompt) => pushItem(open, waitingPrompt(prompt, null)), answered)
   })
-  return snapshot.queue.reduce(admission, next)
+  return listed(next, snapshot.queue)
 }
 
-function startedRequest(queue: readonly Admission[]): Request | null {
-  const started = queue.find(row => row.status === 'started')
-  return started === undefined ? null : { text: started.text, inputId: started.inputId, rowId: null, attachments: [] }
+function startedRequest(state: Tracked, rows: readonly Admission[]): Request | null {
+  const started = rows.find(row => row.state.s === 'started')
+  return started === undefined ? null : { text: started.text, inputId: started.inputId, rowId: null, attachments: carried(state, started) }
 }
 
-function admission(state: Tracked, row: Pick<Admission, 'inputId' | 'admissionId' | 'status'>): Tracked {
+/** A row of one of Hermes's lists, by the ids that can tie it to this client's outbox. */
+type Listed = { readonly admissionId: string; readonly inputId: InputId }
+
+/** This client's message as its outbox holds it, while Hermes has not listed it yet. */
+function sentEntry(state: Tracked, row: Listed): OutboxEntry | undefined {
   const { content, fence } = state
-  const entry = content.outbox.find(held => held.inputId === row.inputId)
-  if (entry === undefined) return state
-  const remembered: Tracked = fence.admissions[row.admissionId] === row.inputId
-    ? state
-    : { ...state, fence: { ...fence, admissions: { ...fence.admissions, [row.admissionId]: row.inputId } } }
-  switch (row.status) {
-    case 'unknown':
-      return remembered
-    case 'queued':
-      return entry.state.s === 'queued' ? remembered : setEntry(remembered, { inputId: entry.inputId, text: entry.text, attachments: entry.attachments, state: { s: 'queued' } })
-    case 'terminal':
-      return dropEntry(state, row.inputId)
-    case 'started': {
-      const { run } = content
-      if (run.state !== 'running') return remembered
-      const { request } = run.turn
-      if (request !== null && request.inputId !== null && request.inputId !== row.inputId) return remembered
-      const claimed = editTurn(state, turn => ({ ...turn, request: { text: request?.text ?? entry.text, inputId: entry.inputId, rowId: null, attachments: entry.attachments } }))
-      return dropEntry(claimed, row.inputId)
-    }
-    default:
-      return unreachable(row.status)
+  return content.outbox.find(entry => entry.inputId === row.inputId || entry.inputId === fence.sent[row.admissionId])
+}
+
+/**
+ * The attachments a row's turn starts with. Only their holder has them: the queue row Hermes listed,
+ * else this client's outbox entry for it. Hermes's own rows name none.
+ */
+function carried(state: Tracked, row: Listed): readonly Attachment[] {
+  return (state.content.queue.find(held => held.admissionId === row.admissionId) ?? sentEntry(state, row))?.attachments ?? []
+}
+
+function listed(state: Tracked, rows: readonly Admission[]): Tracked {
+  const { content, fence } = state
+  const named = new Set(rows.map(row => sentEntry(state, row)))
+  const outbox = content.outbox.some(entry => named.has(entry)) ? content.outbox.filter(entry => !named.has(entry)) : content.outbox
+  const admissions = Object.fromEntries(rows.map(({ admissionId, text, inputId }) => [admissionId, { text, inputId }]))
+  const sent = Object.fromEntries(Object.entries(fence.sent).filter(([, inputId]) => outbox.some(entry => entry.inputId === inputId)))
+  const started = startedRequest(state, rows)
+  const next: Tracked = {
+    ...state,
+    content: patch(content, { queue: queueOf(content.queue, row => sentEntry(state, row), rows), outbox }),
+    fence: { ...fence, admissions, sent }
   }
+  if (started === null) return next
+  return editTurn(next, turn => (turn.request === null || turn.request.inputId === null
+    ? { ...turn, request: { ...started, text: turn.request?.text ?? started.text, rowId: turn.request?.rowId ?? null } }
+    : turn))
+}
+
+function handedOver(state: Tracked, before: readonly QueuedMessage[]): Tracked {
+  const wasSteering = new Set(before.flatMap(row => (row.state.s === 'steering' ? [row.admissionId] : [])))
+  return state.content.queue
+    .filter(row => row.state.s === 'steering' && !wasSteering.has(row.admissionId))
+    .reduce((handed, row) => editTurn(handed, turn => pushItem(turn, { kind: 'steer', text: row.text })), state)
+}
+
+function dropEntry(state: Tracked, inputId: InputId | null): Tracked {
+  const { content, fence } = state
+  if (!content.outbox.some(entry => entry.inputId === inputId)) return state
+  const sent = Object.fromEntries(Object.entries(fence.sent).filter(([, held]) => held !== inputId))
+  return { ...state, content: { ...content, outbox: content.outbox.filter(entry => entry.inputId !== inputId) }, fence: { ...fence, sent } }
 }
 
 function setEntry(state: Tracked, entry: OutboxEntry): Tracked {
   const outbox = state.content.outbox.map(held => held.inputId === entry.inputId ? entry : held)
   return { ...state, content: { ...state.content, outbox } }
-}
-
-function dropEntry(state: Tracked, inputId: InputId): Tracked {
-  const { content, fence } = state
-  if (!content.outbox.some(entry => entry.inputId === inputId)) return state
-  const admissions = Object.fromEntries(Object.entries(fence.admissions).filter(([, held]) => held !== inputId))
-  return {
-    ...state,
-    content: { ...content, outbox: content.outbox.filter(entry => entry.inputId !== inputId) },
-    fence: { ...fence, admissions }
-  }
 }
 
 function earlier(state: Tracked, page: HistoryPage): Tracked {
@@ -598,13 +618,15 @@ function act(state: Tracked, action: LocalAction): Tracked {
       const entry = content.outbox.find(held => held.inputId === action.inputId)
       const sending: OutboxEntry = {
         inputId: action.inputId, text: action.text, ...(action.apiText === undefined ? {} : { apiText: action.apiText }), attachments: action.attachments,
-        state: { s: 'sending' }
+        ...(action.replaces === undefined ? {} : { replaces: action.replaces }), state: { s: 'sending' }
       }
       if (entry === undefined) return { ...state, content: { ...content, outbox: [...content.outbox, sending] } }
       return entry.state.s === 'failed' ? setEntry(state, sending) : state
     }
-    case 'send.admitted':
-      return admission(state, action)
+    case 'send.admitted': {
+      if (!content.outbox.some(held => held.inputId === action.inputId)) return state
+      return { ...state, fence: { ...state.fence, sent: { ...state.fence.sent, [action.admissionId]: action.inputId } } }
+    }
     case 'send.failed': {
       const entry = content.outbox.find(held => held.inputId === action.inputId)
       if (entry === undefined || (entry.state.s === 'failed' && entry.state.message === action.message)) return state
@@ -616,6 +638,16 @@ function act(state: Tracked, action: LocalAction): Tracked {
       return content.run.state === 'running' && content.run.stop === 'none'
         ? { ...state, content: { ...content, run: { ...content.run, stop: 'requested' } } }
         : state
+    case 'steered': {
+      const { run } = content
+      return run.state === 'running' && run.generation === action.during ? editTurn(state, turn => pushItem(turn, { kind: 'steer', text: action.text })) : state
+    }
+    case 'told': {
+      const { promptId, text, went } = action
+      const held = state.fence.told[promptId] ?? {}
+      if (Object.hasOwn(held, text) && held[text] === went) return state
+      return { ...state, fence: { ...state.fence, told: { ...state.fence.told, [promptId]: { ...held, [text]: went } } } }
+    }
     case 'answer': {
       if ('requestId' in action) return withRequests(state, answering(heldOf(state), action.requestId, action.reply))
       const { promptId, reply } = action
@@ -659,7 +691,7 @@ const IDLE: Run = { state: 'idle' }
 const NO_MODEL: SessionModel = { current: null, next: null, ask: null }
 const NO_USAGE: SessionUsage = { totals: null, context: null }
 const ZERO_TOKENS: Tokens = { input: 0, output: 0, reasoning: 0 }
-const UNTUNED: Tuning = { reasoning: null }
+const UNTUNED: Tuning = { reasoning: null, busy: null }
 const LOST: Outcome = { kind: 'lost' }
 const INTERLUDE: Outcome = { kind: 'interlude' }
 const ANSWERED_ELSEWHERE: PromptItem['state'] = { s: 'answered', reply: null }
@@ -680,17 +712,12 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
       if (stamp.generation === null || (event.turnId !== null && holdsTurn(state.content, event.turnId))) return state
       if (run.state === 'running' && stamp.generation <= run.generation) return state
       const settled = settle(state, LOST, null, [], null, null)
-      const claimed = claimEntry(settled, event.admissionId, event.requestText)
-      const request = claimed !== null
-        ? { text: claimed.text, inputId: claimed.inputId, rowId: null, attachments: claimed.attachments }
-        : requestOf(event.requestText)
-      return openRun(
-        claimed === null ? settled : dropEntry(settled, claimed.inputId),
-        stamp.generation,
-        event.turnId ?? runTurnId(stamp.generation),
-        request,
-        seenBy(seenAt)
-      )
+      const request = requestFor(settled, event.admissionId, event.requestText)
+      const opened = openRun(dropEntry(settled, request?.inputId ?? null), stamp.generation, event.turnId ?? runTurnId(stamp.generation), request, seenBy(seenAt))
+      // Hermes says the turn started before it lists the row as started (gateway/session_authority.py:1237-1240), and the row is no longer waiting.
+      const { queue } = opened.content
+      const waiting = queue.filter(row => row.admissionId !== event.admissionId)
+      return waiting.length === queue.length ? opened : { ...opened, content: { ...opened.content, queue: waiting } }
     }
     case 'text.delta': {
       const open = ensureRun(state, stamp.generation, seenAt)
@@ -798,7 +825,7 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
         : { ...titled, fence: patch(titled.fence, { revision: Math.max(titled.fence.revision, event.revision) }) }
       const cut: Tracked = event.cutBefore === undefined ? revised : cutBefore(revised, event.cutBefore)
       const counted: Tracked = event.countsRestart === undefined ? cut : restartCounts(cut)
-      return (event.queue ?? []).reduce(admission, counted)
+      return event.queue === undefined ? counted : handedOver(listed(counted, event.queue), counted.content.queue)
     }
     default:
       return unreachable(event)
@@ -910,15 +937,19 @@ function holdsDeclined(content: SessionContent, requestId: string): boolean {
     || content.history.some(turn => turn.items.some(isIt))
 }
 
-function claimEntry(state: Tracked, admissionId: string | null, requestText: string | null): OutboxEntry | null {
+function requestFor(state: Tracked, admissionId: string | null, requestText: string | null): Request | null {
+  const { admissions, sent } = state.fence
   const { outbox } = state.content
-  const { admissions } = state.fence
-  const inputId = admissionId === null ? undefined : admissions[admissionId]
-  const admitted = outbox.find(entry => entry.inputId === inputId)
-  if (admitted !== undefined) return admitted
-  const sending = outbox.filter(entry => entry.state.s === 'sending' && !Object.values(admissions).includes(entry.inputId))
+  const row = admissionId === null ? undefined : admissions[admissionId]
+  // Hermes's own words for the request, when the start carries them, are what a person reads. The row's text is what the model reads.
+  if (admissionId !== null && row !== undefined) {
+    return { ...row, text: requestText ?? row.text, rowId: null, attachments: carried(state, { admissionId, inputId: row.inputId }) }
+  }
+  const admitted = outbox.find(entry => admissionId !== null && entry.inputId === sent[admissionId])
+  if (admitted !== undefined) return { text: admitted.text, inputId: admitted.inputId, rowId: null, attachments: admitted.attachments }
+  const sending = outbox.filter(entry => entry.state.s === 'sending' && !Object.values(sent).includes(entry.inputId))
   const [only] = sending
-  return only !== undefined && sending.length === 1 && (requestText === null || requestText === only.text) ? only : null
+  return only !== undefined && sending.length === 1 && (requestText === null || requestText === only.text) ? { text: only.text, inputId: only.inputId, rowId: null, attachments: only.attachments } : requestOf(requestText)
 }
 
 function settle(
@@ -937,7 +968,7 @@ function settle(
   const settled: Tracked = {
     ...state,
     content: { ...content, history: [...content.history, turn], run: IDLE },
-    fence: { ...patch(fence, { text: null, settledThrough: highestRow(fence.settledThrough, rows) }), totalsEpoch: fence.totalsEpoch + 1 }
+    fence: { ...patch(fence, { text: null, settledThrough: highestRow(fence.settledThrough, rows) }), totalsEpoch: fence.totalsEpoch + 1, told: {} }
   }
   return setUsage(settled, { totals, context: usage?.context ?? before.context })
 }
@@ -983,6 +1014,7 @@ function settledItem(item: Item): Item<'settled'> {
     // A helper may still work after its turn ends: Hermes runs helpers in the background.
     case 'helper':
     case 'plan':
+    case 'steer':
     case 'moa':
     case 'notice':
     case 'status':

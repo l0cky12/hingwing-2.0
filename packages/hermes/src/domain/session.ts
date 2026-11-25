@@ -20,6 +20,8 @@ export type HelperId = Brand<string, 'HelperId'>
 
 /** A request Hermes holds open on the socket. For a connector card it is the operation's id. */
 export type RequestId = Brand<string, 'RequestId'>
+/** One row of Hermes's queue for a chat. */
+export type AdmissionId = Brand<string, 'AdmissionId'>
 /** Idempotency key of one user message. Minted once when the user presses Send, reused on every retry. */
 export type InputId = Brand<string, 'InputId'>
 /** Idempotency key of one branch. Minted by the window for a message and reused on every retry until Hermes answers. It is the `request_id` Hermes keys the branch's receipt on. */
@@ -91,7 +93,13 @@ export interface SessionContent {
    * `closed` notice where it closed.
    */
   readonly requests: readonly HermesRequest[]
-  /** Messages the user sent that no turn has picked up yet. */
+  /**
+   * Hermes's queue for the chat, oldest first: every client's messages that wait behind the running
+   * turn, are on their way into it, or were lost to a restart. Hermes is its only writer: each of its
+   * lists replaces this one whole, and a turn's start takes its own message out.
+   */
+  readonly queue: readonly QueuedMessage[]
+  /** This client's messages that Hermes has not listed yet, or refused. One leaves when Hermes's queue or a turn names it. */
   readonly outbox: readonly OutboxEntry[]
   readonly model: SessionModel
   readonly usage: SessionUsage
@@ -107,7 +115,12 @@ export interface SessionContent {
 export interface Tuning {
   /** Whether Hermes streams the model's reasoning for this chat. It applies from the next turn. */
   readonly reasoning: boolean | null
+  /** What Hermes does with a message sent while a turn runs. While it is null, such a message queues. */
+  readonly busy: BusyMode | null
 }
+
+/** `queue`: it waits its turn. `steer`: the running turn reads it after its next tool. `interrupt`: the model's request is cut short for it. */
+export type BusyMode = 'queue' | 'steer' | 'interrupt'
 
 /** The value a window reads. */
 export interface Session extends SessionContent {
@@ -218,7 +231,7 @@ export type Outcome =
 
 /** `Item<'settled'>` is assignable to `Item<'open'>`, so views take `Item` and handle both. */
 export type Item<S extends 'open' | 'settled' = 'open'> =
-  | TextItem<S> | ReasoningItem<S> | ToolItem<S> | HelperItem | PlanItem | PromptItem<S> | MoaItem | NoticeItem | StatusItem
+  | TextItem<S> | ReasoningItem<S> | ToolItem<S> | HelperItem | PlanItem | PromptItem<S> | SteerItem | MoaItem | NoticeItem | StatusItem
 
 export interface TextItem<S extends 'open' | 'settled' = 'open'> {
   readonly kind: 'text'
@@ -239,6 +252,16 @@ export interface ReasoningItem<S extends 'open' | 'settled' = 'open'> {
    */
   readonly startedAt: number | null
   readonly endedAt: number | null
+}
+
+/**
+ * Words the user put into the turn while it ran: a steer, a redirect, a queued message sent now, or
+ * the "do this instead" of a denied approval. A live one sits where Highwing learned of it. Read
+ * from stored rows it sits where the model read it.
+ */
+export interface SteerItem {
+  readonly kind: 'steer'
+  readonly text: string
 }
 
 export interface ToolItem<S extends 'open' | 'settled' = 'open'> {
@@ -344,7 +367,14 @@ export interface PromptItem<S extends 'open' | 'settled' = 'open'> {
 export type Ask =
   | { readonly kind: 'approval'; readonly command: string; readonly reason: string | null; readonly choices: readonly string[] }
   | { readonly kind: 'clarify'; readonly question: string; readonly choices: readonly string[]; readonly multi: boolean }
-export type PromptReply = { readonly kind: 'choice'; readonly value: string } | { readonly kind: 'text'; readonly value: string }
+export type PromptReply =
+  | { readonly kind: 'choice'; readonly value: string }
+  | { readonly kind: 'text'; readonly value: string }
+  /** For an approval: deny it, and tell Hermes what to do instead. */
+  | { readonly kind: 'deny'; readonly tell: string }
+
+/** Where the words of a denial went. `turn`: into the running turn. `next`: as the next message, because the turn could not take them. `unsure`: Hermes did not say, so they were not sent again. */
+export type Told = 'turn' | 'next' | 'unsure'
 export type PromptState =
   | { readonly s: 'waiting'; readonly error: string | null } // error: the last attempt to answer failed
   | { readonly s: 'sending'; readonly reply: PromptReply }
@@ -491,13 +521,39 @@ export type StatusItem =
 /** `print`: a line the agent printed. `goal`: a goal check's verdict. `warning`: a degraded side path the turn survived. */
 export type StatusAbout = 'compacting' | 'compacted' | 'goal' | 'warning' | 'print' | 'other'
 
+export interface QueuedMessage {
+  readonly admissionId: AdmissionId
+  readonly inputId: InputId
+  readonly text: string
+  /** `here`: sent from this Highwing since it started. `elsewhere`: another client's, or sent before a restart of Highwing. */
+  readonly from: 'here' | 'elsewhere'
+  /** What this client sent with the message, in order. Empty for another client's row: Hermes's list does not name a row's attachments. */
+  readonly attachments: readonly Attachment[]
+  readonly state: QueuedState
+}
+
+export type QueuedState =
+  /** Waits its turn. It can always be cancelled. `can` is what else Hermes allows for it. */
+  | { readonly s: 'queued'; readonly can: readonly ('sendNow' | 'edit')[] }
+  /** Sent now: on its way into the running turn. It offers nothing, and may come back to the queue. */
+  | { readonly s: 'steering' }
+  /**
+   * Hermes restarted while this ran and cannot say how it ended. Hermes runs nothing behind it until
+   * someone releases it, with the `generation` it ran as. A release never runs it again.
+   */
+  | { readonly s: 'lost'; readonly generation: Generation }
+
+export type QueuedAction = 'cancel' | 'sendNow' | 'edit' | 'release'
+
 export interface OutboxEntry {
   readonly inputId: InputId
   readonly text: string
   /** What the model reads when it differs from the `text` the thread and the stored history show. */
   readonly apiText?: string
   readonly attachments: readonly Attachment[]
-  readonly state: { readonly s: 'sending' } | { readonly s: 'queued' } | { readonly s: 'failed'; readonly message: string }
+  /** An edit: the queued row this message takes the place of. Every try sends it as that replacement, because sent as a message it would queue beside the row. */
+  readonly replaces?: AdmissionId
+  readonly state: { readonly s: 'sending' } | { readonly s: 'failed'; readonly message: string }
 }
 
 /** Why a dial failed in a way that a later try can fix without the user. */

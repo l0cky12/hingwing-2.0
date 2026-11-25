@@ -5,10 +5,11 @@
 import { canonicalBotId, type BotCreated, type BotDetails, type BotFacts, type BotId } from '../domain/bots'
 import type { ContextBreakdown, ModelConfirm, ModelMenu } from '../domain/command'
 import type { PaneAsk } from '../domain/pane'
-import type { Admission, CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
+import type { Admission } from '../domain/queue'
+import type { CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type { CloseWhy } from '../domain/requests'
 import type {
-  Answer, Ask, Began, ConnectTarget, FileDiff, Generation, HelperEnd, HelperId, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, PromptId,
+  AdmissionId, Answer, Ask, Began, BusyMode, ConnectTarget, FileDiff, Generation, HelperEnd, HelperId, InputId, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, PromptId,
   Question, RequestId, SessionId, SessionUsage, SettledTurn, SidebarRow, StatusAbout, ToolId, ToolResult, TurnId
 } from '../domain/session'
 import type { PathMatch } from '../domain/path'
@@ -16,7 +17,7 @@ import type { RelayState } from '../domain/relay'
 import type { SlashCatalog, SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
 import type {
-  AgentPrintPayload, CanonicalBotDeliverResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalPendingPrompt,
+  AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalPendingPrompt,
   CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
   CommandDispatchResult, CommandsCatalogResult, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget,
   ConnectionRequestPayload, ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload,
@@ -155,13 +156,27 @@ function promptOf(value: unknown): { readonly id: PromptId; readonly generation:
   }
 }
 
-const ADMISSION_STATUSES: readonly string[] = ['queued', 'started', 'unknown', 'terminal'] satisfies Admission['status'][]
+/** `controls` names what Hermes serves for a queued row. An older Hermes lists none (gateway/session_queued_controls.py:49-59). */
+const CONTROLS: { readonly [control: string]: 'sendNow' | 'edit' } = { steer: 'sendNow', replace: 'edit' }
 
 function admissionOf(value: unknown): Admission {
   const row = fields<CanonicalPendingAdmission>(value)
-  const status = row.str('status')
-  if (!ADMISSION_STATUSES.includes(status)) throw new Unusable()
-  return { inputId: row.str('input_id') as Admission['inputId'], admissionId: row.str('admission_id'), text: row.str('text'), status: status as Admission['status'] }
+  const state = ((): Admission['state'] => {
+    switch (row.str('status')) {
+      case 'queued':
+        return { s: 'queued', can: (row.optList('controls') ?? []).flatMap(control => (isString(control) ? CONTROLS[control] ?? [] : [])) }
+      // A row handed to the running turn reads `started` until that turn settles it (gateway/session_authority.py:461-465).
+      case 'started':
+        return { s: row.optBool('steering') === true ? 'steering' : 'started' }
+      case 'unknown':
+        return { s: 'lost', generation: row.int('execution_generation') as Generation }
+      case 'terminal':
+        return { s: 'terminal' }
+      default:
+        throw new Unusable()
+    }
+  })()
+  return { admissionId: row.str('admission_id') as AdmissionId, inputId: row.str('input_id') as InputId, text: row.str('text'), state }
 }
 
 type Shown = (payload: Obj, envelope: Obj) => SessionEvent | null
@@ -550,7 +565,7 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
     revision: reply.revision,
     subscriptionId: reply.subscription_id,
     watermark: { epoch: reply.replay_epoch, seq: reply.last_sequence },
-    queue: reply.pending.flatMap(row => usable(() => admissionOf(row)) ?? []),
+    queue: parsePending(reply.pending),
     prompts: reply.prompts.flatMap(prompt => {
       const parsed = usable(() => promptOf(prompt))
       return parsed === null ? [] : [{ id: parsed.id, generation: parsed.generation, ask: parsed.ask }]
@@ -647,9 +662,34 @@ export function parsePathMatches(reply: CompletionItemsResult): readonly PathMat
   })
 }
 
+export function parsePending(rows: readonly unknown[]): Admission[] {
+  return rows.flatMap(row => usable(() => admissionOf(row)) ?? [])
+}
+
 /** `config.get` and `config.set` of `show_reasoning` answer `'1'` or `'0'` (`gateway/session_busy_controls.py:90-108`). */
 export function parseShown(reply: { readonly value?: unknown }): boolean | null {
   return reply.value === '1' ? true : reply.value === '0' ? false : null
+}
+
+const BUSY_MODES: readonly string[] = ['queue', 'steer', 'interrupt'] satisfies BusyMode[]
+
+/** `config.get` and `config.set` of `busy` answer the mode by name (`gateway/session_busy_controls.py:30-72`). */
+export function parseBusy(reply: { readonly value?: unknown }): BusyMode | null {
+  return isString(reply.value) && BUSY_MODES.includes(reply.value) ? reply.value as BusyMode : null
+}
+
+/** What `session.steer` or `session.redirect` did with the words (`CanonicalCorrectionAck`, tui_gateway/contracts/canonical_sessions.py:306-321). */
+export type Correction =
+  | 'taken'
+  /** No agent saw them (`delivered: false`), so they are safe to send as a message. A bare stop phrase that ended a voice chat reads so too: a submit of it is dropped the same way. */
+  | 'unread'
+  /** `rejected` with no `delivered`: they may have reached the agent, so they are never sent again. */
+  | 'unsure'
+
+export function parseCorrection(reply: CanonicalCorrectionResult): Correction {
+  if (!('status' in reply)) return 'unread'
+  if (reply.status !== 'rejected') return 'taken'
+  return reply.delivered === false ? 'unread' : 'unsure'
 }
 
 export function parseModelMenu(reply: ModelOptionsResult): ModelMenu {
@@ -714,6 +754,9 @@ export function parseTranscript(pages: readonly StoredTranscriptResult[]): Histo
   return { ...parseRows(oldestFirst.flatMap(page => page.rows)), older: cursor === null ? null : { cursor } }
 }
 
+/** Whether the page's first row opens a turn, as `parseRows` reads it. If not, the turn its first rows belong to began on an older page. */
+export const beginsAtTurn = (page: StoredTranscriptResult): boolean => usable(() => storedRow(page.rows[0], 0))?.opensTurn === true
+
 interface TurnInProgress {
   readonly request: string | null
   readonly requestRow: number | null
@@ -724,8 +767,9 @@ interface TurnInProgress {
 
 /**
  * Stored rows -> settled turns, shared by `parseSnapshot` and `parseTranscript` (a transcript
- * `message` row is a `display_messages` row). A user row opens a turn. Assistant text, tool rows and
- * compaction rows become its items. Stored rows carry no diff, so a history tool is `done` with
+ * `message` row is a `display_messages` row). A user row opens a turn, unless it is words steered
+ * into the turn before it, which are an item of that turn. Assistant text, tool rows and compaction
+ * rows become its items. Stored rows carry no diff, so a history tool is `done` with
  * `diffs: []`. A turn that ends in an assistant answer is `complete`. A turn with no answer is
  * `unfinished` when it is the last one, else `lost`. Every turn lists the `row_id`s its rows carry.
  * An assistant row's reasoning becomes a sealed reasoning item above its text, with no times.
@@ -739,7 +783,7 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   rows.forEach((value, index) => {
     const row = usable(() => storedRow(value, index))
     if (row === null) return
-    if (row.role === 'user') turns.push({ request: row.text, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [] })
+    if (row.opensTurn) turns.push({ request: row.text, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [] })
     if (row.items.length > 0 && turns.length === 0) turns.push({ request: null, requestRow: null, began: null, items: [], rows: [] })
     const turn = turns.at(-1)
     turn?.items.push(...row.items)
@@ -770,8 +814,11 @@ function storedRow(value: unknown, index: number) {
   const rowId = row.optInt('row_id')
   const seconds = row.optNum('timestamp')
   const at = seconds !== null && seconds > 0 ? Math.round(seconds * 1000) : null
+  // Words steered into a turn are stored as a user row of their own, among the turn's rows (agent/prompt_builder.py:585-592).
+  const steers = role === 'user' && row.optStr('display_kind') === 'steer'
   const items = ((): Item<'settled'>[] => {
     if (row.optStr('row_kind') === 'compaction') return [{ kind: 'notice', what: 'said', tone: 'info', text }]
+    if (steers) return [{ kind: 'steer', text }]
     if (role === 'assistant') {
       const reasoning = row.optStr('reasoning') ?? ''
       return [
@@ -791,7 +838,7 @@ function storedRow(value: unknown, index: number) {
       status: { s: 'done', durationS: null, diffs: [], image: null, result: content === undefined ? NO_RESULT : parseToolResult(content, null, false) }
     }]
   })()
-  return { role, text, rowId, at, items }
+  return { opensTurn: role === 'user' && !steers, text, rowId, at, items }
 }
 
 export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<SidebarRow, 'badge'>[] {

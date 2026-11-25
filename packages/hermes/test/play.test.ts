@@ -29,16 +29,16 @@ describe('the errand, played through the real client', () => {
     expect(played.history[0]?.began).toEqual({ at: expect.any(Number), clock: 'client' })
   })
 
-  it('opens with the handshake, one resume with history, the three lists, the slash catalog, the relay probe, the bots and the watched chat\'s reasoning switch, then makes the story\'s two calls', async () => {
+  it('opens with the handshake, one resume with history, the three lists, the slash catalog, the relay probe, the bots and the watched chat\'s two switches, then makes the story\'s two calls', async () => {
     const { script, session } = (await moments(fixture)).at(-1) as Moment
     expect(script.dials).toBe(1)
     const sent = methodsOf(script.received)
     expect(sent.map(call => call.method)).toEqual([
       'client.capabilities', 'runtime.describe', 'session.resume', 'session.list', 'session.list', 'session.list', 'commands.catalog', 'bot_relay.deliver', 'profiles.list', 'session.stats', 'config.get',
-      'session.stats', 'prompt.submit', 'approval.respond', 'session.stats'
+      'config.get', 'session.stats', 'prompt.submit', 'approval.respond', 'session.stats'
     ])
-    expect(sent.splice(10, 1)[0]?.params).toEqual({ session_id: fixture.header.sessionId, key: 'show_reasoning' })
-    expect(session.tuning, 'the errand\'s Hermes refuses the read, so the switch stays unknown').toEqual({ reasoning: null })
+    expect(sent.splice(10, 2).map(call => call.params)).toEqual(['show_reasoning', 'busy'].map(key => ({ session_id: fixture.header.sessionId, key })))
+    expect(session.tuning, 'the errand\'s Hermes refuses both reads, so the switches stay unknown').toEqual({ reasoning: null, busy: null })
     expect(sent[2]?.params).toEqual({ session_id: fixture.header.sessionId, display_projection: true })
     expect(sent.slice(3, 6).map(call => call.params)).toEqual([
       { scope: 'live', picker: true }, { scope: 'live', include_hidden: true }, { scope: 'stored', limit: 100, include_hidden: true, picker: true }
@@ -63,7 +63,9 @@ describe('the errand, played through the real client', () => {
     const working = seen.findIndex(moment => activityOf(moment.session).kind === 'working')
     expect(working).toBeGreaterThan(-1)
     expect(working).toBeLessThan(seen.indexOf(asking as Moment))
-    expect(seen.filter(moment => moment.session.outbox.length > 0).map(moment => moment.session.outbox[0]?.state.s)).toContain('queued')
+    expect(seen.find(moment => moment.session.queue.length > 0)?.session, 'the sent message is a row of Hermes\'s queue, and has left the outbox').toMatchObject({
+      queue: [{ from: 'here', state: { s: 'queued' } }], outbox: []
+    })
   })
 })
 

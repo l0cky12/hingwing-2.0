@@ -163,6 +163,15 @@ describe('validators', () => {
     expect(parseCommand({ do: 'versions' })).toBeNull()
   })
 
+  it('read the queue actions, the busy mode and a denial with words, and drop keys the command does not have', () => {
+    const row = { do: 'queued', sessionId: 's1', admissionId: 'a1' }
+    expect(parseCommand({ ...row, action: 'sendNow', text: 'ignored' })).toEqual({ ...row, action: 'sendNow' })
+    expect(parseCommand({ ...row, action: 'edit', text: 'new words' })).toEqual({ ...row, action: 'edit', text: 'new words' })
+    expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'busy', to: 'steer' })).toEqual({ do: 'tune', sessionId: 's1', set: 'busy', to: 'steer' })
+    const deny = { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'deny', tell: 'use trash-put instead' } }
+    expect(parseCommand(deny)).toEqual(deny)
+  })
+
   it('read a target with the parser the settings file uses', () => {
     expect(parseCommand({ do: 'checkTarget', target: { kind: 'remote', host: ' hermes-host.example-tailnet.ts.net ', port: 22 } }))
       .toEqual({ do: 'checkTarget', target: { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' } })
@@ -227,6 +236,11 @@ describe('validators', () => {
     ['a secret with no value', { do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'secret' } }],
     ['a lock whose answer is one string', { do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'lock', question: 'q0', answer: 'prod' } }],
     ['a connector answer with a value that is not text', { do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'connect', target: 'github', as: 'approved', values: { TOKEN: 1 } } }],
+    ['a denial that tells Hermes nothing', { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'deny', tell: ' ' } }],
+    ['an action a queue row never offers', { do: 'queued', sessionId: 's1', admissionId: 'a1', action: 'reorder' }],
+    ['a queue action that names no row', { do: 'queued', sessionId: 's1', action: 'cancel' }],
+    ['an edit with no text', { do: 'queued', sessionId: 's1', admissionId: 'a1', action: 'edit', text: '' }],
+    ['a busy mode Hermes does not have', { do: 'tune', sessionId: 's1', set: 'busy', to: 'drop' }],
     ['a non-boolean start', { do: 'reconnect', start: 'yes' }],
     ['a YOLO switch with a word for on', { do: 'setYolo', sessionId: 's1', on: 'on' }],
     ['a path completion for a word that is not a mention', { do: 'completePath', sessionId: 's1', word: 'not' }],
@@ -266,7 +280,7 @@ describe('validators', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'closePreview', 'completePath', 'contextBreakdown',
       'createBot', 'describeBot', 'discard', 'editBot', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat', 'openPreview',
-      'pickModel', 'placePreview', 'preview', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename', 'rewind', 'send', 'setYolo', 'start',
+      'pickModel', 'placePreview', 'preview', 'queued', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename', 'rewind', 'send', 'setYolo', 'start',
       'stop', 'tune', 'versions'
     ])
   })

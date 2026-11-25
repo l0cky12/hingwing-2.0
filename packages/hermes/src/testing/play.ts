@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { Answer, HermesRequest, PromptId, RequestId, RequestReply, Session, SessionId } from '../domain/session'
+import type { AdmissionId, Answer, BusyMode, HermesRequest, PromptId, RequestId, RequestReply, Session, SessionId } from '../domain/session'
 import { openHermes, type Command, type Hermes, type Upload } from '../hub'
 import { systemClock } from '../wire/link'
 import { manualClock } from './clock'
@@ -30,15 +30,25 @@ function cardReply(result: Recorded): RequestReply {
   return { kind: 'connect', target: String(target.name), as: target.status === 'approved' ? 'approved' : 'skipped', ...values }
 }
 
-const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fixture: Fixture, following: FixtureStep | undefined) => Command>> = {
+const queued = (action: 'cancel' | 'sendNow' | 'release') => (sessionId: SessionId, params: Recorded): Command =>
+  ({ do: 'queued', sessionId, admissionId: params.admission_id as AdmissionId, action })
+
+const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fixture: Fixture, next: AwaitStep | undefined) => Command>> = {
   'prompt.submit': (sessionId, params) => ({ do: 'send', sessionId, text: String(params.text) }),
-  'session.mutate': (sessionId, params, fixture, following) => {
+  'session.mutate': (sessionId, params, fixture, next) => {
     const rowId = (params.payload as { target_message_id?: unknown } | undefined)?.target_message_id
     if (params.operation !== 'rewind' || typeof rowId !== 'number') throw new Error(`the stand-in user has no command for session.mutate ${String(params.operation)}`)
-    const sends = following !== undefined && 'await' in following && following.await === 'prompt.submit'
     const stored = fixture.header.stored.find(row => (row as { row_id?: unknown }).row_id === rowId) as { text?: unknown } | undefined
-    return { do: 'rewind', sessionId, rowId, text: String(sends ? recorded(following).text : stored?.text) }
+    return { do: 'rewind', sessionId, rowId, text: String(next?.await === 'prompt.submit' ? recorded(next).text : stored?.text) }
   },
+  'session.steer': (sessionId, params, _fixture, next) => (denies(next)
+    ? { do: 'answer', sessionId, promptId: recorded(next).prompt_id as PromptId, reply: { kind: 'deny', tell: String(params.text) } }
+    : { do: 'send', sessionId, text: String(params.text) }),
+  'session.redirect': (sessionId, params) => ({ do: 'send', sessionId, text: String(params.text) }),
+  'prompt.cancel': queued('cancel'),
+  'prompt.steer_queued': queued('sendNow'),
+  'prompt.resolve_unknown': queued('release'),
+  'prompt.replace_queued': (sessionId, params) => ({ do: 'queued', sessionId, admissionId: params.admission_id as AdmissionId, action: 'edit', text: String(params.text) }),
   'approval.respond': (sessionId, params) => ({ do: 'answer', sessionId, promptId: params.prompt_id as PromptId, reply: { kind: 'choice', value: String(params.choice) } }),
   'clarify.respond': (sessionId, params) => ({ do: 'answer', sessionId, promptId: params.prompt_id as PromptId, reply: { kind: 'text', value: String(params.answer) } }),
   'session.interrupt': sessionId => ({ do: 'stop', sessionId }),
@@ -46,6 +56,22 @@ const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fix
     do: 'answer', sessionId, requestId: params.request_id as RequestId, reply: { kind: 'lock', question: String(params.question_id), answer: lockedAnswer(params.answer) }
   }),
   'connection.respond': (sessionId, params) => ({ do: 'answer', sessionId, requestId: params.op_id as RequestId, reply: cardReply(record(params.result)) })
+}
+
+type CallOf<M extends string> = AwaitStep & { readonly await: M }
+const denies = (step: AwaitStep | undefined): step is CallOf<'approval.respond'> => step?.await === 'approval.respond' && recorded(step).choice === 'deny'
+const corrects = (step: AwaitStep | undefined): step is CallOf<'session.steer' | 'session.redirect'> => step?.await === 'session.steer' || step?.await === 'session.redirect'
+
+function follows(step: AwaitStep, before: AwaitStep | undefined): boolean {
+  if (!corrects(before)) return false
+  if (denies(step)) return before.await === 'session.steer'
+  return step.await === 'prompt.submit' && recorded(step).text === recorded(before).text && record(before.reply).delivered === false
+}
+
+function busyFor(step: AwaitStep, next: AwaitStep | undefined, held: BusyMode | null): BusyMode | null {
+  if (step.await === 'session.redirect') return 'interrupt'
+  if (step.await === 'session.steer') return denies(next) ? null : 'steer'
+  return step.await === 'prompt.submit' && held !== null ? 'queue' : null
 }
 
 const TYPED = 'typed by the stand-in user'
@@ -58,7 +84,12 @@ function requestReply({ ask }: HermesRequest, result: Recorded): RequestReply {
 function commandFor(step: AwaitStep | AnswerStep, session: Session, index: number, fixture: Fixture): Command | null {
   const { id: sessionId } = session
   if ('await' in step) {
-    const command = USER[step.await]?.(sessionId, recorded(step), fixture, fixture.steps.slice(index + 1).find(next => 'await' in next))
+    const isAwait = (other: FixtureStep): other is AwaitStep => 'await' in other
+    const next = fixture.steps.slice(index + 1).find(isAwait)
+    if (follows(step, fixture.steps.slice(0, index).findLast(isAwait))) return null
+    const busy = busyFor(step, next, session.tuning.busy)
+    if (busy !== null && busy !== session.tuning.busy) return { do: 'tune', sessionId, set: 'busy', to: busy }
+    const command = USER[step.await]?.(sessionId, recorded(step), fixture, next)
     if (command === undefined) throw new Error(`step ${index}: the stand-in user has no command for ${step.await}`)
     return command
   }
@@ -67,7 +98,7 @@ function commandFor(step: AwaitStep | AnswerStep, session: Session, index: numbe
   return { do: 'answer', sessionId, requestId: request.id, reply: requestReply(request, record(step.result)) }
 }
 
-const mintedIn = (step: AwaitStep): unknown => recorded(step).input_id ?? recorded(step).request_id
+const mintedIn = (step: AwaitStep): unknown => recorded(step).input_id ?? recorded(step).submission_id ?? recorded(step).request_id
 
 const STUCK_MS = 10 * 60_000
 const LOOPBACK = { turnMs: 2, stuckMs: 20_000 } as const
@@ -137,7 +168,7 @@ export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncG
     if (sendAfter >= 0) asked.add(sendAfter)
     void hermes.run(command).then(outcome => {
       options.answered?.(command, outcome)
-      if (!outcome.ok) asked.delete(index)
+      if (!outcome.ok || command.do === 'tune') asked.delete(index)
     })
   }
 

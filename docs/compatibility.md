@@ -136,6 +136,16 @@ machine, then reconnect."
   `tune` then answers Hermes's refusal. Reasoning that Hermes streams anyway is
   still shown. Highwing reads again after the next attach. See "What Hermes
   says" below.
+- If Hermes refuses `config.get` for `busy`, for any reason,
+  `Session.tuning.busy` stays null. A message sent while a turn runs is then
+  submitted and queues, as it did before Highwing read the mode. `tune` then
+  answers Hermes's refusal. See "Hermes's queue" below.
+- If a pending row carries no `controls`, as on a Hermes older than the
+  queued-row verbs, the row offers only cancel, and `queued` refuses a send-now
+  or an edit before any call. If Hermes refuses `prompt.steer_queued`,
+  `prompt.replace_queued`, `prompt.resolve_unknown`, `session.steer` or
+  `session.redirect` as an unknown method, the command answers that refusal and
+  the queue stays as Hermes lists it.
 
 ## Tokens and the context window
 
@@ -295,6 +305,89 @@ a method it does not know the same way.
 Before this, Highwing refused every request, in every chat it was attached
 to. That cancelled a sudo prompt someone could have answered in Hermes's own
 terminal.
+
+## Hermes's queue
+
+Hermes keeps one queue of messages per chat, for every client. Each
+`session.info` and each attach reply carries the whole of it as `pending`
+(`gateway/session_authority.py:479-496`, `gateway/session_queued_controls.py:62-72`).
+`Session.queue` is that list, replaced whole from each one.
+
+| A pending row | Is in Highwing | Hermes source |
+|---|---|---|
+| `status: "queued"`, with `controls` | A queued row. `steer` in `controls` allows send-now, `replace` allows an edit. Cancel is always offered | `gateway/session_queued_controls.py:49-59` |
+| `status: "started"` with `steering: true` | A row on its way into the running turn. It offers nothing, and it is never the turn's request | `gateway/session_authority.py:461-477`, `persistence/sqlite/authority/_admission_store.py:258-260` |
+| `status: "unknown"` | A lost row: Hermes restarted while it ran. It carries the generation its release needs | `persistence/sqlite/authority/_admission_store.py:372-382,418-419` |
+| `status: "started"` | The running turn's request, not a queue row | `gateway/session_authority.py:461-465` |
+
+| A window's command | Highwing calls | Hermes source |
+|---|---|---|
+| `queued` cancel | `prompt.cancel {session_id, admission_id}` | `gateway/session_authority.py:831-841` |
+| `queued` sendNow | `prompt.steer_queued {session_id, admission_id}` | `gateway/session_queued_controls.py:128-181` |
+| `queued` edit | `prompt.replace_queued {session_id, admission_id, submission_id, text}`, with a new `submission_id` | `gateway/session_queued_controls.py:213-242` |
+| `queued` release | `prompt.resolve_unknown {session_id, admission_id, execution_generation}`, with the lost row's own generation | `gateway/session_authority.py:907-914` |
+| `send` while a turn runs, busy mode `steer` | `session.steer {session_id, text, execution_generation}` | `gateway/session_busy_controls.py:181-221` |
+| `send` while a turn runs, busy mode `interrupt` | `session.redirect`, with the same params | the same |
+| `answer` with `{kind: "deny", tell}` | `session.steer` with the prompt's generation, then `approval.respond` with `choice: "deny"` | `ui-tui/src/app/useApprovalAnswers.ts:63-84` |
+| `tune` busy | `config.set {session_id, key: "busy", value}` | `gateway/session_busy_controls.py:30-72` |
+
+- The busy mode is the chat's, shared by every client that has it open. Highwing
+  reads it with `config.get {session_id, key: "busy"}` when a window starts to
+  watch the chat and after each attach, with the reasoning switch. A change
+  made in another client shows at the next read.
+- `sendPlan` in `packages/hermes/src/domain/queue.ts` decides where a message
+  goes. A message is submitted, and so queues, when no turn runs, when the mode
+  is `queue` or unknown, when the turn waits on an approval, a question or a
+  request, and when it is stopping. A line that runs a slash command is never
+  steered. A message with attachments always queues whole: a steer or a
+  redirect carries words only, so Hermes Desktop queues the whole payload
+  (`apps/desktop/src/app/chat/composer/use-composer-submit.ts`) and the TUI
+  queues any turn with an image.
+- A queued row of this client keeps the attachments it was sent with, and its
+  request takes them when its turn starts. Hermes's pending list names no
+  attachments, so another client's row shows none. Hermes lists `steer` and
+  `replace` only for a row whose payload is text alone
+  (`gateway/session_queued_controls.py:51-60`), so a row with attachments
+  offers only cancel.
+- Hermes answers a steer or a redirect with a verdict
+  (`tui_gateway/contracts/canonical_sessions.py:306-321`). `queued` and
+  `redirected` mean the turn has the words, and Highwing files them in the
+  turn. `rejected` with `delivered: false` means no agent saw them, so Highwing
+  submits them as a message. A `stale_generation` refusal means the turn has
+  ended, and is handled the same way. A plain `rejected` may follow delivery,
+  so Highwing never sends those words again and the command says so.
+- A denial with words is two calls, and the socket can drop after Hermes took
+  the first. `session.steer` carries no id
+  (`gateway/session_busy_controls.py:181-221`), so Hermes would read a repeat
+  as new words. Highwing remembers, by prompt, the words Hermes has or may
+  have, and the same denial tried again sends only `approval.respond`. A steer
+  whose answer the socket lost counts as words Hermes may have.
+- Words that no agent saw go out as the next message once the denial is
+  confirmed. If Hermes refuses that `prompt.submit`, or the chat is no longer
+  attached by then, the `answer` command answers that refusal and the words
+  stay in `Session.outbox` as a failed message. The denial is not undone.
+- Hermes stores steered words as a user row with `display_kind: "steer"`
+  (`agent/prompt_builder.py:585-592`, `tui_gateway/session_history.py:329-332`).
+  Highwing reads that row as an item of the turn it sits in, not as a new turn.
+  A page of older rows that begins at one therefore begins inside a turn, and
+  "Show earlier turns" reads on to the page that holds that turn's request. A
+  user row with `display_kind: "skill_invocation"` is a request, and opens a
+  turn (`tui_gateway/session_history.py:360-363`).
+- A queued message that Hermes hands to the turn leaves the list when the turn
+  settles. It comes back as a queued row when the turn never read it
+  (`gateway/session_queued_controls.py:104-116,184-200`).
+- An edit whose reply the socket lost is sent again on the next socket as the
+  same `prompt.replace_queued`, with the row and the `submission_id` of the
+  first try. Hermes answers that repeat with the admission the first one made
+  (`gateway/session_queued_controls.py:212-233`). A `prompt.submit` of the
+  edit would queue it beside the row it replaces whenever Hermes had not taken
+  the first try.
+- A lost row pauses the queue behind it. Hermes releases it itself when the
+  last viewer of the chat closes (`gateway/session_authority.py:916-919`), so
+  Highwing does not stay attached to a chat only because its queue holds rows.
+- A frame that ends a cancelled or steered queued message carries no
+  generation (`gateway/session_authority.py:878-893`). Highwing does not read
+  it as the end of the running turn.
 
 ## When a change needs a newer Hermes route
 

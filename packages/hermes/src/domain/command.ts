@@ -2,7 +2,10 @@ import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId } from './bots'
 import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
-import type { AttachmentId, BranchId, ContextFill, InputId, ModelOption, ModelRef, PromptId, PromptReply, RequestId, RequestReply, SessionId } from './session'
+import type {
+  AdmissionId, AttachmentId, BranchId, BusyMode, ContextFill, InputId, ModelOption, ModelRef, PromptId, PromptReply, QueuedAction, RequestId, RequestReply,
+  SessionId, Told
+} from './session'
 
 export type Command =
   /**
@@ -16,8 +19,10 @@ export type Command =
    */
   | { readonly do: 'start'; readonly chat: Unstarted; readonly text: string; readonly attachments?: readonly AttachmentId[] }
   /**
-   * A line that starts with a listed `/name` runs that Hermes command or skill instead of going to the agent as text.
-   * `attachments` go with the message in the order given; absent means none. A command line with any is refused.
+   * A line that starts with a listed `/name` runs that Hermes command or skill instead of going to the
+   * agent as text. Text sent while a turn runs queues, steers the turn or redirects it, as the chat's
+   * busy mode says (`sendPlan`). `attachments` go with the message in the order given; absent means
+   * none. A command line with any is refused.
    */
   | { readonly do: 'send'; readonly sessionId: SessionId; readonly text: string; readonly attachments?: readonly AttachmentId[] }
   /**
@@ -40,7 +45,15 @@ export type Command =
   /** Answers a question of the turn, by `promptId`, or something Hermes asks outside it, by `requestId`. */
   | { readonly do: 'answer'; readonly sessionId: SessionId; readonly promptId: PromptId; readonly reply: PromptReply }
   | { readonly do: 'answer'; readonly sessionId: SessionId; readonly requestId: RequestId; readonly reply: RequestReply }
+  /** Drops one of this client's messages that Hermes has not listed. A listed one is a `queued` row. */
   | { readonly do: 'discard'; readonly sessionId: SessionId; readonly inputId: InputId }
+  /**
+   * Acts on one row of Hermes's queue, by what the row's state offers: `cancel` it, send it into the
+   * running turn now, `edit` its text (which moves it to the back), or `release` a lost one so the
+   * queue runs again. An action the row does not offer is refused, and nothing is sent.
+   */
+  | { readonly do: 'queued'; readonly sessionId: SessionId; readonly admissionId: AdmissionId; readonly action: Exclude<QueuedAction, 'edit'> }
+  | { readonly do: 'queued'; readonly sessionId: SessionId; readonly admissionId: AdmissionId; readonly action: 'edit'; readonly text: string }
   | { readonly do: 'rename'; readonly sessionId: SessionId; readonly title: string }
   | { readonly do: 'archive'; readonly sessionId: SessionId; readonly archived: boolean }
   | { readonly do: 'loadEarlier'; readonly sessionId: SessionId }
@@ -69,15 +82,20 @@ export type Command =
   | { readonly do: 'setYolo'; readonly sessionId: SessionId; readonly on: boolean }
   /** Sets one of Hermes's switches for the chat, for every client that has it open. */
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'reasoning'; readonly on: boolean }
+  | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'busy'; readonly to: BusyMode }
   /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
   | { readonly do: 'reconnect'; readonly start: boolean }
 
-/** `send` and `start` answer the words to show under the composer: a command's output or note, or `null` for none. */
+/**
+ * `send` and `start` answer the words to show under the composer: a command's output or note, or
+ * `null` for none. `answer` says where the words of a denial went, and nothing for any other reply.
+ */
 export type ResultOf<C extends Command> =
   C extends { do: 'open' } ? SessionId | null
   : C extends { do: 'send' | 'start' } ? string | null
   : C extends { do: 'branch' } ? SessionId
   : C extends { do: 'versions' } ? ChatVersions
+  : C extends { do: 'answer' } ? Told | undefined
   : C extends { do: 'models' | 'botModels' } ? ModelMenu
   : C extends { do: 'createBot' } ? BotCreated
   : C extends { do: 'describeBot' } ? BotDetails

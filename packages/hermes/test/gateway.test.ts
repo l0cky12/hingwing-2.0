@@ -922,3 +922,65 @@ describe('the scripted gateway and what Hermes asks', () => {
     expect(await pending(story(event(1, 'connection.request', card), event(2, 'connection.update', { ...moved, settled: true, settled_by: 'all_resolved' })))).toBeNull()
   })
 })
+
+describe("the scripted gateway and Hermes's queue", () => {
+  const row = (admission_id: string, status: string, more: Record<string, unknown> = {}) => ({
+    admission_id, ref: { profile_id: 'default', session_id: SESSION }, sequence: 1, status, outcome: null, authority_epoch: 2, execution_generation: null,
+    input_id: `in-${admission_id}`, text: 'tidy the notes', controls: [], steering: false, ...more
+  })
+  const LOST = row('lost', 'unknown', { execution_generation: 1 })
+  const receipt = { admission_id: 'lost', status: 'terminal', outcome: 'interrupted' }
+  const RESTARTED: Fixture = {
+    header: { ...ERRAND.header, pending: [LOST, row('behind', 'queued', { controls: ['steer', 'replace'] })], controls: { busy: 'interrupt' } },
+    steps: [{ at: 0, await: 'prompt.resolve_unknown', params: {}, reply: receipt }, ...ERRAND.steps.filter(step => !('await' in step))]
+  }
+  const release = { session_id: SESSION, admission_id: 'lost', execution_generation: 1 }
+
+  it('lists what was pending before the story starts in the attach reply', async () => {
+    const { call } = await rawSocket({}, RESTARTED)
+    expect((await call('session.resume', { session_id: SESSION })).result).toMatchObject({ running: false, pending: [{ admission_id: 'lost', status: 'unknown' }, { admission_id: 'behind' }] })
+  })
+
+  it('releases a lost row only by the generation it ran as, and knows only the rows it listed', async () => {
+    const { call } = await rawSocket({}, RESTARTED)
+    await call('session.resume', { session_id: SESSION })
+    expect(await call('prompt.resolve_unknown', { ...release, execution_generation: 2 })).toMatchObject(refusal('stale_generation'))
+    expect(await call('prompt.resolve_unknown', { ...release, admission_id: 'behind' })).toMatchObject(refusal('stale_generation'))
+    expect(await call('prompt.resolve_unknown', without(release, 'execution_generation'))).toMatchObject(refusal('invalid_params', { fields: ['execution_generation'] }))
+    expect(await call('prompt.cancel', { session_id: SESSION, admission_id: 'gone' })).toMatchObject(refusal('not_found'))
+    expect(await call('prompt.steer_queued', { session_id: SESSION, admission_id: 'behind', text: 'now' })).toMatchObject(refusal('invalid_params', { fields: ['text'] }))
+    expect((await call('prompt.resolve_unknown', release)).result).toEqual(receipt)
+  })
+
+  it('takes an edit only from a socket that attached the session, with an id for the new message', async () => {
+    const { call } = await rawSocket({}, RESTARTED)
+    const edit = { session_id: SESSION, admission_id: 'behind', submission_id: 'in-2', text: 'tidy the notes and the list' }
+    expect(await call('prompt.replace_queued', edit)).toMatchObject(refusal('permission_denied'))
+    await call('session.resume', { session_id: SESSION })
+    expect(await call('prompt.replace_queued', { ...edit, submission_id: '' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('prompt.replace_queued', { ...edit, admission_id: 'gone' })).toMatchObject(refusal('not_found'))
+  })
+
+  it('refuses a steer with no words, an undeclared key, or the generation of a turn that is not running', async () => {
+    const { call } = await rawSocket({}, RESTARTED)
+    await call('session.resume', { session_id: SESSION })
+    const steer = { session_id: SESSION, text: 'use the staging db', execution_generation: 1 }
+    expect(await call('session.steer', { ...steer, text: '  ' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.redirect', { ...steer, now: true })).toMatchObject(refusal('invalid_params', { fields: ['now'] }))
+    expect(await call('session.steer', steer)).toMatchObject(refusal('stale_generation'))
+    expect(await call('session.redirect', steer)).toMatchObject(refusal('stale_generation'))
+  })
+
+  it('answers the busy mode only when the fixture has one, and takes only a mode Hermes has', async () => {
+    const { call } = await rawSocket({}, RESTARTED)
+    const busy = { session_id: SESSION, key: 'busy' }
+    expect((await call('config.get', busy)).result).toEqual({ key: 'busy', value: 'interrupt', scope: 'session' })
+    expect(await call('config.set', { ...busy, value: 'on' })).toMatchObject(refusal('invalid_params'))
+    expect((await call('config.set', { ...busy, value: 'steer' })).result).toEqual({ key: 'busy', value: 'steer', scope: 'session' })
+    expect((await call('config.get', busy)).result).toMatchObject({ value: 'steer' })
+
+    const reasoningOnly = await rawSocket({}, { ...ERRAND, header: { ...ERRAND.header, controls: { show_reasoning: '0' } } })
+    expect(await reasoningOnly.call('config.get', busy)).toMatchObject(refusal('invalid_params'))
+    expect(await (await rawSocket()).call('config.get', busy)).toMatchObject({ error: { code: -32601 } })
+  })
+})
