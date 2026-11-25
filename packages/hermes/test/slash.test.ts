@@ -56,7 +56,10 @@ describe('OWN_COMMANDS', () => {
     ['/btw   which file was it? ', { do: 'side', sessionId: 's1', kind: 'btw', text: 'which file was it?' }],
     ['/BG tidy the notes', { do: 'side', sessionId: 's1', kind: 'background', text: 'tidy the notes' }],
     ['/compress', { do: 'compress', sessionId: 's1', focus: null }],
-    ['/compress the release plan', { do: 'compress', sessionId: 's1', focus: 'the release plan' }]
+    ['/compress the release plan', { do: 'compress', sessionId: 's1', focus: 'the release plan' }],
+    ['/compress here-and-now', { do: 'compress', sessionId: 's1', focus: 'here-and-now' }],
+    ['/compress --keep', { do: 'compress', sessionId: 's1', focus: '--keep' }],
+    ['/compress up to heresy', { do: 'compress', sessionId: 's1', focus: 'heresy' }]
   ])('turns %s into its command', (text, command) => {
     expect(own(text)).toEqual(command)
   })
@@ -65,7 +68,12 @@ describe('OWN_COMMANDS', () => {
     expect(own(text)).toEqual({ usage })
   })
 
-  it.each(['/title', '/compress here 3', '/compress --preview', '/compress the release plan --preview', '/goal ship it'])('leaves %s to Hermes', text => {
+  it.each([
+    '/title', '/goal ship it',
+    '/compress here 3', '/compress HERE 3', '/compress up to here 3', '/compress Up To Here',
+    '/compress --keep 3', '/compress -K 3', '/compress --keep=3',
+    '/compress --preview', '/compress the release plan --PREVIEW', '/compress --dry-run', '/compress plan --dryrun', '/compress the plan --aggressive'
+  ])('leaves %s to Hermes', text => {
     expect(own(text)).toBeNull()
   })
 })
