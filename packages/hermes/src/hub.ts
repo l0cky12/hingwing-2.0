@@ -292,7 +292,7 @@ export function openHermes(options: HermesOptions): Hermes {
   const wanted = (id: SessionId): boolean => {
     if (watchers.has(id) || list.running.has(id)) return true
     const session = actors.get(id)?.session
-    return session !== undefined && (session.run.state === 'running' || session.outbox.length > 0 || session.requests.length > 0)
+    return session !== undefined && (session.run.state === 'running' || session.outbox.length > 0 || session.requests.length > 0 || session.sides.some(side => side.state.s === 'running'))
   }
 
   const retain = () => {

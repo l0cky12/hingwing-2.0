@@ -107,6 +107,34 @@ describe('retention', () => {
     expect(opened.detaches()).toHaveLength(1)
   })
 
+  it('keeps a session whose background prompt runs with no window on it, then lets it go 60 s after its answer', async () => {
+    const epoch = (ERRAND.steps[1] as { push: { params: { replay_epoch: string } } }).push.params.replay_epoch
+    const answer = { type: 'background.complete', session_id: SESSION, payload: { task_id: 'bg_1', text: 'Tidied.' }, replay_epoch: epoch, seq: 1 }
+    const opened = open({
+      ...ERRAND,
+      steps: [
+        { at: 0, await: 'prompt.background', params: { session_id: SESSION, text: 'Tidy the notes' }, reply: { task_id: 'bg_1' } },
+        { at: 300_000, push: { jsonrpc: '2.0', method: 'event', params: answer } }
+      ]
+    }, { timing: 'recorded' })
+    const unwatch = opened.watch()
+    await opened.clock.advance(0)
+    expect(await opened.hermes.run({ do: 'side', sessionId: SESSION, kind: 'background', text: 'Tidy the notes' })).toEqual({ ok: true, value: undefined })
+    unwatch()
+    await opened.clock.advance(299_999)
+    expect(opened.detaches(), 'the background prompt is running').toEqual([])
+
+    await opened.clock.advance(1)
+    expect(opened.script.finished).toBe(true)
+    const glance: Session[] = []
+    opened.hermes.watch(SESSION, session => glance.push(session))()
+    expect(glance.at(-1)?.sides, 'its answer reached the chat').toMatchObject([{ id: 'bg_1', state: { s: 'done', text: 'Tidied.' } }])
+    await opened.clock.advance(59_999)
+    expect(opened.detaches()).toEqual([])
+    await opened.clock.advance(1)
+    expect(opened.detaches()).toHaveLength(1)
+  })
+
   it('attaches a session the gateway lists as running, so a chat no window shows turns its row to asking', async () => {
     const first = open()
     first.watch()
