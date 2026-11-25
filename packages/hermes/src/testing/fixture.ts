@@ -104,6 +104,11 @@ export interface Fixture {
      */
     readonly relay?: { readonly [profile: string]: RelayScript }
     /**
+     * The group chats of the home profile and what Hermes says of them. Absent: the gateway refuses every `groups.*`
+     * call as an unknown method, as a Hermes without group chats does.
+     */
+    readonly groups?: GroupsScript
+    /**
      * What `complete.path` answers. `words` maps a typed word (`@not`) to the reply as Hermes sends it, and a
      * word not listed answers `{ items: [] }`. `cwd` is the story session's `info.cwd`. Absent: the gateway
      * refuses `complete.path` as an unknown method, as a Hermes without it does.
@@ -125,6 +130,27 @@ export interface Fixture {
 
 /** `reply`: the bot's one answer, sent `delay_ms` after the call (default 0). `refuse`: the reason Hermes refuses the delivery with. */
 export type RelayScript = { readonly reply: string; readonly delay_ms?: number } | { readonly refuse: string }
+export interface GroupsScript {
+  /** What `groups.capabilities` says of `driver`: whether Hermes runs its group chats now. Default true. Hermes makes a group either way. */
+  readonly driver?: boolean
+  /**
+   * The profiles `groups.capabilities` names as seatable, and the only ones `groups.create` seats: any other is
+   * refused `invalid_params` on field `members`. Absent: every profile of the header's `profiles`. null: the reply
+   * names none, as a Hermes older than `seatable_profiles` does, and every profile is seated.
+   */
+  readonly seatable?: readonly string[] | null
+  /** The groups before the story starts, most recently changed first. */
+  readonly rooms?: readonly RoomSeed[]
+}
+
+/** A group as `groups.create` would have made it. Each seat's id is its profile, and its handle follows Highwing's own rule: `ada` for the bot shown as Ada. */
+export interface RoomSeed {
+  readonly id: string
+  readonly name: string
+  /** In the order they answer. */
+  readonly members: readonly { readonly profile: string; readonly handle: string }[]
+}
+
 /** Hermes's answer to each read a client makes when it starts watching a chat, by method. */
 export type Reads = Readonly<Partial<Record<typeof READS[number], unknown>>>
 export const READS = ['process.list', 'session.control.read'] as const
@@ -243,6 +269,18 @@ const isRelayScript = (value: unknown): value is RelayScript =>
     : typeof value.reply === 'string' && (value.delay_ms === undefined || (typeof value.delay_ms === 'number' && value.delay_ms >= 0))
       && Object.keys(value).every(key => key === 'reply' || key === 'delay_ms'))
 
+const isText = (value: unknown): value is string => typeof value === 'string' && value !== ''
+
+const isRoomSeed = (value: unknown): value is RoomSeed =>
+  isObject(value) && isText(value.id) && isText(value.name) && Array.isArray(value.members)
+  && value.members.length >= 2 && value.members.length <= 6 && value.members.every(seat => isObject(seat) && isText(seat.profile) && isText(seat.handle))
+
+const isGroupsScript = (value: unknown): value is GroupsScript =>
+  isObject(value) && Object.keys(value).every(key => key === 'driver' || key === 'seatable' || key === 'rooms')
+  && (value.driver === undefined || typeof value.driver === 'boolean')
+  && (value.seatable === undefined || value.seatable === null || (Array.isArray(value.seatable) && value.seatable.every(isText)))
+  && (value.rooms === undefined || (Array.isArray(value.rooms) && value.rooms.every(isRoomSeed)))
+
 function parseHeader(value: unknown): Fixture['header'] | string {
   if (!isObject(value)) return 'the header must be an object'
   const { fixture, hermes, source, sessionId, stored } = value
@@ -306,6 +344,13 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (relay !== undefined && !(isObject(relay) && Object.values(relay).every(isRelayScript))) {
     return '"relay" must map a profile to { reply, delay_ms? } or { refuse }'
   }
+  const { groups } = value
+  if (groups !== undefined && !isGroupsScript(groups)) {
+    return '"groups" may hold only "driver", "seatable" (a list of profiles, or null) and "rooms", each room { id, name, members } seating 2 to 6 { profile, handle }'
+  }
+  const served = new Set(isObject(profiles) && Array.isArray(profiles.profiles) ? profiles.profiles.flatMap(row => (isObject(row) && isText(row.name) ? [row.name] : [])) : ['default'])
+  const unserved = (groups?.rooms ?? []).flatMap(room => room.members.filter(seat => !served.has(seat.profile)).map(seat => `${room.id}: ${seat.profile}`))
+  if (unserved.length > 0) return `"groups" seats profiles the header's "profiles" does not list (${unserved.join(', ')})`
   const { paths } = value
   if (paths !== undefined && !(isObject(paths) && isObject(paths.words) && (paths.cwd === undefined || typeof paths.cwd === 'string'))) {
     return '"paths" must be { cwd?, words } with "words" mapping a typed word to its complete.path reply'
@@ -328,6 +373,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),
     ...(relay === undefined ? {} : { relay: relay as { readonly [profile: string]: RelayScript } }),
+    ...(groups === undefined ? {} : { groups }),
     ...(paths === undefined ? {} : { paths: paths as NonNullable<Fixture['header']['paths']> }),
     ...(reads === undefined ? {} : { reads }),
     ...(todoState === undefined ? {} : { todo_state: todoState as NonNullable<Fixture['header']['todo_state']> })

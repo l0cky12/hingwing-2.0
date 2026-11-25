@@ -10,6 +10,7 @@ import { GATEWAY_PROTOCOL, type Clock, type Reach } from '../wire/link'
 import { parseEvent } from '../wire/parse'
 import { MASKED, type ChatSeed, type Fixture, type FixtureStep, type Reads } from './fixture'
 import { checkParams } from './params'
+import { ScriptedRooms } from './rooms'
 
 export interface Peer {
   write(frame: unknown): void
@@ -506,6 +507,8 @@ const SWITCH_WORDS: Readonly<Record<string, string>> = { 1: '1', on: '1', true: 
 /** gateway/session_busy_controls.py:45-46 */
 const BUSY_MODES: readonly unknown[] = ['interrupt', 'steer', 'queue']
 
+const refusal = (reason: string, data: Obj = {}): { error: WireError } => ({ error: { code: 4001, message: reason, data: { reason, ...data } } })
+
 /** gateway/session_controls.py:386-392 */
 const unknownMethod = (method: string) => new Refused('unknown_method', { code: -32601, message: `unknown method: ${method}`, data: { reason: 'unknown_method' } })
 
@@ -867,6 +870,7 @@ export class ScriptedGateway {
   private readonly afterReply: (() => void)[] = []
   private readonly sockets = new Set<Socket>()
   private readonly stagedImages = new Set<string>()
+  private readonly rooms: ScriptedRooms | null
   private drop: Drop
   private delivered = 0
   private seqShift = 0
@@ -903,6 +907,17 @@ export class ScriptedGateway {
     this.seeded = Object.entries(fixture.header.chats ?? {}).flatMap(([profile, seeds]) => seeds.map(seed => seeded(profile, seed)))
     this.souls = new Map(Object.entries(fixture.header.souls ?? {}))
     this.clash = fixture.header.configureClash
+    const served = this.profiles.flatMap(row => (isText(row.name) ? [row.name] : []))
+    this.rooms = fixture.header.groups === undefined ? null : new ScriptedRooms(fixture.header.groups, {
+      clock: options.clock,
+      profiles: served.length > 0 ? served : [this.home],
+      refuse: (reason, named) => { throw new Refused(reason, { code: 4001, message: reason, data: { reason, ...named } }) },
+      unserved: method => {
+        const unexpected = `the scripted gateway plays no ${method}`
+        this.settle.reject(new Error(unexpected))
+        throw new Refused(unexpected, { code: -32603, message: unexpected })
+      }
+    })
   }
 
   get latest(): number {
@@ -952,10 +967,10 @@ export class ScriptedGateway {
    * is JSON-RPC's -32601.
    */
   private dispatch(socket: Socket, method: string, raw: unknown): { result: unknown } | { error: WireError } {
-    const refusal = (reason: string, data: Obj = {}): { error: WireError } => ({ error: { code: 4001, message: reason, data: { reason, ...data } } })
     // A Hermes without the bot relay declares none of its methods, so no param check is reached.
     if (method.startsWith('bot_relay.') && this.fixture.header.relay === undefined) return { error: unknownMethod(method).wire }
     if (method === 'complete.path' && this.fixture.header.paths === undefined) return { error: unknownMethod(method).wire }
+    if (method.startsWith('groups.')) return this.rooms === null ? { error: unknownMethod(method).wire } : this.group(this.rooms, method, raw)
     if (!isObject(raw)) return refusal('invalid_params')
     const { profile, ...unscoped } = raw
     const named = isText(profile)
@@ -972,6 +987,21 @@ export class ScriptedGateway {
     try {
       if (chat !== undefined) return { result: this.chat(socket, method, params, routed, chat) }
       return { result: handler === undefined ? this.story(socket, method, params, routed) : handler(this, socket, params, routed) }
+    } catch (error) {
+      if (error instanceof Refused) return { error: error.wire }
+      throw error
+    }
+  }
+
+  /** `dispatch_group_control` (gateway/session_group_controls.py:62-80): a group belongs to the socket's own profile. */
+  private group(rooms: ScriptedRooms, method: string, raw: unknown): { result: unknown } | { error: WireError } {
+    if (!isObject(raw)) return refusal('invalid_params')
+    const { profile, ...params } = raw
+    if (profile !== undefined && profile !== null && profile !== this.home) return refusal('profile_mismatch')
+    const fields = checkParams(method, params)
+    if (fields !== undefined && fields.length > 0) return refusal('invalid_params', { fields })
+    try {
+      return { result: rooms.call(method, params) }
     } catch (error) {
       if (error instanceof Refused) return { error: error.wire }
       throw error

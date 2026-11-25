@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { loadFixture, type Fixture, type FixtureStep } from '../../src/testing/fixture'
+import { loadFixture, type Fixture, type FixtureStep, type GroupsScript } from '../../src/testing/fixture'
 
 export const ERRAND = loadFixture(fileURLToPath(new URL('../../../../fixtures/errand.jsonl', import.meta.url)))
 export const SESSION = ERRAND.header.sessionId
@@ -30,6 +30,13 @@ export const TEAM_NO_RELAY: Fixture = { ...ERRAND, header: { ...ERRAND.header, p
 /** The same three on a Hermes that can: Rae answers after 1500 ms and Sam is not running. */
 export const TEAM: Fixture = { ...TEAM_NO_RELAY, header: { ...TEAM_NO_RELAY.header, relay: RELAY } }
 export const RAE_SAID = (RELAY.rae as { reply: string }).reply
+
+const { groups: GROUPS, ...LAUNCH_PROFILES } = JSON.parse(readFileSync(fileURLToPath(new URL('../../../../fixtures/profiles/launch.json', import.meta.url)), 'utf8')) as { groups: GroupsScript }
+/** Ada, the default bot, with Sam, Rae, Juno, Otto, Mia and Kit, on a Hermes with no group chats. */
+export const LAUNCH_NO_GROUPS: Fixture = { ...ERRAND, header: { ...ERRAND.header, profiles: LAUNCH_PROFILES } }
+/** The same seven on a Hermes that has group chats, before any is made. */
+export const LAUNCH: Fixture = { ...LAUNCH_NO_GROUPS, header: { ...LAUNCH_NO_GROUPS.header, groups: GROUPS } }
+export const withGroups = (groups: GroupsScript): Fixture => ({ ...LAUNCH, header: { ...LAUNCH.header, groups } })
 
 export const stepOf =(method: string) => ERRAND.steps.findIndex(step => 'await' in step && step.await === method)
 export const paramsOf = (method: string) => (ERRAND.steps[stepOf(method)] as Extract<FixtureStep, { await: string }>).params as Record<string, unknown>

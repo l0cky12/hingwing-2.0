@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { manualClock, settle } from '../src/testing/clock'
 import { MASKED, scriptedDialer, type Fixture, type FixtureStep, type ScriptOptions } from '../src/testing/fixture'
 import {
-  BOUND, BRANCH, BRANCH_OLD, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PICK_ASK, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, SORTED, SORTED_2, SORTED_3,
-  SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, type Added
+  BOUND, BRANCH, BRANCH_OLD, DOWNLOADS, ERRAND, INVOICES, LAUNCH, LAUNCH_NO_GROUPS, NO_HOME_CHAT, paramsOf, PICK_ASK, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH,
+  SORTED, SORTED_2, SORTED_3, SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, withGroups, type Added
 } from './support/errand'
 
 interface Reply {
@@ -542,6 +542,72 @@ describe('the scripted gateway hands a message to another bot', () => {
     expect(await call('bot_relay.deliver', { ...deliver, profile: 'sam' })).toMatchObject(refusal('queue_full'))
     expect(await call('bot_relay.deliver', { ...deliver, profile: 'default' })).toMatchObject(refusal('runtime_unavailable'))
     expect(script.step, 'the story has not moved').toBe(0)
+  })
+})
+
+describe('the scripted gateway keeps group chats as Hermes does', () => {
+  const unknown = { error: { code: -32601, data: { reason: 'unknown_method' } } }
+  const seat = (profile: string, handle = profile) => ({ member_id: profile, profile, handle })
+  const create = (more: Record<string, unknown> = {}) => ({ room_id: 'launch-plan', name: 'Launch plan', members: [seat('default', 'ada'), seat('sam'), seat('juno')], ...more })
+  const membersRefused = (detail: string) => refusal('invalid_params', { field: 'members', detail })
+  const listed = async (call: (method: string, params?: unknown) => Promise<Reply>) =>
+    ((await call('groups.list', {})).result?.rooms as { room_id: string; name: string; members: unknown[] }[]).map(room => [room.room_id, room.name, room.members.length])
+
+  it('knows no groups method when the header has no groups, whatever the params', async () => {
+    const { call } = await rawSocket({}, LAUNCH_NO_GROUPS)
+    for (const [method, params] of [['groups.capabilities', {}], ['groups.list', 'all'], ['groups.create', create()], ['groups.state', { room_id: 'x' }]] as const) {
+      expect(await call(method, params), method).toMatchObject(unknown)
+    }
+  })
+
+  it('names the bots it would seat, every served profile unless the header says which, and none at all for an older Hermes', async () => {
+    const caps = async (groups: Parameters<typeof withGroups>[0]) => (await (await rawSocket({}, withGroups(groups))).call('groups.capabilities', {})).result
+    expect(await caps({})).toMatchObject({ driver: true, seatable_profiles: ['default', 'juno', 'kit', 'mia', 'otto', 'rae', 'sam'] })
+    expect(await caps({ driver: false, seatable: ['sam', 'default'] })).toMatchObject({ driver: false, seatable_profiles: ['default', 'sam'] })
+    expect(await caps({ seatable: null })).not.toHaveProperty('seatable_profiles')
+  })
+
+  it('makes a group once for one id, lists it first, and answers the same create again with the group it made', async () => {
+    const { call } = await rawSocket({}, withGroups({ rooms: [{ id: 'standup', name: 'Standup', members: [{ profile: 'otto', handle: 'otto' }, { profile: 'mia', handle: 'mia' }] }] }))
+    const made = await call('groups.create', create())
+    expect(made.result?.room).toMatchObject({ room_id: 'launch-plan', name: 'Launch plan', members: [{ ...seat('default', 'ada'), target: { kind: 'local', profile: 'default' } }, seat('sam'), seat('juno')] })
+    expect(made.result?.room).not.toHaveProperty('idempotent')
+    expect((await call('groups.create', create({ name: ' Launch plan ' }))).result?.room).toMatchObject({ room_id: 'launch-plan', idempotent: true })
+    expect(await listed(call)).toEqual([['launch-plan', 'Launch plan', 3], ['standup', 'Standup', 2]])
+  })
+
+  it('refuses another group under an id it already made, as a bare invalid_params', async () => {
+    const { call } = await rawSocket({}, LAUNCH)
+    await call('groups.create', create())
+    expect(await call('groups.create', create({ name: 'Other' }))).toEqual({ jsonrpc: '2.0', id: 2, ...refusal('invalid_params') })
+    expect(await call('groups.create', create({ members: [seat('default', 'ada'), seat('sam')] }))).toMatchObject(refusal('invalid_params'))
+    expect(await listed(call)).toEqual([['launch-plan', 'Launch plan', 3]])
+  })
+
+  it.each([
+    ['a bot it would not seat', { members: [seat('default', 'ada'), seat('otto')] }, "member 1 profile 'otto': this bot can't join group chats yet"],
+    ['a profile it does not serve', { members: [seat('default', 'ada'), seat('zed')] }, "member 1 profile 'zed' is not local to this gateway"],
+    ['one bot', { members: [seat('sam')] }, 'members must contain between 2 and 6 entries'],
+    ['seven bots', { members: ['default', 'sam', 'rae', 'juno', 'mia', 'kit', 'sam'].map(profile => seat(profile)) }, 'members must contain between 2 and 6 entries'],
+    ['a handle taken twice', { members: [seat('default', 'sam'), seat('sam')] }, 'member handles must be unique and cannot reserve @all or @everyone'],
+    ['a reserved handle', { members: [seat('default', 'everyone'), seat('sam')] }, 'member handles must be unique and cannot reserve @all or @everyone'],
+    ['a seat with no handle', { members: [{ member_id: 'default', profile: 'default' }, seat('sam')] }, 'member 0 is missing fields: handle'],
+    ['a seat with a key Hermes does not take', { members: [{ ...seat('default', 'ada'), color: 'ink' }, seat('sam')] }, 'member 0 has unknown fields: color']
+  ])('refuses a roster with %s on field members, in Hermes\'s words', async (_, more, detail) => {
+    const { call } = await rawSocket({}, withGroups({ seatable: ['default', 'sam', 'rae', 'juno', 'mia', 'kit'] }))
+    expect(await call('groups.create', create(more))).toMatchObject(membersRefused(detail))
+    expect(await listed(call)).toEqual([])
+  })
+
+  it('refuses a key it does not take, a bad id or name, and another profile\'s groups', async () => {
+    const { call } = await rawSocket({}, LAUNCH)
+    expect(await call('groups.list', { limit: 10, cursor: 'x' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('groups.capabilities', { verbose: true })).toMatchObject(refusal('invalid_params'))
+    expect(await call('groups.create', create({ room_id: '-lead' }))).toMatchObject(refusal('invalid_params'))
+    expect(await call('groups.create', create({ name: ' ' }))).toMatchObject(refusal('invalid_params'))
+    expect(await call('groups.create', create({ name: 'x'.repeat(201) }))).toMatchObject(refusal('invalid_params'))
+    expect(await call('groups.list', { profile: 'sam' })).toMatchObject(refusal('profile_mismatch'))
+    expect(await call('groups.list', { profile: 'default' })).toMatchObject({ result: { rooms: [], next_offset: null } })
   })
 })
 

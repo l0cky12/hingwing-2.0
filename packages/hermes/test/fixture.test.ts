@@ -237,6 +237,22 @@ describe('loadFixture', () => {
     }
   })
 
+  it('reads the group chats of the home profile, and refuses a room that seats too few, too many or an unlisted profile', () => {
+    const profiles = { profiles: [{ name: 'default', is_default: true }, { name: 'sam' }, { name: 'juno' }] }
+    const seats = (...names: string[]) => names.map(profile => ({ profile, handle: profile }))
+    const groups = { driver: false, seatable: ['default', 'sam'], rooms: [{ id: 'launch-plan', name: 'Launch plan', members: seats('default', 'sam', 'juno') }] }
+    expect(loadFixture(write([{ ...header, profiles, groups }])).header.groups).toEqual(groups)
+    expect(loadFixture(write([{ ...header, profiles, groups: {} }])).header.groups).toEqual({})
+    expect(loadFixture(write([header])).header).not.toHaveProperty('groups')
+    const shape = '"groups" may hold only "driver", "seatable" (a list of profiles, or null) and "rooms", each room { id, name, members } seating 2 to 6 { profile, handle }'
+    for (const entry of [{ turns: {} }, { driver: 'yes' }, { seatable: 'sam' }, { rooms: [{ id: 'a', name: 'A', members: seats('sam') }] }, { rooms: [{ id: 'a', name: 'A', members: [{ profile: 'sam' }, { profile: 'juno' }] }] }]) {
+      const bad = write([{ ...header, profiles, groups: entry }])
+      expect(() => loadFixture(bad), JSON.stringify(entry)).toThrow(`${bad}:1: ${shape}`)
+    }
+    const stray = write([{ ...header, profiles, groups: { rooms: [{ id: 'a', name: 'A', members: seats('sam', 'zed') }] } }])
+    expect(() => loadFixture(stray)).toThrow(`${stray}:1: "groups" seats profiles the header's "profiles" does not list (a: zed)`)
+  })
+
   it('reads the words complete.path answers and the folder, and refuses a header that holds neither', () => {
     const paths = { cwd: '/home/sam/errands', words: { '@not': { items: [{ text: '@file:notes.md' }] } } }
     expect(loadFixture(write([{ ...header, paths }])).header.paths).toEqual(paths)
