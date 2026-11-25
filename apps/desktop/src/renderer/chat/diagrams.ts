@@ -23,7 +23,7 @@ function configFromPage(): MermaidConfig {
     startOnLoad: false,
     securityLevel: 'strict',
     suppressErrorRendering: true,
-    // Labels drawn as SVG text need no foreignObject, so the SVG sanitizer below can drop it.
+    // Labels as SVG text where Mermaid allows it. It still draws some, such as math and event model boxes, as HTML in a foreignObject, which the sanitizer keeps.
     htmlLabels: false,
     secure: ['secure', 'securityLevel', 'startOnLoad', 'maxTextSize', 'suppressErrorRendering', 'maxEdges', 'htmlLabels'],
     ...Object.fromEntries(DIAGRAM_CONFIGS.map(kind => [kind, { useMaxWidth: false }])),
@@ -62,7 +62,7 @@ let drawer: Promise<Drawer> | undefined
 function loadDrawer(): Promise<Drawer> {
   drawer ??= Promise.all([import('mermaid'), import('dompurify')]).then(([{ default: mermaid }, { default: purify }]) => {
     mermaid.initialize(configFromPage())
-    return { mermaid, sanitize: svg => purify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } }) as SanitizedSvg }
+    return { mermaid, sanitize: svg => purify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true, mathMl: true }, ADD_TAGS: ['foreignObject'], HTML_INTEGRATION_POINTS: { 'annotation-xml': true, foreignobject: true } }) as SanitizedSvg }
   })
   return drawer
 }

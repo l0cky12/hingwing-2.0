@@ -222,7 +222,7 @@ describe('Markdown with a mermaid block', () => {
 
   it('renders every prefix of the diagram reply and marks each shown text with the field find searches', () => {
     const diagrams = finalReply('fixtures/diagram.jsonl')
-    expect(parseMarkdown(diagrams).filter(block => block.kind === 'code' && diagramFor(block.lang) !== null)).toHaveLength(3)
+    expect(parseMarkdown(diagrams).filter(block => block.kind === 'code' && diagramFor(block.lang) !== null)).toHaveLength(4)
     for (let end = 0; end <= diagrams.length; end++) {
       const prefix = diagrams.slice(0, end)
       const fields = proseLeaves(parseMarkdown(prefix)).map((leaf, index) => [fieldId('t1/0', `block ${index}`), leafText(leaf)])

@@ -32,6 +32,14 @@ flowchart TD
     X["<script>alert(1)</script>"] --> Y["<img src=x onerror=alert(2)>"]
 ```
 
+And one whose messages hold math and markup:
+
+```mermaid
+sequenceDiagram
+    Alice->>Bob: $$x^2$$
+    Bob->>Alice: <img src=x onerror=alert(3)>
+```
+
 That covers the relay from end to end."""
 
 built = math_fixture.derive((HERE / "markdown.jsonl").read_text().splitlines(), REQUEST, REPLY)
