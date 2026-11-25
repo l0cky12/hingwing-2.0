@@ -7,6 +7,7 @@ import { Chat } from './chat/Chat'
 import { Banner, TopBar } from './chrome/Chrome'
 import { Preview } from './preview/Preview'
 import { Composer } from './composer/Composer'
+import { Palette } from './palette/Palette'
 import { Saved, SetupForm } from './setup/Setup'
 import { Epoch, useTopic } from './store'
 
@@ -52,6 +53,7 @@ function ChatWindow({ hidden, target }: { readonly hidden: boolean; readonly tar
         <ChatScreen target={target} />
       </div>
       {preview?.state === 'open' && <Preview preview={preview} />}
+      {!hidden && <Palette target={target} />}
     </div>
   )
 }

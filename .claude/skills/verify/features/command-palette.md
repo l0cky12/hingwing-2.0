@@ -1,0 +1,38 @@
+# Command palette
+
+Ctrl+K (Cmd+K on a Mac) opens a sheet at the top centre of the chat window: a "Search chats, bots and actions" field over a list in three groups, Chats, Bots and Actions. With nothing typed, the list holds the open bot's chats that wait on an approval, then its newest chats without the open one, then every bot, then the actions on offer now. Typing narrows it to the chats whose title or preview holds every typed word, the bots whose name does, and the actions whose label does. A word at the start of a word ranks above one inside a word, and ties go to the newest chat. A chat found by its preview shows the preview under its title. Up and Down move through the list and wrap at both ends. Enter opens the chat, opens the bot, or runs the action, and closes the sheet. A chat row says "Working" or "Waiting for your OK" at its right, or when it was last used. Nothing matching reads "No matches". Escape, Ctrl+K again or a click outside the sheet closes it and gives focus back to where it was. The actions are New chat, Stop (while the open chat runs), Open Connection (with a saved connection), Reconnect (while the connection is blocked) and Start Hermes (while Hermes is not running).
+
+## Sub-features
+
+- `palette-open` opens the sheet with Ctrl+K, its field focused.
+- `palette-chat` opens a chat by a word of its title.
+- `palette-preview` lists a chat by a word only its preview holds, with the preview under the title.
+- `palette-no-matches` says "No matches" for words nothing holds.
+- `palette-bot` opens a bot by its name.
+- `palette-new-chat` runs New chat for "new", above any chat that holds the word.
+- `palette-close` closes with Escape or Ctrl+K and puts focus back in the composer.
+- `palette-keys` wraps Up and Down at both ends, and keeps the window's own shortcuts, such as Ctrl+N, from acting behind the sheet.
+
+## How to get to it (user POV)
+
+- Press Ctrl+K (Cmd+K on a Mac) anywhere in the chat window. It does nothing while a setup screen or another dialog is open.
+- Type a few letters, move with Up and Down, and press Enter. A click on a row picks it too.
+
+## Driving it with highwing-verify
+
+Preconditions:
+
+- `--profiles fixtures/profiles/chats.json` seeds Research with three chats: "Send invoice reminder" (waits on an approval), "Sort the invoices" (preview "Sorted fourteen invoices by due date; the oldest is due Friday.") and "Clean up Downloads". The roster also holds "Timothy · CEO".
+- The `sidebar` topic holds only the open bot's chats, so click Research before searching its chats.
+
+- **Open, chat, preview, no matches, bot, new chat, Escape.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/chats.json --run palette wait live wait bots click button Research current button Research click button "Sort the invoices" current button "Sort the invoices" click textbox "Message Hermes" press Control+k count dialog "Command palette" 1 focused combobox "Search chats, bots and actions" shot open type "Search chats, bots and actions" down see "Clean up Downloads" shot down press Enter gone dialog "Command palette" current button "Clean up Downloads" press Control+k type "Search chats, bots and actions" fourteen count option "Sort the invoices" 1 see "Sorted fourteen invoices by due date; the oldest is due Friday." shot preview-match type "Search chats, bots and actions" zzzz see "No matches" shot no-matches type "Search chats, bots and actions" Timothy press Enter gone dialog "Command palette" current button "Timothy · CEO" click button Research current button Research press Control+k type "Search chats, bots and actions" new press Enter gone dialog "Command palette" wait unstarted focused textbox "Message Hermes" shot new-chat press Control+k focused combobox "Search chats, bots and actions" press Escape gone dialog "Command palette" focused textbox "Message Hermes" called session.create '{}' 0 quiet`. `open.aria.txt` holds `dialog "Command palette"` with the groups Chats ("Send invoice reminder" `[selected]`, "Clean up Downloads"), Bots (six) and Actions ("New chat"). The open chat, "Sort the invoices", is left out. `no-matches.aria.txt` holds `status: No matches`. `called session.create '{}' 0` shows that New chat made no chat before a first message.
+- **New chat from an open chat.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/chats.json --run palette-new wait live wait bots click button Research current button Research click button "Sort the invoices" current button "Sort the invoices" said "Sorted fourteen invoices by due date" press Control+k type "Search chats, bots and actions" new shot new-typed press Enter gone dialog "Command palette" wait unstarted count heading "Hermes Research" 1 focused textbox "Message Hermes" shot new-chat called session.create '{}' 0 quiet`. The thread showed a chat before Enter, so `wait unstarted` proves New chat emptied it. `new-typed.aria.txt` holds only `option "New chat" [selected]` under Actions.
+- **Wrap, shortcuts behind the sheet, Ctrl+K to close.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/chats.json --run palette-keys wait live wait bots click button Research current button Research click button "Sort the invoices" current button "Sort the invoices" click textbox "Message Hermes" press Control+k press ArrowUp shot wrapped-up press ArrowDown shot wrapped-down press Control+n count dialog "Command palette" 1 count heading "Hermes Research · Sort the invoices" 1 press Control+k gone dialog "Command palette" focused textbox "Message Hermes" press Control+k type "Search chats, bots and actions" sort press Enter gone dialog "Command palette" current button "Sort the invoices" focused textbox "Message Hermes" quiet`. `wrapped-up.aria.txt` holds `option "New chat" [selected]`, the last row. `wrapped-down.aria.txt` holds `option "Send invoice reminder" [selected]`, the first.
+
+## Gotchas
+
+- The helper has no step that reads `aria-selected`. Read `[selected]` in a shot's `.aria.txt`.
+- An option's name is its title alone. The ARIA snapshot prints the rest of the row after the name: the state words or the time, an action's keys, and a matched preview.
+- `wait unstarted` passes on Research's own empty Bot Chat too, since the fixture gives Research none. `called session.create '{}' 0` and the top bar's heading tell the new chat apart.
+- With words typed, the open chat is listed like any other. Only the empty field leaves it out.
+- Stop, Open Connection, Reconnect and Start Hermes are not in these runs: a fixture run has no saved connection, and its chat is not running when the palette opens. `apps/desktop/test/palette.test.tsx` covers when each is offered.

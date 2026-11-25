@@ -41,21 +41,24 @@ export function agoOf(at: number, now: number): string {
   return `${Math.floor(since / DAY)}d`
 }
 
-const DOING: { readonly [B in SidebarRow['badge']]: string | null } = { none: null, running: 'Working', asking: 'Waiting for your OK' }
+export const DOING: { readonly [B in SidebarRow['badge']]: string | null } = { none: null, running: 'Working', asking: 'Waiting for your OK' }
 
-const named = (title: string) => (title.trim() === '' ? UNTITLED : title)
+export const named = (title: string) => (title.trim() === '' ? UNTITLED : title)
 
-/**
- * `sidebar` and `open` undefined: Electron main has not pushed them yet. The rows are drawn only
- * while they are the open chat's bot's, so a switch never shows one bot's chats under another.
- */
+/** The rows are drawn only while they are the open chat's bot's, so a switch never shows one bot's chats under another. */
+export function listedRows(sidebar: Sidebar | undefined, open: OpenChat | undefined): readonly SidebarRow[] | null {
+  if (sidebar === undefined || open === undefined || sidebar.status === 'loading' || sidebar.bot !== (open.shown?.bot ?? null)) return null
+  return sidebar.rows
+}
+
 export function chatsOf(sidebar: Sidebar | undefined, open: OpenChat | undefined, now: number, drafts: ReadonlySet<SessionId>): ChatsView {
-  if (sidebar === undefined || open === undefined || sidebar.status === 'loading' || sidebar.bot !== (open.shown?.bot ?? null)) return LOADING
-  if (sidebar.rows.length === 0) return { show: 'note', words: NO_CHATS }
-  const shown = open.shown?.sessionId ?? null
+  const rows = listedRows(sidebar, open)
+  if (rows === null) return LOADING
+  if (rows.length === 0) return { show: 'note', words: NO_CHATS }
+  const shown = open?.shown?.sessionId ?? null
   return {
     show: 'rows',
-    rows: sidebar.rows.map(row => ({
+    rows: rows.map(row => ({
       id: row.id, name: named(row.title), preview: row.preview, when: row.lastActiveAt === null ? '' : agoOf(row.lastActiveAt, now),
       doing: DOING[row.badge], badge: row.badge, current: row.id === shown, showsDraft: row.id !== shown && drafts.has(row.id)
     }))
