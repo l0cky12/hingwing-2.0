@@ -32,16 +32,20 @@ export type SetupCommand =
 /** How a page main draws in its own view is doing. `failed` hides the view, so the window shows the reason in its place. */
 export type PageLoad = { readonly at: 'loading' } | { readonly at: 'shown' } | { readonly at: 'failed'; readonly reason: string }
 
+/** A CSV file's records. The first is the header. `rows` is the first few after it, and `total` counts all of them. */
+export interface Table { readonly header: readonly string[]; readonly rows: readonly (readonly string[])[]; readonly total: number }
+
 /** What the pane shows. One kind per body the window draws. */
-export type PreviewContent = { readonly kind: 'page'; readonly load: PageLoad }
+export type PreviewContent = { readonly kind: 'page'; readonly load: PageLoad } | { readonly kind: 'table'; readonly table: Table }
 
 /**
  * The pane beside the chat. Owned by Electron main, one per window, and kept across chats.
- * `address` is the web URL or the absolute path shown. `title` is Hermes's label, else the page's own title, else the address.
+ * `address` is the web URL or the absolute path shown. `title` is Hermes's label, else the page's own title, else the address
+ * or the file's name. `file`: a file on this computer, which the user's own program can open.
  */
 export type Preview =
   | { readonly state: 'closed' }
-  | { readonly state: 'open'; readonly title: string; readonly address: string; readonly content: PreviewContent }
+  | { readonly state: 'open'; readonly title: string; readonly address: string; readonly file: boolean; readonly content: PreviewContent }
 
 export interface Rect { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 
@@ -50,10 +54,11 @@ export type PreviewCommand =
   | { readonly do: 'browse'; readonly url: string }
   | { readonly do: 'reloadPreview' }
   | { readonly do: 'closePreview' }
+  | { readonly do: 'openPreview' }
   /** Where the page's body sits in the window, in CSS pixels. null: nowhere to draw it, so main hides the page. */
   | { readonly do: 'placePreview'; readonly rect: Rect | null }
 
-const PREVIEW_VERBS: { readonly [K in PreviewCommand['do']]: true } = { preview: true, browse: true, reloadPreview: true, closePreview: true, placePreview: true }
+const PREVIEW_VERBS: { readonly [K in PreviewCommand['do']]: true } = { preview: true, browse: true, reloadPreview: true, closePreview: true, openPreview: true, placePreview: true }
 export const isPreviewCommand = (command: AppCommand): command is PreviewCommand => Object.hasOwn(PREVIEW_VERBS, command.do)
 
 export type AppCommand = Command | SetupCommand | PreviewCommand
@@ -358,6 +363,7 @@ export const validators: Validators = {
   browse: raw => (webPage(raw.url) ? { do: 'browse', url: raw.url } : null),
   reloadPreview: () => ({ do: 'reloadPreview' }),
   closePreview: () => ({ do: 'closePreview' }),
+  openPreview: () => ({ do: 'openPreview' }),
   placePreview: raw => {
     if (raw.rect === null) return { do: 'placePreview', rect: null }
     const rect = rectOf(raw.rect)

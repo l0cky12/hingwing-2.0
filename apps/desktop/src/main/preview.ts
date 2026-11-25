@@ -4,8 +4,9 @@ import { net, protocol, session as sessions, WebContentsView, type BrowserWindow
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
-import type { Preview, PreviewCommand, Rect, Setup } from '../ipc-contract'
+import type { PageLoad, Preview, PreviewCommand, Rect, Setup } from '../ipc-contract'
 import type { Opener } from './files'
+import { formatOf, MISSING, readPreviewFile, type FileContents, type Format } from './preview-file'
 import {
   failureOf, nextPane, PAGE_SCHEME, pageFor, pageInView, pageUrlOf, pathOfPageUrl, previewOf, servedPath, type Page, type Pane, type PaneEvent, type Reach
 } from './preview-page'
@@ -23,37 +24,38 @@ export interface PreviewPane {
 }
 
 export interface PreviewDeps {
-  readonly opener: Pick<Opener, 'browse'>
+  readonly opener: Pick<Opener, 'browse' | 'open'>
   reach(session: Session | undefined): Reach
   isAppUrl(url: string): boolean
 }
 
 const DONE = { ok: true, value: undefined } as const
+const notFound = () => new Response(null, { status: 404 })
 const ABORTED = -3
 const NAVIGABLE: ReadonlySet<string> = new Set(['http:', 'https:', `${PAGE_SCHEME}:`])
-const MISSING = "This file isn't there any more."
 
 /** Before the app is ready, as Electron asks: a standard scheme resolves a page's relative links. */
 export const registerPageScheme = () =>
   protocol.registerSchemesAsPrivileged([{ scheme: PAGE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }])
 
+type Served = { readonly kind: 'folder'; readonly page: string } | { readonly kind: 'pdf'; readonly path: string; readonly checkedBytes: Uint8Array<ArrayBuffer> }
+
 let configured: WebSession | null = null
 
-/**
- * In memory, so nothing a page stores outlives the app. A page asks for no permission, download or
- * window that it gets. `filePage` is the file page shown, which decides what the page scheme serves.
- */
-function previewSession(filePage: () => string | null): WebSession {
+/** In memory, so nothing a page stores outlives the app. A page asks for no permission, download or window that it gets. */
+function previewSession(served: () => Served | null): WebSession {
   if (configured !== null) return configured
   const session = sessions.fromPartition('highwing-preview')
   session.setPermissionRequestHandler((_contents, _permission, answer) => answer(false))
   session.setPermissionCheckHandler(() => false)
   session.on('will-download', event => event.preventDefault())
   session.protocol.handle(PAGE_SCHEME, async request => {
-    const page = filePage()
+    const serving = served()
     const path = pathOfPageUrl(request.url)
-    const served = page === null || path === null ? null : await servedPath(page, path, homedir())
-    return served === null ? new Response(null, { status: 404 }) : net.fetch(pathToFileURL(served).href)
+    if (serving === null || path === null) return notFound()
+    if (serving.kind === 'pdf') return path === serving.path ? new Response(serving.checkedBytes, { headers: { 'content-type': 'application/pdf' } }) : notFound()
+    const real = await servedPath(serving.page, path, homedir())
+    return real === null ? notFound() : net.fetch(pathToFileURL(real).href)
   })
   configured = session
   return session
@@ -65,9 +67,9 @@ export function previewPane(deps: PreviewDeps): PreviewPane {
   let window: BrowserWindow | null = null
   let view: WebContentsView | null = null
   let pane: Pane | null = null
-  let filePage: string | null = null
-  /** Shows the last request again, for a Reload with no page in view to reload, as after a missing file. */
+  let served: Served | null = null
   let retry: (() => void) | null = null
+  let generation = 0
   let rect: Rect | null = null
   let value: Preview = previewOf(null)
   const listeners = new Set<(value: Preview) => void>()
@@ -94,12 +96,13 @@ export function previewPane(deps: PreviewDeps): PreviewPane {
     window?.contentView.removeChildView(view)
     view.webContents.close()
     view = null
+    served = null
   }
 
-  const load = (page: Page) => {
+  const load = (page: Page, pdf: Uint8Array<ArrayBuffer> | null = null) => {
     drop()
-    filePage = page.kind === 'file' ? page.path : null
-    const created = new WebContentsView({ webPreferences: { session: previewSession(() => filePage), sandbox: true, contextIsolation: true, nodeIntegration: false } })
+    served = page.kind === 'web' ? null : pdf === null ? { kind: 'folder', page: page.path } : { kind: 'pdf', path: page.path, checkedBytes: pdf }
+    const created = new WebContentsView({ webPreferences: { session: previewSession(() => served), sandbox: true, contextIsolation: true, nodeIntegration: false } })
     const contents = created.webContents
     const own = <A extends unknown[]>(act: (...args: A) => void) => (...args: A) => {
       if (view === created) act(...args)
@@ -132,21 +135,41 @@ export function previewPane(deps: PreviewDeps): PreviewPane {
     void contents.loadURL(page.kind === 'web' ? page.url : pageUrlOf(page.path)).catch(() => {})
   }
 
+  const LANDS: { readonly [F in Format]: (path: string, value: FileContents[F]) => void } = {
+    pdf: (path, bytes) => load({ kind: 'file', path }, bytes),
+    csv: (_path, table) => apply({ on: 'tabled', table })
+  }
+
   const show: PreviewPane['show'] = (request, label, session) => {
     const verdict = pageFor(request, deps.reach(session))
     if (verdict === null) return false
+    generation++
     retry = () => show(request, label, session)
-    if ('page' in verdict && (verdict.page.kind === 'web' || existsSync(verdict.page.path))) {
-      apply({ on: 'show', asked: request, address: verdict.address, label, load: { at: 'loading' } })
-      load(verdict.page)
+    const page = 'page' in verdict ? verdict.page : null
+    const file = page?.kind === 'file' ? page.path : null
+    const format = file === null ? null : formatOf(file)
+    const shows = (state: PageLoad) => apply({ on: 'show', asked: request, address: verdict.address, file, label, load: state })
+    if (file !== null && format !== null) {
+      drop()
+      shows({ at: 'loading' })
+      const reading = generation
+      void readPreviewFile(file, format).then(read => {
+        if (reading !== generation) return
+        if (read.ok) (LANDS[format] as (path: string, value: FileContents[Format]) => void)(file, read.value)
+        else apply({ on: 'failed', reason: read.reason })
+      })
+    } else if (page !== null && (file === null || existsSync(file))) {
+      shows({ at: 'loading' })
+      load(page)
     } else {
       drop()
-      apply({ on: 'show', asked: request, address: verdict.address, label, load: { at: 'failed', reason: 'failed' in verdict ? verdict.failed : MISSING } })
+      shows({ at: 'failed', reason: 'failed' in verdict ? verdict.failed : MISSING })
     }
     return true
   }
 
   const close = () => {
+    generation++
     retry = null
     drop()
     apply({ on: 'close' })
@@ -155,8 +178,9 @@ export function previewPane(deps: PreviewDeps): PreviewPane {
   const COMMANDS: { readonly [K in PreviewCommand['do']]: (command: Extract<PreviewCommand, { do: K }>) => unknown } = {
     preview: ({ url }) => show(url, null, undefined),
     browse: ({ url }) => deps.opener.browse(url),
-    reloadPreview: () => (view === null ? retry?.() : view.webContents.reload()),
+    reloadPreview: () => (view === null || served?.kind === 'pdf' ? retry?.() : view.webContents.reload()),
     closePreview: close,
+    openPreview: () => (pane?.file ? deps.opener.open(pane.file) : undefined),
     placePreview: ({ rect: next }) => {
       rect = next
       place()
