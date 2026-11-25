@@ -585,6 +585,13 @@ export interface ConnectTarget {
   readonly fields: readonly { readonly name: string; readonly prompt: string | null; readonly required: boolean; readonly secret: boolean; readonly initial: string }[]
 }
 
+/**
+ * A target whose sign-in failed or whose link expired. Hermes ignores an approval of it. Connect
+ * asks for a new link with `connectors.connect` and `reconnect` instead, as Hermes Desktop's
+ * Try again does (gateway/session_connections.py:102-129, tools/connectors/run.py:46-71).
+ */
+export const reissues = (target: ConnectTarget): boolean => target.state === 'failed' || target.state === 'expired'
+
 export type RequestState =
   | { readonly s: 'waiting'; readonly error: string | null } // error: the last answer did not reach Hermes
   /** An answer is on its way. A result frame gets no reply, so this lasts until Hermes closes the request. */

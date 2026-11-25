@@ -291,13 +291,37 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .approval .choices button:hover { background: var(--sheet); }
 .approval .choices button.primary { background: var(--ink); color: var(--sheet); }
 .approval .choices button.deny { margin-left: auto; }
-.approval .answer { display: flex; gap: 8px; margin-top: 10px; }
-.approval .answer input { flex: 1; padding: 6px 10px; font: inherit; background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; }
+.approval .answer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.approval .answer input { flex: 1 1 160px; min-width: 0; padding: 6px 10px; font: inherit; background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; }
 .approval .answer button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--ink); background: transparent; }
+.approval .answer button.primary { background: var(--ink); color: var(--sheet); }
 .approval .picks { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 12px 0 0; padding: 0; border: 0; }
 .approval .picks legend { padding: 0; margin-bottom: 6px; color: var(--graphite); font-size: 13px; }
 .approval .picks label { display: flex; align-self: flex-start; align-items: center; gap: 8px; }
 .approval .picks input[type="checkbox"] { margin: 0; accent-color: var(--ink); }
+.approval .locked { list-style: none; margin: 12px 0 0; padding: 0; }
+.approval .locked li { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; padding: 7px 0; border-top: 1px solid var(--rule); }
+.approval .locked li:last-child { border-bottom: 1px solid var(--rule); }
+.approval .locked .asked { flex-basis: 100%; color: var(--graphite); font-size: 13px; }
+.approval .locked .said { flex: 1; font-weight: 500; overflow-wrap: anywhere; }
+.approval .locked button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--ink); background: transparent; font-size: 13px; }
+.approval .question fieldset { display: grid; gap: 7px; margin: 14px 0 0; padding: 0; border: 0; min-width: 0; }
+.approval .question legend { padding: 0; margin-bottom: 8px; font-weight: 500; }
+.approval .question .hint { margin: -4px 0 2px; color: var(--graphite); font-size: 13px; }
+.approval .pick { display: flex; align-items: baseline; gap: 9px; overflow-wrap: anywhere; }
+.approval .pick input { flex: none; margin: 0; accent-color: var(--ink); transform: translateY(1px); }
+.approval .question .other { padding: 6px 10px; font: inherit; background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; }
+.approval .targets { list-style: none; margin: 12px 0 0; padding: 0; }
+.approval .targets > li { padding: 10px 0 12px; border-top: 1px solid var(--rule); }
+.approval .targets > li:last-child { border-bottom: 1px solid var(--rule); }
+.approval .target .head { display: flex; align-items: baseline; gap: 12px; margin: 0; }
+.approval .target .name { font-weight: 500; }
+.approval .target .state { margin-left: auto; font-size: 13px; color: var(--graphite); }
+.approval .target .state.waiting { color: var(--caution); font-weight: 500; }
+.approval .target a { color: var(--ink); text-underline-offset: 2px; }
+.approval .target .field { display: grid; gap: 4px; margin-top: 10px; font-size: 13px; color: var(--graphite); }
+.approval .target .field input { padding: 6px 10px; font: inherit; font-size: 14px; color: var(--ink); background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; }
+.approval .target .choices { margin-top: 10px; }
 .approval.answered { background: none; border-left: 0; padding: 6px 0; margin: 0; border-radius: 0; }
 .approval.answered p { margin: 0 0 6px; color: var(--graphite); }
 .approval.answered pre { background: none; padding: 0; color: var(--graphite); font-size: 12.5px; overflow-wrap: anywhere; }

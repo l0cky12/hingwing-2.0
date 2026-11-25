@@ -1,3 +1,4 @@
+import type { Activity } from '@highwing/hermes/domain'
 import type { ThreadView } from '@highwing/thread'
 
 export type Place =
@@ -21,4 +22,11 @@ export function progressOf(view: ThreadView): string {
   return last === undefined
     ? `none:${view.pending.length}`
     : `${last.key}:${last.nodes.reduce((size, node) => size + (node.kind === 'group' ? node.count : 1), 0)}:${last.end.kind}:${view.pending.length}`
+}
+
+export function jumpWords(place: Place, activity: Activity['kind'] | null, progress: string): string {
+  if (place.kind !== 'reading') return ''
+  if (activity === 'asking') return 'Waiting for your OK'
+  if (activity === 'answering') return 'Waiting for your answer'
+  return progress !== place.since ? 'New steps below' : ''
 }

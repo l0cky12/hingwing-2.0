@@ -610,10 +610,11 @@ function requestText(fixturePath) {
 const MASK = '•••'
 const expand = (ctx, text) => (text === '@request' ? requestText(ctx.fixture ?? fail('@request needs --fixture')) : text)
 
-/** Logs the step, with the text of a password field as `•••`. The text is remembered so `leaked` can prove no evidence file holds it. */
+const PRIVATE_FIELDS = 'input[type=password], [data-private] input'
+
 async function secretField(ctx, verb, label, text) {
   const field = ctx.page.getByLabel(label, { exact: true })
-  const secret = (await field.getAttribute('type', { timeout: ctx.timeout })) === 'password'
+  const secret = await field.evaluate((input, selector) => input.matches(selector), PRIVATE_FIELDS, { timeout: ctx.timeout })
   if (secret) {
     ctx.secretLabels.add(label)
     if (text !== '') ctx.secrets.add(text)
@@ -638,14 +639,36 @@ function maskedSnapshot(snapshot, labels) {
   }).join('\n')
 }
 
-/** The evidence files that hold a typed password in any written form. */
+/**
+ * Takes the screenshot with every private field that holds text showing the mask, then puts the text back.
+ * A code or a username is drawn as typed, so only this keeps it out of a PNG. The shot counts as leaked
+ * when a private field showed other text once it was taken.
+ */
+async function capture(ctx, path, options) {
+  await ctx.page.evaluate(([selector, mask]) => {
+    globalThis.highwingVerifyTyped = new Map([...document.querySelectorAll(selector)].filter(input => input.value !== '').map(input => [input, input.value]))
+    for (const input of globalThis.highwingVerifyTyped.keys()) input.value = mask
+  }, [PRIVATE_FIELDS, MASK])
+  try {
+    await ctx.page.screenshot({ path, ...options })
+    const shown = await ctx.page.locator(PRIVATE_FIELDS).evaluateAll((inputs, mask) => inputs.filter(input => input.value !== '' && input.value !== mask).length, MASK)
+    if (shown > 0) ctx.exposed.push(path)
+  } finally {
+    await ctx.page.evaluate(() => {
+      for (const [input, value] of globalThis.highwingVerifyTyped ?? []) input.value = value
+      delete globalThis.highwingVerifyTyped
+    })
+  }
+}
+
+/** The evidence files that hold a typed password in any written form, and the screenshots taken while a private field showed one. */
 function leaked(ctx) {
   const forms = [...ctx.secrets].flatMap(writtenForms)
-  if (forms.length === 0) return []
-  return readdirSync(ctx.evidence, { recursive: true, withFileTypes: true })
+  if (forms.length === 0) return ctx.exposed
+  return [...ctx.exposed, ...readdirSync(ctx.evidence, { recursive: true, withFileTypes: true })
     .filter(entry => entry.isFile() && !entry.name.endsWith('.png'))
     .map(entry => join(entry.parentPath, entry.name))
-    .filter(path => forms.some(form => readFileSync(path, 'utf8').includes(form)))
+    .filter(path => forms.some(form => readFileSync(path, 'utf8').includes(form)))]
 }
 
 function log(ctx, line) {
@@ -747,9 +770,9 @@ async function sizeWindow(ctx, options) {
 async function shoot(ctx, name) {
   const path = join(ctx.evidence, `${name}.png`)
   await ctx.page.mouse.move(0, 0)
-  await ctx.page.screenshot({ path, animations: 'disabled', caret: 'hide', ...(ctx.clip && { clip: ctx.clip }) })
+  await capture(ctx, path, { animations: 'disabled', caret: 'hide', ...(ctx.clip && { clip: ctx.clip }) })
   await drawPreview(ctx, path)
-  const fields = await ctx.page.locator('input[type=password]').evaluateAll(inputs => inputs.map(input => ({ label: input.getAttribute('aria-label') ?? '', value: input.value })))
+  const fields = await ctx.page.locator(PRIVATE_FIELDS).evaluateAll(inputs => inputs.map(input => ({ label: input.getAttribute('aria-label') ?? '', value: input.value })))
   for (const { value } of fields) if (value !== '') ctx.secrets.add(value)
   const snapshot = maskedSnapshot(await ctx.page.locator('body').ariaSnapshot(), [...ctx.secretLabels, ...fields.map(field => field.label)])
   writeFileSync(join(ctx.evidence, `${name}.aria.txt`), masked(ctx, snapshot))
@@ -851,7 +874,12 @@ function serveInDeltas(steps, origin) {
   }
 }
 
-const requestMethods = steps => new Map(steps.filter(step => step.push?.method !== undefined && step.push.id !== undefined).map(step => [step.push.id, step.push.method]))
+const requestMethods = steps => new Map(steps.flatMap(step => {
+  if (step.push?.method !== undefined && step.push.id !== undefined) return [[step.push.id, step.push.method]]
+  return step.push?.params?.type === 'connection.request' ? [[step.push.params.payload.op_id, 'connection']] : []
+}))
+
+const answerTo = step => step.answer ?? step.params?.request_id ?? step.params?.op_id
 
 function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, profiles, paths, createWarnings, configureClash, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, answeredElsewhere, answerHere, cancel, actedElsewhere, windowMakes, origin, attachLimit }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
@@ -859,7 +887,7 @@ function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, pr
   const recorded = lines.slice(1).map(line => JSON.parse(line))
   const methods = requestMethods(recorded)
   const here = new Set((answerHere ?? '').split(',').filter(Boolean))
-  const wanted = step => 'answer' in step && 'result' in step && here.has(methods.get(step.answer))
+  const wanted = step => (('answer' in step && 'result' in step) || ANSWER_CALLS.has(step.await)) && here.has(methods.get(answerTo(step)))
   const answered = answeredElsewhere ? recorded.filter(step => wanted(step) || (!('result' in step && 'answer' in step) && !ANSWER_CALLS.has(step.await))) : recorded
   const made = new Set(windowMakes?.split(',') ?? [])
   const madeHere = step => made.has(step.await) || made.has(`${step.await}:${step.params?.action}`)
@@ -968,7 +996,7 @@ async function run(argv) {
   const calls = join(evidence, 'gateway-calls.jsonl')
   rmSync(calls, { force: true })
   const userData = join(scratch, 'user-data')
-  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set() }
+  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set(), exposed: [] }
   const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
   const saved = SAVED[options.saved ?? 'none']
@@ -1061,7 +1089,7 @@ async function run(argv) {
   } catch (error) {
     failed = error
     log(ctx, `FAILED: ${error.message.split('\n')[0]}`)
-    await ctx.page?.screenshot({ path: join(evidence, 'failure.png') }).catch(() => {})
+    if (ctx.page) await capture(ctx, join(evidence, 'failure.png')).catch(() => {})
   } finally {
     // A tool the app left running holds the app's pipes open, and close() would then wait on it for ever.
     await Promise.race([app.close().catch(() => {}), new Promise(done => setTimeout(done, QUIT_MS))])

@@ -13,14 +13,14 @@ import { folderFieldLabel, thinkingShown } from '../composer/tuning'
 import { YoloPill } from '../composer/YoloPill'
 import { run, useTopic } from '../store'
 import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
-import { drawnView } from './drawn'
 import { ImageSessionContext } from './Image'
 import { forget, landAt, landed, pressFor } from './landing'
 import { marked, pressedOf, unmarked } from './marks'
-import { FOLLOW_WITHIN, FOLLOWING, placeAfter, progressOf, type Place } from './place'
+import { FOLLOW_WITHIN, FOLLOWING, jumpWords, placeAfter, progressOf, type Place } from './place'
+import type { RequestAnswer } from './Asks'
 import { Sides } from './Sides'
 import { closeSide, sideCards, useClosedSides } from './sides'
-import { Thread, type QueueControls, type QueuedRow, type SecretAnswer } from './Thread'
+import { Thread, type QueueControls, type QueuedRow } from './Thread'
 
 const PAGE = 0.875
 const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -42,7 +42,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const session = useTopic(id === null ? null : `session:${id}`)
   const relays = useTopic('relay')?.bySession[id ?? ''] ?? NO_RELAYS
   const [tick, wake] = useReducer((count: number) => count + 1, 0)
-  const view = useMemo(() => (session === undefined ? null : drawnView(threadView(session, { now: Date.now(), timeZone: TIME_ZONE }))), [session, tick])
+  const view = useMemo(() => (session === undefined ? null : threadView(session, { now: Date.now(), timeZone: TIME_ZONE })), [session, tick])
   const progress = useMemo(() => (view === null ? '' : progressOf(view)), [view])
   const scroller = useRef<HTMLElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
@@ -166,23 +166,21 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [jump, onScroll])
 
-  const asking = session !== undefined && activityOf(session).kind === 'asking'
+  const activity = session === undefined ? null : activityOf(session).kind
   const shown = place.kind === 'reading' && place.far
   useLayoutEffect(() => {
     if (!shown && document.activeElement === jumper.current) composer.current?.focus()
   }, [shown])
 
-  const secretAsked = view !== null && view.asks.length > 0
-  const notice = place.kind !== 'reading' ? '' : asking ? 'Waiting for your OK' : secretAsked ? 'Waiting for your answer' : progress !== place.since ? 'New steps below' : ''
+  const waitsOnYou = activity === 'asking' || activity === 'answering'
+  const notice = jumpWords(place, activity, progress)
 
   const onAnswer = useCallback(async (promptId: PromptId, reply: PromptReply) => {
     if (id === null) return undefined
     const outcome = await run({ do: 'answer', sessionId: id, promptId, reply })
     return outcome.ok ? outcome.value : undefined
   }, [id])
-  const onAnswerRequest = useCallback<SecretAnswer>((requestId, reply) => {
-    if (id !== null) void run({ do: 'answer', sessionId: id, requestId, reply })
-  }, [id])
+  const onAnswerRequest = useCallback<RequestAnswer>(async (requestId, reply) => id !== null && (await run({ do: 'answer', sessionId: id, requestId, reply })).ok, [id])
   const onLoadEarlier = useCallback(() => {
     if (id !== null) void run({ do: 'loadEarlier', sessionId: id })
   }, [id])
@@ -329,7 +327,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
           </FileCallContext>
         )}
       </main>
-      <div className={`jump${shown ? ' shown' : ''}${asking || secretAsked ? ' asking' : ''}`}>
+      <div className={`jump${shown ? ' shown' : ''}${waitsOnYou ? ' asking' : ''}`}>
         <button ref={jumper} type="button" aria-label="Jump to latest" aria-describedby={words} onClick={jump}>
           <svg aria-hidden="true" viewBox="0 0 12 12" width="12" height="12"><path d="M6 2v8M2.5 6.5 6 10l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>

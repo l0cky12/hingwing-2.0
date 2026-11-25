@@ -3,7 +3,7 @@ import { SessionActor, type Upload } from '../src/actor'
 import type { Admission } from '../src/domain/queue'
 import type { CardRequest, ServerRequest, SessionEvent } from '../src/domain/reduce'
 import type {
-  AdmissionId, AttachmentId, BranchId, Generation, InputId, Link, ModelOption, PromptId, RequestAsk, RequestId, RequestReply, Session, SessionId, SessionUsage
+  AdmissionId, AttachmentId, BranchId, ConnectTarget, Generation, InputId, Link, ModelOption, PromptId, RequestAsk, RequestId, RequestReply, Session, SessionId, SessionUsage
 } from '../src/domain/session'
 import { runSessionCommand, type Hub, type SessionCommand } from '../src/session-commands'
 import { manualClock, settle } from '../src/testing/clock'
@@ -699,6 +699,11 @@ describe('answering what Hermes asks outside the turn', () => {
     targets: [{ name: 'github', kind: 'mcp', action: 'install', state: 'pending', resolved: false, detail: null, instructions: null, url: null, fields: [] }]
   }
 
+  const signIn = (state: ConnectTarget['state']): RequestAsk => ({
+    kind: 'connect', rev: 1, suggested: [],
+    targets: [{ name: 'github', kind: 'connector', action: 'connect', state, resolved: false, detail: null, instructions: null, url: null, fields: [] }]
+  })
+
   async function asked(ask: RequestAsk, method = 'clarify') {
     const staged = stage()
     await staged.open()
@@ -792,6 +797,23 @@ describe('answering what Hermes asks outside the turn', () => {
     await answer('connection.respond', { status: 'ok', settled: true })
     await done
     expect(held()?.state).toEqual({ s: 'sending', reply: { kind: 'skip' } })
+  })
+
+  it.each(['failed', 'expired'] as const)('tries a %s target again with connectors.connect, which mints a new link, and leaves the card open', async state => {
+    const { reply, calls, answer, held } = await asked(signIn(state), 'connection.request')
+    const again = reply({ kind: 'connect', target: 'github', as: 'approved' })
+    expect(calls.map(call => ({ method: call.method, params: call.params }))).toEqual([
+      { method: 'connectors.connect', params: { owner: { type: 'session', session_id: ID }, connectors: ['github'], reconnect: true } }
+    ])
+    await answer('connectors.connect', { op_id: REQUEST, seq: 2, deadline_at: 0, settled: false, targets: [] })
+    expect(await again).toEqual({ ok: true, value: undefined })
+    expect(held()?.state).toEqual({ s: 'waiting', error: null })
+  })
+
+  it('skips a failed target with connection.respond', async () => {
+    const { reply, calls } = await asked(signIn('failed'), 'connection.request')
+    void reply({ kind: 'connect', target: 'github', as: 'skipped' })
+    expect(calls[0]).toMatchObject({ method: 'connection.respond', params: { result: { targets: [{ name: 'github', status: 'skipped' }] } } })
   })
 })
 

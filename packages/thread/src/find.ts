@@ -1,9 +1,11 @@
+import { drawnQuestions } from './asks'
 import { leafText, parseMarkdown, proseLeaves } from './prose'
 import type { Phrase, StepView, ThreadView } from './thread-view'
 
 export type FieldPart =
-  | 'request' | 'title' | 'heading' | 'command' | 'why' | 'name' | 'waits' | 'error' | 'words' | 'text' | 'detail' | 'end'
+  | 'request' | 'title' | 'heading' | 'command' | 'why' | 'name' | 'waits' | 'progress' | 'error' | 'words' | 'text' | 'detail' | 'end'
   | `block ${number}` | `path ${number}` | `line ${number} ${number}` | `body ${number}` | `label ${number}`
+  | `question ${number}` | `answer ${number}` | `target ${number}` | `detail ${number}` | `instructions ${number}`
 
 export const fieldId = (key: string, part: FieldPart) => `${key} ${part}`
 
@@ -19,7 +21,12 @@ interface Field { readonly id: string; readonly text: string; readonly opens: re
 
 const joined = (words: Phrase) => words.map(piece => piece.v).join('')
 
-function fields(view: ThreadView): Field[] {
+/** Card key -> the id of the locked question the window is changing on that card. */
+export type Changing = ReadonlyMap<string, string>
+
+const NOTHING_CHANGING: Changing = new Map()
+
+function fields(view: ThreadView, changing: Changing): Field[] {
   const out: Field[] = []
   const add = (key: string, part: FieldPart, text: string, opens: readonly string[] = []) => out.push({ id: fieldId(key, part), text, opens })
 
@@ -80,7 +87,7 @@ function fields(view: ThreadView): Field[] {
           })
           break
         case 'closed':
-          if (node.words !== null) add(node.key, 'words', node.words)
+          add(node.key, 'words', node.words)
           break
         case 'reasoning':
           add(node.key, 'text', node.text, [node.key])
@@ -102,9 +109,30 @@ function fields(view: ThreadView): Field[] {
   }
   for (const card of view.asks) {
     add(card.key, 'heading', card.heading)
-    if (card.command !== null) add(card.key, 'command', card.command)
-    if (card.why !== null) add(card.key, 'why', card.why)
-    if (card.name !== null) add(card.key, 'name', card.name)
+    switch (card.kind) {
+      case 'secret':
+        if (card.command !== null) add(card.key, 'command', card.command)
+        if (card.why !== null) add(card.key, 'why', card.why)
+        if (card.name !== null) add(card.key, 'name', card.name)
+        break
+      case 'questions': {
+        if (card.progress !== null) add(card.key, 'progress', card.progress)
+        const { locked, open } = drawnQuestions(card, changing.get(card.key) ?? null)
+        for (const { question, index, words } of locked) {
+          add(card.key, `question ${index}`, question.text)
+          add(card.key, `answer ${index}`, words)
+        }
+        if (open !== null) add(card.key, `question ${open.index}`, open.question.text)
+        break
+      }
+      case 'connect':
+        card.targets.forEach((target, index) => {
+          add(card.key, `target ${index}`, target.heading)
+          if (target.detail !== null) add(card.key, `detail ${index}`, target.detail)
+          if (target.instructions !== null) add(card.key, `instructions ${index}`, target.instructions)
+        })
+        break
+    }
     if (card.waits !== null) add(card.key, 'waits', card.waits)
     if (card.error !== null) add(card.key, 'error', card.error)
   }
@@ -117,9 +145,9 @@ function fields(view: ThreadView): Field[] {
 
 const escaped = (query: string) => query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-export function findInThread(view: ThreadView, query: string): readonly FindMatch[] {
+export function findInThread(view: ThreadView, query: string, changing = NOTHING_CHANGING): readonly FindMatch[] {
   if (query === '') return []
   const pattern = new RegExp(escaped(query), 'giu')
-  return fields(view).flatMap(field =>
+  return fields(view, changing).flatMap(field =>
     Array.from(field.text.matchAll(pattern), match => ({ field: field.id, start: match.index, end: match.index + match[0].length, opens: field.opens })))
 }

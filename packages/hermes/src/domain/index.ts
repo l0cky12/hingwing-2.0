@@ -1,6 +1,6 @@
 /** `@highwing/hermes/domain`: what the renderer and `@highwing/thread` may import. Types, pure selectors, and the tables that name a target and its failures. */
 export type * from './session'
-export { EFFORTS, PLAIN_CONTROLS, STORED_ROWS } from './session'
+export { EFFORTS, PLAIN_CONTROLS, reissues, STORED_ROWS } from './session'
 export {
   EXPORT_FORMATS, type Checkpoint, type CheckpointDiff, type Checkpoints, type Command, type ContextBreakdown, type ExportFormat, type Exported, type ModelConfirm, type ModelMenu, type Outcome as CommandOutcome, type Refusal, type Restored, type RestoreScope,
   type ResultOf
