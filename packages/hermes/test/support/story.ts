@@ -74,7 +74,6 @@ function userInputs({ await: method, params: sent, reply: answered }: Call, next
     case 'session.mutate':
       if (params.operation === 'rewind') throw new Error('the direct fold has no rewind')
       return []
-    case 'complete.path':
     case 'session.export':
       return []
     case 'connection.respond': {

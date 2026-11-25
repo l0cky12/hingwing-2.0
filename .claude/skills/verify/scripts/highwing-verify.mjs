@@ -742,7 +742,7 @@ const ALWAYS = () => true
 /** The calls `--acted-elsewhere` leaves to another client, by method, each with the recorded params it covers. The window has no control for them yet. */
 const ACTED_CALLS = {
   'prompt.resolve_unknown': ALWAYS, 'prompt.replace_queued': ALWAYS, 'prompt.cancel': ALWAYS, 'prompt.steer_queued': ALWAYS, 'session.steer': ALWAYS, 'session.redirect': ALWAYS,
-  'complete.path': ALWAYS, 'session.export': ALWAYS,
+  'session.export': ALWAYS,
   'config.set': params => params?.key === 'fast',
   'session.mutate': params => params?.operation === 'reasoning' || params?.operation === 'workspace'
 }

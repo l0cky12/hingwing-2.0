@@ -51,7 +51,6 @@ const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fix
     const stored = fixture.header.stored.find(row => (row as { row_id?: unknown }).row_id === rowId) as { text?: unknown } | undefined
     return { do: 'rewind', sessionId, rowId, text: String(next?.await === 'prompt.submit' ? recorded(next).text : stored?.text) }
   },
-  'complete.path': (sessionId, params) => ({ do: 'complete', sessionId, word: String(params.word) }),
   'prompt.btw': (sessionId, params) => ({ do: 'send', sessionId, text: `/btw ${String(params.text)}` }),
   'prompt.background': (sessionId, params) => ({ do: 'send', sessionId, text: `/bg ${String(params.text)}` }),
   'config.set': (sessionId, params) => {

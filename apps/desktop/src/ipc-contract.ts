@@ -301,10 +301,6 @@ export const validators: Validators = {
     const sessionId = sessionIdOf(raw)
     return sessionId && (raw.kind === 'btw' || raw.kind === 'background') && filled(raw.text) ? { do: 'side', sessionId, kind: raw.kind, text: raw.text } : null
   },
-  complete: raw => {
-    const sessionId = sessionIdOf(raw)
-    return sessionId && filled(raw.word) ? { do: 'complete', sessionId, word: raw.word } : null
-  },
   move: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && filled(raw.cwd) ? { do: 'move', sessionId, cwd: raw.cwd } : null

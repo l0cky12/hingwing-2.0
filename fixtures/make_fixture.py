@@ -50,10 +50,10 @@ The stories are in ``STORIES``:
 - ``commands`` writes fixtures/commands.jsonl: a chat made in /tmp/hermes-proto-work on ``gpt-5.4``, two short turns,
   then one call of each chat command. First the ones the window can make: ``prompt.btw`` and ``prompt.background``
   with their answers, YOLO on (``config.set``), and ``session.mutate compress`` with a focus, whose ``stored`` step
-  holds the rows a rebuild reads. Then the rest: ``complete.path`` for ``@no``, effort ``high``
-  (``session.mutate reasoning``), fast on (``config.set``), a move to ``docs`` (``session.mutate workspace``) and
-  ``session.export`` as Markdown. The header carries the real
-  ``commands.catalog`` reply and the attach reply's ``cwd``, ``reasoning_effort``, ``fast`` and ``yolo`` as ``info``.
+  holds the rows a rebuild reads. Then the rest: effort ``high`` (``session.mutate reasoning``), fast on
+  (``config.set``), a move to ``docs`` (``session.mutate workspace``) and ``session.export`` as Markdown. The header
+  carries the real ``commands.catalog`` reply, the attach reply's ``cwd``, ``reasoning_effort``, ``fast`` and ``yolo``
+  as ``info``, and the real ``complete.path`` reply for ``@no`` as ``paths``, which the scripted gateway answers from.
 
 The script runs the canonical gateway in-process, the way Hermes's own
 tests/gateway/test_authority_complete_persisted_turn.py does: a real ``SessionAuthority`` over a
@@ -1484,7 +1484,7 @@ async def commands_main():
     compressed = await story_call("session.mutate", await mutate("compress", {"focus": FOCUS}))
     # The rows a rebuild reads once the compression's receipt is out, placed before it as the gateway's store has them.
     recorder.steps.insert(compressed + 1, {"at": recorder.steps[compressed]["at"], "stored": await stored_rows()})
-    await story_call("complete.path", {"session_id": session_id, "word": "@no"})
+    completed = await call(socket, "complete.path", {"session_id": session_id, "word": "@no"})
     await story_call("session.mutate", await mutate("reasoning", {"effort": "high"}))
     await story_call("config.set", {"session_id": session_id, "key": "fast", "value": "fast"})
     await story_call("session.mutate", await mutate("workspace", {"cwd": f"{WORK}/docs"}))
@@ -1500,7 +1500,8 @@ async def commands_main():
         stop("the socket received other frames than the session published")
     info = {key: opened["info"][key] for key in ("cwd", "reasoning_effort", "fast", "yolo")}
     header = {"fixture": 1, "hermes": HERMES_VERSION, "source": "generated", "sessionId": session_id, "describe": describe, "list": listing,
-              "stored": opened["display_messages"] if "display_messages" in opened else opened["messages"], "catalog": catalog, "info": info}
+              "stored": opened["display_messages"] if "display_messages" in opened else opened["messages"], "catalog": catalog, "info": info,
+              "paths": {"words": {"@no": completed}}}
     with OUT.open("w") as out:
         for line in [header, *({**step, "at": step["at"] - began} for step in recorder.steps)]:
             out.write(json.dumps(line, ensure_ascii=False) + "\n")

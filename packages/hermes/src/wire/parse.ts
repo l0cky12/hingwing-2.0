@@ -3,7 +3,7 @@
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
 import { canonicalBotId, type BotCreated, type BotDetails, type BotFacts, type BotId } from '../domain/bots'
-import type { ContextBreakdown, ModelConfirm, ModelMenu, PathCompletion } from '../domain/command'
+import type { ContextBreakdown, ModelConfirm, ModelMenu } from '../domain/command'
 import type { PaneAsk } from '../domain/pane'
 import type { Admission } from '../domain/queue'
 import type { CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, Said as SaidTuning, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
@@ -704,12 +704,6 @@ export function parsePending(rows: readonly unknown[]): Admission[] {
 /** `config.get` and `config.set` of `show_reasoning` answer `'1'` or `'0'` (`gateway/session_busy_controls.py:90-108`). */
 export function parseShown(reply: { readonly value?: unknown }): boolean | null {
   return reply.value === '1' ? true : reply.value === '0' ? false : null
-}
-
-export function parseCompletions(reply: CompletionItemsResult): readonly PathCompletion[] {
-  return (Array.isArray(reply.items) ? reply.items : []).flatMap(item => (isObject(item) && isString(item.text) && item.text !== ''
-    ? [{ text: item.text, label: isString(item.display) && item.display !== '' ? item.display : item.text, detail: isString(item.meta) && item.meta !== '' ? item.meta : null }]
-    : []))
 }
 
 /** The report of a compression, committed or with nothing to remove: Hermes's headline, size line and note (agent/manual_compression_feedback.py:88-96). */

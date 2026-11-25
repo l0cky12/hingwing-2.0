@@ -43,8 +43,7 @@ describe('the chat commands, from Hermes\'s own gateway', () => {
   })
 
   it('records the closed key set of every call, and what Hermes answered', () => {
-    expect(paramsOf('complete.path').map(minted)).toEqual([{ session_id: fixture.header.sessionId, word: '@no' }])
-    expect(calls.find(step => step.await === 'complete.path')?.reply).toEqual({ items: [{ text: '@file:notes.md', display: 'notes.md', meta: '' }] })
+    expect(fixture.header.paths?.words['@no']).toEqual({ items: [{ text: '@file:notes.md', display: 'notes.md', meta: '' }] })
     expect(paramsOf('prompt.btw').map(Object.keys)).toEqual([['session_id', 'text']])
     expect(paramsOf('session.mutate').map(params => [params.operation, params.payload])).toEqual([
       ['compress', { focus: 'the release plan' }], ['reasoning', { effort: 'high' }], ['workspace', { cwd: `${WORK}/docs` }]
@@ -62,15 +61,14 @@ describe('the commands story, played through the real client', () => {
 
   it('makes each call as Hermes recorded it, from the typed /btw, /bg and /compress lines and the commands', async () => {
     const last = (await played()).seen.at(-1)!
-    for (const method of ['complete.path', 'prompt.btw', 'prompt.background', 'session.mutate', 'config.set', 'session.export']) {
+    for (const method of ['prompt.btw', 'prompt.background', 'session.mutate', 'config.set', 'session.export']) {
       expect(sentBy(last, method).map(minted), method).toEqual(paramsOf(method).map(minted))
     }
   })
 
-  it('answers each command, with the completion, the export and the compression report', async () => {
+  it('answers each command, with the export and the compression report', async () => {
     const { outcomes } = await played()
     expect(outcomes.every(([, outcome]) => outcome.ok)).toBe(true)
-    expect(outcomes.find(([command]) => command === 'complete')?.[1]).toEqual({ ok: true, value: [{ text: '@file:notes.md', label: 'notes.md', detail: null }] })
     expect(outcomes.find(([command]) => command === 'export')?.[1]).toMatchObject({ ok: true, value: { filename: expect.stringMatching(/\.md$/), content: expect.stringContaining('notes.md') } })
     expect(outcomes.filter(([command]) => command === 'send').at(-1)?.[1]).toEqual({ ok: true, value: expect.stringMatching(/^Compressed: 4 → 3 messages/) })
   })
