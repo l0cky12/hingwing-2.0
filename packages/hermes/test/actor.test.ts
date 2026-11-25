@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { SessionActor, type Upload } from '../src/actor'
-import type { ServerRequest, SessionEvent } from '../src/domain/reduce'
-import type { AttachmentId, BranchId, Generation, InputId, Link, ModelOption, PromptId, Session, SessionId, SessionUsage } from '../src/domain/session'
+import type { Admission } from '../src/domain/queue'
+import type { CardRequest, ServerRequest, SessionEvent } from '../src/domain/reduce'
+import type {
+  AdmissionId, AttachmentId, BranchId, Generation, InputId, Link, ModelOption, PromptId, RequestAsk, RequestId, RequestReply, Session, SessionId, SessionUsage
+} from '../src/domain/session'
 import { runSessionCommand, type Hub, type SessionCommand } from '../src/session-commands'
 import { manualClock, settle } from '../src/testing/clock'
 import { Offline, RpcRefusal, type Calls } from '../src/wire/link'
@@ -30,15 +33,21 @@ function stage() {
   const calls: Call[] = []
   const usageReads: Call[] = []
   const published: Session[] = []
-  const refusedRequests: ServerRequest[] = []
-  const state: { link: Link; ids: number } = { link: { state: 'online' }, ids: 0 }
+  const bridges: ServerRequest[] = []
+  const answers: { requestId: string; method: string; result: unknown }[] = []
+  const state: { link: Link; ids: number; batches: boolean } = { link: { state: 'online' }, ids: 0, batches: false }
   const conn: Calls = {
     get link() { return state.link },
+    get clarifyBatch() { return state.batches },
     call: (method: string, params: unknown) => new Promise<never>((resolve, reject) => {
       (method === 'session.stats' ? usageReads : calls).push({ method, params: params as Record<string, unknown>, resolve: resolve as (result: unknown) => void, reject })
-    })
+    }),
+    respond: (requestId, method, result) => {
+      if (state.link.state !== 'online') throw new Offline('down')
+      answers.push({ requestId, method, result })
+    }
   }
-  const actor = new SessionActor(ID, { conn, clock, publish: session => published.push(session), refuse: request => refusedRequests.push(request), mintId: () => `id-${++state.ids}` })
+  const actor = new SessionActor(ID, { conn, clock, publish: session => published.push(session), bridge: request => bridges.push(request), mintId: () => `id-${++state.ids}`, watched: () => false })
   const branched: Parameters<Hub['branched']>[0][] = []
   const hub: Hub = {
     settledCatalog: async () => [], retitle: () => {}, drop: () => {}, refreshSoon: () => {},
@@ -63,7 +72,7 @@ function stage() {
     await settle()
   }
   return {
-    clock, calls, usageReads, published, refusedRequests, actor, answer, answerUsageRead, branched,
+    clock, calls, usageReads, published, bridges, answers, actor, answer, answerUsageRead, state, branched,
     command: (command: SessionCommand) => runSessionCommand(actor.port, command, hub),
     sync: () => actor.session.sync,
     methods: () => calls.map(call => call.method),
@@ -89,8 +98,10 @@ function stage() {
 }
 
 const refusal = (reason: string, revision: number | null = null) => new RpcRefusal(4001, reason, reason, revision)
+const queued = (admissionId: string, inputId: string, text: string, state: Admission['state'] = { s: 'queued', can: [] }): Admission =>
+  ({ admissionId: admissionId as AdmissionId, inputId: inputId as InputId, text, state })
 const started: SessionEvent = { type: 'turn.started', turnId: null, admissionId: null, requestText: null }
-const asked: SessionEvent = { type: 'prompt.opened', id: 'p1' as PromptId, generation: 1 as Generation, ask: { kind: 'approval', command: 'rm -rf x', reason: null, choices: ['once', 'deny'] } }
+const asked: SessionEvent = { type: 'prompt.opened', id: 'p1' as PromptId, generation: 1 as Generation, ask: { kind: 'approval', command: 'rm -rf x', reason: null, choices: ['once', 'deny'] }, timeoutS: null }
 
 describe('attach', () => {
   it('opens a session it has never seen with one resume that asks for history', async () => {
@@ -174,10 +185,14 @@ describe('attach', () => {
     expect(sync()).toEqual({ state: 'live' })
   })
 
-  it('refuses every request the snapshot lists as still open, once the gate is live', async () => {
-    const { open, refusedRequests } = stage()
-    await open({ open_requests: [{ id: 'srq-1', method: 'sudo', params: { session_id: ID, command: 'sudo ls' } }] })
-    expect(refusedRequests).toEqual([{ requestId: 'srq-1', method: 'sudo', sessionId: ID }])
+  it('hands the hub each listed request that has no card, and holds the one that has, once the gate is live', async () => {
+    const { open, bridges, actor } = stage()
+    await open({ open_requests: [
+      { id: 'srq-1', method: 'sudo', params: { session_id: ID, command: 'sudo ls' } },
+      { id: 'srq-2', method: 'theme.pick', params: { session_id: ID, picker: 'accent' } }
+    ] })
+    expect(bridges).toEqual([{ kind: 'bridge', requestId: 'srq-2', method: 'theme.pick', sessionId: ID }])
+    expect(actor.session.requests).toEqual([{ id: 'srq-1', ask: { kind: 'secret', for: { is: 'sudo', command: 'sudo ls' } }, state: { s: 'waiting', error: null }, deadline: null }])
   })
 
   it('detaches with the subscription the attach gave it', async () => {
@@ -190,7 +205,7 @@ describe('attach', () => {
 
 describe('usage', () => {
   const stats = (more: Record<string, unknown> = {}) => ({ input_tokens: 0, output_tokens: 0, reasoning_tokens: 0, last_prompt_tokens: 6000, context_length: 200_000, ...more })
-  const ended = (usage: SessionUsage | null): SessionEvent => ({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: 'Done.', rows: [], userRow: null, usage })
+  const ended = (usage: SessionUsage | null): SessionEvent => ({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: 'Done.', rows: [], userRow: null, replyRow: null, usage })
 
   it('reads the chat\'s usage once it is live, and the first turn then holds what it used', async () => {
     const { actor, open, usageReads, answerUsageRead, event } = stage()
@@ -287,15 +302,27 @@ describe('completePath', () => {
 })
 
 describe('send', () => {
-  it('shows the message as sending, then as the gateway admitted it', async () => {
-    const { actor, open, calls, answer } = stage()
+  it('shows the message as sending, then as a row of the queue once Hermes lists it', async () => {
+    const { actor, open, calls, answer, event } = stage()
     await open()
     const sent = actor.port.submit('hello')
     expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'hello', attachments: [], state: { s: 'sending' } }])
     expect(calls[0]).toMatchObject({ method: 'prompt.submit', params: { session_id: ID, text: 'hello', input_id: 'id-1' } })
     await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
     expect(await sent).toEqual({ ok: true, value: undefined })
-    expect(actor.session.outbox[0]?.state).toEqual({ s: 'queued' })
+    expect(actor.session.outbox[0]?.state, 'the receipt alone moves nothing').toEqual({ s: 'sending' })
+    event({ type: 'meta', queue: [queued('a1', 'id-1', 'hello')] }, null)
+    expect(actor.session.outbox).toEqual([])
+    expect(actor.session.queue).toEqual([{ admissionId: 'a1', inputId: 'id-1', text: 'hello', from: 'here', attachments: [], state: { s: 'queued', can: [] } }])
+  })
+
+  it('drops a message Hermes says is already done, which no list will name', async () => {
+    const { actor, open, answer } = stage()
+    await open()
+    const sent = actor.port.submit('hello')
+    await answer('prompt.submit', { admission_id: 'a1', status: 'terminal' })
+    await sent
+    expect(actor.session.outbox).toEqual([])
   })
 
   it('refuses while the session is not live, and files nothing', async () => {
@@ -326,11 +353,11 @@ describe('send', () => {
     await answer('session.resume', reconnectSnapshot())
     expect(calls.map(call => [call.method, call.params])).toEqual([['prompt.submit', { session_id: ID, text: 'hello', input_id: 'id-1' }]])
     await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
-    expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'hello', attachments: [], state: { s: 'queued' } }])
+    expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'hello', attachments: [], state: { s: 'sending' } }])
   })
 
   it('shows one text and gives the model another, and sends both again after a drop', async () => {
-    const { actor, open, dropAndRedial, answer, calls } = stage()
+    const { actor, open, dropAndRedial, answer, calls, event } = stage()
     await open()
     const sent = actor.port.submit('/release-notes', 'SKILL BODY')
     expect(calls.map(call => call.params)).toEqual([{ session_id: ID, text: '/release-notes', input_id: 'id-1', api_text: 'SKILL BODY' }])
@@ -341,7 +368,10 @@ describe('send', () => {
     await answer('session.resume', reconnectSnapshot())
     expect(calls.map(call => call.params)).toEqual([{ session_id: ID, text: '/release-notes', input_id: 'id-1', api_text: 'SKILL BODY' }])
     await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
-    expect(actor.session.outbox, 'an admitted message no longer carries the model text').toEqual([{ inputId: 'id-1', text: '/release-notes', attachments: [], state: { s: 'queued' } }])
+    event({ type: 'meta', queue: [queued('a1', 'id-1', '/release-notes')] }, null)
+    expect(actor.session.queue, 'a listed message carries only the text the thread shows').toEqual([
+      { admissionId: 'a1', inputId: 'id-1', text: '/release-notes', from: 'here', attachments: [], state: { s: 'queued', can: [] } }
+    ])
   })
 
   const screenshot: Upload = { id: 'a-1' as AttachmentId, name: 'error.png', kind: 'image', size: 3, mime: 'image/png', bytes: Uint8Array.from([1, 2, 3]) }
@@ -624,6 +654,29 @@ describe('mutate and loadEarlier', () => {
     expect(actor.session.earlier).toBe('none')
   })
 
+  it('reads past a page that begins at steered words, to the page that begins at their turn\'s request', async () => {
+    const { actor, command, calls, answer } = stage()
+    actor.attach()
+    await answer('session.resume', snapshot({ messages: [{ archived_truncated: true }], display_messages: [{ role: 'user', text: 'third', row_id: 7 }, { role: 'assistant', text: 'ok', row_id: 8 }] }))
+    const loaded = command({ do: 'loadEarlier', sessionId: ID })
+    await answer('session.transcript', {
+      session_id: ID, next_cursor: 'c1', reset: false,
+      rows: [{ role: 'user', display_kind: 'steer', text: 'use the staging db', row_id: 5 }, { role: 'assistant', text: 'second answer', row_id: 6 }]
+    })
+    expect(calls[0], 'the turn those words were steered into began on an older page').toMatchObject({ method: 'session.transcript', params: { cursor: 'c1' } })
+    await answer('session.transcript', {
+      session_id: ID, next_cursor: 'c2', reset: false,
+      rows: [{ role: 'user', display_kind: 'skill_invocation', text: '/release-notes second', row_id: 3 }, { role: 'tool', name: 'terminal', tool_call_id: 't1' }]
+    })
+    expect(await loaded).toEqual({ ok: true, value: undefined })
+    expect(calls, 'a skill invocation is a request, so that page holds whole turns').toEqual([])
+    expect(actor.session.history.map(turn => [turn.request?.text, turn.items.map(item => item.kind)])).toEqual([
+      ['/release-notes second', ['tool', 'steer', 'text']],
+      ['third', ['text']]
+    ])
+    expect(actor.session.earlier).toBe('more')
+  })
+
   it('goes back to "more" when the read fails', async () => {
     const { actor, command, answer } = stage()
     actor.attach()
@@ -632,5 +685,123 @@ describe('mutate and loadEarlier', () => {
     await answer('session.transcript', refusal('session_busy'))
     expect(await loaded).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
     expect(actor.session.earlier).toBe('more')
+  })
+})
+
+describe('answering what Hermes asks outside the turn', () => {
+  const REQUEST = 'srq-1' as RequestId
+  const BATCH: RequestAsk = {
+    kind: 'questions', answers: {},
+    questions: [{ id: 'q0', text: 'Which env?', choices: ['staging', 'prod'], multi: false }, { id: 'q1', text: 'Which regions?', choices: ['eu', 'us'], multi: true }]
+  }
+  const CARD: RequestAsk = {
+    kind: 'connect', rev: 1, suggested: [],
+    targets: [{ name: 'github', kind: 'mcp', action: 'install', state: 'pending', resolved: false, detail: null, instructions: null, url: null, fields: [] }]
+  }
+
+  async function asked(ask: RequestAsk, method = 'clarify') {
+    const staged = stage()
+    await staged.open()
+    const request: CardRequest = { kind: 'card', requestId: REQUEST, sessionId: ID, method, ask, waitS: null }
+    staged.actor.feed({ in: 'request', request, seenAt: 0 })
+    const reply = (answer: RequestReply) => staged.command({ do: 'answer', sessionId: ID, requestId: REQUEST, reply: answer })
+    return { ...staged, reply, held: () => staged.actor.session.requests[0] }
+  }
+
+  it('sends a login as one JSON string of identifier and password', async () => {
+    const { reply, answers, published } = await asked({ kind: 'secret', for: { is: 'login', site: 'Example', origin: 'https://example.com' } }, 'vault.save_login')
+    expect(await reply({ kind: 'secret', value: 'hunter2', identifier: 'ada' })).toEqual({ ok: true, value: undefined })
+    expect(answers).toEqual([{ requestId: REQUEST, method: 'vault.save_login', result: { value: '{"identifier":"ada","password":"hunter2"}' } }])
+    expect(JSON.stringify(published)).not.toContain('hunter2')
+  })
+
+  it('refuses while the chat is not attached, and writes nothing', async () => {
+    const { reply, held, link, answers } = await asked({ kind: 'secret', for: { is: 'code', site: null, hint: null } }, 'vault.code')
+    link({ state: 'waiting', attempt: 1, retryAt: 0, why: 'dropped', message: '' })
+    expect(await reply({ kind: 'secret', value: '123456' })).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(answers).toEqual([])
+    expect(held()?.state).toEqual({ s: 'waiting', error: null })
+  })
+
+  it('locks one question with clarify.lock, a single pick as its label and several as a JSON array of labels', async () => {
+    const { reply, calls, answer, held } = await asked(BATCH)
+    const first = reply({ kind: 'lock', question: 'q0', answer: ['prod'] })
+    expect(calls[0]).toMatchObject({ method: 'clarify.lock', params: { request_id: REQUEST, question_id: 'q0', answer: 'prod' } })
+    expect(held()?.state).toEqual({ s: 'sending', reply: { kind: 'lock', question: 'q0', answer: ['prod'] } })
+    await answer('clarify.lock', { status: 'ok', remaining: ['q1'] })
+    expect(await first).toEqual({ ok: true, value: undefined })
+    expect(held()).toMatchObject({ ask: { answers: { q0: ['prod'] } }, state: { s: 'waiting', error: null } })
+
+    const last = reply({ kind: 'lock', question: 'q1', answer: ['eu', 'us'] })
+    expect(calls[0]?.params).toEqual({ request_id: REQUEST, question_id: 'q1', answer: '["eu","us"]' })
+    await answer('clarify.lock', { status: 'ok', remaining: [] })
+    await last
+    expect(held(), 'the last lock submits: the card waits for Hermes to close it').toMatchObject({ ask: { answers: { q0: ['prod'], q1: ['eu', 'us'] } }, state: { s: 'sending' } })
+  })
+
+  it('locks a skipped question as null, and ends the batch early with an empty result', async () => {
+    const { reply, calls, answer, answers } = await asked(BATCH)
+    const skipped = reply({ kind: 'lock', question: 'q0', answer: null })
+    expect(calls[0]?.params).toEqual({ request_id: REQUEST, question_id: 'q0', answer: null })
+    await answer('clarify.lock', { status: 'ok', remaining: ['q1'] })
+    await skipped
+    await reply({ kind: 'skip' })
+    expect(answers).toEqual([{ requestId: REQUEST, method: 'clarify', result: {} }])
+  })
+
+  it('refuses two picks for a single-choice question and a question the batch does not have, with no call', async () => {
+    const { reply, calls } = await asked(BATCH)
+    expect(await reply({ kind: 'lock', question: 'q0', answer: ['staging', 'prod'] })).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(await reply({ kind: 'lock', question: 'q9', answer: ['x'] })).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(calls).toEqual([])
+  })
+
+  it('says a lock Hermes had stopped waiting for is no longer open', async () => {
+    const { reply, answer, held } = await asked(BATCH)
+    const late = reply({ kind: 'lock', question: 'q0', answer: ['prod'] })
+    await answer('clarify.lock', { status: 'expired' })
+    expect(await late).toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    expect(held()?.state).toEqual({ s: 'waiting', error: 'That question is no longer open.' })
+  })
+
+  it('answers while a message of this client is still on its way, as a plugin command\'s choice needs', async () => {
+    const { reply, command, calls, answer, answers } = await asked({ kind: 'secret', for: { is: 'sudo', command: 'sudo true' } }, 'sudo')
+    const sending = command({ do: 'send', sessionId: ID, text: 'tidy the notes' })
+    await settle()
+    expect(calls.map(call => call.method)).toEqual(['prompt.submit'])
+    expect(await reply({ kind: 'secret', value: 'hunter2' })).toEqual({ ok: true, value: undefined })
+    expect(answers).toHaveLength(1)
+    await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
+    expect(await sending).toEqual({ ok: true, value: null })
+  })
+
+  it('answers a connector card by its session and operation, and leaves it open until the stream settles it', async () => {
+    const { reply, calls, answer, held, published } = await asked(CARD, 'connection.request')
+    const approved = reply({ kind: 'connect', target: 'github', as: 'approved', values: { GITHUB_TOKEN: 'ghp_secret' } })
+    expect(calls[0]).toMatchObject({
+      method: 'connection.respond',
+      params: { owner: { type: 'session', session_id: ID }, op_id: REQUEST, result: { targets: [{ name: 'github', status: 'approved', env: { GITHUB_TOKEN: 'ghp_secret' } }] } }
+    })
+    await answer('connection.respond', { status: 'ok', settled: false })
+    expect(await approved).toEqual({ ok: true, value: undefined })
+    expect(held()?.state).toEqual({ s: 'waiting', error: null })
+    expect(JSON.stringify(published)).not.toContain('ghp_secret')
+
+    const done = reply({ kind: 'skip' })
+    expect(calls[0]?.params).toMatchObject({ result: { settled_by: 'continue' } })
+    await answer('connection.respond', { status: 'ok', settled: true })
+    await done
+    expect(held()?.state).toEqual({ s: 'sending', reply: { kind: 'skip' } })
+  })
+})
+
+describe('the clarify batch declaration', () => {
+  it.each([[true, { clarify_batch: true }], [false, {}]] as const)('is sent on prompt.submit only when the gateway said it sends batches (%s)', async (batches, declared) => {
+    const { command, calls, state, open } = stage()
+    state.batches = batches
+    await open()
+    void command({ do: 'send', sessionId: ID, text: 'hello' })
+    await settle()
+    expect(calls.find(call => call.method === 'prompt.submit')?.params).toEqual({ session_id: ID, text: 'hello', input_id: 'id-1', ...declared })
   })
 })

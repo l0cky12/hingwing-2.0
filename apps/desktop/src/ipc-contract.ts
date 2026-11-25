@@ -1,7 +1,9 @@
 import {
-  targetOf,
-  type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type ChatRef, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply,
-  type RelayDesk, type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type Unstarted
+  EFFORTS, EXPORT_FORMATS, PLAIN_CONTROLS, targetOf,
+  type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type BusyMode, type ChatRef,
+  type CheckFailure, type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type Item, type Link, type ModelOption,
+  type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
+  type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 
 /** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
@@ -64,7 +66,8 @@ export const isPreviewCommand = (command: AppCommand): command is PreviewCommand
 export type AppCommand = Command | SetupCommand | PreviewCommand
 /** A new picture's bytes come only from main's file picker. */
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' }>
-export type AppResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
+export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
+export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
 
 /** Every topic with one value per connection, and what it carries. */
 export interface AppTopics {
@@ -243,8 +246,51 @@ const attachmentOf = (raw: unknown): Attachment | null =>
   isObject(raw) && filled(raw.id) && filled(raw.name) && (raw.kind === 'image' || raw.kind === 'file') && Number.isSafeInteger(raw.size) && (raw.size as number) >= 0
     ? { id: raw.id as AttachmentId, name: raw.name, kind: raw.kind, size: raw.size as number }
     : null
-const replyOf = (raw: unknown): PromptReply | null =>
-  isObject(raw) && (raw.kind === 'choice' || raw.kind === 'text') && text(raw.value) ? { kind: raw.kind, value: raw.value } : null
+function replyOf(raw: unknown): PromptReply | null {
+  if (!isObject(raw)) return null
+  if (raw.kind === 'deny') return filled(raw.tell) ? { kind: 'deny', tell: raw.tell } : null
+  return (raw.kind === 'choice' || raw.kind === 'text') && text(raw.value) ? { kind: raw.kind, value: raw.value } : null
+}
+
+const BUSY_MODES: readonly string[] = ['queue', 'steer', 'interrupt'] satisfies BusyMode[]
+const ROW_ACTIONS: readonly string[] = ['cancel', 'sendNow', 'release'] satisfies Exclude<QueuedAction, 'edit'>[]
+
+const texts = (value: unknown): value is string[] => Array.isArray(value) && value.every(text)
+const valuesOf = (raw: unknown): { readonly [field: string]: string } | null => (isObject(raw) && Object.values(raw).every(text) ? raw as { readonly [field: string]: string } : null)
+
+function requestReplyOf(raw: unknown): RequestReply | null {
+  if (!isObject(raw)) return null
+  switch (raw.kind) {
+    case 'secret':
+      if (!text(raw.value) || !(raw.identifier === undefined || text(raw.identifier))) return null
+      return { kind: 'secret', value: raw.value, ...(raw.identifier === undefined ? {} : { identifier: raw.identifier }) }
+    case 'lock':
+      return filled(raw.question) && (raw.answer === null || texts(raw.answer)) ? { kind: 'lock', question: raw.question, answer: raw.answer } : null
+    case 'skip':
+      return { kind: 'skip' }
+    case 'connect': {
+      const values = raw.values === undefined ? undefined : valuesOf(raw.values)
+      if (!filled(raw.target) || !(raw.as === 'approved' || raw.as === 'skipped') || values === null) return null
+      return { kind: 'connect', target: raw.target, as: raw.as, ...(values === undefined ? {} : { values }) }
+    }
+    default:
+      return null
+  }
+}
+
+function controlActionOf(raw: unknown): ControlAction | null {
+  if (!isObject(raw)) return null
+  if (raw.act === 'subgoal.add') return filled(raw.text) ? { act: 'subgoal.add', text: raw.text } : null
+  if (raw.act === 'subgoal.remove') return Number.isInteger(raw.index) && (raw.index as number) >= 1 ? { act: 'subgoal.remove', index: raw.index as number } : null
+  const act = PLAIN_CONTROLS.find(held => held === raw.act)
+  return act === undefined ? null : { act }
+}
+
+function restoreScopeOf(raw: unknown): RestoreScope | null {
+  if (!isObject(raw)) return null
+  if (raw.kind === 'file') return filled(raw.path) ? { kind: 'file', path: raw.path } : null
+  return raw.kind === 'folder' && (raw.edits === 'keep' || raw.edits === 'overwrite') ? { kind: 'folder', edits: raw.edits } : null
+}
 
 type Validators = { readonly [K in WindowCommand['do']]: (raw: Obj) => Extract<WindowCommand, { do: K }> | null }
 
@@ -262,6 +308,23 @@ export const validators: Validators = {
     const sessionId = sessionIdOf(raw)
     const attachments = attachmentIdsOf(raw.attachments)
     return sessionId && attachments && filled(raw.text) ? { do: 'send', sessionId, text: raw.text, attachments } : null
+  },
+  side: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && (raw.kind === 'btw' || raw.kind === 'background') && filled(raw.text) ? { do: 'side', sessionId, kind: raw.kind, text: raw.text } : null
+  },
+  move: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && filled(raw.cwd) ? { do: 'move', sessionId, cwd: raw.cwd } : null
+  },
+  compress: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && (raw.focus === null || filled(raw.focus)) ? { do: 'compress', sessionId, focus: raw.focus } : null
+  },
+  export: raw => {
+    const sessionId = sessionIdOf(raw)
+    const format = EXPORT_FORMATS.find(held => held === raw.format)
+    return sessionId && format !== undefined ? { do: 'export', sessionId, format } : null
   },
   rewind: raw => {
     const sessionId = sessionIdOf(raw)
@@ -285,12 +348,24 @@ export const validators: Validators = {
   },
   answer: raw => {
     const sessionId = sessionIdOf(raw)
+    if (sessionId === null) return null
+    if (filled(raw.requestId)) {
+      const reply = requestReplyOf(raw.reply)
+      return reply && { do: 'answer', sessionId, requestId: raw.requestId as RequestId, reply }
+    }
     const reply = replyOf(raw.reply)
-    return sessionId && filled(raw.promptId) && reply ? { do: 'answer', sessionId, promptId: raw.promptId as Extract<Command, { do: 'answer' }>['promptId'], reply } : null
+    return filled(raw.promptId) && reply ? { do: 'answer', sessionId, promptId: raw.promptId as PromptId, reply } : null
   },
   discard: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && filled(raw.inputId) ? { do: 'discard', sessionId, inputId: raw.inputId as Extract<Command, { do: 'discard' }>['inputId'] } : null
+  },
+  queued: raw => {
+    const sessionId = sessionIdOf(raw)
+    if (!sessionId || !filled(raw.admissionId)) return null
+    const row = { do: 'queued', sessionId, admissionId: raw.admissionId as AdmissionId } as const
+    if (raw.action === 'edit') return filled(raw.text) ? { ...row, action: 'edit', text: raw.text } : null
+    return text(raw.action) && ROW_ACTIONS.includes(raw.action) ? { ...row, action: raw.action as Exclude<QueuedAction, 'edit'> } : null
   },
   rename: raw => {
     const sessionId = sessionIdOf(raw)
@@ -348,9 +423,51 @@ export const validators: Validators = {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'botPicture', bot }
   },
-  setYolo: raw => {
+  tune: raw => {
     const sessionId = sessionIdOf(raw)
-    return sessionId && typeof raw.on === 'boolean' ? { do: 'setYolo', sessionId, on: raw.on } : null
+    if (!sessionId) return null
+    if (raw.set === 'busy') return text(raw.to) && BUSY_MODES.includes(raw.to) ? { do: 'tune', sessionId, set: 'busy', to: raw.to as BusyMode } : null
+    if (raw.set === 'effort') {
+      const to = raw.to === 'default' ? 'default' : EFFORTS.find(level => level === raw.to)
+      return to === undefined ? null : { do: 'tune', sessionId, set: 'effort', to }
+    }
+    if (typeof raw.on !== 'boolean') return null
+    switch (raw.set) {
+      case 'reasoning':
+        return { do: 'tune', sessionId, set: 'reasoning', on: raw.on }
+      case 'yolo':
+        return { do: 'tune', sessionId, set: 'yolo', on: raw.on }
+      case 'fast':
+        return { do: 'tune', sessionId, set: 'fast', on: raw.on }
+      default:
+        return null
+    }
+  },
+  killProcess: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && filled(raw.processId) ? { do: 'killProcess', sessionId, processId: raw.processId as ProcessId } : null
+  },
+  control: raw => {
+    const sessionId = sessionIdOf(raw)
+    const action = controlActionOf(raw.action)
+    return sessionId && action && { do: 'control', sessionId, action }
+  },
+  checkpoints: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && { do: 'checkpoints', sessionId }
+  },
+  checkpointDiff: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && filled(raw.checkpoint) ? { do: 'checkpointDiff', sessionId, checkpoint: raw.checkpoint as CheckpointId } : null
+  },
+  restore: raw => {
+    const sessionId = sessionIdOf(raw)
+    const scope = restoreScopeOf(raw.scope)
+    return sessionId && scope && filled(raw.checkpoint) ? { do: 'restore', sessionId, checkpoint: raw.checkpoint as CheckpointId, scope } : null
+  },
+  react: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && filled(raw.turn) && (raw.emoji === null || filled(raw.emoji)) ? { do: 'react', sessionId, turn: raw.turn as TurnId, emoji: raw.emoji } : null
   },
   reconnect: raw => (typeof raw.start === 'boolean' ? { do: 'reconnect', start: raw.start } : null),
   checkTarget: raw => {

@@ -1,8 +1,8 @@
 import type { Outcome, Refusal } from './domain/command'
-import { emptyTracked, reduce, sessionOf, type Fence, type Gate, type HistoryPage, type LocalAction, type ServerRequest, type SessionInput, type Tracked } from './domain/reduce'
-import type { Attachment, InputId, OutboxEntry, Session, SessionContent, SessionId } from './domain/session'
-import { Offline, RpcRefusal, type Calls, type Clock, type Method, type Served } from './wire/link'
-import { parseReplay, parseSnapshot, parseStats } from './wire/parse'
+import { emptyTracked, reduce, sessionOf, type BridgeRequest, type Fence, type Gate, type HistoryPage, type LocalAction, type SessionInput, type Tracked } from './domain/reduce'
+import type { AdmissionId, Attachment, InputId, OutboxEntry, RequestId, Session, SessionContent, SessionId } from './domain/session'
+import { Offline, RpcRefusal, type Calls, type Clock, type Method, type Requested, type RequestMethod, type Served } from './wire/link'
+import { parseBusy, parseControl, parseProcesses, parseReplay, parseShown, parseSnapshot, parseStats } from './wire/parse'
 
 export const DONE: Outcome = { ok: true, value: undefined }
 export const refused = (kind: Refusal['kind'], message: string): Outcome<never> => ({ ok: false, refusal: { kind, message } })
@@ -17,7 +17,15 @@ const REFUSALS: Readonly<Record<string, Refusal>> = {
   invalid_params: { kind: 'rejected', message: 'Hermes did not accept the request.' },
   unsupported_command: { kind: 'unsupported', message: "Hermes can't run that command from Highwing." },
   profile_mismatch: { kind: 'rejected', message: "Hermes isn't running that bot right now." },
-  unknown_method: { kind: 'unsupported', message: "This Hermes doesn't support that." }
+  unknown_method: { kind: 'unsupported', message: "This Hermes doesn't support that." },
+  fast_unavailable: { kind: 'rejected', message: "This chat's model has no fast mode." },
+  export_too_large: { kind: 'rejected', message: 'This chat is too large for Hermes to export.' },
+  process_not_found: { kind: 'stale', message: 'That process is no longer in this chat.' },
+  unsupported_projection: { kind: 'unsupported', message: "Hermes runs this chat elsewhere, so it can't list or stop its processes." },
+  goal_not_active: { kind: 'stale', message: 'This chat has no goal now.' },
+  command_unavailable: { kind: 'unsupported', message: "Hermes can't run goals for this chat." },
+  invalid_checkpoint: { kind: 'rejected', message: 'Hermes no longer keeps that checkpoint.' },
+  unsupported_terminal_backend: { kind: 'unsupported', message: "Hermes keeps no checkpoints for this chat's terminal." }
 }
 const FENCE_REFUSALS: ReadonlySet<string> = new Set(['revision_conflict', 'stale_generation'])
 const NOT_CONNECTED: Refusal = { kind: 'offline', message: "Highwing isn't connected to this chat right now." }
@@ -53,6 +61,7 @@ export const RESTART_LIMIT = { count: 4, withinMs: 60_000 } as const
 const KEEPS_RESTARTING = 'Hermes keeps restarting this chat.'
 
 type Attaching = Extract<Gate, { at: 'attaching' }>
+type Sendable = Pick<OutboxEntry, 'inputId' | 'text' | 'apiText' | 'replaces'>
 
 /** An attachment with its bytes, read from where Highwing keeps it. `mime` is what the bytes are, as Highwing sniffed them. */
 export type Upload = Attachment & { readonly mime: string; readonly bytes: Uint8Array }
@@ -78,21 +87,23 @@ export interface ActorDeps {
   readonly conn: Calls
   readonly clock: Clock
   readonly publish: (session: Session, previous: Session) => void
-  readonly refuse: (request: ServerRequest) => void
+  readonly bridge: (request: BridgeRequest) => void
   readonly mintId: () => string
+  readonly watched: () => boolean
 }
 
 export interface SessionPort {
   readonly id: SessionId
   readonly content: SessionContent
   readonly fence: Fence
-  call<M extends Method>(method: M, params: Served[M]['params']): Promise<Outcome<Served[M]['result']>>
+  /** `reasons` words a refusal of this call that the general table would word wrongly. */
+  call<M extends Method>(method: M, params: Served[M]['params'], reasons?: Readonly<Record<string, Refusal>>): Promise<Outcome<Served[M]['result']>>
   /** `invalid` stands in for the general refusal when Hermes names that payload field as the invalid one. */
   mutate(
     operation: string,
     payload: Record<string, unknown>,
     expectedGeneration: number | null,
-    invalid?: { readonly field: string; readonly refusal: Refusal }
+    invalid?: { readonly field: string | null; readonly refusal: Refusal }
   ): Promise<Outcome<Served['session.mutate']['result']>>
   /**
    * The request exactly as the row built it, with the same one retry on a fence refusal. `sent` hears each request
@@ -103,11 +114,17 @@ export interface SessionPort {
     sent: (request: Mutation) => void,
     explain: (reason: string) => Refusal | null
   ): Promise<Outcome<Served['session.mutate']['result']>>
+  /** Answers a request with a result frame. Hermes sends no reply to one, so `ok` means only that the frame was written. */
+  respond<M extends RequestMethod>(requestId: RequestId, method: M, result: Requested[M]['result']): Outcome
   /**
    * `apiText` is what the model reads when it differs from the `text` the thread and the stored history show. Each upload
    * is staged with Hermes first, in order. The message is sent only once every one is, and not at all when Hermes refuses one.
    */
   submit(text: string, apiText?: string, uploads?: readonly Upload[]): Promise<Outcome>
+  /** Submits words the caller can no longer give back. Refused for any reason, they stay in the outbox as a failed message. */
+  submitOrKeep(text: string): Promise<Outcome>
+  /** Sends `text` in place of a queued row, as a new message at the back. A refusal leaves nothing in the outbox, unless the socket dropped before Hermes answered: the same replacement is then sent again. */
+  replace(admissionId: AdmissionId, text: string): Promise<Outcome>
   act(action: LocalAction): void
   earlier(page: HistoryPage): void
   whenLive<T>(run: () => Promise<Outcome<T>>): Promise<Outcome<T>>
@@ -128,7 +145,10 @@ export class SessionActor {
       id,
       get content() { return tracked().content },
       get fence() { return tracked().fence },
-      call: (method, params) => outcomeOf(() => deps.conn.call(method, params)),
+      call: (method, params, reasons = {}) => outcomeOf(
+        () => deps.conn.call(method, params),
+        error => (error instanceof RpcRefusal && Object.hasOwn(reasons, error.reason ?? '') ? reasons[error.reason ?? ''] as Refusal : refusalOf(error))
+      ),
       mutate: (operation, payload, expectedGeneration, invalid) => outcomeOf(
         () => this.mutation({ request_id: deps.mintId(), operation, payload, expected_revision: this.tracked.fence.revision, expected_generation: expectedGeneration }),
         error => (invalid !== undefined && error instanceof RpcRefusal && error.reason === 'invalid_params' && error.field === invalid.field ? invalid.refusal : refusalOf(error))
@@ -137,9 +157,30 @@ export class SessionActor {
         () => this.mutation(request, sent),
         error => (error instanceof RpcRefusal ? explain(error.reason ?? '') ?? refusalOf(error) : refusalOf(error))
       ),
+      respond: (requestId, method, result) => {
+        try {
+          deps.conn.respond(requestId, method, result)
+          return DONE
+        } catch (error) {
+          return { ok: false, refusal: refusalOf(error) }
+        }
+      },
       submit: (text, apiText, uploads = []) => this.port.whenLive(() => (uploads.length === 0
         ? this.post(text, apiText, [], null)
         : this.stage(uploads).then(staged => (staged.ok ? this.post(text, apiText, uploads, staged.value) : staged)))),
+      submitOrKeep: async text => {
+        const sending = { inputId: deps.mintId() as InputId, text, attachments: [] }
+        this.act({ did: 'send', ...sending })
+        const sent = await this.port.whenLive(() => this.submit(sending))
+        // `admit` has marked a message Hermes refused. One refused because the chat is not live never reached it.
+        if (!sent.ok) this.act({ did: 'send.failed', inputId: sending.inputId, message: sent.refusal.message })
+        return sent
+      },
+      replace: (admissionId, text) => {
+        const sending = { inputId: deps.mintId() as InputId, text, attachments: [], replaces: admissionId }
+        this.act({ did: 'send', ...sending })
+        return this.admit(sending)
+      },
       act: action => this.act(action),
       earlier: page => this.step({ in: 'earlier', page }),
       whenLive: run => (this.tracked.gate.at === 'live' ? run() : Promise.resolve({ ok: false, refusal: NOT_CONNECTED }))
@@ -151,7 +192,7 @@ export class SessionActor {
   }
 
   /** Whether the input moved the live cursor, as a frame seen for the first time and in order does. */
-  feed(input: Extract<SessionInput, { in: 'event' | 'gap' | 'declined' }>): boolean {
+  feed(input: Extract<SessionInput, { in: 'event' | 'gap' | 'request' | 'declined' }>): boolean {
     const before = this.tracked.gate
     this.step(input)
     const after = this.tracked.gate
@@ -160,6 +201,10 @@ export class SessionActor {
 
   attach(): void {
     if (this.deps.conn.link.state === 'online') this.step({ in: 'attach' })
+  }
+
+  watchBegan(): void {
+    if (this.tracked.gate.at === 'live') this.readFacts()
   }
 
   linkChanged(): void {
@@ -171,6 +216,7 @@ export class SessionActor {
   private step(input: SessionInput): void {
     const before = this.tracked.gate
     const wasRunning = this.tracked.content.run.state === 'running'
+    const listed = this.tracked.fence.heard.processes
     this.tracked = reduce(this.tracked, input)
     for (const inputId of this.resubmits.keys()) if (!this.tracked.content.outbox.some(entry => entry.inputId === inputId)) this.resubmits.delete(inputId)
     const after = this.tracked.gate
@@ -180,9 +226,33 @@ export class SessionActor {
     if (after.at === 'attaching' && !(before.at === 'attaching' && before.attempt === after.attempt)) {
       void this.runAttach(after, before.at !== 'detached')
     } else if (wentLive) {
-      // A message whose submit died with the last socket. The gateway's duplicate guard makes a second delivery a no-op.
+      // A message whose call died with the last socket. The same call again is a no-op for one Hermes took: its duplicate guards are keyed on the ids the call carries.
       for (const entry of this.tracked.content.outbox) if (entry.state.s === 'sending') void this.admit(entry)
+      if (this.deps.watched()) this.readFacts()
+    } else if (after.at === 'live' && this.tracked.fence.heard.processes !== listed && this.deps.watched()) {
+      void this.readProcesses()
     }
+  }
+
+  private readFacts(): void {
+    const { attaches: attempt, heard } = this.tracked.fence
+    const session_id = this.id
+    const read = (key: string) => this.port.call('config.get', { session_id, key })
+    void Promise.all([read('show_reasoning'), read('busy')]).then(([shown, busy]) => {
+      if (![shown, busy].some(answer => !answer.ok && answer.refusal.kind === 'offline')) {
+        this.step({ in: 'facts', attempt, heard, tuning: { reasoning: shown.ok ? parseShown(shown.value) : null, busy: busy.ok ? parseBusy(busy.value) : null } })
+      }
+    })
+    void this.port.call('session.control.read', { session_id }).then(control => {
+      if (control.ok || control.refusal.kind !== 'offline') this.step({ in: 'facts', attempt, heard, control: control.ok ? parseControl(control.value.control) : null })
+    })
+    void this.readProcesses()
+  }
+
+  private async readProcesses(): Promise<void> {
+    const { attaches: attempt, heard } = this.tracked.fence
+    const listed = await this.port.call('process.list', { session_id: this.id })
+    if (listed.ok || listed.refusal.kind !== 'offline') this.step({ in: 'facts', attempt, heard, processes: listed.ok ? parseProcesses(listed.value) : null })
   }
 
   private act(action: LocalAction): void {
@@ -227,7 +297,8 @@ export class SessionActor {
   private attached(attempt: number, snapshot: ReturnType<typeof parseSnapshot>, replay: ReturnType<typeof parseReplay> | null): void {
     this.step({ in: 'attached', attempt, snapshot, replay })
     const { gate } = this.tracked
-    if (gate.at === 'live' && gate.subscriptionId === snapshot.subscriptionId) snapshot.openRequests.forEach(this.deps.refuse)
+    if (gate.at !== 'live' || gate.subscriptionId !== snapshot.subscriptionId) return
+    for (const request of snapshot.openRequests) if (request.kind === 'bridge') this.deps.bridge(request)
   }
 
   private async readUsage(): Promise<void> {
@@ -236,7 +307,7 @@ export class SessionActor {
       .then(reply => this.step({ in: 'usage', usage: parseStats(reply), asked }), refusalOf)
   }
 
-  private async submit(entry: Pick<OutboxEntry, 'inputId' | 'text' | 'apiText'>): Promise<Outcome> {
+  private async submit(entry: Sendable): Promise<Outcome> {
     // Written before the submit, so the gateway answers it before the turn can build a new agent that counts from zero.
     void this.readUsage()
     return this.admit(entry)
@@ -275,17 +346,28 @@ export class SessionActor {
     return { ok: true, value: { images, refs } }
   }
 
-  private async admit({ inputId, text, apiText }: Pick<OutboxEntry, 'inputId' | 'text' | 'apiText'>): Promise<Outcome> {
+  private async admit({ inputId, text, apiText, replaces }: Sendable): Promise<Outcome> {
     const resubmit = this.resubmits.get(inputId)
     const apiTextSent = resubmit === undefined ? apiText : resubmit.apiText
-    const receipt = await this.port.call('prompt.submit', {
-      session_id: this.id, text, input_id: inputId, ...(apiTextSent === undefined ? {} : { api_text: apiTextSent }),
-      ...(resubmit === undefined || resubmit.attachments.length === 0 ? {} : { attachments: [...resubmit.attachments] })
-    })
+    // Asks for the clarify tool's questions as one request, which `requests` can hold. Without it each comes as a prompt of the turn.
+    const batch = this.deps.conn.clarifyBatch ? { clarify_batch: true } : {}
+    // A repeat of a replacement Hermes took answers the admission it made, only for the same row and id (gateway/session_queued_controls.py:212-233).
+    const receipt = await (replaces === undefined
+      ? this.port.call('prompt.submit', {
+        session_id: this.id, text, input_id: inputId, ...(apiTextSent === undefined ? {} : { api_text: apiTextSent }),
+        ...(resubmit === undefined || resubmit.attachments.length === 0 ? {} : { attachments: [...resubmit.attachments] }), ...batch
+      })
+      : this.port.call('prompt.replace_queued', { session_id: this.id, admission_id: replaces, submission_id: inputId, text }))
     if (receipt.ok) {
-      if ('admission_id' in receipt.value) this.act({ did: 'send.admitted', inputId, admissionId: receipt.value.admission_id, status: receipt.value.status })
-      else this.act({ did: 'send.discarded', inputId })
+      // Hermes's pending list takes the entry of a row it holds. Nothing lists a message that was not admitted, or one that is already done.
+      if (!('admission_id' in receipt.value) || receipt.value.status === 'terminal') this.act({ did: 'send.discarded', inputId })
+      else this.act({ did: 'send.admitted', inputId, admissionId: receipt.value.admission_id })
       return DONE
+    }
+    if (replaces !== undefined) {
+      // The editor still holds a refused edit's words, so the outbox keeps only one Hermes may have taken.
+      if (receipt.refusal.kind !== 'offline') this.act({ did: 'send.discarded', inputId })
+      return receipt
     }
     if (receipt.refusal.kind === 'offline') return DONE
     this.act({ did: 'send.failed', inputId, message: receipt.refusal.message })

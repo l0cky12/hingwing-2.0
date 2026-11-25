@@ -3,32 +3,44 @@
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
 import { canonicalBotId, type BotCreated, type BotDetails, type BotFacts, type BotId } from '../domain/bots'
-import type { ContextBreakdown, ModelConfirm, ModelMenu } from '../domain/command'
+import type { CheckpointDiff, Checkpoints, ContextBreakdown, ModelConfirm, ModelMenu, Restored } from '../domain/command'
 import type { PaneAsk } from '../domain/pane'
-import type { Admission, HelperUpdate, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
+import type { Admission } from '../domain/queue'
+import type { CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, Said as SaidTuning, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
+import type { CloseWhy } from '../domain/requests'
+import { EFFORTS } from '../domain/session'
 import type {
-  Ask, Began, FileDiff, Generation, HelperEnd, HelperId, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, PromptId, SessionId,
-  SessionUsage, SettledTurn, SidebarRow, ToolId, ToolResult, TurnId
+  AdmissionId, Answer, Ask, BackgroundProcess, Began, BusyMode, CheckpointId, ConnectTarget, FileDiff, Generation, Goal, GoalPart, GoalVerdict, GoalWait, Heartbeat, HelperEnd,
+  HelperId, InputId, Item, Json, Loop, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, ProcessId, PromptId, Question, Reaction, RequestId, SessionControl, SessionId,
+  SessionUsage, SettledTurn, SideId, SidebarRow, SideTask, StatusAbout, ToolId, ToolResult, TurnId
 } from '../domain/session'
 import type { PathMatch } from '../domain/path'
 import type { RelayState } from '../domain/relay'
-import type { SlashCatalog, SlashEntry } from '../domain/slash'
+import { OWN_COMMANDS, type SlashCatalog, type SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
 import type {
-  CanonicalBotDeliverResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalProfilesResult, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
-  CanonicalSnapshot, CompletionItem, CompletionItemsResult, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
-  MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, PreviewClosePayload, PreviewOpenPayload, ProfilesConfigureResult, ProfilesCreateResult, ProfilesDescribeResult, ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult,
-  SessionStats, SessionTitlePayload, SessionUsagePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload, SubagentEventPayload,
-  TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage
+  AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
+  CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
+  CommandDispatchResult, CommandsCatalogResult, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
+  ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, LoopSnapshot,
+  MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
+  MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn,
+  PreviewClosePayload, PreviewOpenPayload, ProcessEntry, ProcessListResult, ProfilesConfigureResult, ProfilesCreateResult, ProfilesDescribeResult,
+  ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, RequestCancelPayload, RollbackCheckpoint,
+  RollbackDiffResult, RollbackListResult, RollbackRestoreResult, SecretRequestParams, SessionContextBreakdownResult, SessionControlDispatch,
+  SessionControlSnapshot, SessionLiveInfo, SessionMutateResult, SessionStats, SessionTitlePayload, SessionUsagePayload, SideAgentCompletePayload,
+  StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload,
+  SubagentEventPayload, SudoRequestParams, TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage,
+  VaultCodeRequestParams, VaultSaveLoginRequestParams, VaultUnlockRequestParams
 } from './contract.generated'
 
 export type ParsedEvent =
   /** One shown frame of a session's stream: a session id, a seq and a replay epoch on the envelope, and a payload we use. */
   | { readonly scope: 'session'; readonly sessionId: SessionId; readonly type: string; readonly stamp: Stamp; readonly event: SessionEvent }
   /**
-   * A frame of a session's stream with nothing to show: a type we leave out for now (status.update,
-   * session.usage), or a payload we could not use. It still reaches the session, so the cursor moves
-   * and the frame is not mistaken for a hole.
+   * A frame of a session's stream with nothing to show: a type we leave out for now, or a payload we
+   * could not use. It still reaches the session, so the cursor moves and the frame is not mistaken for
+   * a hole.
    */
   | { readonly scope: 'session'; readonly sessionId: SessionId; readonly type: string; readonly stamp: Stamp; readonly event: null; readonly skipped: 'unshown' | 'invalid' }
   /** A frame of a session's stream that asks something of the window, not of the chat. It moves the cursor as an unshown frame does. */
@@ -132,54 +144,81 @@ const LOST: Outcome = { kind: 'lost' }
 const NO_RESULT: ToolResult = { kind: 'none' }
 
 /** An approval or clarify prompt. Event payloads and snapshot entries are the same dict (`gateway/session_pending_controls.py:18-51,74`). */
-function promptOf(value: unknown): { readonly id: PromptId; readonly generation: Generation; readonly ask: Ask } {
+function promptOf(value: unknown): { readonly id: PromptId; readonly generation: Generation; readonly ask: Ask; readonly timeoutS: number | null } {
   const p = fields<CanonicalPendingPrompt>(value)
   const id = p.str('prompt_id') as PromptId
   const generation = p.int('execution_generation') as Generation
+  const seconds = p.optNum('timeout_s')
+  const timeoutS = seconds !== null && seconds > 0 ? seconds : null
   switch (p.str('kind')) {
     case 'approval':
-      return { id, generation, ask: { kind: 'approval', command: p.str('command'), reason: p.optStr('description') || null, choices: p.strs('choices') } }
+      return { id, generation, timeoutS, ask: { kind: 'approval', command: p.str('command'), reason: p.optStr('description') || null, choices: p.strs('choices') } }
     case 'clarify':
-      return { id, generation, ask: { kind: 'clarify', question: p.str('question'), choices: p.strs('choices'), multi: p.optBool('multi_select') ?? false } }
+      return { id, generation, timeoutS, ask: { kind: 'clarify', question: p.str('question'), choices: p.strs('choices'), multi: p.optBool('multi_select') ?? false } }
     default:
       throw new Unusable()
   }
 }
 
-const ADMISSION_STATUSES: readonly string[] = ['queued', 'started', 'unknown', 'terminal'] satisfies Admission['status'][]
+/** `controls` names what Hermes serves for a queued row. An older Hermes lists none (gateway/session_queued_controls.py:49-59). */
+const CONTROLS: { readonly [control: string]: 'sendNow' | 'edit' } = { steer: 'sendNow', replace: 'edit' }
 
 function admissionOf(value: unknown): Admission {
   const row = fields<CanonicalPendingAdmission>(value)
-  const status = row.str('status')
-  if (!ADMISSION_STATUSES.includes(status)) throw new Unusable()
-  return { inputId: row.str('input_id') as Admission['inputId'], admissionId: row.str('admission_id'), text: row.str('text'), status: status as Admission['status'] }
+  const state = ((): Admission['state'] => {
+    switch (row.str('status')) {
+      case 'queued':
+        return { s: 'queued', can: (row.optList('controls') ?? []).flatMap(control => (isString(control) ? CONTROLS[control] ?? [] : [])) }
+      // A row handed to the running turn reads `started` until that turn settles it (gateway/session_authority.py:461-465).
+      case 'started':
+        return { s: row.optBool('steering') === true ? 'steering' : 'started' }
+      case 'unknown':
+        return { s: 'lost', generation: row.int('execution_generation') as Generation }
+      case 'terminal':
+        return { s: 'terminal' }
+      default:
+        throw new Unusable()
+    }
+  })()
+  return { admissionId: row.str('admission_id') as AdmissionId, inputId: row.str('input_id') as InputId, text: row.str('text'), state }
 }
 
-type Shown = (payload: Obj, envelope: Obj) => SessionEvent
+type Shown = (payload: Obj, envelope: Obj) => SessionEvent | null
+
+function sideAnswer(payload: Obj, kind: SideTask['kind']): SessionEvent {
+  const p = fields<SideAgentCompletePayload>(payload)
+  const id = p.str('task_id')
+  if (id === '') throw new Unusable()
+  return { type: 'side.answered', id: id as SideId, kind, asked: p.optStr('question') || null, text: stripAnsi(p.str('text')) }
+}
 
 interface MetaFields {
   readonly title?: string | null
   readonly revision?: number | null
   readonly queue?: readonly Admission[] | null
   readonly model?: ModelRef | null
-  readonly yolo?: boolean | null
+  readonly cwd?: string | null
+  readonly tuning?: Partial<SaidTuning>
   readonly pick?: PickOutcome | null
   readonly generation?: number | null
   readonly cutBefore?: number | null
+  readonly rewritten?: true
   readonly countsRestart?: true
 }
 
-function meta({ title, revision, queue, model, yolo, pick, generation, cutBefore, countsRestart }: MetaFields): SessionEvent {
+function meta({ title, revision, queue, model, cwd, tuning, pick, generation, cutBefore, rewritten, countsRestart }: MetaFields): SessionEvent {
   return {
     type: 'meta',
     ...(title == null ? {} : { title }),
     ...(revision == null ? {} : { revision }),
     ...(queue == null ? {} : { queue }),
     ...(model == null ? {} : { model }),
-    ...(yolo == null ? {} : { yolo }),
+    ...(cwd == null ? {} : { cwd }),
+    ...(tuning === undefined || Object.keys(tuning).length === 0 ? {} : { tuning }),
     ...(pick == null ? {} : { pick }),
     ...(generation == null ? {} : { generation: generation as Generation }),
     ...(cutBefore == null ? {} : { cutBefore }),
+    ...(rewritten === undefined ? {} : { rewritten }),
     ...(countsRestart === undefined ? {} : { countsRestart })
   }
 }
@@ -297,6 +336,7 @@ export const SHOWN: { readonly [type: string]: Shown } = {
       finalText: outcome.kind === 'failed' ? null : p.optStr('text') || null,
       rows: receipt === null ? [] : fields<PersistedTurn>(receipt).ints('row_ids'),
       userRow: receipt === null ? null : fields<PersistedTurn>(receipt).optInt('user_row_id'),
+      replyRow: receipt === null ? null : fields<PersistedTurn>(receipt).optInt('final_assistant_row_id'),
       usage: usage === null ? null : parseUsage(usage)
     }
   },
@@ -347,17 +387,62 @@ export const SHOWN: { readonly [type: string]: Shown } = {
       result: parseToolResult(p.raw('result'), p.optStr('result_text'), p.optBool('is_error') ?? false)
     }
   },
+  /** The four MoA facade events, each a step of one round (`gateway/local_viewer_events.py:129-161`). */
+  'moa.progress': payload => {
+    const p = fields<MoaProgressPayload>(payload)
+    return { type: 'moa', step: { is: 'progress', done: p.int('refs_done'), total: p.int('refs_total') } }
+  },
+  'moa.reference': payload => {
+    const p = fields<MoaReferencePayload>(payload)
+    return { type: 'moa', step: { is: 'reference', label: p.str('label'), text: stripAnsi(p.str('text')) } }
+  },
+  'moa.phase': payload => {
+    const p = fields<MoaPhasePayload>(payload)
+    if (p.str('phase') !== 'aggregator') throw new Unusable()
+    return { type: 'moa', step: { is: 'aggregating', by: p.optStr('aggregator') || null } }
+  },
+  'moa.aggregating': payload => ({ type: 'moa', step: { is: 'aggregating', by: fields<MoaAggregatingPayload>(payload).optStr('aggregator') || null } }),
+  'status.update': payload => {
+    const p = fields<StatusUpdatePayload>(payload)
+    const kind = p.str('kind')
+    // A process ended or matched a watch (tui_gateway/session_notifications.py:613,723). Its words repeat what the list says.
+    if (kind === 'process') return { type: 'processes.changed' }
+    return { type: 'status', about: STATUS_ABOUT[kind] ?? 'other', text: stripAnsi(p.str('text')) }
+  },
+  'agent.print': payload => ({ type: 'status', about: 'print', text: stripAnsi(fields<AgentPrintPayload>(payload).str('text')) }),
+  'notification.show': payload => ({ type: 'notice.shown', notice: noticeOf(payload) }),
+  'notification.clear': payload => ({ type: 'notice.cleared', key: fields<NotificationClearPayload>(payload).str('key') }),
   'approval.request': promptOpened,
   'clarify.request': promptOpened,
   'approval.settled': promptSettled,
   'clarify.settled': promptSettled,
   'approval.cancelled': payload => ({ type: 'prompts.cancelled', ids: fields<ApprovalCancelledPayload>(payload).strs('request_ids') as PromptId[] }),
+  /** A side agent's answer, published on the chat's stream with no generation (gateway/session_tui_side.py:156-158). */
+  'btw.complete': payload => sideAnswer(payload, 'btw'),
+  'background.complete': payload => sideAnswer(payload, 'background'),
+  /** A reason outside Hermes's own five reads as withdrawn (`RequestCancelReason`, tui_gateway/contracts/server_requests.py:372-377). */
+  'request.cancel': payload => {
+    const p = fields<RequestCancelPayload>(payload)
+    return { type: 'request.cancelled', id: p.str('id') as RequestId, why: CANCEL_WHY[p.str('reason')] ?? 'withdrawn' }
+  },
+  /** The card of `manage_connections`, opened on the turn that called it (gateway/local_desktop_ui.py:278). */
+  'connection.request': (payload, envelope) => ({ type: 'connect', card: connectCard(payload, envelope), settled: null }),
+  /**
+   * Each change of the card, with the whole card (gateway/local_desktop_ui.py:132-151). The frame
+   * with `settled` is its last. An operation of the account, not of a chat, is not this chat's card.
+   */
+  'connection.update': (payload, envelope) => {
+    const p = fields<ConnectionUpdatePayload>(payload)
+    if (fields<{ type: string }>(p.optObj('owner') ?? {}).optStr('type') !== 'session') return null
+    const settled = p.optBool('settled') === true ? SETTLED_BY[p.optStr('settled_by') ?? ''] ?? 'withdrawn' : null
+    return { type: 'connect', card: connectCard(payload, envelope), settled }
+  },
   'session.info': payload => {
     const p = fields<CanonicalSessionInfo>(payload)
     // Its execution_generation is how an attached viewer learns a generation a policy change moved (gateway/session_authority.py:484-495).
     return meta({
       title: p.optStr('title'), revision: p.optInt('revision'), queue: p.optList('pending')?.map(admissionOf) ?? null,
-      model: modelOf(p.optStr('model'), p.optStr('provider')), yolo: p.optBool('yolo'), generation: p.optInt('execution_generation')
+      model: modelOf(p.optStr('model'), p.optStr('provider')), cwd: p.optStr('cwd') || null, tuning: saidIn(payload), generation: p.optInt('execution_generation')
     })
   },
   /** A tick after each model call of a turn (`gateway/session_usage.py:176-186`). */
@@ -371,10 +456,17 @@ export const SHOWN: { readonly [type: string]: Shown } = {
     const target = p.optStr('operation') === 'rewind' ? p.optObj('target_message') : null
     return meta({
       title: p.optStr('title'), revision: p.optInt('revision'), generation: p.optInt('execution_generation'),
-      cutBefore: target === null ? null : fields<{ id?: number }>(target).optInt('id')
+      cutBefore: target === null ? null : fields<{ id?: number }>(target).optInt('id'),
+      ...(REWRITES.has(p.optStr('operation') ?? '') ? { rewritten: true } : {})
     })
   },
-  error: payload => ({ type: 'notice', tone: 'error', text: stripAnsi(fields<ErrorPayload>(payload).str('message')) })
+  error: payload => ({ type: 'notice', tone: 'error', text: stripAnsi(fields<ErrorPayload>(payload).str('message')) }),
+  /** gateway/session_control_actions.py:76-84: the whole snapshot, on every change from any client. */
+  'session.control.update': payload => {
+    const snapshot = fields<{ control: SessionControlSnapshot }>(payload).optObj('control')
+    if (snapshot === null) throw new Unusable()
+    return { type: 'control', control: parseControl(snapshot) }
+  }
 }
 
 const nonBlank = (text: string | null) => (text === null || text.trim() === '' ? null : text)
@@ -389,19 +481,45 @@ export const FOR_WINDOW: { readonly [type: string]: (payload: unknown) => PaneAs
   'preview.close': payload => ({ do: 'close', url: nonBlank(fields<PreviewClosePayload>(payload).optStr('url')) })
 }
 
+/** The receipts of operations that replace the chat's stored rows (gateway/session_mutations.py:381-383). A rewind names its cut instead. */
+const REWRITES: ReadonlySet<string> = new Set(['compress', 'reset'])
+
 export const UNSHOWN: ReadonlySet<string> = new Set([
   /** Every canonical turn publishes it (`gateway/run_turn_progress.py:1092`); not in the generated contract. */
   'agent.step',
-  'agent.print', 'agent.terminal.output', 'background.complete', 'billing.step_up.verification', 'bot_relay.outbox.pending',
-  'browser.progress', 'btw.complete', 'connection.request', 'connection.update', 'cron.changed', 'display.install.done',
+  'agent.terminal.output', 'billing.step_up.verification', 'bot_relay.outbox.pending',
+  'browser.progress', 'cron.changed', 'display.install.done',
   'display.install.log', 'display.lease', 'display.status', 'free_tier.challenge', 'gateway.ready', 'groups.changed',
-  'message.reaction', 'moa.aggregating', 'moa.phase', 'moa.progress', 'moa.reference', 'notice', 'notification.clear',
-  'notification.show', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
+  'message.reaction', 'notice', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
   'pet.hatch.progress', 'platforms.changed', 'preview.restart.complete',
-  'preview.restart.progress', 'projects.changed', 'reaction', 'request.cancel',
-  'review.summary', 'session.control.update', 'session.reclaimed', 'session.resume_progress',
-  'setup.ready', 'skills.changed', 'skin.changed', 'status.update', 'terminal.close', 'tip.show', 'tool.output_risk', 'voice.interrupted', 'voice.partial', 'voice.status', 'voice.transcript', 'wake.detected'
+  'preview.restart.progress', 'projects.changed', 'reaction',
+  'review.summary', 'session.reclaimed', 'session.resume_progress',
+  'setup.ready', 'skills.changed', 'skin.changed', 'terminal.close', 'tip.show', 'tool.output_risk', 'voice.interrupted', 'voice.partial', 'voice.status', 'voice.transcript', 'wake.detected'
 ])
+
+/**
+ * `status.update` kinds: `compacting` is a compaction's progress line, re-tagged by Hermes from its
+ * mark (`agent/conversation_compression.py:157-166`), and `compacted` its end. A goal check's verdict
+ * is `goal` (`gateway/run_goals.py:238-246`). `warn` is `_emit_warning`.
+ */
+const STATUS_ABOUT: { readonly [kind: string]: StatusAbout } = { compacting: 'compacting', compacted: 'compacted', goal: 'goal', warn: 'warning' }
+
+const NOTICE_LEVELS: readonly string[] = ['info', 'warn', 'error', 'success'] satisfies ShownNotice['level'][]
+
+/** `AgentNotice` as `run_turn_progress.py:1119-1127` publishes it. */
+function noticeOf(payload: Obj): ShownNotice {
+  const p = fields<NotificationShowPayload>(payload)
+  const text = stripAnsi(p.str('text'))
+  const level = p.optStr('level') ?? 'info'
+  const ttl = p.optNum('ttl_ms')
+  return {
+    key: p.optStr('key') || p.optStr('id') || text,
+    level: NOTICE_LEVELS.includes(level) ? level as ShownNotice['level'] : 'info',
+    text,
+    detail: p.optStr('detail') || null,
+    ttlMs: p.optStr('kind') === 'ttl' && ttl !== null && ttl > 0 ? ttl : null
+  }
+}
 
 /**
  * `status` is the contract's TurnStatus. Without one, `outcome` decides the way Hermes derives the
@@ -453,9 +571,26 @@ export function parseEvent(params: unknown): ParsedEvent {
   }
   const shown = Object.hasOwn(SHOWN, type) ? SHOWN[type] : undefined
   if (shown === undefined) return { scope: 'session', sessionId, type, stamp, event: null, skipped: 'unshown' }
-  const event = isObject(payload) ? usable(() => shown(payload, params)) : null
-  if (event === null) return { scope: 'session', sessionId, type, stamp, event: null, skipped: 'invalid' }
-  return { scope: 'session', sessionId, type, stamp, event }
+  const parsed = isObject(payload) ? usable(() => ({ event: shown(payload, params) })) : null
+  if (parsed === null) return { scope: 'session', sessionId, type, stamp, event: null, skipped: 'invalid' }
+  if (parsed.event === null) return { scope: 'session', sessionId, type, stamp, event: null, skipped: 'unshown' }
+  return { scope: 'session', sessionId, type, stamp, event: parsed.event }
+}
+
+/**
+ * The switches a `session.info` names. Hermes says `reasoning_effort` `''` for the model's own level
+ * and `fast` as whether the chat's tier is fast on its model (gateway/session_local.py:486-503).
+ */
+function saidIn(info: unknown): Partial<SaidTuning> {
+  const p = fields<CanonicalSessionInfo>(info)
+  const effort = p.optStr('reasoning_effort')
+  const fast = p.optBool('fast')
+  const yolo = p.optBool('yolo')
+  return {
+    ...(effort === null ? {} : { effort: effort === '' ? 'default' : EFFORTS.find(level => level === effort) ?? null }),
+    ...(fast === null ? {} : { fast }),
+    ...(yolo === null ? {} : { yolo })
+  }
 }
 
 /**
@@ -470,19 +605,25 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
     title: reply.info.title ?? '',
     cwd: reply.info.cwd || null,
     model: modelOf(reply.info.model, reply.info.provider),
-    yolo: typeof reply.info.yolo === 'boolean' ? reply.info.yolo : null,
+    tuning: { effort: null, fast: null, yolo: null, ...saidIn(reply.info) },
     running: reply.running,
     generation: reply.execution_generation as Generation,
     revision: reply.revision,
     subscriptionId: reply.subscription_id,
     watermark: { epoch: reply.replay_epoch, seq: reply.last_sequence },
-    queue: reply.pending.flatMap(row => usable(() => admissionOf(row)) ?? []),
-    prompts: reply.prompts.flatMap(prompt => usable(() => promptOf(prompt)) ?? []),
+    queue: parsePending(reply.pending),
+    prompts: reply.prompts.flatMap(prompt => {
+      const parsed = usable(() => promptOf(prompt))
+      return parsed === null ? [] : [{ id: parsed.id, generation: parsed.generation, ask: parsed.ask }]
+    }),
     history: reply.messages_omitted === true ? null : {
       ...parseRows(reply.display_messages ?? []),
       older: first?.['archived_truncated'] === true ? { cursor: null } : null
     },
-    openRequests: (reply.open_requests ?? []).map(parseServerRequest)
+    openRequests: [
+      ...(reply.open_requests ?? []).map(parseServerRequest),
+      ...(isObject(reply.pending_connection) ? [parseServerRequest({ id: String(reply.pending_connection.op_id), method: CONNECT, params: { ...reply.pending_connection, session_id: reply.session_id } })] : [])
+    ]
   }
 }
 
@@ -506,6 +647,149 @@ export function parseUsage(view: Usage): SessionUsage {
       }
     }
   }) ?? NO_USAGE
+}
+
+/** `process.list` (gateway/session_ancillary.py:655-671). A row it cannot use is left out. */
+export function parseProcesses(reply: ProcessListResult): readonly BackgroundProcess[] {
+  return (Array.isArray(reply.processes) ? reply.processes : []).flatMap(row => usable(() => processOf(row)) ?? [])
+}
+
+function processOf(row: unknown): BackgroundProcess {
+  const p = fields<ProcessEntry>(row)
+  const exited = p.optStr('status') === 'exited'
+  return {
+    id: p.str('session_id') as ProcessId,
+    command: stripAnsi(p.optStr('command') ?? ''),
+    state: exited
+      ? { s: 'exited', code: p.optNum('exit_code'), why: p.optStr('completion_reason') || null, at: unixMs(p.optNum('exited_at')) }
+      : { s: 'running' },
+    startedAt: unixMs(p.optNum('started_epoch')),
+    tail: stripAnsi(p.optStr('output_tail') ?? '')
+  }
+}
+
+/** Hermes's seconds since the epoch, where 0 means never. */
+const unixMs = (seconds: number | null): number | null => (seconds === null || seconds <= 0 ? null : Math.round(seconds * 1000))
+
+/** A part Hermes says in a way Highwing cannot read is left out, as if the chat had none. */
+export function parseControl(snapshot: unknown): SessionControl {
+  const p = usable(() => fields<SessionControlSnapshot>(snapshot))
+  const part = <T>(key: 'goal' | 'loop' | 'heartbeat', parse: (raw: Obj) => T): T | null => {
+    const raw = p?.optObj(key) ?? null
+    return raw === null ? null : usable(() => parse(raw))
+  }
+  return { goal: part('goal', goalOf), loop: part('loop', loopOf), heartbeat: part('heartbeat', heartbeatOf) }
+}
+
+const GOAL_STATUSES: readonly string[] = ['active', 'paused', 'done'] satisfies Goal['status'][]
+const GOAL_VERDICTS: readonly string[] = ['done', 'blocked', 'continue', 'wait', 'skipped'] satisfies GoalVerdict[]
+const GOAL_PARTS: { readonly [P in GoalPart]: string } = { outcome: 'outcome', verification: 'verification', constraints: 'constraints', boundaries: 'boundaries', stopWhen: 'stop_when' }
+
+function oneOf<T extends string>(raw: string | null, allowed: readonly string[]): T {
+  if (raw === null || !allowed.includes(raw)) throw new Unusable()
+  return raw as T
+}
+
+const said = (text: string | null): string | null => (text === null || text.trim() === '' ? null : text)
+
+/** tui_gateway/methods_session_control.py:49-95 */
+function goalOf(raw: Obj): Goal {
+  const g = fields<GoalSnapshot>(raw)
+  const contract = g.optObj('contract') ?? {}
+  const verdict = g.optStr('last_verdict')
+  return {
+    title: g.str('title'),
+    status: oneOf(g.str('status'), GOAL_STATUSES),
+    turns: { used: g.int('turns_used'), max: g.int('max_turns') },
+    contract: Object.fromEntries(Object.entries(GOAL_PARTS).map(([part, key]) => [part, said(isString(contract[key]) ? contract[key] : null)])) as Goal['contract'],
+    subgoals: (g.optList('subgoals') ?? []).filter(isString),
+    gates: (g.optList('gates') ?? []).flatMap(gate => usable(() => {
+      const r = fields<{ command: string; attempts: number; max_retries: number; last_exit_code: number | null }>(gate)
+      return [{ command: r.str('command'), attempts: r.int('attempts'), maxRetries: r.int('max_retries'), lastExit: r.optNum('last_exit_code') }]
+    }) ?? []),
+    pausedWhy: said(g.optStr('paused_reason')),
+    verdict: verdict === null || !GOAL_VERDICTS.includes(verdict) ? null : { is: verdict as GoalVerdict, why: said(g.optStr('last_reason')) },
+    waiting: usable(() => waitOf(g.optObj('wait_barrier')))
+  }
+}
+
+function waitOf(raw: Obj | null): GoalWait | null {
+  if (raw === null) return null
+  const w = fields<{ type: string; until_at: number; target: string | number; reason: string }>(raw)
+  const why = said(w.optStr('reason'))
+  const target = w.raw('target')
+  switch (w.str('type')) {
+    case 'until': {
+      const until = unixMs(w.optNum('until_at'))
+      if (until === null) throw new Unusable()
+      return { on: 'time', until, why }
+    }
+    case 'session':
+      if (!isString(target)) throw new Unusable()
+      return { on: 'session', session: target, why }
+    case 'pid':
+      if (!isCount(target)) throw new Unusable()
+      return { on: 'process', pid: target, why }
+    default:
+      throw new Unusable()
+  }
+}
+
+const LOOP_MODES: { readonly [mode: string]: Loop['mode'] } = { interval: 'interval', self_paced: 'self-paced' }
+
+/** tui_gateway/methods_session_control.py:98-122 */
+function loopOf(raw: Obj): Loop {
+  const l = fields<LoopSnapshot>(raw)
+  const mode = LOOP_MODES[l.str('mode')]
+  if (mode === undefined) throw new Unusable()
+  return {
+    prompt: l.str('prompt'),
+    status: oneOf(l.str('status'), GOAL_STATUSES),
+    mode,
+    everyS: l.optNum('interval_seconds') ?? 0,
+    ticks: { fired: l.int('ticks_fired'), max: l.int('max_ticks') },
+    nextAt: unixMs(l.optNum('next_due_at')),
+    heldByGoal: l.optBool('deferred_by_goal') ?? false,
+    pausedWhy: said(l.optStr('paused_reason')),
+    stoppedWhy: said(l.optStr('last_stop_reason'))
+  }
+}
+
+/** tui_gateway/methods_session_control.py:125-136 */
+function heartbeatOf(raw: Obj): Heartbeat {
+  const h = fields<HeartbeatSnapshot>(raw)
+  return {
+    prompt: h.str('prompt'),
+    status: oneOf(h.str('status'), ['active', 'paused']),
+    everyS: h.optNum('interval_seconds') ?? 0,
+    fired: h.int('fire_count'),
+    lastAt: unixMs(h.optNum('last_fired_at'))
+  }
+}
+
+/** `rollback.list` (gateway/session_tui_ops.py:254-258). */
+export function parseCheckpoints(reply: RollbackListResult): Checkpoints {
+  if (reply.enabled !== true) return { kept: 'off' }
+  const items = (Array.isArray(reply.checkpoints) ? reply.checkpoints : []).flatMap(row => usable(() => {
+    const c = fields<RollbackCheckpoint>(row)
+    return [{ id: c.str('hash') as CheckpointId, at: said(c.optStr('timestamp')), reason: c.optStr('message') ?? '' }]
+  }) ?? [])
+  return { kept: 'on', items }
+}
+
+export function parseCheckpointDiff(reply: RollbackDiffResult): CheckpointDiff {
+  return { stat: stripAnsi(isString(reply.stat) ? reply.stat : ''), patch: stripAnsi(isString(reply.diff) ? reply.diff : '') }
+}
+
+/** `rollback.restore` (agent/checkpoints/manager.py:1242-1500, gateway/session_tui_ops.py:310-313). A failed one names its reason in `error`. */
+export function parseRestored(reply: RollbackRestoreResult): Restored | { readonly failed: string } {
+  if (reply.success !== true) return { failed: isString(reply.error) && reply.error.trim() !== '' ? reply.error : 'Hermes could not restore that checkpoint.' }
+  const names = (raw: unknown): readonly string[] | null => (Array.isArray(raw) ? raw.filter(isString) : null)
+  return {
+    files: names(reply.restored_files),
+    kept: names(reply.skipped_user_edits) ?? [],
+    lastTurn: (reply.history_removed ?? 0) > 0 ? 'removed' : 'kept'
+  }
 }
 
 /**
@@ -565,6 +849,48 @@ export function parsePathMatches(reply: CompletionItemsResult): readonly PathMat
     const match = text === null ? null : PATH_ROW.exec(text)
     return match === null ? [] : [{ path: match[2] as string, folder: match[1] === 'folder' || (match[2] as string).endsWith('/') }]
   })
+}
+
+export function parsePending(rows: readonly unknown[]): Admission[] {
+  return rows.flatMap(row => usable(() => admissionOf(row)) ?? [])
+}
+
+/** `config.get` and `config.set` of `show_reasoning` answer `'1'` or `'0'` (`gateway/session_busy_controls.py:90-108`). */
+export function parseShown(reply: { readonly value?: unknown }): boolean | null {
+  return reply.value === '1' ? true : reply.value === '0' ? false : null
+}
+
+/** The report of a compression, committed or with nothing to remove: Hermes's headline, size line and note (agent/manual_compression_feedback.py:88-96). */
+export function parseCompressed(reply: SessionMutateResult): string | null {
+  const summary = isObject(reply.summary) ? reply.summary : {}
+  const lines = [summary.headline, summary.token_line, summary.note].filter((line): line is string => isString(line) && line.trim() !== '')
+  return lines.length === 0 ? null : lines.map(line => stripAnsi(line).trim()).join('\n')
+}
+
+/** `config.set` of `fast` answers the tier by its word: `fast` or `ultrafast` for a fast one, `normal` for none (agent/fast_mode.py:54-56). */
+export function parseFast(reply: { readonly value?: unknown }): boolean | null {
+  return isString(reply.value) ? reply.value === 'fast' || reply.value === 'ultrafast' : null
+}
+
+const BUSY_MODES: readonly string[] = ['queue', 'steer', 'interrupt'] satisfies BusyMode[]
+
+/** `config.get` and `config.set` of `busy` answer the mode by name (`gateway/session_busy_controls.py:30-72`). */
+export function parseBusy(reply: { readonly value?: unknown }): BusyMode | null {
+  return isString(reply.value) && BUSY_MODES.includes(reply.value) ? reply.value as BusyMode : null
+}
+
+/** What `session.steer` or `session.redirect` did with the words (`CanonicalCorrectionAck`, tui_gateway/contracts/canonical_sessions.py:306-321). */
+export type Correction =
+  | 'taken'
+  /** No agent saw them (`delivered: false`), so they are safe to send as a message. A bare stop phrase that ended a voice chat reads so too: a submit of it is dropped the same way. */
+  | 'unread'
+  /** `rejected` with no `delivered`: they may have reached the agent, so they are never sent again. */
+  | 'unsure'
+
+export function parseCorrection(reply: CanonicalCorrectionResult): Correction {
+  if (!('status' in reply)) return 'unread'
+  if (reply.status !== 'rejected') return 'taken'
+  return reply.delivered === false ? 'unread' : 'unsure'
 }
 
 export function parseModelMenu(reply: ModelOptionsResult): ModelMenu {
@@ -629,18 +955,23 @@ export function parseTranscript(pages: readonly StoredTranscriptResult[]): Histo
   return { ...parseRows(oldestFirst.flatMap(page => page.rows)), older: cursor === null ? null : { cursor } }
 }
 
+/** Whether the page's first row opens a turn, as `parseRows` reads it. If not, the turn its first rows belong to began on an older page. */
+export const beginsAtTurn = (page: StoredTranscriptResult): boolean => usable(() => storedRow(page.rows[0], 0))?.opensTurn === true
+
 interface TurnInProgress {
   readonly request: string | null
   readonly requestRow: number | null
   readonly began: Began | null
   readonly items: Item<'settled'>[]
   readonly rows: number[]
+  reply: SettledTurn['reply']
 }
 
 /**
  * Stored rows -> settled turns, shared by `parseSnapshot` and `parseTranscript` (a transcript
- * `message` row is a `display_messages` row). A user row opens a turn. Assistant text, tool rows and
- * compaction rows become its items. Stored rows carry no diff, so a history tool is `done` with
+ * `message` row is a `display_messages` row). A user row opens a turn, unless it is words steered
+ * into the turn before it, which are an item of that turn. Assistant text, tool rows and compaction
+ * rows become its items. Stored rows carry no diff, so a history tool is `done` with
  * `diffs: []`. A turn that ends in an assistant answer is `complete`. A turn with no answer is
  * `unfinished` when it is the last one, else `lost`. Every turn lists the `row_id`s its rows carry.
  * An assistant row's reasoning becomes a sealed reasoning item above its text, with no times.
@@ -654,11 +985,12 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   rows.forEach((value, index) => {
     const row = usable(() => storedRow(value, index))
     if (row === null) return
-    if (row.role === 'user') turns.push({ request: row.text, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [] })
-    if (row.items.length > 0 && turns.length === 0) turns.push({ request: null, requestRow: null, began: null, items: [], rows: [] })
+    if (row.opensTurn) turns.push({ request: row.text, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [], reply: null })
+    if (row.items.length > 0 && turns.length === 0) turns.push({ request: null, requestRow: null, began: null, items: [], rows: [], reply: null })
     const turn = turns.at(-1)
     turn?.items.push(...row.items)
     if (row.rowId !== null) turn?.rows.push(row.rowId)
+    if (turn !== undefined && row.answers && row.rowId !== null) turn.reply = { rowId: row.rowId, reactions: row.reactions }
   })
   // A compaction row sits before the row it was stored on, so it can follow a turn's answer.
   const answered = (turn: TurnInProgress) => turn.items.findLast(item => item.kind !== 'notice' && item.kind !== 'reasoning')?.kind === 'text'
@@ -672,7 +1004,8 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
       items: turn.items,
       outcome: answered(turn) ? COMPLETE : LOST,
       rows: turn.rows,
-      tokens: null
+      tokens: null,
+      reply: answered(turn) ? turn.reply : null
     }]),
     unfinished: open === null ? null : { request: open.request, began: open.began, items: open.items }
   }
@@ -685,8 +1018,11 @@ function storedRow(value: unknown, index: number) {
   const rowId = row.optInt('row_id')
   const seconds = row.optNum('timestamp')
   const at = seconds !== null && seconds > 0 ? Math.round(seconds * 1000) : null
+  // Words steered into a turn are stored as a user row of their own, among the turn's rows (agent/prompt_builder.py:585-592).
+  const steers = role === 'user' && row.optStr('display_kind') === 'steer'
   const items = ((): Item<'settled'>[] => {
     if (row.optStr('row_kind') === 'compaction') return [{ kind: 'notice', what: 'said', tone: 'info', text }]
+    if (steers) return [{ kind: 'steer', text }]
     if (role === 'assistant') {
       const reasoning = row.optStr('reasoning') ?? ''
       return [
@@ -706,7 +1042,23 @@ function storedRow(value: unknown, index: number) {
       status: { s: 'done', durationS: null, diffs: [], image: null, result: content === undefined ? NO_RESULT : parseToolResult(content, null, false) }
     }]
   })()
-  return { role, text, rowId, at, items }
+  const metadata = row.raw('display_metadata')
+  return {
+    opensTurn: role === 'user' && !steers, text, rowId, at, items,
+    answers: role === 'assistant' && text.trim() !== '',
+    reactions: parseReactions(isObject(metadata) ? metadata.reactions : undefined)
+  }
+}
+
+/** `display_metadata.reactions` of a stored row, and the list `message.react` answers (persistence/sqlite/conversation/_store/messages.py:450-472). */
+export function parseReactions(raw: unknown): readonly Reaction[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((value): Reaction[] => {
+    const reaction = usable(() => fields<MessageReaction>(value))
+    const emoji = reaction?.optStr('emoji')?.trim() ?? ''
+    const by = reaction?.optStr('author')
+    return emoji !== '' && (by === 'user' || by === 'agent') ? [{ emoji, by }] : []
+  })
 }
 
 export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<SidebarRow, 'badge'>[] {
@@ -887,10 +1239,135 @@ export function parseTitled(reply: CanonicalListResult): SessionId | null {
   return isObject(row) ? titledId(row) : null
 }
 
-/** A server-to-client request frame, or an `open_requests` entry of a snapshot. Its params carry the session (`tui_gateway/server_requests.py:98,103`); an app-level one has `''`. */
+const CANCEL_WHY: { readonly [reason: string]: CloseWhy } = {
+  resolved: 'resolved', timeout: 'timeout', interrupted: 'interrupted', shutdown: 'withdrawn', session_closed: 'withdrawn'
+}
+
+/** `SettleReason` in Hermes's tools/connectors/contract.py. */
+const SETTLED_BY: { readonly [reason: string]: CloseWhy } = { all_resolved: 'done', continue: 'done', deadline: 'timeout', interrupt: 'interrupted' }
+
+const CONNECT = 'connection.request'
+
+type Card = (params: Obj) => Pick<CardRequest, 'ask' | 'waitS'>
+
+export const REQUESTS: { readonly [method: string]: Card } = {
+  /** `SUDO_TIMEOUT_S`, gateway/session_sudo_prompt.py:19. The command is redacted by Hermes. */
+  sudo: params => ({ waitS: 120, ask: { kind: 'secret', for: { is: 'sudo', command: stripAnsi(fields<SudoRequestParams>(params).optStr('command') ?? '') } } }),
+  /** `SECRET_TIMEOUT_S`, gateway/session_secret_prompt.py:19 */
+  secret: params => {
+    const p = fields<SecretRequestParams>(params)
+    return { waitS: 120, ask: { kind: 'secret', for: { is: 'env', name: p.str('env_var'), prompt: stripAnsi(p.str('prompt')) } } }
+  },
+  /** `UNLOCK_TIMEOUT_S`, `SAVE_LOGIN_TIMEOUT_S` and `CODE_TIMEOUT_S`, gateway/session_vault_prompt.py:22-24 */
+  'vault.unlock_prompt': params => {
+    const p = fields<VaultUnlockRequestParams>(params)
+    return { waitS: 120, ask: { kind: 'secret', for: { is: 'vault', backend: p.str('backend'), name: p.str('display_name') } } }
+  },
+  'vault.save_login': params => {
+    const p = fields<VaultSaveLoginRequestParams>(params)
+    return { waitS: 180, ask: { kind: 'secret', for: { is: 'login', site: p.str('site'), origin: p.str('origin') } } }
+  },
+  'vault.code': params => {
+    const p = fields<VaultCodeRequestParams>(params)
+    return { waitS: 180, ask: { kind: 'secret', for: { is: 'code', site: p.optStr('site') || null, hint: p.optStr('hint') || null } } }
+  },
+  /**
+   * The clarify tool's batch (gateway/session_clarify_batch.py) and a plugin command's choice, which
+   * is one question `q0` (gateway/plugin_command_choice.py:71-78). Hermes waits its `clarify_timeout`
+   * config for both (tools/clarify_gateway.py:294-301), which no frame carries.
+   */
+  clarify: params => {
+    const p = fields<ClarifyRequestParams>(params)
+    const questions = (p.optList('questions') ?? []).map(questionOf)
+    if (questions.length === 0) throw new Unusable()
+    const locked = p.optObj('answers') ?? {}
+    const answers = Object.fromEntries(questions.flatMap(question => (question.id in locked ? [[question.id, answerOf(locked[question.id], question.multi)]] : [])))
+    return { waitS: null, ask: { kind: 'questions', questions, answers } }
+  },
+  /** `timeout_seconds` is the operation's whole wait, counted from when it opened (tools/connectors/operation.py:270-281). */
+  [CONNECT]: params => {
+    const p = fields<ConnectionRequestPayload & ConnectionUpdatePayload>(params)
+    const display = p.optObj('display')
+    return {
+      waitS: p.optNum('timeout_seconds'),
+      ask: {
+        kind: 'connect',
+        rev: p.int('seq'),
+        targets: (p.optList('targets') ?? []).flatMap(target => usable(() => targetOf(target)) ?? []),
+        suggested: display === null ? [] : fields<ConnectionDisplay>(display).strs('suggested')
+      }
+    }
+  }
+}
+
+function questionOf(value: unknown): Question {
+  const q = fields<ClarifyQuestion>(value)
+  return { id: q.str('qid'), text: stripAnsi(q.str('question')), choices: q.optList('choices')?.filter(isString) ?? [], multi: q.optBool('multi_select') ?? false }
+}
+
+/** A locked answer as Hermes holds it: null for skipped, else one string, which for several picks is a JSON array of labels (tools/clarify_tool.py:36-47). */
+function answerOf(raw: unknown, multi: boolean): Answer {
+  if (!isString(raw)) return null
+  if (!multi) return [raw]
+  try {
+    const picks: unknown = JSON.parse(raw)
+    return isStrings(picks) ? picks : [raw]
+  } catch {
+    return [raw]
+  }
+}
+
+const TARGET_KINDS: readonly string[] = ['connector', 'mcp', 'plugin', 'skill'] satisfies ConnectTarget['kind'][]
+const TARGET_ACTIONS: readonly string[] = ['authorize', 'connect', 'enable', 'install', 'reconnect'] satisfies ConnectTarget['action'][]
+/** `TargetState` in Hermes's tools/connectors/contract.py. */
+const TARGET_STATES: { readonly [state: string]: ConnectTarget['state'] } = {
+  pending: 'pending', initiated: 'started', connected: 'connected', skipped: 'skipped', failed: 'failed', expired: 'expired', not_connected: 'not-connected'
+}
+const WEB_LINK = /^https?:\/\//i
+
+function targetOf(value: unknown): ConnectTarget {
+  const t = fields<ConnectionOperationTarget>(value)
+  const kind = t.str('kind')
+  const action = t.str('action')
+  const state = TARGET_STATES[t.str('state')]
+  if (!TARGET_KINDS.includes(kind) || !TARGET_ACTIONS.includes(action) || state === undefined) throw new Unusable()
+  const url = t.optStr('connect_url')
+  return {
+    name: t.str('name'),
+    kind: kind as ConnectTarget['kind'],
+    action: action as ConnectTarget['action'],
+    state,
+    resolved: t.optBool('resolved') ?? false,
+    detail: t.optStr('detail') || null,
+    instructions: t.optStr('instructions') || null,
+    url: url !== null && WEB_LINK.test(url) ? url : null,
+    fields: (t.optList('required_env') ?? []).map(value => {
+      const field = fields<ConnectionTargetEnvField>(value)
+      return { name: field.str('name'), prompt: field.optStr('prompt') || null, required: field.optBool('required') ?? false, secret: field.optBool('secret') ?? false, initial: field.optStr('default') ?? '' }
+    })
+  }
+}
+
+function connectCard(payload: Obj, envelope: Obj): CardRequest {
+  const id = fields<ConnectionRequestPayload>(payload).str('op_id')
+  const request = parseServerRequest({ id, method: CONNECT, params: { ...payload, session_id: envelope.session_id } })
+  if (request.kind !== 'card') throw new Unusable()
+  return request
+}
+
+/**
+ * A server-to-client request frame, an `open_requests` entry of a snapshot, or a connector card. Its
+ * params carry the session (`gateway/session_server_requests.py:175`).
+ */
 export function parseServerRequest(request: { readonly id: string; readonly method: string; readonly params: unknown }): ServerRequest {
-  const sessionId = isObject(request.params) ? request.params.session_id : undefined
-  return { requestId: request.id, method: request.method, sessionId: typeof sessionId === 'string' && sessionId !== '' ? sessionId as SessionId : null }
+  const { method, params } = request
+  const requestId = request.id as RequestId
+  const named = isObject(params) ? params.session_id : undefined
+  const sessionId = typeof named === 'string' && named !== '' ? named as SessionId : null
+  const card = Object.hasOwn(REQUESTS, method) ? REQUESTS[method] : undefined
+  if (card === undefined) return { kind: 'bridge', requestId, sessionId, method }
+  const parsed = isObject(params) ? usable(() => card(params)) : null
+  return sessionId === null || parsed === null ? { kind: 'unusable', requestId, method } : { kind: 'card', requestId, sessionId, method, ...parsed }
 }
 
 function diffLineKind(line: string): FileDiff['lines'][number]['t'] | null {
@@ -995,7 +1472,7 @@ const GATEWAY_RUNS: ReadonlySet<string> = new Set([
   'insights', 'platforms', 'version', 'debug'
 ])
 
-const HIGHWING_RUNS: ReadonlySet<string> = new Set(['new'])
+const HIGHWING_RUNS: ReadonlySet<string> = new Set(['new', ...Object.keys(OWN_COMMANDS)])
 
 /** `desktop` is `null` for a command a desktop app should offer, else the reason it should not. */
 const offered = (meta: unknown) => isObject(meta) && (meta.desktop === null || meta.desktop === undefined)
@@ -1017,7 +1494,7 @@ export function parseCatalog(reply: CommandsCatalogResult): SlashCatalog {
     seen.add(key)
     if (Object.hasOwn(skills, key)) {
       skillRows.push({ kind: 'skill', name, description })
-    } else if ((GATEWAY_RUNS.has(name) || HIGHWING_RUNS.has(name) || Object.hasOwn(plugins, name)) && offered(meta[key])) {
+    } else if (isObject(meta[key]) && (HIGHWING_RUNS.has(name) || ((GATEWAY_RUNS.has(name) || Object.hasOwn(plugins, name)) && offered(meta[key])))) {
       commands.push({ kind: 'command', name, description })
     }
   }
@@ -1033,7 +1510,7 @@ export type Directive =
  * (gateway/session_commands.py:422-533). The client submits `message` with its own input id; the gateway
  * never does. `null` for a directive Highwing cannot carry out.
  */
-export function parseDirective(reply: CommandDispatchResult, typed: string): Directive | null {
+export function parseDirective(reply: CommandDispatchResult | SessionControlDispatch, typed: string): Directive | null {
   if (!isObject(reply)) return null
   switch (reply.type) {
     case 'exec':

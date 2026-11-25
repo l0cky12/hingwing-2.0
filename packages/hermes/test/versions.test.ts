@@ -141,6 +141,8 @@ describe('reading the versions of a chat from Hermes', () => {
     const calls: { readonly method: string; readonly params: Record<string, unknown> }[] = []
     const via: Calls = {
       link: { state: 'online' },
+      respond: () => {},
+      clarifyBatch: false,
       call: (async (method: string, params: Record<string, unknown>) => {
         calls.push({ method, params })
         if (method === 'projects.tree') return answers.tree()
@@ -181,6 +183,8 @@ describe('reading the versions of a chat from Hermes', () => {
     const calls: string[] = []
     const endless: Calls = {
       link: { state: 'online' },
+      respond: () => {},
+      clarifyBatch: false,
       call: (async (method: string) => {
         calls.push(method)
         return method === 'projects.tree' ? TREE : said([['user', 'again']])

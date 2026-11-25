@@ -22,6 +22,45 @@ The stories are in ``STORIES``:
   quoted fields hold a comma and a newline, and a ``.pdf`` that is plain text, all into the work dir's
   ``reports`` folder. Two more steps edit the header of a 20,000-row CSV and of a CSV over the preview's
   10 MB limit, which the story puts in the work dir before the turn. It asks for no approval.
+- ``says`` writes fixtures/says.jsonl: a turn in which Hermes says everything a local viewer hears
+  beside the reply (reasoning, a MoA round, a tool's image, compaction lines, a printed line, a
+  notice shown and cleared), asks to approve an ``rm -rf`` that carries ``timeout_s``, and then, with
+  no turn running, says a ``/goal`` verdict. The story turns the chat's reasoning display on first
+  and the header keeps the ``config.get`` answer for it as ``controls`` and the tool image's bytes as
+  ``media``.
+- ``asks`` writes fixtures/asks.jsonl: a turn in which Hermes asks its viewers for things outside
+  the turn's own prompts, then one more question while no turn runs. In order: a ``sudo`` password,
+  answered (the recorded result is masked); a skill's ``secret``, skipped; a ``vault.code``, answered
+  by a second viewer, so this one only hears ``request.cancel``; a two-question ``clarify`` batch,
+  answered by two ``clarify.lock`` calls; the ``manage_connections`` card, whose one target is
+  skipped with ``connection.respond`` and which then settles; a ``theme.pick`` window request, which
+  the story declines as a client with a window on the chat and no picker does; and, after the turn,
+  a plugin command's choice.
+- ``queue`` writes fixtures/queue.jsonl: a chat opened after Hermes restarted in the middle of a turn.
+  The header's ``pending`` lists that turn as ``unknown`` with a message queued behind it. The story
+  releases the lost turn (``prompt.resolve_unknown``), so the queued message runs. While it runs the
+  story queues a message, a second viewer queues another, and the story edits its own
+  (``prompt.replace_queued``), cancels the other viewer's (``prompt.cancel``) and sends its own now
+  (``prompt.steer_queued``). It then steers the turn (``session.steer``, answered ``queued``), queues
+  a third message, redirects the turn (``session.redirect``, answered ``redirected``), and denies an
+  ``rm -rf`` after telling Hermes what to do instead (``session.steer`` with the prompt's
+  generation, then ``approval.respond``). The third message's turn is redirected before it has an
+  agent, which Hermes answers ``rejected`` with ``delivered: false``, so the story submits those
+  words as a message, and they run as the last turn.
+- ``commands`` writes fixtures/commands.jsonl: a chat made in /tmp/hermes-proto-work on ``gpt-5.4``, two short turns,
+  then one call of each chat command. First the ones the window can make: ``prompt.btw`` and ``prompt.background``
+  with their answers, YOLO on (``config.set``), and ``session.mutate compress`` with a focus, whose ``stored`` step
+  holds the rows a rebuild reads. Then the rest: effort ``high`` (``session.mutate reasoning``), fast on
+  (``config.set``), a move to ``docs`` (``session.mutate workspace``) and ``session.export`` as Markdown. The header
+  carries the real ``commands.catalog`` reply, the attach reply's ``cwd``, ``reasoning_effort``, ``fast`` and ``yolo``
+  as ``info``, and the real ``complete.path`` reply for ``@no`` as ``paths``, which the scripted gateway answers from.
+- ``panels`` writes fixtures/panels.jsonl: a chat in /tmp/hermes-proto-work whose first turn starts a docs server in the
+  background and writes release.md, and whose second turn patches it. The story then reacts 👍 to the first turn's answer
+  (``message.react``), kills the server (``process.kill``), sets a goal, adds a criterion and pauses the goal
+  (``session.control``), lists the checkpoints (``rollback.list``), reads the diff since the first one (``rollback.diff``)
+  and restores the folder to the second one (``rollback.restore``), which takes back the second turn. The header's
+  ``reads`` and each ``reads`` step are what ``process.list`` and ``session.control.read`` answer from there on, read
+  where Hermes's state changed: before each turn's end frame, after each call, and before the goal's first update.
 - ``always`` writes fixtures/always.jsonl: the errand, answered ``always``.
 - ``choose`` writes fixtures/choose.jsonl: the ``clarify`` tool asks one question that takes several
   answers (``multi_select``). The story answers two of the labels as Highwing encodes them, Hermes's
@@ -67,8 +106,94 @@ Scripted, because no AI provider exists on this machine:
 - ids. ``uuid.uuid4`` is seeded per story, so admission, prompt, turn and epoch ids repeat across
   runs and differ between fixtures.
 
+Real in ``says``, from Hermes's own emitters on the same turn:
+- the chat's reasoning display, set by a real ``config.set show_reasoning`` and read back by
+  ``config.get`` (``gateway/session_busy_controls.py``) before the recording starts;
+- ``reasoning.delta`` and ``agent.print`` through the sinks ``local_viewer_events.wire`` installs on
+  the agent (``reasoning_callback``, ``_print_fn``), as ``TurnRunner`` installs them for a Desktop turn;
+- ``reasoning.available`` and the ``moa.*`` events through ``local_viewer_events.publish_progress``,
+  the agent's progress callback, with the kwargs ``agent/moa_loop.py``'s relay passes;
+- ``status.update`` for a compaction through ``TurnRunner._status_callback_sync`` with the agent's own
+  ``COMPACTION_STATUS`` and ``COMPACTION_DONE_STATUS``, and ``notification.show`` / ``.clear``
+  through ``_local_notice_callback_sync`` / ``_local_notice_clear_callback_sync`` with an ``AgentNotice``;
+- ``tool.complete.image_path``, read by ``complete_fields`` from a real PNG in /tmp/hermes-proto-work;
+- the goal verdict while idle, published by ``GatewayRunner._send_goal_status_notice`` for a local
+  source after the turn has ended.
+
+Scripted in ``says`` as well: the reasoning text, the MoA reference answers, and the result of
+``vision_analyze``, which needs a vision provider. A step's ``result`` replaces the tool run.
+
+Real in ``asks``: every request frame, every ``request.cancel``, and the ``connection.request`` and
+``connection.update`` events. Each request goes out through ``gateway/session_server_requests._ask``
+to the story's socket, which answers it with a JSON-RPC response frame through
+``AuthorityConnection.dispatch`` (``_resolve_response``), with ``clarify.lock`` or with
+``connection.respond``, as a viewer does. What asks is the callback the turn's own scope installs:
+- ``sudo``: ``sudo_prompt_scope``, then the terminal tool's ``_prompt_for_sudo_password``;
+- ``secret``: ``secret_prompt_scope``, then the skills tool's ``_capture_required_environment_variables``;
+- ``vault.code``: ``vault_prompt_scope``, then the vault's own code-prompt callback. The second viewer is
+  a second ``AuthorityConnection`` attached to the session;
+- the ``clarify`` batch: the real ``clarify`` tool over ``ask_clarify_batch``;
+- the card: a ``ConnectionOperation`` opened in ``tools/connectors/live`` and published by the
+  ``connection_callback`` that ``local_desktop_ui.wire`` installs. ``connection.respond`` runs
+  ``tools.connectors.run.respond``, and the operation's own change hook publishes each update;
+- ``theme.pick``: the ``theme_callback`` that ``local_desktop_ui.wire`` installs;
+- the plugin choice: ``hermes_cli.plugin_choices.ask_choice`` under ``viewer_choices``, the asker
+  ``command.dispatch`` binds around a plugin command's handler.
+
+Scripted in ``asks``: the tool around each request. No ``sudo`` runs, no skill is loaded, no site is
+opened and no connector directory is read: each step's tool result is written by the story, except
+the ``clarify`` tool's, which is real. The plugin command itself is not dispatched, so the fixture
+has no ``command.dispatch`` call held open around its choice. The typed values are the story's.
+
+Real in ``queue``: both owners, the restart between them, and every call and frame of the story.
+The restart is how Hermes's own tests start a second gateway over one state.db
+(``tests/tui_gateway/test_legacy_submit_forwards_to_owner.py``): ``runtime.begin_epoch`` and
+``admissions.recover``, which marks the row the first owner was running ``unknown``. The recording
+starts at the second owner's ``session.resume``, whose ``pending`` and ``display_messages`` are the
+header's. Every queue call goes through ``AuthorityConnection.dispatch`` to the admission store, so
+each pending list (``controls``, ``steering``), each cancelled or steered row's completion frame, and
+each correction verdict is Hermes's. The busy mode in ``controls`` is set by a real ``config.set``
+and read back by ``config.get``. The stored rows of steered words are the agent's own
+``agent.prompt_builder.steer_user_row``, and Hermes's display projection marks them
+``display_kind: "steer"``.
+
+Scripted in ``queue``: the agent's steer seam. ``Seam`` stands for the ``AIAgent`` the turn adopts
+(``SessionAuthority.adopt_agent``): it accepts every steer and redirect, treats a redirect that
+arrives during a tool as a steer, as ``agent/interrupt_control.py`` does, and says at settlement that
+the turn read the queued message it was handed. The turn waits at named gates so each call lands at
+a known point, and it appends the steered rows where the agent's drain would. The stand-in runner has
+no launch policy to default the busy mode from, so the story sets ``queue`` before it reads it.
+Hermes answers a steer in the window before a turn has an agent by holding it for that agent, so the
+``delivered: false`` verdict in this fixture is a redirect's. The first owner is never shut down: its
+turn waits at a gate that never opens, as a killed process leaves it.
+
+Real in ``commands``: every call and frame of the story through ``AuthorityConnection.dispatch``, on a session with
+a frozen launch policy. The runner is Hermes's own ``GatewayRunner``, built without ``__init__`` as Hermes's tests
+build a partial one, so the policy, its folder, its effort, the /fast pin and the side agents' threads, scopes and
+``*.complete`` events are Hermes's. Each ``session.info`` and ``session.updated`` is the one Hermes publishes, and
+the stored rows after the compression are a real ``session.resume {display_projection: true}``.
+
+Scripted in ``commands``: the model's part, because no provider exists here. The two turns' words, as in the
+stories above; ``/btw``'s answer (``agent.side_question.answer_side_question``); ``/bg``'s agent, which answers its
+prompt at once in place of ``AIAgent``; and the compression's summary (``ContextCompressor.compress``), which keeps
+the last turn as it was.
+
+Real in ``panels``: every call and frame of the story through ``AuthorityConnection.dispatch``, on the same
+``GatewayRunner`` as ``commands``. The server is a real ``terminal(background=true)`` process in Hermes's process
+registry, listed and killed by its owner. Each checkpoint is the agent's own ``_ensure_file_checkpoint``
+(agent/tool_executor.py) on a ``CheckpointManager`` built from the session's frozen policy, in a profile whose config turns
+checkpoints on. The reaction, the criterion, the pause, the list, the diff, the restore and its rewind are Hermes's
+handlers over its store; each ``session.control.update`` is ``session_control_actions.publish``. The rows after the
+restore are a real ``session.resume {display_projection: true}``, and carry the reaction in ``display_metadata``.
+
+Scripted in ``panels``: the model's part, as above; the goal, set by ``GoalManager.set`` with a one-line contract, where
+``/goal`` itself would have a model draft the contract and start a turn; and each checkpoint's git dates, taken from the
+story's clock so its hash repeats. The server's pid in the ``terminal`` result differs between runs. Hermes's canonical
+route sends no ``status.update {kind: 'process'}`` (only ``tui_gateway`` does), so a process is read again at a turn's
+end and after a kill.
+
 Not emitted, because only a provider produces them: ``thinking.delta`` (spinner text while a request
-is in flight), ``reasoning.delta`` and ``session.usage`` (token counts).
+is in flight) and ``session.usage`` (token counts).
 """
 import asyncio
 import base64
@@ -107,10 +232,18 @@ class Story:
     files: dict
     # The folder the story's rm -rf asks to delete, or None when it deletes nothing.
     doomed: str | None
+    # The recorded answer to the turn's prompt. None ends the fixture at the prompt's request.
     answer: str | None
-    asks: str | None = "approval"
+    # The prompt the turn raises: "approval", "clarify", or None for a turn that raises none. The fixture
+    # then ends with the turn's ``stored`` rows.
+    prompt: str | None = "approval"
     # True when the story's turn takes a screenshot, so the script registers the scripted tool.
     screenshots: bool = False
+    viewer: bool = False
+    after: object = None
+    # Files under WORK that a tool names as its image. The header's ``media`` carries their bytes, so a replay draws them.
+    shows: tuple = ()
+    asks: tuple = ()
 
 
 NOTES = "# Todo\n\n- [ ] sketch the chat view\n- [ ] wire the gateway socket\n- [ ] review screenshots\n"
@@ -244,7 +377,7 @@ function backupName(file: string): string {
 MARKDOWN = Story(
     request="Give me a short plan for backing up notes.md and renaming its heading.",
     steps=[{"say": MARKDOWN_REPLY, "call": None}],
-    out="markdown.jsonl", seed=20261123, files={}, doomed=None, answer=None, asks=None)
+    out="markdown.jsonl", seed=20261123, files={}, doomed=None, answer=None, prompt=None)
 
 IMAGES = Story(
     request="Take a screenshot of the dashboard and chart last week's signups.",
@@ -252,7 +385,7 @@ IMAGES = Story(
         {"say": "I'll capture the dashboard first.", "call": ("screenshot", {}), "ms": 420},
         {"say": f"Here is the chart you asked for.\n\n![a chart]({CHART_URL})", "call": None},
     ],
-    out="images.jsonl", seed=20261124, files={}, doomed=None, answer=None, asks=None, screenshots=True)
+    out="images.jsonl", seed=20261124, files={}, doomed=None, answer=None, prompt=None, screenshots=True)
 
 SITE = f"{WORK}/site"
 DEV_URL = "http://localhost:5173/"
@@ -268,14 +401,14 @@ PREVIEW = Story(
     steps=[*BUILD_PAGE,
            {"say": (f"Preview ready at [the demo]({DEV_URL}). The page is saved as `{SITE}/index.html`, and it "
                     "replaces [the old docs](http://unreachable.invalid/)."), "call": None}],
-    out="preview.jsonl", seed=20261125, files={}, doomed=None, answer=None, asks=None)
+    out="preview.jsonl", seed=20261125, files={}, doomed=None, answer=None, prompt=None)
 
 PREVIEW_CLOSE = Story(
     request="Show me the demo page in /tmp/hermes-proto-work/site, then close it.",
     steps=[*BUILD_PAGE,
            {"say": "Closing the preview now.", "call": ("desktop_preview", {"action": "close"}), "ms": 6, "pause": 2000},
            {"say": "Closed.", "call": None}],
-    out="preview-close.jsonl", seed=20261126, files={}, doomed=None, answer=None, asks=None)
+    out="preview-close.jsonl", seed=20261126, files={}, doomed=None, answer=None, prompt=None)
 
 ALWAYS = replace(ERRAND, out="always.jsonl", seed=20261127, answer="always")
 
@@ -288,7 +421,7 @@ CHOOSE = Story(
          "ms": 8},
         {"say": "Deploying to staging and canary.", "call": None},
     ],
-    out="choose.jsonl", seed=20261128, files={}, doomed=None, answer='["staging (Recommended)","canary"]', asks="clarify")
+    out="choose.jsonl", seed=20261128, files={}, doomed=None, answer='["staging (Recommended)","canary"]', prompt="clarify")
 
 REPORTS = f"{WORK}/reports"
 FILES = Path(__file__).resolve().parent / "preview-files"
@@ -338,10 +471,348 @@ PREVIEW_FILES = Story(
     ],
     out="preview-files.jsonl", seed=20261127,
     files={"reports/big.csv": rows(20000), "reports/huge.csv": rows(200000, 40)},
-    doomed=None, answer=None, asks=None)
+    doomed=None, answer=None, prompt=None)
+
+
+def tiny_png() -> bytes:
+    import struct
+    import zlib
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    rows = b"".join(b"\x00" + b"\x3c\x8c\x5a" * 2 for _ in range(2))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+
+
+def moa_round(turn, agent):
+    """One MoA fan-out as ``agent/moa_loop.py`` relays it to the agent's progress callback."""
+    progress = local_viewer_events.publish_progress
+    for done in (1, 2):
+        CLOCK.tick(150)
+        progress(turn, "moa.progress", "advisor", None, {"moa_refs_done": done, "moa_refs_total": 2})
+    for index, (label, text) in enumerate([("fast-small", "It is a bar chart of three weekly totals."),
+                                           ("careful-large", "Three bars: 4, 7 and 5. The second week peaks.")], start=1):
+        progress(turn, "moa.reference", label, text, {"moa_index": index, "moa_count": 2})
+    progress(turn, "moa.phase", "judge-large", None, {"moa_phase": "aggregator", "moa_refs_done": 2, "moa_refs_total": 2})
+    progress(turn, "moa.aggregating", "judge-large", None, {"moa_ref_count": 2})
+
+
+def compaction_and_notice(turn, agent):
+    from agent.conversation_compression import COMPACTION_DONE_STATUS, COMPACTION_STATUS
+    from agent.credits_tracker import AgentNotice
+    turn._status_callback_sync("lifecycle", COMPACTION_STATUS)
+    CLOCK.tick(900)
+    turn._status_callback_sync("compacted", COMPACTION_DONE_STATUS)
+    agent._print_fn("Subagent finished: 3 files checked.")
+    turn._local_notice_callback_sync(AgentNotice(text="Credits are running low.", level="warn", kind="sticky",
+                                                 key="credits.low", id="credits.low"))
+
+
+def clear_notice(turn, agent):
+    turn._local_notice_clear_callback_sync("credits.low")
+
+
+async def goal_verdict(runner, live):
+    from gateway.run_goals import GatewayGoalsMixin
+    await GatewayGoalsMixin._send_goal_status_notice(
+        runner, live.source, "✓ Goal achieved: the chart was read and the scratch folder is gone.")
+
+
+SAYS = Story(
+    request="In /tmp/hermes-proto-work: tell me what chart.png shows, then delete the scratch folder.",
+    steps=[
+        {"hermes": [moa_round],
+         "reasoning": ("stream", ["The user wants the chart read first, ", "then the scratch folder removed. ",
+                                  "The reference models have read it."]),
+         "say": "The models agree it is a bar chart. Looking at it myself.",
+         "call": ("vision_analyze", {"image_url": f"{WORK}/chart.png", "question": "What does this chart show?"}),
+         "result": json.dumps({"success": True, "analysis": "A bar chart of three weekly totals: 4, 7 and 5."}),
+         "ms": 420},
+        {"hermes": [compaction_and_notice], "reasoning": ("whole", ["The chart is read. Only the scratch folder is left."]),
+         "say": "It shows three weekly totals. Now removing the scratch folder.",
+         "call": ("terminal", {"command": f"rm -rf {WORK}/scratch"}), "ms": 95},
+        {"hermes": [clear_notice], "say": "Done. The chart shows weekly totals of 4, 7 and 5, and the scratch folder is gone.",
+         "call": None},
+    ],
+    out="says.jsonl", seed=20261124, files={"chart.png": tiny_png(), "scratch/old.txt": "tmp\n"},
+    doomed=f"{WORK}/scratch", answer="once", viewer=True, after=goal_verdict, shows=("chart.png",))
+
+SUDO_COMMAND = "sudo apt-get install -y jq"
+BATCH = [{"question": "Which environment should I deploy to?", "choices": ["staging", "production"]},
+         {"question": "Which regions?", "choices": ["eu-west", "us-east", "ap-south"], "multi_select": True}]
+NO_PICKER = {"code": -32601, "message": "Highwing has no part of its window to answer this with."}
+MASKED = "•••"
+
+
+def with_window(turn, agent, ask):
+    from gateway import local_desktop_ui
+    token = local_desktop_ui.wire(turn, agent)
+    try:
+        return ask()
+    finally:
+        local_desktop_ui.release(token)
+
+
+def sudo_password(turn, agent):
+    from gateway.session_sudo_prompt import sudo_prompt_scope
+    from tools.terminal_tool_sudo import _prompt_for_sudo_password
+    with sudo_prompt_scope(turn, agent):
+        typed = _prompt_for_sudo_password(command=SUDO_COMMAND)
+    return json.dumps({"output": "jq is already the newest version (1.7.1-3)." if typed else "sudo: a password is required",
+                       "exit_code": 0 if typed else 1, "error": None, "cwd": WORK})
+
+
+def skill_secret(turn, agent):
+    from gateway.session_secret_prompt import secret_prompt_scope
+    from tools.skills_tool_setup import _capture_required_environment_variables
+    with secret_prompt_scope(turn, agent):
+        captured = _capture_required_environment_variables("gif-search", [
+            {"name": "TENOR_API_KEY", "prompt": "Tenor API key", "help": "https://developers.google.com/tenor"}])
+    return json.dumps({"success": True, "name": "gif-search", "setup_needed": bool(captured["missing_names"]),
+                       "missing_required_environment_variables": captured["missing_names"]})
+
+
+def vault_code(turn, agent):
+    from agent.vault_backends import unlock
+    from gateway.session_vault_prompt import vault_prompt_scope
+    with vault_prompt_scope(turn, agent):
+        code = unlock.get_code_prompt_callback()("example.com", "the 6-digit code from your authenticator app")
+    return json.dumps({"success": bool(code), "url": "https://example.com/account"})
+
+
+def clarify_batch(turn, agent):
+    from gateway.session_clarify_batch import ask_clarify_batch
+    from tools.clarify_tool import clarify_tool
+    return clarify_tool(BATCH, callback=lambda questions: ask_clarify_batch(turn, questions))
+
+
+def connector_card(turn, agent):
+    from tools.connectors import live as open_operations
+    from tools.connectors.operation import ConnectionOperation, Target
+
+    def ask():
+        # ``created_at`` defaults to the clock the module bound at import, before the story's virtual one.
+        operation = ConnectionOperation(session_key=turn._ctx.session_key, created_at=time.time(), targets=[Target(
+            name="github", kind="connector", action="connect", connect_url="https://example.com/connect/github",
+            instructions="Sign in to GitHub in your browser, then come back here.")])
+        open_operations.open(operation)
+        agent.connection_callback(operation.request_payload())
+        while not operation.settled:
+            operation.wake.wait(0.05)
+        return json.dumps(operation.result())
+    return with_window(turn, agent, ask)
+
+
+def theme_picker(turn, agent):
+    return with_window(turn, agent, lambda: json.dumps(agent.theme_callback({"picker": "accent"})))
+
+
+async def plugin_choice(runner, live):
+    from gateway.plugin_command_choice import viewer_choices
+    from hermes_cli.plugin_choices import ask_choice
+    session_id = next(sid for sid, held in runner.session_authority.sessions.items() if held is live)
+
+    def ask():
+        with viewer_choices(live, session_id):
+            return ask_choice("Which notes should /tidy clean up?", ["Today's", "This week's", "All of them"])
+    await asyncio.to_thread(ask)
+
+
+def typed(value):
+    async def act(viewer, frame):
+        await viewer.answer(frame["id"], {"result": {"value": value}}, {"result": {"value": MASKED}})
+    return act
+
+
+async def skipped(viewer, frame):
+    await viewer.answer(frame["id"], {"result": {"value": ""}})
+
+
+async def declined(viewer, frame):
+    await viewer.answer(frame["id"], {"error": NO_PICKER})
+
+
+async def elsewhere(viewer, frame):
+    other = AuthorityConnection(viewer.authority, SimpleNamespace(write=lambda obj: True), {"user_id": USER, "native_bootstrap": True})
+    await viewer.call(other, "session.resume", {"session_id": viewer.session_id})
+    await other.dispatch({"jsonrpc": "2.0", "id": frame["id"], "result": {"value": "424242"}})
+
+
+def locks(*answers):
+    async def act(viewer, frame):
+        for question, answer in zip(frame["params"]["questions"], answers):
+            CLOCK.tick(900)
+            await viewer.story_call("clarify.lock", {"request_id": frame["id"], "question_id": question["qid"], "answer": answer})
+    return act
+
+
+async def skip_target(viewer, frame):
+    card = frame["params"]["payload"]
+    await viewer.story_call("connection.respond", {
+        "owner": {"type": "session", "session_id": viewer.session_id}, "op_id": card["op_id"],
+        "result": {"targets": [{"name": card["targets"][0]["name"], "status": "skipped"}]}})
+
+
+ASKS = Story(
+    request="Install jq, find me a celebration gif, check my example.com account, then deploy the notes site.",
+    steps=[
+        {"say": "I'll install jq first. That needs your sudo password.",
+         "call": ("terminal", {"command": SUDO_COMMAND}), "during": [sudo_password], "ms": 2400},
+        {"say": "Now the gif. The gif-search skill needs a Tenor key.",
+         "call": ("skill_view", {"name": "gif-search"}), "during": [skill_secret], "ms": 40},
+        {"say": "No key, so I'll skip the gif. Signing in to example.com.",
+         "call": ("browser_navigate", {"url": "https://example.com/account"}), "during": [vault_code], "ms": 1800},
+        {"say": "You're signed in. Before I deploy, two questions.",
+         "call": ("clarify", {"questions": BATCH}), "during": [clarify_batch], "ms": 30},
+        {"say": "Production in two regions. The deploy needs GitHub connected.",
+         "call": ("manage_connections", {"action": "connect", "connectors": ["github"]}), "during": [connector_card], "ms": 60},
+        {"say": "Skipped, so I'll deploy from the local checkout. Offering an accent colour while it runs.",
+         "call": ("set_theme", {"picker": "accent"}), "during": [theme_picker], "ms": 25},
+        {"say": "Done. jq is installed, the gif was skipped for want of a Tenor key, and the notes site is deployed to production.",
+         "call": None},
+    ],
+    out="asks.jsonl", seed=20261125, files={}, doomed=None, answer=None, prompt=None, after=plugin_choice,
+    asks=(("sudo", typed("correct horse battery staple")), ("secret", skipped), ("vault.code", elsewhere),
+          ("clarify", locks("production", json.dumps(["eu-west (Recommended)", "us-east"], separators=(",", ":")))), ("connection.request", skip_target),
+          ("theme.pick", declined), ("clarify", locks("This week's"))))
+
+class Seam:
+    """The half of the turn's agent that ``session.steer``, ``session.redirect`` and
+    ``prompt.steer_queued`` reach (``agent/interrupt_control.py``). It takes every text. A redirect
+    that arrives while a tool runs is delivered as a steer, as the agent's own ``redirect`` does then."""
+
+    def __init__(self):
+        self.taken = []
+
+    def steer(self, text, ticket=None):
+        self.taken.append(text)
+        return True
+
+    def redirect(self, text):
+        return self.steer(text)
+
+    def withdraw_steer(self, ticket):
+        # Asked at settlement whether a queued message handed to the turn went unread. The turn read each one.
+        return False
+
+    def read(self):
+        """What the agent's steer drain appends once the running tool returns: one user row per text."""
+        from agent.prompt_builder import steer_user_row
+        rows = [steer_user_row(text) for text in self.taken]
+        self.taken.clear()
+        return rows
+
+
+SEAM = Seam()
+GATES = {}
+
+
+def gate(name):
+    return GATES.setdefault(name, SimpleNamespace(reached=threading.Event(), opened=threading.Event()))
+
+
+def hold(name):
+    def beat(turn, agent):
+        gate(name).reached.set()
+        gate(name).opened.wait()
+    return beat
+
+
+def adopt(turn, agent):
+    authority, session_id, generation = turn._approval_owner
+    authority.adopt_agent(session_id, generation, SEAM)
+
+
+def held_tool(name, result):
+    def during(turn, agent):
+        hold(name)(turn, agent)
+        return result
+    return during
+
+
+RENAME = "Rename every note to kebab-case."
+LIST_CHANGES = "Then list what changed."
+CHANGELOG, CHANGELOG_EDITED = "Also update the changelog.", "Also update the changelog, under Unreleased."
+TAG = "And tag the release as v2."
+ISO_DATES = "Use ISO dates in the changelog."
+RELEASE_NOTES = "Now draft the release notes."
+NO_TAG = "Skip the tag for now."
+USE_TRASH = "Move it to the trash instead of deleting it."
+THREE_LINES = "Keep them to three lines."
+DRAFTS = f"{WORK}/drafts"
+QUEUE_TURNS = {
+    RENAME: [
+        {"hermes": [adopt], "say": "Renaming the notes to kebab-case.", "call": ("terminal", {"command": f"ls {WORK}/notes"}), "ms": 40},
+        {"hermes": [hold("crash")], "say": "", "call": None},
+    ],
+    LIST_CHANGES: [
+        {"hermes": [adopt], "say": "Listing what changed in the notes folder.", "call": ("terminal", {"command": f"ls {WORK}/notes"}), "ms": 35},
+        {"hermes": [hold("queue")], "reads": SEAM.read, "say": "Three notes were renamed. I'll update the changelog under Unreleased as well.",
+         "call": ("terminal", {"command": f"cat {WORK}/CHANGELOG.md"}), "ms": 30},
+        {"hermes": [hold("steer")], "reads": SEAM.read, "say": "Using ISO dates. Tagging the release next.",
+         "call": ("terminal", {"command": "git tag --list"}), "during": [held_tool("redirect", "v1\n")], "ms": 900},
+        {"reads": SEAM.read, "say": "Skipping the tag. Clearing the old drafts.", "call": ("terminal", {"command": f"rm -rf {DRAFTS}"}),
+         "after": hold("denied"), "ms": 20},
+        {"reads": SEAM.read, "say": "I left the drafts in place and moved nothing: there is no trash command here. The changelog is updated with ISO dates.",
+         "call": None},
+    ],
+    RELEASE_NOTES: [{"hermes": [hold("build"), adopt], "say": "Release notes: notes renamed to kebab-case, changelog updated under Unreleased, no tag yet.", "call": None}],
+    THREE_LINES: [{"hermes": [adopt], "say": "Renamed the notes.\nUpdated the changelog.\nNo tag yet.", "call": None}],
+}
+QUEUE = Story(
+    request=RENAME, steps=[], out="queue.jsonl", seed=20261126,
+    files={"notes/First Note.md": "one\n", "notes/Second Note.md": "two\n", "notes/Third Note.md": "three\n",
+           "CHANGELOG.md": "# Changelog\n\n## Unreleased\n", "drafts/old.md": "draft\n"},
+    doomed=None, answer=None, prompt=None)
+
+PLAN_REQUEST = "What does notes.md say about the release?"
+PLAN_REPLY = "notes.md lists three tasks for the release: sketch the chat view, wire the gateway socket and review the screenshots."
+DOCS_REQUEST = "Then outline docs/plan.md."
+DOCS_REPLY = "docs/plan.md has two parts: the release date and who signs it off."
+COMMAND_TURNS = {PLAN_REQUEST: [{"say": PLAN_REPLY, "call": None}], DOCS_REQUEST: [{"say": DOCS_REPLY, "call": None}]}
+BTW = "Which file holds the plan?"
+BTW_ANSWER = "The plan is in docs/plan.md."
+BACKGROUND = "Draft a changelog entry for the notes."
+BACKGROUND_ANSWER = "Changelog: notes.md now lists the release tasks, and docs/plan.md holds the release plan."
+FOCUS = "the release plan"
+COMMANDS = Story(
+    request=PLAN_REQUEST, steps=[], out="commands.jsonl", seed=20261127,
+    files={"notes.md": NOTES, "docs/plan.md": "# Plan\n\n- date: next week\n- sign-off: the owner\n"},
+    doomed=None, answer=None, prompt=None)
+
+SERVE = "echo 'serving the docs on :8000'; exec sleep 600"
+
+
+def serving(turn, agent):
+    from tools.process_registry import process_registry
+    for _ in range(1000):
+        if any("serving the docs" in held.output_buffer for held in list(process_registry._running.values())):
+            return
+        threading.Event().wait(0.01)
+    stop("the docs server printed nothing")
+RELEASE_NOTES = "# Release notes\n\n- the chat view\n- the gateway socket\n"
+DATED = "- date: next Friday\n"
+GOAL = "Ship the release notes"
+GOAL_OUTCOME = "release.md lists every change in the release"
+CRITERION = "each change names its pull request"
+PANELS_REQUEST = "Start the docs server, then write the release notes in release.md."
+DATE_REQUEST = "Add the release date to release.md."
+PANELS_TURNS = {
+    PANELS_REQUEST: [
+        {"say": "Starting the docs server first.", "call": ("terminal", {"command": SERVE, "background": True}), "ms": 40, "after": serving},
+        {"say": "", "call": ("write_file", {"path": f"{WORK}/release.md", "content": RELEASE_NOTES}), "ms": 12, "checkpoint": True},
+        {"say": "The docs server is running, and release.md lists the two changes.", "call": None}],
+    DATE_REQUEST: [
+        {"say": "", "call": ("patch", {"mode": "replace", "path": f"{WORK}/release.md", "old_string": "- the gateway socket\n",
+                                         "new_string": "- the gateway socket\n" + DATED}), "ms": 15, "checkpoint": True},
+        {"say": "release.md now says the release is next Friday.", "call": None}]}
+PANELS = Story(
+    request=PANELS_REQUEST, steps=[], out="panels.jsonl", seed=20261124, files={"notes.md": NOTES}, doomed=None, answer=None, prompt=None)
 
 STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN, "images": IMAGES, "preview": PREVIEW,
-           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "always": ALWAYS, "choose": CHOOSE}
+           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "always": ALWAYS, "choose": CHOOSE, "says": SAYS,
+           "asks": ASKS, "queue": QUEUE, "commands": COMMANDS, "panels": PANELS}
 PROMPTS = {"approval": ("approval.request", "approval.respond", "choice"),
            "clarify": ("clarify.request", "clarify.respond", "answer")}
 NAME = sys.argv[1] if len(sys.argv) > 1 else "errand"
@@ -367,9 +838,12 @@ OUT = Path(__file__).resolve().parent / TALE.out
 
 for path in (WORK, HOME):
     shutil.rmtree(path, ignore_errors=True)
-for name, text in TALE.files.items():
+for name, content in TALE.files.items():
     Path(WORK, name).parent.mkdir(parents=True, exist_ok=True)
-    Path(WORK, name).write_text(text)
+    if isinstance(content, bytes):
+        Path(WORK, name).write_bytes(content)
+    else:
+        Path(WORK, name).write_text(content)
 os.makedirs(HOME)
 # After the bootstrap: pointed at a new home first, it would prepare a whole runtime there.
 os.environ["HERMES_HOME"] = HOME
@@ -505,8 +979,14 @@ class Recorder:
         self.loop = loop
 
     def write(self, obj):
-        if self.recording:
-            self.written.append(wire(obj))
+        if not self.recording:
+            return True
+        self.written.append(wire(obj))
+        if obj.get("method") != "event" and "id" in obj:
+            # A server request is written to the session's sockets and never published, so no observer sees it.
+            CLOCK.tick(4)
+            self.steps.append({"at": CLOCK.now(), "push": wire(obj)})
+            self.loop.call_soon_threadsafe(self.seen.put_nowait, obj)
         return True
 
     def observe(self, frame):
@@ -522,6 +1002,12 @@ class Recorder:
         while True:
             frame = await self.seen.get()
             if frame.get("method") == "event" and frame["params"]["type"] == event_type:
+                return frame
+
+    async def asked(self, name):
+        while True:
+            frame = await self.seen.get()
+            if name in (frame.get("method"), frame.get("params", {}).get("type")):
                 return frame
 
 
@@ -541,10 +1027,16 @@ def flushing_agent(db, session_id):
     return agent
 
 
-def play_turn(turn, db, history, call_ids):
+def play_turn(turn, db, history, call_ids, request=None, steps=None, kept=None):
     authority, session_id, generation = turn._approval_owner
     agent = flushing_agent(db, session_id)
-    messages = list(history) + [{"role": "user", "content": REQUEST}]
+    messages = list(history) + [{"role": "user", "content": REQUEST if request is None else request}]
+
+    def flush():
+        agent._flush_messages_to_session_db(messages, history)
+        if kept is not None:
+            kept[:] = messages
+
     agent._persist_user_message_idx = len(history)
     session_key = turn._ctx.session_key
 
@@ -560,12 +1052,24 @@ def play_turn(turn, db, history, call_ids):
     key_token = set_current_session_key(session_key)
     register_gateway_notify(session_key, notify)
     window = local_desktop_ui.wire(turn, agent)
+    sinks = local_viewer_events.wire(turn, agent) if TALE.viewer else None
     needs_break = False
     streamed = False
     try:
-        for iteration, step in enumerate(STORY, start=1):
+        for iteration, step in enumerate(STORY if steps is None else steps, start=1):
             CLOCK.tick(step.get("pause", 0))
             turn._ctx._step_callback_sync(iteration, [])
+            for beat in step.get("hermes", []):
+                beat(turn, agent)
+            messages.extend(step["reads"]() if "reads" in step else [])
+            # The agent keeps the reasoning on the assistant message.
+            how, chunks = step.get("reasoning", ("stream", []))
+            if how == "whole":
+                local_viewer_events.publish_progress(turn, "reasoning.available", "_thinking", "".join(chunks), None)
+            for chunk in chunks if how == "stream" else []:
+                CLOCK.tick(20)
+                agent.reasoning_callback(chunk)
+            thought = {"reasoning": "".join(chunks)} if chunks else {}
             words = step["say"]() if callable(step["say"]) else step["say"]
             if words:
                 text = ("\n\n" + words) if needs_break else words
@@ -575,38 +1079,46 @@ def play_turn(turn, db, history, call_ids):
                     turn._publish_execution("message.delta", {"text": text[i:i + 24]})
                 streamed = True
             if step["call"] is None:
-                messages.append({"role": "assistant", "content": words or ""})
+                messages.append({"role": "assistant", "content": words or "", **thought})
                 break
             name, args = step["call"]
             call_id = call_ids[iteration - 1]
             CLOCK.tick(60)
             turn._publish_execution("tool.generating", {"name": name})
-            messages.append({"role": "assistant", "content": words or "", "tool_calls": [
+            messages.append({"role": "assistant", "content": words or "", **thought, "tool_calls": [
                 {"id": call_id, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}]})
-            agent._flush_messages_to_session_db(messages, history)
+            flush()
             # ``turn_tool_round.py``: the open text box closes before the tool lines.
             turn._publish_execution("message.delta", {"text": None})
             turn.combined_tool_start_callback(call_id, name, args)
             if "stage" in step:
                 step["stage"]()
-            if name == "clarify":
+            asked = [ask(turn, agent) for ask in step.get("during", [])]
+            if asked:
+                result = asked[-1]
+            elif "result" in step:
+                result = step["result"]
+            elif name == "clarify":
                 # The agent runs clarify inline with its ``clarify_callback`` (agent/inline_tool_executors.py),
                 # which the gateway sets to the turn's ``_clarify_callback_sync``.
                 result = clarify_tool(args["questions"], callback=turn._clarify_callback_sync)
             else:
                 result = model_tools.handle_function_call(name, args, task_id=session_id, tool_call_id=call_id,
                                                           session_id=session_id)
+            if "after" in step:
+                step["after"](turn, agent)
             CLOCK.tick(step["ms"])
             turn.combined_tool_complete_callback(call_id, name, args, result)
             messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
-            agent._flush_messages_to_session_db(messages, history)
+            flush()
             needs_break = streamed
     finally:
+        local_viewer_events.restore(agent, sinks)
         local_desktop_ui.release(window)
         unregister_gateway_notify(session_key)
         reset_current_session_key(key_token)
         clear_session_vars(tokens)
-    agent._flush_messages_to_session_db(messages, history)
+    flush()
     final = messages[-1]["content"]
     result = {"final_response": final, "messages": messages}
     receipt = _persisted_turn(agent, history, result, 0)
@@ -615,18 +1127,39 @@ def play_turn(turn, db, history, call_ids):
             "last_reasoning": None, "response_previewed": False, "response_transformed": False}
 
 
-async def main():
-    db = open_persistence(profile_scope(home=HOME))
-    # Hermes's own `owner` test fixture (tests/gateway/conftest.py): the routing store and the
-    # authority share the profile's state.db. The runner is a stand-in with no adapters and no agent.
+def owner(db, instance_id, epoch):
+    """Hermes's own `owner` test fixture (tests/gateway/conftest.py): the routing store and the
+    authority share the profile's state.db. The runner is a stand-in with no adapters and no agent."""
     store = SessionStore(config=GatewayConfig(), sessions_dir=Path(HOME) / "sessions")
     store._db, store._persistence_beside = db, lambda pinned: pinned
     runner = SimpleNamespace(_draining=False, session_store=store, adapters={},
                              _adapter_for_source=lambda source: None, _evict_cached_agent=lambda route: None,
                              _cached_agent_for=lambda route: None)
-    authority = SessionAuthority(runner, profile_id=HOME, instance_id="fixture",
-                                 epoch=db.runtime.begin_epoch(instance_id="fixture"), persistence=db)
+    authority = SessionAuthority(runner, profile_id=HOME, instance_id=instance_id, epoch=epoch, persistence=db)
     runner.session_authority = authority
+    return runner, authority
+
+
+def turn_of(runner, live, authority, ref, row):
+    turn = TurnRunner.__new__(TurnRunner)
+    turn._runner = runner
+    turn._approval_owner = (authority, ref.session_id, row["generation"])
+    # The status fields are what ``_status_callback_sync``, the notice sinks and ``_clarify_callback_sync`` read.
+    turn._ctx = SimpleNamespace(
+        source=live.source, session_id=ref.session_id, session_key=live.route,
+        _loop_for_step=asyncio.get_running_loop(), _run_still_current=lambda: True,
+        _voice_ack_guild=[None], _native_slack_task_cards=False, progress_mode=None, agent_holder=[None],
+        _hooks_ref=SimpleNamespace(loaded_hooks=[]), progress_queue=None,
+        mute_notification_reply=False, _status_adapter=LocalSessionAdapter(authority), user_config={},
+        run_generation=row["generation"], _status_chat_id=live.source.chat_id, _status_thread_metadata=None,
+        _cleanup_progress=False, stream_consumer_holder=[None], inbound_message_id=None)
+    turn._ctx._step_callback_sync = lambda iteration, prev: TurnRunner._step_callback_sync(turn, iteration, prev)
+    return turn
+
+
+async def main():
+    db = open_persistence(profile_scope(home=HOME))
+    runner, authority = owner(db, "fixture", db.runtime.begin_epoch(instance_id="fixture"))
     recorder = Recorder(asyncio.get_running_loop())
     socket = AuthorityConnection(authority, recorder, {"user_id": USER, "native_bootstrap": True})
     rpc_id = 0
@@ -649,17 +1182,7 @@ async def main():
     call_ids = ["call_" + uuid.uuid4().hex[:24] for _ in STORY]
 
     async def scripted_execution(authority, ref, row):
-        turn = TurnRunner.__new__(TurnRunner)
-        turn._runner = runner
-        turn._approval_owner = (authority, ref.session_id, row["generation"])
-        turn._ctx = SimpleNamespace(
-            source=live.source, session_id=ref.session_id, session_key=live.route,
-            _loop_for_step=asyncio.get_running_loop(), _run_still_current=lambda: True,
-            _voice_ack_guild=[None], _native_slack_task_cards=False, progress_mode=None, agent_holder=[None],
-            _hooks_ref=SimpleNamespace(loaded_hooks=[]), progress_queue=None,
-            _status_adapter=LocalSessionAdapter(authority), _status_chat_id=live.source.chat_id,
-            _status_thread_metadata=None, stream_consumer_holder=[None], inbound_message_id=None)
-        turn._ctx._step_callback_sync = lambda iteration, prev: TurnRunner._step_callback_sync(turn, iteration, prev)
+        turn = turn_of(runner, live, authority, ref, row)
         result = await asyncio.to_thread(play_turn, turn, db, history, call_ids)
         authority.pending_results[row["admission_id"]] = {"result": result, "usage": {}}
         # The event stream delivered the reply, so the handler answers None and ``message.complete``
@@ -677,11 +1200,30 @@ async def main():
         reply = await call(socket, method, params)
         recorder.steps.insert(mark, {"at": at, "await": method, "params": params, "reply": reply["result"]})
 
+    controls = {}
+    if TALE.viewer:
+        await call(socket, "config.set", {"session_id": session_id, "key": "show_reasoning", "value": "on"})
+        shown = (await call(socket, "config.get", {"session_id": session_id, "key": "show_reasoning"}))["result"]
+        controls[shown["key"]] = shown["value"]
+
+    async def answer(request_id, frame, kept=None):
+        recorder.steps.append({"at": CLOCK.now(), "answer": request_id, **(kept or frame)})
+        await socket.dispatch({"jsonrpc": "2.0", "id": request_id, **frame})
+
+    viewer = SimpleNamespace(authority=authority, session_id=session_id, call=call, story_call=story_call, answer=answer)
+
+    async def attend():
+        for name, act in TALE.asks:
+            frame = wire(await recorder.asked(name))
+            CLOCK.tick(1500)
+            await act(viewer, frame)
+
     recorder.recording = True
-    await story_call("prompt.submit", {"session_id": session_id, "text": REQUEST,
-                                       "input_id": "input_" + uuid.uuid4().hex[:16]})
-    if TALE.asks is not None:
-        asked, respond, reply_key = PROMPTS[TALE.asks]
+    # A viewer that takes the clarify tool's questions as one request says so with each message.
+    await story_call("prompt.submit", {"session_id": session_id, "text": REQUEST, "input_id": "input_" + uuid.uuid4().hex[:16],
+                                       **({"clarify_batch": True} if TALE.asks else {})})
+    if TALE.prompt is not None:
+        asked, respond, reply_key = PROMPTS[TALE.prompt]
         try:
             request = await asyncio.wait_for(recorder.push_of(asked), 60)
         except TimeoutError:
@@ -707,8 +1249,13 @@ async def main():
         CLOCK.tick(4)
         recorder.steps.append({"at": CLOCK.now(), "stored": snapshot["display_messages"]})
 
-    if TALE.asks is None:
+    if TALE.prompt is None:
+        attending = asyncio.create_task(attend())
         await live.task
+        if TALE.after is not None:
+            CLOCK.tick(600)
+            await TALE.after(runner, live)
+        await attending
         pushes = await stop_recording()
         await record_stored()
     elif TALE.answer is None:
@@ -720,14 +1267,19 @@ async def main():
         CLOCK.tick(1500)
         await story_call(respond, {**answer_to, reply_key: TALE.answer})
         await live.task
+        if TALE.after is not None:
+            CLOCK.tick(600)
+            await TALE.after(runner, live)
         pushes = await stop_recording()
         await record_stored()
 
     header = {"fixture": 1, "hermes": HERMES_VERSION, "source": "generated", "sessionId": session_id,
-              "describe": describe, "list": listing, "stored": created["messages"]}
+              "describe": describe, "list": listing, "stored": created["messages"], **({"controls": controls} if controls else {})}
+    media = {f"{WORK}/{name}": Path(WORK, name).read_bytes() for name in TALE.shows}
     if TALE.screenshots:
-        header["media"] = {path: base64.b64encode(data).decode() for path, data in
-                           ((SHOT, Path(SHOT).read_bytes()), (CHART_URL, chart_png()))}
+        media |= {SHOT: Path(SHOT).read_bytes(), CHART_URL: chart_png()}
+    if media:
+        header["media"] = {path: base64.b64encode(data).decode() for path, data in media.items()}
     with OUT.open("w") as out:
         for line in [header, *recorder.steps]:
             out.write(json.dumps(line, ensure_ascii=False) + "\n")
@@ -737,4 +1289,481 @@ async def main():
         sys.exit(f"after the answer to the rm -rf, {TALE.doomed} {'is gone' if TALE.answer is None else 'is still there'}")
 
 
-asyncio.run(main())
+def stop(problem):
+    """Ends the script. The lost turn still waits at its gate, on a thread the interpreter would wait for."""
+    if problem is not None:
+        print(problem, file=sys.stderr, flush=True)
+    os._exit(0 if problem is None else 1)
+
+
+async def queue_main():
+    db = open_persistence(profile_scope(home=HOME))
+    loop = asyncio.get_running_loop()
+    client = {"user_id": USER, "native_bootstrap": True}
+    quiet = SimpleNamespace(write=lambda obj: True)
+    rpc_id = 0
+    history = []
+
+    async def call(connection, method, params):
+        nonlocal rpc_id
+        rpc_id += 1
+        reply = await connection.dispatch({"jsonrpc": "2.0", "id": rpc_id, "method": method, "params": params})
+        if "error" in reply:
+            stop(f"{method} refused: {reply['error']}")
+        return reply["result"]
+
+    def execution_of(runner):
+        async def scripted_execution(authority, ref, row):
+            text = row["payload"]["text"]
+            steps = QUEUE_TURNS[text]
+            turn = turn_of(runner, authority.sessions[ref.session_id], authority, ref, row)
+            call_ids = ["call_" + uuid.uuid4().hex[:24] for _ in steps]
+            result = await asyncio.to_thread(play_turn, turn, db, list(history), call_ids, text, steps, history)
+            authority.pending_results[row["admission_id"]] = {"result": result, "usage": {}}
+            return None
+        return scripted_execution
+
+    async def reached(name):
+        for _ in range(1200):
+            if gate(name).reached.is_set():
+                return
+            await asyncio.sleep(0.01)
+        stop(f"the turn never reached {name}")
+
+    def submit(session_id, text):
+        return {"session_id": session_id, "text": text, "input_id": "input_" + uuid.uuid4().hex[:16]}
+
+    runner, first = owner(db, "fixture", db.runtime.begin_epoch(instance_id="fixture"))
+    session_finite.execute_finite_admission = execution_of(runner)
+    before = AuthorityConnection(first, quiet, client)
+    session_id = (await call(before, "session.create", {}))["session_id"]
+    lost = await call(before, "prompt.submit", submit(session_id, RENAME))
+    await reached("crash")
+    await call(before, "prompt.submit", submit(session_id, LIST_CHANGES))
+
+    CLOCK.tick(42_000)
+    epoch = db.runtime.begin_epoch(instance_id="fixture-restarted")
+    db.admissions.recover(epoch=epoch)
+    runner, authority = owner(db, "fixture-restarted", epoch)
+    session_finite.execute_finite_admission = execution_of(runner)
+    recorder = Recorder(loop)
+    socket = AuthorityConnection(authority, recorder, client)
+    opened = await call(socket, "session.resume", {"session_id": session_id, "display_projection": True})
+    if [row["status"] for row in opened["pending"]] != ["unknown", "queued"]:
+        stop(f"after the restart Hermes lists {opened['pending']}")
+    live = authority.sessions[session_id]
+    live.event_stream.observers.add(recorder.observe)
+    describe = await call(socket, "runtime.describe", {})
+    listing = await call(socket, "session.list", {})
+    await call(socket, "config.set", {"session_id": session_id, "key": "busy", "value": "queue"})
+    busy = await call(socket, "config.get", {"session_id": session_id, "key": "busy"})
+    other = AuthorityConnection(authority, quiet, client)
+    await call(other, "session.resume", {"session_id": session_id})
+
+    async def story_call(method, params, pause=1500):
+        CLOCK.tick(pause)
+        at, mark = CLOCK.now(), len(recorder.steps)
+        reply = await call(socket, method, params)
+        recorder.steps.insert(mark, {"at": at, "await": method, "params": params, "reply": reply})
+        return reply
+
+    def row(admission):
+        return {"session_id": session_id, "admission_id": admission["admission_id"]}
+
+    def open_gate(name):
+        CLOCK.tick(400)
+        gate(name).opened.set()
+
+    recorder.recording = True
+    began = CLOCK.now()
+    await story_call("prompt.resolve_unknown", {**row(lost), "execution_generation": lost_generation(opened)})
+
+    await reached("queue")
+    mine = await story_call("prompt.submit", submit(session_id, CHANGELOG))
+    CLOCK.tick(700)
+    theirs = await call(other, "prompt.submit", submit(session_id, TAG))
+    edited = await story_call("prompt.replace_queued", {**row(mine), "submission_id": "input_" + uuid.uuid4().hex[:16], "text": CHANGELOG_EDITED})
+    await story_call("prompt.cancel", row(theirs))
+    await story_call("prompt.steer_queued", row(edited))
+    open_gate("queue")
+
+    await reached("steer")
+    running = authority._handle(live_ref(authority, session_id)).execution_generation
+    await story_call("session.steer", {"session_id": session_id, "text": ISO_DATES, "execution_generation": running})
+    await story_call("prompt.submit", submit(session_id, RELEASE_NOTES))
+    open_gate("steer")
+
+    await reached("redirect")
+    await story_call("session.redirect", {"session_id": session_id, "text": NO_TAG, "execution_generation": running})
+    open_gate("redirect")
+
+    try:
+        prompt = (await asyncio.wait_for(recorder.push_of("approval.request"), 60))["params"]["payload"]
+    except TimeoutError:
+        stop("the gateway never asked to approve the rm -rf")
+    held = {"session_id": session_id, "execution_generation": prompt["execution_generation"]}
+    await story_call("session.steer", {**held, "text": USE_TRASH})
+    await story_call("approval.respond", {**held, "prompt_id": prompt["prompt_id"], "choice": "deny"}, pause=0)
+    await asyncio.wait_for(recorder.push_of("approval.settled"), 60)
+    open_gate("denied")
+
+    await reached("build")
+    building = authority._handle(live_ref(authority, session_id)).execution_generation
+    unread = await story_call("session.redirect", {"session_id": session_id, "text": THREE_LINES, "execution_generation": building})
+    if unread != {**unread, "status": "rejected", "delivered": False}:
+        stop(f"a redirect before the turn had an agent answered {unread}")
+    await story_call("prompt.submit", submit(session_id, THREE_LINES), pause=0)
+    open_gate("build")
+
+    for _ in range(1200):
+        if not authority._pending_rows(live_ref(authority, session_id)):
+            break
+        await asyncio.sleep(0.01)
+    else:
+        stop("the queue never emptied")
+    pushes = [step["push"] for step in recorder.steps if "push" in step]
+    for _ in range(100):
+        if len(recorder.written) >= len(pushes):
+            break
+        await asyncio.sleep(0.05)
+    recorder.recording = False
+    if recorder.written != pushes:
+        stop("the socket received other frames than the session published")
+    stored = (await call(AuthorityConnection(authority, quiet, client), "session.resume", {"session_id": session_id, "display_projection": True}))["display_messages"]
+    CLOCK.tick(4)
+    recorder.steps.append({"at": CLOCK.now(), "stored": stored})
+
+    header = {"fixture": 1, "hermes": HERMES_VERSION, "source": "generated", "sessionId": session_id, "describe": describe, "list": listing,
+              "stored": opened["display_messages"], "pending": opened["pending"], "controls": {busy["key"]: busy["value"]}}
+    with OUT.open("w") as out:
+        for line in [header, *({**step, "at": step["at"] - began} for step in recorder.steps)]:
+            out.write(json.dumps(line, ensure_ascii=False) + "\n")
+        out.flush()
+    print(f"wrote {OUT}: {len(pushes)} pushes, {len(recorder.steps) - len(pushes)} other steps", file=sys.stderr)
+    if not os.path.exists(DRAFTS):
+        stop(f"the rm -rf was denied, and {DRAFTS} is gone")
+    stop(None)
+
+
+def lost_generation(snapshot):
+    return next(row["execution_generation"] for row in snapshot["pending"] if row["status"] == "unknown")
+
+
+def live_ref(authority, session_id):
+    from gateway.session_contract import SessionRef
+    return SessionRef(authority.profile_id, session_id)
+
+
+def policy_owner(db, instance_id, epoch):
+    """``owner`` with Hermes's own ``GatewayRunner``, built without ``__init__`` as Hermes's tests build a partial runner.
+    Its local adapter holds each session's frozen launch policy, which the folder, the effort, fast and the side agents read."""
+    from gateway.run import GatewayRunner
+    store = SessionStore(config=GatewayConfig(), sessions_dir=Path(HOME) / "sessions")
+    store._db, store._persistence_beside = db, lambda pinned: pinned
+    runner = GatewayRunner.__new__(GatewayRunner)
+    runner._draining, runner.session_store, runner.adapters = False, store, {}
+    runner._evict_cached_agent = lambda route, **kwargs: None
+    runner._cached_agent_for = lambda route: None
+    authority = SessionAuthority(runner, profile_id=HOME, instance_id=instance_id, epoch=epoch, persistence=db)
+    runner.session_authority = authority
+    return runner, authority
+
+
+def scripted_side_agents():
+    """The model's part of ``/btw`` and ``/bg``: their answers. The side agents' threads, scopes and events are Hermes's."""
+    import agent.side_question
+    from gateway import session_tui_side
+    agent.side_question.answer_side_question = lambda text, history, **kwargs: BTW_ANSWER
+
+    def background_agent(authority, policy, live, task_id, **overrides):
+        return SimpleNamespace(run_conversation=lambda user_message, task_id: {"final_response": BACKGROUND_ANSWER, "messages": []},
+                               close=lambda: None)
+    session_tui_side._side_agent = background_agent
+
+
+def scripted_summary():
+    """The model's part of ``/compress``: the summary that replaces all but the last turn."""
+    from agent.context_compressor import COMPRESSED_SUMMARY_METADATA_KEY, SUMMARY_PREFIX, ContextCompressor
+
+    def compress(self, messages, **kwargs):
+        summary = {"role": "user", "content": f"{SUMMARY_PREFIX}\nThe user asked what notes.md says about the release: three tasks.",
+                   COMPRESSED_SUMMARY_METADATA_KEY: True}
+        return [summary, *messages[-2:]]
+    ContextCompressor.compress = compress
+
+
+async def commands_main():
+    db = open_persistence(profile_scope(home=HOME))
+    loop = asyncio.get_running_loop()
+    client = {"user_id": USER, "native_bootstrap": True}
+    history = []
+    rpc_id = 0
+
+    async def call(connection, method, params):
+        nonlocal rpc_id
+        rpc_id += 1
+        reply = await connection.dispatch({"jsonrpc": "2.0", "id": rpc_id, "method": method, "params": params})
+        if "error" in reply:
+            stop(f"{method} refused: {reply['error']}")
+        return reply["result"]
+
+    runner, authority = policy_owner(db, "fixture", db.runtime.begin_epoch(instance_id="fixture"))
+
+    async def scripted_execution(authority, ref, row):
+        text = row["payload"]["text"]
+        steps = COMMAND_TURNS[text]
+        turn = turn_of(runner, authority.sessions[ref.session_id], authority, ref, row)
+        call_ids = ["call_" + uuid.uuid4().hex[:24] for _ in steps]
+        result = await asyncio.to_thread(play_turn, turn, db, list(history), call_ids, text, steps, history)
+        authority.pending_results[row["admission_id"]] = {"result": result, "usage": {}}
+        return None
+
+    session_finite.execute_finite_admission = scripted_execution
+    scripted_side_agents()
+    scripted_summary()
+    recorder = Recorder(loop)
+    socket = AuthorityConnection(authority, recorder, client)
+    opened = await call(socket, "session.create", {"source": "gui", "cwd": WORK, "model": "gpt-5.4", "provider": "openai"})
+    session_id = opened["session_id"]
+    live = authority.sessions[session_id]
+    live.event_stream.observers.add(recorder.observe)
+    describe = await call(socket, "runtime.describe", {})
+    listing = await call(socket, "session.list", {})
+    catalog = await call(socket, "commands.catalog", {"session_id": session_id})
+
+    async def fences():
+        held = await call(AuthorityConnection(authority, SimpleNamespace(write=lambda obj: True), client), "session.resume", {"session_id": session_id, "omit_messages": True})
+        return {"expected_revision": held["revision"], "expected_generation": held["execution_generation"]}
+
+    async def story_call(method, params, pause=1500):
+        CLOCK.tick(pause)
+        at, mark = CLOCK.now(), len(recorder.steps)
+        reply = await call(socket, method, params)
+        recorder.steps.insert(mark, {"at": at, "await": method, "params": params, "reply": reply})
+        return mark
+
+    async def settled(text):
+        await story_call("prompt.submit", {"session_id": session_id, "text": text, "input_id": "input_" + uuid.uuid4().hex[:16]})
+        await asyncio.wait_for(recorder.push_of("message.complete"), 60)
+        for _ in range(1200):
+            if not authority._pending_rows(live_ref(authority, session_id)):
+                return
+            await asyncio.sleep(0.01)
+        stop(f"the turn of {text!r} never left the queue")
+
+    async def mutate(operation, payload):
+        return {"session_id": session_id, "request_id": "request_" + uuid.uuid4().hex[:16], **await fences(), "operation": operation, "payload": payload}
+
+    async def stored_rows():
+        reader = AuthorityConnection(authority, SimpleNamespace(write=lambda obj: True), client)
+        return (await call(reader, "session.resume", {"session_id": session_id, "display_projection": True}))["display_messages"]
+
+    recorder.recording = True
+    began = CLOCK.now()
+    await settled(PLAN_REQUEST)
+    await settled(DOCS_REQUEST)
+    await story_call("prompt.btw", {"session_id": session_id, "text": BTW})
+    await asyncio.wait_for(recorder.push_of("btw.complete"), 60)
+    await story_call("prompt.background", {"session_id": session_id, "text": BACKGROUND})
+    await asyncio.wait_for(recorder.push_of("background.complete"), 60)
+    await story_call("config.set", {"session_id": session_id, "key": "yolo", "value": "on"})
+    compressed = await story_call("session.mutate", await mutate("compress", {"focus": FOCUS}))
+    recorder.steps.insert(compressed + 1, {"at": recorder.steps[compressed]["at"], "stored": await stored_rows()})
+    completed = await call(socket, "complete.path", {"session_id": session_id, "word": "@no"})
+    await story_call("session.mutate", await mutate("reasoning", {"effort": "high"}))
+    await story_call("config.set", {"session_id": session_id, "key": "fast", "value": "fast"})
+    await story_call("session.mutate", await mutate("workspace", {"cwd": f"{WORK}/docs"}))
+    await story_call("session.export", {"session_id": session_id, "format": "md"})
+
+    pushes = [step["push"] for step in recorder.steps if "push" in step]
+    for _ in range(100):
+        if len(recorder.written) >= len(pushes):
+            break
+        await asyncio.sleep(0.05)
+    recorder.recording = False
+    if recorder.written != pushes:
+        stop("the socket received other frames than the session published")
+    info = {key: opened["info"][key] for key in ("cwd", "reasoning_effort", "fast", "yolo")}
+    header = {"fixture": 1, "hermes": HERMES_VERSION, "source": "generated", "sessionId": session_id, "describe": describe, "list": listing,
+              "stored": opened["display_messages"] if "display_messages" in opened else opened["messages"], "catalog": catalog, "info": info,
+              "paths": {"words": {"@no": completed}}}
+    with OUT.open("w") as out:
+        for line in [header, *({**step, "at": step["at"] - began} for step in recorder.steps)]:
+            out.write(json.dumps(line, ensure_ascii=False) + "\n")
+        out.flush()
+    print(f"wrote {OUT}: {len(pushes)} pushes, {len(recorder.steps) - len(pushes)} other steps", file=sys.stderr)
+    stop(None)
+
+
+async def panels_main():
+    # Hermes keeps no checkpoints unless the profile says so (hermes_cli/config_defaults.py:486-487); the session freezes it at launch.
+    Path(HOME, "config.yaml").write_text("checkpoints:\n  enabled: true\n")
+    db = open_persistence(profile_scope(home=HOME))
+    loop = asyncio.get_running_loop()
+    client = {"user_id": USER, "native_bootstrap": True}
+    history = []
+    rpc_id = 0
+
+    async def call(connection, method, params):
+        nonlocal rpc_id
+        rpc_id += 1
+        reply = await connection.dispatch({"jsonrpc": "2.0", "id": rpc_id, "method": method, "params": params})
+        if "error" in reply:
+            stop(f"{method} refused: {reply['error']}")
+        return reply["result"]
+
+    runner, authority = policy_owner(db, "fixture", db.runtime.begin_epoch(instance_id="fixture"))
+    from agent.checkpoints import manager as checkpoint_store
+    from agent.checkpoints.manager import CheckpointManager
+    git = checkpoint_store._run_git
+
+    def dated_git(*args, extra_env=None, **kwargs):
+        when = f"@{int(time.time())} +0000"
+        return git(*args, extra_env={**(extra_env or {}), "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}, **kwargs)
+    checkpoint_store._run_git = dated_git
+    from agent.tool_executor import _ensure_file_checkpoint
+    from gateway import session_control_actions
+    from gateway.run import _checkpoint_agent_kwargs
+    from gateway.session_policy import policy_for_source
+    receipts = []
+
+    async def scripted_execution(authority, ref, row):
+        text = row["payload"]["text"]
+        live = authority.sessions[ref.session_id]
+        turn = turn_of(runner, live, authority, ref, row)
+        call_ids = ["call_" + uuid.uuid4().hex[:24] for _ in PANELS_TURNS[text]]
+        # The agent's own checkpoint before a file tool (agent/tool_executor.py:95-114), from the session's frozen policy.
+        kwargs = _checkpoint_agent_kwargs(policy_for_source(runner, live.source).config(authority, secrets=False))
+        checkpoints = SimpleNamespace(_checkpoint_mgr=CheckpointManager(enabled=bool(kwargs["checkpoints_enabled"]), **{
+            key[len("checkpoint_"):]: value for key, value in kwargs.items() if key.startswith("checkpoint_")}))
+        steps = [{**step, "stage": (lambda step=step: _ensure_file_checkpoint(checkpoints, step["call"][0], step["call"][1], ref.session_id))}
+                 if step.get("checkpoint") else step for step in PANELS_TURNS[text]]
+        result = await asyncio.to_thread(play_turn, turn, db, list(history), call_ids, text, steps, history)
+        receipts.append(result["persisted_turn"])
+        authority.pending_results[row["admission_id"]] = {"result": result, "usage": {}}
+        return None
+
+    session_finite.execute_finite_admission = scripted_execution
+    recorder = Recorder(loop)
+    socket = AuthorityConnection(authority, recorder, client)
+    opened = await call(socket, "session.create", {"source": "gui", "cwd": WORK, "model": "gpt-5.4", "provider": "openai"})
+    session_id = opened["session_id"]
+    live = authority.sessions[session_id]
+    live.event_stream.observers.add(recorder.observe)
+    describe = await call(socket, "runtime.describe", {})
+    listing = await call(socket, "session.list", {})
+    reader = AuthorityConnection(authority, SimpleNamespace(write=lambda obj: True), client)
+
+    async def reads():
+        return {"process.list": await call(reader, "process.list", {"session_id": session_id}),
+                "session.control.read": await call(reader, "session.control.read", {"session_id": session_id})}
+
+    held = {}
+
+    async def read_at(index):
+        now = await reads()
+        changed = {method: reply for method, reply in now.items() if held.get(method) != reply}
+        held.update(now)
+        if changed:
+            recorder.steps.insert(index, {"at": recorder.steps[index - 1]["at"], "reads": changed})
+
+    async def story_call(method, params, pause=1500):
+        CLOCK.tick(pause)
+        at, mark = CLOCK.now(), len(recorder.steps)
+        reply = await call(socket, method, params)
+        recorder.steps.insert(mark, {"at": at, "await": method, "params": params, "reply": reply})
+        await read_at(mark + 1)
+        return reply
+
+    async def settled(text):
+        await story_call("prompt.submit", {"session_id": session_id, "text": text, "input_id": "input_" + uuid.uuid4().hex[:16]})
+        await asyncio.wait_for(recorder.push_of("message.complete"), 60)
+        for _ in range(1200):
+            if not authority._pending_rows(live_ref(authority, session_id)):
+                break
+            await asyncio.sleep(0.01)
+        else:
+            stop(f"the turn of {text!r} never left the queue")
+        await read_at(next(at for at in range(len(recorder.steps) - 1, -1, -1)
+                           if recorder.steps[at].get("push", {}).get("params", {}).get("type") == "message.complete"))
+
+    async def stored_rows():
+        fresh = AuthorityConnection(authority, SimpleNamespace(write=lambda obj: True), client)
+        return (await call(fresh, "session.resume", {"session_id": session_id, "display_projection": True}))["display_messages"]
+
+    start_reads = await reads()
+    held.update(start_reads)
+    recorder.recording = True
+    began = CLOCK.now()
+    await settled(PANELS_REQUEST)
+    await settled(DATE_REQUEST)
+    [server] = (await reads())["process.list"]["processes"]
+    reply_row = receipts[0]["final_assistant_row_id"]
+    await story_call("message.react", {"session_id": session_id, "row_id": reply_row, "emoji": "👍"})
+    await story_call("process.kill", {"session_id": session_id, "process_id": server["session_id"]})
+
+    from hermes_cli.goals import GoalContract, GoalManager
+    CLOCK.tick(1500)
+    GoalManager(session_id).set(GOAL, contract=GoalContract(outcome=GOAL_OUTCOME))
+    mark = len(recorder.steps)
+    session_control_actions.publish(authority, session_id)
+    await asyncio.wait_for(recorder.push_of("session.control.update"), 60)
+    await read_at(mark)
+    await story_call("session.control", {"session_id": session_id, "action": "subgoal.add", "args": {"text": CRITERION}})
+    await asyncio.wait_for(recorder.push_of("session.control.update"), 60)
+    await story_call("session.control", {"session_id": session_id, "action": "goal.pause", "args": {}})
+    await asyncio.wait_for(recorder.push_of("session.control.update"), 60)
+
+    listed = await story_call("rollback.list", {"session_id": session_id})
+    before_date, before_notes = listed["checkpoints"][0]["hash"], listed["checkpoints"][-1]["hash"]
+    await story_call("rollback.diff", {"session_id": session_id, "hash": before_notes})
+    restored = await story_call("rollback.restore", {"session_id": session_id, "hash": before_date})
+    if not restored.get("history_removed"):
+        stop(f"the restore took back no turn: {restored}")
+    # The rows a rebuild reads once the restore has rewound the chat, which it does before it answers.
+    at = next(index for index, step in enumerate(recorder.steps) if step.get("await") == "rollback.restore")
+    recorder.steps.insert(at, {"at": recorder.steps[at]["at"], "stored": await stored_rows()})
+
+    pushes = [step["push"] for step in recorder.steps if "push" in step]
+    for _ in range(100):
+        if len(recorder.written) >= len(pushes):
+            break
+        await asyncio.sleep(0.05)
+    recorder.recording = False
+    if recorder.written != pushes:
+        stop("the socket received other frames than the session published")
+    header = {"fixture": 1, "hermes": HERMES_VERSION, "source": "generated", "sessionId": session_id, "describe": describe, "list": listing,
+              "stored": opened["display_messages"] if "display_messages" in opened else opened["messages"], "reads": start_reads}
+    with OUT.open("w") as out:
+        for line in [header, *({**step, "at": step["at"] - began} for step in recorder.steps)]:
+            out.write(json.dumps(line, ensure_ascii=False) + "\n")
+        out.flush()
+    print(f"wrote {OUT}: {len(pushes)} pushes, {len(recorder.steps) - len(pushes)} other steps", file=sys.stderr)
+    stop(None)
+
+
+async def panels_story():
+    try:
+        await panels_main()
+    except Exception:
+        import traceback
+        stop(traceback.format_exc())
+
+
+async def commands_story():
+    try:
+        await commands_main()
+    except Exception:
+        import traceback
+        stop(traceback.format_exc())
+
+
+async def queue_story():
+    try:
+        await queue_main()
+    except Exception:
+        import traceback
+        stop(traceback.format_exc())
+
+
+asyncio.run({"queue": queue_story, "commands": commands_story, "panels": panels_story}.get(NAME, main)())

@@ -97,7 +97,14 @@ const STEPS = {
   said: { arity: 1, run: async (ctx, text) => ctx.page.locator('#scroll').getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout: ctx.timeout }) },
   click: { arity: 2, run: async (ctx, role, name) => byRole(ctx.page, role, name).click({ timeout: ctx.timeout }) },
   'click-at': { arity: 3, run: async (ctx, role, name, n) => nth(ctx, role, name, n).click({ timeout: ctx.timeout }) },
-  type: { arity: 2, run: async (ctx, label, text) => ctx.page.getByLabel(label, { exact: true }).fill(expand(ctx, text), { timeout: ctx.timeout }) },
+  type: {
+    arity: 2,
+    logs: true,
+    run: async (ctx, label, text) => {
+      const field = await secretField(ctx, 'type', label, text)
+      await field.fill(expand(ctx, text), { timeout: ctx.timeout })
+    }
+  },
   select: { arity: 2, run: async (ctx, label, option) => void (await ctx.page.getByLabel(label, { exact: true }).selectOption({ label: option }, { timeout: ctx.timeout })) },
   press: { arity: 1, run: async (ctx, key) => ctx.page.keyboard.press(key) },
   reload: { arity: 0, run: async ctx => void await ctx.page.reload() },
@@ -235,10 +242,13 @@ const STEPS = {
   },
   value: {
     arity: 2,
+    logs: true,
     run: async (ctx, label, text) => {
+      const field = await secretField(ctx, 'value', label, text)
       await rendered(ctx.page)
-      const held = await ctx.page.getByLabel(label, { exact: true }).inputValue({ timeout: ctx.timeout })
-      if (held !== text) throw new Error(`"${label}" holds ${JSON.stringify(held)}, not ${JSON.stringify(text)}`)
+      const held = await field.inputValue({ timeout: ctx.timeout })
+      if (held === text) return
+      throw new Error(ctx.secretLabels.has(label) ? `"${label}" does not hold the expected value` : `"${label}" holds ${JSON.stringify(held)}, not ${JSON.stringify(text)}`)
     }
   },
   focused: {
@@ -436,6 +446,15 @@ const STEPS = {
       if (held.length !== Number(n)) throw new Error(`the drafts folder holds ${held.length} draft file(s), not ${n}`)
     }
   },
+  answered: {
+    arity: 3,
+    run: async (ctx, method, json, n) => {
+      const check = { method, expected: JSON.parse(json), n: Number(n) }
+      const seen = await poll(ctx, async () => answersLike(ctx, check), held => held >= check.n)
+      if (seen !== check.n) throw new Error(`the gateway saw ${seen} answer(s) to a ${method} request containing ${json}, not ${n}`)
+      ctx.answered.push(check)
+    }
+  },
   quiet: {
     arity: 0,
     run: async ctx => {
@@ -486,6 +505,14 @@ function callsLike(ctx, { method, expected }) {
   if (!existsSync(ctx.calls)) return 0
   return readFileSync(ctx.calls, 'utf8').split('\n').filter(line => line.trim() !== '').map(line => JSON.parse(line))
     .filter(frame => frame.method === method && contains(frame.params, expected)).length
+}
+
+/** A result or error frame names only the id of the request it answers. The fixture's request frames say which method that id is. */
+function answersLike(ctx, { method, expected }) {
+  if (!existsSync(ctx.calls)) return 0
+  const lines = path => readFileSync(path, 'utf8').split('\n').filter(line => line.trim() !== '').map(line => JSON.parse(line))
+  const asked = new Set(lines(ctx.fixture).filter(step => step.push?.method === method && step.push.id !== undefined).map(step => step.push.id))
+  return lines(ctx.calls).filter(frame => frame.method === undefined && asked.has(frame.id) && contains(frame, expected)).length
 }
 
 const isPattern = name => /^\/.+\/$/.test(name)
@@ -580,10 +607,49 @@ function requestText(fixturePath) {
   fail(`${fixturePath} has no prompt.submit step, so @request means nothing`)
 }
 
+const MASK = '•••'
 const expand = (ctx, text) => (text === '@request' ? requestText(ctx.fixture ?? fail('@request needs --fixture')) : text)
 
+/** Logs the step, with the text of a password field as `•••`. The text is remembered so `leaked` can prove no evidence file holds it. */
+async function secretField(ctx, verb, label, text) {
+  const field = ctx.page.getByLabel(label, { exact: true })
+  const secret = (await field.getAttribute('type', { timeout: ctx.timeout })) === 'password'
+  if (secret) {
+    ctx.secretLabels.add(label)
+    if (text !== '') ctx.secrets.add(text)
+  }
+  log(ctx, `${verb} ${JSON.stringify(label)} ${secret ? JSON.stringify(MASK) : JSON.stringify(text)}`)
+  return field
+}
+
+/** Each way a typed password can be written: as typed, and escaped inside a JSON or YAML string. */
+const writtenForms = secret => [secret, JSON.stringify(secret).slice(1, -1)]
+
+const masked = (ctx, text) => [...ctx.secrets].flatMap(writtenForms).reduce((out, form) => out.split(form).join(MASK), text)
+
+/** A snapshot writes a textbox's value after its name, escaped. A password field's value is replaced before anything matches on it. */
+function maskedSnapshot(snapshot, labels) {
+  const names = labels.map(label => `- textbox ${JSON.stringify(label)}`)
+  return snapshot.split('\n').map(line => {
+    const head = line.trimStart()
+    if (!names.some(name => head === name || head.startsWith(`${name}:`) || head.startsWith(`${name} [`))) return line
+    const colon = line.indexOf(': ', line.length - head.length)
+    return colon === -1 ? line : `${line.slice(0, colon)}: ${MASK}`
+  }).join('\n')
+}
+
+/** The evidence files that hold a typed password in any written form. */
+function leaked(ctx) {
+  const forms = [...ctx.secrets].flatMap(writtenForms)
+  if (forms.length === 0) return []
+  return readdirSync(ctx.evidence, { recursive: true, withFileTypes: true })
+    .filter(entry => entry.isFile() && !entry.name.endsWith('.png'))
+    .map(entry => join(entry.parentPath, entry.name))
+    .filter(path => forms.some(form => readFileSync(path, 'utf8').includes(form)))
+}
+
 function log(ctx, line) {
-  const stamped = `${new Date().toISOString()} ${line}`
+  const stamped = `${new Date().toISOString()} ${masked(ctx, line)}`
   console.log(stamped)
   appendFileSync(join(ctx.evidence, 'steps.log'), `${stamped}\n`)
 }
@@ -683,7 +749,10 @@ async function shoot(ctx, name) {
   await ctx.page.mouse.move(0, 0)
   await ctx.page.screenshot({ path, animations: 'disabled', caret: 'hide', ...(ctx.clip && { clip: ctx.clip }) })
   await drawPreview(ctx, path)
-  writeFileSync(join(ctx.evidence, `${name}.aria.txt`), await ctx.page.locator('body').ariaSnapshot())
+  const fields = await ctx.page.locator('input[type=password]').evaluateAll(inputs => inputs.map(input => ({ label: input.getAttribute('aria-label') ?? '', value: input.value })))
+  for (const { value } of fields) if (value !== '') ctx.secrets.add(value)
+  const snapshot = maskedSnapshot(await ctx.page.locator('body').ariaSnapshot(), [...ctx.secretLabels, ...fields.map(field => field.label)])
+  writeFileSync(join(ctx.evidence, `${name}.aria.txt`), masked(ctx, snapshot))
   const size = pngSize(path)
   if (size.width !== ctx.size.width || size.height !== ctx.size.height) throw new Error(`${name}.png is ${size.width}x${size.height}, not ${ctx.size.width}x${ctx.size.height}`)
   if (ctx.holding && !(await STATES[ctx.holding](ctx.page).isVisible())) {
@@ -742,6 +811,17 @@ function ownDisplay() {
   if (parent !== process.ppid) fail(`display ${process.env.DISPLAY} belongs to another run's X server. Start this run again.`)
 }
 
+const ANSWER_CALLS = new Set(['clarify.lock', 'connection.respond'])
+const ALWAYS = () => true
+const ACTED_CALLS = {
+  'prompt.resolve_unknown': ALWAYS, 'prompt.replace_queued': ALWAYS, 'prompt.cancel': ALWAYS, 'prompt.steer_queued': ALWAYS, 'session.steer': ALWAYS, 'session.redirect': ALWAYS,
+  'session.export': ALWAYS,
+  'process.kill': ALWAYS, 'session.control': ALWAYS, 'rollback.list': ALWAYS, 'rollback.diff': ALWAYS, 'rollback.restore': ALWAYS, 'message.react': ALWAYS,
+  'config.set': params => params?.key === 'fast',
+  'session.mutate': params => params?.operation === 'reasoning' || params?.operation === 'workspace'
+}
+const isActedElsewhere = step => Object.hasOwn(ACTED_CALLS, step.await ?? '') && ACTED_CALLS[step.await](step.params)
+
 /**
  * Hermes streams a reply in pieces and may cut the dev server's URL in two. Each segment's pieces are
  * joined, the origin is put in, and the text is cut again where it was, a cut inside the URL moving to
@@ -776,13 +856,27 @@ function serveInDeltas(steps, origin) {
   }
 }
 
-function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, paths, createWarnings, configureClash, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, origin, attachLimit }, out) {
+const requestMethods = steps => new Map(steps.filter(step => step.push?.method !== undefined && step.push.id !== undefined).map(step => [step.push.id, step.push.method]))
+
+function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, paths, createWarnings, configureClash, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, answeredElsewhere, answerHere, cancel, actedElsewhere, origin, attachLimit }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const header = JSON.parse(lines[0])
-  const steps = lines.slice(1).map(line => JSON.parse(line))
+  const recorded = lines.slice(1).map(line => JSON.parse(line))
+  const methods = requestMethods(recorded)
+  const here = new Set((answerHere ?? '').split(',').filter(Boolean))
+  const wanted = step => 'answer' in step && 'result' in step && here.has(methods.get(step.answer))
+  const answered = answeredElsewhere ? recorded.filter(step => wanted(step) || (!('result' in step && 'answer' in step) && !ANSWER_CALLS.has(step.await))) : recorded
+  let steps = actedElsewhere ? answered.filter(step => !isActedElsewhere(step)) : answered
   if (origin) {
     serveInDeltas(steps, origin)
     steps.splice(0, steps.length, ...steps.map(step => JSON.parse(JSON.stringify(step).replaceAll(DEV_ORIGIN, origin))))
+  }
+  if (cancel) {
+    const [method, reason] = cancel.split('=')
+    const id = steps.find(step => step.push?.method === method && step.push.id !== undefined)?.push.id ?? fail(`${fixturePath} asks no ${method} request`)
+    const withdrawal = steps.find(step => step.push?.params?.type === 'request.cancel' && step.push.params.payload?.id === id) ?? fail(`${fixturePath} never cancels the ${method} request`)
+    withdrawal.push.params.payload.reason = reason
+    steps = steps.filter(step => step.answer !== id)
   }
   if (models) header.models = JSON.parse(readFileSync(resolve(process.cwd(), models), 'utf8'))
   if (guarded) header.guarded = guarded.split(',')
@@ -815,7 +909,7 @@ function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, p
     steps.splice(at + 1, 0, { at: turnedOnAt, push: info })
   }
   if (dropAfter) {
-    const at = steps.findIndex(step => step.push?.params?.type === dropAfter)
+    const at = steps.findIndex(step => step.push?.params?.type === dropAfter || step.push?.method === dropAfter)
     if (at === -1) fail(`${fixturePath} pushes no ${dropAfter} frame`)
     const dropAt = Math.min(steps[at].at + 50, steps[at + 1]?.at ?? Infinity)
     steps.splice(at + 1, 0, { at: dropAt, drop: 1006 })
@@ -846,18 +940,20 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'answer-here': 'value', cancel: 'value' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
   if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
   const site = options.serve ? await serve(options.serve) : null
-  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], origin: site?.origin, attachLimit: options['attach-limit'] }
+  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], answeredElsewhere: options['answered-elsewhere'], answerHere: options['answer-here'], cancel: options.cancel, actedElsewhere: options['acted-elsewhere'], origin: site?.origin, attachLimit: options['attach-limit'] }
   const edited = Object.values(edits).some(Boolean)
   if (options.yolo && options.yolo !== 'on' && options.yolo !== 'off') fail(`--yolo takes on or off, not "${options.yolo}"`)
+  if (options['answer-here'] && !options['answered-elsewhere']) fail('--answer-here needs --answered-elsewhere, because without it the window answers every request')
+  if (options.cancel && !/^[^=]+=[^=]+$/.test(options.cancel)) fail(`--cancel takes <method>=<reason>, not "${options.cancel}"`)
   if (!options.yolo && (options['yolo-denied'] || options['yolo-elsewhere-after'])) fail('--yolo-denied and --yolo-elsewhere-after need --yolo, because a Hermes with no YOLO answers neither')
   if (options.tree && !options.profiles) fail('--tree needs --profiles, because the tree lists the chats that file seeds')
-  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host')
+  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host')
   if (options['configure-clash'] && !options.profiles) fail('--configure-clash needs --profiles: without it Hermes has no bots to rename')
   if (options['attach-limit'] && !/^[1-9]\d*$/.test(options['attach-limit'])) fail(`--attach-limit takes a number of bytes, not "${options['attach-limit']}"`)
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
@@ -873,7 +969,7 @@ async function run(argv) {
   const calls = join(evidence, 'gateway-calls.jsonl')
   rmSync(calls, { force: true })
   const userData = join(scratch, 'user-data')
-  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [] }
+  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set() }
   const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
   const saved = SAVED[options.saved ?? 'none']
@@ -899,6 +995,7 @@ async function run(argv) {
   if (options['pick-file']) env.HIGHWING_PICK_FILE = resolve(process.cwd(), options['pick-file'])
   delete env.HIGHWING_PICK_FILES
   if (options.pick) env.HIGHWING_PICK_FILES = options.pick.split(',').map(path => resolve(process.cwd(), path)).join(delimiter)
+  env.HIGHWING_SAVE_DIR = join(evidence, 'saves')
   rmSync(ctx.notices, { force: true })
   env.HIGHWING_NOTIFY_LOG = ctx.notices
 
@@ -945,7 +1042,7 @@ async function run(argv) {
     if (site) log(ctx, `serving ${options.serve} at ${site.origin} in place of ${DEV_ORIGIN}`)
     await sizeWindow(ctx, options)
     for (const { verb, args } of steps) {
-      log(ctx, `${verb} ${args.map(arg => JSON.stringify(arg)).join(' ')}`)
+      if (!STEPS[verb].logs) log(ctx, `${verb} ${args.map(arg => JSON.stringify(arg)).join(' ')}`)
       if (verb !== 'shot' && verb !== 'wait') ctx.holding = null
       await STEPS[verb].run(ctx, ...args)
     }
@@ -953,6 +1050,10 @@ async function run(argv) {
     for (const check of ctx.called) {
       const seen = callsLike(ctx, check)
       if (seen !== check.n) throw new Error(`by the end of the run the gateway saw ${seen} ${check.method} call(s) containing ${JSON.stringify(check.expected)}, not ${check.n}`)
+    }
+    for (const check of ctx.answered) {
+      const seen = answersLike(ctx, check)
+      if (seen !== check.n) throw new Error(`by the end of the run the gateway saw ${seen} answer(s) to a ${check.method} request containing ${JSON.stringify(check.expected)}, not ${check.n}`)
     }
     for (const { title, n } of ctx.notified) {
       const seen = noticesRecorded(ctx).filter(notice => notice.title === title).length
@@ -980,6 +1081,11 @@ async function run(argv) {
       host.child.kill()
       rmSync(join(scratch, 'host-pid'), { force: true })
     }
+  }
+  const leaks = leaked(ctx)
+  if (leaks.length > 0 && !failed) {
+    failed = new Error(`a typed password is in ${leaks.join(', ')}`)
+    log(ctx, `FAILED: ${failed.message}`)
   }
   log(ctx, `${failed ? 'FAIL' : 'PASS'} evidence in ${evidence}`)
   process.exit(failed ? 1 : 0)

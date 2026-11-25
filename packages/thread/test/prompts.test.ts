@@ -8,15 +8,16 @@ const CLOCK = { now: 1_800_000_000_000, timeZone: 'UTC' }
 
 function session(items: readonly PromptItem[], live = true): Session {
   return {
-    id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', outbox: [],
-    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null,
+    id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', interlude: [], requests: [], queue: [], outbox: [],
+    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null },
+    tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [], processes: null, control: null,
     sync: live ? { state: 'live' } : { state: 'offline' },
     run: { state: 'running', generation: 1 as Generation, stop: 'none', turn: { id: 't1' as TurnId, request: { text: 'Deploy it', inputId: null, rowId: null, attachments: [] }, began: null, items, announced: null } }
   }
 }
 
 const prompt = (ask: PromptItem['ask'], state: PromptItem['state'] = { s: 'waiting', error: null }): PromptItem =>
-  ({ kind: 'prompt', id: 'p1' as PromptId, generation: 1 as Generation, ask, state })
+  ({ kind: 'prompt', id: 'p1' as PromptId, generation: 1 as Generation, ask, state, deadline: null })
 
 const multi = (choices = ['staging', 'production', 'canary']): Extract<PromptItem['ask'], { kind: 'clarify' }> =>
   ({ kind: 'clarify', question: 'Where should it go?', choices, multi: true })
@@ -103,7 +104,7 @@ describe('Always allow', () => {
 
   it('names the command when Hermes flagged no pattern', () => {
     const card = cardOf(prompt(approval(null)))
-    const always = card.state === 'asking' && card.pick.kind === 'one' ? card.pick.buttons.find(button => button.reply.value === 'always') : undefined
+    const always = card.state === 'asking' && card.pick.kind === 'one' ? card.pick.buttons.find(button => button.reply.kind === 'choice' && button.reply.value === 'always') : undefined
     expect(always?.confirm?.body).toBe('Hermes won\'t ask again for commands matching “rm -rf scratch”, in this chat or any other.')
   })
 })

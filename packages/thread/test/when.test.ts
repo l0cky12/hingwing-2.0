@@ -12,12 +12,12 @@ const client = (ms: number): Began => ({ at: ms, clock: 'client' })
 
 const settled = (id: string, began: Began | null): SettledTurn => ({
   id: id as TurnId, request: { text: `Request ${id}`, inputId: null, rowId: null, attachments: [] }, began, items: [{ kind: 'text', markdown: `Answer ${id}`, sealed: true }],
-  outcome: { kind: 'complete' }, rows: [], tokens: null
+  outcome: { kind: 'complete' }, rows: [], tokens: null, reply: null
 })
 
 const session = (history: readonly SettledTurn[], over: Partial<Session> = {}): Session => ({
-  id: 's1' as Session['id'], title: '', cwd: null, history, earlier: 'none', run: { state: 'idle' }, outbox: [],
-  model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, sync: { state: 'live' }, ...over
+  id: 's1' as Session['id'], title: '', cwd: null, history, earlier: 'none', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [],
+  model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [], processes: null, control: null, sync: { state: 'live' }, ...over
 })
 
 const running = (began: Began | null, items: readonly Item[] = [], history: readonly SettledTurn[] = [], sync: Sync = { state: 'live' }): Session =>
@@ -125,7 +125,7 @@ describe('the elapsed time on the live end', () => {
   it('keeps it out of the words and off a prompt that waits for the user', () => {
     const view = threadView(running(began), UTC(NOW + 5 * MINUTE))
     expect(view.turns[0]!.end).toEqual({ kind: 'tip', words: [{ t: 'text', v: 'Thinking' }], elapsed: '5 min' })
-    const asking: Item = { kind: 'prompt', id: 'p1' as never, generation: 1 as Generation, ask: { kind: 'approval', command: 'rm x', reason: null, choices: ['once'] }, state: { s: 'waiting', error: null } }
+    const asking: Item = { kind: 'prompt', id: 'p1' as never, generation: 1 as Generation, ask: { kind: 'approval', command: 'rm x', reason: null, choices: ['once'] }, state: { s: 'waiting', error: null }, deadline: null }
     expect(threadView(running(began, [asking]), UTC(NOW + 5 * MINUTE)).turns[0]!.end).toEqual({ kind: 'at', nodeKey: 't9/0', tone: 'asking' })
   })
 

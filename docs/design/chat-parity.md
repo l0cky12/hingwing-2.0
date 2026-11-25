@@ -64,18 +64,18 @@ No call site names a generation, a revision, a stored row id, an admission statu
 |---|---|---|
 | `interlude: Item[]` | `reduce`, from events that arrive while `run` is idle | Status lines, notices and verdicts between turns. When the next turn starts, its settled items move into `history` as one entry whose outcome is `interlude`. A turn's settle never touches it. |
 | `requests: HermesRequest[]` | `reduce`, from live server requests, the snapshot's `open_requests` and `pending_connection`, `request.cancel`, and this client's answers | Sudo, secret, vault, question batches, plugin choices and the connector card. Their life is the socket request's, not the turn's. |
-| `queue: QueuedMessage[]` | `reduce`, from each pending list, replaced whole | Hermes's FIFO. |
+| `queue: QueuedMessage[]` | `reduce`, from each pending list, replaced whole. A turn's start takes out the row it names | Hermes's FIFO. Each row says whether this client sent it (`from`). |
 | `outbox: OutboxEntry[]` | `reduce`, from local actions. An entry leaves when a pending list or `message.start` names its input id. | `sending` and `failed` only. |
 | `tuning` | `reduce`, from `session.info` and the reads below | Busy mode, the reasoning gate, effort and fast. |
 | `panel` | `reduce`, from events and reads (U4) | Usage, todos, subagents, processes, goal and loop state, side answers. |
 
-`Item` gains `reasoning`, `moa`, `steer` and `status`. A tool's `done` status gains `image`. `PromptItem` gains `deadline`. `SettledTurn` gains `anchors`, the stored rows of its request and reply, so a command can name a turn and never a row id.
+`Item` gains `moa`, `steer` and `status`. #99 added `reasoning`, `helper` and `plan`. A tool's `done` status gains `image`. `PromptItem` gains `deadline`. `SettledTurn` gains `anchors`, the stored rows of its request and reply, so a command can name a turn and never a row id.
 
 `Activity` gains `answering`, derived from `requests`. The sidebar's badge table is `satisfies Record<Activity['kind'], …>`, so a missing badge fails the build.
 
 ### Invariants the types hold
 
-- No state holds a request's answer. `RequestState` is `waiting | sending`, and the `answer` action takes a `RecordedReply`, a type with no `secret` member. The recording dialer masks result frames.
+- No state holds a typed value. `RequestState` is `waiting | sending`, and the `answer` action takes a `RecordedReply`, a type with no `secret` member. The recording dialer masks result frames and a connector card's credentials.
 - `QueuedMessage.state` decides which actions a row offers. `lost` carries the generation that `prompt.resolve_unknown` needs.
 - A rewind in flight lives in `Fence.rewind`: the request id, the target row and the two fences it was sent with. After a lost reply the actor sends exactly that again.
 - `PromptItem.generation` stays required. Requests are not prompts.
@@ -109,12 +109,13 @@ Each unit is one PR, stacked on the one before it. Each ends with:
 | PR | Unit | Rows | Proves it |
 |---|---|---|---|
 | B0 | Groundwork, no behaviour change | none | `SessionPatch.changed` with only the changed fields, and the `SessionPort` and `session-commands.ts` with today's commands moved onto it. Every existing test passes unchanged, and `applyPush(a, sessionPatch(a, b))` equals `b` for each pair of consecutive sessions of every fixture. Each later unit adds the scripted gateway handlers its own calls need. |
-| B1 | What Hermes says | #8, #9, #11, #12, #13, #16 | `says.jsonl`: reasoning, MoA, a tool image, status lines, a notice, an approval with `timeout_s`, and a goal verdict while idle. The `declined` phantom turn is gone. |
-| B2 | What Hermes asks | #20, #21, #22 | `asks.jsonl`: sudo answered (the recorded result is masked), a secret skipped, a vault prompt closed by `request.cancel`, a two-question batch, a plugin choice while idle, a connector card, and a Desktop bridge declined only while watched. |
-| B3 | Queue and steer | #3, #4, #6, #17 | `queue.jsonl`: another client's queued row, cancel, send now, edit, a lost row released, steer, redirect, a rejected steer resubmitted, and deny-and-tell. |
-| B4 | Side prompts and chat commands | #30, #32, #33, #35, #36, #38, #45, #55 | `commands.jsonl`: `complete.path`, `/btw` and `/bg` with their answers, effort, fast, the chat's folder, export and compress. |
+| B1 | What Hermes says | #8 (the reasoning switch), #9, #11, #12, #13, #16 | `says.jsonl`: the reasoning switch, MoA, a tool image, status lines, a notice, an approval with `timeout_s`, and a goal verdict while idle. The `declined` phantom turn is gone. |
+| B2 | What Hermes asks | #20, #21, #22 | `asks.jsonl`: sudo answered (the recorded result is masked), a secret skipped, a vault code another viewer answers, so it closes by `request.cancel`, a two-question batch, a plugin choice while idle, a connector card, and a Desktop bridge (`theme.pick`) declined only while watched. |
+| B3 | Queue and steer | #3, #4, #6, #17 | `queue.jsonl`: a chat opened on a row Hermes lost to a restart, that row released, another client's queued row, edit, cancel, send now, steer, redirect, deny-and-tell, and a redirect no agent saw, submitted as a message. Hermes holds a steer for a turn that has no agent yet, so only a redirect is answered `delivered: false` there. |
+| B4 | Side prompts and chat commands | #30, #32, #33, #35, #36, #38, #45, #55 | `commands.jsonl`: `complete.path` as a header the gateway answers from (#112's `completePath`), `/btw` and `/bg` with their answers, effort, fast, the chat's folder, export and compress. |
 | B5 | Session panels | #42, #43, #44, #46 | `panels.jsonl`: processes, a goal card, checkpoints and a reaction. |
 | B6 | Undo, rewrites from other windows, pin and delete | #24, #26, #53, #54 | Builds on #96's rewind and #69's chat list once they merge. |
+| B-ui | What the frontend units need first | #44, and the typed forms of #4, #8, #35 and #36 | `sendPlan` and `offeredBy` exported from `@highwing/hermes/domain` and compiled from the renderer's tsconfig. A typed `/busy`, `/fast` or `/reasoning` that sets a switch Highwing models runs `tune`, so `tuning` takes Hermes's reply, and every other form still goes to Hermes. A typed `/rollback` lists, diffs and restores checkpoints with B5's commands and answers in words under the composer. Tests over each typed form, and the slash-menu and chat-commands recipes. |
 
 ### Rows that issues own
 
@@ -126,14 +127,14 @@ These rows were in the first plan. Issues #66 and #69 to #78 now cover them, bui
 | #57 new chat | #66, merged as #95 |
 | #23 retry, #25 edit and resend | #74, PR #96 |
 | #39 usage and context | #77, PR #98 |
-| #40 todos, #41 subagents, and the drawing of #8 reasoning | #72 |
+| #40 todos, #41 subagents, and #8 reasoning | #72, merged as #99 |
 | #27 branch | #75 |
 | #28 images, #29 files | #70 |
 | #56 chat list | #69, merged as #102 |
 | #59 drafts | #73 |
 | yolo pill | #78, merged as #101 |
 
-B1 still parses reasoning, because it landed first. Whichever of B1 and #72 merges second keeps one parser.
+#99 owns reasoning: it reads `reasoning.delta`, `reasoning.available` and a stored reply's `reasoning` into one reasoning item per model call, and draws it. B1 keeps only the switch that turns it on: `tuning.reasoning` and `tune reasoning`.
 
 ## Frontend limits
 
@@ -153,25 +154,25 @@ Each limit comes from a backend choice or a gateway fact, and bounds what a wind
 7. A notice's time to live runs on this client's clock. A notice heard through replay after its time is dropped.
 8. Reasoning arrives only when Hermes shows it for the chat. A chat launched from the CLI or a messaging platform streams none until `tune reasoning` turns it on, from the next turn.
 9. A tool image can be read only when Hermes runs on this computer. Otherwise the window has the file's name and `reason: 'remote'`.
-10. A countdown needs `deadline`, which is null for a prompt first heard through a snapshot or a replay. Secret and batch cards have no countdown, though Hermes withdraws them after its own wait.
+10. A countdown needs `deadline`, which is null for a prompt first heard through a snapshot or a replay. A batch card has no countdown, though Hermes withdraws it after its own wait, because that wait is Hermes's config and no frame carries it.
 
 **B2, what Hermes asks**
 
-11. Requests are not placed in the turn. Draw waiting ones at the live end. A closed one leaves a notice in the interlude or the open turn.
-12. A secret is sent once and kept nowhere. The card cannot show what was typed. Its answer has no receipt, so the card reads `sending` until Hermes's `request.cancel` closes it. Any client attached to the chat can answer first.
-13. A batch is answered one question at a time, each answer visible to every client, and the last answer submits it. A "review, then submit" step has to hold the last answer in the window.
-14. A plugin command's question appears while that command's `send` is still pending. The composer must let a card be answered while a send is in flight.
+11. Requests are not placed in the turn. Draw waiting ones at the live end. A closed one leaves a `closed` notice in the interlude or the open turn, saying what was asked and how it ended. A request can wait while no turn runs: `activityOf` then says `answering` and `run` is idle, so Stop follows `run`, and the thread's end mark follows `turnActivityOf`.
+12. A secret is sent once and kept nowhere. The card cannot show what was typed. Its answer has no receipt, so the card reads `sending` until Hermes's `request.cancel` closes it. Any client attached to the chat can answer first, and Hermes does not say which did: a request closed while this client had not answered reads `elsewhere`. A masked prompt has a `deadline` from Hermes's own wait for its method, null for one first heard through a snapshot or during an attach. A login is one reply with an `identifier` and a `value`.
+13. A batch is answered one question at a time, and the last answer submits it. A "review, then submit" step has to hold the last answer in the window. An answer is the picked labels as Hermes showed them, or one typed line. Hermes may add " (Recommended)" to a label, and takes it back with or without that. A lock made in another client shows at the next attach, because Hermes publishes none.
+14. A plugin command's question appears while that command's `send` is still pending. The composer must let a card be answered while a send is in flight. A connector card is answered one target at a time, and `skip` continues with what is connected. Its targets change in place as Hermes reports them, and a sign-in link is kept only when it is an http or https link. A request for part of Hermes Desktop's window (a theme picker, the preview, a setup card) is refused while a window shows the chat, and leaves the `declined` notice the thread already draws.
 
 **B3, queue, steer and rewind**
 
-15. A queued row can be edited or sent now only when its `can` says so. Editing moves it to the back. There is no reorder. A row handed to the turn may come back to the queue.
-16. A lost row keeps the queue paused until someone releases it. Hermes never runs it again, so "send again" is a new `send`.
-17. Busy mode is read when the chat is watched. A change made in another client shows at the next read. While it is unknown, a send queues.
-18. Deny-and-tell is one call. If the running turn could not take the words, they go as the next message instead, and the window learns which from the outcome.
+15. A queued row can be edited or sent now only when its `can` says so. Editing moves it to the back. There is no reorder. A row handed to the turn may come back to the queue. Until the turn settles it stays in `queue` as `steering`, and its words are also a `steer` item of the open turn, which stays if the row comes back. A row is `from: 'here'` only when this Highwing sent it since it started. After Highwing restarts, its own queued messages read `elsewhere`. An edit shows as a `sending` outbox entry beside the old row until Hermes lists the new one. A row changes only by Hermes's next list, so an action's outcome says only that Hermes took the call.
+16. A lost row keeps the queue paused until someone releases it. Hermes never runs it again, so "send again" is a new `send`. Its turn is in the thread with the outcome `lost`. Highwing does not stay attached to a chat for its queue alone, because Hermes releases a lost row itself once the last viewer closes.
+17. Busy mode is read when the chat is watched. A change made in another client shows at the next read. While it is unknown, a send queues. A send also queues, whatever the mode, while the turn waits on an approval, a question or a request, and while it is stopping. A line that runs a slash command is never steered. `sendPlan(session)` gives the same answer to a window that wants to label its button. A steer or redirect that Hermes rejects without saying the words went unread is refused and never sent again: the window still has the text, and the refusal says Hermes may have read it.
+18. Deny-and-tell is one call. If the running turn could not take the words, they go as the next message instead, and the window learns which from the outcome: `turn`, `next`, or `unsure` when Hermes did not say and the words were not sent again. The card reads `sending` from the steer until the denial is confirmed. If the steer is refused outright, nothing is denied and the card waits again. If the denial gets no answer, the card waits again too, and the same words denied again are not handed to the turn a second time: the outcome is the `turn` or `unsure` of the first try. A steer that got no answer counts as `unsure`. If the words cannot go as the next message either, the denial stands, the command answers that refusal, and the words stay in the outbox as a failed message.
 19. `rewind` is refused while a turn runs and for a request that a compression summarised. It never undoes file changes. Afterwards the chat is read again: the pane shows `rebuilding`, pages loaded with "Show earlier turns" are dropped, and the remaining turns lose live-only detail such as diffs and durations.
 20. Only a turn with a known request row can be rewound or branched. A live turn whose receipt Hermes omitted cannot until the chat is read again.
 21. A change from another client shows as the same rebuild, with no hint of what changed.
-22. A steered message's place in a live turn is where Highwing learned of it. The stored position replaces it after a rebuild.
+22. A steered message's place in a live turn is where Highwing learned of it. The stored position replaces it after a rebuild. Words another client steers with `session.steer` or `session.redirect` are not shown live at all, because Hermes publishes nothing for them: they appear at the next rebuild. A `steer` item has no state and no sender.
 
 **B4, attachments**
 
@@ -194,6 +195,9 @@ Each limit comes from a backend choice or a gateway fact, and bounds what a wind
 33. Todos are the latest list only. A subagent's output and a process's output are snapshots read on demand.
 34. A checkpoint's diff is patch text, not a parsed diff.
 35. A reaction made in another client does not appear live. Hermes publishes none.
+36. The process list is as Hermes last answered it: read when a window starts watching the chat, at each turn's end and after this window's kill. A process another client kills between turns shows at the next of those. A process's output is the tail of at most 32768 characters that the list carries.
+37. The goal, loop and heartbeat follow every update Hermes publishes. A loop's countdown runs on this client's clock to `nextAt`, Hermes's time. A control button that starts a turn sends its message as this window's, as a slash command does, and answers the words to show.
+38. A reaction goes only on a settled turn's stored answer. The agent's own reactions on the user's messages are not held. A checkpoint's time is git's date as text.
 
 ## Synthesis decision
 
@@ -230,4 +234,4 @@ Rejected:
 
 1. Should Highwing set the busy mode at all, given every other client of the chat shares it? The plan reads it and offers `tune busy`, as Hermes Desktop does.
 2. Retrying a skill-invocation turn resends the typed `/skill args`. Does `prompt.submit` expand it, or must the resend go through `command.dispatch`? B3's fixture settles it.
-3. Do display rows carry reactions in `display_metadata.reactions` and image attachments? B6 and B4 settle these from Hermes's own generator.
+3. Do display rows carry reactions in `display_metadata.reactions` and image attachments? B6 and B4 settle these from Hermes's own generator. Reactions: yes. `fixtures/panels.jsonl` stores the rows after a real `message.react`, and the reacted row carries `display_metadata.reactions`.

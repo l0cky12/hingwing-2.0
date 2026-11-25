@@ -2,7 +2,7 @@ import { leafText, parseMarkdown, proseLeaves } from './prose'
 import type { Phrase, StepView, ThreadView } from './thread-view'
 
 export type FieldPart =
-  | 'request' | 'title' | 'heading' | 'command' | 'why' | 'error' | 'words' | 'text' | 'detail' | 'end'
+  | 'request' | 'title' | 'heading' | 'command' | 'why' | 'name' | 'waits' | 'error' | 'words' | 'text' | 'detail' | 'end'
   | `block ${number}` | `path ${number}` | `line ${number} ${number}` | `body ${number}`
 
 export const fieldId = (key: string, part: FieldPart) => `${key} ${part}`
@@ -66,6 +66,9 @@ function fields(view: ThreadView): Field[] {
         case 'notice':
           add(node.key, 'text', node.text)
           break
+        case 'closed':
+          if (node.words !== null) add(node.key, 'words', node.words)
+          break
         case 'reasoning':
           add(node.key, 'text', node.text, [node.key])
           break
@@ -83,6 +86,14 @@ function fields(view: ThreadView): Field[] {
     }
     const { end } = turn
     if (end.kind === 'paused' || end.kind === 'failed' || end.kind === 'stopped' || end.kind === 'lost') add(turn.key, 'end', end.words)
+  }
+  for (const card of view.asks) {
+    add(card.key, 'heading', card.heading)
+    if (card.command !== null) add(card.key, 'command', card.command)
+    if (card.why !== null) add(card.key, 'why', card.why)
+    if (card.name !== null) add(card.key, 'name', card.name)
+    if (card.waits !== null) add(card.key, 'waits', card.waits)
+    if (card.error !== null) add(card.key, 'error', card.error)
   }
   for (const message of view.pending) {
     add(message.key, 'text', message.text)

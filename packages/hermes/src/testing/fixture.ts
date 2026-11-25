@@ -6,7 +6,7 @@ import type { SessionId } from '../domain/session'
 import type { Reach } from '../wire/link'
 
 export { play, playToEnd, type Moment } from './play'
-export { recordingDialer } from './record'
+export { maskedFrame, recordingDialer } from './record'
 export { scriptedDialer, type ScriptedDialer, type ScriptOptions } from './script'
 
 /**
@@ -25,6 +25,11 @@ export interface Fixture {
     readonly list: unknown
     /** The session's stored display rows before the story starts. */
     readonly stored: readonly unknown[]
+    /**
+     * The session's pending list before the story starts, as an attach reply's `pending` carries it:
+     * what a chat holds when it is opened after Hermes restarted. Absent: nothing is pending.
+     */
+    readonly pending?: readonly unknown[]
     readonly catalog?: unknown
     /**
      * The canned `model.options` reply, whose `model` and `provider` are the session's model at the
@@ -52,11 +57,22 @@ export interface Fixture {
     readonly usage?: { readonly before: Json; readonly after: Json; readonly breakdown: Json }
     /**
      * The story chat's YOLO at the start; every Bot Chat starts off. Absent: attach replies carry no
-     * `info.yolo` until a recorded frame names it, and the gateway refuses `config.set` as an unknown method, as a Hermes without `config.set` does.
+     * `info.yolo` until a recorded frame names it, and the gateway refuses a `config.set` of `yolo` as an unknown method, as a Hermes without `config.set` does.
      */
     readonly yolo?: boolean
+    /**
+     * Fields of the story session's attach `info` before the story starts, as Hermes said them: `cwd`, `reasoning_effort`,
+     * `fast`, `yolo`. Recorded session.info frames change them. Absent: the attach reply names none of them.
+     */
+    readonly info?: { readonly [key: string]: Json[string] }
     /** Every YOLO set is refused `permission_denied`, as Hermes refuses a viewer without control of the chat. */
     readonly yoloDenied?: boolean
+    /**
+     * The story session's controls as `config.get` answers them, by key: `{ "show_reasoning": "1" }`.
+     * `config.set` changes them, except a set of key `yolo`, which `yolo` serves. Absent: the gateway refuses both as unknown methods, as a Hermes
+     * that serves neither does.
+     */
+    readonly controls?: { readonly [key: string]: string }
     /**
      * The canned `profiles.list` reply, as Hermes sends it. Absent: the gateway refuses
      * `profiles.list` as an unknown method, as a Hermes older than the call does.
@@ -93,12 +109,20 @@ export interface Fixture {
      * refuses `complete.path` as an unknown method, as a Hermes without it does.
      */
     readonly paths?: { readonly cwd?: string; readonly words: { readonly [word: string]: unknown } }
+    /**
+     * The story session's answers to `process.list` and `session.control.read` at the start, by method. A `reads`
+     * step changes them. Absent: the gateway refuses that read as an unknown method, as a Hermes without it does.
+     */
+    readonly reads?: Reads
   }
   readonly steps: readonly FixtureStep[]
 }
 
 /** `reply`: the bot's one answer, sent `delay_ms` after the call (default 0). `refuse`: the reason Hermes refuses the delivery with. */
 export type RelayScript = { readonly reply: string; readonly delay_ms?: number } | { readonly refuse: string }
+/** Hermes's answer to each read a client makes when it starts watching a chat, by method. */
+export type Reads = Readonly<Partial<Record<typeof READS[number], unknown>>>
+export const READS = ['process.list', 'session.control.read'] as const
 
 /** A chat a bot has before the story starts. */
 export interface ChatSeed {
@@ -124,17 +148,30 @@ export type FixtureStep =
    * (`input_id`, `request_id`); it does check that the key set matches what the method accepts.
    */
   | { readonly at: number; readonly await: string; readonly params: unknown; readonly reply?: unknown; readonly error?: { readonly code: number; readonly message: string; readonly data?: unknown } }
+  /**
+   * The story waits here until an attached socket answers the server request whose id is `answer`:
+   * with `result`, or with `error` when it declines. A recorded `value` of `MASKED` stands for
+   * whatever was typed, and matches any value that is not empty.
+   */
+  | { readonly at: number; readonly answer: string; readonly result: unknown }
+  | { readonly at: number; readonly answer: string; readonly error: { readonly code: number; readonly message: string } }
   /** From here on the gateway's stored rows for the session are these. A resume that asks for history gets them. */
   | { readonly at: number; readonly stored: readonly unknown[] }
+  /** From here on the gateway answers these reads with these replies. A read it does not name answers as before. */
+  | { readonly at: number; readonly reads: Reads }
   /** The gateway closes the socket. The story continues on the client's next dial. */
   | { readonly at: number; readonly drop: number }
+
+export const MASKED = '•••'
 
 type Json = { readonly [key: string]: unknown }
 
 const isObject = (value: unknown): value is Json =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
-const STEP_KINDS = ['push', 'await', 'stored', 'drop'] as const
+const STEP_KINDS = ['push', 'await', 'answer', 'stored', 'reads', 'drop'] as const
+
+const isReads = (value: unknown): value is Reads => isObject(value) && Object.keys(value).every(key => (READS as readonly string[]).includes(key))
 
 function parseStep(value: unknown, previousAt: number): FixtureStep | string {
   if (!isObject(value)) return 'a step must be an object'
@@ -146,7 +183,7 @@ function parseStep(value: unknown, previousAt: number): FixtureStep | string {
   const [kind] = kinds
   if (kind === undefined || kinds.length > 1) return `a step needs exactly one of ${STEP_KINDS.join(', ')}`
   const allowed: Readonly<Record<typeof kind, readonly string[]>> = {
-    push: ['at', 'push'], await: ['at', 'await', 'params', 'reply', 'error'], stored: ['at', 'stored'], drop: ['at', 'drop']
+    push: ['at', 'push'], await: ['at', 'await', 'params', 'reply', 'error'], answer: ['at', 'answer', 'result', 'error'], stored: ['at', 'stored'], reads: ['at', 'reads'], drop: ['at', 'drop']
   }
   const extra = Object.keys(value).filter(key => !allowed[kind].includes(key))
   if (extra.length > 0) return `a ${kind} step has unknown keys: ${extra.join(', ')}`
@@ -169,8 +206,18 @@ function parseStep(value: unknown, previousAt: number): FixtureStep | string {
       }
       return { at, await: method, params, error: { code: error.code, message: error.message, ...('data' in error ? { data: error.data } : {}) } }
     }
+    case 'answer': {
+      const { answer, error } = value
+      if (typeof answer !== 'string' || answer === '') return '"answer" must be the id of a server request'
+      if ('result' in value === 'error' in value) return 'an answer step has a result or an error, not both and not neither'
+      if (!('error' in value)) return { at, answer, result: value.result }
+      if (!isObject(error) || typeof error.code !== 'number' || typeof error.message !== 'string') return '"error" must have a numeric code and a message'
+      return { at, answer, error: { code: error.code, message: error.message } }
+    }
     case 'stored':
       return Array.isArray(value.stored) ? { at, stored: value.stored } : '"stored" must be an array of rows'
+    case 'reads':
+      return isReads(value.reads) ? { at, reads: value.reads } : `"reads" must map ${READS.join(' or ')} to a reply`
     case 'drop':
       return Number.isInteger(value.drop) ? { at, drop: value.drop as number } : '"drop" must be a close code'
   }
@@ -200,6 +247,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (typeof sessionId !== 'string' || sessionId === '') return '"sessionId" must be a session id'
   if (!('describe' in value) || !('list' in value)) return 'the header needs "describe" and "list"'
   if (!Array.isArray(stored)) return '"stored" must be an array of rows'
+  const { pending } = value
+  if (pending !== undefined && !Array.isArray(pending)) return '"pending" must be an array of pending rows'
   const { models } = value
   if (models !== undefined && !(isObject(models) && Array.isArray(models.providers))) return '"models" must be a model.options reply with "providers"'
   const { guarded, branches, tree } = value
@@ -214,6 +263,10 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   const { yolo, yoloDenied } = value
   if (yolo !== undefined && typeof yolo !== 'boolean') return '"yolo" must be true or false'
   if (yoloDenied !== undefined && typeof yoloDenied !== 'boolean') return '"yoloDenied" must be true or false'
+  const { info } = value
+  if (info !== undefined && !isObject(info)) return '"info" must be an object of attach info fields'
+  const { controls } = value
+  if (controls !== undefined && !(isObject(controls) && Object.values(controls).every(held => typeof held === 'string'))) return '"controls" must map control keys to strings'
   const { profiles } = value
   if (profiles !== undefined && !(isObject(profiles) && Array.isArray(profiles.profiles))) return '"profiles" must be a profiles.list reply with "profiles"'
   const { createWarnings } = value
@@ -231,6 +284,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (attachLimits !== undefined && !(isObject(attachLimits) && Object.keys(attachLimits).every(key => key === 'image' || key === 'file') && limit(attachLimits.image) && limit(attachLimits.file))) {
     return '"attachLimits" may hold only "image" and "file", each a number of bytes above 0'
   }
+  const { reads } = value
+  if (reads !== undefined && !isReads(reads)) return `"reads" must map ${READS.join(' or ')} to a reply`
   const { chats } = value
   if (chats !== undefined && !(isObject(chats) && Object.values(chats).every(seeds => Array.isArray(seeds) && seeds.every(isSeed)))) {
     return '"chats" must map a profile to its chats, each with id, title, last_active and rows'
@@ -248,11 +303,14 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   return {
     fixture, hermes, source, sessionId: sessionId as SessionId, describe: value.describe, list: value.list, stored,
+    ...(pending === undefined ? {} : { pending }),
     ...('catalog' in value ? { catalog: value.catalog } : {}),
     ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] }),
     ...(usage === undefined ? {} : { usage }),
     ...(yolo === undefined ? {} : { yolo }), ...(yoloDenied === undefined ? {} : { yoloDenied }),
     ...(branches === undefined ? {} : { branches }), ...(tree === undefined ? {} : { tree }),
+    ...(info === undefined ? {} : { info }),
+    ...(controls === undefined ? {} : { controls: controls as Record<string, string> }),
     ...(profiles === undefined ? {} : { profiles }),
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
     ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash }),
@@ -261,7 +319,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),
     ...(relay === undefined ? {} : { relay: relay as { readonly [profile: string]: RelayScript } }),
-    ...(paths === undefined ? {} : { paths: paths as NonNullable<Fixture['header']['paths']> })
+    ...(paths === undefined ? {} : { paths: paths as NonNullable<Fixture['header']['paths']> }),
+    ...(reads === undefined ? {} : { reads })
   }
 }
 

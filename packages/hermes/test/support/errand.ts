@@ -32,11 +32,19 @@ export const RAE_SAID = (RELAY.rae as { reply: string }).reply
 export const stepOf =(method: string) => ERRAND.steps.findIndex(step => 'await' in step && step.await === method)
 export const paramsOf = (method: string) => (ERRAND.steps[stepOf(method)] as Extract<FixtureStep, { await: string }>).params as Record<string, unknown>
 
-export function withSudo(afterPush: number): Fixture {
+export const SUDO = 'srq-0123456789ab'
+export const SUDO_ASK = { push: { jsonrpc: '2.0', id: SUDO, method: 'sudo', params: { session_id: SESSION, command: 'sudo true' } } }
+export const PICK = 'srq-ba5eba11cafe'
+export const PICK_ASK = { push: { jsonrpc: '2.0', id: PICK, method: 'theme.pick', params: { session_id: SESSION, picker: 'accent' } } }
+export const PICK_DECLINED = { answer: PICK, error: { code: -32601, message: 'Highwing has no part of its window to answer this with.' } }
+
+export type Added = { readonly push: unknown } | { readonly answer: string; readonly result: unknown } | { readonly answer: string; readonly error: { readonly code: number; readonly message: string } }
+
+export function withSteps(afterPush: number, ...steps: readonly Added[]): Fixture {
   const pushes = ERRAND.steps.flatMap((step, index) => ('push' in step ? [index] : []))
   const at = pushes[afterPush - 1] as number
-  const request = { jsonrpc: '2.0', id: 'srq-0123456789ab', method: 'sudo', params: { session_id: SESSION, command: 'sudo true' } }
-  return { ...ERRAND, steps: [...ERRAND.steps.slice(0, at + 1), { at: ERRAND.steps[at]?.at ?? 0, push: request }, ...ERRAND.steps.slice(at + 1)] }
+  const added = steps.map((step): FixtureStep => ({ at: ERRAND.steps[at]?.at ?? 0, ...step }))
+  return { ...ERRAND, steps: [...ERRAND.steps.slice(0, at + 1), ...added, ...ERRAND.steps.slice(at + 1)] }
 }
 
 export interface Sent { readonly method: string; readonly params?: Record<string, unknown> }

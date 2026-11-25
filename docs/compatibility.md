@@ -131,6 +131,21 @@ machine, then reconnect."
   Hermes refuses either call, the chat shows no version switcher and no error,
   and opens as before. Highwing asks again each time a chat opens. See
   `packages/hermes/src/versions.ts`.
+- If Hermes refuses `config.get` for `show_reasoning`, for any reason,
+  `Session.tuning.reasoning` stays null, so a window shows no reasoning switch.
+  `tune` then answers Hermes's refusal. Reasoning that Hermes streams anyway is
+  still shown. Highwing reads again after the next attach. See "What Hermes
+  says" below.
+- If Hermes refuses `config.get` for `busy`, for any reason,
+  `Session.tuning.busy` stays null. A message sent while a turn runs is then
+  submitted and queues, as it did before Highwing read the mode. `tune` then
+  answers Hermes's refusal. See "Hermes's queue" below.
+- If a pending row carries no `controls`, as on a Hermes older than the
+  queued-row verbs, the row offers only cancel, and `queued` refuses a send-now
+  or an edit before any call. If Hermes refuses `prompt.steer_queued`,
+  `prompt.replace_queued`, `prompt.resolve_unknown`, `session.steer` or
+  `session.redirect` as an unknown method, the command answers that refusal and
+  the queue stays as Hermes lists it.
 
 ## Tokens and the context window
 
@@ -159,10 +174,11 @@ no cache, plan, rate-limit or money field from any of them.
 
 - If Hermes doesn't send `yolo` with a chat's state, or answers `config.set`
   with an unknown-method error, Highwing shows no YOLO pill and the chat works
-  as before. The pill writes only the open chat's setting: it names the chat
-  and the key `yolo`, sends no `scope`, and says "on" or "off" outright. Hermes
-  refuses any scope but "global", which would flip every chat of the profile,
-  and takes a missing value to mean "toggle". See `packages/hermes/src/session-commands.ts`.
+  as before. The pill sends `tune yolo`, which writes only the open chat's
+  setting: it names the chat and the key `yolo`, sends no `scope`, and says
+  "on" or "off" outright. Hermes refuses any scope but "global", which would
+  flip every chat of the profile, and takes a missing value to mean "toggle".
+  See `SWITCHES` in `packages/hermes/src/session-commands.ts`.
 
 ## Attachments
 
@@ -191,6 +207,305 @@ refuses one.
   them alone. The model reads `api_text`.
 - Hermes keeps no record of a message's attachments in its history. A request
   shows its attachments only in the run of Highwing that sent it.
+
+## What Hermes says
+
+Hermes 0.23.3 publishes these events to a local viewer's chat beside the
+reply. Highwing reads each one into the chat's session. A line Hermes says while
+no turn runs goes into `Session.interlude`, and never opens a turn.
+
+| Event | Read as | Source |
+| --- | --- | --- |
+| `reasoning.delta`, `reasoning.available` | One reasoning item per model call, streamed or sent whole. A whole block that starts the streamed one is that block | `gateway/local_viewer_events.py:50-55`, `agent/turn_response_intake.py:139-165` |
+| `moa.progress`, `moa.reference`, `moa.phase`, `moa.aggregating` | One MoA item per round, updated in place | `gateway/local_viewer_events.py:129-161` |
+| `status.update` | A status line, by `kind`: `compacting`, `compacted`, `goal`, `warn`, else other. `process` is not shown yet | `gateway/run_turn_progress.py:1215-1219`, `gateway/run_goals.py:238-246` |
+| `agent.print` | A status line | `gateway/local_viewer_events.py:40-42` |
+| `notification.show`, `notification.clear` | A keyed notice, replaced by a later one with its key, marked cleared by `clear` | `gateway/run_turn_progress.py:1119-1133` |
+| `tool.complete` `image_path` | The image a finished tool names | `gateway/local_viewer_events.py:227-228` |
+| `approval.request`, `clarify.request` `timeout_s` | A prompt's deadline on this client's clock | `gateway/local_viewer_events.py:248-263` |
+
+- Reasoning and MoA progress arrive only while Hermes shows reasoning for the
+  chat. Highwing reads that switch with
+  `config.get {session_id, key: "show_reasoning"}`, which answers `"1"` or `"0"`
+  (`gateway/session_busy_controls.py:90-108`). It reads it when a window starts
+  to watch the chat and after each attach, and sets it with
+  `config.set {session_id, key: "show_reasoning", value: "on" | "off"}`. A
+  change applies from the next turn. A chat launched from the CLI or a
+  messaging platform shows none until it is turned on.
+- A stored reply keeps its reasoning in the display row's `reasoning` key
+  (`tui_gateway/session_history.py:275-281,365`). A rebuild reads it from there. MoA
+  progress, status lines, notices and tool images are not stored, so a rebuild
+  drops them.
+- A notice with a time to live (`kind: "ttl"`) that Highwing hears through
+  replay is dropped, because its time runs on this client's clock.
+- No gateway method returns a tool image's bytes. Main's one image loader,
+  `apps/desktop/src/main/images.ts`, reads the file only when Hermes runs on
+  this computer, and only for a path a finished tool of the watched chat named.
+
+## What Hermes asks
+
+Hermes 0.23.3 asks a local viewer for some things outside the turn's own
+prompts. Each is a JSON-RPC request with a string id (`srq-…`), written to
+every socket attached to the chat (`gateway/session_server_requests.py`). The
+first client to answer settles it for all of them. Highwing holds each one it
+has a card for in `Session.requests`, whether or not a turn runs.
+
+| Request | Held as | Hermes waits | Answered with |
+| --- | --- | --- | --- |
+| `sudo` | A masked prompt for the sudo password, with the command | 120 s (`gateway/session_sudo_prompt.py:19`) | A result frame `{value}` |
+| `secret` | A masked prompt for a named variable of the bot's `.env` | 120 s (`gateway/session_secret_prompt.py:19`) | A result frame `{value}` |
+| `vault.unlock_prompt` | A masked prompt for a password manager's master password | 120 s (`gateway/session_vault_prompt.py:22`) | A result frame `{value}` |
+| `vault.save_login` | A login to save for a site | 180 s (`:23`) | A result frame whose `value` is the JSON `{identifier, password}` |
+| `vault.code` | A one-time code | 180 s (`:24`) | A result frame `{value}` |
+| `clarify` | One to five questions asked together, or a plugin command's one choice (`gateway/session_clarify_batch.py`, `gateway/plugin_command_choice.py`) | Hermes's `clarify_timeout`, 90 s unless configured. No frame carries it | `clarify.lock {request_id, question_id, answer}` once per question. The last lock submits. A result frame `{}` ends the batch early and keeps the locks |
+| `connection.request` event, `connection.update` events, the snapshot's `pending_connection` | The connector card: its targets, each with its state and sign-in link | The card's own `timeout_seconds` | `connection.respond {owner: {type: "session", session_id}, op_id, result}` |
+
+- A result frame gets no reply. An empty `value` means skipped. The request
+  reads as sending until Hermes publishes `request.cancel {id, method, reason}`,
+  which closes it. The reasons are `resolved` (some client settled it),
+  `timeout`, `interrupted`, `shutdown` and `session_closed`
+  (`tui_gateway/contracts/server_requests.py:366-378`). Any other reason reads
+  as withdrawn.
+- A typed value goes to Hermes once. No session, no push to a window and no
+  recording holds it: `RecordedReply` has no member for one, and
+  `recordingDialer` writes `•••` in its place.
+- Several picks for one question go as a JSON array of labels in one string,
+  the form Hermes decodes (`tools/clarify_tool.py:36-47`).
+- Hermes sends the clarify tool's questions as one request only to a client
+  that asks, with `clarify_batch: true` on `prompt.submit`
+  (`gateway/session_cli_turn.py:54-61`). Highwing asks when
+  `client.capabilities` answered `canonical_clarify_batch: true`. Without it
+  each question comes as a `clarify.request` prompt of the turn, as before.
+- A request frame has no place in the event stream. Each `session.resume`
+  lists the ones still open as `open_requests`, with a batch's locks so far
+  (`gateway/session_server_requests.py:125-135`). After each attach Highwing
+  closes a held request the list leaves out, and opens one it lists. A
+  request this client answered that is still listed opens again with "Hermes
+  didn't get your answer."
+- Another client's lock of a batch question is published nowhere. Highwing
+  learns of it at its next attach.
+
+### Requests Highwing has no card for
+
+`preview.read`, `preview.act`, `window.read`, `terminal.read`, `theme.apply`,
+`theme.pick`, `tour` and `setup_beat` ask for parts of Hermes Desktop's
+window (`gateway/local_desktop_ui.py`). Highwing has none of them, and treats
+a method it does not know the same way.
+
+- While a Highwing window shows the chat, Highwing answers such a request
+  with JSON-RPC error `-32601`, so the tool stops waiting, and the thread says
+  so. Hermes reads any error frame as "skipped" for every viewer
+  (`gateway/session_server_requests.py:89-96`).
+- While no window shows the chat, Highwing leaves the request open. The hub
+  stays attached to every running chat, and a refusal from it would cancel a
+  request that Hermes Desktop, attached to the same chat, could answer.
+- A request Highwing has a card for is never refused. Until the window draws
+  the cards, such a request waits for another client or for Hermes's own
+  timeout.
+
+Before this, Highwing refused every request, in every chat it was attached
+to. That cancelled a sudo prompt someone could have answered in Hermes's own
+terminal.
+
+## Hermes's queue
+
+Hermes keeps one queue of messages per chat, for every client. Each
+`session.info` and each attach reply carries the whole of it as `pending`
+(`gateway/session_authority.py:479-496`, `gateway/session_queued_controls.py:62-72`).
+`Session.queue` is that list, replaced whole from each one.
+
+| A pending row | Is in Highwing | Hermes source |
+|---|---|---|
+| `status: "queued"`, with `controls` | A queued row. `steer` in `controls` allows send-now, `replace` allows an edit. Cancel is always offered | `gateway/session_queued_controls.py:49-59` |
+| `status: "started"` with `steering: true` | A row on its way into the running turn. It offers nothing, and it is never the turn's request | `gateway/session_authority.py:461-477`, `persistence/sqlite/authority/_admission_store.py:258-260` |
+| `status: "unknown"` | A lost row: Hermes restarted while it ran. It carries the generation its release needs | `persistence/sqlite/authority/_admission_store.py:372-382,418-419` |
+| `status: "started"` | The running turn's request, not a queue row | `gateway/session_authority.py:461-465` |
+
+| A window's command | Highwing calls | Hermes source |
+|---|---|---|
+| `queued` cancel | `prompt.cancel {session_id, admission_id}` | `gateway/session_authority.py:831-841` |
+| `queued` sendNow | `prompt.steer_queued {session_id, admission_id}` | `gateway/session_queued_controls.py:128-181` |
+| `queued` edit | `prompt.replace_queued {session_id, admission_id, submission_id, text}`, with a new `submission_id` | `gateway/session_queued_controls.py:213-242` |
+| `queued` release | `prompt.resolve_unknown {session_id, admission_id, execution_generation}`, with the lost row's own generation | `gateway/session_authority.py:907-914` |
+| `send` while a turn runs, busy mode `steer` | `session.steer {session_id, text, execution_generation}` | `gateway/session_busy_controls.py:181-221` |
+| `send` while a turn runs, busy mode `interrupt` | `session.redirect`, with the same params | the same |
+| `answer` with `{kind: "deny", tell}` | `session.steer` with the prompt's generation, then `approval.respond` with `choice: "deny"` | `ui-tui/src/app/useApprovalAnswers.ts:63-84` |
+| `tune` busy | `config.set {session_id, key: "busy", value}` | `gateway/session_busy_controls.py:30-72` |
+
+- The busy mode is the chat's, shared by every client that has it open. Highwing
+  reads it with `config.get {session_id, key: "busy"}` when a window starts to
+  watch the chat and after each attach, with the reasoning switch. A change
+  made in another client shows at the next read.
+- `sendPlan` in `packages/hermes/src/domain/queue.ts` decides where a message
+  goes. A message is submitted, and so queues, when no turn runs, when the mode
+  is `queue` or unknown, when the turn waits on an approval, a question or a
+  request, and when it is stopping. A line that runs a slash command is never
+  steered. A message with attachments always queues whole: a steer or a
+  redirect carries words only, so Hermes Desktop queues the whole payload
+  (`apps/desktop/src/app/chat/composer/use-composer-submit.ts`) and the TUI
+  queues any turn with an image.
+- A queued row of this client keeps the attachments it was sent with, and its
+  request takes them when its turn starts. Hermes's pending list names no
+  attachments, so another client's row shows none. Hermes lists `steer` and
+  `replace` only for a row whose payload is text alone
+  (`gateway/session_queued_controls.py:51-60`), so a row with attachments
+  offers only cancel.
+- Hermes answers a steer or a redirect with a verdict
+  (`tui_gateway/contracts/canonical_sessions.py:306-321`). `queued` and
+  `redirected` mean the turn has the words, and Highwing files them in the
+  turn. `rejected` with `delivered: false` means no agent saw them, so Highwing
+  submits them as a message. A `stale_generation` refusal means the turn has
+  ended, and is handled the same way. A plain `rejected` may follow delivery,
+  so Highwing never sends those words again and the command says so.
+- A denial with words is two calls, and the socket can drop after Hermes took
+  the first. `session.steer` carries no id
+  (`gateway/session_busy_controls.py:181-221`), so Hermes would read a repeat
+  as new words. Highwing remembers, by prompt, the words Hermes has or may
+  have, and the same denial tried again sends only `approval.respond`. A steer
+  whose answer the socket lost counts as words Hermes may have.
+- Words that no agent saw go out as the next message once the denial is
+  confirmed. If Hermes refuses that `prompt.submit`, or the chat is no longer
+  attached by then, the `answer` command answers that refusal and the words
+  stay in `Session.outbox` as a failed message. The denial is not undone.
+- Hermes stores steered words as a user row with `display_kind: "steer"`
+  (`agent/prompt_builder.py:585-592`, `tui_gateway/session_history.py:329-332`).
+  Highwing reads that row as an item of the turn it sits in, not as a new turn.
+  A page of older rows that begins at one therefore begins inside a turn, and
+  "Show earlier turns" reads on to the page that holds that turn's request. A
+  user row with `display_kind: "skill_invocation"` is a request, and opens a
+  turn (`tui_gateway/session_history.py:360-363`).
+- A queued message that Hermes hands to the turn leaves the list when the turn
+  settles. It comes back as a queued row when the turn never read it
+  (`gateway/session_queued_controls.py:104-116,184-200`).
+- An edit whose reply the socket lost is sent again on the next socket as the
+  same `prompt.replace_queued`, with the row and the `submission_id` of the
+  first try. Hermes answers that repeat with the admission the first one made
+  (`gateway/session_queued_controls.py:212-233`). A `prompt.submit` of the
+  edit would queue it beside the row it replaces whenever Hermes had not taken
+  the first try.
+- A lost row pauses the queue behind it. Hermes releases it itself when the
+  last viewer of the chat closes (`gateway/session_authority.py:916-919`), so
+  Highwing does not stay attached to a chat only because its queue holds rows.
+- A frame that ends a cancelled or steered queued message carries no
+  generation (`gateway/session_authority.py:878-893`). Highwing does not read
+  it as the end of the running turn.
+
+## Chat commands
+
+Hermes 0.23.3 serves each of these on the canonical route. `Session.tuning`
+holds every switch Hermes keeps for the chat, for all its clients. Effort, fast
+and YOLO come with each attach reply's `info` and with each `session.info`
+(`gateway/session_local.py:486-503,520-560`), so Highwing reads none of them
+with `config.get`. `Session.cwd` is the chat's folder, from the same places.
+
+| A window's command | Highwing calls | Hermes source |
+|---|---|---|
+| `completePath`, for an `@` word in the composer | `complete.path {session_id, word}` | `gateway/session_complete_path.py:15-40` |
+| `side` btw, or a typed `/btw <question>` | `prompt.btw {session_id, text}`, answered `{task_id}` | `gateway/session_tui_side.py:197-224` |
+| `side` background, or a typed `/bg <prompt>` | `prompt.background {session_id, text}`, answered `{task_id}` | `gateway/session_tui_side.py:175-193` |
+| `tune` effort | `session.mutate reasoning {effort}`, `null` for the model's own level, with `expected_generation` | `persistence/authority/runtime.py:299-316`, `gateway/session_mutation_policy.py` |
+| `tune` fast | `config.set {session_id, key: "fast", value: "fast" \| "normal"}` | `gateway/session_tui_config.py:274-298` |
+| `tune` yolo | `config.set {session_id, key: "yolo", value: "on" \| "off"}` | `gateway/session_tui_config.py:187-193,357-377` |
+| `move` | `session.mutate workspace {cwd}`, with `expected_generation` | `gateway/session_mutation_policy.py:37-55` |
+| `compress`, or a typed `/compress [focus]` | `session.mutate compress {focus?}`, with `expected_generation` | `gateway/session_mutation_compress.py:32-113` |
+| `export` | `session.export {session_id, format}`, `md`, `json` or `html` | `gateway/session_tui_ops.py:89-122` |
+
+- `btw.complete {task_id, question, text}` and `background.complete {task_id, text}`
+  carry the answer on the chat's stream, with no generation. Each is one entry
+  of `Session.sides`, by task, from any client. A failed side agent answers
+  `error: ...` as its text (`gateway/session_tui_side.py:139-151`). Hermes
+  stores neither answer, so one that was running when the chat was read again
+  reads `lost`.
+- Hermes takes a side prompt only from a socket that has the chat attached,
+  and refuses any other with `permission_denied`.
+- A committed effort or folder comes back in a `session.info` before the reply
+  (`gateway/session_mutations.py:376-380`). An effort set during a turn is held
+  for the next turn (`gateway/session_mutations.py:129-137`). A move is
+  refused while a turn runs. Highwing refuses it before it sends anything.
+  Hermes refuses a folder that is not on its machine with `invalid_params` and
+  no field (`gateway/session_mutation_policy.py:45-49`).
+- `config.set` of `fast` answers the tier's word and pushes `{service_tier, fast}`
+  in a `session.info` (`gateway/session_busy_controls.py:111-131`). Hermes
+  refuses it with `fast_unavailable` for a model with no fast tier. A later
+  `session.info` from a policy change (an effort, a folder or a model) reads the
+  frozen policy's tier, not the chat's `/fast` pin, so it says fast is off
+  while no agent is built (`gateway/session_local.py:467-477,543`).
+- A compression is refused while a turn runs. Its receipt is a `session.updated`
+  with `operation: "compress"` and Hermes's report in `summary`. The command
+  answers the report's headline, size line and note. A compression that
+  removes nothing answers `status: "noop"` and publishes nothing.
+- A `session.updated` with operation `compress` or `reset`, from any client,
+  starts the rebuild that a replay gap takes, because both rewrite the stored
+  rows. A `rewind` receipt cuts the chat in place instead.
+- `session.export` renders the chat and writes nothing on Hermes's machine.
+  Main saves it through a save dialog, so the window gets the saved file's
+  path and never the text. `HIGHWING_SAVE_DIR` names a folder to save into
+  with no dialog, which a verify run sets.
+
+## Session panels
+
+Hermes 0.23.3 serves each of these on the canonical route, though the generated
+contract lists them as legacy methods. `Session.processes` and
+`Session.control` are Hermes's state for the chat, shared by every client.
+
+| A window's command, or a read | Highwing calls | Hermes source |
+|---|---|---|
+| read when a window starts watching the chat, after each attach, and again when the list is old | `process.list {session_id}` | `gateway/session_ancillary.py:226-237,655-671` |
+| `killProcess` | `process.kill {session_id, process_id}` | `gateway/session_ancillary.py:294-305`, `tools/process_registry.py:2120-2210` |
+| read when a window starts watching the chat, and after each attach | `session.control.read {session_id}` | `gateway/session_ancillary.py:474-500` |
+| `control` | `session.control {session_id, action, args}` | `gateway/session_control_actions.py:141-164` |
+| `checkpoints`, or a typed `/rollback [list]` | `rollback.list {session_id}` | `gateway/session_tui_ops.py:212-275` |
+| `checkpointDiff`, or a typed `/rollback diff <n\|hash>` | `rollback.diff {session_id, hash}` | `gateway/session_tui_ops.py:282-299` |
+| `restore`, or a typed `/rollback <n\|hash> [file] [--all]` | `rollback.restore {session_id, hash, file_path? \| all?}` | `gateway/session_tui_ops.py:300-312,350-375` |
+| `react` | `message.react {session_id, row_id, emoji}` | `gateway/session_reactions.py:13-55` |
+
+- A refused read leaves its part null, as for a Hermes without the method.
+  Hermes refuses `process.list` with `unsupported_projection` for a chat a
+  managed worker runs.
+- The list is old after `status.update {kind: "process"}`, after a turn's end,
+  and after this client's kill, and a watched chat reads it again. Hermes's
+  canonical route never sends that `status.update`: only `tui_gateway` does
+  (`tui_gateway/session_notifications.py:613,723`). Under the canonical route a
+  process that exits while a viewer is attached starts a turn of its own
+  (`gateway/session_completion_notes.py`), so its end is the signal.
+- `process.kill` answers `killed` or `already_exited` for a process that ended,
+  `error` with Hermes's words when the process outlived the kill, and refuses
+  `process_not_found` for any id the chat does not own.
+- Hermes publishes `session.control.update {control}` to every viewer on every
+  change: a control button, a slash command, a fired loop, a judged turn
+  (`gateway/session_control_actions.py:76-138`). Highwing replaces `control`
+  with it and never reads the button's reply. A read answer asked before an
+  update leaves the update in place. A button answers `dispatch`, which is
+  `exec` words or a `send` message that the client submits, as
+  `command.dispatch` does. The actions are the 13 of
+  `gateway/session_control_actions.py:15-22`. `subgoal.add` takes `text`, and
+  `subgoal.remove` an `index` from 1.
+- Hermes keeps no checkpoints unless the profile's `checkpoints.enabled` is on
+  (`hermes_cli/config_defaults.py:486-487`). `rollback.list` then answers
+  `enabled: false`. `rollback.diff` cuts the patch at 4000 characters.
+- A restore of the whole folder keeps the files the user edited since the
+  checkpoint unless `all` is sent. It is refused with `session_busy` while a
+  turn runs, and Highwing refuses it before it sends anything. It also takes
+  back the chat's last turn through the fenced `rewind` mutation, which
+  publishes `session.updated` before the reply, and answers `history_removed`.
+  Highwing then reads the chat again, and does so too when the socket drops
+  before the answer. A restore of one file only touches the disk.
+- A typed `/rollback` reads as Hermes Desktop reads it, and also takes the TUI's
+  `--force` for `--all`. Its `<n|hash>` goes to Hermes as typed: Hermes reads a
+  list number or a hash the same way on every surface (`agent/checkpoints/refs.py`),
+  and answers a number out of range with `Invalid checkpoint number. Use 1-N.`
+  The command answers its result in words under the composer, worded as
+  Hermes Desktop and the CLI word it, and a list or diff with extra words
+  answers the usage line.
+- `message.react` keeps one reaction per author per row. The same emoji again
+  clears it, another replaces it, and `emoji: null` clears it. It answers the
+  row's reactions, which Highwing shows at once. Hermes publishes no
+  `message.reaction` to other clients for a user's reaction, so another
+  client's reaction shows at the next read of the stored rows. Display rows
+  carry the reactions in `display_metadata.reactions`
+  (`tui_gateway/session_history.py:370-371`). A reaction addresses the turn's
+  answer: the last assistant row with text, or the receipt's
+  `final_assistant_row_id` for a turn that settled live.
 
 ## When a change needs a newer Hermes route
 
@@ -282,9 +597,34 @@ Of the 66 listed commands whose `desktop` is `null`, the gateway runs 33:
 `/blueprint` `/help` `/usage` `/topup` `/version` `/debug`
 
 The gateway refuses the other 33 offered commands, among them `/new`,
-`/compress`, `/retry`, `/undo`, `/resume` and `/stop`. A client runs these as
-its own actions. Highwing runs a bare `/new` itself: it opens a new chat in the
-bot of the chat it was typed in. The menu lists it with the 33 the gateway runs.
+`/compress`, `/bg`, `/btw`, `/retry`, `/undo`, `/resume` and `/stop`. A client
+runs these as its own actions. Highwing runs a bare `/new` itself: it opens a
+new chat in the bot of the chat it was typed in. It also runs every name in
+`OWN_COMMANDS` (`packages/hermes/src/domain/slash.ts`): `/title` with a title,
+`/btw`, `/bg`, `/compress`, `/rollback` (see [Session panels](#session-panels)),
+and the forms of `/busy`, `/fast` and `/reasoning` that set a switch Highwing
+models. Hermes's own forms of `/compress` (`here [N]`,
+`--preview`) go to the gateway, which refuses them. The menu lists `/new` and
+those names with the 33 the gateway runs. It lists `/busy` and `/fast` too,
+though Hermes marks them `terminal` and `advanced`.
+
+The settings run `tune` for this chat, so `Session.tuning` takes the state Hermes
+answers, and show the line Hermes's TUI shows (`busy input mode: steer`,
+`fast mode: fast`, `reasoning: high`):
+
+| Typed | `tune` |
+| --- | --- |
+| `/busy queue\|steer\|interrupt` | busy, that mode |
+| `/fast fast\|on`, `/fast normal\|off` | fast on, fast off |
+| `/reasoning <level>`, one of `EFFORTS` | effort, that level |
+| `/reasoning reset` | effort, the model's own level |
+| `/reasoning show\|on`, `/reasoning hide\|off` | reasoning shown, hidden |
+
+The words are case-blind, and `/reasoning` takes the TUI's `--session` too. Every
+other form goes to the gateway as before: a bare or `status` read, `--global`,
+the tiers `auto`, `cold` and `ultrafast`, and the display words `full` and
+`clamp`. The gateway's own `/busy` and `/reasoning show|hide` also save the
+choice to `config.yaml`. `tune` sets only this chat, as Hermes's TUI does.
 The Hermes `/stop` stops background processes, not the current turn, so it is
 not Highwing's Stop.
 

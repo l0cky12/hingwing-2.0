@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { manualClock, settle } from '../src/testing/clock'
-import { scriptedDialer, type Fixture, type ScriptOptions } from '../src/testing/fixture'
-import { BOUND, BRANCH, BRANCH_OLD, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, SORTED, SORTED_2, SORTED_3, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS } from './support/errand'
+import { MASKED, scriptedDialer, type Fixture, type FixtureStep, type ScriptOptions } from '../src/testing/fixture'
+import {
+  BOUND, BRANCH, BRANCH_OLD, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PICK_ASK, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, SORTED, SORTED_2, SORTED_3,
+  SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, type Added
+} from './support/errand'
 
 interface Reply {
   readonly id?: number
@@ -29,7 +32,7 @@ async function rawSocket(options: ScriptOptions = {}, fixture: Fixture = ERRAND)
     if (reply === undefined) throw new Error(`${method} got no reply`)
     return reply
   }
-  return { script, call, post, frames, clock }
+  return { script, call, post, frames, clock, send: (frame: unknown) => socket.send(JSON.stringify(frame)), played: () => clock.advance(0) }
 }
 
 const without = (params: Record<string, unknown>, key: string) => Object.fromEntries(Object.entries(params).filter(([held]) => held !== key))
@@ -839,5 +842,253 @@ describe('attachments, as Hermes stages them', () => {
     expect(await call('file.attach', { session_id: SESSION, name: 'notes.txt', data_url: `data:text/plain;base64,${Buffer.from('hi').toString('base64')}` }))
       .toMatchObject({ result: { attached: true, ref_text: '@file:/hermes/default/attachments/notes.txt' } })
     expect(await call('file.attach', { session_id: SESSION, name: 'notes.txt', data_url: 'not a data url' })).toMatchObject(refusal('invalid_params'))
+  })
+})
+
+describe('the scripted gateway and what Hermes asks', () => {
+  const story = (...steps: readonly Added[]): Fixture => ({ header: ERRAND.header, steps: steps.map((step): FixtureStep => ({ at: 0, ...step })) })
+  const event = (seq: number, type: string, payload: Record<string, unknown>) =>
+    ({ push: { jsonrpc: '2.0', method: 'event', params: { type, session_id: SESSION, replay_epoch: 'e', seq, payload } } })
+  const CANCEL = event(1, 'request.cancel', { id: SUDO, method: 'sudo', reason: 'resolved' })
+  const answer = (value: string) => ({ jsonrpc: '2.0', id: SUDO, result: { value } })
+  const openRequests = async (call: Awaited<ReturnType<typeof rawSocket>>['call']) => (await call('session.resume', { session_id: SESSION })).result?.open_requests
+
+  it('lists a request as open until its answer arrives, then plays the cancel that follows', async () => {
+    const { call, send, script, frames, played } = await rawSocket({}, story(SUDO_ASK, { answer: SUDO, result: { value: MASKED } }, CANCEL))
+    await call('session.resume', { session_id: SESSION })
+    await played()
+    expect(frames.find(frame => frame.method === 'sudo')).toMatchObject({ id: SUDO, params: { command: 'sudo true' } })
+    expect(await openRequests(call)).toEqual([{ id: SUDO, method: 'sudo', params: SUDO_ASK.push.params }])
+    send(answer('anything typed'))
+    await played()
+    expect(frames.filter(frame => frame.params?.type === 'request.cancel')).toHaveLength(1)
+    expect(await openRequests(call)).toEqual([])
+    expect(script.finished).toBe(true)
+  })
+
+  it('closes a request the story cancels, with no answer', async () => {
+    const { call, played } = await rawSocket({}, story(SUDO_ASK, { ...CANCEL, push: { ...CANCEL.push, params: { ...CANCEL.push.params, payload: { id: SUDO, method: 'sudo', reason: 'timeout' } } } }))
+    await call('session.resume', { session_id: SESSION })
+    await played()
+    expect(await openRequests(call)).toEqual([])
+  })
+
+  it.each([
+    ['an answer while it waits for a call', { header: ERRAND.header, steps: [{ at: 0, ...SUDO_ASK }, { at: 0, await: 'prompt.submit', params: {}, reply: {} }] }, answer('x'), /it waits for no answer/],
+    ['an answer to another request', story(SUDO_ASK, { answer: 'srq-other', result: {} }), answer('x'), /it waits for the answer to srq-other/],
+    ['a result other than the recorded one', story(SUDO_ASK, { answer: SUDO, result: { value: '' } }), answer('x'), /it waits for the result \{"value":""\}/],
+    ['an empty value where one was typed', story(SUDO_ASK, { answer: SUDO, result: { value: MASKED } }), answer(''), /it waits for the result/],
+    ['a result where it waits for a decline', story(SUDO_ASK, { answer: SUDO, error: { code: -32601, message: 'no' } }), answer('x'), /it waits for error -32601/]
+  ])('fails the story on %s', async (_name, fixture, sent, problem) => {
+    const { call, send, script, played } = await rawSocket({}, fixture)
+    await call('session.resume', { session_id: SESSION })
+    await played()
+    send(sent)
+    await expect(script.done).rejects.toThrow(problem)
+  })
+
+  it('fails the story on an answer from a socket that has not attached the session', async () => {
+    const { call, script, played } = await rawSocket({}, story(SUDO_ASK, { answer: SUDO, result: { value: MASKED } }))
+    await call('session.resume', { session_id: SESSION })
+    await played()
+    const stranger = await script({ start: false })
+    stranger.send(JSON.stringify(answer('x')))
+    await expect(script.done).rejects.toThrow(/the socket has not attached the session/)
+  })
+
+  it('does not hand an automatic window request to a viewer that reconnects, and does hand it a card that waits', async () => {
+    const read = { push: { jsonrpc: '2.0', id: 'srq-read', method: 'terminal.read', params: { session_id: SESSION } } }
+    const { call, played } = await rawSocket({}, story(read, { answer: 'srq-read', error: { code: -32601, message: 'no' } }))
+    await call('session.resume', { session_id: SESSION })
+    await played()
+    expect(await openRequests(call)).toEqual([])
+    const picker = await rawSocket({}, story(PICK_ASK))
+    await picker.call('session.resume', { session_id: SESSION })
+    await picker.played()
+    expect(await openRequests(picker.call)).toMatchObject([{ method: 'theme.pick' }])
+  })
+
+  it('serves the open connector card as pending_connection, with the targets of its latest update, until it settles', async () => {
+    const card = { op_id: 'op1', seq: 1, deadline_at: 9, timeout_seconds: 300, targets: [{ name: 'github', kind: 'connector', action: 'connect', state: 'pending' }] }
+    const moved = { op_id: 'op1', seq: 2, deadline_at: 9, owner: { type: 'session', session_id: SESSION }, targets: [{ name: 'github', kind: 'connector', action: 'connect', state: 'skipped' }] }
+    const pending = async (fixture: Fixture) => {
+      const { call, played } = await rawSocket({}, fixture)
+      await call('session.resume', { session_id: SESSION })
+      await played()
+      return (await call('session.resume', { session_id: SESSION })).result?.pending_connection
+    }
+    expect(await pending(story(event(1, 'connection.request', card)))).toEqual(card)
+    expect(await pending(story(event(1, 'connection.request', card), event(2, 'connection.update', { ...moved, settled: false })))).toEqual({ ...card, seq: 2, targets: moved.targets })
+    expect(await pending(story(event(1, 'connection.request', card), event(2, 'connection.update', { ...moved, settled: true, settled_by: 'all_resolved' })))).toBeNull()
+  })
+})
+
+describe("the scripted gateway and Hermes's queue", () => {
+  const row = (admission_id: string, status: string, more: Record<string, unknown> = {}) => ({
+    admission_id, ref: { profile_id: 'default', session_id: SESSION }, sequence: 1, status, outcome: null, authority_epoch: 2, execution_generation: null,
+    input_id: `in-${admission_id}`, text: 'tidy the notes', controls: [], steering: false, ...more
+  })
+  const LOST = row('lost', 'unknown', { execution_generation: 1 })
+  const receipt = { admission_id: 'lost', status: 'terminal', outcome: 'interrupted' }
+  const RESTARTED: Fixture = {
+    header: { ...ERRAND.header, pending: [LOST, row('behind', 'queued', { controls: ['steer', 'replace'] })], controls: { busy: 'interrupt' } },
+    steps: [{ at: 0, await: 'prompt.resolve_unknown', params: {}, reply: receipt }, ...ERRAND.steps.filter(step => !('await' in step))]
+  }
+  const release = { session_id: SESSION, admission_id: 'lost', execution_generation: 1 }
+
+  it('lists what was pending before the story starts in the attach reply', async () => {
+    const { call } = await rawSocket({}, RESTARTED)
+    expect((await call('session.resume', { session_id: SESSION })).result).toMatchObject({ running: false, pending: [{ admission_id: 'lost', status: 'unknown' }, { admission_id: 'behind' }] })
+  })
+
+  it('releases a lost row only by the generation it ran as, and knows only the rows it listed', async () => {
+    const { call } = await rawSocket({}, RESTARTED)
+    await call('session.resume', { session_id: SESSION })
+    expect(await call('prompt.resolve_unknown', { ...release, execution_generation: 2 })).toMatchObject(refusal('stale_generation'))
+    expect(await call('prompt.resolve_unknown', { ...release, admission_id: 'behind' })).toMatchObject(refusal('stale_generation'))
+    expect(await call('prompt.resolve_unknown', without(release, 'execution_generation'))).toMatchObject(refusal('invalid_params', { fields: ['execution_generation'] }))
+    expect(await call('prompt.cancel', { session_id: SESSION, admission_id: 'gone' })).toMatchObject(refusal('not_found'))
+    expect(await call('prompt.steer_queued', { session_id: SESSION, admission_id: 'behind', text: 'now' })).toMatchObject(refusal('invalid_params', { fields: ['text'] }))
+    expect((await call('prompt.resolve_unknown', release)).result).toEqual(receipt)
+  })
+
+  it('takes an edit only from a socket that attached the session, with an id for the new message', async () => {
+    const { call } = await rawSocket({}, RESTARTED)
+    const edit = { session_id: SESSION, admission_id: 'behind', submission_id: 'in-2', text: 'tidy the notes and the list' }
+    expect(await call('prompt.replace_queued', edit)).toMatchObject(refusal('permission_denied'))
+    await call('session.resume', { session_id: SESSION })
+    expect(await call('prompt.replace_queued', { ...edit, submission_id: '' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('prompt.replace_queued', { ...edit, admission_id: 'gone' })).toMatchObject(refusal('not_found'))
+  })
+
+  it('refuses a steer with no words, an undeclared key, or the generation of a turn that is not running', async () => {
+    const { call } = await rawSocket({}, RESTARTED)
+    await call('session.resume', { session_id: SESSION })
+    const steer = { session_id: SESSION, text: 'use the staging db', execution_generation: 1 }
+    expect(await call('session.steer', { ...steer, text: '  ' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.redirect', { ...steer, now: true })).toMatchObject(refusal('invalid_params', { fields: ['now'] }))
+    expect(await call('session.steer', steer)).toMatchObject(refusal('stale_generation'))
+    expect(await call('session.redirect', steer)).toMatchObject(refusal('stale_generation'))
+  })
+
+  it('answers the busy mode only when the fixture has one, and takes only a mode Hermes has', async () => {
+    const { call } = await rawSocket({}, RESTARTED)
+    const busy = { session_id: SESSION, key: 'busy' }
+    expect((await call('config.get', busy)).result).toEqual({ key: 'busy', value: 'interrupt', scope: 'session' })
+    expect(await call('config.set', { ...busy, value: 'on' })).toMatchObject(refusal('invalid_params'))
+    expect((await call('config.set', { ...busy, value: 'steer' })).result).toEqual({ key: 'busy', value: 'steer', scope: 'session' })
+    expect((await call('config.get', busy)).result).toMatchObject({ value: 'steer' })
+
+    const reasoningOnly = await rawSocket({}, { ...ERRAND, header: { ...ERRAND.header, controls: { show_reasoning: '0' } } })
+    expect(await reasoningOnly.call('config.get', busy)).toMatchObject(refusal('invalid_params'))
+    expect(await (await rawSocket()).call('config.get', busy)).toMatchObject({ error: { code: -32601 } })
+  })
+})
+
+describe('the scripted gateway and the chat commands', () => {
+  const STORY: Fixture = {
+    header: { ...ERRAND.header, info: { cwd: '/work', reasoning_effort: '', fast: false, yolo: false } },
+    steps: [
+      { at: 0, await: 'prompt.btw', params: {}, reply: { task_id: 'btw_1' } },
+      { at: 0, await: 'config.set', params: {}, reply: { key: 'yolo', value: '1', scope: 'session' } },
+      { at: 0, await: 'session.mutate', params: {}, reply: { session_id: SESSION, operation: 'workspace' } },
+      { at: 0, await: 'session.export', params: {}, reply: { format: 'md', filename: 'chat.md', content: '# Chat' } }
+    ]
+  }
+  const fenced = { session_id: SESSION, request_id: 'r1', expected_revision: 0, expected_generation: 0 }
+
+  it('repeats the header info in the attach reply, and a YOLO set the story records in the next one', async () => {
+    const { call } = await rawSocket({}, STORY)
+    expect((await call('session.resume', { session_id: SESSION })).result?.info).toMatchObject({ cwd: '/work', reasoning_effort: '', fast: false, yolo: false })
+    await call('prompt.btw', { session_id: SESSION, text: 'why?' })
+    expect((await call('config.set', { session_id: SESSION, key: 'yolo', value: 'on' })).result).toEqual({ key: 'yolo', value: '1', scope: 'session' })
+    expect((await call('session.resume', { session_id: SESSION })).result?.info).toMatchObject({ yolo: true })
+  })
+
+  it('refuses each call outside the closed key set Hermes checks', async () => {
+    const { call } = await rawSocket({}, STORY)
+    await call('session.resume', { session_id: SESSION })
+    expect(await call('prompt.btw', { session_id: SESSION, text: ' ' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('prompt.btw', { session_id: SESSION, text: 'why?', now: true })).toMatchObject(refusal('invalid_params'))
+    await call('prompt.btw', { session_id: SESSION, text: 'why?' })
+    expect(await call('config.set', { session_id: SESSION, key: 'yolo', value: 'on', scope: 'session' })).toMatchObject(refusal('invalid_params'))
+    await call('config.set', { session_id: SESSION, key: 'yolo', value: 'on' })
+    expect(await call('session.mutate', { ...fenced, operation: 'workspace', payload: { cwd: ' ' } })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.mutate', { ...without(fenced, 'expected_generation'), operation: 'workspace', payload: { cwd: '/work/docs' } })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.mutate', { ...fenced, operation: 'workspace', payload: { cwd: '/work/docs' } })).toMatchObject({ result: { operation: 'workspace' } })
+    expect(await call('session.export', { session_id: SESSION, format: 'md', redact: 'no' })).toMatchObject(refusal('invalid_params'))
+  })
+
+  it('takes a side prompt only from a socket that attached the chat, since its answer rides that subscription', async () => {
+    const { call } = await rawSocket({}, { ...STORY, steps: STORY.steps.slice(1) })
+    expect(await call('prompt.btw', { session_id: SESSION, text: 'why?' })).toMatchObject(refusal('permission_denied'))
+    expect(await call('prompt.background', { session_id: 'other', text: 'tidy' })).toMatchObject(refusal('not_found'))
+  })
+
+  it.each([
+    ['an effort Hermes does not take', 'reasoning', { effort: 'turbo' }],
+    ['an effort with a second key', 'reasoning', { effort: 'high', scope: 'global' }],
+    ['a compression with a key Hermes does not parse', 'compress', { focus: 'x', keep: 2 }],
+    ['a compression whose focus is not text', 'compress', { focus: 3 }]
+  ])('refuses %s', async (_, operation, payload) => {
+    const { call } = await rawSocket({}, STORY)
+    expect(await call('session.mutate', { ...fenced, operation, payload })).toMatchObject(refusal('invalid_params'))
+  })
+})
+
+describe('the scripted gateway and the session panels', () => {
+  const PROCESSES = { processes: [{ session_id: 'proc_1', command: 'npm run build', status: 'running' }] }
+  const KILLED = { processes: [{ session_id: 'proc_1', command: 'npm run build', status: 'exited', completion_reason: 'killed' }] }
+  const CONTROL = { control: { goal: null, loop: null, heartbeat: null, revision: '', updated_at: 0 } }
+  const STORY: Fixture = {
+    header: { ...ERRAND.header, reads: { 'process.list': PROCESSES, 'session.control.read': CONTROL } },
+    steps: [
+      { at: 0, await: 'process.kill', params: {}, reply: { status: 'killed', session_id: 'proc_1' } },
+      { at: 0, reads: { 'process.list': KILLED } },
+      { at: 0, await: 'session.control', params: {}, reply: { ...CONTROL, dispatch: { type: 'exec', output: 'Goal paused.', notice: null, message: null, display: null } } },
+      { at: 0, await: 'rollback.list', params: {}, reply: { enabled: true, checkpoints: [] } },
+      { at: 0, await: 'rollback.diff', params: {}, reply: { stat: '', diff: '' } },
+      { at: 0, await: 'rollback.restore', params: {}, reply: { success: true } },
+      { at: 0, await: 'message.react', params: {}, reply: { row_id: 2, reactions: [] } }
+    ]
+  }
+
+  it('answers each read as the story last said, and a read the story never names as an unknown method, as a Hermes without it does', async () => {
+    const { call, played } = await rawSocket({}, STORY)
+    await call('session.resume', { session_id: SESSION })
+    expect((await call('process.list', { session_id: SESSION })).result).toEqual(PROCESSES)
+    expect((await call('session.control.read', { session_id: SESSION })).result).toEqual(CONTROL)
+    await call('process.kill', { session_id: SESSION, process_id: 'proc_1' })
+    await played()
+    expect((await call('process.list', { session_id: SESSION })).result).toEqual(KILLED)
+    expect(await call('process.list', { session_id: SESSION, all: true })).toMatchObject(refusal('invalid_params'))
+    expect(await call('process.list', { session_id: 'other' })).toMatchObject(refusal('not_found'))
+    const errand = await rawSocket()
+    expect(await errand.call('process.list', { session_id: SESSION })).toMatchObject({ error: { code: -32601 } })
+    expect(await errand.call('session.control.read', { session_id: SESSION })).toMatchObject({ error: { code: -32601 } })
+  })
+
+  it('refuses each write outside the closed key set Hermes checks, and takes the story\'s own', async () => {
+    const { call, played } = await rawSocket({}, STORY)
+    await call('session.resume', { session_id: SESSION })
+    expect(await call('process.kill', { session_id: SESSION, process_id: '' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('process.kill', { session_id: SESSION, process_id: 'proc_1', force: true })).toMatchObject(refusal('invalid_params'))
+    expect(await call('process.kill', { session_id: SESSION, process_id: 'proc_1' })).toMatchObject({ result: { status: 'killed' } })
+    await played()
+    expect(await call('session.control', { session_id: SESSION, action: 'goal.delete', args: {} })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.control', { session_id: SESSION, action: 'subgoal.add', args: { text: ' ' } })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.control', { session_id: SESSION, action: 'subgoal.remove', args: { index: 0 } })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.control', { session_id: SESSION, action: 'goal.pause', args: { why: 'x' } })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.control', { session_id: SESSION, action: 'goal.pause', args: {} })).toMatchObject({ result: { dispatch: { output: 'Goal paused.' } } })
+    expect(await call('rollback.list', { session_id: SESSION, hash: 'abc' })).toMatchObject(refusal('invalid_params'))
+    await call('rollback.list', { session_id: SESSION })
+    expect(await call('rollback.diff', { session_id: SESSION })).toMatchObject(refusal('invalid_params'))
+    await call('rollback.diff', { session_id: SESSION, hash: 'abc' })
+    expect(await call('rollback.restore', { session_id: SESSION, hash: 'abc', all: 'yes' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('rollback.restore', { session_id: SESSION, hash: 'abc', file_path: 'notes.md', all: false })).toMatchObject({ result: { success: true } })
+    expect(await call('message.react', { session_id: SESSION, emoji: '👍' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('message.react', { session_id: SESSION, row_id: 2, emoji: ' ' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('message.react', { session_id: SESSION, row_id: 2, emoji: '👍', author: 'bot' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('message.react', { session_id: SESSION, row_id: 2, emoji: null })).toMatchObject({ result: { row_id: 2 } })
   })
 })

@@ -37,7 +37,9 @@ const wordsOf = (turn: SettledTurn): Pick<TurnNotice, 'title' | 'body'> | null =
     case 'complete':
     case 'stopped':
       return { title: 'Hermes finished', body: (replyOf(turn) || DONE_BODY).slice(0, BODY_MAX) }
+    // What Hermes says between turns is no turn the user waited on.
     case 'lost':
+    case 'interlude':
       return null
   }
 }

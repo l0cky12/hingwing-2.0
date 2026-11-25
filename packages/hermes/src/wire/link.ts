@@ -1,7 +1,7 @@
 import type { BotId } from '../domain/bots'
 import { CHECK_FAILURES, type SshFailure } from '../domain/reach'
 import type { BlockedWhy, Link, WaitingWhy } from '../domain/session'
-import type { CanonicalRpcMethods, RpcMethods } from './contract.generated'
+import type { CanonicalRpcMethods, ClientCapabilitiesResult, RpcMethods, ServerRequestMap, ServerRequestMethod } from './contract.generated'
 
 /**
  * What a socket's ticket lets it reach. `host`: every profile the gateway serves, chosen per frame
@@ -160,11 +160,14 @@ export class RpcRefusal extends Error {
 export class Offline extends Error {}
 
 /**
- * The canonical route also serves six methods the generated contract does not list as canonical:
+ * The canonical route also serves methods the generated contract does not list as canonical:
  * `commands.catalog` and `command.dispatch` (`AuthorityConnection.handlers`, gateway/session_controls.py:239-247),
- * `model.options` (gateway/session_config.py:11-13) and `session.context_breakdown` (gateway/session_tui_ops.py:33).
- * A fifth, `complete.path`, lists the files under a session's folder (gateway/session_controls.py:286-287).
- * A sixth, `file.attach`, is in gateway/session_ancillary.py:139-180 of a Hermes newer than the vendored contract,
+ * `model.options` (gateway/session_config.py:11-13), `session.context_breakdown` (gateway/session_tui_ops.py:33)
+ * and `connection.respond` (gateway/session_connections.py:10). So do the panel's calls: `process.list`, `process.kill` and
+ * `session.control.read` (gateway/session_ancillary.py:24-34), `session.control` (gateway/session_control_actions.py),
+ * `rollback.*` (gateway/session_tui_ops.py:29-31) and `message.react` (gateway/session_reactions.py).
+ * `complete.path` lists the files under a session's folder (gateway/session_controls.py:286-287).
+ * `file.attach` is in gateway/session_ancillary.py:139-180 of a Hermes newer than the vendored contract,
  * and an older one may refuse it.
  * `profiles.create` is not canonical: the authority answers -32601 and the socket falls back to the legacy
  * handler for a connection with the interactive grant (tui_gateway/ws.py:403-411, tui_gateway/ws_legacy_fallback.py:53-62).
@@ -174,9 +177,14 @@ export class Offline extends Error {}
  * means this Hermes cannot say which chats were branched from which.
  */
 export type Served = CanonicalRpcMethods & Pick<RpcMethods,
-  'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'complete.path' | 'file.attach' |
-  'profiles.create' | 'profiles.describe' | 'profiles.configure' | 'profiles.set_asset' | 'profiles.get_asset' | 'projects.tree'>
+  'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'connection.respond' | 'complete.path' | 'file.attach' |
+  'profiles.create' | 'profiles.describe' | 'profiles.configure' | 'profiles.set_asset' | 'profiles.get_asset' | 'projects.tree' |
+  'prompt.btw' | 'prompt.background' | 'process.list' | 'process.kill' | 'session.control.read' | 'session.control' | 'rollback.list' |
+  'rollback.diff' | 'rollback.restore' | 'message.react'>
 export type Method = keyof Served
+
+export type Requested = ServerRequestMap
+export type RequestMethod = ServerRequestMethod
 
 export interface Connection {
   readonly link: Link
@@ -193,16 +201,28 @@ export interface Connection {
   /**
    * Answer a server-to-client request with JSON-RPC error -32601, the code Hermes's own client uses for
    * a request it has no handler for (apps/shared/src/json-rpc-channel.ts:94), so the agent stops waiting.
+   * Hermes reads any error frame as "skipped", for every viewer (gateway/session_server_requests.py:89-96).
    * Works for a request that arrived on an earlier socket and is still listed as open.
    */
   decline(requestId: string, message: string): void
+  /**
+   * Answer a server-to-client request with a result frame. Hermes sends no reply to one
+   * (gateway/session_controls.py:313-319), so the only failure known here is `Offline`, thrown when
+   * no socket is online to write it to. `method` picks the result's shape and is not sent.
+   */
+  respond<M extends RequestMethod>(requestId: string, method: M, result: Requested[M]['result']): void
+  /**
+   * Whether this gateway sends the clarify tool's questions as one request to a client that asks for
+   * that on `prompt.submit` (`canonical_clarify_batch`, tui_gateway/methods_voice.py:544-545). false while not online.
+   */
+  readonly clarifyBatch: boolean
   readonly creation: { readonly sources: readonly string[]; readonly parameters: readonly string[] } | null
   retryNow(request: { readonly start: boolean }): void
   close(): void
 }
 
 /** What a session's actor may use of the connection. */
-export type Calls = Pick<Connection, 'link' | 'call'>
+export type Calls = Pick<Connection, 'link' | 'call' | 'respond' | 'clarifyBatch'>
 
 export interface ConnectionEvents {
   onLink(link: Link): void
@@ -235,7 +255,7 @@ type Creation = NonNullable<Connection['creation']>
 type Phase =
   | { readonly at: 'dialing'; readonly attempt: number }
   | { readonly at: 'handshake'; readonly attempt: number; readonly socket: WireSocket; readonly giveUp: () => void }
-  | { readonly at: 'online'; readonly attempt: number; readonly socket: WireSocket; readonly since: number; readonly creation: Creation; readonly heartbeat: { stop(): void } }
+  | { readonly at: 'online'; readonly attempt: number; readonly socket: WireSocket; readonly since: number; readonly creation: Creation; readonly clarifyBatch: boolean; readonly heartbeat: { stop(): void } }
   | { readonly at: 'waiting'; readonly attempt: number; readonly retryAt: number; readonly why: WaitingWhy; readonly message: string; readonly cancel: () => void }
   | { readonly at: 'blocked'; readonly why: BlockedWhy; readonly message: string }
   | { readonly at: 'closed' }
@@ -367,12 +387,13 @@ export function connect(
     const tooOld = new DialError('incompatible', 'This Hermes gateway is too old for Highwing.')
     if (!isObject(payload) || payload.session_authority !== true) return lost(socket, tooOld)
     try {
-      await request(socket, 'client.capabilities', { server_requests: true })
+      const able = await request(socket, 'client.capabilities', { server_requests: true }) as Partial<ClientCapabilitiesResult> | null
       const described = await request(socket, 'runtime.describe', {}) as CanonicalRpcMethods['runtime.describe']['result']
       if (phase.at !== 'handshake' || phase.socket !== socket) return
       phase.giveUp()
       const { sources, parameters } = described.session_create
-      enter({ at: 'online', attempt: phase.attempt, socket, since: clock.now(), creation: { sources, parameters }, heartbeat: beat(socket) })
+      const clarifyBatch = able?.canonical_clarify_batch === true
+      enter({ at: 'online', attempt: phase.attempt, socket, since: clock.now(), creation: { sources, parameters }, clarifyBatch, heartbeat: beat(socket) })
       events.onOnline()
     } catch (error) {
       if (error instanceof RpcRefusal) lost(socket, tooOld)
@@ -426,12 +447,21 @@ export function connect(
     return request(phase.socket, method, bot === null ? params : { ...params, profile: bot }, timeoutMs) as Promise<Served[M]['result']>
   }
 
+  // A result frame names no profile: Hermes settles it as whichever of the socket's connections attached the session (gateway/session_controls.py:979-988).
+  const respond: Connection['respond'] = (requestId, method, result) => {
+    if (phase.at !== 'online') throw new Offline(`The answer to ${method} was not sent: Highwing is not connected to Hermes.`)
+    phase.socket.send(JSON.stringify({ jsonrpc: '2.0', id: requestId, result }))
+  }
+  const clarifyBatch = () => phase.at === 'online' && phase.clarifyBatch
+
   return {
     get link() { return link },
     get reach() { return phase.at === 'online' ? phase.socket.reach : null },
     get creation() { return phase.at === 'online' ? phase.creation : null },
+    get clarifyBatch() { return clarifyBatch() },
     call: callAs(null),
-    as: bot => ({ get link() { return link }, call: callAs(bot) }),
+    as: bot => ({ get link() { return link }, get clarifyBatch() { return clarifyBatch() }, call: callAs(bot), respond }),
+    respond,
     decline: (requestId, message) => {
       if (phase.at === 'online') phase.socket.send(JSON.stringify({ jsonrpc: '2.0', id: requestId, error: { code: METHOD_NOT_FOUND, message } }))
     },

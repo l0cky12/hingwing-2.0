@@ -1,4 +1,4 @@
-import { activityOf, modelViewOf, type AttachmentId, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type Relay, type SessionId, type Shown, type Version } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, type AttachmentId, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type Relay, type SessionId, type Shown, type SideId, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
@@ -9,10 +9,13 @@ import { ModelPicker } from '../composer/ModelPicker'
 import { YoloPill } from '../composer/YoloPill'
 import { run, useTopic } from '../store'
 import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
+import { drawnView } from './drawn'
 import { ImageSessionContext } from './Image'
 import { forget, landAt, landed, pressFor } from './landing'
 import { FOLLOW_WITHIN, FOLLOWING, placeAfter, progressOf, type Place } from './place'
-import { Thread } from './Thread'
+import { Sides } from './Sides'
+import { closeSide, sideCards, useClosedSides } from './sides'
+import { Thread, type SecretAnswer } from './Thread'
 
 const PAGE = 0.875
 const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -31,7 +34,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const session = useTopic(id === null ? null : `session:${id}`)
   const relays = useTopic('relay')?.bySession[id ?? ''] ?? NO_RELAYS
   const [tick, wake] = useReducer((count: number) => count + 1, 0)
-  const view = useMemo(() => (session === undefined ? null : threadView(session, { now: Date.now(), timeZone: TIME_ZONE })), [session, tick])
+  const view = useMemo(() => (session === undefined ? null : drawnView(threadView(session, { now: Date.now(), timeZone: TIME_ZONE }))), [session, tick])
   const progress = useMemo(() => (view === null ? '' : progressOf(view)), [view])
   const scroller = useRef<HTMLElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
@@ -161,10 +164,14 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     if (!shown && document.activeElement === jumper.current) composer.current?.focus()
   }, [shown])
 
-  const notice = place.kind !== 'reading' ? '' : asking ? 'Waiting for your OK' : progress !== place.since ? 'New steps below' : ''
+  const secretAsked = view !== null && view.asks.length > 0
+  const notice = place.kind !== 'reading' ? '' : asking ? 'Waiting for your OK' : secretAsked ? 'Waiting for your answer' : progress !== place.since ? 'New steps below' : ''
 
   const onAnswer = useCallback((promptId: PromptId, reply: PromptReply) => {
     if (id !== null) void run({ do: 'answer', sessionId: id, promptId, reply })
+  }, [id])
+  const onAnswerRequest = useCallback<SecretAnswer>((requestId, reply) => {
+    if (id !== null) void run({ do: 'answer', sessionId: id, requestId, reply })
   }, [id])
   const onLoadEarlier = useCallback(() => {
     if (id !== null) void run({ do: 'loadEarlier', sessionId: id })
@@ -172,7 +179,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const onFindClosed = useCallback(() => composer.current?.focus(), [])
 
   const live = session?.sync.state === 'live'
-  const idle = session !== undefined && activityOf(session).kind === 'idle'
+  const idle = session?.run.state === 'idle'
   const waiting = view !== null && view.pending.some(message => message.status !== 'failed')
   const [held, setEditing] = useState<(Omit<Editing, 'later'> & { readonly id: SessionId | null }) | null>(null)
   const editedAt = held === null || held.id !== id || view === null ? -1 : view.turns.findIndex(turn => turn.rowId === held.rowId)
@@ -238,8 +245,22 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   useEffect(() => { if (live) void refreshModels() }, [live, refreshModels])
   const model = modelViewOf(menu.id === id ? menu.menu : null, session)
   const fill = session?.usage.context ?? null
-  const yolo = id !== null && live ? (session?.yolo ?? null) : null
+  const yolo = id !== null && live ? (session?.tuning.yolo ?? null) : null
   const online = useTopic('link')?.state === 'online'
+
+  const closed = useClosedSides(id)
+  const cards = useMemo(() => sideCards(session?.sides ?? [], closed), [session?.sides, closed])
+  const onCloseSide = useCallback((side: SideId) => {
+    if (id === null) return
+    closeSide(id, side)
+    composer.current?.focus()
+  }, [id])
+  const onEscape = () => {
+    const newest = cards.at(-1)
+    if (id === null || newest === undefined) return false
+    closeSide(id, newest.id)
+    return true
+  }
 
   const fileCall = useMemo(() => (id === null ? NO_FILE_CALL : fileCallFor(id)), [id])
 
@@ -250,7 +271,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
           <FileCallContext value={fileCall}>
             <ImageSessionContext value={id}>
               <Thread
-                view={view} relays={relays} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
+                view={view} relays={relays} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
                 canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
                 canBranch={canBranch} onBranch={onBranch} versions={versions} onVersion={onVersion}
               />
@@ -258,7 +279,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
           </FileCallContext>
         )}
       </main>
-      <div className={`jump${shown ? ' shown' : ''}${asking ? ' asking' : ''}`}>
+      <div className={`jump${shown ? ' shown' : ''}${asking || secretAsked ? ' asking' : ''}`}>
         <button ref={jumper} type="button" aria-label="Jump to latest" aria-describedby={words} onClick={jump}>
           <svg aria-hidden="true" viewBox="0 0 12 12" width="12" height="12"><path d="M6 2v8M2.5 6.5 6 10l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>
@@ -273,10 +294,12 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         seed={chat.kind === 'branch' ? chat.text : ''}
         canSend={id === null || live}
         canAttach={online}
-        showStop={session !== undefined && activityOf(session).kind !== 'idle'}
+        showStop={session?.run.state === 'running'}
         onSend={onSend}
         editing={editing}
         onCancelEdit={() => setEditing(null)}
+        above={id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} />}
+        onEscape={onEscape}
         onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}
       >
@@ -289,7 +312,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
                   onPick={(pick, confirm) => run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) })}
                 />
               )}
-              {yolo !== null && <YoloPill key={`yolo-${id}`} on={yolo} onSet={on => run({ do: 'setYolo', sessionId: id, on })} />}
+              {yolo !== null && <YoloPill key={`yolo-${id}`} on={yolo} onSet={on => run({ do: 'tune', sessionId: id, set: 'yolo', on })} />}
             </div>
             {fill !== null && <ContextMeter key={id} fill={fill} stale={!live} onBreakdown={() => run({ do: 'contextBreakdown', sessionId: id })} />}
           </div>

@@ -1,10 +1,11 @@
 import {
-  activityOf,
-  type Activity, type Attachment, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type Item, type NoticeItem, type Outcome, type PlanEntry, type PlanItem,
-  type PromptId, type PromptItem, type PromptReply, type ReasoningItem, type Session, type SettledTurn, type Sync, type Tokens, type ToolItem, type Turn
+  turnActivityOf,
+  type Asked, type Attachment, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type HermesRequest, type Item, type MoaItem, type NoticeItem,
+  type Outcome, type PlanEntry, type PlanItem, type PromptId, type PromptItem, type PromptReply, type ReasoningItem, type RequestEnd, type RequestId,
+  type SecretFor, type Session, type SettledTurn, type StatusItem, type Sync, type Tokens, type ToolItem, type Turn, type TurnActivity, type TurnId
 } from '@highwing/hermes/domain'
 import { multiAnswers } from './multi'
-import { changesAt, elapsedWords, timeLines, type ViewClock } from './when'
+import { changesAt, elapsedWords, timeLines, timeOfDay, type ViewClock } from './when'
 
 export type { ViewClock }
 
@@ -18,16 +19,39 @@ export type Phrase = readonly { readonly t: 'text' | 'code'; readonly v: string 
 export interface ThreadView {
   readonly state: 'opening' | 'ready' | 'unavailable'
   readonly turns: readonly TurnView[]
-  /** Messages sent and not yet picked up, shown under the last turn. */
+  /**
+   * This client's messages that no turn has picked up, shown under the last turn: the ones Hermes
+   * holds in its queue, then the ones it has not listed. Another client's queued messages are not in
+   * the view yet.
+   */
   readonly pending: readonly {
     readonly key: string; readonly text: string; readonly attachments: readonly Attachment[]; readonly status: 'sending' | 'queued' | 'failed'; readonly detail: string | null
   }[]
+  /** What Hermes waits on you for, oldest first, drawn after the turns. */
+  readonly asks: readonly AskCard[]
   readonly earlier: Session['earlier']
   /**
    * The earliest instant after the clock's `now` at which the same session would read differently
    * (an elapsed time ticks over, a time line appears or says a new day), or null when none will.
    */
   readonly changesAt: number | null
+}
+
+/** A masked field Hermes waits on: a sudo password, or the value of a secret. */
+export interface AskCard {
+  readonly key: string
+  readonly requestId: RequestId
+  readonly heading: string
+  readonly command: string | null
+  readonly why: string | null
+  readonly name: string | null
+  readonly label: string
+  /** When Hermes stops waiting: "Hermes waits until 14:07." null when Hermes named no limit. */
+  readonly waits: string | null
+  /** An answer is on its way, or the link is down. */
+  readonly busy: boolean
+  /** The last answer did not reach Hermes. */
+  readonly error: string | null
 }
 
 export interface TurnView {
@@ -77,6 +101,12 @@ export type ThreadNode =
   | { readonly kind: 'helper'; readonly key: string; readonly helper: HelperView }
   /** The turn's to-do list. At most one per turn. */
   | { readonly kind: 'plan'; readonly key: string; readonly plan: PlanView }
+  | { readonly kind: 'moa'; readonly key: string; readonly moa: MoaItem }
+  | { readonly kind: 'status'; readonly key: string; readonly status: StatusItem }
+  /** Words the user put into the turn while it ran. */
+  | { readonly kind: 'steer'; readonly key: string; readonly text: string }
+  /** Where a request closed. `words` is null for a kind with no card. */
+  | { readonly kind: 'closed'; readonly key: string; readonly asked: Asked; readonly end: RequestEnd; readonly words: string | null }
 
 /**
  * The turn's single end mark.
@@ -91,6 +121,7 @@ export type ThreadNode =
  * - `failed` and `stopped`: brick, with words.
  * - `lost`: graphite, no check ring, with words. How the turn ended is unknown, so nothing on screen
  *   claims it succeeded.
+ * - `none`: no mark. What Hermes said between two turns is not a run of the agent.
  */
 export type ThreadEnd =
   | { readonly kind: 'at'; readonly nodeKey: string; readonly tone: 'live'; readonly elapsed: string | null }
@@ -101,6 +132,7 @@ export type ThreadEnd =
   | { readonly kind: 'failed'; readonly words: string }
   | { readonly kind: 'stopped'; readonly words: string }
   | { readonly kind: 'lost'; readonly words: string }
+  | { readonly kind: 'none' }
 
 export interface DiffStat { readonly added: number; readonly removed: number }
 
@@ -214,6 +246,8 @@ const VIEW_STATE = {
 
 const settledViews = new WeakMap<SettledTurn, TurnView>()
 
+const LIVE_INTERLUDE = 'interlude:live' as TurnId
+
 /**
  * The whole thread, and the one entry point: the renderer calls it on every session value and the
  * tests call it on every fixture step. Settled turns are memoised by reference, so a streaming delta
@@ -227,19 +261,22 @@ export function threadView(session: Session, clock: ViewClock): ThreadView {
   const lines = timeLines(starts, clock)
   const settled = session.history.map((turn, index) => settledView(turn, lines[index] ?? null))
   const open = run.state === 'running'
-    ? turnView(run.turn, lines.at(-1) ?? null, sync.state === 'live', nodes => openEnd(run.turn, nodes, activityOf(session), sync.state, clock))
+    ? turnView(run.turn, lines.at(-1) ?? null, sync.state === 'live', nodes => openEnd(run.turn, nodes, turnActivityOf(run), sync.state, clock))
     : null
+  const interlude = session.interlude.length === 0
+    ? null
+    : turnView({ id: LIVE_INTERLUDE, request: null, items: session.interlude }, null, false, () => NO_END)
   const elapsing = open !== null && (open.end.kind === 'tip' || (open.end.kind === 'at' && open.end.tone === 'live'))
   return {
     state: VIEW_STATE[sync.state],
-    turns: open === null ? settled : [...settled, open],
-    pending: session.outbox.map(entry => ({
-      key: entry.inputId,
-      text: entry.text,
-      attachments: entry.attachments,
-      status: entry.state.s,
-      detail: entry.state.s === 'failed' ? entry.state.message : null
-    })),
+    turns: [...settled, ...(interlude === null ? [] : [interlude]), ...(open === null ? [] : [open])],
+    pending: [
+      ...session.queue.flatMap(row => (row.from === 'here' ? [{ key: row.inputId, text: row.text, attachments: row.attachments, status: 'queued' as const, detail: null }] : [])),
+      ...session.outbox.map(entry => ({
+        key: entry.inputId, text: entry.text, attachments: entry.attachments, status: entry.state.s, detail: entry.state.s === 'failed' ? entry.state.message : null
+      }))
+    ],
+    asks: session.requests.flatMap(request => askCard(request, sync.state === 'live', clock)),
     earlier: session.earlier,
     changesAt: changesAt(starts, lines, elapsing ? starts.at(-1) ?? null : null, clock)
   }
@@ -253,7 +290,7 @@ function settledView(turn: SettledTurn, time: string | null): TurnView {
   return view
 }
 
-function turnView(turn: Turn, time: string | null, live: boolean, end: (nodes: readonly ThreadNode[]) => ThreadEnd): TurnView {
+function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<SettledTurn, 'tokens'>>, time: string | null, live: boolean, end: (nodes: readonly ThreadNode[]) => ThreadEnd): TurnView {
   const at = (index: number) => `${turn.id}/${index}`
   const helpers = new Map(turn.items.flatMap(item => (item.kind === 'helper' ? [[item.id, item] as const] : [])))
   const asked = new Set(turn.items.flatMap(item => (item.kind === 'prompt' && item.ask.kind === 'approval' && (item.state.s === 'waiting' || item.state.s === 'sending') ? [item.ask.command] : [])))
@@ -280,19 +317,25 @@ function turnView(turn: Turn, time: string | null, live: boolean, end: (nodes: r
       case 'prompt':
         return { kind: 'prompt', key, card: promptCard(item, partner !== null, live) }
       case 'notice':
-        return { kind: 'notice', key, ...noticeWords(item) }
+        return item.what === 'closed' ? { kind: 'closed', key, asked: item.asked, end: item.end, words: closedWords(item.asked, item.end) } : { kind: 'notice', key, ...noticeWords(item) }
       case 'reasoning':
         return { kind: 'reasoning', key, text: trimBlankLines(item.text), streaming: !item.sealed, duration: thoughtFor(item) }
       case 'helper':
         return { kind: 'helper', key, helper: helperView(item, key, helpers, asked) }
       case 'plan':
         return { kind: 'plan', key, plan: planView(item, key, !('outcome' in turn)) }
+      case 'moa':
+        return { kind: 'moa', key, moa: item }
+      case 'status':
+        return { kind: 'status', key, status: item }
+      case 'steer':
+        return { kind: 'steer', key, text: item.text }
     }
   })
   return {
     key: turn.id, time, request: turn.request?.text ?? null, attachments: turn.request?.attachments ?? NO_ATTACHMENTS, rowId: turn.request?.rowId ?? null,
     nodes, end: end(nodes),
-    tokens: 'tokens' in turn ? tokenWords(turn.tokens) : null
+    tokens: tokenWords(turn.tokens ?? null)
   }
 }
 
@@ -717,7 +760,10 @@ function answeredWords(prompt: PromptItem, state: Exclude<PromptItem['state'], {
   const { reply } = state
   if (reply === null) return 'Answered from another window.'
   const { ask } = prompt
-  if (ask.kind === 'approval') return (reply.kind === 'choice' ? APPROVAL_CHOICES[reply.value]?.answered : undefined) ?? `You answered “${reply.value}”.`
+  if (ask.kind === 'approval' || reply.kind === 'deny') {
+    const value = reply.kind === 'deny' ? 'deny' : reply.value
+    return (ask.kind === 'approval' && reply.kind !== 'text' ? APPROVAL_CHOICES[value]?.answered : undefined) ?? `You answered “${value}”.`
+  }
   const answers = (ask.multi ? multiAnswers(reply.value) : null) ?? [reply.value]
   const quoted = answers.filter(answer => answer !== '').map(answer => `“${answer}”`)
   const last = quoted.pop()
@@ -725,13 +771,58 @@ function answeredWords(prompt: PromptItem, state: Exclude<PromptItem['state'], {
   return `You answered ${quoted.length === 0 ? last : `${quoted.join(', ')} and ${last}`}.`
 }
 
+interface CardWords { readonly heading: string; readonly label: string; readonly answered: string }
+
+const SECRET_WORDS = {
+  sudo: { heading: 'Hermes needs your sudo password', label: 'Password', answered: 'You sent a password.' },
+  env: { heading: 'Hermes needs a secret', label: 'Secret value', answered: 'You sent the secret.' },
+  vault: null,
+  login: null,
+  code: null
+} as const satisfies Record<SecretFor['is'], CardWords | null>
+
+const wordsOfSecret = (is: Asked): CardWords | null => (is in SECRET_WORDS ? SECRET_WORDS[is as SecretFor['is']] : null)
+
+const END_WORDS = {
+  answered: null,
+  skipped: 'You skipped this.',
+  elsewhere: 'Answered from another window.',
+  done: 'Answered from another window.',
+  timeout: 'Nobody answered in time, so Hermes stopped waiting.',
+  interrupted: 'Hermes withdrew this request.',
+  withdrawn: 'Hermes withdrew this request.'
+} as const satisfies Record<RequestEnd, string | null>
+
+function closedWords(asked: Asked, end: RequestEnd): string | null {
+  const card = wordsOfSecret(asked)
+  return card === null ? null : END_WORDS[end] ?? card.answered
+}
+
+function askCard(request: HermesRequest, live: boolean, clock: ViewClock): readonly AskCard[] {
+  const { ask, state, deadline } = request
+  if (ask.kind !== 'secret') return []
+  const words = wordsOfSecret(ask.for.is)
+  if (words === null) return []
+  const { for: secret } = ask
+  return [{
+    key: `ask:${request.id}`,
+    requestId: request.id,
+    heading: words.heading,
+    command: secret.is === 'sudo' ? secret.command : null,
+    why: secret.is === 'env' ? secret.prompt : null,
+    name: secret.is === 'env' ? secret.name : null,
+    label: words.label,
+    waits: deadline === null ? null : `Hermes waits until ${timeOfDay(deadline, clock.timeZone)}.`,
+    busy: state.s === 'sending' || !live,
+    error: state.s === 'waiting' ? state.error : null
+  }]
+}
+
 const DECLINED_WORDS: { readonly [method: string]: string } = {
-  sudo: "Hermes asked for your sudo password. Highwing can't show that prompt yet, so it said no.",
-  secret: "Hermes asked for a secret. Highwing can't show that prompt yet, so it said no.",
   setup_beat: "Hermes asked to show a setup step. Highwing can't show that yet, so it said no."
 }
 
-function noticeWords(notice: NoticeItem): { readonly tone: 'error' | 'info'; readonly text: string } {
+function noticeWords(notice: Exclude<NoticeItem, { what: 'closed' }>): { readonly tone: 'error' | 'info'; readonly text: string } {
   if (notice.what === 'said') return { tone: notice.tone, text: notice.text }
   const method = notice.method.split('.')[0] ?? notice.method
   return { tone: 'info', text: DECLINED_WORDS[method] ?? `Hermes sent a request Highwing can't show yet (${notice.method}), so it said no.` }
@@ -750,9 +841,9 @@ const TIP_WORDS = {
   thinking: 'Thinking',
   writing: 'Writing',
   stopping: 'Stopping'
-} as const satisfies Record<Exclude<Activity['kind'], 'preparing' | 'working' | 'asking' | 'reasoning' | 'helping'>, string>
+} as const satisfies Record<Exclude<TurnActivity['kind'], 'preparing' | 'working' | 'asking' | 'reasoning' | 'helping'>, string>
 
-function openEnd(turn: Turn, nodes: readonly ThreadNode[], activity: Activity, sync: Sync['state'], clock: ViewClock): ThreadEnd {
+function openEnd(turn: Turn, nodes: readonly ThreadNode[], activity: TurnActivity, sync: Sync['state'], clock: ViewClock): ThreadEnd {
   if (sync !== 'live') return { kind: 'paused', words: PAUSED_WORDS[sync] }
   const elapsed = elapsedWords(turn.began?.at ?? null, clock.now)
   const tip = (words: string): ThreadEnd => ({ kind: 'tip', words: [{ t: 'text', v: words }], elapsed })
@@ -780,6 +871,7 @@ function openEnd(turn: Turn, nodes: readonly ThreadNode[], activity: Activity, s
 }
 
 const LOST_WORDS = 'Ended while Highwing was disconnected.'
+const NO_END: ThreadEnd = { kind: 'none' }
 
 function settledEnd(outcome: Outcome): ThreadEnd {
   switch (outcome.kind) {
@@ -787,6 +879,7 @@ function settledEnd(outcome: Outcome): ThreadEnd {
     case 'failed': return { kind: 'failed', words: failureWords(outcome) }
     case 'stopped': return { kind: 'stopped', words: 'Stopped' }
     case 'lost': return { kind: 'lost', words: LOST_WORDS }
+    case 'interlude': return NO_END
   }
 }
 
@@ -824,6 +917,12 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
  *   ○ You allowed this once.                                   answered prompt
  *   ◆ Run this command?                                        asking prompt, its command, reason and buttons indented
  *   ! Hermes asked for your sudo password. ...                 notice
+ *   ≋ MoA 2/3 · 2 references · aggregating                     MoA round
+ *   · Goal: not done yet ...                                   status line, its kind when not `other`
+ *   ※ warn: Credits are low  (cleared)                         keyed notice
+ *   ○ You sent a password.                                     where a request with a card closed, in its words
+ *   ◇ code: elsewhere                                          where a request with no card closed, and how
+ *   » use trash-put instead                                    words the user put into the running turn
  *   ✓ Done                                                     end: ✓ done, ✗ failed, ⊘ stopped, ~ lost, each with its words
  *     1,204 in, 380 out                                        what the reply used, when Hermes said
  *
@@ -831,6 +930,9 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
  *   ◆ Helper Check disk usage · 1 step  3.3 s                  helper: ◆ done or failed, ◇ queued or working,
  *       Started `du -sh`                                       its now line while closed and working
  *   ☐ Plan · 1 of 3 done                                       plan: ☑ once every entry is done
+ *
+ *   ◈ Hermes needs your sudo password                          ask card, after the turns: its command, why, variable
+ *       Hermes waits until 14:07.                               name, wait, its field and buttons, and its error
  *
  * `◉` replaces the glyph of the node that carries the live end, or opens a tip line ("◉ Thinking").
  * Once a minute has passed the live end adds `, 3 min` after its words. `◌` is a paused end. `⋯` is a
@@ -853,6 +955,7 @@ export function outline(view: ThreadView, opened: ReadonlySet<string> = new Set(
     if (end !== null) lines.push(end)
     if (turn.tokens !== null) lines.push(`  ${turn.tokens}`)
   })
+  for (const card of view.asks) lines.push(...askLines(card))
   for (const message of view.pending) {
     if (message.attachments.length > 0) lines.push(attachmentLine(message.attachments))
     lines.push(`⋯ ${firstLine(message.text)}  (${message.status}${message.detail ? `: ${message.detail}` : ''})`)
@@ -861,6 +964,18 @@ export function outline(view: ThreadView, opened: ReadonlySet<string> = new Set(
 }
 
 const attachmentLine = (attachments: readonly Attachment[]) => `+ ${attachments.map(({ kind, name }) => `[${kind}] ${name}`).join('  ')}`
+
+function askLines(card: AskCard): string[] {
+  return [
+    `◈ ${card.heading}${card.busy ? '  (busy)' : ''}`,
+    ...(card.command === null ? [] : [`    ${card.command}`]),
+    ...(card.why === null ? [] : [`    ${card.why}`]),
+    ...(card.name === null ? [] : [`    ${card.name}`]),
+    ...(card.waits === null ? [] : [`    ${card.waits}`]),
+    `    (${card.label}) [Skip] [Send]`,
+    ...(card.error === null ? [] : [`    ! ${card.error}`])
+  ]
+}
 
 function pickLine(pick: PromptPick): string {
   if (pick.kind === 'many') return [...pick.choices, 'Other'].map(choice => `[ ] ${choice}`).join('  ') + '  [Answer] [Skip]'
@@ -891,6 +1006,8 @@ function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, open
     }
     case 'notice':
       return [`! ${node.text}`]
+    case 'closed':
+      return [node.words === null ? `◇ ${node.asked}: ${node.end}` : `○ ${node.words}`]
     case 'reasoning': {
       const head = `${live ? '◉' : '▸'} Thought${node.streaming ? ' …' : ''}${live ? elapsedSuffix(elapsed) : ''}`
       return opened.has(node.key) ? [head, ...node.text.split('\n').map(line => `    ${line}`)] : [head]
@@ -903,6 +1020,21 @@ function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, open
       const head = `${glyph} Plan · ${plan.done} of ${plan.total} done${plan.cancelled > 0 ? `, ${plan.cancelled} cancelled` : ''}${live ? elapsedSuffix(elapsed) : ''}`
       if (!opened.has(node.key)) return [head]
       return [head, ...plan.entries.map(entry => `    ${'  '.repeat(entry.depth)}${ENTRY_MARK[entry.state]} ${entry.text}`)]
+    }
+    case 'steer':
+      return [`» ${firstLine(node.text)}`]
+    case 'moa': {
+      const { progress, references, phase } = node.moa
+      return [[
+        `≋ MoA${progress === null ? '' : ` ${progress.done}/${progress.total}`}`,
+        `${references.length} references`,
+        ...(phase.is === 'aggregating' ? [`aggregating${phase.by === null ? '' : ` with ${phase.by}`}`] : [])
+      ].join(' · ')]
+    }
+    case 'status': {
+      const { status } = node
+      if (status.what === 'line') return [`· ${status.about === 'other' ? '' : `${status.about}: `}${firstLine(status.text)}`]
+      return [`※ ${status.level}: ${firstLine(status.text)}${status.state === 'cleared' ? '  (cleared)' : ''}`]
     }
   }
 }
@@ -945,7 +1077,8 @@ function sectionLines(section: RecordSection): string[] {
 
 function endLine(end: ThreadEnd): string | null {
   switch (end.kind) {
-    case 'at': return null
+    case 'at':
+    case 'none': return null
     case 'tip': return `◉ ${phrase(end.words)}${elapsedSuffix(end.elapsed)}`
     default: return `${END_GLYPH[end.kind]} ${end.words}`
   }
@@ -964,7 +1097,7 @@ function meta(stat: DiffStat | null, duration: string | null): string {
 const phrase = (words: Phrase) => words.map(piece => (piece.t === 'code' ? `\`${piece.v}\`` : piece.v)).join('')
 const firstLine = (value: string) => value.split('\n')[0] ?? ''
 
-const SETTLED_ENDS: ReadonlySet<ThreadEnd['kind']> = new Set(['done', 'failed', 'stopped', 'lost'])
+const SETTLED_ENDS: ReadonlySet<ThreadEnd['kind']> = new Set(['done', 'failed', 'stopped', 'lost', 'none'])
 
 /**
  * Properties every view must hold, checked on every prefix of every fixture. Returns the

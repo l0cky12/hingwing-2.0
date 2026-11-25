@@ -6,7 +6,7 @@ import type { Command, Outcome, ResultOf } from './domain/command'
 import { mentionedBots } from './domain/mention'
 import type { OpenChat } from './domain/open'
 import type { PaneAsk } from './domain/pane'
-import type { ServerRequest } from './domain/reduce'
+import type { BridgeRequest, ServerRequest } from './domain/reduce'
 import type { RelayDesk } from './domain/relay'
 import type { AttachmentId, BranchId, Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog } from './domain/slash'
@@ -60,7 +60,8 @@ export interface Hermes {
   /**
    * Watch one session. The listener gets the current value at once and every later one. A session is
    * kept attached while a window watches it, while the gateway lists it as running, while its own
-   * run is open, and while it has unsent messages. It is detached 60 s after none of those hold.
+   * run is open, while Hermes waits on a request in it, and while it has unsent messages. It is
+   * detached 60 s after none of those hold.
    * Call the returned function to stop watching.
    */
   watch(id: SessionId, listener: (session: Session) => void): () => void
@@ -77,7 +78,7 @@ export interface HermesOptions {
   readonly clock?: Clock
   /** Mints the idempotency keys of messages and mutations. Default `randomUUID`. A fixture replay passes the recorded ones. */
   readonly mintId?: () => string
-  /** Counts for a debug panel: frames not shown, unusable, or with no session to go to, and requests declined. No payloads, no tickets. */
+  /** Counts for a debug panel: frames and requests not shown, unusable, or with no session to go to, and requests declined. No payloads, no tickets. */
   readonly onDiagnostic?: (what: { readonly kind: 'unshown' | 'invalid' | 'unrouted' | 'declined'; readonly type: string }) => void
   /**
    * What Hermes asked of the pane beside the chat, with the session it asked from. Only the chat the
@@ -94,7 +95,7 @@ export interface HermesOptions {
 /** How long a session nothing retains stays attached. */
 export const RETAIN_MS = 60_000
 const LIST_DEBOUNCE_MS = 300
-const CANT_SHOW = "Highwing can't show this prompt yet, so it said no."
+const NO_BRIDGE = 'Highwing has no part of its window to answer this with.'
 
 function feed<T>(initial: T, same: (a: T, b: T) => boolean = Object.is): Feed<T> & { set(next: T): void } {
   let value = initial
@@ -144,14 +145,35 @@ export function openHermes(options: HermesOptions): Hermes {
 
   const actors = new Map<SessionId, SessionActor>()
   const watchers = new Map<SessionId, Set<(session: Session) => void>>()
+  const windows = new Map<SessionId, number>()
   const releases = new Map<SessionId, () => void>()
   const branchPins = new Map<BranchId, BranchPin>()
   let cancelRefresh: (() => void) | null = null
 
-  const refuse = (request: ServerRequest) => {
-    conn.decline(request.requestId, CANT_SHOW)
-    if (request.sessionId !== null) actors.get(request.sessionId)?.feed({ in: 'declined', request })
+  /**
+   * A request with no card is refused only while a window shows its chat, so the agent does not
+   * wait on a window that cannot answer. Unwatched, it is left open: Hermes reads a refusal as
+   * "skipped" for every viewer, and another client may be the one that can answer.
+   */
+  const bridge = (request: BridgeRequest) => {
+    const { sessionId } = request
+    if (sessionId === null || !windows.has(sessionId)) return count('unshown', request.method)
+    conn.decline(request.requestId, NO_BRIDGE)
+    actors.get(sessionId)?.feed({ in: 'declined', request })
     count('declined', request.method)
+  }
+
+  const asked = (request: ServerRequest) => {
+    switch (request.kind) {
+      case 'card': {
+        const actor = actors.get(request.sessionId)
+        return actor === undefined ? count('unrouted', request.method) : actor.feed({ in: 'request', request, seenAt: clock.now() })
+      }
+      case 'bridge':
+        return bridge(request)
+      case 'unusable':
+        return count('invalid', request.method)
+    }
   }
 
   const refreshSoon = () => {
@@ -194,7 +216,7 @@ export function openHermes(options: HermesOptions): Hermes {
       const parsed = parseEvent(params)
       ;(routes[parsed.scope] as (parsed: ParsedEvent) => void)(parsed)
     },
-    onServerRequest: request => refuse(parseServerRequest(request))
+    onServerRequest: request => asked(parseServerRequest(request))
   }, { startOnLaunch: options.startGatewayOnLaunch ?? true, clock })
 
   const link = feed<Link>(conn.link)
@@ -253,7 +275,8 @@ export function openHermes(options: HermesOptions): Hermes {
     if (held !== undefined) return held
     const bot = desk.botOf(id)
     const actor = new SessionActor(id, {
-      conn: bot === undefined ? conn : conn.as(bot), clock, mintId, refuse,
+      conn: bot === undefined ? conn : conn.as(bot), clock, mintId, bridge,
+      watched: () => windows.has(id),
       publish: (session, previous) => {
         for (const listener of [...(watchers.get(id) ?? [])]) listener(session)
         if (session.run.state !== previous.run.state) refreshSoon()
@@ -269,7 +292,7 @@ export function openHermes(options: HermesOptions): Hermes {
   const wanted = (id: SessionId): boolean => {
     if (watchers.has(id) || list.running.has(id)) return true
     const session = actors.get(id)?.session
-    return session !== undefined && (session.run.state === 'running' || session.outbox.length > 0)
+    return session !== undefined && (session.run.state === 'running' || session.outbox.length > 0 || session.requests.length > 0 || session.sides.some(side => side.state.s === 'running'))
   }
 
   const retain = () => {
@@ -291,7 +314,7 @@ export function openHermes(options: HermesOptions): Hermes {
     }
   }
 
-  const watch: Hermes['watch'] = (id, listener) => {
+  const follow = (id: SessionId, listener: (session: Session) => void): (() => void) => {
     const actor = actorFor(id)
     const listeners = watchers.get(id) ?? new Set()
     watchers.set(id, listeners.add(listener))
@@ -304,9 +327,25 @@ export function openHermes(options: HermesOptions): Hermes {
     }
   }
 
+  const watch: Hermes['watch'] = (id, listener) => {
+    const before = windows.get(id) ?? 0
+    windows.set(id, before + 1)
+    const stop = follow(id, listener)
+    if (before === 0) actorFor(id).watchBegan()
+    let watching = true
+    return () => {
+      if (!watching) return
+      watching = false
+      const left = (windows.get(id) ?? 1) - 1
+      if (left === 0) windows.delete(id)
+      else windows.set(id, left)
+      stop()
+    }
+  }
+
   const attached = (id: SessionId): Promise<SessionActor> => new Promise(resolve => {
     const unwatch: { stop?: () => void } = {}
-    unwatch.stop = watch(id, session => {
+    unwatch.stop = follow(id, session => {
       if (ATTACHING.has(session.sync.state)) return
       queueMicrotask(() => unwatch.stop?.())
       resolve(actorFor(id))

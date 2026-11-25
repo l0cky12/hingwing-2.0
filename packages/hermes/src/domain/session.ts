@@ -17,6 +17,17 @@ export type ToolId = Brand<string, 'ToolId'>
 export type PromptId = Brand<string, 'PromptId'>
 /** Hermes's `subagent_id`: one helper the agent handed part of the errand to. */
 export type HelperId = Brand<string, 'HelperId'>
+/** Hermes's `task_id` for a side question or a background prompt. */
+export type SideId = Brand<string, 'SideId'>
+/** Hermes's id of a process the agent runs in the background (its registry's `proc_…` id). */
+export type ProcessId = Brand<string, 'ProcessId'>
+/** The commit hash of one checkpoint of a chat's folder. */
+export type CheckpointId = Brand<string, 'CheckpointId'>
+
+/** A request Hermes holds open on the socket. For a connector card it is the operation's id. */
+export type RequestId = Brand<string, 'RequestId'>
+/** One row of Hermes's queue for a chat. */
+export type AdmissionId = Brand<string, 'AdmissionId'>
 /** Idempotency key of one user message. Minted once when the user presses Send, reused on every retry. */
 export type InputId = Brand<string, 'InputId'>
 /** Idempotency key of one branch. Minted by the window for a message and reused on every retry until Hermes answers. It is the `request_id` Hermes keys the branch's receipt on. */
@@ -74,13 +85,169 @@ export interface SessionContent {
   readonly earlier: 'none' | 'more' | 'loading'
   /** The one place that says whether the agent is working. */
   readonly run: Run
-  /** Messages the user sent that no turn has picked up yet. */
+  /**
+   * What Hermes said since the last turn ended, while none runs: a goal check's verdict, a notice, a
+   * request this build declined. Oldest first. Empty while a turn runs, because a line said then is an
+   * item of that turn. When the next turn starts, these move into `history` as one entry whose outcome
+   * is `interlude`. Live only: a rebuild drops them.
+   */
+  readonly interlude: readonly Item<'settled'>[]
+  /**
+   * What Hermes waits on outside the turn, oldest first: a password, a secret, a batch of questions,
+   * a plugin command's choice, a connector card. A request lives as long as Hermes holds it open, so a
+   * turn that settles leaves it here, and one can wait while no turn runs. A closed one leaves a
+   * `closed` notice where it closed.
+   */
+  readonly requests: readonly HermesRequest[]
+  /**
+   * Hermes's queue for the chat, oldest first: every client's messages that wait behind the running
+   * turn, are on their way into it, or were lost to a restart. Hermes is its only writer: each of its
+   * lists replaces this one whole, and a turn's start takes its own message out.
+   */
+  readonly queue: readonly QueuedMessage[]
+  /** This client's messages that Hermes has not listed yet, or refused. One leaves when Hermes's queue or a turn names it. */
   readonly outbox: readonly OutboxEntry[]
   readonly model: SessionModel
   readonly usage: SessionUsage
-  /** Whether Hermes runs this chat's commands without an approval card. null until Hermes says, which an older Hermes never does. */
+  readonly tuning: Tuning
+  /** Side questions and background prompts, oldest first, by whichever client asked. Live only: Hermes stores neither. */
+  readonly sides: readonly SideTask[]
+  /**
+   * The processes the agent left running in the background, and the ones that ended that Hermes
+   * still keeps, as Hermes last listed them. null until it answers, and on a Hermes that refuses the read.
+   */
+  readonly processes: readonly BackgroundProcess[] | null
+  /** The chat's goal, loop and heartbeat, as Hermes last said. null until it says, and on a Hermes that refuses the read. */
+  readonly control: SessionControl | null
+}
+
+/** A process the agent started to run in the background (`terminal(background=true)`). Times are Unix ms on Hermes's clock. */
+export interface BackgroundProcess {
+  readonly id: ProcessId
+  /** The command line, cut at 200 characters by Hermes. */
+  readonly command: string
+  readonly state:
+    | { readonly s: 'running' }
+    /** `why`: Hermes's word for how it ended, such as `killed`. */
+    | { readonly s: 'exited'; readonly code: number | null; readonly why: string | null; readonly at: number | null }
+  readonly startedAt: number | null
+  /** The end of its output when the list was read, ANSI-stripped. Hermes sends at most its last 32768 characters. */
+  readonly tail: string
+}
+
+/** What keeps the chat working on its own between messages. Each is null when the chat has none. */
+export interface SessionControl {
+  readonly goal: Goal | null
+  readonly loop: Loop | null
+  readonly heartbeat: Heartbeat | null
+}
+
+/** `/goal`: Hermes keeps taking turns until a check says the goal is met. */
+export interface Goal {
+  readonly title: string
+  readonly status: 'active' | 'paused' | 'done'
+  readonly turns: { readonly used: number; readonly max: number }
+  /** What the user said "done" means and its limits. A part the user left out is null. */
+  readonly contract: { readonly [P in GoalPart]: string | null }
+  /** Criteria the check reads, in order. A control action names one by its place, from 1. */
+  readonly subgoals: readonly string[]
+  /** Commands that must pass before the goal counts as met. */
+  readonly gates: readonly { readonly command: string; readonly attempts: number; readonly maxRetries: number; readonly lastExit: number | null }[]
+  readonly pausedWhy: string | null
+  /** The last check's verdict and its reason. null before the first check. */
+  readonly verdict: { readonly is: GoalVerdict; readonly why: string | null } | null
+  /** What the goal waits for before its next turn. `goal.unwait` stops the wait. */
+  readonly waiting: GoalWait | null
+}
+export type GoalPart = 'outcome' | 'verification' | 'constraints' | 'boundaries' | 'stopWhen'
+export type GoalVerdict = 'done' | 'blocked' | 'continue' | 'wait' | 'skipped'
+export type GoalWait =
+  | { readonly on: 'time'; readonly until: number; readonly why: string | null }
+  | { readonly on: 'session'; readonly session: string; readonly why: string | null }
+  | { readonly on: 'process'; readonly pid: number; readonly why: string | null }
+
+/** `/loop`: the same prompt again on a cadence, or when the agent says. */
+export interface Loop {
+  readonly prompt: string
+  readonly status: 'active' | 'paused' | 'done'
+  /** `interval`: every `everyS` seconds. `self-paced`: the agent sets each wait. */
+  readonly mode: 'interval' | 'self-paced'
+  readonly everyS: number
+  readonly ticks: { readonly fired: number; readonly max: number }
+  /** When the next prompt fires. null when none is due. */
+  readonly nextAt: number | null
+  /** A goal is running, so the loop waits for it. */
+  readonly heldByGoal: boolean
+  readonly pausedWhy: string | null
+  readonly stoppedWhy: string | null
+}
+
+/** `/heartbeat`: a prompt that fires every `everyS` seconds. */
+export interface Heartbeat {
+  readonly prompt: string
+  readonly status: 'active' | 'paused'
+  readonly everyS: number
+  readonly fired: number
+  readonly lastAt: number | null
+}
+
+/** The buttons Hermes serves for those cards that take nothing more (gateway/session_control_actions.py:15-22). */
+export const PLAIN_CONTROLS = [
+  'goal.pause', 'goal.resume', 'goal.clear', 'goal.unwait', 'subgoal.clear', 'loop.pause', 'loop.resume', 'loop.stop', 'heartbeat.pause', 'heartbeat.resume', 'heartbeat.clear'
+] as const
+export type ControlAction =
+  | { readonly act: typeof PLAIN_CONTROLS[number] }
+  | { readonly act: 'subgoal.add'; readonly text: string }
+  /** `index` counts from 1. */
+  | { readonly act: 'subgoal.remove'; readonly index: number }
+
+/** An emoji on a stored message. Each author has at most one per message. */
+export interface Reaction {
+  readonly emoji: string
+  /** `user`: whoever uses the chat, from any client. `agent`: the model. */
+  readonly by: 'user' | 'agent'
+}
+
+/**
+ * A side question (`btw`: about this chat, which it leaves as it was) or a background prompt
+ * (`background`: run apart by an agent of its own). Its answer comes whole, and it cannot be stopped.
+ */
+export interface SideTask {
+  readonly id: SideId
+  readonly kind: 'btw' | 'background'
+  /** null: asked in another client, and Hermes repeats only a side question's words. */
+  readonly asked: string | null
+  readonly state:
+    | { readonly s: 'running' }
+    /** Hermes's answer. A failure is words too, starting `error:` (gateway/session_tui_side.py:143-154). */
+    | { readonly s: 'done'; readonly text: string }
+    /** The chat was read again while it ran, so its answer may have gone by unseen. */
+    | { readonly s: 'lost' }
+}
+
+/**
+ * Hermes's switches for this chat, shared with every client that has it open. Each is null until
+ * Hermes answers the read, and stays null on a Hermes that refuses it.
+ */
+export interface Tuning {
+  /** Whether Hermes streams the model's reasoning for this chat. It applies from the next turn. */
+  readonly reasoning: boolean | null
+  /** What Hermes does with a message sent while a turn runs. While it is null, such a message queues. */
+  readonly busy: BusyMode | null
+  /** How hard the model thinks, from the next turn. `default`: the model's own level. */
+  readonly effort: Effort | 'default' | null
+  /** Whether the model answers in its fast tier, from the next turn. false also for a model that has none. */
+  readonly fast: boolean | null
+  /** Whether Hermes runs this chat's commands without an approval card. An older Hermes never says. */
   readonly yolo: boolean | null
 }
+
+/** The reasoning levels Hermes takes (persistence/authority/runtime.py:84-87). `none` turns reasoning off. */
+export const EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const
+export type Effort = typeof EFFORTS[number]
+
+/** `queue`: it waits its turn. `steer`: the running turn reads it after its next tool. `interrupt`: the model's request is cut short for it. */
+export type BusyMode = 'queue' | 'steer' | 'interrupt'
 
 /** The value a window reads. */
 export interface Session extends SessionContent {
@@ -142,9 +309,9 @@ interface TurnBase<S extends 'open' | 'settled'> {
    */
   readonly began: Began | null
   /**
-   * In arrival order. Append-only while open, except that a tool, a prompt, a helper or a declined
-   * notice is updated in place by id, the plan in place by revision, and streaming reasoning in place.
-   * A helper is updated in place in a settled turn too.
+   * In arrival order. Append-only while open, except that a tool, a prompt, a helper, a declined
+   * notice, a MoA round, a compaction line and a keyed notice are updated in place by id, the plan in
+   * place by revision, and streaming reasoning in place. A helper is updated in place in a settled turn too.
    */
   readonly items: readonly Item<S>[]
 }
@@ -165,6 +332,12 @@ export interface SettledTurn extends TurnBase<'settled'> {
    * end named no totals, and a turn that began while the totals before it were unknown.
    */
   readonly tokens: Tokens | null
+  /**
+   * The stored row of the turn's answer, which a reaction is put on. null for a turn with no stored
+   * answer: one that failed or was cut short, an interlude, and a turn that settled live without
+   * Hermes naming the row.
+   */
+  readonly reply: { readonly rowId: number; readonly reactions: readonly Reaction[] } | null
 }
 export type Turn = OpenTurn | SettledTurn
 
@@ -186,10 +359,12 @@ export type Outcome =
    * is unknown, so the thread says so in words and never draws the Done ring for it.
    */
   | { readonly kind: 'lost' }
+  /** Not a run of the agent: what Hermes said between two turns. `request` and `began` are null and `rows` is empty. */
+  | { readonly kind: 'interlude' }
 
 /** `Item<'settled'>` is assignable to `Item<'open'>`, so views take `Item` and handle both. */
 export type Item<S extends 'open' | 'settled' = 'open'> =
-  | TextItem<S> | ReasoningItem<S> | ToolItem<S> | HelperItem | PlanItem | PromptItem<S> | NoticeItem
+  | TextItem<S> | ReasoningItem<S> | ToolItem<S> | HelperItem | PlanItem | PromptItem<S> | SteerItem | MoaItem | NoticeItem | StatusItem
 
 export interface TextItem<S extends 'open' | 'settled' = 'open'> {
   readonly kind: 'text'
@@ -210,6 +385,16 @@ export interface ReasoningItem<S extends 'open' | 'settled' = 'open'> {
    */
   readonly startedAt: number | null
   readonly endedAt: number | null
+}
+
+/**
+ * Words the user put into the turn while it ran: a steer, a redirect, a queued message sent now, or
+ * the "do this instead" of a denied approval. A live one sits where Highwing learned of it. Read
+ * from stored rows it sits where the model read it.
+ */
+export interface SteerItem {
+  readonly kind: 'steer'
+  readonly text: string
 }
 
 export interface ToolItem<S extends 'open' | 'settled' = 'open'> {
@@ -303,12 +488,26 @@ export interface PromptItem<S extends 'open' | 'settled' = 'open'> {
   readonly generation: Generation
   readonly ask: Ask
   readonly state: S extends 'open' ? PromptState : Exclude<PromptState, { s: 'waiting' | 'sending' }>
+  /**
+   * When Hermes stops waiting, on this client's clock: the moment the question came off the live
+   * socket plus Hermes's `timeout_s`. null when Hermes set no limit, when the question was first
+   * heard through a snapshot or a replay, whose arrival says nothing about when it was asked, and
+   * once its turn has settled.
+   */
+  readonly deadline: S extends 'open' ? number | null : null
 }
-/** New kinds (sudo, secret) are added here and nowhere else in the domain. */
+/** A question the turn asks, fenced by its generation. What Hermes asks outside the turn is a `RequestAsk`. */
 export type Ask =
   | { readonly kind: 'approval'; readonly command: string; readonly reason: string | null; readonly choices: readonly string[] }
   | { readonly kind: 'clarify'; readonly question: string; readonly choices: readonly string[]; readonly multi: boolean }
-export type PromptReply = { readonly kind: 'choice'; readonly value: string } | { readonly kind: 'text'; readonly value: string }
+export type PromptReply =
+  | { readonly kind: 'choice'; readonly value: string }
+  | { readonly kind: 'text'; readonly value: string }
+  /** For an approval: deny it, and tell Hermes what to do instead. */
+  | { readonly kind: 'deny'; readonly tell: string }
+
+/** Where the words of a denial went. `turn`: into the running turn. `next`: as the next message, because the turn could not take them. `unsure`: Hermes did not say, so they were not sent again. */
+export type Told = 'turn' | 'next' | 'unsure'
 export type PromptState =
   | { readonly s: 'waiting'; readonly error: string | null } // error: the last attempt to answer failed
   | { readonly s: 'sending'; readonly reply: PromptReply }
@@ -319,10 +518,165 @@ export type NoticeItem =
   /** Hermes's own words. */
   | { readonly kind: 'notice'; readonly what: 'said'; readonly tone: 'error' | 'info'; readonly text: string }
   /**
-   * Hermes asked this client for something this build cannot show (a sudo password, a secret, a
-   * setup card). The request was refused at once so the agent does not wait. Keyed by `requestId`.
+   * Hermes asked the window for something only Hermes Desktop has (its preview, its terminal pane,
+   * a setup card). A window was showing the chat, so the request was refused at once and the agent
+   * does not wait. Keyed by `requestId`.
    */
   | { readonly kind: 'notice'; readonly what: 'declined'; readonly requestId: string; readonly method: string }
+  | { readonly kind: 'notice'; readonly what: 'closed'; readonly requestId: RequestId; readonly asked: Asked; readonly end: RequestEnd }
+
+export interface HermesRequest {
+  readonly id: RequestId
+  readonly ask: RequestAsk
+  readonly state: RequestState
+  /**
+   * When Hermes stops waiting, on this client's clock: the moment the request came off the live
+   * socket plus Hermes's own wait for it. null when Hermes's config sets the wait (a batch), and for
+   * a request first heard through a snapshot or during an attach.
+   */
+  readonly deadline: number | null
+}
+
+export type RequestAsk =
+  | { readonly kind: 'secret'; readonly for: SecretFor }
+  /**
+   * One to five questions asked together, or a plugin command's one choice. `answers` holds what
+   * Hermes has locked so far, by question id. An answer can be changed until every question is
+   * locked. The last lock submits the batch.
+   */
+  | { readonly kind: 'questions'; readonly questions: readonly Question[]; readonly answers: { readonly [questionId: string]: Answer } }
+  /**
+   * Connectors, MCP servers, plugins or skills to sign in to, install or enable while a tool waits.
+   * Hermes sends the whole card with every change. `rev` orders those: an older one changes nothing.
+   */
+  | { readonly kind: 'connect'; readonly rev: number; readonly targets: readonly ConnectTarget[]; readonly suggested: readonly string[] }
+
+export type SecretFor =
+  | { readonly is: 'sudo'; readonly command: string }
+  /** Saved to the bot's `.env` on the machine Hermes runs on. The model never reads it. */
+  | { readonly is: 'env'; readonly name: string; readonly prompt: string }
+  | { readonly is: 'vault'; readonly backend: string; readonly name: string }
+  | { readonly is: 'login'; readonly site: string; readonly origin: string }
+  | { readonly is: 'code'; readonly site: string | null; readonly hint: string | null }
+
+export interface Question {
+  readonly id: string
+  readonly text: string
+  /** Empty: a typed answer only. */
+  readonly choices: readonly string[]
+  readonly multi: boolean
+}
+/** The picked labels, or one typed line. null: skipped. */
+export type Answer = readonly string[] | null
+
+export interface ConnectTarget {
+  readonly name: string
+  readonly kind: 'connector' | 'mcp' | 'plugin' | 'skill'
+  readonly action: 'authorize' | 'connect' | 'enable' | 'install' | 'reconnect'
+  readonly state: 'pending' | 'started' | 'connected' | 'skipped' | 'failed' | 'expired' | 'not-connected'
+  /** Nothing more is needed from the user for it. */
+  readonly resolved: boolean
+  readonly detail: string | null
+  readonly instructions: string | null
+  /** The page to sign in on. Kept only when it is an http or https link. */
+  readonly url: string | null
+  readonly fields: readonly { readonly name: string; readonly prompt: string | null; readonly required: boolean; readonly secret: boolean; readonly initial: string }[]
+}
+
+export type RequestState =
+  | { readonly s: 'waiting'; readonly error: string | null } // error: the last answer did not reach Hermes
+  /** An answer is on its way. A result frame gets no reply, so this lasts until Hermes closes the request. */
+  | { readonly s: 'sending'; readonly reply: RecordedReply }
+
+/** What a window answers a request with. The `answer` command refuses a kind the request does not take, and sends nothing. */
+export type RequestReply =
+  /** For a `secret` ask. `identifier` only for a login. */
+  | { readonly kind: 'secret'; readonly value: string; readonly identifier?: string }
+  | { readonly kind: 'lock'; readonly question: string; readonly answer: Answer }
+  /** A secret: no value, which Hermes reads as "no". Questions: stop here, keeping the locked answers. A connector card: continue with what is connected. */
+  | { readonly kind: 'skip' }
+  | { readonly kind: 'connect'; readonly target: string; readonly as: 'approved' | 'skipped'; readonly values?: { readonly [field: string]: string } }
+
+/**
+ * What a session may remember of a reply to a request. It has no member that carries a typed value,
+ * so the reducer cannot store a secret and no push can carry one.
+ */
+export type RecordedReply = Exclude<RequestReply, { kind: 'secret' | 'connect' }> | { readonly kind: 'withheld' }
+
+export type Asked = SecretFor['is'] | Exclude<RequestAsk['kind'], 'secret'>
+export type RequestEnd =
+  | 'answered' //    this client answered it
+  | 'skipped' //     this client skipped it
+  | 'elsewhere' //   another client settled it, or it was gone when this one attached again
+  | 'done' //        a connector card settled: every target resolved, or someone continued
+  | 'timeout' //     nobody answered within Hermes's wait
+  | 'interrupted' // the turn was stopped
+  | 'withdrawn' //   Hermes took it back for another reason
+
+/**
+ * One round of mixture-of-agents: several reference models answer, then one model combines their
+ * answers. Updated in place until it aggregates. The next round is a new item.
+ */
+export interface MoaItem {
+  readonly kind: 'moa'
+  /** Reference models that have answered, of how many. null until Hermes counts them. */
+  readonly progress: { readonly done: number; readonly total: number } | null
+  readonly references: readonly { readonly label: string; readonly text: string }[]
+  readonly phase: { readonly is: 'advising' } | { readonly is: 'aggregating'; readonly by: string | null }
+}
+
+/**
+ * A line Hermes showed beside the conversation. Never stored, so a rebuild drops it.
+ * - `line`: a status line. One compaction is one line, updated from `compacting` to `compacted`.
+ * - `notice`: a notice Hermes keyed, such as a credit warning or a sign-in link. One with the same key
+ *   replaces it, wherever it sits. `notification.clear` marks it `cleared` rather than removing it, so
+ *   an open turn stays append-only.
+ */
+export type StatusItem =
+  | { readonly kind: 'status'; readonly what: 'line'; readonly about: StatusAbout; readonly text: string }
+  | {
+      readonly kind: 'status'
+      readonly what: 'notice'
+      readonly key: string
+      readonly level: 'info' | 'warn' | 'error' | 'success'
+      readonly text: string
+      /** The full text behind a short `text`. */
+      readonly detail: string | null
+      /** How long Hermes shows it, counted from `seenAt`. null: until it is cleared. */
+      readonly ttlMs: number | null
+      /**
+       * This client's clock when the notice came off the live socket. null when it was heard through
+       * replay. A notice with a `ttlMs` is kept only when this is known.
+       */
+      readonly seenAt: number | null
+      readonly state: 'shown' | 'cleared'
+    }
+/** `print`: a line the agent printed. `goal`: a goal check's verdict. `warning`: a degraded side path the turn survived. */
+export type StatusAbout = 'compacting' | 'compacted' | 'goal' | 'warning' | 'print' | 'other'
+
+export interface QueuedMessage {
+  readonly admissionId: AdmissionId
+  readonly inputId: InputId
+  readonly text: string
+  /** `here`: sent from this Highwing since it started. `elsewhere`: another client's, or sent before a restart of Highwing. */
+  readonly from: 'here' | 'elsewhere'
+  /** What this client sent with the message, in order. Empty for another client's row: Hermes's list does not name a row's attachments. */
+  readonly attachments: readonly Attachment[]
+  readonly state: QueuedState
+}
+
+export type QueuedState =
+  /** Waits its turn. It can always be cancelled. `can` is what else Hermes allows for it. */
+  | { readonly s: 'queued'; readonly can: readonly ('sendNow' | 'edit')[] }
+  /** Sent now: on its way into the running turn. It offers nothing, and may come back to the queue. */
+  | { readonly s: 'steering' }
+  /**
+   * Hermes restarted while this ran and cannot say how it ended. Hermes runs nothing behind it until
+   * someone releases it, with the `generation` it ran as. A release never runs it again.
+   */
+  | { readonly s: 'lost'; readonly generation: Generation }
+
+export type QueuedAction = 'cancel' | 'sendNow' | 'edit' | 'release'
 
 export interface OutboxEntry {
   readonly inputId: InputId
@@ -330,7 +684,9 @@ export interface OutboxEntry {
   /** What the model reads when it differs from the `text` the thread and the stored history show. */
   readonly apiText?: string
   readonly attachments: readonly Attachment[]
-  readonly state: { readonly s: 'sending' } | { readonly s: 'queued' } | { readonly s: 'failed'; readonly message: string }
+  /** An edit: the queued row this message takes the place of. Every try sends it as that replacement, because sent as a message it would queue beside the row. */
+  readonly replaces?: AdmissionId
+  readonly state: { readonly s: 'sending' } | { readonly s: 'failed'; readonly message: string }
 }
 
 /** Why a dial failed in a way that a later try can fix without the user. */

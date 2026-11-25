@@ -1,31 +1,150 @@
 import { randomUUID } from 'node:crypto'
-import type { PromptId, Session, SessionId } from '../domain/session'
+import { EXPORT_FORMATS } from '../domain/command'
+import {
+  EFFORTS, PLAIN_CONTROLS, type AdmissionId, type Answer, type BusyMode, type CheckpointId, type ControlAction, type HermesRequest, type ProcessId, type PromptId, type RequestId, type RequestReply, type Session,
+  type SessionId
+} from '../domain/session'
 import { openHermes, type Command, type Hermes, type Upload } from '../hub'
 import { systemClock } from '../wire/link'
 import { manualClock } from './clock'
-import type { Fixture, FixtureStep } from './fixture'
+import { MASKED, type Fixture, type FixtureStep } from './fixture'
+import { recordingDialer } from './record'
 import { scriptedDialer, type ScriptedDialer, type ScriptOptions } from './script'
 
 type Recorded = Readonly<Record<string, unknown>>
 type AwaitStep = Extract<FixtureStep, { await: string }>
+type AnswerStep = Extract<FixtureStep, { answer: string }>
 
-const recorded = (step: AwaitStep): Recorded => (step.params !== null && typeof step.params === 'object' ? step.params as Recorded : {})
+const record = (value: unknown): Recorded => (value !== null && typeof value === 'object' ? value as Recorded : {})
+const recorded = (step: AwaitStep): Recorded => record(step.params)
 
-const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fixture: Fixture, following: FixtureStep | undefined) => Command>> = {
-  'prompt.submit': (sessionId, params) => ({ do: 'send', sessionId, text: String(params.text) }),
-  'session.mutate': (sessionId, params, fixture, following) => {
-    const rowId = (params.payload as { target_message_id?: unknown } | undefined)?.target_message_id
-    if (params.operation !== 'rewind' || typeof rowId !== 'number') throw new Error(`the stand-in user has no command for session.mutate ${String(params.operation)}`)
-    const sends = following !== undefined && 'await' in following && following.await === 'prompt.submit'
-    const stored = fixture.header.stored.find(row => (row as { row_id?: unknown }).row_id === rowId) as { text?: unknown } | undefined
-    return { do: 'rewind', sessionId, rowId, text: String(sends ? recorded(following).text : stored?.text) }
-  },
-  'approval.respond': (sessionId, params) => ({ do: 'answer', sessionId, promptId: params.prompt_id as PromptId, reply: { kind: 'choice', value: String(params.choice) } }),
-  'clarify.respond': (sessionId, params) => ({ do: 'answer', sessionId, promptId: params.prompt_id as PromptId, reply: { kind: 'text', value: String(params.answer) } }),
-  'session.interrupt': sessionId => ({ do: 'stop', sessionId })
+function lockedAnswer(raw: unknown): Answer {
+  if (typeof raw !== 'string') return null
+  try {
+    const picks: unknown = JSON.parse(raw)
+    return Array.isArray(picks) && picks.every(pick => typeof pick === 'string') ? picks : [raw]
+  } catch {
+    return [raw]
+  }
 }
 
-const mintedIn = (step: AwaitStep): unknown => recorded(step).input_id ?? recorded(step).request_id
+function cardReply(result: Recorded): RequestReply {
+  const [target] = Array.isArray(result.targets) ? result.targets.map(record) : []
+  if (target === undefined) return { kind: 'skip' }
+  const values = target.env === undefined ? {} : { values: record(target.env) as { readonly [field: string]: string } }
+  return { kind: 'connect', target: String(target.name), as: target.status === 'approved' ? 'approved' : 'skipped', ...values }
+}
+
+const queued = (action: 'cancel' | 'sendNow' | 'release') => (sessionId: SessionId, params: Recorded): Command =>
+  ({ do: 'queued', sessionId, admissionId: params.admission_id as AdmissionId, action })
+
+function controlOf(params: Recorded): ControlAction {
+  const args = record(params.args)
+  if (params.action === 'subgoal.add') return { act: 'subgoal.add', text: String(args.text) }
+  if (params.action === 'subgoal.remove') return { act: 'subgoal.remove', index: Number(args.index) }
+  const act = PLAIN_CONTROLS.find(held => held === params.action)
+  if (act === undefined) throw new Error(`the stand-in user has no button for ${String(params.action)}`)
+  return { act }
+}
+
+function reactedTurn(session: Session, params: Recorded): Command {
+  const turn = session.history.find(held => held.reply?.rowId === params.row_id)
+  if (turn === undefined) throw new Error(`the stand-in user sees no answer stored as row ${String(params.row_id)}`)
+  return { do: 'react', sessionId: session.id, turn: turn.id, emoji: typeof params.emoji === 'string' ? params.emoji : null }
+}
+
+const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fixture: Fixture, next: AwaitStep | undefined, session: Session) => Command>> = {
+  'prompt.submit': (sessionId, params) => ({ do: 'send', sessionId, text: String(params.text) }),
+  'session.mutate': (sessionId, params, fixture, next) => {
+    const payload = record(params.payload)
+    switch (params.operation) {
+      case 'reasoning':
+        return { do: 'tune', sessionId, set: 'effort', to: EFFORTS.find(level => level === payload.effort) ?? 'default' }
+      case 'workspace':
+        return { do: 'move', sessionId, cwd: String(payload.cwd) }
+      case 'compress':
+        return { do: 'send', sessionId, text: typeof payload.focus === 'string' ? `/compress ${payload.focus}` : '/compress' }
+    }
+    const rowId = payload.target_message_id
+    if (params.operation !== 'rewind' || typeof rowId !== 'number') throw new Error(`the stand-in user has no command for session.mutate ${String(params.operation)}`)
+    const stored = fixture.header.stored.find(row => (row as { row_id?: unknown }).row_id === rowId) as { text?: unknown } | undefined
+    return { do: 'rewind', sessionId, rowId, text: String(next?.await === 'prompt.submit' ? recorded(next).text : stored?.text) }
+  },
+  'prompt.btw': (sessionId, params) => ({ do: 'send', sessionId, text: `/btw ${String(params.text)}` }),
+  'prompt.background': (sessionId, params) => ({ do: 'send', sessionId, text: `/bg ${String(params.text)}` }),
+  'config.set': (sessionId, params) => {
+    if (params.key === 'fast') return { do: 'tune', sessionId, set: 'fast', on: params.value !== 'normal' }
+    if (params.key === 'yolo') return { do: 'tune', sessionId, set: 'yolo', on: params.value === 'on' }
+    throw new Error(`the stand-in user has no command for config.set ${String(params.key)}`)
+  },
+  'session.export': (sessionId, params) => ({ do: 'export', sessionId, format: EXPORT_FORMATS.find(format => format === params.format) ?? 'json' }),
+  'session.steer': (sessionId, params, _fixture, next) => (denies(next)
+    ? { do: 'answer', sessionId, promptId: recorded(next).prompt_id as PromptId, reply: { kind: 'deny', tell: String(params.text) } }
+    : { do: 'send', sessionId, text: String(params.text) }),
+  'session.redirect': (sessionId, params) => ({ do: 'send', sessionId, text: String(params.text) }),
+  'prompt.cancel': queued('cancel'),
+  'prompt.steer_queued': queued('sendNow'),
+  'prompt.resolve_unknown': queued('release'),
+  'prompt.replace_queued': (sessionId, params) => ({ do: 'queued', sessionId, admissionId: params.admission_id as AdmissionId, action: 'edit', text: String(params.text) }),
+  'approval.respond': (sessionId, params) => ({ do: 'answer', sessionId, promptId: params.prompt_id as PromptId, reply: { kind: 'choice', value: String(params.choice) } }),
+  'clarify.respond': (sessionId, params) => ({ do: 'answer', sessionId, promptId: params.prompt_id as PromptId, reply: { kind: 'text', value: String(params.answer) } }),
+  'session.interrupt': sessionId => ({ do: 'stop', sessionId }),
+  'clarify.lock': (sessionId, params) => ({
+    do: 'answer', sessionId, requestId: params.request_id as RequestId, reply: { kind: 'lock', question: String(params.question_id), answer: lockedAnswer(params.answer) }
+  }),
+  'connection.respond': (sessionId, params) => ({ do: 'answer', sessionId, requestId: params.op_id as RequestId, reply: cardReply(record(params.result)) }),
+  'process.kill': (sessionId, params) => ({ do: 'killProcess', sessionId, processId: params.process_id as ProcessId }),
+  'session.control': (sessionId, params) => ({ do: 'control', sessionId, action: controlOf(params) }),
+  'rollback.list': sessionId => ({ do: 'checkpoints', sessionId }),
+  'rollback.diff': (sessionId, params) => ({ do: 'checkpointDiff', sessionId, checkpoint: params.hash as CheckpointId }),
+  'rollback.restore': (sessionId, params) => ({
+    do: 'restore', sessionId, checkpoint: params.hash as CheckpointId,
+    scope: typeof params.file_path === 'string' ? { kind: 'file', path: params.file_path } : { kind: 'folder', edits: params.all === true ? 'overwrite' : 'keep' }
+  }),
+  'message.react': (_sessionId, params, _fixture, _next, session) => reactedTurn(session, params)
+}
+
+type CallOf<M extends string> = AwaitStep & { readonly await: M }
+const denies = (step: AwaitStep | undefined): step is CallOf<'approval.respond'> => step?.await === 'approval.respond' && recorded(step).choice === 'deny'
+const corrects = (step: AwaitStep | undefined): step is CallOf<'session.steer' | 'session.redirect'> => step?.await === 'session.steer' || step?.await === 'session.redirect'
+
+function follows(step: AwaitStep, before: AwaitStep | undefined): boolean {
+  if (!corrects(before)) return false
+  if (denies(step)) return before.await === 'session.steer'
+  return step.await === 'prompt.submit' && recorded(step).text === recorded(before).text && record(before.reply).delivered === false
+}
+
+function busyFor(step: AwaitStep, next: AwaitStep | undefined, held: BusyMode | null): BusyMode | null {
+  if (step.await === 'session.redirect') return 'interrupt'
+  if (step.await === 'session.steer') return denies(next) ? null : 'steer'
+  return step.await === 'prompt.submit' && held !== null ? 'queue' : null
+}
+
+const TYPED = 'typed by the stand-in user'
+
+function requestReply({ ask }: HermesRequest, result: Recorded, typed: string): RequestReply {
+  if (ask.kind !== 'secret' || result.value !== MASKED) return { kind: 'skip' }
+  return { kind: 'secret', value: typed, ...(ask.for.is === 'login' ? { identifier: typed } : {}) }
+}
+
+function commandFor(step: AwaitStep | AnswerStep, session: Session, index: number, fixture: Fixture, typed: string): Command | null {
+  const { id: sessionId } = session
+  if ('await' in step) {
+    const isAwait = (other: FixtureStep): other is AwaitStep => 'await' in other
+    const next = fixture.steps.slice(index + 1).find(isAwait)
+    if (follows(step, fixture.steps.slice(0, index).findLast(isAwait))) return null
+    const busy = busyFor(step, next, session.tuning.busy)
+    if (busy !== null && busy !== session.tuning.busy) return { do: 'tune', sessionId, set: 'busy', to: busy }
+    const command = USER[step.await]?.(sessionId, recorded(step), fixture, next, session)
+    if (command === undefined) throw new Error(`step ${index}: the stand-in user has no command for ${step.await}`)
+    return command
+  }
+  const request = session.requests.find(held => held.id === step.answer)
+  if ('error' in step || request === undefined || request.state.s !== 'waiting') return null
+  return { do: 'answer', sessionId, requestId: request.id, reply: requestReply(request, record(step.result), typed) }
+}
+
+const mintedIn = (step: AwaitStep): unknown => recorded(step).input_id ?? recorded(step).submission_id ?? recorded(step).request_id
 
 const STUCK_MS = 10 * 60_000
 const LOOPBACK = { turnMs: 2, stuckMs: 20_000 } as const
@@ -39,6 +158,10 @@ export interface PlayOptions extends Omit<ScriptOptions, 'timing' | 'clock'> {
   readonly ended?: (session: Session) => boolean
   /** Files the stand-in user attaches to its first message. The hub reads them from here. */
   readonly attach?: readonly Upload[]
+  /** What the stand-in user types into a masked prompt. Default: a fixed sentence. */
+  readonly typed?: string
+  /** Records the session's frames to this path as a fixture, as the app does with `HIGHWING_RECORD`. */
+  readonly record?: string
   /** Called with each command the stand-in user ran and what the hub answered. */
   readonly answered?: (command: Command, outcome: Awaited<ReturnType<Hermes['run']>>) => void
 }
@@ -52,9 +175,10 @@ export interface Moment {
 }
 
 /**
- * Plays a fixture through `openHermes` with a stand-in user: when the story awaits `prompt.submit`,
- * `approval.respond`, `clarify.respond` or `session.interrupt`, it issues the matching `Command` with the
- * recorded text or choice. A rewind is one command for the `session.mutate` step and the `prompt.submit` after it. Yields the session after every step that changed it, so a test can assert on
+ * Plays a fixture through `openHermes` with a stand-in user: when the story awaits a call or an
+ * answer to a server request, it issues the matching `Command` with the recorded text or choice.
+ * In place of a masked value it types `options.typed`. A rewind is one command for the `session.mutate`
+ * step and the `prompt.submit` after it. Yields the session after every step that changed it, so a test can assert on
  * any moment of a turn, not only its end. Ends when the story is over and the session is live.
  * `script` is the gateway's side: what the client sent it, and how often it dialed.
  *
@@ -71,7 +195,7 @@ export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncG
   const attach = options.attach ?? []
   let attached = attach.length === 0
   const hermes = openHermes({
-    dial: script, clock, client: { name: 'highwing-play', version: '0' }, mintId: () => ids.shift() ?? randomUUID(),
+    dial: options.record === undefined ? script : recordingDialer(script, options.record, clock), clock, client: { name: 'highwing-play', version: '0' }, mintId: () => ids.shift() ?? randomUUID(),
     uploads: { read: async id => attach.find(upload => upload.id === id) ?? null }
   })
 
@@ -84,17 +208,17 @@ export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncG
   const user = (session: Session) => {
     const index = script.step
     const step = fixture.steps[index]
-    if (step === undefined || !('await' in step) || session.sync.state !== 'live' || asked.has(index)) return
-    const typed = USER[step.await]?.(sessionId, recorded(step), fixture, fixture.steps.slice(index + 1).find(next => 'await' in next))
-    if (typed === undefined) throw new Error(`step ${index}: the stand-in user has no command for ${step.await}`)
-    const command: Command = typed.do === 'send' && !attached ? { ...typed, attachments: attach.map(upload => upload.id) } : typed
+    if (step === undefined || !('await' in step || 'answer' in step) || session.sync.state !== 'live' || asked.has(index)) return
+    const planned = commandFor(step, session, index, fixture, options.typed ?? TYPED)
+    if (planned === null) return
+    const command: Command = planned.do === 'send' && !attached ? { ...planned, attachments: attach.map(upload => upload.id) } : planned
     if (command.do === 'send') attached = true
     asked.add(index)
     const sendAfter = command.do === 'rewind' ? fixture.steps.findIndex((next, at) => at > index && 'await' in next) : -1
     if (sendAfter >= 0) asked.add(sendAfter)
     void hermes.run(command).then(outcome => {
       options.answered?.(command, outcome)
-      if (!outcome.ok) asked.delete(index)
+      if (!outcome.ok || (command.do === 'tune' && command.set === 'busy')) asked.delete(index)
     })
   }
 
@@ -113,7 +237,9 @@ export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncG
       if (script.finished && latest !== undefined && ended(latest)) return
       if (clock.now() - progressAt > (virtual === null ? LOOPBACK.stuckMs : STUCK_MS)) {
         const step = fixture.steps[script.step]
-        const waiting = step !== undefined && 'await' in step ? `waiting for ${step.await}` : 'with no viewer attached'
+        const waiting = step === undefined || 'push' in step || 'stored' in step || 'reads' in step || 'drop' in step
+          ? 'with no viewer attached'
+          : `waiting for ${'await' in step ? step.await : `an answer to ${step.answer}`}`
         throw new Error(`the story is stuck at step ${script.step} of ${fixture.steps.length}, ${waiting}. The session is ${latest?.sync.state ?? 'unseen'}.`)
       }
     }

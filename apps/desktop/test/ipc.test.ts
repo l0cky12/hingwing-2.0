@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
 import type { Hermes } from '@highwing/hermes'
-import type { AttachmentId, Bots, Link, OpenChat, RelayDesk, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
+import type { AttachmentId, Bots, CommandOutcome, Exported, Link, OpenChat, RelayDesk, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Preview, type PreviewCommand, type Push, type Topic } from '../src/ipc-contract'
@@ -106,6 +106,12 @@ describe('validators', () => {
       .toEqual({ do: 'send', sessionId: 's1', text: 'what is this', attachments: ['a-1', 'a-2'] })
     expect(parseCommand({ do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 'once', x: 1 } }))
       .toEqual({ do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 'once' } })
+    const request = (reply: object) => parseCommand({ do: 'answer', sessionId: 's1', requestId: 'r1', reply: { ...reply, x: 1 } })
+    expect(request({ kind: 'secret', value: 'hunter2', identifier: 'ada' })).toEqual({ do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'secret', value: 'hunter2', identifier: 'ada' } })
+    expect(request({ kind: 'lock', question: 'q0', answer: ['a', 'b'] })).toEqual({ do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'lock', question: 'q0', answer: ['a', 'b'] } })
+    expect(request({ kind: 'lock', question: 'q0', answer: null })).toMatchObject({ reply: { kind: 'lock', answer: null } })
+    expect(request({ kind: 'skip' })).toEqual({ do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'skip' } })
+    expect(request({ kind: 'connect', target: 'github', as: 'approved', values: { TOKEN: 't' } })).toEqual({ do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'connect', target: 'github', as: 'approved', values: { TOKEN: 't' } } })
     expect(parseCommand({ do: 'reconnect', start: true })).toEqual({ do: 'reconnect', start: true })
     expect(parseCommand({ do: 'open', ref: { kind: 'bot', bot: 'research', sessionId: 's9' }, sessionId: 's9' })).toEqual({ do: 'open', ref: { kind: 'bot', bot: 'research' } })
     expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: 'research', draftId: 'd1', sessionId: 's9' } })).toEqual({ do: 'open', ref: { kind: 'new', bot: 'research', draftId: 'd1' } })
@@ -117,7 +123,14 @@ describe('validators', () => {
       .toEqual({ do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: null }, text: 'hello', attachments: [] })
     const model = { id: 'careful-large', provider: 'acme', providerName: 'Acme' }
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model: { ...model, price: 9 } })).toEqual({ do: 'pickModel', sessionId: 's1', model })
-    expect(parseCommand({ do: 'setYolo', sessionId: 's1', on: false, extra: 1 })).toEqual({ do: 'setYolo', sessionId: 's1', on: false })
+    expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'yolo', on: false, extra: 1 })).toEqual({ do: 'tune', sessionId: 's1', set: 'yolo', on: false })
+    expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'fast', on: true })).toEqual({ do: 'tune', sessionId: 's1', set: 'fast', on: true })
+    expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'effort', to: 'xhigh', on: true })).toEqual({ do: 'tune', sessionId: 's1', set: 'effort', to: 'xhigh' })
+    expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'effort', to: 'default' })).toEqual({ do: 'tune', sessionId: 's1', set: 'effort', to: 'default' })
+    expect(parseCommand({ do: 'move', sessionId: 's1', cwd: '/work/docs' })).toEqual({ do: 'move', sessionId: 's1', cwd: '/work/docs' })
+    expect(parseCommand({ do: 'compress', sessionId: 's1', focus: null })).toEqual({ do: 'compress', sessionId: 's1', focus: null })
+    expect(parseCommand({ do: 'export', sessionId: 's1', format: 'json', redact: true })).toEqual({ do: 'export', sessionId: 's1', format: 'json' })
+    expect(parseCommand({ do: 'side', sessionId: 's1', kind: 'background', text: 'tidy the notes', extra: 1 })).toEqual({ do: 'side', sessionId: 's1', kind: 'background', text: 'tidy the notes' })
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })).toEqual({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })
   })
 
@@ -143,6 +156,20 @@ describe('validators', () => {
     expect(parseCommand({ do: 'botPicture', bot: 'rae' })).toEqual({ do: 'botPicture', bot: 'rae' })
   })
 
+  it('keep the panel commands: a process, a control button with what it takes, a checkpoint and its scope, and an emoji or none on a turn', () => {
+    expect(parseCommand({ do: 'killProcess', sessionId: 's1', processId: 'proc_1', extra: 1 })).toEqual({ do: 'killProcess', sessionId: 's1', processId: 'proc_1' })
+    expect(parseCommand({ do: 'control', sessionId: 's1', action: { act: 'goal.pause', text: 'ignored' } })).toEqual({ do: 'control', sessionId: 's1', action: { act: 'goal.pause' } })
+    expect(parseCommand({ do: 'control', sessionId: 's1', action: { act: 'subgoal.add', text: 'tests pass' } })).toEqual({ do: 'control', sessionId: 's1', action: { act: 'subgoal.add', text: 'tests pass' } })
+    expect(parseCommand({ do: 'control', sessionId: 's1', action: { act: 'subgoal.remove', index: 2 } })).toEqual({ do: 'control', sessionId: 's1', action: { act: 'subgoal.remove', index: 2 } })
+    expect(parseCommand({ do: 'checkpoints', sessionId: 's1' })).toEqual({ do: 'checkpoints', sessionId: 's1' })
+    expect(parseCommand({ do: 'checkpointDiff', sessionId: 's1', checkpoint: 'abc123' })).toEqual({ do: 'checkpointDiff', sessionId: 's1', checkpoint: 'abc123' })
+    const folder = { do: 'restore', sessionId: 's1', checkpoint: 'abc123', scope: { kind: 'folder', edits: 'keep' } }
+    expect(parseCommand({ ...folder, scope: { ...folder.scope, path: 'ignored' } })).toEqual(folder)
+    expect(parseCommand({ ...folder, scope: { kind: 'file', path: 'notes.md' } })).toEqual({ ...folder, scope: { kind: 'file', path: 'notes.md' } })
+    expect(parseCommand({ do: 'react', sessionId: 's1', turn: 't1', emoji: '👍' })).toEqual({ do: 'react', sessionId: 's1', turn: 't1', emoji: '👍' })
+    expect(parseCommand({ do: 'react', sessionId: 's1', turn: 't1', emoji: null })).toEqual({ do: 'react', sessionId: 's1', turn: 't1', emoji: null })
+  })
+
   it('keep a rewind to a stored row and the text to send there', () => {
     expect(parseCommand({ do: 'rewind', sessionId: 's1', rowId: 7, text: 'again', extra: 1 })).toEqual({ do: 'rewind', sessionId: 's1', rowId: 7, text: 'again' })
   })
@@ -155,6 +182,15 @@ describe('validators', () => {
     expect(parseCommand({ do: 'versions', sessionId: 's1', extra: 1 })).toEqual({ do: 'versions', sessionId: 's1' })
     expect(parseCommand({ do: 'versions', sessionId: ' ' })).toBeNull()
     expect(parseCommand({ do: 'versions' })).toBeNull()
+  })
+
+  it('read the queue actions, the busy mode and a denial with words, and drop keys the command does not have', () => {
+    const row = { do: 'queued', sessionId: 's1', admissionId: 'a1' }
+    expect(parseCommand({ ...row, action: 'sendNow', text: 'ignored' })).toEqual({ ...row, action: 'sendNow' })
+    expect(parseCommand({ ...row, action: 'edit', text: 'new words' })).toEqual({ ...row, action: 'edit', text: 'new words' })
+    expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'busy', to: 'steer' })).toEqual({ do: 'tune', sessionId: 's1', set: 'busy', to: 'steer' })
+    const deny = { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'deny', tell: 'use trash-put instead' } }
+    expect(parseCommand(deny)).toEqual(deny)
   })
 
   it('read a target with the parser the settings file uses', () => {
@@ -216,13 +252,39 @@ describe('validators', () => {
     ['the picture of a bot with no name', { do: 'botPicture', bot: ' ' }],
     ['a blank first message', { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: '' }],
     ['a reply of the wrong kind', { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 1 } }],
+    ['a prompt answered with a request\'s reply', { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'skip' } }],
+    ['a request answered with a prompt\'s reply', { do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'choice', value: 'once' } }],
+    ['a secret with no value', { do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'secret' } }],
+    ['a lock whose answer is one string', { do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'lock', question: 'q0', answer: 'prod' } }],
+    ['a connector answer with a value that is not text', { do: 'answer', sessionId: 's1', requestId: 'r1', reply: { kind: 'connect', target: 'github', as: 'approved', values: { TOKEN: 1 } } }],
+    ['a denial that tells Hermes nothing', { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'deny', tell: ' ' } }],
+    ['an action a queue row never offers', { do: 'queued', sessionId: 's1', admissionId: 'a1', action: 'reorder' }],
+    ['a queue action that names no row', { do: 'queued', sessionId: 's1', action: 'cancel' }],
+    ['an edit with no text', { do: 'queued', sessionId: 's1', admissionId: 'a1', action: 'edit', text: '' }],
+    ['a busy mode Hermes does not have', { do: 'tune', sessionId: 's1', set: 'busy', to: 'drop' }],
     ['a non-boolean start', { do: 'reconnect', start: 'yes' }],
-    ['a YOLO switch with a word for on', { do: 'setYolo', sessionId: 's1', on: 'on' }],
+    ['a move to no folder', { do: 'move', sessionId: 's1', cwd: ' ' }],
+    ['a compression with a blank focus', { do: 'compress', sessionId: 's1', focus: '' }],
+    ['an export in a format Hermes does not render', { do: 'export', sessionId: 's1', format: 'pdf' }],
+    ['a side prompt of no kind Hermes has', { do: 'side', sessionId: 's1', kind: 'aside', text: 'why?' }],
+    ['a side question with no words', { do: 'side', sessionId: 's1', kind: 'btw', text: ' ' }],
+    ['an effort Hermes does not take', { do: 'tune', sessionId: 's1', set: 'effort', to: 'turbo' }],
+    ['a fast switch with a word for on', { do: 'tune', sessionId: 's1', set: 'fast', on: 'on' }],
+    ['a YOLO switch with a word for on', { do: 'tune', sessionId: 's1', set: 'yolo', on: 'on' }],
     ['a path completion for a word that is not a mention', { do: 'completePath', sessionId: 's1', word: 'not' }],
     ['a path completion with no word', { do: 'completePath', sessionId: 's1' }],
-    ['a YOLO switch with no chat', { do: 'setYolo', on: true }],
+    ['a YOLO switch with no chat', { do: 'tune', set: 'yolo', on: true }],
     ['a pick with no provider', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: '', providerName: '' } }],
-    ['a pick with a blank confirm token', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: 'p', providerName: 'P' }, confirm: ' ' }]
+    ['a pick with a blank confirm token', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: 'p', providerName: 'P' }, confirm: ' ' }],
+    ['a kill that names no process', { do: 'killProcess', sessionId: 's1', processId: ' ' }],
+    ['a button Hermes does not serve', { do: 'control', sessionId: 's1', action: { act: 'goal.delete' } }],
+    ['a criterion with no words', { do: 'control', sessionId: 's1', action: { act: 'subgoal.add', text: ' ' } }],
+    ['a criterion removed at place zero', { do: 'control', sessionId: 's1', action: { act: 'subgoal.remove', index: 0 } }],
+    ['a diff of no checkpoint', { do: 'checkpointDiff', sessionId: 's1', checkpoint: '' }],
+    ['a restore of a scope Hermes does not have', { do: 'restore', sessionId: 's1', checkpoint: 'abc123', scope: { kind: 'folder', edits: 'merge' } }],
+    ['a restore of a file with no path', { do: 'restore', sessionId: 's1', checkpoint: 'abc123', scope: { kind: 'file', path: ' ' } }],
+    ['a blank emoji', { do: 'react', sessionId: 's1', turn: 't1', emoji: ' ' }],
+    ['a reaction on no turn', { do: 'react', sessionId: 's1', emoji: '👍' }]
   ])('refuse %s', (_, raw) => {
     expect(parseCommand(raw)).toBeNull()
   })
@@ -253,9 +315,10 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'closePreview', 'completePath', 'contextBreakdown', 'createBot', 'describeBot',
-      'discard', 'editBot', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat', 'openPreview', 'pickModel', 'placePreview', 'preview', 'reconnect',
-      'reloadPreview', 'removeBotPicture', 'rename', 'rewind', 'send', 'setYolo', 'start', 'stop', 'versions'
+      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'checkpointDiff', 'checkpoints', 'closePreview', 'completePath',
+      'compress', 'contextBreakdown', 'control', 'createBot', 'describeBot', 'discard', 'editBot', 'editTarget', 'export', 'keepTarget', 'killProcess',
+      'loadEarlier', 'models', 'move', 'open', 'openChat', 'openPreview', 'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect',
+      'reloadPreview', 'removeBotPicture', 'rename', 'restore', 'rewind', 'send', 'side', 'start', 'stop', 'tune', 'versions'
     ])
   })
 })
@@ -284,6 +347,8 @@ function harness() {
   })
   let emit: (session: Session) => void = () => {}
   const commands: unknown[] = []
+  let exported: CommandOutcome<Exported> = { ok: true, value: { filename: 'chat.md', content: '# Notes' } }
+  let savedAt: Promise<string | null> = Promise.resolve('/home/u/Downloads/chat.md')
   let catalog: SlashCatalog = []
   const catalogListeners = new Set<(value: SlashCatalog) => void>()
   let bots: Bots = { state: 'loading' }
@@ -322,7 +387,7 @@ function harness() {
     },
     run: async (command: unknown) => {
       commands.push(command)
-      return { ok: true, value: undefined }
+      return (command as { do: string }).do === 'export' ? exported : { ok: true, value: undefined }
     }
   } as unknown as Hermes
   const opened: { action: string; path: string }[] = []
@@ -332,6 +397,8 @@ function harness() {
     show: async path => (opened.push({ action: 'show', path }), { ok: true }),
     browse: async () => { throw new Error('a window never browses through the opener') }
   }
+  const saves: Exported[] = []
+  const saver = { save: async (rendered: Exported): Promise<string | null> => (saves.push(rendered), savedAt) }
   const kept: Draft[] = []
   const picked: string[] = []
   const stored: readonly Draft[] = [{ key: 'new', bot: null, text: 'kept on disk', attachments: [] }]
@@ -355,7 +422,7 @@ function harness() {
   const served = serveWindows(
     pinnedConnection(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
-    async bot => (picked.push(bot), { ok: true, value: 'cancelled' }), { store, sources }
+    async bot => (picked.push(bot), { ok: true, value: 'cancelled' }), { store, sources }, saver
   )
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
@@ -369,9 +436,13 @@ function harness() {
     open = next
     openListeners.forEach(listener => listener(next))
   }
+  const exportsAs = (next: CommandOutcome<Exported>, path: string | null | Error) => {
+    exported = next
+    savedAt = path instanceof Error ? Promise.reject(path) : Promise.resolve(path)
+  }
   return {
     listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, stored, previewed, toPane, staged, served,
-    setCatalog, setBots, setOpen
+    saves, exportsAs, setCatalog, setBots, setOpen
   }
 }
 
@@ -484,6 +555,24 @@ describe('serveWindows', () => {
     await expect(run(event(), { do: 'browse', url: 'file:///etc/passwd' })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
     expect(toPane).toEqual(asked)
     expect(commands).toEqual([])
+  })
+
+  it('saves an export through the saver and answers the window the path, never the text', async () => {
+    const { handlers, event, saves } = harness()
+    const answered = await handlers.get(CHANNEL.run)!(event(), { do: 'export', sessionId: 's1', format: 'md' })
+    expect(saves).toEqual([{ filename: 'chat.md', content: '# Notes' }])
+    expect(answered).toEqual({ ok: true, value: '/home/u/Downloads/chat.md' })
+  })
+
+  it.each([
+    ['a cancelled dialog', { ok: true, value: { filename: 'chat.md', content: '# Notes' } }, null, { ok: true, value: null }, 1],
+    ['a file it could not write', { ok: true, value: { filename: 'chat.md', content: '# Notes' } }, new Error('EACCES'), { ok: false, refusal: { kind: 'rejected', message: "Highwing couldn't write the file." } }, 1],
+    ["Hermes's refusal, with nothing to save", { ok: false, refusal: { kind: 'rejected', message: 'This chat is too large for Hermes to export.' } }, null, { ok: false, refusal: { kind: 'rejected', message: 'This chat is too large for Hermes to export.' } }, 0]
+  ] as const)('answers an export with %s', async (_, rendered, path, want, saved) => {
+    const { handlers, event, saves, exportsAs } = harness()
+    exportsAs(rendered, path)
+    await expect(handlers.get(CHANNEL.run)!(event(), { do: 'export', sessionId: 's1', format: 'html' })).resolves.toEqual(want)
+    expect(saves).toHaveLength(saved)
   })
 
   it('runs a valid command from the app page and refuses a malformed one or a foreign frame', async () => {

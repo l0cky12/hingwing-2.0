@@ -19,16 +19,18 @@ highwing-2.0/
     hermes/                      @highwing/hermes        Node. No Electron, no DOM.
       src/
         hub.ts                   public entry "."         openHermes, Hermes, Command, Feed, liveDialer, remoteRoute, Route, checkTarget
-        actor.ts                 private                  one session: owns its Tracked state, makes the calls a state asks for, lends commands a SessionPort
+        actor.ts                 private                  one session: owns its Tracked state, makes the calls a state asks for (attach, resubmit, the facts a watched chat needs), lends commands a SessionPort
         session-commands.ts      private                  one row per command about one chat, over that chat's SessionPort. `versions` stays in hub.ts: it must not attach the chat
         sidebar.ts               private                  stored rows, the running set, deriveSidebar
         roster.ts                private                  botList: what Highwing knows about the bots and their Bot Chats, and when it asks Hermes
         open.ts                  private                  chatDesk: which chat is open, the lookups and the create a change asks for
         domain/                  public entry "./domain"  browser-safe, imports nothing
-          session.ts                                      Session, Run, Turn, Item, Link, Sidebar
-          reduce.ts                                       SessionEvent, Gate, SessionInput, reduce, syncOf, activityOf
+          session.ts                                      Session, Run, Turn, Item, Link, Sidebar, BackgroundProcess, SessionControl, ControlAction, Reaction
+          reduce.ts                                       SessionEvent, Gate, SessionInput, reduce, syncOf, activityOf, turnActivityOf
+          requests.ts                                     the life of what Hermes asks outside the turn: opened, reconciled with a snapshot, answered, closed
+          queue.ts                                        Hermes's queue: queueOf (a pending list becomes `queue`), offeredBy (what a row's state offers), sendPlan (submit, steer or redirect)
           command.ts                                      Command, ResultOf, Outcome, Refusal: data the renderer sends and gets back
-          slash.ts                                        SlashEntry, SlashCatalog, slashLineOf: the slash menu's rows
+          slash.ts                                        SlashEntry, SlashCatalog, slashLineOf: the slash menu's rows. OWN_COMMANDS, ownCommand: the lines Highwing runs itself
           bots.ts                                         Bots, Roster, Bot, BotFacts, rosterOf: the sidebar's bots, grouped and painted
           open.ts                                         OpenChat, Shown, ChatRef, nextDesk, launchChat: the open chat and every move it can make
           reach.ts                                        Target, SshHost, CheckStep, CheckFailure, CHECK_FAILURES: where Hermes runs and what can stop Highwing reaching it
@@ -52,14 +54,14 @@ highwing-2.0/
       src/when.ts                                         the words and thresholds for turn times (internal)
   apps/desktop/
     src/ipc-contract.ts          shared by all three      AppTopics, Topic, Push, Bridge, applyPush, Setup, SetupCommand
-    src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows), files.ts (openablePath)
+    src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows), files.ts (openablePath), saves.ts (dialogSaver, folderSaver: where an export is written)
       settings.ts                no Electron              parseSettings, loadSettings, saveSettings: connection.json
       drafts.ts                  no Electron              readDraft, draftStore: drafts/, one file per chat's unsent draft
       attachments.ts             no Electron              attachmentStore: attachments/, the files staged for messages; desktopSources: the file dialog and clipboard, or HIGHWING_PICK_FILES
       connection.ts              no Electron              ownConnection, nextSetup, pinnedConnection: the setup state, the saved target, the live Hermes
       notify.ts                  no Electron              noticeOf, notifyTurnEnds: a desktop notification when the shown chat's turn ends while no window has focus
     src/preload/index.ts         preload                  exposes Bridge: watch, run, file, image, drafts, keepDraft, attachPick, attachPaste and attachDropped
-    src/renderer/                renderer                 store.ts (useTopic), setup/, bots/, chats/, chat/ (Attachments.tsx: chips and sent files), composer/ (drafts.ts: useDraft, useAttachments), chrome/, styles/
+    src/renderer/                renderer                 store.ts (useTopic), setup/, bots/, chats/, chat/ (Attachments.tsx: chips and sent files; drawn.ts: what the window draws of the view), composer/ (drafts.ts: useDraft, useAttachments), chrome/, styles/
   fixtures/                                               *.jsonl, make_fixture.py (run with Hermes's interpreter), profiles/*.json (canned `profiles.list` replies), attach/ (files the attachment recipes stage, from make_attach_files.py)
   scripts/                                                sync-contract.ts, contract-drift.ts
 ```
@@ -72,9 +74,23 @@ highwing-2.0/
 |---|---|---|
 | The socket, pending calls, heartbeat, backoff, `Link` | `connect()` in `wire/link.ts`, in Electron main | read `Link` through `Hermes.link` |
 | One session's content (`history`, `run`, `outbox`) | that session's `SessionActor`, changed only through `reduce` | read through `Hermes.watch`; change by `Hermes.run(command)` |
+| Hermes's queue for a chat (`queue`), every client's rows | Hermes. The same actor replaces it whole from each pending list, by `queueOf` in `domain/queue.ts`, and takes out the row a turn starts with. No local action edits it | windows send `queued` with an `admissionId`. The row's state decides what is offered, and a row changes only by Hermes's next list |
+| This client's messages Hermes has not listed (`outbox`) | the same actor, from `send`, an edit's replacement, a receipt and a refusal. An entry leaves when a pending list or a turn's start names it | windows send `send` and `discard`. A message is in `outbox` or in `queue`, never both |
 | Whether that session is attached, its stream cursor, its parked frames | the same actor, as the `Gate` value inside its `Tracked` state, changed only through `reduce` | nobody. `Session.sync` is derived from it by `syncOf` at publish time |
 | Revision, text position, paging cursor | the same actor, as `Fence` | nobody |
 | Running, asking, settled | derived from `Session.run` by `activityOf` | nobody stores it |
+| What Hermes said while no turn ran (`interlude`) | the same actor, through `reduce`. The next turn's start seals it into `history` as one entry whose outcome is `interlude` | read through `Hermes.watch`. A rebuild drops it |
+| What Hermes waits on outside the turn (`requests`), and which request ids it has closed | the same actor, through `reduce`, by the rules in `domain/requests.ts`: a request frame or a connector card's event opens one, each snapshot's `open_requests` and `pending_connection` reconcile them, `request.cancel` or the card's settlement closes one | windows send `answer` with a `requestId`. A turn that starts or settles never touches them. No state holds a typed value |
+| Whether a request with no card is refused | the hub's `bridge`: refused only while a window watches the chat | nobody. A request with a card is never refused |
+| Where a message sent during a turn goes | nobody stores it. `sendPlan` derives it from `run`, `requests` and `tuning.busy` each time | the `send` row asks it. A window can ask it too, to label its button |
+| Hermes's switches for a chat (`tuning`) | the same actor, through `reduce`: effort, fast and YOLO from each attach reply and `session.info`, busy and reasoning from a `facts` input tagged with the attach it was read under, and `tuned` after this client's `config.set` | windows send `tune` |
+| Side questions and background prompts (`sides`) | the same actor, through `reduce`: `side.started` from this client's `side` reply, the answer from `btw.complete` or `background.complete`, by any client's task. A rebuild marks a running one `lost` | windows send `side`, or type `/btw` or `/bg` |
+| Background processes (`processes`) and the goal, loop and heartbeat (`control`) | the same actor, through `reduce`: each read is a `facts` input tagged with the attach it was read under and with `Fence.heard`, so a read asked before Hermes said more about that part leaves it. A `session.control.update` replaces `control`. `status.update {kind: 'process'}`, a turn's end and this client's kill make the list old, and a watched chat reads it again | windows send `killProcess` and `control`. Nothing polls |
+| The reactions on a settled turn's answer (`SettledTurn.reply`) | the same actor, through `reduce`: from the stored row's `display_metadata.reactions`, and `reacted` from this client's `message.react` reply. Hermes tells no other client | windows send `react` with the turn, never a row id |
+| A chat folder's checkpoints and their diffs | nobody keeps them. The `checkpoints`, `checkpointDiff` and `restore` rows answer Hermes's word. A restore that took back the last turn reads the chat again | windows send the commands |
+| The slash commands Highwing runs itself | `OWN_COMMANDS` in `domain/slash.ts`, from a typed line to a `Command`. `parseCatalog` offers its names | the `send` row runs the command a listed line stands for. `/new` stays the hub's |
+| An exported chat's text | nobody keeps it. Main's `Saver` (`main/saves.ts`) writes it where the user says | windows send `export` and get the saved path |
+| Which windows watch a chat | the hub, as a count per chat. A command waiting for an attach watches too and is not counted | the actor asks `watched()` before it reads facts |
 | Stored list rows and the set of running sessions | `sidebar.ts` | `Sidebar` is derived from them plus each actor's session when published |
 | What Highwing knows about the bots: loading, offline, unsupported, refused, or a roster | `roster.ts`, changed only through its `after` function | read through `Hermes.bots` and the `bots` topic. The hub says when to ask |
 | Where each bot is drawn and its avatar tone | nobody; `rosterOf(facts)` in `domain/bots.ts` computes them from each answer | the renderer draws the roster as given and picks no colour |
@@ -121,6 +137,8 @@ A `message.delta` frame becomes pixels in four steps.
 | Design C | `outline(threadView(session, clock))` compared with a golden text, for each fixture | `@highwing/thread` tests |
 | Soundness at every moment | `checkThread(threadView(session, clock))` on every step of every fixture | same |
 | Find | `findInThread(threadView(session, clock), query)` on the settled errand, counted against `outline` with every row open | same |
+| What Hermes says | `fixtures/says.jsonl`, from Hermes's own emitters: `playToEnd` equals the direct fold, a drop after every push ends in the same session and outline, and `checkThread` holds at every moment | `@highwing/hermes` and `@highwing/thread` tests |
+| What Hermes asks | `fixtures/asks.jsonl`, from Hermes's own request paths: `playToEnd` equals the direct fold, a drop after every push ends in the same session and outline, and `checkThread` holds at every moment. The scripted gateway fails a replay on an answer the story does not wait for | `@highwing/hermes` and `@highwing/thread` tests |
 | The attach order | `reduce` fed the `attached` cases by hand: a catch-up frame that ends the turn, a hole, a new epoch | `domain/` tests |
 | Reconnect | `playToEnd(fixture, { drop })` for a drop after every push, compared with the undisturbed outline | `@highwing/hermes` tests |
 | A gap | the same with `ringFrames` small, so replay answers `snapshot_required` | same |
@@ -151,5 +169,5 @@ A `message.delta` frame becomes pixels in four steps.
 | Model picker, settings | new `Command` members, `Session` fields fed by `meta` events | the reducer's turn logic |
 | Attachments | a field on the `send` command and on `Request` | view grouping |
 | Subagents, todos | new `Item` kinds, parse table rows moved from unshown to shown, new `ThreadNode` kinds | attach lifecycle |
-| Sudo and secret prompts | new `Ask` kinds answered through the same `answer` command, and the hub's `refuse` stops declining those methods | card plumbing |
+| Cards for what Hermes asks | views of `Session.requests` at the thread's live end, and of the `closed` notices. They send `answer` with a `requestId` | the reducer, the hub's decline rule |
 | Core in a `utilityProcess` | a new composition root in `apps/desktop/src/main/` that hosts `openHermes` there and serves windows over ports | `@highwing/hermes`, `@highwing/thread`, renderer |

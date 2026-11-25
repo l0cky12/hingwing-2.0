@@ -1,6 +1,6 @@
 import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, Route } from '@highwing/hermes'
 import type { CheckFailure, CheckStep, Command, CommandOutcome, Target } from '@highwing/hermes/domain'
-import type { AppResult, Live, Setup, SetupCommand } from '../ipc-contract'
+import type { HubResult, Live, Setup, SetupCommand } from '../ipc-contract'
 import type { Settings } from './settings'
 
 /** The commands a connection carries out. The pane beside the chat has its own owner. */
@@ -11,7 +11,7 @@ export interface ConnectionOwner {
   readonly setup: Feed<Setup>
   /** The Hermes of the live connection. null until a target is saved. */
   readonly hermes: Hermes | null
-  run<C extends ConnectionCommand>(command: C): Promise<CommandOutcome<AppResult<C>>>
+  run<C extends ConnectionCommand>(command: C): Promise<CommandOutcome<HubResult<C>>>
   close(): Promise<void>
 }
 
@@ -157,7 +157,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
     get hermes() { return open?.hermes ?? null },
     run: async <C extends ConnectionCommand>(command: C) => {
       const outcome = isSetupCommand(command) ? runSetup(command) : await (open?.hermes.run(command) ?? NOT_CONNECTED)
-      return outcome as CommandOutcome<AppResult<C>>
+      return outcome as CommandOutcome<HubResult<C>>
     },
     close: async () => {
       closed = true
@@ -174,7 +174,7 @@ export function pinnedConnection(hermes: Hermes): ConnectionOwner {
     setup: feed<Setup>({ at: 'pinned' }),
     hermes,
     run: async <C extends ConnectionCommand>(command: C) =>
-      (isSetupCommand(command) ? NOT_NOW : await hermes.run(command)) as CommandOutcome<AppResult<C>>,
+      (isSetupCommand(command) ? NOT_NOW : await hermes.run(command)) as CommandOutcome<HubResult<C>>,
     close: () => hermes.close()
   }
 }

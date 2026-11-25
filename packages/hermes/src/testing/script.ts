@@ -83,13 +83,16 @@ function memorySocket(gateway: ScriptedGateway): WireSocket {
  *   refused `profile_mismatch` for every profile but its own, as an attach ticket is.
  * - Loopback only: the upgrade is refused when it carries an `Origin` header, a ticket that was
  *   used before or is older than 30 s, or anything but exactly one ticket subprotocol.
+ * - Answers to its requests. A result or error frame must be the one the story waits for at an
+ *   `answer` step, come from a socket attached to the session, and match what was recorded. Any
+ *   other fails the replay, so a client that declines what it should leave open fails its fixture.
  * It answers by itself: gateway.ready, client.capabilities, runtime.describe, gateway.ping,
  * session.list, session.detach, the attach calls, `model.options` (from the header's `models`) and a
  * `session.mutate` that switches the model, which commits at once or, during a turn, when it ends. A
  * `session.mutate` that branches is answered too when the header says `branches`, in the story session or a chat beside it:
  * the child is a chat of the parent's profile, and an exact retry of a `request_id` gets the child the first one made.
  * `session.resume` and `session.events.since` are answered from the frames pushed so far (watermark, running, generation, open prompts, the
- * ring) and the current stored rows. Frames published between a `since` answer and the resume that
+ * requests still open, the open connector card, the ring) and the current stored rows. Frames published between a `since` answer and the resume that
  * follows are written to the socket before the resume reply, as the gateway's catch-up does.
  * Beside the story it plays one Bot Chat for each bot of the header's `profiles` that names one, and
  * makes one on a titled `session.create`. An untitled `session.create` makes a new, empty chat in

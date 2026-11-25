@@ -9,8 +9,8 @@ import type {
 } from '../src/wire/contract.generated'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 import {
-  parseBranched, parseContextBreakdown, parseEvent, parsePathMatches, parseInlineDiff, parseListRows, parseModelMenu, parseModelReceipt, parseReplay, parseRows, parseServerRequest,
-  parseSnapshot, parseStats, parseToolResult, parseTranscript, FOR_WINDOW, SHOWN, UNSHOWN
+  FOR_WINDOW, parseBranched, parseContextBreakdown, parseEvent, parseInlineDiff, parseListRows, parseModelMenu, parseModelReceipt, parsePathMatches,
+  parseReplay, parseRows, parseServerRequest, parseShown, parseSnapshot, parseStats, parseToolResult, parseTranscript, SHOWN, UNSHOWN
 } from '../src/wire/parse'
 
 const ERRAND = fileURLToPath(new URL('../../../fixtures/errand.jsonl', import.meta.url))
@@ -140,7 +140,8 @@ describe('parseEvent on the errand fixture', () => {
       type: 'prompt.opened',
       id: '3c0eea6699184b1dbee7a16b0a6bf830',
       generation: 1,
-      ask: { kind: 'approval', command: 'rm -rf /tmp/hermes-proto-work/scratch', reason: 'delete in root path', choices: ['once', 'deny', 'session', 'always'] }
+      ask: { kind: 'approval', command: 'rm -rf /tmp/hermes-proto-work/scratch', reason: 'delete in root path', choices: ['once', 'deny', 'session', 'always'] },
+      timeoutS: 300
     })
     const settled = only(params.filter(({ type }) => type === 'approval.settled'))
     expect(eventOf(settled)).toEqual({ type: 'prompt.settled', id: '3c0eea6699184b1dbee7a16b0a6bf830' })
@@ -148,15 +149,15 @@ describe('parseEvent on the errand fixture', () => {
 
   it('ends the turn complete with no final text and the receipt rows 1 to 10', () => {
     const complete = only(params.filter(({ type }) => type === 'message.complete'))
-    expect(eventOf(complete)).toEqual({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], userRow: 1, usage: null })
+    expect(eventOf(complete)).toEqual({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], userRow: 1, replyRow: 10, usage: null })
   })
 
   it('reads the queue, revision and generation from session.info', () => {
     const [submitted, running, settled] = params.filter(({ type }) => type === 'session.info')
     expect(eventOf(submitted as Params)).toEqual({
-      type: 'meta', revision: 0, generation: 0, queue: [{ inputId: 'input_990d3cd8381d422f', admissionId: 'e07cb5793e7f497bbcc1c0c8b0cdf20a', text: REQUEST, status: 'queued' }]
+      type: 'meta', revision: 0, generation: 0, queue: [{ inputId: 'input_990d3cd8381d422f', admissionId: 'e07cb5793e7f497bbcc1c0c8b0cdf20a', text: REQUEST, state: { s: 'queued', can: ['sendNow', 'edit'] } }]
     })
-    expect(eventOf(running as Params)).toMatchObject({ type: 'meta', revision: 0, queue: [{ status: 'started' }] })
+    expect(eventOf(running as Params)).toMatchObject({ type: 'meta', revision: 0, queue: [{ state: { s: 'started' } }] })
     expect(eventOf(settled as Params)).toEqual({ type: 'meta', revision: 1, generation: 1, queue: [] })
   })
 })
@@ -198,7 +199,7 @@ describe('parseEvent outside the happy path', () => {
       return parsed.scope === 'session' ? parsed.event : null
     }
     expect(complete({ text: 'Worker execution is unknown.', outcome: 'unknown', status: 'error' })).toEqual({
-      type: 'turn.ended', outcome: { kind: 'failed', message: 'Worker execution is unknown.', code: null, retryable: false }, finalText: null, rows: [], userRow: null, usage: null
+      type: 'turn.ended', outcome: { kind: 'failed', message: 'Worker execution is unknown.', code: null, retryable: false }, finalText: null, rows: [], userRow: null, replyRow: null, usage: null
     })
     expect(complete({ status: 'error', error: 'no credentials', error_surface: { layer: 'provider', code: 'auth_permanent', retryable: false } }))
       .toMatchObject({ outcome: { kind: 'failed', message: 'no credentials', code: 'auth_permanent' } })
@@ -367,8 +368,8 @@ describe('parseSnapshot', () => {
       id: '3c0eea6699184b1dbee7a16b0a6bf830', generation: 1,
       ask: { kind: 'approval', command: 'rm -rf /tmp/hermes-proto-work/scratch', reason: 'delete in root path', choices: ['once', 'deny', 'session', 'always'] }
     }])
-    expect(snapshot.queue).toEqual([{ inputId: 'input_990d3cd8381d422f', admissionId: 'e07cb5793e7f497bbcc1c0c8b0cdf20a', text: REQUEST, status: 'started' }])
-    expect(snapshot.openRequests).toEqual([{ requestId: 'req-1', method: 'sudo', sessionId: SESSION }])
+    expect(snapshot.queue).toEqual([{ inputId: 'input_990d3cd8381d422f', admissionId: 'e07cb5793e7f497bbcc1c0c8b0cdf20a', text: REQUEST, state: { s: 'started' } }])
+    expect(snapshot.openRequests).toEqual([{ kind: 'card', requestId: 'req-1', method: 'sudo', sessionId: SESSION, waitS: 120, ask: { kind: 'secret', for: { is: 'sudo', command: 'apt install x' } } }])
   })
 
   it('says older rows exist when the first stored row was cut by the byte budget', () => {
@@ -425,8 +426,8 @@ describe('parseListRows and parseServerRequest', () => {
     expect(parseListRows(sessions)).toEqual([{ id: SESSION, title: '', preview: null, lastActiveAt: 1795251600000 }])
   })
 
-  it('reads an app-level request as having no session', () => {
-    expect(parseServerRequest({ id: 'r2', method: 'display.install.sudo', params: { session_id: '' } })).toEqual({ requestId: 'r2', method: 'display.install.sudo', sessionId: null })
+  it('reads an app-level request as a bridge with no session', () => {
+    expect(parseServerRequest({ id: 'r2', method: 'display.install.sudo', params: { session_id: '' } })).toEqual({ kind: 'bridge', requestId: 'r2', method: 'display.install.sudo', sessionId: null })
   })
 })
 
@@ -542,20 +543,53 @@ describe('usage', () => {
   })
 })
 
-describe('yolo', () => {
-  const frame = (payload: Record<string, unknown>) => ({ type: 'session.info', session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload })
+describe('rewrites', () => {
+  const receipt = (payload: Record<string, unknown>) => ({ type: 'session.updated', session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload: { session_id: SESSION, revision: 4, execution_generation: 2, ...payload } })
 
-  it('reads the YOLO a session.info names, and nothing when it names none', () => {
-    expect(parseEvent(frame({ yolo: true }))).toMatchObject({ event: { type: 'meta', yolo: true } })
-    expect(parseEvent(frame({ yolo: false }))).toMatchObject({ event: { type: 'meta', yolo: false } })
-    expect(parseEvent(frame({ revision: 3 }))).not.toMatchObject({ event: { yolo: expect.anything() } })
+  it.each(['compress', 'reset'])('reads a %s receipt from any client as a rewrite of the stored rows', operation => {
+    expect(parseEvent(receipt({ operation }))).toMatchObject({ event: { type: 'meta', revision: 4, generation: 2, rewritten: true } })
   })
 
-  it('reads the YOLO an attach reply names, and null when Hermes sends none', () => {
+  it('reads the other receipts for what they change', () => {
+    expect(parseEvent(receipt({ operation: 'rewind', target_message: { id: 7 } }))).toMatchObject({ event: { type: 'meta', cutBefore: 7 } })
+    expect(parseEvent(receipt({ operation: 'workspace', cwd: '/work/docs' }))).toMatchObject({ event: { type: 'meta', revision: 4 } })
+  })
+})
+
+describe('side answers', () => {
+  const frame = (type: string, payload: Record<string, unknown>) => ({ type, session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload })
+
+  it('reads a side question\'s answer with its words, and a background answer without', () => {
+    expect(parseEvent(frame('btw.complete', { task_id: 'btw_1', question: 'Which file?', text: 'notes.md' }))).toMatchObject({
+      stamp: { seq: 9, generation: null }, event: { type: 'side.answered', id: 'btw_1', kind: 'btw', asked: 'Which file?', text: 'notes.md' }
+    })
+    expect(parseEvent(frame('background.complete', { task_id: 'bg_1', text: 'error: no provider' }))).toMatchObject({
+      event: { type: 'side.answered', id: 'bg_1', kind: 'background', asked: null, text: 'error: no provider' }
+    })
+    expect(parseEvent(frame('btw.complete', { task_id: '', text: 'x' }))).toMatchObject({ event: null, skipped: 'invalid' })
+  })
+})
+
+describe('the switches Hermes says', () => {
+  const frame = (payload: Record<string, unknown>) => ({ type: 'session.info', session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload })
+
+  it('reads the effort, fast, YOLO and folder a session.info names, and nothing it leaves out', () => {
+    expect(parseEvent(frame({ yolo: true }))).toMatchObject({ event: { type: 'meta', tuning: { yolo: true } } })
+    expect(parseEvent(frame({ service_tier: 'priority', fast: true }))).toMatchObject({ event: { type: 'meta', tuning: { fast: true } } })
+    expect(parseEvent(frame({ reasoning_effort: 'high', fast: false, yolo: false, cwd: '/work/docs' }))).toMatchObject({
+      event: { type: 'meta', cwd: '/work/docs', tuning: { effort: 'high', fast: false, yolo: false } }
+    })
+    expect(parseEvent(frame({ reasoning_effort: '' }))).toMatchObject({ event: { tuning: { effort: 'default' } } })
+    expect(parseEvent(frame({ reasoning_effort: 'turbo' }))).toMatchObject({ event: { tuning: { effort: null } } })
+    expect(parseEvent(frame({ revision: 3 }))).not.toMatchObject({ event: { tuning: expect.anything() } })
+    expect(parseEvent(frame({ revision: 3, cwd: '' }))).not.toMatchObject({ event: { cwd: expect.anything() } })
+  })
+
+  it('reads them from an attach reply, each null when Hermes sends none', () => {
     const info = { desktop_protocol: 'hermes-gateway-v1', title: 'Errand' } as const
-    expect(parseSnapshot(snapshotReply({ info: { ...info, yolo: true } })).yolo).toBe(true)
-    expect(parseSnapshot(snapshotReply({ info: { ...info, yolo: false } })).yolo).toBe(false)
-    expect(parseSnapshot(snapshotReply({ info })).yolo).toBeNull()
+    expect(parseSnapshot(snapshotReply({ info: { ...info, yolo: true, reasoning_effort: 'none', fast: true } })).tuning).toEqual({ effort: 'none', fast: true, yolo: true })
+    expect(parseSnapshot(snapshotReply({ info: { ...info, yolo: false } })).tuning).toEqual({ effort: null, fast: null, yolo: false })
+    expect(parseSnapshot(snapshotReply({ info })).tuning).toEqual({ effort: null, fast: null, yolo: null })
   })
 })
 
@@ -797,5 +831,138 @@ describe('parsePathMatches', () => {
   it('lists nothing for a reply it cannot read', () => {
     expect(parsePathMatches({} as CompletionItemsResult)).toEqual([])
     expect(parsePathMatches({ items: 'no' } as unknown as CompletionItemsResult)).toEqual([])
+  })
+})
+
+describe('what Hermes says, parsed', () => {
+  const said = (type: string, payload: Record<string, unknown>) => {
+    const parsed = parseEvent({ type, session_id: SESSION, seq: 4, replay_epoch: EPOCH, payload })
+    if (parsed.scope !== 'session') throw new Error(`${type} did not reach the session`)
+    return parsed.event === null ? parsed.skipped : parsed.event
+  }
+
+  it('reads the four MoA events as steps of a round, as Hermes publishes them', () => {
+    expect(said('moa.progress', { label: 'a', refs_done: 1, refs_total: 3 })).toEqual({ type: 'moa', step: { is: 'progress', done: 1, total: 3 } })
+    expect(said('moa.reference', { label: 'a', text: '\u001b[1mUse rm.\u001b[0m', index: 1, count: 3 })).toEqual({ type: 'moa', step: { is: 'reference', label: 'a', text: 'Use rm.' } })
+    expect(said('moa.phase', { phase: 'aggregator', aggregator: 'judge', refs_done: 3, refs_total: 3 })).toEqual({ type: 'moa', step: { is: 'aggregating', by: 'judge' } })
+    expect(said('moa.aggregating', { aggregator: '' })).toEqual({ type: 'moa', step: { is: 'aggregating', by: null } })
+    expect(said('moa.phase', { phase: 'references' })).toBe('invalid')
+  })
+
+  it('splits status.update by kind, and reads a process line as the signal to list the processes again', () => {
+    expect(said('status.update', { kind: 'compacting', text: 'Compacting…' })).toEqual({ type: 'status', about: 'compacting', text: 'Compacting…' })
+    expect(said('status.update', { kind: 'compacted', text: 'Done.' })).toEqual({ type: 'status', about: 'compacted', text: 'Done.' })
+    expect(said('status.update', { kind: 'goal', text: 'Goal met.' })).toEqual({ type: 'status', about: 'goal', text: 'Goal met.' })
+    expect(said('status.update', { kind: 'warn', text: 'Memory is off.' })).toEqual({ type: 'status', about: 'warning', text: 'Memory is off.' })
+    expect(said('status.update', { kind: 'lifecycle', text: 'Retrying.' })).toEqual({ type: 'status', about: 'other', text: 'Retrying.' })
+    expect(said('status.update', { kind: 'process', text: 'npm test finished.' })).toEqual({ type: 'processes.changed' })
+    expect(said('agent.print', { text: '\u001b[2mSubagent done.\u001b[0m' })).toEqual({ type: 'status', about: 'print', text: 'Subagent done.' })
+  })
+
+  it('keys a notice by its key, then its id, then its words, and keeps a time to live only for a ttl notice', () => {
+    expect(said('notification.show', { text: 'Credits are low.', level: 'warn', kind: 'sticky', key: 'credits', id: 'n1', ttl_ms: null }))
+      .toEqual({ type: 'notice.shown', notice: { key: 'credits', level: 'warn', text: 'Credits are low.', detail: null, ttlMs: null } })
+    expect(said('notification.show', { text: 'Saved.', level: 'success', kind: 'ttl', id: 'n2', ttl_ms: 4000, detail: 'All of it.' }))
+      .toEqual({ type: 'notice.shown', notice: { key: 'n2', level: 'success', text: 'Saved.', detail: 'All of it.', ttlMs: 4000 } })
+    expect(said('notification.show', { text: 'Odd.', level: 'loud', kind: 'sticky', ttl_ms: 4000 }))
+      .toEqual({ type: 'notice.shown', notice: { key: 'Odd.', level: 'info', text: 'Odd.', detail: null, ttlMs: null } })
+    expect(said('notification.clear', { key: 'credits' })).toEqual({ type: 'notice.cleared', key: 'credits' })
+  })
+
+  it('reads a prompt\'s timeout', () => {
+    const prompt: CanonicalPendingPrompt = { kind: 'approval', prompt_id: 'p1', execution_generation: 2, command: 'rm x', choices: ['once'], timeout_s: 60 }
+    expect(said('approval.request', { ...prompt })).toMatchObject({ type: 'prompt.opened', timeoutS: 60 })
+    expect(said('approval.request', { ...prompt, timeout_s: null })).toMatchObject({ type: 'prompt.opened', timeoutS: null })
+  })
+
+  it('reads the show_reasoning control', () => {
+    expect([parseShown({ value: '1' }), parseShown({ value: '0' }), parseShown({ value: 'on' }), parseShown({})]).toEqual([true, false, null, null])
+  })
+})
+
+describe('what Hermes asks, parsed', () => {
+  const frame = (method: string, params: Record<string, unknown>) => parseServerRequest({ id: 'srq-1', method, params: { session_id: SESSION, ...params } })
+  const envelope = (type: string, payload: Record<string, unknown>) => ({ type, session_id: SESSION, replay_epoch: 'e', seq: 4, payload })
+  const TARGET = { name: 'github', kind: 'connector', action: 'connect', state: 'initiated', connect_url: 'https://example.com/oauth', detail: 'Waiting for sign-in' }
+  const CARD = { op_id: 'op1', seq: 2, deadline_at: 1_795_251_900, targets: [TARGET] }
+
+  it.each([
+    ['sudo', { command: 'sudo apt install jq' }, 120, { is: 'sudo', command: 'sudo apt install jq' }],
+    ['secret', { env_var: 'TENOR_API_KEY', prompt: 'Tenor API key' }, 120, { is: 'env', name: 'TENOR_API_KEY', prompt: 'Tenor API key' }],
+    ['vault.unlock_prompt', { backend: 'bitwarden', display_name: 'Bitwarden' }, 120, { is: 'vault', backend: 'bitwarden', name: 'Bitwarden' }],
+    ['vault.save_login', { origin: 'https://example.com', site: 'Example' }, 180, { is: 'login', site: 'Example', origin: 'https://example.com' }],
+    ['vault.code', { site: 'Example', hint: null }, 180, { is: 'code', site: 'Example', hint: null }]
+  ])('reads %s as a masked prompt with the wait Hermes gives it', (method, params, waitS, asks) => {
+    expect(frame(method, params)).toEqual({ kind: 'card', requestId: 'srq-1', sessionId: SESSION, method, waitS, ask: { kind: 'secret', for: asks } })
+  })
+
+  it('reads a clarify request as a batch, with the locks a reconnect lists, and no wait of its own', () => {
+    const questions = [{ qid: 'q0', question: 'Which env?', choices: ['staging', 'prod'] }, { qid: 'q1', question: 'Regions?', choices: ['eu', 'us'], multi_select: true }, { qid: 'q2', question: 'Why?' }]
+    expect(frame('clarify', { questions, answers: { q0: 'prod', q1: '["eu","us"]', q2: null } })).toMatchObject({
+      kind: 'card', waitS: null,
+      ask: {
+        kind: 'questions',
+        questions: [{ id: 'q0', text: 'Which env?', choices: ['staging', 'prod'], multi: false }, { id: 'q1', text: 'Regions?', choices: ['eu', 'us'], multi: true }, { id: 'q2', text: 'Why?', choices: [], multi: false }],
+        answers: { q0: ['prod'], q1: ['eu', 'us'], q2: null }
+      }
+    })
+  })
+
+  it('reads a typed answer to a several-pick question as one line', () => {
+    expect(frame('clarify', { questions: [{ qid: 'q0', question: 'Regions?', choices: ['eu'], multi_select: true }], answers: { q0: 'neither' } })).toMatchObject({ ask: { answers: { q0: ['neither'] } } })
+  })
+
+  it.each(['preview.read', 'preview.act', 'window.read', 'terminal.read', 'theme.apply', 'theme.pick', 'tour', 'setup_beat', 'approval', 'not.a.method'])('reads %s as a bridge: no card', method => {
+    expect(frame(method, {})).toEqual({ kind: 'bridge', requestId: 'srq-1', sessionId: SESSION, method })
+  })
+
+  it('reads a card method whose params it cannot use, or that names no session, as unusable', () => {
+    expect(frame('secret', { prompt: 'no variable' })).toEqual({ kind: 'unusable', requestId: 'srq-1', method: 'secret' })
+    expect(frame('clarify', { questions: [] })).toEqual({ kind: 'unusable', requestId: 'srq-1', method: 'clarify' })
+    expect(parseServerRequest({ id: 'srq-1', method: 'sudo', params: { session_id: '' } })).toEqual({ kind: 'unusable', requestId: 'srq-1', method: 'sudo' })
+  })
+
+  it.each([
+    ['resolved', 'resolved'], ['timeout', 'timeout'], ['interrupted', 'interrupted'], ['shutdown', 'withdrawn'], ['session_closed', 'withdrawn'], ['the user closed the tab', 'withdrawn']
+  ])('reads request.cancel with reason %s as %s', (reason, why) => {
+    expect(parseEvent(envelope('request.cancel', { id: 'srq-1', method: 'sudo', reason }))).toMatchObject({ event: { type: 'request.cancelled', id: 'srq-1', why } })
+  })
+
+  it('reads connection.request as the card opening, with its wait and only a web link kept', () => {
+    const payload = { ...CARD, timeout_seconds: 300, targets: [TARGET, { ...TARGET, name: 'notes', connect_url: 'file:///etc/passwd', state: 'not_connected' }] }
+    expect(parseEvent(envelope('connection.request', payload))).toMatchObject({
+      event: {
+        type: 'connect', settled: null,
+        card: {
+          kind: 'card', requestId: 'op1', sessionId: SESSION, method: 'connection.request', waitS: 300,
+          ask: { kind: 'connect', rev: 2, suggested: [], targets: [{ name: 'github', state: 'started', url: 'https://example.com/oauth', resolved: false }, { name: 'notes', state: 'not-connected', url: null }] }
+        }
+      }
+    })
+  })
+
+  it.each([['all_resolved', 'done'], ['continue', 'done'], ['deadline', 'timeout'], ['interrupt', 'interrupted'], [null, 'withdrawn']])('reads a settled connection.update (%s) as the card closing: %s', (by, why) => {
+    const payload = { ...CARD, owner: { type: 'session', session_id: SESSION }, settled: true, settled_by: by }
+    expect(parseEvent(envelope('connection.update', payload))).toMatchObject({ event: { type: 'connect', settled: why, card: { requestId: 'op1' } } })
+  })
+
+  it('reads an unsettled connection.update as the card as it is now, and leaves out an operation of the account', () => {
+    const update = { ...CARD, seq: 3, owner: { type: 'session', session_id: SESSION }, settled: false, target: 'github', from: 'pending', to: 'initiated' }
+    expect(parseEvent(envelope('connection.update', update))).toMatchObject({ event: { type: 'connect', settled: null, card: { waitS: null, ask: { rev: 3 } } } })
+    expect(parseEvent(envelope('connection.update', { ...update, owner: { type: 'account' } }))).toMatchObject({ event: null, skipped: 'unshown' })
+  })
+
+  it('lists the snapshot\'s open connector card with its open requests', () => {
+    const { header } = fixture
+    const snapshot = parseSnapshot({
+      session_id: SESSION, stored_session_id: SESSION, messages: [], message_count: 0, running: true, authority_epoch: 1, replay_epoch: 'e', last_sequence: 4,
+      subscription_id: 's', revision: 1, execution_generation: 1, pending: [], prompts: [], info: { desktop_protocol: 'hermes-gateway-v1' }, display_messages: header.stored as never,
+      open_requests: [{ id: 'srq-9', method: 'theme.pick', params: { session_id: SESSION, picker: 'accent' } }],
+      pending_connection: { ...CARD, timeout_seconds: 300 } as never
+    })
+    expect(snapshot.openRequests).toMatchObject([
+      { kind: 'bridge', requestId: 'srq-9', method: 'theme.pick' },
+      { kind: 'card', requestId: 'op1', method: 'connection.request', sessionId: SESSION, ask: { kind: 'connect', rev: 2 } }
+    ])
   })
 })

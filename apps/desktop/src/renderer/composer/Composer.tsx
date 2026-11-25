@@ -29,6 +29,8 @@ interface ComposerProps {
   readonly onInput: () => void
   readonly editing?: Editing | null
   readonly onCancelEdit?: () => void
+  readonly above?: ReactNode
+  readonly onEscape?: () => boolean
   readonly children?: ReactNode
 }
 
@@ -108,7 +110,7 @@ export function admitted(results: readonly StageResult[], held: readonly Attachm
 
 const draggingFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') === true
 
-export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, editing = null, onCancelEdit, children }: ComposerProps) {
+export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, editing = null, onCancelEdit, above, onEscape, children }: ComposerProps) {
   const catalog = useTopic('slash') ?? NO_CATALOG
   const roster = useTopic('bots')
   const relay = useTopic('relay')
@@ -308,9 +310,18 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
     event.preventDefault()
     void submit()
   }
+  // The model and context popovers and the remove dialog sit in this footer too, and close on their own Escape.
+  const onFooterKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
+    if (!(event.target instanceof Element) || event.target.closest('form, .sides') === null) return
+    if (onEscape?.() !== true) return
+    event.preventDefault()
+    box.current?.focus()
+  }
 
   return (
-    <footer className={dragging && canAttach ? 'composer dragging' : 'composer'}>
+    <footer className={dragging && canAttach ? 'composer dragging' : 'composer'} onKeyDown={onFooterKeyDown}>
+      {above}
       {menu.open && (
         <div className="slash-anchor">
           <div className="slash-menu" role="listbox" id={MENU_ID} aria-label={menu.label}>

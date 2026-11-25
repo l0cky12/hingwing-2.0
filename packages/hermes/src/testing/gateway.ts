@@ -8,7 +8,7 @@ import { PICTURE_MAX_BYTES, pictureTypeOf } from '../domain/bots'
 import type { SessionEvent } from '../domain/reduce'
 import { GATEWAY_PROTOCOL, type Clock, type Reach } from '../wire/link'
 import { parseEvent } from '../wire/parse'
-import type { ChatSeed, Fixture, FixtureStep } from './fixture'
+import { MASKED, type ChatSeed, type Fixture, type FixtureStep, type Reads } from './fixture'
 import { checkParams } from './params'
 
 export interface Peer {
@@ -71,6 +71,10 @@ interface View {
   title: string
   pending: readonly unknown[]
   readonly prompts: Map<string, Obj>
+  /** The server requests still open, by id, as their frames carried them (gateway/session_server_requests.py:31-33). */
+  readonly requests: Map<string, { readonly method: string; readonly params: unknown }>
+  /** The open connector card as `connection.request` carried it, with the targets of its latest update (gateway/session_connections.py:30-34). */
+  connection: Obj | null
   model: Model | null
   /** A model switch asked for during a turn. It commits when the turn ends (gateway/session_mutations.py:134-143). */
   deferred: Model | null
@@ -79,6 +83,7 @@ interface View {
   turnsEnded: number
   /** null until the header or a recorded frame names it. */
   yolo: boolean | null
+  info: Obj
 }
 
 const TRACK: { readonly [T in SessionEvent['type']]?: (view: View, event: Extract<SessionEvent, { type: T }>, payload: Obj) => void } = {
@@ -91,13 +96,25 @@ const TRACK: { readonly [T in SessionEvent['type']]?: (view: View, event: Extrac
   'prompt.opened': (view, event, payload) => void view.prompts.set(event.id, payload),
   'prompt.settled': (view, event) => void view.prompts.delete(event.id),
   'prompts.cancelled': (view, event) => event.ids.forEach(id => view.prompts.delete(id)),
+  'request.cancelled': (view, event) => void view.requests.delete(event.id),
+  connect: (view, event, payload) => {
+    if (event.settled !== null) view.connection = null
+    else if ('timeout_seconds' in payload) view.connection = payload
+    else if (view.connection?.op_id === payload.op_id) view.connection = { ...view.connection, seq: payload.seq, targets: payload.targets }
+  },
   meta: (view, event, payload) => {
     if (event.title !== undefined) view.title = event.title
     if (event.revision !== undefined) view.revision = event.revision
-    if (event.yolo !== undefined) view.yolo = event.yolo
+    if (event.generation !== undefined) view.generation = Math.max(view.generation, event.generation)
+    if (event.tuning?.yolo !== undefined) view.yolo = event.tuning.yolo
     if (Array.isArray(payload.pending)) view.pending = payload.pending
+    const said = Object.entries(payload).filter(([key]) => INFO_KEYS.has(key))
+    if (said.length > 0) view.info = { ...view.info, ...Object.fromEntries(said) }
   }
 }
+
+/** The `info` fields of a session.info that an attach reply repeats (gateway/session_local.py:520-560). */
+const INFO_KEYS: ReadonlySet<string> = new Set(['cwd', 'reasoning_effort', 'service_tier', 'fast'])
 
 type Drop =
   | { readonly at: 'armed'; readonly afterPush: number; readonly missed: number }
@@ -121,6 +138,51 @@ const dispatchable: Check = (_gateway, _socket, params) =>
     : 'invalid_params'
 const runningGeneration: Check = (gateway, _socket, params) =>
   isInt(params.execution_generation) && gateway.view.running && gateway.view.generation === params.execution_generation ? null : 'stale_generation'
+/** gateway/session_busy_controls.py:182-186: the closed key set, words that are not blank, and a whole-number generation. */
+const correction: Check = (_gateway, _socket, params) =>
+  Object.keys(params).every(key => ['session_id', 'profile', 'text', 'execution_generation'].includes(key)) && isText(params.text) && params.text.trim() !== '' && isInt(params.execution_generation)
+    ? null
+    : 'invalid_params'
+const isString = (value: unknown): value is string => typeof value === 'string'
+const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
+const closed = (keys: Readonly<Record<string, (value: unknown) => boolean>>): Check => (_gateway, _socket, params) =>
+  Object.entries(params).every(([key, value]) => Object.hasOwn(keys, key) && keys[key]!(value)) ? null : 'invalid_params'
+const isWords = (value: unknown): value is string => typeof value === 'string' && value.trim() !== ''
+/** gateway/session_tui_side.py:33-38 */
+const sideText: Check = (gateway, socket, params, routed) =>
+  closed({ session_id: isString, profile: isString, text: isString })(gateway, socket, params, routed) ?? (String(params.text).trim() === '' ? 'invalid_params' : null)
+
+/** The operations whose payload the story checks, each closed as Hermes parses it (persistence/authority/runtime.py:299-366). */
+const PAYLOADS: Readonly<Record<string, (payload: Obj) => boolean>> = {
+  reasoning: payload => Object.keys(payload).join() === 'effort' && (payload.effort === null || EFFORT_WORDS.has(String(payload.effort).trim().toLowerCase())),
+  workspace: payload => Object.keys(payload).join() === 'cwd' && isText(payload.cwd) && payload.cwd.trim() !== '',
+  compress: payload => Object.entries(payload).every(([key, value]) => key in COMPRESS_FIELDS && COMPRESS_FIELDS[key]!(value)),
+  rewind: payload => isInt(payload.target_message_id) && payload.target_message_id > 0
+    && Object.keys(payload).every(key => key === 'target_message_id' || (key === 'preserve_compaction_handoff' && isBoolean(payload[key]))),
+  rename: payload => Object.keys(payload).join() === 'title' && isString(payload.title),
+  archive: payload => Object.keys(payload).join() === 'archived' && isBoolean(payload.archived)
+}
+const EFFORT_WORDS: ReadonlySet<string> = new Set(['none', 'false', 'disabled', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
+const COMPRESS_FIELDS: Readonly<Record<string, (value: unknown) => boolean>> = { focus: isString, preview: isBoolean, partial: isBoolean, keep_last: isInt }
+/** Operations that need `expected_generation` (gateway/session_mutations.py:20,154, persistence/authority/runtime.py:75). */
+const FENCED: ReadonlySet<string> = new Set(['model', 'reasoning', 'workspace', 'editor_mcp', 'edit_policy', 'delete', 'rewind', 'reset', 'branch', 'compress'])
+/** gateway/session_mutations.py:150-154: the closed field set, the generation an operation needs, then its payload. */
+const mutation: Check = (_gateway, _socket, params) => {
+  const { operation, payload } = params
+  const fields = Object.keys(params).filter(key => key !== 'expected_generation')
+  if (fields.length !== 5 || !['session_id', 'request_id', 'expected_revision', 'operation', 'payload'].every(key => fields.includes(key))) return 'invalid_params'
+  if (!isText(operation) || !isObject(payload) || (FENCED.has(operation) && !isInt(params.expected_generation))) return 'invalid_params'
+  return PAYLOADS[operation]?.(payload) === false ? 'invalid_params' : null
+}
+
+const pendingRow = (gateway: ScriptedGateway, params: Obj) => gateway.view.pending.filter(isObject).find(row => row.admission_id === params.admission_id)
+/** gateway/session_authority.py:817-821: a receipt is read only for a row of this session. The story knows the rows of its latest pending list. */
+const listed: Check = (gateway, _socket, params) => (pendingRow(gateway, params) === undefined ? 'not_found' : null)
+/** persistence/sqlite/authority/_admission_store.py:418-419: only an unknown row, and only by the generation it ran as. */
+const lostGeneration: Check = (gateway, _socket, params) => {
+  const row = pendingRow(gateway, params)
+  return row?.status === 'unknown' && row.execution_generation === params.execution_generation ? null : 'stale_generation'
+}
 
 const submissionId: Check = (_gateway, _socket, params) => (isText(params.submission_id || params.input_id) ? null : 'invalid_params')
 const stagedOnly: Check = (gateway, _socket, params, routed) => (gateway.staged(params.attachments, routed) ? null : 'invalid_params')
@@ -154,6 +216,59 @@ function decoded(text: string, max: number): Buffer | null {
   return bytes.byteLength === 0 || bytes.byteLength > max ? null : bytes
 }
 
+/** gateway/session_clarify_lock.py:20-22 */
+const lockable: Check = (_gateway, _socket, params) => (isText(params.request_id) && isText(params.question_id) ? null : 'invalid_params')
+/** gateway/session_connections.py:76-83: the card answers for its own session's operation. */
+const ownCard: Check = (gateway, _socket, params) =>
+  isObject(params.owner) && params.owner.type === 'session' && params.owner.session_id === gateway.sessionId && isText(params.op_id) && isObject(params.result) ? null : 'invalid_params'
+
+/**
+ * Bridges Hermes does not hand to a reconnecting viewer, because a second delivery would repeat the
+ * action (gateway/local_desktop_ui.py:216-218). The two that wait on a card, `theme.pick` and `setup_beat`, are listed.
+ */
+const UNREPLAYED: ReadonlySet<string> = new Set(['terminal.read', 'preview.read', 'preview.act', 'window.read', 'theme.apply', 'tour'])
+
+const AFTER: Readonly<Record<string, (view: View, params: Obj, reply: unknown) => void>> = {
+  /** gateway/session_busy_controls.py:137-166: a YOLO set sends no session.info, so a later attach reply is the only other word of it. */
+  'config.set': (view, params, reply) => {
+    if (params.key === 'yolo' && isObject(reply) && (reply.value === '1' || reply.value === '0')) view.yolo = reply.value === '1'
+  },
+  /** gateway/session_server_requests.py:149-168: a lock is listed with the request until the last one settles it. */
+  'clarify.lock': (view, params, reply) => {
+    const id = String(params.request_id)
+    const open = view.requests.get(id)
+    if (open === undefined || !isObject(reply) || reply.status !== 'ok') return
+    if (Array.isArray(reply.remaining) && reply.remaining.length === 0) return void view.requests.delete(id)
+    const held = isObject(open.params) ? open.params : {}
+    view.requests.set(id, { method: open.method, params: { ...held, answers: { ...(isObject(held.answers) ? held.answers : {}), [String(params.question_id)]: params.answer ?? null } } })
+  }
+}
+
+/** `_ACTION_COMMANDS` and `_SUBGOAL_ACTIONS` in gateway/session_control_actions.py:15-22. */
+const CONTROL_ACTIONS: ReadonlySet<string> = new Set([
+  'goal.pause', 'goal.resume', 'goal.clear', 'goal.unwait', 'loop.pause', 'loop.resume', 'loop.stop', 'heartbeat.pause', 'heartbeat.resume', 'heartbeat.clear',
+  'subgoal.add', 'subgoal.remove', 'subgoal.clear'
+])
+/** gateway/session_control_actions.py:26-35,136-143: the closed key sets of the call and of `args`, an action Hermes serves, and the argument it needs. */
+const controlAction: Check = (gateway, socket, params, routed) => {
+  const { action, args = {} } = params
+  if (closed({ session_id: isString, profile: isString, action: isString, args: value => value === null || isObject(value) })(gateway, socket, params, routed) !== null) return 'invalid_params'
+  const given = isObject(args) ? args : {}
+  if (!isString(action) || !CONTROL_ACTIONS.has(action.trim()) || !Object.keys(given).every(key => key === 'text' || key === 'index')) return 'invalid_params'
+  if (action === 'subgoal.remove' && !(isInt(given.index) && given.index >= 1)) return 'invalid_params'
+  return action === 'subgoal.add' && !isWords(given.text) ? 'invalid_params' : null
+}
+/** `_ROLLBACK_FIELDS` and their types in gateway/session_tui_ops.py:203-230. A diff and a restore name a checkpoint. */
+const rollback = (fields: Readonly<Record<string, (value: unknown) => boolean>>): Check => (gateway, socket, params, routed) =>
+  closed({ session_id: isString, profile: isString, ...fields })(gateway, socket, params, routed) ?? ('hash' in fields && !isText(params.hash) ? 'invalid_params' : null)
+/** `_parse` in gateway/session_reactions.py:13-24: a row by id or the newest of a role, an emoji that is not blank or none, and an author. */
+const reaction: Check = (_gateway, _socket, params) => {
+  const { row_id: row, newest_role: role, emoji, author = 'user' } = params
+  const known = Object.keys(params).every(key => ['session_id', 'profile', 'row_id', 'newest_role', 'emoji', 'author'].includes(key))
+  const addressed = row === undefined || row === null ? role === 'user' || role === 'assistant' : isInt(row)
+  return known && addressed && (emoji === undefined || emoji === null || isWords(emoji)) && (author === 'user' || author === 'agent') ? null : 'invalid_params'
+}
+
 /**
  * The calls a story answers, each with the checks its handler makes first, in the handler's order.
  * A session verb on a socket that has not attached the session is `permission_denied` for a submit
@@ -167,8 +282,35 @@ const STORY_CHECKS: Readonly<Record<string, readonly Check[]>> = {
   'approval.respond': [exactly('session_id', 'execution_generation', 'prompt_id', 'choice'), attached, runningGeneration],
   'clarify.respond': [exactly('session_id', 'execution_generation', 'prompt_id', 'answer'), attached, runningGeneration],
   'session.interrupt': [known, (gateway, _socket, params) => (gateway.view.generation === params.execution_generation ? null : 'stale_generation')],
+  'clarify.lock': [lockable],
+  'connection.respond': [ownCard],
+  /** gateway/session_tui_side.py:33-45: the answer rides this socket's subscription, so the chat must be attached on it. */
+  'prompt.btw': [sideText, known, attached],
+  'prompt.background': [sideText, known, attached],
+  /** gateway/session_tui_ops.py:89-101 */
+  'session.export': [closed({ session_id: isString, profile: isString, format: isString, redact: isBoolean }), known],
+  /** gateway/session_tui_config.py:187-199: a set the story records, with no `scope`. */
+  'config.set': [closed({ session_id: isString, profile: isString, key: isString, value: () => true }), known],
+  'session.mutate': [mutation, known],
   /** gateway/session_commands.py:422-425 */
-  'command.dispatch': [known, dispatchable]
+  'command.dispatch': [known, dispatchable],
+  /** gateway/session_busy_controls.py:181-200 */
+  'session.steer': [correction, known, runningGeneration],
+  'session.redirect': [correction, known, runningGeneration],
+  /** gateway/session_authority.py:831-841 */
+  'prompt.cancel': [known, listed],
+  'prompt.steer_queued': [known, listed],
+  /** gateway/session_queued_controls.py:213-220: the edit is a submission, read before the row it replaces. */
+  'prompt.replace_queued': [attached, submissionId, listed],
+  /** gateway/session_authority.py:907-914 */
+  'prompt.resolve_unknown': [known, listed, lostGeneration],
+  /** gateway/session_ancillary.py:294-305 */
+  'process.kill': [closed({ session_id: isString, profile: isString, process_id: isText }), known],
+  'session.control': [controlAction, known],
+  'rollback.list': [rollback({ undo_since: value => typeof value === 'number', undo_message_id: isInt }), known],
+  'rollback.diff': [rollback({ hash: isString }), known],
+  'rollback.restore': [rollback({ hash: isString, file_path: isString, all: isBoolean }), known],
+  'message.react': [reaction, known]
 }
 const ANY_STORY_CALL: readonly Check[] = [known]
 
@@ -293,9 +435,11 @@ interface Held extends Stream {
   readonly model: Model | null
   readonly yolo: boolean | null
   readonly cwd?: string
+  readonly info: Obj
   readonly pending: readonly unknown[]
   readonly prompts: readonly unknown[]
   readonly openRequests: readonly unknown[]
+  readonly connection: Obj | null
 }
 
 /** The snapshot `session.resume` answers (gateway/session_controls.py:659-769), read at the stream's watermark. */
@@ -310,12 +454,12 @@ function snapshotOf(held: Held, subscriptionId: string, params: Obj): Obj {
     subscription_id: subscriptionId, revision: held.revision, execution_generation: held.generation,
     pending: held.pending, prompts: held.prompts,
     info: {
-      desktop_protocol: GATEWAY_PROTOCOL, title: held.title,
+      ...held.info, desktop_protocol: GATEWAY_PROTOCOL, title: held.title,
       ...(model === null ? {} : { model: model.model, ...(model.provider === null ? {} : { provider: model.provider }) }),
       ...(held.yolo === null ? {} : { yolo: held.yolo }),
       ...(held.cwd === undefined ? {} : { cwd: held.cwd })
     },
-    pending_connection: null, open_requests: held.openRequests
+    pending_connection: held.connection, open_requests: held.openRequests
   }
 }
 
@@ -330,6 +474,11 @@ function pathItems(gateway: ScriptedGateway, params: Obj, authorize: () => void)
   authorize()
   return gateway.fixture.header.paths?.words[word] ?? { items: [] }
 }
+
+/** `_YOLO_WORDS` in gateway/session_busy_controls.py:134 */
+const SWITCH_WORDS: Readonly<Record<string, string>> = { 1: '1', on: '1', true: '1', 0: '0', off: '0', false: '0' }
+/** gateway/session_busy_controls.py:45-46 */
+const BUSY_MODES: readonly unknown[] = ['interrupt', 'steer', 'queue']
 
 /** gateway/session_controls.py:386-392 */
 const unknownMethod = (method: string) => new Refused('unknown_method', { code: -32601, message: `unknown method: ${method}`, data: { reason: 'unknown_method' } })
@@ -433,6 +582,13 @@ function usageView(stats: Obj): Obj {
 const YOLO_WORDS: Readonly<Record<string, boolean>> = { 1: true, on: true, true: true, 0: false, off: false, false: false }
 
 const tokenFor = ({ model }: Model) => `confirm-${model}`
+
+function sameAnswer(recorded: unknown, sent: unknown): boolean {
+  if (recorded === MASKED) return typeof sent === 'string' && sent !== ''
+  if (Array.isArray(recorded)) return Array.isArray(sent) && sent.length === recorded.length && recorded.every((item, index) => sameAnswer(item, sent[index]))
+  if (!isObject(recorded)) return recorded === sent
+  return isObject(sent) && Object.keys(sent).length === Object.keys(recorded).length && Object.entries(recorded).every(([key, value]) => key in sent && sameAnswer(value, sent[key]))
+}
 
 const modelOf = (value: Obj | undefined): Model | null =>
   value !== undefined && isText(value.model) ? { model: value.model, provider: isText(value.provider) ? value.provider : null } : null
@@ -541,8 +697,17 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const mutation = typeof params.operation === 'string' && Object.hasOwn(MUTATIONS, params.operation) ? MUTATIONS[params.operation] : undefined
     return mutation === undefined ? gateway.story(socket, 'session.mutate', params, routed) : mutation(gateway, params, routed)
   },
-  'config.set': (gateway, _socket, params, routed) => gateway.setYolo(params, routed, null),
+  /** gateway/session_config.py:65-73 hands the session controls to gateway/session_busy_controls.py:30-56. */
+  'config.get': (gateway, _socket, params, routed) => gateway.control(params, routed, false),
+  /** gateway/session_tui_config.py:187-193 */
+  'config.set': (gateway, socket, params, routed) => {
+    if (gateway.awaits('config.set')) return gateway.story(socket, 'config.set', params, routed)
+    return params.key === 'yolo' || gateway.fixture.header.controls === undefined ? gateway.setYolo(params, routed, null) : gateway.control(params, routed, true)
+  },
   'session.detach': detach,
+  /** gateway/session_ancillary.py:226-237: the session's own projection, which the story names. */
+  'process.list': (gateway, _socket, params, routed) => gateway.read('process.list', params, routed),
+  'session.control.read': (gateway, _socket, params, routed) => gateway.read('session.control.read', params, routed),
   /**
    * `_delivery_params` (gateway/session_bot.py:804-827), with the id rule of tools/bot_live_delivery.py:131-134,
    * then the target: a profile that is not running refuses `runtime_unavailable` (tui_gateway/methods_bot_relay.py:122).
@@ -638,6 +803,8 @@ export class ScriptedGateway {
   branchesMade = 0
 
   private stored: readonly unknown[]
+  private reads: Reads
+  private readonly controls: Record<string, string> | null
   private readonly profiles: Obj[]
   private readonly souls: Map<string, string>
   private readonly pictures = new Map<string, { readonly mime: string; readonly size: number; readonly data: string }>()
@@ -650,7 +817,6 @@ export class ScriptedGateway {
   private readonly storyIsBotChatOf: string | null
   private readonly afterReply: (() => void)[] = []
   private readonly sockets = new Set<Socket>()
-  private readonly openRequests = new Map<string, { readonly method: string; readonly params: unknown }>()
   private readonly stagedImages = new Set<string>()
   private drop: Drop
   private delivered = 0
@@ -662,11 +828,14 @@ export class ScriptedGateway {
     this.sessionId = fixture.header.sessionId
     this.reach = fixture.header.reach ?? 'host'
     this.stored = fixture.header.stored
+    this.reads = fixture.header.reads ?? {}
+    this.controls = fixture.header.controls === undefined ? null : { ...fixture.header.controls }
     this.drop = options.drop === null ? { at: 'spent' } : { at: 'armed', ...options.drop }
     const { models } = fixture.header
     this.view = {
-      running: false, generation: 0, revision: 0, title: '', pending: [], prompts: new Map(),
-      model: modelOf(isObject(models) ? models : undefined), deferred: null, switchesCommitted: 0, branchesCommitted: 0, turnsEnded: 0, yolo: fixture.header.yolo ?? null
+      running: false, generation: 0, revision: 0, title: '', pending: fixture.header.pending ?? [], prompts: new Map(), requests: new Map(), connection: null,
+      model: modelOf(isObject(models) ? models : undefined), deferred: null, switchesCommitted: 0, branchesCommitted: 0, turnsEnded: 0, yolo: fixture.header.yolo ?? null,
+      info: fixture.header.info ?? {}
     }
     this.epoch = fixture.steps.map(epochOf).find(isText) ?? 'fixture-epoch'
     this.done = new Promise((resolve, reject) => { this.settle = { resolve, reject } })
@@ -712,13 +881,7 @@ export class ScriptedGateway {
     this.options.onReceived?.(frame)
     if (!isObject(frame)) return
     const { id, method } = frame
-    if (typeof method !== 'string') {
-      // A viewer's answer to a server request settles it only from a socket attached to its session
-      // (gateway/session_server_requests.py:53-75), and gets no reply.
-      const open = typeof id === 'string' ? this.openRequests.get(id) : undefined
-      if (open !== undefined && socket.subscriptions.has(this.sessionId)) this.openRequests.delete(id as string)
-      return
-    }
+    if (typeof method !== 'string') return this.answered(socket, frame)
     // Answered by the read loop, ahead of every handler (tui_gateway/ws.py:710-714).
     if (method === 'gateway.ping') return socket.peer.write({ jsonrpc: '2.0', id, result: { ok: true } })
     const reply = this.dispatch(socket, method, frame.params ?? {})
@@ -803,6 +966,42 @@ export class ScriptedGateway {
       isObject(held) && isText(held.path) && this.stagedImages.has(held.path) && held.path.startsWith(`/hermes/${routed}/`))
   }
 
+  /**
+   * A viewer's answer to a server request. Hermes settles the request only for a socket attached to
+   * its session, sends no reply, and drops an answer nothing waits for
+   * (gateway/session_server_requests.py:53-96). The story fails on one it did not expect, so a client
+   * that answers what it should leave open fails its replay.
+   */
+  private answered(socket: Socket, frame: Obj): void {
+    const step = this.fixture.steps[this.step]
+    const id = String(frame.id)
+    const problem = ((): string | null => {
+      if (step === undefined || !('answer' in step)) return 'it waits for no answer'
+      if (step.answer !== id) return `it waits for the answer to ${step.answer}`
+      if (!socket.subscriptions.has(this.sessionId)) return 'the socket has not attached the session'
+      if (!this.view.requests.has(id)) return 'that request is not open'
+      if ('error' in step) return isObject(frame.error) && frame.error.code === step.error.code ? null : `it waits for error ${step.error.code}`
+      return 'result' in frame && sameAnswer(step.result, frame.result) ? null : `it waits for the result ${JSON.stringify(step.result)}`
+    })()
+    if (problem !== null) return this.settle.reject(new Error(`the story did not expect this answer to ${id} at step ${this.step}: ${problem}`))
+    this.view.requests.delete(id)
+    this.step++
+    this.pump()
+  }
+
+  awaits(method: string): boolean {
+    const step = this.fixture.steps[this.step]
+    return step !== undefined && 'await' in step && step.await === method
+  }
+
+  /** A read of the story session, answered as the story's latest `reads` say. One they never name is an unknown method. */
+  read(method: keyof Reads, params: Obj, routed: string): unknown {
+    if (!Object.hasOwn(this.reads, method)) throw unknownMethod(method)
+    if (!strings(['session_id', 'profile'])(params)) throw new Refused('invalid_params')
+    this.authorize(params, routed)
+    return this.reads[method]
+  }
+
   /** Whether the frame is for the story session, on the profile it lives in. */
   plays(params: Obj, routed: string): boolean {
     return params.session_id === this.sessionId && routed === this.home
@@ -842,14 +1041,16 @@ export class ScriptedGateway {
     }
     const step = this.fixture.steps[this.step]
     if (step === undefined || !('await' in step) || step.await !== method) {
-      const waiting = step !== undefined && 'await' in step ? `it waits for ${step.await}` : 'it waits for no call'
+      const waiting = step !== undefined && 'await' in step ? `it waits for ${step.await}` : step !== undefined && 'answer' in step ? `it waits for an answer to ${step.answer}` : 'it waits for no call'
       const unexpected = `the story did not expect ${method} at step ${this.step}: ${waiting}`
       this.settle.reject(new Error(unexpected))
       throw new Refused(unexpected, { code: -32603, message: unexpected })
     }
     this.step++
     if (step.error !== undefined) throw new Refused(step.error.message, step.error)
-    if (method === 'session.mutate') this.publishReceipt()
+    AFTER[method]?.(this.view, params, step.reply)
+    if (method === 'session.mutate' || method === 'rollback.restore') this.publishReceipt()
+    for (let next = this.fixture.steps[this.step]; next !== undefined && 'reads' in next; next = this.fixture.steps[this.step]) this.play(next)
     return step.reply
   }
 
@@ -857,9 +1058,10 @@ export class ScriptedGateway {
    * A committed mutation publishes its receipt as `session.updated` before the reply goes out
    * (gateway/session_mutations.py:347-352, as `commitModel` does), so the steps after a `session.mutate`
    * step up to the next awaited call play now. Played after the reply they would race the client's next call.
+   * A whole-folder restore commits its rewind the same way before it answers (gateway/session_tui_ops.py:350-375).
    */
   private publishReceipt(): void {
-    for (let next = this.fixture.steps[this.step]; next !== undefined && !('await' in next); next = this.fixture.steps[this.step]) this.play(next)
+    for (let next = this.fixture.steps[this.step]; next !== undefined && !('await' in next || 'answer' in next); next = this.fixture.steps[this.step]) this.play(next)
   }
 
   storyParent(): Parent {
@@ -1072,8 +1274,9 @@ export class ScriptedGateway {
     const { view } = this
     return snapshotOf({
       id: this.sessionId, rows: this.stored, ring: this.ring, epoch: this.epoch, running: view.running, generation: view.generation,
-      revision: view.revision, title: view.title, model: view.model, yolo: view.yolo, pending: view.pending, prompts: [...view.prompts.values()],
-      openRequests: this.openRequestList(), ...(this.fixture.header.paths?.cwd === undefined ? {} : { cwd: this.fixture.header.paths.cwd })
+      revision: view.revision, title: view.title, model: view.model, yolo: view.yolo, info: view.info, pending: view.pending, prompts: [...view.prompts.values()],
+      openRequests: this.openRequestList(), connection: view.connection,
+      ...(this.fixture.header.paths?.cwd === undefined ? {} : { cwd: this.fixture.header.paths.cwd })
     }, socket.subscriptionId, params)
   }
 
@@ -1085,7 +1288,7 @@ export class ScriptedGateway {
     socket.subscriptions.set(chat.id, socket.subscriptionId)
     return snapshotOf({
       id: chat.id, rows: chat.rows, ring: chat.ring, epoch: chat.epoch, running: chat.running, generation: chat.generation,
-      revision: chat.revision, title: chat.title, model: chat.model, yolo: this.yoloAt(chat.yolo), pending: [], prompts: chat.asking === null ? [] : [chat.asking], openRequests: []
+      revision: chat.revision, title: chat.title, model: chat.model, yolo: this.yoloAt(chat.yolo), info: {}, pending: [], prompts: chat.asking === null ? [] : [chat.asking], openRequests: [], connection: null
     }, socket.subscriptionId, params)
   }
 
@@ -1154,6 +1357,22 @@ export class ScriptedGateway {
     const params = { ...stamp, type, session_id: chat.id, payload, replay_epoch: chat.epoch, seq: (chat.ring.at(-1)?.seq ?? 0) + 1 }
     chat.ring.push(params)
     for (const socket of this.viewers(chat.id)) socket.peer.write({ jsonrpc: '2.0', method: 'event', params })
+  }
+
+  /** A session control's read or write (gateway/session_busy_controls.py:30-108): `{key, value, scope}`. */
+  control(params: Obj, routed: string, write: boolean): unknown {
+    const held = this.controls
+    if (held === null) throw unknownMethod(write ? 'config.set' : 'config.get')
+    const { key } = params
+    const allowed = ['session_id', 'profile', 'key', ...(write ? ['value'] : [])]
+    if (!isText(key) || !(key in held) || Object.keys(params).some(name => !allowed.includes(name))) throw new Refused('invalid_params')
+    this.authorize(params, routed)
+    if (write) {
+      const word = key === 'busy' ? BUSY_MODES.find(mode => mode === params.value) : SWITCH_WORDS[String(params.value).trim().toLowerCase()]
+      if (!isText(word)) throw new Refused('invalid_params')
+      held[key] = word
+    }
+    return { key, value: held[key], scope: 'session' }
   }
 
   modelMenu(current: Model | null): unknown {
@@ -1344,7 +1563,7 @@ export class ScriptedGateway {
 
   /** gateway/session_server_requests.py:125-135 */
   openRequestList(): unknown[] {
-    return [...this.openRequests].map(([id, { method, params }]) => ({ id, method, params }))
+    return [...this.view.requests].flatMap(([id, { method, params }]) => (UNREPLAYED.has(method) ? [] : [{ id, method, params }]))
   }
 
   releaseHeld(): void {
@@ -1365,7 +1584,7 @@ export class ScriptedGateway {
       this.finished = true
       return this.settle.resolve()
     }
-    if ('await' in step || this.viewers().length === 0) return
+    if ('await' in step || 'answer' in step || this.viewers().length === 0) return
     const before = this.fixture.steps[this.step - 1]?.at ?? 0
     this.scheduled = true
     this.options.clock.setTimeout(() => {
@@ -1375,10 +1594,12 @@ export class ScriptedGateway {
     }, this.options.timing === 'recorded' ? step.at - before : 0)
   }
 
-  private play(step: Exclude<FixtureStep, { await: string }>): void {
+  private play(step: Exclude<FixtureStep, { await: string } | { answer: string }>): void {
     this.step++
     if ('stored' in step) {
       this.stored = step.stored
+    } else if ('reads' in step) {
+      this.reads = { ...this.reads, ...step.reads }
     } else if ('drop' in step) {
       this.closeAll(step.drop)
     } else {
@@ -1397,6 +1618,7 @@ export class ScriptedGateway {
     const lost: PushStep[] = []
     for (let next = this.fixture.steps[this.step]; next !== undefined && lost.length < missed; next = this.fixture.steps[this.step]) {
       if ('stored' in next) this.stored = next.stored
+      else if ('reads' in next) this.reads = { ...this.reads, ...next.reads }
       else if ('push' in next) lost.push(next)
       else break
       this.step++
@@ -1415,7 +1637,7 @@ export class ScriptedGateway {
     if (!isObject(push)) return
     const { id, method, params } = push
     if (method !== 'event') {
-      if (typeof id === 'string' && typeof method === 'string') this.openRequests.set(id, { method, params })
+      if (typeof id === 'string' && typeof method === 'string') this.view.requests.set(id, { method, params })
     } else if (isObject(params) && isInt(params.seq)) {
       this.ring.push({ ...params, seq: params.seq })
       this.track(params)

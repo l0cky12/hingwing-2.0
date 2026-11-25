@@ -1,6 +1,6 @@
 import { checkTarget, liveDialer, openHermes, remoteRoute, type Dialer, type Route } from '@highwing/hermes'
 import type { BotId, Target } from '@highwing/hermes/domain'
-import { loadFixture, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
+import { loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, net, Notification, shell, type OpenDialogOptions } from 'electron'
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -14,10 +14,11 @@ import { desktopNotifier, notifyTurnEnds, recordingNotifier } from './notify'
 import { pickPicture, readHead } from './picture'
 import { previewPane, registerPageScheme } from './preview'
 import { reachOf } from './preview-page'
+import { dialogSaver, folderSaver } from './saves'
 import { loadSettings, saveSettings } from './settings'
 import { isAppUrl, openWindow } from './windows'
 
-const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_RECORD, HIGHWING_OPEN_LOG, HIGHWING_PICK_FILE, HIGHWING_PICK_FILES, HIGHWING_NOTIFY_LOG } = process.env
+const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_RECORD, HIGHWING_OPEN_LOG, HIGHWING_PICK_FILE, HIGHWING_PICK_FILES, HIGHWING_SAVE_DIR, HIGHWING_NOTIFY_LOG } = process.env
 const fixture = HIGHWING_FIXTURE ? loadFixture(HIGHWING_FIXTURE) : null
 
 const PICTURE_DIALOG: OpenDialogOptions = {
@@ -55,15 +56,16 @@ app.whenReady().then(async () => {
   const owner = fixture
     ? pinnedConnection(open(scriptedDialer(fixture, {
       timing: 'recorded',
-      ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(frame)}\n`) } : {})
+      ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(maskedFrame(frame))}\n`) } : {})
     })))
     : ownConnection({ loaded: await loadSettings(settingsDir), save: target => saveSettings(settingsDir, target), check: checkTarget, routeFor, open })
   pane.follow(owner.setup)
   const pictures = { choose: choosePicture, read: readHead, set: (bot: BotId, data: string) => owner.run({ do: 'setBotPicture', bot, data }) }
   const sources = desktopSources({ dialog, clipboard, focused: () => BrowserWindow.getFocusedWindow() }, HIGHWING_PICK_FILES)
   const images = imageLoader(fixture ? fixtureImageDeps(fixture.header.media) : desktopImageDeps(net))
+  const saver = HIGHWING_SAVE_DIR ? folderSaver(HIGHWING_SAVE_DIR) : dialogSaver(dialog, () => app.getPath('downloads'))
   const served = serveWindows(
-    owner, ipcMain, isAppUrl, opener, images, drafts, pane, bot => pickPicture(pictures, bot), { store: attachments, sources }
+    owner, ipcMain, isAppUrl, opener, images, drafts, pane, bot => pickPicture(pictures, bot), { store: attachments, sources }, saver
   )
   const stopNotices = notifyTurnEnds(owner, {
     notifier: HIGHWING_NOTIFY_LOG ? recordingNotifier(HIGHWING_NOTIFY_LOG) : desktopNotifier(Notification),

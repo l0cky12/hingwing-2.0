@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type {
-  FileDiff, Generation, HelperId, HelperItem, Item, NoticeItem, Outcome, PlanEntry, PlanItem, PromptId, PromptItem, ReasoningItem, Session, SettledTurn,
-  Sync, ToolId, ToolItem, ToolResult, TurnId
+  AdmissionId, FileDiff, Generation, HelperId, HelperItem, HermesRequest, InputId, Item, NoticeItem, Outcome, PlanEntry, PlanItem, PromptId, PromptItem, QueuedMessage, ReasoningItem,
+  RequestId, Session, SettledTurn, Sync, ToolId, ToolItem, ToolResult, TurnId
 } from '../../hermes/src/domain/session'
 import { checkThread, outline, threadView, type HelperView, type PlanView, type StepView, type ThreadNode, type ThreadView } from '../src/thread-view'
 
@@ -11,13 +11,13 @@ const NONE: ToolResult = { kind: 'none' }
 
 function session(over: Partial<Session> = {}): Session {
   return {
-    id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, outbox: [],
-    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, sync: { state: 'live' }, ...over
+    id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [],
+    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [], processes: null, control: null, sync: { state: 'live' }, ...over
   }
 }
 
 const settled = (items: readonly Item<'settled'>[], outcome: Outcome = COMPLETE, id = 't1'): SettledTurn =>
-  ({ id: id as TurnId, request: { text: 'Do the errand', inputId: null, rowId: null, attachments: [] }, began: null, items, outcome, rows: [], tokens: null })
+  ({ id: id as TurnId, request: { text: 'Do the errand', inputId: null, rowId: null, attachments: [] }, began: null, items, outcome, rows: [], tokens: null, reply: null })
 
 const running = (items: readonly Item[], sync: Sync = { state: 'live' }, announced: string | null = null): Session => session({
   sync,
@@ -41,7 +41,7 @@ function diff(path: string, added: number, removed: number, createsFile = false)
 const command = (output: string, exitCode = 0): ToolResult => ({ kind: 'command', output, exitCode, clipped: 0 })
 
 function approval<S extends 'open' | 'settled' = 'open'>(state: PromptItem<S>['state'], cmd = 'rm -rf scratch'): PromptItem<S> {
-  return { kind: 'prompt', id: 'p1' as PromptId, generation: 1 as Generation, ask: { kind: 'approval', command: cmd, reason: 'delete', choices: ['once', 'deny', 'session', 'always'] }, state }
+  return { kind: 'prompt', id: 'p1' as PromptId, generation: 1 as Generation, ask: { kind: 'approval', command: cmd, reason: 'delete', choices: ['once', 'deny', 'session', 'always'] }, state, deadline: null }
 }
 
 const turnOf = (s: Session) => threadView(s, CLOCK).turns.at(-1)!
@@ -143,14 +143,29 @@ describe('approvals beside their tool', () => {
 describe('notices', () => {
   const declined = (method: string): NoticeItem => ({ kind: 'notice', what: 'declined', requestId: 'r1', method })
 
-  it.each(['sudo', 'sudo.request'])('says no to a sudo request (%s) in words', method => {
-    expect(nodesOf(running([declined(method)]))[0]).toMatchObject({
-      kind: 'notice', tone: 'info', text: "Hermes asked for your sudo password. Highwing can't show that prompt yet, so it said no."
+  it('says no to a setup step in words', () => {
+    expect(nodesOf(running([declined('setup_beat')]))[0]).toMatchObject({
+      kind: 'notice', tone: 'info', text: "Hermes asked to show a setup step. Highwing can't show that yet, so it said no."
     })
   })
 
   it('names the method of a request it has no words for', () => {
-    expect(nodesOf(running([declined('vault.unlock')]))[0]).toMatchObject({ text: "Hermes sent a request Highwing can't show yet (vault.unlock), so it said no." })
+    expect(nodesOf(running([declined('preview.read')]))[0]).toMatchObject({ text: "Hermes sent a request Highwing can't show yet (preview.read), so it said no." })
+  })
+
+  it('carries where a request closed as a node of its own, with a line in the outline', () => {
+    const closed: NoticeItem = { kind: 'notice', what: 'closed', requestId: 'srq-1' as RequestId, asked: 'sudo', end: 'answered' }
+    const view = threadView(running([closed]), CLOCK)
+    expect(view.turns[0]?.nodes).toEqual([{ kind: 'closed', key: expect.any(String), asked: 'sudo', end: 'answered', words: 'You sent a password.' }])
+    expect(outline(view).split('\n')).toContain('○ You sent a password.')
+    expect(checkThread(view)).toEqual([])
+  })
+
+  it('keeps the live end on the running tool while Hermes waits on a request', () => {
+    const sudo: HermesRequest = { id: 'srq-1' as RequestId, ask: { kind: 'secret', for: { is: 'sudo', command: 'sudo true' } }, state: { s: 'waiting', error: null }, deadline: null }
+    const waiting = { ...running([runningTool('terminal', { command: 'sudo true' })]), requests: [sudo] }
+    expect(threadView(waiting, CLOCK).turns[0]?.end).toMatchObject({ kind: 'at', tone: 'live' })
+    expect(checkThread(threadView(waiting, CLOCK))).toEqual([])
   })
 })
 
@@ -225,7 +240,7 @@ describe('checkThread', () => {
   it('reports each broken invariant', () => {
     const step: StepView = { key: 't1/0', title: [], state: 'done', stat: null, duration: null, record: null, image: null }
     const view: ThreadView = {
-      state: 'ready', pending: [], earlier: 'none', changesAt: null,
+      state: 'ready', pending: [], asks: [], earlier: 'none', changesAt: null,
       turns: [
         {
           key: 't1', time: null, request: null, attachments: [], rowId: null, end: { kind: 'at', nodeKey: 't1/7', tone: 'live', elapsed: null }, tokens: '9 in, 1 out',
@@ -526,7 +541,7 @@ describe('the live end while a hidden tool runs', () => {
 
 describe('checkThread on helpers, plans and reasoning', () => {
   const turn = (nodes: ThreadNode[], end: ThreadView['turns'][number]['end']): ThreadView => ({
-    state: 'ready', pending: [], earlier: 'none', changesAt: null, turns: [{ key: 't1', time: null, request: null, attachments: [], rowId: null, tokens: null, nodes, end }]
+    state: 'ready', pending: [], asks: [], earlier: 'none', changesAt: null, turns: [{ key: 't1', time: null, request: null, attachments: [], rowId: null, tokens: null, nodes, end }]
   })
   const planNode = (key: string): ThreadNode => ({ kind: 'plan', key, plan: { done: 0, total: 1, cancelled: 0, openByDefault: true, entries: [{ key: `${key}/e1`, text: 'x', state: 'todo', depth: 0 }] } })
   const reasoningNode = (key: string, streaming: boolean): ThreadNode => ({ kind: 'reasoning', key, text: 'x', streaming, duration: null })
@@ -577,5 +592,80 @@ describe('attachments', () => {
     const view = threadView(session({ outbox: [{ inputId: 'i1' as never, text: 'Summarise this', attachments: [sent[1]!], state: { s: 'sending' } }] }), CLOCK)
     expect(view.pending[0]?.attachments).toEqual([sent[1]])
     expect(outline(view)).toBe(['+ [file] contract.pdf', '⋯ Summarise this  (sending)'].join('\n'))
+  })
+
+  it('draws them with a message Hermes holds in its queue', () => {
+    const queued: QueuedMessage = { admissionId: 'a1' as AdmissionId, inputId: 'i1' as InputId, text: 'Summarise this', from: 'here', attachments: sent, state: { s: 'queued', can: [] } }
+    const view = threadView(session({ queue: [queued] }), CLOCK)
+    expect(view.pending[0]?.attachments).toEqual(sent)
+    expect(outline(view)).toBe(['+ [image] error.png  [file] contract.pdf', '⋯ Summarise this  (queued)'].join('\n'))
+  })
+})
+
+describe('what Hermes says', () => {
+  const goal: Item<'settled'> = { kind: 'status', what: 'line', about: 'goal', text: 'Goal met.\nAll three items are done.' }
+  const notice = (state: 'shown' | 'cleared'): Item<'settled'> =>
+    ({ kind: 'status', what: 'notice', key: 'credits', level: 'warn', text: 'Credits are low.', detail: null, ttlMs: null, seenAt: null, state })
+  const moa: Item<'settled'> = { kind: 'moa', progress: { done: 2, total: 3 }, references: [{ label: 'a', text: 'Use rm.' }], phase: { is: 'aggregating', by: 'judge' } }
+  const interlude = (items: readonly Item<'settled'>[], id = 'interlude:2'): SettledTurn =>
+    ({ id: id as TurnId, request: null, began: null, items, outcome: { kind: 'interlude' }, rows: [], tokens: null, reply: null })
+
+  it('prints a glyph line for a MoA round, a status line and a notice', () => {
+    const turn = running([moa, goal, notice('shown'), notice('cleared')])
+    expect(lines(turn)).toEqual([
+      '> Do the errand',
+      '≋ MoA 2/3 · 1 references · aggregating with judge',
+      '· goal: Goal met.',
+      '※ warn: Credits are low.',
+      '※ warn: Credits are low.  (cleared)',
+      '◉ Thinking'
+    ])
+    expect(checkThread(threadView(turn, CLOCK))).toEqual([])
+  })
+
+  it('shows the live interlude after the last turn, with no request and no end mark', () => {
+    const view = threadView(session({ history: [settled([text('Done.')])], interlude: [goal] }), CLOCK)
+    expect(view.turns.map(turn => [turn.key, turn.end.kind])).toEqual([['t1', 'done'], ['interlude:live', 'none']])
+    expect(outline(view).split('\n')).toEqual(['> Do the errand', '| Done.', '✓ Done', '', '· goal: Goal met.'])
+    expect(checkThread(view)).toEqual([])
+  })
+
+  it('draws a sealed interlude between turns as settled, with no end mark', () => {
+    const view = threadView(session({ history: [settled([text('Done.')]), interlude([goal]), settled([text('Again.')], COMPLETE, 't3')] }), CLOCK)
+    expect(view.turns.map(turn => turn.end.kind)).toEqual(['done', 'none', 'done'])
+    expect(checkThread(view)).toEqual([])
+  })
+
+  it('shows this client\'s rows of Hermes\'s queue under the last turn, ahead of what Hermes has not listed, and leaves out another client\'s', () => {
+    const row = (id: string, from: 'here' | 'elsewhere', state: QueuedMessage['state'] = { s: 'queued', can: [] }): QueuedMessage =>
+      ({ admissionId: `a-${id}` as AdmissionId, inputId: id as InputId, text: `message ${id}`, from, attachments: [], state })
+    const view = threadView(session({
+      queue: [row('one', 'here'), row('two', 'elsewhere'), row('three', 'here', { s: 'steering' })],
+      outbox: [{ inputId: 'four' as InputId, text: 'message four', attachments: [], state: { s: 'sending' } }]
+    }), CLOCK)
+    expect(view.pending).toEqual([
+      { key: 'one', text: 'message one', attachments: [], status: 'queued', detail: null },
+      { key: 'three', text: 'message three', attachments: [], status: 'queued', detail: null },
+      { key: 'four', text: 'message four', attachments: [], status: 'sending', detail: null }
+    ])
+    expect(checkThread(view)).toEqual([])
+  })
+
+  it('draws words steered into a turn where they sit in it', () => {
+    const view = threadView(session({ history: [settled([tool('terminal', { command: 'ls' }), { kind: 'steer', text: 'use trash-put instead\nplease' }, text('Done.')])] }), CLOCK)
+    expect(view.turns[0]?.nodes.map(node => node.kind)).toEqual(['step', 'steer', 'prose'])
+    expect(outline(view)).toContain('» use trash-put instead')
+    expect(checkThread(view)).toEqual([])
+  })
+
+  it('words a denial that told Hermes what to do as a denial', () => {
+    const denied: PromptItem<'settled'> = {
+      kind: 'prompt', id: 'p1' as PromptId, generation: 1 as Generation, ask: { kind: 'approval', command: 'rm -rf x', reason: null, choices: ['once', 'deny'] },
+      state: { s: 'answered', reply: { kind: 'deny', tell: 'use trash-put instead' } }, deadline: null
+    }
+    const plain: PromptItem<'settled'> = { ...denied, id: 'p2' as PromptId, state: { s: 'answered', reply: { kind: 'choice', value: 'deny' } } }
+    const cards = threadView(session({ history: [settled([denied, plain])] }), CLOCK).turns[0]?.nodes.flatMap(node => (node.kind === 'prompt' ? [node.card] : []))
+    expect(cards).toHaveLength(2)
+    expect(cards?.[0]).toEqual(cards?.[1])
   })
 })
