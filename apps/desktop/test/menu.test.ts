@@ -113,6 +113,11 @@ describe('the @ list', () => {
     expect(picked('Ask @Rae about it', inside.range, inside.items[0]!)).toEqual({ text: 'Ask @Rae about it', caret: 9 })
     const quoted = opened(at('Ask @"Tim oth" now', 9))
     expect(picked('Ask @"Tim oth" now', quoted.range, quoted.items[0]!)).toEqual({ text: 'Ask @"Timothy · CEO" now', caret: 21 })
+    const before = opened(at('Ask @"Timothy CEO" now', 5))
+    const timothy = before.items.find(item => item.kind === 'bot' && item.bot.name === 'Timothy · CEO')!
+    expect(picked('Ask @"Timothy CEO" now', before.range, timothy), 'caret before the opening quote').toEqual({ text: 'Ask @"Timothy · CEO" now', caret: 21 })
+    const open = opened(at('Ask @"Tim about it', 9))
+    expect(picked('Ask @"Tim about it', open.range, open.items[0]!), 'an unclosed quote takes only its word').toEqual({ text: 'Ask @"Timothy · CEO" about it', caret: 21 })
   })
 
   it('stays closed on the text Escape closed it on, and wraps the active row', () => {

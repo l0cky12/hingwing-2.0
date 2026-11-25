@@ -65,8 +65,9 @@ const TRIGGERS: readonly Trigger[] = [
     typed: (text, caret) => {
       const typed = typedMention(text.slice(0, caret))
       if (typed === null) return null
-      const rest = (text[typed.at + 1] === '"' ? /^[^"\n]*"?/ : /^\S*/).exec(text.slice(caret))?.[0] ?? ''
-      return { from: typed.at, to: caret + rest.length, query: typed.query }
+      const close = text[typed.at + 1] === '"' ? text.indexOf('"', typed.at + 2) : -1
+      const to = close >= caret ? close + 1 : caret + (/^\S*/.exec(text.slice(caret))?.[0].length ?? 0)
+      return { from: typed.at, to, query: typed.query }
     },
     sections: [
       { label: 'Bots', items: (query, { bots }) => bots.filter(bot => starts(bot.name, query) || starts(bot.id, query)).map(bot => ({ kind: 'bot', bot, mention: mentionOf(bot, bots) })) }
