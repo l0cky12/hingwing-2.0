@@ -11,21 +11,18 @@ const SIDEBAR: readonly Segment<Mode>[] = [
   { value: 'chats', label: 'Chats', icon: <Bubble /> }
 ]
 
-/** `where` names the place a shortcut works when Settings is not it. */
-const SHORTCUTS: readonly { readonly label: string; readonly key: string; readonly where: string | null }[] = [
-  { label: 'Command palette', key: 'K', where: null },
-  { label: 'New chat', key: 'N', where: 'In a chat' },
-  { label: 'Find in chat', key: 'F', where: 'In a chat' }
+const SHORTCUTS: readonly { readonly label: string; readonly key: string; readonly onlyIn: string | null }[] = [
+  { label: 'Command palette', key: 'K', onlyIn: null },
+  { label: 'New chat', key: 'N', onlyIn: 'In a chat' },
+  { label: 'Find in chat', key: 'F', onlyIn: 'In a chat' }
 ]
 
-/** Settings, in the chat column. Main decides when it closes: `onClose` only asks. */
-export function Settings({ setup, mode, onClose }: { readonly setup: CardSetup; readonly mode: Mode; readonly onClose: () => void }) {
+export function Settings({ setup, mode, onRequestClose }: { readonly setup: CardSetup; readonly mode: Mode; readonly onRequestClose: () => void }) {
   const saving = setup.at === 'checking' && setup.step === 'save'
   const link = useTopic('link')
   const heading = useRef<HTMLHeadingElement>(null)
   const ids = useId()
 
-  // On `saved` the connection card puts focus on Change.
   useLayoutEffect(() => {
     if (setup.at !== 'saved') heading.current?.focus()
   }, [])
@@ -33,16 +30,16 @@ export function Settings({ setup, mode, onClose }: { readonly setup: CardSetup; 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || document.querySelector('dialog:modal') !== null) return
       event.preventDefault()
-      onClose()
+      onRequestClose()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+  }, [onRequestClose])
 
   return (
     <div className="screen">
       <Bar where="Settings">
-        <button type="button" aria-keyshortcuts="Escape" disabled={saving} onClick={onClose}>Close</button>
+        <button type="button" aria-keyshortcuts="Escape" disabled={saving} onClick={onRequestClose}>Close</button>
       </Bar>
       <main>
         <div className="settings">
@@ -68,9 +65,9 @@ export function Settings({ setup, mode, onClose }: { readonly setup: CardSetup; 
           <section className="group short" aria-labelledby={`${ids}-keys`}>
             <h3 id={`${ids}-keys`}>Keyboard shortcuts</h3>
             <div className="card">
-              {SHORTCUTS.map(({ label, key, where }) => (
+              {SHORTCUTS.map(({ label, key, onlyIn }) => (
                 <div key={key} className="row">
-                  <div className="text"><p className="label">{label}{where !== null && <span className="where">{where}</span>}</p></div>
+                  <div className="text"><p className="label">{label}{onlyIn !== null && <span className="where">{onlyIn}</span>}</p></div>
                   <div className="control keys"><kbd>{COMMAND_KEY}</kbd><kbd>{key}</kbd></div>
                 </div>
               ))}

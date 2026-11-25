@@ -16,7 +16,6 @@ export const Bubble = () => <svg {...line(15, 1.9)}><path d="M21 12a8 8 0 0 1-11
 
 export interface Segment<V extends string> { readonly value: V; readonly label: string; readonly icon: ReactNode }
 
-/** Radios in a track. The picked one is mint. */
 export function Segmented<V extends string>({ labelledBy, value, segments, onPick }: {
   readonly labelledBy: string
   readonly value: V
@@ -63,7 +62,7 @@ function SummaryRow({ summary, folded, change, onChange }: {
       <span className="tile"><Tile size={22} width={1.6} /></span>
       <div className="text" role="status">
         <p className="label">{summary.title}{summary.online && <span className="state online">Online</span>}</p>
-        {summary.said !== null ? <p className="said">{summary.said}</p> : summary.host !== null && <p className="host">{summary.host}</p>}
+        {summary.linkMessage !== null ? <p className="said">{summary.linkMessage}</p> : summary.host !== null && <p className="host">{summary.host}</p>}
       </div>
       <div className="control">
         {action !== null && <button type="button" className="btn" onClick={() => void press(action.run)}>{action.label}</button>}
@@ -136,7 +135,7 @@ function Editor({ setup, view, onFold }: { readonly setup: CardSetup; readonly v
         {foot.show === 'note' && <p className="note">Highwing keeps the current connection until a check passes.</p>}
         {foot.show === 'progress' && <p className="note progress" role="status" aria-label="Checking"><span className="glyph" />{foot.words}</p>}
         {cancel !== null && (
-          <button type="button" className="btn" disabled={cancel === 'off'} onClick={cancel === 'fold' ? onFold : () => void run({ do: cancel === 'stop' ? 'stopCheck' : 'keepTarget' })}>
+          <button type="button" className="btn" disabled={cancel === 'saving'} onClick={cancel === 'fold' ? onFold : () => void run({ do: cancel === 'stop' ? 'stopCheck' : 'keepTarget' })}>
             {cancel === 'stop-waiting' ? 'Stop waiting' : 'Cancel'}
           </button>
         )}
@@ -146,11 +145,9 @@ function Editor({ setup, view, onFold }: { readonly setup: CardSetup; readonly v
   )
 }
 
-/** One connection editor for Settings and for a first run, so the two never drift apart. A first run has no link. */
 export function ConnectionCard({ setup, link }: { readonly setup: CardSetup; readonly link: Link | undefined }) {
   const [editing, setEditing] = useState(false)
   const [seen, setSeen] = useState(setup.at)
-  // Main moved on: a check ended, was stopped, or passed. The editor folds unless the new state keeps it open.
   if (seen !== setup.at) {
     setSeen(setup.at)
     setEditing(false)
@@ -158,7 +155,6 @@ export function ConnectionCard({ setup, link }: { readonly setup: CardSetup; rea
   const view = cardOf(setup, link, editing)
   const change = useRef<HTMLButtonElement>(null)
   const open = view.editor !== null
-  // A check that passes on a new machine remounts the window, already folded on `saved`. That counts as folding too.
   const wasOpen = useRef(open || setup.at === 'saved')
   useLayoutEffect(() => {
     if (wasOpen.current && !open) change.current?.focus()

@@ -1,6 +1,5 @@
 const MAC = navigator.userAgent.includes('Mac')
 
-/** The key the app's shortcuts are held with, as a keycap names it. */
 export const COMMAND_KEY = MAC ? '⌘' : 'Ctrl'
 
 /** Ctrl+`letter`, or Cmd+`letter` on macOS. A layout whose key types no Latin letter is read by the key's place. */

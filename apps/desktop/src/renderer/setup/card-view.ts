@@ -3,42 +3,29 @@ import { bannerOf, type BannerAction } from '../chrome/Chrome'
 import { SIGN_IN_HINT } from './form'
 import type { CardSetup } from './screens'
 
-/** The row that says who Highwing talks to now. */
 export interface Summary {
   readonly kind: Target['kind']
   readonly title: string
-  /** The host or address as saved, when it says more than the title: a full tailnet name, a `user@`, or an address's scheme and port. */
   readonly host: string | null
-  /** The link's own words while it waits or is blocked. They take the host's place. */
-  readonly said: string | null
+  readonly linkMessage: string | null
   readonly online: boolean
   readonly action: BannerAction | null
 }
 
-/** The footer's left slot. A first run has no note, so it shows nothing until a check runs. */
 export type Foot = { readonly show: 'note' } | { readonly show: 'progress'; readonly words: string } | { readonly show: 'nothing' }
 
 export interface Editor {
-  /** What the draft starts from when the editor opens. */
   readonly seed: Target | null
   readonly disabled: boolean
   readonly problem: { readonly words: string; readonly fix: string } | null
   readonly foot: Foot
-  /** Said under the fields while the check waits for a sign-in in the browser. */
   readonly hint: string | null
-  /**
-   * `stop` asks main to end the check. `off` is the save step, which main will not cancel. A first run has no Cancel, only
-   * `stop-waiting` while it waits for a sign-in, which ends the check as a failure.
-   */
-  readonly cancel: 'fold' | 'stop' | 'off' | 'stop-waiting' | null
+  readonly cancel: 'fold' | 'stop' | 'saving' | 'stop-waiting' | null
 }
 
 export interface CardView {
-  /** null on a first run, which has no connection to sum up. */
   readonly summary: Summary | null
-  /** null while folded. */
   readonly editor: Editor | null
-  /** Said once a check from Settings passes. */
   readonly news: string | null
 }
 
@@ -56,13 +43,12 @@ function summaryOf(target: Target, link: Link | undefined): Summary {
     kind: target.kind,
     title,
     host: saved !== title ? saved : null,
-    said: link?.state === 'waiting' || link?.state === 'blocked' ? link.message : null,
+    linkMessage: link?.state === 'waiting' || link?.state === 'blocked' ? link.message : null,
     online: link?.state === 'online',
     action: action && inSettings(action)
   }
 }
 
-/** `editing` is the window's own: whether Change opened the editor. A running or failed check always shows it. */
 export function cardOf(setup: CardSetup, link: Link | undefined, editing: boolean): CardView {
   const first = setup.live === null
   const summary = setup.live === null ? null : summaryOf(setup.live.target, link)
@@ -74,7 +60,7 @@ export function cardOf(setup: CardSetup, link: Link | undefined, editing: boolea
     case 'checking': {
       const words = STEP_WORDS[setup.step](machineOf(setup.target))
       const signIn = setup.step === 'sign-in'
-      const cancel = first ? (signIn ? 'stop-waiting' : null) : setup.step === 'save' ? 'off' : 'stop'
+      const cancel = first ? (signIn ? 'stop-waiting' : null) : setup.step === 'save' ? 'saving' : 'stop'
       return { summary, editor: { seed: setup.target, disabled: true, problem: null, foot: { show: 'progress', words }, hint: signIn ? SIGN_IN_HINT : null, cancel }, news: null }
     }
     case 'failed': {

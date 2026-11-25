@@ -146,7 +146,6 @@ function Sheet({ target, settingsOpen, returnFocusTo, onClose }: SheetProps) {
   )
 }
 
-/** Ctrl+K (Cmd+K on macOS) opens the palette over the chat window, and over Settings beside it. */
 export function Palette({ target, settingsOpen }: { readonly target: Target | null; readonly settingsOpen: boolean }) {
   const [back, setBack] = useState<Element | null | undefined>(undefined)
   const opened = back !== undefined

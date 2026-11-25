@@ -10,7 +10,6 @@ const NOTICES = {
   newer: 'A newer Highwing saved the connection on this computer. This one can\'t read it, and keeps that file under another name when you connect.'
 } as const
 
-/** The whole window before any connection is saved. */
 export function FirstRun({ setup }: { readonly setup: Extract<Setup, { at: 'form' | 'checking' | 'failed' }> }) {
   return (
     <div className="screen">

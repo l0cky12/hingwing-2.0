@@ -64,7 +64,6 @@ function useSwitchModeKeepingFocus(mode: Mode) {
   return { root, pick }
 }
 
-/** Close asks main to leave Settings. Once it has, focus goes back to the top bar's Settings button. A sidebar or palette pick leaves focus where its open puts it. */
 function useCloseSettings(shown: boolean) {
   const settingsButton = useRef<HTMLButtonElement>(null)
   const closing = useRef(false)
@@ -84,7 +83,6 @@ function useCloseSettings(shown: boolean) {
 
 interface ChatWindowProps {
   readonly hidden: boolean
-  /** Shown in the chat column, over the chat, which stays mounted under it. */
   readonly settings: CardSetup | null
   readonly target: Target | null
   readonly mode: Mode
@@ -95,7 +93,6 @@ function ChatWindow({ hidden, settings, target, mode }: ChatWindowProps) {
   const { root, pick } = useSwitchModeKeepingFocus(mode)
   const { settingsButton, close } = useCloseSettings(settings !== null)
   const switcher = <ModeSwitch mode={mode} onPick={pick} />
-  // Settings takes the chat column, so the pane beside the chat steps aside until it closes.
   const paned = preview?.state === 'open' && settings === null
   return (
     <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined}>
@@ -104,7 +101,7 @@ function ChatWindow({ hidden, settings, target, mode }: ChatWindowProps) {
       <div key="screen" className="screen" hidden={settings !== null}>
         <ChatScreen target={target} settingsButton={settingsButton} />
       </div>
-      {settings !== null && <Settings setup={settings} mode={mode} onClose={close} />}
+      {settings !== null && <Settings setup={settings} mode={mode} onRequestClose={close} />}
       <DraftSweep />
       {paned && <Preview preview={preview} />}
       {!hidden && <Palette target={target} settingsOpen={settings !== null} />}
@@ -112,11 +109,6 @@ function ChatWindow({ hidden, settings, target, mode }: ChatWindowProps) {
   )
 }
 
-/**
- * `screenOf` names the screen for each setup state. While a connection is live its chat stays
- * mounted under Settings and the saved screen, hidden, so an unsent draft survives them. Only a new
- * epoch remounts it, which also makes it ask Electron main again for every topic it reads.
- */
 export function App() {
   const setup = useTopic('setup')
   const mode = useTopic('mode')

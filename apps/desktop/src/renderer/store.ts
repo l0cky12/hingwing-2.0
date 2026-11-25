@@ -17,7 +17,8 @@ interface Copy {
  * The connection a subtree reads from. A copy belongs to one epoch, so a subtree mounted for a new
  * connection starts empty and never draws what the old connection held.
  */
-export const Epoch = createContext(0)
+const NO_EPOCH = 0
+export const Epoch = createContext(NO_EPOCH)
 
 const copies = new Map<string, Copy>()
 
@@ -72,14 +73,14 @@ export function useTopic<T extends Topic>(topic: T | null): TopicValue<T> | unde
   return useSyncExternalStore(topic === null ? NEVER : subscribe(key, topic), () => copies.get(key)?.value as TopicValue<T> | undefined)
 }
 
-/**
- * Opening a bot or chat while Settings is up leaves Settings first, and opens only once main agrees.
- * While main saves a new connection it refuses, and nothing moves. The sidebar and the palette both
- * open through here. App reads the setup state outside any epoch.
- */
+function settingsShown(): boolean {
+  const setup = copies.get(keyOf(NO_EPOCH, 'setup'))?.value as Setup | undefined
+  return setup !== undefined && screenOf(setup).show === 'settings'
+}
+
+/** Every open, from the sidebar or the palette, leaves Settings first, and runs only once main agrees. */
 export const run: Bridge['run'] = async command => {
-  const setup = copies.get(keyOf(0, 'setup'))?.value as Setup | undefined
-  if (command.do === 'open' && setup !== undefined && screenOf(setup).show === 'settings') {
+  if (command.do === 'open' && settingsShown()) {
     const left = await window.highwing.run({ do: 'keepTarget' })
     if (!left.ok) return left
   }

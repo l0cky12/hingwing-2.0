@@ -34,7 +34,7 @@ describe('which screen the window shows', () => {
 describe('the connection row', () => {
   it('names the machine, adds the full name in mono, and shows the Online pill', () => {
     expect(cardOf(AT_REST, ONLINE, false)).toEqual({
-      summary: { kind: 'remote', title: 'hermes-host', host: 'hermes-host.example-tailnet.ts.net', said: null, online: true, action: null },
+      summary: { kind: 'remote', title: 'hermes-host', host: 'hermes-host.example-tailnet.ts.net', linkMessage: null, online: true, action: null },
       editor: null,
       news: null
     })
@@ -49,16 +49,16 @@ describe('the connection row', () => {
 
   it('shows the link\'s own words with no pill while it waits or is blocked, with the banner\'s action', () => {
     expect(cardOf(AT_REST, waiting('not-running', "Hermes isn't running."), false).summary)
-      .toMatchObject({ said: "Hermes isn't running.", online: false, action: { label: 'Start Hermes', run: [{ do: 'reconnect', start: true }] } })
+      .toMatchObject({ linkMessage: "Hermes isn't running.", online: false, action: { label: 'Start Hermes', run: [{ do: 'reconnect', start: true }] } })
     expect(cardOf(AT_REST, { state: 'blocked', why: 'auth', message: 'Hermes turned Highwing away.' }, false).summary)
-      .toMatchObject({ said: 'Hermes turned Highwing away.', online: false, action: { label: 'Retry', run: [{ do: 'reconnect', start: false }] } })
+      .toMatchObject({ linkMessage: 'Hermes turned Highwing away.', online: false, action: { label: 'Retry', run: [{ do: 'reconnect', start: false }] } })
     expect(cardOf(AT_REST, waiting('dropped', 'Reconnecting to Hermes.'), false).summary)
-      .toMatchObject({ said: 'Reconnecting to Hermes.', online: false, action: null })
+      .toMatchObject({ linkMessage: 'Reconnecting to Hermes.', online: false, action: null })
   })
 
   it('offers Sign in on a signed-out link, which checks the live connection in the Settings already open', () => {
     expect(cardOf(AT_REST, { state: 'blocked', why: 'signed-out', message: 'Sign in to Hermes again.' }, false).summary)
-      .toMatchObject({ said: 'Sign in to Hermes again.', action: { label: 'Sign in', run: [{ do: 'checkTarget', target: HOST }] } })
+      .toMatchObject({ linkMessage: 'Sign in to Hermes again.', action: { label: 'Sign in', run: [{ do: 'checkTarget', target: HOST }] } })
   })
 
   it('names a gateway by its host, with the address in mono when it says more', () => {
@@ -68,7 +68,7 @@ describe('the connection row', () => {
 
   it('keeps the mono line with no pill and no action while connecting, or before the link is known', () => {
     for (const link of [{ state: 'connecting', attempt: 1 } as const, undefined]) {
-      expect(cardOf(AT_REST, link, false).summary).toMatchObject({ host: 'hermes-host.example-tailnet.ts.net', said: null, online: false, action: null })
+      expect(cardOf(AT_REST, link, false).summary).toMatchObject({ host: 'hermes-host.example-tailnet.ts.net', linkMessage: null, online: false, action: null })
     }
   })
 })
@@ -86,7 +86,7 @@ describe('the editor in Settings', () => {
 
   it('turns Cancel off while the connection is saved', () => {
     expect(cardOf({ at: 'checking', live: LIVE, target: LAB, step: 'save' }, ONLINE, false).editor)
-      .toMatchObject({ disabled: true, foot: { show: 'progress', words: 'Saving this connection' }, cancel: 'off' })
+      .toMatchObject({ disabled: true, foot: { show: 'progress', words: 'Saving this connection' }, cancel: 'saving' })
   })
 
   it('says why a check failed under the field, keeps the draft, and still shows the current connection online', () => {
