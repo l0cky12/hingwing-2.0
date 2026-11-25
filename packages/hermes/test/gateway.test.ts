@@ -1035,3 +1035,60 @@ describe('the scripted gateway and the chat commands', () => {
     expect(await call('session.mutate', { ...fenced, operation, payload })).toMatchObject(refusal('invalid_params'))
   })
 })
+
+describe('the scripted gateway and the session panels', () => {
+  const PROCESSES = { processes: [{ session_id: 'proc_1', command: 'npm run build', status: 'running' }] }
+  const KILLED = { processes: [{ session_id: 'proc_1', command: 'npm run build', status: 'exited', completion_reason: 'killed' }] }
+  const CONTROL = { control: { goal: null, loop: null, heartbeat: null, revision: '', updated_at: 0 } }
+  const STORY: Fixture = {
+    header: { ...ERRAND.header, reads: { 'process.list': PROCESSES, 'session.control.read': CONTROL } },
+    steps: [
+      { at: 0, await: 'process.kill', params: {}, reply: { status: 'killed', session_id: 'proc_1' } },
+      { at: 0, reads: { 'process.list': KILLED } },
+      { at: 0, await: 'session.control', params: {}, reply: { ...CONTROL, dispatch: { type: 'exec', output: 'Goal paused.', notice: null, message: null, display: null } } },
+      { at: 0, await: 'rollback.list', params: {}, reply: { enabled: true, checkpoints: [] } },
+      { at: 0, await: 'rollback.diff', params: {}, reply: { stat: '', diff: '' } },
+      { at: 0, await: 'rollback.restore', params: {}, reply: { success: true } },
+      { at: 0, await: 'message.react', params: {}, reply: { row_id: 2, reactions: [] } }
+    ]
+  }
+
+  it('answers each read as the story last said, and a read the story never names as an unknown method, as a Hermes without it does', async () => {
+    const { call, played } = await rawSocket({}, STORY)
+    await call('session.resume', { session_id: SESSION })
+    expect((await call('process.list', { session_id: SESSION })).result).toEqual(PROCESSES)
+    expect((await call('session.control.read', { session_id: SESSION })).result).toEqual(CONTROL)
+    await call('process.kill', { session_id: SESSION, process_id: 'proc_1' })
+    await played()
+    expect((await call('process.list', { session_id: SESSION })).result).toEqual(KILLED)
+    expect(await call('process.list', { session_id: SESSION, all: true })).toMatchObject(refusal('invalid_params'))
+    expect(await call('process.list', { session_id: 'other' })).toMatchObject(refusal('not_found'))
+    const errand = await rawSocket()
+    expect(await errand.call('process.list', { session_id: SESSION })).toMatchObject({ error: { code: -32601 } })
+    expect(await errand.call('session.control.read', { session_id: SESSION })).toMatchObject({ error: { code: -32601 } })
+  })
+
+  it('refuses each write outside the closed key set Hermes checks, and takes the story\'s own', async () => {
+    const { call, played } = await rawSocket({}, STORY)
+    await call('session.resume', { session_id: SESSION })
+    expect(await call('process.kill', { session_id: SESSION, process_id: '' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('process.kill', { session_id: SESSION, process_id: 'proc_1', force: true })).toMatchObject(refusal('invalid_params'))
+    expect(await call('process.kill', { session_id: SESSION, process_id: 'proc_1' })).toMatchObject({ result: { status: 'killed' } })
+    await played()
+    expect(await call('session.control', { session_id: SESSION, action: 'goal.delete', args: {} })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.control', { session_id: SESSION, action: 'subgoal.add', args: { text: ' ' } })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.control', { session_id: SESSION, action: 'subgoal.remove', args: { index: 0 } })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.control', { session_id: SESSION, action: 'goal.pause', args: { why: 'x' } })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.control', { session_id: SESSION, action: 'goal.pause', args: {} })).toMatchObject({ result: { dispatch: { output: 'Goal paused.' } } })
+    expect(await call('rollback.list', { session_id: SESSION, hash: 'abc' })).toMatchObject(refusal('invalid_params'))
+    await call('rollback.list', { session_id: SESSION })
+    expect(await call('rollback.diff', { session_id: SESSION })).toMatchObject(refusal('invalid_params'))
+    await call('rollback.diff', { session_id: SESSION, hash: 'abc' })
+    expect(await call('rollback.restore', { session_id: SESSION, hash: 'abc', all: 'yes' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('rollback.restore', { session_id: SESSION, hash: 'abc', file_path: 'notes.md', all: false })).toMatchObject({ result: { success: true } })
+    expect(await call('message.react', { session_id: SESSION, emoji: '👍' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('message.react', { session_id: SESSION, row_id: 2, emoji: ' ' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('message.react', { session_id: SESSION, row_id: 2, emoji: '👍', author: 'bot' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('message.react', { session_id: SESSION, row_id: 2, emoji: null })).toMatchObject({ result: { row_id: 2 } })
+  })
+})

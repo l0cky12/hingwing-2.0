@@ -244,6 +244,17 @@ describe('loadFixture', () => {
     expect(() => loadFixture(info)).toThrow(`${info}:1: "info" must be an object of attach info fields`)
   })
 
+  it('reads the panel reads the chat starts with and a step that changes them, and refuses a read Hermes does not have', () => {
+    const reads = { 'process.list': { processes: [] } }
+    const loaded = loadFixture(write([{ ...header, reads }, { at: 0, reads: { 'session.control.read': { control: null } } }]))
+    expect(loaded.header.reads).toEqual(reads)
+    expect(loaded.steps).toEqual([{ at: 0, reads: { 'session.control.read': { control: null } } }])
+    const unknown = write([{ ...header, reads: { 'process.tail': {} } }])
+    expect(() => loadFixture(unknown)).toThrow(`${unknown}:1: "reads" must map process.list or session.control.read to a reply`)
+    const step = write([header, { at: 0, reads: { 'config.get': {} } }])
+    expect(() => loadFixture(step)).toThrow(`${step}:2: "reads" must map process.list or session.control.read to a reply`)
+  })
+
   it('names the line of the prototype\'s envelope', () => {
     const path = write([header, { at: 0, push: { kind: 'event', type: 'message.delta', session_id: 's', seq: 1, payload: {} } }])
     expect(() => loadFixture(path)).toThrow(`${path}:2: "push" must be a JSON-RPC 2.0 frame with a method`)
