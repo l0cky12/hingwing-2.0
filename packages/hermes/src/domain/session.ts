@@ -708,6 +708,7 @@ export type WaitingWhy =
 export type BlockedWhy =
   | 'hermes-missing' | 'incompatible' | 'auth' | 'inaccessible' | 'refused'
   | 'ssh-missing' | 'ssh-denied' | 'ssh-check' | 'host-changed'
+  | 'signed-out' // a gateway reached by its address holds no sign-in for Highwing, or ended the one it had
 
 /** The app-wide connection to the gateway. */
 export type Link =
