@@ -54,10 +54,11 @@ highwing-2.0/
     src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows), files.ts (openablePath)
       settings.ts                no Electron              parseSettings, loadSettings, saveSettings: connection.json
       drafts.ts                  no Electron              readDraft, draftStore: drafts/, one file per chat's unsent draft
+      attachments.ts             no Electron              attachmentStore: attachments/, the files staged for messages; desktopSources: the file dialog and clipboard, or HIGHWING_PICK_FILES
       connection.ts              no Electron              ownConnection, nextSetup, pinnedConnection: the setup state, the saved target, the live Hermes
-    src/preload/index.ts         preload                  exposes Bridge: watch, run, file, image, drafts and keepDraft
-    src/renderer/                renderer                 store.ts (useTopic), setup/, bots/, chats/, chat/, composer/ (drafts.ts: useDraft), chrome/, styles/
-  fixtures/                                               *.jsonl, make_fixture.py (run with Hermes's interpreter), profiles/*.json (canned `profiles.list` replies)
+    src/preload/index.ts         preload                  exposes Bridge: watch, run, file, image, drafts, keepDraft, attachPick, attachPaste and attachDropped
+    src/renderer/                renderer                 store.ts (useTopic), setup/, bots/, chats/, chat/ (Attachments.tsx: chips and sent files), composer/ (drafts.ts: useDraft, useAttachments), chrome/, styles/
+  fixtures/                                               *.jsonl, make_fixture.py (run with Hermes's interpreter), profiles/*.json (canned `profiles.list` replies), attach/ (files the attachment recipes stage, from make_attach_files.py)
   scripts/                                                sync-contract.ts, contract-drift.ts
 ```
 
@@ -81,6 +82,7 @@ highwing-2.0/
 | The saved connection on disk | `main/settings.ts` | nobody. `ownConnection` gets `loaded` and `save` as arguments |
 | A window's copy of a topic | `renderer/store.ts` in that window, written only by `applyPush` | components read with `useTopic` |
 | A chat's unsent draft | `renderer/composer/drafts.ts` in that window, kept on disk by `main/drafts.ts` | the composer reads it with `useDraft`, the chat list with `useChatDrafts`; not Hermes's state |
+| The files staged for a message | the bytes: `main/attachments.ts`, under userData `attachments/`; which ones and in what order: the chat's draft | the window holds ids and names only. The hub reads the bytes through its `uploads` option when the message is sent. A launch deletes files no draft names |
 | Open rows | React state in that window | not shared; not Hermes's state |
 | The bot search text and the last refusal of a click | React state in that window's sidebar. The selected bot is derived from the `open` topic and the roster on each render | not shared; not Hermes's state |
 | The design C view | nobody; `threadView(session, clock)` recomputes it and memoises settled turns by reference | |
@@ -96,7 +98,7 @@ Two windows on one session read the same actor through two IPC subscriptions. Th
 4. `packages/hermes` never imports `electron`. It takes a `Dialer` and a `Clock` instead of reaching for globals.
 5. The renderer imports `@highwing/hermes/domain`, `@highwing/thread` and `ipc-contract.ts`. It cannot import `@highwing/hermes` or `./testing`, which need Node.
 6. Main imports `@highwing/hermes` and `ipc-contract.ts`. Only `main/index.ts` imports `./testing`, to honour `HIGHWING_FIXTURE` and `HIGHWING_RECORD`.
-7. `main/settings.ts`, `main/drafts.ts` and `main/connection.ts` never import `electron`. They take the settings directory, the drafts directory, the check and the route as arguments.
+7. `main/settings.ts`, `main/drafts.ts`, `main/attachments.ts` and `main/connection.ts` never import `electron`. They take the settings directory, the drafts directory, the attachments directory, the dialog and clipboard, the check and the route as arguments.
 
 Rules 2, 3 and 5 are enforced by `exports` maps and by the renderer's tsconfig having no Node types. Rules 1, 3 and 4 inside the package, and rule 7, are enforced by one ESLint `no-restricted-imports` block per folder. CI runs both.
 
@@ -122,6 +124,7 @@ A `message.delta` frame becomes pixels in four steps.
 | Protocol rules | the scripted gateway refuses a wrong key set, a verb on an unattached socket, and (on loopback) an `Origin` header or a reused ticket | every fixture test |
 | The open chat | `nextDesk` fed a table of event sequences: the launch pick, a click that needs a lookup, two clicks, an answer for an earlier click, a refusal, a switch back | `domain/` tests |
 | Bots and profiles | the scripted gateway routes each frame by its `profile` as Hermes's dispatcher does, plays a Bot Chat per bot and answers `<profile>: <text>`, so a hub test reads which bot a message ran as | `@highwing/hermes` tests |
+| Attachments | `play(errand, { attach })` sends the first message with an image. The scripted gateway stages images and files as Hermes does and refuses a submit that names a path it did not stage, so `test/attach.test.ts` checks the attach call came first and the submit named its path | same |
 | The ticket | `mintWith` fed scripted command replies, and both routes run against the fake `hermes`, which answers `--serve` | same |
 | Contract drift | `pnpm contract:drift` compares the two vendored contract files with the installed Hermes and prints the methods and event types that changed | CI and after each `hermes update` |
 | Illegal states | `tsc -p sketch/.typecheck/tsconfig.json` | CI |

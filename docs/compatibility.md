@@ -164,6 +164,34 @@ no cache, plan, rate-limit or money field from any of them.
   refuses any scope but "global", which would flip every chat of the profile,
   and takes a missing value to mean "toggle". See `packages/hermes/src/actor.ts`.
 
+## Attachments
+
+A message can carry files. Highwing stages each one with Hermes before it
+submits the message, in the order the chips show, and sends nothing if Hermes
+refuses one.
+
+| Method | Sent for | Params | Hermes answers |
+| --- | --- | --- | --- |
+| `image.attach_bytes` | A PNG, JPEG, GIF or WebP, by its bytes | `session_id`, `content_base64`, `filename` | The staged `path` and `mime`. It queues nothing (`gateway/session_images.py`). |
+| `file.attach` | Any other file, a PDF included | `session_id`, `data_url`, `name` | `ref_text`, an `@file:` reference to the staged copy (`gateway/session_ancillary.py:139-180`). |
+| `prompt.submit` | The message | `attachments: [{path, mime}]` for the staged images; `api_text` is the text, a blank line, and each `ref_text` on its own line | The usual receipt. |
+
+- Both attach calls need a socket subscribed to the session. A socket that is
+  not gets `permission_denied`.
+- Hermes takes at most 10 images on one submit, and refuses an image over
+  25 MiB or of another type with `invalid_params`. A file sent inline may be up
+  to 256 MiB (`_ATTACHMENT_MAX_BYTES` in `tui_gateway/prompt_attachments.py`).
+  Highwing checks the same limits when you attach a file, so the refusal names
+  the file and the limit before anything reaches Hermes.
+- `file.attach` is not in the vendored contract's canonical list. An older
+  Hermes may answer it with an unknown-method error or refuse it. Highwing then
+  shows "Hermes refused <name>: This Hermes doesn't support that." and sends
+  nothing.
+- `text` stays the words you typed, so the thread and Hermes's history show
+  them alone. The model reads `api_text`.
+- Hermes keeps no record of a message's attachments in its history. A request
+  shows its attachments only in the run of Highwing that sent it.
+
 ## When a change needs a newer Hermes route
 
 1. Install the newer Hermes, then run `pnpm contract:drift` to see which
