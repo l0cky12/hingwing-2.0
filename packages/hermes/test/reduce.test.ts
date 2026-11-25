@@ -1308,6 +1308,8 @@ describe('side questions and background prompts', () => {
   it("keeps an answer that came before the reply, and one to another client's task", () => {
     const early = feed(live(), answered(1, 'btw_1', 'notes.md'), started('btw_1'))
     expect(early.content.sides).toMatchObject([{ id: 'btw_1', state: { s: 'done', text: 'notes.md' } }])
+    const earlyBackground = feed(live(), answered(1, 'bg_2', 'Tidied.', 'background', null), started('bg_2', 'background', 'Tidy the notes'))
+    expect(earlyBackground.content.sides, 'its reply fills in what was asked').toEqual([{ id: 'bg_2', kind: 'background', asked: 'Tidy the notes', state: { s: 'done', text: 'Tidied.' } }])
     const theirs = reduce(live(), answered(1, 'bg_9', 'Tidied.', 'background', null))
     expect(theirs.content.sides).toEqual([{ id: 'bg_9', kind: 'background', asked: null, state: { s: 'done', text: 'Tidied.' } }])
   })
