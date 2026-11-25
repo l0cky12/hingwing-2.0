@@ -653,6 +653,33 @@ describe('the open chat', () => {
       expect(calls(noGui, 'session.create')).toEqual([])
     })
 
+    it('opens up front only when its first message could be sent, and otherwise says why and leaves the open chat', async () => {
+      const ready = await launched(WITH_BOTS)
+      expect(await ready.hermes.run({ do: 'open', ref: { kind: 'new', bot: RESEARCH, draftId: 'draft-1' }, upFront: true })).toEqual({ ok: true, value: null })
+      expect(ready.hermes.open.get().shown).toEqual(fresh(RESEARCH, 'draft-1'))
+      expect(calls(ready, 'session.create'), 'opening it still makes nothing').toEqual([])
+
+      const offline = open(WITH_BOTS)
+      offline.state.failWith = new DialError('not-running')
+      await offline.clock.advance(100)
+      const before = offline.hermes.open.get()
+      expect(await offline.hermes.run({ do: 'open', ref: { kind: 'new', bot: RESEARCH, draftId: 'draft-1' }, upFront: true }))
+        .toEqual({ ok: false, refusal: { kind: 'offline', message: "Highwing isn't connected to Hermes right now." } })
+      expect(offline.hermes.open.get()).toEqual(before)
+      expect(await offline.hermes.run({ do: 'open', ref: { kind: 'new', bot: RESEARCH, draftId: 'draft-2' } }), 'Ctrl+N still opens a draft offline').toEqual({ ok: true, value: null })
+
+      const bound = await launched(BOUND)
+      const shown = bound.hermes.open.get()
+      expect(await bound.hermes.run({ do: 'open', ref: { kind: 'new', bot: RESEARCH, draftId: 'draft-1' }, upFront: true }))
+        .toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't switch bots from Highwing yet. Update Hermes on that machine, then reconnect." } })
+      expect(bound.hermes.open.get()).toEqual(shown)
+
+      const header = { ...WITH_BOTS.header, describe: { ...(WITH_BOTS.header.describe as object), session_create: { sources: ['cli'], parameters: [] } } }
+      const noGui = await launched({ ...WITH_BOTS, header })
+      expect(await noGui.hermes.run({ do: 'open', ref: { kind: 'new', bot: RESEARCH, draftId: 'draft-1' }, upFront: true }))
+        .toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't start a chat from Highwing." } })
+    })
+
     const minting = async (fixture: Fixture) => {
       let minted = 0
       const opened = open(fixture, { mintId: () => `minted-${++minted}` })

@@ -414,7 +414,7 @@ export function openHermes(options: HermesOptions): Hermes {
       const opened = await typedNew(command)
       if (opened !== null) return opened
     }
-    if (command.do === 'open') return desk.ask(command.ref)
+    if (command.do === 'open') return 'upFront' in command ? desk.askUpFront(command.ref) : desk.ask(command.ref)
     if (command.do === 'start') {
       const started = await desk.start(command.chat)
       return started.ok ? run({ do: 'send', sessionId: started.value, text: command.text, attachments: command.attachments ?? [] }) : started

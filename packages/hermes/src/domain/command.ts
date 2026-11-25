@@ -15,6 +15,12 @@ export type Command =
    */
   | { readonly do: 'open'; readonly ref: ChatRef }
   /**
+   * A new chat in a bot that must be able to start now. When its first message could not be sent (no connection, a
+   * socket bound to one profile, a Hermes that makes no chat for Highwing), it is refused and the open chat stays.
+   * A plain `open` of a new chat opens the draft anyway, and its first send says why.
+   */
+  | { readonly do: 'open'; readonly ref: { readonly kind: 'new'; readonly bot: BotId; readonly draftId: string }; readonly upFront: true }
+  /**
    * The first message to a chat that has no session yet: makes the session and sends `text` there.
    * Messages sent while it is being made go to that one session, in the order sent.
    */

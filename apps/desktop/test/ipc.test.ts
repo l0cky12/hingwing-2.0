@@ -166,6 +166,8 @@ describe('validators', () => {
   it("keep a bot's edited fields as sent, with the revision it was read at, and a window's removal of a picture", () => {
     expect(parseCommand({ do: 'describeBot', bot: 'rae', extra: 1 })).toEqual({ do: 'describeBot', bot: 'rae' })
     expect(parseCommand({ do: 'markBot', bot: 'rae', mark: 'hide', extra: 1 })).toEqual({ do: 'markBot', bot: 'rae', mark: 'hide' })
+    expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: 'rae', draftId: 'd1', upFront: true }, upFront: true }))
+      .toEqual({ do: 'open', ref: { kind: 'new', bot: 'rae', draftId: 'd1' }, upFront: true })
     expect(parseCommand({ do: 'editBot', bot: 'rae', edit: { persona: ' Plain.\n', extra: 1 }, revision: 2 })).toEqual({ do: 'editBot', bot: 'rae', edit: { persona: ' Plain.\n' }, revision: 2 })
     expect(parseCommand({ do: 'editBot', bot: 'rae', edit: { name: 'Ray', description: '' }, revision: null }))
       .toEqual({ do: 'editBot', bot: 'rae', edit: { name: 'Ray', description: '' }, revision: null })
@@ -284,6 +286,9 @@ describe('validators', () => {
     ['details of a bot with no name', { do: 'describeBot', bot: '' }],
     ['an edit that changes nothing', { do: 'editBot', bot: 'rae', edit: {}, revision: 2 }],
     ['a mark that is not one of the four', { do: 'markBot', bot: 'rae', mark: 'flip' }],
+    ['an up-front open of a bot\'s chat', { do: 'open', ref: { kind: 'bot', bot: 'rae' }, upFront: true }],
+    ['an up-front open of a new chat in no bot', { do: 'open', ref: { kind: 'new', bot: null, draftId: 'd1' }, upFront: true }],
+    ['an up-front flag that is not true', { do: 'open', ref: { kind: 'new', bot: 'rae', draftId: 'd1' }, upFront: false }],
     ['a mark for a bot with no name', { do: 'markBot', bot: ' ', mark: 'pin' }],
     ['a roster refresh, which only Electron main asks for', { do: 'refreshBots' }],
     ['an edit to a blank name', { do: 'editBot', bot: 'rae', edit: { name: '  ' }, revision: 2 }],

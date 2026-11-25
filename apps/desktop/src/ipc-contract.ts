@@ -313,7 +313,8 @@ type Validators = { readonly [K in WindowCommand['do']]: (raw: Obj) => Extract<W
 export const validators: Validators = {
   open: raw => {
     const ref = chatRefOf(raw.ref)
-    return ref && { do: 'open', ref }
+    if (raw.upFront === undefined) return ref && { do: 'open', ref }
+    return raw.upFront === true && ref?.kind === 'new' && ref.bot !== null ? { do: 'open', ref: { kind: 'new', bot: ref.bot, draftId: ref.draftId }, upFront: true } : null
   },
   start: raw => {
     const chat = unstartedOf(raw.chat)
