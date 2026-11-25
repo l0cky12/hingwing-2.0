@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "types": ["node"] },
-  "include": ["electron.vite.config.ts", "src/main", "src/preload", "src/ipc-contract.ts", "test/**/*.ts"]
+  "include": ["electron.vite.config.ts", "src/main", "src/preload", "src/ipc-contract.ts", "src/chat-link.ts", "test/**/*.ts"]
 }

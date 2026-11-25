@@ -117,6 +117,7 @@ describe('validators', () => {
     expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: 'research', draftId: 'd1', sessionId: 's9' } })).toEqual({ do: 'open', ref: { kind: 'new', bot: 'research', draftId: 'd1' } })
     expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: null, draftId: 'd1' } })).toEqual({ do: 'open', ref: { kind: 'new', bot: null, draftId: 'd1' } })
     expect(parseCommand({ do: 'open', ref: { kind: 'chat', sessionId: 's9', bot: 'research' } })).toEqual({ do: 'open', ref: { kind: 'chat', sessionId: 's9' } })
+    expect(parseCommand({ do: 'open', ref: { kind: 'link', sessionId: 's9', bot: 'research' } })).toEqual({ do: 'open', ref: { kind: 'link', sessionId: 's9' } })
     expect(parseCommand({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null, draftId: 'd1' }, text: 'hello', sessionId: 's9' }))
       .toEqual({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello', attachments: [] })
     expect(parseCommand({ do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: null }, text: 'hello' }))
@@ -233,6 +234,7 @@ describe('validators', () => {
     ['a first message to a plain chat', { do: 'start', chat: { kind: 'chat', bot: null, sessionId: null }, text: 'hello' }],
     ['a first message to a chat picked from the list', { do: 'start', chat: { kind: 'chat', sessionId: 's1' }, text: 'hello' }],
     ['an open of a picked chat with no session', { do: 'open', ref: { kind: 'chat', sessionId: ' ' } }],
+    ['an open of a linked chat with no session', { do: 'open', ref: { kind: 'link', sessionId: ' ' } }],
     ['a new bot with no name', { do: 'createBot', draft: { name: ' ', description: '', model: null, persona: '' } }],
     ['a new bot whose description is not text', { do: 'createBot', draft: { name: 'Rae', description: 7, model: null, persona: '' } }],
     ['a new bot whose persona is missing', { do: 'createBot', draft: { name: 'Rae', description: '', model: null } }],
@@ -330,7 +332,7 @@ const still = <T>(value: T) => ({ get: () => value, subscribe: () => () => {} })
 const LINK: Link = { state: 'blocked', why: 'hermes-missing', message: 'A link of this test.' }
 const SIDEBAR: Sidebar = { bot: null, status: 'stale', rows: [], complete: true }
 const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] } }
-const NOTHING_OPEN: OpenChat = { shown: null, opening: null }
+const NOTHING_OPEN: OpenChat = { shown: null, opening: null, missing: null }
 const NO_RELAYS: RelayDesk = { supported: false, bySession: {} }
 
 function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection) {
@@ -514,7 +516,7 @@ describe('serveWindows', () => {
     const { listeners, handlers, pushes, event, setOpen, commands } = harness()
     listeners.get(CHANNEL.watch)!(event(), 5, 'open')
     vi.advanceTimersByTime(COALESCE_MS)
-    const research = { shown: { kind: 'bot', bot: 'research', sessionId: 'local-0001' }, opening: null } as OpenChat
+    const research = { shown: { kind: 'bot', bot: 'research', sessionId: 'local-0001' }, opening: null, missing: null } as OpenChat
     setOpen(research)
     expect(pushes).toEqual([{ topic: 'open', rev: 1, full: NOTHING_OPEN }, { topic: 'open', rev: 2, full: research }])
     await handlers.get(CHANNEL.run)!(event(), { do: 'open', ref: { kind: 'bot', bot: 'research' } })

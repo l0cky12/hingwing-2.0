@@ -15,6 +15,8 @@ export type ChatRef =
   | { readonly kind: 'new'; readonly bot: BotId | null; readonly draftId: string }
   /** A chat picked from the list of a bot's chats. */
   | { readonly kind: 'chat'; readonly sessionId: SessionId }
+  /** A chat named from outside Highwing by its session id alone. Hermes is asked where it lives before it opens. */
+  | { readonly kind: 'link'; readonly sessionId: SessionId }
 
 /** A chat no message has made yet. Its first message makes it. */
 export type Unstarted =
@@ -43,8 +45,10 @@ export type Shown =
 export interface OpenChat {
   /** null: Hermes has not said enough to pick a chat yet, or it has none to show. */
   readonly shown: Shown | null
-  /** The bot a click asked for and Hermes has not answered about. The pane keeps `shown` meanwhile. */
-  readonly opening: Extract<ChatRef, { kind: 'bot' }> | null
+  /** The bot or linked chat a click asked for and Hermes has not answered about. The pane keeps `shown` meanwhile. */
+  readonly opening: Extract<ChatRef, { kind: 'bot' | 'link' }> | null
+  /** A link named this chat and Hermes has none by that id. The composer says so until the next ask. */
+  readonly missing: SessionId | null
 }
 
 /** bot -> its Bot Chat. */
@@ -64,7 +68,7 @@ export interface Desk {
   readonly finding: readonly BotId[]
 }
 
-export const EMPTY_DESK: Desk = { open: { shown: null, opening: null }, chats: {}, owners: {}, finding: [] }
+export const EMPTY_DESK: Desk = { open: { shown: null, opening: null, missing: null }, chats: {}, owners: {}, finding: [] }
 
 /** Profile names are any word Hermes allows, `constructor` included, so a lookup reads the desk's own keys only. */
 export const chatOf = (desk: Desk, bot: BotId): SessionId | undefined => Object.hasOwn(desk.chats, bot) ? desk.chats[bot] : undefined
@@ -83,21 +87,37 @@ export type DeskEvent =
   /** Hermes listed these chats in the bot's profile. Records their owner, and opens nothing. */
   | { readonly on: 'listed'; readonly bot: BotId; readonly sessions: readonly SessionId[] }
   | { readonly on: 'branched'; readonly from: SessionId; readonly sessionId: SessionId; readonly text: string }
+  | { readonly on: 'sought'; readonly sessionId: SessionId; readonly found: Whereabouts }
+  | { readonly on: 'unsought'; readonly sessionId: SessionId }
 
-/** Look this bot's Bot Chat up by its title. */
-export interface DeskEffect { readonly find: BotId }
+/** Where Hermes's lists put a session: in a bot's profile, in the socket's own, or in none it lists. */
+export type Whereabouts = { readonly in: 'bot'; readonly bot: BotId } | { readonly in: 'own' } | { readonly in: 'none' }
+
+export type DeskEffect =
+  /** Look this bot's Bot Chat up by its title. */
+  | { readonly find: BotId }
+  | { readonly seek: SessionId }
+
+const waitsForBot = (open: OpenChat, bot: BotId) => open.opening?.kind === 'bot' && open.opening.bot === bot
+const waitsForLink = (open: OpenChat, sessionId: SessionId) => open.opening?.kind === 'link' && open.opening.sessionId === sessionId
 
 function showing(desk: Desk, bot: BotId, sessionId: SessionId | null): Desk {
-  const { opening } = desk.open
-  return { ...desk, open: { shown: { kind: 'bot', bot, sessionId }, opening: opening?.bot === bot ? null : opening } }
+  const { open } = desk
+  return { ...desk, open: { ...open, shown: { kind: 'bot', bot, sessionId }, opening: waitsForBot(open, bot) ? null : open.opening } }
+}
+
+function picking(desk: Desk, sessionId: SessionId): Desk {
+  const { shown } = desk.open
+  const keepsItsPaneAndDraft = shown?.sessionId === sessionId
+  return { ...desk, open: { shown: keepsItsPaneAndDraft ? shown : { kind: 'chat', bot: ownerOf(desk, sessionId) ?? null, sessionId }, opening: null, missing: null } }
 }
 
 function learned(desk: Desk, bot: BotId, sessionId: SessionId): Desk {
-  const { shown, opening } = desk.open
+  const { shown } = desk.open
   const known: Desk = chatOf(desk, bot) === sessionId
     ? desk
     : { ...desk, chats: { ...desk.chats, [bot]: sessionId }, owners: { ...desk.owners, [sessionId]: bot } }
-  const answersLatestClick = opening?.bot === bot
+  const answersLatestClick = waitsForBot(desk.open, bot)
   const followsShownBot = shown?.kind === 'bot' && shown.bot === bot && shown.sessionId !== sessionId
   return answersLatestClick || followsShownBot ? showing(known, bot, sessionId) : known
 }
@@ -109,16 +129,18 @@ function asked(desk: Desk, ref: ChatRef): { readonly desk: Desk; readonly effect
     case 'bot': {
       const { bot } = ref
       const known = chatOf(desk, bot)
-      if (known !== undefined) return done({ ...desk, open: { shown: { kind: 'bot', bot, sessionId: known }, opening: null } })
-      const waiting: Desk = { ...desk, open: { ...desk.open, opening: ref } }
+      if (known !== undefined) return done({ ...desk, open: { shown: { kind: 'bot', bot, sessionId: known }, opening: null, missing: null } })
+      const waiting: Desk = { ...desk, open: { ...desk.open, opening: ref, missing: null } }
       return desk.finding.includes(bot) ? done(waiting) : { desk: { ...waiting, finding: [...desk.finding, bot] }, effects: [{ find: bot }] }
     }
     case 'new':
-      return done({ ...desk, open: { shown: { kind: 'new', bot: ref.bot, draftId: ref.draftId, sessionId: null }, opening: null } })
-    case 'chat': {
-      // The chat shown already keeps its kind, and so its pane and any unsent draft.
-      const { shown } = desk.open
-      return done({ ...desk, open: { shown: shown?.sessionId === ref.sessionId ? shown : { kind: 'chat', bot: ownerOf(desk, ref.sessionId) ?? null, sessionId: ref.sessionId }, opening: null } })
+      return done({ ...desk, open: { shown: { kind: 'new', bot: ref.bot, draftId: ref.draftId, sessionId: null }, opening: null, missing: null } })
+    case 'chat':
+      return done(picking(desk, ref.sessionId))
+    case 'link': {
+      const { sessionId } = ref
+      if (desk.open.shown?.sessionId === sessionId || ownerOf(desk, sessionId) !== undefined) return done(picking(desk, sessionId))
+      return { desk: { ...desk, open: { ...desk.open, opening: ref, missing: null } }, effects: [{ seek: sessionId }] }
     }
   }
 }
@@ -142,12 +164,11 @@ export function nextDesk(desk: Desk, event: DeskEvent): { readonly desk: Desk; r
       const { bot, sessionId } = event
       const found: Desk = { ...desk, finding: desk.finding.filter(held => held !== bot) }
       if (sessionId !== null) return done(learned(found, bot, sessionId))
-      return done(found.open.opening?.bot === bot ? showing(found, bot, null) : found)
+      return done(waitsForBot(found.open, bot) ? showing(found, bot, null) : found)
     }
     case 'failed': {
-      const { opening } = desk.open
       const finding = desk.finding.filter(held => held !== event.bot)
-      return done({ ...desk, finding, open: opening?.bot === event.bot ? { ...desk.open, opening: null } : desk.open })
+      return done({ ...desk, finding, open: waitsForBot(desk.open, event.bot) ? { ...desk.open, opening: null } : desk.open })
     }
     case 'made': {
       const { bot, draftId, sessionId } = event
@@ -165,8 +186,16 @@ export function nextDesk(desk: Desk, event: DeskEvent): { readonly desk: Desk; r
       const owned: Desk = bot === null ? desk : { ...desk, owners: { ...desk.owners, [event.sessionId]: bot } }
       const { shown, opening } = desk.open
       const stillThere = shown?.sessionId === event.from && opening === null
-      return done(stillThere ? { ...owned, open: { shown: { kind: 'branch', bot, sessionId: event.sessionId, text: event.text }, opening: null } } : owned)
+      return done(stillThere ? { ...owned, open: { shown: { kind: 'branch', bot, sessionId: event.sessionId, text: event.text }, opening: null, missing: null } } : owned)
     }
+    case 'sought': {
+      const { sessionId, found } = event
+      if (found.in === 'none') return done(waitsForLink(desk.open, sessionId) ? { ...desk, open: { ...desk.open, opening: null, missing: sessionId } } : desk)
+      const owned: Desk = found.in === 'own' || ownerOf(desk, sessionId) !== undefined ? desk : { ...desk, owners: { ...desk.owners, [sessionId]: found.bot } }
+      return done(waitsForLink(desk.open, sessionId) ? picking(owned, sessionId) : owned)
+    }
+    case 'unsought':
+      return done(waitsForLink(desk.open, event.sessionId) ? { ...desk, open: { ...desk.open, opening: null } } : desk)
   }
 }
 

@@ -207,6 +207,7 @@ export function openHermes(options: HermesOptions): Hermes {
       roster.linked(next.state)
     },
     onOnline: () => {
+      desk.online()
       list.refresh()
       catalogRead = readCatalog()
       relayRead = relays.probe()

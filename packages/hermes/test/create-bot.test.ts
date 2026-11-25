@@ -39,7 +39,7 @@ describe('createBot through the hub', () => {
     await clock.advance(0)
     expect(calls('profiles.list').length, 'the roster is asked for again').toBe(reads + 1)
     expect(names()).toContain('rae')
-    expect(hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: 'rae', sessionId: null }, opening: null })
+    expect(hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: 'rae', sessionId: null }, opening: null, missing: null })
     expect(calls('session.list').filter(call => call.params?.profile === 'rae').map(call => call.params?.title), "the new bot's chat is looked up in its own profile").toContain('Bot Chat')
   })
 

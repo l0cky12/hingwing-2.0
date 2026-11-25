@@ -19,7 +19,7 @@ const ROWS = [
 const listing = (bot: BotId | null, rows: readonly SidebarRow[] = ROWS, status: Sidebar['status'] = 'ready'): Sidebar => ({ bot, status, rows, complete: true })
 const NO_DRAFTS: ReadonlySet<SessionId> = new Set()
 const showing = (bot: BotId | null, sessionId: string | null = 's2'): OpenChat =>
-  ({ shown: { kind: 'chat', bot, sessionId: sessionId as SessionId }, opening: null })
+  ({ shown: { kind: 'chat', bot, sessionId: sessionId as SessionId }, opening: null, missing: null })
 
 describe('what the chat list shows', () => {
   it('names each chat by its title, says when it was last used and what it is doing, and marks the open one', () => {
@@ -57,7 +57,7 @@ describe('what the chat list shows', () => {
 
   it("lists the socket's own chats when the open chat has no bot", () => {
     expect(chatsOf(listing(null), showing(null), NOW, NO_DRAFTS)).toMatchObject({ show: 'rows' })
-    expect(chatsOf(listing(null), { shown: null, opening: null }, NOW, NO_DRAFTS)).toMatchObject({ show: 'rows' })
+    expect(chatsOf(listing(null), { shown: null, opening: null, missing: null }, NOW, NO_DRAFTS)).toMatchObject({ show: 'rows' })
   })
 
   it('says so when the bot has no chats', () => {

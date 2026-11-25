@@ -226,6 +226,24 @@ const STEPS = {
       ctx.notified.push({ title, n: Number(n) })
     }
   },
+  second: {
+    arity: 1,
+    run: async (ctx, arg) => {
+      const child = spawn(ctx.launch.executable, [...ctx.launch.args, arg], { cwd: ctx.launch.cwd, env: ctx.launch.env, stdio: 'ignore' })
+      writeFileSync(ctx.launch.secondPid, String(child.pid))
+      const code = await new Promise(done => {
+        const timer = setTimeout(() => done(null), ctx.timeout)
+        child.on('exit', (exitCode, signal) => {
+          clearTimeout(timer)
+          done(exitCode ?? signal)
+        })
+      })
+      if (code === null) child.kill('SIGKILL')
+      rmSync(ctx.launch.secondPid, { force: true })
+      log(ctx, `  second instance pid ${child.pid} ${code === null ? `still running after ${ctx.timeout} ms, killed` : `exited with ${code}`}`)
+      if (code === null) throw new Error(`the second instance did not exit within ${ctx.timeout} ms`)
+    }
+  },
   home: {
     arity: 0,
     run: async ctx => {
@@ -966,7 +984,7 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
@@ -1027,11 +1045,14 @@ async function run(argv) {
   env.HIGHWING_NOTIFY_LOG = ctx.notices
 
   const { _electron } = requireDesktop('playwright-core')
-  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"` : `HIGHWING_FIXTURE=${fixture}`}${Object.keys(media).length > 0 ? `, emulating ${JSON.stringify(media)}` : ''}`)
+  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"` : `HIGHWING_FIXTURE=${fixture}`}${Object.keys(media).length > 0 ? `, emulating ${JSON.stringify(media)}` : ''}${options.arg === undefined ? '' : `, with the argument ${JSON.stringify(options.arg)}`}`)
   ctx.launched = Date.now()
+  const executable = electronBinary() ?? fail('electron binary missing; run doctor')
+  const args = [MAIN_JS, '--ozone-platform=x11', '--force-device-scale-factor=1', '--disable-gpu', `--user-data-dir=${userData}`]
+  ctx.launch = { executable, args, cwd: REPO, env, secondPid: join(scratch, 'second-pid') }
   const app = await _electron.launch({
-    executablePath: electronBinary() ?? fail('electron binary missing; run doctor'),
-    args: [MAIN_JS, '--ozone-platform=x11', '--force-device-scale-factor=1', '--disable-gpu', `--user-data-dir=${userData}`],
+    executablePath: executable,
+    args: options.arg === undefined ? args : [...args, options.arg],
     cwd: REPO,
     env,
     timeout: ctx.timeout
@@ -1146,7 +1167,7 @@ function cleanup(argv) {
   const targets = options.all ? (existsSync(SCRATCH_ROOT) ? readdirSync(SCRATCH_ROOT) : []) : [options.run]
   for (const runId of targets) {
     const scratch = join(SCRATCH_ROOT, runId)
-    for (const pidFile of [join(scratch, 'pid'), join(scratch, 'host-pid')]) {
+    for (const pidFile of [join(scratch, 'pid'), join(scratch, 'host-pid'), join(scratch, 'second-pid')]) {
       if (!existsSync(pidFile)) continue
       const pid = Number(readFileSync(pidFile, 'utf8'))
       if (alive(pid)) process.kill(pid, 'SIGKILL')

@@ -1,6 +1,7 @@
 import type { Bots, CommandOutcome, ExportFormat, OpenChat, SessionId, Sidebar } from '@highwing/hermes/domain'
 import { useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
+import { chatLink } from '../../chat-link'
 import { baseName } from '../chat/FilePath'
 import { menuStep, useMenu } from '../chat/menu'
 import { slotOf, sweepDrafts, useChatDrafts } from '../composer/drafts'
@@ -56,12 +57,12 @@ interface ChatsPanelProps extends RowActions {
 export function ChatsPanel({ sidebar, open, bots, now, drafts, live, ...actions }: ChatsPanelProps) {
   const ids = useId()
   const view = chatsOf(sidebar, open, now, drafts)
-  const [saved, setSaved] = useState<{ readonly name: string } | null>(null)
+  const [said, setSaid] = useState<{ readonly words: string } | null>(null)
   useEffect(() => {
-    if (saved === null) return
-    const id = setTimeout(() => setSaved(null), SAVED_MS)
+    if (said === null) return
+    const id = setTimeout(() => setSaid(null), SAVED_MS)
     return () => clearTimeout(id)
-  }, [saved])
+  }, [said])
   return (
     <nav className="chats" aria-label="Chats">
       <div className="chats-head"><h2>{botNameOf(bots, open?.shown?.bot ?? null) ?? CHATS}</h2></div>
@@ -69,10 +70,10 @@ export function ChatsPanel({ sidebar, open, bots, now, drafts, live, ...actions 
         {view.show === 'note' && <p className="chats-note" role="status">{view.words}</p>}
         {view.show === 'rows' && view.rows.map((row, at) => (
           // A session id is any word Hermes mints, so the ids come from the row's place.
-          <ChatItem key={row.id} row={row} ids={`${ids}-${at}`} live={live} {...actions} onSaved={path => setSaved({ name: baseName(path) })} />
+          <ChatItem key={row.id} row={row} ids={`${ids}-${at}`} live={live} {...actions} onSay={words => setSaid({ words })} />
         ))}
       </div>
-      <p className="chats-note chats-saved" role="status">{saved === null ? '' : `Saved ${saved.name}`}</p>
+      <p className="chats-note chats-saved" role="status">{said?.words ?? ''}</p>
     </nav>
   )
 }
@@ -81,10 +82,10 @@ interface ChatItemProps extends RowActions {
   readonly row: ChatRow
   readonly ids: string
   readonly live: boolean
-  readonly onSaved: (path: string) => void
+  readonly onSay: (words: string) => void
 }
 
-function ChatItem({ row, ids, live, onOpen, onRename, onExport, onSaved }: ChatItemProps) {
+function ChatItem({ row, ids, live, onOpen, onRename, onExport, onSay }: ChatItemProps) {
   const { open: menu, setOpen: setMenu, holder, toggle, onKeyDown } = useMenu<HTMLDivElement, HTMLButtonElement>()
   const items = useRef<HTMLDivElement>(null)
   const opener = useRef<HTMLButtonElement>(null)
@@ -127,7 +128,12 @@ function ChatItem({ row, ids, live, onOpen, onRename, onExport, onSaved }: ChatI
     toggle.current?.focus()
     const outcome = await onExport(row.id, format)
     setRefused(outcome.ok ? null : outcome.refusal.message)
-    if (outcome.ok && outcome.value !== null) onSaved(outcome.value)
+    if (outcome.ok && outcome.value !== null) onSay(`Saved ${baseName(outcome.value)}`)
+  }
+  const copyLink = () => {
+    setMenu(false)
+    toggle.current?.focus()
+    navigator.clipboard.writeText(chatLink(row.id)).then(() => onSay('Link copied'), () => onSay('Couldn’t copy the link'))
   }
   const onMenuKey = (event: KeyboardEvent) => {
     const buttons = [...(items.current?.querySelectorAll('button') ?? [])]
@@ -194,6 +200,7 @@ function ChatItem({ row, ids, live, onOpen, onRename, onExport, onSaved }: ChatI
         <div ref={items} className="file-menu" role="menu" aria-label={`More for ${row.name}`} onKeyDown={onMenuKey} onBlur={onMenuBlur}>
           <button type="button" role="menuitem" onClick={() => { setMenu(false); setRefused(null); setNaming('typing') }}>Rename…</button>
           {EXPORTS.map(([format, label]) => <button key={format} type="button" role="menuitem" onClick={() => void exportAs(format)}>{label}</button>)}
+          <button type="button" role="menuitem" onClick={copyLink}>Copy link</button>
         </div>
       )}
       {refused !== null && <p className="err">{refused}</p>}

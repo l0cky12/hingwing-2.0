@@ -467,7 +467,7 @@ describe('the open chat', () => {
 
   it('is the newest chat, with no bot and no profile on any call, on a Hermes that lists no bots', async () => {
     const opened = await launched(ERRAND)
-    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: null, sessionId: SESSION }, opening: null })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: null, sessionId: SESSION }, opening: null, missing: null })
     opened.watch()
     await toApproval(opened)
     expect(opened.sent().filter(call => 'profile' in (call.params ?? {}))).toEqual([])
@@ -483,7 +483,7 @@ describe('the open chat', () => {
 
   it("is the default bot's Bot Chat at launch, and launching creates nothing", async () => {
     const opened = await launched(WITH_BOTS)
-    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: EMU, sessionId: SESSION }, opening: null })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: EMU, sessionId: SESSION }, opening: null, missing: null })
     opened.watch()
     await opened.clock.advance(0)
     expect(calls(opened, 'session.resume')).toEqual([{ method: 'session.resume', params: { session_id: SESSION, display_projection: true, profile: 'default' } }])
@@ -494,7 +494,7 @@ describe('the open chat', () => {
     const opened = await launched({ ...WITH_BOTS, header: { ...WITH_BOTS.header, models: { providers: [] } } })
     const before = opened.sent().length
     expect(await opened.hermes.run({ do: 'open', ref: bot(RESEARCH) })).toEqual({ ok: true, value: RESEARCH_CHAT })
-    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: RESEARCH, sessionId: RESEARCH_CHAT }, opening: null })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: RESEARCH, sessionId: RESEARCH_CHAT }, opening: null, missing: null })
     expect(opened.sent().slice(before), "the roster named the chat, so the click only lists the bot's chats").toEqual([
       { method: 'session.list', params: { scope: 'live', picker: true, profile: 'research' } },
       { method: 'session.list', params: { scope: 'live', include_hidden: true, profile: 'research' } },
@@ -529,10 +529,10 @@ describe('the open chat', () => {
     const opened = await launched(WITH_BOTS)
     const first = opened.hermes.run({ do: 'open', ref: bot(HERMES_DEV) })
     const second = opened.hermes.run({ do: 'open', ref: bot(HERMES_DEV) })
-    expect(opened.hermes.open.get(), 'the chat stays while Hermes is asked').toEqual({ shown: { kind: 'bot', bot: EMU, sessionId: SESSION }, opening: bot(HERMES_DEV) })
+    expect(opened.hermes.open.get(), 'the chat stays while Hermes is asked').toEqual({ shown: { kind: 'bot', bot: EMU, sessionId: SESSION }, opening: bot(HERMES_DEV), missing: null })
     await opened.clock.advance(0)
     expect([await first, await second]).toEqual([{ ok: true, value: null }, { ok: true, value: null }])
-    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: HERMES_DEV, sessionId: null }, opening: null })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: HERMES_DEV, sessionId: null }, opening: null, missing: null })
     expect(calls(opened, 'session.list').filter(call => 'title' in (call.params ?? {})), 'one lookup for the two clicks')
       .toEqual([{ method: 'session.list', params: { title: 'Bot Chat', include_hidden: true, profile: 'hermes-dev' } }])
     expect(calls(opened, 'session.create'), 'a click makes no session').toEqual([])
@@ -544,7 +544,7 @@ describe('the open chat', () => {
       method: 'session.create',
       params: { source: 'gui', title: 'Bot Chat', follow_profile_config: true, request_id: expect.any(String) as string, client: CLIENT, hidden: true, profile: 'hermes-dev' }
     }])
-    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: HERMES_DEV, sessionId: MADE }, opening: null })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: HERMES_DEV, sessionId: MADE }, opening: null, missing: null })
     expect(saidIn(opened, MADE)).toEqual([['one', 'hermes-dev: one'], ['two', 'hermes-dev: two']])
 
     expect(await opened.hermes.run({ do: 'start', chat: unstarted(HERMES_DEV), text: 'three' }), 'a message that still thinks the chat is unstarted goes to the chat').toEqual({ ok: true, value: null })
@@ -558,19 +558,19 @@ describe('the open chat', () => {
 
   it('is the default bot unstarted when it has no Bot Chat, and its first message makes the chat', async () => {
     const opened = await launched(NO_HOME_CHAT)
-    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: EMU, sessionId: null }, opening: null })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: EMU, sessionId: null }, opening: null, missing: null })
     await opened.clock.advance(1_000)
     expect(calls(opened, 'session.create')).toEqual([])
     expect(await opened.hermes.run({ do: 'start', chat: unstarted(EMU), text: 'hello' })).toEqual({ ok: true, value: null })
     await opened.clock.advance(0)
-    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: EMU, sessionId: 'bot-chat-default' }, opening: null })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: EMU, sessionId: 'bot-chat-default' }, opening: null, missing: null })
     expect(saidIn(opened, 'bot-chat-default' as SessionId)).toEqual([['hello', 'default: hello']])
     expect(calls(opened, 'session.create')).toMatchObject([{ params: { profile: 'default', title: 'Bot Chat' } }])
   })
 
   it('opens the newest chat and refuses to switch bots on a Hermes whose socket reaches one profile', async () => {
     const opened = await launched(BOUND)
-    const shown = { shown: { kind: 'chat', bot: null, sessionId: SESSION }, opening: null }
+    const shown = { shown: { kind: 'chat', bot: null, sessionId: SESSION }, opening: null, missing: null }
     expect(opened.hermes.open.get()).toEqual(shown)
     const before = opened.sent().length
     const refusal = { kind: 'unsupported', message: "This Hermes can't switch bots from Highwing yet. Update Hermes on that machine, then reconnect." }
@@ -591,7 +591,7 @@ describe('the open chat', () => {
     offline.state.failWith = new DialError('not-running')
     await offline.clock.advance(100)
     expect(await offline.hermes.run({ do: 'open', ref: bot(RESEARCH) })).toEqual({ ok: false, refusal: { kind: 'offline', message: "Highwing isn't connected to Hermes right now." } })
-    expect(offline.hermes.open.get()).toEqual({ shown: null, opening: null })
+    expect(offline.hermes.open.get()).toEqual({ shown: null, opening: null, missing: null })
   })
 
   describe('a new chat', () => {
@@ -603,7 +603,7 @@ describe('the open chat', () => {
       const opened = await launched(WITH_BOTS)
       const before = opened.sent().length
       expect(await opened.hermes.run({ do: 'open', ref: { kind: 'new', bot: EMU, draftId: 'draft-1' } })).toEqual({ ok: true, value: null })
-      expect(opened.hermes.open.get()).toEqual({ shown: fresh(EMU, 'draft-1'), opening: null })
+      expect(opened.hermes.open.get()).toEqual({ shown: fresh(EMU, 'draft-1'), opening: null, missing: null })
       expect(opened.sent().length, 'opening a new chat asks Hermes nothing').toBe(before)
 
       expect(await opened.hermes.run({ do: 'start', chat: fresh(EMU, 'draft-1'), text: 'hello' })).toEqual({ ok: true, value: null })
@@ -611,14 +611,14 @@ describe('the open chat', () => {
       expect(calls(opened, 'session.create')).toEqual([{
         method: 'session.create', params: { source: 'gui', request_id: 'draft-1', follow_profile_config: true, client: CLIENT, profile: 'default' }
       }])
-      expect(opened.hermes.open.get()).toEqual({ shown: { ...fresh(EMU, 'draft-1'), sessionId: MADE }, opening: null })
+      expect(opened.hermes.open.get()).toEqual({ shown: { ...fresh(EMU, 'draft-1'), sessionId: MADE }, opening: null, missing: null })
       expect(saidIn(opened, MADE)).toEqual([['hello', 'default: hello']])
       expect(calls(opened, 'session.resume').filter(call => call.params?.session_id === MADE), 'the new session takes the one attach path').toHaveLength(1)
 
       const rosters = calls(opened, 'profiles.list').length
       await opened.clock.advance(1_000)
       expect(calls(opened, 'profiles.list').length, 'the roster was read again, and still names the story as the Bot Chat').toBeGreaterThan(rosters)
-      expect(opened.hermes.open.get()).toEqual({ shown: { ...fresh(EMU, 'draft-1'), sessionId: MADE }, opening: null })
+      expect(opened.hermes.open.get()).toEqual({ shown: { ...fresh(EMU, 'draft-1'), sessionId: MADE }, opening: null, missing: null })
     })
 
     it('makes one session for two messages sent at once, and both land there in order', async () => {
@@ -662,7 +662,7 @@ describe('the open chat', () => {
     it("opens for a bare /new typed into a chat, in that chat's bot, and asks Hermes nothing", async () => {
       const opened = await minting(WITH_CATALOG)
       expect(await opened.hermes.run({ do: 'send', sessionId: SESSION, text: '/new' })).toEqual({ ok: true, value: null })
-      expect(opened.hermes.open.get()).toEqual({ shown: fresh(EMU, 'minted-1'), opening: null })
+      expect(opened.hermes.open.get()).toEqual({ shown: fresh(EMU, 'minted-1'), opening: null, missing: null })
       expect(calls(opened, 'session.create')).toEqual([])
       expect(calls(opened, 'command.dispatch')).toEqual([])
       expect(calls(opened, 'prompt.submit')).toEqual([])
@@ -670,11 +670,11 @@ describe('the open chat', () => {
 
     it('opens for a /new typed into a chat that has no session yet, and makes none', async () => {
       const opened = await minting({ ...WITH_CATALOG, header: { ...WITH_CATALOG.header, homeBotChat: false } })
-      expect(opened.hermes.open.get()).toEqual({ shown: unstarted(EMU), opening: null })
+      expect(opened.hermes.open.get()).toEqual({ shown: unstarted(EMU), opening: null, missing: null })
       expect(await opened.hermes.run({ do: 'start', chat: unstarted(EMU), text: ' /new ' })).toEqual({ ok: true, value: null })
-      expect(opened.hermes.open.get()).toEqual({ shown: fresh(EMU, 'minted-1'), opening: null })
+      expect(opened.hermes.open.get()).toEqual({ shown: fresh(EMU, 'minted-1'), opening: null, missing: null })
       expect(await opened.hermes.run({ do: 'start', chat: fresh(EMU, 'minted-1'), text: '/NEW' })).toEqual({ ok: true, value: null })
-      expect(opened.hermes.open.get()).toEqual({ shown: fresh(EMU, 'minted-2'), opening: null })
+      expect(opened.hermes.open.get()).toEqual({ shown: fresh(EMU, 'minted-2'), opening: null, missing: null })
       expect(calls(opened, 'session.create')).toEqual([])
     })
   })
@@ -698,9 +698,9 @@ describe("a bot's chats", () => {
     ])
 
     expect(await opened.hermes.run(picked(INVOICES))).toEqual({ ok: true, value: INVOICES })
-    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: RESEARCH, sessionId: INVOICES }, opening: null })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: RESEARCH, sessionId: INVOICES }, opening: null, missing: null })
     expect(await opened.hermes.run(picked(DOWNLOADS))).toEqual({ ok: true, value: DOWNLOADS })
-    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: RESEARCH, sessionId: DOWNLOADS }, opening: null })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: RESEARCH, sessionId: DOWNLOADS }, opening: null, missing: null })
 
     opened.hermes.watch(DOWNLOADS, () => {})
     await opened.clock.advance(0)
@@ -741,6 +741,75 @@ describe("a bot's chats", () => {
     await opened.clock.advance(0)
     expect(seen).toEqual([`${EMU}:loading:`, `${RESEARCH}:loading:`, `${RESEARCH}:ready:${[REMINDER, INVOICES, DOWNLOADS].join()}`])
     expect(opened.sent().filter(call => call.method === 'session.list' && call.params?.profile === EMU), "Emu's list was asked for, and its answer dropped").toHaveLength(6)
+  })
+})
+
+describe('a chat link', () => {
+  const RESEARCH = 'research' as BotId
+  const UNKNOWN = 'local-9999' as SessionId
+  const linked = (sessionId: SessionId) => ({ do: 'open', ref: { kind: 'link', sessionId } }) as const
+  const seeks = (opened: ReturnType<typeof open>) =>
+    opened.sent().filter(call => call.method === 'session.list' && call.params?.scope === 'stored' && call.params.picker === undefined).map(call => call.params)
+
+  it("waits for Hermes's bots, then opens a chat the roster names in its bot with no search", async () => {
+    const opened = open(WITH_BOTS)
+    const outcome = opened.hermes.run(linked(RESEARCH_CHAT))
+    expect(opened.hermes.open.get(), 'held while Hermes has said nothing about its bots').toEqual({ shown: null, opening: { kind: 'link', sessionId: RESEARCH_CHAT }, missing: null })
+    await opened.clock.advance(0)
+    expect(await outcome).toEqual({ ok: true, value: RESEARCH_CHAT })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: RESEARCH, sessionId: RESEARCH_CHAT }, opening: null, missing: null })
+    expect(seeks(opened)).toEqual([])
+  })
+
+  it('looks through every bot for a chat only a list names, and opens it as that bot', async () => {
+    const opened = open(WITH_CHATS)
+    await opened.clock.advance(0)
+    const outcome = opened.hermes.run(linked(INVOICES))
+    expect(opened.hermes.open.get().opening).toEqual({ kind: 'link', sessionId: INVOICES })
+    await opened.clock.advance(0)
+    expect(await outcome).toEqual({ ok: true, value: INVOICES })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: RESEARCH, sessionId: INVOICES }, opening: null, missing: null })
+    expect(seeks(opened).map(params => params?.profile).sort()).toEqual(['default', 'dr-eggbot', 'hermes-dev', 'highwing', 'research', 'timothy'])
+    expect(seeks(opened)[0]).toEqual({ scope: 'stored', include_hidden: true, limit: 200, profile: expect.any(String) as string })
+
+    opened.hermes.watch(INVOICES, () => {})
+    await opened.clock.advance(0)
+    expect(opened.sent().filter(call => call.method === 'session.resume' && call.params?.session_id === INVOICES).map(call => call.params?.profile)).toEqual(['research'])
+    expect(opened.sent().filter(call => call.method === 'session.create')).toEqual([])
+  })
+
+  it('keeps the open chat and names the missing one when Hermes has no chat by that id', async () => {
+    const opened = open(WITH_CHATS)
+    await opened.clock.advance(0)
+    const before = opened.hermes.open.get().shown
+    const outcome = opened.hermes.run(linked(UNKNOWN))
+    await opened.clock.advance(0)
+    expect(await outcome).toEqual({ ok: true, value: null })
+    expect(opened.hermes.open.get()).toEqual({ shown: before, opening: null, missing: UNKNOWN })
+    await opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
+    expect(opened.hermes.open.get().missing, 'the next click clears it').toBeNull()
+  })
+
+  it("looks only in the socket's own profile on a Hermes whose socket reaches one", async () => {
+    const opened = open(BOUND)
+    await opened.clock.advance(0)
+    const outcome = opened.hermes.run(linked(UNKNOWN))
+    await opened.clock.advance(0)
+    expect(await outcome).toEqual({ ok: true, value: null })
+    expect(seeks(opened)).toEqual([{ scope: 'stored', include_hidden: true, limit: 200 }])
+    expect(opened.hermes.open.get().missing).toBe(UNKNOWN)
+  })
+
+  it('holds a link while Highwing cannot reach Hermes, and opens it once connected', async () => {
+    const opened = open(WITH_CHATS)
+    opened.state.failWith = new DialError('not-running')
+    await opened.clock.advance(100)
+    const outcome = opened.hermes.run(linked(INVOICES))
+    expect(opened.hermes.open.get()).toEqual({ shown: null, opening: { kind: 'link', sessionId: INVOICES }, missing: null })
+    opened.state.failWith = null
+    await opened.clock.advance(30_000)
+    expect(await outcome).toEqual({ ok: true, value: INVOICES })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: RESEARCH, sessionId: INVOICES }, opening: null, missing: null })
   })
 })
 
@@ -893,7 +962,7 @@ describe('branching a chat', () => {
 
   it('shows the new chat with the message in its box, and leaves the parent as it was', async () => {
     const { opened } = await branched(BRANCH, branch(3, B1))
-    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'branch', bot: null, sessionId: CHILD, text: SECOND_REQUEST }, opening: null })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'branch', bot: null, sessionId: CHILD, text: SECOND_REQUEST }, opening: null, missing: null })
     const history = (id: SessionId) => {
       let latest: Session | undefined
       opened.hermes.watch(id, session => { latest = session })()
@@ -952,7 +1021,7 @@ describe('branching a chat', () => {
     const { opened, outcome } = await branched(BRANCH_OLD, branch(3, B1))
     const refusal = { ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't branch a chat." } }
     expect(outcome).toEqual(refusal)
-    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: null, sessionId: SESSION }, opening: null })
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: null, sessionId: SESSION }, opening: null, missing: null })
     expect(opened.script.branchesMade).toBe(0)
 
     const again = opened.hermes.run(branch(3, B1))

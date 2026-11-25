@@ -10,6 +10,7 @@ import { desktopOpener, recordingOpener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
 import { draftStore, DRAFTS_DIR } from './drafts'
 import { serveWindows } from './ipc'
+import { chatLinks } from './links'
 import { desktopNotifier, notifyTurnEnds, recordingNotifier } from './notify'
 import { pickPicture, readHead } from './picture'
 import { previewPane, registerPageScheme } from './preview'
@@ -39,9 +40,28 @@ const routeFor = (target: Target): Route => {
   return { ...route, dial: recorded(route.dial) }
 }
 
+const raise = () => {
+  const window = BrowserWindow.getAllWindows()[0]
+  if (window === undefined) return
+  if (window.isMinimized()) window.restore()
+  window.show()
+  window.focus()
+}
+
+const links = chatLinks()
 // One instance per user-data directory: a second would open a second socket and race the first one's saves.
 if (!app.requestSingleInstanceLock()) app.exit(0)
-app.on('second-instance', () => BrowserWindow.getAllWindows()[0]?.focus())
+app.on('second-instance', (_event, argv) => {
+  raise()
+  links.holdLatest(argv)
+})
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  links.holdLatest([url])
+})
+links.holdLatest(process.argv)
+// Only an installed build claims the scheme: a dev or verify run would point the user's desktop at a build that goes away.
+if (app.isPackaged) app.setAsDefaultProtocolClient('highwing')
 
 registerPageScheme()
 
@@ -70,17 +90,12 @@ app.whenReady().then(async () => {
   const stopNotices = notifyTurnEnds(owner, {
     notifier: HIGHWING_NOTIFY_LOG ? recordingNotifier(HIGHWING_NOTIFY_LOG) : desktopNotifier(Notification),
     focused: () => BrowserWindow.getFocusedWindow() !== null,
-    raise: () => {
-      const window = BrowserWindow.getAllWindows()[0]
-      if (window === undefined) return
-      if (window.isMinimized()) window.restore()
-      window.show()
-      window.focus()
-    }
+    raise
   })
   openWindow(opener, pane)
+  const stopLinks = links.serve(owner, raise)
   let closed: Promise<void> | null = null
-  const close = () => (closed ??= (served.dispose(), stopNotices(), Promise.all([owner.close(), drafts.settled()]).then(() => {})))
+  const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), Promise.all([owner.close(), drafts.settled()]).then(() => {})))
   app.on('window-all-closed', () => void close().finally(() => app.quit()))
   // A quit from the menu or the session never emits window-all-closed, and a check or an attach still running would outlive the app.
   // Electron does not wait for a will-quit listener, so the quit is held until a draft still being written is on disk.

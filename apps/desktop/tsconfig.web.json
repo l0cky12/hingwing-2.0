@@ -5,5 +5,5 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx"
   },
-  "include": ["src/renderer", "src/ipc-contract.ts"]
+  "include": ["src/renderer", "src/ipc-contract.ts", "src/chat-link.ts"]
 }

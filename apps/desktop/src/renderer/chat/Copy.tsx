@@ -1,30 +1,45 @@
+import type { SessionId } from '@highwing/hermes/domain'
 import { fieldId } from '@highwing/thread'
 import { useEffect, useRef, useState } from 'react'
+import { chatLink } from '../../chat-link'
 
 const SHOWN_MS = 2000
 
 const WORDS = { copied: 'Copied', failed: 'Couldn’t copy' } as const
 
-type Outcome = keyof typeof WORDS | null
-
-export function CopyButton({ text, name }: { readonly text: string; readonly name: string }) {
-  const [outcome, setOutcome] = useState<Outcome>(null)
+function useCopy(): { readonly said: string | null; readonly copy: (text: string) => void } {
+  const [outcome, setOutcome] = useState<keyof typeof WORDS | null>(null)
   const timer = useRef<number | undefined>(undefined)
   useEffect(() => () => window.clearTimeout(timer.current), [])
-  const show = (next: Outcome) => {
+  const show = (next: keyof typeof WORDS) => {
     setOutcome(next)
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(() => setOutcome(null), SHOWN_MS)
   }
-  const press = () => {
+  const copy = (text: string) => {
     navigator.clipboard.writeText(text).then(() => show('copied'), () => show('failed'))
   }
+  return { said: outcome === null ? null : WORDS[outcome], copy }
+}
+
+export function CopyButton({ text, name }: { readonly text: string; readonly name: string }) {
+  const { said, copy } = useCopy()
   return (
     <>
-      <button type="button" className={outcome === null ? 'copy' : 'copy shown'} aria-label={name} onClick={press}>
-        {outcome === null ? 'Copy' : WORDS[outcome]}
+      <button type="button" className={said === null ? 'copy' : 'copy shown'} aria-label={name} onClick={() => copy(text)}>
+        {said ?? 'Copy'}
       </button>
-      <span className="sr" aria-live="polite">{outcome === null ? '' : WORDS[outcome]}</span>
+      <span className="sr" aria-live="polite">{said ?? ''}</span>
+    </>
+  )
+}
+
+export function CopyLink({ sessionId }: { readonly sessionId: SessionId }) {
+  const { said, copy } = useCopy()
+  return (
+    <>
+      <button type="button" aria-label="Copy link" onClick={() => copy(chatLink(sessionId))}>{said ?? 'Copy link'}</button>
+      <span className="sr" aria-live="polite">{said ?? ''}</span>
     </>
   )
 }
