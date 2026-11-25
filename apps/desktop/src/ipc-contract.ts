@@ -1,7 +1,7 @@
 import {
   targetOf,
   type BotDraft, type BotId, type Bots, type ChatRef, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply,
-  type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type Unstarted
+  type RelayDesk, type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type Unstarted
 } from '@highwing/hermes/domain'
 
 /** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
@@ -41,10 +41,12 @@ export interface AppTopics {
   readonly bots: Bots
   /** Which chat the window shows. A window keeps no copy of its own choice: it asks with `open` and draws this. */
   readonly open: OpenChat
+  /** Whether Hermes can hand a message to another bot, and the messages handed over from each chat. */
+  readonly relay: RelayDesk
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
