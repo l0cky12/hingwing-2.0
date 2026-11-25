@@ -98,12 +98,12 @@ export interface SessionPort {
   readonly fence: Fence
   /** `reasons` words a refusal of this call that the general table would word wrongly. */
   call<M extends Method>(method: M, params: Served[M]['params'], reasons?: Readonly<Record<string, Refusal>>): Promise<Outcome<Served[M]['result']>>
-  /** `invalid` stands in for the general refusal when Hermes names that payload field as the invalid one. */
+  /** `invalid` stands in for the general refusal when Hermes names that payload field as the invalid one, worded from Hermes's detail. */
   mutate(
     operation: string,
     payload: Record<string, unknown>,
     expectedGeneration: number | null,
-    invalid?: { readonly field: string | null; readonly refusal: Refusal }
+    invalid?: { readonly field: string | null; readonly refusal: (detail: string | null) => Refusal }
   ): Promise<Outcome<Served['session.mutate']['result']>>
   /**
    * The request exactly as the row built it, with the same one retry on a fence refusal. `sent` hears each request
@@ -151,7 +151,7 @@ export class SessionActor {
       ),
       mutate: (operation, payload, expectedGeneration, invalid) => outcomeOf(
         () => this.mutation({ request_id: deps.mintId(), operation, payload, expected_revision: this.tracked.fence.revision, expected_generation: expectedGeneration }),
-        error => (invalid !== undefined && error instanceof RpcRefusal && error.reason === 'invalid_params' && error.field === invalid.field ? invalid.refusal : refusalOf(error))
+        error => (invalid !== undefined && error instanceof RpcRefusal && error.reason === 'invalid_params' && error.field === invalid.field ? invalid.refusal(error.detail) : refusalOf(error))
       ),
       resend: (request, sent, explain) => outcomeOf(
         () => this.mutation(request, sent),

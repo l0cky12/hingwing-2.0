@@ -5,7 +5,7 @@ import { DialError, openHermes, RETAIN_MS, type Dialer, type HermesOptions, type
 import { manualClock } from '../src/testing/clock'
 import { MASKED, play, scriptedDialer, type Fixture, type FixtureStep, type Moment, type ScriptOptions } from '../src/testing/fixture'
 import {
-  BOUND, BRANCH, BRANCH_OLD, callsIn, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, NO_TREE, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID,
+  BOUND, BRANCH, BRANCH_OLD, callsIn, DOWNLOADS, EDIT_COMPACTED, ERRAND, INVOICES, NO_HOME_CHAT, NO_TREE, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID,
   SESSION, SLASH, stepOf, SORTED, SORTED_2, SORTED_3, SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, withSteps
 } from './support/errand'
 
@@ -1065,6 +1065,21 @@ describe('branching a chat', () => {
     expect(await sent).toEqual({ ok: true, value: null })
     expect(opened.sent().filter(call => call.params?.session_id === child && call.method !== 'session.stats').map(call => [call.method, call.params?.profile]))
       .toEqual([['session.resume', 'research'], ['prompt.submit', 'research']])
+  })
+})
+
+describe('editing a message from before a compaction', () => {
+  it('says Hermes compacted it, sends nothing and keeps every turn', async () => {
+    const opened = open(EDIT_COMPACTED)
+    await opened.clock.advance(0)
+    const outcome = opened.hermes.run({ do: 'rewind', sessionId: SESSION, rowId: 1, text: 'Rename the heading in notes.md to Goals' })
+    await opened.clock.advance(0)
+    expect(await outcome).toEqual({ ok: false, refusal: { kind: 'rejected', message: "Hermes compacted this part of the chat, so it can't edit this message." } })
+    expect(opened.sent().filter(call => call.method === 'session.mutate')).toHaveLength(1)
+    expect(opened.sent().map(call => call.method)).not.toContain('prompt.submit')
+    let shown: Session | undefined
+    opened.hermes.watch(SESSION, session => { shown = session })()
+    expect(shown?.history.map(turn => turn.request?.text)).toEqual(['Rename the heading in notes.md to Plan', 'Add a line about the deadline under it', 'List the folder'])
   })
 })
 

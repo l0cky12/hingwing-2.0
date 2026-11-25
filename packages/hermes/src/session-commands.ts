@@ -40,6 +40,7 @@ const MOVED_ON: Refusal = { kind: 'stale', message: 'This chat changed while Hig
 const MID_TURN = refused('stale', 'Wait for the reply to finish, then try again.')
 const NO_FOLDER: Refusal = { kind: 'rejected', message: "That folder isn't on the machine Hermes runs on." }
 const GONE: Refusal = { kind: 'rejected', message: 'That message is no longer in this chat.' }
+const EDIT_COMPACTED: Refusal = { kind: 'rejected', message: "Hermes compacted this part of the chat, so it can't edit this message." }
 const DROPPED_ANSWER = 'The connection dropped before Hermes confirmed your answer.'
 const CANT_BRANCH: Refusal = { kind: 'unsupported', message: "This Hermes can't branch a chat." }
 const BRANCH_BUSY: Refusal = { kind: 'stale', message: 'Wait for the reply to finish, then branch.' }
@@ -112,7 +113,10 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
 
   rewind: (port, { rowId, text }) => port.whenLive(async () => {
     if (port.content.run.state === 'running') return MID_TURN
-    const cut = await port.mutate('rewind', { target_message_id: rowId }, port.fence.generation ?? 0, { field: 'target_message_id', refusal: GONE })
+    // Hermes names a row compaction archived with a `compacted:` detail (persistence/authority/runtime.py:68-69).
+    const cut = await port.mutate('rewind', { target_message_id: rowId }, port.fence.generation ?? 0, {
+      field: 'target_message_id', refusal: detail => (detail?.startsWith('compacted:') === true ? EDIT_COMPACTED : GONE)
+    })
     if (!cut.ok) return cut
     port.act({ did: 'rewound', rowId })
     return port.submit(text)
@@ -148,7 +152,7 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
   move: (port, { cwd }) => port.whenLive(async () => {
     if (port.content.run.state === 'running') return MID_TURN
     // Hermes names no field when the folder is not there (gateway/session_mutation_policy.py:45-49). It pushes the new folder in a session.info.
-    const moved = await port.mutate('workspace', { cwd }, port.fence.generation ?? 0, { field: null, refusal: NO_FOLDER })
+    const moved = await port.mutate('workspace', { cwd }, port.fence.generation ?? 0, { field: null, refusal: () => NO_FOLDER })
     return moved.ok ? DONE : moved
   }),
 
