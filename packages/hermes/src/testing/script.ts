@@ -100,6 +100,8 @@ function memorySocket(gateway: ScriptedGateway): WireSocket {
  * reply after a delay on the clock, or a refusal. Without one it knows no `bot_relay.*` method.
  * With a `tree` header it answers `projects.tree` for a profile with its chats beside the story, each branch naming the
  * chat it was made from. Without one it refuses the call as an unknown method. It pages `session.transcript` for those chats.
+ * With a `paths` header it answers `complete.path` from the header's words, and its `cwd` is the story session's `info.cwd`.
+ * Without one it knows no `complete.path`.
  * It reads the frames it pushes with `parseEvent`, so the envelope's field names stay in `wire/parse.ts`.
  */
 export function scriptedDialer(fixture: Fixture, options: ScriptOptions = {}): ScriptedDialer {

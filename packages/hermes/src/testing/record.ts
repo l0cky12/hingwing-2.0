@@ -19,6 +19,7 @@ const OWN_ANSWERS: Readonly<Record<string, (header: Header, reply: Obj, params: 
   'session.stats': () => NOTHING,
   'session.context_breakdown': () => NOTHING,
   'bot_relay.deliver': () => NOTHING,
+  'complete.path': () => NOTHING,
   'runtime.describe': (header, reply) => {
     header.describe ??= reply
     return NOTHING

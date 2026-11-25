@@ -78,6 +78,12 @@ export interface Fixture {
      * method, as a Hermes without the bot relay does.
      */
     readonly relay?: { readonly [profile: string]: RelayScript }
+    /**
+     * What `complete.path` answers. `words` maps a typed word (`@not`) to the reply as Hermes sends it, and a
+     * word not listed answers `{ items: [] }`. `cwd` is the story session's `info.cwd`. Absent: the gateway
+     * refuses `complete.path` as an unknown method, as a Hermes without it does.
+     */
+    readonly paths?: { readonly cwd?: string; readonly words: { readonly [word: string]: unknown } }
   }
   readonly steps: readonly FixtureStep[]
 }
@@ -219,6 +225,10 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (relay !== undefined && !(isObject(relay) && Object.values(relay).every(isRelayScript))) {
     return '"relay" must map a profile to { reply, delay_ms? } or { refuse }'
   }
+  const { paths } = value
+  if (paths !== undefined && !(isObject(paths) && isObject(paths.words) && (paths.cwd === undefined || typeof paths.cwd === 'string'))) {
+    return '"paths" must be { cwd?, words } with "words" mapping a typed word to its complete.path reply'
+  }
   return {
     fixture, hermes, source, sessionId: sessionId as SessionId, describe: value.describe, list: value.list, stored,
     ...('catalog' in value ? { catalog: value.catalog } : {}),
@@ -231,7 +241,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),
-    ...(relay === undefined ? {} : { relay: relay as { readonly [profile: string]: RelayScript } })
+    ...(relay === undefined ? {} : { relay: relay as { readonly [profile: string]: RelayScript } }),
+    ...(paths === undefined ? {} : { paths: paths as NonNullable<Fixture['header']['paths']> })
   }
 }
 

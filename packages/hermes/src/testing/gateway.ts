@@ -261,6 +261,7 @@ interface Held extends Stream {
   readonly title: string
   readonly model: Model | null
   readonly yolo: boolean | null
+  readonly cwd?: string
   readonly pending: readonly unknown[]
   readonly prompts: readonly unknown[]
   readonly openRequests: readonly unknown[]
@@ -280,10 +281,23 @@ function snapshotOf(held: Held, subscriptionId: string, params: Obj): Obj {
     info: {
       desktop_protocol: GATEWAY_PROTOCOL, title: held.title,
       ...(model === null ? {} : { model: model.model, ...(model.provider === null ? {} : { provider: model.provider }) }),
-      ...(held.yolo === null ? {} : { yolo: held.yolo })
+      ...(held.yolo === null ? {} : { yolo: held.yolo }),
+      ...(held.cwd === undefined ? {} : { cwd: held.cwd })
     },
     pending_connection: null, open_requests: held.openRequests
   }
+}
+
+/**
+ * `complete_path` (gateway/session_complete_path.py:15-40): known keys, all strings, then `{ items: [] }` for an empty
+ * word or no session. Only a call that gets past those is authorized, with `authorize`.
+ */
+function pathItems(gateway: ScriptedGateway, params: Obj, authorize: () => void): unknown {
+  if (!strings(['session_id', 'profile', 'word', 'cwd'])(params)) throw new Refused('invalid_params')
+  const { word, session_id } = params
+  if (!isText(word) || !isText(session_id)) return { items: [] }
+  authorize()
+  return gateway.fixture.header.paths?.words[word] ?? { items: [] }
 }
 
 /** gateway/session_controls.py:386-392 */
@@ -471,6 +485,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     gateway.authorize(params, routed)
     return usage.breakdown
   },
+  'complete.path': (gateway, _socket, params, routed) => pathItems(gateway, params, () => gateway.authorize(params, routed)),
   /** tui_gateway/methods_profiles.py:271-290 */
   'profiles.list': (gateway, socket) => gateway.roster(socket),
   /** tui_gateway/methods_profiles.py:296-347 */
@@ -533,6 +548,7 @@ const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
   },
   'session.transcript': (_gateway, _socket, params, _routed, chat) => transcriptPage(chat, params),
   'model.options': (gateway, _socket, _params, _routed, chat) => gateway.modelMenu(chat.model),
+  'complete.path': (gateway, _socket, params) => pathItems(gateway, params, () => {}),
   'config.set': (gateway, _socket, params, routed, chat) => gateway.setYolo(params, routed, chat),
   'session.mutate': (gateway, _socket, params, routed, chat) => {
     if (params.operation !== 'branch') throw new Refused('unsupported_command')
@@ -657,6 +673,7 @@ export class ScriptedGateway {
     const refusal = (reason: string, data: Obj = {}): { error: WireError } => ({ error: { code: 4001, message: reason, data: { reason, ...data } } })
     // A Hermes without the bot relay declares none of its methods, so no param check is reached.
     if (method.startsWith('bot_relay.') && this.fixture.header.relay === undefined) return { error: unknownMethod(method).wire }
+    if (method === 'complete.path' && this.fixture.header.paths === undefined) return { error: unknownMethod(method).wire }
     if (!isObject(raw)) return refusal('invalid_params')
     const { profile, ...unscoped } = raw
     const named = isText(profile)
@@ -949,7 +966,7 @@ export class ScriptedGateway {
     return snapshotOf({
       id: this.sessionId, rows: this.stored, ring: this.ring, epoch: this.epoch, running: view.running, generation: view.generation,
       revision: view.revision, title: view.title, model: view.model, yolo: view.yolo, pending: view.pending, prompts: [...view.prompts.values()],
-      openRequests: this.openRequestList()
+      openRequests: this.openRequestList(), ...(this.fixture.header.paths?.cwd === undefined ? {} : { cwd: this.fixture.header.paths.cwd })
     }, socket.subscriptionId, params)
   }
 
