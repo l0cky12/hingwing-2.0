@@ -16,6 +16,7 @@ The top bar's Settings button, or Open Settings in the Ctrl+K palette, opens Set
 - `settings-blocked` shows a blocked link's words and Retry in the connection row, with the banner hidden.
 - `settings-narrow` stacks the editor's rows and wraps a long host name in a narrow window.
 - `settings-forced` draws the picked segment and keyboard focus apart in forced colors.
+- `settings-chat-buttons` leaves the chat's Copy, Edit message and Branch from here buttons as `main` draws them, since every Settings style sits under `.settings` or `.setup`.
 
 ## How to get to it (user POV)
 
@@ -40,6 +41,7 @@ Preconditions:
 - **A blocked link.** Run `$H run --fake-host hermes-not-found --saved local --run settings-blocked wait window wait offline click button Settings wait settings gone status Connection count button Retry 1 count button Change 1 shot settings-blocked`.
 - **Narrow.** Run `$H run --fake-host ok --fixture $F --saved remote --size 760x860 --run settings-narrow wait live click button Settings wait settings click button Change type "Hermes machine" someone@$M click button Connect gone button Connect wait settings inview button Change inview radio Chats shot narrow-saved click button Change type "Hermes machine" hermes-lab click button Connect wait setup-failed inview button Connect inview textbox "Hermes machine" shot narrow-failed`.
 - **Forced colors.** Run `$H run --fake-host ok --fixture $F --saved remote --forced-colors --run settings-forced wait live wait bots click button Settings wait settings click button Change focused textbox "Hermes machine" press Shift+Tab focused radio "Tailnet machine" checked radio "Tailnet machine" shot settings-forced`. The picked segments carry a `Highlight` border, and the focused one has the focus outline outside it.
+- **The chat's message buttons.** Run `$H run --fixture fixtures/branch.jsonl --chat-only --run settings-chat-buttons wait live press Shift+Tab press Shift+Tab press Shift+Tab press Shift+Tab press Shift+Tab press Shift+Tab press Shift+Tab focused button "Branch from here" shot buttons-branch-focused press Shift+Tab press Shift+Tab focused button "Copy request" shot buttons-copy-focused quiet`. Keyboard focus on the last message's buttons shows all three. Build `main` and run the same steps as `settings-chat-buttons-main`, then rebuild this branch. `node .claude/skills/verify/scripts/chat-parity.mjs /tmp/highwing-verify/settings-chat-buttons-main /tmp/highwing-verify/settings-chat-buttons` must end in `PASS`. A Settings rule that reaches the chat, as a bare `.edit` once did, takes the Edit button's border and fails it.
 
 ## Gotchas
 
