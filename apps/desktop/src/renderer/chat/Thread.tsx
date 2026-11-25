@@ -1,5 +1,5 @@
 import { versionLabel, type ChatVersions, type Landing, type PromptId, type PromptReply, type Relay, type Version, type Versions } from '@highwing/hermes/domain'
-import { fieldId, findInThread, type FindMatch, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
+import { fieldId, findInThread, multiReply, type FindMatch, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Avatar } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
@@ -51,7 +51,9 @@ function Prompt({ nodeKey, card, asking, onAnswer }: PromptProps) {
       <h3 data-find={fieldId(nodeKey, 'heading')}>{card.heading}</h3>
       {card.command !== null && <Command nodeKey={nodeKey} command={card.command} />}
       {card.why !== null && <p className="why" data-find={fieldId(nodeKey, 'why')}>{card.why}</p>}
-      <Buttons buttons={card.buttons} freeText={card.freeText} command={card.command} busy={card.busy} onAnswer={answer} />
+      {card.pick.kind === 'one'
+        ? <Buttons buttons={card.pick.buttons} freeText={card.pick.freeText} command={card.command} busy={card.busy} onAnswer={answer} />
+        : <Checks choices={card.pick.choices} busy={card.busy} onAnswer={answer} />}
       {card.error !== null && <p className="err" data-find={fieldId(nodeKey, 'error')}>{card.error}</p>}
     </div>
   )
@@ -136,6 +138,37 @@ function Confirm({ words, label, command, onCancel, onConfirm }: ConfirmProps) {
         <button type="button" className="primary" onClick={onConfirm}>{label}</button>
       </div>
     </dialog>
+  )
+}
+
+function Checks({ choices, busy, onAnswer }: PickProps & { readonly choices: readonly string[] }) {
+  const [picked, setPicked] = useState<readonly string[]>([])
+  const [other, setOther] = useState<string | null>(null)
+  const reply = multiReply({ picked, other: other ?? '' })
+  const toggle = (choice: string) => setPicked(held => (held.includes(choice) ? held.filter(each => each !== choice) : [...held, choice]))
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (reply !== null) onAnswer(reply)
+  }
+  return (
+    <form onSubmit={submit}>
+      <fieldset className="picks" disabled={busy}>
+        <legend>Pick all that apply</legend>
+        {choices.map(choice => (
+          <label key={choice}><input type="checkbox" checked={picked.includes(choice)} onChange={() => toggle(choice)} />{choice}</label>
+        ))}
+        <label><input type="checkbox" checked={other !== null} onChange={() => setOther(held => (held === null ? '' : null))} />Other</label>
+        {other !== null && (
+          <div className="answer">
+            <input aria-label="Other answer" value={other} autoFocus onChange={event => setOther(event.target.value)} />
+          </div>
+        )}
+        <div className="choices">
+          <button className="primary" disabled={reply === null}>Answer</button>
+          <button type="button" className="deny" onClick={() => onAnswer({ kind: 'text', value: '' })}>Skip</button>
+        </div>
+      </fieldset>
+    </form>
   )
 }
 
