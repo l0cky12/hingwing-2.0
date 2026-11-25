@@ -98,6 +98,7 @@ function memorySocket(gateway: ScriptedGateway): WireSocket {
  * makes one on a titled `session.create`. An untitled `session.create` makes a new, empty chat in
  * the routed profile, `chat-<profile>-<n>`, once per `request_id`. Each of these answers each
  * message with one turn that says `<profile>: <text>`, naming the profile the submit was routed by.
+ * A `session.mutate` that renames one of these chats retitles it, and `session.export` renders its title and messages.
  * The story session is the home bot's Bot Chat, unless the header says `homeBotChat: false`.
  * With a `relay` header it answers `bot_relay.deliver` for each profile as the header scripts it: one
  * reply after a delay on the clock, or a refusal. Without one it knows no `bot_relay.*` method.
