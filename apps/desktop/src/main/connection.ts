@@ -183,3 +183,15 @@ export function pinnedConnection(hermes: Hermes): ConnectionOwner {
     close: () => hermes.close()
   }
 }
+
+interface FocusEvents {
+  on(event: 'browser-window-focus', listener: () => void): unknown
+  off(event: 'browser-window-focus', listener: () => void): unknown
+}
+
+/** Hermes sends no event when a profile changes, so a pin made in Hermes desktop reaches Highwing when the user comes back to it. */
+export function refreshBotsOnFocus(app: FocusEvents, owner: Pick<ConnectionOwner, 'run'>): () => void {
+  const refresh = () => void owner.run({ do: 'refreshBots' })
+  app.on('browser-window-focus', refresh)
+  return () => app.off('browser-window-focus', refresh)
+}
