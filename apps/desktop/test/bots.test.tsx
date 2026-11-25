@@ -1,4 +1,4 @@
-import { BOT_TONES, type BotId, type Bots, type Groups, type Link, type OpenChat, type SessionId } from '@highwing/hermes/domain'
+import { BOT_TONES, type BotId, type Bots, type GroupId, type Groups, type Link, type MemberId, type OpenChat, type SessionId } from '@highwing/hermes/domain'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
@@ -99,6 +99,41 @@ describe('the bots sidebar', () => {
       expect(render(bots)).toMatch(/<div class="bots-list" aria-busy="true"><\/div>/)
     }
     expect(render({ state: 'unsupported' })).toMatch(/<div class="bots-list"><p[^>]* role="status">This Hermes can&#x27;t list its bots\.<\/p><\/div>/)
+  })
+
+  const seat = (bot: string, handle = bot) => ({ id: bot as MemberId, bot: bot as BotId, handle, name: handle })
+  const groups = (...rows: [string, string, ...ReturnType<typeof seat>[]][]): Groups =>
+    ({ state: 'listed', driver: true, seatable: null, rows: rows.map(([id, name, ...members]) => ({ id: id as GroupId, name, members })) })
+  const section = (html: string) => /<section><h3>Group chats<\/h3>(.*?)<\/section>/s.exec(html)?.[1] ?? null
+  const rowsIn = (html: string) => Array.from((section(html) ?? '').matchAll(/<li class="group-row">(.*?)<\/li>/gs), ([, row]) => row!)
+  const textOf = (row: string) => Array.from(row.matchAll(/<span class="bot-(?:name|preview)">([^<]*)</g), ([, text]) => text)
+
+  it("lists the group chats between the default bot and the sections, each named and followed by its members' names", () => {
+    const html = showing(APPROVED, AT_LAUNCH, ONLINE, groups(['plan', 'Launch plan', seat('default', 'emu'), seat('research'), seat('timothy')], ['ops', 'Ops', seat('highwing'), seat('hermes-dev')]))
+    expect(html).toMatch(/class="bot-row bot-row-feature".*<h3>Group chats<\/h3>.*<h3>New section<\/h3>/s)
+    expect(rowsIn(html).map(textOf)).toEqual([['Launch plan', 'Emu, Research and Timothy · CEO'], ['Ops', 'highwing and Hermes']])
+    expect(section(html), 'not yet a control').not.toMatch(/<button|tabindex/)
+  })
+
+  const facesIn = (row: string) => Array.from(row.matchAll(/<span class="avatar tone-(\w+)"[^>]*>(\w)<|<span class="stack-more">([^<]*)</g), ([, tone, letter, more]) => (more ?? `${letter} ${tone}`))
+
+  it("draws a member's avatar as the roster draws that bot, and a seat the roster no longer lists by its own name", () => {
+    const [row] = rowsIn(showing(APPROVED, AT_LAUNCH, ONLINE, groups(['trio', 'Trio', seat('default'), seat('research'), seat('gone', 'zed')])))
+    expect(facesIn(row!)).toEqual(['E ink', 'R umber', 'Z slate'])
+    expect(row).toMatch(/<span class="stack" aria-hidden="true">/)
+    expect(textOf(row!)).toEqual(['Trio', 'Emu, Research and zed'])
+  })
+
+  it('keeps the stack to three places, the third saying how many more, and names every member under the name', () => {
+    const [row] = rowsIn(showing(APPROVED, AT_LAUNCH, ONLINE, groups(['big', 'Everyone', seat('default'), seat('research'), seat('gone', 'zed'), seat('timothy'), seat('highwing')])))
+    expect(facesIn(row!)).toEqual(['E ink', 'R umber', '+3'])
+    expect(textOf(row!)).toEqual(['Everyone', 'Emu, Research, zed, Timothy · CEO and highwing'])
+  })
+
+  it.each([
+    ['Hermes has made none', NO_GROUPS], ['this Hermes has no group chats', { state: 'unsupported' }], ['Hermes has not said yet', { state: 'loading' }], ['nothing has been pushed yet', undefined]
+  ] as [string, Groups | undefined][])('draws no Group chats section when %s', (_, held) => {
+    expect(section(showing(APPROVED, AT_LAUNCH, ONLINE, held))).toBeNull()
   })
 
   it('has a paint for every tone a bot can carry', () => {

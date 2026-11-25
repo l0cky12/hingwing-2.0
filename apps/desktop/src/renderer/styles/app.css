@@ -806,6 +806,12 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .new-menu button svg { flex: none; color: var(--graphite); }
 .new-menu kbd { margin-left: auto; font: 400 12px var(--sans); color: var(--graphite); }
 .new-menu hr { margin: 3px 4px; border: 0; border-top: 1px solid var(--rule); }
+.group-rows { margin: 0; padding: 0; list-style: none; }
+.group-row { display: flex; gap: 12px; align-items: center; padding: 7px 12px; }
+.stack { display: inline-flex; flex: none; min-width: 62px; margin-left: 2px; }
+.stack > * { box-shadow: 0 0 0 2px var(--paper); }
+.stack > * + * { margin-left: -5px; }
+.stack-more { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--sheet); color: var(--graphite); font-size: 11px; font-weight: 700; }
 .bot[aria-current]:focus-visible { box-shadow: inset 5px 0 0 var(--ink); }
 @media (forced-colors: active) {
   .bot[aria-current] { border-left: 3px solid Highlight; padding-left: 9px; }

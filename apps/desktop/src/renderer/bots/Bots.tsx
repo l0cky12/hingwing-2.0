@@ -2,6 +2,7 @@ import type { Bot, BotCreated, BotDetails, BotDraft, BotId, Bots, CommandOutcome
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { GroupForm } from '../groups/GroupForm'
+import { groupRowsOf, type GroupRowView } from '../groups/group-rows'
 import { newChatIn } from '../new-chat'
 import { run, useTopic } from '../store'
 import { Avatar } from './Avatar'
@@ -59,6 +60,28 @@ function DetailsButton({ bot, onClick }: { readonly bot: Bot; readonly onClick: 
   return <button type="button" className="bot-details" aria-label={label} aria-haspopup="dialog" title={label} onClick={onClick}><Pencil /></button>
 }
 
+function GroupChats({ rows }: { readonly rows: readonly GroupRowView[] }) {
+  return (
+    <section>
+      <h3>Group chats</h3>
+      <ul className="group-rows">
+        {rows.map(row => (
+          <li key={row.id} className="group-row">
+            <span className="stack" aria-hidden="true">
+              {row.faces.map(face => <Avatar key={face.id} bot={face} size={24} />)}
+              {row.more > 0 && <span className="stack-more">+{row.more}</span>}
+            </span>
+            <span className="bot-text">
+              <span className="bot-name">{row.name}</span>
+              <span className="bot-preview">{row.preview}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOpen, onNewChat, onCreate, onCreateGroup, onModels, ...editor }: BotsPanelProps) {
   const [refused, setRefused] = useState<string | null>(null)
   const [form, setForm] = useState<{ readonly models: ModelMenu | 'loading' } | null>(null)
@@ -94,6 +117,7 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
   const edited = editing === null ? null : botIn(bots, editing.bot)
   const list = listOf(bots, query)
   const { featured, sections } = list.show === 'roster' ? list : { featured: null, sections: [] }
+  const groupRows = (query ?? '').trim() === '' ? groupRowsOf(groups, bots) : []
   const closeSearch = () => {
     // The Search bots button is back in the page only once this has rendered.
     flushSync(() => setQuery(null))
@@ -132,6 +156,7 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
               <DetailsButton bot={featured} onClick={() => void describe(featured.id)} />
             </div>
           )}
+          {groupRows.length > 0 && <GroupChats rows={groupRows} />}
           {sections.map((section, at) => (
             <section key={section.name ?? ''}>
               <h3>{section.name ?? UNASSIGNED}</h3>
