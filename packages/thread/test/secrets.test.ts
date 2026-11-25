@@ -141,7 +141,7 @@ describe('where a request closed', () => {
     ['code', 'answered', 'You entered the code.'],
     ['code', 'skipped', 'You skipped the code.'],
     ['code', 'elsewhere', 'Answered from another window.'],
-    ['questions', 'answered', 'You sent your answers.'],
+    ['questions', 'answered', 'You answered.'],
     ['questions', 'elsewhere', 'Answered from another window.'],
     ['questions', 'timeout', 'Nobody answered in time, so Hermes stopped waiting.'],
     ['connect', 'done', 'Hermes went on with what is connected.'],

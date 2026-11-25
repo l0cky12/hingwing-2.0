@@ -105,7 +105,7 @@ const CLOSED_WORDS = {
   vault: { answered: 'You unlocked the vault.', skipped: 'You kept the vault locked.' },
   login: { answered: 'You saved the login.', skipped: "You didn't save the login." },
   code: { answered: 'You entered the code.', skipped: 'You skipped the code.' },
-  questions: { answered: 'You sent your answers.', skipped: 'You stopped answering.' },
+  questions: { answered: 'You answered.', skipped: 'You stopped answering.' },
   connect: { answered: 'Hermes went on with what is connected.', skipped: 'Hermes went on with what is connected.' }
 } as const satisfies Record<Asked, Record<'answered' | 'skipped', string>>
 

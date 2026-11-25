@@ -48,6 +48,6 @@ describe('the view the window draws', () => {
     const items = [closed('sudo', 'answered'), closed('code', 'elsewhere'), closed('env', 'skipped'), closed('questions', 'answered')]
     const [drawn] = drawnView(threadView(session([turn('t1', items)]), CLOCK)).turns
     expect(drawn?.nodes.map(node => node.kind === 'closed' ? node.words : node.kind))
-      .toEqual(['You sent a password.', 'Answered from another window.', 'You skipped this.', 'You sent your answers.'])
+      .toEqual(['You sent a password.', 'Answered from another window.', 'You skipped this.', 'You answered.'])
   })
 })

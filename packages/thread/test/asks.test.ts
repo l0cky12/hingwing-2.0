@@ -40,7 +40,7 @@ describe('the asks story in the thread view', () => {
       ANSWERED_ELSEWHERE,
       "| You're signed in. Before I deploy, two questions.",
       '● Used `clarify`  3.3 s',
-      '○ You sent your answers.',
+      '○ You answered.',
       '| Production in two regions. The deploy needs GitHub connected.',
       '● Used `manage_connections`  1.6 s',
       '○ Hermes went on with what is connected.',
@@ -50,7 +50,7 @@ describe('the asks story in the thread view', () => {
       '| Done. jq is installed, the gif was skipped for want of a Tenor key, and the notes site is deployed to production.',
       '✓ Done',
       '',
-      '○ You sent your answers.'
+      '○ You answered.'
     ])
   })
 
