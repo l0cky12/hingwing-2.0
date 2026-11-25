@@ -1,4 +1,4 @@
-import { EFFORTS, type Effort, type Tuning } from '@highwing/hermes/domain'
+import { EFFORTS, machineOf, type Effort, type Target, type Tuning } from '@highwing/hermes/domain'
 
 /** The switches the Thinking pill sets, as `tune` takes them. */
 export type ThinkingTune =
@@ -15,3 +15,6 @@ export const EFFORT_WORDS: { readonly [L in typeof LEVELS[number]]: string } = {
 export const thinkingShown = (tuning: Tuning): boolean => tuning.effort !== null || tuning.fast !== null || tuning.reasoning !== null
 
 export const thinkingLabel = (tuning: Tuning): string => (tuning.effort === null ? 'Thinking' : `Effort: ${EFFORT_WORDS[tuning.effort]}`)
+
+/** `target` is null in a fixture run, which names no machine. */
+export const folderFieldLabel = (target: Target | null): string => `Folder on ${target === null ? 'the Hermes machine' : machineOf(target)}`
