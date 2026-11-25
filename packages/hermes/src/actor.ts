@@ -391,8 +391,10 @@ export class SessionActor {
     })
   }
 
-  async detach(): Promise<void> {
+  /** Detaches from Hermes and keeps the content, so the next `attach` shows it while it catches up. */
+  async release(): Promise<void> {
     const { gate } = this.tracked
+    this.step({ in: 'release' })
     if (gate.at !== 'live') return
     await this.deps.conn.call('session.detach', { session_id: this.id, subscription_id: gate.subscriptionId }).catch(refusalOf)
   }

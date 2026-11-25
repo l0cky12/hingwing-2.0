@@ -195,11 +195,13 @@ describe('attach', () => {
     expect(actor.session.requests).toEqual([{ id: 'srq-1', ask: { kind: 'secret', for: { is: 'sudo', command: 'sudo ls' } }, state: { s: 'waiting', error: null }, deadline: null }])
   })
 
-  it('detaches with the subscription the attach gave it', async () => {
+  it('detaches with the subscription the attach gave it when released, and keeps what it shows', async () => {
     const { actor, open, calls } = stage()
     await open()
-    void actor.detach()
+    const shown = actor.session.history
+    void actor.release()
     expect(calls.map(call => [call.method, call.params])).toEqual([['session.detach', { session_id: ID, subscription_id: 'sub-1' }]])
+    expect(actor.session.history).toBe(shown)
   })
 })
 

@@ -79,6 +79,26 @@ describe('retention', () => {
     expect(opened.detaches()).toEqual([{ method: 'session.detach', params: { session_id: SESSION, subscription_id: 'subscription-1' } }])
   })
 
+  it("shows a released session's content at once when it is watched again, then brings it up to date", async () => {
+    const opened = open()
+    const unwatch = opened.watch()
+    await opened.clock.advance(0)
+    const before = opened.seen.at(-1)
+    unwatch()
+    await opened.clock.advance(RETAIN_MS)
+    expect(opened.detaches()).toHaveLength(1)
+    expect(opened.hermes.sidebar.get().rows, 'its row badges nothing from what it kept').toMatchObject([{ id: SESSION, badge: 'none' }])
+
+    const again: Session[] = []
+    opened.hermes.watch(SESSION, session => again.push(session))
+    expect(again[0]?.history, 'before any reply').toEqual(before?.history)
+    expect(again[0]?.sync.state).not.toBe('live')
+    await opened.clock.advance(0)
+    expect(again.at(-1)?.sync.state).toBe('live')
+    expect(again.at(-1)?.history).toEqual(before?.history)
+    expect(opened.sent().filter(call => call.method === 'session.resume'), 'attached again').toHaveLength(2)
+  })
+
   it('keeps a session that is watched again inside the 60 s', async () => {
     const opened = open()
     const unwatch = opened.watch()
