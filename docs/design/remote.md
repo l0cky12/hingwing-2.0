@@ -6,7 +6,7 @@ Design for issue #7. Status: reviewed. The remote route, the setup check, the sa
 
 Highwing reaches Hermes only on its own machine. `cliMint` in `packages/hermes/src/wire/link.ts` runs `hermes gateway attach --json` locally, and `dialWith` dials the loopback URL it prints. The goal is a Highwing on an Arch laptop that reaches the Hermes gateway on another machine of the same tailnet, chosen in a setup screen, with the local route unchanged and an Arch package to install.
 
-The gateway's rules shape the answer. It listens on loopback only. It redeems a native ticket only from a loopback peer and only when the upgrade has no `Origin` header (`gateway/run_api.py:472-493` in Hermes 0.23.3). A ticket is single-use and expires 30 s after it is minted (`gateway/runtime_bootstrap.py:37-76`). It is bound to the gateway instance, profile and purpose, not to the peer address.
+The gateway's rules shape the answer. It listens on loopback only. It redeems a native ticket only from a loopback peer and only when the upgrade has no `Origin` header (`gateway/run_api.py:521-541` in Hermes 0.23.3, `be787439`). A ticket is single-use and expires 30 s after it is minted (`gateway/runtime_bootstrap.py:37-76`). It is bound to the gateway instance, profile and purpose, not to the peer address.
 
 ## What Hermes supports
 
@@ -17,7 +17,7 @@ Routes Hermes has that this design does not use:
 | Route | Why not |
 |---|---|
 | `hermes serve --isolated` over ssh (Hermes Desktop's "ssh" kind) | Authenticates with a long-lived `?token=`, not a single-use ticket. Needs `python3` on the Hermes machine. |
-| Remote URL with OAuth (`POST /api/auth/ws-ticket`) | Needs a non-loopback Webapp bind (`0.0.0.0` only) and an auth provider on the Hermes machine. |
+| Remote URL with OAuth (`POST /api/auth/ws-ticket`) | Needs the gateway's Webapp turned on at an address this computer can reach, and an auth provider on the Hermes machine. `webapp.host` takes `0.0.0.0`, `::` or one address of the machine, or stays on loopback with `webapp.public_url` behind a proxy. `docs/design/url.md` adds this route. |
 | Forwarding the control socket | Not a contract. The socket checks the OS user on the same machine. |
 | `hermes gateway tickets --serve --json` channel | Its `interactive` ticket serves every profile. Highwing uses one profile, the channel never starts a gateway, and `attach` is still needed for the port. Kept as the path for a multi-profile Highwing. Issue #64 took it. See "Tickets" under "Implementation reconciliation". |
 
