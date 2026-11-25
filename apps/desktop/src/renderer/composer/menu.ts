@@ -2,7 +2,7 @@ import { botsIn, mentionOf, typedMention, type Bot, type BotId, type Bots, type 
 
 export type MenuItem =
   | { readonly kind: SlashEntry['kind']; readonly entry: SlashEntry }
-  | { readonly kind: 'bot'; readonly bot: Bot }
+  | { readonly kind: 'bot'; readonly bot: Bot; readonly mention: string }
 
 export interface MenuSection {
   readonly label: string
@@ -64,10 +64,12 @@ const TRIGGERS: readonly Trigger[] = [
     label: 'Mentions',
     typed: (text, caret) => {
       const typed = typedMention(text.slice(0, caret))
-      return typed === null ? null : { from: typed.at, to: caret, query: typed.query }
+      if (typed === null) return null
+      const rest = (text[typed.at + 1] === '"' ? /^[^"\n]*"?/ : /^\S*/).exec(text.slice(caret))?.[0] ?? ''
+      return { from: typed.at, to: caret + rest.length, query: typed.query }
     },
     sections: [
-      { label: 'Bots', items: (query, { bots }) => bots.filter(bot => starts(bot.name, query) || starts(bot.id, query)).map(bot => ({ kind: 'bot', bot })) }
+      { label: 'Bots', items: (query, { bots }) => bots.filter(bot => starts(bot.name, query) || starts(bot.id, query)).map(bot => ({ kind: 'bot', bot, mention: mentionOf(bot, bots) })) }
     ]
   }
 ]
@@ -85,7 +87,7 @@ export function menuOf(text: string, caret: number, sources: MenuSources, { acti
   return CLOSED
 }
 
-export const completionOf = (item: MenuItem): string => (item.kind === 'bot' ? mentionOf(item.bot) : `/${item.entry.name} `)
+export const completionOf = (item: MenuItem): string => (item.kind === 'bot' ? item.mention : `/${item.entry.name} `)
 
 /** The box after a pick: the typed text replaced by the item, and the caret after the space that ends it. Space already there is kept, not doubled. */
 export function picked(text: string, { from, to }: Range, item: MenuItem): { readonly text: string; readonly caret: number } {

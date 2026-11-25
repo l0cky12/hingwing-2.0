@@ -9,10 +9,10 @@ const TRAILING = /[.,!?;:)]+$/
 
 function named<B extends Named>(bots: readonly B[], word: string): B | undefined {
   const sought = word.toLowerCase()
-  return bots.find(bot => bot.name.toLowerCase() === sought) ?? bots.find(bot => bot.id.toLowerCase() === sought)
+  return bots.find(bot => bot.id.toLowerCase() === sought) ?? bots.find(bot => bot.name.toLowerCase() === sought)
 }
 
-/** The distinct bots a message mentions, by shown name or id in any case, in the order it first names them. */
+/** The distinct bots a message mentions, by id or else shown name, in any case, in the order it first names them. */
 export function mentionedBots<B extends Named>(text: string, bots: readonly B[]): readonly B[] {
   const found = new Set<B>()
   for (const [, quoted, bare = ''] of text.matchAll(MENTIONS)) {
@@ -22,9 +22,9 @@ export function mentionedBots<B extends Named>(text: string, bots: readonly B[])
   return [...found]
 }
 
-/** The text a pick puts in the box. A name that holds a quote cannot be quoted, so the id stands in for it. */
-export function mentionOf({ id, name }: Named): string {
-  const word = name.includes('"') ? id : name
+/** The text a pick puts in the box. The id stands in for a name that holds a quote or names another of `bots`. */
+export function mentionOf<B extends Named>(bot: B, bots: readonly B[]): string {
+  const word = !bot.name.includes('"') && named(bots, bot.name) === bot ? bot.name : bot.id
   return /\s/.test(word) ? `@"${word}" ` : `@${word} `
 }
 

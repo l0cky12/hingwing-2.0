@@ -108,6 +108,13 @@ describe('the @ list', () => {
     expect(picked('Ask @"tim', quoted.range, quoted.items[0]!)).toEqual({ text: 'Ask @"Timothy · CEO" ', caret: 21 })
   })
 
+  it('replaces the whole @ word when the caret sits inside it', () => {
+    const inside = opened(at('Ask @Rae about it', 6))
+    expect(picked('Ask @Rae about it', inside.range, inside.items[0]!)).toEqual({ text: 'Ask @Rae about it', caret: 9 })
+    const quoted = opened(at('Ask @"Tim oth" now', 9))
+    expect(picked('Ask @"Tim oth" now', quoted.range, quoted.items[0]!)).toEqual({ text: 'Ask @"Timothy · CEO" now', caret: 21 })
+  })
+
   it('stays closed on the text Escape closed it on, and wraps the active row', () => {
     expect(names('Ask @sa', { active: 0, dismissed: 'Ask @sa' })).toBeNull()
     expect(names('Ask @sam', { active: 0, dismissed: 'Ask @sa' })).toEqual(['Sam', 'Mira'])

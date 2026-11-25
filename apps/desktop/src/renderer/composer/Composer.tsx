@@ -87,7 +87,7 @@ export function Composer({ slot, inputRef, autoFocus, canSend, showStop, onSend,
     if (caretTo.current === null || element === null) return
     element.setSelectionRange(caretTo.current, caretTo.current)
     caretTo.current = null
-  }, [draft, press])
+  }, [draft, caret, press])
 
   const wasConfirming = useRef(false)
   useLayoutEffect(() => {

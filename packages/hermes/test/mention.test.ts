@@ -51,18 +51,31 @@ describe('mentionedBots', () => {
 
 describe('mentionOf', () => {
   it('is the name after an @, with a space to go on typing', () => {
-    expect(mentionOf(RAE)).toBe('@Rae ')
+    expect(mentionOf(RAE, BOTS)).toBe('@Rae ')
   })
 
   it('quotes a name that holds a space, and the text it gives reads back as that bot', () => {
-    expect(mentionOf(CEO)).toBe('@"Timothy · CEO" ')
-    expect(mentionedBots(`Ask ${mentionOf(CEO)}now`, BOTS)).toEqual([CEO])
+    expect(mentionOf(CEO, BOTS)).toBe('@"Timothy · CEO" ')
+    expect(mentionedBots(`Ask ${mentionOf(CEO, BOTS)}now`, BOTS)).toEqual([CEO])
   })
 
   it('falls back to the id for a name that holds a quote', () => {
     const quoted = bot('q', 'The "Boss"')
-    expect(mentionOf(quoted)).toBe('@q ')
-    expect(mentionedBots(mentionOf(quoted), [quoted])).toEqual([quoted])
+    expect(mentionOf(quoted, [quoted])).toBe('@q ')
+    expect(mentionedBots(mentionOf(quoted, [quoted]), [quoted])).toEqual([quoted])
+  })
+
+  it('gives the id of a bot whose name another bot shares, so each pick reads back as the bot picked', () => {
+    const twin = bot('sam-two', 'Sam')
+    const both = [SAM, twin]
+    expect(both.map(held => mentionOf(held, both))).toEqual(['@Sam ', '@sam-two '])
+    expect(both.map(held => mentionedBots(mentionOf(held, both), both))).toEqual([[SAM], [twin]])
+  })
+
+  it('gives the id of a bot whose name is another bot\'s id', () => {
+    const named = bot('x', 'sam')
+    expect(mentionOf(named, [SAM, named])).toBe('@x ')
+    expect(mentionedBots('@sam', [SAM, named])).toEqual([SAM])
   })
 })
 
