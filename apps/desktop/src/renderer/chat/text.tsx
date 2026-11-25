@@ -1,8 +1,9 @@
 import { fieldId, parseMarkdown, proseLeaves, type Block, type Inline, type Phrase, type ProseLeaf } from '@highwing/thread'
 import { Fragment, useMemo, type ReactNode } from 'react'
-import { isWebLink } from '../../ipc-contract'
+import { isWebLink, isWebPage } from '../../ipc-contract'
 import { Code } from './Code'
 import { ThreadImage } from './Image'
+import { WebLink } from './WebLink'
 
 export function PhraseText({ words }: { readonly words: Phrase }) {
   return words.map((piece, index) => (piece.t === 'code' ? <code key={index}>{piece.v}</code> : <Fragment key={index}>{piece.v}</Fragment>))
@@ -19,6 +20,7 @@ function inline(nodes: readonly Inline[]): ReactNode[] {
       case 'break': return <br key={index} />
       case 'image': return <ThreadImage key={index} request={{ kind: 'web', url: node.src }} alt={node.alt} />
       case 'link':
+        if (isWebPage(node.href)) return <WebLink key={index} href={node.href}>{inline(node.children)}</WebLink>
         return isWebLink(node.href)
           ? <a key={index} href={node.href} target="_blank" rel="noreferrer">{inline(node.children)}</a>
           : <Fragment key={index}>{inline(node.children)}</Fragment>

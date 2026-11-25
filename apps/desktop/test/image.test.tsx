@@ -57,7 +57,7 @@ describe('an image in a reply', () => {
   })
 
   it('keeps a link a link', () => {
-    expect(render('[a chart](https://example.com/c.png)')).toContain('<a href="https://example.com/c.png" target="_blank" rel="noreferrer">a chart</a>')
+    expect(render('[a chart](https://example.com/c.png)')).toContain('<a href="https://example.com/c.png" target="_blank" rel="noreferrer" aria-expanded="false">a chart</a>')
   })
 })
 
