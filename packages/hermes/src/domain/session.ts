@@ -527,6 +527,8 @@ export interface QueuedMessage {
   readonly text: string
   /** `here`: sent from this Highwing since it started. `elsewhere`: another client's, or sent before a restart of Highwing. */
   readonly from: 'here' | 'elsewhere'
+  /** What this client sent with the message, in order. Empty for another client's row: Hermes's list does not name a row's attachments. */
+  readonly attachments: readonly Attachment[]
   readonly state: QueuedState
 }
 

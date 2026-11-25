@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { offeredBy, sendPlan, type Admission } from '../src/domain/queue'
 import { emptyTracked, reduce, type SessionEvent, type SessionInput, type Snapshot, type Tracked } from '../src/domain/reduce'
-import type { AdmissionId, BusyMode, Generation, InputId, PromptId, QueuedState, RequestId, Run, SessionId, TurnId } from '../src/domain/session'
+import type { AdmissionId, Attachment, AttachmentId, BusyMode, Generation, InputId, PromptId, QueuedState, RequestId, Run, SessionId, TurnId } from '../src/domain/session'
 import { parseBusy, parseCorrection, parseEvent, parseRows } from '../src/wire/parse'
 
 const EPOCH = 'e1'
@@ -24,7 +24,9 @@ let seq = 0
 const event = (sessionEvent: SessionEvent, generation: number | null = 1): SessionInput =>
   ({ in: 'event', frame: { stamp: { epoch: EPOCH, seq: ++seq, generation: generation as Generation | null }, event: sessionEvent, seenAt: null } })
 const list = (...queue: Admission[]): SessionInput => event({ type: 'meta', queue }, null)
-const send = (inputId: string, text: string): SessionInput => ({ in: 'local', action: { did: 'send', inputId: inputId as InputId, text, attachments: [] } })
+const SHOT: Attachment = { id: 'f1' as AttachmentId, name: 'error.png', kind: 'image', size: 127 }
+const send = (inputId: string, text: string, attachments: readonly Attachment[] = []): SessionInput =>
+  ({ in: 'local', action: { did: 'send', inputId: inputId as InputId, text, attachments } })
 const started = (admissionId: string | null): SessionEvent => ({ type: 'turn.started', turnId: null, admissionId, requestText: null })
 const feed = (state: Tracked, ...inputs: SessionInput[]) => inputs.reduce(reduce, state)
 const openTurn = (state: Tracked) => (state.content.run.state === 'running' ? state.content.run.turn : null)
@@ -38,7 +40,7 @@ describe('Hermes\'s queue', () => {
     expect(again.content).toBe(first.content)
 
     const cancelled = feed(again, list(row('a2', 'i2', 'two')))
-    expect(cancelled.content.queue).toEqual([{ admissionId: 'a2', inputId: 'i2', text: 'two', from: 'elsewhere', state: QUEUED }])
+    expect(cancelled.content.queue).toEqual([{ admissionId: 'a2', inputId: 'i2', text: 'two', from: 'elsewhere', attachments: [], state: QUEUED }])
     expect(cancelled.content.queue[0], 'the row that did not change is the same object').toBe(first.content.queue[1])
     expect(feed(cancelled, list()).content.queue).toEqual([])
   })
@@ -46,8 +48,8 @@ describe('Hermes\'s queue', () => {
   it('holds another client\'s row, which this client never sent', () => {
     const state = feed(live(), send('i1', 'mine'), list(row('a1', 'i1', 'mine'), row('a2', 'other-input', 'theirs', { s: 'queued', can: [] })))
     expect(state.content.queue).toEqual([
-      { admissionId: 'a1', inputId: 'i1', text: 'mine', from: 'here', state: QUEUED },
-      { admissionId: 'a2', inputId: 'other-input', text: 'theirs', from: 'elsewhere', state: { s: 'queued', can: [] } }
+      { admissionId: 'a1', inputId: 'i1', text: 'mine', from: 'here', attachments: [], state: QUEUED },
+      { admissionId: 'a2', inputId: 'other-input', text: 'theirs', from: 'elsewhere', attachments: [], state: { s: 'queued', can: [] } }
     ])
   })
 
@@ -108,6 +110,35 @@ describe('Hermes\'s queue', () => {
 
     const back = feed(handed, list(row('a2', 'i2', 'also check the tests')))
     expect(back.content.queue, 'a row the turn never read is queued again').toMatchObject([{ state: QUEUED }])
+  })
+
+  it('carries this client\'s attachments from its outbox entry onto the row Hermes lists, then onto the request its turn starts with', () => {
+    const queued = feed(live(), send('i1', 'what is this', [SHOT]), list(row('a1', 'i1', 'what is this', { s: 'queued', can: [] })))
+    expect(queued.content.outbox).toEqual([])
+    expect(queued.content.queue).toMatchObject([{ admissionId: 'a1', from: 'here', attachments: [SHOT] }])
+    expect(feed(queued, list(row('a1', 'i1', 'what is this', { s: 'queued', can: [] }))).content, 'a list that changes nothing keeps them').toBe(queued.content)
+
+    const running = feed(queued, event(started('a1')))
+    expect(openTurn(running)?.request).toEqual({ text: 'what is this', inputId: 'i1', rowId: null, attachments: [SHOT] })
+    expect(running.content.queue).toEqual([])
+  })
+
+  it('carries them by the admission a receipt gave when Hermes lists the message under another input id', () => {
+    const admitted: SessionInput = { in: 'local', action: { did: 'send.admitted', inputId: 'minted' as InputId, admissionId: 'a1' } }
+    const queued = feed(live(), send('minted', 'what is this', [SHOT]), admitted, list(row('a1', 'recorded', 'what is this')))
+    expect(queued.content.queue).toMatchObject([{ inputId: 'recorded', attachments: [SHOT] }])
+    expect(openTurn(feed(queued, event(started('a1'))))?.request?.attachments).toEqual([SHOT])
+  })
+
+  it('gives the request the outbox entry\'s attachments when a list first names the message as started', () => {
+    const running = feed(live(), send('i1', 'what is this', [SHOT]), event(started(null)), list(row('a1', 'i1', 'what is this', { s: 'started' })))
+    expect(openTurn(running)?.request).toEqual({ text: 'what is this', inputId: 'i1', rowId: null, attachments: [SHOT] })
+  })
+
+  it('names no attachments for another client\'s row, since Hermes\'s list does not say', () => {
+    const state = feed(live(), send('i1', 'mine', [SHOT]), list(row('a2', 'theirs-input', 'theirs')), event(started('a2')))
+    expect(openTurn(state)?.request).toEqual({ text: 'theirs', inputId: 'theirs-input', rowId: null, attachments: [] })
+    expect(state.content.outbox).toMatchObject([{ inputId: 'i1', attachments: [SHOT] }])
   })
 
   it('holds a lost row with the generation its release needs', () => {

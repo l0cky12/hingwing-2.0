@@ -313,7 +313,7 @@ describe('send', () => {
     expect(actor.session.outbox[0]?.state, 'the receipt alone moves nothing').toEqual({ s: 'sending' })
     event({ type: 'meta', queue: [queued('a1', 'id-1', 'hello')] }, null)
     expect(actor.session.outbox).toEqual([])
-    expect(actor.session.queue).toEqual([{ admissionId: 'a1', inputId: 'id-1', text: 'hello', from: 'here', state: { s: 'queued', can: [] } }])
+    expect(actor.session.queue).toEqual([{ admissionId: 'a1', inputId: 'id-1', text: 'hello', from: 'here', attachments: [], state: { s: 'queued', can: [] } }])
   })
 
   it('drops a message Hermes says is already done, which no list will name', async () => {
@@ -370,7 +370,7 @@ describe('send', () => {
     await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
     event({ type: 'meta', queue: [queued('a1', 'id-1', '/release-notes')] }, null)
     expect(actor.session.queue, 'a listed message carries only the text the thread shows').toEqual([
-      { admissionId: 'a1', inputId: 'id-1', text: '/release-notes', from: 'here', state: { s: 'queued', can: [] } }
+      { admissionId: 'a1', inputId: 'id-1', text: '/release-notes', from: 'here', attachments: [], state: { s: 'queued', can: [] } }
     ])
   })
 

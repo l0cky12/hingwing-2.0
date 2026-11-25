@@ -593,6 +593,13 @@ describe('attachments', () => {
     expect(view.pending[0]?.attachments).toEqual([sent[1]])
     expect(outline(view)).toBe(['+ [file] contract.pdf', '⋯ Summarise this  (sending)'].join('\n'))
   })
+
+  it('draws them with a message Hermes holds in its queue', () => {
+    const queued: QueuedMessage = { admissionId: 'a1' as AdmissionId, inputId: 'i1' as InputId, text: 'Summarise this', from: 'here', attachments: sent, state: { s: 'queued', can: [] } }
+    const view = threadView(session({ queue: [queued] }), CLOCK)
+    expect(view.pending[0]?.attachments).toEqual(sent)
+    expect(outline(view)).toBe(['+ [image] error.png  [file] contract.pdf', '⋯ Summarise this  (queued)'].join('\n'))
+  })
 })
 
 describe('what Hermes says', () => {
@@ -631,7 +638,7 @@ describe('what Hermes says', () => {
 
   it('shows this client\'s rows of Hermes\'s queue under the last turn, ahead of what Hermes has not listed, and leaves out another client\'s', () => {
     const row = (id: string, from: 'here' | 'elsewhere', state: QueuedMessage['state'] = { s: 'queued', can: [] }): QueuedMessage =>
-      ({ admissionId: `a-${id}` as AdmissionId, inputId: id as InputId, text: `message ${id}`, from, state })
+      ({ admissionId: `a-${id}` as AdmissionId, inputId: id as InputId, text: `message ${id}`, from, attachments: [], state })
     const view = threadView(session({
       queue: [row('one', 'here'), row('two', 'elsewhere'), row('three', 'here', { s: 'steering' })],
       outbox: [{ inputId: 'four' as InputId, text: 'message four', attachments: [], state: { s: 'sending' } }]

@@ -1,4 +1,4 @@
-import type { AdmissionId, BusyMode, Generation, InputId, QueuedAction, QueuedMessage, QueuedState, SessionContent } from './session'
+import type { AdmissionId, Attachment, BusyMode, Generation, InputId, OutboxEntry, QueuedAction, QueuedMessage, QueuedState, SessionContent } from './session'
 
 export interface Admission {
   readonly admissionId: AdmissionId
@@ -7,17 +7,28 @@ export interface Admission {
   readonly state: QueuedState | { readonly s: 'started' } | { readonly s: 'terminal' }
 }
 
-export function queueOf(held: readonly QueuedMessage[], sent: (row: Admission) => boolean, rows: readonly Admission[]): readonly QueuedMessage[] {
+/**
+ * `held` with Hermes's list in its place. `sent` is the outbox entry a row names, which hands the row
+ * its attachments as it leaves the outbox; the row keeps them for as long as Hermes lists it.
+ */
+export function queueOf(
+  held: readonly QueuedMessage[], sent: (row: Admission) => Pick<OutboxEntry, 'attachments'> | undefined, rows: readonly Admission[]
+): readonly QueuedMessage[] {
   const next = rows.flatMap((row): QueuedMessage[] => {
     const { state } = row
     if (state.s === 'started' || state.s === 'terminal') return []
     const before = held.find(message => message.admissionId === row.admissionId)
-    const from = before?.from === 'here' || sent(row) ? 'here' : 'elsewhere'
-    const unchanged = before !== undefined && before.inputId === row.inputId && before.text === row.text && before.from === from && sameState(before.state, state)
-    return [unchanged ? before : { admissionId: row.admissionId, inputId: row.inputId, text: row.text, from, state }]
+    const entry = sent(row)
+    const from = before?.from === 'here' || entry !== undefined ? 'here' : 'elsewhere'
+    const attachments = entry?.attachments ?? before?.attachments ?? NONE
+    const unchanged = before !== undefined && before.inputId === row.inputId && before.text === row.text && before.from === from
+      && before.attachments === attachments && sameState(before.state, state)
+    return [unchanged ? before : { admissionId: row.admissionId, inputId: row.inputId, text: row.text, from, attachments, state }]
   })
   return next.length === held.length && next.every((message, index) => message === held[index]) ? held : next
 }
+
+const NONE: readonly Attachment[] = []
 
 function sameState(a: QueuedState, b: QueuedState): boolean {
   switch (a.s) {

@@ -237,7 +237,7 @@ export function threadView(session: Session, clock: ViewClock): ThreadView {
     state: VIEW_STATE[sync.state],
     turns: [...settled, ...(interlude === null ? [] : [interlude]), ...(open === null ? [] : [open])],
     pending: [
-      ...session.queue.flatMap(row => (row.from === 'here' ? [{ key: row.inputId, text: row.text, attachments: NO_ATTACHMENTS, status: 'queued' as const, detail: null }] : [])),
+      ...session.queue.flatMap(row => (row.from === 'here' ? [{ key: row.inputId, text: row.text, attachments: row.attachments, status: 'queued' as const, detail: null }] : [])),
       ...session.outbox.map(entry => ({
         key: entry.inputId, text: entry.text, attachments: entry.attachments, status: entry.state.s, detail: entry.state.s === 'failed' ? entry.state.message : null
       }))
