@@ -57,6 +57,8 @@ Every run names one of two gateways. Hermes, ssh and Tailscale are installed on 
 
 Every run sets `HIGHWING_OPEN_LOG` to `opens.jsonl` in the evidence directory. Main then records each request to open a file, show its folder, or open a link in the browser in that file, and opens nothing on the desktop. A run without `--pick-file` removes any `HIGHWING_PICK_FILE` it inherited.
 
+Every run also sets `HIGHWING_NOTIFY_LOG` to `notices.jsonl` in the evidence directory. Main then records each desktop notification there as a JSON line (`sessionId`, `turnId`, `title`, `body`) and shows nothing on the desktop.
+
 A JavaScript dialog the page opens (`alert`, `confirm` or `prompt`) is logged to `steps.log` as `DIALOG`, dismissed, and fails the run once the steps end. The app never opens one, so a dialog means script ran that should not have.
 
 Ready means the first window has loaded. Use `wait window` as the first step.
@@ -102,6 +104,8 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `nothing-opened` | none | fails if `opens.jsonl` holds any call, so nothing went to the desktop or the browser |
 | `previewing <url>` | URL or `/regex/` | waits until the preview pane's page has finished loading that URL, and logs where main draws it and whether it is visible. A failed page counts once its load has stopped |
 | `page-says <text>` | text | waits until the text of the page in the preview pane holds the text |
+| `blur` | none | takes focus from the window, and fails if any Highwing window still has focus. Playwright's clicks do not give it back |
+| `notified <title> <n>` | title, number | waits until `notices.jsonl` holds n notifications with that title, logs each, and fails on any other count. It is checked again when the steps end |
 | `home` | none | fails unless the app has one window and its address is still the one it launched with |
 | `copied <text>` | text | fails unless the system clipboard holds exactly this text |
 | `gone <role> <name>` | ARIA role, exact accessible name or `/regex/` | polls until no visible element has that role and name, and fails at the timeout. Waits out a fade |
@@ -162,6 +166,7 @@ Each run writes to `/tmp/highwing-verify/<run>/`:
 - `<name>.png` and `<name>.aria.txt` hold each shot and the ARIA snapshot of the page at that moment.
 - `<name>.clip.txt` holds the clipboard text that a `clipboard` step read.
 - `opens.jsonl` holds one JSON line for each open or show call that main accepted.
+- `notices.jsonl` holds one JSON line for each desktop notification main would have shown.
 - `main.log` holds the Electron main process's stdout and stderr. `console.log` holds the renderer console and page errors.
 - `failure.png` is the window when a step failed.
 - `gateway-calls.jsonl` holds every frame the client sent the scripted gateway, one per line, as it arrived (`--fixture` runs). Main writes it when `HIGHWING_FIXTURE_CALLS` names a file, which `run` always sets.

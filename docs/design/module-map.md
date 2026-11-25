@@ -57,6 +57,7 @@ highwing-2.0/
       drafts.ts                  no Electron              readDraft, draftStore: drafts/, one file per chat's unsent draft
       attachments.ts             no Electron              attachmentStore: attachments/, the files staged for messages; desktopSources: the file dialog and clipboard, or HIGHWING_PICK_FILES
       connection.ts              no Electron              ownConnection, nextSetup, pinnedConnection: the setup state, the saved target, the live Hermes
+      notify.ts                  no Electron              noticeOf, notifyTurnEnds: a desktop notification when the shown chat's turn ends while no window has focus
     src/preload/index.ts         preload                  exposes Bridge: watch, run, file, image, drafts, keepDraft, attachPick, attachPaste and attachDropped
     src/renderer/                renderer                 store.ts (useTopic), setup/, bots/, chats/, chat/ (Attachments.tsx: chips and sent files), composer/ (drafts.ts: useDraft, useAttachments), chrome/, styles/
   fixtures/                                               *.jsonl, make_fixture.py (run with Hermes's interpreter), profiles/*.json (canned `profiles.list` replies), attach/ (files the attachment recipes stage, from make_attach_files.py)
@@ -80,6 +81,7 @@ highwing-2.0/
 | Which chat is open, the Bot Chat of each bot, and which bot owns a session | `open.ts`, changed only through `nextDesk` in `domain/open.ts` | windows read the `open` topic and send `open` and `start`. The hub reads `botOf` to build a session's actor |
 | Which profile a call runs in | `Connection.as(bot)` in `wire/link.ts`, which adds `profile` to every call made through it | an actor calls only through the connection it was given |
 | Where Hermes runs, which screen shows, and which `Hermes` is live | `ownConnection` in `main/connection.ts`, changed only through `nextSetup` | windows read the `setup` topic and send `checkTarget`, `editTarget`, `keepTarget`, `openChat` |
+| Which turn ends were told as desktop notifications | `notifyTurnEnds` in `main/notify.ts`, one per app, keyed by session and turn id. `noticeOf` decides from two values of the shown chat | windows never notify. `main/index.ts` passes Electron's `Notification`, or a recorder when `HIGHWING_NOTIFY_LOG` is set |
 | The saved connection on disk | `main/settings.ts` | nobody. `ownConnection` gets `loaded` and `save` as arguments |
 | A window's copy of a topic | `renderer/store.ts` in that window, written only by `applyPush` | components read with `useTopic` |
 | A chat's unsent draft | `renderer/composer/drafts.ts` in that window, kept on disk by `main/drafts.ts` | the composer reads it with `useDraft`, the chat list with `useChatDrafts`; not Hermes's state |
@@ -98,8 +100,8 @@ Two windows on one session read the same actor through two IPC subscriptions. Th
 3. `wire/contract.generated.ts` is imported only inside `packages/hermes/src/wire/` and `testing/`. No public entry exports a type from it.
 4. `packages/hermes` never imports `electron`. It takes a `Dialer` and a `Clock` instead of reaching for globals.
 5. The renderer imports `@highwing/hermes/domain`, `@highwing/thread` and `ipc-contract.ts`. It cannot import `@highwing/hermes` or `./testing`, which need Node.
-6. Main imports `@highwing/hermes` and `ipc-contract.ts`. Only `main/index.ts` imports `./testing`, to honour `HIGHWING_FIXTURE` and `HIGHWING_RECORD`.
-7. `main/settings.ts`, `main/drafts.ts`, `main/attachments.ts` and `main/connection.ts` never import `electron`. They take the settings directory, the drafts directory, the attachments directory, the dialog and clipboard, the check and the route as arguments.
+6. Main imports `@highwing/hermes`, `ipc-contract.ts`, and `@highwing/thread` for the words the thread shows. Only `main/index.ts` imports `./testing`, to honour `HIGHWING_FIXTURE` and `HIGHWING_RECORD`.
+7. `main/settings.ts`, `main/drafts.ts`, `main/attachments.ts`, `main/connection.ts` and `main/notify.ts` never import `electron`. They take the settings directory, the drafts directory, the attachments directory, the dialog and clipboard, the check, the route and the notifier as arguments.
 
 Rules 2, 3 and 5 are enforced by `exports` maps and by the renderer's tsconfig having no Node types. Rules 1, 3 and 4 inside the package, and rule 7, are enforced by one ESLint `no-restricted-imports` block per folder. CI runs both.
 
