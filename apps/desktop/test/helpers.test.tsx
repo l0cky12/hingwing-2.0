@@ -22,7 +22,7 @@ function visibleButtons(node: ReactNode): Control[] {
 
 function shown(node: ThreadNode, tone: 'live' | null = null) {
   let state = NONE_OPEN
-  const props = () => ({ node, endTone: tone, elapsed: null, open: state, onAnswer: () => {}, onToggle: (key: string, byDefault = false) => { state = toggled(state, key, byDefault) } })
+  const props = () => ({ node, endTone: tone, elapsed: null, open: state, onAnswer: async () => undefined, onToggle: (key: string, byDefault = false) => { state = toggled(state, key, byDefault) } })
   return {
     markup: () => renderToStaticMarkup(<Node {...props()} />),
     button: (name: RegExp) => {
@@ -189,7 +189,7 @@ describe('a plan node', () => {
 describe('a turn', () => {
   const turn = (end: TurnView['end']): TurnView => ({ key: 't1', time: null, request: 'Check the servers', attachments: [], rowId: null, tokens: null, nodes: [plan(true)], end })
   const draw = (end: TurnView['end']) => renderToStaticMarkup((
-    <Turn turn={turn(end)} open={NONE_OPEN} onToggle={() => {}} onAnswer={() => {}} canEdit={false} showsRegenerate={false} canRegenerate={false} canBranch={false} onEdit={() => {}} onRegenerate={() => {}} onBranch={() => {}} versions={[]} onVersion={() => {}} />
+    <Turn turn={turn(end)} open={NONE_OPEN} onToggle={() => {}} onAnswer={async () => undefined} canEdit={false} showsRegenerate={false} canRegenerate={false} canBranch={false} onEdit={() => {}} onRegenerate={() => {}} onBranch={() => {}} versions={[]} onVersion={() => {}} />
   ))
 
   it('is a live turn while its end is live, and not once it is done', () => {

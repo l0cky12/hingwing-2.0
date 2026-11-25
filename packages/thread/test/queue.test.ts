@@ -20,7 +20,7 @@ async function sessions(options?: Parameters<typeof play>[1]): Promise<Session[]
 const unsound = (seen: readonly Session[]) =>
   seen.flatMap((session, index) => checkThread(threadView(session, AT_PLAY_START)).map(problem => `moment ${index}: ${problem}`))
 const outlined = (session: Session) => outline(threadView(session, AT_PLAY_START)).split('\n').filter(line => !line.startsWith('@ ')).join('\n')
-const pendingOf = (seen: readonly Session[]) => seen.map(session => threadView(session, AT_PLAY_START).pending.map(message => `${message.text} (${message.status})`))
+const pendingOf = (seen: readonly Session[]) => seen.map(session => outline(threadView(session, AT_PLAY_START)).split('\n').filter(line => line.startsWith('⋯ ')))
 
 describe('the queue story in the thread view', () => {
   it('outlines the lost turn, then the turn with each steered line where the model read it, then the two that followed', () => {
@@ -63,13 +63,22 @@ describe('the queue story in the thread view', () => {
     expect(outlined(seen.at(-1) as Session)).toBe(want)
   })
 
-  it("lists this client's queued messages under the last turn as before, and never another client's or one queued before Highwing started", async () => {
+  it('lists every queued row under the last turn with its sender and what it offers, the lost row first, and an edit beside the row it replaces', async () => {
     const pending = pendingOf(await sessions())
-    expect(pending).toContainEqual(['Also update the changelog. (queued)'])
-    expect(pending).toContainEqual(['Also update the changelog, under Unreleased. (queued)'])
-    expect(pending).toContainEqual(['Now draft the release notes. (queued)'])
-    const texts = new Set(pending.flat())
-    expect([...texts].filter(text => text.startsWith('And tag the release') || text.startsWith('Rename every note') || text.startsWith('Then list what changed'))).toEqual([])
+    expect(pending).toContainEqual([
+      '⋯ Rename every note to kebab-case.  (lost, from elsewhere, release)',
+      '⋯ Then list what changed.  (queued, from elsewhere, sendNow, edit, cancel)'
+    ])
+    expect(pending).toContainEqual([
+      '⋯ Also update the changelog.  (queued, sendNow, edit, cancel)',
+      '⋯ And tag the release as v2.  (queued, from elsewhere, sendNow, edit, cancel)',
+      '⋯ Also update the changelog, under Unreleased.  (sending)'
+    ])
+    expect(pending).toContainEqual([
+      '⋯ Also update the changelog, under Unreleased.  (steering)',
+      '⋯ Now draft the release notes.  (queued, sendNow, edit, cancel)'
+    ])
+    expect(pending.at(-1)).toEqual([])
   })
 
   it.each(Array.from({ length: pushes }, (_, index) => index + 1))('a drop after push %i, 3 missed, stays sound and ends in the same outline', async afterPush => {

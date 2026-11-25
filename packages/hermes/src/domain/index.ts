@@ -7,7 +7,7 @@ export {
 } from './command'
 export { activityOf, turnActivityOf, type Activity, type TurnActivity } from './reduce'
 export { offeredBy, sendPlan, type SendPlan } from './queue'
-export type { SlashCatalog, SlashEntry } from './slash'
+export { slashLineOf, type SlashCatalog, type SlashEntry } from './slash'
 export { BOT_TONES, botsIn, canonicalBotId, PICTURE_MAX_BYTES, PICTURE_RULE, pictureTypeOf, rosterOf, type AvatarTone, type Bot, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotFacts, type BotId, type Bots, type BotSection, type BotTone, type PictureType, type Roster } from './bots'
 export type { PathMatch } from './path'
 export { mentionedBots, mentionOf, typedMention } from './mention'

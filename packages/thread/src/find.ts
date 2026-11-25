@@ -68,6 +68,7 @@ function fields(view: ThreadView): Field[] {
           if (node.detail !== null) add(node.key, 'detail', node.detail, [node.key])
           break
         case 'status':
+        case 'steer':
           add(node.key, 'text', node.text)
           break
         case 'moa':
@@ -109,7 +110,7 @@ function fields(view: ThreadView): Field[] {
   }
   for (const message of view.pending) {
     add(message.key, 'text', message.text)
-    if (message.detail !== null) add(message.key, 'detail', message.detail)
+    if (message.status === 'failed') add(message.key, 'detail', message.detail)
   }
   return out
 }

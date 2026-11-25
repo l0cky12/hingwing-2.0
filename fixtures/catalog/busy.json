@@ -1,0 +1,14 @@
+{
+  "pairs": [
+    [
+      "/busy",
+      "Control how messages behave while Hermes is working (usage: /busy [queue|steer|interrupt|status])"
+    ]
+  ],
+  "commands": {
+    "/busy": {
+      "argument_mode": "options",
+      "desktop": "terminal"
+    }
+  }
+}

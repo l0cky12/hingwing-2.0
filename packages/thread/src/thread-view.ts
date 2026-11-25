@@ -1,8 +1,8 @@
 import {
-  turnActivityOf,
-  type Asked, type Attachment, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type HermesRequest, type Item, type MoaItem, type NoticeItem,
-  type Outcome, type PlanEntry, type PlanItem, type PromptId, type PromptItem, type PromptReply, type ReasoningItem, type RequestEnd, type RequestId,
-  type SecretFor, type Session, type SettledTurn, type StatusAbout, type Sync, type Tokens, type ToolItem, type Turn, type TurnActivity, type TurnId
+  offeredBy, turnActivityOf,
+  type AdmissionId, type Asked, type Attachment, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type HermesRequest, type Item, type MoaItem, type NoticeItem,
+  type Outcome, type PlanEntry, type PlanItem, type PromptId, type PromptItem, type PromptReply, type QueuedAction, type QueuedMessage, type QueuedState, type ReasoningItem,
+  type RequestEnd, type RequestId, type SecretFor, type Session, type SettledTurn, type StatusAbout, type Sync, type Tokens, type ToolItem, type Turn, type TurnActivity, type TurnId
 } from '@highwing/hermes/domain'
 import { multiAnswers } from './multi'
 import { hidesAt, isShownAt, moaWords, NOTICE_TONES } from './says'
@@ -20,14 +20,8 @@ export type Phrase = readonly { readonly t: 'text' | 'code'; readonly v: string 
 export interface ThreadView {
   readonly state: 'opening' | 'ready' | 'unavailable'
   readonly turns: readonly TurnView[]
-  /**
-   * This client's messages that no turn has picked up, shown under the last turn: the ones Hermes
-   * holds in its queue, then the ones it has not listed. Another client's queued messages are not in
-   * the view yet.
-   */
-  readonly pending: readonly {
-    readonly key: string; readonly text: string; readonly attachments: readonly Attachment[]; readonly status: 'sending' | 'queued' | 'failed'; readonly detail: string | null
-  }[]
+  /** Messages no turn has picked up, shown under the last turn: every row of Hermes's queue, then this client's messages Hermes has not listed. */
+  readonly pending: readonly PendingRow[]
   /** What Hermes waits on you for, oldest first, drawn after the turns. */
   readonly asks: readonly AskCard[]
   readonly earlier: Session['earlier']
@@ -55,6 +49,21 @@ export interface AskCard {
   /** The last answer did not reach Hermes. */
   readonly error: string | null
 }
+
+export type PendingRow =
+  | {
+      /** `steering`: on its way into the running turn. `lost`: a restart cut it off, and the queue waits behind it. */
+      readonly status: QueuedState['s']
+      readonly key: string
+      readonly text: string
+      readonly attachments: readonly Attachment[]
+      readonly admissionId: AdmissionId
+      readonly from: QueuedMessage['from']
+      /** What the row offers, in the order its buttons are drawn. */
+      readonly actions: readonly QueuedAction[]
+    }
+  | { readonly status: 'sending'; readonly key: string; readonly text: string; readonly attachments: readonly Attachment[] }
+  | { readonly status: 'failed'; readonly key: string; readonly text: string; readonly attachments: readonly Attachment[]; readonly detail: string }
 
 export interface TurnView {
   /** Stable for the life of the turn. Node keys below are stable while the turn only grows. */
@@ -225,6 +234,8 @@ export type PromptCard =
       /** Why Hermes asks: its flagged reason in a sentence, or its question as given. */
       readonly why: string | null
       readonly pick: PromptPick
+      /** An approval that can be denied with words for Hermes about what to do instead. */
+      readonly tell: boolean
       /** An answer is on its way, or the session is not live. Buttons are disabled, the card stays amber. */
       readonly busy: boolean
       readonly error: string | null
@@ -280,17 +291,22 @@ export function threadView(session: Session, clock: ViewClock): ThreadView {
   return {
     state: VIEW_STATE[sync.state],
     turns: [...settled.map(memo => memo.view), interlude, ...(open === null ? [] : [open])].filter(turn => !isEmptyInterlude(turn)),
-    pending: [
-      ...session.queue.flatMap(row => (row.from === 'here' ? [{ key: row.inputId, text: row.text, attachments: row.attachments, status: 'queued' as const, detail: null }] : [])),
-      ...session.outbox.map(entry => ({
-        key: entry.inputId, text: entry.text, attachments: entry.attachments, status: entry.state.s, detail: entry.state.s === 'failed' ? entry.state.message : null
-      }))
-    ],
+    pending: [...session.queue.map(queuedRow), ...session.outbox.map(outboxRow)],
     asks: session.requests.flatMap(request => askCard(request, sync.state === 'live', clock)),
     earlier: session.earlier,
     changesAt: earliest([changesAt(starts, lines, elapsing ? starts.at(-1) ?? null : null, clock), ...hides])
   }
 }
+
+const ACTION_ORDER: readonly QueuedAction[] = ['sendNow', 'edit', 'cancel', 'release']
+
+function queuedRow({ admissionId, inputId, text, attachments, from, state }: QueuedMessage): PendingRow {
+  const offered = offeredBy(state)
+  return { status: state.s, key: inputId, text, attachments, admissionId, from, actions: ACTION_ORDER.filter(action => offered.includes(action)) }
+}
+
+const outboxRow = ({ inputId: key, text, attachments, state }: Session['outbox'][number]): PendingRow =>
+  state.s === 'failed' ? { status: 'failed', key, text, attachments, detail: state.message } : { status: 'sending', key, text, attachments }
 
 function earliest(times: readonly (number | null)[]): number | null {
   const due = times.filter(at => at !== null)
@@ -767,6 +783,7 @@ function promptCard(prompt: PromptItem, paired: boolean, live: boolean): PromptC
       command: ask.kind === 'approval' ? ask.command : null,
       why: ask.kind === 'approval' ? (ask.reason === null ? null : `Hermes flagged it as “${ask.reason}”.`) : ask.question,
       pick: promptPick(ask),
+      tell: ask.kind === 'approval' && ask.choices.includes('deny'),
       busy: state.s === 'sending' || !live,
       error: state.s === 'waiting' ? state.error : null
     }
@@ -958,7 +975,7 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
  *
  * `◉` replaces the glyph of the node that carries the live end, or opens a tip line ("◉ Thinking").
  * Once a minute has passed the live end adds `, 3 min` after its words. `◌` is a paused end. `⋯` is a
- * pending message. Keys in `opened` print what that row holds under it: a step's record sections,
+ * pending message, with its state, its sender when another client sent it, and what it offers. Keys in `opened` print what that row holds under it: a step's record sections,
  * a reasoning block's text, a helper's steps and summary, a plan's entries.
  */
 export function outline(view: ThreadView, opened: ReadonlySet<string> = new Set()): string {
@@ -980,9 +997,15 @@ export function outline(view: ThreadView, opened: ReadonlySet<string> = new Set(
   for (const card of view.asks) lines.push(...askLines(card))
   for (const message of view.pending) {
     if (message.attachments.length > 0) lines.push(attachmentLine(message.attachments))
-    lines.push(`⋯ ${firstLine(message.text)}  (${message.status}${message.detail ? `: ${message.detail}` : ''})`)
+    lines.push(`⋯ ${firstLine(message.text)}  (${pendingWords(message)})`)
   }
   return lines.join('\n')
+}
+
+function pendingWords(row: PendingRow): string {
+  if (row.status === 'failed') return `failed: ${row.detail}`
+  if (row.status === 'sending') return 'sending'
+  return [row.status, ...(row.from === 'elsewhere' ? ['from elsewhere'] : []), ...row.actions].join(', ')
 }
 
 const attachmentLine = (attachments: readonly Attachment[]) => `+ ${attachments.map(({ kind, name }) => `[${kind}] ${name}`).join('  ')}`

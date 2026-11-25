@@ -9,12 +9,12 @@ const question = (busy: boolean): ThreadNode => ({
   kind: 'prompt', key: 't1/3',
   card: {
     state: 'asking', promptId: 'p1' as PromptId, heading: 'Hermes has a question', command: null, why: 'Where should it go?',
-    pick: { kind: 'many', choices: ['staging', 'production'] }, busy, error: null
+    pick: { kind: 'many', choices: ['staging', 'production'] }, tell: false, busy, error: null
   }
 })
 
 const markup = (node: ThreadNode) =>
-  renderToStaticMarkup(<Node node={node} endTone="asking" elapsed={null} open={NONE_OPEN} onToggle={() => {}} onAnswer={() => {}} />)
+  renderToStaticMarkup(<Node node={node} endTone="asking" elapsed={null} open={NONE_OPEN} onToggle={() => {}} onAnswer={async () => undefined} />)
 
 describe('a question that takes several answers', () => {
   it('is a group named by its heading, with a checkbox per choice and one for Other', () => {

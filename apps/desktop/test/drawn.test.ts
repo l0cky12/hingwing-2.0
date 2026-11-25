@@ -20,7 +20,7 @@ const closed: Item<'settled'> = { kind: 'notice', what: 'closed', requestId: 'sr
 const steer: Item<'settled'> = { kind: 'steer', text: 'use trash-put instead' }
 
 describe('the view the window draws', () => {
-  it('keeps MoA rounds, status lines, reasoning, helpers and plans, and leaves out only closed requests and steers nothing draws yet', () => {
+  it('keeps MoA rounds, status lines, reasoning, steered words, helpers and plans, and leaves out only closed requests', () => {
     const items: Item<'settled'>[] = [
       { kind: 'moa', progress: null, references: [], phase: { is: 'advising' } },
       closed,
@@ -32,7 +32,7 @@ describe('the view the window draws', () => {
       { kind: 'text', markdown: 'Done.', sealed: true }
     ]
     const [drawn] = drawnView(threadView(session([turn('t1', items)]), CLOCK)).turns
-    expect(drawn?.nodes.map(node => node.kind)).toEqual(['moa', 'reasoning', 'status', 'helper', 'plan', 'prose'])
+    expect(drawn?.nodes.map(node => node.kind)).toEqual(['moa', 'reasoning', 'status', 'steer', 'helper', 'plan', 'prose'])
   })
 
   it('drops an interlude that holds only lines nothing draws, keeps one that says something, and keeps the view whole when nothing is left out', () => {

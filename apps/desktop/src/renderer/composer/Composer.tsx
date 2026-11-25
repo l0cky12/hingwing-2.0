@@ -1,11 +1,12 @@
-import type { Attachment, AttachmentId, CommandOutcome, PathMatch, SessionId, SlashCatalog } from '@highwing/hermes/domain'
+import type { Attachment, AttachmentId, CommandOutcome, PathMatch, SendPlan, SessionId, SlashCatalog } from '@highwing/hermes/domain'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { MAX_ATTACHMENTS, type StageResult } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
 import { Chips } from '../chat/Attachments'
 import { useTopic } from '../store'
+import { busyHint } from './busy'
 import { attachTo, detach, draftSent, moveAttachment, moveDraft, seedDraft, stagingFor, useAttachments, useDraft, useStaging, writeDraft, type DraftSlot } from './drafts'
-import type { Editing } from './edit'
+import { EDITING_WORDS, type Editing } from './edit'
 import { RemoveDialog } from './RemoveDialog'
 import { mentionable, mentionWord, menuOf, picked, type Menu, type MenuItem } from './menu'
 import { usePathFiles } from './paths'
@@ -27,6 +28,8 @@ interface ComposerProps {
   readonly onSend: (text: string, attachments: readonly AttachmentId[]) => Promise<CommandOutcome<string | null>>
   readonly onStop: () => void
   readonly onInput: () => void
+  /** How a send holding these attachments would reach Hermes now. */
+  readonly planFor?: (attachments: readonly Attachment[]) => SendPlan['by']
   readonly editing?: Editing | null
   readonly onCancelEdit?: () => void
   readonly above?: ReactNode
@@ -35,6 +38,8 @@ interface ComposerProps {
 }
 
 const NO_CATALOG: SlashCatalog = []
+const SUBMIT_ALWAYS = (): SendPlan['by'] => 'submit'
+const HINT_ID = 'composer-busy'
 const MENU_ID = 'composer-menu'
 const optionId = (index: number) => `composer-option-${index}`
 const keyOf = (item: MenuItem) => {
@@ -110,7 +115,7 @@ export function admitted(results: readonly StageResult[], held: readonly Attachm
 
 const draggingFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') === true
 
-export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, editing = null, onCancelEdit, above, onEscape, children }: ComposerProps) {
+export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, planFor = SUBMIT_ALWAYS, editing = null, onCancelEdit, above, onEscape, children }: ComposerProps) {
   const catalog = useTopic('slash') ?? NO_CATALOG
   const roster = useTopic('bots')
   const relay = useTopic('relay')
@@ -137,6 +142,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   const caretTo = useRef<number | null>(null)
   const typed = menuOf(draft, caret, sources, { active, dismissed })
   const menu = focused ? typed : { open: false as const }
+  const hint = busyHint(planFor(attachments), draft, catalog, editing)
 
   const shownActive = menu.open ? menu.active : null
   useLayoutEffect(() => {
@@ -255,7 +261,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   const submit = (event?: FormEvent) => {
     event?.preventDefault()
     if (!canSend || sending.current || staging > 0 || draft.trim() === '') return
-    if (editing !== null && editing.later > 0) setConfirming(true)
+    if (editing?.kind === 'sent' && editing.later > 0) setConfirming(true)
     else void deliver()
   }
 
@@ -340,7 +346,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
       )}
       {editing !== null && (
         <div className="editing">
-          <span>Editing a sent message</span>
+          <span>{editing.kind === 'gone' ? editing.why : EDITING_WORDS[editing.kind]}</span>
           <button type="button" onClick={cancelEdit}>Cancel</button>
         </div>
       )}
@@ -360,7 +366,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
         <textarea
           ref={box} autoFocus={autoFocus} rows={1} placeholder="Ask Hermes to do something" aria-label="Message Hermes" value={draft}
           aria-autocomplete="list" aria-controls={menu.open ? MENU_ID : undefined}
-          aria-activedescendant={menu.open ? optionId(menu.active) : undefined}
+          aria-activedescendant={menu.open ? optionId(menu.active) : undefined} aria-describedby={hint === null ? undefined : HINT_ID}
           onChange={event => edit(event.target.value, event.target.selectionStart)} onKeyDown={onKeyDown} onPaste={onPaste}
           onSelect={event => setCaret(event.currentTarget.selectionStart)}
           onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
@@ -368,9 +374,10 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
         {showStop && <button type="button" className="stop" disabled={!canSend} onClick={onStop}>Stop</button>}
         <button type="submit" disabled={!canSend || pending || staging > 0}>Send</button>
       </form>
+      {hint !== null && <p className="busy" id={HINT_ID}>{hint}</p>}
       {children}
       {refusal !== null && <p className="err refusal">{refusal}</p>}
-      {confirming && editing !== null && (
+      {confirming && editing?.kind === 'sent' && (
         <RemoveDialog
           later={editing.later}
           onCancel={() => setConfirming(false)}
