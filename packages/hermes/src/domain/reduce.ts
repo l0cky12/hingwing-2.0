@@ -685,11 +685,14 @@ function act(state: Tracked, action: LocalAction): Tracked {
     }
     case 'tuned':
       return tune(state, action.tuning)
-    case 'side.started':
-      // The answer can come before the reply that names its task.
-      return content.sides.some(side => side.id === action.id)
-        ? state
-        : { ...state, content: { ...content, sides: [...content.sides, { id: action.id, kind: action.kind, asked: action.asked, state: RUNNING_SIDE }] } }
+    case 'side.started': {
+      const { sides } = content
+      const at = sides.findIndex(side => side.id === action.id)
+      if (at === -1) return { ...state, content: { ...content, sides: [...sides, { id: action.id, kind: action.kind, asked: action.asked, state: RUNNING_SIDE }] } }
+      // The answer came before this reply, and a background prompt's answer does not repeat what was asked.
+      const held = sides[at]!
+      return held.asked !== null ? state : { ...state, content: { ...content, sides: sides.with(at, { ...held, asked: action.asked }) } }
+    }
     default:
       return unreachable(action)
   }
