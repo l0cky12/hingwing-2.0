@@ -29,10 +29,12 @@ function userInputs(method: string, params: Record<string, unknown>, reply: Reco
         local({ did: 'send.admitted', inputId, admissionId: reply?.admission_id as string, status: reply?.status as Admission['status'] })
       ]
     }
-    case 'approval.respond': {
+    case 'approval.respond':
+    case 'clarify.respond': {
       const promptId = params.prompt_id as PromptId
+      const reply = method === 'approval.respond' ? { kind: 'choice', value: params.choice as string } as const : { kind: 'text', value: params.answer as string } as const
       return [
-        local({ did: 'answer', promptId, reply: { kind: 'choice', value: params.choice as string } }),
+        local({ did: 'answer', promptId, reply }),
         local({ did: 'answer.resolved', promptId, byUs: true })
       ]
     }
@@ -164,3 +166,4 @@ export const ignoringStartTimes = <T extends { readonly history: readonly Settle
 
 export const errand = () => readStory(new URL('../../../../fixtures/errand.jsonl', import.meta.url).pathname)
 export const delegate = () => readStory(new URL('../../../../fixtures/delegate.jsonl', import.meta.url).pathname)
+export const choose = () => readStory(new URL('../../../../fixtures/choose.jsonl', import.meta.url).pathname)

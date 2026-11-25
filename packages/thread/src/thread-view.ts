@@ -3,12 +3,14 @@ import {
   type Activity, type Attachment, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type Item, type NoticeItem, type Outcome, type PlanEntry, type PlanItem,
   type PromptId, type PromptItem, type PromptReply, type ReasoningItem, type Session, type SettledTurn, type Sync, type Tokens, type ToolItem, type Turn
 } from '@highwing/hermes/domain'
+import { multiAnswers } from './multi'
 import { changesAt, elapsedWords, timeLines, type ViewClock } from './when'
 
 export type { ViewClock }
 
 export { leafText, parseMarkdown, proseLeaves, type Align, type Block, type Cell, type CodeBlock, type Inline, type ProseLeaf } from './prose'
 export { fieldId, findInThread, type FieldPart, type FindMatch } from './find'
+export { multiReply } from './multi'
 
 /** Text with literal parts. `code` is set in JetBrains Mono; nothing here is HTML. */
 export type Phrase = readonly { readonly t: 'text' | 'code'; readonly v: string }[]
@@ -185,14 +187,26 @@ export type PromptCard =
       readonly command: string | null
       /** Why Hermes asks: its flagged reason in a sentence, or its question as given. */
       readonly why: string | null
-      readonly buttons: readonly { readonly reply: PromptReply; readonly label: string; readonly role: 'primary' | 'plain' | 'decline' }[]
-      readonly freeText: boolean
+      readonly pick: PromptPick
       /** An answer is on its way, or the session is not live. Buttons are disabled, the card stays amber. */
       readonly busy: boolean
       readonly error: string | null
     }
   /** Hollow caution ring. `command` is null when the step next to the card already shows it. */
   | { readonly state: 'answered'; readonly words: string; readonly command: string | null }
+
+/** One button per choice, with a typed answer for a clarify; or checkboxes for a question that takes several answers. */
+export type PromptPick =
+  | { readonly kind: 'one'; readonly buttons: readonly PromptButton[]; readonly freeText: boolean }
+  | { readonly kind: 'many'; readonly choices: readonly string[] }
+
+/** `confirm` holds the words of the second yes a button needs before it answers, or null when one press answers. */
+export interface PromptButton {
+  readonly reply: PromptReply
+  readonly label: string
+  readonly role: 'primary' | 'plain' | 'decline'
+  readonly confirm: { readonly title: string; readonly body: string } | null
+}
 
 const VIEW_STATE = {
   opening: 'opening', live: 'ready', offline: 'ready', 'catching-up': 'ready', rebuilding: 'ready', unavailable: 'unavailable'
@@ -656,21 +670,37 @@ const PROMPT_WORDS = {
   clarify: { heading: 'Hermes has a question', freeText: true }
 } as const satisfies Record<PromptItem['ask']['kind'], { heading: string; freeText: boolean }>
 
+function alwaysConfirm(ask: Extract<PromptItem['ask'], { kind: 'approval' }>): PromptButton['confirm'] {
+  return {
+    title: 'Always allow commands like this?',
+    body: `Hermes won't ask again for commands matching “${ask.reason ?? ask.command}”, in this chat or any other.`
+  }
+}
+
+function promptPick(ask: PromptItem['ask']): PromptPick {
+  if (ask.kind === 'clarify' && ask.multi) return { kind: 'many', choices: ask.choices }
+  const choices = ask.kind === 'approval' ? APPROVAL_CHOICES : {}
+  const buttons = ask.choices
+    .map((value): PromptButton => ({
+      reply: { kind: 'choice', value },
+      label: choices[value]?.label ?? value,
+      role: choices[value]?.role ?? 'plain',
+      confirm: ask.kind === 'approval' && value === 'always' ? alwaysConfirm(ask) : null
+    }))
+    .sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role])
+  return { kind: 'one', buttons, freeText: PROMPT_WORDS[ask.kind].freeText }
+}
+
 function promptCard(prompt: PromptItem, paired: boolean, live: boolean): PromptCard {
   const { ask, state } = prompt
   if (state.s === 'waiting' || state.s === 'sending') {
-    const choices = ask.kind === 'approval' ? APPROVAL_CHOICES : {}
-    const buttons = ask.choices
-      .map(value => ({ reply: { kind: 'choice', value } as const, label: choices[value]?.label ?? value, role: choices[value]?.role ?? 'plain' }))
-      .sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role])
     return {
       state: 'asking',
       promptId: prompt.id,
       heading: PROMPT_WORDS[ask.kind].heading,
       command: ask.kind === 'approval' ? ask.command : null,
       why: ask.kind === 'approval' ? (ask.reason === null ? null : `Hermes flagged it as “${ask.reason}”.`) : ask.question,
-      buttons,
-      freeText: PROMPT_WORDS[ask.kind].freeText,
+      pick: promptPick(ask),
       busy: state.s === 'sending' || !live,
       error: state.s === 'waiting' ? state.error : null
     }
@@ -686,8 +716,13 @@ function answeredWords(prompt: PromptItem, state: Exclude<PromptItem['state'], {
   if (state.s === 'withdrawn') return 'Hermes withdrew this request.'
   const { reply } = state
   if (reply === null) return 'Answered from another window.'
-  const known = prompt.ask.kind === 'approval' && reply.kind === 'choice' ? APPROVAL_CHOICES[reply.value] : undefined
-  return known?.answered ?? `You answered “${reply.value}”.`
+  const { ask } = prompt
+  if (ask.kind === 'approval') return (reply.kind === 'choice' ? APPROVAL_CHOICES[reply.value]?.answered : undefined) ?? `You answered “${reply.value}”.`
+  const answers = (ask.multi ? multiAnswers(reply.value) : null) ?? [reply.value]
+  const quoted = answers.filter(answer => answer !== '').map(answer => `“${answer}”`)
+  const last = quoted.pop()
+  if (last === undefined) return 'You skipped this question.'
+  return `You answered ${quoted.length === 0 ? last : `${quoted.join(', ')} and ${last}`}.`
 }
 
 const DECLINED_WORDS: { readonly [method: string]: string } = {
@@ -827,6 +862,11 @@ export function outline(view: ThreadView, opened: ReadonlySet<string> = new Set(
 
 const attachmentLine = (attachments: readonly Attachment[]) => `+ ${attachments.map(({ kind, name }) => `[${kind}] ${name}`).join('  ')}`
 
+function pickLine(pick: PromptPick): string {
+  if (pick.kind === 'many') return [...pick.choices, 'Other'].map(choice => `[ ] ${choice}`).join('  ') + '  [Answer] [Skip]'
+  return `${pick.buttons.map(button => `[${button.label}]`).join(' ')}${pick.freeText ? ' [Type an answer]' : ''}`
+}
+
 function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, opened: ReadonlySet<string>): string[] {
   switch (node.kind) {
     case 'prose':
@@ -845,7 +885,7 @@ function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, open
         `◆ ${card.heading}${card.busy ? '  (busy)' : ''}`,
         ...(card.command === null ? [] : [`    ${card.command}`]),
         ...(card.why === null ? [] : [`    ${card.why}`]),
-        `    ${card.buttons.map(button => `[${button.label}]`).join(' ')}${card.freeText ? ' [Type an answer]' : ''}`,
+        `    ${pickLine(card.pick)}`,
         ...(card.error === null ? [] : [`    ! ${card.error}`])
       ]
     }

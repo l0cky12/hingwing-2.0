@@ -76,7 +76,7 @@ describe('words outside steps', () => {
   it('finds the error on an approval card', () => {
     const card = { kind: 'prompt', key: 'run:1/9', card: {
       state: 'asking', promptId: 'p1', heading: 'Run this command?', command: 'rm -rf scratch', why: null,
-      buttons: [], freeText: false, busy: false, error: 'Approval receipt timed out'
+      pick: { kind: 'one', buttons: [], freeText: false }, busy: false, error: 'Approval receipt timed out'
     } } as const
     const asking = { ...view, turns: [{ ...turn, nodes: [...turn.nodes, card] }] } as ThreadView
     expect(findInThread(asking, 'timed out').map(match => match.field)).toEqual([fieldId('run:1/9', 'error')])
