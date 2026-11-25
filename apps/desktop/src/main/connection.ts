@@ -72,7 +72,7 @@ const isSetupCommand = (command: ConnectionCommand): command is SetupCommand => 
 
 const sameTarget = (a: Target, b: Target) => (a.kind === 'remote' && b.kind === 'remote' ? a.host === b.host : a.kind === b.kind)
 
-function feed<T>(initial: T): Feed<T> & { set(next: T): void } {
+export function feed<T>(initial: T): Feed<T> & { set(next: T): void } {
   let value = initial
   const listeners = new Set<(value: T) => void>()
   return {

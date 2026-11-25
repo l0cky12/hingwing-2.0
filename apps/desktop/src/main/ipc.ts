@@ -11,6 +11,7 @@ import type { ConnectionOwner } from './connection'
 import type { DraftStore } from './drafts'
 import { openablePath, type Opener } from './files'
 import type { ImageLoader } from './images'
+import type { ModeStore } from './mode'
 import type { PreviewPane } from './preview'
 import type { Saver } from './saves'
 
@@ -44,7 +45,8 @@ const NEVER: Source = () => () => {}
 
 /** The pane's side of a window: its topic, its commands, and the files a window previews. */
 export type PreviewOwner = Pick<PreviewPane, 'preview' | 'show' | 'run'>
-interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner }
+export type ModeOwner = Pick<ModeStore, 'mode' | 'set'>
+interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner; readonly mode: ModeOwner }
 
 /** A Hermes topic is bound to the connection that is live when the window asks. A window that sees a new epoch asks again. */
 const onHermes = (source: (hermes: Hermes, topic: Topic) => Source) => ({ owner }: Owners, topic: Topic): Source =>
@@ -53,6 +55,7 @@ const onHermes = (source: (hermes: Hermes, topic: Topic) => Source) => ({ owner 
 const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source } = {
   setup: ({ owner }) => current(owner.setup),
   preview: ({ pane }) => current(pane.preview),
+  mode: ({ mode }) => current(mode.mode),
   link: onHermes(hermes => current(hermes.link)),
   sidebar: onHermes(hermes => current(hermes.sidebar)),
   slash: onHermes(hermes => current(hermes.slash)),
@@ -116,6 +119,7 @@ function serveTopic(topic: Topic, servedBy: Hermes | null, source: Source, send:
   }
 }
 
+const DONE: CommandOutcome<void> = { ok: true, value: undefined }
 const REFUSED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Highwing refused a malformed request from its window.' } }
 const NOT_SAVED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: "Highwing couldn't write the file." } }
 const FILE_REFUSED: FileOutcome = { ok: false, reason: 'refused' }
@@ -144,10 +148,10 @@ export interface Attaching { readonly store: Pick<AttachmentStore, 'stage' | 're
 export function serveWindows(
   owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>,
   pane: PreviewOwner, pickPicture: (bot: BotId) => Promise<CommandOutcome<PictureChoice>>, attaching: Attaching,
-  saver: Saver
+  saver: Saver, mode: ModeOwner
 ): { dispose(): void } {
   const windows = new Map<number, Map<number, Served>>()
-  const owners: Owners = { owner, pane }
+  const owners: Owners = { owner, pane, mode }
   const files = fileActions(opener, pane)
   const trusted = ({ senderFrame }: IpcEvent) => senderFrame !== null && senderFrame.parent === null && isAppUrl(senderFrame.url)
 
@@ -183,6 +187,10 @@ export function serveWindows(
     const command = parseCommand(raw)
     if (!trusted(event) || command === null) return REFUSED
     if (isPreviewCommand(command)) return pane.run(command)
+    if (command.do === 'setMode') {
+      mode.set(command.mode)
+      return DONE
+    }
     if (command.do !== 'export') return owner.run(command)
     const rendered = await owner.run(command)
     if (!rendered.ok) return rendered
