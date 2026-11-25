@@ -187,7 +187,7 @@ describe('a plan node', () => {
 })
 
 describe('a turn', () => {
-  const turn = (end: TurnView['end']): TurnView => ({ key: 't1', time: null, request: 'Check the servers', attachments: [], rowId: null, tokens: null, nodes: [plan(true)], end })
+  const turn = (end: TurnView['end']): TurnView => ({ key: 't1', time: null, request: 'Check the servers', attachments: [], rowId: null, tokens: null, reactions: null, nodes: [plan(true)], end })
   const draw = (end: TurnView['end']) => renderToStaticMarkup((
     <Turn turn={turn(end)} open={NONE_OPEN} onToggle={() => {}} onAnswer={async () => undefined} canEdit={false} showsRegenerate={false} canRegenerate={false} canBranch={false} onEdit={() => {}} onRegenerate={() => {}} onBranch={() => {}} versions={[]} onVersion={() => {}} />
   ))

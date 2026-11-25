@@ -1,7 +1,7 @@
 import {
   offeredBy, turnActivityOf,
   type AdmissionId, type Asked, type Attachment, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type HermesRequest, type Item, type MoaItem, type NoticeItem,
-  type Outcome, type PlanEntry, type PlanItem, type PromptId, type PromptItem, type PromptReply, type QueuedAction, type QueuedMessage, type QueuedState, type ReasoningItem,
+  type Outcome, type PlanEntry, type PlanItem, type PromptId, type PromptItem, type PromptReply, type QueuedAction, type QueuedMessage, type QueuedState, type Reaction, type ReasoningItem,
   type RequestEnd, type RequestId, type SecretFor, type Session, type SettledTurn, type StatusAbout, type Sync, type Tokens, type ToolItem, type Turn, type TurnActivity, type TurnId
 } from '@highwing/hermes/domain'
 import { multiAnswers } from './multi'
@@ -80,6 +80,8 @@ export interface TurnView {
   readonly end: ThreadEnd
   /** What the reply used, under its end: "1,204 in, 380 out". null draws nothing: a turn still running, or one Hermes named no counts for. */
   readonly tokens: string | null
+  /** The reactions on the turn's stored answer, and the turn to put one on. null for a turn whose answer Hermes has not stored, which takes none. */
+  readonly reactions: { readonly turn: TurnId; readonly given: readonly Reaction[] } | null
 }
 
 export type ThreadNode =
@@ -325,7 +327,7 @@ function settledView(turn: SettledTurn, time: string | null, now: number): Memo 
   return held
 }
 
-function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<SettledTurn, 'tokens'>>, time: string | null, live: boolean, now: number, end: (nodes: readonly ThreadNode[]) => ThreadEnd): TurnView {
+function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<SettledTurn, 'tokens' | 'reply'>>, time: string | null, live: boolean, now: number, end: (nodes: readonly ThreadNode[]) => ThreadEnd): TurnView {
   const at = (index: number) => `${turn.id}/${index}`
   const helpers = new Map(turn.items.flatMap(item => (item.kind === 'helper' ? [[item.id, item] as const] : [])))
   const asked = new Set(turn.items.flatMap(item => (item.kind === 'prompt' && item.ask.kind === 'approval' && (item.state.s === 'waiting' || item.state.s === 'sending') ? [item.ask.command] : [])))
@@ -372,7 +374,8 @@ function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<Se
   return {
     key: turn.id, time, request: turn.request?.text ?? null, attachments: turn.request?.attachments ?? NO_ATTACHMENTS, rowId: turn.request?.rowId ?? null,
     nodes, end: end(nodes),
-    tokens: tokenWords(turn.tokens ?? null)
+    tokens: tokenWords(turn.tokens ?? null),
+    reactions: turn.reply == null ? null : { turn: turn.id, given: turn.reply.reactions }
   }
 }
 
