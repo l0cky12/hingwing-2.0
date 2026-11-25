@@ -50,6 +50,14 @@ describe('the connector card', () => {
     expect(buttons(markup)).toEqual(['Connect', 'Skip', 'Continue without the rest'])
   })
 
+  it('offers Try again, with no fields, for a target whose sign-in failed or whose link expired', () => {
+    for (const state of ['failed', 'expired'] as const) {
+      const markup = drawn([{ ...LINEAR, state }])
+      expect(markup).not.toContain('Linear API key')
+      expect(buttons(markup)).toEqual(['Try again', 'Skip', 'Continue without the rest'])
+    }
+  })
+
   it('turns every button off while an answer is on its way or the link is down', () => {
     expect(buttons(drawn([GITHUB], { s: 'sending', reply: { kind: 'withheld' } }))).toEqual(['Connect (off)', 'Skip (off)', 'Continue without the rest (off)'])
     expect(buttons(drawn([GITHUB], undefined, { state: 'offline' }))).toEqual(['Connect (off)', 'Skip (off)', 'Continue without the rest (off)'])

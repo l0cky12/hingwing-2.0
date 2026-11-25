@@ -2,9 +2,9 @@ import { DONE, refused, type Mutation, type SessionPort, type Upload } from './a
 import type { Bot } from './domain/bots'
 import type { Command, ModelConfirm, Outcome, Refusal, Restored, ResultOf } from './domain/command'
 import { offeredBy, sendPlan } from './domain/queue'
-import type {
-  AttachmentId, BranchId, Generation, HermesRequest, PromptId, PromptReply, QueuedMessage, RecordedReply, RequestId, RequestReply, SessionContent, SessionId,
-  SideId, Told, Tuning, TurnId
+import {
+  reissues, type AttachmentId, type BranchId, type Generation, type HermesRequest, type PromptId, type PromptReply, type QueuedMessage, type RecordedReply,
+  type RequestId, type RequestReply, type SessionContent, type SessionId, type SideId, type Told, type Tuning, type TurnId
 } from './domain/session'
 import { ownCommand, slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import type { Served } from './wire/link'
@@ -471,9 +471,11 @@ const ANSWERS: Answers = {
     skip: (port, { id }) => ({ recorded: SKIP, sent: () => port.respond(id, 'clarify', {}) })
   },
   connect: {
-    connect: (port, { id }, { target, as, values }) => ({
+    connect: (port, { id, ask }, { target, as, values }) => ({
       recorded: WITHHELD,
-      sent: () => respondToCard(port, id, { targets: [{ name: target, status: as, ...(values === undefined ? {} : { env: { ...values } }) }] })
+      sent: () => (as === 'approved' && ask.targets.some(held => held.name === target && reissues(held))
+        ? reissue(port, target)
+        : respondToCard(port, id, { targets: [{ name: target, status: as, ...(values === undefined ? {} : { env: { ...values } }) }] }))
     }),
     skip: (port, { id }) => ({ recorded: SKIP, sent: () => respondToCard(port, id, { settled_by: 'continue' }) })
   }
@@ -490,6 +492,12 @@ function lockedText(answer: Replying<'lock'>['answer'], multi: boolean): string 
 async function respondToCard(port: SessionPort, id: RequestId, result: Served['connection.respond']['params']['result']): Promise<Outcome<'waits' | 'settles'>> {
   const taken = await port.call('connection.respond', { owner: { type: 'session', session_id: port.id }, op_id: id, result })
   return taken.ok ? { ok: true, value: taken.value.settled ? 'settles' : 'waits' } : taken
+}
+
+/** The new link comes with the card, by the stream. */
+async function reissue(port: SessionPort, target: string): Promise<Outcome<'waits'>> {
+  const minted = await port.call('connectors.connect', { owner: { type: 'session', session_id: port.id }, connectors: [target], reconnect: true })
+  return minted.ok ? { ok: true, value: 'waits' } : minted
 }
 
 async function answerRequest(port: SessionPort, requestId: RequestId, reply: RequestReply): Promise<Outcome<undefined>> {

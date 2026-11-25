@@ -91,9 +91,9 @@ describe('a connector card', () => {
     expect(view.asks[0]).toEqual({
       kind: 'connect', key: 'ask:connect-1', requestId: 'connect-1', heading: 'Hermes needs a connection to continue', waits: null, busy: null, error: null,
       targets: [
-        { name: 'github', heading: 'Sign in to github', state: 'Waiting', open: true, detail: null, instructions: GITHUB.instructions, url: GITHUB.url, fields: [] },
+        { name: 'github', heading: 'Sign in to github', state: 'Waiting', open: true, connect: 'Connect', detail: null, instructions: GITHUB.instructions, url: GITHUB.url, fields: [] },
         {
-          name: 'linear', heading: 'Sign in to linear', state: 'Connected', open: false, detail: null, instructions: null, url: null,
+          name: 'linear', heading: 'Sign in to linear', state: 'Connected', open: false, connect: 'Connect', detail: null, instructions: null, url: null,
           fields: [
             { name: 'LINEAR_API_KEY', label: 'Linear API key', required: true, masked: true, initial: '' },
             { name: 'LINEAR_TEAM', label: 'LINEAR_TEAM', required: false, masked: false, initial: 'eng' }
@@ -117,6 +117,12 @@ describe('a connector card', () => {
   ])('reads a target that is %s as "%s"', (state, words) => {
     const view = threadView(session([card([{ ...GITHUB, state }])]), CLOCK)
     expect(view.asks[0]?.kind === 'connect' && view.asks[0].targets[0]?.state).toBe(words)
+  })
+
+  it.each(['failed', 'expired'] as const)('offers Try again for a %s target, with no fields, since a new link carries no values', state => {
+    const view = threadView(session([card([{ ...LINEAR, state, resolved: false }])]), CLOCK)
+    expect(view.asks[0]).toMatchObject({ targets: [{ open: true, connect: 'Try again', fields: [] }] })
+    expect(outline(view)).toContain('      [Try again] [Skip]')
   })
 
   it('finds a target by its heading and instructions', () => {

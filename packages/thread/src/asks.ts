@@ -1,4 +1,4 @@
-import type { Answer, Asked, ConnectTarget, HermesRequest, RequestEnd, RequestId, SecretFor } from '@highwing/hermes/domain'
+import { reissues, type Answer, type Asked, type ConnectTarget, type HermesRequest, type RequestEnd, type RequestId, type SecretFor } from '@highwing/hermes/domain'
 import { timeOfDay, type ViewClock } from './when'
 
 export type AskCard = SecretCard | QuestionsCard | ConnectCard
@@ -60,6 +60,8 @@ export interface TargetView {
   readonly state: string
   /** Still needs the user: it can be connected or skipped. */
   readonly open: boolean
+  /** Try again asks Hermes for a new link, since the sign-in failed or the link expired. */
+  readonly connect: 'Connect' | 'Try again'
   readonly detail: string | null
   readonly instructions: string | null
   readonly url: string | null
@@ -191,10 +193,11 @@ export function askCard(request: HermesRequest, live: boolean, clock: ViewClock)
           heading: `Sign in to ${target.name}`,
           state: TARGET_STATES[target.state],
           open: !target.resolved,
+          connect: reissues(target) ? 'Try again' : 'Connect',
           detail: target.detail,
           instructions: target.instructions,
           url: target.url,
-          fields: target.fields.map(field => ({ name: field.name, label: field.prompt ?? field.name, required: field.required, masked: field.secret, initial: field.initial }))
+          fields: reissues(target) ? [] : target.fields.map(field => ({ name: field.name, label: field.prompt ?? field.name, required: field.required, masked: field.secret, initial: field.initial }))
         }))
       }
   }
@@ -231,7 +234,7 @@ export function askLines(card: AskCard): string[] {
         ...card.targets.flatMap(target => [
           `    ${target.heading}  ${target.state}`,
           ...indented([target.detail, target.instructions, target.url === null ? null : `↗ ${target.url}`], '      '),
-          ...(target.open ? [`      ${target.fields.map(field => `(${field.label}) `).join('')}[Connect] [Skip]`] : [])
+          ...(target.open ? [`      ${target.fields.map(field => `(${field.label}) `).join('')}[${target.connect}] [Skip]`] : [])
         ]),
         '    [Continue without the rest]',
         ...error

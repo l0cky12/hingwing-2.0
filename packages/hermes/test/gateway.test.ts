@@ -909,6 +909,16 @@ describe('the scripted gateway and what Hermes asks', () => {
     await expect(script.done).rejects.toThrow(problem)
   })
 
+  it("answers a connector card's Try again for the story session only, and only with reconnect, as Hermes does", async () => {
+    const minted = { op_id: 'op-1', seq: 2, deadline_at: 0, settled: false, targets: [] }
+    const retry = { owner: { type: 'session', session_id: SESSION }, connectors: ['github'], reconnect: true }
+    const { call } = await rawSocket({}, { header: ERRAND.header, steps: [{ at: 0, await: 'connectors.connect', params: retry, reply: minted }] })
+    expect(await call('connectors.connect', { ...retry, reconnect: false })).toMatchObject(refusal('invalid_params'))
+    expect(await call('connectors.connect', { ...retry, owner: { type: 'session', session_id: 'another' } })).toMatchObject(refusal('invalid_params'))
+    expect(await call('connectors.connect', { ...retry, connectors: 'github' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('connectors.connect', retry)).toEqual(expect.objectContaining({ result: minted }))
+  })
+
   it('fails the story on an answer from a socket that has not attached the session', async () => {
     const { call, script, played } = await rawSocket({}, story(SUDO_ASK, { answer: SUDO, result: { value: MASKED } }))
     await call('session.resume', { session_id: SESSION })

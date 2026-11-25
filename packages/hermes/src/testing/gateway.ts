@@ -223,6 +223,10 @@ const lockable: Check = (_gateway, _socket, params) => (isText(params.request_id
 /** gateway/session_connections.py:76-83: the card answers for its own session's operation. */
 const ownCard: Check = (gateway, _socket, params) =>
   isObject(params.owner) && params.owner.type === 'session' && params.owner.session_id === gateway.sessionId && isText(params.op_id) && isObject(params.result) ? null : 'invalid_params'
+/** gateway/session_connections.py:37-55, 102-108: the card's Try again names its own session, its targets, and `reconnect`. */
+const ownRetry: Check = (gateway, _socket, params) =>
+  isObject(params.owner) && params.owner.type === 'session' && params.owner.session_id === gateway.sessionId &&
+  Array.isArray(params.connectors) && params.connectors.every(isText) && params.reconnect === true ? null : 'invalid_params'
 
 /**
  * Bridges Hermes does not hand to a reconnecting viewer, because a second delivery would repeat the
@@ -294,6 +298,7 @@ const STORY_CHECKS: Readonly<Record<string, readonly Check[]>> = {
   /** gateway/session_tui_config.py:187-199: a set the story records, with no `scope`. */
   'config.set': [closed({ session_id: isString, profile: isString, key: isString, value: () => true }), known],
   'session.mutate': [mutation, known],
+  'connectors.connect': [ownRetry],
   /** gateway/session_commands.py:422-425 */
   'command.dispatch': [known, dispatchable],
   /** gateway/session_busy_controls.py:181-200 */

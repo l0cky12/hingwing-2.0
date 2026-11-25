@@ -189,7 +189,7 @@ function Target({ card, target, index, sending, onRespond }: TargetProps) {
         ))}
         {target.open && (
           <div className="choices">
-            <button type="submit" className="primary" disabled={busy}>{sending && card.busy === 'sending' ? SENDING : 'Connect'}</button>
+            <button type="submit" className="primary" disabled={busy}>{sending && card.busy === 'sending' ? SENDING : target.connect}</button>
             <button type="button" disabled={busy} onClick={() => onRespond('skipped')}>Skip</button>
           </div>
         )}
