@@ -1,6 +1,6 @@
 import { PICTURE_MAX_BYTES, PICTURE_RULE, pictureTypeOf, type BotId, type CommandOutcome } from '@highwing/hermes/domain'
 import { open } from 'node:fs/promises'
-import type { PictureChoice } from '../ipc-contract'
+import type { PictureChoice, PictureFile } from '../ipc-contract'
 
 export function pictureDataUrl(bytes: Uint8Array): string | null {
   if (bytes.length > PICTURE_MAX_BYTES) return null
@@ -19,7 +19,8 @@ const TOO_BIG = PICTURE_MAX_BYTES + 1
 const UNREADABLE: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: "Highwing couldn't read that file." } }
 const NOT_A_PICTURE: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: PICTURE_RULE } }
 
-export async function pickPicture(deps: PictureDeps, bot: BotId): Promise<CommandOutcome<PictureChoice>> {
+/** The picked file as a data URL, once its bytes and size are checked. It goes nowhere: the caller decides what to do with it. */
+export async function choosePicture(deps: Pick<PictureDeps, 'choose' | 'read'>): Promise<CommandOutcome<PictureFile>> {
   const path = await deps.choose()
   if (path === null) return { ok: true, value: 'cancelled' }
   let bytes: Uint8Array
@@ -29,8 +30,14 @@ export async function pickPicture(deps: PictureDeps, bot: BotId): Promise<Comman
     return UNREADABLE
   }
   const data = pictureDataUrl(bytes)
-  if (data === null) return NOT_A_PICTURE
-  const set = await deps.set(bot, data)
+  return data === null ? NOT_A_PICTURE : { ok: true, value: data }
+}
+
+export async function pickPicture(deps: PictureDeps, bot: BotId): Promise<CommandOutcome<PictureChoice>> {
+  const chosen = await choosePicture(deps)
+  if (!chosen.ok) return chosen
+  if (chosen.value === 'cancelled') return { ok: true, value: 'cancelled' }
+  const set = await deps.set(bot, chosen.value)
   return set.ok ? { ok: true, value: 'set' } : set
 }
 

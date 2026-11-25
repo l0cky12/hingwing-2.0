@@ -14,7 +14,7 @@ import { serveWindows } from './ipc'
 import { chatLinks } from './links'
 import { modeStore } from './mode'
 import { desktopNotifier, notifyTurnEnds, recordingNotifier } from './notify'
-import { pickPicture, readHead } from './picture'
+import { choosePicture, pickPicture, readHead } from './picture'
 import { previewPane, registerPageScheme } from './preview'
 import { reachOf } from './preview-page'
 import { dialogSaver, folderSaver } from './saves'
@@ -28,7 +28,7 @@ const PICTURE_DIALOG: OpenDialogOptions = {
   title: 'Choose a picture', properties: ['openFile'], filters: [{ name: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
 }
 
-async function choosePicture(): Promise<string | null> {
+async function pictureFile(): Promise<string | null> {
   if (HIGHWING_PICK_FILE) return HIGHWING_PICK_FILE
   const window = BrowserWindow.getFocusedWindow()
   const { canceled, filePaths: [path] } = await (window === null ? dialog.showOpenDialog(PICTURE_DIALOG) : dialog.showOpenDialog(window, PICTURE_DIALOG))
@@ -83,12 +83,13 @@ app.whenReady().then(async () => {
     })))
     : ownConnection({ loaded: await loadSettings(settingsDir), save: target => saveSettings(settingsDir, target), check: checkTarget, routeFor, open })
   pane.follow(owner.setup)
-  const pictures = { choose: choosePicture, read: readHead, set: (bot: BotId, data: string) => owner.run({ do: 'setBotPicture', bot, data }) }
+  const pictureDeps = { choose: pictureFile, read: readHead, set: (bot: BotId, data: string) => owner.run({ do: 'setBotPicture', bot, data }) }
   const sources = desktopSources({ dialog, clipboard, focused: () => BrowserWindow.getFocusedWindow() }, HIGHWING_PICK_FILES)
   const images = imageLoader(fixture ? fixtureImageDeps(fixture.header.media) : desktopImageDeps(net))
   const saver = HIGHWING_SAVE_DIR ? folderSaver(HIGHWING_SAVE_DIR) : dialogSaver(dialog, () => app.getPath('downloads'))
   const served = serveWindows(
-    owner, ipcMain, isAppUrl, opener, images, drafts, pane, bot => pickPicture(pictures, bot), { store: attachments, sources }, saver, mode
+    owner, ipcMain, isAppUrl, opener, images, drafts, pane, { pick: bot => pickPicture(pictureDeps, bot), choose: () => choosePicture(pictureDeps) },
+    { store: attachments, sources }, saver, mode
   )
   const stopNotices = notifyTurnEnds(owner, {
     notifier: HIGHWING_NOTIFY_LOG ? recordingNotifier(HIGHWING_NOTIFY_LOG) : desktopNotifier(Notification),

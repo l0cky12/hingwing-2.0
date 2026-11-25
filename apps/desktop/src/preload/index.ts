@@ -21,6 +21,7 @@ const bridge: Bridge = {
   drafts: () => ipcRenderer.invoke(CHANNEL.drafts),
   keepDraft: draft => ipcRenderer.send(CHANNEL.keepDraft, draft),
   pickBotPicture: bot => ipcRenderer.invoke(CHANNEL.pickPicture, bot),
+  choosePicture: () => ipcRenderer.invoke(CHANNEL.choosePicture),
   attachPick: () => ipcRenderer.invoke(CHANNEL.attachPick),
   attachPaste: () => ipcRenderer.invoke(CHANNEL.attachPaste),
   // getPathForFile answers '' for a File the page built itself, so a window can only name a file the user gave it.

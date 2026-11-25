@@ -459,7 +459,8 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   const served = serveWindows(
     ownerOf(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
-    async bot => (picked.push(bot), { ok: true, value: 'cancelled' }), { store, sources }, saver, { mode, set: next => mode.set(next) }
+    { pick: async bot => (picked.push(bot), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
+    { store, sources }, saver, { mode, set: next => mode.set(next) }
   )
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
@@ -874,10 +875,19 @@ describe('the picture call', () => {
     expect(rig.picked).toEqual(['rae'])
   })
 
+  it("answers main's chosen picture to the window, and refuses a foreign frame without asking", async () => {
+    const rig = harness()
+    const call = rig.handlers.get(CHANNEL.choosePicture)!
+    await expect(call(rig.event())).resolves.toEqual({ ok: true, value: PICTURE })
+    await expect(call(rig.event('https://example.com/'))).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(rig.picked).toEqual(['chosen'])
+  })
+
   it('stops answering once disposed', () => {
     const { handlers, served } = harness()
     served.dispose()
     expect(handlers.has(CHANNEL.pickPicture)).toBe(false)
+    expect(handlers.has(CHANNEL.choosePicture)).toBe(false)
   })
 })
 

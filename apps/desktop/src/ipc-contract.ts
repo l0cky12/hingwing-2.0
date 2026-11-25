@@ -145,6 +145,8 @@ export const MAX_ATTACHMENTS = 64
 
 /** `set`: the picture was sent and Hermes kept it. `cancelled`: the user closed the file picker, and nothing was sent. */
 export type PictureChoice = 'set' | 'cancelled'
+/** A picked picture as a data URL main checked, or `cancelled` when the user closed the file picker. */
+export type PictureFile = string | 'cancelled'
 
 export interface Bridge {
   watch<T extends Topic>(topic: T, onPush: (push: Push<T>) => void): () => void
@@ -156,6 +158,8 @@ export interface Bridge {
   keepDraft(draft: Draft): void
   /** Main shows a file picker, checks the picked file and sends it as the bot's picture. */
   pickBotPicture(bot: BotId): Promise<CommandOutcome<PictureChoice>>
+  /** Main shows the same picker and checks the file the same way, and answers the picture. Nothing is sent to Hermes. */
+  choosePicture(): Promise<CommandOutcome<PictureFile>>
   /** Opens the file dialog and holds each file picked, in the order picked. Nothing picked: an empty list. */
   attachPick(): Promise<readonly StageResult[]>
   /** Holds the image on the clipboard. No image there: an empty list. */
@@ -166,7 +170,7 @@ export interface Bridge {
 
 export const CHANNEL = {
   watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image',
-  drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft', pickPicture: 'highwing:pick-picture', attachPick: 'highwing:attach-pick',
+  drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft', pickPicture: 'highwing:pick-picture', choosePicture: 'highwing:choose-picture', attachPick: 'highwing:attach-pick',
   attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop'
 } as const
 
