@@ -1,8 +1,9 @@
 import type { ContextBreakdown, ModelConfirm, ModelMenu, Outcome, Refusal } from './domain/command'
+import type { PathMatch } from './domain/path'
 import { emptyTracked, reduce, sessionOf, type Gate, type LocalAction, type ServerRequest, type SessionInput, type Tracked } from './domain/reduce'
 import type { BranchId, InputId, ModelOption, OutboxEntry, PromptId, PromptReply, Session, SessionContent, SessionId } from './domain/session'
 import { Offline, RpcRefusal, type Calls, type Clock } from './wire/link'
-import { parseBranched, parseContextBreakdown, parseModelMenu, parseModelReceipt, parseReplay, parseSnapshot, parseStats, parseTranscript } from './wire/parse'
+import { parseBranched, parseContextBreakdown, parsePathMatches, parseModelMenu, parseModelReceipt, parseReplay, parseSnapshot, parseStats, parseTranscript } from './wire/parse'
 
 export const DONE: Outcome = { ok: true, value: undefined }
 export const refused = (kind: Refusal['kind'], message: string): Outcome<never> => ({ ok: false, refusal: { kind, message } })
@@ -299,6 +300,16 @@ export class SessionActor {
     if (offline !== null) return offline
     try {
       return { ok: true, value: parseContextBreakdown(await this.deps.conn.call('session.context_breakdown', { session_id: this.id })) }
+    } catch (error) {
+      return { ok: false, refusal: refusalOf(error) }
+    }
+  }
+
+  async completePath(word: string): Promise<Outcome<readonly PathMatch[]>> {
+    const offline = this.offline()
+    if (offline !== null) return offline
+    try {
+      return { ok: true, value: parsePathMatches(await this.deps.conn.call('complete.path', { session_id: this.id, word })) }
     } catch (error) {
       return { ok: false, refusal: refusalOf(error) }
     }

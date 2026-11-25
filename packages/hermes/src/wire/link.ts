@@ -160,16 +160,17 @@ export class RpcRefusal extends Error {
 export class Offline extends Error {}
 
 /**
- * The canonical route also serves four methods the generated contract does not list as canonical:
+ * The canonical route also serves five methods the generated contract does not list as canonical:
  * `commands.catalog` and `command.dispatch` (`AuthorityConnection.handlers`, gateway/session_controls.py:239-247),
  * `model.options` (gateway/session_config.py:11-13) and `session.context_breakdown` (gateway/session_tui_ops.py:33).
+ * A fifth, `complete.path`, lists the files under a session's folder (gateway/session_controls.py:286-287).
  * `profiles.create` is not canonical: the authority answers -32601 and the socket falls back to the legacy
  * handler for a connection with the interactive grant (tui_gateway/ws.py:403-411, tui_gateway/ws_legacy_fallback.py:53-62).
  * A -32601 from it means this Hermes cannot create bots from Highwing.
  * `projects.tree` reaches its legacy handler the same way (tui_gateway/methods_config.py:137), and a -32601 from it
  * means this Hermes cannot say which chats were branched from which.
  */
-type Served = CanonicalRpcMethods & Pick<RpcMethods, 'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'profiles.create' | 'projects.tree'>
+type Served = CanonicalRpcMethods & Pick<RpcMethods, 'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'complete.path' | 'profiles.create' | 'projects.tree'>
 type Method = keyof Served
 
 export interface Connection {

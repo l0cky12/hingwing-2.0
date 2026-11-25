@@ -259,6 +259,25 @@ describe('usage', () => {
   })
 })
 
+describe('completePath', () => {
+  it('asks Hermes for the word alone, and keeps only the files and folders it lists', async () => {
+    const { actor, open, calls, answer } = stage()
+    await open()
+    const asked = actor.completePath('@not')
+    expect(calls[0]).toMatchObject({ method: 'complete.path', params: { session_id: ID, word: '@not' } })
+    await answer('complete.path', { items: [{ text: '@file:notes.md', display: 'notes.md', meta: '' }, { text: '@notes-bot' }, { text: '@folder:notebooks/', meta: 'dir' }] })
+    expect(await asked).toEqual({ ok: true, value: [{ path: 'notes.md', folder: false }, { path: 'notebooks/', folder: true }] })
+  })
+
+  it('refuses in plain words on a Hermes that does not serve it', async () => {
+    const { actor, open, answer } = stage()
+    await open()
+    const asked = actor.completePath('@not')
+    await answer('complete.path', new RpcRefusal(-32601, 'unknown_method', 'unknown method'))
+    expect(await asked).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes doesn't support that." } })
+  })
+})
+
 describe('send', () => {
   it('shows the message as sending, then as the gateway admitted it', async () => {
     const { actor, open, calls, answer } = stage()

@@ -5,6 +5,7 @@ export type { Command, ContextBreakdown, ModelConfirm, ModelMenu, Outcome as Com
 export { activityOf, type Activity } from './reduce'
 export type { SlashCatalog, SlashEntry } from './slash'
 export { BOT_TONES, botsIn, canonicalBotId, rosterOf, type AvatarTone, type Bot, type BotCreated, type BotDraft, type BotFacts, type BotId, type Bots, type BotSection, type BotTone, type Roster } from './bots'
+export type { PathMatch } from './path'
 export { mentionedBots, mentionOf, typedMention } from './mention'
 export type { Relay, RelayDesk, RelayId, RelayState } from './relay'
 export type { ChatRef, OpenChat, Shown, Unstarted } from './open'
