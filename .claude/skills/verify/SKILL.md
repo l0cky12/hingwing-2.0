@@ -54,6 +54,7 @@ Every run names one of two gateways. Hermes, ssh and Tailscale are installed on 
 - `--yolo-elsewhere-after <event type>` needs `--yolo`. It adds a `session.info` frame with `yolo: true` 50 ms after the first frame of that type, and moves the seq of every later frame of the session up by one. It stands for another client turning YOLO on.
 - `--pick <path[,path]>` sets `HIGHWING_PICK_FILES` to those files, each resolved from the repo root. Main then answers every press of the paperclip ("Attach files") with them, in that order, and opens no file dialog. Without it a press opens the system dialog, which nothing in a run can answer.
 - `--attach-limit <bytes>` writes a copy of the fixture whose header carries `attachLimits` with that many bytes for both an image and a file, and plays the copy. Main then refuses to attach a larger file, in words that name the file and the limit. Without it the limits are Hermes's own: 25 MiB for an image and 256 MiB for a file. It combines with the other fixture options into one `fixture-edited.jsonl`.
+- `--menu-pick <label>` sets `HIGHWING_MENU_PICK`. Main then runs the entry with that label each time it records a context menu that holds it, enabled, as if the user picked it. A run without it removes any `HIGHWING_MENU_PICK` it inherited.
 - `--arg <value>` appends one argument to the app's command line, such as a `highwing://chat/<session id>` link, as a launch from the desktop passes it.
 - `--size <width>x<height>` sets the window's content size before the first step, and the size every `shot` must have. The default is 1180x860.
 - `--chat-only` makes the size above the size of the chat column. The window grows by the width of whatever sits left of the chat, the bots and chats columns' 536 px, and every `shot` is clipped to the chat column. The ARIA snapshot still covers the whole page. Use it for any shot that a tool reads as a chat with no sidebar: the design C references, `forced-colors-check.mjs` and `chat-parity.mjs`.
@@ -65,6 +66,8 @@ Every run names one of two gateways. Hermes, ssh and Tailscale are installed on 
 Every run sets `HIGHWING_OPEN_LOG` to `opens.jsonl` in the evidence directory. Main then records each request to open a file, show its folder, or open a link in the browser in that file, and opens nothing on the desktop. A run without `--pick-file` removes any `HIGHWING_PICK_FILE` it inherited. Every run also sets `HIGHWING_SAVE_DIR` to `saves/` in the evidence directory. Main then writes an exported chat there under Hermes's file name, and opens no save dialog.
 
 Every run also sets `HIGHWING_NOTIFY_LOG` to `notices.jsonl` in the evidence directory. Main then records each desktop notification there as a JSON line (`sessionId`, `turnId`, `title`, `body`) and shows nothing on the desktop.
+
+Every run also sets `HIGHWING_MENU_LOG` to `menus.jsonl` in the evidence directory. Main then records each context menu it would have shown there as a JSON line, `{ items, disabled? }`: `items` lists the entries' labels in order, with `"separator"` for a separator, and `disabled` lists the labels of the entries that are disabled. Nothing pops up.
 
 A JavaScript dialog the page opens (`alert`, `confirm` or `prompt`) is logged to `steps.log` as `DIALOG`, dismissed, and fails the run once the steps end. The app never opens one, so a dialog means script ran that should not have.
 
@@ -114,6 +117,8 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `blur` | none | takes focus from the window, and fails if any Highwing window still has focus. Playwright's clicks do not give it back |
 | `notified <title> <n>` | title, number | waits until `notices.jsonl` holds n notifications with that title, logs each, and fails on any other count. It is checked again when the steps end |
 | `home` | none | fails unless the app has one window and its address is still the one it launched with |
+| `menu <key> <label>` | Playwright key name, exact entry label | presses the key, such as `ContextMenu`, and waits for main to record a new menu in `menus.jsonl`. It presses again, 200 ms later, until a recorded menu holds the label, and fails at the timeout naming the last menu. It logs the menu that held the label and how many presses it took. The spellchecker marks a word a second or so after it is typed, so the first menus may lack the suggestions |
+| `menu-without <key> <label>` | Playwright key name, exact entry label | as `menu`, until a recorded menu lacks the label. It proves something only after a `menu` that showed the label |
 | `second <arg>` | one argument, such as a `highwing://chat/<session id>` link | starts a second instance with the same electron binary, arguments (less any `--arg`), user-data directory, environment, working directory and display, plus this argument. Waits for it to exit, logs its exit code, and fails if it is still running at the step timeout. Its PID is kept for `cleanup` while it runs |
 | `copied <text>` | text | fails unless the system clipboard holds exactly this text |
 | `gone <role> <name>` | ARIA role, exact accessible name or `/regex/` | polls until no visible element has that role and name, and fails at the timeout. Waits out a fade |
@@ -176,6 +181,7 @@ Each run writes to `/tmp/highwing-verify/<run>/`:
 - `<name>.clip.txt` holds the clipboard text that a `clipboard` step read.
 - `opens.jsonl` holds one JSON line for each open or show call that main accepted.
 - `notices.jsonl` holds one JSON line for each desktop notification main would have shown.
+- `menus.jsonl` holds one JSON line for each context menu main would have shown.
 - `main.log` holds the Electron main process's stdout and stderr. `console.log` holds the renderer console and page errors.
 - `failure.png` is the window when a step failed.
 - `gateway-calls.jsonl` holds every frame the client sent the scripted gateway, one per line, as it arrived (`--fixture` runs). A typed answer's `value` and a connector card's credentials are written as `•••`, so the file proves a value was sent and never what it was. Main writes it when `HIGHWING_FIXTURE_CALLS` names a file, which `run` always sets.

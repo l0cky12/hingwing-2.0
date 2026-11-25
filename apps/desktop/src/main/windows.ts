@@ -2,6 +2,7 @@ import { BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isWebLink } from '../ipc-contract'
+import { attachContextMenu, type ShowMenu } from './context-menu'
 import type { Opener } from './files'
 import type { PreviewPane } from './preview'
 
@@ -16,17 +17,18 @@ export const isAppUrl = (url: string) => {
 /** The content size design C was drawn and reviewed at. */
 const DESIGN_SIZE = { width: 1180, height: 860 } as const
 
-export function openWindow(opener: Pick<Opener, 'browse'>, pane: Pick<PreviewPane, 'attach'>): BrowserWindow {
+export function openWindow(opener: Pick<Opener, 'browse'>, pane: Pick<PreviewPane, 'attach'>, show: ShowMenu): BrowserWindow {
   const window = new BrowserWindow({
     ...DESIGN_SIZE, useContentSize: true,
     title: 'Highwing', backgroundColor: '#E8EBE4',
-    webPreferences: { preload: join(import.meta.dirname, '../preload/index.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false }
+    webPreferences: { preload: join(import.meta.dirname, '../preload/index.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: true }
   })
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isWebLink(url)) void opener.browse(url)
     return { action: 'deny' }
   })
   window.webContents.on('will-navigate', event => event.preventDefault())
+  attachContextMenu(window, show)
   pane.attach(window)
   if (DEV_URL) void window.loadURL(DEV_URL)
   else void window.loadFile(INDEX_HTML)
