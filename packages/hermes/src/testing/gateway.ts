@@ -465,14 +465,17 @@ interface Held extends Stream {
   readonly todos: Obj | null
 }
 
-/** The snapshot `session.resume` answers (gateway/session_controls.py:659-769), read at the stream's watermark. */
+/**
+ * The snapshot `session.resume` answers (gateway/session_controls.py:659-769), read at the stream's watermark. `messages` is
+ * the stored history, handoffs included (:140-148). `display_messages` leaves each handoff out (:753-756, :122-129).
+ */
 function snapshotOf(held: Held, subscriptionId: string, params: Obj): Obj {
   const omit = params.omit_messages === true
   const { model } = held
   return {
     session_id: held.id, stored_session_id: held.id,
     messages: omit ? [] : held.rows, ...(omit ? { messages_omitted: true } : {}), message_count: held.rows.length, todo_state: held.todos,
-    ...(params.display_projection === true ? { display_messages: held.rows } : {}),
+    ...(params.display_projection === true ? { display_messages: held.rows.filter(row => !isObject(row) || row.row_kind !== 'compaction') } : {}),
     running: held.running, authority_epoch: 1, replay_epoch: held.epoch, last_sequence: held.ring.at(-1)?.seq ?? 0,
     subscription_id: subscriptionId, revision: held.revision, execution_generation: held.generation,
     pending: held.pending, prompts: held.prompts,
@@ -571,6 +574,16 @@ function rowsThrough(rows: readonly Obj[], through: number): readonly Obj[] | nu
   let end = at + 1
   if (rows[at]?.role === 'assistant') while (rows[end]?.role === 'tool') end++
   return rows.slice(0, end)
+}
+
+/**
+ * The rows Hermes can still cut a branch through (persistence/sqlite/authority/_mutation_publish.py `_branch_boundary`). Rows a
+ * compaction archived stay in the history the chat shows, before its handoff, but are not active. The handoff's own row, the
+ * summary, is (persistence/sqlite/authority/_mutation.py:171-182).
+ */
+function activeRows(rows: readonly Obj[]): readonly Obj[] {
+  const handoff = rows.findLastIndex(row => row.row_kind === 'compaction')
+  return handoff < 0 ? rows : rows.slice(handoff)
 }
 
 /** An editor call's refusal, which carries no `data` (tui_gateway/server.py:751-753). */
@@ -727,6 +740,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (gateway.awaits('config.set')) return gateway.story(socket, 'config.set', params, routed)
     return params.key === 'yolo' || gateway.fixture.header.controls === undefined ? gateway.setYolo(params, routed, null) : gateway.control(params, routed, true)
   },
+  'session.transcript': (gateway, socket, params, routed) => {
+    if (gateway.awaits('session.transcript')) return gateway.story(socket, 'session.transcript', params, routed)
+    gateway.authorize(params, routed)
+    return gateway.transcript(params)
+  },
   'session.detach': detach,
   /** gateway/session_ancillary.py:226-237: the session's own projection, which the story names. */
   'process.list': (gateway, _socket, params, routed) => gateway.read('process.list', params, routed),
@@ -762,18 +780,19 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 /**
  * `session.transcript` (gateway/session_stored_reads.py). Oldest order answers the rows after it and a cursor that is
  * never null, so the page after the last row is empty. Latest order pages back from the newest row and ends in a null cursor.
+ * A compaction row keeps its `row_kind` (gateway/session_transcript_rows.py:1-12).
  */
-function transcriptPage(chat: EchoChat, params: Obj): Obj {
+function transcriptPage(sessionId: string, stored: readonly Obj[], params: Obj): Obj {
   const { cursor, limit = 200, order = 'latest', subagent_id: subagent } = params
   if (!isInt(limit) || limit < 1 || limit > 500 || (order !== 'oldest' && order !== 'latest') || (subagent !== undefined && subagent !== null)) throw new Refused('invalid_params')
   const [, asked, count] = typeof cursor === 'string' ? /^(oldest|latest):(\d+)$/.exec(cursor) ?? [] : []
   if (cursor !== undefined && cursor !== null && asked !== order) throw new Refused('invalid_params')
-  const read = Math.min(Number(count ?? 0), chat.rows.length)
-  const rows = order === 'oldest' ? chat.rows.slice(read, read + limit) : chat.rows.slice(Math.max(0, chat.rows.length - read - limit), chat.rows.length - read)
+  const read = Math.min(Number(count ?? 0), stored.length)
+  const rows = order === 'oldest' ? stored.slice(read, read + limit) : stored.slice(Math.max(0, stored.length - read - limit), stored.length - read)
   const reached = read + rows.length
   return {
-    session_id: chat.id, rows: rows.map(row => ({ ...row, row_kind: 'message' })), reset: false,
-    next_cursor: order === 'latest' && reached >= chat.rows.length ? null : `${order}:${reached}`
+    session_id: sessionId, rows: rows.map(row => ({ row_kind: 'message', ...row })), reset: false,
+    next_cursor: order === 'latest' && reached >= stored.length ? null : `${order}:${reached}`
   }
 }
 
@@ -790,7 +809,7 @@ const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
     if (!isText(inputId) || !gateway.staged(params.attachments, routed)) throw new Refused('invalid_params')
     return gateway.echo(chat, inputId, String(params.text ?? ''), routed)
   },
-  'session.transcript': (_gateway, _socket, params, _routed, chat) => transcriptPage(chat, params),
+  'session.transcript': (_gateway, _socket, params, _routed, chat) => transcriptPage(chat.id, chat.rows, params),
   'model.options': (gateway, _socket, _params, _routed, chat) => gateway.modelMenu(chat.model),
   'complete.path': (gateway, _socket, params) => pathItems(gateway, params, () => {}),
   'config.set': (gateway, _socket, params, routed, chat) => gateway.setYolo(params, routed, chat),
@@ -1019,6 +1038,10 @@ export class ScriptedGateway {
     this.pump()
   }
 
+  transcript(params: Obj): Obj {
+    return transcriptPage(this.sessionId, this.stored.filter(isObject), params)
+  }
+
   awaits(method: string): boolean {
     const step = this.fixture.steps[this.step]
     return step !== undefined && 'await' in step && step.await === method
@@ -1098,7 +1121,7 @@ export class ScriptedGateway {
     const { view } = this
     const title = view.title || this.listedTitle()
     return {
-      id: this.sessionId, profile: this.home, title, rows: this.stored.filter(isObject),
+      id: this.sessionId, profile: this.home, title, rows: activeRows(this.stored.filter(isObject)),
       generation: view.generation, busy: view.running || view.pending.length > 0, revision: view.revision,
       commit: result => {
         view.revision++
