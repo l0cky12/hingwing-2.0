@@ -75,6 +75,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     else setPlace(held => placeAfter(held, distanceFrom(element), progress))
   }, [view, progress, relays, versions])
 
+  const [paging, setPaging] = useState(false)
   useLayoutEffect(() => {
     const element = scroller.current
     const landing = id === null ? null : landingFor(id)
@@ -82,14 +83,20 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     if (landing === 'end') return landed(id)
     const request = element.querySelector(`.turn[data-row="${landing}"] > .request`)
     if (request === null) {
-      if (view.earlier === 'more') void run({ do: 'loadEarlier', sessionId: id })
-      else if (view.earlier === 'none') landed(id)
+      if (view.earlier === 'none') landed(id)
+      else if (view.earlier === 'more' && !paging) {
+        setPaging(true)
+        void run({ do: 'loadEarlier', sessionId: id }).then(outcome => {
+          if (!outcome.ok) landed(id)
+          setPaging(false)
+        })
+      }
       return
     }
     landed(id)
     request.scrollIntoView({ block: 'center', behavior: 'instant' })
     setPlace(held => placeAfter(held, distanceFrom(element), progress))
-  }, [id, view, progress])
+  }, [id, view, progress, paging])
 
   useLayoutEffect(() => {
     const element = scroller.current
