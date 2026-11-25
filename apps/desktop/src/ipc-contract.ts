@@ -1,6 +1,6 @@
 import {
   targetOf,
-  type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type ChatRef, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply,
+  type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type ChatRef, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply,
   type RelayDesk, type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type Unstarted
 } from '@highwing/hermes/domain'
 
@@ -106,6 +106,8 @@ export type FileOutcome = { readonly ok: true } | { readonly ok: false; readonly
 export type ImageRequest =
   | { readonly kind: 'web'; readonly url: string }
   | { readonly kind: 'tool'; readonly sessionId: SessionId; readonly path: string }
+  /** An image attached to a message, while Highwing holds it. */
+  | { readonly kind: 'attachment'; readonly id: AttachmentId }
 export type ImageType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' | 'image/avif'
 /** Every refusal looks the same to the window: the loader says nothing about why. */
 export type ImageOutcome = { readonly ok: true; readonly type: ImageType; readonly bytes: Uint8Array } | { readonly ok: false }
@@ -115,8 +117,17 @@ export type ImageOutcome = { readonly ok: true; readonly type: ImageType; readon
  * new-chat view.
  */
 export type DraftKey = `chat:${SessionId}` | `bot:${BotId}` | 'new'
-/** `bot` is the bot of the chat the draft was typed in, so it can be matched to that bot's list. Empty `text`: no draft. */
-export interface Draft { readonly key: DraftKey; readonly bot: BotId | null; readonly text: string }
+/** `bot` is the bot of the chat the draft was typed in, so it can be matched to that bot's list. Empty `text` and no attachments: no draft. */
+export interface Draft { readonly key: DraftKey; readonly bot: BotId | null; readonly text: string; readonly attachments: readonly Attachment[] }
+
+/** A file Highwing was asked to hold for a message: held, or refused with plain words that name it. */
+export type StageResult = { readonly ok: true; readonly attachment: Attachment } | { readonly ok: false; readonly name: string; readonly reason: string }
+
+/** A file dropped on the window: its path on this computer, or null for one that has none, such as an image dragged out of a web page. */
+export interface DroppedFile { readonly name: string; readonly path: string | null }
+
+/** More ids than a message could ever carry. Hermes takes 10 images, and a window has no reason to send more files than that. */
+export const MAX_ATTACHMENTS = 64
 
 /** `set`: the picture was sent and Hermes kept it. `cancelled`: the user closed the file picker, and nothing was sent. */
 export type PictureChoice = 'set' | 'cancelled'
@@ -127,15 +138,22 @@ export interface Bridge {
   file(request: FileRequest): Promise<FileOutcome>
   image(request: ImageRequest): Promise<ImageOutcome>
   drafts(): Promise<readonly Draft[]>
-  /** Keeps the draft on disk, or deletes it when its text is empty. Applied in the order a window sends them. */
+  /** Keeps the draft on disk, or deletes it when it is empty. Applied in the order a window sends them. */
   keepDraft(draft: Draft): void
   /** Main shows a file picker, checks the picked file and sends it as the bot's picture. */
   pickBotPicture(bot: BotId): Promise<CommandOutcome<PictureChoice>>
+  /** Opens the file dialog and holds each file picked, in the order picked. Nothing picked: an empty list. */
+  attachPick(): Promise<readonly StageResult[]>
+  /** Holds the image on the clipboard. No image there: an empty list. */
+  attachPaste(): Promise<readonly StageResult[]>
+  /** Holds the files of a drop. The window never names a path: the bridge reads it from each `File`. */
+  attachDropped(files: readonly File[]): Promise<readonly StageResult[]>
 }
 
 export const CHANNEL = {
   watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image',
-  drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft', pickPicture: 'highwing:pick-picture'
+  drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft', pickPicture: 'highwing:pick-picture', attachPick: 'highwing:attach-pick',
+  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop'
 } as const
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
@@ -211,6 +229,15 @@ const webPage = (raw: unknown): raw is string => text(raw) && isWebPage(raw)
 const place = (raw: unknown): raw is number => typeof raw === 'number' && Number.isFinite(raw) && raw >= 0
 const rectOf = (raw: unknown): Rect | null =>
   isObject(raw) && place(raw.x) && place(raw.y) && place(raw.width) && place(raw.height) ? { x: raw.x, y: raw.y, width: raw.width, height: raw.height } : null
+/** Missing: none. Anything but a short list of ids: null, so the command is refused. */
+const attachmentIdsOf = (raw: unknown): readonly AttachmentId[] | null => {
+  if (raw === undefined) return []
+  return Array.isArray(raw) && raw.length <= MAX_ATTACHMENTS && raw.every(filled) ? (raw as AttachmentId[]) : null
+}
+const attachmentOf = (raw: unknown): Attachment | null =>
+  isObject(raw) && filled(raw.id) && filled(raw.name) && (raw.kind === 'image' || raw.kind === 'file') && Number.isSafeInteger(raw.size) && (raw.size as number) >= 0
+    ? { id: raw.id as AttachmentId, name: raw.name, kind: raw.kind, size: raw.size as number }
+    : null
 const replyOf = (raw: unknown): PromptReply | null =>
   isObject(raw) && (raw.kind === 'choice' || raw.kind === 'text') && text(raw.value) ? { kind: raw.kind, value: raw.value } : null
 
@@ -223,11 +250,13 @@ export const validators: Validators = {
   },
   start: raw => {
     const chat = unstartedOf(raw.chat)
-    return chat && filled(raw.text) ? { do: 'start', chat, text: raw.text } : null
+    const attachments = attachmentIdsOf(raw.attachments)
+    return chat && attachments && filled(raw.text) ? { do: 'start', chat, text: raw.text, attachments } : null
   },
   send: raw => {
     const sessionId = sessionIdOf(raw)
-    return sessionId && filled(raw.text) ? { do: 'send', sessionId, text: raw.text } : null
+    const attachments = attachmentIdsOf(raw.attachments)
+    return sessionId && attachments && filled(raw.text) ? { do: 'send', sessionId, text: raw.text, attachments } : null
   },
   rewind: raw => {
     const sessionId = sessionIdOf(raw)
@@ -353,15 +382,29 @@ export function parseFileRequest(raw: unknown): FileRequest | null {
 const draftKeyOf = (raw: unknown): DraftKey | null =>
   raw === 'new' || (text(raw) && /^(?:chat|bot):/.test(raw) && filled(raw.slice(raw.indexOf(':') + 1))) ? (raw as DraftKey) : null
 
+/** `attachments` may be missing, as in a draft an earlier build wrote. */
 export function parseDraft(raw: unknown): Draft | null {
   if (!isObject(raw) || !text(raw.text) || !(raw.bot === null || filled(raw.bot))) return null
   const key = draftKeyOf(raw.key)
-  return key && { key, bot: botIdOf(raw.bot), text: raw.text }
+  const held = raw.attachments === undefined ? [] : Array.isArray(raw.attachments) && raw.attachments.length <= MAX_ATTACHMENTS ? raw.attachments.map(attachmentOf) : null
+  if (held === null || held.includes(null)) return null
+  return key && { key, bot: botIdOf(raw.bot), text: raw.text, attachments: held as Attachment[] }
+}
+
+export const isEmptyDraft = (draft: Pick<Draft, 'text' | 'attachments'>) => draft.text === '' && draft.attachments.length === 0
+
+export function parseDropped(raw: unknown): readonly DroppedFile[] | null {
+  if (!Array.isArray(raw) || raw.length > MAX_ATTACHMENTS) return null
+  const files = raw.map(file => (isObject(file) && filled(file.name) && (file.path === null || (text(file.path) && ABSOLUTE.test(file.path)))
+    ? { name: file.name, path: file.path as string | null }
+    : null))
+  return files.includes(null) ? null : (files as DroppedFile[])
 }
 
 export function parseImageRequest(raw: unknown): ImageRequest | null {
   if (!isObject(raw)) return null
   if (raw.kind === 'web') return text(raw.url) && isWebPage(raw.url) ? { kind: 'web', url: raw.url } : null
+  if (raw.kind === 'attachment') return filled(raw.id) ? { kind: 'attachment', id: raw.id as AttachmentId } : null
   if (raw.kind !== 'tool') return null
   const sessionId = sessionIdOf(raw)
   return sessionId && text(raw.path) && ABSOLUTE.test(raw.path) ? { kind: 'tool', sessionId, path: raw.path } : null

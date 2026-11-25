@@ -17,7 +17,8 @@ export interface ImageDeps {
 /** What a request is judged against: the session the window watches, and whether Hermes runs on this machine. */
 export interface ImageContext { readonly session: Session | undefined; readonly local: boolean }
 
-export interface ImageLoader { load(request: ImageRequest, context: ImageContext): Promise<ImageOutcome> }
+/** An attachment's image is read from the attachment store, not here. */
+export interface ImageLoader { load(request: Exclude<ImageRequest, { kind: 'attachment' }>, context: ImageContext): Promise<ImageOutcome> }
 
 const REFUSED: ImageOutcome = { ok: false }
 

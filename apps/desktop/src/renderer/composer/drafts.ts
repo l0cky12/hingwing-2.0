@@ -1,10 +1,12 @@
-import { STORED_ROWS, type SessionId, type Shown, type Sidebar } from '@highwing/hermes/domain'
+import { STORED_ROWS, type Attachment, type AttachmentId, type SessionId, type Shown, type Sidebar } from '@highwing/hermes/domain'
 import { useSyncExternalStore } from 'react'
-import type { Draft, DraftKey } from '../../ipc-contract'
+import { isEmptyDraft, type Draft, type DraftKey } from '../../ipc-contract'
 
 export type DraftSlot = Pick<Draft, 'key' | 'bot'> | null
+type Held = Pick<Draft, 'text' | 'attachments'>
 
 const SAVE_MS = 500
+const EMPTY: Held = { text: '', attachments: [] }
 
 export function slotOf(shown: Shown): NonNullable<DraftSlot> {
   if (shown.sessionId !== null) return { key: `chat:${shown.sessionId}`, bot: shown.bot }
@@ -15,7 +17,7 @@ const drafts = new Map<DraftKey, Draft>()
 const typed = new Set<DraftKey>()
 const restored = new Set<DraftKey>()
 const saving = new Map<DraftKey, { readonly draft: Draft; readonly timer: ReturnType<typeof setTimeout> }>()
-let loose = ''
+let loose: Held = EMPTY
 /** Seeds asked for before main's drafts are read. A saved draft for the same chat wins over them. */
 let seeds: Draft[] | null = []
 let chats: ReadonlySet<SessionId> = new Set()
@@ -33,7 +35,7 @@ function keep(draft: Draft, when: 'soon' | 'now') {
   const { key } = draft
   typed.add(key)
   restored.delete(key)
-  if (draft.text === '') drafts.delete(key)
+  if (isEmptyDraft(draft)) drafts.delete(key)
   else drafts.set(key, draft)
   clearTimeout(saving.get(key)?.timer)
   saving.delete(key)
@@ -49,7 +51,15 @@ function flush() {
   saving.clear()
 }
 
-const textOf = (slot: DraftSlot) => (slot === null ? loose : drafts.get(slot.key)?.text ?? '')
+const heldOf = (slot: DraftSlot): Held => (slot === null ? loose : drafts.get(slot.key) ?? EMPTY)
+
+/** Typing saves a moment later. A change to the attachments saves at once, since the files they name are already on disk. */
+function put(slot: DraftSlot, change: Partial<Held>, when: 'soon' | 'now') {
+  const next = { ...heldOf(slot), ...change }
+  if (slot === null) loose = next
+  else keep({ ...slot, ...next }, when)
+  changed()
+}
 
 export async function startDrafts(): Promise<void> {
   window.addEventListener('pagehide', flush)
@@ -71,24 +81,35 @@ function plant(draft: Draft) {
   if (!drafts.has(draft.key) && !typed.has(draft.key)) keep(draft, 'soon')
 }
 
-export function writeDraft(slot: DraftSlot, text: string) {
-  if (slot === null) loose = text
-  else keep({ ...slot, text }, 'soon')
-  changed()
+export const writeDraft = (slot: DraftSlot, text: string) => put(slot, { text }, 'soon')
+
+export const attachTo = (slot: DraftSlot, attachments: readonly Attachment[]) => {
+  if (attachments.length > 0) put(slot, { attachments: [...heldOf(slot).attachments, ...attachments] }, 'now')
 }
 
 /** Puts a branch's text in the chat it made. A draft the chat has, or one typed or cleared since the window loaded, wins. */
 export function seedDraft(slot: NonNullable<DraftSlot>, text: string) {
-  if (seeds !== null) return void seeds.push({ ...slot, text })
-  plant({ ...slot, text })
+  if (seeds !== null) return void seeds.push({ ...slot, text, attachments: [] })
+  plant({ ...slot, text, attachments: [] })
   changed()
 }
 
-export function draftSent(slot: DraftSlot, text: string) {
-  if (textOf(slot).trim() !== text) return
-  if (slot === null) loose = ''
-  else keep({ ...slot, text: '' }, 'now')
-  changed()
+export const detach = (slot: DraftSlot, id: AttachmentId) => put(slot, { attachments: heldOf(slot).attachments.filter(held => held.id !== id) }, 'now')
+
+/** Moves an attachment one place earlier (-1) or later (1). Nothing moves past either end. */
+export function moveAttachment(slot: DraftSlot, id: AttachmentId, by: -1 | 1) {
+  const attachments = [...heldOf(slot).attachments]
+  const at = attachments.findIndex(held => held.id === id)
+  const to = at + by
+  if (at < 0 || to < 0 || to >= attachments.length) return
+  ;[attachments[at], attachments[to]] = [attachments[to]!, attachments[at]!]
+  put(slot, { attachments }, 'now')
+}
+
+/** Clears what was sent: the text, unless it changed while the message was on its way, and exactly the attachments sent with it. */
+export function draftSent(slot: DraftSlot, text: string, sent: ReadonlySet<AttachmentId>) {
+  const held = heldOf(slot)
+  put(slot, { text: held.text.trim() === text ? '' : held.text, attachments: held.attachments.filter(attachment => !sent.has(attachment.id)) }, 'now')
 }
 
 export function sweepDrafts(sidebar: Sidebar | undefined, open: DraftKey | null) {
@@ -98,7 +119,7 @@ export function sweepDrafts(sidebar: Sidebar | undefined, open: DraftKey | null)
     const draft = drafts.get(key)
     return draft !== undefined && key.startsWith('chat:') && key !== open && draft.bot === sidebar.bot && !listed.has(key) ? [draft] : []
   })
-  for (const draft of gone) keep({ ...draft, text: '' }, 'now')
+  for (const draft of gone) keep({ ...draft, ...EMPTY }, 'now')
   if (gone.length > 0) changed()
 }
 
@@ -107,6 +128,8 @@ const subscribe = (listener: () => void) => {
   return () => void listeners.delete(listener)
 }
 
-export const useDraft = (slot: DraftSlot): string => useSyncExternalStore(subscribe, () => textOf(slot))
+export const useDraft = (slot: DraftSlot): string => useSyncExternalStore(subscribe, () => heldOf(slot).text)
+
+export const useAttachments = (slot: DraftSlot): readonly Attachment[] => useSyncExternalStore(subscribe, () => heldOf(slot).attachments)
 
 export const useChatDrafts = (): ReadonlySet<SessionId> => useSyncExternalStore(subscribe, () => chats)

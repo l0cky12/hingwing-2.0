@@ -24,7 +24,7 @@ function samePaneOnFirstMessage(shown: Shown): string {
 function OpenPane() {
   const shown = useTopic('open')?.shown ?? null
   return shown === null
-    ? <><main id="scroll" /><Composer slot={null} canSend={false} showStop={false} onSend={NO_CHAT} onStop={() => {}} onInput={() => {}} /></>
+    ? <><main id="scroll" /><Composer slot={null} canSend={false} canAttach={false} showStop={false} onSend={NO_CHAT} onStop={() => {}} onInput={() => {}} /></>
     : <Chat key={samePaneOnFirstMessage(shown)} chat={shown} />
 }
 

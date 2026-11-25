@@ -2,6 +2,7 @@ import { versionLabel, type ChatVersions, type Landing, type PromptId, type Prom
 import { fieldId, findInThread, type FindMatch, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Avatar } from '../bots/Avatar'
+import { SentAttachments } from './Attachments'
 import { CopyButton } from './Copy'
 import { isCommandKey } from '../keys'
 import { Helper, Plan, Reasoning } from './Helpers'
@@ -178,6 +179,7 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit
   return (
     <article className={cx('turn', live && 'live-turn')} data-row={rowId ?? undefined}>
       {turn.time !== null && <p className="when">{turn.time}</p>}
+      <SentAttachments attachments={turn.attachments} />
       {request !== null && (
         <p className="request" data-find={fieldId(turn.key, 'request')}>
           {request}
@@ -372,6 +374,7 @@ export function Thread({ view, relays, onAnswer, onLoadEarlier, onFindClosed, on
         {atEnd.length > 0 && <p className="versions-end">{atEnd.map(group => <VersionSwitch key={group.versions[0]?.sessionId} versions={group} onVersion={onVersion} />)}</p>}
         {view.pending.map(message => (
           <article key={message.key} className="turn pending">
+            <SentAttachments attachments={message.attachments} />
             <p className="request" data-find={fieldId(message.key, 'text')}>{message.text}</p>
             {message.status === 'failed'
               ? <p className="err" data-find={fieldId(message.key, 'detail')}>{message.detail}</p>

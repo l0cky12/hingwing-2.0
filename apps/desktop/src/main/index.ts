@@ -1,9 +1,10 @@
 import { checkTarget, liveDialer, openHermes, remoteRoute, type Dialer, type Route } from '@highwing/hermes'
 import type { BotId, Target } from '@highwing/hermes/domain'
 import { loadFixture, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
-import { app, BrowserWindow, dialog, ipcMain, net, shell, type OpenDialogOptions } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, net, shell, type OpenDialogOptions } from 'electron'
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { attachmentStore, ATTACHMENTS_DIR, desktopSources, HERMES_LIMITS } from './attachments'
 import { ownConnection, pinnedConnection } from './connection'
 import { desktopOpener, recordingOpener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
@@ -15,7 +16,7 @@ import { reachOf } from './preview-page'
 import { loadSettings, saveSettings } from './settings'
 import { isAppUrl, openWindow } from './windows'
 
-const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_RECORD, HIGHWING_OPEN_LOG, HIGHWING_PICK_FILE } = process.env
+const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_RECORD, HIGHWING_OPEN_LOG, HIGHWING_PICK_FILE, HIGHWING_PICK_FILES } = process.env
 const fixture = HIGHWING_FIXTURE ? loadFixture(HIGHWING_FIXTURE) : null
 
 const PICTURE_DIALOG: OpenDialogOptions = {
@@ -45,19 +46,24 @@ registerPageScheme()
 app.whenReady().then(async () => {
   const opener = HIGHWING_OPEN_LOG ? recordingOpener(HIGHWING_OPEN_LOG) : desktopOpener(shell)
   const pane = previewPane({ opener, isAppUrl, reach: session => reachOf(owner.setup.get(), session) })
-  const open = (dial: Dialer) => openHermes({ dial, client: { name: 'highwing', version: app.getVersion() }, onPane: pane.ask })
   const settingsDir = app.getPath('userData')
+  const attachments = attachmentStore(join(settingsDir, ATTACHMENTS_DIR), { ...HERMES_LIMITS, ...fixture?.header.attachLimits })
+  const drafts = draftStore(join(settingsDir, DRAFTS_DIR))
+  // A sent attachment is kept only for the run that sent it: Hermes's history holds no record of it to draw.
+  await attachments.sweep(new Set((await drafts.load()).flatMap(draft => draft.attachments.map(held => held.id))))
+  const open = (dial: Dialer) => openHermes({ dial, client: { name: 'highwing', version: app.getVersion() }, onPane: pane.ask, uploads: attachments })
   const owner = fixture
     ? pinnedConnection(open(scriptedDialer(fixture, {
       timing: 'recorded',
       ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(frame)}\n`) } : {})
     })))
     : ownConnection({ loaded: await loadSettings(settingsDir), save: target => saveSettings(settingsDir, target), check: checkTarget, routeFor, open })
-  const drafts = draftStore(join(settingsDir, DRAFTS_DIR))
   pane.follow(owner.setup)
   const pictures = { choose: choosePicture, read: readHead, set: (bot: BotId, data: string) => owner.run({ do: 'setBotPicture', bot, data }) }
+  const sources = desktopSources({ dialog, clipboard, focused: () => BrowserWindow.getFocusedWindow() }, HIGHWING_PICK_FILES)
+  const images = imageLoader(fixture ? fixtureImageDeps(fixture.header.media) : desktopImageDeps(net))
   const served = serveWindows(
-    owner, ipcMain, isAppUrl, opener, imageLoader(fixture ? fixtureImageDeps(fixture.header.media) : desktopImageDeps(net)), drafts, pane, bot => pickPicture(pictures, bot)
+    owner, ipcMain, isAppUrl, opener, images, drafts, pane, bot => pickPicture(pictures, bot), { store: attachments, sources }
   )
   openWindow(opener, pane)
   let closed: Promise<void> | null = null

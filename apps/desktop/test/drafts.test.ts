@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Draft } from '../src/ipc-contract'
 import { draftStore, readDraft } from '../src/main/drafts'
 
-const draftOf = (key: string, bot: string, text: string) => ({ key, bot, text }) as unknown as Draft
+const draftOf = (key: string, bot: string, text: string) => ({ key, bot, text, attachments: [] }) as unknown as Draft
+const SHOT = { id: 'a-1', name: 'error.png', kind: 'image', size: 2048 } as const
 const CHAT = draftOf('chat:local-0102', 'research', 'half a thought')
 const UNSTARTED = draftOf('bot:research', 'research', 'Rename every photo')
 const text = (value: unknown) => JSON.stringify(value)
@@ -13,9 +14,10 @@ const emptyDir = () => join(mkdtempSync(join(tmpdir(), 'highwing-drafts-')), 'dr
 const filesIn = (dir: string) => readdirSync(dir).sort()
 
 describe('readDraft', () => {
-  it('reads a draft this build wrote', () => {
+  it('reads a draft this build wrote, and one an earlier build wrote with no attachments', () => {
     expect(readDraft(text({ version: 1, ...CHAT }))).toEqual(CHAT)
-    expect(readDraft(text({ version: 1, key: 'new', bot: null, text: 'x' }))).toEqual({ key: 'new', bot: null, text: 'x' })
+    expect(readDraft(text({ version: 1, key: 'new', bot: null, text: 'x' }))).toEqual({ key: 'new', bot: null, text: 'x', attachments: [] })
+    expect(readDraft(text({ version: 1, ...CHAT, text: '', attachments: [SHOT] }))).toEqual({ ...CHAT, text: '', attachments: [SHOT] })
   })
 
   it.each([
@@ -30,7 +32,8 @@ describe('readDraft', () => {
     ['a chat key with no session', text({ version: 1, ...CHAT, key: 'chat:' })],
     ['text that is not a string', text({ version: 1, ...CHAT, text: ['half'] })],
     ['a bot that is not a name', text({ version: 1, ...CHAT, bot: 7 })],
-    ['empty text', text({ version: 1, ...CHAT, text: '' })]
+    ['empty text and no attachments', text({ version: 1, ...CHAT, text: '' })],
+    ['an attachment it cannot read', text({ version: 1, ...CHAT, attachments: [{ ...SHOT, kind: 'pdf' }] })]
   ])('reads %s as no draft, without throwing', (_what, content) => {
     expect(readDraft(content)).toBeNull()
   })
@@ -62,6 +65,18 @@ describe('draftStore', () => {
     store.keep({ ...UNSTARTED, text: '' })
     await store.settled()
     await expect(store.load()).resolves.toEqual([])
+    expect(filesIn(dir)).toEqual([])
+  })
+
+  it('keeps a draft that holds only attachments, and deletes it once they are gone too', async () => {
+    const dir = emptyDir()
+    const store = draftStore(dir)
+    const attached = { ...CHAT, text: '', attachments: [SHOT] } as unknown as Draft
+    store.keep(attached)
+    await store.settled()
+    await expect(draftStore(dir).load()).resolves.toEqual([attached])
+    store.keep({ ...attached, attachments: [] })
+    await store.settled()
     expect(filesIn(dir)).toEqual([])
   })
 

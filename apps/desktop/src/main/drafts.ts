@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto'
 import { mkdir, open, readdir, readFile, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import { parseDraft, type Draft, type DraftKey } from '../ipc-contract'
+import { isEmptyDraft, parseDraft, type Draft, type DraftKey } from '../ipc-contract'
 
 export const DRAFTS_DIR = 'drafts'
 const VERSION = 1
 
 export interface DraftStore {
-  /** Writes the draft, or deletes it when its text is empty. Applied in call order. */
+  /** Writes the draft, or deletes it when it has no text and no attachments. Applied in call order. */
   keep(draft: Draft): void
   load(): Promise<readonly Draft[]>
   /** Resolves once every `keep` so far has reached the disk or failed. */
@@ -23,14 +23,15 @@ export function readDraft(text: string): Draft | null {
   }
   if (raw === null || typeof raw !== 'object' || (raw as { readonly version?: unknown }).version !== VERSION) return null
   const draft = parseDraft(raw)
-  return draft === null || draft.text === '' ? null : draft
+  return draft === null || isEmptyDraft(draft) ? null : draft
 }
 
 const fileOf = (dir: string, key: DraftKey) => join(dir, `${createHash('sha256').update(key).digest('hex').slice(0, 32)}.json`)
 
-async function write(dir: string, { key, bot, text }: Draft): Promise<void> {
+async function write(dir: string, draft: Draft): Promise<void> {
+  const { key, bot, text, attachments } = draft
   const file = fileOf(dir, key)
-  if (text === '') {
+  if (isEmptyDraft(draft)) {
     await unlink(file).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== 'ENOENT') throw error
     })
@@ -39,7 +40,7 @@ async function write(dir: string, { key, bot, text }: Draft): Promise<void> {
   await mkdir(dir, { recursive: true, mode: 0o700 })
   const temp = await open(`${file}.tmp`, 'w', 0o600)
   try {
-    await temp.writeFile(`${JSON.stringify({ version: VERSION, key, bot, text })}\n`)
+    await temp.writeFile(`${JSON.stringify({ version: VERSION, key, bot, text, attachments })}\n`)
     await temp.sync()
   } finally {
     await temp.close()
