@@ -339,7 +339,16 @@ Hermes keeps one queue of messages per chat, for every client. Each
   goes. A message is submitted, and so queues, when no turn runs, when the mode
   is `queue` or unknown, when the turn waits on an approval, a question or a
   request, and when it is stopping. A line that runs a slash command is never
-  steered.
+  steered. A message with attachments always queues whole: a steer or a
+  redirect carries words only, so Hermes Desktop queues the whole payload
+  (`apps/desktop/src/app/chat/composer/use-composer-submit.ts`) and the TUI
+  queues any turn with an image.
+- A queued row of this client keeps the attachments it was sent with, and its
+  request takes them when its turn starts. Hermes's pending list names no
+  attachments, so another client's row shows none. Hermes lists `steer` and
+  `replace` only for a row whose payload is text alone
+  (`gateway/session_queued_controls.py:51-60`), so a row with attachments
+  offers only cancel.
 - Hermes answers a steer or a redirect with a verdict
   (`tui_gateway/contracts/canonical_sessions.py:306-321`). `queued` and
   `redirected` mean the turn has the words, and Highwing files them in the
