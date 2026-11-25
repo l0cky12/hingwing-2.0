@@ -393,7 +393,7 @@ export function parseDraft(raw: unknown): Draft | null {
 export const isEmptyDraft = (draft: Pick<Draft, 'text' | 'attachments'>) => draft.text === '' && draft.attachments.length === 0
 
 export function parseDropped(raw: unknown): readonly DroppedFile[] | null {
-  if (!Array.isArray(raw) || raw.length > MAX_ATTACHMENTS) return null
+  if (!Array.isArray(raw)) return null
   const files = raw.map(file => (isObject(file) && filled(file.name) && (file.path === null || (text(file.path) && ABSOLUTE.test(file.path)))
     ? { name: file.name, path: file.path as string | null }
     : null))

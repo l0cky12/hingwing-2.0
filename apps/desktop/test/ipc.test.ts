@@ -2,7 +2,7 @@ import type { Hermes } from '@highwing/hermes'
 import type { AttachmentId, Bots, Link, OpenChat, RelayDesk, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyPush, CHANNEL, isWebLink, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Preview, type PreviewCommand, type Push, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Preview, type PreviewCommand, type Push, type Topic } from '../src/ipc-contract'
 import { pinnedConnection } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
@@ -607,6 +607,17 @@ describe('the attach calls', () => {
       { ok: true, attachment: { id: 'id-2', name: 'shot.png', kind: 'image', size: 3 } },
       { ok: false, name: 'web.png', reason: "web.png isn't a file on this computer, so Highwing can't attach it." }
     ])
+  })
+
+  it('hold no more of a large drop than one message carries, copy none of the rest, and name each one left out', async () => {
+    const rig = harness()
+    const dropped = Array.from({ length: MAX_ATTACHMENTS + 2 }, (_, index) => ({ name: `f${index}.png`, path: `/tmp/f${index}.png` }))
+    const results = await rig.handlers.get(CHANNEL.attachDrop)!(rig.event(), dropped) as readonly { readonly ok: boolean }[]
+    expect(results.filter(result => result.ok)).toHaveLength(MAX_ATTACHMENTS)
+    expect(results.slice(MAX_ATTACHMENTS)).toEqual([MAX_ATTACHMENTS, MAX_ATTACHMENTS + 1].map(index => (
+      { ok: false, name: `f${index}.png`, reason: `A message holds up to ${MAX_ATTACHMENTS} attachments, so f${index}.png wasn't attached.` }
+    )))
+    expect(rig.staged).toHaveLength(MAX_ATTACHMENTS)
   })
 
   it('hold nothing for a foreign frame or a drop that names a relative path', async () => {

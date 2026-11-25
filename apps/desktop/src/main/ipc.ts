@@ -1,10 +1,11 @@
 import type { Hermes } from '@highwing/hermes'
 import type { BotId, CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
 import {
-  CHANNEL, isAppTopic, isPreviewCommand, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
+  CHANNEL, isAppTopic, isPreviewCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
   type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type PictureChoice, type Push, type SessionPatch, type Setup, type StageResult,
   type Tail, type Topic
 } from '../ipc-contract'
+import { basename } from 'node:path'
 import type { AttachmentStore, AttachSources, StageSource } from './attachments'
 import type { ConnectionOwner } from './connection'
 import type { DraftStore } from './drafts'
@@ -210,9 +211,14 @@ export function serveWindows(
 
   const { store, sources } = attaching
   const notHere = (name: string): StageResult => ({ ok: false, name, reason: `${name} isn't a file on this computer, so Highwing can't attach it.` })
+  const nameOf = (file: StageSource | StageResult) => (typeof file === 'string' ? basename(file) : 'ok' in file ? (file.ok ? file.attachment.name : file.name) : file.name)
+  const overCap = (name: string): StageResult => ({ ok: false, name, reason: `A message holds up to ${MAX_ATTACHMENTS} attachments, so ${name} wasn't attached.` })
   const stageOneByOne = async (files: readonly (StageSource | StageResult)[]): Promise<readonly StageResult[]> => {
     const results: StageResult[] = []
-    for (const file of files) results.push(typeof file === 'object' && 'ok' in file ? file : await store.stage(file))
+    for (const [index, file] of files.entries()) {
+      if (index >= MAX_ATTACHMENTS) results.push(overCap(nameOf(file)))
+      else results.push(typeof file === 'object' && 'ok' in file ? file : await store.stage(file))
+    }
     return results
   }
   ipc.handle(CHANNEL.attachPick, async event => (trusted(event) ? stageOneByOne(await sources.pick()) : []))

@@ -121,6 +121,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   const attachments = useAttachments(slot)
   const [attachRefusals, setAttachRefusals] = useState<readonly string[]>([])
   const [dragging, setDragging] = useState(false)
+  const [staging, setStaging] = useState(0)
   const [active, setActive] = useState(0)
   const [dismissed, setDismissed] = useState<string | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -182,7 +183,8 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   const latestAttachments = useRef(attachments)
   latestAttachments.current = attachments
   const take = async (staging: Promise<readonly StageResult[]>) => {
-    const results = await staging
+    setStaging(count => count + 1)
+    const results = await staging.finally(() => setStaging(count => count - 1))
     if (results.length === 0) return
     const { added, refused } = admitted(results, latestAttachments.current)
     attachTo(slot, added)
@@ -251,7 +253,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault()
-    if (!canSend || sending.current || draft.trim() === '') return
+    if (!canSend || sending.current || staging > 0 || draft.trim() === '') return
     if (editing !== null && editing.later > 0) setConfirming(true)
     else void deliver()
   }
@@ -266,7 +268,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   const deliver = async () => {
     setConfirming(false)
     const text = draft.trim()
-    if (!canSend || sending.current || text === '') return
+    if (!canSend || sending.current || staging > 0 || text === '') return
     sending.current = true
     setPending(true)
     setOutput(null)
@@ -354,7 +356,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
           onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         />
         {showStop && <button type="button" className="stop" disabled={!canSend} onClick={onStop}>Stop</button>}
-        <button type="submit" disabled={!canSend || pending}>Send</button>
+        <button type="submit" disabled={!canSend || pending || staging > 0}>Send</button>
       </form>
       {children}
       {refusal !== null && <p className="err refusal">{refusal}</p>}
