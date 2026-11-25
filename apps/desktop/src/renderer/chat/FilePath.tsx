@@ -14,7 +14,7 @@ export const fileCallFor = (sessionId: SessionId): FileCall => (action, path) =>
 
 export const baseName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
 
-const PAGE = /\.html?$/i
+const PREVIEWS = /\.(html?|pdf|csv|tsv)$/i
 
 const WORDS = {
   missing: "This file isn't there any more.",
@@ -48,13 +48,13 @@ export function FilePath({ path, findId }: { readonly path: string; readonly fin
     <div className="file" ref={row} onKeyDown={onKeyDown}>
       <div className="file-row">
         <button className="file-open" aria-label={`Open ${name}`} title={path} data-find={findId} onClick={() => void act('open')}>{path}</button>
+        {PREVIEWS.test(path) && <button className="file-preview" aria-label={`Preview ${name}`} onClick={() => void act('preview')}>Preview</button>}
         <span className="file-side">
           <button className="file-more" ref={toggle} aria-label={`More for ${name}`} aria-expanded={menu} onClick={() => setMenu(open => !open)}>
             <span aria-hidden="true">⋯</span>
           </button>
           {menu && (
             <div className="file-menu">
-              {PAGE.test(path) && <button onClick={() => void act('preview')}>Preview</button>}
               <button onClick={() => void act('show')}>Show in folder</button>
               <button onClick={() => void copy()}>Copy path</button>
             </div>
