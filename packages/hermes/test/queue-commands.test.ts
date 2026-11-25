@@ -5,7 +5,7 @@ import type { SessionEvent } from '../src/domain/reduce'
 import type { AdmissionId, BusyMode, Generation, InputId, Link, PromptId, QueuedAction, Session, SessionId } from '../src/domain/session'
 import { runSessionCommand, type Hub, type SessionCommand } from '../src/session-commands'
 import { manualClock, settle } from '../src/testing/clock'
-import { RpcRefusal, type Calls } from '../src/wire/link'
+import { Offline, RpcRefusal, type Calls } from '../src/wire/link'
 
 const ID = 's1' as SessionId
 const EPOCH = 'e1'
@@ -18,14 +18,19 @@ const row = (state: Admission['state'], admissionId = ADMISSION): Admission => (
 const started: SessionEvent = { type: 'turn.started', turnId: null, admissionId: null, requestText: null }
 const asked: SessionEvent = { type: 'prompt.opened', id: 'p1' as PromptId, generation: 1 as Generation, ask: { kind: 'approval', command: 'rm -rf x', reason: null, choices: ['once', 'deny'] }, timeoutS: null }
 const ack = (status: string, more: Record<string, unknown> = {}) => ({ status, text: 'x', execution_generation: 1, authority_epoch: 1, ...more })
+const SNAPSHOT = {
+  session_id: ID, stored_session_id: ID, messages: [], display_messages: [], message_count: 0, running: false, authority_epoch: 1, replay_epoch: EPOCH,
+  last_sequence: 0, subscription_id: 'sub-1', revision: 3, execution_generation: 0, pending: [], prompts: [], info: {}, open_requests: []
+}
 
 async function stage({ watched = false }: { readonly watched?: boolean } = {}) {
   const calls: Call[] = []
-  const link: Link = { state: 'online' }
+  const state: { link: Link } = { link: { state: 'online' } }
   let ids = 0
   let seq = 0
   const conn: Calls = {
-    link, clarifyBatch: false,
+    get link() { return state.link },
+    clarifyBatch: false,
     call: (method: string, params: unknown) => new Promise<never>((resolve, reject) => {
       calls.push({ method, params: params as Record<string, unknown>, resolve: resolve as (result: unknown) => void, reject })
     }),
@@ -49,12 +54,19 @@ async function stage({ watched = false }: { readonly watched?: boolean } = {}) {
   const event = (sessionEvent: SessionEvent, generation: number | null = 1) =>
     actor.feed({ in: 'event', frame: { stamp: { epoch: EPOCH, seq: ++seq, generation: generation as Generation | null }, event: sessionEvent, seenAt: null } })
   actor.attach()
-  await answer('session.resume', {
-    session_id: ID, stored_session_id: ID, messages: [], display_messages: [], message_count: 0, running: false, authority_epoch: 1, replay_epoch: EPOCH,
-    last_sequence: 0, subscription_id: 'sub-1', revision: 3, execution_generation: 0, pending: [], prompts: [], info: {}, open_requests: []
-  })
+  await answer('session.resume', SNAPSHOT)
   return {
     actor, calls, answer, event,
+    /** The socket drops with every call unanswered. Hermes then answers the attach on the next socket with `held`. */
+    redial: async (held: Record<string, unknown> = {}) => {
+      state.link = { state: 'waiting', attempt: 1, retryAt: 1_000, why: 'dropped', message: 'Reconnecting to Hermes.' }
+      actor.linkChanged()
+      for (const call of calls.splice(0)) call.reject(new Offline('socket closed'))
+      state.link = { state: 'online' }
+      actor.linkChanged()
+      await answer('session.events.since', { events: [], latest_seq: seq, last_sequence: seq, epoch: EPOCH, replay_epoch: EPOCH, truncated: false, snapshot_required: false, count: 0 })
+      await answer('session.resume', { ...SNAPSHOT, display_messages: undefined, messages_omitted: true, subscription_id: 'sub-2', last_sequence: seq, ...held })
+    },
     command: (command: SessionCommand) => runSessionCommand(actor.port, command, hub),
     list: (...queue: Admission[]) => event({ type: 'meta', queue }, null),
     tune: (busy: BusyMode) => actor.port.act({ did: 'tuned', tuning: { busy } }),
@@ -88,7 +100,7 @@ describe('queued', () => {
     list(QUEUED)
     const done = command(edit)
     expect(sent()).toEqual([['prompt.replace_queued', { session_id: ID, admission_id: ADMISSION, submission_id: 'id-1', text: 'tidy the notes and the todo list' }]])
-    expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'tidy the notes and the todo list', attachments: [], state: { s: 'sending' } }])
+    expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'tidy the notes and the todo list', attachments: [], replaces: ADMISSION, state: { s: 'sending' } }])
     await answer('prompt.replace_queued', { admission_id: 'a2', status: 'queued' })
     expect(await done).toEqual({ ok: true, value: undefined })
     list({ admissionId: 'a2' as AdmissionId, inputId: 'id-1' as InputId, text: 'tidy the notes and the todo list', state: QUEUED.state })
@@ -104,6 +116,38 @@ describe('queued', () => {
     expect(await done).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
     expect(actor.session.outbox).toEqual([])
     expect(actor.session.queue).toHaveLength(1)
+  })
+
+  describe('edit whose reply the socket lost', () => {
+    const REPLACE = ['prompt.replace_queued', { session_id: ID, admission_id: ADMISSION, submission_id: 'id-1', text: 'tidy the notes and the todo list' }] as const
+    const STILL_QUEUED = { pending: [{ admission_id: ADMISSION, input_id: `in-${ADMISSION}`, text: 'tidy the notes', status: 'queued', controls: ['steer', 'replace'] }] }
+    const interrupted = async () => {
+      const held = await stage()
+      held.list(QUEUED)
+      const done = held.command(edit)
+      await held.redial(STILL_QUEUED)
+      expect(await done).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+      return held
+    }
+
+    it('is sent again as the same replacement of the same row, never as a new message', async () => {
+      const { actor, list, sent, answer } = await interrupted()
+      expect(sent(), 'a submit here would queue the edit beside the message it replaces').toEqual([REPLACE])
+      await answer('prompt.replace_queued', { admission_id: 'a2', status: 'queued' })
+      list({ admissionId: 'a2' as AdmissionId, inputId: 'id-1' as InputId, text: 'tidy the notes and the todo list', state: QUEUED.state })
+      expect(actor.session.outbox).toEqual([])
+      expect(actor.session.queue).toMatchObject([{ admissionId: 'a2', from: 'here', text: 'tidy the notes and the todo list' }])
+    })
+
+    it.each([
+      ['the edit already ran, which no list will name', { admission_id: 'a2', status: 'terminal' }],
+      ['the row started before the edit reached Hermes', refusal('admission_started')]
+    ])('leaves the outbox when Hermes answers that %s', async (_, reply) => {
+      const { actor, sent, answer } = await interrupted()
+      await answer('prompt.replace_queued', reply)
+      expect(actor.session.outbox).toEqual([])
+      expect(sent()).toEqual([])
+    })
   })
 
   it('release answers for a lost row with the generation that row ran as', async () => {

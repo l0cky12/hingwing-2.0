@@ -549,6 +549,8 @@ export interface OutboxEntry {
   /** What the model reads when it differs from the `text` the thread and the stored history show. */
   readonly apiText?: string
   readonly attachments: readonly Attachment[]
+  /** An edit: the queued row this message takes the place of. Every try sends it as that replacement, because sent as a message it would queue beside the row. */
+  readonly replaces?: AdmissionId
   readonly state: { readonly s: 'sending' } | { readonly s: 'failed'; readonly message: string }
 }
 

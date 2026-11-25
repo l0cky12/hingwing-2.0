@@ -7,10 +7,10 @@
 import { queueOf, type Admission } from './queue'
 import { accepted, answering, closed, failed, opened, reconciled, type Change, type CloseWhy, type Held } from './requests'
 import type {
-  Ask, Attachment, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, MoaItem, ModelRef, OpenTurn, OutboxEntry,
-  Outcome, PlanEntry, PromptId, PromptItem, PromptReply, QueuedMessage, ReasoningItem, RecordedReply, Request, RequestAsk, RequestId, Run, Session,
-  SessionContent, SessionId, SessionModel, SessionUsage, SettledTurn, StatusAbout, StatusItem, Sync, TextItem, Tokens, ToolId, ToolItem, ToolResult, Tuning,
-  TurnId
+  AdmissionId, Ask, Attachment, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, MoaItem, ModelRef, OpenTurn,
+  OutboxEntry, Outcome, PlanEntry, PromptId, PromptItem, PromptReply, QueuedMessage, ReasoningItem, RecordedReply, Request, RequestAsk, RequestId, Run,
+  Session, SessionContent, SessionId, SessionModel, SessionUsage, SettledTurn, StatusAbout, StatusItem, Sync, TextItem, Tokens, ToolId, ToolItem, ToolResult,
+  Tuning, TurnId
 } from './session'
 
 /** A gateway event in domain terms. `wire/parse.ts` builds these. Field names are ours, not the wire's. */
@@ -219,7 +219,10 @@ export type SessionInput =
 
 /** What this client did. Folded through the same reducer so a second window sees it too. */
 export type LocalAction =
-  | { readonly did: 'send'; readonly inputId: InputId; readonly text: string; readonly apiText?: string; readonly attachments: readonly Attachment[] }
+  | {
+    readonly did: 'send'; readonly inputId: InputId; readonly text: string; readonly apiText?: string; readonly attachments: readonly Attachment[]
+    readonly replaces?: AdmissionId
+  }
   | { readonly did: 'send.admitted'; readonly inputId: InputId; readonly admissionId: string }
   | { readonly did: 'send.failed'; readonly inputId: InputId; readonly message: string }
   | { readonly did: 'send.discarded'; readonly inputId: InputId }
@@ -590,7 +593,7 @@ function act(state: Tracked, action: LocalAction): Tracked {
       const entry = content.outbox.find(held => held.inputId === action.inputId)
       const sending: OutboxEntry = {
         inputId: action.inputId, text: action.text, ...(action.apiText === undefined ? {} : { apiText: action.apiText }), attachments: action.attachments,
-        state: { s: 'sending' }
+        ...(action.replaces === undefined ? {} : { replaces: action.replaces }), state: { s: 'sending' }
       }
       if (entry === undefined) return { ...state, content: { ...content, outbox: [...content.outbox, sending] } }
       return entry.state.s === 'failed' ? setEntry(state, sending) : state

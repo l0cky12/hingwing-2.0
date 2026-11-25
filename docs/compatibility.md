@@ -353,6 +353,12 @@ Hermes keeps one queue of messages per chat, for every client. Each
 - A queued message that Hermes hands to the turn leaves the list when the turn
   settles. It comes back as a queued row when the turn never read it
   (`gateway/session_queued_controls.py:104-116,184-200`).
+- An edit whose reply the socket lost is sent again on the next socket as the
+  same `prompt.replace_queued`, with the row and the `submission_id` of the
+  first try. Hermes answers that repeat with the admission the first one made
+  (`gateway/session_queued_controls.py:212-233`). A `prompt.submit` of the
+  edit would queue it beside the row it replaces whenever Hermes had not taken
+  the first try.
 - A lost row pauses the queue behind it. Hermes releases it itself when the
   last viewer of the chat closes (`gateway/session_authority.py:916-919`), so
   Highwing does not stay attached to a chat only because its queue holds rows.

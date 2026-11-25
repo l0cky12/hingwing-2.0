@@ -3,8 +3,8 @@ import type { Bot } from './domain/bots'
 import type { Command, ModelConfirm, Outcome, Refusal, ResultOf } from './domain/command'
 import { offeredBy, sendPlan } from './domain/queue'
 import type {
-  AttachmentId, BranchId, Generation, HermesRequest, InputId, PromptId, PromptReply, QueuedMessage, RecordedReply, RequestId, RequestReply, SessionContent,
-  SessionId, Told, TurnId
+  AttachmentId, BranchId, Generation, HermesRequest, PromptId, PromptReply, QueuedMessage, RecordedReply, RequestId, RequestReply, SessionContent, SessionId,
+  Told, TurnId
 } from './domain/session'
 import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import type { Served } from './wire/link'
@@ -259,13 +259,7 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
 const QUEUED: { readonly [A in Extract<SessionCommand, { do: 'queued' }>['action']]: (port: SessionPort, row: QueuedMessage, text: string) => Promise<Outcome<unknown>> } = {
   cancel: (port, row) => port.call('prompt.cancel', { session_id: port.id, admission_id: row.admissionId }),
   sendNow: (port, row) => port.call('prompt.steer_queued', { session_id: port.id, admission_id: row.admissionId }),
-  edit: async (port, row, text) => {
-    const inputId = port.mint() as InputId
-    port.act({ did: 'send', inputId, text, attachments: [] })
-    const replaced = await port.call('prompt.replace_queued', { session_id: port.id, admission_id: row.admissionId, submission_id: inputId, text })
-    if (!replaced.ok && replaced.refusal.kind !== 'offline') port.act({ did: 'send.discarded', inputId })
-    return replaced
-  },
+  edit: (port, row, text) => port.replace(row.admissionId, text),
   release: (port, row) => (row.state.s === 'lost'
     ? port.call('prompt.resolve_unknown', { session_id: port.id, admission_id: row.admissionId, execution_generation: row.state.generation })
     : Promise.resolve(NOT_OFFERED))
