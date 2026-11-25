@@ -1,9 +1,11 @@
 import { refusalOf } from './actor'
-import { PICTURE_RULE, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotId } from './domain/bots'
+import { GENERATED_MAX_BYTES, PICTURE_RULE, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotId, type PetChoice } from './domain/bots'
 import type { ModelMenu, Outcome, Refusal } from './domain/command'
 import { NOT_CONNECTED } from './open'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
-import { parseBotRecord, parseConfigured, parseCreated, parseDetails, parseModelMenu, parsePicture, type Configured } from './wire/parse'
+import {
+  parseBotRecord, parseConfigured, parseCreated, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets, parsePicture, type Configured
+} from './wire/parse'
 
 type Wire = Pick<Connection, 'call' | 'as'>
 type Reasons = { readonly [code: number]: (message: string) => Refusal }
@@ -21,6 +23,15 @@ const EDIT_REASONS: Reasons = {
 const PICTURE_REASONS: Reasons = {
   ...EDIT_REASONS,
   ...Object.fromEntries([4067, 4068, 4069, 4070].map(code => [code, () => ({ kind: 'rejected', message: PICTURE_RULE })]))
+}
+
+const DRAW_REASONS: Reasons = {
+  [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't draw pictures." }),
+  4071: () => ({ kind: 'rejected', message: 'Describe the picture first.' }),
+  5071: message => ({ kind: 'rejected', message: `Hermes couldn't draw that picture: ${message}` })
+}
+const PET_REASONS: Reasons = {
+  [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't list pets." })
 }
 
 const GONE: Outcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Hermes no longer has this bot.' } }
@@ -45,9 +56,16 @@ function createParams({ name, description, model, persona }: BotDraft) {
   }
 }
 
-/** Hermes copies the launch profile's credentials into the new bot unless told not to, so a new bot has a provider. */
-export const createBot = (conn: Wire, draft: BotDraft): Promise<Outcome<BotCreated>> =>
-  guarded(CREATE_REASONS, async () => ({ ok: true, value: parseCreated(await conn.call('profiles.create', createParams(draft))) }))
+/**
+ * Hermes copies the launch profile's credentials into the new bot unless told not to, so a new bot has a provider. The bot
+ * exists once Hermes made it, so a picture it then refuses is one more warning rather than a refusal of the create.
+ */
+export async function createBot(conn: Wire, draft: BotDraft, picture: string | null): Promise<Outcome<BotCreated>> {
+  const made = await guarded(CREATE_REASONS, async () => ({ ok: true, value: parseCreated(await conn.call('profiles.create', createParams(draft))) }))
+  if (!made.ok || picture === null) return made
+  const set = await setBotPicture(conn, made.value.bot, picture)
+  return set.ok ? made : { ok: true, value: { ...made.value, warnings: [...made.value.warnings, `its picture wasn't saved. ${set.refusal.message}`] } }
+}
 
 /** With no session Hermes reads the profile's own config (tui_gateway/methods_complete.py:297-299, :320-334), so a bot with no chat has a list. */
 export const botModels = (conn: Wire, bot: BotId | null): Promise<Outcome<ModelMenu>> =>
@@ -106,3 +124,24 @@ export const setBotPicture = (conn: Wire, bot: BotId, data: string | null): Prom
 
 export const botPicture = (conn: Wire, bot: BotId): Promise<Outcome<string | null>> =>
   guarded(EDIT_REASONS, async () => ({ ok: true, value: parsePicture(await conn.call('profiles.get_asset', { name: bot, asset: 'avatar' })) }))
+
+export const canGeneratePicture = (conn: Wire): Promise<Outcome<boolean>> =>
+  guarded({}, async () => {
+    try {
+      return { ok: true, value: parseImageProbe(await conn.call('image.generate', { probe: true })) }
+    } catch (error) {
+      // A Hermes without the call has no image model to offer, which is no refusal.
+      if (error instanceof RpcRefusal && error.code === METHOD_NOT_FOUND) return { ok: true, value: false }
+      throw error
+    }
+  })
+
+export const generatePicture = (conn: Wire, prompt: string): Promise<Outcome<string>> =>
+  guarded(DRAW_REASONS, async () => parseGenerated(await conn.call('image.generate', { prompt, aspect_ratio: 'square', max_bytes: GENERATED_MAX_BYTES })))
+
+export const listPets = (conn: Wire): Promise<Outcome<readonly PetChoice[]>> =>
+  guarded(PET_REASONS, async () => ({ ok: true, value: parsePets(await conn.call('pet.gallery', {})) }))
+
+/** Hermes fetches a sheet only from petdex (agent/pet/store.py:240), so a `url` the window names reaches no other host. */
+export const petPicture = (conn: Wire, slug: string, url: string | null): Promise<Outcome<string | null>> =>
+  guarded(PET_REASONS, async () => ({ ok: true, value: parsePetPicture(await conn.call('pet.thumb', url === null ? { slug } : { slug, url })) }))

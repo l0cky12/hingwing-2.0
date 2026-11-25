@@ -15,7 +15,7 @@ export function BotsSidebar({ head }: { readonly head: ReactNode }) {
     <BotsPanel
       head={head} bots={useTopic('bots')} open={useTopic('open')} link={useTopic('link')}
       onOpen={bot => run({ do: 'open', ref: { kind: 'bot', bot } })}
-      onCreate={draft => run({ do: 'createBot', draft })}
+      onCreate={draft => run({ do: 'createBot', draft, picture: null })}
       onModels={() => run({ do: 'botModels', bot: null })}
       onDescribe={bot => run({ do: 'describeBot', bot })}
       onEdit={(bot, edit, revision) => run({ do: 'editBot', bot, edit, revision })}

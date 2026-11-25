@@ -13,6 +13,7 @@ import { BOUND, callsIn, ERRAND, WITH_BOTS } from './support/errand'
 const CAREFUL: ModelOption = { id: 'careful-large' as ModelOption['id'], provider: 'acme', providerName: 'Acme' }
 const RAE: BotDraft = { name: 'Rae', description: 'Writes the weekly report', model: CAREFUL, persona: 'You write short, plain reports for the team.' }
 const WITH_MODELS: Fixture = { ...WITH_BOTS, header: { ...WITH_BOTS.header, models: three } }
+const PICTURE = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7, 7, 7, 7]).toString('base64')}`
 
 async function launched(fixture: Fixture) {
   const clock = manualClock()
@@ -24,14 +25,14 @@ async function launched(fixture: Fixture) {
     const bots = hermes.bots.get()
     return bots.state === 'listed' ? [bots.roster.featured, ...bots.roster.sections.flatMap(section => section.bots)].flatMap(bot => bot?.id ?? []) : bots.state
   }
-  return { clock, hermes, calls, names }
+  return { clock, hermes, calls, names, script }
 }
 
 describe('createBot through the hub', () => {
   it('sends the typed name, description, persona and model, then lists the new bot and opens it', async () => {
     const { clock, hermes, calls, names } = await launched(WITH_BOTS)
     const reads = calls('profiles.list').length
-    expect(await hermes.run({ do: 'createBot', draft: RAE })).toEqual({ ok: true, value: { bot: 'rae', warnings: [] } })
+    expect(await hermes.run({ do: 'createBot', draft: RAE, picture: null })).toEqual({ ok: true, value: { bot: 'rae', warnings: [] } })
     expect(calls('profiles.create')).toEqual([{
       method: 'profiles.create',
       params: { name: 'Rae', description: 'Writes the weekly report', soul: 'You write short, plain reports for the team.', model: 'careful-large', provider: 'acme' }
@@ -45,29 +46,61 @@ describe('createBot through the hub', () => {
 
   it('leaves out what was not typed', async () => {
     const { calls, hermes } = await launched(WITH_BOTS)
-    await hermes.run({ do: 'createBot', draft: { name: ' rae ', description: '  ', model: null, persona: ' \n ' } })
+    await hermes.run({ do: 'createBot', draft: { name: ' rae ', description: '  ', model: null, persona: ' \n ' }, picture: null })
     expect(calls('profiles.create')).toEqual([{ method: 'profiles.create', params: { name: 'rae' } }])
   })
 
   it("passes the persona as typed, not trimmed, because it is the bot's SOUL.md", async () => {
     const { calls, hermes } = await launched(WITH_BOTS)
-    await hermes.run({ do: 'createBot', draft: { ...RAE, persona: '  Plain.\n' } })
+    await hermes.run({ do: 'createBot', draft: { ...RAE, persona: '  Plain.\n' }, picture: null })
     expect(calls('profiles.create')[0]?.params?.soul).toBe('  Plain.\n')
   })
 
   it("returns Hermes's warnings, and the bot is listed and open all the same", async () => {
     const warning = 'subscription logins not carried over (acme): the profile uses the default profile\'s.'
     const { clock, hermes, names } = await launched({ ...WITH_BOTS, header: { ...WITH_BOTS.header, createWarnings: [warning] } })
-    expect(await hermes.run({ do: 'createBot', draft: RAE })).toEqual({ ok: true, value: { bot: 'rae', warnings: [warning] } })
+    expect(await hermes.run({ do: 'createBot', draft: RAE, picture: null })).toEqual({ ok: true, value: { bot: 'rae', warnings: [warning] } })
     await clock.advance(0)
     expect(names()).toContain('rae')
     expect(hermes.open.get().shown).toMatchObject({ bot: 'rae' })
   })
 
+  it('stores the picture for the new bot once Hermes made it, and lists the bot with a picture', async () => {
+    const { clock, hermes, calls, script } = await launched(WITH_BOTS)
+    expect(await hermes.run({ do: 'createBot', draft: RAE, picture: PICTURE })).toEqual({ ok: true, value: { bot: 'rae', warnings: [] } })
+    expect(callsIn(script.received).map(call => call.method).filter(method => method.startsWith('profiles.') && method !== 'profiles.list')).toEqual(['profiles.create', 'profiles.set_asset'])
+    expect(calls('profiles.set_asset')).toEqual([{ method: 'profiles.set_asset', params: { name: 'rae', asset: 'avatar', data: PICTURE } }])
+    await clock.advance(0)
+    const bots = hermes.bots.get()
+    expect(bots.state === 'listed' && bots.roster.sections.flatMap(section => section.bots).find(bot => bot.id === 'rae')?.picture).toBe(true)
+  })
+
+  it('makes the bot all the same when Hermes does not keep its picture, and says so in a warning', async () => {
+    const { clock, hermes, names } = await launched({ ...WITH_BOTS, header: { ...WITH_BOTS.header, assetFails: '[Errno 28] No space left on device' } })
+    expect(await hermes.run({ do: 'createBot', draft: RAE, picture: PICTURE }))
+      .toEqual({ ok: true, value: { bot: 'rae', warnings: ["its picture wasn't saved. Hermes refused: [Errno 28] No space left on device"] } })
+    await clock.advance(0)
+    expect(names()).toContain('rae')
+    expect(hermes.open.get().shown).toMatchObject({ bot: 'rae' })
+  })
+
+  it("adds the picture's warning after Hermes's own", async () => {
+    const warning = 'subscription logins not carried over (acme)'
+    const { hermes } = await launched({ ...WITH_BOTS, header: { ...WITH_BOTS.header, createWarnings: [warning], assetFails: 'disk full' } })
+    expect(await hermes.run({ do: 'createBot', draft: RAE, picture: PICTURE }))
+      .toEqual({ ok: true, value: { bot: 'rae', warnings: [warning, "its picture wasn't saved. Hermes refused: disk full"] } })
+  })
+
+  it('sends no picture for a bot Hermes refused to make', async () => {
+    const { hermes, calls } = await launched(WITH_BOTS)
+    expect(await hermes.run({ do: 'createBot', draft: { ...RAE, name: 'Research' }, picture: PICTURE })).toMatchObject({ ok: false })
+    expect(calls('profiles.set_asset')).toEqual([])
+  })
+
   it("refuses with Hermes's reason for the name, and opens nothing", async () => {
     const { clock, hermes, calls, names } = await launched(WITH_BOTS)
     const shown = hermes.open.get()
-    const taken = await hermes.run({ do: 'createBot', draft: { ...RAE, name: 'Research' } })
+    const taken = await hermes.run({ do: 'createBot', draft: { ...RAE, name: 'Research' }, picture: null })
     expect(taken).toEqual({
       ok: false,
       refusal: {
@@ -83,14 +116,14 @@ describe('createBot through the hub', () => {
 
   it('is unsupported on a Hermes with no profiles, and on a socket with no interactive grant', async () => {
     const refusal = { kind: 'unsupported', message: "This Hermes can't create bots from Highwing." }
-    expect(await (await launched(ERRAND)).hermes.run({ do: 'createBot', draft: RAE })).toEqual({ ok: false, refusal })
-    expect(await (await launched(BOUND)).hermes.run({ do: 'createBot', draft: RAE })).toEqual({ ok: false, refusal })
+    expect(await (await launched(ERRAND)).hermes.run({ do: 'createBot', draft: RAE, picture: null })).toEqual({ ok: false, refusal })
+    expect(await (await launched(BOUND)).hermes.run({ do: 'createBot', draft: RAE, picture: null })).toEqual({ ok: false, refusal })
   })
 
   it('is offline, with nothing sent, while the link is down', async () => {
     const clock = manualClock()
     const hermes = openHermes({ dial: () => Promise.reject(new Error('down')), clock, client: { name: 'highwing-test', version: '0.0.0' } })
-    expect(await hermes.run({ do: 'createBot', draft: RAE })).toEqual({ ok: false, refusal: { kind: 'offline', message: "Highwing isn't connected to Hermes right now." } })
+    expect(await hermes.run({ do: 'createBot', draft: RAE, picture: null })).toEqual({ ok: false, refusal: { kind: 'offline', message: "Highwing isn't connected to Hermes right now." } })
   })
 })
 
@@ -123,11 +156,11 @@ describe('createBot refusals', () => {
     [-32601, 'unknown method: profiles.create', { kind: 'unsupported', message: "This Hermes can't create bots from Highwing." }],
     [4001, 'invalid_params', { kind: 'rejected', message: 'Hermes refused: invalid_params' }]
   ])('maps code %i', async (code, message, refusal) => {
-    expect(await createBot(refusing(code, message), RAE)).toEqual({ ok: false, refusal })
+    expect(await createBot(refusing(code, message), RAE, null)).toEqual({ ok: false, refusal })
   })
 
   it('maps a dropped socket to the offline refusal', async () => {
-    expect(await createBot(failing(new Offline('gone')), RAE)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(await createBot(failing(new Offline('gone')), RAE, null)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
     expect(await botModels(failing(new Offline('gone')), null)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
   })
 })

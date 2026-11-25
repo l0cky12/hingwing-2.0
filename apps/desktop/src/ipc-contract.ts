@@ -1,5 +1,5 @@
 import {
-  EFFORTS, EXPORT_FORMATS, PLAIN_CONTROLS, targetOf,
+  EFFORTS, EXPORT_FORMATS, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckFailure, type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type HelperId, type Item, type Link, type ModelOption,
   type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
@@ -69,7 +69,7 @@ export type ModeCommand = { readonly do: 'setMode'; readonly mode: Mode }
 export const isMode = (raw: unknown): raw is Mode => raw === 'bots' || raw === 'chats'
 
 export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand
-/** A new picture's bytes come only from main's file picker. */
+/** A picture for a bot that exists comes only from main's file picker. A new bot's picture is checked as `createBot` crosses. */
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
@@ -405,8 +405,13 @@ export const validators: Validators = {
   },
   createBot: raw => {
     const draft = draftOf(raw.draft)
-    return draft && { do: 'createBot', draft }
+    const picture = raw.picture === null ? null : pictureDataUrlOf(raw.picture, PICTURE_MAX_BYTES)
+    return draft && (raw.picture === null || picture !== null) ? { do: 'createBot', draft, picture } : null
   },
+  canGeneratePicture: () => ({ do: 'canGeneratePicture' }),
+  generatePicture: raw => (filled(raw.prompt) ? { do: 'generatePicture', prompt: raw.prompt } : null),
+  pets: () => ({ do: 'pets' }),
+  petPicture: raw => (filled(raw.slug) && (raw.url === null || webPage(raw.url)) ? { do: 'petPicture', slug: raw.slug, url: raw.url } : null),
   botModels: raw => {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     return raw.bot !== null && bot === null ? null : { do: 'botModels', bot }

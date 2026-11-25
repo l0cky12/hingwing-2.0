@@ -2,8 +2,8 @@
  * The only place gateway shapes become domain shapes. Everything past these functions trusts its types.
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
-import { canonicalBotId, type BotCreated, type BotDetails, type BotFacts, type BotId } from '../domain/bots'
-import type { CheckpointDiff, Checkpoints, ContextBreakdown, ModelConfirm, ModelMenu, Restored } from '../domain/command'
+import { canonicalBotId, GENERATED_MAX_BYTES, PICTURE_MAX_BYTES, pictureDataUrlOf, type BotCreated, type BotDetails, type BotFacts, type BotId, type PetChoice } from '../domain/bots'
+import type { CheckpointDiff, Checkpoints, ContextBreakdown, ModelConfirm, ModelMenu, Outcome as CommandOutcome, Restored } from '../domain/command'
 import type { PaneAsk } from '../domain/pane'
 import type { Admission } from '../domain/queue'
 import type { CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, Said as SaidTuning, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
@@ -22,9 +22,9 @@ import type {
   AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
   CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
   CommandDispatchResult, CommandsCatalogResult, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
-  ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, LoopSnapshot,
+  ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, ImageGenerateResult, LoopSnapshot,
   MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
-  MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn,
+  MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PetGalleryResult, PetThumbResult,
   PreviewClosePayload, PreviewOpenPayload, ProcessEntry, ProcessListResult, ProfilesConfigureResult, ProfilesCreateResult, ProfilesDescribeResult,
   ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, RequestCancelPayload, RollbackCheckpoint,
   RollbackDiffResult, RollbackListResult, RollbackRestoreResult, SecretRequestParams, SessionContextBreakdownResult, SessionControlDispatch,
@@ -1234,6 +1234,42 @@ export function parseCreated(reply: ProfilesCreateResult): BotCreated {
     warnings: Array.isArray(reply.warnings) ? reply.warnings.flatMap(warning => words(warning) ?? []) : []
   }
 }
+
+/** `image.generate` with `probe` answers `available` alone (tui_gateway/methods_images.py:69-70). */
+export const parseImageProbe = (reply: ImageGenerateResult): boolean => isObject(reply) && reply.available === true
+
+const notDrawn = (message: string): CommandOutcome<never> => ({ ok: false, refusal: { kind: 'rejected', message } })
+
+/**
+ * A picture `image.generate` drew (tui_gateway/methods_images.py:71-96). Hermes types it by the download's content type, so the
+ * type is read from its bytes. `image_data` is missing when the download failed or was larger than `max_bytes`.
+ */
+export function parseGenerated(reply: ImageGenerateResult): CommandOutcome<string> {
+  if (!isObject(reply) || reply.success !== true) return notDrawn(words(isObject(reply) ? reply.error : null) ?? "Hermes couldn't draw that picture.")
+  if (!isString(reply.image_data)) return notDrawn("Hermes drew the picture but couldn't send it to Highwing.")
+  const picture = pictureDataUrlOf(reply.image_data, GENERATED_MAX_BYTES)
+  return picture === null ? notDrawn('Hermes drew a picture that is not a PNG, JPEG or WebP.') : { ok: true, value: picture }
+}
+
+/**
+ * `pet.gallery`'s entries, each slug once, with the ones petdex hand-picks first (tui_gateway/methods_session.py:1467-1495).
+ * A pet Hermes holds that petdex no longer lists has an empty `spritesheetUrl`, since Hermes reads its sheet from disk.
+ */
+export function parsePets(reply: PetGalleryResult): readonly PetChoice[] {
+  const rows = isObject(reply) && Array.isArray(reply.pets) ? reply.pets.filter(isObject) : []
+  const seen = new Set<string>()
+  const listed = rows.flatMap(row => {
+    const slug = words(row.slug)
+    if (slug === null || seen.has(slug)) return []
+    seen.add(slug)
+    const url = words(row.spritesheetUrl)
+    return [{ pet: { slug, name: words(row.displayName) ?? slug, url: url !== null && /^https?:\/\//.test(url) ? url : null }, curated: row.curated === true }]
+  })
+  return [...listed.filter(held => held.curated), ...listed.filter(held => !held.curated)].map(held => held.pet)
+}
+
+/** `pet.thumb`'s idle frame, a PNG data URL (tui_gateway/methods_session.py:1557-1563), or null when Hermes has none. */
+export const parsePetPicture = (reply: PetThumbResult): string | null => (isObject(reply) && reply.ok === true ? pictureDataUrlOf(reply.dataUri, PICTURE_MAX_BYTES) : null)
 
 /** A target that is not running answers with one of these, as a refusal or in a failed receipt (tui_gateway/methods_bot_relay.py:122). */
 const NOT_RUNNING: ReadonlySet<string> = new Set(['runtime_unavailable', 'runtime_offline'])

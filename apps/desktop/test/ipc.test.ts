@@ -22,6 +22,8 @@ beforeAll(async () => {
 })
 
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const PICTURE = `data:image/png;base64,${Buffer.from([...PNG, 1, 2, 3, 4]).toString('base64')}`
+const OVERSIZED = `data:image/png;base64,${Buffer.concat([PNG, Buffer.alloc(2_000_001 - PNG.byteLength)]).toString('base64')}`
 const HELD = { id: 'held-1' as AttachmentId, name: 'error.png', kind: 'image' as const, size: PNG.byteLength, mime: 'image/png', bytes: PNG }
 
 const itemsOf = (session: Session) => (session.run.state === 'running' ? session.run.turn.items : [])
@@ -138,10 +140,22 @@ describe('validators', () => {
   it('keep the four fields of a new bot, and the bot whose models are listed or null for the socket\'s own', () => {
     const model = { id: 'careful-large', provider: 'acme', providerName: 'Acme' }
     const draft = { name: 'Rae', description: '', model, persona: 'You write short reports.\n' }
-    expect(parseCommand({ do: 'createBot', draft: { ...draft, extra: 1, model: { ...model, price: 9 } }, extra: 1 })).toEqual({ do: 'createBot', draft })
-    expect(parseCommand({ do: 'createBot', draft: { ...draft, model: null } })).toEqual({ do: 'createBot', draft: { ...draft, model: null } })
+    expect(parseCommand({ do: 'createBot', draft: { ...draft, extra: 1, model: { ...model, price: 9 } }, picture: null, extra: 1 })).toEqual({ do: 'createBot', draft, picture: null })
+    expect(parseCommand({ do: 'createBot', draft: { ...draft, model: null }, picture: null })).toEqual({ do: 'createBot', draft: { ...draft, model: null }, picture: null })
     expect(parseCommand({ do: 'botModels', bot: null, extra: 1 })).toEqual({ do: 'botModels', bot: null })
     expect(parseCommand({ do: 'botModels', bot: 'research' })).toEqual({ do: 'botModels', bot: 'research' })
+  })
+
+  it("keep a new bot's picture typed by its bytes, and the calls that draw a picture and list pets", () => {
+    const draft = { name: 'Rae', description: '', model: null, persona: '' }
+    expect(parseCommand({ do: 'createBot', draft, picture: PICTURE })).toEqual({ do: 'createBot', draft, picture: PICTURE })
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1]).toString('base64')
+    expect(parseCommand({ do: 'createBot', draft, picture: `data:image/png;base64,${jpeg}` })).toEqual({ do: 'createBot', draft, picture: `data:image/jpeg;base64,${jpeg}` })
+    expect(parseCommand({ do: 'canGeneratePicture', extra: 1 })).toEqual({ do: 'canGeneratePicture' })
+    expect(parseCommand({ do: 'generatePicture', prompt: 'a cheerful robot', extra: 1 })).toEqual({ do: 'generatePicture', prompt: 'a cheerful robot' })
+    expect(parseCommand({ do: 'pets', extra: 1 })).toEqual({ do: 'pets' })
+    expect(parseCommand({ do: 'petPicture', slug: 'tabby', url: 'https://petdex.example/tabby.webp', name: 'Tabby' })).toEqual({ do: 'petPicture', slug: 'tabby', url: 'https://petdex.example/tabby.webp' })
+    expect(parseCommand({ do: 'petPicture', slug: 'mochi', url: null })).toEqual({ do: 'petPicture', slug: 'mochi', url: null })
   })
 
   it('keep a path completion to a chat and the mention typed', () => {
@@ -240,7 +254,16 @@ describe('validators', () => {
     ['a new bot whose persona is missing', { do: 'createBot', draft: { name: 'Rae', description: '', model: null } }],
     ['a new bot whose model is not a model', { do: 'createBot', draft: { name: 'Rae', description: '', model: { id: 'm' }, persona: '' } }],
     ['a new bot whose model is left out', { do: 'createBot', draft: { name: 'Rae', description: '', persona: '' } }],
-    ['a new bot with no draft', { do: 'createBot' }],
+    ['a new bot with no draft', { do: 'createBot', picture: null }],
+    ['a new bot with no picture named', { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' } }],
+    ['a new bot whose picture is text', { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' }, picture: `data:image/png;base64,${Buffer.from('not a picture').toString('base64')}` }],
+    ['a new bot whose picture is a GIF', { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' }, picture: `data:image/gif;base64,${Buffer.from('GIF89a').toString('base64')}` }],
+    ['a new bot whose picture is over 2 MB', { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' }, picture: OVERSIZED }],
+    ['a new bot whose picture is a file path', { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' }, picture: '/home/me/rae.png' }],
+    ['a drawing with no prompt', { do: 'generatePicture', prompt: '  ' }],
+    ['a pet picture with no slug', { do: 'petPicture', slug: '', url: null }],
+    ['a pet picture whose sheet is not a web address', { do: 'petPicture', slug: 'tabby', url: 'file:///etc/passwd' }],
+    ['a pet picture with no sheet named', { do: 'petPicture', slug: 'tabby' }],
     ['a model list for a bot with no name', { do: 'botModels', bot: ' ' }],
     ['a model list that names no bot', { do: 'botModels' }],
     ['details of a bot with no name', { do: 'describeBot', bot: '' }],
@@ -327,10 +350,11 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'checkpointDiff', 'checkpoints', 'closePreview', 'completePath',
-      'compress', 'contextBreakdown', 'control', 'createBot', 'describeBot', 'discard', 'editBot', 'editTarget', 'export', 'keepTarget', 'killProcess',
-      'loadEarlier', 'models', 'move', 'open', 'openChat', 'openPreview', 'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect',
-      'reloadPreview', 'removeBotPicture', 'rename', 'restore', 'rewind', 'send', 'setMode', 'side', 'start', 'stop', 'stopHelper', 'tune', 'versions'
+      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints', 'closePreview',
+      'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'describeBot', 'discard', 'editBot', 'editTarget', 'export', 'generatePicture',
+      'keepTarget', 'killProcess', 'loadEarlier', 'models', 'move', 'open', 'openChat', 'openPreview', 'petPicture', 'pets', 'pickModel', 'placePreview', 'preview',
+      'queued', 'react', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename', 'restore', 'rewind', 'send', 'setMode', 'side', 'start', 'stop', 'stopHelper',
+      'tune', 'versions'
     ])
   })
 })
