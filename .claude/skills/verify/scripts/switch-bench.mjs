@@ -10,6 +10,8 @@ const H = join(REPO, '.claude/skills/verify/scripts/highwing-verify.mjs')
 const EVIDENCE_ROOT = '/tmp/highwing-verify'
 const BASE = ['--fixture', 'fixtures/errand.jsonl', '--profiles', 'fixtures/profiles/bench.json']
 const PICK = ['click', 'button', '/^Bot: /']
+/** A user takes a second or more to open the picker after the bots show. Work Highwing does in that second is not part of the switch. */
+const THINK = ['pause', '1000']
 const ATLAS_LAST = 'text:#scroll:Atlas closing note'
 const BIRCH_ROW = 'text:nav.chats:Birch errand 01'
 const COLD_TIMEOUT = '90000'
@@ -21,9 +23,9 @@ const COLD_TIMEOUT = '90000'
 const SCENARIOS = {
   'mode-to-chats': { mode: 'bots', before: ['click', 'button', 'Bots'], timed: ['menuitemradio', 'Chats', 'visible:nav.chats .chat-row'] },
   'mode-to-bots': { mode: 'chats', before: ['click', 'button', 'Chats'], timed: ['menuitemradio', 'Bots', 'visible:aside.bots .bot-row'] },
-  'bot-first-list': { mode: 'chats', before: PICK, timed: ['menuitemradio', 'Birch', BIRCH_ROW] },
-  'bot-first-thread': { mode: 'chats', before: PICK, timed: ['menuitemradio', 'Atlas', ATLAS_LAST] },
-  'bot-first-name': { mode: 'chats', before: PICK, timed: ['menuitemradio', 'Cedar', 'text:.bot-pick-button:Cedar'] },
+  'bot-first-list': { mode: 'chats', before: [...THINK, ...PICK], timed: ['menuitemradio', 'Birch', BIRCH_ROW] },
+  'bot-first-thread': { mode: 'chats', before: [...THINK, ...PICK], timed: ['menuitemradio', 'Atlas', ATLAS_LAST] },
+  'bot-first-name': { mode: 'chats', before: [...THINK, ...PICK], timed: ['menuitemradio', 'Cedar', 'text:.bot-pick-button:Cedar'] },
   'bot-return-list': {
     mode: 'chats',
     before: [...PICK, 'click', 'menuitemradio', 'Birch', 'see', 'Birch errand 01', ...PICK, 'click', 'menuitemradio', 'Cedar', 'see', 'Cedar task 1', ...PICK],

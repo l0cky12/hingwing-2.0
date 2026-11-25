@@ -130,6 +130,13 @@ const STEPS = {
   select: { arity: 2, run: async (ctx, label, option) => void (await ctx.page.getByLabel(label, { exact: true }).selectOption({ label: option }, { timeout: ctx.timeout })) },
   press: { arity: 1, run: async (ctx, key) => ctx.page.keyboard.press(key) },
   reload: { arity: 0, run: async ctx => void await ctx.page.reload() },
+  pause: {
+    arity: 1,
+    run: async (ctx, ms) => {
+      if (!/^\d+$/.test(ms)) throw new Error(`pause takes a whole number of ms, not "${ms}"`)
+      await ctx.page.waitForTimeout(Number(ms))
+    }
+  },
   gone: { arity: 2, run: async (ctx, role, name) => waitGone(ctx, role, name) },
   inview: { arity: 2, run: async (ctx, role, name) => checkInView(ctx, role, name) },
   inside: { arity: 4, run: async (ctx, role, name, outerRole, outerName) => checkInside(ctx, role, name, outerRole, outerName) },
