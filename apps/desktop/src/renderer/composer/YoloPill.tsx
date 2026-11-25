@@ -50,7 +50,7 @@ export function YoloPill({ on, onSet }: YoloPillProps) {
       )}
       {asking.at === 'refused' && <p className="err">{asking.message}</p>}
       <dialog
-        ref={dialog} className="yolo-ask" aria-labelledby={heading}
+        ref={dialog} className="confirm-dialog" aria-labelledby={heading}
         onClose={() => setAsking(held => (held.at === 'confirming' ? { at: 'idle' } : held))}
       >
         <h2 id={heading}>Turn on YOLO for this chat?</h2>
