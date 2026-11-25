@@ -1,5 +1,5 @@
 import type { SideId } from '@highwing/hermes/domain'
-import { useId } from 'react'
+import { useId, useLayoutEffect, useRef } from 'react'
 import type { SideAnswer, SideCard } from './sides'
 import { Markdown } from './text'
 
@@ -30,8 +30,14 @@ function Card({ card, onClose }: { readonly card: SideCard; readonly onClose: (i
 }
 
 export function Sides({ cards, onClose }: { readonly cards: readonly SideCard[]; readonly onClose: (id: SideId) => void }) {
+  const stack = useRef<HTMLDivElement>(null)
+  const newest = cards.at(-1)?.id
+  useLayoutEffect(() => {
+    const element = stack.current
+    if (element !== null) element.scrollTop = element.scrollHeight
+  }, [newest])
   return (
-    <div className="sides">
+    <div className="sides" ref={stack}>
       {cards.map(card => <Card key={card.id} card={card} onClose={onClose} />)}
     </div>
   )
