@@ -1,10 +1,11 @@
 import type { Bot, BotCreated, BotDetails, BotDraft, BotId, Bots, CommandOutcome, Link, ModelMenu, OpenChat } from '@highwing/hermes/domain'
-import { useId, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { flushSync } from 'react-dom'
 import { run, useTopic } from '../store'
 import { Avatar } from './Avatar'
 import { BotEditor, type BotEditorProps } from './BotEditor'
 import { BotForm } from './BotForm'
+import { retryOfflinePictures } from './pictures'
 import { EMPTY_DRAFT, nameProblem } from './bot-form'
 import { botIn, listOf, newBotBlock, selectedIn, UNASSIGNED } from './roster-view'
 
@@ -59,6 +60,10 @@ export function BotsPanel({ bots, open, link, onOpen, onCreate, onModels, ...edi
   const selected = selectedIn(bots, open)
   const opening = open?.opening?.bot ?? null
   const block = newBotBlock(link, bots)
+  const online = link?.state === 'online'
+  useEffect(() => {
+    if (online) retryOfflinePictures()
+  }, [online])
   const pick = async (bot: BotId) => {
     setMade(null)
     const outcome = await onOpen(bot)

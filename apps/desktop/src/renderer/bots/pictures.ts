@@ -2,7 +2,8 @@ import type { BotId } from '@highwing/hermes/domain'
 import { useContext, useEffect, useSyncExternalStore } from 'react'
 import { Epoch, run } from '../store'
 
-type Entry = { readonly state: 'loading' } | { readonly state: 'loaded'; readonly url: string | null }
+/** `offline`: the read failed because the link was down, so it is made again once the link is back. */
+type Entry = { readonly state: 'loading' } | { readonly state: 'offline' } | { readonly state: 'loaded'; readonly url: string | null }
 
 const entries = new Map<string, Entry>()
 const listeners = new Set<() => void>()
@@ -42,10 +43,17 @@ function load(key: string, bot: BotId) {
   changed()
   void run({ do: 'botPicture', bot }).then(outcome => {
     if (entries.get(key) !== loading) return
-    // A refusal draws the letter until this window changes the picture or the connection changes, rather than asking again at once.
-    entries.set(key, { state: 'loaded', url: outcome.ok && outcome.value !== null ? blobUrlOf(outcome.value) : null })
+    // Any other refusal draws the letter until this window changes the picture or the connection changes, rather than asking again at once.
+    entries.set(key, !outcome.ok && outcome.refusal.kind === 'offline' ? { state: 'offline' } : { state: 'loaded', url: outcome.ok && outcome.value !== null ? blobUrlOf(outcome.value) : null })
     changed()
   })
+}
+
+/** Forgets every read that failed because the link was down, so each avatar reads its picture again. Call it once the link is back. */
+export function retryOfflinePictures(): void {
+  const offline = [...entries].filter(([, entry]) => entry.state === 'offline')
+  for (const [key] of offline) entries.delete(key)
+  if (offline.length > 0) changed()
 }
 
 export function usePicture(bot: BotId | null): string | null {
