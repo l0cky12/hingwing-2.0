@@ -34,9 +34,24 @@ export const OWN_COMMANDS = {
   title: (sessionId, title) => (title === '' ? null : { do: 'rename', sessionId, title }),
   btw: (sessionId, text) => (text === '' ? { usage: '/btw <question>' } : { do: 'side', sessionId, kind: 'btw', text }),
   bg: (sessionId, text) => (text === '' ? { usage: '/bg <prompt>' } : { do: 'side', sessionId, kind: 'background', text }),
-  /** `here [N]` and `--preview`, anywhere in the line, are Hermes's own forms (hermes_cli/partial_compress.py:51-63), which Highwing does not send, so Hermes answers those lines. */
-  compress: (sessionId, focus) => (/^(-|here\b)|(^|\s)--preview(\s|$)/.test(focus) ? null : { do: 'compress', sessionId, focus: focus === '' ? null : focus })
+  compress: compressCommand
 } as const satisfies { readonly [name: string]: (sessionId: SessionId, arg: string) => Own }
+
+const COMPRESS_FLAGS: ReadonlySet<string> = new Set(['--preview', '--dry-run', '--dryrun', '--aggressive'])
+
+/**
+ * `/compress <arg>` read as Hermes's own parser reads it (hermes_cli/partial_compress.py:21-69, agent/conversation_compression_manual.py:63-64).
+ * The partial, preview and aggressive forms are null: Highwing does not send them, so Hermes answers those lines.
+ */
+function compressCommand(sessionId: SessionId, arg: string): Own {
+  const tokens = arg.split(/\s+/).filter(token => token !== '')
+  if (tokens.some(token => COMPRESS_FLAGS.has(token.toLowerCase()))) return null
+  const joined = tokens.join(' ')
+  const focus = joined.toLowerCase().startsWith('up to here') ? joined.slice('up to '.length) : joined
+  const [head = '', count] = focus.toLowerCase().split(' ')
+  if (head === 'here' || ((head === '--keep' || head === '-k') && count !== undefined) || head.startsWith('--keep=')) return null
+  return { do: 'compress', sessionId, focus: focus === '' ? null : focus }
+}
 
 export function ownCommand({ entry, arg }: SlashLine, sessionId: SessionId): Own {
   if (entry.kind !== 'command' || !Object.hasOwn(OWN_COMMANDS, entry.name)) return null
