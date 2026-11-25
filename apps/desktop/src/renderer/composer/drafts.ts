@@ -16,6 +16,8 @@ const typed = new Set<DraftKey>()
 const restored = new Set<DraftKey>()
 const saving = new Map<DraftKey, { readonly draft: Draft; readonly timer: ReturnType<typeof setTimeout> }>()
 let loose = ''
+/** Seeds asked for before main's drafts are read. A saved draft for the same chat wins over them. */
+let seeds: Draft[] | null = []
 let chats: ReadonlySet<SessionId> = new Set()
 const listeners = new Set<() => void>()
 
@@ -51,12 +53,22 @@ const textOf = (slot: DraftSlot) => (slot === null ? loose : drafts.get(slot.key
 
 export async function startDrafts(): Promise<void> {
   window.addEventListener('pagehide', flush)
-  for (const draft of await window.highwing.drafts()) {
-    if (typed.has(draft.key)) continue
-    drafts.set(draft.key, draft)
-    restored.add(draft.key)
+  try {
+    for (const draft of await window.highwing.drafts()) {
+      if (typed.has(draft.key)) continue
+      drafts.set(draft.key, draft)
+      restored.add(draft.key)
+    }
+  } finally {
+    const asked = seeds ?? []
+    seeds = null
+    asked.forEach(plant)
+    changed()
   }
-  changed()
+}
+
+function plant(draft: Draft) {
+  if (!drafts.has(draft.key) && !typed.has(draft.key)) keep(draft, 'soon')
 }
 
 export function writeDraft(slot: DraftSlot, text: string) {
@@ -67,8 +79,8 @@ export function writeDraft(slot: DraftSlot, text: string) {
 
 /** Puts a branch's text in the chat it made. A draft the chat has, or one typed or cleared since the window loaded, wins. */
 export function seedDraft(slot: NonNullable<DraftSlot>, text: string) {
-  if (drafts.has(slot.key) || typed.has(slot.key)) return
-  keep({ ...slot, text }, 'soon')
+  if (seeds !== null) return void seeds.push({ ...slot, text })
+  plant({ ...slot, text })
   changed()
 }
 
