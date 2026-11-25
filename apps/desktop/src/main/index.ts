@@ -11,6 +11,7 @@ import { desktopOpener, recordingOpener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
 import { draftStore, DRAFTS_DIR } from './drafts'
 import { serveWindows } from './ipc'
+import { dbusSend, hasSecretService } from './keyring'
 import { chatLinks } from './links'
 import { modeStore } from './mode'
 import { desktopNotifier, notifyTurnEnds, recordingNotifier } from './notify'
@@ -62,6 +63,10 @@ app.on('open-url', (event, url) => {
   links.holdLatest([url])
 })
 links.holdLatest(process.argv)
+// Chromium picks a keyring by the desktop's name, and takes none on a desktop it does not know, even where a Secret Service runs.
+if (process.platform === 'linux' && fixture === null && !app.commandLine.hasSwitch('password-store') && hasSecretService(dbusSend(process.env))) {
+  app.commandLine.appendSwitch('password-store', 'gnome-libsecret')
+}
 // Only an installed build claims the scheme: a dev or verify run would point the user's desktop at a build that goes away.
 if (app.isPackaged) app.setAsDefaultProtocolClient('highwing')
 
