@@ -4,7 +4,6 @@ import { failureWords } from '@highwing/thread'
 import { appendFile } from 'node:fs/promises'
 import type { ConnectionOwner } from './connection'
 
-/** A turn end worth a desktop notification, in the words Hermes Desktop uses. */
 export interface TurnNotice {
   readonly sessionId: SessionId
   readonly turnId: TurnId
@@ -18,7 +17,6 @@ export interface Notifier {
 
 export interface NotifyDeps {
   readonly notifier: Notifier
-  /** Whether any Highwing window has focus. */
   focused(): boolean
   raise(): void
 }
@@ -44,11 +42,6 @@ const wordsOf = (turn: SettledTurn): Pick<TurnNotice, 'title' | 'body'> | null =
   }
 }
 
-/**
- * The notice for the turn that ended between two values of one chat, or null. Only an end heard on
- * the live socket counts: history read at open, and an end that replay or catch-up delivered, are
- * old news by the time they arrive.
- */
 export function noticeOf(before: Session, after: Session): TurnNotice | null {
   if (before.sync.state !== 'live' || after.sync.state !== 'live' || before.run.state !== 'running') return null
   const ended = after.history.at(-1)
@@ -57,10 +50,6 @@ export function noticeOf(before: Session, after: Session): TurnNotice | null {
   return words === null ? null : { sessionId: after.id, turnId: ended.id, ...words }
 }
 
-/**
- * Notifies once for each turn of the shown chat that ends while no Highwing window has focus, on
- * whichever Hermes is live. A click raises the window and opens that chat again if another is shown.
- */
 export function notifyTurnEnds(owner: Pick<ConnectionOwner, 'setup' | 'hermes'>, deps: NotifyDeps): () => void {
   const told = new Set<string>()
 
@@ -112,19 +101,24 @@ export function notifyTurnEnds(owner: Pick<ConnectionOwner, 'setup' | 'hermes'>,
   }
 }
 
+const NOTICES_HELD = 16
+
 export function desktopNotifier(Notification: typeof Electron.Notification): Notifier {
   // A notification nothing holds can be garbage-collected while on screen, and its click then reaches nobody.
-  const held = new Set<Electron.Notification>()
+  // `close` is not a release point: Windows fires it on a timeout while the notice stays clickable in Action
+  // Center, and it is not guaranteed at all, so the newest few are kept instead.
+  const held: Electron.Notification[] = []
   return {
     show({ title, body }, onClick) {
       if (!Notification.isSupported()) return
       const shown = new Notification({ title, body })
-      held.add(shown)
+      held.push(shown)
+      if (held.length > NOTICES_HELD) held.shift()
       shown.on('click', () => {
-        held.delete(shown)
+        const at = held.indexOf(shown)
+        if (at !== -1) held.splice(at, 1)
         onClick()
       })
-      shown.on('close', () => held.delete(shown))
       shown.show()
     }
   }

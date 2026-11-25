@@ -10,7 +10,6 @@ const STORY = fixture.header.sessionId as SessionId
 const OTHER = 'other-chat' as SessionId
 
 let moments: readonly Session[] = []
-/** The last value before the errand's turn ended, and the first after. */
 let running: Session
 let ended: Session
 
@@ -84,7 +83,6 @@ function changing<T>(initial: T): Feed<T> & { set(next: T): void } {
 
 const showing = (sessionId: SessionId | null): OpenChat => ({ shown: sessionId === null ? null : { kind: 'chat', bot: null, sessionId }, opening: null })
 
-/** A Hermes whose shown chat and session values the test sets, recording the commands it is sent. */
 function stubHermes(first: Session) {
   const open = changing(showing(first.id))
   const sessions = new Map<SessionId, ReturnType<typeof changing<Session>>>()
