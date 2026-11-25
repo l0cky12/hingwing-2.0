@@ -53,7 +53,7 @@ describe('chat links', () => {
     links.holdLatest(['highwing://chat/local-0001'])
     links.holdLatest(['highwing://chat/local-0002'])
     app.connect()
-    app.move({ at: 'saved', live: LIVE })
+    app.move({ at: 'saved', live: LIVE, from: 'first-run' })
     expect(app.commands, 'the saved screen is still up').toEqual([])
     app.move({ at: 'chat', live: LIVE })
     expect(app.commands).toEqual([opens('local-0002')])

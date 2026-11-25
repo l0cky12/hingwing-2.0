@@ -33,11 +33,12 @@ type At<A extends Setup['at']> = Extract<Setup, { at: A }>
 type On<E extends SetupEvent['do']> = Extract<SetupEvent, { do: E }>
 type Editing = At<'form' | 'checking' | 'failed'>
 
-const check = ({ live }: Editing, { target }: On<'checkTarget'>): Setup =>
+const check = ({ live }: At<'form' | 'failed' | 'saved'>, { target }: On<'checkTarget'>): Setup =>
   ({ at: 'checking', live, target, step: firstStep(target) })
-const keep = ({ live }: Editing): Setup | null => (live === null ? null : { at: 'chat', live })
+const keep = ({ live }: Editing | At<'saved'>): Setup | null => (live === null ? null : { at: 'chat', live })
 const stopWaiting = ({ target, step }: At<'checking'>): Setup | null =>
   (step === 'sign-in' ? { at: 'failed', live: null, target, failure: 'sign-in-cancelled' } : null)
+const stop = ({ live }: Editing): Setup => ({ at: 'form', live, notice: null })
 
 /** Every move the setup screen can make. A state with no row for an event refuses it. */
 const MOVES: { readonly [A in Setup['at']]: { readonly [E in SetupEvent['do']]?: (setup: At<A>, event: On<E>) => Setup | null } } = {
@@ -46,12 +47,13 @@ const MOVES: { readonly [A in Setup['at']]: { readonly [E in SetupEvent['do']]?:
   checking: {
     step: (setup, { step }) => (setup.step === step ? setup : { ...setup, step }),
     fail: ({ live, target }, { failure }) => ({ at: 'failed', live, target, failure }),
-    connect: (_setup, { live }) => ({ at: 'saved', live }),
+    connect: (setup, { live }) => ({ at: 'saved', live, from: setup.live === null ? 'first-run' : 'settings' }),
     // The target is going to disk. Cancelling now would leave the file and the chat on different machines.
-    keepTarget: setup => (setup.step === 'save' ? null : keep(setup) ?? stopWaiting(setup))
+    keepTarget: setup => (setup.step === 'save' ? null : keep(setup) ?? stopWaiting(setup)),
+    stopCheck: setup => (setup.step === 'save' ? null : stop(setup))
   },
-  failed: { checkTarget: check, keepTarget: keep },
-  saved: { openChat: ({ live }) => ({ at: 'chat', live }) },
+  failed: { checkTarget: check, keepTarget: keep, stopCheck: stop },
+  saved: { openChat: keep, keepTarget: keep, checkTarget: check },
   pinned: {}
 }
 
@@ -69,7 +71,7 @@ const refused = (kind: 'rejected' | 'offline', message: string) => ({ ok: false,
 const NOT_NOW = refused('rejected', "Highwing can't do that from this screen.")
 const NOT_CONNECTED = refused('offline', "Highwing isn't connected to Hermes yet.")
 
-const SETUP_VERBS: Readonly<Record<SetupCommand['do'], true>> = { checkTarget: true, editTarget: true, keepTarget: true, openChat: true }
+const SETUP_VERBS: Readonly<Record<SetupCommand['do'], true>> = { checkTarget: true, editTarget: true, keepTarget: true, stopCheck: true, openChat: true }
 const isSetupCommand = (command: ConnectionCommand): command is SetupCommand => command.do in SETUP_VERBS
 
 export function feed<T>(initial: T): Feed<T> & { set(next: T): void } {
@@ -149,7 +151,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
 
   const runSetup = (command: SetupCommand): CommandOutcome => {
     if (closed || !apply(command)) return NOT_NOW
-    if (command.do === 'keepTarget') {
+    if (command.do === 'keepTarget' || command.do === 'stopCheck') {
       checking?.abort()
       checking = null
     }

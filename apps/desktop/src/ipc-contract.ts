@@ -18,16 +18,20 @@ export type Setup =
   | { readonly at: 'form'; readonly live: Live | null; readonly notice: 'unreadable' | 'newer' | null }
   | { readonly at: 'checking'; readonly live: Live | null; readonly target: Target; readonly step: CheckStep }
   | { readonly at: 'failed'; readonly live: Live | null; readonly target: Target; readonly failure: SetupFailure }
-  | { readonly at: 'saved'; readonly live: Live }
+  /** `from` is where the check started: a first run shows the saved screen, Settings stays open on the new connection. */
+  | { readonly at: 'saved'; readonly live: Live; readonly from: 'first-run' | 'settings' }
   /** `HIGHWING_FIXTURE` plays a recorded gateway. There is nothing to set up. */
   | { readonly at: 'pinned' }
 
 export type SetupCommand =
   /** Check a target and, when it passes, save it and connect to it. */
   | { readonly do: 'checkTarget'; readonly target: Target }
-  /** Open the setup screen over the chat. */
+  /** Open Settings over the chat. */
   | { readonly do: 'editTarget' }
+  /** Close Settings: back to the chat on the connection it has. With none, Stop waiting ends a first run's wait for a sign-in. */
   | { readonly do: 'keepTarget' }
+  /** Cancel a running or failed check: back to the form, on the connection the chat has. */
+  | { readonly do: 'stopCheck' }
   | { readonly do: 'openChat' }
 
 /** How a page main draws in its own view is doing. `failed` hides the view, so the window shows the reason in its place. */
@@ -522,6 +526,7 @@ export const validators: Validators = {
   },
   editTarget: () => ({ do: 'editTarget' }),
   keepTarget: () => ({ do: 'keepTarget' }),
+  stopCheck: () => ({ do: 'stopCheck' }),
   openChat: () => ({ do: 'openChat' }),
   preview: raw => (webPage(raw.url) ? { do: 'preview', url: raw.url } : null),
   browse: raw => (webPage(raw.url) ? { do: 'browse', url: raw.url } : null),
