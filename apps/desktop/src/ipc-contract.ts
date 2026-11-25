@@ -1,9 +1,9 @@
 import {
-  EFFORTS, EXPORT_FORMATS, targetOf,
+  EFFORTS, EXPORT_FORMATS, PLAIN_CONTROLS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type BusyMode, type ChatRef,
-  type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptId,
-  type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply, type ResultOf, type Session, type SessionId, type SettledTurn,
-  type Sidebar, type SlashCatalog, type Target, type Unstarted
+  type CheckFailure, type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type Item, type Link, type ModelOption,
+  type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
+  type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 
 /** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
@@ -278,6 +278,20 @@ function requestReplyOf(raw: unknown): RequestReply | null {
   }
 }
 
+function controlActionOf(raw: unknown): ControlAction | null {
+  if (!isObject(raw)) return null
+  if (raw.act === 'subgoal.add') return filled(raw.text) ? { act: 'subgoal.add', text: raw.text } : null
+  if (raw.act === 'subgoal.remove') return Number.isInteger(raw.index) && (raw.index as number) >= 1 ? { act: 'subgoal.remove', index: raw.index as number } : null
+  const act = PLAIN_CONTROLS.find(held => held === raw.act)
+  return act === undefined ? null : { act }
+}
+
+function restoreScopeOf(raw: unknown): RestoreScope | null {
+  if (!isObject(raw)) return null
+  if (raw.kind === 'file') return filled(raw.path) ? { kind: 'file', path: raw.path } : null
+  return raw.kind === 'folder' && (raw.edits === 'keep' || raw.edits === 'overwrite') ? { kind: 'folder', edits: raw.edits } : null
+}
+
 type Validators = { readonly [K in WindowCommand['do']]: (raw: Obj) => Extract<WindowCommand, { do: K }> | null }
 
 export const validators: Validators = {
@@ -428,6 +442,32 @@ export const validators: Validators = {
       default:
         return null
     }
+  },
+  killProcess: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && filled(raw.processId) ? { do: 'killProcess', sessionId, processId: raw.processId as ProcessId } : null
+  },
+  control: raw => {
+    const sessionId = sessionIdOf(raw)
+    const action = controlActionOf(raw.action)
+    return sessionId && action && { do: 'control', sessionId, action }
+  },
+  checkpoints: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && { do: 'checkpoints', sessionId }
+  },
+  checkpointDiff: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && filled(raw.checkpoint) ? { do: 'checkpointDiff', sessionId, checkpoint: raw.checkpoint as CheckpointId } : null
+  },
+  restore: raw => {
+    const sessionId = sessionIdOf(raw)
+    const scope = restoreScopeOf(raw.scope)
+    return sessionId && scope && filled(raw.checkpoint) ? { do: 'restore', sessionId, checkpoint: raw.checkpoint as CheckpointId, scope } : null
+  },
+  react: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && filled(raw.turn) && (raw.emoji === null || filled(raw.emoji)) ? { do: 'react', sessionId, turn: raw.turn as TurnId, emoji: raw.emoji } : null
   },
   reconnect: raw => (typeof raw.start === 'boolean' ? { do: 'reconnect', start: raw.start } : null),
   checkTarget: raw => {

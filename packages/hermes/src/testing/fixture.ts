@@ -109,12 +109,20 @@ export interface Fixture {
      * refuses `complete.path` as an unknown method, as a Hermes without it does.
      */
     readonly paths?: { readonly cwd?: string; readonly words: { readonly [word: string]: unknown } }
+    /**
+     * The story session's answers to `process.list` and `session.control.read` at the start, by method. A `reads`
+     * step changes them. Absent: the gateway refuses that read as an unknown method, as a Hermes without it does.
+     */
+    readonly reads?: Reads
   }
   readonly steps: readonly FixtureStep[]
 }
 
 /** `reply`: the bot's one answer, sent `delay_ms` after the call (default 0). `refuse`: the reason Hermes refuses the delivery with. */
 export type RelayScript = { readonly reply: string; readonly delay_ms?: number } | { readonly refuse: string }
+/** Hermes's answer to each read a client makes when it starts watching a chat, by method. */
+export type Reads = Readonly<Partial<Record<typeof READS[number], unknown>>>
+export const READS = ['process.list', 'session.control.read'] as const
 
 /** A chat a bot has before the story starts. */
 export interface ChatSeed {
@@ -149,6 +157,8 @@ export type FixtureStep =
   | { readonly at: number; readonly answer: string; readonly error: { readonly code: number; readonly message: string } }
   /** From here on the gateway's stored rows for the session are these. A resume that asks for history gets them. */
   | { readonly at: number; readonly stored: readonly unknown[] }
+  /** From here on the gateway answers these reads with these replies. A read it does not name answers as before. */
+  | { readonly at: number; readonly reads: Reads }
   /** The gateway closes the socket. The story continues on the client's next dial. */
   | { readonly at: number; readonly drop: number }
 
@@ -159,7 +169,9 @@ type Json = { readonly [key: string]: unknown }
 const isObject = (value: unknown): value is Json =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
-const STEP_KINDS = ['push', 'await', 'answer', 'stored', 'drop'] as const
+const STEP_KINDS = ['push', 'await', 'answer', 'stored', 'reads', 'drop'] as const
+
+const isReads = (value: unknown): value is Reads => isObject(value) && Object.keys(value).every(key => (READS as readonly string[]).includes(key))
 
 function parseStep(value: unknown, previousAt: number): FixtureStep | string {
   if (!isObject(value)) return 'a step must be an object'
@@ -171,7 +183,7 @@ function parseStep(value: unknown, previousAt: number): FixtureStep | string {
   const [kind] = kinds
   if (kind === undefined || kinds.length > 1) return `a step needs exactly one of ${STEP_KINDS.join(', ')}`
   const allowed: Readonly<Record<typeof kind, readonly string[]>> = {
-    push: ['at', 'push'], await: ['at', 'await', 'params', 'reply', 'error'], answer: ['at', 'answer', 'result', 'error'], stored: ['at', 'stored'], drop: ['at', 'drop']
+    push: ['at', 'push'], await: ['at', 'await', 'params', 'reply', 'error'], answer: ['at', 'answer', 'result', 'error'], stored: ['at', 'stored'], reads: ['at', 'reads'], drop: ['at', 'drop']
   }
   const extra = Object.keys(value).filter(key => !allowed[kind].includes(key))
   if (extra.length > 0) return `a ${kind} step has unknown keys: ${extra.join(', ')}`
@@ -204,6 +216,8 @@ function parseStep(value: unknown, previousAt: number): FixtureStep | string {
     }
     case 'stored':
       return Array.isArray(value.stored) ? { at, stored: value.stored } : '"stored" must be an array of rows'
+    case 'reads':
+      return isReads(value.reads) ? { at, reads: value.reads } : `"reads" must map ${READS.join(' or ')} to a reply`
     case 'drop':
       return Number.isInteger(value.drop) ? { at, drop: value.drop as number } : '"drop" must be a close code'
   }
@@ -270,6 +284,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (attachLimits !== undefined && !(isObject(attachLimits) && Object.keys(attachLimits).every(key => key === 'image' || key === 'file') && limit(attachLimits.image) && limit(attachLimits.file))) {
     return '"attachLimits" may hold only "image" and "file", each a number of bytes above 0'
   }
+  const { reads } = value
+  if (reads !== undefined && !isReads(reads)) return `"reads" must map ${READS.join(' or ')} to a reply`
   const { chats } = value
   if (chats !== undefined && !(isObject(chats) && Object.values(chats).every(seeds => Array.isArray(seeds) && seeds.every(isSeed)))) {
     return '"chats" must map a profile to its chats, each with id, title, last_active and rows'
@@ -303,7 +319,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),
     ...(relay === undefined ? {} : { relay: relay as { readonly [profile: string]: RelayScript } }),
-    ...(paths === undefined ? {} : { paths: paths as NonNullable<Fixture['header']['paths']> })
+    ...(paths === undefined ? {} : { paths: paths as NonNullable<Fixture['header']['paths']> }),
+    ...(reads === undefined ? {} : { reads })
   }
 }
 

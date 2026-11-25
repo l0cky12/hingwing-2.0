@@ -38,7 +38,7 @@ const toolFinished = (id: string): SessionEvent =>
 const promptOpened = (id: string, gen = 1): SessionEvent => ({ type: 'prompt.opened', id: promptId(id), generation: generation(gen), ask: APPROVAL, timeoutS: null })
 const ended = (
   outcome: Outcome, finalText: string | null = null, rows: readonly number[] = [], userRow: number | null = null, usage: SessionUsage | null = null
-): SessionEvent => ({ type: 'turn.ended', outcome, finalText, rows, userRow, usage })
+): SessionEvent => ({ type: 'turn.ended', outcome, finalText, rows, userRow, replyRow: null, usage })
 
 function snapshot(over: Partial<Snapshot> = {}): Snapshot {
   return {
@@ -63,11 +63,12 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
 function storedTurn(id: string, rows: readonly number[]): SettledTurn {
   return {
     id: turnId(id), request: { text: `request ${id}`, inputId: null, rowId: rows[0] ?? null, attachments: [] }, items: [{ kind: 'text', markdown: `answer ${id}`, sealed: true }],
-    began: null, outcome: COMPLETE, rows, tokens: null
+    began: null, outcome: COMPLETE, rows, tokens: null, reply: null
   }
 }
 
 const feed = (state: Tracked, ...inputs: SessionInput[]): Tracked => inputs.reduce(reduce, state)
+const UNHEARD = { control: 0, processes: 0 }
 
 function live(): Tracked {
   return feed(emptyTracked('s1' as SessionId), { in: 'attach' }, { in: 'attached', attempt: 1, snapshot: snapshot(), replay: null })
@@ -158,7 +159,8 @@ describe('the fold', () => {
       ],
       outcome: failed,
       rows: [11, 12],
-      tokens: null
+      tokens: null,
+      reply: null
     }])
     expect(activityOf(state.content)).toEqual({ kind: 'idle' })
   })
@@ -262,7 +264,8 @@ describe('attached', () => {
       items: [{ kind: 'text', markdown: 'Hello world', sealed: true }],
       outcome: COMPLETE,
       rows: [7],
-      tokens: null
+      tokens: null,
+      reply: null
     }])
   })
 
@@ -310,7 +313,7 @@ describe('attached', () => {
       snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 9 }, history: { turns, unfinished: null, older: { cursor: 'c1' } } })
     })
     expect(state.gate).toEqual({ at: 'live', cursor: { epoch: EPOCH, seq: 9 }, subscriptionId: 'sub-1' })
-    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [] })
+    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [], processes: null, control: null })
   })
 
   it('B: opens the unfinished turn of a running snapshot with its waiting prompts, then the parked frames above the watermark', () => {
@@ -1144,7 +1147,7 @@ describe('what Hermes says', () => {
     const next = reduce(said, event(2, started('t2'), 2))
     expect(next.content.interlude).toEqual([])
     expect(next.content.history).toEqual([{
-      id: 'interlude:2', request: null, began: null, rows: [], outcome: { kind: 'interlude' }, tokens: null,
+      id: 'interlude:2', request: null, began: null, rows: [], outcome: { kind: 'interlude' }, tokens: null, reply: null,
       items: [verdict, { kind: 'notice', what: 'declined', requestId: 'r1', method: 'theme.pick' }]
     }])
     expect(openItems(next)).toEqual([])
@@ -1258,11 +1261,11 @@ describe('tuning', () => {
   it('takes facts read under the current attach, and drops facts read under an older one', () => {
     const state = live()
     expect(state.content.tuning).toEqual({ reasoning: null, busy: null, effort: null, fast: null, yolo: null })
-    const read = reduce(state, { in: 'facts', attempt: 1, tuning: { reasoning: true } })
+    const read = reduce(state, { in: 'facts', attempt: 1, heard: UNHEARD, tuning: { reasoning: true } })
     expect(read.content.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
     const reattached = feed(read, { in: 'link.lost' }, { in: 'attach' })
-    expect(reduce(reattached, { in: 'facts', attempt: 1, tuning: { reasoning: false } }).content).toBe(reattached.content)
-    expect(reduce(reattached, { in: 'facts', attempt: 2, tuning: { reasoning: false } }).content.tuning).toEqual({ reasoning: false, busy: null, effort: null, fast: null, yolo: null })
+    expect(reduce(reattached, { in: 'facts', attempt: 1, heard: UNHEARD, tuning: { reasoning: false } }).content).toBe(reattached.content)
+    expect(reduce(reattached, { in: 'facts', attempt: 2, heard: UNHEARD, tuning: { reasoning: false } }).content.tuning).toEqual({ reasoning: false, busy: null, effort: null, fast: null, yolo: null })
   })
 
   it('takes a switch this client set, keeps it through a rebuild, and changes nothing when it is the same', () => {

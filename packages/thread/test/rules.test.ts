@@ -12,12 +12,12 @@ const NONE: ToolResult = { kind: 'none' }
 function session(over: Partial<Session> = {}): Session {
   return {
     id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [],
-    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [], sync: { state: 'live' }, ...over
+    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [], processes: null, control: null, sync: { state: 'live' }, ...over
   }
 }
 
 const settled = (items: readonly Item<'settled'>[], outcome: Outcome = COMPLETE, id = 't1'): SettledTurn =>
-  ({ id: id as TurnId, request: { text: 'Do the errand', inputId: null, rowId: null, attachments: [] }, began: null, items, outcome, rows: [], tokens: null })
+  ({ id: id as TurnId, request: { text: 'Do the errand', inputId: null, rowId: null, attachments: [] }, began: null, items, outcome, rows: [], tokens: null, reply: null })
 
 const running = (items: readonly Item[], sync: Sync = { state: 'live' }, announced: string | null = null): Session => session({
   sync,
@@ -608,7 +608,7 @@ describe('what Hermes says', () => {
     ({ kind: 'status', what: 'notice', key: 'credits', level: 'warn', text: 'Credits are low.', detail: null, ttlMs: null, seenAt: null, state })
   const moa: Item<'settled'> = { kind: 'moa', progress: { done: 2, total: 3 }, references: [{ label: 'a', text: 'Use rm.' }], phase: { is: 'aggregating', by: 'judge' } }
   const interlude = (items: readonly Item<'settled'>[], id = 'interlude:2'): SettledTurn =>
-    ({ id: id as TurnId, request: null, began: null, items, outcome: { kind: 'interlude' }, rows: [], tokens: null })
+    ({ id: id as TurnId, request: null, began: null, items, outcome: { kind: 'interlude' }, rows: [], tokens: null, reply: null })
 
   it('prints a glyph line for a MoA round, a status line and a notice', () => {
     const turn = running([moa, goal, notice('shown'), notice('cleared')])

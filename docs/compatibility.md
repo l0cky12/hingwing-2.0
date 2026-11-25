@@ -442,6 +442,64 @@ with `config.get`. `Session.cwd` is the chat's folder, from the same places.
   path and never the text. `HIGHWING_SAVE_DIR` names a folder to save into
   with no dialog, which a verify run sets.
 
+## Session panels
+
+Hermes 0.23.3 serves each of these on the canonical route, though the generated
+contract lists them as legacy methods. `Session.processes` and
+`Session.control` are Hermes's state for the chat, shared by every client.
+
+| A window's command, or a read | Highwing calls | Hermes source |
+|---|---|---|
+| read when a window starts watching the chat, after each attach, and again when the list is old | `process.list {session_id}` | `gateway/session_ancillary.py:226-237,655-671` |
+| `killProcess` | `process.kill {session_id, process_id}` | `gateway/session_ancillary.py:294-305`, `tools/process_registry.py:2120-2210` |
+| read when a window starts watching the chat, and after each attach | `session.control.read {session_id}` | `gateway/session_ancillary.py:474-500` |
+| `control` | `session.control {session_id, action, args}` | `gateway/session_control_actions.py:141-164` |
+| `checkpoints` | `rollback.list {session_id}` | `gateway/session_tui_ops.py:212-275` |
+| `checkpointDiff` | `rollback.diff {session_id, hash}` | `gateway/session_tui_ops.py:282-299` |
+| `restore` | `rollback.restore {session_id, hash, file_path? \| all?}` | `gateway/session_tui_ops.py:300-312,350-375` |
+| `react` | `message.react {session_id, row_id, emoji}` | `gateway/session_reactions.py:13-55` |
+
+- A refused read leaves its part null, as for a Hermes without the method.
+  Hermes refuses `process.list` with `unsupported_projection` for a chat a
+  managed worker runs.
+- The list is old after `status.update {kind: "process"}`, after a turn's end,
+  and after this client's kill, and a watched chat reads it again. Hermes's
+  canonical route never sends that `status.update`: only `tui_gateway` does
+  (`tui_gateway/session_notifications.py:613,723`). Under the canonical route a
+  process that exits while a viewer is attached starts a turn of its own
+  (`gateway/session_completion_notes.py`), so its end is the signal.
+- `process.kill` answers `killed` or `already_exited` for a process that ended,
+  `error` with Hermes's words when the process outlived the kill, and refuses
+  `process_not_found` for any id the chat does not own.
+- Hermes publishes `session.control.update {control}` to every viewer on every
+  change: a control button, a slash command, a fired loop, a judged turn
+  (`gateway/session_control_actions.py:76-138`). Highwing replaces `control`
+  with it and never reads the button's reply. A read answer asked before an
+  update leaves the update in place. A button answers `dispatch`, which is
+  `exec` words or a `send` message that the client submits, as
+  `command.dispatch` does. The actions are the 13 of
+  `gateway/session_control_actions.py:15-22`. `subgoal.add` takes `text`, and
+  `subgoal.remove` an `index` from 1.
+- Hermes keeps no checkpoints unless the profile's `checkpoints.enabled` is on
+  (`hermes_cli/config_defaults.py:486-487`). `rollback.list` then answers
+  `enabled: false`. `rollback.diff` cuts the patch at 4000 characters.
+- A restore of the whole folder keeps the files the user edited since the
+  checkpoint unless `all` is sent. It is refused with `session_busy` while a
+  turn runs, and Highwing refuses it before it sends anything. It also takes
+  back the chat's last turn through the fenced `rewind` mutation, which
+  publishes `session.updated` before the reply, and answers `history_removed`.
+  Highwing then reads the chat again, and does so too when the socket drops
+  before the answer. A restore of one file only touches the disk.
+- `message.react` keeps one reaction per author per row. The same emoji again
+  clears it, another replaces it, and `emoji: null` clears it. It answers the
+  row's reactions, which Highwing shows at once. Hermes publishes no
+  `message.reaction` to other clients for a user's reaction, so another
+  client's reaction shows at the next read of the stored rows. Display rows
+  carry the reactions in `display_metadata.reactions`
+  (`tui_gateway/session_history.py:370-371`). A reaction addresses the turn's
+  answer: the last assistant row with text, or the receipt's
+  `final_assistant_row_id` for a turn that settled live.
+
 ## When a change needs a newer Hermes route
 
 1. Install the newer Hermes, then run `pnpm contract:drift` to see which

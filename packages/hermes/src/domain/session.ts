@@ -19,6 +19,10 @@ export type PromptId = Brand<string, 'PromptId'>
 export type HelperId = Brand<string, 'HelperId'>
 /** Hermes's `task_id` for a side question or a background prompt. */
 export type SideId = Brand<string, 'SideId'>
+/** Hermes's id of a process the agent runs in the background (its registry's `proc_…` id). */
+export type ProcessId = Brand<string, 'ProcessId'>
+/** The commit hash of one checkpoint of a chat's folder. */
+export type CheckpointId = Brand<string, 'CheckpointId'>
 
 /** A request Hermes holds open on the socket. For a connector card it is the operation's id. */
 export type RequestId = Brand<string, 'RequestId'>
@@ -108,6 +112,100 @@ export interface SessionContent {
   readonly tuning: Tuning
   /** Side questions and background prompts, oldest first, by whichever client asked. Live only: Hermes stores neither. */
   readonly sides: readonly SideTask[]
+  /**
+   * The processes the agent left running in the background, and the ones that ended that Hermes
+   * still keeps, as Hermes last listed them. null until it answers, and on a Hermes that refuses the read.
+   */
+  readonly processes: readonly BackgroundProcess[] | null
+  /** The chat's goal, loop and heartbeat, as Hermes last said. null until it says, and on a Hermes that refuses the read. */
+  readonly control: SessionControl | null
+}
+
+/** A process the agent started to run in the background (`terminal(background=true)`). Times are Unix ms on Hermes's clock. */
+export interface BackgroundProcess {
+  readonly id: ProcessId
+  /** The command line, cut at 200 characters by Hermes. */
+  readonly command: string
+  readonly state:
+    | { readonly s: 'running' }
+    /** `why`: Hermes's word for how it ended, such as `killed`. */
+    | { readonly s: 'exited'; readonly code: number | null; readonly why: string | null; readonly at: number | null }
+  readonly startedAt: number | null
+  /** The end of its output when the list was read, ANSI-stripped. Hermes sends at most its last 32768 characters. */
+  readonly tail: string
+}
+
+/** What keeps the chat working on its own between messages. Each is null when the chat has none. */
+export interface SessionControl {
+  readonly goal: Goal | null
+  readonly loop: Loop | null
+  readonly heartbeat: Heartbeat | null
+}
+
+/** `/goal`: Hermes keeps taking turns until a check says the goal is met. */
+export interface Goal {
+  readonly title: string
+  readonly status: 'active' | 'paused' | 'done'
+  readonly turns: { readonly used: number; readonly max: number }
+  /** What the user said "done" means and its limits. A part the user left out is null. */
+  readonly contract: { readonly [P in GoalPart]: string | null }
+  /** Criteria the check reads, in order. A control action names one by its place, from 1. */
+  readonly subgoals: readonly string[]
+  /** Commands that must pass before the goal counts as met. */
+  readonly gates: readonly { readonly command: string; readonly attempts: number; readonly maxRetries: number; readonly lastExit: number | null }[]
+  readonly pausedWhy: string | null
+  /** The last check's verdict and its reason. null before the first check. */
+  readonly verdict: { readonly is: GoalVerdict; readonly why: string | null } | null
+  /** What the goal waits for before its next turn. `goal.unwait` stops the wait. */
+  readonly waiting: GoalWait | null
+}
+export type GoalPart = 'outcome' | 'verification' | 'constraints' | 'boundaries' | 'stopWhen'
+export type GoalVerdict = 'done' | 'blocked' | 'continue' | 'wait' | 'skipped'
+export type GoalWait =
+  | { readonly on: 'time'; readonly until: number; readonly why: string | null }
+  | { readonly on: 'session'; readonly session: string; readonly why: string | null }
+  | { readonly on: 'process'; readonly pid: number; readonly why: string | null }
+
+/** `/loop`: the same prompt again on a cadence, or when the agent says. */
+export interface Loop {
+  readonly prompt: string
+  readonly status: 'active' | 'paused' | 'done'
+  /** `interval`: every `everyS` seconds. `self-paced`: the agent sets each wait. */
+  readonly mode: 'interval' | 'self-paced'
+  readonly everyS: number
+  readonly ticks: { readonly fired: number; readonly max: number }
+  /** When the next prompt fires. null when none is due. */
+  readonly nextAt: number | null
+  /** A goal is running, so the loop waits for it. */
+  readonly heldByGoal: boolean
+  readonly pausedWhy: string | null
+  readonly stoppedWhy: string | null
+}
+
+/** `/heartbeat`: a prompt that fires every `everyS` seconds. */
+export interface Heartbeat {
+  readonly prompt: string
+  readonly status: 'active' | 'paused'
+  readonly everyS: number
+  readonly fired: number
+  readonly lastAt: number | null
+}
+
+/** The buttons Hermes serves for those cards that take nothing more (gateway/session_control_actions.py:15-22). */
+export const PLAIN_CONTROLS = [
+  'goal.pause', 'goal.resume', 'goal.clear', 'goal.unwait', 'subgoal.clear', 'loop.pause', 'loop.resume', 'loop.stop', 'heartbeat.pause', 'heartbeat.resume', 'heartbeat.clear'
+] as const
+export type ControlAction =
+  | { readonly act: typeof PLAIN_CONTROLS[number] }
+  | { readonly act: 'subgoal.add'; readonly text: string }
+  /** `index` counts from 1. */
+  | { readonly act: 'subgoal.remove'; readonly index: number }
+
+/** An emoji on a stored message. Each author has at most one per message. */
+export interface Reaction {
+  readonly emoji: string
+  /** `user`: whoever uses the chat, from any client. `agent`: the model. */
+  readonly by: 'user' | 'agent'
 }
 
 /**
@@ -234,6 +332,12 @@ export interface SettledTurn extends TurnBase<'settled'> {
    * end named no totals, and a turn that began while the totals before it were unknown.
    */
   readonly tokens: Tokens | null
+  /**
+   * The stored row of the turn's answer, which a reaction is put on. null for a turn with no stored
+   * answer: one that failed or was cut short, an interlude, and a turn that settled live without
+   * Hermes naming the row.
+   */
+  readonly reply: { readonly rowId: number; readonly reactions: readonly Reaction[] } | null
 }
 export type Turn = OpenTurn | SettledTurn
 

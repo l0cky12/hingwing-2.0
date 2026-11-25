@@ -2,7 +2,7 @@ import type { Outcome, Refusal } from './domain/command'
 import { emptyTracked, reduce, sessionOf, type BridgeRequest, type Fence, type Gate, type HistoryPage, type LocalAction, type SessionInput, type Tracked } from './domain/reduce'
 import type { AdmissionId, Attachment, InputId, OutboxEntry, RequestId, Session, SessionContent, SessionId } from './domain/session'
 import { Offline, RpcRefusal, type Calls, type Clock, type Method, type Requested, type RequestMethod, type Served } from './wire/link'
-import { parseBusy, parseReplay, parseShown, parseSnapshot, parseStats } from './wire/parse'
+import { parseBusy, parseControl, parseProcesses, parseReplay, parseShown, parseSnapshot, parseStats } from './wire/parse'
 
 export const DONE: Outcome = { ok: true, value: undefined }
 export const refused = (kind: Refusal['kind'], message: string): Outcome<never> => ({ ok: false, refusal: { kind, message } })
@@ -19,7 +19,13 @@ const REFUSALS: Readonly<Record<string, Refusal>> = {
   profile_mismatch: { kind: 'rejected', message: "Hermes isn't running that bot right now." },
   unknown_method: { kind: 'unsupported', message: "This Hermes doesn't support that." },
   fast_unavailable: { kind: 'rejected', message: "This chat's model has no fast mode." },
-  export_too_large: { kind: 'rejected', message: 'This chat is too large for Hermes to export.' }
+  export_too_large: { kind: 'rejected', message: 'This chat is too large for Hermes to export.' },
+  process_not_found: { kind: 'stale', message: 'That process is no longer in this chat.' },
+  unsupported_projection: { kind: 'unsupported', message: "Hermes runs this chat elsewhere, so it can't list or stop its processes." },
+  goal_not_active: { kind: 'stale', message: 'This chat has no goal now.' },
+  command_unavailable: { kind: 'unsupported', message: "Hermes can't run goals for this chat." },
+  invalid_checkpoint: { kind: 'rejected', message: 'Hermes no longer keeps that checkpoint.' },
+  unsupported_terminal_backend: { kind: 'unsupported', message: "Hermes keeps no checkpoints for this chat's terminal." }
 }
 const FENCE_REFUSALS: ReadonlySet<string> = new Set(['revision_conflict', 'stale_generation'])
 const NOT_CONNECTED: Refusal = { kind: 'offline', message: "Highwing isn't connected to this chat right now." }
@@ -90,7 +96,8 @@ export interface SessionPort {
   readonly id: SessionId
   readonly content: SessionContent
   readonly fence: Fence
-  call<M extends Method>(method: M, params: Served[M]['params']): Promise<Outcome<Served[M]['result']>>
+  /** `reasons` words a refusal of this call that the general table would word wrongly. */
+  call<M extends Method>(method: M, params: Served[M]['params'], reasons?: Readonly<Record<string, Refusal>>): Promise<Outcome<Served[M]['result']>>
   /** `invalid` stands in for the general refusal when Hermes names that payload field as the invalid one. */
   mutate(
     operation: string,
@@ -138,7 +145,10 @@ export class SessionActor {
       id,
       get content() { return tracked().content },
       get fence() { return tracked().fence },
-      call: (method, params) => outcomeOf(() => deps.conn.call(method, params)),
+      call: (method, params, reasons = {}) => outcomeOf(
+        () => deps.conn.call(method, params),
+        error => (error instanceof RpcRefusal && Object.hasOwn(reasons, error.reason ?? '') ? reasons[error.reason ?? ''] as Refusal : refusalOf(error))
+      ),
       mutate: (operation, payload, expectedGeneration, invalid) => outcomeOf(
         () => this.mutation({ request_id: deps.mintId(), operation, payload, expected_revision: this.tracked.fence.revision, expected_generation: expectedGeneration }),
         error => (invalid !== undefined && error instanceof RpcRefusal && error.reason === 'invalid_params' && error.field === invalid.field ? invalid.refusal : refusalOf(error))
@@ -194,7 +204,7 @@ export class SessionActor {
   }
 
   watchBegan(): void {
-    if (this.tracked.gate.at === 'live') void this.readFacts()
+    if (this.tracked.gate.at === 'live') this.readFacts()
   }
 
   linkChanged(): void {
@@ -206,6 +216,7 @@ export class SessionActor {
   private step(input: SessionInput): void {
     const before = this.tracked.gate
     const wasRunning = this.tracked.content.run.state === 'running'
+    const listed = this.tracked.fence.heard.processes
     this.tracked = reduce(this.tracked, input)
     for (const inputId of this.resubmits.keys()) if (!this.tracked.content.outbox.some(entry => entry.inputId === inputId)) this.resubmits.delete(inputId)
     const after = this.tracked.gate
@@ -217,16 +228,31 @@ export class SessionActor {
     } else if (wentLive) {
       // A message whose call died with the last socket. The same call again is a no-op for one Hermes took: its duplicate guards are keyed on the ids the call carries.
       for (const entry of this.tracked.content.outbox) if (entry.state.s === 'sending') void this.admit(entry)
-      if (this.deps.watched()) void this.readFacts()
+      if (this.deps.watched()) this.readFacts()
+    } else if (after.at === 'live' && this.tracked.fence.heard.processes !== listed && this.deps.watched()) {
+      void this.readProcesses()
     }
   }
 
-  private async readFacts(): Promise<void> {
-    const attempt = this.tracked.fence.attaches
-    const read = (key: string) => this.port.call('config.get', { session_id: this.id, key })
-    const [shown, busy] = await Promise.all([read('show_reasoning'), read('busy')])
-    if ([shown, busy].some(answer => !answer.ok && answer.refusal.kind === 'offline')) return
-    this.step({ in: 'facts', attempt, tuning: { reasoning: shown.ok ? parseShown(shown.value) : null, busy: busy.ok ? parseBusy(busy.value) : null } })
+  private readFacts(): void {
+    const { attaches: attempt, heard } = this.tracked.fence
+    const session_id = this.id
+    const read = (key: string) => this.port.call('config.get', { session_id, key })
+    void Promise.all([read('show_reasoning'), read('busy')]).then(([shown, busy]) => {
+      if (![shown, busy].some(answer => !answer.ok && answer.refusal.kind === 'offline')) {
+        this.step({ in: 'facts', attempt, heard, tuning: { reasoning: shown.ok ? parseShown(shown.value) : null, busy: busy.ok ? parseBusy(busy.value) : null } })
+      }
+    })
+    void this.port.call('session.control.read', { session_id }).then(control => {
+      if (control.ok || control.refusal.kind !== 'offline') this.step({ in: 'facts', attempt, heard, control: control.ok ? parseControl(control.value.control) : null })
+    })
+    void this.readProcesses()
+  }
+
+  private async readProcesses(): Promise<void> {
+    const { attaches: attempt, heard } = this.tracked.fence
+    const listed = await this.port.call('process.list', { session_id: this.id })
+    if (listed.ok || listed.refusal.kind !== 'offline') this.step({ in: 'facts', attempt, heard, processes: listed.ok ? parseProcesses(listed.value) : null })
   }
 
   private act(action: LocalAction): void {

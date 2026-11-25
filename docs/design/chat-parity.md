@@ -194,6 +194,9 @@ Each limit comes from a backend choice or a gateway fact, and bounds what a wind
 33. Todos are the latest list only. A subagent's output and a process's output are snapshots read on demand.
 34. A checkpoint's diff is patch text, not a parsed diff.
 35. A reaction made in another client does not appear live. Hermes publishes none.
+36. The process list is as Hermes last answered it: read when a window starts watching the chat, at each turn's end and after this window's kill. A process another client kills between turns shows at the next of those. A process's output is the tail of at most 32768 characters that the list carries.
+37. The goal, loop and heartbeat follow every update Hermes publishes. A loop's countdown runs on this client's clock to `nextAt`, Hermes's time. A control button that starts a turn sends its message as this window's, as a slash command does, and answers the words to show.
+38. A reaction goes only on a settled turn's stored answer. The agent's own reactions on the user's messages are not held. A checkpoint's time is git's date as text.
 
 ## Synthesis decision
 
@@ -230,4 +233,4 @@ Rejected:
 
 1. Should Highwing set the busy mode at all, given every other client of the chat shares it? The plan reads it and offers `tune busy`, as Hermes Desktop does.
 2. Retrying a skill-invocation turn resends the typed `/skill args`. Does `prompt.submit` expand it, or must the resend go through `command.dispatch`? B3's fixture settles it.
-3. Do display rows carry reactions in `display_metadata.reactions` and image attachments? B6 and B4 settle these from Hermes's own generator.
+3. Do display rows carry reactions in `display_metadata.reactions` and image attachments? B6 and B4 settle these from Hermes's own generator. Reactions: yes. `fixtures/panels.jsonl` stores the rows after a real `message.react`, and the reacted row carries `display_metadata.reactions`.

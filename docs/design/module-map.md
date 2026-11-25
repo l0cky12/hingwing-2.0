@@ -25,7 +25,7 @@ highwing-2.0/
         roster.ts                private                  botList: what Highwing knows about the bots and their Bot Chats, and when it asks Hermes
         open.ts                  private                  chatDesk: which chat is open, the lookups and the create a change asks for
         domain/                  public entry "./domain"  browser-safe, imports nothing
-          session.ts                                      Session, Run, Turn, Item, Link, Sidebar
+          session.ts                                      Session, Run, Turn, Item, Link, Sidebar, BackgroundProcess, SessionControl, ControlAction, Reaction
           reduce.ts                                       SessionEvent, Gate, SessionInput, reduce, syncOf, activityOf, turnActivityOf
           requests.ts                                     the life of what Hermes asks outside the turn: opened, reconciled with a snapshot, answered, closed
           queue.ts                                        Hermes's queue: queueOf (a pending list becomes `queue`), offeredBy (what a row's state offers), sendPlan (submit, steer or redirect)
@@ -84,6 +84,9 @@ highwing-2.0/
 | Where a message sent during a turn goes | nobody stores it. `sendPlan` derives it from `run`, `requests` and `tuning.busy` each time | the `send` row asks it. A window can ask it too, to label its button |
 | Hermes's switches for a chat (`tuning`) | the same actor, through `reduce`: effort, fast and YOLO from each attach reply and `session.info`, busy and reasoning from a `facts` input tagged with the attach it was read under, and `tuned` after this client's `config.set` | windows send `tune` |
 | Side questions and background prompts (`sides`) | the same actor, through `reduce`: `side.started` from this client's `side` reply, the answer from `btw.complete` or `background.complete`, by any client's task. A rebuild marks a running one `lost` | windows send `side`, or type `/btw` or `/bg` |
+| Background processes (`processes`) and the goal, loop and heartbeat (`control`) | the same actor, through `reduce`: each read is a `facts` input tagged with the attach it was read under and with `Fence.heard`, so a read asked before Hermes said more about that part leaves it. A `session.control.update` replaces `control`. `status.update {kind: 'process'}`, a turn's end and this client's kill make the list old, and a watched chat reads it again | windows send `killProcess` and `control`. Nothing polls |
+| The reactions on a settled turn's answer (`SettledTurn.reply`) | the same actor, through `reduce`: from the stored row's `display_metadata.reactions`, and `reacted` from this client's `message.react` reply. Hermes tells no other client | windows send `react` with the turn, never a row id |
+| A chat folder's checkpoints and their diffs | nobody keeps them. The `checkpoints`, `checkpointDiff` and `restore` rows answer Hermes's word. A restore that took back the last turn reads the chat again | windows send the commands |
 | The slash commands Highwing runs itself | `OWN_COMMANDS` in `domain/slash.ts`, from a typed line to a `Command`. `parseCatalog` offers its names | the `send` row runs the command a listed line stands for. `/new` stays the hub's |
 | An exported chat's text | nobody keeps it. Main's `Saver` (`main/saves.ts`) writes it where the user says | windows send `export` and get the saved path |
 | Which windows watch a chat | the hub, as a count per chat. A command waiting for an attach watches too and is not counted | the actor asks `watched()` before it reads facts |

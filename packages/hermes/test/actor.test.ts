@@ -205,7 +205,7 @@ describe('attach', () => {
 
 describe('usage', () => {
   const stats = (more: Record<string, unknown> = {}) => ({ input_tokens: 0, output_tokens: 0, reasoning_tokens: 0, last_prompt_tokens: 6000, context_length: 200_000, ...more })
-  const ended = (usage: SessionUsage | null): SessionEvent => ({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: 'Done.', rows: [], userRow: null, usage })
+  const ended = (usage: SessionUsage | null): SessionEvent => ({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: 'Done.', rows: [], userRow: null, replyRow: null, usage })
 
   it('reads the chat\'s usage once it is live, and the first turn then holds what it used', async () => {
     const { actor, open, usageReads, answerUsageRead, event } = stage()

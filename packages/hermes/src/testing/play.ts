@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { EXPORT_FORMATS } from '../domain/command'
-import { EFFORTS, type AdmissionId, type Answer, type BusyMode, type HermesRequest, type PromptId, type RequestId, type RequestReply, type Session, type SessionId } from '../domain/session'
+import {
+  EFFORTS, PLAIN_CONTROLS, type AdmissionId, type Answer, type BusyMode, type CheckpointId, type ControlAction, type HermesRequest, type ProcessId, type PromptId, type RequestId, type RequestReply, type Session,
+  type SessionId
+} from '../domain/session'
 import { openHermes, type Command, type Hermes, type Upload } from '../hub'
 import { systemClock } from '../wire/link'
 import { manualClock } from './clock'
@@ -35,7 +38,22 @@ function cardReply(result: Recorded): RequestReply {
 const queued = (action: 'cancel' | 'sendNow' | 'release') => (sessionId: SessionId, params: Recorded): Command =>
   ({ do: 'queued', sessionId, admissionId: params.admission_id as AdmissionId, action })
 
-const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fixture: Fixture, next: AwaitStep | undefined) => Command>> = {
+function controlOf(params: Recorded): ControlAction {
+  const args = record(params.args)
+  if (params.action === 'subgoal.add') return { act: 'subgoal.add', text: String(args.text) }
+  if (params.action === 'subgoal.remove') return { act: 'subgoal.remove', index: Number(args.index) }
+  const act = PLAIN_CONTROLS.find(held => held === params.action)
+  if (act === undefined) throw new Error(`the stand-in user has no button for ${String(params.action)}`)
+  return { act }
+}
+
+function reactedTurn(session: Session, params: Recorded): Command {
+  const turn = session.history.find(held => held.reply?.rowId === params.row_id)
+  if (turn === undefined) throw new Error(`the stand-in user sees no answer stored as row ${String(params.row_id)}`)
+  return { do: 'react', sessionId: session.id, turn: turn.id, emoji: typeof params.emoji === 'string' ? params.emoji : null }
+}
+
+const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fixture: Fixture, next: AwaitStep | undefined, session: Session) => Command>> = {
   'prompt.submit': (sessionId, params) => ({ do: 'send', sessionId, text: String(params.text) }),
   'session.mutate': (sessionId, params, fixture, next) => {
     const payload = record(params.payload)
@@ -74,7 +92,16 @@ const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fix
   'clarify.lock': (sessionId, params) => ({
     do: 'answer', sessionId, requestId: params.request_id as RequestId, reply: { kind: 'lock', question: String(params.question_id), answer: lockedAnswer(params.answer) }
   }),
-  'connection.respond': (sessionId, params) => ({ do: 'answer', sessionId, requestId: params.op_id as RequestId, reply: cardReply(record(params.result)) })
+  'connection.respond': (sessionId, params) => ({ do: 'answer', sessionId, requestId: params.op_id as RequestId, reply: cardReply(record(params.result)) }),
+  'process.kill': (sessionId, params) => ({ do: 'killProcess', sessionId, processId: params.process_id as ProcessId }),
+  'session.control': (sessionId, params) => ({ do: 'control', sessionId, action: controlOf(params) }),
+  'rollback.list': sessionId => ({ do: 'checkpoints', sessionId }),
+  'rollback.diff': (sessionId, params) => ({ do: 'checkpointDiff', sessionId, checkpoint: params.hash as CheckpointId }),
+  'rollback.restore': (sessionId, params) => ({
+    do: 'restore', sessionId, checkpoint: params.hash as CheckpointId,
+    scope: typeof params.file_path === 'string' ? { kind: 'file', path: params.file_path } : { kind: 'folder', edits: params.all === true ? 'overwrite' : 'keep' }
+  }),
+  'message.react': (_sessionId, params, _fixture, _next, session) => reactedTurn(session, params)
 }
 
 type CallOf<M extends string> = AwaitStep & { readonly await: M }
@@ -108,7 +135,7 @@ function commandFor(step: AwaitStep | AnswerStep, session: Session, index: numbe
     if (follows(step, fixture.steps.slice(0, index).findLast(isAwait))) return null
     const busy = busyFor(step, next, session.tuning.busy)
     if (busy !== null && busy !== session.tuning.busy) return { do: 'tune', sessionId, set: 'busy', to: busy }
-    const command = USER[step.await]?.(sessionId, recorded(step), fixture, next)
+    const command = USER[step.await]?.(sessionId, recorded(step), fixture, next, session)
     if (command === undefined) throw new Error(`step ${index}: the stand-in user has no command for ${step.await}`)
     return command
   }
@@ -210,7 +237,7 @@ export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncG
       if (script.finished && latest !== undefined && ended(latest)) return
       if (clock.now() - progressAt > (virtual === null ? LOOPBACK.stuckMs : STUCK_MS)) {
         const step = fixture.steps[script.step]
-        const waiting = step === undefined || 'push' in step || 'stored' in step || 'drop' in step
+        const waiting = step === undefined || 'push' in step || 'stored' in step || 'reads' in step || 'drop' in step
           ? 'with no viewer attached'
           : `waiting for ${'await' in step ? step.await : `an answer to ${step.answer}`}`
         throw new Error(`the story is stuck at step ${script.step} of ${fixture.steps.length}, ${waiting}. The session is ${latest?.sync.state ?? 'unseen'}.`)
