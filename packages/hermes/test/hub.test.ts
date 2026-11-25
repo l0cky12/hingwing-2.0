@@ -757,19 +757,52 @@ describe("a bot's chats", () => {
     expect(rowsOf(opened)[0]).toEqual([REMINDER, 'Send invoice reminder', 'asking'])
   })
 
-  it('drop a list that answers after the user left its bot', async () => {
+  const listsOf = (opened: ReturnType<typeof open>, bot: BotId) => opened.sent().filter(call => call.method === 'session.list' && call.params?.profile === bot && !('title' in (call.params ?? {})))
+  const shown = (opened: ReturnType<typeof open>) => {
+    const seen: string[] = []
+    opened.hermes.sidebar.subscribe(sidebar => seen.push(`${sidebar.bot}:${sidebar.status}:${sidebar.rows.map(row => row.id).join()}`))
+    return seen
+  }
+
+  it("show a bot's last rows at once when the user comes back to it, and refresh them behind", async () => {
     const opened = open(WITH_CHATS)
     await opened.clock.advance(0)
     await opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
     await opened.clock.advance(0)
-    const seen: string[] = []
-    opened.hermes.sidebar.subscribe(sidebar => seen.push(`${sidebar.bot}:${sidebar.status}:${sidebar.rows.map(row => row.id).join()}`))
+    const seen = shown(opened)
 
     void opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: EMU } })
-    void opened.hermes.run(picked(INVOICES))
+    expect(seen, 'before any reply').toEqual([`${EMU}:stale:${SESSION}`])
     await opened.clock.advance(0)
-    expect(seen).toEqual([`${EMU}:loading:`, `${RESEARCH}:loading:`, `${RESEARCH}:ready:${[REMINDER, INVOICES, DOWNLOADS].join()}`])
-    expect(opened.sent().filter(call => call.method === 'session.list' && call.params?.profile === EMU), "Emu's list was asked for, and its answer dropped").toHaveLength(6)
+    expect(seen).toEqual([`${EMU}:stale:${SESSION}`, `${EMU}:ready:${SESSION}`])
+    expect(listsOf(opened, EMU), 'listed again').toHaveLength(6)
+  })
+
+  it("keep an answer that comes after the user left its bot for that bot, and never show it under another", async () => {
+    const opened = open(WITH_CHATS, { latencyMs: 75 })
+    await opened.clock.advance(2_000)
+    const seen = shown(opened)
+
+    void opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
+    await opened.clock.advance(90)
+    void opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: EMU } })
+    await opened.clock.advance(100)
+    expect(seen, "Research's answer came while Emu was open").toEqual([`${RESEARCH}:loading:`, `${EMU}:stale:${SESSION}`, `${EMU}:ready:${SESSION}`])
+
+    void opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
+    await opened.clock.advance(80)
+    expect(seen.at(-1), 'once its title lookup answers, shown from the answer it kept').toBe(`${RESEARCH}:stale:${[REMINDER, INVOICES, DOWNLOADS].join()}`)
+  })
+
+  it('ask for the new bot at once while the list of the bot it left is still on its way', async () => {
+    const opened = open(WITH_CHATS, { latencyMs: 75 })
+    await opened.clock.advance(2_000)
+    void opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
+    await opened.clock.advance(90)
+    void opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: EMU } })
+    await opened.clock.advance(1)
+    expect(listsOf(opened, RESEARCH), "Research's list has not answered").toHaveLength(3)
+    expect(listsOf(opened, EMU)).toHaveLength(6)
   })
 })
 

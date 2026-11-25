@@ -18,7 +18,10 @@ export interface SessionList {
    */
   readonly running: ReadonlySet<SessionId>
   refresh(): void
-  /** List this bot's chats from now on. A list that answers for the bot it left is dropped. */
+  /**
+   * List this bot's chats from now on. A bot listed before on this connection shows its last rows at
+   * once, `stale` and with no `running`, until its refresh answers. An answer for a bot it left is kept for that bot.
+   */
   follow(bot: BotId | null): void
   retitle(id: SessionId, title: string): void
   drop(id: SessionId): void
@@ -42,74 +45,76 @@ const LIVE = { scope: 'live', picker: true } as const
  */
 const LIVE_HIDDEN = { scope: 'live', include_hidden: true } as const
 
+/** A bot's chats as Hermes last listed them on this connection. */
+interface Listing { readonly rows: readonly ListRow[]; readonly complete: boolean }
+
+const NONE: ReadonlySet<SessionId> = new Set()
+
 /** `owned` hears which bot each listed chat lives in before `changed` runs, so an actor made on `changed` reaches the right profile. */
 export function sessionList(conn: Connection, owned: (bot: BotId, sessions: readonly SessionId[]) => void, changed: () => void): SessionList {
   let bot: BotId | null = null
   let status: Sidebar['status'] = 'loading'
-  let rows: readonly ListRow[] = []
-  let complete = false
-  let running: ReadonlySet<SessionId> = new Set()
-  let fetching = false
-  let again = false
+  const lists = new Map<BotId | null, Listing>()
+  let running = NONE
+  /** bot -> whether it is to be listed again once the fetch in flight for it answers. */
+  const fetching = new Map<BotId | null, boolean>()
 
-  const fetch = async () => {
-    fetching = true
-    const asked = bot
+  const fetch = async (asked: BotId | null) => {
+    fetching.set(asked, false)
     const via = asked === null ? conn : conn.as(asked)
     try {
       const [live, hidden, stored] = await Promise.all([via.call('session.list', LIVE), via.call('session.list', LIVE_HIDDEN), via.call('session.list', STORED)])
+      const rows = merged(parseUserChats(live.sessions), parseUserChats(stored.sessions))
+      lists.set(asked, { rows, complete: stored.sessions.length < STORED_ROWS })
+      if (asked !== null) owned(asked, rows.map(row => row.id))
       if (asked === bot) {
-        rows = merged(parseUserChats(live.sessions), parseUserChats(stored.sessions))
-        complete = stored.sessions.length < STORED_ROWS
         const listed = new Set(rows.map(row => row.id))
         running = new Set(hidden.sessions.filter(row => row.running).map(row => row.session_id as SessionId).filter(id => listed.has(id)))
         status = 'ready'
-        if (asked !== null) owned(asked, rows.map(row => row.id))
         changed()
       }
     } catch (error) {
       if (!(error instanceof Offline) && !(error instanceof RpcRefusal)) throw error
     } finally {
-      fetching = false
-    }
-    if (again) {
-      again = false
-      void fetch()
+      const again = fetching.get(asked) === true
+      fetching.delete(asked)
+      if (again) void fetch(asked)
     }
   }
 
   const refresh = () => {
-    if (fetching) again = true
-    else void fetch()
+    if (fetching.has(bot)) fetching.set(bot, true)
+    else void fetch(bot)
+  }
+
+  const edit = (change: (rows: readonly ListRow[]) => readonly ListRow[]) => {
+    let shown = false
+    for (const [of, listing] of lists) {
+      const rows = change(listing.rows)
+      if (rows === listing.rows) continue
+      lists.set(of, { ...listing, rows })
+      shown ||= of === bot
+    }
+    if (shown) changed()
   }
 
   return {
     get bot() { return bot },
     get status() { return status },
-    get rows() { return rows },
-    get complete() { return complete },
+    get rows() { return lists.get(bot)?.rows ?? [] },
+    get complete() { return lists.get(bot)?.complete ?? false },
     get running() { return running },
     refresh,
     follow: next => {
       if (next === bot) return
       bot = next
-      rows = []
-      complete = false
-      running = new Set()
-      status = 'loading'
+      running = NONE
+      status = lists.has(next) ? 'stale' : 'loading'
       changed()
       refresh()
     },
-    retitle: (id, title) => {
-      if (!rows.some(row => row.id === id && row.title !== title)) return
-      rows = rows.map(row => (row.id === id ? { ...row, title } : row))
-      changed()
-    },
-    drop: id => {
-      if (!rows.some(row => row.id === id)) return
-      rows = rows.filter(row => row.id !== id)
-      changed()
-    },
+    retitle: (id, title) => edit(rows => (rows.some(row => row.id === id && row.title !== title) ? rows.map(row => (row.id === id ? { ...row, title } : row)) : rows)),
+    drop: id => edit(rows => (rows.some(row => row.id === id) ? rows.filter(row => row.id !== id) : rows)),
     stale: () => {
       if (status !== 'ready') return
       status = 'stale'
