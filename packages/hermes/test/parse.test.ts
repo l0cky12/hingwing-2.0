@@ -10,7 +10,7 @@ import type {
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 import {
   parseContextBreakdown, parseEvent, parseInlineDiff, parseListRows, parseModelMenu, parseModelReceipt, parseReplay, parseRows, parseServerRequest,
-  parseSnapshot, parseStats, parseToolResult, parseTranscript, SHOWN, UNSHOWN
+  parseSnapshot, parseStats, parseToolResult, parseTranscript, FOR_WINDOW, SHOWN, UNSHOWN
 } from '../src/wire/parse'
 
 const ERRAND = fileURLToPath(new URL('../../../fixtures/errand.jsonl', import.meta.url))
@@ -218,10 +218,23 @@ describe('parseEvent outside the happy path', () => {
     })
   })
 
-  it('covers every generated event type as shown, unshown or app-wide', () => {
-    const unlisted = GATEWAY_EVENT_TYPES.filter(type => !(type in SHOWN) && !UNSHOWN.has(type) && parseEvent({ type }).scope !== 'app')
+  it('covers every generated event type as shown, for the window, unshown or app-wide', () => {
+    const unlisted = GATEWAY_EVENT_TYPES.filter(type => !(type in SHOWN) && !(type in FOR_WINDOW) && !UNSHOWN.has(type) && parseEvent({ type }).scope !== 'app')
     expect(unlisted).toEqual([])
-    expect(Object.keys(SHOWN).filter(type => UNSHOWN.has(type))).toEqual([])
+    expect([...Object.keys(SHOWN), ...Object.keys(FOR_WINDOW)].filter(type => UNSHOWN.has(type))).toEqual([])
+  })
+
+  it('reads a preview frame as an ask of the window, with a blank label or url as none', () => {
+    const asked = (type: string, payload: object) => parseEvent(frame({ type, payload }))
+    expect(asked('preview.open', { url: 'http://localhost:5173/', label: 'demo' })).toEqual({
+      scope: 'session', sessionId: SESSION, type: 'preview.open', stamp: { epoch: EPOCH, seq: 7, generation: null }, event: null, skipped: 'window',
+      ask: { do: 'open', url: 'http://localhost:5173/', label: 'demo' }
+    })
+    expect(asked('preview.open', { url: '/tmp/site/index.html', label: '' })).toMatchObject({ ask: { do: 'open', url: '/tmp/site/index.html', label: null } })
+    expect(asked('preview.close', { url: '' })).toMatchObject({ skipped: 'window', ask: { do: 'close', url: null } })
+    expect(asked('preview.close', {})).toMatchObject({ ask: { do: 'close', url: null } })
+    expect(asked('preview.close', { url: 'http://localhost:5173/' })).toMatchObject({ ask: { do: 'close', url: 'http://localhost:5173/' } })
+    for (const payload of [{ url: '' }, { label: 'demo' }, { url: 7 }]) expect(asked('preview.open', payload)).toMatchObject({ event: null, skipped: 'invalid' })
   })
 })
 

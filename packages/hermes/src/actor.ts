@@ -63,8 +63,12 @@ export class SessionActor {
     return this.published
   }
 
-  feed(input: Extract<SessionInput, { in: 'event' | 'gap' | 'declined' }>): void {
+  /** Whether the input moved the live cursor, as a frame seen for the first time and in order does. */
+  feed(input: Extract<SessionInput, { in: 'event' | 'gap' | 'declined' }>): boolean {
+    const before = this.tracked.gate
     this.step(input)
+    const after = this.tracked.gate
+    return before.at === 'live' && after.at === 'live' && after.cursor !== before.cursor
   }
 
   attach(): void {

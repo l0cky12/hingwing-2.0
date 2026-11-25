@@ -8,5 +8,6 @@ export { BOT_TONES, botsIn, canonicalBotId, rosterOf, type AvatarTone, type Bot,
 export { mentionedBots, mentionOf, typedMention } from './mention'
 export type { Relay, RelayDesk, RelayId, RelayState } from './relay'
 export type { ChatRef, OpenChat, Shown, Unstarted } from './open'
+export type { PaneAsk } from './pane'
 export { modelViewOf, sameModel, type ModelView } from './model'
 export { CHECK_FAILURES, STEP_WORDS, machineOf, parseSshHost, targetOf, type CheckFailure, type CheckStep, type SshHost, type Target } from './reach'
