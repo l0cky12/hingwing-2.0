@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { SessionActor } from '../src/actor'
+import { SessionActor, type Upload } from '../src/actor'
 import type { Admission } from '../src/domain/queue'
 import type { SessionEvent } from '../src/domain/reduce'
-import type { AdmissionId, BusyMode, Generation, InputId, Link, PromptId, QueuedAction, Session, SessionId } from '../src/domain/session'
+import type { AdmissionId, AttachmentId, BusyMode, Generation, InputId, Link, PromptId, QueuedAction, Session, SessionId } from '../src/domain/session'
 import { runSessionCommand, type Hub, type SessionCommand } from '../src/session-commands'
 import { manualClock, settle } from '../src/testing/clock'
 import { Offline, RpcRefusal, type Calls } from '../src/wire/link'
@@ -13,6 +13,8 @@ const ADMISSION = 'a1' as AdmissionId
 
 interface Call { readonly method: string; readonly params: Record<string, unknown>; resolve(result: unknown): void; reject(error: Error): void }
 
+const SHOT: Upload = { id: 'f1' as AttachmentId, name: 'error.png', kind: 'image', size: 3, mime: 'image/png', bytes: Uint8Array.from([1, 2, 3]) }
+const STAGED_SHOT = { attached: true, path: '/h/cache/images/upload-1.png', mime: 'image/png' }
 const refusal = (reason: string) => new RpcRefusal(4001, reason, reason, null)
 const row = (state: Admission['state'], admissionId = ADMISSION): Admission => ({ admissionId, inputId: `in-${admissionId}` as InputId, text: 'tidy the notes', state })
 const started: SessionEvent = { type: 'turn.started', turnId: null, admissionId: null, requestText: null }
@@ -40,7 +42,7 @@ async function stage({ watched = false }: { readonly watched?: boolean } = {}) {
   const hub: Hub = {
     settledCatalog: async () => [], retitle: () => {}, drop: () => {}, refreshSoon: () => {},
     settledRelay: async () => {}, mentioned: () => [], relay: () => {}, branchPins: new Map(), branched: () => {},
-    uploads: { read: async () => null }
+    uploads: { read: async (id: AttachmentId) => (id === SHOT.id ? SHOT : null) }
   }
   const answer = async (method: string, result: unknown) => {
     const call = calls.find(held => held.method === method)
@@ -214,6 +216,19 @@ describe('send while a turn runs', () => {
       expect(items()).toEqual([{ kind: 'steer', text: 'use the staging db' }])
       expect(actor.session.outbox).toEqual([])
     })
+
+  it.each<BusyMode>(['steer', 'interrupt'])('queues a message with attachments whole in %s mode, and hands nothing to the turn', async busy => {
+    const { event, tune, command, sent, answer, items } = await stage()
+    event(started)
+    tune(busy)
+    const done = command({ do: 'send', sessionId: ID, text: 'what is this', attachments: [SHOT.id] })
+    await settle()
+    await answer('image.attach_bytes', STAGED_SHOT)
+    expect(sent()).toEqual([['prompt.submit', { session_id: ID, text: 'what is this', input_id: 'id-1', attachments: [{ path: STAGED_SHOT.path, mime: 'image/png' }] }]])
+    await answer('prompt.submit', { admission_id: 'a9', status: 'queued' })
+    expect(await done).toEqual({ ok: true, value: null })
+    expect(items()).toEqual([])
+  })
 
   it('submits it as the next message when no agent saw the steer', async () => {
     const { actor, done, sent, answer, items } = await sending('steer')

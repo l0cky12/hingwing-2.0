@@ -62,11 +62,13 @@ const BUSY = { queue: 'submit', steer: 'steer', interrupt: 'redirect' } as const
  * A message is submitted, and so queues behind a running turn, unless the chat's busy mode hands it
  * to that turn. A turn that waits on the user reads nothing until it is answered, and one that is
  * stopping reads nothing more, so a message sent then queues too, as Hermes Desktop's does
- * (apps/desktop/src/app/chat/composer/busy-submit-state.ts).
+ * (apps/desktop/src/app/chat/composer/busy-submit-state.ts). A steer or a redirect carries only
+ * words, so a message with `attachments` always queues whole, as in Hermes Desktop
+ * (apps/desktop/src/app/chat/composer/use-composer-submit.ts) and the TUI.
  */
-export function sendPlan(session: Pick<SessionContent, 'run' | 'requests' | 'tuning'>): SendPlan {
+export function sendPlan(session: Pick<SessionContent, 'run' | 'requests' | 'tuning'>, attachments: readonly Attachment[]): SendPlan {
   const { run, requests, tuning } = session
-  if (run.state !== 'running' || tuning.busy === null) return SUBMIT
+  if (run.state !== 'running' || tuning.busy === null || attachments.length > 0) return SUBMIT
   const by = BUSY[tuning.busy]
   const held = run.stop === 'requested' || requests.length > 0
     || run.turn.items.some(item => item.kind === 'prompt' && (item.state.s === 'waiting' || item.state.s === 'sending'))

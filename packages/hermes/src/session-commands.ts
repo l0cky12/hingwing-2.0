@@ -273,7 +273,7 @@ async function correct(port: SessionPort, by: 'steer' | 'redirect', text: string
 }
 
 async function say(port: SessionPort, text: string, uploads: readonly Upload[]): Promise<Outcome> {
-  const plan = sendPlan(port.content)
+  const plan = sendPlan(port.content, uploads)
   if (plan.by === 'submit') return port.submit(text, undefined, uploads)
   return port.whenLive(async () => {
     const handed = await correct(port, plan.by, text, plan.during)

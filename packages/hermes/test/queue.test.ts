@@ -166,11 +166,11 @@ describe('Hermes\'s queue', () => {
 describe('sendPlan', () => {
   const running = (stop: 'none' | 'requested' = 'none', items: Extract<Run, { state: 'running' }>['turn']['items'] = []): Run =>
     ({ state: 'running', generation: 4 as Generation, stop, turn: { id: 't1' as TurnId, request: null, began: null, items, announced: null } })
-  const plan = (run: Run, busy: BusyMode | null, requests = 0) =>
+  const plan = (run: Run, busy: BusyMode | null, requests = 0, attachments: readonly Attachment[] = []) =>
     sendPlan({
       run, tuning: { reasoning: null, busy },
       requests: Array.from({ length: requests }, (_, index) => ({ id: `r${index}` as RequestId, ask: { kind: 'secret', for: { is: 'sudo', command: 'x' } }, state: { s: 'waiting', error: null }, deadline: null }))
-    })
+    }, attachments)
   const asking = running('none', [{
     kind: 'prompt', id: 'p1' as PromptId, generation: 4 as Generation, ask: { kind: 'approval', command: 'rm', reason: null, choices: ['once', 'deny'] }, state: { s: 'waiting', error: null }, deadline: null
   }])
@@ -186,6 +186,10 @@ describe('sendPlan', () => {
     ['Hermes waits on a request', running(), 'steer', 1, { by: 'submit' }]
   ])('when %s', (_, run, busy, requests, want) => {
     expect(plan(run, busy, requests)).toEqual(want)
+  })
+
+  it.each<BusyMode>(['steer', 'interrupt'])('queues a message with attachments whole in %s mode, since a steer or redirect carries only words', busy => {
+    expect(plan(running(), busy, 0, [SHOT])).toEqual({ by: 'submit' })
   })
 })
 
