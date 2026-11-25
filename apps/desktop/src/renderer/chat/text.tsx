@@ -2,6 +2,8 @@ import { fieldId, parseMarkdown, proseLeaves, type Block, type Inline, type Phra
 import { Fragment, useMemo, type ReactNode } from 'react'
 import { isWebLink, isWebPage } from '../../ipc-contract'
 import { Code } from './Code'
+import { Diagram } from './Diagram'
+import { diagramFor } from './diagrams'
 import { Formula } from './Formula'
 import { ThreadImage } from './Image'
 import { WebLink } from './WebLink'
@@ -60,7 +62,10 @@ function block(node: Block, key: number, tail: ReactNode, ids: FindIds): ReactNo
       return node.ordered ? <ol key={key} start={node.start}>{items}</ol> : <ul key={key}>{items}</ul>
     }
     case 'quote': return <blockquote key={key}>{blockList(node.blocks, tail, ids)}</blockquote>
-    case 'code': return <Code key={key} node={node} caret={tail} findId={ids.get(node)} />
+    case 'code':
+      return node.open || diagramFor(node.lang) === null
+        ? <Code key={key} node={node} caret={tail} findId={ids.get(node)} />
+        : <Fragment key={key}><Diagram node={node} findId={ids.get(node)} />{tail}</Fragment>
     case 'table':
       return (
         <Fragment key={key}>

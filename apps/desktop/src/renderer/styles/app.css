@@ -134,6 +134,12 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 }
 .prose .code:hover .chip, .prose .code:has(:focus-visible) .chip, .prose .chip:has(.copy.shown) { opacity: 1; }
 .prose > .code:first-child > .chip { right: 72px; }
+.prose .diagram > .drawn { margin: 6px 0 0; padding: 12px 14px; max-height: min(70vh, 560px); overflow: auto; background: var(--sheet); border-radius: 6px; scrollbar-width: thin; }
+.prose .diagram > .drawn > svg { display: block; }
+.prose .diagram > .undrawn { max-width: 66ch; margin: 6px 0 0; font: 400 13.5px/1.5 var(--sans); color: var(--graphite); }
+.chip > .view { padding: 0 6px; border: 0; border-radius: 3px; background: none; color: var(--graphite); font: inherit; }
+.chip > .view:hover { color: var(--ink); }
+.chip > .view[aria-pressed="true"] { color: var(--ink); background: var(--code-bg); }
 .caret::after { content: ""; display: inline-block; width: 0.5em; height: 1em; margin-left: 2px; vertical-align: -0.12em; background: var(--signal); animation: blink 1s steps(2) infinite; }
 
 .step > .head, .group > .head, .reasoning > .head, .helper > .head, .plan > .head {
@@ -532,6 +538,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .tip.complete .glyph, .tip.lost .glyph { border-width: 2px; }
   .tip.complete .glyph::after { left: 3px; top: 0.25px; width: 4px; height: 7px; }
   .caret::after { width: 0; border-left: 0.5em solid CanvasText; }
+  .chip > .view[aria-pressed="true"] { outline: 1px solid CanvasText; }
 
   .approval { --card-edge: 1px; border: 1px solid CanvasText; }
   .approval.live { --card-edge: 4px; border-left-width: var(--card-edge); }

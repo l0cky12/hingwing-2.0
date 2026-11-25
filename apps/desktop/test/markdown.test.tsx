@@ -2,6 +2,7 @@ import { loadFixture } from '@highwing/hermes/testing'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { fieldId, leafText, parseMarkdown, proseLeaves, type Block } from '@highwing/thread'
+import { diagramFor } from '../src/renderer/chat/diagrams'
 import { grammarFor, loadGrammar } from '../src/renderer/chat/highlight'
 import { Markdown } from '../src/renderer/chat/text'
 
@@ -191,5 +192,41 @@ describe('Markdown with the grammars loaded', () => {
     const markup = render(`\`\`\`ts\n${long}\n\`\`\``)
     expect(markup).not.toMatch(COLORED)
     expect(codeBlocks(markup).map(textOf)).toEqual([long])
+  })
+})
+
+const FLOWCHART = 'flowchart LR\n    A[Request] --> B[Reply]'
+const toggles = (markup: string) => Array.from(markup.matchAll(/<button type="button" class="view" aria-pressed="(true|false)">([^<]*)<\/button>/g), ([, pressed, name]) => `${name} ${pressed}`)
+
+describe('Markdown with a mermaid block', () => {
+  it('marks a mermaid fence for drawing in any case, and no other fence', () => {
+    expect(diagramFor('mermaid')).toBe('mermaid')
+    expect(diagramFor('Mermaid')).toBe('mermaid')
+    for (const lang of ['ts', 'mmd', 'constructor', null]) expect(diagramFor(lang), String(lang)).toBeNull()
+  })
+
+  it('offers Diagram and Source on a closed mermaid block, and keeps its source where find searches', () => {
+    const markup = render(`\`\`\`mermaid\n${FLOWCHART}\n\`\`\``)
+    expect(toggles(markup)).toEqual(['Diagram true', 'Source false'])
+    expect(markup).toContain('aria-label="Copy code"')
+    expect(markedText(markup)).toEqual([[fieldId('t1/0', 'block 0'), FLOWCHART]])
+  })
+
+  it('shows a mermaid block that is still streaming as a plain code block, with the caret inside it', () => {
+    const markup = render(`\`\`\`mermaid\n${FLOWCHART}`)
+    expect(toggles(markup)).toEqual([])
+    expect(markup).toContain('<div class="code" data-open="true">')
+    expect(codeBlocks(markup).map(textOf)).toEqual([FLOWCHART])
+    expect(markup).toContain('<span class="caret"></span></pre>')
+  })
+
+  it('renders every prefix of the diagram reply and marks each shown text with the field find searches', () => {
+    const diagrams = finalReply('fixtures/diagram.jsonl')
+    expect(parseMarkdown(diagrams).filter(block => block.kind === 'code' && diagramFor(block.lang) !== null)).toHaveLength(3)
+    for (let end = 0; end <= diagrams.length; end++) {
+      const prefix = diagrams.slice(0, end)
+      const fields = proseLeaves(parseMarkdown(prefix)).map((leaf, index) => [fieldId('t1/0', `block ${index}`), leafText(leaf)])
+      expect(markedText(render(prefix)), `prefix of ${end} characters`).toEqual(fields)
+    }
   })
 })
