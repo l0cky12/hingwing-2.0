@@ -10,6 +10,7 @@ Run:  python3 -I fixtures/make_picture_fixtures.py
   pet.thumb with a 96x104 PNG idle frame, the size Hermes crops (agent/pet/store.py:29-31), except Dune and Velvet,
   which have none.
 - pets/none.json: a Hermes that lists no pets.
+- pictures/truncated.png: a 64x64 PNG cut off partway through its pixels, whose first bytes still say PNG.
 - pets/refused.json: the gallery of gallery.json, whose first pet.thumb for Tabby fails, as a call lost to a timeout would.
 
 Each sheet the gallery names is on a petdex host, the only hosts Hermes fetches a sheet from (agent/pet/store.py:215-221).
@@ -216,6 +217,9 @@ def write(path, value):
     path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + "\n")
 
+
+whole = png(64, 64, lambda x, y: bytes(mix(hex_rgb("#4F7396"), hex_rgb("#D96A4E"), (x + y) / 126)))
+(HERE / "pictures" / "truncated.png").write_bytes(whole[:len(whole) // 2])
 
 write(HERE / "images" / "drawn.json", {"available": True, "picture": data_url(png(256, 256, robot)), "delay_ms": 1200})
 write(HERE / "images" / "none.json", {"available": False})

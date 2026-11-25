@@ -2,7 +2,7 @@ import type { CommandOutcome, PetChoice } from '@highwing/hermes/domain'
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { PictureFile } from '../../ipc-contract'
 import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_COLORS, FACE_SHAPES, faceSvg, lookWords, shapeFor, surpriseFor, titleOf, type Face, type FaceColor, type FaceShape, type Look } from './look'
-import { blobUrlOf } from './pictures'
+import { blobUrlOf, decodes } from './pictures'
 
 /** What the picker asks Hermes and main for. */
 export interface LookCalls {
@@ -40,6 +40,7 @@ type Thumb = { readonly at: 'loading' | 'refused' } | { readonly at: 'read'; rea
 const SHOWN_PETS = 24
 const SHOWN_SHARE = 0.1
 const HOW = 'Click it to pick a shape, generate a picture, upload one or choose a pet.'
+const UNREADABLE = "Highwing couldn't read that picture."
 
 const icon = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
 const Pencil = () => <svg {...icon} aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z" /></svg>
@@ -216,8 +217,10 @@ export function LookPicker({ look, name, calls, onLook, onDrawing }: LookPickerP
   const choose = async () => {
     setUpload({ busy: true, words: null })
     const outcome = await calls.choose()
-    setUpload({ busy: false, words: outcome.ok ? null : outcome.refusal.message })
-    if (outcome.ok && outcome.value !== 'cancelled') take({ from: 'upload', picture: outcome.value })
+    const picture = outcome.ok && outcome.value !== 'cancelled' ? outcome.value : null
+    const readable = picture !== null && (await decodes(picture))
+    setUpload({ busy: false, words: !outcome.ok ? outcome.refusal.message : picture !== null && !readable ? UNREADABLE : null })
+    if (picture !== null && readable) take({ from: 'upload', picture })
   }
 
   const shapeInstead = look.from !== 'face' && <button type="button" className="look-reset" onClick={backToFace}>Use a shape instead</button>
