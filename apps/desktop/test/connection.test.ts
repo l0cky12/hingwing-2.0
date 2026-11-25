@@ -3,7 +3,7 @@ import type { CheckFailure, CheckStep, SessionId, SshHost, Target } from '@highw
 import type { GatewayUrl } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { Live, Setup } from '../src/ipc-contract'
-import { nextSetup, ownConnection, pinnedConnection, refreshBotsOnFocus, type ConnectionDeps, type SetupEvent } from '../src/main/connection'
+import { feed, nextSetup, ownConnection, pinnedConnection, refreshBotsOnFocus, type ConnectionDeps, type SetupEvent } from '../src/main/connection'
 import { chatLinks } from '../src/main/links'
 import type { Settings } from '../src/main/settings'
 
@@ -362,8 +362,12 @@ describe('ownConnection, opening a chat while Settings is up', () => {
   const opening = (sessionId: string) => ({ do: 'open', ref: { kind: 'chat', sessionId: sessionId as SessionId } }) as const
   const LINKED = { do: 'open', ref: { kind: 'link', sessionId: 'local-0001' } }
   const holdSave = () => {
-    let finishSave = () => {}
-    return { save: () => new Promise<void>(resolve => { finishSave = resolve }), finish: () => finishSave() }
+    let settle: { resolve(): void; reject(error: Error): void } = { resolve: () => {}, reject: () => {} }
+    return {
+      save: () => new Promise<void>((resolve, reject) => { settle = { resolve, reject } }),
+      finish: () => settle.resolve(),
+      fail: () => settle.reject(new Error('EACCES'))
+    }
   }
 
   it('closes Settings, aborts its check, and opens', async () => {
@@ -457,6 +461,43 @@ describe('ownConnection, opening a chat while Settings is up', () => {
     await settled()
     expect(at()).toEqual({ at: 'chat', live: { target: REMOTE, epoch: 2 } })
     expect(opened[1]!.commands).toEqual([LINKED])
+  })
+
+  it.each([
+    ['passes', 'finish', { target: REMOTE, epoch: 2 }, 1],
+    ['fails', 'fail', { target: LOCAL, epoch: 1 }, 0]
+  ] as const)('ends a window that watches after the links on the chat, for a link held through a save that %s', async (_what, end, live, connection) => {
+    const held = holdSave()
+    const { owner, opened, pass, settled, at } = harness({ state: 'saved', target: LOCAL }, held.save)
+    const links = chatLinks()
+    links.serve(owner, () => {})
+    const window: Setup[] = []
+    owner.setup.subscribe(setup => window.push(setup))
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    links.holdLatest(['highwing://chat/local-0001'])
+    held[end]()
+    await settled()
+    expect(at()).toEqual({ at: 'chat', live })
+    expect(window.at(-1)).toEqual({ at: 'chat', live })
+    expect(opened[connection]!.commands).toEqual([LINKED])
+  })
+})
+
+describe('feed', () => {
+  it('ends every listener on the newest value when a listener sets it again', () => {
+    const screen = feed('form')
+    const seen: string[][] = [[], [], []]
+    screen.subscribe(next => void seen[0]!.push(next))
+    screen.subscribe(next => {
+      seen[1]!.push(next)
+      if (next === 'saved') screen.set('chat')
+    })
+    screen.subscribe(next => void seen[2]!.push(next))
+    screen.set('saved')
+    expect(screen.get()).toBe('chat')
+    expect(seen).toEqual([['saved', 'chat'], ['saved', 'chat'], ['chat']])
   })
 })
 

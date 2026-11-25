@@ -89,6 +89,7 @@ const isSetupCommand = (command: ConnectionCommand): command is SetupCommand => 
 
 export function feed<T>(initial: T): Feed<T> & { set(next: T): void } {
   let value = initial
+  let sets = 0
   const listeners = new Set<(value: T) => void>()
   return {
     get: () => value,
@@ -99,7 +100,12 @@ export function feed<T>(initial: T): Feed<T> & { set(next: T): void } {
     set: next => {
       if (next === value) return
       value = next
-      for (const listener of [...listeners]) listener(next)
+      const set = ++sets
+      for (const listener of [...listeners]) {
+        // A listener set a newer value and already told every listener. Going on would end the rest on this stale one.
+        if (sets !== set) return
+        listener(next)
+      }
     }
   }
 }
