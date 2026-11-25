@@ -88,6 +88,7 @@ export function parseGatewayUrl(raw: string): ParsedUrl {
   if (url.username !== '' || url.password !== '') return { ok: false, problem: 'credentials' }
   // `URL` drops an empty `?` or `#`, so only the text shows one was typed.
   if (/[?#]/.test(text)) return { ok: false, problem: 'extras' }
+  if (/%(?![0-9a-f]{2})/i.test(url.pathname)) return { ok: false, problem: 'not-an-address' }
   const path = url.pathname.replace(/\/+$/, '').replace(/%[0-9a-f]{2}/gi, escape => {
     const char = String.fromCharCode(parseInt(escape.slice(1), 16))
     return UNRESERVED.test(char) ? char : escape.toUpperCase()

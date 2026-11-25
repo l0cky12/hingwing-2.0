@@ -126,6 +126,11 @@ describe('parseGatewayUrl', () => {
     expect(gatewayUrl('https://hermes.example.com/hermes')).toBe('https://hermes.example.com/hermes')
   })
 
+  it.each(['https://box.example/%7ehermes/%2f', 'https://box.example/a%20b', 'https://box.example/%25'])('reads its own canonical form of %j back unchanged', text => {
+    const url = gatewayUrl(text)
+    expect(gatewayUrl(url)).toBe(url)
+  })
+
   it('tells two gateways apart by scheme, port and path', () => {
     const urls = ['https://box.example', 'http://box.example', 'https://box.example:8443', 'https://box.example/hermes'].map(gatewayUrl)
     expect(new Set(urls).size).toBe(4)
@@ -140,6 +145,7 @@ describe('parseGatewayUrl', () => {
   it.each([
     ['nothing', '', 'not-an-address'],
     ['another scheme', 'ftp://box.example', 'not-an-address'],
+    ['a stray percent sign', 'https://box.example/%%34%31', 'not-an-address'],
     ['another scheme with one slash', 'ftp:/box.example', 'not-an-address'],
     ['over 2048 characters before the slashes are dropped', `https://box.example${'/'.repeat(2048)}`, 'not-an-address'],
     ['a script', 'javascript:alert(1)', 'not-an-address'],
