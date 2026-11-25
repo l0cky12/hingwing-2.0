@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { EXPORT_FORMATS } from '../domain/command'
 import {
-  EFFORTS, PLAIN_CONTROLS, type AdmissionId, type Answer, type BusyMode, type CheckpointId, type ControlAction, type HermesRequest, type ProcessId, type PromptId, type RequestId, type RequestReply, type Session,
+  EFFORTS, PLAIN_CONTROLS, type AdmissionId, type Answer, type BusyMode, type CheckpointId, type ControlAction, type HelperId, type HermesRequest, type ProcessId, type PromptId, type RequestId, type RequestReply, type Session,
   type SessionId
 } from '../domain/session'
 import { openHermes, type Command, type Hermes, type Upload } from '../hub'
@@ -94,6 +94,7 @@ const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fix
   }),
   'connection.respond': (sessionId, params) => ({ do: 'answer', sessionId, requestId: params.op_id as RequestId, reply: cardReply(record(params.result)) }),
   'process.kill': (sessionId, params) => ({ do: 'killProcess', sessionId, processId: params.process_id as ProcessId }),
+  'subagent.interrupt': (sessionId, params) => ({ do: 'stopHelper', sessionId, helperId: params.subagent_id as HelperId }),
   'session.control': (sessionId, params) => ({ do: 'control', sessionId, action: controlOf(params) }),
   'rollback.list': sessionId => ({ do: 'checkpoints', sessionId }),
   'rollback.diff': (sessionId, params) => ({ do: 'checkpointDiff', sessionId, checkpoint: params.hash as CheckpointId }),

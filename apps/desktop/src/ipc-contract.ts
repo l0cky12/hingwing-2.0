@@ -1,7 +1,7 @@
 import {
   EFFORTS, EXPORT_FORMATS, PLAIN_CONTROLS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type BusyMode, type ChatRef,
-  type CheckFailure, type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type Item, type Link, type ModelOption,
+  type CheckFailure, type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type HelperId, type Item, type Link, type ModelOption,
   type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
   type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
@@ -446,6 +446,10 @@ export const validators: Validators = {
   killProcess: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && filled(raw.processId) ? { do: 'killProcess', sessionId, processId: raw.processId as ProcessId } : null
+  },
+  stopHelper: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && filled(raw.helperId) ? { do: 'stopHelper', sessionId, helperId: raw.helperId as HelperId } : null
   },
   control: raw => {
     const sessionId = sessionIdOf(raw)

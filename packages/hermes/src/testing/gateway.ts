@@ -154,6 +154,8 @@ const closed = (keys: Readonly<Record<string, (value: unknown) => boolean>>): Ch
   Object.entries(params).every(([key, value]) => Object.hasOwn(keys, key) && keys[key]!(value)) ? null : 'invalid_params'
 const isWords = (value: unknown): value is string => typeof value === 'string' && value.trim() !== ''
 const escapeHtml = (text: string) => text.replace(/[&<>]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[char]!)
+const helperControl: Check = (gateway, socket, params, routed) =>
+  closed({ session_id: isText, profile: isString, subagent_id: isText })(gateway, socket, params, routed) ?? (isText(params.subagent_id) ? null : 'invalid_params')
 const exportParams = closed({ session_id: isString, profile: isString, format: isString, redact: isBoolean })
 /** gateway/session_tui_side.py:33-38 */
 const sideText: Check = (gateway, socket, params, routed) =>
@@ -318,6 +320,8 @@ const STORY_CHECKS: Readonly<Record<string, readonly Check[]>> = {
   'prompt.resolve_unknown': [known, listed, lostGeneration],
   /** gateway/session_ancillary.py:294-305 */
   'process.kill': [closed({ session_id: isString, profile: isString, process_id: isText }), known],
+  /** gateway/session_ancillary.py:38-47 */
+  'subagent.interrupt': [helperControl, known],
   'session.control': [controlAction, known],
   'rollback.list': [rollback({ undo_since: value => typeof value === 'number', undo_message_id: isInt }), known],
   'rollback.diff': [rollback({ hash: isString }), known],

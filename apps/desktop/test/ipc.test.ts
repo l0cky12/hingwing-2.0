@@ -156,8 +156,9 @@ describe('validators', () => {
     expect(parseCommand({ do: 'botPicture', bot: 'rae' })).toEqual({ do: 'botPicture', bot: 'rae' })
   })
 
-  it('keep the panel commands: a process, a control button with what it takes, a checkpoint and its scope, and an emoji or none on a turn', () => {
+  it('keep the panel commands: a process, a helper, a control button with what it takes, a checkpoint and its scope, and an emoji or none on a turn', () => {
     expect(parseCommand({ do: 'killProcess', sessionId: 's1', processId: 'proc_1', extra: 1 })).toEqual({ do: 'killProcess', sessionId: 's1', processId: 'proc_1' })
+    expect(parseCommand({ do: 'stopHelper', sessionId: 's1', helperId: 'sa-0-1', text: 'steer' })).toEqual({ do: 'stopHelper', sessionId: 's1', helperId: 'sa-0-1' })
     expect(parseCommand({ do: 'control', sessionId: 's1', action: { act: 'goal.pause', text: 'ignored' } })).toEqual({ do: 'control', sessionId: 's1', action: { act: 'goal.pause' } })
     expect(parseCommand({ do: 'control', sessionId: 's1', action: { act: 'subgoal.add', text: 'tests pass' } })).toEqual({ do: 'control', sessionId: 's1', action: { act: 'subgoal.add', text: 'tests pass' } })
     expect(parseCommand({ do: 'control', sessionId: 's1', action: { act: 'subgoal.remove', index: 2 } })).toEqual({ do: 'control', sessionId: 's1', action: { act: 'subgoal.remove', index: 2 } })
@@ -277,6 +278,8 @@ describe('validators', () => {
     ['a pick with no provider', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: '', providerName: '' } }],
     ['a pick with a blank confirm token', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: 'p', providerName: 'P' }, confirm: ' ' }],
     ['a kill that names no process', { do: 'killProcess', sessionId: 's1', processId: ' ' }],
+    ['a stop that names no helper', { do: 'stopHelper', sessionId: 's1', helperId: ' ' }],
+    ['a stop of a helper in no chat', { do: 'stopHelper', helperId: 'sa-0-1' }],
     ['a button Hermes does not serve', { do: 'control', sessionId: 's1', action: { act: 'goal.delete' } }],
     ['a criterion with no words', { do: 'control', sessionId: 's1', action: { act: 'subgoal.add', text: ' ' } }],
     ['a criterion removed at place zero', { do: 'control', sessionId: 's1', action: { act: 'subgoal.remove', index: 0 } }],
@@ -318,7 +321,7 @@ describe('validators', () => {
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'checkpointDiff', 'checkpoints', 'closePreview', 'completePath',
       'compress', 'contextBreakdown', 'control', 'createBot', 'describeBot', 'discard', 'editBot', 'editTarget', 'export', 'keepTarget', 'killProcess',
       'loadEarlier', 'models', 'move', 'open', 'openChat', 'openPreview', 'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect',
-      'reloadPreview', 'removeBotPicture', 'rename', 'restore', 'rewind', 'send', 'side', 'start', 'stop', 'tune', 'versions'
+      'reloadPreview', 'removeBotPicture', 'rename', 'restore', 'rewind', 'send', 'side', 'start', 'stop', 'stopHelper', 'tune', 'versions'
     ])
   })
 })

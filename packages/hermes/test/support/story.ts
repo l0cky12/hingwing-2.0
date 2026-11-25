@@ -78,6 +78,7 @@ function userInputs({ await: method, params: sent, reply: answered }: Call, next
       return []
     case 'session.export':
     case 'session.control':
+    case 'subagent.interrupt':
     case 'rollback.list':
     case 'rollback.diff':
       return []

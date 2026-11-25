@@ -459,6 +459,7 @@ contract lists them as legacy methods. `Session.processes` and
 |---|---|---|
 | read when a window starts watching the chat, after each attach, and again when the list is old | `process.list {session_id}` | `gateway/session_ancillary.py:226-237,655-671` |
 | `killProcess` | `process.kill {session_id, process_id}` | `gateway/session_ancillary.py:294-305`, `tools/process_registry.py:2120-2210` |
+| `stopHelper` | `subagent.interrupt {session_id, subagent_id}` | `gateway/session_ancillary.py:24-55` |
 | read when a window starts watching the chat, and after each attach | `session.control.read {session_id}` | `gateway/session_ancillary.py:474-500` |
 | `control` | `session.control {session_id, action, args}` | `gateway/session_control_actions.py:141-164` |
 | `checkpoints`, or a typed `/rollback [list]` | `rollback.list {session_id}` | `gateway/session_tui_ops.py:212-275` |
@@ -478,6 +479,14 @@ contract lists them as legacy methods. `Session.processes` and
 - `process.kill` answers `killed` or `already_exited` for a process that ended,
   `error` with Hermes's words when the process outlived the kill, and refuses
   `process_not_found` for any id the chat does not own.
+- `subagent.interrupt` answers `{found, subagent_id}`. `found: false` means
+  the chat's agent runs no helper with that id, and the command is refused
+  with "Hermes is no longer running that helper." A helper Hermes found ends
+  with its own `subagent.complete` at status `interrupted`, which every
+  viewer gets. Hermes stops any helper below the chat's agent
+  (`subagent_records`, gateway/session_ancillary.py:532-548). Highwing offers
+  Stop only on a helper the agent itself started, and does not offer
+  `subagent.steer`.
 - Hermes publishes `session.control.update {control}` to every viewer on every
   change: a control button, a slash command, a fired loop, a judged turn
   (`gateway/session_control_actions.py:76-138`). Highwing replaces `control`

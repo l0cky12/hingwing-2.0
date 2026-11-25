@@ -1143,4 +1143,15 @@ describe('the scripted gateway and the session panels', () => {
     expect(await call('message.react', { session_id: SESSION, row_id: 2, emoji: '👍', author: 'bot' })).toMatchObject(refusal('invalid_params'))
     expect(await call('message.react', { session_id: SESSION, row_id: 2, emoji: null })).toMatchObject({ result: { row_id: 2 } })
   })
+
+  it('refuses a helper stop outside the key set Hermes checks, and takes the story\'s own', async () => {
+    const stop: Fixture = { header: ERRAND.header, steps: [{ at: 0, await: 'subagent.interrupt', params: { subagent_id: 'sa-0-1' }, reply: { found: true, subagent_id: 'sa-0-1' } }] }
+    const { call } = await rawSocket({}, stop)
+    await call('session.resume', { session_id: SESSION })
+    expect(await call('subagent.interrupt', { session_id: SESSION })).toMatchObject(refusal('invalid_params'))
+    expect(await call('subagent.interrupt', { session_id: SESSION, subagent_id: '' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('subagent.interrupt', { session_id: SESSION, subagent_id: 'sa-0-1', text: 'go on' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('subagent.interrupt', { session_id: 'other', subagent_id: 'sa-0-1' })).toMatchObject(refusal('not_found'))
+    expect(await call('subagent.interrupt', { session_id: SESSION, subagent_id: 'sa-0-1' })).toMatchObject({ result: { found: true, subagent_id: 'sa-0-1' } })
+  })
 })
