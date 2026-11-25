@@ -26,12 +26,10 @@ function answerOf(state: SideTask['state']): SideAnswer {
   }
 }
 
-/** The cards to draw above the composer, oldest first, so the newest sits nearest it. */
 export function sideCards(sides: readonly SideTask[], closed: ReadonlySet<SideId>): SideCard[] {
   return sides.flatMap(side => (closed.has(side.id) ? [] : [{ id: side.id, label: SIDE_LABELS[side.kind], asked: side.asked, answer: answerOf(side.state) }]))
 }
 
-// Closing is the renderer's alone: dropping the task from the session would let its late answer add it back.
 const closedSides = new Map<SessionId, ReadonlySet<SideId>>()
 const NONE_CLOSED: ReadonlySet<SideId> = new Set()
 const listeners = new Set<() => void>()

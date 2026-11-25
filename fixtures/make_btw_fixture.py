@@ -2,16 +2,8 @@
 
 Run with any Python 3:  python3 fixtures/make_btw_fixture.py
 
-Derived from fixtures/commands.jsonl, not a recording. The header is commands.jsonl's own (its `catalog`
-lists `/btw`, and its `info` holds the switches). The story plays commands.jsonl's first turn up to its
-first `agent.step`, so the turn is running, then asks two side questions with `prompt.btw`. Their
-`btw.complete` answers come in the opposite order to the asking, three seconds before the reply
-streams. The turn then finishes as recorded, and one last `btw.complete` arrives for a `task_id` this
-client never asked, as when another client asks a side question in the same chat.
-
-Every inserted push copies the envelope of the `btw.complete` that commands.jsonl recorded from Hermes's
-gateway: no generation, the chat's `replay_epoch`, and the next `seq`. The recorded frames after an
-insert get their `seq` renumbered so the chat's stream stays consecutive.
+Derived from fixtures/commands.jsonl, not a recording: its header and first turn are recorded, and the
+`prompt.btw` calls and `btw.complete` answers copy the envelope of the one that file recorded.
 """
 import json
 from pathlib import Path

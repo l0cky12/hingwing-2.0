@@ -29,9 +29,7 @@ interface ComposerProps {
   readonly onInput: () => void
   readonly editing?: Editing | null
   readonly onCancelEdit?: () => void
-  /** Drawn above the box, in the composer's flow, so the thread gives way to it. */
   readonly above?: ReactNode
-  /** Escape that neither the slash menu nor an edit took. True when it was used. */
   readonly onEscape?: () => boolean
   readonly children?: ReactNode
 }
