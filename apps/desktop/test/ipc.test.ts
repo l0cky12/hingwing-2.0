@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
 import type { Hermes, Route } from '@highwing/hermes'
-import type { AttachmentId, Bots, CommandOutcome, Exported, Link, OpenChat, RelayDesk, Session, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
+import type { AttachmentId, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type Preview, type PreviewCommand, type Push, type Topic } from '../src/ipc-contract'
@@ -304,6 +304,25 @@ describe('validators', () => {
     expect(parseCommand({ do: 'openPreview', path: '/etc/passwd' })).toEqual({ do: 'openPreview' })
   })
 
+  it('keep a new group chat whose name and bots Hermes could take, trimmed and in the order given', () => {
+    const draft = { group: 'launch-plan', name: ' Launch plan ', bots: ['default', 'sam', 'juno'] }
+    expect(parseCommand({ do: 'createGroup', draft: { ...draft, colour: 'ink' }, extra: 1 })).toEqual({ do: 'createGroup', draft: { ...draft, name: 'Launch plan' } })
+    expect(parseCommand({ do: 'createGroup', draft: { ...draft, bots: ['a', 'b', 'c', 'd', 'e', 'f'], name: 'x'.repeat(200) } })).toMatchObject({ draft: { bots: { length: 6 } } })
+  })
+
+  it.each([
+    ['no draft', {}],
+    ['an id Hermes would not take', { draft: { group: 'launch plan', name: 'Launch plan', bots: ['default', 'sam'] } }],
+    ['a blank name', { draft: { group: 'g', name: '  ', bots: ['default', 'sam'] } }],
+    ['a name too long for Hermes', { draft: { group: 'g', name: 'x'.repeat(201), bots: ['default', 'sam'] } }],
+    ['one bot', { draft: { group: 'g', name: 'G', bots: ['default'] } }],
+    ['seven bots', { draft: { group: 'g', name: 'G', bots: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] } }],
+    ['a bot twice', { draft: { group: 'g', name: 'G', bots: ['sam', 'sam'] } }],
+    ['a blank bot', { draft: { group: 'g', name: 'G', bots: ['sam', ' '] } }]
+  ])('refuse a new group chat with %s', (_, raw) => {
+    expect(parseCommand({ do: 'createGroup', ...raw })).toBeNull()
+  })
+
   it('keep a mode switch', () => {
     expect(parseCommand({ do: 'setMode', mode: 'chats', extra: 1 })).toEqual({ do: 'setMode', mode: 'chats' })
     expect(parseCommand({ do: 'setMode', mode: 'bots' })).toEqual({ do: 'setMode', mode: 'bots' })
@@ -328,7 +347,7 @@ describe('validators', () => {
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'checkpointDiff', 'checkpoints', 'closePreview', 'completePath',
-      'compress', 'contextBreakdown', 'control', 'createBot', 'describeBot', 'discard', 'editBot', 'editTarget', 'export', 'keepTarget', 'killProcess',
+      'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'describeBot', 'discard', 'editBot', 'editTarget', 'export', 'keepTarget', 'killProcess',
       'loadEarlier', 'models', 'move', 'open', 'openChat', 'openPreview', 'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect',
       'reloadPreview', 'removeBotPicture', 'rename', 'restore', 'rewind', 'send', 'setMode', 'side', 'start', 'stop', 'stopHelper', 'tune', 'versions'
     ])
@@ -341,6 +360,7 @@ const SIDEBAR: Sidebar = { bot: null, status: 'stale', rows: [], complete: true 
 const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] } }
 const NOTHING_OPEN: OpenChat = { shown: null, opening: null, missing: null }
 const NO_RELAYS: RelayDesk = { supported: false, bySession: {} }
+const NO_GROUPS: Groups = { state: 'unsupported' }
 
 function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection) {
   const listeners = new Map<string, (event: IpcEvent, ...args: unknown[]) => void>()
@@ -385,6 +405,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
       }
     },
     relay: still(NO_RELAYS),
+    groups: still(NO_GROUPS),
     slash: {
       get: () => catalog,
       subscribe: (listener: (value: SlashCatalog) => void) => {
@@ -499,7 +520,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, preview: { state: 'closed' }, mode: 'chats' }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, preview: { state: 'closed' }, mode: 'chats' }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))

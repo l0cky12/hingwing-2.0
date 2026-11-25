@@ -1,7 +1,7 @@
 import {
-  EFFORTS, EXPORT_FORMATS, PLAIN_CONTROLS, targetOf,
+  EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, PLAIN_CONTROLS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type BusyMode, type ChatRef,
-  type CheckFailure, type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type HelperId, type Item, type Link, type ModelOption,
+  type CheckFailure, type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupDraft, type Groups, type HelperId, type Item, type Link, type ModelOption,
   type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
   type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
@@ -85,12 +85,14 @@ export interface AppTopics {
   readonly open: OpenChat
   /** Whether Hermes can hand a message to another bot, and the messages handed over from each chat. */
   readonly relay: RelayDesk
+  /** The group chats, whether this Hermes can make one, and the bots it would seat. */
+  readonly groups: Groups
   readonly preview: Preview
   readonly mode: Mode
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, preview: true, mode: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, preview: true, mode: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -218,6 +220,13 @@ const editOf = (raw: unknown): BotEdit | null => {
   if (!(name === undefined || filled(name)) || !(description === undefined || text(description)) || !(persona === undefined || text(persona))) return null
   const edit = { ...(name === undefined ? {} : { name }), ...(description === undefined ? {} : { description }), ...(persona === undefined ? {} : { persona }) }
   return Object.keys(edit).length > 0 ? edit : null
+}
+/** The boundary for a new group: past it the hub trusts the draft. */
+const groupDraftOf = (raw: unknown): GroupDraft | null => {
+  if (!isObject(raw) || !isGroupId(raw.group) || !filled(raw.name) || raw.name.trim().length > GROUP_NAME_MAX || !Array.isArray(raw.bots)) return null
+  const bots = raw.bots.map(botIdOf)
+  const fits = bots.length >= GROUP_SIZE.min && bots.length <= GROUP_SIZE.max && new Set(bots).size === bots.length
+  return fits && !bots.includes(null) ? { group: raw.group, name: raw.name.trim(), bots: bots as BotId[] } : null
 }
 const revisionOf = (raw: unknown): number | null | undefined =>
   raw === null ? null : Number.isInteger(raw) && (raw as number) >= 0 ? (raw as number) : undefined
@@ -428,6 +437,10 @@ export const validators: Validators = {
   botPicture: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'botPicture', bot }
+  },
+  createGroup: raw => {
+    const draft = groupDraftOf(raw.draft)
+    return draft && { do: 'createGroup', draft }
   },
   tune: raw => {
     const sessionId = sessionIdOf(raw)

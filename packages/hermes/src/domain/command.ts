@@ -1,4 +1,5 @@
 import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId } from './bots'
+import type { GroupDraft } from './groups'
 import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
@@ -90,6 +91,11 @@ export type Command =
   | { readonly do: 'removeBotPicture'; readonly bot: BotId }
   /** The bot's picture as a data URL, or null for none. */
   | { readonly do: 'botPicture'; readonly bot: BotId }
+  /**
+   * Makes the group chat and lists it in `groups`. The same draft sent again makes no second group: Hermes answers a
+   * repeated id with the group it already made.
+   */
+  | { readonly do: 'createGroup'; readonly draft: GroupDraft }
   /** Sets one of Hermes's switches for the chat, for every client that has it open. */
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'reasoning'; readonly on: boolean }
   /** YOLO: Hermes runs this chat's commands without asking. */
@@ -189,7 +195,7 @@ export interface Refusal {
   readonly kind: 'offline' | 'not-attached' | 'stale' | 'conflict' | 'rejected' | 'unsupported'
   /** Plain words for the user. */
   readonly message: string
-  /** The field of the request Hermes refused, so a form shows the reason under it. */
-  readonly field?: 'name'
+  /** The field of the request Hermes refused, so a form shows the reason under it. `members`: the bots of a new group chat. */
+  readonly field?: 'name' | 'members'
 }
 export type Outcome<T = void> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly refusal: Refusal }
