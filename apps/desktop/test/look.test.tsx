@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { BotForm } from '../src/renderer/bots/BotForm'
 import { EMPTY_DRAFT } from '../src/renderer/bots/bot-form'
 import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_SHAPES, faceSvg, lookWords, shapeFor } from '../src/renderer/bots/look'
-import { LookPicker, type LookCalls } from '../src/renderer/bots/LookPicker'
+import { LookPicker, PetTile, type LookCalls } from '../src/renderer/bots/LookPicker'
 import { NewBotForm } from '../src/renderer/bots/NewBotForm'
 
 const NAMES = ['Rae', 'Ada', 'Sam', 'Research', 'Emu', 'Timothy', 'highwing', 'Pip', 'Ledger', 'Juno']
@@ -82,6 +82,19 @@ describe('the picker, closed', () => {
     const pet = renderToStaticMarkup(<LookPicker look={{ from: 'pet', slug: 'clover', name: 'Clover', picture: PICTURE }} name="Rae" calls={CALLS} onLook={() => {}} onDrawing={() => {}} />)
     expect(pet).toMatch(/<img class="look-picture pet" src="blob:/)
     expect(pet).toContain('Clover, a pet')
+  })
+})
+
+describe('a pet tile', () => {
+  const DUNE = { slug: 'dune', name: 'Dune', url: null }
+  const tileOf = (thumb: Parameters<typeof PetTile>[0]['thumb']) =>
+    renderToStaticMarkup(<PetTile pet={DUNE} thumb={thumb} pressed={false} onShown={() => {}} onPick={() => {}} />).match(/<button[^>]*>/)![0].replaceAll('&#x27;', "'")
+
+  it('is disabled until its picture comes, and says Hermes has none only when Hermes answered so', () => {
+    expect([attr(tileOf(undefined), 'title'), tileOf(undefined).includes('disabled')]).toEqual(['Dune', true])
+    expect([attr(tileOf({ at: 'read', picture: null }), 'title'), tileOf({ at: 'read', picture: null }).includes('disabled')]).toEqual(['Hermes has no picture of Dune', true])
+    expect([attr(tileOf({ at: 'refused' }), 'title'), tileOf({ at: 'refused' }).includes('disabled')]).toEqual(["Highwing couldn't load Dune's picture", true])
+    expect([attr(tileOf({ at: 'read', picture: PICTURE }), 'title'), tileOf({ at: 'read', picture: PICTURE }).includes('disabled')]).toEqual(['Dune', false])
   })
 })
 

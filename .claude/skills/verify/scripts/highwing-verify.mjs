@@ -114,6 +114,7 @@ const STEPS = {
   reload: { arity: 0, run: async ctx => void await ctx.page.reload() },
   gone: { arity: 2, run: async (ctx, role, name) => waitGone(ctx, role, name) },
   inview: { arity: 2, run: async (ctx, role, name) => checkInView(ctx, role, name) },
+  reveal: { arity: 2, run: async (ctx, role, name) => byRole(ctx.page, role, name).scrollIntoViewIfNeeded({ timeout: ctx.timeout }) },
   shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
   field: {
     arity: 3,

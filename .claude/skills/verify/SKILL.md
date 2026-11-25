@@ -127,6 +127,7 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `second <arg>` | one argument, such as a `highwing://chat/<session id>` link | starts a second instance with the same electron binary, arguments (less any `--arg`), user-data directory, environment, working directory and display, plus this argument. Waits for it to exit, logs its exit code, and fails if it is still running at the step timeout. Its PID is kept for `cleanup` while it runs |
 | `copied <text>` | text | fails unless the system clipboard holds exactly this text |
 | `gone <role> <name>` | ARIA role, exact accessible name or `/regex/` | polls until no visible element has that role and name, and fails at the timeout. Waits out a fade |
+| `reveal <role> <name>` | ARIA role, exact accessible name or `/regex/` | scrolls that element into view, as a user scrolling to it does, even while it is disabled |
 | `inview <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that element's box lies fully inside the visible area of every scrolling ancestor and of the window |
 | `enabled <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that control is enabled now |
 | `checked <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that radio or checkbox is checked now |

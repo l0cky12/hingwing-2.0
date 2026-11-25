@@ -34,10 +34,11 @@ type Drawing =
   | { readonly at: 'unknown' | 'checking' | 'none' | 'ready'; readonly words: string | null }
   | { readonly at: 'busy'; readonly wanted: boolean }
 type PetList = { readonly at: 'unread' | 'reading' } | { readonly at: 'read'; readonly pets: readonly PetChoice[] } | { readonly at: 'refused'; readonly words: string }
-/** A pet's idle frame: `loading`, or the picture, null when Hermes has none. */
-type Thumb = 'loading' | string | null
+/** A pet's idle frame. `refused`: the ask failed, so it is made again when the tile is next shown. `picture`: null when Hermes has none. */
+type Thumb = { readonly at: 'loading' | 'refused' } | { readonly at: 'read'; readonly picture: string | null }
 
 const SHOWN_PETS = 24
+const SHOWN_SHARE = 0.1
 const HOW = 'Click it to pick a shape, generate a picture, upload one or choose a pet.'
 
 const icon = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
@@ -65,14 +66,37 @@ export function LookArt({ look, name, size }: { readonly look: Look; readonly na
   return url === null ? null : <img className={`look-picture${look.from === 'pet' ? ' pet' : ''}`} src={url} alt="" width={size} height={size} />
 }
 
+interface PetTileProps {
+  readonly pet: PetChoice
+  readonly thumb: Thumb | undefined
+  readonly pressed: boolean
+  /** Called each time the tile scrolls into view. */
+  readonly onShown: () => void
+  readonly onPick: (picture: string) => void
+}
+
+const titleOfTile = (pet: PetChoice, thumb: Thumb | undefined) =>
+  thumb?.at === 'refused' ? `Highwing couldn't load ${pet.name}'s picture` : thumb?.at === 'read' && thumb.picture === null ? `Hermes has no picture of ${pet.name}` : pet.name
+
 /** A pet is picked by its picture, so a tile is disabled until Hermes sends one, and stays so when Hermes has none. */
-function PetTile({ pet, thumb = 'loading', pressed, onPick }: { readonly pet: PetChoice; readonly thumb: Thumb | undefined; readonly pressed: boolean; readonly onPick: (picture: string) => void }) {
-  const picture = thumb === 'loading' ? null : thumb
+export function PetTile({ pet, thumb, pressed, onShown, onPick }: PetTileProps) {
+  const picture = thumb?.at === 'read' ? thumb.picture : null
   const url = useBlobUrl(picture)
+  const tile = useRef<HTMLButtonElement>(null)
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    // A tile whose edge only touches the grid's counts as intersecting, so a share of it in view is what counts as shown.
+    const watch = new IntersectionObserver(entries => setShown((entries.at(-1)?.intersectionRatio ?? 0) >= SHOWN_SHARE), { threshold: SHOWN_SHARE })
+    if (tile.current !== null) watch.observe(tile.current)
+    return () => watch.disconnect()
+  }, [])
+  useEffect(() => {
+    if (shown) onShown()
+  }, [shown])
   return (
     <button
-      type="button" className="look-pet" aria-pressed={pressed} aria-busy={thumb === 'loading' || undefined} disabled={picture === null}
-      title={thumb === null ? `Hermes has no picture of ${pet.name}` : pet.name} onClick={() => { if (picture !== null) onPick(picture) }}
+      ref={tile} type="button" className="look-pet" aria-pressed={pressed} aria-busy={thumb === undefined || thumb.at === 'loading' || undefined}
+      disabled={picture === null} title={titleOfTile(pet, thumb)} onClick={() => { if (picture !== null) onPick(picture) }}
     >
       <span className="look-pet-art">{url !== null && <img src={url} alt="" width={40} height={40} />}</span>
       <span className="look-pet-name">{pet.name}</span>
@@ -129,14 +153,13 @@ export function LookPicker({ look, name, calls, onLook, onDrawing }: LookPickerP
   }, [open])
 
   const matches = petList.at === 'read' ? matchesOf(petList.pets, query) : []
-  useEffect(() => {
-    const unread = matches.filter(pet => !thumbs.has(pet.slug))
-    if (unread.length === 0) return
-    setThumbs(held => new Map([...held, ...unread.map(pet => [pet.slug, 'loading'] as const)]))
-    for (const pet of unread) {
-      void calls.petPicture(pet).then(outcome => setThumbs(held => new Map(held).set(pet.slug, outcome.ok ? outcome.value : null)))
-    }
-  }, [matches.map(pet => pet.slug).join('\n')])
+  // Hermes reads thumbs on a small pool shared with every slow call, so only a tile the user can see asks for its own.
+  const readThumb = (pet: PetChoice) => {
+    const held = thumbs.get(pet.slug)
+    if (held !== undefined && held.at !== 'refused') return
+    setThumbs(now => new Map(now).set(pet.slug, { at: 'loading' }))
+    void calls.petPicture(pet).then(outcome => setThumbs(now => new Map(now).set(pet.slug, outcome.ok ? { at: 'read', picture: outcome.value } : { at: 'refused' })))
+  }
 
   const show = (next: Tab) => {
     setTab(next)
@@ -277,7 +300,7 @@ export function LookPicker({ look, name, calls, onLook, onDrawing }: LookPickerP
           <div className="look-pets" role="group" aria-label="Pets">
             {matches.map(pet => (
               <PetTile
-                key={pet.slug} pet={pet} thumb={thumbs.get(pet.slug)} pressed={look.from === 'pet' && look.slug === pet.slug}
+                key={pet.slug} pet={pet} thumb={thumbs.get(pet.slug)} pressed={look.from === 'pet' && look.slug === pet.slug} onShown={() => readThumb(pet)}
                 onPick={picture => take({ from: 'pet', slug: pet.slug, name: pet.name, picture })}
               />
             ))}
