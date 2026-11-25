@@ -279,6 +279,8 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
     const text = draft.trim()
     if (!canSend || sending.current || staging > 0 || text === '') return
     sending.current = true
+    // Send disables itself while the message is on its way, so a focused Send would drop focus to the page.
+    box.current?.focus()
     setPending(true)
     setOutput(null)
     const sent = editing === null ? attachments.map(attachment => attachment.id) : []
