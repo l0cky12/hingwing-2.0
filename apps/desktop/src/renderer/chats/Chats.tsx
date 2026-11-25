@@ -97,12 +97,22 @@ function ChatItem({ row, ids, live, onOpen, onRename, onExport, onSaved }: ChatI
     if (menu) items.current?.querySelector('button')?.focus()
   }, [menu])
 
+  useEffect(() => {
+    if (live) return
+    setMenu(false)
+    setNaming(held => (held === 'typing' ? 'off' : held))
+  }, [live])
+
+  const field = useRef<HTMLInputElement>(null)
   const stopNaming = () => {
+    // While saving, the disabled field drops focus to the page; focus anywhere else is where the user went since.
+    const { activeElement } = document
+    const stayed = activeElement === null || activeElement === document.body || activeElement === field.current
     flushSync(() => setNaming('off'))
-    opener.current?.focus()
+    if (stayed) opener.current?.focus()
   }
   const rename = async (title: string) => {
-    if (title.trim() === '' || title === row.name) {
+    if (!live || title.trim() === '' || title === row.name) {
       stopNaming()
       return
     }
@@ -112,6 +122,7 @@ function ChatItem({ row, ids, live, onOpen, onRename, onExport, onSaved }: ChatI
     stopNaming()
   }
   const exportAs = async (format: ExportFormat) => {
+    if (!live) return
     setMenu(false)
     toggle.current?.focus()
     const outcome = await onExport(row.id, format)
@@ -126,6 +137,7 @@ function ChatItem({ row, ids, live, onOpen, onRename, onExport, onSaved }: ChatI
     buttons[next]?.focus()
   }
   const onNameKey = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing) return
     if (event.key === 'Escape') {
       event.stopPropagation()
       stopNaming()
@@ -156,7 +168,7 @@ function ChatItem({ row, ids, live, onOpen, onRename, onExport, onSaved }: ChatI
         <div className="chat-row" aria-current={row.current || undefined}>
           {lines(
             <input
-              className="chat-name" aria-label="Chat name" defaultValue={row.name} autoFocus disabled={naming === 'saving'}
+              ref={field} className="chat-name" aria-label="Chat name" defaultValue={row.name} autoFocus disabled={naming === 'saving'}
               onFocus={event => event.currentTarget.select()} onKeyDown={onNameKey} onBlur={event => event.currentTarget.disabled || setNaming('off')}
             />
           )}
