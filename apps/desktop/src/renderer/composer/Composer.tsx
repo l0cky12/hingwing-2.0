@@ -120,7 +120,8 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   const catalog = useTopic('slash') ?? NO_CATALOG
   const roster = useTopic('bots')
   const relay = useTopic('relay')
-  const own = useTopic('open')?.shown?.bot ?? null
+  const open = useTopic('open')
+  const own = open?.shown?.bot ?? null
   const draft = useDraft(slot)
   const [caret, setCaret] = useState(0)
   const [focused, setFocused] = useState(false)
@@ -379,6 +380,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
       {hint !== null && <p className="busy" id={HINT_ID}>{hint}</p>}
       {children}
       {refusal !== null && <p className="err refusal">{refusal}</p>}
+      {open?.missing != null && <p className="err refusal">That chat isn't on this Hermes.</p>}
       {confirming && editing?.kind === 'sent' && (
         <RemoveDialog
           later={editing.later}

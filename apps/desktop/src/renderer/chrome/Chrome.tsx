@@ -1,6 +1,7 @@
 import { machineOf, type Link, type Target } from '@highwing/hermes/domain'
 import { useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { isCommandKey } from '../keys'
+import { CopyLink } from '../chat/Copy'
 import { botNameOf, openChatName } from '../chats/chat-list'
 import { run, useTopic } from '../store'
 
@@ -41,11 +42,13 @@ function useOpenChatName(): string | null {
 /** `target` is null in a fixture run, which has no connection to name or to change. */
 export function TopBar({ target }: { readonly target: Target | null }) {
   const chat = useOpenChatName()
+  const sessionId = useTopic('open')?.shown?.sessionId ?? null
   const where = [chat, target === null ? null : `on ${machineOf(target)}`].filter(part => part !== null).join(' ')
   return (
     <Bar where={where === '' ? null : where}>
       <NewChat />
       {target !== null && <button onClick={() => void run({ do: 'editTarget' })}>Connection</button>}
+      {sessionId !== null && <CopyLink sessionId={sessionId} />}
     </Bar>
   )
 }
