@@ -21,7 +21,6 @@ const post = (web: FakeWebapp, path: string, body?: unknown, bearer?: string) =>
   ...(body === undefined ? {} : { body: JSON.stringify(body) })
 })
 
-/** The browser's part, by hand: the code Hermes sends back to the app. */
 const codeFrom = async (web: FakeWebapp): Promise<string> => {
   const login = await fetch(new URL((await authorize(web)).headers.get('location') ?? '', web.url), { redirect: 'manual' })
   const back = new URL(login.headers.get('location') ?? '')

@@ -3,7 +3,7 @@
  * listener (Hermes's gateway/webapp_listener.py) is the only door: a public status, a sign-in in
  * the user's own browser (RFC 8252 with PKCE, hermes_cli/dashboard_auth/routes.py:307-355), a
  * bearer that mints one-use socket tickets (routes.py:583-595), and `/api/ws` with the ticket as a
- * subprotocol. Nothing here imports Electron: main supplies the browser and the place to keep a sign-in.
+ * subprotocol.
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
@@ -92,14 +92,8 @@ function jsonOf(text: string): unknown {
   }
 }
 
-/**
- * What Hermes gave this app at a sign-in or a refresh (routes.py:120-125). It prints as dots, so a
- * log line, an error or a JSON dump that reaches one by accident shows no token. hub.ts does not
- * export it, so nothing outside this package can name it in a target, a settings file or an IPC message.
- */
 export class Credential {
   constructor(
-    /** null: the sign-in was kept from an earlier run and has not been refreshed in this one. */
     readonly access: string | null,
     readonly refresh: string,
     /** The Hermes provider that signed the user in. A refresh names it, so Hermes asks that provider first (request_utils.py:146-148). */
@@ -140,7 +134,6 @@ interface Asked {
 
 interface Answer {
   readonly status: number
-  /** The body read as JSON. null: it was something else. */
   readonly body: unknown
 }
 
@@ -186,12 +179,9 @@ const page = (words: string) => `<!doctype html><meta charset="utf-8"><title>Hig
 const SIGNED_IN = page("You're signed in to Hermes. You can close this tab and go back to Highwing.")
 const NOT_SIGNED_IN = page("Highwing couldn't finish this sign-in. Go back to Highwing and press Connect to try again.")
 
-/** The one holder of an address's sign-in in this process. A check and a route of the address share it. */
 interface Login {
-  /** A bearer Hermes may still take. Rejects as `signed-out` when no sign-in is held. */
   bearer(): Promise<string>
-  /** Hermes answered 401 to `bearer`. Refreshes, unless a refresh since then already replaced it. */
-  refused(bearer: string): Promise<void>
+  replaceRefused(bearer: string): Promise<void>
   take(credential: Credential): Promise<void>
   forget(): Promise<void>
 }
@@ -206,7 +196,7 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
     const deadline = AbortSignal.timeout(REQUEST_MS)
     const response = await fetcher(address, {
       method,
-      // A redirect is never followed, so a bearer goes only to the address the user gave.
+      // Never followed, so a bearer goes only to the address the user gave.
       redirect: 'manual',
       signal: asked.signal === undefined ? deadline : AbortSignal.any([asked.signal, deadline]),
       headers: {
@@ -219,16 +209,14 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
     return { status: response.status, body: jsonOf(await response.text()) }
   }
 
-  /** What a request that carried a credential answered. null: Hermes refused the credential. */
-  const answered = async (url: GatewayUrl, path: string, asked: Asked): Promise<Obj | null> => {
+  const answered = async (url: GatewayUrl, path: string, asked: Asked): Promise<Obj | 'refused'> => {
     const { status, body } = await send('POST', `${url}${path}`, asked).catch(() => { throw cantReach(url) })
-    if (status === 401) return null
+    if (status === 401) return 'refused'
     if (status >= 500) throw cantReach(url)
     if (status !== 200 || !isObject(body)) throw new DialError('incompatible')
     return body
   }
 
-  /** Whichever comes first: what `wait` resolves to, the abort of `signal`, or `ms` on the clock. Leaves no timer or listener behind. */
   const within = async <T extends boolean | object>(ms: number, signal: AbortSignal, wait: Promise<T>): Promise<T | 'aborted' | 'timed-out'> => {
     let stop = () => {}
     const cut = new Promise<'aborted' | 'timed-out'>(resolve => {
@@ -257,14 +245,12 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
 
     const load = () => (loaded ??= deps.keep.load(url).then(secret => { held = fromKept(secret) }, () => {}))
 
-    /**
-     * A keeper that cannot save leaves the sign-in in memory for this run. A sign-in that `keepOnly`
-     * forgot is not written back by a refresh that was still in flight.
-     */
+    const stillHeld = () => logins.get(url) === self
+
     const hold = async (next: Credential | null) => {
       await load()
       held = next
-      if (logins.get(url) === self) await deps.keep.save(url, next === null ? null : keptOf(next)).catch(() => {})
+      if (stillHeld()) await deps.keep.save(url, next === null ? null : keptOf(next)).catch(() => {})
     }
 
     /**
@@ -273,7 +259,7 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
      */
     const renew = async (from: Credential) => {
       const reply = await answered(url, '/auth/native/refresh', { json: { refresh_token: from.refresh, provider: from.provider } })
-      if (reply === null) {
+      if (reply === 'refused') {
         await hold(null)
         throw ended(url)
       }
@@ -282,7 +268,6 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
       await hold(next)
     }
 
-    /** Refresh tokens rotate, so of two refreshes at once Hermes would refuse one. Every caller waits on the one in flight. */
     const refresh = (from: Credential) => (renewing ??= renew(from).finally(() => { renewing = null }))
 
     const bearer = async (): Promise<string> => {
@@ -295,7 +280,7 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
 
     const self: Login = {
       bearer,
-      refused: async refusedBearer => {
+      replaceRefused: async refusedBearer => {
         if (held !== null && held.access === refusedBearer) await refresh(held)
       },
       take: hold,
@@ -315,11 +300,11 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
     const ticketWith = (bearer: string) => answered(url, '/api/auth/ws-ticket', { bearer, signal })
     const bearer = await held.bearer()
     let reply = await ticketWith(bearer)
-    if (reply === null) {
-      await held.refused(bearer)
+    if (reply === 'refused') {
+      await held.replaceRefused(bearer)
       reply = await ticketWith(await held.bearer())
     }
-    if (reply === null) {
+    if (reply === 'refused') {
       await held.forget()
       throw ended(url)
     }
@@ -363,7 +348,6 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
     }
   }
 
-  /** Dials once and reads the gateway's first words: the only sure test that the address serves the gateway's chat. */
   const proven = async (endpoint: Endpoint, signal: AbortSignal): Promise<void> => {
     const socket = await dialWith(async () => endpoint)({ start: false }).catch(() => { throw new Failed('url-no-socket') })
     try {
@@ -413,7 +397,6 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
 
     route: url => {
       const life = new AbortController()
-      /** A dial that a dispose cut short fails as `dropped`, whatever its cut request looked like. */
       const minted: Mint = async () => {
         try {
           life.signal.throwIfAborted()

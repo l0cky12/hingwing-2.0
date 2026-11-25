@@ -3,7 +3,6 @@ import { systemClock, type Clock } from '../../src/wire/link'
 import type { Loopback } from '../../src/testing/loopback'
 import { closing, errandGateway, listen } from './host'
 
-/** A fake Webapp in front of `gateway`, or of a new errand gateway, closed after the test. */
 export const webapp = async (
   name: WebappScenarioName,
   options: { readonly gateway?: Loopback; readonly clock?: Clock; readonly prefix?: string } = {}

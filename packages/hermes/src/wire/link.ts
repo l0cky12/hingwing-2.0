@@ -83,7 +83,7 @@ const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
 /**
  * Whether a frame is `gateway.ready`, and whether the gateway that sent it owns its sessions.
  * null: another frame. The standalone dashboard's socket says `gateway.ready` with no
- * `session_authority` (Hermes's tui_gateway/ws.py:378-401), and Highwing cannot chat through it.
+ * `session_authority` (Hermes's tui_gateway/ws.py:660-662), and Highwing cannot chat through it.
  */
 export function sessionAuthorityOf(frame: unknown): boolean | null {
   if (!isObject(frame) || frame.method !== 'event' || !isObject(frame.params) || frame.params.type !== 'gateway.ready') return null

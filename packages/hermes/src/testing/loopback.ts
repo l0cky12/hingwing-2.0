@@ -19,15 +19,13 @@ export interface Upgrade {
 
 /** A Webapp in front of the socket, as the gateway's Webapp listener is (Hermes's gateway/webapp_listener.py). */
 export interface Front {
-  /** The path a proxy serves Hermes under, or ''. The socket is at `<prefix>/api/ws`. */
   readonly prefix: string
   /**
    * What an upgrade meets. `legacy`: a good ticket opens the standalone dashboard's chat, whose
-   * `gateway.ready` names no session authority (tui_gateway/ws.py:378-401). `refused`: no upgrade
+   * `gateway.ready` names no session authority (tui_gateway/ws.py:660-662). `refused`: no upgrade
    * gets through, as behind a proxy that passes no WebSocket.
    */
   readonly upgrades: 'gateway' | 'legacy' | 'refused'
-  /** Answers the plain HTTP requests on the gateway's port. */
   serve(request: IncomingMessage, response: ServerResponse): void
 }
 
@@ -41,7 +39,6 @@ export interface Loopback {
   mint(reach: Reach): Endpoint
   readonly upgrades: readonly Upgrade[]
   readonly port: number
-  /** Puts a Webapp in front of the socket. Without one, every HTTP request gets 404. */
   front(front: Front): void
   close(): Promise<void>
 }

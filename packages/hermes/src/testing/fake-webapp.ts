@@ -36,28 +36,21 @@ const STATUS = {
   /** A Webapp bound to loopback with no `webapp.public_url` has no sign-in gate, and offers no flow (status.py:425-428). */
   ungated: { ...FULL, auth_required: false, auth_flows: [] },
   'cookie-only': { ...GATED, auth_flows: ['cookie'] },
-  /** A Hermes from before native sign-in. */
   old: GATED,
-  /** Another web server: a page where Hermes would answer JSON. */
   html: null
 } as const
 
 interface Scenario {
-  /** What listens at the address. `closed`: nothing. `self-signed`: https with a certificate no computer trusts. */
   readonly listener: 'http' | 'closed' | 'self-signed'
   readonly status: keyof typeof STATUS
-  /** What the user does with the sign-in page. `never`: leaves it open. */
-  readonly user: 'signs-in' | 'never'
-  /** What `/auth/native/token` answers a good code. */
+  readonly user: 'signs-in' | 'leaves-the-page-open'
   readonly token: 'gives' | 'refuses'
   readonly upgrades: Front['upgrades']
-  /** What a check makes of the address. null: it passes. */
   readonly verdict: UrlFailure | 'hermes-too-old' | null
 }
 
 const OK = { listener: 'http', status: 'webapp', user: 'signs-in', token: 'gives', upgrades: 'gateway', verdict: null } as const
 
-/** One row per way a check of an address can end. A new `UrlFailure` does not compile until it has a row here. */
 export const WEBAPP_SCENARIOS: Readonly<Record<UrlFailure | 'ok' | 'too-old' | 'ungated', Scenario>> = {
   ok: OK,
   'too-old': { ...OK, status: 'old', verdict: 'hermes-too-old' },
@@ -67,10 +60,8 @@ export const WEBAPP_SCENARIOS: Readonly<Record<UrlFailure | 'ok' | 'too-old' | '
   'not-hermes': { ...OK, status: 'html', verdict: 'not-hermes' },
   'no-sign-in': { ...OK, status: 'cookie-only', verdict: 'no-sign-in' },
   dashboard: { ...OK, status: 'dashboard', verdict: 'dashboard' },
-  /** The user leaves the page open. The check that waits is cancelled. */
-  'sign-in-cancelled': { ...OK, user: 'never', verdict: 'sign-in-cancelled' },
-  /** The user leaves the page open. The check waits its whole time. */
-  'sign-in-timed-out': { ...OK, user: 'never', verdict: 'sign-in-timed-out' },
+  'sign-in-cancelled': { ...OK, user: 'leaves-the-page-open', verdict: 'sign-in-cancelled' },
+  'sign-in-timed-out': { ...OK, user: 'leaves-the-page-open', verdict: 'sign-in-timed-out' },
   'sign-in-refused': { ...OK, token: 'refuses', verdict: 'sign-in-refused' },
   'url-no-socket': { ...OK, upgrades: 'refused', verdict: 'url-no-socket' },
   'url-legacy': { ...OK, upgrades: 'legacy', verdict: 'url-legacy' }
@@ -79,21 +70,13 @@ export const WEBAPP_SCENARIOS: Readonly<Record<UrlFailure | 'ok' | 'too-old' | '
 export type WebappScenarioName = keyof typeof WEBAPP_SCENARIOS
 
 export interface FakeWebapp {
-  /** The address to type. */
   readonly url: GatewayUrl
-  /** Plays the browser and its user. Pass it as `browse`. It returns once the page is opening, as a real browser does. */
   readonly browse: (url: string) => Promise<void>
-  /** The addresses `browse` was given. */
   readonly opened: readonly string[]
-  /** The text of each page the browser ended on. */
   readonly pages: readonly string[]
-  /** Every token, code and ticket this fake handed out, for a test to prove none reached a place it must not. */
   readonly secrets: readonly string[]
-  /** Every HTTP request it got, as `METHOD path`, in order. */
   readonly requests: readonly string[]
-  /** Ends every access token, as its time running out does. A refresh still works. */
   lapse(): void
-  /** Ends every sign-in, as signing out on the gateway does. A bearer and a refresh then answer 401. */
   signOut(): void
   close(): Promise<void>
 }
@@ -136,7 +119,6 @@ const der = (tag: number, ...parts: readonly Buffer[]): Buffer => {
   return Buffer.concat([Buffer.from([tag, ...length]), body])
 }
 
-/** A new key and an X.509 certificate it signed for itself, so nothing this computer trusts vouches for it. */
 function selfSigned(): { readonly key: string; readonly cert: string } {
   const { publicKey, privateKey } = generateKeyPairSync('ed25519')
   const ed25519 = der(0x30, der(0x06, Buffer.from([0x2b, 0x65, 0x70])))
@@ -176,7 +158,6 @@ export async function fakeWebapp(
   const pages: string[] = []
   const pending = new Map<string, { readonly challenge: string; readonly redirect: string; readonly state: string; readonly expires: number }>()
   const codes = new Map<string, { readonly challenge: string; readonly expires: number }>()
-  /** Each live sign-in's refresh token, and its access token until that lapses. */
   const signIns = new Map<string, string | null>()
 
   const secret = (): string => {
@@ -262,7 +243,6 @@ export async function fakeWebapp(
   const https = scenario.listener === 'self-signed' ? await untrusted() : null
   const address = {
     http: `http://127.0.0.1:${gateway.port}${prefix}`,
-    /** Port 1 is reserved and nothing listens on it, so a connection is refused at once. */
     closed: 'http://127.0.0.1:1',
     'self-signed': `https://127.0.0.1:${https?.port}`
   }[scenario.listener]
