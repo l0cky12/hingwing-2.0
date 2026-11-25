@@ -36,7 +36,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Send a message](./send-a-message.md) covers the composer's Send button, Enter, and Stop while a turn runs.
 - [Answer an approval](./answer-an-approval.md) covers the approval card and "Run once" releasing the story to Done.
 - [Open a file](./open-a-file.md) covers the path button in an open record, Show in folder, and Copy path.
-- [Markdown replies](./markdown.md) covers lists, headings, links, tables and code blocks in a reply, and the code block's Copy button.
+- [Markdown replies](./markdown.md) covers lists, headings, links, tables and code blocks in a reply, the code block's Copy button, and its syntax colors: plain while streaming, no layout jump, Find and Copy inside a colored block, and forced colors.
 - [Images in the thread](./images.md) covers a reply image, a tool image, the larger view and what main refuses.
 - [Choose the model](./choose-the-model.md) covers the model readout under the composer, the list of models, a switch, a switch during a turn, "No model set up", and a Hermes that does not list its models.
 - [Context meter and tokens per reply](./context-meter.md) covers the token line under a reply, the context meter beside the model readout, its breakdown panel, "nearly full", the stale meter while the link is down, and a Hermes that reports no usage.

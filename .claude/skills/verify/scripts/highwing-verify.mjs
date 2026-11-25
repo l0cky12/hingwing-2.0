@@ -50,6 +50,40 @@ const rendered = page => page.evaluate(() => new Promise(resolve => requestAnima
 
 const nth = (ctx, role, name, n) => ctx.page.getByRole(role, { name, exact: true }).nth(Number(n) - 1)
 
+/** Runs in the page, so it carries its own helpers. */
+function sampleCode({ lang, ms }) {
+  const sample = () => {
+    const blocks = Array.from(document.querySelectorAll('#scroll .code')).filter(block => lang === null || block.querySelector('.lang')?.textContent === lang)
+    const block = blocks.at(-1)
+    if (block === undefined) return null
+    const colors = new Set()
+    const walker = document.createTreeWalker(block.querySelector('pre code'), NodeFilter.SHOW_TEXT)
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) if (node.data.trim() !== '') colors.add(getComputedStyle(node.parentElement).color)
+    return { block, seen: { colors: [...colors], open: block.hasAttribute('data-open'), height: block.getBoundingClientRect().height, scroll: document.querySelector('#scroll').scrollHeight } }
+  }
+  if (ms === undefined) return sample()?.seen ?? null
+  return new Promise(resolve => {
+    let samples = []
+    let watched = null
+    const finish = () => {
+      observer.disconnect()
+      clearTimeout(timer)
+      resolve(samples)
+    }
+    const take = () => {
+      const now = sample()
+      if (now === null) return
+      if (now.block !== watched) [watched, samples] = [now.block, []]
+      samples.push(now.seen)
+      if (now.seen.colors.length > 1) finish()
+    }
+    const observer = new MutationObserver(take)
+    const timer = setTimeout(finish, ms)
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true })
+    take()
+  })
+}
+
 const STEPS = {
   wait: { arity: 1, run: async (ctx, state) => waitFor(ctx, state) },
   see: { arity: 1, run: async (ctx, text) => ctx.page.getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout: ctx.timeout }) },
@@ -183,6 +217,29 @@ const STEPS = {
     run: async (ctx, count) => {
       const found = await ctx.page.evaluate(() => ['find', 'find-current'].reduce((total, name) => total + (CSS.highlights.get(name)?.size ?? 0), 0))
       if (found !== Number(count)) throw new Error(`${found} ranges are marked, expected ${count}`)
+    }
+  },
+  hues: {
+    arity: 1,
+    run: async (ctx, n) => {
+      const seen = await poll(ctx, () => ctx.page.evaluate(sampleCode, { lang: null }), held => held?.colors.length === Number(n))
+      if (seen === null) throw new Error('the thread shows no code block')
+      log(ctx, `  the last code block draws its text in ${seen.colors.length} color(s): ${seen.colors.join(', ')}`)
+      if (seen.colors.length !== Number(n)) throw new Error(`the last code block draws its text in ${seen.colors.length} color(s), not ${n}`)
+    }
+  },
+  steady: {
+    arity: 1,
+    run: async (ctx, lang) => {
+      const samples = await ctx.page.evaluate(sampleCode, { lang, ms: ctx.timeout })
+      const colored = samples.at(-1)
+      log(ctx, `  sampled the last "${lang}" block ${samples.length} time(s)`)
+      if (colored === undefined || colored.colors.length < 2) throw new Error(`the last "${lang}" block showed no second color within ${ctx.timeout} ms`)
+      if (samples.some(sample => sample.open && sample.colors.length > 1)) throw new Error(`the "${lang}" block showed colors while its fence was open`)
+      const plain = samples.findLast(sample => !sample.open && sample.colors.length === 1)
+      if (plain === undefined) throw new Error(`the "${lang}" block was never plain with its fence closed before its colors arrived`)
+      log(ctx, `  closed and plain: block ${plain.height}px, thread ${plain.scroll}px. Colored: block ${colored.height}px, thread ${colored.scroll}px`)
+      if (plain.height !== colored.height || plain.scroll !== colored.scroll) throw new Error(`the layout moved when the "${lang}" block's colors arrived`)
     }
   },
   enabled: {
