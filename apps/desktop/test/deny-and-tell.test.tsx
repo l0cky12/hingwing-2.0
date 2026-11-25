@@ -8,8 +8,11 @@ import { Node } from '../src/renderer/chat/Thread'
 const card = (more: Partial<Extract<PromptCard, { state: 'asking' }>>): ThreadNode => ({
   kind: 'prompt', key: 't1/4',
   card: {
-    state: 'asking', promptId: 'p1' as PromptId, heading: 'Run this command?', command: 'rm -rf drafts', why: null, freeText: false, tell: true, busy: false, error: null,
-    buttons: [{ reply: { kind: 'choice', value: 'once' }, label: 'Run once', role: 'primary' }, { reply: { kind: 'choice', value: 'deny' }, label: "Don't run", role: 'decline' }],
+    state: 'asking', promptId: 'p1' as PromptId, heading: 'Run this command?', command: 'rm -rf drafts', why: null, tell: true, busy: false, error: null,
+    pick: {
+      kind: 'one', freeText: false,
+      buttons: [{ reply: { kind: 'choice', value: 'once' }, label: 'Run once', role: 'primary', confirm: null }, { reply: { kind: 'choice', value: 'deny' }, label: "Don't run", role: 'decline', confirm: null }]
+    },
     ...more
   }
 })
