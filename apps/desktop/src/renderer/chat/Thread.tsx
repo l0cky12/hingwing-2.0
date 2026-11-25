@@ -1,6 +1,6 @@
 import { versionLabel, type ChatVersions, type Landing, type PromptId, type PromptReply, type Relay, type Version, type Versions } from '@highwing/hermes/domain'
-import { fieldId, findInThread, type FindMatch, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { fieldId, findInThread, type FindMatch, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
+import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Avatar } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
 import { CopyButton } from './Copy'
@@ -37,7 +37,6 @@ interface PromptProps {
 }
 
 function Prompt({ nodeKey, card, asking, onAnswer }: PromptProps) {
-  const [text, setText] = useState('')
   if (card.state === 'answered') {
     return (
       <div className="approval answered">
@@ -46,30 +45,97 @@ function Prompt({ nodeKey, card, asking, onAnswer }: PromptProps) {
       </div>
     )
   }
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    if (text.trim() !== '') onAnswer(card.promptId, { kind: 'text', value: text.trim() })
-  }
+  const answer = (reply: PromptReply) => onAnswer(card.promptId, reply)
   return (
     <div className={cx('approval', asking && 'live')} role="group" aria-label={card.heading} {...(asking ? { 'data-end': 'asking' } : {})}>
       <h3 data-find={fieldId(nodeKey, 'heading')}>{card.heading}</h3>
       {card.command !== null && <Command nodeKey={nodeKey} command={card.command} />}
       {card.why !== null && <p className="why" data-find={fieldId(nodeKey, 'why')}>{card.why}</p>}
+      <Buttons buttons={card.buttons} freeText={card.freeText} command={card.command} busy={card.busy} onAnswer={answer} />
+      {card.error !== null && <p className="err" data-find={fieldId(nodeKey, 'error')}>{card.error}</p>}
+    </div>
+  )
+}
+
+interface PickProps {
+  readonly busy: boolean
+  readonly onAnswer: (reply: PromptReply) => void
+}
+
+interface ButtonsProps extends PickProps {
+  readonly buttons: readonly PromptButton[]
+  readonly freeText: boolean
+  readonly command: string | null
+}
+
+function Buttons({ buttons, freeText, command, busy, onAnswer }: ButtonsProps) {
+  const [text, setText] = useState('')
+  const [confirming, setConfirming] = useState<PromptButton | null>(null)
+  if (busy && confirming !== null) setConfirming(null)
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (text.trim() !== '') onAnswer({ kind: 'text', value: text.trim() })
+  }
+  return (
+    <>
       <div className="choices">
-        {card.buttons.map(button => (
-          <button key={button.label} className={ROLE_CLASS[button.role] ?? undefined} disabled={card.busy} onClick={() => onAnswer(card.promptId, button.reply)}>
+        {buttons.map(button => (
+          <button key={button.label} className={ROLE_CLASS[button.role] ?? undefined} disabled={busy} onClick={() => (button.confirm === null ? onAnswer(button.reply) : setConfirming(button))}>
             {button.label}
           </button>
         ))}
       </div>
-      {card.freeText && (
+      {freeText && (
         <form className="answer" onSubmit={submit}>
-          <input aria-label="Type an answer" value={text} disabled={card.busy} onChange={event => setText(event.target.value)} />
-          <button disabled={card.busy}>Answer</button>
+          <input aria-label="Type an answer" value={text} disabled={busy} onChange={event => setText(event.target.value)} />
+          <button disabled={busy}>Answer</button>
         </form>
       )}
-      {card.error !== null && <p className="err" data-find={fieldId(nodeKey, 'error')}>{card.error}</p>}
-    </div>
+      {confirming !== null && confirming.confirm !== null && (
+        <Confirm
+          words={confirming.confirm} label={confirming.label} command={command}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => { setConfirming(null); onAnswer(confirming.reply) }}
+        />
+      )}
+    </>
+  )
+}
+
+interface ConfirmProps {
+  readonly words: NonNullable<PromptButton['confirm']>
+  readonly label: string
+  readonly command: string | null
+  readonly onCancel: () => void
+  readonly onConfirm: () => void
+}
+
+function Confirm({ words, label, command, onCancel, onConfirm }: ConfirmProps) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const cancel = useRef<HTMLButtonElement>(null)
+  const title = useId()
+  const body = useId()
+  useLayoutEffect(() => {
+    const box = dialog.current
+    if (box === null) return
+    box.showModal()
+    cancel.current?.focus()
+    // Closed before React removes it, so the browser hands focus back to the button that opened it.
+    return () => box.close()
+  }, [])
+  return (
+    <dialog
+      ref={dialog} className="confirm-dialog" aria-labelledby={title} aria-describedby={body}
+      onCancel={event => { event.preventDefault(); onCancel() }}
+    >
+      <h2 id={title}>{words.title}</h2>
+      <p id={body}>{words.body}</p>
+      {command !== null && <pre>{command}</pre>}
+      <div className="actions">
+        <button ref={cancel} type="button" onClick={onCancel}>Cancel</button>
+        <button type="button" className="primary" onClick={onConfirm}>{label}</button>
+      </div>
+    </dialog>
   )
 }
 

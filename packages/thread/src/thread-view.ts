@@ -185,7 +185,7 @@ export type PromptCard =
       readonly command: string | null
       /** Why Hermes asks: its flagged reason in a sentence, or its question as given. */
       readonly why: string | null
-      readonly buttons: readonly { readonly reply: PromptReply; readonly label: string; readonly role: 'primary' | 'plain' | 'decline' }[]
+      readonly buttons: readonly PromptButton[]
       readonly freeText: boolean
       /** An answer is on its way, or the session is not live. Buttons are disabled, the card stays amber. */
       readonly busy: boolean
@@ -193,6 +193,14 @@ export type PromptCard =
     }
   /** Hollow caution ring. `command` is null when the step next to the card already shows it. */
   | { readonly state: 'answered'; readonly words: string; readonly command: string | null }
+
+/** `confirm` holds the words of the second yes a button needs before it answers, or null when one press answers. */
+export interface PromptButton {
+  readonly reply: PromptReply
+  readonly label: string
+  readonly role: 'primary' | 'plain' | 'decline'
+  readonly confirm: { readonly title: string; readonly body: string } | null
+}
 
 const VIEW_STATE = {
   opening: 'opening', live: 'ready', offline: 'ready', 'catching-up': 'ready', rebuilding: 'ready', unavailable: 'unavailable'
@@ -656,12 +664,24 @@ const PROMPT_WORDS = {
   clarify: { heading: 'Hermes has a question', freeText: true }
 } as const satisfies Record<PromptItem['ask']['kind'], { heading: string; freeText: boolean }>
 
+function alwaysConfirm(ask: Extract<PromptItem['ask'], { kind: 'approval' }>): PromptButton['confirm'] {
+  return {
+    title: 'Always allow commands like this?',
+    body: `Hermes won't ask again for commands matching “${ask.reason ?? ask.command}”, in this chat or any other.`
+  }
+}
+
 function promptCard(prompt: PromptItem, paired: boolean, live: boolean): PromptCard {
   const { ask, state } = prompt
   if (state.s === 'waiting' || state.s === 'sending') {
     const choices = ask.kind === 'approval' ? APPROVAL_CHOICES : {}
     const buttons = ask.choices
-      .map(value => ({ reply: { kind: 'choice', value } as const, label: choices[value]?.label ?? value, role: choices[value]?.role ?? 'plain' }))
+      .map((value): PromptButton => ({
+        reply: { kind: 'choice', value },
+        label: choices[value]?.label ?? value,
+        role: choices[value]?.role ?? 'plain',
+        confirm: ask.kind === 'approval' && value === 'always' ? alwaysConfirm(ask) : null
+      }))
       .sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role])
     return {
       state: 'asking',
