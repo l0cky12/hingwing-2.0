@@ -66,7 +66,7 @@ function SummaryRow({ summary, folded, change, onChange }: {
       </div>
       <div className="control">
         {action !== null && <button type="button" className="btn" onClick={() => void press(action.run)}>{action.label}</button>}
-        {folded && <button ref={change} type="button" className="btn" onClick={onChange}>Change</button>}
+        {folded && <button ref={change} type="button" className="btn change" onClick={onChange}>Change</button>}
       </div>
     </div>
   )

@@ -7,6 +7,10 @@ import { run, useTopic } from '../store'
 import { activeIn, paletteOf, step, type PaletteItem, type PaletteView, type Row } from './palette-view'
 
 const composerBox = () => document.querySelector<HTMLTextAreaElement>('.composer textarea')
+/** Settings hides the chat's composer. Its connection card's Change takes focus, or the Settings heading while the editor is open. */
+const settingsFocus = () => document.querySelector<HTMLElement>('.settings .change') ?? document.querySelector<HTMLElement>('.settings > h2')
+const canHoldFocus = (element: Element | null): element is HTMLElement =>
+  element instanceof HTMLElement && element !== document.body && element.isConnected && element.closest('[hidden]') === null
 
 function detailOf(item: PaletteItem, now: number): string | null {
   switch (item.kind) {
@@ -93,7 +97,7 @@ function Sheet({ target, settingsOpen, returnFocusTo, onClose }: SheetProps) {
   const dismiss = () => {
     leaving.current = true
     dialog.current?.close()
-    const held = returnFocusTo instanceof HTMLElement && returnFocusTo !== document.body && returnFocusTo.isConnected ? returnFocusTo : composerBox()
+    const held = canHoldFocus(returnFocusTo) ? returnFocusTo : settingsOpen ? settingsFocus() : composerBox()
     held?.focus()
     onClose()
   }
