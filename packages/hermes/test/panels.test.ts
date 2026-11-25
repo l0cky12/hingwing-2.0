@@ -178,6 +178,17 @@ describe('the checkpoints', () => {
     expect(sent().at(-1)).toEqual(['session.resume', { session_id: ID, display_projection: true }])
   })
 
+  it('read the chat again once when Hermes\'s rewind began the re-read before the restore answered', async () => {
+    const { actor, command, sent, answer } = await stage()
+    const done = command({ do: 'restore', sessionId: ID, checkpoint: HASH, scope: { kind: 'folder', edits: 'keep' } })
+    actor.feed({ in: 'gap' })
+    const resumes = () => sent().filter(([method]) => method === 'session.resume').length
+    expect(resumes(), 'the rewind began one re-read').toBe(1)
+    await answer('rollback.restore', { success: true, restored_to: '4f1c2a9e', restored_files: ['notes.md'], skipped_user_edits: [], skipped_oversize: [], history_removed: 2 })
+    expect(await done).toMatchObject({ ok: true, value: { lastTurn: 'removed' } })
+    expect(resumes(), 'the answer begins no second one').toBe(1)
+  })
+
   it('overwrite the user\'s edits only when asked', async () => {
     const { command, sent } = await stage()
     void command({ do: 'restore', sessionId: ID, checkpoint: HASH, scope: { kind: 'folder', edits: 'overwrite' } })

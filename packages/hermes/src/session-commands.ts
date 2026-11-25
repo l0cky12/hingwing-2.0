@@ -294,12 +294,14 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     // Hermes takes back the last turn with a whole folder, and refuses that mid-turn. One file only touches the disk (gateway/session_tui_ops.py:235-238).
     if (scope.kind === 'folder' && port.content.run.state === 'running') return MID_TURN
     const how = scope.kind === 'file' ? { file_path: scope.path } : scope.edits === 'overwrite' ? { all: true } : {}
+    const attaches = port.fence.attaches
     const reply = await port.call('rollback.restore', { session_id: port.id, hash: checkpoint, ...how })
     if (!reply.ok && reply.refusal.kind === 'offline' && scope.kind === 'folder') port.act({ did: 'rewritten' })
     if (!reply.ok) return reply
     const restored = parseRestored(reply.value)
     if ('failed' in restored) return refused('rejected', restored.failed)
-    if (restored.lastTurn === 'removed') port.act({ did: 'rewritten' })
+    // The restore's rewind is a session.mutate, whose event reaches the socket before this answer and has begun the re-read (gateway/session_tui_ops.py:310-311,364-371).
+    if (restored.lastTurn === 'removed' && port.fence.attaches === attaches) port.act({ did: 'rewritten' })
     return { ok: true, value: restored }
   }),
 
