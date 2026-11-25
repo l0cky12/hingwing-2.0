@@ -1,5 +1,5 @@
 import {
-  targetOf,
+  EFFORTS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptId,
   type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply, type ResultOf, type Session, type SessionId, type SettledTurn,
@@ -391,15 +391,25 @@ export const validators: Validators = {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'botPicture', bot }
   },
-  setYolo: raw => {
-    const sessionId = sessionIdOf(raw)
-    return sessionId && typeof raw.on === 'boolean' ? { do: 'setYolo', sessionId, on: raw.on } : null
-  },
   tune: raw => {
     const sessionId = sessionIdOf(raw)
     if (!sessionId) return null
     if (raw.set === 'busy') return text(raw.to) && BUSY_MODES.includes(raw.to) ? { do: 'tune', sessionId, set: 'busy', to: raw.to as BusyMode } : null
-    return raw.set === 'reasoning' && typeof raw.on === 'boolean' ? { do: 'tune', sessionId, set: 'reasoning', on: raw.on } : null
+    if (raw.set === 'effort') {
+      const to = raw.to === 'default' ? 'default' : EFFORTS.find(level => level === raw.to)
+      return to === undefined ? null : { do: 'tune', sessionId, set: 'effort', to }
+    }
+    if (typeof raw.on !== 'boolean') return null
+    switch (raw.set) {
+      case 'reasoning':
+        return { do: 'tune', sessionId, set: 'reasoning', on: raw.on }
+      case 'yolo':
+        return { do: 'tune', sessionId, set: 'yolo', on: raw.on }
+      case 'fast':
+        return { do: 'tune', sessionId, set: 'fast', on: raw.on }
+      default:
+        return null
+    }
   },
   reconnect: raw => (typeof raw.start === 'boolean' ? { do: 'reconnect', start: raw.start } : null),
   checkTarget: raw => {

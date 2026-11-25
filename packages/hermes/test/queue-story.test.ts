@@ -112,7 +112,7 @@ describe('the queue story, played through the real client', () => {
 
   it('reads the busy mode the fixture has, and leaves the chat in the mode of its last send', async () => {
     const { seen } = await played()
-    expect(seen.find(moment => moment.session.tuning.busy !== null)?.session.tuning).toEqual({ reasoning: null, busy: 'queue' })
+    expect(seen.find(moment => moment.session.tuning.busy !== null)?.session.tuning).toEqual({ reasoning: null, busy: 'queue', effort: null, fast: null, yolo: null })
     expect(sentBy(seen.at(-1)!, 'config.set').map(params => (params as { value: string }).value)).toEqual(['steer', 'queue', 'interrupt'])
   })
 })

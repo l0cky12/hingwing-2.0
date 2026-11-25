@@ -104,7 +104,7 @@ const TRACK: { readonly [T in SessionEvent['type']]?: (view: View, event: Extrac
   meta: (view, event, payload) => {
     if (event.title !== undefined) view.title = event.title
     if (event.revision !== undefined) view.revision = event.revision
-    if (event.yolo !== undefined) view.yolo = event.yolo
+    if (event.tuning?.yolo !== undefined) view.yolo = event.tuning.yolo
     if (Array.isArray(payload.pending)) view.pending = payload.pending
   }
 }

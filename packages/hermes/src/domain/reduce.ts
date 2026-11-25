@@ -70,7 +70,9 @@ export type SessionEvent =
       readonly revision?: number
       readonly queue?: readonly Admission[]
       readonly model?: ModelRef
-      readonly yolo?: boolean
+      readonly cwd?: string
+      /** Switches Hermes pushes for every viewer of the chat. */
+      readonly tuning?: Partial<Said>
       readonly pick?: PickOutcome
       /** The session's generation now, which a policy change such as a model switch moves without a turn. */
       readonly generation?: Generation
@@ -134,13 +136,16 @@ export type ServerRequest =
 export type CardRequest = Extract<ServerRequest, { kind: 'card' }>
 export type BridgeRequest = Extract<ServerRequest, { kind: 'bridge' }>
 
+/** The switches Hermes says on every attach and pushes in `session.info`. The rest are read (`facts`). */
+export type Said = Pick<Tuning, 'effort' | 'fast' | 'yolo'>
+
 /** A parsed attach reply (`session.create` / `session.resume`). */
 export interface Snapshot {
   readonly id: SessionId
   readonly title: string
   readonly cwd: string | null
   readonly model: ModelRef | null
-  readonly yolo: boolean | null
+  readonly tuning: Said
   readonly running: boolean
   readonly generation: Generation
   readonly revision: number
@@ -239,7 +244,6 @@ export type LocalAction =
   | { readonly did: 'earlier.requested' }
   /** Hermes cut the chat before this stored row. The turn that row opens and every later turn are gone. */
   | { readonly did: 'rewound'; readonly rowId: number }
-  | { readonly did: 'yolo'; readonly on: boolean }
   | { readonly did: 'model.deferred'; readonly model: ModelRef; readonly during: Generation }
   /** Hermes confirmed a switch this client set. */
   | { readonly did: 'tuned'; readonly tuning: Partial<Tuning> }
@@ -281,7 +285,7 @@ export interface Tracked {
 
 export function emptyTracked(id: SessionId): Tracked {
   return {
-    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], requests: [], queue: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, yolo: null, tuning: UNTUNED },
+    content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], requests: [], queue: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, tuning: UNTUNED },
     gate: { at: 'detached', why: 'new', cursor: null },
     fence: { revision: 0, text: null, older: null, admissions: {}, sent: {}, settledThrough: null, generation: null, attaches: 0, totalsEpoch: 0, closed: [], told: {} }
   }
@@ -487,8 +491,7 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       // Hermes asks a newly attached viewer again about a held pick (gateway/session_deferred_pick.py:46-54).
       model: { ...modelFrom(content.model, snapshot.model), next: null, ask: null },
       usage: patch(content.usage, { totals: null }),
-      yolo: snapshot.yolo,
-      tuning: content.tuning
+      tuning: patch(content.tuning, snapshot.tuning)
     },
     fence: {
       revision: Math.max(fence.revision, snapshot.revision),
@@ -516,7 +519,7 @@ function markLost(turns: readonly SettledTurn[], settledThrough: number | null):
 function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
   let next: Tracked = {
     ...state,
-    content: patch(state.content, { title: snapshot.title, model: modelFrom(state.content.model, snapshot.model), yolo: snapshot.yolo }),
+    content: patch(state.content, { title: snapshot.title, cwd: snapshot.cwd, model: modelFrom(state.content.model, snapshot.model), tuning: patch(state.content.tuning, snapshot.tuning) }),
     fence: patch(state.fence, {
       revision: Math.max(state.fence.revision, snapshot.revision),
       generation: newest(state.fence.generation, snapshot.generation)
@@ -670,8 +673,6 @@ function act(state: Tracked, action: LocalAction): Tracked {
       return cutBefore(state, action.rowId)
     case 'earlier.requested':
       return content.earlier === 'more' ? { ...state, content: { ...content, earlier: 'loading' } } : state
-    case 'yolo':
-      return content.yolo === action.on ? state : { ...state, content: { ...content, yolo: action.on } }
     case 'model.deferred': {
       const { next } = content.model
       const { run } = content
@@ -691,7 +692,7 @@ const IDLE: Run = { state: 'idle' }
 const NO_MODEL: SessionModel = { current: null, next: null, ask: null }
 const NO_USAGE: SessionUsage = { totals: null, context: null }
 const ZERO_TOKENS: Tokens = { input: 0, output: 0, reasoning: 0 }
-const UNTUNED: Tuning = { reasoning: null, busy: null }
+const UNTUNED: Tuning = { reasoning: null, busy: null, effort: null, fast: null, yolo: null }
 const LOST: Outcome = { kind: 'lost' }
 const INTERLUDE: Outcome = { kind: 'interlude' }
 const ANSWERED_ELSEWHERE: PromptItem['state'] = { s: 'answered', reply: null }
@@ -816,7 +817,8 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
         : closed(heldOf(state), event.card.requestId, event.settled))
     case 'meta': {
       const named: Tracked = event.model === undefined ? state : { ...state, content: patch(state.content, { model: modelFrom(state.content.model, event.model) }) }
-      const lit: Tracked = event.yolo === undefined ? named : { ...named, content: patch(named.content, { yolo: event.yolo }) }
+      const moved: Tracked = event.cwd === undefined ? named : { ...named, content: patch(named.content, { cwd: event.cwd }) }
+      const lit: Tracked = event.tuning === undefined ? moved : tune(moved, event.tuning)
       const picked: Tracked = event.pick === undefined ? lit : afterPick(lit, event.pick)
       const fenced: Tracked = event.generation === undefined ? picked : { ...picked, fence: patch(picked.fence, { generation: newest(picked.fence.generation, event.generation) }) }
       const titled: Tracked = event.title === undefined ? fenced : { ...fenced, content: patch(fenced.content, { title: event.title }) }

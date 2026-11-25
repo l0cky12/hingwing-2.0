@@ -461,14 +461,14 @@ describe('the busy mode', () => {
     expect(sent()).toEqual([['config.get', { session_id: ID, key: 'show_reasoning' }], ['config.get', { session_id: ID, key: 'busy' }]])
     await answer('config.get', { key: 'show_reasoning', value: '0', scope: 'session' })
     await answer('config.get', { key: 'busy', value: 'steer', scope: 'session' })
-    expect(actor.session.tuning).toEqual({ reasoning: false, busy: 'steer' })
+    expect(actor.session.tuning).toEqual({ reasoning: false, busy: 'steer', effort: null, fast: null, yolo: null })
   })
 
   it('stays unknown on a Hermes that refuses the read, so a message sent during a turn queues', async () => {
     const { actor, answer, event, command, sent } = await stage({ watched: true })
     await answer('config.get', { key: 'show_reasoning', value: '1', scope: 'session' })
     await answer('config.get', refusal('invalid_params'))
-    expect(actor.session.tuning).toEqual({ reasoning: true, busy: null })
+    expect(actor.session.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
     event(started)
     void command({ do: 'send', sessionId: ID, text: 'hello' })
     await settle()

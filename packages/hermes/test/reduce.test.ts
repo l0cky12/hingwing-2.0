@@ -46,7 +46,7 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
     title: 'Errand',
     cwd: '/home/u',
     model: null,
-    yolo: null,
+    tuning: { effort: null, fast: null, yolo: null },
     running: false,
     generation: generation(1),
     revision: 1,
@@ -310,7 +310,7 @@ describe('attached', () => {
       snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 9 }, history: { turns, unfinished: null, older: { cursor: 'c1' } } })
     })
     expect(state.gate).toEqual({ at: 'live', cursor: { epoch: EPOCH, seq: 9 }, subscriptionId: 'sub-1' })
-    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, tuning: { reasoning: null, busy: null } })
+    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null } })
   })
 
   it('B: opens the unfinished turn of a running snapshot with its waiting prompts, then the parked frames above the watermark', () => {
@@ -613,23 +613,31 @@ describe('when a turn began', () => {
   })
 })
 
-describe('the session YOLO', () => {
+describe('the switches Hermes says: effort, fast and YOLO', () => {
   it('starts unknown and takes what a snapshot, a session.info and the user\'s own switch say', () => {
-    expect(emptyTracked('s1' as SessionId).content.yolo).toBeNull()
-    const seeded = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, { in: 'attached', attempt: 1, snapshot: snapshot({ yolo: false }), replay: null })
-    expect(seeded.content.yolo).toBe(false)
-    const elsewhere = reduce(seeded, event(1, { type: 'meta', yolo: true }, null))
-    expect(elsewhere.content.yolo).toBe(true)
-    expect(reduce(elsewhere, event(2, { type: 'meta', title: 'Renamed' }, null)).content.yolo).toBe(true)
-    const off = reduce(elsewhere, { in: 'local', action: { did: 'yolo', on: false } })
-    expect(off.content.yolo).toBe(false)
-    expect(reduce(off, { in: 'local', action: { did: 'yolo', on: false } })).toBe(off)
+    expect(emptyTracked('s1' as SessionId).content.tuning.yolo).toBeNull()
+    const seeded = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, { in: 'attached', attempt: 1, snapshot: snapshot({ tuning: { effort: null, fast: null, yolo: false } }), replay: null })
+    expect(seeded.content.tuning.yolo).toBe(false)
+    const elsewhere = reduce(seeded, event(1, { type: 'meta', tuning: { yolo: true } }, null))
+    expect(elsewhere.content.tuning.yolo).toBe(true)
+    expect(reduce(elsewhere, event(2, { type: 'meta', title: 'Renamed' }, null)).content.tuning.yolo).toBe(true)
+    const off = reduce(elsewhere, { in: 'local', action: { did: 'tuned', tuning: { yolo: false } } })
+    expect(off.content.tuning.yolo).toBe(false)
+    expect(reduce(off, { in: 'local', action: { did: 'tuned', tuning: { yolo: false } } })).toBe(off)
+  })
+
+  it('takes the effort, fast and folder a session.info pushes, and keeps the switches it does not name', () => {
+    const seeded = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, { in: 'attached', attempt: 1, snapshot: snapshot({ tuning: { effort: 'default', fast: false, yolo: false } }), replay: null })
+    const moved = reduce(seeded, event(1, { type: 'meta', cwd: '/home/u/docs', tuning: { effort: 'high' } }, null))
+    expect(moved.content.cwd).toBe('/home/u/docs')
+    expect(moved.content.tuning).toMatchObject({ effort: 'high', fast: false, yolo: false })
+    expect(reduce(moved, event(2, { type: 'meta', tuning: { fast: true } }, null)).content.tuning).toMatchObject({ effort: 'high', fast: true })
   })
 
   it('lets a reattach snapshot overwrite what the chat held', () => {
-    const on = reduce(live(), { in: 'local', action: { did: 'yolo', on: true } })
-    const after = feed(on, { in: 'link.lost' }, { in: 'attach' }, { in: 'attached', attempt: 2, snapshot: snapshot({ yolo: false }), replay: null })
-    expect(after.content.yolo).toBe(false)
+    const on = reduce(live(), { in: 'local', action: { did: 'tuned', tuning: { yolo: true } } })
+    const after = feed(on, { in: 'link.lost' }, { in: 'attach' }, { in: 'attached', attempt: 2, snapshot: snapshot({ tuning: { effort: null, fast: null, yolo: false } }), replay: null })
+    expect(after.content.tuning.yolo).toBe(false)
   })
 })
 
@@ -1249,19 +1257,19 @@ describe('what Hermes says', () => {
 describe('tuning', () => {
   it('takes facts read under the current attach, and drops facts read under an older one', () => {
     const state = live()
-    expect(state.content.tuning).toEqual({ reasoning: null, busy: null })
+    expect(state.content.tuning).toEqual({ reasoning: null, busy: null, effort: null, fast: null, yolo: null })
     const read = reduce(state, { in: 'facts', attempt: 1, tuning: { reasoning: true } })
-    expect(read.content.tuning).toEqual({ reasoning: true, busy: null })
+    expect(read.content.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
     const reattached = feed(read, { in: 'link.lost' }, { in: 'attach' })
     expect(reduce(reattached, { in: 'facts', attempt: 1, tuning: { reasoning: false } }).content).toBe(reattached.content)
-    expect(reduce(reattached, { in: 'facts', attempt: 2, tuning: { reasoning: false } }).content.tuning).toEqual({ reasoning: false, busy: null })
+    expect(reduce(reattached, { in: 'facts', attempt: 2, tuning: { reasoning: false } }).content.tuning).toEqual({ reasoning: false, busy: null, effort: null, fast: null, yolo: null })
   })
 
   it('takes a switch this client set, keeps it through a rebuild, and changes nothing when it is the same', () => {
     const tuned = reduce(live(), { in: 'local', action: { did: 'tuned', tuning: { reasoning: true } } })
-    expect(tuned.content.tuning).toEqual({ reasoning: true, busy: null })
+    expect(tuned.content.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
     expect(reduce(tuned, { in: 'local', action: { did: 'tuned', tuning: { reasoning: true } } }).content).toBe(tuned.content)
     const rebuilt = feed(tuned, { in: 'gap' }, { in: 'attached', attempt: 2, snapshot: snapshot(), replay: null })
-    expect(rebuilt.content.tuning).toEqual({ reasoning: true, busy: null })
+    expect(rebuilt.content.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
   })
 })

@@ -3,8 +3,8 @@ import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
 import type {
-  AdmissionId, AttachmentId, BranchId, BusyMode, ContextFill, InputId, ModelOption, ModelRef, PromptId, PromptReply, QueuedAction, RequestId, RequestReply,
-  SessionId, Told
+  AdmissionId, AttachmentId, BranchId, BusyMode, ContextFill, Effort, InputId, ModelOption, ModelRef, PromptId, PromptReply, QueuedAction, RequestId,
+  RequestReply, SessionId, Told
 } from './session'
 
 export type Command =
@@ -79,9 +79,14 @@ export type Command =
   | { readonly do: 'removeBotPicture'; readonly bot: BotId }
   /** The bot's picture as a data URL, or null for none. */
   | { readonly do: 'botPicture'; readonly bot: BotId }
-  | { readonly do: 'setYolo'; readonly sessionId: SessionId; readonly on: boolean }
   /** Sets one of Hermes's switches for the chat, for every client that has it open. */
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'reasoning'; readonly on: boolean }
+  /** YOLO: Hermes runs this chat's commands without asking. */
+  | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'yolo'; readonly on: boolean }
+  /** Fast: the model's fast tier, from the next turn. Refused for a model that has none. */
+  | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'fast'; readonly on: boolean }
+  /** Set during a turn, it applies from the next. The new level shows in `tuning` when Hermes says it. */
+  | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'effort'; readonly to: Effort | 'default' }
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'busy'; readonly to: BusyMode }
   /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
   | { readonly do: 'reconnect'; readonly start: boolean }

@@ -17,7 +17,8 @@ const REFUSALS: Readonly<Record<string, Refusal>> = {
   invalid_params: { kind: 'rejected', message: 'Hermes did not accept the request.' },
   unsupported_command: { kind: 'unsupported', message: "Hermes can't run that command from Highwing." },
   profile_mismatch: { kind: 'rejected', message: "Hermes isn't running that bot right now." },
-  unknown_method: { kind: 'unsupported', message: "This Hermes doesn't support that." }
+  unknown_method: { kind: 'unsupported', message: "This Hermes doesn't support that." },
+  fast_unavailable: { kind: 'rejected', message: "This chat's model has no fast mode." }
 }
 const FENCE_REFUSALS: ReadonlySet<string> = new Set(['revision_conflict', 'stale_generation'])
 const NOT_CONNECTED: Refusal = { kind: 'offline', message: "Highwing isn't connected to this chat right now." }

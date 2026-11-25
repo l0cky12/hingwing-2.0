@@ -6,8 +6,9 @@ import { canonicalBotId, type BotCreated, type BotDetails, type BotFacts, type B
 import type { ContextBreakdown, ModelConfirm, ModelMenu } from '../domain/command'
 import type { PaneAsk } from '../domain/pane'
 import type { Admission } from '../domain/queue'
-import type { CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
+import type { CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, Said as SaidTuning, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type { CloseWhy } from '../domain/requests'
+import { EFFORTS } from '../domain/session'
 import type {
   AdmissionId, Answer, Ask, Began, BusyMode, ConnectTarget, FileDiff, Generation, HelperEnd, HelperId, InputId, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, PromptId,
   Question, RequestId, SessionId, SessionUsage, SettledTurn, SidebarRow, StatusAbout, ToolId, ToolResult, TurnId
@@ -186,21 +187,23 @@ interface MetaFields {
   readonly revision?: number | null
   readonly queue?: readonly Admission[] | null
   readonly model?: ModelRef | null
-  readonly yolo?: boolean | null
+  readonly cwd?: string | null
+  readonly tuning?: Partial<SaidTuning>
   readonly pick?: PickOutcome | null
   readonly generation?: number | null
   readonly cutBefore?: number | null
   readonly countsRestart?: true
 }
 
-function meta({ title, revision, queue, model, yolo, pick, generation, cutBefore, countsRestart }: MetaFields): SessionEvent {
+function meta({ title, revision, queue, model, cwd, tuning, pick, generation, cutBefore, countsRestart }: MetaFields): SessionEvent {
   return {
     type: 'meta',
     ...(title == null ? {} : { title }),
     ...(revision == null ? {} : { revision }),
     ...(queue == null ? {} : { queue }),
     ...(model == null ? {} : { model }),
-    ...(yolo == null ? {} : { yolo }),
+    ...(cwd == null ? {} : { cwd }),
+    ...(tuning === undefined || Object.keys(tuning).length === 0 ? {} : { tuning }),
     ...(pick == null ? {} : { pick }),
     ...(generation == null ? {} : { generation: generation as Generation }),
     ...(cutBefore == null ? {} : { cutBefore }),
@@ -422,7 +425,7 @@ export const SHOWN: { readonly [type: string]: Shown } = {
     // Its execution_generation is how an attached viewer learns a generation a policy change moved (gateway/session_authority.py:484-495).
     return meta({
       title: p.optStr('title'), revision: p.optInt('revision'), queue: p.optList('pending')?.map(admissionOf) ?? null,
-      model: modelOf(p.optStr('model'), p.optStr('provider')), yolo: p.optBool('yolo'), generation: p.optInt('execution_generation')
+      model: modelOf(p.optStr('model'), p.optStr('provider')), cwd: p.optStr('cwd') || null, tuning: saidIn(payload), generation: p.optInt('execution_generation')
     })
   },
   /** A tick after each model call of a turn (`gateway/session_usage.py:176-186`). */
@@ -548,6 +551,22 @@ export function parseEvent(params: unknown): ParsedEvent {
 }
 
 /**
+ * The switches a `session.info` names. Hermes says `reasoning_effort` `''` for the model's own level
+ * and `fast` as whether the chat's tier is fast on its model (gateway/session_local.py:486-503).
+ */
+function saidIn(info: unknown): Partial<SaidTuning> {
+  const p = fields<CanonicalSessionInfo>(info)
+  const effort = p.optStr('reasoning_effort')
+  const fast = p.optBool('fast')
+  const yolo = p.optBool('yolo')
+  return {
+    ...(effort === null ? {} : { effort: effort === '' ? 'default' : EFFORTS.find(level => level === effort) ?? null }),
+    ...(fast === null ? {} : { fast }),
+    ...(yolo === null ? {} : { yolo })
+  }
+}
+
+/**
  * `messages_omitted` -> history null. Otherwise history comes from `display_messages`, the gateway's
  * own display rows, through `parseRows`. `older` is set when the first stored row carries
  * `archived_truncated` (`gateway/session_local_recovery.py:388`), which only `messages` keeps.
@@ -559,7 +578,7 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
     title: reply.info.title ?? '',
     cwd: reply.info.cwd || null,
     model: modelOf(reply.info.model, reply.info.provider),
-    yolo: typeof reply.info.yolo === 'boolean' ? reply.info.yolo : null,
+    tuning: { effort: null, fast: null, yolo: null, ...saidIn(reply.info) },
     running: reply.running,
     generation: reply.execution_generation as Generation,
     revision: reply.revision,
@@ -669,6 +688,11 @@ export function parsePending(rows: readonly unknown[]): Admission[] {
 /** `config.get` and `config.set` of `show_reasoning` answer `'1'` or `'0'` (`gateway/session_busy_controls.py:90-108`). */
 export function parseShown(reply: { readonly value?: unknown }): boolean | null {
   return reply.value === '1' ? true : reply.value === '0' ? false : null
+}
+
+/** `config.set` of `fast` answers the tier by its word: `fast` or `ultrafast` for a fast one, `normal` for none (agent/fast_mode.py:54-56). */
+export function parseFast(reply: { readonly value?: unknown }): boolean | null {
+  return isString(reply.value) ? reply.value === 'fast' || reply.value === 'ultrafast' : null
 }
 
 const BUSY_MODES: readonly string[] = ['queue', 'steer', 'interrupt'] satisfies BusyMode[]
