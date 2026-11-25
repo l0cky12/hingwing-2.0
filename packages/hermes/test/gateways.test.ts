@@ -1,3 +1,4 @@
+import { connect } from 'node:net'
 import { inspect, isDeepStrictEqual } from 'node:util'
 import { describe, expect, it } from 'vitest'
 import { failureOf, URL_FAILURES, type CheckStep, type GatewayUrl, type UrlFailure } from '../src/domain/reach'
@@ -44,6 +45,15 @@ const dialFailure = (dial: Promise<unknown>) => dial.then(
 
 const count = (web: FakeWebapp, request: string) => web.requests.filter(made => made === request).length
 const callbackOf = (authorize: string) => new URL(authorize).searchParams.get('redirect_uri') as string
+/** Sends `request` as written and resolves with everything the server sent before it closed the connection. */
+const raw = (address: string, request: string) => new Promise<string>((resolve, reject) => {
+  const { hostname, port } = new URL(address)
+  let heard = ''
+  const socket = connect(Number(port), hostname, () => socket.write(request))
+  socket.on('data', chunk => { heard += chunk.toString() })
+  socket.on('error', reject)
+  socket.on('close', () => resolve(heard))
+})
 const listenerIsClosed = (authorize: string | undefined) => expect(fetch(callbackOf(authorize ?? ''))).rejects.toThrow('fetch failed')
 
 describe('the scenarios of the fake Webapp', () => {
@@ -132,6 +142,28 @@ describe('the check of a gateway address, against the fake Webapp', () => {
     expect((await landed[0])?.status).toBe(400)
     expect(count(web, 'POST /auth/native/token')).toBe(0)
     await listenerIsClosed(opened[0])
+  })
+
+  it('answers 404 to a request it cannot read as a URL, and goes on waiting', async () => {
+    const web = await webapp('ok')
+    const answers: string[] = []
+    const browse = async (authorize: string) => {
+      answers.push(await raw(callbackOf(authorize), 'GET //[ HTTP/1.1\r\nhost: x\r\n\r\n'))
+      await web.browse(authorize)
+    }
+    expect(await check(gatewaysTo(web, { browse }), web.url).result).toEqual({ ok: true })
+    expect(answers[0]).toMatch(/^HTTP\/1\.1 404 /)
+  })
+
+  it('closes a connection still sending its request when the check is cancelled', async () => {
+    const web = await webapp('sign-in-cancelled')
+    const { result, life } = check(gatewaysTo(web), web.url)
+    await until('the browser to open', () => web.opened.length === 1)
+    const hanging = raw(callbackOf(web.opened[0] ?? ''), 'GET /callback HTTP/1.1\r\n')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    life.abort()
+    expect(await result).toEqual({ ok: false, failure: 'sign-in-cancelled' })
+    expect(await hanging).toBe('')
   })
 
   it('answers 404 to any other request on its port, and goes on waiting', async () => {

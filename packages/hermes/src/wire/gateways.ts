@@ -326,10 +326,10 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
       const back = await within(signInMs, signal, new Promise<{ readonly code: string }>((resolve, reject) => {
         const refuse = () => reject(new Failed('sign-in-refused'))
         server.on('request', (request, response) => {
-          const { pathname, searchParams } = new URL(request.url ?? '/', redirect)
-          if (pathname !== '/callback') return void response.writeHead(404, { connection: 'close' }).end()
-          const code = searchParams.get('code') ?? ''
-          const good = code !== '' && searchParams.get('state') === state
+          const asked = URL.parse(request.url ?? '/', redirect)
+          if (asked?.pathname !== '/callback') return void response.writeHead(404, { connection: 'close' }).end()
+          const code = asked.searchParams.get('code') ?? ''
+          const good = code !== '' && asked.searchParams.get('state') === state
           response.writeHead(good ? 200 : 400, { 'content-type': 'text/html; charset=utf-8', connection: 'close' }).end(good ? SIGNED_IN : NOT_SIGNED_IN)
           if (good) resolve({ code })
           else refuse()
@@ -344,12 +344,18 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
       if (credential === null) throw new Failed('sign-in-refused')
       return credential
     } finally {
+      server.closeAllConnections()
       server.close()
     }
   }
 
   const proven = async (endpoint: Endpoint, signal: AbortSignal): Promise<void> => {
-    const socket = await dialWith(async () => endpoint)({ start: false }).catch(() => { throw new Failed('url-no-socket') })
+    const dialing = dialWith(async () => endpoint)({ start: false })
+    const socket = await within(HANDSHAKE_MS, signal, dialing.catch(() => { throw new Failed('url-no-socket') }))
+    if (socket === 'aborted' || socket === 'timed-out') {
+      void dialing.then(late => late.close(), () => {})
+      throw new Failed('url-no-socket')
+    }
     try {
       const authority = await within(HANDSHAKE_MS, signal, new Promise<boolean>((resolve, reject) => {
         socket.onClose = () => reject(new Failed('url-no-socket'))
