@@ -54,6 +54,7 @@ Every run names one of two gateways. Hermes, ssh and Tailscale are installed on 
 - `--yolo-elsewhere-after <event type>` needs `--yolo`. It adds a `session.info` frame with `yolo: true` 50 ms after the first frame of that type, and moves the seq of every later frame of the session up by one. It stands for another client turning YOLO on.
 - `--pick <path[,path]>` sets `HIGHWING_PICK_FILES` to those files, each resolved from the repo root. Main then answers every press of the paperclip ("Attach files") with them, in that order, and opens no file dialog. Without it a press opens the system dialog, which nothing in a run can answer.
 - `--attach-limit <bytes>` writes a copy of the fixture whose header carries `attachLimits` with that many bytes for both an image and a file, and plays the copy. Main then refuses to attach a larger file, in words that name the file and the limit. Without it the limits are Hermes's own: 25 MiB for an image and 256 MiB for a file. It combines with the other fixture options into one `fixture-edited.jsonl`.
+- `--arg <value>` appends one argument to the app's command line, such as a `highwing://chat/<session id>` link, as a launch from the desktop passes it.
 - `--size <width>x<height>` sets the window's content size before the first step, and the size every `shot` must have. The default is 1180x860.
 - `--chat-only` makes the size above the size of the chat column. The window grows by the width of whatever sits left of the chat, the bots and chats columns' 536 px, and every `shot` is clipped to the chat column. The ARIA snapshot still covers the whole page. Use it for any shot that a tool reads as a chat with no sidebar: the design C references, `forced-colors-check.mjs` and `chat-parity.mjs`.
 - `--forced-colors` emulates the desktop's forced-colors (high-contrast) mode in the first window once it opens, before any step runs, so the window draws only with system colors.
@@ -113,6 +114,7 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `blur` | none | takes focus from the window, and fails if any Highwing window still has focus. Playwright's clicks do not give it back |
 | `notified <title> <n>` | title, number | waits until `notices.jsonl` holds n notifications with that title, logs each, and fails on any other count. It is checked again when the steps end |
 | `home` | none | fails unless the app has one window and its address is still the one it launched with |
+| `second <arg>` | one argument, such as a `highwing://chat/<session id>` link | starts a second instance with the same electron binary, arguments (less any `--arg`), user-data directory, environment, working directory and display, plus this argument. Waits for it to exit, logs its exit code, and fails if it is still running at the step timeout. Its PID is kept for `cleanup` while it runs |
 | `copied <text>` | text | fails unless the system clipboard holds exactly this text |
 | `gone <role> <name>` | ARIA role, exact accessible name or `/regex/` | polls until no visible element has that role and name, and fails at the timeout. Waits out a fade |
 | `inview <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that element's box lies fully inside the visible area of every scrolling ancestor and of the window |
@@ -190,7 +192,7 @@ Proof standards:
 
 ## Cleanup
 
-`$H cleanup --run <name>` or `$H cleanup --all` kills only the PIDs this skill recorded in `/tmp/highwing-verify-scratch/<run>/pid` and `host-pid`, the app and its fake host. It then deletes that scratch directory, which holds the Electron user-data dir. It never touches `/tmp/highwing-verify/`. Never kill Electron by process name, because the user may be running their own.
+`$H cleanup --run <name>` or `$H cleanup --all` kills only the PIDs this skill recorded in `/tmp/highwing-verify-scratch/<run>/pid`, `host-pid` and `second-pid`: the app, its fake host and a second instance. It then deletes that scratch directory, which holds the Electron user-data dir. It never touches `/tmp/highwing-verify/`. Never kill Electron by process name, because the user may be running their own.
 
 ## Feature map
 
