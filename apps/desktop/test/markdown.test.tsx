@@ -1,7 +1,8 @@
 import { loadFixture } from '@highwing/hermes/testing'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { fieldId, leafText, parseMarkdown, proseLeaves, type Block } from '@highwing/thread'
+import { grammarFor, loadGrammar } from '../src/renderer/chat/highlight'
 import { Markdown } from '../src/renderer/chat/text'
 
 function finalReply(path: string): string {
@@ -22,6 +23,23 @@ const reply = finalReply('fixtures/markdown.jsonl')
 
 const find = <K extends Block['kind']>(blocks: readonly Block[], kind: K) => blocks.filter((block): block is Extract<Block, { kind: K }> => block.kind === kind)
 
+function rendersEveryPrefix() {
+  for (let end = 0; end <= reply.length; end++) {
+    const prefix = reply.slice(0, end)
+    let markup = ''
+    expect(() => { markup = render(prefix) }, `prefix of ${end} characters`).not.toThrow()
+    expect(textOf(markup), `prefix of ${end} characters`).not.toContain('```')
+  }
+}
+
+function marksEveryPrefix() {
+  for (let end = 0; end <= reply.length; end++) {
+    const prefix = reply.slice(0, end)
+    const fields = proseLeaves(parseMarkdown(prefix)).map((leaf, index) => [fieldId('t1/0', `block ${index}`), leafText(leaf)])
+    expect(markedText(render(prefix)), `prefix of ${end} characters`).toEqual(fields)
+  }
+}
+
 const TS_BLOCK = `// Keep each backup for a week.
 const days: number = 7
 function backupName(file: string): string {
@@ -29,22 +47,9 @@ function backupName(file: string): string {
 }`
 
 describe('Markdown', () => {
-  it('renders every prefix of the reply without throwing or showing a fence marker', () => {
-    for (let end = 0; end <= reply.length; end++) {
-      const prefix = reply.slice(0, end)
-      let markup = ''
-      expect(() => { markup = render(prefix) }, `prefix of ${end} characters`).not.toThrow()
-      expect(textOf(markup), `prefix of ${end} characters`).not.toContain('```')
-    }
-  })
+  it('renders every prefix of the reply without throwing or showing a fence marker', rendersEveryPrefix)
 
-  it('marks each shown text with the field find searches, at every prefix of the reply', () => {
-    for (let end = 0; end <= reply.length; end++) {
-      const prefix = reply.slice(0, end)
-      const fields = proseLeaves(parseMarkdown(prefix)).map((leaf, index) => [fieldId('t1/0', `block ${index}`), leafText(leaf)])
-      expect(markedText(render(prefix)), `prefix of ${end} characters`).toEqual(fields)
-    }
-  })
+  it('marks each shown text with the field find searches, at every prefix of the reply', marksEveryPrefix)
 
   it('reads the reply as a two-item list, a level-two heading, a link, a three-column table, an sh block and a ts block', () => {
     const blocks = parseMarkdown(reply)
@@ -94,5 +99,51 @@ describe('Markdown', () => {
 
   it('keeps unclosed inline markers and raw HTML as written', () => {
     expect(textOf(render('a **bold start and <b>tag</b>'))).toBe('a **bold start and <b>tag</b>')
+  })
+})
+
+const COLORED = /<span class="hljs-[^"]+">/
+const codeBlocks = (markup: string) => Array.from(markup.matchAll(/<pre[^>]*>([\s\S]*?)<\/pre>/g), ([, inner]) => inner!)
+
+describe('Markdown with the grammars loaded', () => {
+  beforeAll(() => Promise.all(['sh', 'ts'].map(lang => loadGrammar(grammarFor(lang)!))))
+
+  it('colors both code blocks of the reply', () => {
+    const blocks = codeBlocks(render(reply))
+    expect(blocks).toHaveLength(2)
+    for (const block of blocks) expect(block).toMatch(COLORED)
+  })
+
+  it('renders every prefix of the reply without throwing or showing a fence marker', rendersEveryPrefix)
+
+  it('marks each shown text with the field find searches, at every prefix of the reply', marksEveryPrefix)
+
+  it('shows a colored ts block with exactly the text it was given', () => {
+    const source = 'const tag = `<${name} a="1">` && b > c\n// it\'s \'quoted\' & <done>\nlet n: number = 0x1F'
+    const markup = render(`\`\`\`ts\n${source}\n\`\`\``)
+    expect(markup).toMatch(COLORED)
+    expect(codeBlocks(markup).map(textOf)).toEqual([source])
+  })
+
+  it('reads the fence name in any case', () => {
+    expect(render('```TS\nconst days = 7\n```')).toMatch(COLORED)
+  })
+
+  it('keeps a fence that is still streaming plain', () => {
+    const markup = render('```ts\nconst days = 7')
+    expect(markup).toContain('<code>const days = 7</code><span class="caret"></span></pre>')
+    expect(markup).not.toMatch(COLORED)
+  })
+
+  it('leaves a block plain when its language is unknown or missing, and never guesses one', () => {
+    for (const fence of ['```', '```elixir', '```text']) expect(render(`${fence}\nconst days = 7\n\`\`\``)).not.toMatch(COLORED)
+  })
+
+  it('leaves a block over 100,000 characters plain', () => {
+    const long = 'const days = 7\n'.repeat(7_000).trimEnd()
+    expect(long.length).toBeGreaterThan(100_000)
+    const markup = render(`\`\`\`ts\n${long}\n\`\`\``)
+    expect(markup).not.toMatch(COLORED)
+    expect(codeBlocks(markup).map(textOf)).toEqual([long])
   })
 })

@@ -21,6 +21,11 @@
   --code-bg: #DCE1D8;
   --moss: #3F6B3A;
   --brick: #A3402B;
+  --syn-keyword: var(--brick);
+  --syn-string: var(--moss);
+  --syn-comment: var(--graphite);
+  --syn-number: var(--caution);
+  --syn-title: var(--signal);
   --serif: Literata, Georgia, serif;
   --sans: Schibsted, "Liberation Sans", sans-serif;
   --mono: "JetBrains Mono", "DejaVu Sans Mono", monospace;
@@ -94,6 +99,12 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .prose code { font-size: 0.82em; background: var(--code-bg); padding: 1px 3px; border-radius: 3px; }
 .prose pre { margin: 6px 0 0; padding: 12px 14px; background: var(--sheet); border-radius: 6px; font-size: 13px; line-height: 1.55; overflow-x: auto; }
 .prose pre code { background: none; padding: 0; font-size: inherit; }
+.prose pre code :is(.hljs-keyword, .hljs-type, .hljs-doctag, .hljs-template-tag, .hljs-template-variable, .hljs-variable.language_, .hljs-name, .hljs-selector-tag, .hljs-deletion) { color: var(--syn-keyword); }
+.prose pre code :is(.hljs-string, .hljs-regexp, .hljs-char.escape_, .hljs-addition) { color: var(--syn-string); }
+.prose pre code :is(.hljs-comment, .hljs-quote) { color: var(--syn-comment); }
+.prose pre code :is(.hljs-number, .hljs-literal, .hljs-built_in, .hljs-symbol, .hljs-bullet, .hljs-attr, .hljs-attribute, .hljs-meta, .hljs-variable, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id, .hljs-selector-pseudo, .hljs-link) { color: var(--syn-number); }
+.prose pre code :is(.hljs-title, .hljs-section) { color: var(--syn-title); }
+.prose pre code .hljs-subst { color: var(--ink); }
 .prose > :not(.code) { max-width: 66ch; }
 .prose :is(h1, h2, h3, h4, h5, h6) { margin: 18px 0 6px; font-weight: 600; line-height: 1.35; }
 .prose :is(h1, h2) { font-size: 20px; }

@@ -1,7 +1,7 @@
 import { fieldId, parseMarkdown, proseLeaves, type Block, type Inline, type Phrase, type ProseLeaf } from '@highwing/thread'
 import { Fragment, useMemo, type ReactNode } from 'react'
 import { isWebLink } from '../../ipc-contract'
-import { CopyButton } from './Copy'
+import { Code } from './Code'
 import { ThreadImage } from './Image'
 
 export function PhraseText({ words }: { readonly words: Phrase }) {
@@ -56,13 +56,7 @@ function block(node: Block, key: number, tail: ReactNode, ids: FindIds): ReactNo
       return node.ordered ? <ol key={key} start={node.start}>{items}</ol> : <ul key={key}>{items}</ul>
     }
     case 'quote': return <blockquote key={key}>{blockList(node.blocks, tail, ids)}</blockquote>
-    case 'code':
-      return (
-        <div key={key} className="code">
-          <pre data-find={ids.get(node)}><code>{node.text}</code>{tail}</pre>
-          <div className="chip">{node.lang !== null && <span className="lang">{node.lang}</span>}<CopyButton text={node.text} name="Copy code" /></div>
-        </div>
-      )
+    case 'code': return <Code key={key} node={node} caret={tail} findId={ids.get(node)} />
     case 'table':
       return (
         <Fragment key={key}>
