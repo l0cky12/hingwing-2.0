@@ -39,7 +39,7 @@ function ChatScreen({ target }: { readonly target: Target | null }) {
     <>
       <div className="top">
         <TopBar target={target} />
-        {link !== undefined && <Banner link={link} />}
+        {link !== undefined && <Banner link={link} target={target} />}
       </div>
       <OpenPane />
     </>
