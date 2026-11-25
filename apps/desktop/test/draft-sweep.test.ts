@@ -5,7 +5,7 @@ import type {} from '../src/renderer/store'
 
 const OLD = { key: 'chat:local-0007', bot: null, text: 'Ask about the lease', attachments: [] } as unknown as Draft
 const listing = (complete: boolean): Sidebar =>
-  ({ bot: null, status: 'ready', complete, rows: [{ id: 'local-0100' as SessionId, title: 'Rent', preview: null, lastActiveAt: null, badge: 'none' }] })
+  ({ bot: null, status: 'ready', complete, rows: [{ id: 'local-0100' as SessionId, title: 'Rent', preview: null, lastActiveAt: null, botChat: false, badge: 'none' }] })
 
 async function restore(saved: readonly Draft[]) {
   vi.resetModules()

@@ -1103,7 +1103,7 @@ export function parseReactions(raw: unknown): readonly Reaction[] {
  */
 const JOB_SOURCES: ReadonlySet<string | null> = new Set(['acp', 'cron', 'kanban', 'oneshot', 'subagent', 'tool'])
 
-export function parseUserChats(rows: readonly CanonicalSessionListRow[]): Omit<SidebarRow, 'badge'>[] {
+export function parseUserChats(rows: readonly CanonicalSessionListRow[]): Omit<SidebarRow, 'badge' | 'botChat'>[] {
   return rows.filter(row => !JOB_SOURCES.has(row.source)).map(row => {
     const seconds = row.last_active_at ?? row.started_at
     return {

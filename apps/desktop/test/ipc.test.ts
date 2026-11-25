@@ -198,6 +198,14 @@ describe('validators', () => {
     expect(parseCommand({ do: 'branch', sessionId: 's1', rowId: 3, branchId: 'b1', extra: 1 })).toEqual({ do: 'branch', sessionId: 's1', rowId: 3, branchId: 'b1' })
   })
 
+  it('keep an archive or a removal of a chat, and refuse one that names no chat', () => {
+    expect(parseCommand({ do: 'archive', sessionId: 's1', archived: true, extra: 1 })).toEqual({ do: 'archive', sessionId: 's1', archived: true })
+    expect(parseCommand({ do: 'archive', sessionId: 's1', archived: 'yes' })).toBeNull()
+    expect(parseCommand({ do: 'remove', sessionId: 's1', extra: 1 })).toEqual({ do: 'remove', sessionId: 's1' })
+    expect(parseCommand({ do: 'remove', sessionId: ' ' })).toBeNull()
+    expect(parseCommand({ do: 'remove' })).toBeNull()
+  })
+
   it('keep an ask for the versions of a chat, and refuse one that names no chat', () => {
     expect(parseCommand({ do: 'versions', sessionId: 's1', extra: 1 })).toEqual({ do: 'versions', sessionId: 's1' })
     expect(parseCommand({ do: 'versions', sessionId: ' ' })).toBeNull()
@@ -411,7 +419,7 @@ describe('validators', () => {
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
       'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'describeBot', 'discard', 'editBot',
       'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
-      'petPicture', 'pets', 'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename',
+      'petPicture', 'pets', 'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename',
       'restore', 'rewind', 'send', 'sendToGroup', 'setMode', 'side', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
     ])
   })

@@ -1,7 +1,7 @@
 import type { BotId, OpenChat, SessionId, Sidebar, SidebarRow } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { agoOf, botNameOf, chatsOf, openChatName } from '../src/renderer/chats/chat-list'
+import { agoOf, botNameOf, chatsOf, offersOf, openChatName } from '../src/renderer/chats/chat-list'
 import { menuStep } from '../src/renderer/chat/menu'
 import { ChatsPanel } from '../src/renderer/chats/Chats'
 import { APPROVED } from './support/bots'
@@ -9,7 +9,7 @@ import { APPROVED } from './support/bots'
 const NOW = Date.UTC(2026, 10, 24, 12)
 const RESEARCH = 'research' as BotId
 const row = (id: string, title: string, more: Partial<SidebarRow> = {}): SidebarRow =>
-  ({ id: id as SessionId, title, preview: null, lastActiveAt: NOW, badge: 'none', ...more })
+  ({ id: id as SessionId, title, preview: null, lastActiveAt: NOW, botChat: false, badge: 'none', ...more })
 const ROWS = [
   row('s1', 'Send invoice reminder', { badge: 'asking', preview: 'I drafted the reminder.' }),
   row('s2', 'Sort the invoices', { lastActiveAt: NOW - 5 * 60_000 }),
@@ -21,15 +21,29 @@ const NO_DRAFTS: ReadonlySet<SessionId> = new Set()
 const showing = (bot: BotId | null, sessionId: string | null = 's2'): OpenChat =>
   ({ shown: { kind: 'chat', bot, sessionId: sessionId as SessionId }, opening: null, missing: null })
 
+const LEAVES = ['rename', 'export-md', 'export-json', 'export-html', 'link', 'archive', 'remove']
+
+describe('what a row offers', () => {
+  it('is every action for a chat, Archive and Remove last', () => {
+    expect(offersOf({ botChat: false })).toEqual(LEAVES)
+  })
+
+  it("leaves Archive and Remove off the bot's own chat, whatever it is titled", () => {
+    expect(offersOf({ botChat: true })).toEqual(['rename', 'export-md', 'export-json', 'export-html', 'link'])
+    expect(chatsOf(listing(RESEARCH, [row('s1', 'Bot Chat', { botChat: true }), row('s2', 'Bot Chat')]), showing(RESEARCH), NOW, NO_DRAFTS))
+      .toMatchObject({ rows: [{ offers: offersOf({ botChat: true }) }, { offers: LEAVES }] })
+  })
+})
+
 describe('what the chat list shows', () => {
   it('names each chat by its title, says when it was last used and what it is doing, and marks the open one', () => {
     expect(chatsOf(listing(RESEARCH), showing(RESEARCH), NOW, NO_DRAFTS)).toEqual({
       show: 'rows',
       rows: [
-        { id: 's1', name: 'Send invoice reminder', preview: 'I drafted the reminder.', when: 'now', doing: 'Waiting for your OK', badge: 'asking', current: false, showsDraft: false },
-        { id: 's2', name: 'Sort the invoices', preview: null, when: '5m', doing: null, badge: 'none', current: true, showsDraft: false },
-        { id: 's3', name: 'Untitled chat', preview: null, when: 'now', doing: 'Working', badge: 'running', current: false, showsDraft: false },
-        { id: 's4', name: 'Clean up Downloads', preview: null, when: '2d', doing: null, badge: 'none', current: false, showsDraft: false }
+        { id: 's1', name: 'Send invoice reminder', preview: 'I drafted the reminder.', when: 'now', doing: 'Waiting for your OK', badge: 'asking', current: false, showsDraft: false, offers: LEAVES },
+        { id: 's2', name: 'Sort the invoices', preview: null, when: '5m', doing: null, badge: 'none', current: true, showsDraft: false, offers: LEAVES },
+        { id: 's3', name: 'Untitled chat', preview: null, when: 'now', doing: 'Working', badge: 'running', current: false, showsDraft: false, offers: LEAVES },
+        { id: 's4', name: 'Clean up Downloads', preview: null, when: '2d', doing: null, badge: 'none', current: false, showsDraft: false, offers: LEAVES }
       ]
     })
     expect(chatsOf(listing(RESEARCH, [row('s5', 'Fresh', { lastActiveAt: null })]), showing(RESEARCH), NOW, NO_DRAFTS), 'a chat Hermes gave no time')
@@ -95,6 +109,7 @@ describe('the chat list', () => {
       <ChatsPanel
         head={<h2>Chats</h2>} sidebar={sidebar} open={open} now={NOW} drafts={drafts} live={live} onOpen={() => {}}
         onRename={async () => ({ ok: true, value: undefined })} onExport={async () => ({ ok: true, value: null })}
+        onArchive={async () => ({ ok: true, value: undefined })} onRemove={async () => ({ ok: true, value: undefined })}
       />
     )
   const attr = (tag: string, name: string) => new RegExp(` ${name}="([^"]*)"`).exec(tag)?.[1]

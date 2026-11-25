@@ -211,6 +211,38 @@ describe('the open chat', () => {
   })
 })
 
+describe('a chat Hermes archived or removed', () => {
+  const gone = (sessionId: SessionId): DeskEvent => ({ on: 'gone', sessionId })
+
+  it("moves the open chat to its bot's own chat", () => {
+    const { desk } = after([listed(RESEARCH, [R2]), picked(R2), gone(R2)], LAUNCHED)
+    expect(desk.open).toEqual({ shown: { kind: 'bot', bot: RESEARCH, sessionId: R1 }, opening: null, missing: null })
+    expect(desk.owners).not.toHaveProperty(R2)
+  })
+
+  it("moves it to the bot's unstarted chat when Highwing knows none, and forgets a Bot Chat that went", () => {
+    expect(after([listed(OPS, [O1]), picked(O1), gone(O1)], LAUNCHED).desk.open.shown).toEqual({ kind: 'bot', bot: OPS, sessionId: null })
+    const botChatGone = after([asked(RESEARCH), gone(R1)], LAUNCHED).desk
+    expect(botChatGone.open.shown).toEqual({ kind: 'bot', bot: RESEARCH, sessionId: null })
+    expect(botChatGone.chats).toEqual({ [EMU]: HOME })
+  })
+
+  it('shows nothing with no bot, and the next facts pick the newest chat left', () => {
+    const own = after([facts({}, { kind: 'chat', bot: null, sessionId: R1 })]).desk
+    const left = after([gone(R1)], own).desk
+    expect(left.open.shown).toBeNull()
+    expect(after([facts({}, { kind: 'chat', bot: null, sessionId: R2 })], left).desk.open.shown).toEqual({ kind: 'chat', bot: null, sessionId: R2 })
+  })
+
+  it('keeps the open chat when another chat went, and a branch or new chat follows its bot', () => {
+    const { desk } = after([listed(RESEARCH, [R2]), gone(R2)], LAUNCHED)
+    expect(desk.open).toBe(LAUNCHED.open)
+    expect(desk.owners).not.toHaveProperty(R2)
+    const started = after([askedNew(OPS, 'd1'), made(OPS, 'd1', O1), gone(O1)], LAUNCHED).desk
+    expect(started.open.shown).toEqual({ kind: 'bot', bot: OPS, sessionId: null })
+  })
+})
+
 describe('the chat a connection shows before any click', () => {
   const fact = (id: BotId, isDefault: boolean) => ({ id, name: id, isDefault, section: null, preview: null, description: null, chat: null, picture: false, pinned: false, hidden: false })
   const WITH_DEFAULT: Bots = { state: 'listed', roster: rosterOf([fact(EMU, true), fact(RESEARCH, false)]), edition: 1 }

@@ -256,7 +256,7 @@ describe("the scripted gateway plays a bot's Bot Chat", () => {
     const again = await call('session.resume', { ...RESEARCH, display_projection: true })
     expect(again.result?.display_messages).toMatchObject([{ text: RESEARCH_SAID }, { role: 'user', text: 'hello' }, { role: 'assistant', text: 'research: hello' }])
     expect(await call('session.events.since', { ...RESEARCH, last_seen: 2, replay_epoch: again.result?.replay_epoch })).toMatchObject({ result: { count: 2, snapshot_required: false } })
-    expect(await call('session.mutate', { ...RESEARCH, request_id: 'r', expected_revision: 0, operation: 'archive', payload: { archived: true } })).toMatchObject(refusal('unsupported_command'))
+    expect(await call('session.mutate', { ...RESEARCH, request_id: 'r', expected_revision: 0, expected_generation: 1, operation: 'reset', payload: {} })).toMatchObject(refusal('unsupported_command'))
   })
 
   it('finds a Bot Chat by its title, and creates one once for a bot that has none', async () => {
@@ -832,7 +832,67 @@ describe('the scripted gateway branches a chat as Hermes does', () => {
     const { call } = await rawSocket({}, WITH_CHATS)
     const rename = { profile: 'research', session_id: INVOICES, request_id: 'r', expected_revision: 0, operation: 'rename', payload: { title: 'x' } }
     expect(await call('session.mutate', { ...rename, payload: { title: 'x', color: 'red' } })).toMatchObject(refusal('invalid_params'))
-    expect(await call('session.mutate', { ...rename, operation: 'archive', payload: { archived: true } })).toMatchObject(refusal('unsupported_command'))
+    expect(await call('session.mutate', { ...rename, operation: 'reset', payload: {}, expected_generation: 0 })).toMatchObject(refusal('unsupported_command'))
+  })
+
+  const stored = async (call: Awaited<ReturnType<typeof rawSocket>>['call'], profile: string) =>
+    ((await call('session.list', { profile, scope: 'stored', limit: 100, include_hidden: true, picker: true })).result?.sessions as { session_id: string }[]).map(row => row.session_id)
+  const live = async (call: Awaited<ReturnType<typeof rawSocket>>['call'], profile: string, include_hidden: boolean) =>
+    ((await call('session.list', { profile, scope: 'live', include_hidden, picker: true })).result?.sessions as { session_id: string }[]).map(row => row.session_id)
+
+  it('archives a chat beside the story, so a stored list leaves it out even with hidden chats, and only a live list with hidden chats keeps it (gateway/session_controls.py:644-649, persistence/sqlite/conversation/_store/sessions.py:145-148)', async () => {
+    const { call, frames } = await rawSocket({}, WITH_CHATS)
+    const reminder = { profile: 'research', session_id: REMINDER }
+    await call('session.resume', { ...reminder, display_projection: true })
+    const asked = { ...reminder, request_id: 'r', expected_revision: 0, operation: 'archive', payload: { archived: true } }
+    expect(await call('session.mutate', { ...asked, expected_revision: 3 })).toMatchObject(refusal('revision_conflict', { revision: 0 }))
+    expect((await call('session.mutate', asked)).result, 'no busy gate, though its turn waits on an approval').toMatchObject({ operation: 'archive', revision: 1 })
+    expect(eventsOf(frames, REMINDER).at(-1)).toMatchObject({ type: 'session.info', payload: { revision: 1 } })
+    expect(await stored(call, 'research')).toEqual([INVOICES, DOWNLOADS])
+    expect(await live(call, 'research', false)).toEqual([])
+    expect(await live(call, 'research', true)).toEqual([REMINDER])
+    expect(await call('session.resume', { ...reminder, display_projection: true }), 'an archived chat still opens').toMatchObject({ result: { session_id: REMINDER } })
+  })
+
+  it('removes a chat beside the story at its generation, after which no list names it and it cannot be resumed (persistence/sqlite/authority/_mutation.py:53-72)', async () => {
+    const { call } = await rawSocket({}, WITH_CHATS)
+    const invoices = { profile: 'research', session_id: INVOICES }
+    const unfenced = { ...invoices, request_id: 'r', expected_revision: 0, operation: 'delete', payload: {} }
+    const asked = { ...unfenced, expected_generation: 0 }
+    expect(await call('session.mutate', unfenced), 'a delete needs the generation').toMatchObject(refusal('invalid_params'))
+    expect(await call('session.mutate', { ...asked, payload: { all: true } })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.mutate', { ...asked, expected_generation: 4 })).toMatchObject(refusal('stale_generation', { revision: 0, execution_generation: 0 }))
+    expect((await call('session.mutate', asked)).result).toEqual({ session_id: INVOICES, operation: 'delete' })
+    expect(await stored(call, 'research')).toEqual([REMINDER, DOWNLOADS])
+    expect(await live(call, 'research', true)).toEqual([REMINDER])
+    expect(await call('session.resume', { ...invoices, display_projection: true })).toMatchObject(refusal('not_found'))
+  })
+
+  it('retires an archived Bot Chat, so a title lookup no longer finds it (gateway/session_controls.py:622-625)', async () => {
+    const { call } = await rawSocket({}, WITH_BOTS)
+    const titled = async () => ((await call('session.list', { profile: 'research', title: 'Bot Chat' })).result?.sessions as { session_id: string }[]).map(row => row.session_id)
+    expect(await titled()).toEqual([RESEARCH_CHAT])
+    await call('session.mutate', { ...RESEARCH, request_id: 'r', expected_revision: 0, operation: 'archive', payload: { archived: true } })
+    expect(await titled()).toEqual([])
+  })
+
+  it('refuses to remove a chat while its turn runs (persistence/sqlite/authority/_runtime_guards.py:51-59)', async () => {
+    const { call } = await rawSocket({}, WITH_CHATS)
+    const asked = { profile: 'research', session_id: REMINDER, request_id: 'r', expected_revision: 0, expected_generation: 1, operation: 'delete', payload: {} }
+    expect(await call('session.mutate', asked)).toMatchObject(refusal('session_busy'))
+    expect(await stored(call, 'research')).toEqual([REMINDER, INVOICES, DOWNLOADS])
+  })
+
+  it('archives and removes the story chat as Hermes does, and a removed story is not found', async () => {
+    const { call } = await rawSocket()
+    const story = { session_id: SESSION }
+    const listed = async (include_hidden: boolean) => ((await call('session.list', { scope: 'live', include_hidden })).result?.sessions as { session_id: string }[]).map(row => row.session_id)
+    await call('session.resume', { ...story, display_projection: true })
+    expect((await call('session.mutate', { ...story, request_id: 'a', expected_revision: 0, operation: 'archive', payload: { archived: true } })).result).toMatchObject({ operation: 'archive', revision: 1 })
+    expect([await listed(false), await listed(true)]).toEqual([[], [SESSION]])
+    expect((await call('session.mutate', { ...story, request_id: 'd', expected_revision: 1, expected_generation: 0, operation: 'delete', payload: {} })).result).toMatchObject({ operation: 'delete' })
+    expect(await listed(true)).toEqual([])
+    expect(await call('session.resume', { ...story, display_projection: true })).toMatchObject(refusal('not_found'))
   })
 
   it('exports a chat beside the story under the file name Hermes gives it, and refuses a format it does not know', async () => {

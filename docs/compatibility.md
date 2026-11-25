@@ -470,6 +470,8 @@ with `config.get`. `Session.cwd` is the chat's folder, from the same places.
 | `move` | `session.mutate workspace {cwd}`, with `expected_generation` | `gateway/session_mutation_policy.py:37-55` |
 | `compress`, or a typed `/compress [focus]` | `session.mutate compress {focus?}`, with `expected_generation` | `gateway/session_mutation_compress.py:32-113` |
 | `export` | `session.export {session_id, format}`, `md`, `json` or `html` | `gateway/session_tui_ops.py:89-122` |
+| `archive` | `session.mutate archive {archived}` | `persistence/authority/runtime.py:344-355` |
+| `remove` | `session.mutate delete {}`, with `expected_generation`. Refused while a turn runs, and when Hermes can't retire the chat's route | `persistence/sqlite/authority/_mutation.py:53-72`, `persistence/sqlite/authority/_runtime_guards.py:51-59`, `gateway/session_mutations.py:217-221` |
 
 - `btw.complete {task_id, question, text}` and `background.complete {task_id, text}`
   carry the answer on the chat's stream, with no generation. Each is one entry

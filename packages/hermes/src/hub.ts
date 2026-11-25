@@ -135,7 +135,7 @@ function sameSidebar(a: Sidebar, b: Sidebar): boolean {
   return a.bot === b.bot && a.status === b.status && a.complete === b.complete && a.rows.length === b.rows.length && a.rows.every((row, index) => {
     const other = b.rows[index]
     return other !== undefined && row.id === other.id && row.title === other.title && row.preview === other.preview
-      && row.lastActiveAt === other.lastActiveAt && row.badge === other.badge
+      && row.lastActiveAt === other.lastActiveAt && row.badge === other.badge && row.botChat === other.botChat
   })
 }
 
@@ -268,7 +268,7 @@ export function openHermes(options: HermesOptions): Hermes {
   const publishSidebar = () => {
     const settled = new Map<SessionId, SessionContent>()
     for (const [id, actor] of actors) if (actor.session.sync.state !== 'opening') settled.set(id, actor.session)
-    sidebar.set(deriveSidebar(list, settled))
+    sidebar.set(deriveSidebar(list, settled, desk.isBotChat))
   }
 
   const desk = chatDesk({
@@ -277,6 +277,7 @@ export function openHermes(options: HermesOptions): Hermes {
       open.set(desk.open)
       list.follow(shownBot(desk.open))
       book.follow(shownGroup(desk.open))
+      publishSidebar()
     }
   })
   const open = feed<OpenChat>(desk.open, sameOpen)
@@ -411,6 +412,7 @@ export function openHermes(options: HermesOptions): Hermes {
     relay: relays.send,
     branchPins,
     branched: desk.branched,
+    gone: desk.gone,
     uploads
   }
 

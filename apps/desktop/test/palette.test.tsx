@@ -12,7 +12,7 @@ const DAY = 86_400_000
 const RESEARCH = 'research' as BotId
 const OPEN = 'open-chat' as SessionId
 const row = (id: string, title: string, more: Partial<SidebarRow> = {}): SidebarRow =>
-  ({ id: id as SessionId, title, preview: null, lastActiveAt: NOW, badge: 'none', ...more })
+  ({ id: id as SessionId, title, preview: null, lastActiveAt: NOW, botChat: false, badge: 'none', ...more })
 const showing = (sessionId: SessionId | null): OpenChat => ({ shown: sessionId === null ? { kind: 'bot', bot: RESEARCH, sessionId: null } : { kind: 'chat', bot: RESEARCH, sessionId }, opening: null, missing: null })
 const sceneOf = (rows: readonly SidebarRow[], more: Partial<Scene> = {}): Scene => ({
   sidebar: { bot: RESEARCH, status: 'ready', rows, complete: true }, bots: APPROVED, open: showing(OPEN), link: { state: 'online' },

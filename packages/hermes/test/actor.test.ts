@@ -51,7 +51,7 @@ function stage() {
   const branched: Parameters<Hub['branched']>[0][] = []
   const hub: Hub = {
     settledCatalog: async () => [], retitle: () => {}, drop: () => {}, refreshSoon: () => {},
-    settledRelay: async () => {}, mentioned: () => [], relay: () => {}, branchPins: new Map(), branched: made => void branched.push(made),
+    settledRelay: async () => {}, mentioned: () => [], relay: () => {}, branchPins: new Map(), branched: made => void branched.push(made), gone: () => {},
     uploads: { read: async () => null }
   }
   let seq = 0

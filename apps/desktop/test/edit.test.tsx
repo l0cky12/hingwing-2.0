@@ -12,7 +12,7 @@ describe('the removal sentence', () => {
 })
 
 describe('the removal dialog', () => {
-  const markup = renderToStaticMarkup(<RemoveDialog later={3} onCancel={() => {}} onConfirm={() => {}} />)
+  const markup = renderToStaticMarkup(<RemoveDialog title={removalWords(3)} detail="Hermes can’t bring them back." confirm="Remove and send" onCancel={() => {}} onConfirm={() => {}} />)
 
   it('is named by the count and described by what cannot be undone', () => {
     const [, title] = /aria-labelledby="([^"]+)"/.exec(markup)!

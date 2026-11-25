@@ -420,6 +420,10 @@ export const validators: Validators = {
     const sessionId = sessionIdOf(raw)
     return sessionId && typeof raw.archived === 'boolean' ? { do: 'archive', sessionId, archived: raw.archived } : null
   },
+  remove: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && { do: 'remove', sessionId }
+  },
   loadEarlier: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && { do: 'loadEarlier', sessionId }

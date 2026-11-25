@@ -283,3 +283,35 @@ describe('export', () => {
     expect(await done).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'This chat is too large for Hermes to export.' } })
   })
 })
+
+describe('remove', () => {
+  it('deletes the chat at its generation, then moves a window off it before the list drops it', async () => {
+    const gone: string[] = []
+    const { command, sent, answer } = await stage({ hub: { drop: id => void gone.push(`drop ${id}`), gone: id => void gone.push(`gone ${id}`) } })
+    const done = command({ do: 'remove', sessionId: ID })
+    expect(sent()).toEqual([['session.mutate', { session_id: ID, request_id: 'id-1', operation: 'delete', payload: {}, expected_revision: 3, expected_generation: 0 }]])
+    await answer('session.mutate', { session_id: ID, operation: 'delete' })
+    expect(await done).toEqual(DONE)
+    expect(gone).toEqual([`gone ${ID}`, `drop ${ID}`])
+  })
+
+  it('refuses while a reply runs, asking Hermes nothing', async () => {
+    const { command, sent, event } = await stage()
+    event(started)
+    expect(await command({ do: 'remove', sessionId: ID })).toEqual({ ok: false, refusal: { kind: 'stale', message: 'Wait for the reply to finish, then remove this chat.' } })
+    expect(sent()).toEqual([])
+  })
+
+  it.each([
+    ['session_busy', 'Wait for the reply to finish, then remove this chat.'],
+    ['unknown_execution', 'Wait for the reply to finish, then remove this chat.'],
+    ['runtime_coordination_required', "Hermes can't remove this chat. You can archive it instead."]
+  ])('says why Hermes refused with %s in plain words, and keeps the chat', async (reason, message) => {
+    const gone: string[] = []
+    const { command, answer } = await stage({ hub: { drop: id => void gone.push(id), gone: id => void gone.push(id) } })
+    const done = command({ do: 'remove', sessionId: ID })
+    await answer('session.mutate', refusal(reason))
+    expect(await done).toMatchObject({ ok: false, refusal: { message } })
+    expect(gone).toEqual([])
+  })
+})

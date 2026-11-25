@@ -4,7 +4,7 @@ import { STORED_ROWS, type SessionContent, type SessionId, type Sidebar, type Si
 import { Offline, RpcRefusal, type Connection } from './wire/link'
 import { parseUserChats } from './wire/parse'
 
-type ListRow = Omit<SidebarRow, 'badge'>
+type ListRow = Omit<SidebarRow, 'badge' | 'botChat'>
 
 export interface SessionList {
   /** Whose chats the rows are. null: the socket's own profile. */
@@ -148,12 +148,18 @@ const BADGES = {
   stopping: 'running', asking: 'asking', answering: 'asking'
 } as const satisfies Record<ReturnType<typeof activityOf>['kind'], SidebarRow['badge']>
 
-export function deriveSidebar(list: Pick<SessionList, 'bot' | 'status' | 'rows' | 'complete' | 'running'>, attached: ReadonlyMap<SessionId, SessionContent>): Sidebar {
+/** `isBotChat`: whether a chat is some bot's own, as the chat desk knows it. A socket bound to one profile lists that bot's own chat with no bot followed. */
+export function deriveSidebar(
+  list: Pick<SessionList, 'bot' | 'status' | 'rows' | 'complete' | 'running'>,
+  attached: ReadonlyMap<SessionId, SessionContent>,
+  isBotChat: (id: SessionId) => boolean = () => false
+): Sidebar {
   return {
     bot: list.bot,
     status: list.status,
     complete: list.complete,
-    rows: list.rows.map(row => {
+    rows: list.rows.map(listed => {
+      const row = { ...listed, botChat: isBotChat(listed.id) }
       const session = attached.get(row.id)
       if (session === undefined) return { ...row, badge: list.running.has(row.id) ? 'running' : 'none' }
       return { ...row, title: session.title || row.title, badge: BADGES[activityOf(session).kind] }

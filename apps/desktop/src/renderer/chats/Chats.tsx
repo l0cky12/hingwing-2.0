@@ -5,13 +5,14 @@ import { chatLink } from '../../chat-link'
 import { baseName } from '../chat/FilePath'
 import { menuStep, useMenu } from '../chat/menu'
 import { slotOf, sweepDrafts, useChatDrafts } from '../composer/drafts'
+import { RemoveDialog } from '../composer/RemoveDialog'
 import { run, useTopic } from '../store'
-import { chatsOf, DRAFT, type ChatRow } from './chat-list'
+import { ACTION_LABELS, chatsOf, DRAFT, type ChatRow, type RowAction } from './chat-list'
 
 const TICK_MS = 30_000
 const SAVED_MS = 5_000
 
-const EXPORTS: readonly (readonly [ExportFormat, string])[] = [['md', 'Export as Markdown'], ['json', 'Export as JSON'], ['html', 'Export as HTML']]
+const REMOVE_DETAIL = 'Hermes deletes this chat and its messages, and can’t bring them back.'
 
 function useNow(): number {
   const [now, setNow] = useState(Date.now)
@@ -38,6 +39,8 @@ export function ChatsSidebar({ head }: { readonly head: ReactNode }) {
       onOpen={sessionId => void run({ do: 'open', ref: { kind: 'chat', sessionId } })}
       onRename={(sessionId, title) => run({ do: 'rename', sessionId, title })}
       onExport={(sessionId, format) => run({ do: 'export', sessionId, format })}
+      onArchive={sessionId => run({ do: 'archive', sessionId, archived: true })}
+      onRemove={sessionId => run({ do: 'remove', sessionId })}
     />
   )
 }
@@ -46,6 +49,8 @@ interface RowActions {
   readonly onOpen: (sessionId: SessionId) => void
   readonly onRename: (sessionId: SessionId, title: string) => Promise<CommandOutcome<unknown>>
   readonly onExport: (sessionId: SessionId, format: ExportFormat) => Promise<CommandOutcome<string | null>>
+  readonly onArchive: (sessionId: SessionId) => Promise<CommandOutcome<unknown>>
+  readonly onRemove: (sessionId: SessionId) => Promise<CommandOutcome<unknown>>
 }
 
 interface ChatsPanelProps extends RowActions {
@@ -61,6 +66,18 @@ export function ChatsPanel({ head, sidebar, open, now, drafts, live, ...actions 
   const ids = useId()
   const view = chatsOf(sidebar, open, now, drafts)
   const [said, setSaid] = useState<{ readonly words: string } | null>(null)
+  const list = useRef<HTMLDivElement>(null)
+  const [left, setLeft] = useState<{ readonly id: SessionId; readonly at: number } | null>(null)
+  const rows = view.show === 'rows' ? view.rows : []
+  useEffect(() => {
+    if (left === null || rows.some(row => row.id === left.id)) return
+    setLeft(null)
+    // Focus that went with the row's own buttons falls to the page. Focus anywhere else is where the user went since.
+    const { activeElement } = document
+    if (activeElement !== null && activeElement !== document.body) return
+    const openers = list.current?.querySelectorAll<HTMLElement>('button.chat-row') ?? []
+    ;(openers[Math.min(left.at, openers.length - 1)] ?? list.current)?.focus()
+  })
   useEffect(() => {
     if (said === null) return
     const id = setTimeout(() => setSaid(null), SAVED_MS)
@@ -69,11 +86,13 @@ export function ChatsPanel({ head, sidebar, open, now, drafts, live, ...actions 
   return (
     <nav className="chats" aria-label="Chats">
       <div className="chats-head">{head}</div>
-      <div className="chats-list" aria-busy={view.show === 'loading' || undefined}>
+      <div ref={list} className="chats-list" tabIndex={-1} aria-busy={view.show === 'loading' || undefined}>
         {view.show === 'note' && <p className="chats-note" role="status">{view.words}</p>}
-        {view.show === 'rows' && view.rows.map((row, at) => (
+        {rows.map((row, at) => (
           // A session id is any word Hermes mints, so the ids come from the row's place.
-          <ChatItem key={row.id} row={row} ids={`${ids}-${at}`} live={live} {...actions} onSay={words => setSaid({ words })} />
+          <ChatItem
+            key={row.id} row={row} ids={`${ids}-${at}`} live={live} {...actions} onSay={words => setSaid({ words })} onLeft={() => setLeft({ id: row.id, at })}
+          />
         ))}
       </div>
       <p className="chats-note chats-saved" role="status">{said?.words ?? ''}</p>
@@ -86,14 +105,17 @@ interface ChatItemProps extends RowActions {
   readonly ids: string
   readonly live: boolean
   readonly onSay: (words: string) => void
+  /** The row left the list on this item's word: archived or removed. */
+  readonly onLeft: () => void
 }
 
-function ChatItem({ row, ids, live, onOpen, onRename, onExport, onSay }: ChatItemProps) {
+function ChatItem({ row, ids, live, onOpen, onRename, onExport, onArchive, onRemove, onSay, onLeft }: ChatItemProps) {
   const { open: menu, setOpen: setMenu, holder, toggle, onKeyDown } = useMenu<HTMLDivElement, HTMLButtonElement>()
   const items = useRef<HTMLDivElement>(null)
   const opener = useRef<HTMLButtonElement>(null)
   const [naming, setNaming] = useState<'off' | 'typing' | 'saving'>('off')
   const [refused, setRefused] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState(false)
   const [doing, when, preview] = [`${ids}-doing`, `${ids}-when`, `${ids}-preview`]
   const words = row.doing ?? (row.showsDraft ? DRAFT : null)
 
@@ -104,6 +126,7 @@ function ChatItem({ row, ids, live, onOpen, onRename, onExport, onSay }: ChatIte
   useEffect(() => {
     if (live) return
     setMenu(false)
+    setConfirming(false)
     setNaming(held => (held === 'typing' ? 'off' : held))
   }, [live])
 
@@ -137,6 +160,28 @@ function ChatItem({ row, ids, live, onOpen, onRename, onExport, onSay }: ChatIte
     setMenu(false)
     toggle.current?.focus()
     navigator.clipboard.writeText(chatLink(row.id)).then(() => onSay('Link copied'), () => onSay('Couldn’t copy the link'))
+  }
+  const leave = async (asked: (sessionId: SessionId) => Promise<CommandOutcome<unknown>>, words: string) => {
+    toggle.current?.focus()
+    const outcome = await asked(row.id)
+    setRefused(outcome.ok ? null : outcome.refusal.message)
+    if (!outcome.ok) return
+    onSay(words)
+    onLeft()
+  }
+  /** A modal dialog makes the rest of the page inert, so it closes before focus goes back. */
+  const stopConfirming = () => {
+    flushSync(() => setConfirming(false))
+    toggle.current?.focus()
+  }
+  const acts: { readonly [A in RowAction]: () => void } = {
+    rename: () => { setMenu(false); setRefused(null); setNaming('typing') },
+    'export-md': () => void exportAs('md'),
+    'export-json': () => void exportAs('json'),
+    'export-html': () => void exportAs('html'),
+    link: copyLink,
+    archive: () => { setMenu(false); void leave(onArchive, `Archived ${row.name}`) },
+    remove: () => { setMenu(false); setConfirming(true) }
   }
   const onMenuKey = (event: KeyboardEvent) => {
     const buttons = [...(items.current?.querySelectorAll('button') ?? [])]
@@ -186,7 +231,10 @@ function ChatItem({ row, ids, live, onOpen, onRename, onExport, onSay }: ChatIte
     )
   }
   return (
-    <div className="chat-item" ref={holder} onKeyDown={onKeyDown}>
+    <div
+      className="chat-item" ref={holder} onKeyDown={onKeyDown}
+      onContextMenu={event => { event.preventDefault(); if (live && !confirming) setMenu(true) }}
+    >
       <button
         ref={opener} type="button" className="chat-row" aria-label={row.name} aria-describedby={`${doing} ${when} ${preview}`}
         aria-current={row.current || undefined} onClick={() => onOpen(row.id)}
@@ -201,12 +249,16 @@ function ChatItem({ row, ids, live, onOpen, onRename, onExport, onSay }: ChatIte
       </button>
       {menu && (
         <div ref={items} className="file-menu" role="menu" aria-label={`More for ${row.name}`} onKeyDown={onMenuKey} onBlur={onMenuBlur}>
-          <button type="button" role="menuitem" onClick={() => { setMenu(false); setRefused(null); setNaming('typing') }}>Rename…</button>
-          {EXPORTS.map(([format, label]) => <button key={format} type="button" role="menuitem" onClick={() => void exportAs(format)}>{label}</button>)}
-          <button type="button" role="menuitem" onClick={copyLink}>Copy link</button>
+          {row.offers.map(action => <button key={action} type="button" role="menuitem" onClick={acts[action]}>{ACTION_LABELS[action]}</button>)}
         </div>
       )}
       {refused !== null && <p className="err">{refused}</p>}
+      {confirming && (
+        <RemoveDialog
+          title={`Remove “${row.name}”?`} detail={REMOVE_DETAIL} confirm="Remove" onCancel={stopConfirming}
+          onConfirm={() => { flushSync(() => setConfirming(false)); void leave(onRemove, `Removed ${row.name}`) }}
+        />
+      )}
     </div>
   )
 }

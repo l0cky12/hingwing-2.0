@@ -738,6 +738,8 @@ export interface SidebarRow {
   readonly title: string
   readonly preview: string | null
   readonly lastActiveAt: number | null
+  /** The bot's own chat, as Highwing knows it from the roster or a title lookup. Never by its title in the list: a user can title any chat "Bot Chat". */
+  readonly botChat: boolean
   /**
    * Derived when the sidebar is published. A running session is always attached, so `asking` and
    * `running` come from `activityOf` of its session. Until its first attach settles, `running`

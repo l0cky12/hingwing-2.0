@@ -12,7 +12,22 @@ export interface ChatRow {
   readonly badge: SidebarRow['badge']
   readonly current: boolean
   readonly showsDraft: boolean
+  /** What its More menu offers, in order. */
+  readonly offers: readonly RowAction[]
 }
+
+export type RowAction = 'rename' | 'export-md' | 'export-json' | 'export-html' | 'link' | 'archive' | 'remove'
+
+export const ACTION_LABELS: { readonly [A in RowAction]: string } = {
+  rename: 'Rename…', 'export-md': 'Export as Markdown', 'export-json': 'Export as JSON', 'export-html': 'Export as HTML', link: 'Copy link',
+  archive: 'Archive', remove: 'Remove…'
+}
+
+const KEPT: readonly RowAction[] = ['rename', 'export-md', 'export-json', 'export-html', 'link']
+const LEAVES: readonly RowAction[] = [...KEPT, 'archive', 'remove']
+
+/** A bot's own chat is the one its row opens, so the list offers no way to archive or remove it. */
+export const offersOf = (row: Pick<SidebarRow, 'botChat'>): readonly RowAction[] => (row.botChat ? KEPT : LEAVES)
 
 /** What the list under the header shows. */
 export type ChatsView =
@@ -59,7 +74,7 @@ export function chatsOf(sidebar: Sidebar | undefined, open: OpenChat | undefined
     show: 'rows',
     rows: rows.map(row => ({
       id: row.id, name: named(row.title), preview: row.preview, when: row.lastActiveAt === null ? '' : agoOf(row.lastActiveAt, now),
-      doing: DOING[row.badge], badge: row.badge, current: row.id === shown, showsDraft: row.id !== shown && drafts.has(row.id)
+      doing: DOING[row.badge], badge: row.badge, current: row.id === shown, showsDraft: row.id !== shown && drafts.has(row.id), offers: offersOf(row)
     }))
   }
 }

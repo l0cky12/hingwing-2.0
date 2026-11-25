@@ -30,6 +30,8 @@ export interface Hub {
   /** Branch keys -> their pins. The hub owns it, so a pin outlives an actor that was detached and made again. */
   readonly branchPins: Map<BranchId, BranchPin>
   branched(made: { readonly from: SessionId; readonly sessionId: SessionId; readonly text: string }): void
+  /** Hermes archived or removed this chat. */
+  gone(id: SessionId): void
   /** Where a message's attachments are read from when it is sent. null: Highwing no longer holds it. */
   readonly uploads: { read(id: AttachmentId): Promise<Upload | null> }
 }
@@ -49,6 +51,16 @@ const BRANCH_REFUSALS: Readonly<Record<string, Refusal>> = {
   unknown_method: CANT_BRANCH,
   runtime_coordination_required: { kind: 'unsupported', message: "Hermes can't branch this chat." },
   session_busy: BRANCH_BUSY
+}
+const REMOVE_RUNNING: Refusal = { kind: 'stale', message: 'Wait for the reply to finish, then remove this chat.' }
+/**
+ * Hermes refuses a delete while a turn runs or might (persistence/sqlite/authority/_runtime_guards.py:51-59), and when its
+ * runner can't retire the chat's route (gateway/session_mutations.py:217-221).
+ */
+const REMOVE_REFUSALS: Readonly<Record<string, Refusal>> = {
+  session_busy: REMOVE_RUNNING,
+  unknown_execution: REMOVE_RUNNING,
+  runtime_coordination_required: { kind: 'unsupported', message: "Hermes can't remove this chat. You can archive it instead." }
 }
 const NO_CHILD: Refusal = { kind: 'rejected', message: "Hermes made the chat but didn't say which one." }
 const NOT_OPEN = refused('stale', 'That question is no longer open.')
@@ -223,7 +235,21 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
   archive: (port, { archived }, hub) => port.whenLive(async () => {
     const changed = await port.mutate('archive', { archived }, null)
     if (!changed.ok) return changed
-    if (archived) hub.drop(port.id)
+    if (archived) {
+      hub.gone(port.id)
+      hub.drop(port.id)
+    }
+    hub.refreshSoon()
+    return DONE
+  }),
+
+  /** Hermes deletes the chat with its whole compression chain (persistence/sqlite/authority/_runtime_guards.py `delete_targets`). */
+  remove: (port, _command, hub) => port.whenLive(async () => {
+    if (port.content.run.state === 'running') return { ok: false, refusal: REMOVE_RUNNING }
+    const removed = await port.mutate('delete', {}, port.fence.generation ?? 0, undefined, REMOVE_REFUSALS)
+    if (!removed.ok) return removed
+    hub.gone(port.id)
+    hub.drop(port.id)
     hub.refreshSoon()
     return DONE
   }),
