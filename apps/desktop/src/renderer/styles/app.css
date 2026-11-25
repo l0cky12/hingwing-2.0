@@ -715,6 +715,12 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .preview-note { margin: 0; color: var(--graphite); }
 .preview-failed { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 360px; padding: 24px; text-align: center; }
 .preview-failed p { margin: 0; color: var(--caution); font-weight: 500; }
+.preview-table { flex: 1; min-height: 0; overflow: auto; background: var(--sheet); }
+.preview-table:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+.preview-table table { border-collapse: separate; border-spacing: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+.preview-table th, .preview-table td { max-width: 32em; padding: 6px 12px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }
+.preview-table th { position: sticky; top: 0; z-index: 1; background: var(--paper); color: var(--ink); font-weight: 700; }
+.preview-rows { margin: 0; padding: 8px 20px; border-top: 1px solid var(--rule); color: var(--graphite); font-size: 13px; }
 /* Two columns of chat and page no longer fit: the pane covers the chat, and Back to chat gives it back. */
 @media (max-width: 899px) {
   .window[data-preview] { grid-template-columns: 288px minmax(0, 1fr); }
@@ -730,5 +736,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .preview { border-left: 1px solid CanvasText; }
   .preview-head { border-bottom: 1px solid CanvasText; }
   .preview-head button, .preview-failed button { border: 1px solid ButtonText; }
+  .preview-table th { background: Canvas; }
+  .preview-table th, .preview-table td { border-bottom: 1px solid CanvasText; }
+  .preview-rows { border-top: 1px solid CanvasText; }
   .link-menu { border: 1px solid CanvasText; }
 }

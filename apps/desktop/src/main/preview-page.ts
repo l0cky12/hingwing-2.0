@@ -1,8 +1,8 @@
 import { machineOf, type Session } from '@highwing/hermes/domain'
 import { realpath } from 'node:fs/promises'
-import { dirname, isAbsolute, relative, sep } from 'node:path'
+import { basename, dirname, isAbsolute, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { isWebPage, type PageLoad, type Preview, type Setup } from '../ipc-contract'
+import { isWebPage, type PageLoad, type Preview, type Setup, type Table } from '../ipc-contract'
 import { openablePath } from './files'
 
 export type Page = { readonly kind: 'web'; readonly url: string } | { readonly kind: 'file'; readonly path: string }
@@ -103,25 +103,30 @@ export const failureOf = (code: number, description: string, address: string): s
 
 /**
  * The pane as main holds it. Hermes's label outranks the page's own title. `asked` is the request as
- * Hermes or the window put it, and `address` the page the view is on now. `painted`: the page has
- * drawn once, so a reload keeps it in view.
+ * Hermes or the window put it, and `address` the page the view is on now. `file` is the path a
+ * step named, when it is on this computer: what Open opens, wherever a page has gone since.
+ * `painted`: the page has drawn once, so a reload keeps it in view. `table`: a CSV file, drawn by
+ * the window in place of a page.
  */
 export interface Pane {
   readonly asked: string
   readonly address: string
+  readonly file: string | null
   readonly label: string | null
   readonly pageTitle: string | null
   readonly load: PageLoad
   readonly painted: boolean
+  readonly table: Table | null
 }
 
 export type PaneEvent =
-  | { readonly on: 'show'; readonly asked: string; readonly address: string; readonly label: string | null; readonly load: PageLoad }
+  | { readonly on: 'show'; readonly asked: string; readonly address: string; readonly file: string | null; readonly label: string | null; readonly load: PageLoad }
   | { readonly on: 'navigated'; readonly address: string }
   | { readonly on: 'loading' }
   | { readonly on: 'loaded' }
   | { readonly on: 'failed'; readonly reason: string }
   | { readonly on: 'titled'; readonly title: string }
+  | { readonly on: 'tabled'; readonly table: Table }
   | { readonly on: 'close' }
 
 type Move<E extends PaneEvent['on']> = (pane: Pane, event: Extract<PaneEvent, { on: E }>) => Pane
@@ -131,11 +136,15 @@ const MOVES: { readonly [E in Exclude<PaneEvent['on'], 'show' | 'close'>]: Move<
   // A load that failed stays failed until the next one starts.
   loaded: pane => (pane.load.at === 'loading' ? { ...pane, load: { at: 'shown' }, painted: true } : pane),
   failed: (pane, { reason }) => ({ ...pane, load: { at: 'failed', reason } }),
-  titled: (pane, { title }) => ({ ...pane, pageTitle: title.trim() === '' ? null : title })
+  titled: (pane, { title }) => ({ ...pane, pageTitle: title.trim() === '' ? null : title }),
+  tabled: (pane, { table }) => ({ ...pane, table, load: { at: 'shown' } })
 }
 
 export function nextPane(pane: Pane | null, event: PaneEvent): Pane | null {
-  if (event.on === 'show') return { asked: event.asked, address: event.address, label: event.label, pageTitle: null, load: event.load, painted: false }
+  if (event.on === 'show') {
+    const { asked, address, file, label, load } = event
+    return { asked, address, file, label, pageTitle: null, load, painted: false, table: null }
+  }
   if (pane === null || event.on === 'close') return null
   return (MOVES[event.on] as Move<typeof event.on>)(pane, event)
 }
@@ -143,7 +152,13 @@ export function nextPane(pane: Pane | null, event: PaneEvent): Pane | null {
 export const previewOf = (pane: Pane | null): Preview =>
   pane === null
     ? { state: 'closed' }
-    : { state: 'open', title: pane.label ?? pane.pageTitle ?? pane.address, address: pane.address, content: { kind: 'page', load: pane.load } }
+    : {
+        state: 'open',
+        title: pane.label ?? pane.pageTitle ?? (pane.file === null ? pane.address : basename(pane.address)),
+        address: pane.address,
+        file: pane.file !== null,
+        content: pane.table === null ? { kind: 'page', load: pane.load } : { kind: 'table', table: pane.table }
+      }
 
 /** Whether the page itself is drawn. A failed page gives its place to the reason, and a first load to the window's "Loading". */
 export const pageInView = (pane: Pane | null): boolean => pane !== null && (pane.load.at === 'shown' || (pane.load.at === 'loading' && pane.painted))

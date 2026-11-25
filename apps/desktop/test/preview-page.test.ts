@@ -57,6 +57,11 @@ describe('pageFor', () => {
   it('refuses a path when no chat named it', () => {
     expect(pageFor(SITE, { ...local, session: undefined })).toBeNull()
   })
+
+  it('refuses a CSV or a PDF no finished step named, so main reads nothing of it', () => {
+    expect(pageFor('/tmp/hermes-proto-work/site/report.csv', local)).toBeNull()
+    expect(pageFor('file:///tmp/hermes-proto-work/report.pdf', local)).toBeNull()
+  })
 })
 
 describe('reachOf', () => {
@@ -78,7 +83,8 @@ describe('failureOf', () => {
 
 describe('the pane', () => {
   const run = (...events: PaneEvent[]) => events.reduce<Pane | null>(nextPane, null)
-  const show = (label: string | null = null, address = 'http://localhost:5173/'): PaneEvent => ({ on: 'show', asked: address, address, label, load: { at: 'loading' } })
+  const show = (label: string | null = null, address = 'http://localhost:5173/', file: string | null = null): PaneEvent =>
+    ({ on: 'show', asked: address, address, file, label, load: { at: 'loading' } })
 
   it("is titled by Hermes's label, else by the page's own title, else by its address", () => {
     expect(previewOf(run(show('demo'), { on: 'titled', title: 'Vite App' }))).toMatchObject({ state: 'open', title: 'demo' })
@@ -88,7 +94,7 @@ describe('the pane', () => {
 
   it('draws the page once it has loaded, and keeps it in view while it reloads', () => {
     const loading = run(show())
-    expect(previewOf(loading)).toEqual({ state: 'open', title: 'http://localhost:5173/', address: 'http://localhost:5173/', content: { kind: 'page', load: { at: 'loading' } } })
+    expect(previewOf(loading)).toEqual({ state: 'open', title: 'http://localhost:5173/', address: 'http://localhost:5173/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
     expect(pageInView(loading)).toBe(false)
     const shown = nextPane(loading, { on: 'loaded' })
     expect(previewOf(shown)).toMatchObject({ content: { load: { at: 'shown' } } })
@@ -108,13 +114,32 @@ describe('the pane', () => {
     expect(previewOf(moved)).toMatchObject({ address: 'http://localhost:5173/about' })
   })
 
+  it('shows a CSV file as its table, titled by its name, and offers to open it', () => {
+    const table = { header: ['name', 'total'], rows: [['Alice', '120']], total: 1 }
+    const report = '/tmp/hermes-proto-work/report.csv'
+    expect(previewOf(run(show(null, report, report), { on: 'tabled', table })))
+      .toEqual({ state: 'open', title: 'report.csv', address: report, file: true, content: { kind: 'table', table } })
+    expect(previewOf(run(show('Q3 report', report, report), { on: 'tabled', table }))).toMatchObject({ title: 'Q3 report' })
+  })
+
+  it('offers to open a file with its reason when it fails, and nothing for a web page', () => {
+    expect(previewOf(run(show(null, '/w/fake.pdf', '/w/fake.pdf'), { on: 'failed', reason: "This isn't a PDF." })))
+      .toMatchObject({ title: 'fake.pdf', file: true, content: { kind: 'page', load: { at: 'failed', reason: "This isn't a PDF." } } })
+    expect(previewOf(run(show()))).toMatchObject({ file: false })
+  })
+
+  it('starts a new page without the last one\'s table', () => {
+    const table = { header: ['n'], rows: [], total: 0 }
+    expect(previewOf(run(show(null, '/w/a.csv', '/w/a.csv'), { on: 'tabled', table }, show()))).toMatchObject({ content: { kind: 'page', load: { at: 'loading' } } })
+  })
+
   it('closes, and stays closed whatever a closing page still reports', () => {
     expect(previewOf(run(show(), { on: 'close' }, { on: 'loaded' }, { on: 'titled', title: 'late' }))).toEqual({ state: 'closed' })
   })
 
   it('starts a new page with nothing of the last one', () => {
     expect(previewOf(run(show('demo'), { on: 'loaded' }, show(null, 'https://example.com/'))))
-      .toEqual({ state: 'open', title: 'https://example.com/', address: 'https://example.com/', content: { kind: 'page', load: { at: 'loading' } } })
+      .toEqual({ state: 'open', title: 'https://example.com/', address: 'https://example.com/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
   })
 })
 

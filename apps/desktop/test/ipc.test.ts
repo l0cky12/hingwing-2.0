@@ -206,6 +206,7 @@ describe('validators', () => {
     expect(parseCommand({ do: 'browse', url: 'https://example.com/docs' })).toEqual({ do: 'browse', url: 'https://example.com/docs' })
     expect(parseCommand({ do: 'placePreview', rect: { x: 600, y: 56, width: 580, height: 804, z: 1 } })).toEqual({ do: 'placePreview', rect: { x: 600, y: 56, width: 580, height: 804 } })
     expect(parseCommand({ do: 'placePreview', rect: null })).toEqual({ do: 'placePreview', rect: null })
+    expect(parseCommand({ do: 'openPreview', path: '/etc/passwd' })).toEqual({ do: 'openPreview' })
   })
 
   it.each([
@@ -227,8 +228,8 @@ describe('validators', () => {
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'closePreview', 'completePath', 'contextBreakdown', 'createBot', 'describeBot',
-      'discard', 'editBot', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat', 'pickModel', 'placePreview', 'preview', 'reconnect', 'reloadPreview',
-      'removeBotPicture', 'rename', 'rewind', 'send', 'setYolo', 'start', 'stop', 'versions'
+      'discard', 'editBot', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat', 'openPreview', 'pickModel', 'placePreview', 'preview', 'reconnect',
+      'reloadPreview', 'removeBotPicture', 'rename', 'rewind', 'send', 'setYolo', 'start', 'stop', 'versions'
     ])
   })
 })
@@ -450,7 +451,7 @@ describe('serveWindows', () => {
     const run = handlers.get(CHANNEL.run)!
     const asked: PreviewCommand[] = [
       { do: 'preview', url: 'http://localhost:5173/' }, { do: 'browse', url: 'https://example.com/' }, { do: 'reloadPreview' },
-      { do: 'placePreview', rect: { x: 600, y: 56, width: 580, height: 804 } }, { do: 'closePreview' }
+      { do: 'placePreview', rect: { x: 600, y: 56, width: 580, height: 804 } }, { do: 'openPreview' }, { do: 'closePreview' }
     ]
     for (const command of asked) await expect(run(event(), command)).resolves.toEqual({ ok: true, value: undefined })
     await expect(run(event('https://example.com/'), { do: 'browse', url: 'https://example.com/' })).resolves.toMatchObject({ ok: false })
