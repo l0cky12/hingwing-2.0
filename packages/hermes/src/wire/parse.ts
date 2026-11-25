@@ -12,10 +12,11 @@ import type {
 } from '../domain/session'
 import type { RelayState } from '../domain/relay'
 import type { SlashCatalog, SlashEntry } from '../domain/slash'
+import type { Said, TreeRow } from '../domain/versions'
 import type {
   CanonicalBotDeliverResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalProfilesResult, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
   CanonicalSnapshot, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
-  MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, PreviewClosePayload, PreviewOpenPayload, ProfilesCreateResult, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult,
+  MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, PreviewClosePayload, PreviewOpenPayload, ProfilesCreateResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult,
   SessionStats, SessionTitlePayload, SessionUsagePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload, SubagentEventPayload,
   TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage
 } from './contract.generated'
@@ -705,6 +706,46 @@ export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<Si
       preview: row.preview || null,
       lastActiveAt: seconds === null ? null : Math.round(seconds * 1000)
     }
+  })
+}
+
+/** `_branched_from` is on every row (tui_gateway/methods_projects.py:342), and is no key of the generated contract. */
+type TreeSession = ProjectTreeSession & { _branched_from?: string | null }
+
+/**
+ * A chat is a version of its parent only when `_branched_from` names that parent, which a branch writes
+ * (persistence/sqlite/authority/_mutation_publish.py:124).
+ */
+export function parseTreeRows(reply: ProjectsTreeResult): TreeRow[] | null {
+  return usable(() => {
+    const listed = (held: readonly unknown[] | null): readonly unknown[] => held ?? []
+    const rows = new Map<SessionId, TreeRow>()
+    for (const node of fields<ProjectsTreeResult>(reply).optList('projects') ?? []) {
+      const project = fields<ProjectTreeNode>(node)
+      const lanes = listed(project.optList('repos')).flatMap(repo => listed(fields<ProjectTreeRepo>(repo).optList('groups')))
+      for (const value of [...listed(project.optList('previewSessions')), ...lanes.flatMap(lane => listed(fields<ProjectTreeLane>(lane).optList('sessions')))]) {
+        const row = fields<TreeSession>(value)
+        const id = row.str('id') as SessionId
+        if (id === '' || row.optBool('archived') === true || rows.has(id)) continue
+        const branchedFrom = row.optStr('_branched_from')
+        const parent = branchedFrom !== null && branchedFrom !== '' && branchedFrom !== id && branchedFrom === row.optStr('parent_session_id') ? branchedFrom as SessionId : null
+        rows.set(id, { id, parent, startedAt: row.optNum('started_at') ?? 0 })
+      }
+    }
+    return [...rows.values()]
+  })
+}
+
+export function parseSaid(reply: StoredTranscriptResult): { readonly said: readonly Said[]; readonly next: string | null; readonly reset: boolean } | null {
+  return usable(() => {
+    const page = fields<StoredTranscriptResult>(reply)
+    const said = (page.optList('rows') ?? []).map((value): Said => {
+      const row = fields<StoredTranscriptRow>(value)
+      const [role, kind] = [row.str('role'), row.str('row_kind')]
+      const key = JSON.stringify([role, kind, row.optStr('text'), row.raw('content') ?? null, row.optStr('tool_call_id'), row.optStr('name'), row.raw('args') ?? null])
+      return { user: role === 'user' && kind === 'message', rowId: row.optInt('row_id'), key }
+    })
+    return { said, next: page.optStr('next_cursor'), reset: page.optBool('reset') === true }
   })
 }
 

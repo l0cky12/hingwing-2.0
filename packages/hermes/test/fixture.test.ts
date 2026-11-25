@@ -184,6 +184,10 @@ describe('loadFixture', () => {
     expect(loadFixture(write([{ ...header, chats }])).header.chats).toEqual(chats)
     const bad = write([{ ...header, chats: { research: [{ id: 'r1', title: 'Sort', last_active: 1 }] } }])
     expect(() => loadFixture(bad)).toThrow(`${bad}:1: "chats" must map a profile to its chats, each with id, title, last_active and rows`)
+    const branched = { research: [...chats.research, { id: 'r2', title: 'Sort #2', last_active: 2, rows: [], branched_from: 'r1' }] }
+    expect(loadFixture(write([{ ...header, chats: branched, tree: true }])).header).toMatchObject({ chats: branched, tree: true })
+    const orphan = write([{ ...header, chats: { research: [{ id: 'r2', title: 'Sort #2', last_active: 2, rows: [], branched_from: 'r1' }] } }])
+    expect(() => loadFixture(orphan)).toThrow(`${orphan}:1: "branched_from" must name another chat of the same profile`)
   })
 
   it('reads the YOLO the chat starts in and whether Hermes refuses a switch, and refuses any other value', () => {

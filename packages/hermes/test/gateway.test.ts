@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { manualClock, settle } from '../src/testing/clock'
 import { scriptedDialer, type Fixture, type ScriptOptions } from '../src/testing/fixture'
-import { BOUND, BRANCH, BRANCH_OLD, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS } from './support/errand'
+import { BOUND, BRANCH, BRANCH_OLD, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, SORTED, SORTED_2, SORTED_3, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS } from './support/errand'
 
 interface Reply {
   readonly id?: number
@@ -625,5 +625,76 @@ describe('the scripted gateway branches a chat as Hermes does', () => {
   it('refuses any other operation on a chat beside the story', async () => {
     const { call } = await rawSocket({}, WITH_CHATS)
     expect(await call('session.mutate', { profile: 'research', session_id: INVOICES, request_id: 'r', expected_revision: 0, operation: 'rename', payload: { title: 'x' } })).toMatchObject(refusal('unsupported_command'))
+  })
+})
+
+describe('the scripted gateway lists a profile\'s chats as a tree', () => {
+  type TreeRow = Record<string, unknown>
+  const previews = (reply: Reply) => ((reply.result?.projects as { previewSessions: TreeRow[] }[])[0]?.previewSessions ?? [])
+  const all = { profile: 'research', preview_limit: 100 }
+
+  it('answers -32601 when the fixture has no tree, and on a socket bound to one profile', async () => {
+    const { call } = await rawSocket({}, WITH_CHATS)
+    expect(await call('projects.tree', { profile: 'research' })).toMatchObject({ error: { code: -32601, data: { reason: 'unknown_method' } } })
+    const bound = await rawSocket({}, { ...WITH_VERSIONS, header: { ...WITH_VERSIONS.header, reach: 'profile' } })
+    expect(await bound.call('projects.tree', {})).toMatchObject({ error: { code: -32601, data: { reason: 'unknown_method' } } })
+  })
+
+  it('names the chat a branch was made from twice, and no parent for any other chat', async () => {
+    const { call } = await rawSocket({}, WITH_VERSIONS)
+    const rows = previews(await call('projects.tree', all))
+    expect(rows.map(row => [row.id, row.parent_session_id, row._branched_from, row.profile]), 'newest first').toEqual([
+      [SORTED_3, SORTED, SORTED, 'research'], [SORTED_2, SORTED, SORTED, 'research'], [SORTED, null, null, 'research'], ['local-0103', null, null, 'research']
+    ])
+    expect(rows[2]).toMatchObject({ title: 'Sort the invoices', started_at: 1795249000, message_count: 6, archived: false })
+  })
+
+  it('previews the three newest chats unless asked for more, as Hermes does', async () => {
+    const { call } = await rawSocket({}, WITH_VERSIONS)
+    expect(previews(await call('projects.tree', { profile: 'research' })).map(row => row.id)).toEqual([SORTED_3, SORTED_2, SORTED])
+  })
+
+  it('lists a chat a branch made under the chat it was made from, and never the story session', async () => {
+    const { call } = await rawSocket({}, WITH_VERSIONS)
+    const asked = { profile: 'research', session_id: SORTED, request_id: 'branch-1', expected_revision: 0, expected_generation: 0, operation: 'branch', payload: { through_message_id: 2 } }
+    await call('session.mutate', asked)
+    expect(previews(await call('projects.tree', all))).toContainEqual(expect.objectContaining({ id: 'branch-research-1', parent_session_id: SORTED, _branched_from: SORTED, started_at: 0 }))
+    await call('session.mutate', { ...asked, profile: undefined, session_id: SESSION, payload: {} })
+    const home = previews(await call('projects.tree', { preview_limit: 100 }))
+    expect(home.map(row => [row.id, row.parent_session_id])).toEqual([['branch-default-2', null]])
+  })
+})
+
+describe('the scripted gateway pages a chat beside the story', () => {
+  const page = (more: Record<string, unknown>) => ({ profile: 'research', session_id: SORTED, inline_images: false, ...more })
+  const read = (reply: Reply) => (reply.result?.rows as { role: string; row_id: number; row_kind: string }[]).map(row => [row.role, row.row_id, row.row_kind])
+
+  it('oldest first, with a cursor that is never null and an empty page at the end', async () => {
+    const { call } = await rawSocket({}, WITH_VERSIONS)
+    const first = await call('session.transcript', page({ order: 'oldest', limit: 4 }))
+    expect(read(first)).toEqual([['user', 1, 'message'], ['assistant', 2, 'message'], ['user', 3, 'message'], ['assistant', 4, 'message']])
+    expect(first.result).toMatchObject({ session_id: SORTED, reset: false })
+    const second = await call('session.transcript', page({ order: 'oldest', limit: 4, cursor: first.result?.next_cursor }))
+    expect(read(second)).toEqual([['user', 5, 'message'], ['assistant', 6, 'message']])
+    const end = await call('session.transcript', page({ order: 'oldest', limit: 4, cursor: second.result?.next_cursor }))
+    expect(read(end)).toEqual([])
+    expect(end.result?.next_cursor).toBe(second.result?.next_cursor)
+  })
+
+  it('latest first, back to a null cursor', async () => {
+    const { call } = await rawSocket({}, WITH_VERSIONS)
+    const newest = await call('session.transcript', page({ order: 'latest', limit: 4 }))
+    expect(read(newest).map(([, rowId]) => rowId)).toEqual([3, 4, 5, 6])
+    const older = await call('session.transcript', page({ order: 'latest', limit: 4, cursor: newest.result?.next_cursor }))
+    expect(read(older).map(([, rowId]) => rowId)).toEqual([1, 2])
+    expect(older.result?.next_cursor).toBeNull()
+  })
+
+  it('refuses a cursor of the other order, a limit over 500 and an unknown key', async () => {
+    const { call } = await rawSocket({}, WITH_VERSIONS)
+    const first = await call('session.transcript', page({ order: 'oldest', limit: 2 }))
+    expect(await call('session.transcript', page({ order: 'latest', cursor: first.result?.next_cursor }))).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.transcript', page({ order: 'oldest', limit: 501 }))).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.transcript', page({ newest: true }))).toMatchObject(refusal('invalid_params', { fields: ['newest'] }))
   })
 })

@@ -166,8 +166,10 @@ export class Offline extends Error {}
  * `profiles.create` is not canonical: the authority answers -32601 and the socket falls back to the legacy
  * handler for a connection with the interactive grant (tui_gateway/ws.py:403-411, tui_gateway/ws_legacy_fallback.py:53-62).
  * A -32601 from it means this Hermes cannot create bots from Highwing.
+ * `projects.tree` reaches its legacy handler the same way (tui_gateway/methods_config.py:137), and a -32601 from it
+ * means this Hermes cannot say which chats were branched from which.
  */
-type Served = CanonicalRpcMethods & Pick<RpcMethods, 'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'profiles.create'>
+type Served = CanonicalRpcMethods & Pick<RpcMethods, 'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'profiles.create' | 'projects.tree'>
 type Method = keyof Served
 
 export interface Connection {

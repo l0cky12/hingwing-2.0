@@ -697,7 +697,7 @@ function serveInDeltas(steps, origin) {
   }
 }
 
-function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, createWarnings, bound, noBotChat, yolo, yoloDenied, yoloElsewhereAfter, origin }, out) {
+function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, createWarnings, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, origin }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const header = JSON.parse(lines[0])
   const steps = lines.slice(1).map(line => JSON.parse(line))
@@ -717,6 +717,7 @@ function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, c
   if (createWarnings) header.createWarnings = JSON.parse(readFileSync(resolve(process.cwd(), createWarnings), 'utf8'))
   if (bound) header.reach = 'profile'
   if (noBotChat) header.homeBotChat = false
+  if (tree) header.tree = true
   if (yolo) header.yolo = yolo === 'on'
   if (yoloDenied) header.yoloDenied = true
   if (yoloElsewhereAfter) {
@@ -762,17 +763,18 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', 'create-warnings': 'value', bound: 'flag', 'no-bot-chat': 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', 'create-warnings': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
   if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
   const site = options.serve ? await serve(options.serve) : null
-  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, createWarnings: options['create-warnings'], bound: options.bound, noBotChat: options['no-bot-chat'], yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], origin: site?.origin }
+  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, createWarnings: options['create-warnings'], bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], origin: site?.origin }
   const edited = Object.values(edits).some(Boolean)
   if (options.yolo && options.yolo !== 'on' && options.yolo !== 'off') fail(`--yolo takes on or off, not "${options.yolo}"`)
   if (!options.yolo && (options['yolo-denied'] || options['yolo-elsewhere-after'])) fail('--yolo-denied and --yolo-elsewhere-after need --yolo, because a Hermes with no YOLO answers neither')
-  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --create-warnings, --bound, --no-bot-chat, --yolo, --yolo-denied, --yolo-elsewhere-after and --serve edit the fixture a --fixture run replays. They do nothing with --fake-host')
+  if (options.tree && !options.profiles) fail('--tree needs --profiles, because the tree lists the chats that file seeds')
+  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --create-warnings, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after and --serve edit the fixture a --fixture run replays. They do nothing with --fake-host')
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
   if (options.size && !/^[1-9]\d*x[1-9]\d*$/.test(options.size)) fail(`--size takes <width>x<height>, not "${options.size}"`)
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')

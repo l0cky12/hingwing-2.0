@@ -225,6 +225,10 @@ export const validators: Validators = {
       ? { do: 'branch', sessionId, rowId: raw.rowId as number, branchId: raw.branchId as BranchId }
       : null
   },
+  versions: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && { do: 'versions', sessionId }
+  },
   stop: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && { do: 'stop', sessionId }

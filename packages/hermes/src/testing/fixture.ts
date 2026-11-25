@@ -39,6 +39,11 @@ export interface Fixture {
      */
     readonly branches?: true
     /**
+     * true: the gateway answers `projects.tree` with the chats beside the story, each branch naming the chat it was
+     * branched from. Absent: it refuses the call as an unknown method, as a Hermes whose socket reaches no legacy handler does.
+     */
+    readonly tree?: true
+    /**
      * Canned usage. `before` and `after` are `session.stats` replies: the gateway answers `before` until the
      * story's first turn ends and `after` from then on, and every turn end carries `after` as Hermes's usage
      * view. `breakdown` is the `session.context_breakdown` reply. Absent: the gateway refuses both calls as
@@ -91,6 +96,8 @@ export interface ChatSeed {
   readonly hidden?: boolean
   /** The approval the chat's running turn waits on. */
   readonly asking?: { readonly command: string; readonly description: string }
+  /** The id of the chat of the same profile this one was branched from. */
+  readonly branched_from?: string
 }
 
 export type FixtureStep =
@@ -159,6 +166,9 @@ const isSeed = (value: unknown): value is ChatSeed =>
   && Array.isArray(value.rows) && value.rows.every(row => isObject(row) && (row.role === 'user' || row.role === 'assistant') && typeof row.text === 'string')
   && (value.hidden === undefined || typeof value.hidden === 'boolean')
   && (value.asking === undefined || (isObject(value.asking) && typeof value.asking.command === 'string' && typeof value.asking.description === 'string'))
+  && (value.branched_from === undefined || (typeof value.branched_from === 'string' && value.branched_from !== '' && value.branched_from !== value.id))
+
+const parentsListed = (seeds: readonly ChatSeed[]) => seeds.every(seed => seed.branched_from === undefined || seeds.some(other => other.id === seed.branched_from))
 
 const isRelayScript = (value: unknown): value is RelayScript =>
   isObject(value) && ('refuse' in value
@@ -177,7 +187,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (!Array.isArray(stored)) return '"stored" must be an array of rows'
   const { models } = value
   if (models !== undefined && !(isObject(models) && Array.isArray(models.providers))) return '"models" must be a model.options reply with "providers"'
-  const { guarded, branches } = value
+  const { guarded, branches, tree } = value
+  if (tree !== undefined && tree !== true) return '"tree" must be true'
   if (guarded !== undefined && !(Array.isArray(guarded) && guarded.every(model => typeof model === 'string'))) return '"guarded" must be a list of model names'
   if (branches !== undefined && branches !== true) return '"branches" must be true'
   const { before, after, breakdown } = isObject(value.usage) ? value.usage : {}
@@ -201,6 +212,9 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (chats !== undefined && !(isObject(chats) && Object.values(chats).every(seeds => Array.isArray(seeds) && seeds.every(isSeed)))) {
     return '"chats" must map a profile to its chats, each with id, title, last_active and rows'
   }
+  if (chats !== undefined && !Object.values(chats as { readonly [profile: string]: readonly ChatSeed[] }).every(parentsListed)) {
+    return '"branched_from" must name another chat of the same profile'
+  }
   const { relay } = value
   if (relay !== undefined && !(isObject(relay) && Object.values(relay).every(isRelayScript))) {
     return '"relay" must map a profile to { reply, delay_ms? } or { refuse }'
@@ -211,7 +225,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] }),
     ...(usage === undefined ? {} : { usage }),
     ...(yolo === undefined ? {} : { yolo }), ...(yoloDenied === undefined ? {} : { yoloDenied }),
-    ...(branches === undefined ? {} : { branches }),
+    ...(branches === undefined ? {} : { branches }), ...(tree === undefined ? {} : { tree }),
     ...(profiles === undefined ? {} : { profiles }),
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),

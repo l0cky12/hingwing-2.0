@@ -4,7 +4,7 @@ import type { BranchId, Item, PromptId, Session, SessionId } from '../src/domain
 import { DialError, openHermes, RETAIN_MS, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
 import { play, scriptedDialer, type Fixture, type FixtureStep, type Moment, type ScriptOptions } from '../src/testing/fixture'
-import { BOUND, BRANCH, BRANCH_OLD, callsIn, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, withSudo } from './support/errand'
+import { BOUND, BRANCH, BRANCH_OLD, callsIn, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, NO_TREE, paramsOf, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, SORTED, SORTED_2, SORTED_3, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, withSudo } from './support/errand'
 
 const CLIENT = { name: 'highwing-test', version: '0.0.0' }
 const TEXT = String(paramsOf('prompt.submit').text)
@@ -874,6 +874,61 @@ describe('branching a chat', () => {
     expect(await sent).toEqual({ ok: true, value: null })
     expect(opened.sent().filter(call => call.params?.session_id === child && call.method !== 'session.stats').map(call => [call.method, call.params?.profile]))
       .toEqual([['session.resume', 'research'], ['prompt.submit', 'research']])
+  })
+})
+
+describe('the versions of a message', () => {
+  const RESEARCH = 'research' as BotId
+  const reads = (opened: ReturnType<typeof open>) => opened.sent().filter(call => call.method === 'projects.tree' || call.method === 'session.transcript')
+  const inResearch = async (fixture: Fixture) => {
+    const opened = open(fixture)
+    await opened.clock.advance(0)
+    await opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
+    await opened.clock.advance(0)
+    return opened
+  }
+
+  it('are read from Hermes in the chat\'s bot, with no attach of the chat or of its versions', async () => {
+    const opened = await inResearch(WITH_VERSIONS)
+    const versions = [{ sessionId: SORTED, landing: 3 }, { sessionId: SORTED_2, landing: 3 }, { sessionId: SORTED_3, landing: 3 }]
+    expect(await opened.hermes.run({ do: 'versions', sessionId: SORTED })).toEqual({ ok: true, value: [{ versions, current: 0 }] })
+    expect(await opened.hermes.run({ do: 'versions', sessionId: SORTED_3 })).toEqual({ ok: true, value: [{ versions, current: 2 }] })
+    expect(reads(opened).every(call => call.params?.profile === 'research')).toBe(true)
+    expect(reads(opened).filter(call => call.method === 'projects.tree'), 'each ask reads the tree again').toHaveLength(2)
+    expect(opened.sent().filter(call => call.method === 'session.resume' && call.params?.session_id !== SESSION)).toEqual([])
+  })
+
+  it('are none for a chat that was never branched, at the cost of the tree alone', async () => {
+    const opened = await inResearch(WITH_VERSIONS)
+    expect(await opened.hermes.run({ do: 'versions', sessionId: 'local-0103' as SessionId })).toEqual({ ok: true, value: [] })
+    expect(reads(opened).map(call => call.method)).toEqual(['projects.tree'])
+  })
+
+  it('place a chat a branch just made at the end of its thread, and at its own message once it holds one', async () => {
+    const opened = await inResearch(WITH_VERSIONS)
+    const made = await opened.hermes.run({ do: 'branch', sessionId: SORTED, rowId: 3, branchId: 'branch-1' as BranchId })
+    if (!made.ok) throw new Error(made.refusal.message)
+    await opened.clock.advance(0)
+    const child = made.value
+    expect(await opened.hermes.run({ do: 'versions', sessionId: child }), 'the branch holds the second message and its reply, so the third is where it parts').toEqual({
+      ok: true, value: [{ versions: [{ sessionId: SORTED, landing: 5 }, { sessionId: child, landing: 'end' }], current: 1 }]
+    })
+    opened.hermes.watch(child, () => {})
+    await opened.clock.advance(0)
+    await opened.hermes.run({ do: 'send', sessionId: child, text: 'Now group them by week.' })
+    await opened.clock.advance(0)
+    expect(await opened.hermes.run({ do: 'versions', sessionId: child })).toEqual({
+      ok: true, value: [{ versions: [{ sessionId: SORTED, landing: 5 }, { sessionId: child, landing: 5 }], current: 1 }]
+    })
+    expect(await opened.hermes.run({ do: 'versions', sessionId: SORTED }), 'the first chat has two messages with versions').toMatchObject({
+      ok: true, value: [{ versions: [{ sessionId: SORTED, landing: 3 }, { sessionId: SORTED_2 }, { sessionId: SORTED_3 }] }, { versions: [{ sessionId: SORTED, landing: 5 }, { sessionId: child, landing: 5 }], current: 0 }]
+    })
+  })
+
+  it('are refused by a Hermes that lists no tree, and no chat is read', async () => {
+    const opened = await inResearch(NO_TREE)
+    expect(await opened.hermes.run({ do: 'versions', sessionId: SORTED })).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes doesn't support that." } })
+    expect(reads(opened).map(call => call.method)).toEqual(['projects.tree'])
   })
 })
 

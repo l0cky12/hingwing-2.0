@@ -14,6 +14,7 @@ import { chatDesk } from './open'
 import { relayBook } from './relay'
 import { botList } from './roster'
 import { deriveSidebar, sessionList } from './sidebar'
+import { readVersions } from './versions'
 import { connect, systemClock, type Clock, type Dialer } from './wire/link'
 import { parseCatalog, parseDirective, parseEvent, parseServerRequest, type ParsedEvent } from './wire/parse'
 
@@ -91,7 +92,7 @@ export const RETAIN_MS = 60_000
 const LIST_DEBOUNCE_MS = 300
 const CANT_SHOW = "Highwing can't show this prompt yet, so it said no."
 
-type SessionCommand = Extract<Command, { readonly sessionId: SessionId }>
+type SessionCommand = Exclude<Extract<Command, { readonly sessionId: SessionId }>, { readonly do: 'versions' }>
 
 function feed<T>(initial: T, same: (a: T, b: T) => boolean = Object.is): Feed<T> & { set(next: T): void } {
   let value = initial
@@ -383,6 +384,13 @@ export function openHermes(options: HermesOptions): Hermes {
     return opened.ok ? NOTHING_TO_SHOW : opened
   }
 
+  const versions = async (sessionId: SessionId) => {
+    const bot = desk.botOf(sessionId)
+    const read = await readVersions(bot === undefined ? conn : conn.as(bot), sessionId)
+    if (read.ok && bot !== undefined) desk.listed(bot, read.value.flatMap(group => group.versions.map(version => version.sessionId)))
+    return read
+  }
+
   const run = async (command: Command): Promise<Outcome<unknown>> => {
     if (command.do === 'send' || command.do === 'start') {
       const opened = await typedNew(command)
@@ -394,6 +402,7 @@ export function openHermes(options: HermesOptions): Hermes {
       return started.ok ? run({ do: 'send', sessionId: started.value, text: command.text }) : started
     }
     if (command.do === 'botModels') return botModels(conn, command.bot)
+    if (command.do === 'versions') return versions(command.sessionId)
     if (command.do === 'createBot') {
       const made = await createBot(conn, command.draft)
       // A 5062 may have made the profile, so the roster is read after any attempt.

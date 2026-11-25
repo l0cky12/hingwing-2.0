@@ -1,0 +1,41 @@
+# Switch between versions of a message
+
+A message that was tried more than once shows "2 / 3" on its line, between "Previous version" and "Next version". Each try is a chat of its own: the chat the others were branched from is the first, and the branches follow in the order they were made. A press opens the chat that holds that try and lands at the same message, so the user compares replies without hunting through the Chats list. Hermes holds the versions. Highwing asks for them each time a chat opens and keeps nothing on disk, so the same switcher shows from any computer. A chat that stops before the message, such as one a branch just made, shows the switcher after its last turn. A Hermes that cannot list which chat was branched from which shows no switcher, and the chat opens as it always did.
+
+## Sub-features
+
+- `versions-switcher` puts the group "Versions" on the request the tries part at: "Previous version", the text "1 / 3" and "Next version". It is always shown, where Copy, the pencil and the fork wait for the pointer. Previous is disabled on the first version and Next on the last.
+- `versions-press` opens the chat of the version beside the shown one. The Chats list and the heading name it, the same request is in view, and the text counts on.
+- `versions-fresh` shows the same switcher in a user-data folder that has never run, so nothing came from local storage.
+- `versions-end` shows the switcher after the last turn of a chat that a branch just made, and a second switcher in the chat it was branched from, at the message the new chat has not sent yet.
+- `versions-refused` shows no switcher when Hermes refuses `projects.tree`, and reads no chat.
+
+## How to get to it (user POV)
+
+- Open a chat that was branched, or one that a chat was branched from. The switcher is on the message where they part.
+- Press the arrow on either side of "2 / 3".
+
+## Driving it with highwing-verify
+
+Preconditions:
+
+- `fixtures/profiles/versions.json`, written by `python3 fixtures/make_versions_fixture.py`. It is the roster of `chats.json`, and it seeds Research with four chats: "Sort the invoices" (`local-0201`, three requests), "Sort the invoices #2" (`local-0202`) and "#3" (`local-0203`), each `branched_from` the first with its first request and reply and a second request of its own, and "Clean up Downloads", which was never branched. The first chat's third reply is long, so its thread is taller than the window.
+- `--tree` makes the gateway answer `projects.tree`. Without it the gateway refuses the call `-32601`.
+- The second request reads "Now group them by customer." in the first chat, "by month." in #2 and "by amount." in #3.
+
+- **The first version.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/versions.json --tree --run versions-a wait live click button Research click button "Sort the invoices" current button "Sort the invoices" said "Now group them by customer." see "1 / 3" count group Versions 1 disabled button "Previous version" enabled button "Next version" shot versions-first called projects.tree '{"profile":"research","preview_limit":2000}' 1 called session.transcript '{"profile":"research","order":"oldest","limit":500,"inline_images":false}' 6 called session.transcript '{"session_id":"local-0201"}' 2 quiet`. `versions-first.aria.txt` holds `group "Versions"` under the second request, with `button "Previous version" [disabled]`, `text: 1 / 3` and `button "Next version"`. Each of the three chats is read once: a page of rows, then the empty page that ends it.
+- **Press Next and Previous.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/versions.json --tree --run versions-b wait live click button Research click button "Sort the invoices" see "1 / 3" click button "Next version" current button "Sort the invoices #2" said "Now group them by month." see "2 / 3" count heading "Hermes Research · Sort the invoices #2" 1 inview group Versions enabled button "Previous version" enabled button "Next version" shot versions-second click button "Next version" current button "Sort the invoices #3" said "Now group them by amount." see "3 / 3" disabled button "Next version" click button "Previous version" current button "Sort the invoices #2" see "2 / 3" click button "Previous version" current button "Sort the invoices" see "1 / 3" said "Now group them by customer." inview group Versions shot versions-back quiet`. `versions-back.png` shows the first chat scrolled to its second request, with "Jump to latest" shown, where a chat picked from the list opens at its end.
+- **A fresh profile folder.** Run `$H cleanup --run versions-fresh`, then `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/versions.json --tree --run versions-fresh wait live drafts 0 click button Research click button "Sort the invoices" said "Now group them by customer." see "1 / 3" count group Versions 1 enabled button "Next version" shot versions-fresh called projects.tree '{"profile":"research"}' 1 quiet`. The run's user-data folder is new, and the switcher is the one `versions-a` shows.
+- **A chat a branch just made.** Run `$H run --fixture fixtures/branch.jsonl --profiles fixtures/profiles/versions.json --tree --run versions-end wait live click button Research click button "Sort the invoices" see "1 / 3" click-at button "Branch from here" 2 see "Sort the invoices #4" see "2 / 2" inview group Versions shot versions-branched click button "Previous version" current button "Sort the invoices" see "1 / 2" count group Versions 2 said "List what is still owed, oldest first." shot versions-two click-at button "Next version" 2 current button "Sort the invoices #4" see "2 / 2" value "Message Hermes" "Now group them by customer." quiet`. `fixtures/branch.jsonl` says Hermes branches, so the fork makes "Sort the invoices #4" with the first two requests and the second one's text in its box. `versions-branched.png` shows "2 / 2" under its last reply. `versions-two.aria.txt` holds two groups in the first chat: "1 / 3" at the second request and "1 / 2" at the third, which the new chat has not sent.
+- **Hermes refuses the tree.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/versions.json --run versions-refused wait live click button Research click button "Sort the invoices" current button "Sort the invoices" called projects.tree '{"profile":"research"}' 1 said "Sort the invoices in the inbox folder by due date." said "Now group them by customer." said "List what is still owed, oldest first." count group Versions 0 count button "Branch from here" 3 shot versions-refused called session.transcript '{}' 0 quiet`. The thread holds its three turns and their actions, and `versions-refused.aria.txt` has no "Versions".
+
+## Gotchas
+
+- `count` does not wait. Put a `see` or `said` of the new chat before a `count heading`, or it reads the heading of the chat left behind.
+- The switcher appears after Hermes answers, a moment after the thread. Wait for it with `see "1 / 3"` before a `count group Versions` or a click.
+- A chat with two messages that have versions has two "Next version" buttons. Use `click-at` with the switcher's number, counting from the top.
+- "Branch from here" keeps the message and its reply in the new chat, so the new chat parts from the original at the message after it. Branching at the second message makes a version of the third.
+- The versions are read when a chat opens. A message sent in a chat a branch just made leaves that chat's switcher after its last turn until the chat is opened again.
+- The launch chat asks for its own versions too, so `called projects.tree '{}'` counts one call more than the chat under test made. Name the profile in the assertion.
+- A request with a switcher keeps 188px beside it, 84px more than the 104px the three actions take.
+- Hermes previews a project's three newest chats unless `preview_limit` asks for more, and the gateway does the same. A family whose chats are not all among the newest three shows only with the `preview_limit` Highwing sends.

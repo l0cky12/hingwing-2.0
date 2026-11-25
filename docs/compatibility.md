@@ -117,6 +117,13 @@ machine, then reconnect."
   Hermes sends no usage at all, Highwing shows no meter and no token line.
 - If Hermes refuses `session.context_breakdown`, the meter's panel shows the
   refusal in one line and the meter keeps working.
+- Highwing finds the versions of a message with `projects.tree`, which says
+  which chat was branched from which, and `session.transcript`, which says where
+  each branch parts from its parent. `projects.tree` is no canonical method. It
+  reaches its legacy handler only on a socket with the interactive grant. If
+  Hermes refuses either call, the chat shows no version switcher and no error,
+  and opens as before. Highwing asks again each time a chat opens. See
+  `packages/hermes/src/versions.ts`.
 
 ## Tokens and the context window
 
