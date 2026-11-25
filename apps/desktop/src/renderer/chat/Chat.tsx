@@ -1,4 +1,4 @@
-import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type TurnId, type Version } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, type BackgroundProcess, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type TurnId, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
@@ -7,6 +7,7 @@ import { ContextMeter } from '../composer/ContextMeter'
 import { editingOf, type EditTarget } from '../composer/edit'
 import { FolderChip } from '../composer/FolderChip'
 import { ModelPicker } from '../composer/ModelPicker'
+import { StatusStack } from '../composer/StatusStack'
 import { ThinkingPill } from '../composer/ThinkingPill'
 import { folderFieldLabel, thinkingShown } from '../composer/tuning'
 import { YoloPill } from '../composer/YoloPill'
@@ -26,6 +27,7 @@ const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 const LONGEST_WAIT_MS = 60_000
 const NO_RELAYS: readonly Relay[] = []
 const NO_VERSIONS: ChatVersions = []
+const NO_PROCESSES: readonly BackgroundProcess[] = []
 
 const distanceFrom = (element: HTMLElement) => element.scrollHeight - element.scrollTop - element.clientHeight
 
@@ -351,6 +353,12 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         onEscape={onEscape}
         onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}
+        stack={id !== null && session !== undefined && (
+          <StatusStack
+            key={`stack-${id}`} processes={session.processes ?? NO_PROCESSES} control={session.control} disabled={!live}
+            onKill={processId => run({ do: 'killProcess', sessionId: id, processId })} onControl={action => run({ do: 'control', sessionId: id, action })}
+          />
+        )}
       >
         {id !== null && (model.show !== 'hidden' || tuning !== null || cwd !== null || yolo !== null || fill !== null) && (
           <div className="under">

@@ -34,6 +34,8 @@ interface ComposerProps {
   readonly onCancelEdit?: () => void
   readonly above?: ReactNode
   readonly onEscape?: () => boolean
+  /** Drawn above the box. */
+  readonly stack?: ReactNode
   readonly children?: ReactNode
 }
 
@@ -115,7 +117,7 @@ export function admitted(results: readonly StageResult[], held: readonly Attachm
 
 const draggingFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') === true
 
-export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, planFor = SUBMIT_ALWAYS, editing = null, onCancelEdit, above, onEscape, children }: ComposerProps) {
+export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, planFor = SUBMIT_ALWAYS, editing = null, onCancelEdit, above, onEscape, stack, children }: ComposerProps) {
   const catalog = useTopic('slash') ?? NO_CATALOG
   const roster = useTopic('bots')
   const relay = useTopic('relay')
@@ -344,6 +346,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
           {cwd !== null && menu.sections.some(section => section.label === 'Files') && <p className="slash-folder">in {cwd}</p>}
         </div>
       )}
+      {stack}
       {editing !== null && (
         <div className="editing">
           <span>{editing.kind === 'gone' ? editing.why : EDITING_WORDS[editing.kind]}</span>
