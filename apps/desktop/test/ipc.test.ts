@@ -269,6 +269,8 @@ describe('validators', () => {
     ['a pet picture whose slug is a full path', { do: 'petPicture', slug: '/abs', url: null }],
     ['a pet picture whose slug holds a slash', { do: 'petPicture', slug: 'pets/tabby', url: null }],
     ['a pet picture whose slug holds a backslash', { do: 'petPicture', slug: 'a\\b', url: null }],
+    ['a pet picture whose slug starts with a Windows drive', { do: 'petPicture', slug: 'D:x', url: null }],
+    ['a pet picture whose slug holds a colon', { do: 'petPicture', slug: 'tab:by', url: null }],
     ['a pet picture whose slug is the folder itself', { do: 'petPicture', slug: '.', url: null }],
     ['a pet picture whose slug is the folder above', { do: 'petPicture', slug: '..', url: null }],
     ['a pet picture whose slug has spaces Hermes would trim', { do: 'petPicture', slug: ' tabby', url: null }],

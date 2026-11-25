@@ -107,7 +107,7 @@ describe('parsePets', () => {
   })
 
   it('leaves out a pet whose slug would name a folder outside the pets one', () => {
-    const rows = ['../../x', '/abs', '..', 'a\\b', 'tabby'].map(slug => ({ slug, displayName: slug, installed: false, spritesheetUrl: '' }))
+    const rows = ['../../x', '/abs', '..', 'a\\b', 'D:x', 'C:', 'tabby'].map(slug => ({ slug, displayName: slug, installed: false, spritesheetUrl: '' }))
     expect(parsePets({ enabled: false, pets: rows }).map(pet => pet.slug)).toEqual(['tabby'])
   })
 })
