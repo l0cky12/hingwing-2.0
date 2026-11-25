@@ -16,6 +16,7 @@ This directory is the maintained source for verifying what a Highwing user sees 
 - Wait on a named state, never on a fixed sleep.
 - Treat every command as literal. Keep quoted names unchanged.
 - A shot shows the whole window, sidebar included. Add `--chat-only` when a shot must show the chat column alone at the reference size.
+- `--mode bots|chats` opens the window in that mode. Without it a `--fixture` run keeps the mode for the next run with the same name, and a fresh name opens in bot mode, as [Bot mode and chat mode](./modes.md) says. `wait bots` passes in either mode.
 
 ## Proof and skip reporting
 
@@ -53,7 +54,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Open a bot](./open-a-bot.md) covers opening a bot's chat from the sidebar, a message running as that bot, returning to the same chat, a bot with no chat yet, and a Hermes that cannot switch bots.
 - [New chat](./new-chat.md) covers the top bar's New chat button, Ctrl+N, the first message making the chat in the shown bot, the chat staying open after Hermes's lists refresh, and `/new`.
 - [Scheduled-job chats](./scheduled-job-chats.md) covers a job's chat left out of the Chats column and the launch pick, the words for a message Hermes refused in a job's chat, and its "Start a new chat" button carrying the message to a new chat.
-- [Chat list](./chat-list.md) covers the Chats column: a bot's chats by title, opening one, the "Waiting for your OK" row, a message running in a picked chat, the open chat in the top bar's heading, a bot with no chats, renaming and exporting a chat from its More menu, and the narrow window.
+- [Chat list](./chat-list.md) covers the Chats column, which shows in chat mode only: a bot's chats by title, opening one, the "Waiting for your OK" row, a message running in a picked chat, the open chat in the top bar's heading, a bot with no chats, renaming and exporting a chat from its More menu, and the narrow window.
 - [Create a bot](./create-a-bot.md) covers New bot opening a dialog with Name, Description, Model and Persona, Create disabled while the name is blank, a new bot listed and opened, a taken name stopped before any call, Hermes's warnings in words, and Hermes refusing the name or the call.
 - [Edit a bot](./edit-a-bot.md) covers the Details button on each bot row, the details dialog filled from Hermes, a rename the sidebar and the top bar show, a picture uploaded and removed, a file refused in words with nothing sent, and a rename made elsewhere that reloads the form.
 - [What Hermes says](./hermes-says.md) covers status lines, a compaction, the agent's prints, a goal verdict said between turns, a notice's tone, Details and expiry, the MoA round, and Find inside it.
@@ -72,6 +73,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Branch a chat](./branch-a-chat.md) covers "Branch from here" on a sent message: the new chat opening with the message in its box and the thread through its reply, the original staying whole in the Chats list, the next title in the lineage, a Hermes that cannot branch, and the button disabled while a turn runs.
 - [Switch between versions of a message](./switch-versions.md) covers the "2 / 3" switcher on a message that was tried more than once: Previous version and Next version opening the chat of that try at the same message, the same switcher in a fresh profile folder, a chat a branch just made, and a Hermes that refuses the tree.
 - [Attachments](./attachments.md) covers the paperclip and its file dialog, a pasted image, a drop and the "Drop to attach" line, the chips with Remove and Alt+arrow order, a file over the limit named under the chips, a sent request's attachments in the thread, the paperclip disabled while the link is down, and chips kept with the draft.
+- [Bot mode and chat mode](./modes.md) covers the switch at the top of the left column, its Bots and Chats menu with the keyboard and the pointer, the two columns of each mode, chat mode's bot picker with the keyboard and the pointer, its refusal and its paging keys, the mode kept across a relaunch, the open bot's chats and draft across a switch, a Hermes that reaches one profile, and chat mode at each width, with the preview pane and in forced colors.
 - [Turn notifications](./notify.md) covers the desktop notification when the shown chat's turn ends while no window has focus, its words, and the focused window staying quiet.
 - [Spell check](./spell-check.md) covers a misspelled word in the composer, its context menu with suggestions, "Add to dictionary", Cut, Copy and Paste, a suggestion replacing the word, and a learned word no longer flagged.
 - [Chat links](./chat-links.md) covers `highwing://chat/<session id>` links from the launch command line and from a second launch, a link held through setup, a chat only a search finds, the missing-chat line under the composer, and Copy link in the top bar and a row's More menu.
