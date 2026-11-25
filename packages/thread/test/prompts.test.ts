@@ -11,7 +11,7 @@ function session(items: readonly PromptItem[], live = true): Session {
     id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', outbox: [],
     model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null,
     sync: live ? { state: 'live' } : { state: 'offline' },
-    run: { state: 'running', generation: 1 as Generation, stop: 'none', turn: { id: 't1' as TurnId, request: { text: 'Deploy it', inputId: null, rowId: null }, began: null, items, announced: null } }
+    run: { state: 'running', generation: 1 as Generation, stop: 'none', turn: { id: 't1' as TurnId, request: { text: 'Deploy it', inputId: null, rowId: null, attachments: [] }, began: null, items, announced: null } }
   }
 }
 
