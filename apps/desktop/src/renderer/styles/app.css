@@ -310,6 +310,17 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .approval .pick { display: flex; align-items: baseline; gap: 9px; overflow-wrap: anywhere; }
 .approval .pick input { flex: none; margin: 0; accent-color: var(--ink); transform: translateY(1px); }
 .approval .question .other { padding: 6px 10px; font: inherit; background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; }
+.approval .targets { list-style: none; margin: 12px 0 0; padding: 0; }
+.approval .targets > li { padding: 10px 0 12px; border-top: 1px solid var(--rule); }
+.approval .targets > li:last-child { border-bottom: 1px solid var(--rule); }
+.approval .target .head { display: flex; align-items: baseline; gap: 12px; margin: 0; }
+.approval .target .name { font-weight: 500; }
+.approval .target .state { margin-left: auto; font-size: 13px; color: var(--graphite); }
+.approval .target .state.waiting { color: var(--caution); font-weight: 500; }
+.approval .target a { color: var(--ink); text-underline-offset: 2px; }
+.approval .target .field { display: grid; gap: 4px; margin-top: 10px; font-size: 13px; color: var(--graphite); }
+.approval .target .field input { padding: 6px 10px; font: inherit; font-size: 14px; color: var(--ink); background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; }
+.approval .target .choices { margin-top: 10px; }
 .approval.answered { background: none; border-left: 0; padding: 6px 0; margin: 0; border-radius: 0; }
 .approval.answered p { margin: 0 0 6px; color: var(--graphite); }
 .approval.answered pre { background: none; padding: 0; color: var(--graphite); font-size: 12.5px; overflow-wrap: anywhere; }

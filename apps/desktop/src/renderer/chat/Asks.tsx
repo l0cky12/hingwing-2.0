@@ -1,5 +1,5 @@
 import type { Answer, RequestId, RequestReply } from '@highwing/hermes/domain'
-import { fieldId, type AskCard as Card, type QuestionsCard as Questions, type QuestionView, type SecretCard as Secret } from '@highwing/thread'
+import { fieldId, type AskCard as Card, type ConnectCard as Connect, type QuestionsCard as Questions, type QuestionView, type SecretCard as Secret, type TargetView } from '@highwing/thread'
 import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Command } from './Copy'
 import { answerOf, draftOf, openQuestion, OTHER, picked, sendWords, type Draft } from './questions'
@@ -152,6 +152,82 @@ function QuestionsCard({ card, onAnswer }: CardProps<Questions>) {
   )
 }
 
+interface TargetProps {
+  readonly card: Connect
+  readonly target: TargetView
+  readonly index: number
+  /** This target's answer is the one on its way. */
+  readonly sending: boolean
+  readonly onRespond: (as: 'approved' | 'skipped', values?: { readonly [field: string]: string }) => void
+}
+
+/** Its fields are uncontrolled, read once on Connect and cleared. */
+function Target({ card, target, index, sending, onRespond }: TargetProps) {
+  const busy = card.busy !== null
+  const connect = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (busy) return
+    const typed = new FormData(event.currentTarget)
+    const values = Object.fromEntries(target.fields.map(field => [field.name, String(typed.get(field.name) ?? '')]))
+    onRespond('approved', target.fields.length === 0 ? undefined : values)
+    event.currentTarget.reset()
+  }
+  return (
+    <li>
+      <form className="target" role="group" aria-label={target.heading} data-private="" onSubmit={connect}>
+        <p className="head">
+          <span className="name" data-find={fieldId(card.key, `target ${index}`)}>{target.heading}</span>
+          <span className={`state ${target.open ? 'waiting' : 'settled'}`}>{target.state}</span>
+        </p>
+        {target.detail !== null && <p className="why" data-find={fieldId(card.key, `detail ${index}`)}>{target.detail}</p>}
+        {target.instructions !== null && <p className="why" data-find={fieldId(card.key, `instructions ${index}`)}>{target.instructions}</p>}
+        {target.url !== null && <p className="why"><a href={target.url} target="_blank" rel="noreferrer">Open sign-in page</a></p>}
+        {target.open && target.fields.map(field => (
+          <label key={field.name} className="field">
+            <span>{field.label}</span>
+            <input name={field.name} type={field.masked ? 'password' : 'text'} autoComplete="off" required={field.required} defaultValue={field.initial} disabled={busy} />
+          </label>
+        ))}
+        {target.open && (
+          <div className="choices">
+            <button type="submit" className="primary" disabled={busy}>{sending && card.busy === 'sending' ? SENDING : 'Connect'}</button>
+            <button type="button" disabled={busy} onClick={() => onRespond('skipped')}>Skip</button>
+          </div>
+        )}
+      </form>
+    </li>
+  )
+}
+
+const THE_REST = Symbol('the rest')
+
+/** One row per target, each connected or skipped on its own. Hermes sends the whole card again with every change. */
+function ConnectCard({ card, onAnswer }: CardProps<Connect>) {
+  const [sent, setSent] = useState<string | typeof THE_REST | null>(null)
+  const answer = (reply: RequestReply, by: string | typeof THE_REST) => {
+    setSent(by)
+    onAnswer(card.requestId, reply)
+  }
+  return (
+    <Frame card={card}>
+      <Waits card={card} />
+      <ul className="targets">
+        {card.targets.map((target, index) => (
+          <Target
+            key={target.name} card={card} target={target} index={index} sending={sent === target.name}
+            onRespond={(as, values) => answer({ kind: 'connect', target: target.name, as, ...(values === undefined ? {} : { values }) }, target.name)}
+          />
+        ))}
+      </ul>
+      <div className="choices">
+        <button type="button" disabled={card.busy !== null} onClick={() => answer({ kind: 'skip' }, THE_REST)}>
+          {sent === THE_REST && card.busy === 'sending' ? SENDING : 'Continue without the rest'}
+        </button>
+      </div>
+    </Frame>
+  )
+}
+
 export function AskCard({ card, onAnswer }: CardProps<Card>) {
   switch (card.kind) {
     case 'secret':
@@ -159,6 +235,6 @@ export function AskCard({ card, onAnswer }: CardProps<Card>) {
     case 'questions':
       return <QuestionsCard card={card} onAnswer={onAnswer} />
     case 'connect':
-      return null
+      return <ConnectCard card={card} onAnswer={onAnswer} />
   }
 }
