@@ -264,6 +264,10 @@ export const validators: Validators = {
     if (!sessionId || !model || !(raw.confirm === undefined || filled(raw.confirm))) return null
     return { do: 'pickModel', sessionId, model, ...(raw.confirm === undefined ? {} : { confirm: raw.confirm }) }
   },
+  completePath: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && typeof raw.word === 'string' && raw.word.startsWith('@') ? { do: 'completePath', sessionId, word: raw.word } : null
+  },
   contextBreakdown: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && { do: 'contextBreakdown', sessionId }

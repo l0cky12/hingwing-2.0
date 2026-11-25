@@ -98,6 +98,10 @@ describe('validators', () => {
     expect(parseCommand({ do: 'botModels', bot: 'research' })).toEqual({ do: 'botModels', bot: 'research' })
   })
 
+  it('keep a path completion to a chat and the mention typed', () => {
+    expect(parseCommand({ do: 'completePath', sessionId: 's1', word: '@not', extra: 1 })).toEqual({ do: 'completePath', sessionId: 's1', word: '@not' })
+  })
+
   it('keep a rewind to a stored row and the text to send there', () => {
     expect(parseCommand({ do: 'rewind', sessionId: 's1', rowId: 7, text: 'again', extra: 1 })).toEqual({ do: 'rewind', sessionId: 's1', rowId: 7, text: 'again' })
   })
@@ -158,6 +162,8 @@ describe('validators', () => {
     ['a reply of the wrong kind', { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 1 } }],
     ['a non-boolean start', { do: 'reconnect', start: 'yes' }],
     ['a YOLO switch with a word for on', { do: 'setYolo', sessionId: 's1', on: 'on' }],
+    ['a path completion for a word that is not a mention', { do: 'completePath', sessionId: 's1', word: 'not' }],
+    ['a path completion with no word', { do: 'completePath', sessionId: 's1' }],
     ['a YOLO switch with no chat', { do: 'setYolo', on: true }],
     ['a pick with no provider', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: '', providerName: '' } }],
     ['a pick with a blank confirm token', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: 'p', providerName: 'P' }, confirm: ' ' }]
@@ -190,7 +196,7 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'botModels', 'branch', 'browse', 'checkTarget', 'closePreview', 'contextBreakdown', 'createBot', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat',
+      'answer', 'archive', 'botModels', 'branch', 'browse', 'checkTarget', 'closePreview', 'completePath', 'contextBreakdown', 'createBot', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat',
       'pickModel', 'placePreview', 'preview', 'reconnect', 'reloadPreview', 'rename', 'rewind', 'send', 'setYolo', 'start', 'stop', 'versions'
     ])
   })

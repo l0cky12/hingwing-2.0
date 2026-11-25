@@ -105,6 +105,13 @@ machine, then reconnect."
   opens no list of bots, and a message that names a bot goes to the chat's own
   bot as text. Highwing asks once per connection, with no params, which Hermes
   refuses before it admits anything. See `packages/hermes/src/relay.ts`.
+- If Hermes answers `complete.path` with an unknown-method error or any other
+  refusal, the `@` list holds bots alone. Highwing sends only `session_id` and
+  `word`, because Hermes refuses a null value, and keeps the rows that start
+  `@file:` or `@folder:`. Profile rows, directive hints and plugin rows are
+  left out. Hermes roots the listing in the chat's own folder and lists nothing
+  for a chat on a remote or sandboxed terminal backend
+  (`gateway/session_complete_path.py:15-40`).
 - If Hermes answers `model.options` with an unknown-method error, Highwing
   shows no model readout under the message box and the chat works as before.
   The model is switched with `session.mutate` operation `model`, never with

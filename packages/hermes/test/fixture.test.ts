@@ -209,6 +209,16 @@ describe('loadFixture', () => {
     }
   })
 
+  it('reads the words complete.path answers and the folder, and refuses a header that holds neither', () => {
+    const paths = { cwd: '/home/sam/errands', words: { '@not': { items: [{ text: '@file:notes.md' }] } } }
+    expect(loadFixture(write([{ ...header, paths }])).header.paths).toEqual(paths)
+    expect(loadFixture(write([header])).header).not.toHaveProperty('paths')
+    for (const entry of ['notes', { cwd: 7, words: {} }, { cwd: '/x' }, { words: [] }]) {
+      const bad = write([{ ...header, paths: entry }])
+      expect(() => loadFixture(bad), JSON.stringify(entry)).toThrow(`${bad}:1: "paths" must be { cwd?, words } with "words" mapping a typed word to its complete.path reply`)
+    }
+  })
+
   it('names the line of the prototype\'s envelope', () => {
     const path = write([header, { at: 0, push: { kind: 'event', type: 'message.delta', session_id: 's', seq: 1, payload: {} } }])
     expect(() => loadFixture(path)).toThrow(`${path}:2: "push" must be a JSON-RPC 2.0 frame with a method`)

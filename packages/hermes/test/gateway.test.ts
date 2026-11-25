@@ -471,6 +471,34 @@ describe('the scripted gateway answers config.set for YOLO as Hermes does', () =
   })
 })
 
+describe('the scripted gateway lists the files a typed @ can name', () => {
+  const PATHS = { cwd: '/home/sam/errands', words: { '@not': { items: [{ text: '@file:notes.md', display: 'notes.md', meta: '' }] } } }
+  const WITH_PATHS: Fixture = { ...ERRAND, header: { ...ERRAND.header, paths: PATHS } }
+
+  it('answers a word from the header, and nothing for a word it does not list, an empty word or no session', async () => {
+    const { call } = await rawSocket({}, WITH_PATHS)
+    expect(await call('complete.path', { session_id: SESSION, word: '@not' })).toMatchObject({ result: PATHS.words['@not'] })
+    expect(await call('complete.path', { session_id: SESSION, word: '@zzz' })).toMatchObject({ result: { items: [] } })
+    expect(await call('complete.path', { session_id: SESSION, word: '' })).toMatchObject({ result: { items: [] } })
+    expect(await call('complete.path', { word: '@not' })).toMatchObject({ result: { items: [] } })
+  })
+
+  it('refuses an unknown session, and a param that is not one of four strings', async () => {
+    const { call } = await rawSocket({}, WITH_PATHS)
+    expect(await call('complete.path', { session_id: 'someone-else', word: '@not' })).toMatchObject(refusal('not_found'))
+    expect(await call('complete.path', { session_id: SESSION, word: '@not', cwd: null })).toMatchObject(refusal('invalid_params'))
+    expect(await call('complete.path', { session_id: SESSION, word: '@not', limit: 'a' })).toMatchObject(refusal('invalid_params'))
+  })
+
+  it('gives the story session the header cwd, and knows no complete.path without the header', async () => {
+    const { call } = await rawSocket({}, WITH_PATHS)
+    expect((await call('session.resume', { session_id: SESSION })).result?.info).toMatchObject({ cwd: '/home/sam/errands' })
+    const older = await rawSocket()
+    expect((await older.call('session.resume', { session_id: SESSION })).result?.info).not.toHaveProperty('cwd')
+    expect(await older.call('complete.path', { session_id: SESSION, word: '@not' })).toMatchObject({ error: { code: -32601, data: { reason: 'unknown_method' } } })
+  })
+})
+
 describe('the scripted gateway hands a message to another bot', () => {
   const ID = 'a1'.repeat(16)
   const deliver = { profile: 'rae', id: ID, message: 'Ask @Rae for the weekly report' }

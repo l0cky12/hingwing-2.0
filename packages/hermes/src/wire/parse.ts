@@ -10,12 +10,13 @@ import type {
   Ask, Began, FileDiff, Generation, HelperEnd, HelperId, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, PromptId, SessionId,
   SessionUsage, SettledTurn, SidebarRow, ToolId, ToolResult, TurnId
 } from '../domain/session'
+import type { PathMatch } from '../domain/path'
 import type { RelayState } from '../domain/relay'
 import type { SlashCatalog, SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
 import type {
   CanonicalBotDeliverResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalProfilesResult, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
-  CanonicalSnapshot, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
+  CanonicalSnapshot, CompletionItem, CompletionItemsResult, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
   MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, PreviewClosePayload, PreviewOpenPayload, ProfilesCreateResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult,
   SessionStats, SessionTitlePayload, SessionUsagePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload, SubagentEventPayload,
   TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage
@@ -554,6 +555,17 @@ function categoryOf(row: unknown): ContextBreakdown['categories'][number] {
 }
 
 const NO_BREAKDOWN: ContextBreakdown = { model: null, used: 0, max: 0, percent: 0, estimated: false, categories: [] }
+
+const PATH_ROW = /^@(file|folder):(.+)$/s
+
+/** The rows of a `complete.path` reply that name a file or folder. Profile rows, directive hints and plugin rows share the list and are left out. */
+export function parsePathMatches(reply: CompletionItemsResult): readonly PathMatch[] {
+  return (usable(() => fields<CompletionItemsResult>(reply).optList('items')) ?? []).flatMap(row => {
+    const text = usable(() => fields<CompletionItem>(row).str('text'))
+    const match = text === null ? null : PATH_ROW.exec(text)
+    return match === null ? [] : [{ path: match[2] as string, folder: match[1] === 'folder' || (match[2] as string).endsWith('/') }]
+  })
+}
 
 export function parseModelMenu(reply: ModelOptionsResult): ModelMenu {
   const options = (Array.isArray(reply.providers) ? reply.providers : []).flatMap(row => usable(() => providerOptions(row)) ?? [])

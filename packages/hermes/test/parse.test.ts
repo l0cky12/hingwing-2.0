@@ -4,12 +4,12 @@ import type { SessionEvent } from '../src/domain/reduce'
 import type { FileDiff, ToolResult } from '../src/domain/session'
 import { loadFixture } from '../src/testing/fixture'
 import type {
-  CanonicalEventsResult, CanonicalPendingPrompt, CanonicalSessionListRow, CanonicalSnapshot, SessionContextBreakdownResult, SessionStats,
+  CanonicalEventsResult, CanonicalPendingPrompt, CanonicalSessionListRow, CanonicalSnapshot, CompletionItemsResult, SessionContextBreakdownResult, SessionStats,
   StoredTranscriptResult, TranscriptMessage
 } from '../src/wire/contract.generated'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 import {
-  parseBranched, parseContextBreakdown, parseEvent, parseInlineDiff, parseListRows, parseModelMenu, parseModelReceipt, parseReplay, parseRows, parseServerRequest,
+  parseBranched, parseContextBreakdown, parseEvent, parsePathMatches, parseInlineDiff, parseListRows, parseModelMenu, parseModelReceipt, parseReplay, parseRows, parseServerRequest,
   parseSnapshot, parseStats, parseToolResult, parseTranscript, FOR_WINDOW, SHOWN, UNSHOWN
 } from '../src/wire/parse'
 
@@ -771,5 +771,31 @@ describe('the chat a branch made', () => {
     expect(parseBranched(receipt)).toBeNull()
     expect(parseBranched({ ...receipt, branched_session_id: ' ' })).toBeNull()
     expect(parseBranched({ ...receipt, branched_session_id: 7 })).toBeNull()
+  })
+})
+
+describe('parsePathMatches', () => {
+  it('keeps the files and folders, relative as Hermes spells them, and drops every other row', () => {
+    expect(parsePathMatches({
+      items: [
+        { text: '@sam', display: '@sam' },
+        { text: '@file:archive/notes-2024.md', display: 'notes-2024.md', meta: 'archive' },
+        { text: '@folder:notebooks/', display: 'notebooks/', meta: 'dir' },
+        { text: '@file:My Notes.md' },
+        { text: '@diff' },
+        { text: '@file:' },
+        { text: 7 },
+        null
+      ]
+    } as unknown as CompletionItemsResult)).toEqual([
+      { path: 'archive/notes-2024.md', folder: false },
+      { path: 'notebooks/', folder: true },
+      { path: 'My Notes.md', folder: false }
+    ])
+  })
+
+  it('lists nothing for a reply it cannot read', () => {
+    expect(parsePathMatches({} as CompletionItemsResult)).toEqual([])
+    expect(parsePathMatches({ items: 'no' } as unknown as CompletionItemsResult)).toEqual([])
   })
 })

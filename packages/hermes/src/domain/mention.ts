@@ -4,7 +4,7 @@ import type { Bot } from './bots'
 type Named = Pick<Bot, 'id' | 'name'>
 
 const MENTIONS = /(?<![^\s])@(?:"([^"]+)"|(\S+))/g
-const TYPING = /(?<![^\s])@("[^"]*|[^\s"]*)$/
+const TYPING = /(?<![^\s])@("[^"]*|(?:[^\s"]\S*)?)$/
 const TRAILING = /[.,!?;:)]+$/
 
 function named<B extends Named>(bots: readonly B[], word: string): B | undefined {

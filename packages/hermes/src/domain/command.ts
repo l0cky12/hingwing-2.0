@@ -1,5 +1,6 @@
 import type { BotCreated, BotDraft, BotId } from './bots'
 import type { ChatRef, Unstarted } from './open'
+import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
 import type { BranchId, ContextFill, InputId, ModelOption, ModelRef, PromptId, PromptReply, SessionId } from './session'
 
@@ -42,6 +43,8 @@ export type Command =
   /** `confirm` is the token of a `ModelConfirm`, sent to say yes to it. */
   | { readonly do: 'pickModel'; readonly sessionId: SessionId; readonly model: ModelOption; readonly confirm?: string }
   | { readonly do: 'contextBreakdown'; readonly sessionId: SessionId }
+  /** The files and folders in this chat's working folder that `word` (an `@` and what follows it) starts. */
+  | { readonly do: 'completePath'; readonly sessionId: SessionId; readonly word: string }
   /** Makes the profile, asks for the roster again, then opens the new bot. */
   | { readonly do: 'createBot'; readonly draft: BotDraft }
   /** The models a bot's chat could use, with no chat open. null: the socket's own profile, which a new bot copies its credentials from. */
@@ -60,6 +63,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'createBot' } ? BotCreated
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
+  : C extends { do: 'completePath' } ? readonly PathMatch[]
   : void
 
 /** What Hermes offers this chat. `options` empty: nothing is set up. `fallback`: the model Hermes names for it. */
