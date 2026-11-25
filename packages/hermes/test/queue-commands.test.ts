@@ -245,6 +245,16 @@ describe('send while a turn runs', () => {
     expect(actor.session.outbox).toEqual([])
   })
 
+  it.each([['steer', 'session.steer'], ['interrupt', 'session.redirect']] as const)(
+    'says Hermes may have read it, and keeps nothing to send again, when the socket drops before Hermes answers in %s mode', async (busy, method) => {
+      const { actor, done, sent, drop } = await sending(busy)
+      await settle()
+      expect(sent()).toEqual([[method, { session_id: ID, text: 'use the staging db', execution_generation: 1 }]])
+      drop()
+      expect(await done).toEqual({ ok: false, refusal: { kind: 'rejected', message: "Hermes didn't confirm it took that. It may have read it, so Highwing hasn't sent it again." } })
+      expect(actor.session.outbox).toEqual([])
+    })
+
   it('answers Hermes\'s own refusal of a steer, and sends nothing more', async () => {
     const { done, sent, answer } = await sending('steer')
     await settle()
@@ -362,6 +372,19 @@ describe('deny and tell', () => {
       await answer('approval.respond', { status: 'resolved', prompt_id: 'p1' })
       expect(await again).toEqual({ ok: true, value: 'unsure' })
       expect(steers(items())).toEqual([])
+    })
+
+    it('never steers twice any words an earlier try handed over, though other words came between', async () => {
+      const { command, sent, answer, redial } = await denying()
+      await answer('session.steer', ack('queued'))
+      await redial(STILL_ASKING)
+      void command(deny('move it to the trash'))
+      await settle()
+      await answer('session.steer', ack('queued'))
+      await redial(STILL_ASKING)
+      void command(deny())
+      await settle()
+      expect(sent(), 'only the denial: these words went on the first try').toEqual([DENY])
     })
 
     it('steers again words that no agent saw, and words the first try did not carry', async () => {

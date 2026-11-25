@@ -277,7 +277,7 @@ async function say(port: SessionPort, text: string, uploads: readonly Upload[]):
   if (plan.by === 'submit') return port.submit(text, undefined, uploads)
   return port.whenLive(async () => {
     const handed = await correct(port, plan.by, text, plan.during)
-    if (!handed.ok) return handed
+    if (!handed.ok) return handed.refusal.kind === 'offline' ? MAYBE_READ : handed
     switch (handed.value) {
       case 'taken':
         return DONE
@@ -297,8 +297,8 @@ const TOLD = { taken: 'turn', unread: 'next', unsure: 'unsure' } as const satisf
  * repeat as new words. A steer the socket dropped under may have reached the agent, which reads `unsure`.
  */
 async function tell(port: SessionPort, promptId: PromptId, text: string, during: Generation): Promise<Outcome<Told>> {
-  const before = port.fence.told[promptId]
-  if (before?.text === text) return { ok: true, value: before.went }
+  const before = port.fence.told[promptId]?.[text]
+  if (before !== undefined) return { ok: true, value: before }
   const handed = await correct(port, 'steer', text, during)
   if (!handed.ok && handed.refusal.kind !== 'offline') return handed
   const went = handed.ok ? TOLD[handed.value] : 'unsure'

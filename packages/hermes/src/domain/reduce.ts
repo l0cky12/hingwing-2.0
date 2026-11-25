@@ -270,7 +270,7 @@ export interface Fence {
    * tried again, because its own confirmation was lost, must not hand them over twice, and a steer
    * carries no id Hermes could know a repeat by. Emptied when the turn ends.
    */
-  readonly told: { readonly [promptId: string]: { readonly text: string; readonly went: Exclude<Told, 'next'> } }
+  readonly told: { readonly [promptId: string]: { readonly [text: string]: Exclude<Told, 'next'> } }
 }
 
 export interface Tracked {
@@ -628,9 +628,9 @@ function act(state: Tracked, action: LocalAction): Tracked {
     }
     case 'told': {
       const { promptId, text, went } = action
-      const held = state.fence.told[promptId]
-      if (held?.text === text && held.went === went) return state
-      return { ...state, fence: { ...state.fence, told: { ...state.fence.told, [promptId]: { text, went } } } }
+      const held = state.fence.told[promptId] ?? {}
+      if (held[text] === went) return state
+      return { ...state, fence: { ...state.fence, told: { ...state.fence.told, [promptId]: { ...held, [text]: went } } } }
     }
     case 'answer': {
       if ('requestId' in action) return withRequests(state, answering(heldOf(state), action.requestId, action.reply))
