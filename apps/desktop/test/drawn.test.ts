@@ -1,4 +1,4 @@
-import type { HelperId, Item, Session, SettledTurn, TurnId } from '@highwing/hermes/domain'
+import type { HelperId, Item, RequestId, Session, SettledTurn, TurnId } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { describe, expect, it } from 'vitest'
 import { drawnView } from '../src/renderer/chat/drawn'
@@ -35,5 +35,13 @@ describe('the view the window draws', () => {
     expect(drawnView(threadView(session([turn('t1', [goal]), turn('i2', [goal], null)]), CLOCK)).turns.map(drawn => drawn.key)).toEqual(['t1'])
     const plain = threadView(session([turn('t1', [{ kind: 'reasoning', text: 'Hmm', sealed: true, startedAt: null, endedAt: null }])]), CLOCK)
     expect(drawnView(plain)).toBe(plain)
+  })
+
+  it('draws where a sudo or secret closed, and nothing where a request with no card did', () => {
+    const closed = (asked: 'sudo' | 'env' | 'code' | 'questions', end: 'answered' | 'skipped' | 'elsewhere'): Item<'settled'> =>
+      ({ kind: 'notice', what: 'closed', requestId: 'srq-1' as RequestId, asked, end })
+    const items = [closed('sudo', 'answered'), closed('code', 'elsewhere'), closed('env', 'skipped'), closed('questions', 'answered')]
+    const [drawn] = drawnView(threadView(session([turn('t1', items)]), CLOCK)).turns
+    expect(drawn?.nodes.map(node => node.kind === 'closed' ? node.words : node.kind)).toEqual(['You sent a password.', 'You skipped this.'])
   })
 })

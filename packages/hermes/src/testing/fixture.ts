@@ -6,7 +6,7 @@ import type { SessionId } from '../domain/session'
 import type { Reach } from '../wire/link'
 
 export { play, playToEnd, type Moment } from './play'
-export { recordingDialer } from './record'
+export { maskedFrame, recordingDialer } from './record'
 export { scriptedDialer, type ScriptedDialer, type ScriptOptions } from './script'
 
 /**
