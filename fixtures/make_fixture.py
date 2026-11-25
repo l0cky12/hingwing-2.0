@@ -107,10 +107,7 @@ class Story:
     files: dict
     # The folder the story's rm -rf asks to delete, or None when it deletes nothing.
     doomed: str | None
-    # The recorded answer to the prompt. None ends the fixture at ``approval.request``.
     answer: str | None
-    # The prompt the turn waits on, a key of ``PROMPTS``, or None for a turn that never asks. The fixture
-    # then ends with the turn's ``stored`` rows.
     asks: str | None = "approval"
     # True when the story's turn takes a screenshot, so the script registers the scripted tool.
     screenshots: bool = False
@@ -345,7 +342,6 @@ PREVIEW_FILES = Story(
 
 STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN, "images": IMAGES, "preview": PREVIEW,
            "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "always": ALWAYS, "choose": CHOOSE}
-# A prompt's request event, the call that answers it, and the key that call's answer goes in.
 PROMPTS = {"approval": ("approval.request", "approval.respond", "choice"),
            "clarify": ("clarify.request", "clarify.respond", "answer")}
 NAME = sys.argv[1] if len(sys.argv) > 1 else "errand"
@@ -717,7 +713,8 @@ async def main():
         await record_stored()
     elif TALE.answer is None:
         pushes = await stop_recording()
-        await call(socket, "approval.respond", {**answer_to, "choice": "deny"})
+        # Off the record, so the turn can finish: deny an approval, skip a question with an empty answer.
+        await call(socket, respond, {**answer_to, reply_key: "deny" if reply_key == "choice" else ""})
         await live.task
     else:
         CLOCK.tick(1500)

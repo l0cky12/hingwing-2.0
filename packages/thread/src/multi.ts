@@ -12,7 +12,6 @@ export function multiReply({ picked, other }: { readonly picked: readonly string
   return { kind: 'text', value: JSON.stringify(typed === '' ? picked : [...picked, typed]) }
 }
 
-/** The answers a JSON-array reply holds, or null when the reply is not one. */
 export function multiAnswers(value: string): readonly string[] | null {
   try {
     const parsed: unknown = JSON.parse(value)
