@@ -29,5 +29,6 @@ Preconditions:
 ## Gotchas
 
 - Each window call must reach the gateway while the story waits for it. A step the window cannot make stalls the story for its recorded pause of 1.5 s, so the fixture records the calls the window makes before the ones it leaves to another client.
+- Wait for `gone button Stop` before the second message. The first reply's opening words show while its turn still runs. Under load a second message sent then gets no reply, and the story stalls at `said "docs/plan.md has two parts"`.
 - Do not press Escape before Send. The slash menu is open only while the box holds `/` and a name with no space, so a whole typed line never opens it, and Escape in the box closes the newest side card.
 - The compression's `session.updated` starts a rebuild, so `session.resume` with `display_projection` is sent twice in all.
