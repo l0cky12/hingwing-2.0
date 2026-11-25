@@ -128,16 +128,6 @@ describe('the slash commands Highwing runs itself', () => {
   })
 })
 
-describe('complete', () => {
-  it('asks for the word alone, rooted at the chat, and answers each row with its label and note', async () => {
-    const { command, sent, answer } = await stage()
-    const done = command({ do: 'complete', sessionId: ID, word: '@no' })
-    expect(sent()).toEqual([['complete.path', { session_id: ID, word: '@no' }]])
-    await answer('complete.path', { items: [{ text: '@file:notes.md', display: 'notes.md', meta: '' }, { text: '@folder:docs/', display: 'docs/', meta: 'dir' }, { text: '' }] })
-    expect(await done).toEqual({ ok: true, value: [{ text: '@file:notes.md', label: 'notes.md', detail: null }, { text: '@folder:docs/', label: 'docs/', detail: 'dir' }] })
-  })
-})
-
 describe('move', () => {
   it('moves the chat with a fenced workspace mutate, and takes the folder from the session.info Hermes pushes', async () => {
     const { actor, command, sent, answer, event } = await stage()

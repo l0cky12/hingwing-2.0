@@ -987,7 +987,7 @@ describe("the scripted gateway and Hermes's queue", () => {
 
 describe('the scripted gateway and the chat commands', () => {
   const STORY: Fixture = {
-    header: { ...ERRAND.header, info: { cwd: '/work', reasoning_effort: '', fast: false, yolo: false }, paths: { words: {} } },
+    header: { ...ERRAND.header, info: { cwd: '/work', reasoning_effort: '', fast: false, yolo: false } },
     steps: [
       { at: 0, await: 'prompt.btw', params: {}, reply: { task_id: 'btw_1' } },
       { at: 0, await: 'config.set', params: {}, reply: { key: 'yolo', value: '1', scope: 'session' } },
@@ -1000,8 +1000,6 @@ describe('the scripted gateway and the chat commands', () => {
   it('repeats the header info in the attach reply, and a YOLO set the story records in the next one', async () => {
     const { call } = await rawSocket({}, STORY)
     expect((await call('session.resume', { session_id: SESSION })).result?.info).toMatchObject({ cwd: '/work', reasoning_effort: '', fast: false, yolo: false })
-    await call('complete.path', { session_id: SESSION, word: '@no' })
-    await call('session.resume', { session_id: SESSION })
     await call('prompt.btw', { session_id: SESSION, text: 'why?' })
     expect((await call('config.set', { session_id: SESSION, key: 'yolo', value: 'on' })).result).toEqual({ key: 'yolo', value: '1', scope: 'session' })
     expect((await call('session.resume', { session_id: SESSION })).result?.info).toMatchObject({ yolo: true })
@@ -1009,9 +1007,6 @@ describe('the scripted gateway and the chat commands', () => {
 
   it('refuses each call outside the closed key set Hermes checks', async () => {
     const { call } = await rawSocket({}, STORY)
-    expect(await call('complete.path', { session_id: SESSION, word: '@no', limit: 5 })).toMatchObject(refusal('invalid_params'))
-    expect(await call('complete.path', { session_id: SESSION, word: 7 })).toMatchObject(refusal('invalid_params'))
-    expect((await call('complete.path', { session_id: SESSION, word: '@no' })).result).toEqual({ items: [] })
     await call('session.resume', { session_id: SESSION })
     expect(await call('prompt.btw', { session_id: SESSION, text: ' ' })).toMatchObject(refusal('invalid_params'))
     expect(await call('prompt.btw', { session_id: SESSION, text: 'why?', now: true })).toMatchObject(refusal('invalid_params'))

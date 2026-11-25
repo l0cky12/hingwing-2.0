@@ -400,7 +400,7 @@ with `config.get`. `Session.cwd` is the chat's folder, from the same places.
 
 | A window's command | Highwing calls | Hermes source |
 |---|---|---|
-| `complete` | `complete.path {session_id, word}` | `gateway/session_complete_path.py:15-40` |
+| `completePath`, for an `@` word in the composer | `complete.path {session_id, word}` | `gateway/session_complete_path.py:15-40` |
 | `side` btw, or a typed `/btw <question>` | `prompt.btw {session_id, text}`, answered `{task_id}` | `gateway/session_tui_side.py:197-224` |
 | `side` background, or a typed `/bg <prompt>` | `prompt.background {session_id, text}`, answered `{task_id}` | `gateway/session_tui_side.py:175-193` |
 | `tune` effort | `session.mutate reasoning {effort}`, `null` for the model's own level, with `expected_generation` | `persistence/authority/runtime.py:299-316`, `gateway/session_mutation_policy.py` |

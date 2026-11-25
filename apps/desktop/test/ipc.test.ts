@@ -127,7 +127,6 @@ describe('validators', () => {
     expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'fast', on: true })).toEqual({ do: 'tune', sessionId: 's1', set: 'fast', on: true })
     expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'effort', to: 'xhigh', on: true })).toEqual({ do: 'tune', sessionId: 's1', set: 'effort', to: 'xhigh' })
     expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'effort', to: 'default' })).toEqual({ do: 'tune', sessionId: 's1', set: 'effort', to: 'default' })
-    expect(parseCommand({ do: 'complete', sessionId: 's1', word: '@no' })).toEqual({ do: 'complete', sessionId: 's1', word: '@no' })
     expect(parseCommand({ do: 'move', sessionId: 's1', cwd: '/work/docs' })).toEqual({ do: 'move', sessionId: 's1', cwd: '/work/docs' })
     expect(parseCommand({ do: 'compress', sessionId: 's1', focus: null })).toEqual({ do: 'compress', sessionId: 's1', focus: null })
     expect(parseCommand({ do: 'export', sessionId: 's1', format: 'json', redact: true })).toEqual({ do: 'export', sessionId: 's1', format: 'json' })
@@ -250,7 +249,6 @@ describe('validators', () => {
     ['an edit with no text', { do: 'queued', sessionId: 's1', admissionId: 'a1', action: 'edit', text: '' }],
     ['a busy mode Hermes does not have', { do: 'tune', sessionId: 's1', set: 'busy', to: 'drop' }],
     ['a non-boolean start', { do: 'reconnect', start: 'yes' }],
-    ['a completion of no word', { do: 'complete', sessionId: 's1', word: '' }],
     ['a move to no folder', { do: 'move', sessionId: 's1', cwd: ' ' }],
     ['a compression with a blank focus', { do: 'compress', sessionId: 's1', focus: '' }],
     ['an export in a format Hermes does not render', { do: 'export', sessionId: 's1', format: 'pdf' }],
@@ -294,7 +292,7 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'closePreview', 'complete', 'completePath', 'compress',
+      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'closePreview', 'completePath', 'compress',
       'contextBreakdown', 'createBot', 'describeBot', 'discard', 'editBot', 'editTarget', 'export', 'keepTarget', 'loadEarlier', 'models', 'move', 'open',
       'openChat', 'openPreview', 'pickModel', 'placePreview', 'preview', 'queued', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename', 'rewind', 'send',
       'side', 'start', 'stop', 'tune', 'versions'

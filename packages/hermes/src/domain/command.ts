@@ -44,8 +44,6 @@ export type Command =
    */
   | { readonly do: 'versions'; readonly sessionId: SessionId }
   | { readonly do: 'stop'; readonly sessionId: SessionId }
-  /** Paths under the chat's folder that complete `word`, for an `@` mention. Empty for a folder Hermes cannot list here, such as a remote terminal's. */
-  | { readonly do: 'complete'; readonly sessionId: SessionId; readonly word: string }
   /** Moves the chat to another folder on the machine Hermes runs on. Refused while a turn runs. */
   | { readonly do: 'move'; readonly sessionId: SessionId; readonly cwd: string }
   /**
@@ -111,7 +109,6 @@ export type Command =
 export type ResultOf<C extends Command> =
   C extends { do: 'open' } ? SessionId | null
   : C extends { do: 'send' | 'start' | 'compress' } ? string | null
-  : C extends { do: 'complete' } ? readonly PathCompletion[]
   : C extends { do: 'export' } ? Exported
   : C extends { do: 'branch' } ? SessionId
   : C extends { do: 'versions' } ? ChatVersions
@@ -124,9 +121,6 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
   : C extends { do: 'completePath' } ? readonly PathMatch[]
   : void
-
-/** One row of an `@` completion. `text` replaces the word typed. `detail` is Hermes's note, such as `dir`. */
-export interface PathCompletion { readonly text: string; readonly label: string; readonly detail: string | null }
 
 /** `md` is Markdown. */
 export type ExportFormat = 'md' | 'json' | 'html'

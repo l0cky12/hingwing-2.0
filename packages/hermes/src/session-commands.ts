@@ -9,7 +9,7 @@ import type {
 import { ownCommand, slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import type { Served } from './wire/link'
 import {
-  beginsAtTurn, type Correction, parseBranched, parseBusy, parseCompletions, parseCompressed, parseContextBreakdown, parseCorrection, parseDirective,
+  beginsAtTurn, type Correction, parseBranched, parseBusy, parseCompressed, parseContextBreakdown, parseCorrection, parseDirective,
   parseFast, parseModelMenu, parseModelReceipt, parsePathMatches, parseShown, parseTranscript
 } from './wire/parse'
 
@@ -140,10 +140,6 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     return DONE
   }),
 
-  complete: (port, { word }) => port.whenLive(async () => {
-    const listed = await port.call('complete.path', { session_id: port.id, word })
-    return listed.ok ? { ok: true, value: parseCompletions(listed.value) } : listed
-  }),
 
   move: (port, { cwd }) => port.whenLive(async () => {
     if (port.content.run.state === 'running') return MID_TURN
