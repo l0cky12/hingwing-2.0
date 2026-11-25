@@ -234,7 +234,6 @@ export class SessionActor {
     }
   }
 
-  /** Each read answers on its own, so a slow one holds back no other. */
   private readFacts(): void {
     const { attaches: attempt, heard } = this.tracked.fence
     const session_id = this.id

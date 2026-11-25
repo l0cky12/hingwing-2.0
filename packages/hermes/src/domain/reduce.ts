@@ -843,7 +843,6 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
     case 'turn.ended':
       // A queued message that is cancelled completes with no generation on its stamp
       // (gateway/session_authority.py:886). That is not the end of the turn running ahead of it.
-      // A turn is where the agent starts and stops background processes, so its end makes the list old.
       return stamp.generation === null ? state : heard(settle(state, event.outcome, event.finalText, event.rows, event.userRow, event.usage, event.replyRow), 'processes')
     case 'usage':
       return event.context === null ? state : setUsage(state, { ...state.content.usage, context: event.context })
@@ -982,7 +981,6 @@ function facts(state: Tracked, input: Extract<SessionInput, { in: 'facts' }>): T
   return content === tuned.content ? tuned : { ...tuned, content }
 }
 
-/** A read that says what is already held keeps the held value, so a push does not carry it again. */
 const same = <T>(held: T, said: T): T => (JSON.stringify(held) === JSON.stringify(said) ? held : said)
 
 function heard(state: Tracked, part: keyof Heard): Tracked {

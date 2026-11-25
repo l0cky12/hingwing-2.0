@@ -765,7 +765,6 @@ SERVE = "echo 'serving the docs on :8000'; exec sleep 600"
 
 
 def serving(turn, agent):
-    """Waits for the server's first line, so every list read after the step holds it."""
     from tools.process_registry import process_registry
     for _ in range(1000):
         if any("serving the docs" in held.output_buffer for held in list(process_registry._running.values())):
@@ -1584,7 +1583,6 @@ async def panels_main():
     git = checkpoint_store._run_git
 
     def dated_git(*args, extra_env=None, **kwargs):
-        """A checkpoint's commit dated on the story's clock, so its hash and time repeat across runs."""
         when = f"@{int(time.time())} +0000"
         return git(*args, extra_env={**(extra_env or {}), "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}, **kwargs)
     checkpoint_store._run_git = dated_git
@@ -1628,7 +1626,6 @@ async def panels_main():
     held = {}
 
     async def read_at(index):
-        """A ``reads`` step at ``index`` with each read whose answer changed: from there on a reader gets Hermes's state then."""
         now = await reads()
         changed = {method: reply for method, reply in now.items() if held.get(method) != reply}
         held.update(now)
@@ -1640,7 +1637,6 @@ async def panels_main():
         at, mark = CLOCK.now(), len(recorder.steps)
         reply = await call(socket, method, params)
         recorder.steps.insert(mark, {"at": at, "await": method, "params": params, "reply": reply})
-        # Right after the call: what it changed holds before anything it published.
         await read_at(mark + 1)
         return reply
 
@@ -1653,7 +1649,6 @@ async def panels_main():
             await asyncio.sleep(0.01)
         else:
             stop(f"the turn of {text!r} never left the queue")
-        # What a reader gets once the turn has ended: before the end frame, which is what tells a viewer to read the processes.
         await read_at(next(at for at in range(len(recorder.steps) - 1, -1, -1)
                            if recorder.steps[at].get("push", {}).get("params", {}).get("type") == "message.complete"))
 
@@ -1672,7 +1667,6 @@ async def panels_main():
     await story_call("message.react", {"session_id": session_id, "row_id": reply_row, "emoji": "👍"})
     await story_call("process.kill", {"session_id": session_id, "process_id": server["session_id"]})
 
-    # /goal's own handler drafts the contract with a model and kicks off a turn; the goal it sets is GoalManager.set's.
     from hermes_cli.goals import GoalContract, GoalManager
     CLOCK.tick(1500)
     GoalManager(session_id).set(GOAL, contract=GoalContract(outcome=GOAL_OUTCOME))

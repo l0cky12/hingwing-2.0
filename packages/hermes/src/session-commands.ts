@@ -55,7 +55,7 @@ const NOT_QUEUED = refused('stale', 'That message is no longer in the queue.')
 const NOT_OFFERED = refused('rejected', "Hermes doesn't offer that for this message.")
 const MAYBE_READ = refused('rejected', "Hermes didn't confirm it took that. It may have read it, so Highwing hasn't sent it again.")
 const NOT_STORED = refused('rejected', "That answer isn't stored, so it can't take a reaction.")
-/** `message.react` answers `not_found` for a row the chat no longer shows, such as one a rewind took back (gateway/session_reactions.py:50-51). */
+/** `message.react` answers `not_found` for a row the chat no longer shows, such as one a rewind took back (gateway/session_reactions.py:52-53). */
 const ROW_GONE = { not_found: GONE } as const
 const ANSWERED: Outcome<undefined> = { ok: true, value: undefined }
 const EARLIER = { pageRows: 200, pages: 3 } as const
@@ -295,7 +295,6 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     if (scope.kind === 'folder' && port.content.run.state === 'running') return MID_TURN
     const how = scope.kind === 'file' ? { file_path: scope.path } : scope.edits === 'overwrite' ? { all: true } : {}
     const reply = await port.call('rollback.restore', { session_id: port.id, hash: checkpoint, ...how })
-    // A whole folder whose answer was lost may have taken back the last turn, so the chat is read again either way.
     if (!reply.ok && reply.refusal.kind === 'offline' && scope.kind === 'folder') port.act({ did: 'rewritten' })
     if (!reply.ok) return reply
     const restored = parseRestored(reply.value)
@@ -523,7 +522,6 @@ async function runSlash(port: SessionPort, line: SlashLine, hub: Hub): Promise<O
   return reply.ok ? carryOut(port, parseDirective(reply.value, typed)) : reply
 }
 
-/** What Hermes answered a command or a control button: words to show, or a message the client submits with its own input id. */
 async function carryOut(port: SessionPort, directive: Directive | null): Promise<Outcome<string | null>> {
   if (directive === null) return refused('unsupported', "Highwing can't carry out what Hermes answered to that command.")
   if (directive.do === 'show') return directive.text === '' ? NOTHING_TO_SHOW : { ok: true, value: directive.text }

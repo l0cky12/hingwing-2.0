@@ -7,7 +7,6 @@ import { manualClock, settle } from '../../src/testing/clock'
 import { Offline, RpcRefusal, type Calls } from '../../src/wire/link'
 
 export const ID = 's1' as SessionId
-/** What the actor reads by itself, apart from a command. */
 const READS: ReadonlySet<string> = new Set(['session.stats', 'process.list', 'session.control.read'])
 export const EPOCH = 'e1'
 

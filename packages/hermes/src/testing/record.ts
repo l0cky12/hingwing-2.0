@@ -62,7 +62,6 @@ function maskedParams(method: string, params: Obj): Obj {
   return { ...params, result: { ...params.result, targets } }
 }
 
-/** The first answer to a read is the header's. A later one is a step, from where it was heard. */
 function readReply(method: keyof Reads) {
   return (header: Header, reply: Obj): readonly Found[] => {
     if (header.reads?.[method] !== undefined) return [{ reads: { [method]: reply } }]

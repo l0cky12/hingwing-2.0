@@ -183,7 +183,6 @@ function attempt(state: Tracked): number {
   return state.gate.attempt
 }
 
-/** What a watched chat learns from the panel reads Hermes answers now. */
 function read(state: Tracked, reads: Reads): Tracked {
   const listed = reads['process.list'] as Parameters<typeof parseProcesses>[0] | undefined
   const control = reads['session.control.read'] as { control?: unknown } | undefined

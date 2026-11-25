@@ -1050,7 +1050,6 @@ export class ScriptedGateway {
     if (step.error !== undefined) throw new Refused(step.error.message, step.error)
     AFTER[method]?.(this.view, params, step.reply)
     if (method === 'session.mutate' || method === 'rollback.restore') this.publishReceipt()
-    // A read right after a call says what that call left, so it holds before the reply goes out.
     for (let next = this.fixture.steps[this.step]; next !== undefined && 'reads' in next; next = this.fixture.steps[this.step]) this.play(next)
     return step.reply
   }

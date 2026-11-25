@@ -461,7 +461,7 @@ export const SHOWN: { readonly [type: string]: Shown } = {
     })
   },
   error: payload => ({ type: 'notice', tone: 'error', text: stripAnsi(fields<ErrorPayload>(payload).str('message')) }),
-  /** gateway/session_control_actions.py:107-115: the whole snapshot, on every change from any client. */
+  /** gateway/session_control_actions.py:76-84: the whole snapshot, on every change from any client. */
   'session.control.update': payload => {
     const snapshot = fields<{ control: SessionControlSnapshot }>(payload).optObj('control')
     if (snapshot === null) throw new Unusable()
@@ -649,10 +649,6 @@ export function parseUsage(view: Usage): SessionUsage {
   }) ?? NO_USAGE
 }
 
-/**
- * `session.stats`: the counters that view is built from, read the way Hermes builds it
- * (`tui_usage`, `gateway/session_usage.py:130-147`). The canonical gateway has no `session.usage` method.
- */
 /** `process.list` (gateway/session_ancillary.py:655-671). A row it cannot use is left out. */
 export function parseProcesses(reply: ProcessListResult): readonly BackgroundProcess[] {
   return (Array.isArray(reply.processes) ? reply.processes : []).flatMap(row => usable(() => processOf(row)) ?? [])
@@ -796,6 +792,10 @@ export function parseRestored(reply: RollbackRestoreResult): Restored | { readon
   }
 }
 
+/**
+ * `session.stats`: the counters that view is built from, read the way Hermes builds it
+ * (`tui_usage`, `gateway/session_usage.py:130-147`). The canonical gateway has no `session.usage` method.
+ */
 export function parseStats(reply: SessionStats): SessionUsage {
   return usable(() => {
     const p = fields<SessionStats>(reply)
