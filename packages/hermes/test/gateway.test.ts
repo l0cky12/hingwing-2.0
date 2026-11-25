@@ -885,9 +885,9 @@ describe('the scripted gateway draws pictures and lists pets as Hermes does', ()
     expect((await call('pet.thumb', { slug: 'tabby' })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
   })
 
-  it("refuses a refused_once slug's first thumb, and answers it after", async () => {
+  it("fails a refused_once slug's first thumb open to ok false, as a fetch that timed out does, and answers it after", async () => {
     const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, pets: { ...PETS, refused_once: ['tabby'] } } })
-    expect(await call('pet.thumb', { slug: 'tabby', url: TABBY_SHEET })).toMatchObject({ error: { code: 5031, message: 'pet.thumb failed: timed out' } })
+    expect((await call('pet.thumb', { slug: 'tabby', url: TABBY_SHEET })).result).toEqual({ ok: false, slug: 'tabby' })
     expect((await call('pet.thumb', { slug: 'tabby', url: TABBY_SHEET })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
     expect((await call('pet.thumb', { slug: 'mochi' })).result).toEqual({ ok: true, slug: 'mochi', dataUri: PICTURE })
   })

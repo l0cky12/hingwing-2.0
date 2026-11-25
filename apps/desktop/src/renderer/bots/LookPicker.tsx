@@ -37,6 +37,13 @@ type PetList = { readonly at: 'unread' | 'reading' } | { readonly at: 'read'; re
 /** A pet's idle frame. `refused`: the ask failed, so it is made again when the tile is next shown. `picture`: null when Hermes has none. */
 type Thumb = { readonly at: 'loading' | 'refused' } | { readonly at: 'read'; readonly picture: string | null }
 
+/**
+ * Hermes answers `pet.thumb` with no picture both for a petdex fetch that failed and for a pet with none, and keeps nothing
+ * on a failure (agent/pet/store.py:240-246). So only a pet it holds, with no `url`, surely has none.
+ */
+export const thumbOf = (pet: PetChoice, outcome: CommandOutcome<string | null>): Thumb =>
+  !outcome.ok || (outcome.value === null && pet.url !== null) ? { at: 'refused' } : { at: 'read', picture: outcome.value }
+
 const SHOWN_PETS = 24
 const SHOWN_SHARE = 0.1
 const HOW = 'Click it to pick a shape, generate a picture, upload one or choose a pet.'
@@ -159,7 +166,7 @@ export function LookPicker({ look, name, calls, onLook, onDrawing }: LookPickerP
     const held = thumbs.get(pet.slug)
     if (held !== undefined && held.at !== 'refused') return
     setThumbs(now => new Map(now).set(pet.slug, { at: 'loading' }))
-    void calls.petPicture(pet).then(outcome => setThumbs(now => new Map(now).set(pet.slug, outcome.ok ? { at: 'read', picture: outcome.value } : { at: 'refused' })))
+    void calls.petPicture(pet).then(outcome => setThumbs(now => new Map(now).set(pet.slug, thumbOf(pet, outcome))))
   }
 
   const show = (next: Tab) => {

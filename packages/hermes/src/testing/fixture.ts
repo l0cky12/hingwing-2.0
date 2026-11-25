@@ -142,8 +142,8 @@ export interface Images { readonly available: boolean; readonly picture?: string
 /**
  * `pets`: the gallery's entries as Hermes sends them. `thumbs`: slug -> the PNG data URL `pet.thumb` answers for a pet the
  * gallery lists as installed, one asked with a petdex `url`, or one it answered before; any other ask answers `{ ok: false }`. `delay_ms`: how long
- * each call takes (default 0). `refused_once`: slugs whose first `pet.thumb` fails with an error, as a call lost to a timeout
- * or a dropped link would, and is answered as usual after.
+ * each call takes (default 0). `refused_once`: slugs whose first `pet.thumb` answers `{ ok: false }`, as Hermes does for a petdex
+ * fetch that timed out and keeps nothing (agent/pet/store.py:240-246), and is answered as usual after.
  */
 export interface Pets {
   readonly pets: readonly unknown[]

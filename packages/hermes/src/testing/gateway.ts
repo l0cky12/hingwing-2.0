@@ -1673,7 +1673,7 @@ export class ScriptedGateway {
     if (slug === '') throw refusedProfile(4004, 'missing slug')
     if (pets.refused_once?.includes(slug) && !this.thumbsRefused.has(slug)) {
       this.thumbsRefused.add(slug)
-      throw refusedProfile(5031, 'pet.thumb failed: timed out')
+      return after(pets.delay_ms, { ok: false, slug })
     }
     const installed = pets.pets.some(pet => isObject(pet) && pet.slug === slug && pet.installed === true)
     const fetched = typeof params.url === 'string' && petdexHost(params.url)

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { BotForm } from '../src/renderer/bots/BotForm'
 import { EMPTY_DRAFT } from '../src/renderer/bots/bot-form'
 import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_SHAPES, faceSvg, lookWords, shapeFor, surpriseFor } from '../src/renderer/bots/look'
-import { LookPicker, PetTile, type LookCalls } from '../src/renderer/bots/LookPicker'
+import { LookPicker, PetTile, thumbOf, type LookCalls } from '../src/renderer/bots/LookPicker'
 import { NewBotForm } from '../src/renderer/bots/NewBotForm'
 
 const NAMES = ['Rae', 'Ada', 'Sam', 'Research', 'Emu', 'Timothy', 'highwing', 'Pip', 'Ledger', 'Juno']
@@ -117,6 +117,22 @@ describe('a pet tile', () => {
     expect([attr(tileOf({ at: 'read', picture: null }), 'title'), tileOf({ at: 'read', picture: null }).includes('disabled')]).toEqual(['Hermes has no picture of Dune', true])
     expect([attr(tileOf({ at: 'refused' }), 'title'), tileOf({ at: 'refused' }).includes('disabled')]).toEqual(["Highwing couldn't load Dune's picture", true])
     expect([attr(tileOf({ at: 'read', picture: PICTURE }), 'title'), tileOf({ at: 'read', picture: PICTURE }).includes('disabled')]).toEqual(['Dune', false])
+  })
+})
+
+describe("a pet's thumb", () => {
+  const DUNE = { slug: 'dune', name: 'Dune', url: 'https://cdn.petdex.dev/pets/dune/spritesheet.webp' }
+  const BASIL = { slug: 'basil', name: 'Basil', url: null }
+
+  it('is refused when the ask fails, or when Hermes sends none for a pet it fetches, since a failed fetch answers the same', () => {
+    expect(thumbOf(DUNE, { ok: false, refusal: { kind: 'offline', message: 'offline' } })).toEqual({ at: 'refused' })
+    expect(thumbOf(DUNE, { ok: true, value: null })).toEqual({ at: 'refused' })
+    expect(thumbOf(DUNE, { ok: true, value: PICTURE })).toEqual({ at: 'read', picture: PICTURE })
+  })
+
+  it('is none only for a pet Hermes holds', () => {
+    expect(thumbOf(BASIL, { ok: true, value: null })).toEqual({ at: 'read', picture: null })
+    expect(thumbOf(BASIL, { ok: true, value: PICTURE })).toEqual({ at: 'read', picture: PICTURE })
   })
 })
 
