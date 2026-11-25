@@ -629,7 +629,7 @@ function act(state: Tracked, action: LocalAction): Tracked {
     case 'told': {
       const { promptId, text, went } = action
       const held = state.fence.told[promptId] ?? {}
-      if (held[text] === went) return state
+      if (Object.hasOwn(held, text) && held[text] === went) return state
       return { ...state, fence: { ...state.fence, told: { ...state.fence.told, [promptId]: { ...held, [text]: went } } } }
     }
     case 'answer': {

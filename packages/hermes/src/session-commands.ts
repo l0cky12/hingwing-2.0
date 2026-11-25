@@ -297,8 +297,8 @@ const TOLD = { taken: 'turn', unread: 'next', unsure: 'unsure' } as const satisf
  * repeat as new words. A steer the socket dropped under may have reached the agent, which reads `unsure`.
  */
 async function tell(port: SessionPort, promptId: PromptId, text: string, during: Generation): Promise<Outcome<Told>> {
-  const before = port.fence.told[promptId]?.[text]
-  if (before !== undefined) return { ok: true, value: before }
+  const told = port.fence.told[promptId]
+  if (told !== undefined && Object.hasOwn(told, text)) return { ok: true, value: told[text] as Exclude<Told, 'next'> }
   const handed = await correct(port, 'steer', text, during)
   if (!handed.ok && handed.refusal.kind !== 'offline') return handed
   const went = handed.ok ? TOLD[handed.value] : 'unsure'

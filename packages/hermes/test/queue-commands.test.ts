@@ -387,6 +387,15 @@ describe('deny and tell', () => {
       expect(sent(), 'only the denial: these words went on the first try').toEqual([DENY])
     })
 
+    it.each(['constructor', 'toString', '__proto__'])('steers words that match an object property name, %s, as new words', async words => {
+      const { command, sent, answer, redial } = await denying()
+      await answer('session.steer', ack('queued'))
+      await redial(STILL_ASKING)
+      void command(deny(words))
+      await settle()
+      expect(sent()).toEqual([['session.steer', { session_id: ID, text: words, execution_generation: 1 }]])
+    })
+
     it('steers again words that no agent saw, and words the first try did not carry', async () => {
       const unseen = await denying()
       await unseen.answer('session.steer', ack('rejected', { delivered: false }))
