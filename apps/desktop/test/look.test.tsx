@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { BotForm } from '../src/renderer/bots/BotForm'
 import { EMPTY_DRAFT } from '../src/renderer/bots/bot-form'
-import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_SHAPES, faceSvg, lookWords, shapeFor } from '../src/renderer/bots/look'
+import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_SHAPES, faceSvg, lookWords, shapeFor, surpriseFor } from '../src/renderer/bots/look'
 import { LookPicker, PetTile, type LookCalls } from '../src/renderer/bots/LookPicker'
 import { NewBotForm } from '../src/renderer/bots/NewBotForm'
 
@@ -30,6 +30,28 @@ describe('an Auto shape', () => {
 
   it('gives way to a shape the user picked', () => {
     for (const name of NAMES) expect(shapeFor('pill', name)).toBe('pill')
+  })
+})
+
+describe('Surprise me', () => {
+  const draws = Array.from({ length: 24 }, (_, at) => at / 24)
+
+  it('picks a shape and a color other than the ones the face shows, Auto included', () => {
+    for (const name of NAMES) {
+      for (const face of [DEFAULT_LOOK, { ...DEFAULT_LOOK, shape: 'pill' as const, color: 'coral' as const }]) {
+        for (const draw of draws) {
+          const next = surpriseFor(face, name, () => draw)
+          expect(next.shape, `${name} ${face.shape} ${draw}`).not.toBe(shapeFor(face.shape, name))
+          expect(next.color, `${name} ${face.color} ${draw}`).not.toBe(face.color)
+        }
+      }
+    }
+  })
+
+  it('can land on every other shape and color', () => {
+    const faces = draws.map(draw => surpriseFor(DEFAULT_LOOK, 'Rae', () => draw))
+    expect(new Set(faces.map(face => face.shape)).size).toBe(FACE_SHAPES.length - 1)
+    expect(new Set(faces.map(face => face.color)).size).toBe(FACE_COLOR_NAMES.length - 1)
   })
 })
 

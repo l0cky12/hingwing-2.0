@@ -1,7 +1,7 @@
 import type { CommandOutcome, PetChoice } from '@highwing/hermes/domain'
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { PictureFile } from '../../ipc-contract'
-import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_COLORS, FACE_SHAPES, faceSvg, lookWords, shapeFor, titleOf, type Face, type FaceColor, type FaceShape, type Look } from './look'
+import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_COLORS, FACE_SHAPES, faceSvg, lookWords, shapeFor, surpriseFor, titleOf, type Face, type FaceColor, type FaceShape, type Look } from './look'
 import { blobUrlOf } from './pictures'
 
 /** What the picker asks Hermes and main for. */
@@ -194,14 +194,11 @@ export function LookPicker({ look, name, calls, onLook, onDrawing }: LookPickerP
     setFace(next)
     take(next)
   }
-  const surprise = () => {
-    const pick = <T,>(items: readonly T[]) => items[Math.floor(Math.random() * items.length)] as T
-    const shapes = FACE_SHAPES.filter(shape => shape !== face.shape)
-    pickFace({ shape: pick(shapes), color: pick(FACE_COLOR_NAMES.filter(color => color !== face.color)) })
-  }
+  // The button that was pressed leaves with its panel, so focus goes to the tab whose panel takes its place.
   const backToFace = () => {
     take(face)
     show('shape')
+    document.getElementById(`${ids}-tab-shape`)?.focus()
   }
   const generate = async () => {
     const mine = Symbol('drawing')
@@ -244,7 +241,7 @@ export function LookPicker({ look, name, calls, onLook, onDrawing }: LookPickerP
               />
             ))}
           </div>
-          <button type="button" className="look-quiet" onClick={surprise}><Dice />Surprise me</button>
+          <button type="button" className="look-quiet" onClick={() => pickFace(surpriseFor(face, name))}><Dice />Surprise me</button>
         </div>
       </>
     ),

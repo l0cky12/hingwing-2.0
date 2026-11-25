@@ -34,6 +34,13 @@ export function shapeFor(shape: FaceShape | 'auto', name: string): FaceShape {
 }
 
 /** What is picked, in words: the face's color and shape, or where the picture came from. */
+/** Surprise me: a shape and a color other than the ones the face shows, so it always changes. `random` answers in [0, 1). */
+export function surpriseFor(face: Face, name: string, random: () => number = Math.random): Face {
+  const pick = <T,>(items: readonly T[]) => items[Math.floor(random() * items.length)] as T
+  const shown = shapeFor(face.shape, name)
+  return { from: 'face', shape: pick(FACE_SHAPES.filter(shape => shape !== shown)), color: pick(FACE_COLOR_NAMES.filter(color => color !== face.color)) }
+}
+
 export function lookWords(look: Look, name: string): string {
   switch (look.from) {
     case 'face': return `${titleOf(look.color)} ${shapeFor(look.shape, name)}, picked ${look.shape === 'auto' ? 'from the name' : 'by you'}`
