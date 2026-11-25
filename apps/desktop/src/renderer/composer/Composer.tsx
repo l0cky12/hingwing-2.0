@@ -314,7 +314,9 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   const onFooterKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
     if (!(event.target instanceof Element) || event.target.closest('form, .sides') === null) return
-    if (onEscape?.() === true) event.preventDefault()
+    if (onEscape?.() !== true) return
+    event.preventDefault()
+    box.current?.focus()
   }
 
   return (
