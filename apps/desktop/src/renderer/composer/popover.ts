@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 
-/** A pill's popover. It shows only while `enabled`, and closes on Escape, which hands focus back to the pill, and on a press outside it. */
 export function usePopover(enabled: boolean) {
   const [open, setOpen] = useState(false)
   const anchor = useRef<HTMLDivElement>(null)

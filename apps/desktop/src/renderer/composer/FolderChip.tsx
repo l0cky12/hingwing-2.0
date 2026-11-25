@@ -3,7 +3,6 @@ import { useId, useState, type FormEvent } from 'react'
 import { usePopover } from './popover'
 
 interface FolderChipProps {
-  /** The folder as Hermes names it, on the machine Hermes runs on. */
   readonly cwd: string
   readonly field: string
   readonly disabled: boolean
