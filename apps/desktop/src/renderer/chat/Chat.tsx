@@ -265,6 +265,8 @@ export function Chat({ chat }: { readonly chat: Shown }) {
       </div>
       <Composer
         slot={slotOf(chat)}
+        sessionId={id}
+        cwd={session?.cwd ?? null}
         inputRef={composer}
         autoFocus={chat.kind === 'branch' || (chat.kind === 'new' && chat.sessionId === null)}
         seed={chat.kind === 'branch' ? chat.text : ''}

@@ -1,17 +1,22 @@
-import type { CommandOutcome, SlashCatalog } from '@highwing/hermes/domain'
+import type { CommandOutcome, PathMatch, SessionId, SlashCatalog } from '@highwing/hermes/domain'
 import { useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { Avatar } from '../bots/Bots'
 import { useTopic } from '../store'
 import { draftSent, seedDraft, useDraft, writeDraft, type DraftSlot } from './drafts'
 import type { Editing } from './edit'
 import { RemoveDialog } from './RemoveDialog'
-import { mentionable, menuOf, picked, type Menu, type MenuItem } from './menu'
+import { mentionable, mentionWord, menuOf, picked, type Menu, type MenuItem } from './menu'
+import { usePathMatches } from './paths'
 
 interface ComposerProps {
   readonly slot: DraftSlot
   readonly inputRef?: RefObject<HTMLTextAreaElement | null>
   readonly autoFocus?: boolean
   readonly seed?: string
+  /** The chat's session, once it has one. `@` completes paths in its working folder. */
+  readonly sessionId?: SessionId | null
+  /** The chat's working folder, as Hermes names it. */
+  readonly cwd?: string | null
   readonly canSend: boolean
   readonly showStop: boolean
   readonly onSend: (text: string) => Promise<CommandOutcome<string | null>>
@@ -25,7 +30,19 @@ interface ComposerProps {
 const NO_CATALOG: SlashCatalog = []
 const MENU_ID = 'composer-menu'
 const optionId = (index: number) => `composer-option-${index}`
-const keyOf = (item: MenuItem) => (item.kind === 'bot' ? item.bot.id : item.entry.name)
+const keyOf = (item: MenuItem) => {
+  switch (item.kind) {
+    case 'bot': return item.bot.id
+    case 'file': return `file:${item.match.path}`
+    default: return item.entry.name
+  }
+}
+
+function placeOf({ path }: PathMatch): { readonly name: string; readonly where: string } {
+  const trimmed = path.endsWith('/') ? path.slice(0, -1) : path
+  const cut = trimmed.lastIndexOf('/') + 1
+  return { name: path.slice(cut), where: `./${path.slice(0, cut)}` }
+}
 
 interface OptionProps {
   readonly item: MenuItem
@@ -37,6 +54,15 @@ interface OptionProps {
 function Option({ item, index, active, onPick }: OptionProps) {
   const id = optionId(index)
   const row = { id, role: 'option', 'aria-selected': active, onMouseDown: (event: { preventDefault(): void }) => event.preventDefault(), onClick: () => onPick(item) } as const
+  if (item.kind === 'file') {
+    const { name, where } = placeOf(item.match)
+    return (
+      <div {...row} className={active ? 'slash-row active' : 'slash-row'} aria-label={item.match.path}>
+        <span className="slash-name">{name}</span>
+        <span className="slash-description">{where}</span>
+      </div>
+    )
+  }
   if (item.kind !== 'bot') {
     return (
       <div {...row} className={active ? 'slash-row active' : 'slash-row'}>
@@ -55,20 +81,21 @@ function Option({ item, index, active, onPick }: OptionProps) {
   )
 }
 
-export function Composer({ slot, inputRef, autoFocus, seed = '', canSend, showStop, onSend, onStop, onInput, editing = null, onCancelEdit, children }: ComposerProps) {
+export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, showStop, onSend, onStop, onInput, editing = null, onCancelEdit, children }: ComposerProps) {
   const catalog = useTopic('slash') ?? NO_CATALOG
   const roster = useTopic('bots')
   const relay = useTopic('relay')
   const own = useTopic('open')?.shown?.bot ?? null
-  const sources = useMemo(() => ({ catalog, bots: mentionable(roster, relay, own) }), [catalog, roster, relay, own])
   const draft = useDraft(slot)
   const [caret, setCaret] = useState(0)
+  const [focused, setFocused] = useState(false)
+  const files = usePathMatches(sessionId, focused ? mentionWord(draft, caret) : null)
+  const sources = useMemo(() => ({ catalog, bots: mentionable(roster, relay, own), files }), [catalog, roster, relay, own, files])
   const [active, setActive] = useState(0)
   const [dismissed, setDismissed] = useState<string | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
   const [output, setOutput] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
-  const [focused, setFocused] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const press = editing?.press ?? null
   const sending = useRef(false)
@@ -201,6 +228,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', canSend, showSt
               </div>
             ))}
           </div>
+          {cwd !== null && menu.sections.some(section => section.label === 'Files') && <p className="slash-folder">in {cwd}</p>}
         </div>
       )}
       {editing !== null && (

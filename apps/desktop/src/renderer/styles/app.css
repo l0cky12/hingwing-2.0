@@ -371,6 +371,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .slash-row.active { background: var(--signal-soft); }
 .slash-name { flex: none; font: 13.5px var(--mono); color: var(--ink); }
 .slash-description { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--graphite); font-size: 13.5px; }
+.slash-folder { margin: 6px 12px 0; font-size: 12px; color: var(--graphite); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slash-row.bot { align-items: center; gap: 10px; }
 .slash-bot { flex: none; font-weight: 500; }
 .slash-output {
