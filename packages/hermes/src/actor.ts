@@ -73,15 +73,13 @@ type Attaching = Extract<Gate, { at: 'attaching' }>
 /** An attachment with its bytes, read from where Highwing keeps it. `mime` is what the bytes are, as Highwing sniffed them. */
 export type Upload = Attachment & { readonly mime: string; readonly bytes: Uint8Array }
 
-/**
- * What a message's attachments became on the wire: the staged images `prompt.submit` names, and the text the model reads
- * with each file's `@file:` reference. Kept so a resubmit after a reconnect sends the same thing.
- */
-interface Wired { readonly attachments: readonly { readonly path: string; readonly mime: string }[]; readonly apiText: string | undefined }
+interface Resubmit { readonly attachments: readonly { readonly path: string; readonly mime: string }[]; readonly apiText: string | undefined }
 
-interface Staged { readonly images: Wired['attachments']; readonly refs: readonly string[] }
+interface Staged { readonly images: Resubmit['attachments']; readonly refs: readonly string[] }
 
 const attachmentOf = ({ id, name, kind, size }: Upload): Attachment => ({ id, name, kind, size })
+/** Hermes reads an image's type from its name before its bytes, so the type Highwing read from the bytes goes as `ext` and the name not at all. */
+const IMAGE_EXT: Readonly<Record<string, string>> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }
 const base64 = (bytes: Uint8Array) => Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('base64')
 
 function attachRefusal(name: string, error: unknown): Refusal {
@@ -109,7 +107,7 @@ export class SessionActor {
   private tracked: Tracked
   private published: Session
   private restarts: readonly number[] = []
-  private readonly wired = new Map<InputId, Wired>()
+  private readonly resubmits = new Map<InputId, Resubmit>()
 
   constructor(readonly id: SessionId, private readonly deps: ActorDeps) {
     this.tracked = emptyTracked(id)
@@ -142,7 +140,7 @@ export class SessionActor {
     const before = this.tracked.gate
     const wasRunning = this.tracked.content.run.state === 'running'
     this.tracked = reduce(this.tracked, input)
-    for (const inputId of this.wired.keys()) if (!this.tracked.content.outbox.some(entry => entry.inputId === inputId)) this.wired.delete(inputId)
+    for (const inputId of this.resubmits.keys()) if (!this.tracked.content.outbox.some(entry => entry.inputId === inputId)) this.resubmits.delete(inputId)
     const after = this.tracked.gate
     this.publish()
     const wentLive = after.at === 'live' && before.at !== 'live'
@@ -231,7 +229,7 @@ export class SessionActor {
     const inputId = this.deps.mintId() as InputId
     if (staged !== null) {
       const { images, refs } = staged
-      this.wired.set(inputId, { attachments: images, apiText: refs.length === 0 ? apiText : `${apiText ?? text}\n\n${refs.join('\n')}` })
+      this.resubmits.set(inputId, { attachments: images, apiText: refs.length === 0 ? apiText : `${apiText ?? text}\n\n${refs.join('\n')}` })
     }
     const sending = { inputId, text, ...(apiText === undefined ? {} : { apiText }), attachments: uploads.map(attachmentOf) }
     this.act({ did: 'send', ...sending })
@@ -240,12 +238,12 @@ export class SessionActor {
 
   /** `image.attach_bytes` only stages an image: the `prompt.submit` after it names the staged path. `file.attach` answers the reference the model reads. */
   private async stage(uploads: readonly Upload[]): Promise<Outcome<Staged>> {
-    const images: Wired['attachments'][number][] = []
+    const images: Resubmit['attachments'][number][] = []
     const refs: string[] = []
     for (const upload of uploads) {
       try {
         if (upload.kind === 'image') {
-          const staged = await this.deps.conn.call('image.attach_bytes', { session_id: this.id, content_base64: base64(upload.bytes), filename: upload.name })
+          const staged = await this.deps.conn.call('image.attach_bytes', { session_id: this.id, content_base64: base64(upload.bytes), ext: IMAGE_EXT[upload.mime] ?? 'png' })
           if (!staged.attached || !staged.path) return refused('rejected', `Hermes didn't take ${upload.name}.`)
           images.push({ path: staged.path, mime: staged.mime })
         } else {
@@ -261,12 +259,12 @@ export class SessionActor {
   }
 
   private async admit({ inputId, text, apiText }: Pick<OutboxEntry, 'inputId' | 'text' | 'apiText'>): Promise<Outcome> {
-    const wired = this.wired.get(inputId)
-    const apiTextSent = wired === undefined ? apiText : wired.apiText
+    const resubmit = this.resubmits.get(inputId)
+    const apiTextSent = resubmit === undefined ? apiText : resubmit.apiText
     try {
       const receipt = await this.deps.conn.call('prompt.submit', {
         session_id: this.id, text, input_id: inputId, ...(apiTextSent === undefined ? {} : { api_text: apiTextSent }),
-        ...(wired === undefined || wired.attachments.length === 0 ? {} : { attachments: [...wired.attachments] })
+        ...(resubmit === undefined || resubmit.attachments.length === 0 ? {} : { attachments: [...resubmit.attachments] })
       })
       if ('admission_id' in receipt) this.act({ did: 'send.admitted', inputId, admissionId: receipt.admission_id, status: receipt.status })
       else this.act({ did: 'send.discarded', inputId })

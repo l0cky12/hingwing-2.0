@@ -797,14 +797,26 @@ describe('the scripted gateway edits a profile as Hermes does', () => {
 describe('attachments, as Hermes stages them', () => {
   const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]).toString('base64')
 
-  it('stages an image only for a socket attached to the session, and only a PNG, JPEG, GIF or WebP', async () => {
+  it('stages an image only for a socket attached to the session', async () => {
     const { call } = await rawSocket()
-    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG, filename: 'a.png' })).toMatchObject(refusal('permission_denied'))
+    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG, ext: 'png' })).toMatchObject(refusal('permission_denied'))
     await call('session.resume', { session_id: SESSION })
-    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: Buffer.from('%PDF-1.7').toString('base64'), filename: 'a.png' }))
-      .toMatchObject(refusal('invalid_params'))
-    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG, filename: 'a.png' }))
+    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG, ext: 'png' }))
       .toMatchObject({ result: { attached: true, path: '/hermes/default/cache/images/upload-1.png', mime: 'image/png' } })
+  })
+
+  it('reads the type from the name before the ext hint, and from the bytes only when neither says', async () => {
+    const { call } = await rawSocket()
+    await call('session.resume', { session_id: SESSION })
+    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG, filename: 'photo.heic', ext: 'png' }), 'a name Hermes takes no image type from')
+      .toMatchObject(refusal('invalid_params'))
+    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG, filename: 'photo.JPEG' }))
+      .toMatchObject({ result: { attached: true, path: '/hermes/default/cache/images/upload-1.jpeg', mime: 'image/jpeg' } })
+    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG, ext: '.webp' }))
+      .toMatchObject({ result: { attached: true, mime: 'image/webp' } })
+    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG }))
+      .toMatchObject({ result: { attached: true, mime: 'image/png' } })
+    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG, ext: 'bmp' })).toMatchObject(refusal('invalid_params'))
   })
 
   it('refuses an image over 25 MiB', async () => {

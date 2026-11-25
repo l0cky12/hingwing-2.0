@@ -35,7 +35,7 @@ describe('a message with an image, played through the real client', () => {
     expect(methods.indexOf('image.attach_bytes')).toBeGreaterThan(-1)
     expect(methods.indexOf('image.attach_bytes')).toBeLessThan(methods.indexOf('prompt.submit'))
     const staged = calls.find(call => call.method === 'image.attach_bytes')
-    expect(staged?.params).toEqual({ session_id: SESSION, content_base64: Buffer.from(PNG).toString('base64'), filename: 'error.png' })
+    expect(staged?.params).toEqual({ session_id: SESSION, content_base64: Buffer.from(PNG).toString('base64'), ext: 'png' })
     const submit = calls.find(call => call.method === 'prompt.submit')
     expect(submit?.params?.attachments).toEqual([{ path: '/hermes/default/cache/images/upload-1.png', mime: 'image/png' }])
     expect(submit?.params?.text).toBe(TEXT)
@@ -59,12 +59,25 @@ describe('sending with attachments', () => {
     expect(attach?.params).toEqual({ session_id: SESSION, name: 'contract.pdf', data_url: `data:application/pdf;base64,${Buffer.from(PDF).toString('base64')}` })
   })
 
-  it('sends nothing when Hermes refuses an attachment, and says which one', async () => {
-    const notAnImage = upload('a-3', 'error.png', 'image', 'image/png', new TextEncoder().encode('not a picture'))
-    const opened = open(ERRAND, [CONTRACT, notAnImage])
+  it('stages an image by the type its bytes show, whatever its name says', async () => {
+    const renamed = upload('a-4', 'photo.heic', 'image', 'image/png', PNG)
+    const opened = open(ERRAND, [renamed])
     opened.watch()
     await opened.clock.advance(0)
-    const outcome = opened.hermes.run({ do: 'send', sessionId: SESSION, text: TEXT, attachments: [CONTRACT.id, notAnImage.id] })
+    const outcome = opened.hermes.run({ do: 'send', sessionId: SESSION, text: TEXT, attachments: [renamed.id] })
+    await opened.clock.advance(0)
+    expect(await outcome).toEqual({ ok: true, value: null })
+    expect(opened.sent().find(call => call.method === 'prompt.submit')?.params?.attachments).toEqual([{ path: '/hermes/default/cache/images/upload-1.png', mime: 'image/png' }])
+  })
+
+  it('sends nothing when Hermes refuses an attachment, and says which one', async () => {
+    const huge = new Uint8Array(25 * 1024 * 1024 + 1)
+    huge.set(PNG)
+    const tooBig = upload('a-3', 'error.png', 'image', 'image/png', huge)
+    const opened = open(ERRAND, [CONTRACT, tooBig])
+    opened.watch()
+    await opened.clock.advance(0)
+    const outcome = opened.hermes.run({ do: 'send', sessionId: SESSION, text: TEXT, attachments: [CONTRACT.id, tooBig.id] })
     await opened.clock.advance(0)
     expect(await outcome).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'Hermes refused error.png: Hermes did not accept the request.' } })
     expect(opened.sent().map(call => call.method)).toEqual(expect.arrayContaining(['file.attach', 'image.attach_bytes']))

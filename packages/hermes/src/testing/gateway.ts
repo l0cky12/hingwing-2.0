@@ -129,13 +129,19 @@ const stagedOnly: Check = (gateway, _socket, params, routed) => (gateway.staged(
 export const IMAGE_MAX_BYTES = 25 * 1024 * 1024
 export const FILE_MAX_BYTES = 256 * 1024 * 1024
 
-/** The image types `image.attach_bytes` stages, by their first bytes (gateway/session_images.py:35-39). */
 const IMAGE_MAGIC: readonly { readonly ext: string; readonly mime: string; readonly at: number; readonly bytes: readonly number[] }[] = [
   { ext: '.png', mime: 'image/png', at: 0, bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
   { ext: '.jpg', mime: 'image/jpeg', at: 0, bytes: [0xff, 0xd8, 0xff] },
   { ext: '.gif', mime: 'image/gif', at: 0, bytes: [0x47, 0x49, 0x46, 0x38] },
   { ext: '.webp', mime: 'image/webp', at: 8, bytes: [0x57, 0x45, 0x42, 0x50] }
 ]
+
+/** `_sniff_image_ext` (tui_gateway/prompt_attachments.py:91-99) reads the type from the name's extension first, then the `ext` hint, then the bytes. */
+const EXT_MIME: Readonly<Record<string, string>> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
+function suffixOf(name: string): string {
+  const ext = /[^/\\]\.([^./\\]+)$/.exec(name)?.[1]
+  return ext === undefined ? '' : `.${ext.toLowerCase()}`
+}
 
 /** Decoded bytes, or null for a payload Hermes refuses `invalid_params`: not base64, empty, or over `max`. */
 function decoded(text: string, max: number): Buffer | null {
@@ -642,7 +648,6 @@ export class ScriptedGateway {
   private readonly afterReply: (() => void)[] = []
   private readonly sockets = new Set<Socket>()
   private readonly openRequests = new Map<string, { readonly method: string; readonly params: unknown }>()
-  /** Paths `image.attach_bytes` staged. Each names the profile it was staged in. */
   private readonly stagedImages = new Set<string>()
   private drop: Drop
   private delivered = 0
@@ -765,12 +770,16 @@ export class ScriptedGateway {
   stageImage(params: Obj, routed: string): Obj {
     if (Object.values(params).some(value => typeof value !== 'string')) throw new Refused('invalid_params')
     const bytes = decoded(String(params.content_base64 || params.data || ''), IMAGE_MAX_BYTES)
-    const type = bytes === null ? undefined : IMAGE_MAGIC.find(({ at, bytes: magic }) => magic.every((byte, index) => bytes[at + index] === byte))
-    if (bytes === null || type === undefined) throw new Refused('invalid_params')
-    const name = `upload-${this.stagedImages.size + 1}${type.ext}`
+    if (bytes === null) throw new Refused('invalid_params')
+    const hint = String(params.ext ?? '').trim().toLowerCase().replace(/^\./, '')
+    const ext = suffixOf(String(params.filename ?? '')) || (hint === '' ? '' : `.${hint}`)
+      || (IMAGE_MAGIC.find(({ at, bytes: magic }) => magic.every((byte, index) => bytes[at + index] === byte))?.ext ?? '.png')
+    const mime = EXT_MIME[ext]
+    if (mime === undefined) throw new Refused('invalid_params')
+    const name = `upload-${this.stagedImages.size + 1}${ext}`
     const path = `/hermes/${routed}/cache/images/${name}`
     this.stagedImages.add(path)
-    return { attached: true, path, mime: type.mime, name, count: 1, remainder: '', text: `[User attached image: ${name}]`, bytes: bytes.byteLength }
+    return { attached: true, path, mime, name, count: 1, remainder: '', text: `[User attached image: ${name}]`, bytes: bytes.byteLength }
   }
 
   /** `file.attach` with an inline `data_url` (gateway/session_ancillary.py:139-180, tui_gateway/prompt_attachments.py:278-330). */
