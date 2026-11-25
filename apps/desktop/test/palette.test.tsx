@@ -1,6 +1,8 @@
 import type { BotId, Link, OpenChat, Session, SessionId, SidebarRow, Target } from '@highwing/hermes/domain'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { ACTIONS, type ActionRow, type Scene } from '../src/renderer/palette/actions'
+import { Results } from '../src/renderer/palette/Palette'
 import { activeIn, paletteOf, rank, step, type PaletteItem, type PaletteView } from '../src/renderer/palette/palette-view'
 import { APPROVED } from './support/bots'
 
@@ -118,5 +120,19 @@ describe('the actions', () => {
   it('lists only what is offered, in the order of the table', () => {
     const view = paletteOf(sceneOf([], { link: blocked, session: running('live') }), '')
     expect(view.show === 'rows' && view.sections.find(({ heading }) => heading === 'Actions')?.rows.map(({ item }) => item.title)).toEqual(['New chat', 'Stop', 'Reconnect'])
+  })
+})
+
+describe('the sheet', () => {
+  it('is a listbox of named groups and options, the first one selected, or a status that says "No matches"', () => {
+    const view = paletteOf(sceneOf([SORT, row('s3', 'Send invoice reminder', { badge: 'asking' })]), 'inv')
+    const html = renderToStaticMarkup(<Results view={view} active={activeIn(view, null)} listId="palette" now={NOW} onPick={() => {}} />)
+    expect(html).toContain('role="listbox" id="palette" aria-label="Results"')
+    expect(html).toContain('role="group" aria-label="Chats"')
+    expect(html).toMatch(/role="option" aria-selected="true" aria-label="Send invoice reminder"/)
+    expect(html).toMatch(/role="option" aria-selected="false" aria-label="Sort the invoices"/)
+    expect(html).toContain('Waiting for your OK')
+    const none = paletteOf(sceneOf([SORT]), 'zzzz')
+    expect(renderToStaticMarkup(<Results view={none} active={null} listId="palette" now={NOW} onPick={() => {}} />)).toBe('<p class="palette-note" role="status">No matches</p>')
   })
 })
