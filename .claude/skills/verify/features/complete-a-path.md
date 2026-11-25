@@ -38,6 +38,6 @@ Preconditions:
 
 - The list of bots opens at once and the files arrive about 120 ms later, so `wait mentions` can pass before the Files group is there. `tally option <n>` polls for the count, so put it before `count group Files`.
 - `tally listbox 0` right after typing can pass before the files arrive, so it proves "no list" only where no `--paths` word matches.
-- A folder row keeps the caret in the word and the old rows stay until the new list arrives, so the list does not close between them.
+- A folder row keeps the caret in the word and the old rows stay, dimmed, until the new list arrives, so the list does not close between them. Enter, Tab and a click do nothing on a dimmed row. The scripted gateway answers at once, so the recipes do not show the dimmed rows. `apps/desktop/test/menu.test.ts` covers them.
 - The unit test for a late answer for an older word is `apps/desktop/test/paths.test.ts`. The scripted gateway answers at once, so the recipes cannot make one arrive late.
 - `type` replaces the box's text and leaves the caret at its end. Use `press` for each further character, as a user types.

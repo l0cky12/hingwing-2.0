@@ -6,7 +6,7 @@ import { draftSent, seedDraft, useDraft, writeDraft, type DraftSlot } from './dr
 import type { Editing } from './edit'
 import { RemoveDialog } from './RemoveDialog'
 import { mentionable, mentionWord, menuOf, picked, type Menu, type MenuItem } from './menu'
-import { usePathMatches } from './paths'
+import { usePathFiles } from './paths'
 
 interface ComposerProps {
   readonly slot: DraftSlot
@@ -57,7 +57,7 @@ function Option({ item, index, active, onPick }: OptionProps) {
   if (item.kind === 'file') {
     const { name, where } = placeOf(item.match)
     return (
-      <div {...row} className={active ? 'slash-row active' : 'slash-row'} aria-label={item.match.path}>
+      <div {...row} className={`slash-row${active ? ' active' : ''}${item.current ? '' : ' stale'}`} aria-label={item.match.path} aria-disabled={!item.current}>
         <span className="slash-name">{name}</span>
         <span className="slash-description">{where}</span>
       </div>
@@ -89,7 +89,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   const draft = useDraft(slot)
   const [caret, setCaret] = useState(0)
   const [focused, setFocused] = useState(false)
-  const files = usePathMatches(sessionId, focused ? mentionWord(draft, caret) : null)
+  const files = usePathFiles(sessionId, focused ? mentionWord(draft, caret) : null)
   const sources = useMemo(() => ({ catalog, bots: mentionable(roster, relay, own), files }), [catalog, roster, relay, own, files])
   const [active, setActive] = useState(0)
   const [dismissed, setDismissed] = useState<string | null>(null)
@@ -155,6 +155,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
     onInput()
   }
   const pick = (open: Extract<Menu, { open: true }>, item: MenuItem) => {
+    if (item.kind === 'file' && !item.current) return
     const next = picked(draft, open.range, item)
     caretTo.current = next.caret
     edit(next.text, next.caret)

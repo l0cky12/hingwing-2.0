@@ -48,7 +48,7 @@ describe('the path asker', () => {
     wait(120)
     asked[0]!.reply(NOTES)
     await settle()
-    expect(asker.matches()).toEqual(NOTES)
+    expect(asker.files().matches).toEqual(NOTES)
   })
 
   it('ignores a reply for an older word that arrives after the newer one', async () => {
@@ -62,7 +62,7 @@ describe('the path asker', () => {
     await settle()
     asked[0]!.reply(NOTEBOOKS)
     await settle()
-    expect(asker.matches()).toEqual(NOTES)
+    expect(asker.files().matches).toEqual(NOTES)
   })
 
   it('ignores a reply for a word that was typed past before its ask was sent', async () => {
@@ -72,7 +72,7 @@ describe('the path asker', () => {
     asker.want('@notes')
     asked[0]!.reply(NOTEBOOKS)
     await settle()
-    expect(asker.matches()).toEqual([])
+    expect(asker.files().matches).toEqual([])
   })
 
   it('holds the last matches while a newer word waits, and clears them when no word is wanted', async () => {
@@ -82,13 +82,13 @@ describe('the path asker', () => {
     asked[0]!.reply(NOTEBOOKS)
     await settle()
     asker.want('@notebooks/')
-    expect(asker.matches()).toEqual(NOTEBOOKS)
+    expect(asker.files(), 'the held rows still name the word they answer').toEqual({ word: '@not', matches: NOTEBOOKS })
     wait(120)
     asked[1]!.reply(NOTES)
     await settle()
-    expect(asker.matches()).toEqual(NOTES)
+    expect(asker.files()).toEqual({ word: '@notebooks/', matches: NOTES })
     asker.want(null)
-    expect(asker.matches()).toEqual([])
+    expect(asker.files().matches).toEqual([])
   })
 
   it('asks nothing for an @ alone, and clears what it held', async () => {
@@ -100,7 +100,7 @@ describe('the path asker', () => {
     asker.want('@')
     wait(500)
     expect(asked).toHaveLength(1)
-    expect(asker.matches()).toEqual([])
+    expect(asker.files().matches).toEqual([])
   })
 
   it('shows no matches when Hermes refuses, and does not ask again for the same word', async () => {
@@ -113,7 +113,7 @@ describe('the path asker', () => {
     wait(120)
     asked[1]!.fail()
     await settle()
-    expect(asker.matches()).toEqual([])
+    expect(asker.files().matches).toEqual([])
     asker.want('@note')
     wait(500)
     expect(asked).toHaveLength(2)
@@ -126,7 +126,7 @@ describe('the path asker', () => {
     asker.dispose()
     asked[0]!.reply(NOTES)
     await settle()
-    expect(asker.matches()).toEqual([])
+    expect(asker.files().matches).toEqual([])
     asker.want('@zzz')
     asker.dispose()
     wait(500)

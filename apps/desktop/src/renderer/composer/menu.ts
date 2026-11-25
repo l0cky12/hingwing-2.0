@@ -3,7 +3,8 @@ import { botsIn, mentionOf, typedMention, type Bot, type BotId, type Bots, type 
 export type MenuItem =
   | { readonly kind: SlashEntry['kind']; readonly entry: SlashEntry }
   | { readonly kind: 'bot'; readonly bot: Bot; readonly mention: string }
-  | { readonly kind: 'file'; readonly match: PathMatch }
+  /** `current`: the row answers the word now typed. A row left from an older word shows until the new answer comes, and can't be picked. */
+  | { readonly kind: 'file'; readonly match: PathMatch; readonly current: boolean }
 
 export interface MenuSection {
   readonly label: string
@@ -15,8 +16,13 @@ export interface MenuSources {
   readonly catalog: SlashCatalog
   /** The bots a message from this chat can be handed to. */
   readonly bots: readonly Bot[]
-  /** The files and folders of the chat's working folder that the typed `@` word names. */
-  readonly files: readonly PathMatch[]
+  readonly files: PathFiles
+}
+
+/** The files and folders of the chat's working folder that Hermes listed for `word`. */
+export interface PathFiles {
+  readonly word: string | null
+  readonly matches: readonly PathMatch[]
 }
 
 export interface MenuState {
@@ -74,7 +80,7 @@ const MENTIONS: Trigger = {
   },
   sections: [
     { label: 'Bots', items: (query, { bots }) => bots.filter(bot => starts(bot.name, query) || starts(bot.id, query)).map(bot => ({ kind: 'bot', bot, mention: mentionOf(bot, bots) })) },
-    { label: 'Files', items: (_query, { files }) => files.map(match => ({ kind: 'file', match })) }
+    { label: 'Files', items: (query, { files }) => files.matches.map(match => ({ kind: 'file', match, current: files.word === `@${query}` })) }
   ]
 }
 
@@ -101,7 +107,8 @@ export function menuOf(text: string, caret: number, sources: MenuSources, { acti
 
 /**
  * A file is its plain path and a space. A folder stays a mention with no space, its quote left open, so the
- * caret is still in the word and the list goes on into the folder.
+ * caret is still in the word and the list goes on into the folder. A mention can't spell a double quote, so a
+ * folder whose path holds one goes in as a file does.
  */
 export function completionOf(item: MenuItem): string {
   switch (item.kind) {
@@ -109,7 +116,7 @@ export function completionOf(item: MenuItem): string {
     case 'file': {
       const { path, folder } = item.match
       const spaced = /\s/.test(path)
-      if (folder) return spaced ? `@"${path}` : `@${path}`
+      if (folder && !path.includes('"')) return spaced ? `@"${path}` : `@${path}`
       return spaced ? `"${path}" ` : `${path} `
     }
     default: return `/${item.entry.name} `

@@ -23,8 +23,8 @@ const NOTES: readonly PathMatch[] = [
   { path: 'archive/notes-2024.md', folder: false },
   { path: 'notebooks/', folder: true }
 ]
-const SOURCES: MenuSources = { catalog: CATALOG, bots: mentionable(TEAM, CAN_RELAY, ADA), files: [] }
-const WITH_FILES: MenuSources = { ...SOURCES, files: NOTES }
+const SOURCES: MenuSources = { catalog: CATALOG, bots: mentionable(TEAM, CAN_RELAY, ADA), files: { word: null, matches: [] } }
+const WITH_FILES: MenuSources = { ...SOURCES, files: { word: '@not', matches: NOTES } }
 const fresh: MenuState = { active: 0, dismissed: null }
 const nameOf = (item: MenuItem) => {
   switch (item.kind) {
@@ -142,12 +142,12 @@ describe('the @ list', () => {
 describe('the files in the @ list', () => {
   const files = (text: string, caret = text.length, sources = WITH_FILES) => at(text, caret, fresh, sources)
   const pick = (text: string, path: string, caret = text.length, matches: readonly PathMatch[] = NOTES) => {
-    const menu = opened(files(text, caret, { ...SOURCES, files: matches }))
+    const menu = opened(files(text, caret, { ...SOURCES, files: { word: mentionWord(text, caret), matches } }))
     return picked(text, menu.range, menu.items.find(item => nameOf(item) === path)!)
   }
 
   it('come under Files after Bots, in the order Hermes gave them', () => {
-    expect(outline(files('Rename the heading in @sa', 25, { ...SOURCES, files: [{ path: 'sample.txt', folder: false }] }))).toEqual({
+    expect(outline(files('Rename the heading in @sa', 25, { ...SOURCES, files: { word: '@sa', matches: [{ path: 'sample.txt', folder: false }] } }))).toEqual({
       label: 'Mentions', sections: [['Bots', 'Sam', 'Mira'], ['Files', 'sample.txt']]
     })
     expect(outline(files('Rename the heading in @not'))?.sections).toEqual([['Files', 'notes.md', 'archive/notes-2024.md', 'notebooks/']])
@@ -155,7 +155,7 @@ describe('the files in the @ list', () => {
 
   it('open nothing for a mention with no match in bots or files, and nothing inside an address', () => {
     expect(files('Rename @zzz', 11, SOURCES)).toEqual({ open: false })
-    expect(files('mail me at sam@example', 22, { ...SOURCES, files: [] })).toEqual({ open: false })
+    expect(files('mail me at sam@example', 22, SOURCES)).toEqual({ open: false })
     expect(mentionWord('mail me at sam@example', 22)).toBeNull()
   })
 
@@ -182,13 +182,23 @@ describe('the files in the @ list', () => {
     expect(mentionWord(inside.text, inside.caret), 'the quote stays open').toBe('@My Folder/')
   })
 
+  it('put a folder whose path holds a double quote in as plain text, since a mention cannot spell it', () => {
+    expect(pick('Open @My', 'My "Notes"/', 8, [{ path: 'My "Notes"/', folder: true }])).toEqual({ text: 'Open "My "Notes"/" ', caret: 19 })
+  })
+
+  it('mark rows left from an older word as not current until the new word is answered', () => {
+    const current = (sources: MenuSources) => opened(files('Open @notebooks/', 16, sources)).items.map(item => item.kind === 'file' && item.current)
+    expect(current(WITH_FILES)).toEqual([false, false, false])
+    expect(current({ ...SOURCES, files: { word: '@notebooks/', matches: [{ path: 'notebooks/plan.md', folder: false }] } })).toEqual([true])
+  })
+
   it('keep the text after a folder pick as it was', () => {
     expect(pick('Open @not now', 'notebooks/', 9)).toEqual({ text: 'Open @notebooks/ now', caret: 16 })
   })
 
   it('give completion text for a file or folder with no space in its path', () => {
-    expect(completionOf({ kind: 'file', match: { path: 'a/b.md', folder: false } })).toBe('a/b.md ')
-    expect(completionOf({ kind: 'file', match: { path: 'a/', folder: true } })).toBe('@a/')
+    expect(completionOf({ kind: 'file', match: { path: 'a/b.md', folder: false }, current: true })).toBe('a/b.md ')
+    expect(completionOf({ kind: 'file', match: { path: 'a/', folder: true }, current: true })).toBe('@a/')
   })
 })
 
@@ -220,6 +230,6 @@ describe('the bots a message can be handed to', () => {
     expect(ids(TEAM, undefined, ADA)).toEqual([])
     expect(ids({ state: 'loading' }, CAN_RELAY, ADA)).toEqual([])
     expect(ids(undefined, CAN_RELAY, ADA)).toEqual([])
-    expect(at('Ask @', 5, fresh, { catalog: CATALOG, bots: [], files: [] })).toEqual({ open: false })
+    expect(at('Ask @', 5, fresh, { catalog: CATALOG, bots: [], files: { word: null, matches: [] } })).toEqual({ open: false })
   })
 })
