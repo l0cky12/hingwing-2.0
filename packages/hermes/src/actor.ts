@@ -56,7 +56,7 @@ interface Mutation {
 
 /** Hermes extends a cut at an assistant row through the tool rows after it (persistence/sqlite/authority/_mutation_publish.py `_branch_boundary`). */
 /** The exact request a branch key last sent, and the words of the message it branches from. */
-interface BranchPin { readonly request: Mutation; readonly text: string }
+export interface BranchPin { readonly request: Mutation; readonly text: string }
 
 function branchPoint(content: SessionContent, rowId: number): { readonly through: number; readonly text: string } | null {
   const turn = content.history.find(held => held.request?.rowId === rowId)
@@ -76,6 +76,8 @@ export interface ActorDeps {
   readonly publish: (session: Session, previous: Session) => void
   readonly refuse: (request: ServerRequest) => void
   readonly mintId: () => string
+  /** Branch keys -> their pins. The hub owns it, so a pin outlives an actor that was detached and made again. */
+  readonly branches: Map<BranchId, BranchPin>
 }
 
 /** A page that begins with a user row holds whole turns, so the read can stop there. */
@@ -85,7 +87,6 @@ export class SessionActor {
   private tracked: Tracked
   private published: Session
   private restarts: readonly number[] = []
-  private readonly branches = new Map<BranchId, BranchPin>()
 
   constructor(readonly id: SessionId, private readonly deps: ActorDeps) {
     this.tracked = emptyTracked(id)
@@ -352,16 +353,16 @@ export class SessionActor {
     const offline = this.offline()
     if (offline !== null) return offline
     // A pinned request may have made its chat already, so it skips the local checks and Hermes's receipt answers it.
-    const pin = this.branches.get(branchId) ?? this.branchPin(rowId, branchId)
+    const pin = this.deps.branches.get(branchId) ?? this.branchPin(rowId, branchId)
     if ('ok' in pin) return pin
     const { request, text } = pin
     try {
-      const sessionId = parseBranched(await this.mutation(request, latest => void this.branches.set(branchId, { request: latest, text })))
+      const sessionId = parseBranched(await this.mutation(request, latest => void this.deps.branches.set(branchId, { request: latest, text })))
       return sessionId === null ? { ok: false, refusal: NO_CHILD } : { ok: true, value: { sessionId, text } }
     } catch (error) {
       if (error instanceof Offline) return { ok: false, refusal: NOT_CONNECTED }
       // Hermes writes a receipt only with a commit, so a refused request leaves nothing to resend exactly.
-      this.branches.delete(branchId)
+      this.deps.branches.delete(branchId)
       return { ok: false, refusal: this.branchRefusal(error, rowId) }
     }
   }

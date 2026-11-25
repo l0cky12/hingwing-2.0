@@ -37,7 +37,7 @@ function stage() {
       (method === 'session.stats' ? usageReads : calls).push({ method, params: params as Record<string, unknown>, resolve: resolve as (result: unknown) => void, reject })
     })
   }
-  const actor = new SessionActor(ID, { conn, clock, publish: session => published.push(session), refuse: request => refusedRequests.push(request), mintId: () => `id-${++state.ids}` })
+  const actor = new SessionActor(ID, { conn, clock, publish: session => published.push(session), refuse: request => refusedRequests.push(request), mintId: () => `id-${++state.ids}`, branches: new Map() })
   let seq = 0
   const answer = async (method: string, result: unknown) => {
     const call = calls.find(held => held.method === method)

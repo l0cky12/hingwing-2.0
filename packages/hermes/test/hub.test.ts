@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { BotId } from '../src/domain/bots'
 import type { BranchId, Item, PromptId, Session, SessionId } from '../src/domain/session'
-import { DialError, openHermes, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
+import { DialError, openHermes, RETAIN_MS, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
 import { play, scriptedDialer, type Fixture, type FixtureStep, type Moment, type ScriptOptions } from '../src/testing/fixture'
 import { BOUND, BRANCH, BRANCH_OLD, callsIn, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, withSudo } from './support/errand'
@@ -804,6 +804,16 @@ describe('branching a chat', () => {
     expect(mutations(opened)).toHaveLength(3)
     expect(mutations(opened)[2]?.params, 'the request goes out as it did the first time').toEqual(mutations(opened)[0]?.params)
     expect(opened.script.branchesMade).toBe(2)
+  })
+
+  it('answers a retry with the same key from the first branch after the parent was detached', async () => {
+    const { opened, outcome: first } = await branched(BRANCH, branch(3, B1))
+    await opened.clock.advance(RETAIN_MS + 1)
+    const retry = opened.hermes.run(branch(3, B1))
+    await opened.clock.advance(0)
+    expect(await retry).toEqual(first)
+    expect(mutations(opened)[1]?.params).toEqual(mutations(opened)[0]?.params)
+    expect(opened.script.branchesMade).toBe(1)
   })
 
   it('answers a retry sent at once with the same chat', async () => {
