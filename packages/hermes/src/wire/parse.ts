@@ -156,19 +156,21 @@ interface MetaFields {
   readonly revision?: number | null
   readonly queue?: readonly Admission[] | null
   readonly model?: ModelRef | null
+  readonly yolo?: boolean | null
   readonly pick?: PickOutcome | null
   readonly generation?: number | null
   readonly cutBefore?: number | null
   readonly countsRestart?: true
 }
 
-function meta({ title, revision, queue, model, pick, generation, cutBefore, countsRestart }: MetaFields): SessionEvent {
+function meta({ title, revision, queue, model, yolo, pick, generation, cutBefore, countsRestart }: MetaFields): SessionEvent {
   return {
     type: 'meta',
     ...(title == null ? {} : { title }),
     ...(revision == null ? {} : { revision }),
     ...(queue == null ? {} : { queue }),
     ...(model == null ? {} : { model }),
+    ...(yolo == null ? {} : { yolo }),
     ...(pick == null ? {} : { pick }),
     ...(generation == null ? {} : { generation: generation as Generation }),
     ...(cutBefore == null ? {} : { cutBefore }),
@@ -349,7 +351,7 @@ export const SHOWN: { readonly [type: string]: Shown } = {
     // Its execution_generation is how an attached viewer learns a generation a policy change moved (gateway/session_authority.py:484-495).
     return meta({
       title: p.optStr('title'), revision: p.optInt('revision'), queue: p.optList('pending')?.map(admissionOf) ?? null,
-      model: modelOf(p.optStr('model'), p.optStr('provider')), generation: p.optInt('execution_generation')
+      model: modelOf(p.optStr('model'), p.optStr('provider')), yolo: p.optBool('yolo'), generation: p.optInt('execution_generation')
     })
   },
   /** A tick after each model call of a turn (`gateway/session_usage.py:176-186`). */
@@ -446,6 +448,7 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
     title: reply.info.title ?? '',
     cwd: reply.info.cwd || null,
     model: modelOf(reply.info.model, reply.info.provider),
+    yolo: typeof reply.info.yolo === 'boolean' ? reply.info.yolo : null,
     running: reply.running,
     generation: reply.execution_generation as Generation,
     revision: reply.revision,

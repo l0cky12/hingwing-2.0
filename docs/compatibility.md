@@ -139,6 +139,13 @@ no cache, plan, rate-limit or money field from any of them.
 - `session.context_breakdown` is served on the canonical route
   (`gateway/session_tui_ops.py:33`). Highwing ignores each category's `color`.
 
+- If Hermes doesn't send `yolo` with a chat's state, or answers `config.set`
+  with an unknown-method error, Highwing shows no YOLO pill and the chat works
+  as before. The pill writes only the open chat's setting: it names the chat
+  and the key `yolo`, sends no `scope`, and says "on" or "off" outright. Hermes
+  refuses any scope but "global", which would flip every chat of the profile,
+  and takes a missing value to mean "toggle". See `packages/hermes/src/actor.ts`.
+
 ## When a change needs a newer Hermes route
 
 1. Install the newer Hermes, then run `pnpm contract:drift` to see which

@@ -71,6 +71,8 @@ interface View {
   deferred: Model | null
   switchesCommitted: number
   turnsEnded: number
+  /** null until the header or a recorded frame names it. */
+  yolo: boolean | null
 }
 
 const TRACK: { readonly [T in SessionEvent['type']]?: (view: View, event: Extract<SessionEvent, { type: T }>, payload: Obj) => void } = {
@@ -86,6 +88,7 @@ const TRACK: { readonly [T in SessionEvent['type']]?: (view: View, event: Extrac
   meta: (view, event, payload) => {
     if (event.title !== undefined) view.title = event.title
     if (event.revision !== undefined) view.revision = event.revision
+    if (event.yolo !== undefined) view.yolo = event.yolo
     if (Array.isArray(payload.pending)) view.pending = payload.pending
   }
 }
@@ -166,6 +169,7 @@ class EchoChat implements Stream {
   readonly epoch: string
   generation = 0
   asking: SeededApproval | null = null
+  yolo = false
 
   /** `hidden`: out of `session.list` unless it asks for hidden chats, as a Bot Chat is (hermes-bots/canonical-chat.ts:319). */
   constructor(readonly id: string, readonly profile: string, readonly title: string, readonly hidden = false) {
@@ -231,6 +235,7 @@ interface Held extends Stream {
   readonly revision: number
   readonly title: string
   readonly model: Model | null
+  readonly yolo: boolean | null
   readonly pending: readonly unknown[]
   readonly prompts: readonly unknown[]
   readonly openRequests: readonly unknown[]
@@ -249,7 +254,8 @@ function snapshotOf(held: Held, subscriptionId: string, params: Obj): Obj {
     pending: held.pending, prompts: held.prompts,
     info: {
       desktop_protocol: GATEWAY_PROTOCOL, title: held.title,
-      ...(model === null ? {} : { model: model.model, ...(model.provider === null ? {} : { provider: model.provider }) })
+      ...(model === null ? {} : { model: model.model, ...(model.provider === null ? {} : { provider: model.provider }) }),
+      ...(held.yolo === null ? {} : { yolo: held.yolo })
     },
     pending_connection: null, open_requests: held.openRequests
   }
@@ -321,6 +327,8 @@ function usageView(stats: Obj): Obj {
     })
   }
 }
+
+const YOLO_WORDS: Readonly<Record<string, boolean>> = { 1: true, on: true, true: true, 0: false, off: false, false: false }
 
 const tokenFor = ({ model }: Model) => `confirm-${model}`
 
@@ -411,6 +419,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'profiles.create': (gateway, socket, params) => gateway.create(socket, params),
   'session.mutate': (gateway, socket, params, routed) =>
     (params.operation === 'model' ? gateway.switchModel(params, routed) : gateway.story(socket, 'session.mutate', params, routed)),
+  'config.set': (gateway, _socket, params, routed) => gateway.setYolo(params, routed, null),
   'session.detach': detach
 }
 
@@ -428,6 +437,7 @@ const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
     return gateway.echo(chat, inputId, String(params.text ?? ''), routed)
   },
   'model.options': (gateway, _socket, _params, _routed, chat) => gateway.modelMenu(chat.model),
+  'config.set': (gateway, _socket, params, routed, chat) => gateway.setYolo(params, routed, chat),
   'session.detach': detach
 }
 
@@ -469,7 +479,7 @@ export class ScriptedGateway {
     const { models } = fixture.header
     this.view = {
       running: false, generation: 0, revision: 0, title: '', pending: [], prompts: new Map(),
-      model: modelOf(isObject(models) ? models : undefined), deferred: null, switchesCommitted: 0, turnsEnded: 0
+      model: modelOf(isObject(models) ? models : undefined), deferred: null, switchesCommitted: 0, turnsEnded: 0, yolo: fixture.header.yolo ?? null
     }
     this.epoch = fixture.steps.map(epochOf).find(isText) ?? 'fixture-epoch'
     this.done = new Promise((resolve, reject) => { this.settle = { resolve, reject } })
@@ -642,6 +652,38 @@ export class ScriptedGateway {
     return this.commitModel(asked)
   }
 
+  private yoloAt(yolo: boolean): boolean | null {
+    return this.fixture.header.yolo === undefined ? null : yolo
+  }
+
+  /**
+   * `config.set` for key `yolo` (gateway/session_tui_config.py:187-193,357-377, gateway/session_busy_controls.py:30-44,134-166).
+   * It sets this chat's flag and sends no session.info, so the reply is all a client hears. A missing value, which Hermes takes
+   * as a toggle, is refused: Highwing always names the state.
+   */
+  setYolo(params: Obj, routed: string, chat: EchoChat | null): unknown {
+    if (this.fixture.header.yolo === undefined) throw unknownMethod('config.set')
+    if (params.key !== 'yolo') throw new Refused('invalid_params')
+    if ('scope' in params) {
+      if (params.scope === 'global') {
+        const message = 'Highwing wrote the global YOLO: config.set with scope "global" flips the whole profile'
+        this.settle.reject(new Error(message))
+        throw new Refused(message, { code: -32603, message })
+      }
+      throw new Refused('invalid_params')
+    }
+    if (Object.keys(params).some(key => !['session_id', 'profile', 'key', 'value'].includes(key))) throw new Refused('invalid_params')
+    if (!isText(params.session_id)) throw new Refused('invalid_params')
+    if (chat === null) this.authorize(params, routed)
+    const word = typeof params.value === 'string' ? params.value.trim().toLowerCase() : undefined
+    if (word === undefined || !Object.hasOwn(YOLO_WORDS, word)) throw new Refused('invalid_params')
+    if (this.fixture.header.yoloDenied === true) throw new Refused('permission_denied')
+    const on = YOLO_WORDS[word] === true
+    if (chat === null) this.view.yolo = on
+    else chat.yolo = on
+    return { key: 'yolo', value: on ? '1' : '0', scope: 'session' }
+  }
+
   private guards({ model }: Model): boolean {
     return this.fixture.header.guarded?.includes(model) ?? false
   }
@@ -709,7 +751,7 @@ export class ScriptedGateway {
     const { view } = this
     return snapshotOf({
       id: this.sessionId, rows: this.stored, ring: this.ring, epoch: this.epoch, running: view.running, generation: view.generation,
-      revision: view.revision, title: view.title, model: view.model, pending: view.pending, prompts: [...view.prompts.values()],
+      revision: view.revision, title: view.title, model: view.model, yolo: view.yolo, pending: view.pending, prompts: [...view.prompts.values()],
       openRequests: this.openRequestList()
     }, socket.subscriptionId, params)
   }
@@ -722,7 +764,7 @@ export class ScriptedGateway {
     socket.subscriptions.set(chat.id, socket.subscriptionId)
     return snapshotOf({
       id: chat.id, rows: chat.rows, ring: chat.ring, epoch: chat.epoch, running: chat.running, generation: chat.generation,
-      revision: 0, title: chat.title, model: chat.model, pending: [], prompts: chat.asking === null ? [] : [chat.asking], openRequests: []
+      revision: 0, title: chat.title, model: chat.model, yolo: this.yoloAt(chat.yolo), pending: [], prompts: chat.asking === null ? [] : [chat.asking], openRequests: []
     }, socket.subscriptionId, params)
   }
 

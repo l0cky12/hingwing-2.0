@@ -421,3 +421,48 @@ describe('the scripted gateway creates a profile as Hermes does', () => {
     expect(await (await rawSocket({}, BOUND)).call('profiles.create', { name: 'rae' })).toMatchObject(unknown)
   })
 })
+
+describe('the scripted gateway answers config.set for YOLO as Hermes does', () => {
+  const YOLO: Fixture = { ...WITH_BOTS, header: { ...WITH_BOTS.header, yolo: false } }
+  const ON = { session_id: SESSION, key: 'yolo', value: 'on' }
+
+  it('sets this chat only, answers its scope, and takes the words Hermes takes', async () => {
+    const { call } = await rawSocket({}, YOLO)
+    expect(await call('config.set', ON)).toMatchObject({ result: { key: 'yolo', value: '1', scope: 'session' } })
+    expect((await call('session.resume', { session_id: SESSION })).result?.info).toMatchObject({ yolo: true })
+    expect(await call('config.set', { ...ON, value: 'FALSE' })).toMatchObject({ result: { value: '0' } })
+    expect(await call('config.set', { ...ON, value: 'maybe' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('config.set', without(ON, 'value'))).toMatchObject(refusal('invalid_params'))
+  })
+
+  it("keeps each chat's state apart", async () => {
+    const { call } = await rawSocket({}, YOLO)
+    expect((await call('config.set', { ...RESEARCH, key: 'yolo', value: 'on' })).result).toMatchObject({ value: '1' })
+    expect((await call('session.resume', RESEARCH)).result?.info).toMatchObject({ yolo: true })
+    expect((await call('session.resume', { session_id: SESSION })).result?.info).toMatchObject({ yolo: false })
+  })
+
+  it('refuses a missing or unknown session, a scope, another key and a viewer without control', async () => {
+    const { call } = await rawSocket({}, YOLO)
+    expect(await call('config.set', without(ON, 'session_id'))).toMatchObject(refusal('invalid_params'))
+    expect(await call('config.set', { ...ON, session_id: 'nobody' })).toMatchObject(refusal('not_found'))
+    expect(await call('config.set', { ...ON, scope: 'session' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('config.set', { ...ON, key: 'verbose' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('config.set', { ...ON, confirm_expensive_model: true })).toMatchObject(refusal('invalid_params'))
+
+    const denied = await rawSocket({}, { ...YOLO, header: { ...YOLO.header, yoloDenied: true } })
+    expect(await denied.call('config.set', ON)).toMatchObject(refusal('permission_denied'))
+  })
+
+  it('fails the story loudly when the client writes the global setting', async () => {
+    const { call, script } = await rawSocket({}, YOLO)
+    expect(await call('config.set', { ...ON, scope: 'global' })).toMatchObject({ error: { code: -32603 } })
+    await expect(script.done).rejects.toThrow(/global YOLO/)
+  })
+
+  it('answers -32601 when the header has no yolo, as an older Hermes does', async () => {
+    const { call } = await rawSocket({}, WITH_BOTS)
+    expect(await call('config.set', ON)).toMatchObject({ error: { code: -32601, data: { reason: 'unknown_method' } } })
+    expect((await call('session.resume', { session_id: SESSION })).result?.info).not.toHaveProperty('yolo')
+  })
+})

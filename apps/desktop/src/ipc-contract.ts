@@ -215,6 +215,10 @@ export const validators: Validators = {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     return raw.bot !== null && bot === null ? null : { do: 'botModels', bot }
   },
+  setYolo: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && typeof raw.on === 'boolean' ? { do: 'setYolo', sessionId, on: raw.on } : null
+  },
   reconnect: raw => (typeof raw.start === 'boolean' ? { do: 'reconnect', start: raw.start } : null),
   checkTarget: raw => {
     const target = targetOf(raw.target)

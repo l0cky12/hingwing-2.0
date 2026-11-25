@@ -529,6 +529,23 @@ describe('usage', () => {
   })
 })
 
+describe('yolo', () => {
+  const frame = (payload: Record<string, unknown>) => ({ type: 'session.info', session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload })
+
+  it('reads the YOLO a session.info names, and nothing when it names none', () => {
+    expect(parseEvent(frame({ yolo: true }))).toMatchObject({ event: { type: 'meta', yolo: true } })
+    expect(parseEvent(frame({ yolo: false }))).toMatchObject({ event: { type: 'meta', yolo: false } })
+    expect(parseEvent(frame({ revision: 3 }))).not.toMatchObject({ event: { yolo: expect.anything() } })
+  })
+
+  it('reads the YOLO an attach reply names, and null when Hermes sends none', () => {
+    const info = { desktop_protocol: 'hermes-gateway-v1', title: 'Errand' } as const
+    expect(parseSnapshot(snapshotReply({ info: { ...info, yolo: true } })).yolo).toBe(true)
+    expect(parseSnapshot(snapshotReply({ info: { ...info, yolo: false } })).yolo).toBe(false)
+    expect(parseSnapshot(snapshotReply({ info })).yolo).toBeNull()
+  })
+})
+
 describe('models', () => {
   const frame = (type: string, payload: Record<string, unknown>) => ({ type, session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload })
 

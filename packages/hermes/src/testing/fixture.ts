@@ -41,6 +41,13 @@ export interface Fixture {
      */
     readonly usage?: { readonly before: Json; readonly after: Json; readonly breakdown: Json }
     /**
+     * The story chat's YOLO at the start; every Bot Chat starts off. Absent: attach replies carry no
+     * `info.yolo` until a recorded frame names it, and the gateway refuses `config.set` as an unknown method, as a Hermes without `config.set` does.
+     */
+    readonly yolo?: boolean
+    /** Every YOLO set is refused `permission_denied`, as Hermes refuses a viewer without control of the chat. */
+    readonly yoloDenied?: boolean
+    /**
      * The canned `profiles.list` reply, as Hermes sends it. Absent: the gateway refuses
      * `profiles.list` as an unknown method, as a Hermes older than the call does.
      */
@@ -157,6 +164,9 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (value.usage !== undefined && usage === undefined) {
     return '"usage" must hold "before" and "after" session.stats replies and a "breakdown" session.context_breakdown reply'
   }
+  const { yolo, yoloDenied } = value
+  if (yolo !== undefined && typeof yolo !== 'boolean') return '"yolo" must be true or false'
+  if (yoloDenied !== undefined && typeof yoloDenied !== 'boolean') return '"yoloDenied" must be true or false'
   const { profiles } = value
   if (profiles !== undefined && !(isObject(profiles) && Array.isArray(profiles.profiles))) return '"profiles" must be a profiles.list reply with "profiles"'
   const { createWarnings } = value
@@ -175,6 +185,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...('catalog' in value ? { catalog: value.catalog } : {}),
     ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] }),
     ...(usage === undefined ? {} : { usage }),
+    ...(yolo === undefined ? {} : { yolo }), ...(yoloDenied === undefined ? {} : { yoloDenied }),
     ...(profiles === undefined ? {} : { profiles }),
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),

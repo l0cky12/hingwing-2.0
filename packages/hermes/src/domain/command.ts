@@ -34,6 +34,7 @@ export type Command =
   | { readonly do: 'createBot'; readonly draft: BotDraft }
   /** The models a bot's chat could use, with no chat open. null: the socket's own profile, which a new bot copies its credentials from. */
   | { readonly do: 'botModels'; readonly bot: BotId | null }
+  | { readonly do: 'setYolo'; readonly sessionId: SessionId; readonly on: boolean }
   /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
   | { readonly do: 'reconnect'; readonly start: boolean }
 
