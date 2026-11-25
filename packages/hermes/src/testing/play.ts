@@ -5,6 +5,7 @@ import { openHermes, type Command, type Hermes, type Upload } from '../hub'
 import { systemClock } from '../wire/link'
 import { manualClock } from './clock'
 import { MASKED, type Fixture, type FixtureStep } from './fixture'
+import { recordingDialer } from './record'
 import { scriptedDialer, type ScriptedDialer, type ScriptOptions } from './script'
 
 type Recorded = Readonly<Record<string, unknown>>
@@ -94,12 +95,12 @@ function busyFor(step: AwaitStep, next: AwaitStep | undefined, held: BusyMode | 
 
 const TYPED = 'typed by the stand-in user'
 
-function requestReply({ ask }: HermesRequest, result: Recorded): RequestReply {
+function requestReply({ ask }: HermesRequest, result: Recorded, typed: string): RequestReply {
   if (ask.kind !== 'secret' || result.value !== MASKED) return { kind: 'skip' }
-  return { kind: 'secret', value: TYPED, ...(ask.for.is === 'login' ? { identifier: TYPED } : {}) }
+  return { kind: 'secret', value: typed, ...(ask.for.is === 'login' ? { identifier: typed } : {}) }
 }
 
-function commandFor(step: AwaitStep | AnswerStep, session: Session, index: number, fixture: Fixture): Command | null {
+function commandFor(step: AwaitStep | AnswerStep, session: Session, index: number, fixture: Fixture, typed: string): Command | null {
   const { id: sessionId } = session
   if ('await' in step) {
     const isAwait = (other: FixtureStep): other is AwaitStep => 'await' in other
@@ -113,7 +114,7 @@ function commandFor(step: AwaitStep | AnswerStep, session: Session, index: numbe
   }
   const request = session.requests.find(held => held.id === step.answer)
   if ('error' in step || request === undefined || request.state.s !== 'waiting') return null
-  return { do: 'answer', sessionId, requestId: request.id, reply: requestReply(request, record(step.result)) }
+  return { do: 'answer', sessionId, requestId: request.id, reply: requestReply(request, record(step.result), typed) }
 }
 
 const mintedIn = (step: AwaitStep): unknown => recorded(step).input_id ?? recorded(step).submission_id ?? recorded(step).request_id
@@ -130,6 +131,10 @@ export interface PlayOptions extends Omit<ScriptOptions, 'timing' | 'clock'> {
   readonly ended?: (session: Session) => boolean
   /** Files the stand-in user attaches to its first message. The hub reads them from here. */
   readonly attach?: readonly Upload[]
+  /** What the stand-in user types into a masked prompt. Default: a fixed sentence. */
+  readonly typed?: string
+  /** Records the session's frames to this path as a fixture, as the app does with `HIGHWING_RECORD`. */
+  readonly record?: string
   /** Called with each command the stand-in user ran and what the hub answered. */
   readonly answered?: (command: Command, outcome: Awaited<ReturnType<Hermes['run']>>) => void
 }
@@ -145,7 +150,7 @@ export interface Moment {
 /**
  * Plays a fixture through `openHermes` with a stand-in user: when the story awaits a call or an
  * answer to a server request, it issues the matching `Command` with the recorded text or choice.
- * In place of a masked value it types one of its own. A rewind is one command for the `session.mutate`
+ * In place of a masked value it types `options.typed`. A rewind is one command for the `session.mutate`
  * step and the `prompt.submit` after it. Yields the session after every step that changed it, so a test can assert on
  * any moment of a turn, not only its end. Ends when the story is over and the session is live.
  * `script` is the gateway's side: what the client sent it, and how often it dialed.
@@ -163,7 +168,7 @@ export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncG
   const attach = options.attach ?? []
   let attached = attach.length === 0
   const hermes = openHermes({
-    dial: script, clock, client: { name: 'highwing-play', version: '0' }, mintId: () => ids.shift() ?? randomUUID(),
+    dial: options.record === undefined ? script : recordingDialer(script, options.record, clock), clock, client: { name: 'highwing-play', version: '0' }, mintId: () => ids.shift() ?? randomUUID(),
     uploads: { read: async id => attach.find(upload => upload.id === id) ?? null }
   })
 
@@ -177,9 +182,9 @@ export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncG
     const index = script.step
     const step = fixture.steps[index]
     if (step === undefined || !('await' in step || 'answer' in step) || session.sync.state !== 'live' || asked.has(index)) return
-    const typed = commandFor(step, session, index, fixture)
-    if (typed === null) return
-    const command: Command = typed.do === 'send' && !attached ? { ...typed, attachments: attach.map(upload => upload.id) } : typed
+    const planned = commandFor(step, session, index, fixture, options.typed ?? TYPED)
+    if (planned === null) return
+    const command: Command = planned.do === 'send' && !attached ? { ...planned, attachments: attach.map(upload => upload.id) } : planned
     if (command.do === 'send') attached = true
     asked.add(index)
     const sendAfter = command.do === 'rewind' ? fixture.steps.findIndex((next, at) => at > index && 'await' in next) : -1
