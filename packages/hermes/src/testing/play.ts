@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import type { AdmissionId, Answer, BusyMode, HermesRequest, PromptId, RequestId, RequestReply, Session, SessionId } from '../domain/session'
+import { EXPORT_FORMATS } from '../domain/command'
+import { EFFORTS, type AdmissionId, type Answer, type BusyMode, type HermesRequest, type PromptId, type RequestId, type RequestReply, type Session, type SessionId } from '../domain/session'
 import { openHermes, type Command, type Hermes, type Upload } from '../hub'
 import { systemClock } from '../wire/link'
 import { manualClock } from './clock'
@@ -36,11 +37,29 @@ const queued = (action: 'cancel' | 'sendNow' | 'release') => (sessionId: Session
 const USER: Readonly<Record<string, (sessionId: SessionId, params: Recorded, fixture: Fixture, next: AwaitStep | undefined) => Command>> = {
   'prompt.submit': (sessionId, params) => ({ do: 'send', sessionId, text: String(params.text) }),
   'session.mutate': (sessionId, params, fixture, next) => {
-    const rowId = (params.payload as { target_message_id?: unknown } | undefined)?.target_message_id
+    const payload = record(params.payload)
+    switch (params.operation) {
+      case 'reasoning':
+        return { do: 'tune', sessionId, set: 'effort', to: EFFORTS.find(level => level === payload.effort) ?? 'default' }
+      case 'workspace':
+        return { do: 'move', sessionId, cwd: String(payload.cwd) }
+      case 'compress':
+        return { do: 'send', sessionId, text: typeof payload.focus === 'string' ? `/compress ${payload.focus}` : '/compress' }
+    }
+    const rowId = payload.target_message_id
     if (params.operation !== 'rewind' || typeof rowId !== 'number') throw new Error(`the stand-in user has no command for session.mutate ${String(params.operation)}`)
     const stored = fixture.header.stored.find(row => (row as { row_id?: unknown }).row_id === rowId) as { text?: unknown } | undefined
     return { do: 'rewind', sessionId, rowId, text: String(next?.await === 'prompt.submit' ? recorded(next).text : stored?.text) }
   },
+  'complete.path': (sessionId, params) => ({ do: 'complete', sessionId, word: String(params.word) }),
+  'prompt.btw': (sessionId, params) => ({ do: 'send', sessionId, text: `/btw ${String(params.text)}` }),
+  'prompt.background': (sessionId, params) => ({ do: 'send', sessionId, text: `/bg ${String(params.text)}` }),
+  'config.set': (sessionId, params) => {
+    if (params.key === 'fast') return { do: 'tune', sessionId, set: 'fast', on: params.value !== 'normal' }
+    if (params.key === 'yolo') return { do: 'tune', sessionId, set: 'yolo', on: params.value === 'on' }
+    throw new Error(`the stand-in user has no command for config.set ${String(params.key)}`)
+  },
+  'session.export': (sessionId, params) => ({ do: 'export', sessionId, format: EXPORT_FORMATS.find(format => format === params.format) ?? 'json' }),
   'session.steer': (sessionId, params, _fixture, next) => (denies(next)
     ? { do: 'answer', sessionId, promptId: recorded(next).prompt_id as PromptId, reply: { kind: 'deny', tell: String(params.text) } }
     : { do: 'send', sessionId, text: String(params.text) }),
@@ -168,7 +187,7 @@ export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncG
     if (sendAfter >= 0) asked.add(sendAfter)
     void hermes.run(command).then(outcome => {
       options.answered?.(command, outcome)
-      if (!outcome.ok || command.do === 'tune') asked.delete(index)
+      if (!outcome.ok || (command.do === 'tune' && command.set === 'busy')) asked.delete(index)
     })
   }
 
