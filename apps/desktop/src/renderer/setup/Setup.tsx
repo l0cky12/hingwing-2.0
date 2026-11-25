@@ -11,6 +11,8 @@ const NOTICES = {
   newer: 'A newer Highwing saved the connection on this computer. This one can\'t read it, and keeps that file under another name when you connect.'
 } as const
 
+const SIGN_IN_HINT = 'Highwing opened the sign-in page in your browser. It never sees your password.'
+
 const NOT_A_NAME = "That isn't a machine name. Use the name Tailscale lists, such as hermes-host."
 
 interface Choice {
@@ -37,9 +39,12 @@ const textOf = (shown: Target | undefined): string => (shown === undefined ? '' 
 
 function Progress({ setup }: { readonly setup: Extract<Setup, { at: 'checking' }> }) {
   return (
-    <p className="progress" role="status" aria-label="Checking">
-      <span className="glyph" />{STEP_WORDS[setup.step](machineOf(setup.target))}
-    </p>
+    <>
+      <p className="progress" role="status" aria-label="Checking">
+        <span className="glyph" />{STEP_WORDS[setup.step](machineOf(setup.target))}
+      </p>
+      {setup.step === 'sign-in' && <p className="hint">{SIGN_IN_HINT}</p>}
+    </>
   )
 }
 
@@ -59,6 +64,7 @@ export function SetupForm({ setup }: { readonly setup: Editing }) {
   const [notAName, setNotAName] = useState(false)
   const hint = useId()
   const busy = setup.at === 'checking'
+  const leave = setup.live !== null ? 'Cancel' : setup.at === 'checking' && setup.step === 'sign-in' ? 'Stop waiting' : null
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -109,7 +115,7 @@ export function SetupForm({ setup }: { readonly setup: Editing }) {
             : failed !== null && <Problem words={failed.words(machine)} fix={failed.fix(machine)} />}
           <div className="actions">
             <button type="submit" className="primary" disabled={busy}>Connect</button>
-            {setup.live !== null && <button type="button" onClick={() => void run({ do: 'keepTarget' })}>Cancel</button>}
+            {leave !== null && <button type="button" onClick={() => void run({ do: 'keepTarget' })}>{leave}</button>}
           </div>
         </form>
       </main>

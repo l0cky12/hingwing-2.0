@@ -664,6 +664,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .setup .field input:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
 .setup .hint { margin: 0; font-size: 13px; color: var(--graphite); }
 .setup .progress { display: flex; align-items: center; gap: 12px; margin: 26px 0 0; font-weight: 500; color: var(--signal); }
+.setup .progress + .hint { margin: 6px 0 0 26px; }
 .setup .progress .glyph { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--signal); animation: halo 1.6s ease-out infinite; }
 .setup .problem { margin: 24px 0 0; max-width: 62ch; padding: 14px 16px 15px; background: var(--caution-soft); border-radius: 6px; }
 .setup .problem h3 { margin: 0; font-size: 15px; font-weight: 700; color: var(--caution); }
