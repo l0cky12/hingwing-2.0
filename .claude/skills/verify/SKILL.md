@@ -74,6 +74,7 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `type <label> <text>` | exact label, text or `@request` | fills the field. `@request` is the text of the fixture's first `prompt.submit` step |
 | `select <label> <option>` | exact label, exact option text | picks that option of the labelled select |
 | `press <key>` | Playwright key name | presses it |
+| `reload` | none | reloads the window, as Ctrl+R in a browser does. Main and the gateway keep running, so the open chat stays. Follow it with `wait live` |
 | `click-at <role> <name> <n>` | ARIA role, exact accessible name, a number | clicks the `n`th such control in page order, counting from 1, for a control the thread repeats on every turn |
 | `shot <name>` | file stem | moves the pointer off the page, then saves `<name>.png` and `<name>.aria.txt` |
 | `disabled <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that control is disabled now |

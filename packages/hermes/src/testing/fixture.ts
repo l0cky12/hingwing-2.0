@@ -34,6 +34,11 @@ export interface Fixture {
     /** Models a switch to needs a second yes, as Hermes's guard asks for a costly model. */
     readonly guarded?: readonly string[]
     /**
+     * true: `session.mutate` takes the operation `branch`, as a Hermes with branching does. Absent: the gateway
+     * reads it as a metadata edit it does not know and refuses it `invalid_params` with no field, as an older Hermes does.
+     */
+    readonly branches?: true
+    /**
      * Canned usage. `before` and `after` are `session.stats` replies: the gateway answers `before` until the
      * story's first turn ends and `after` from then on, and every turn end carries `after` as Hermes's usage
      * view. `breakdown` is the `session.context_breakdown` reply. Absent: the gateway refuses both calls as
@@ -172,8 +177,9 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (!Array.isArray(stored)) return '"stored" must be an array of rows'
   const { models } = value
   if (models !== undefined && !(isObject(models) && Array.isArray(models.providers))) return '"models" must be a model.options reply with "providers"'
-  const { guarded } = value
+  const { guarded, branches } = value
   if (guarded !== undefined && !(Array.isArray(guarded) && guarded.every(model => typeof model === 'string'))) return '"guarded" must be a list of model names'
+  if (branches !== undefined && branches !== true) return '"branches" must be true'
   const { before, after, breakdown } = isObject(value.usage) ? value.usage : {}
   const usage = isObject(before) && isObject(after) && isObject(breakdown) ? { before, after, breakdown } : undefined
   if (value.usage !== undefined && usage === undefined) {
@@ -205,6 +211,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] }),
     ...(usage === undefined ? {} : { usage }),
     ...(yolo === undefined ? {} : { yolo }), ...(yoloDenied === undefined ? {} : { yoloDenied }),
+    ...(branches === undefined ? {} : { branches }),
     ...(profiles === undefined ? {} : { profiles }),
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),

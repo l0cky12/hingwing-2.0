@@ -128,6 +128,17 @@ function End({ turnKey, end }: { readonly turnKey: string; readonly end: ThreadE
 /** Acts on a sent message by its stored row and text: `onEdit` puts it in the composer, `onRegenerate` asks again for its reply. */
 export type Rewrite = (rowId: number, text: string) => void
 
+function Fork() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="3" cy="2.5" r="1.3" />
+      <circle cx="9" cy="2.5" r="1.3" />
+      <circle cx="6" cy="9.5" r="1.3" />
+      <path d="M3 3.8v.7a1.5 1.5 0 0 0 1.5 1.5h3A1.5 1.5 0 0 0 9 4.5v-.7M6 6v2.2" />
+    </svg>
+  )
+}
+
 function Pencil() {
   return (
     <svg aria-hidden="true" viewBox="0 0 12 12" width="12" height="12">
@@ -144,11 +155,13 @@ interface TurnProps {
   readonly canEdit: boolean
   readonly showsRegenerate: boolean
   readonly canRegenerate: boolean
+  readonly canBranch: boolean
   readonly onEdit: Rewrite
   readonly onRegenerate: Rewrite
+  readonly onBranch: (rowId: number) => void
 }
 
-export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, onEdit, onRegenerate }: TurnProps) {
+export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch }: TurnProps) {
   const { end, rowId, request } = turn
   const live = end.kind === 'tip' || (end.kind === 'at' && end.tone === 'live')
   return (
@@ -160,6 +173,7 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit
           <span className="actions">
             <CopyButton text={request} name="Copy request" />
             {rowId !== null && <button type="button" className="copy edit" aria-label="Edit message" disabled={!canEdit} onClick={() => onEdit(rowId, request)}><Pencil /></button>}
+            {rowId !== null && <button type="button" className="copy branch" aria-label="Branch from here" disabled={!canBranch} onClick={() => onBranch(rowId)}><Fork /></button>}
           </span>
         </p>
       )}
@@ -210,11 +224,13 @@ interface ThreadProps {
   readonly canEdit: boolean
   readonly regenerateTurnKey: string | null
   readonly canRegenerate: boolean
+  readonly canBranch: boolean
   readonly onEdit: Rewrite
   readonly onRegenerate: Rewrite
+  readonly onBranch: (rowId: number) => void
 }
 
-export function Thread({ view, relays, onAnswer, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, onEdit, onRegenerate }: ThreadProps) {
+export function Thread({ view, relays, onAnswer, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch }: ThreadProps) {
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
   const transcript = useRef<HTMLDivElement>(null)
@@ -322,7 +338,8 @@ export function Thread({ view, relays, onAnswer, onLoadEarlier, onFindClosed, on
           <Fragment key={turn.key}>
             <Turn
               turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer}
-              canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} onEdit={onEdit} onRegenerate={onRegenerate}
+              canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} canBranch={canBranch}
+              onEdit={onEdit} onRegenerate={onRegenerate} onBranch={onBranch}
             />
             {relayTurns(relayed.after.get(turn.key))}
           </Fragment>

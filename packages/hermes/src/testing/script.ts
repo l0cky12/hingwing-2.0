@@ -37,6 +37,8 @@ export interface ScriptedDialer extends Dialer {
   readonly received: readonly unknown[]
   /** The index of the step the story is at. */
   readonly step: number
+  /** Chats a `branch` made. A retry the gateway answered from its receipt is not counted. */
+  readonly branchesMade: number
   /** Loopback only: every upgrade the listener saw. */
   readonly upgrades: readonly Upgrade[]
   /** Stops the loopback listener. */
@@ -83,7 +85,9 @@ function memorySocket(gateway: ScriptedGateway): WireSocket {
  *   used before or is older than 30 s, or anything but exactly one ticket subprotocol.
  * It answers by itself: gateway.ready, client.capabilities, runtime.describe, gateway.ping,
  * session.list, session.detach, the attach calls, `model.options` (from the header's `models`) and a
- * `session.mutate` that switches the model, which commits at once or, during a turn, when it ends.
+ * `session.mutate` that switches the model, which commits at once or, during a turn, when it ends. A
+ * `session.mutate` that branches is answered too when the header says `branches`, in the story session or a chat beside it:
+ * the child is a chat of the parent's profile, and an exact retry of a `request_id` gets the child the first one made.
  * `session.resume` and `session.events.since` are answered from the frames pushed so far (watermark, running, generation, open prompts, the
  * ring) and the current stored rows. Frames published between a `since` answer and the resume that
  * follows are written to the socket before the resume reply, as the gateway's catch-up does.
@@ -122,6 +126,7 @@ export function scriptedDialer(fixture: Fixture, options: ScriptOptions = {}): S
     dials: { get: () => gateway.dials },
     received: { get: () => gateway.received },
     step: { get: () => gateway.step },
+    branchesMade: { get: () => gateway.branchesMade },
     upgrades: { get: () => upgrades },
     close: { value: async () => (await listener)?.close() }
   }) as ScriptedDialer

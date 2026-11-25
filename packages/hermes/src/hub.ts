@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { DONE, refusalOf, refused, SessionActor } from './actor'
+import { DONE, refusalOf, refused, SessionActor, type BranchPin } from './actor'
 import { botModels, createBot } from './bot-admin'
 import { botsIn, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
@@ -8,7 +8,7 @@ import type { OpenChat } from './domain/open'
 import type { PaneAsk } from './domain/pane'
 import type { ServerRequest } from './domain/reduce'
 import type { RelayDesk } from './domain/relay'
-import type { Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
+import type { BranchId, Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import { chatDesk } from './open'
 import { relayBook } from './relay'
@@ -141,6 +141,7 @@ export function openHermes(options: HermesOptions): Hermes {
   const actors = new Map<SessionId, SessionActor>()
   const watchers = new Map<SessionId, Set<(session: Session) => void>>()
   const releases = new Map<SessionId, () => void>()
+  const branchPins = new Map<BranchId, BranchPin>()
   let cancelRefresh: (() => void) | null = null
 
   const refuse = (request: ServerRequest) => {
@@ -248,7 +249,7 @@ export function openHermes(options: HermesOptions): Hermes {
     if (held !== undefined) return held
     const bot = desk.botOf(id)
     const actor = new SessionActor(id, {
-      conn: bot === undefined ? conn : conn.as(bot), clock, mintId, refuse,
+      conn: bot === undefined ? conn : conn.as(bot), clock, mintId, refuse, branches: branchPins,
       publish: (session, previous) => {
         for (const listener of [...(watchers.get(id) ?? [])]) listener(session)
         if (session.run.state !== previous.run.state) refreshSoon()
@@ -323,6 +324,13 @@ export function openHermes(options: HermesOptions): Hermes {
       return NOTHING_TO_SHOW
     },
     rewind: (actor, { rowId, text }) => actor.rewind(rowId, text),
+    branch: async (actor, { rowId, branchId }) => {
+      const made = await actor.branch(rowId, branchId)
+      if (!made.ok) return made
+      desk.branched({ from: actor.id, ...made.value })
+      refreshSoon()
+      return { ok: true, value: made.value.sessionId }
+    },
     stop: actor => actor.stop(),
     answer: (actor, { promptId, reply }) => actor.answer(promptId, reply),
     discard: (actor, { inputId }) => actor.discard(inputId),

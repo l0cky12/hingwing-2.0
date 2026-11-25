@@ -1,4 +1,4 @@
-import { activityOf, modelViewOf, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type Relay, type SessionId, type Shown } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, type BranchId, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type Relay, type SessionId, type Shown } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
@@ -135,10 +135,13 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const editedAt = held === null || held.id !== id || view === null ? -1 : view.turns.findIndex(turn => turn.rowId === held.rowId)
   const later = view === null ? 0 : view.turns.length - 1 - editedAt
   const editing = useMemo(() => (held === null || editedAt < 0 ? null : { ...held, later }), [held, editedAt, later])
-  const [regenerating, setRegenerating] = useState<{ readonly id: SessionId | null; readonly refusal: string } | null>(null)
+  const [refused, setRefused] = useState<{ readonly id: SessionId | null; readonly message: string } | null>(null)
   const [rewriting, setRewriting] = useState(false)
+  const [branching, setBranching] = useState(false)
+  const branchKeys = useRef(new Map<number, BranchId>())
   const presses = useRef(0)
   const canEdit = live === true && idle && !waiting && !rewriting
+  const canBranch = canEdit && !branching
   const settled = view === null ? 0 : session?.run.state === 'running' ? view.turns.length - 1 : view.turns.length
   const regenerateTurn = view?.turns[settled - 1]
   const regenerateTurnKey = regenerateTurn?.rowId == null ? null : regenerateTurn.key
@@ -148,17 +151,28 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     return run({ do: 'rewind', sessionId, rowId, text }).finally(() => setRewriting(false))
   }, [])
   const onEdit = useCallback((rowId: number, text: string) => {
-    setRegenerating(null)
+    setRefused(null)
     setEditing({ id, press: ++presses.current, rowId, text })
   }, [id])
   const onRegenerate = useCallback(async (rowId: number, text: string) => {
     if (id === null) return
-    setRegenerating(null)
+    setRefused(null)
     const outcome = await rewrite(id, rowId, text)
-    if (!outcome.ok) setRegenerating({ id, refusal: outcome.refusal.message })
+    if (!outcome.ok) setRefused({ id, message: outcome.refusal.message })
   }, [id, rewrite])
+  const onBranch = useCallback(async (rowId: number) => {
+    if (id === null) return
+    setRefused(null)
+    const branchId = branchKeys.current.get(rowId) ?? crypto.randomUUID() as BranchId
+    branchKeys.current.set(rowId, branchId)
+    setBranching(true)
+    const outcome = await run({ do: 'branch', sessionId: id, rowId, branchId })
+    setBranching(false)
+    if (outcome.ok || outcome.refusal.kind !== 'offline') branchKeys.current.delete(rowId)
+    if (!outcome.ok) setRefused({ id, message: outcome.refusal.message })
+  }, [id])
   const onSend = useCallback(async (text: string): Promise<CommandOutcome<string | null>> => {
-    setRegenerating(null)
+    setRefused(null)
     if (chat.sessionId === null) return run({ do: 'start', chat, text })
     if (editing === null) return run({ do: 'send', sessionId: chat.sessionId, text })
     const { press } = editing
@@ -194,6 +208,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
               <Thread
                 view={view} relays={relays} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
                 canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
+                canBranch={canBranch} onBranch={onBranch}
               />
             </ImageSessionContext>
           </FileCallContext>
@@ -208,7 +223,8 @@ export function Chat({ chat }: { readonly chat: Shown }) {
       <Composer
         slot={slotOf(chat)}
         inputRef={composer}
-        autoFocus={chat.kind === 'new' && chat.sessionId === null}
+        autoFocus={chat.kind === 'branch' || (chat.kind === 'new' && chat.sessionId === null)}
+        seed={chat.kind === 'branch' ? chat.text : ''}
         canSend={id === null || live}
         showStop={session !== undefined && activityOf(session).kind !== 'idle'}
         onSend={onSend}
@@ -231,7 +247,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
             {fill !== null && <ContextMeter key={id} fill={fill} stale={!live} onBreakdown={() => run({ do: 'contextBreakdown', sessionId: id })} />}
           </div>
         )}
-        {regenerating !== null && regenerating.id === id && <p className="err refusal">{regenerating.refusal}</p>}
+        {refused !== null && refused.id === id && <p className="err refusal">{refused.message}</p>}
       </Composer>
     </>
   )

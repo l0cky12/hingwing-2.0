@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { manualClock, settle } from '../src/testing/clock'
 import { scriptedDialer, type Fixture, type ScriptOptions } from '../src/testing/fixture'
-import { BOUND, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS } from './support/errand'
+import { BOUND, BRANCH, BRANCH_OLD, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS } from './support/errand'
 
 interface Reply {
   readonly id?: number
@@ -511,5 +511,119 @@ describe('the scripted gateway hands a message to another bot', () => {
     expect(await call('bot_relay.deliver', { ...deliver, profile: 'sam' })).toMatchObject(refusal('queue_full'))
     expect(await call('bot_relay.deliver', { ...deliver, profile: 'default' })).toMatchObject(refusal('runtime_unavailable'))
     expect(script.step, 'the story has not moved').toBe(0)
+  })
+})
+
+describe('the scripted gateway branches a chat as Hermes does', () => {
+  const branch = (more: Record<string, unknown> = {}, payload: Record<string, unknown> = { through_message_id: 4 }) =>
+    ({ session_id: SESSION, request_id: 'branch-1', expected_revision: 0, expected_generation: 0, operation: 'branch', payload, ...more })
+  const rowsOf = (reply: Reply) => (reply.result?.display_messages as { role: string; text: string; row_id?: number }[]).map(row => [row.role, row.row_id])
+
+  it('refuses the operation with no field when the fixture does not say it branches, as an older Hermes does', async () => {
+    const { call, script } = await rawSocket({}, BRANCH_OLD)
+    const refused = await call('session.mutate', branch())
+    expect(refused).toMatchObject(refusal('invalid_params'))
+    expect(refused.error?.data).not.toHaveProperty('fields')
+    expect(script.branchesMade).toBe(0)
+  })
+
+  it('copies the rows through the one asked for into a chat of its own, and moves the parent revision', async () => {
+    const { call, script, frames } = await rawSocket({}, BRANCH)
+    await call('session.resume', { session_id: SESSION })
+    const made = await call('session.mutate', branch())
+    expect(made.result).toEqual({ session_id: SESSION, operation: 'branch', branched_session_id: 'branch-default-1', copied_messages: 4, revision: 1 })
+    expect(script.branchesMade).toBe(1)
+    expect(frames.filter(frame => frame.params?.type === 'session.updated').map(frame => frame.params?.payload)).toEqual([made.result])
+    expect(frames.filter(frame => frame.params?.type === 'session.info').map(frame => frame.params?.payload), 'names the parent by its own title').toEqual([{ revision: 1, title: 'Notes heading', running: false }])
+
+    const child = await call('session.resume', { session_id: 'branch-default-1', display_projection: true })
+    expect(child.result).toMatchObject({ info: { title: 'Notes heading #2' }, revision: 0 })
+    expect(rowsOf(child)).toEqual([['user', 1], ['assistant', 2], ['user', 3], ['assistant', 4]])
+    expect((await call('session.resume', { session_id: SESSION })).result).toMatchObject({ revision: 1 })
+    const stored = await call('session.list', { scope: 'stored', limit: 100, picker: true })
+    expect(stored.result?.sessions).toMatchObject([{ session_id: 'branch-default-1', title: 'Notes heading #2', message_count: 4, running: false }])
+  })
+
+  it('branches the whole chat when no row is named, and keeps a title it is given', async () => {
+    const { call } = await rawSocket({}, BRANCH)
+    expect((await call('session.mutate', branch({}, { title: 'Second try' }))).result).toMatchObject({ copied_messages: 6 })
+    const stored = await call('session.list', { scope: 'stored', limit: 100 })
+    expect(stored.result?.sessions).toMatchObject([{ title: 'Second try', message_count: 6 }])
+  })
+
+  it('names the next child after the last in the lineage', async () => {
+    const { call } = await rawSocket({}, BRANCH)
+    await call('session.mutate', branch())
+    await call('session.mutate', branch({ request_id: 'branch-2', expected_revision: 1 }))
+    const titles = (await call('session.list', { scope: 'stored', limit: 100 })).result?.sessions as { title: string }[]
+    expect(titles.map(row => row.title)).toEqual(['Notes heading #2', 'Notes heading #3'])
+  })
+
+  it('answers an exact retry from its receipt with the same child, though the first branch moved the revision', async () => {
+    const { call, script } = await rawSocket({}, BRANCH)
+    const first = await call('session.mutate', branch())
+    const again = await call('session.mutate', branch())
+    expect(again.result).toEqual(first.result)
+    expect(script.branchesMade).toBe(1)
+  })
+
+  it('refuses a resend of the key with other fences or another row, as a request it did not receive', async () => {
+    const { call, script } = await rawSocket({}, BRANCH)
+    await call('session.mutate', branch())
+    expect(await call('session.mutate', branch({ expected_revision: 1 }))).toMatchObject(refusal('admission_conflict'))
+    expect(await call('session.mutate', branch({}, { through_message_id: 2 }))).toMatchObject(refusal('admission_conflict'))
+    expect(script.branchesMade).toBe(1)
+  })
+
+  it('refuses a stale fence with the fresh ones', async () => {
+    const { call } = await rawSocket({}, BRANCH)
+    await call('session.mutate', branch())
+    const moved = { request_id: 'branch-2' }
+    expect(await call('session.mutate', branch(moved))).toMatchObject(refusal('revision_conflict', { revision: 1, execution_generation: 0 }))
+    expect(await call('session.mutate', branch({ ...moved, expected_revision: 1, expected_generation: 3 }))).toMatchObject(refusal('stale_generation', { revision: 1 }))
+  })
+
+  it('refuses a row the chat does not have, a key it does not take and a title that is not text, each with no field', async () => {
+    const { call, script } = await rawSocket({}, BRANCH)
+    for (const payload of [{ through_message_id: 99 }, { through_message_id: 0 }, { through_message_id: 4, mcp_servers: [] }, { title: '' }]) {
+      const refused = await call('session.mutate', branch({}, payload))
+      expect(refused, JSON.stringify(payload)).toMatchObject(refusal('invalid_params'))
+      expect(refused.error?.data).not.toHaveProperty('fields')
+    }
+    expect(script.branchesMade).toBe(0)
+  })
+
+  it('takes the tool rows that follow an assistant row along, and none after a user row', async () => {
+    const rows = [
+      { role: 'user', text: 'List it', row_id: 1 }, { role: 'assistant', text: 'Looking.', row_id: 2 },
+      { role: 'tool', name: 'terminal', content: 'x', tool_call_id: 't1' }, { role: 'assistant', text: 'Done.', row_id: 3 }, { role: 'user', text: 'Again', row_id: 4 }
+    ]
+    const { call } = await rawSocket({}, { ...BRANCH, header: { ...BRANCH.header, stored: rows } })
+    expect((await call('session.mutate', branch({}, { through_message_id: 2 }))).result).toMatchObject({ copied_messages: 3 })
+    expect((await call('session.mutate', branch({ request_id: 'branch-2', expected_revision: 1 }, { through_message_id: 1 }))).result).toMatchObject({ copied_messages: 1 })
+  })
+
+  it('refuses a chat that has a reply running', async () => {
+    const { call } = await rawSocket({}, { ...WITH_CHATS, header: { ...WITH_CHATS.header, branches: true } })
+    const running = { profile: 'research', session_id: REMINDER, request_id: 'branch-1', expected_revision: 0, expected_generation: 1, operation: 'branch', payload: { through_message_id: 2 } }
+    expect(await call('session.mutate', running)).toMatchObject(refusal('session_busy'))
+  })
+
+  it("branches a chat beside the story in its bot, and lists the child there", async () => {
+    const { call, script } = await rawSocket({}, { ...WITH_CHATS, header: { ...WITH_CHATS.header, branches: true } })
+    const asked = { profile: 'research', session_id: INVOICES, request_id: 'branch-1', expected_revision: 0, expected_generation: 0, operation: 'branch', payload: { through_message_id: 2 } }
+    const made = await call('session.mutate', asked)
+    expect(made.result).toMatchObject({ branched_session_id: 'branch-research-1', copied_messages: 2, revision: 1 })
+    expect((await call('session.mutate', asked)).result, 'a retry').toEqual(made.result)
+    expect(script.branchesMade).toBe(1)
+    const stored = await call('session.list', { profile: 'research', scope: 'stored', limit: 100, picker: true })
+    expect(stored.result?.sessions).toContainEqual(expect.objectContaining({ session_id: 'branch-research-1', title: 'Sort the invoices #2' }))
+    const child = await call('session.resume', { profile: 'research', session_id: 'branch-research-1', display_projection: true })
+    expect(rowsOf(child)).toEqual([['user', 1], ['assistant', 2]])
+  })
+
+  it('refuses any other operation on a chat beside the story', async () => {
+    const { call } = await rawSocket({}, WITH_CHATS)
+    expect(await call('session.mutate', { profile: 'research', session_id: INVOICES, request_id: 'r', expected_revision: 0, operation: 'rename', payload: { title: 'x' } })).toMatchObject(refusal('unsupported_command'))
   })
 })

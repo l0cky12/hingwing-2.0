@@ -774,6 +774,11 @@ export function parseDelivery(reply: CanonicalBotDeliverResult, name: string): R
 /** The session a Bot Chat is now: `resolved_id` once a compression moved it, as Hermes's Bots plugin opens it (hermes-bots/canonical-chat.ts:530). */
 const titledId = (row: Obj): SessionId | null => (words(row.resolved_id) ?? words(row.id)) as SessionId | null
 
+/** The chat a `branch` made, as the receipt names it (persistence/sqlite/authority/_mutation_publish.py:152). null: the reply names none. */
+export function parseBranched(reply: SessionMutateResult): SessionId | null {
+  return (isObject(reply) ? words(reply.branched_session_id) : null) as SessionId | null
+}
+
 /** The reply to `session.list {title}`: the one session with that title (gateway/session_controls.py:617-638), or null. */
 export function parseTitled(reply: CanonicalListResult): SessionId | null {
   const [row]: readonly unknown[] = isObject(reply) && Array.isArray(reply.sessions) ? reply.sessions : []

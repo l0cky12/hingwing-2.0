@@ -14,6 +14,8 @@ const askedNew = (bot: BotId | null, draftId: string): DeskEvent => ({ on: 'aske
 const made = (bot: BotId | null, draftId: string, sessionId: SessionId): DeskEvent => ({ on: 'made', bot, draftId, sessionId })
 const picked = (sessionId: SessionId): DeskEvent => ({ on: 'asked', ref: { kind: 'chat', sessionId } })
 const listed = (bot: BotId, sessions: readonly SessionId[]): DeskEvent => ({ on: 'listed', bot, sessions })
+const branched = (from: SessionId, sessionId: SessionId, text: string): DeskEvent => ({ on: 'branched', from, sessionId, text })
+const [B1, B2] = ['local-b1', 'local-b2'] as SessionId[] as [SessionId, SessionId]
 const draft = (bot: BotId | null, draftId: string, sessionId: SessionId | null = null): Shown => ({ kind: 'new', bot, draftId, sessionId } as Shown)
 
 function after(events: readonly DeskEvent[], from: Desk = EMPTY_DESK): { readonly desk: Desk; readonly effects: readonly (readonly DeskEffect[])[] } {
@@ -92,6 +94,24 @@ describe('the open chat', () => {
       [facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME }), asked(OPS), listed(EMU, [HOME]), picked(HOME)], { shown: { kind: 'bot', bot: EMU, sessionId: HOME }, opening: null }, [[], [{ find: OPS }], [], []]],
     ["keeps a new chat's pane when its own row is picked",
       [askedNew(RESEARCH, 'd1'), made(RESEARCH, 'd1', R1), listed(RESEARCH, [R1]), picked(R1)], { shown: draft(RESEARCH, 'd1', R1), opening: null }, [[], [], [], []]],
+    ['shows the chat a branch made, in its parent\'s bot, with the message it was made from',
+      [listed(RESEARCH, [R1]), picked(R1), branched(R1, B1, 'again')], { shown: { kind: 'branch', bot: RESEARCH, sessionId: B1, text: 'again' }, opening: null }, [[], [], []]],
+    ["shows a branch of a Bot Chat in that bot",
+      [facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME }), branched(HOME, B1, 'again')], { shown: { kind: 'branch', bot: EMU, sessionId: B1, text: 'again' }, opening: null }, [[], []]],
+    ["shows a branch of a chat of the socket's own profile with no bot",
+      [picked(R2), branched(R2, B1, 'again')], { shown: { kind: 'branch', bot: null, sessionId: B1, text: 'again' }, opening: null }, [[], []]],
+    ['shows nothing when the user opened another chat before the branch answered',
+      [listed(RESEARCH, [R1, R2]), picked(R1), picked(R2), branched(R1, B1, 'again')], { shown: { kind: 'chat', bot: RESEARCH, sessionId: R2 }, opening: null }, [[], [], [], []]],
+    ['shows nothing when a click on a bot is still waiting for its answer',
+      [listed(RESEARCH, [R1]), picked(R1), asked(OPS), branched(R1, B1, 'again')], { shown: { kind: 'chat', bot: RESEARCH, sessionId: R1 }, opening: { kind: 'bot', bot: OPS } }, [[], [], [{ find: OPS }], []]],
+    ['shows nothing for a branch of a chat that is not shown at all',
+      [branched(R1, B1, 'again')], { shown: null, opening: null }, [[]]],
+    ["keeps a branch's pane, and so its box, when its own row is picked",
+      [listed(RESEARCH, [R1]), picked(R1), branched(R1, B1, 'again'), picked(B1)], { shown: { kind: 'branch', bot: RESEARCH, sessionId: B1, text: 'again' }, opening: null }, [[], [], [], []]],
+    ['opens a branch as a plain chat once another chat has been open',
+      [listed(RESEARCH, [R1]), picked(R1), branched(R1, B1, 'again'), picked(R1), picked(B1)], { shown: { kind: 'chat', bot: RESEARCH, sessionId: B1 }, opening: null }, [[], [], [], [], []]],
+    ['shows a branch of a branch',
+      [listed(RESEARCH, [R1]), picked(R1), branched(R1, B1, 'again'), branched(B1, B2, 'once more')], { shown: { kind: 'branch', bot: RESEARCH, sessionId: B2, text: 'once more' }, opening: null }, [[], [], [], []]],
     ['opens nothing when a list comes',
       [facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME }), listed(RESEARCH, [R1, R2])], { shown: { kind: 'bot', bot: EMU, sessionId: HOME }, opening: null }, [[], []]]
   ])('%s', (_name, events, open, effects) => {
@@ -116,6 +136,11 @@ describe('the open chat', () => {
       [HOME]: EMU, [R1]: RESEARCH, [R2]: RESEARCH, [O1]: OPS, 'local-o2': OPS, 'local-e2': EMU
     })
     expect(desk.chats, 'a new chat is no Bot Chat').toEqual({ [EMU]: HOME, [RESEARCH]: R2, [OPS]: O1 })
+  })
+
+  it("records the owner of a branch's chat even when the branch shows nothing", () => {
+    const { desk } = after([listed(RESEARCH, [R1, R2]), picked(R1), picked(R2), branched(R1, B1, 'again'), picked(R2), branched(R2, B2, 'more')])
+    expect(desk.owners).toEqual({ [R1]: RESEARCH, [R2]: RESEARCH, [B1]: RESEARCH, [B2]: RESEARCH })
   })
 
   it("keeps a session's first owner when another bot's list names it", () => {

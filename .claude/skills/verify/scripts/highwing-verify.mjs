@@ -99,6 +99,7 @@ const STEPS = {
   type: { arity: 2, run: async (ctx, label, text) => ctx.page.getByLabel(label, { exact: true }).fill(expand(ctx, text), { timeout: ctx.timeout }) },
   select: { arity: 2, run: async (ctx, label, option) => void (await ctx.page.getByLabel(label, { exact: true }).selectOption({ label: option }, { timeout: ctx.timeout })) },
   press: { arity: 1, run: async (ctx, key) => ctx.page.keyboard.press(key) },
+  reload: { arity: 0, run: async ctx => void await ctx.page.reload() },
   gone: { arity: 2, run: async (ctx, role, name) => waitGone(ctx, role, name) },
   inview: { arity: 2, run: async (ctx, role, name) => checkInView(ctx, role, name) },
   shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },

@@ -32,6 +32,12 @@ export type Shown =
    * socket's own profile, on a Hermes that can't say which bot it belongs to (bot null).
    */
   | { readonly kind: 'chat'; readonly bot: BotId | null; readonly sessionId: SessionId }
+  /**
+   * A chat a branch made, shown by that branch. `text` is the message it was branched from. The window puts it in
+   * the new chat's draft once, so it stays with that chat like typed text. Picked from the list once another chat
+   * is open, it opens as a plain `chat`.
+   */
+  | { readonly kind: 'branch'; readonly bot: BotId | null; readonly sessionId: SessionId; readonly text: string }
 
 /** The one answer to "which chat is open". Owned by the hub, read by every window as the `open` topic. */
 export interface OpenChat {
@@ -76,6 +82,7 @@ export type DeskEvent =
   | { readonly on: 'made'; readonly bot: BotId | null; readonly draftId: string; readonly sessionId: SessionId }
   /** Hermes listed these chats in the bot's profile. Records their owner, and opens nothing. */
   | { readonly on: 'listed'; readonly bot: BotId; readonly sessions: readonly SessionId[] }
+  | { readonly on: 'branched'; readonly from: SessionId; readonly sessionId: SessionId; readonly text: string }
 
 /** Look this bot's Bot Chat up by its title. */
 export interface DeskEffect { readonly find: BotId }
@@ -152,6 +159,13 @@ export function nextDesk(desk: Desk, event: DeskEvent): { readonly desk: Desk; r
       const unowned = event.sessions.filter(sessionId => ownerOf(desk, sessionId) === undefined)
       if (unowned.length === 0) return done(desk)
       return done({ ...desk, owners: { ...desk.owners, ...Object.fromEntries(unowned.map(sessionId => [sessionId, event.bot])) } })
+    }
+    case 'branched': {
+      const bot = ownerOf(desk, event.from) ?? null
+      const owned: Desk = bot === null ? desk : { ...desk, owners: { ...desk.owners, [event.sessionId]: bot } }
+      const { shown, opening } = desk.open
+      const stillThere = shown?.sessionId === event.from && opening === null
+      return done(stillThere ? { ...owned, open: { shown: { kind: 'branch', bot, sessionId: event.sessionId, text: event.text }, opening: null } } : owned)
     }
   }
 }

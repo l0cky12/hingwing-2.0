@@ -1,4 +1,5 @@
-"""Write fixtures/edit.jsonl, fixtures/regenerate.jsonl and fixtures/edit-refused.jsonl.
+"""Write fixtures/edit.jsonl, fixtures/regenerate.jsonl, fixtures/edit-refused.jsonl, fixtures/branch.jsonl
+and fixtures/branch-old.jsonl.
 
 Run with any Python 3:  python3 fixtures/make_edit_fixtures.py
 
@@ -12,6 +13,10 @@ holds a two second tool step, so a live run can see it running. Its `message.com
 - `regenerate` cuts before the last user row and sends the same text again.
 - `edit-refused` answers the rewind with Hermes's refusal for a row that is gone (`invalid_params`, field
   `target_message_id`) and has no step after it.
+
+- `branch` has no steps and its header says `branches`. Its chat is titled "Notes heading" so a branch has a title to
+  number: "Notes heading #2".
+- `branch-old` is the same chat on a Hermes that cannot branch: its header has no `branches`.
 
 Unlike errand.jsonl this is not a recording of Hermes's gateway. The envelope, the `describe` and `list`
 answers and the frame shapes are errand.jsonl's own. The receipt is built from Hermes's rewind
@@ -189,10 +194,13 @@ def refused_story(cut_row):
     return story.steps
 
 
-def write(name, steps):
+TITLED = {**HEADER["list"], "sessions": [{**HEADER["list"]["sessions"][0], "title": "Notes heading"}]}
+
+
+def write(name, steps, **more):
     header = {
         "fixture": 1, "hermes": HEADER["hermes"], "source": "generated", "sessionId": SESSION,
-        "describe": HEADER["describe"], "list": HEADER["list"], "stored": STORED,
+        "describe": HEADER["describe"], "list": HEADER["list"], "stored": STORED, **more,
     }
     path = HERE / f"{name}.jsonl"
     path.write_text("".join(json.dumps(line, ensure_ascii=False) + "\n" for line in [header, *steps]))
@@ -202,3 +210,5 @@ def write(name, steps):
 write("edit", story_for(3, TURNS[:1], EDITED, EDITED_REPLY, "edit", APPEND))
 write("regenerate", story_for(5, TURNS[:2], TURNS[2][0], REGENERATED_REPLY, "regenerate", LISTING))
 write("edit-refused", refused_story(3))
+write("branch", [], list=TITLED, branches=True)
+write("branch-old", [], list=TITLED)

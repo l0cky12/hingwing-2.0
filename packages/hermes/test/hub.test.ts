@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { BotId } from '../src/domain/bots'
-import type { Item, PromptId, Session, SessionId } from '../src/domain/session'
-import { DialError, openHermes, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
+import type { BranchId, Item, PromptId, Session, SessionId } from '../src/domain/session'
+import { DialError, openHermes, RETAIN_MS, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
 import { play, scriptedDialer, type Fixture, type FixtureStep, type Moment, type ScriptOptions } from '../src/testing/fixture'
-import { BOUND, callsIn, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, withSudo } from './support/errand'
+import { BOUND, BRANCH, BRANCH_OLD, callsIn, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, withSudo } from './support/errand'
 
 const CLIENT = { name: 'highwing-test', version: '0.0.0' }
 const TEXT = String(paramsOf('prompt.submit').text)
@@ -740,6 +740,140 @@ describe('sending a slash line', () => {
     ), '/compress')
     expect(opened.sent().find(call => call.method === 'prompt.submit')?.params).toMatchObject({ text: '/compress' })
     expect(opened.sent().some(call => call.method === 'command.dispatch')).toBe(false)
+  })
+})
+
+describe('branching a chat', () => {
+  const RESEARCH = 'research' as BotId
+  const [B1, B2] = ['branch-1', 'branch-2'] as BranchId[] as [BranchId, BranchId]
+  const CHILD = 'branch-default-1' as SessionId
+  const SECOND_REQUEST = 'Add a line about the deadline under it'
+  const branch = (rowId: number, branchId: BranchId, sessionId: SessionId = SESSION) => ({ do: 'branch', sessionId, rowId, branchId }) as const
+  const mutations = (opened: ReturnType<typeof open>) => opened.sent().filter(call => call.method === 'session.mutate')
+
+  async function branched(fixture: Fixture, command: ReturnType<typeof branch>) {
+    const opened = open(fixture)
+    await opened.clock.advance(0)
+    const outcome = opened.hermes.run(command)
+    await opened.clock.advance(0)
+    return { opened, outcome: await outcome }
+  }
+
+  it('asks Hermes for one branch through the last stored row of the turn, and answers the new chat', async () => {
+    const { opened, outcome } = await branched(BRANCH, branch(3, B1))
+    expect(outcome).toEqual({ ok: true, value: CHILD })
+    expect(mutations(opened)).toHaveLength(1)
+    expect(mutations(opened)[0]?.params).toMatchObject({
+      session_id: SESSION, request_id: B1, operation: 'branch', payload: { through_message_id: 4 }, expected_revision: 0, expected_generation: 0
+    })
+    expect(opened.script.branchesMade).toBe(1)
+  })
+
+  it('shows the new chat with the message in its box, and leaves the parent as it was', async () => {
+    const { opened } = await branched(BRANCH, branch(3, B1))
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'branch', bot: null, sessionId: CHILD, text: SECOND_REQUEST }, opening: null })
+    const history = (id: SessionId) => {
+      let latest: Session | undefined
+      opened.hermes.watch(id, session => { latest = session })()
+      return (latest?.history ?? []).map(turn => turn.request?.text)
+    }
+    await opened.clock.advance(0)
+    expect(history(SESSION)).toEqual(['Rename the heading in notes.md to Plan', SECOND_REQUEST, 'List the folder'])
+  })
+
+  it('makes a chat that holds the turns through the reply and lists it by the next title in the lineage', async () => {
+    const { opened } = await branched(BRANCH, branch(3, B1))
+    await opened.clock.advance(1_000)
+    expect(opened.hermes.sidebar.get().rows.map(row => row.title).sort()).toEqual(['Notes heading', 'Notes heading #2'])
+    let child: Session | undefined
+    opened.hermes.watch(CHILD, session => { child = session })
+    await opened.clock.advance(0)
+    expect(child?.history.map(turn => turn.request?.text)).toEqual(['Rename the heading in notes.md to Plan', SECOND_REQUEST])
+  })
+
+  it('answers a retry with the same key from the first branch, even after the parent moved on', async () => {
+    const { opened, outcome: first } = await branched(BRANCH, branch(3, B1))
+    const second = opened.hermes.run(branch(5, B2))
+    await opened.clock.advance(0)
+    expect(await second).toEqual({ ok: true, value: 'branch-default-2' })
+    expect(mutations(opened)[1]?.params, "the parent's revision moved with the first branch").toMatchObject({ expected_revision: 1 })
+
+    const retry = opened.hermes.run(branch(3, B1))
+    await opened.clock.advance(0)
+    expect(await retry).toEqual(first)
+    expect(mutations(opened)).toHaveLength(3)
+    expect(mutations(opened)[2]?.params, 'the request goes out as it did the first time').toEqual(mutations(opened)[0]?.params)
+    expect(opened.script.branchesMade).toBe(2)
+  })
+
+  it('answers a retry with the same key from the first branch after the parent was detached', async () => {
+    const { opened, outcome: first } = await branched(BRANCH, branch(3, B1))
+    await opened.clock.advance(RETAIN_MS + 1)
+    const retry = opened.hermes.run(branch(3, B1))
+    await opened.clock.advance(0)
+    expect(await retry).toEqual(first)
+    expect(mutations(opened)[1]?.params).toEqual(mutations(opened)[0]?.params)
+    expect(opened.script.branchesMade).toBe(1)
+  })
+
+  it('answers a retry sent at once with the same chat', async () => {
+    const opened = open(BRANCH)
+    await opened.clock.advance(0)
+    const both = Promise.all([opened.hermes.run(branch(3, B1)), opened.hermes.run(branch(3, B1))])
+    await opened.clock.advance(0)
+    const [first, again] = await both
+    expect(again).toEqual(first)
+    expect(opened.script.branchesMade).toBe(1)
+  })
+
+  it("refuses on a Hermes that can't branch, changes nothing, and asks Hermes again on the next click", async () => {
+    const { opened, outcome } = await branched(BRANCH_OLD, branch(3, B1))
+    const refusal = { ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't branch a chat." } }
+    expect(outcome).toEqual(refusal)
+    expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: null, sessionId: SESSION }, opening: null })
+    expect(opened.script.branchesMade).toBe(0)
+
+    const again = opened.hermes.run(branch(3, B1))
+    await opened.clock.advance(0)
+    expect(await again).toEqual(refusal)
+    expect(mutations(opened)).toHaveLength(2)
+  })
+
+  it('refuses a message that is not in the chat without asking Hermes', async () => {
+    const { opened, outcome } = await branched(BRANCH, branch(99, B1))
+    expect(outcome).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'That message is no longer in this chat.' } })
+    expect(mutations(opened)).toEqual([])
+    expect(opened.hermes.open.get().shown).toMatchObject({ kind: 'chat', sessionId: SESSION })
+  })
+
+  it('refuses while a reply is running, asking Hermes nothing', async () => {
+    const opened = open()
+    opened.watch()
+    await toApproval(opened)
+    const outcome = await opened.hermes.run(branch(1, B1))
+    expect(outcome).toEqual({ ok: false, refusal: { kind: 'stale', message: 'Wait for the reply to finish, then branch.' } })
+    expect(mutations(opened)).toEqual([])
+  })
+
+  it("opens the new chat in the parent's bot, and runs a message there as that bot", async () => {
+    const opened = open({ ...WITH_CHATS, header: { ...WITH_CHATS.header, branches: true } })
+    await opened.clock.advance(0)
+    await opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
+    await opened.clock.advance(0)
+    await opened.hermes.run({ do: 'open', ref: { kind: 'chat', sessionId: INVOICES } })
+
+    const made = opened.hermes.run(branch(1, B1, INVOICES))
+    await opened.clock.advance(0)
+    const child = 'branch-research-1' as SessionId
+    expect(await made).toEqual({ ok: true, value: child })
+    expect(opened.hermes.open.get().shown).toMatchObject({ kind: 'branch', bot: RESEARCH, sessionId: child, text: 'Sort the invoices in the inbox folder by due date.' })
+    expect(mutations(opened)[0]?.params).toMatchObject({ profile: 'research', payload: { through_message_id: 2 } })
+
+    const sent = opened.hermes.run({ do: 'send', sessionId: child, text: 'hello' })
+    await opened.clock.advance(0)
+    expect(await sent).toEqual({ ok: true, value: null })
+    expect(opened.sent().filter(call => call.params?.session_id === child && call.method !== 'session.stats').map(call => [call.method, call.params?.profile]))
+      .toEqual([['session.resume', 'research'], ['prompt.submit', 'research']])
   })
 })
 
