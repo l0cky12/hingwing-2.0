@@ -140,7 +140,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   const caretTo = useRef<number | null>(null)
   const typed = menuOf(draft, caret, sources, { active, dismissed })
   const menu = focused ? typed : { open: false as const }
-  const hint = busyHint(plan, draft, catalog)
+  const hint = busyHint(plan, draft, catalog, editing)
 
   const shownActive = menu.open ? menu.active : null
   useLayoutEffect(() => {

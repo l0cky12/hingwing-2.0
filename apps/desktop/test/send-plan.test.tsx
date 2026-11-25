@@ -1,6 +1,7 @@
-import { offeredBy, sendPlan, type Generation, type SendPlan, type SlashCatalog, type TurnId } from '@highwing/hermes/domain'
+import { offeredBy, sendPlan, type AdmissionId, type Generation, type SendPlan, type SlashCatalog, type TurnId } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import { busyHint } from '../src/renderer/composer/busy'
+import type { Editing } from '../src/renderer/composer/edit'
 
 describe('the composer and queue rows, read from the domain', () => {
   it('steer a message into a running turn when the chat says steer', () => {
@@ -22,13 +23,19 @@ describe('the line under the composer while Hermes works', () => {
   const catalog: SlashCatalog = [{ kind: 'command', name: 'busy', description: 'Control how messages behave while Hermes is working' }]
 
   it('says a steered send is read after the current step, and a redirect stops it', () => {
-    expect(busyHint('steer', 'Use ISO dates.', catalog)).toBe('Hermes is working. It reads this after its current step.')
-    expect(busyHint('redirect', '', catalog)).toBe('Hermes is working. It stops this step to read this.')
+    expect(busyHint('steer', 'Use ISO dates.', catalog, null)).toBe('Hermes is working. It reads this after its current step.')
+    expect(busyHint('redirect', '', catalog, null)).toBe('Hermes is working. It stops this step to read this.')
   })
 
   it('says nothing when the send queues, or when the line runs a command', () => {
-    expect(busyHint('submit', 'Use ISO dates.', catalog)).toBeNull()
-    expect(busyHint('steer', '/busy queue', catalog)).toBeNull()
-    expect(busyHint('steer', '/unlisted words', catalog)).toBe('Hermes is working. It reads this after its current step.')
+    expect(busyHint('submit', 'Use ISO dates.', catalog, null)).toBeNull()
+    expect(busyHint('steer', '/busy queue', catalog, null)).toBeNull()
+    expect(busyHint('steer', '/unlisted words', catalog, null)).toBe('Hermes is working. It reads this after its current step.')
+  })
+
+  it('says nothing while a queued message is being edited, since Send moves it to the back of the queue', () => {
+    const editing: Editing = { kind: 'queued', press: 1, admissionId: 'adm-1' as AdmissionId, text: 'Also update the changelog.' }
+    expect(busyHint('steer', 'Also update the changelog, under Unreleased.', catalog, editing)).toBeNull()
+    expect(busyHint('redirect', 'Also update the changelog, under Unreleased.', catalog, editing)).toBeNull()
   })
 })
