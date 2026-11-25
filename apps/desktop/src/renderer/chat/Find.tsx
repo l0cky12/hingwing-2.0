@@ -59,18 +59,25 @@ export function FindBar({ query, total, current, earlier, inputRef, onQuery, onS
   )
 }
 
+const insideFormula = (node: Node) => node.parentElement?.closest('[data-find-text]') != null
+const insideFailedImage = (node: Node) => node.parentElement?.closest('[data-no-find]') != null
+
+function lengthIn(node: Node): number | null {
+  if (insideFormula(node)) return null
+  if (node instanceof Text) return insideFailedImage(node) ? null : node.length
+  if (node instanceof HTMLBRElement) return 1
+  return node instanceof Element ? node.getAttribute('data-find-text')?.length ?? null : null
+}
+
 function rangeIn(element: Element, start: number, end: number): Range | null {
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_ALL, {
-    // A failed image's words are not in the reply's text, so they take no place in its offsets (`leafText` gives an image '').
-    acceptNode: node => (
-      (node instanceof Text && node.parentElement?.closest('[data-no-find]') == null) || node instanceof HTMLBRElement ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
-    )
+    acceptNode: node => (lengthIn(node) === null ? NodeFilter.FILTER_SKIP : NodeFilter.FILTER_ACCEPT)
   })
   const range = document.createRange()
   let began = false
   let at = 0
   for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-    const length = node instanceof Text ? node.length : 1
+    const length = lengthIn(node)!
     if (!began && start < at + length) {
       if (node instanceof Text) range.setStart(node, start - at)
       else range.setStartBefore(node)

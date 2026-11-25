@@ -259,6 +259,13 @@ const STEPS = {
       if (found !== Number(count)) throw new Error(`${found} ranges are marked, expected ${count}`)
     }
   },
+  marked: {
+    arity: 1,
+    run: async (ctx, text) => {
+      const held = await ctx.page.evaluate(() => [...(CSS.highlights.get('find-current') ?? [])][0]?.toString() ?? null)
+      if (held !== text) throw new Error(`the current match covers ${JSON.stringify(held)}, not ${JSON.stringify(text)}`)
+    }
+  },
   hues: {
     arity: 1,
     run: async (ctx, n) => {
@@ -266,6 +273,17 @@ const STEPS = {
       if (seen === null) throw new Error('the thread shows no code block')
       log(ctx, `  the last code block draws its text in ${seen.colors.length} color(s): ${seen.colors.join(', ')}`)
       if (seen.colors.length !== Number(n)) throw new Error(`the last code block draws its text in ${seen.colors.length} color(s), not ${n}`)
+    }
+  },
+  fonts: {
+    arity: 1,
+    run: async (ctx, family) => {
+      const faces = () => ctx.page.evaluate(name => [...document.fonts].filter(face => face.family.replace(/"/g, '') === name).map(face => `${face.style} ${face.weight} ${face.status}`), family)
+      const settled = held => held.some(face => face.endsWith(' loaded')) && !held.some(face => face.endsWith(' loading'))
+      const seen = await poll(ctx, faces, settled)
+      log(ctx, `  ${family}: ${seen.join(', ') || 'no faces'}`)
+      if (seen.some(face => face.endsWith(' error'))) throw new Error(`a ${family} face failed to load`)
+      if (!settled(seen)) throw new Error(`no ${family} face finished loading within ${ctx.timeout} ms`)
     }
   },
   steady: {

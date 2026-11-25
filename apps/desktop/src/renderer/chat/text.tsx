@@ -2,6 +2,7 @@ import { fieldId, parseMarkdown, proseLeaves, type Block, type Inline, type Phra
 import { Fragment, useMemo, type ReactNode } from 'react'
 import { isWebLink, isWebPage } from '../../ipc-contract'
 import { Code } from './Code'
+import { Formula } from './Formula'
 import { ThreadImage } from './Image'
 import { WebLink } from './WebLink'
 
@@ -18,6 +19,7 @@ function inline(nodes: readonly Inline[]): ReactNode[] {
       case 'em': return <em key={index}>{inline(node.children)}</em>
       case 'del': return <del key={index}>{inline(node.children)}</del>
       case 'break': return <br key={index} />
+      case 'math': return <Formula key={index} tex={node.tex} display={node.display} />
       case 'image': return <ThreadImage key={index} request={{ kind: 'web', url: node.src }} alt={node.alt} />
       case 'link':
         if (isWebPage(node.href)) return <WebLink key={index} href={node.href}>{inline(node.children)}</WebLink>
