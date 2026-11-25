@@ -14,11 +14,13 @@ interface BotFormProps {
   readonly focusName?: boolean
   /** Drawn above the fields. A function is handed the draft as typed. */
   readonly children?: ReactNode | ((draft: BotDraft) => ReactNode)
+  /** What the form waits on before it can be sent, in words beside the buttons. The submit button is disabled while set. */
+  readonly waitingFor?: string | null
 }
 
 const DEFAULT_MODEL = "Hermes's default"
 
-export function BotForm({ title, submitLabel, initial, problemOf, models, onSubmit, onClose, focusName = false, children }: BotFormProps) {
+export function BotForm({ title, submitLabel, initial, problemOf, models, onSubmit, onClose, focusName = false, children, waitingFor = null }: BotFormProps) {
   const [{ draft, send }, dispatch] = useReducer(nextForm, initial, startForm)
   const dialog = useRef<HTMLDialogElement>(null)
   const nameField = useRef<HTMLInputElement>(null)
@@ -38,7 +40,7 @@ export function BotForm({ title, submitLabel, initial, problemOf, models, onSubm
   const options = typeof models === 'object' ? models.options : []
   const chosen = draft.model
   const picked = chosen === null ? -1 : options.findIndex(option => sameModel(chosen, option))
-  const ready = !sending && canSubmit(draft, problem)
+  const ready = !sending && waitingFor === null && canSubmit(draft, problem)
 
   const type = (more: Partial<BotDraft>) => dispatch({ on: 'typed', draft: { ...draft, ...more } })
   const submit = async (event: FormEvent) => {
@@ -92,6 +94,7 @@ export function BotForm({ title, submitLabel, initial, problemOf, models, onSubm
         </div>
         {otherWords !== null && <p className="form-refused" role="alert">{otherWords}</p>}
         <div className="form-choices">
+          <p className="form-waiting" role="status">{waitingFor}</p>
           {/* A create already sent finishes in this form, so its answer never lands on a form opened after it. */}
           <button type="button" disabled={sending} onClick={onClose}>Cancel</button>
           <button type="submit" className="primary" disabled={!ready} aria-busy={sending || undefined}>{submitLabel}</button>

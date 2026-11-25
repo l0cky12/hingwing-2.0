@@ -62,7 +62,7 @@ describe('the words for what is picked', () => {
 })
 
 describe('the picker, closed', () => {
-  const drawn = renderToStaticMarkup(<LookPicker look={DEFAULT_LOOK} name="Rae" calls={CALLS} onLook={() => {}} />)
+  const drawn = renderToStaticMarkup(<LookPicker look={DEFAULT_LOOK} name="Rae" calls={CALLS} onLook={() => {}} onDrawing={() => {}} />)
   const button = drawn.match(/<button[^>]*>/)![0]
 
   it('is one avatar button that says it opens a dialog, and is not open', () => {
@@ -79,7 +79,7 @@ describe('the picker, closed', () => {
   })
 
   it('draws a picture as an image in place of the face', () => {
-    const pet = renderToStaticMarkup(<LookPicker look={{ from: 'pet', slug: 'clover', name: 'Clover', picture: PICTURE }} name="Rae" calls={CALLS} onLook={() => {}} />)
+    const pet = renderToStaticMarkup(<LookPicker look={{ from: 'pet', slug: 'clover', name: 'Clover', picture: PICTURE }} name="Rae" calls={CALLS} onLook={() => {}} onDrawing={() => {}} />)
     expect(pet).toMatch(/<img class="look-picture pet" src="blob:/)
     expect(pet).toContain('Clover, a pet')
   })
@@ -89,11 +89,24 @@ describe('the New bot form', () => {
   it('puts the picker above Name, and hands it the draft as typed', () => {
     const drawn = renderToStaticMarkup(
       <BotForm title="New bot" submitLabel="Create" initial={{ ...EMPTY_DRAFT, name: 'Ada' }} problemOf={() => null} models={MODELS} onSubmit={async () => ({ ok: true })} onClose={() => {}}>
-        {draft => <LookPicker look={DEFAULT_LOOK} name={draft.name} calls={CALLS} onLook={() => {}} />}
+        {draft => <LookPicker look={DEFAULT_LOOK} name={draft.name} calls={CALLS} onLook={() => {}} onDrawing={() => {}} />}
       </BotForm>
     )
     expect(drawn.indexOf('Change picture')).toBeLessThan(drawn.indexOf('>Name<'))
     expect(drawn).toContain(faceSvg(shapeFor('auto', 'Ada'), 'slate', 64))
+  })
+
+  it('disables Create and says why while it waits on a picture being drawn', () => {
+    const form = (waitingFor: string | null) => renderToStaticMarkup(
+      <BotForm
+        title="New bot" submitLabel="Create" initial={{ ...EMPTY_DRAFT, name: 'Ada' }} problemOf={() => null} models={MODELS} onSubmit={async () => ({ ok: true })}
+        onClose={() => {}} waitingFor={waitingFor}
+      />
+    )
+    const create = (drawn: string) => drawn.match(/<button type="submit"[^>]*>/)![0]
+    expect(create(form(null))).not.toContain('disabled')
+    expect(create(form('Drawing a picture…'))).toContain('disabled')
+    expect(form('Drawing a picture…')).toContain('role="status">Drawing a picture…</p>')
   })
 
   it('starts on the Auto face of a blank name, with every field of the form after it', () => {
