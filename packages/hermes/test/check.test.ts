@@ -5,6 +5,14 @@ import { FAKE_HOST, SCENARIOS, type FakeHost, type ScenarioName } from '../src/t
 import { checkTarget, peerFailure, tailnetOf, type Peer } from '../src/wire/check'
 import type { Clock } from '../src/wire/link'
 import { host, until } from './support/host'
+import { isDeepStrictEqual } from 'node:util'
+import { gatewaysByUrl, memoryKeep, type Gateways } from '../src/hub'
+import type { FakeWebapp } from '../src/testing/fake-webapp'
+import { playToEnd } from '../src/testing/fixture'
+import { ERRAND } from './support/errand'
+import { closing } from './support/host'
+import { errand, fold, ignoringStartTimes } from './support/story'
+import { webapp } from './support/webapp'
 
 const REMOTE: Target = { kind: 'remote', host: FAKE_HOST }
 
@@ -142,5 +150,52 @@ describe('checkTarget, for this computer', () => {
     const { result } = check(await host('tailscale-missing'), LOCAL)
     expect(await result).toEqual({ ok: true })
     expect(await check(await host('ssh-missing'), LOCAL).result).toEqual({ ok: true })
+  })
+})
+
+describe('checkTarget, for a gateway address', () => {
+  const checkAt = (web: FakeWebapp, gateways: Gateways | null) => {
+    const steps: CheckStep[] = []
+    const target: Target = { kind: 'url', url: web.url }
+    const result = checkTarget(target, { signal: new AbortController().signal, onStep: step => steps.push(step), ...(gateways === null ? {} : { gateways }) })
+    return { steps, result }
+  }
+  const gatewaysTo = (web: FakeWebapp) => gatewaysByUrl({ keep: memoryKeep(), browse: web.browse })
+
+  it('runs the steps of an address against the fake Webapp, and shows no token, code or ticket in them', async () => {
+    const web = await webapp('ok')
+    const { result, steps } = checkAt(web, gatewaysTo(web))
+    expect(await result).toEqual({ ok: true })
+    expect(steps).toEqual(['hermes', 'sign-in', 'gateway'])
+    expect(web.secrets.length).toBeGreaterThan(0)
+    for (const secret of web.secrets) expect(JSON.stringify(steps)).not.toContain(secret)
+  })
+
+  it.each(['dashboard', 'sign-in-refused', 'url-legacy'] as const)('ends in the failure of the %s scenario', async name => {
+    const web = await webapp(name)
+    expect(await checkAt(web, gatewaysTo(web)).result).toEqual({ ok: false, failure: name })
+  })
+
+  it('passes, and the route of the address it checked then chats', async () => {
+    const want = { ...fold(errand()).content, sync: { state: 'live' } }
+    const last = await playToEnd(ERRAND, {
+      ended: session => isDeepStrictEqual(ignoringStartTimes(session), want),
+      transport: async listening => {
+        const web = await webapp('ok', { gateway: listening })
+        const gateways = gatewaysTo(web)
+        expect(await checkAt(web, gateways).result).toEqual({ ok: true })
+        const route = gateways.route(web.url)
+        closing(route, held => held.dispose())
+        return route.dial
+      }
+    })
+    expect(ignoringStartTimes(last)).toEqual(want)
+  })
+
+  it('rejects when it was given nothing to check an address with, and contacts nothing', async () => {
+    const web = await webapp('ok')
+    const { result, steps } = checkAt(web, null)
+    await expect(result).rejects.toThrow('gateways')
+    expect([steps, web.requests]).toEqual([[], []])
   })
 })

@@ -1,5 +1,6 @@
 import type { CheckResult, Dialer, Hermes, Route } from '@highwing/hermes'
 import type { CheckFailure, CheckStep, SshHost, Target } from '@highwing/hermes/domain'
+import type { GatewayUrl } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { Live, Setup } from '../src/ipc-contract'
 import { nextSetup, ownConnection, pinnedConnection, type ConnectionDeps, type SetupEvent } from '../src/main/connection'
@@ -181,6 +182,28 @@ describe('ownConnection, checking a target', () => {
     expect(at()).toEqual({ at: 'saved', live: { target: REMOTE, epoch: 1 } })
     expect(saved).toEqual([])
     expect(opened).toMatchObject([{ closed: false, disposed: false }])
+  })
+
+  it('switches from one gateway address to another, and not to the address already live', async () => {
+    const here: Target = { kind: 'url', url: 'https://hermes.example.com' as GatewayUrl }
+    const there: Target = { kind: 'url', url: 'https://hermes.example.com:8443' as GatewayUrl }
+    const { owner, checks, saved, opened, states, pass, at } = harness({ state: 'saved', target: here })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: { ...here } })
+    expect(at()).toEqual({ at: 'checking', live: { target: here, epoch: 1 }, target: here, step: 'hermes' })
+    await pass()
+    expect([at(), saved, opened.length]).toEqual([{ at: 'saved', live: { target: here, epoch: 1 } }, [], 1])
+
+    await owner.run({ do: 'openChat' })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: there })
+    checks.at(-1)!.step('sign-in')
+    checks.at(-1)!.step('gateway')
+    await pass()
+    expect(at()).toEqual({ at: 'saved', live: { target: there, epoch: 2 } })
+    expect(saved).toEqual([there])
+    expect(opened).toMatchObject([{ target: here, closed: true, disposed: true }, { target: there, closed: false, disposed: false }])
+    expect(states.flatMap(setup => (setup.at === 'checking' && setup.target === there ? [setup.step] : []))).toEqual(['hermes', 'sign-in', 'gateway', 'save'])
   })
 
   it('retries the link of the live connection when the target checked is the one already live', async () => {

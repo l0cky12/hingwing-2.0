@@ -10,6 +10,8 @@ export type SshHost = string & { readonly [sshHost]: true }
 export type Target =
   | { readonly kind: 'local' }
   | { readonly kind: 'remote'; readonly host: SshHost }
+  /** A gateway reached by its address alone. A `GatewayUrl` holds no secret, so neither does a target. */
+  | { readonly kind: 'url'; readonly url: GatewayUrl }
 
 /** A leading "-" would be read by ssh as an option, so no part may start with one. */
 const SSH_HOST = /^(?:[A-Za-z0-9_][A-Za-z0-9._-]*@)?[A-Za-z0-9][A-Za-z0-9._:-]*$/
@@ -20,11 +22,19 @@ export function parseSshHost(raw: string): SshHost | null {
   return host.length <= MAX_HOST && SSH_HOST.test(host) ? (host as SshHost) : null
 }
 
-/** The one parser of a `Target`, for the settings file and for the window's command alike. */
+/**
+ * The one parser of a `Target`, for the settings file and for the window's command alike. An address
+ * must be spelled as `parseGatewayUrl` spells it, so two saved targets are the same gateway exactly
+ * when their addresses are equal.
+ */
 export function targetOf(raw: unknown): Target | null {
   if (raw === null || typeof raw !== 'object') return null
-  const { kind, host } = raw as { readonly kind?: unknown; readonly host?: unknown }
+  const { kind, host, url } = raw as { readonly kind?: unknown; readonly host?: unknown; readonly url?: unknown }
   if (kind === 'local') return { kind }
+  if (kind === 'url') {
+    const parsed = typeof url === 'string' ? parseGatewayUrl(url) : null
+    return parsed !== null && parsed.ok && parsed.url === url ? { kind, url: parsed.url } : null
+  }
   const parsed = kind === 'remote' && typeof host === 'string' ? parseSshHost(host) : null
   return parsed === null ? null : { kind: 'remote', host: parsed }
 }
@@ -38,12 +48,13 @@ export function byKind<R>(target: Target, handlers: ByKind<R>): R {
 export function sameTarget(a: Target, b: Target): boolean {
   return byKind(a, {
     local: () => b.kind === 'local',
-    remote: ({ host }) => b.kind === 'remote' && b.host === host
+    remote: ({ host }) => b.kind === 'remote' && b.host === host,
+    url: ({ url }) => b.kind === 'url' && b.url === url
   })
 }
 
-/** Whether Hermes's files and its localhost are this computer's. */
-export const onThisComputer = (target: Target): boolean => byKind(target, { local: () => true, remote: () => false })
+/** Whether Hermes's files and its localhost are this computer's. An address is never taken to be, whatever host it names. */
+export const onThisComputer = (target: Target): boolean => byKind(target, { local: () => true, remote: () => false, url: () => false })
 
 /** The name without any `user@`: what Tailscale lists and what ssh resolves. */
 export const hostPart = (host: SshHost): string => host.slice(host.indexOf('@') + 1)
@@ -107,14 +118,15 @@ export function isPlainHttp(url: GatewayUrl): boolean {
 
 const ADDRESS = /^[0-9.]+$|:/
 
-/** How the words name a target: "this computer", or the far machine's short name. */
+/** How the words name a target: "this computer", the far machine's short name, or the host of a gateway's address. */
 export function machineOf(target: Target): string {
   return byKind(target, {
     local: () => 'this computer',
     remote: ({ host }) => {
       const name = hostPart(host)
       return ADDRESS.test(name) ? name : (name.split('.')[0] as string)
-    }
+    },
+    url: ({ url }) => gatewayHost(url)
   })
 }
 
@@ -128,7 +140,7 @@ export const gatewayHost = (url: GatewayUrl): string => new URL(url).hostname
  */
 export type CheckStep = 'tailscale' | 'peer' | 'ssh' | 'hermes' | 'sign-in' | 'gateway' | 'save'
 
-export const firstStep = (target: Target): CheckStep => byKind<CheckStep>(target, { local: () => 'hermes', remote: () => 'tailscale' })
+export const firstStep = (target: Target): CheckStep => byKind<CheckStep>(target, { local: () => 'hermes', remote: () => 'tailscale', url: () => 'hermes' })
 
 /** ssh's own failures, before any command runs on the far machine. */
 export type SshFailure = 'unreachable' | 'ssh-missing' | 'ssh-denied' | 'ssh-check' | 'host-changed'

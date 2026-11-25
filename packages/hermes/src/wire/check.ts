@@ -1,4 +1,5 @@
 import { byKind, CHECK_FAILURES, hostPart, type CheckStep, type SetupFailure, type SshHost, type Target } from '../domain/reach'
+import type { Gateways } from './gateways'
 import type { Clock } from './link'
 import { PROBE, probeHermes, probeOf, runTool, type Probe, type ToolRun } from './ssh'
 
@@ -13,6 +14,8 @@ export interface CheckOptions {
   readonly tailscaleBin?: string
   readonly hermesBin?: string
   readonly clock?: Clock
+  /** What checks a gateway address. Only a target of that kind needs it, and its check rejects without it. */
+  readonly gateways?: Pick<Gateways, 'check'>
 }
 
 const TAILSCALE_MS = 10_000
@@ -87,9 +90,17 @@ async function checkLocal(options: CheckOptions): Promise<CheckResult> {
 /**
  * Whether Highwing can reach Hermes at `target`, one step at a time, stopping at the first that
  * fails. A remote target needs Tailscale to list the machine, ssh to reach it and a Hermes there
- * that knows the SSH client contract. This computer needs only that Hermes. Starts nothing and
- * contacts no gateway.
+ * that knows the SSH client contract. This computer needs only that Hermes. Those two checks start
+ * nothing and contact no gateway. A gateway address has no machine to ask, so its check signs in and
+ * opens one socket, as `Gateways.check` describes.
  */
 export function checkTarget(target: Target, options: CheckOptions): Promise<CheckResult> {
-  return byKind(target, { local: () => checkLocal(options), remote: ({ host }) => checkRemote(host, options) })
+  return byKind(target, {
+    local: () => checkLocal(options),
+    remote: ({ host }) => checkRemote(host, options),
+    url: async ({ url }) => {
+      if (options.gateways === undefined) throw new Error('checkTarget was given no `gateways` to check a gateway address with')
+      return options.gateways.check(url, options)
+    }
+  })
 }

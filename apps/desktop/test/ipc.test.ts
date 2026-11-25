@@ -214,12 +214,16 @@ describe('validators', () => {
     expect(parseCommand({ do: 'checkTarget', target: { kind: 'remote', host: ' hermes-host.example-tailnet.ts.net ', port: 22 } }))
       .toEqual({ do: 'checkTarget', target: { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' } })
     expect(parseCommand({ do: 'checkTarget', target: { kind: 'local' } })).toEqual({ do: 'checkTarget', target: { kind: 'local' } })
+    expect(parseCommand({ do: 'checkTarget', target: { kind: 'url', url: 'https://hermes.example.com', token: 'dropped' } }))
+      .toEqual({ do: 'checkTarget', target: { kind: 'url', url: 'https://hermes.example.com' } })
     expect(parseCommand({ do: 'editTarget', target: { kind: 'local' } })).toEqual({ do: 'editTarget' })
   })
 
   it.each([
     ['a target ssh would read as an option', { do: 'checkTarget', target: { kind: 'remote', host: '-oProxyCommand=true' } }],
     ['a check with no target', { do: 'checkTarget' }],
+    ['a check of an address that holds a password', { do: 'checkTarget', target: { kind: 'url', url: 'https://ada:secret@hermes.example.com' } }],
+    ['a check of an address the form would have spelled another way', { do: 'checkTarget', target: { kind: 'url', url: 'hermes.example.com' } }],
     ['not an object', 'send'],
     ['an unknown verb', { do: 'format-disk' }],
     ['a verb from the prototype', { do: 'toString' }],
