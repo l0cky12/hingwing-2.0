@@ -858,7 +858,7 @@ function serveInDeltas(steps, origin) {
 
 const requestMethods = steps => new Map(steps.filter(step => step.push?.method !== undefined && step.push.id !== undefined).map(step => [step.push.id, step.push.method]))
 
-function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, paths, createWarnings, configureClash, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, answeredElsewhere, answerHere, cancel, actedElsewhere, origin, attachLimit }, out) {
+function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, profiles, paths, createWarnings, configureClash, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, answeredElsewhere, answerHere, cancel, actedElsewhere, origin, attachLimit }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const header = JSON.parse(lines[0])
   const recorded = lines.slice(1).map(line => JSON.parse(line))
@@ -879,6 +879,7 @@ function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, p
     steps = steps.filter(step => step.answer !== id)
   }
   if (models) header.models = JSON.parse(readFileSync(resolve(process.cwd(), models), 'utf8'))
+  if (catalog) header.catalog = JSON.parse(readFileSync(resolve(process.cwd(), catalog), 'utf8'))
   if (guarded) header.guarded = guarded.split(',')
   if (usage) header.usage = JSON.parse(readFileSync(resolve(process.cwd(), usage), 'utf8'))
   if (profiles) {
@@ -940,20 +941,20 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'answer-here': 'value', cancel: 'value' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'answer-here': 'value', cancel: 'value' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
   if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
   const site = options.serve ? await serve(options.serve) : null
-  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], answeredElsewhere: options['answered-elsewhere'], answerHere: options['answer-here'], cancel: options.cancel, actedElsewhere: options['acted-elsewhere'], origin: site?.origin, attachLimit: options['attach-limit'] }
+  const edits = { dropAfter: options['drop-after'], models: options.models, catalog: options.catalog, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], answeredElsewhere: options['answered-elsewhere'], answerHere: options['answer-here'], cancel: options.cancel, actedElsewhere: options['acted-elsewhere'], origin: site?.origin, attachLimit: options['attach-limit'] }
   const edited = Object.values(edits).some(Boolean)
   if (options.yolo && options.yolo !== 'on' && options.yolo !== 'off') fail(`--yolo takes on or off, not "${options.yolo}"`)
   if (options['answer-here'] && !options['answered-elsewhere']) fail('--answer-here needs --answered-elsewhere, because without it the window answers every request')
   if (options.cancel && !/^[^=]+=[^=]+$/.test(options.cancel)) fail(`--cancel takes <method>=<reason>, not "${options.cancel}"`)
   if (!options.yolo && (options['yolo-denied'] || options['yolo-elsewhere-after'])) fail('--yolo-denied and --yolo-elsewhere-after need --yolo, because a Hermes with no YOLO answers neither')
   if (options.tree && !options.profiles) fail('--tree needs --profiles, because the tree lists the chats that file seeds')
-  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host')
+  if (scenario && edited) fail('--drop-after, --models, --catalog, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host')
   if (options['configure-clash'] && !options.profiles) fail('--configure-clash needs --profiles: without it Hermes has no bots to rename')
   if (options['attach-limit'] && !/^[1-9]\d*$/.test(options['attach-limit'])) fail(`--attach-limit takes a number of bytes, not "${options['attach-limit']}"`)
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
