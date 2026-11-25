@@ -162,13 +162,27 @@ describe('notifyTurnEnds', () => {
     expect(shown.map(({ notice }) => notice.sessionId)).toEqual([OTHER])
   })
 
-  it('raises the window on a click and keeps the chat when it is still shown', () => {
+  it('raises the window on a click and opens the chat even while it is shown, so a pending switch to another bot gives way', () => {
     const stub = stubHermes(running)
     const { shown, raise } = observe(stub.hermes)
     stub.publish(ended)
     shown[0]!.click()
     expect(raise).toHaveBeenCalledOnce()
-    expect(stub.commands).toEqual([])
+    expect(stub.commands).toEqual([{ do: 'open', ref: { kind: 'chat', sessionId: STORY } }])
+  })
+
+  it('raises the window and opens nothing on a click from a connection that was replaced', () => {
+    const old = stubHermes(running)
+    const { shown, raise, owner, setup } = observe(old.hermes)
+    old.publish(ended)
+    const next = stubHermes({ ...running, id: OTHER })
+    owner.hermes = next.hermes
+    setup.set({ at: 'pinned' })
+    old.open.set(showing(OTHER))
+    shown[0]!.click()
+    expect(raise).toHaveBeenCalledOnce()
+    expect(old.commands).toEqual([])
+    expect(next.commands).toEqual([])
   })
 
   it('opens the chat again on a click when another chat is shown', () => {
