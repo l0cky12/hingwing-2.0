@@ -1,4 +1,4 @@
-import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, type BackgroundProcess, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type TurnId, type Version } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, type BackgroundProcess, type BranchId, type ChatVersions, type CommandOutcome, type HelperId, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type TurnId, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
@@ -13,6 +13,7 @@ import { folderFieldLabel, thinkingShown } from '../composer/tuning'
 import { YoloPill } from '../composer/YoloPill'
 import { run, useTopic } from '../store'
 import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
+import type { HelperControls } from './Helpers'
 import { ImageSessionContext } from './Image'
 import { forget, landAt, landed, pressFor } from './landing'
 import { marked, pressedOf, unmarked } from './marks'
@@ -278,6 +279,17 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     return { ok: true, value: null }
   }, [chat, editing, rewrite, listed, mark])
   const queue = useMemo((): QueueControls => ({ canAct: live, pressed, onAct: onQueued }), [live, pressed, onQueued])
+  const [stopping, setStopping] = useState<ReadonlySet<HelperId>>(new Set())
+  const onStopHelper = useCallback(async (helperId: HelperId) => {
+    if (id === null) return
+    setRefused(null)
+    setStopping(held => new Set(held).add(helperId))
+    const outcome = await run({ do: 'stopHelper', sessionId: id, helperId })
+    if (outcome.ok) return
+    setStopping(held => new Set([...held].filter(other => other !== helperId)))
+    setRefused({ id, message: outcome.refusal.message })
+  }, [id])
+  const helpers = useMemo((): HelperControls | null => (live ? { stopping, onStop: helperId => void onStopHelper(helperId) } : null), [live, stopping, onStopHelper])
 
   const [menu, setMenu] = useState<{ readonly id: SessionId | null; readonly menu: ModelMenu | null }>({ id, menu: null })
   const asked = useRef(0)
@@ -325,7 +337,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
               <Thread
                 view={view} relays={relays} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
                 canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
-                canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact}
+                canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers}
               />
             </ImageSessionContext>
           </FileCallContext>

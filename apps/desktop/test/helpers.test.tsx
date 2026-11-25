@@ -1,30 +1,33 @@
+import type { HelperId } from '@highwing/hermes/domain'
 import type { HelperView, PlanEntryView, PlanView, ThreadNode, TurnView } from '@highwing/thread'
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import type { HelperControls } from '../src/renderer/chat/Helpers'
 import { Node, Turn } from '../src/renderer/chat/Thread'
 import { NONE_OPEN, toggled } from '../src/renderer/chat/open'
 
 type Press = () => void
-interface Control { readonly name: string; readonly expanded: unknown; readonly press: Press }
+interface Control { readonly name: string; readonly expanded: unknown; readonly disabled: boolean; readonly describedBy: unknown; readonly press: Press }
 
 const textOf = (markup: string) => markup.replace(/<[^>]*>/g, '').replace(/&#x27;/g, "'")
 
 function visibleButtons(node: ReactNode): Control[] {
   if (Array.isArray(node)) return node.flatMap(visibleButtons)
   if (!isValidElement(node)) return []
-  const { type, props } = node as ReactElement<{ children?: ReactNode; onClick?: Press; 'aria-expanded'?: unknown }>
+  const { type, props } = node as ReactElement<{ children?: ReactNode; onClick?: Press; 'aria-expanded'?: unknown; 'aria-describedby'?: unknown; disabled?: boolean }>
   if (typeof type === 'function') return visibleButtons((type as (props: unknown) => ReactNode)(props))
   const inside = visibleButtons(props.children)
   if (type !== 'button') return inside
-  return [{ name: textOf(renderToStaticMarkup(node)), expanded: props['aria-expanded'], press: props.onClick! }, ...inside]
+  return [{ name: textOf(renderToStaticMarkup(node)), expanded: props['aria-expanded'], disabled: props.disabled === true, describedBy: props['aria-describedby'], press: props.onClick! }, ...inside]
 }
 
-function shown(node: ThreadNode, tone: 'live' | null = null) {
+function shown(node: ThreadNode, tone: 'live' | null = null, helpers: HelperControls | null = null) {
   let state = NONE_OPEN
-  const props = () => ({ node, endTone: tone, elapsed: null, open: state, onAnswer: async () => undefined, onToggle: (key: string, byDefault = false) => { state = toggled(state, key, byDefault) } })
+  const props = () => ({ node, endTone: tone, elapsed: null, open: state, helpers, onAnswer: async () => undefined, onToggle: (key: string, byDefault = false) => { state = toggled(state, key, byDefault) } })
   return {
     markup: () => renderToStaticMarkup(<Node {...props()} />),
+    buttons: (name: RegExp) => visibleButtons(Node(props())).filter(control => name.test(control.name)),
     button: (name: RegExp) => {
       const found = visibleButtons(Node(props())).filter(control => name.test(control.name))
       expect(found, `one button named ${name}`).toHaveLength(1)
@@ -128,6 +131,34 @@ describe('a helper node', () => {
   })
 })
 
+describe('a helper\'s Stop button', () => {
+  const HELPER = 'sa-0-1' as HelperId
+  const working = (more: Partial<HelperView> = {}) => helper({ stop: HELPER, state: 'working', duration: null, summary: null, ...more })
+  const controls = (stopping: readonly HelperId[] = [], onStop: (id: HelperId) => void = () => {}): HelperControls => ({ stopping: new Set(stopping), onStop })
+
+  it('sits beside a working helper the agent started, named for the helper it stops, and asks Hermes to stop that helper', () => {
+    const asked: HelperId[] = []
+    const view = shown(working(), null, controls([], id => asked.push(id)))
+    const stop = view.button(/^Stop/)
+    expect(stop).toMatchObject({ name: 'Stop helper', disabled: false })
+    expect(view.markup()).toMatch(new RegExp(`<span class="title" id="${String(stop.describedBy)}"[^>]*>Check free space on the backup disk</span>`))
+    expect(view.button(/^Helper/).name, 'the head button does not hold it').not.toContain('Stop')
+    stop.press()
+    expect(asked).toEqual([HELPER])
+  })
+
+  it('reads Stopping and cannot be pressed while the stop is on its way, and is pressable again once it is not', () => {
+    expect(shown(working(), null, controls([HELPER])).button(/^Stop/)).toMatchObject({ name: 'Stopping helper', disabled: true })
+    expect(shown(working(), null, controls(['sa-0-2' as HelperId])).button(/^Stop/)).toMatchObject({ name: 'Stop helper', disabled: false })
+  })
+
+  it('is not offered while the chat is not live, for a helper with nothing to stop, or once the helper has ended', () => {
+    expect(shown(working()).buttons(/^Stop/)).toEqual([])
+    expect(shown(working({ stop: null }), null, controls()).buttons(/^Stop/)).toEqual([])
+    expect(shown(helper({ state: 'failed', ended: 'Stopped' }), null, controls([HELPER])).buttons(/^Stop/)).toEqual([])
+  })
+})
+
 describe('a plan node', () => {
   it('counts its entries by what is done, and names each entry state as hidden text', () => {
     const view = shown(plan(true))
@@ -189,7 +220,7 @@ describe('a plan node', () => {
 describe('a turn', () => {
   const turn = (end: TurnView['end']): TurnView => ({ key: 't1', time: null, request: 'Check the servers', attachments: [], rowId: null, tokens: null, reactions: null, nodes: [plan(true)], end })
   const draw = (end: TurnView['end']) => renderToStaticMarkup((
-    <Turn turn={turn(end)} open={NONE_OPEN} onToggle={() => {}} onAnswer={async () => undefined} canEdit={false} showsRegenerate={false} canRegenerate={false} canBranch={false} onEdit={() => {}} onRegenerate={() => {}} onBranch={() => {}} onNewChat={() => {}} versions={[]} onVersion={() => {}} canReact={false} onReact={() => {}} />
+    <Turn turn={turn(end)} open={NONE_OPEN} onToggle={() => {}} onAnswer={async () => undefined} canEdit={false} showsRegenerate={false} canRegenerate={false} canBranch={false} onEdit={() => {}} onRegenerate={() => {}} onBranch={() => {}} onNewChat={() => {}} versions={[]} onVersion={() => {}} canReact={false} onReact={() => {}} helpers={null} />
   ))
 
   it('is a live turn while its end is live, and not once it is done', () => {
