@@ -347,6 +347,12 @@ Hermes keeps one queue of messages per chat, for every client. Each
   submits them as a message. A `stale_generation` refusal means the turn has
   ended, and is handled the same way. A plain `rejected` may follow delivery,
   so Highwing never sends those words again and the command says so.
+- A denial with words is two calls, and the socket can drop after Hermes took
+  the first. `session.steer` carries no id
+  (`gateway/session_busy_controls.py:181-221`), so Hermes would read a repeat
+  as new words. Highwing remembers, by prompt, the words Hermes has or may
+  have, and the same denial tried again sends only `approval.respond`. A steer
+  whose answer the socket lost counts as words Hermes may have.
 - Hermes stores steered words as a user row with `display_kind: "steer"`
   (`agent/prompt_builder.py:585-592`, `tui_gateway/session_history.py:329-332`).
   Highwing reads that row as an item of the turn it sits in, not as a new turn.

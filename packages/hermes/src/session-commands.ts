@@ -293,6 +293,21 @@ async function say(port: SessionPort, text: string, uploads: readonly Upload[]):
 
 const TOLD = { taken: 'turn', unread: 'next', unsure: 'unsure' } as const satisfies Record<Correction, Told>
 
+/**
+ * Hands a denial's words to the turn that asked, and says where they went. Words that an earlier try of
+ * the same denial handed over are not sent again: `session.steer` carries no id, so Hermes would take a
+ * repeat as new words. A steer the socket dropped under may have reached the agent, which reads `unsure`.
+ */
+async function tell(port: SessionPort, promptId: PromptId, text: string, during: Generation): Promise<Outcome<Told>> {
+  const before = port.fence.told[promptId]
+  if (before?.text === text) return { ok: true, value: before.went }
+  const handed = await correct(port, 'steer', text, during)
+  if (!handed.ok && handed.refusal.kind !== 'offline') return handed
+  const went = handed.ok ? TOLD[handed.value] : 'unsure'
+  if (went !== 'next') port.act({ did: 'told', promptId, text, went })
+  return handed.ok ? { ok: true, value: went } : handed
+}
+
 async function answerPrompt(port: SessionPort, promptId: PromptId, reply: PromptReply): Promise<Outcome<Told | undefined>> {
   const { run } = port.content
   const prompt = run.state === 'running' ? run.turn.items.find(item => item.kind === 'prompt' && item.id === promptId) : undefined
@@ -301,7 +316,7 @@ async function answerPrompt(port: SessionPort, promptId: PromptId, reply: Prompt
   port.act({ did: 'answer', promptId, reply })
   const failed = (refusal: Refusal) => port.act({ did: 'answer.failed', promptId, message: refusal.kind === 'offline' ? DROPPED_ANSWER : refusal.message })
   // The words go first, so they ride on the result of the tool the denial blocks (ui-tui/src/app/useApprovalAnswers.ts:63-84).
-  const told = reply.kind === 'deny' ? await correct(port, 'steer', reply.tell, prompt.generation) : null
+  const told = reply.kind === 'deny' ? await tell(port, promptId, reply.tell, prompt.generation) : null
   if (told !== null && !told.ok) {
     failed(told.refusal)
     return told
@@ -316,8 +331,8 @@ async function answerPrompt(port: SessionPort, promptId: PromptId, reply: Prompt
   }
   port.act({ did: 'answer.resolved', promptId, byUs: answered.value.status === 'resolved' })
   if (reply.kind !== 'deny' || told === null) return ANSWERED
-  if (told.value === 'unread') await port.submit(reply.tell)
-  return { ok: true, value: TOLD[told.value] }
+  if (told.value === 'next') await port.submit(reply.tell)
+  return told
 }
 
 type Asking<K extends HermesRequest['ask']['kind']> = HermesRequest & { readonly ask: Extract<HermesRequest['ask'], { kind: K }> }

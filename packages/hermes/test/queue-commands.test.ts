@@ -57,15 +57,20 @@ async function stage({ watched = false }: { readonly watched?: boolean } = {}) {
   await answer('session.resume', SNAPSHOT)
   return {
     actor, calls, answer, event,
-    /** The socket drops with every call unanswered. Hermes then answers the attach on the next socket with `held`. */
-    redial: async (held: Record<string, unknown> = {}) => {
+    /**
+     * The socket drops with every call unanswered. Hermes then answers the attach on the next socket with `held`.
+     * `replay: 'lost'` is a Hermes that no longer has the missed frames, so the chat is read again whole.
+     */
+    redial: async (held: Record<string, unknown> = {}, replay: 'kept' | 'lost' = 'kept') => {
       state.link = { state: 'waiting', attempt: 1, retryAt: 1_000, why: 'dropped', message: 'Reconnecting to Hermes.' }
       actor.linkChanged()
       for (const call of calls.splice(0)) call.reject(new Offline('socket closed'))
       state.link = { state: 'online' }
       actor.linkChanged()
-      await answer('session.events.since', { events: [], latest_seq: seq, last_sequence: seq, epoch: EPOCH, replay_epoch: EPOCH, truncated: false, snapshot_required: false, count: 0 })
+      const lost = replay === 'lost'
+      await answer('session.events.since', { events: [], latest_seq: seq, last_sequence: seq, epoch: EPOCH, replay_epoch: EPOCH, truncated: lost, snapshot_required: lost, count: 0 })
       await answer('session.resume', { ...SNAPSHOT, display_messages: undefined, messages_omitted: true, subscription_id: 'sub-2', last_sequence: seq, ...held })
+      if (lost) await answer('session.resume', { ...SNAPSHOT, subscription_id: 'sub-2', last_sequence: seq, ...held })
     },
     command: (command: SessionCommand) => runSessionCommand(actor.port, command, hub),
     list: (...queue: Admission[]) => event({ type: 'meta', queue }, null),
@@ -247,11 +252,12 @@ describe('send while a turn runs', () => {
 })
 
 describe('deny and tell', () => {
+  const deny = (tell = 'use trash-put instead'): SessionCommand => ({ do: 'answer', sessionId: ID, promptId: 'p1' as PromptId, reply: { kind: 'deny', tell } })
   const denying = async () => {
     const held = await stage()
     held.event(started)
     held.event(asked)
-    return { ...held, done: held.command({ do: 'answer', sessionId: ID, promptId: 'p1' as PromptId, reply: { kind: 'deny', tell: 'use trash-put instead' } }) }
+    return { ...held, done: held.command(deny()) }
   }
   const STEER = ['session.steer', { session_id: ID, text: 'use trash-put instead', execution_generation: 1 }] as const
   const DENY = ['approval.respond', { session_id: ID, execution_generation: 1, prompt_id: 'p1', choice: 'deny' }] as const
@@ -293,6 +299,56 @@ describe('deny and tell', () => {
     expect(await done).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
     expect(sent()).toEqual([])
     expect(promptState(actor.session)).toMatchObject({ s: 'waiting' })
+  })
+
+  describe('tried again after the socket dropped', () => {
+    const STILL_ASKING = { running: true, execution_generation: 1, prompts: [{ kind: 'approval', prompt_id: 'p1', execution_generation: 1, command: 'rm -rf x', description: '', choices: ['once', 'deny'] }] }
+    const steers = (items: ReturnType<Awaited<ReturnType<typeof stage>>['items']>) => items.filter(item => item.kind === 'steer')
+
+    it.each([
+      ['the turn took', ack('queued'), 'kept', 'turn'],
+      ['the turn took, in a chat read again whole', ack('queued'), 'lost', 'turn'],
+      ['Hermes may have read', ack('rejected'), 'kept', 'unsure']
+    ] as const)('only denies, and never sends again the words %s', async (_, verdict, replay, told) => {
+      const { actor, done, command, sent, answer, redial } = await denying()
+      await answer('session.steer', verdict)
+      await redial(STILL_ASKING, replay)
+      expect(await done, 'the denial got no answer').toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+      expect(promptState(actor.session)).toMatchObject({ s: 'waiting' })
+      const again = command(deny())
+      await settle()
+      expect(sent(), 'the words are not steered twice').toEqual([DENY])
+      await answer('approval.respond', { status: 'resolved', prompt_id: 'p1' })
+      expect(await again).toEqual({ ok: true, value: told })
+    })
+
+    it('only denies, and says it is unsure, when the socket dropped before Hermes said what it did with the words', async () => {
+      const { done, command, sent, answer, redial, items } = await denying()
+      await redial(STILL_ASKING)
+      expect(await done).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+      const again = command(deny())
+      await settle()
+      expect(sent()).toEqual([DENY])
+      await answer('approval.respond', { status: 'resolved', prompt_id: 'p1' })
+      expect(await again).toEqual({ ok: true, value: 'unsure' })
+      expect(steers(items())).toEqual([])
+    })
+
+    it('steers again words that no agent saw, and words the first try did not carry', async () => {
+      const unseen = await denying()
+      await unseen.answer('session.steer', ack('rejected', { delivered: false }))
+      await unseen.redial(STILL_ASKING)
+      void unseen.command(deny())
+      await settle()
+      expect(unseen.sent()).toEqual([STEER])
+
+      const reworded = await denying()
+      await reworded.answer('session.steer', ack('queued'))
+      await reworded.redial(STILL_ASKING)
+      void reworded.command(deny('move it to the trash'))
+      await settle()
+      expect(reworded.sent()).toEqual([['session.steer', { session_id: ID, text: 'move it to the trash', execution_generation: 1 }]])
+    })
   })
 
   it('refuses words for a clarify question and blank words, with no call', async () => {

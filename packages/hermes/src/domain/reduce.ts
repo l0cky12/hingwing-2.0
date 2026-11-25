@@ -9,8 +9,8 @@ import { accepted, answering, closed, failed, opened, reconciled, type Change, t
 import type {
   AdmissionId, Ask, Attachment, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, MoaItem, ModelRef, OpenTurn,
   OutboxEntry, Outcome, PlanEntry, PromptId, PromptItem, PromptReply, QueuedMessage, ReasoningItem, RecordedReply, Request, RequestAsk, RequestId, Run,
-  Session, SessionContent, SessionId, SessionModel, SessionUsage, SettledTurn, StatusAbout, StatusItem, Sync, TextItem, Tokens, ToolId, ToolItem, ToolResult,
-  Tuning, TurnId
+  Session, SessionContent, SessionId, SessionModel, SessionUsage, SettledTurn, StatusAbout, StatusItem, Sync, TextItem, Tokens, Told, ToolId, ToolItem,
+  ToolResult, Tuning, TurnId
 } from './session'
 
 /** A gateway event in domain terms. `wire/parse.ts` builds these. Field names are ours, not the wire's. */
@@ -228,6 +228,8 @@ export type LocalAction =
   | { readonly did: 'send.discarded'; readonly inputId: InputId }
   | { readonly did: 'stop' }
   | { readonly did: 'steered'; readonly text: string; readonly during: Generation }
+  /** A denial's words went to Hermes, which has them (`turn`) or may have them (`unsure`). */
+  | { readonly did: 'told'; readonly promptId: PromptId; readonly text: string; readonly went: Exclude<Told, 'next'> }
   | { readonly did: 'answer'; readonly promptId: PromptId; readonly reply: PromptReply }
   | { readonly did: 'answer'; readonly requestId: RequestId; readonly reply: RecordedReply }
   | { readonly did: 'answer.resolved'; readonly promptId: PromptId; readonly byUs: boolean }
@@ -263,6 +265,12 @@ export interface Fence {
    */
   readonly totalsEpoch: number
   readonly closed: Held['closed']
+  /**
+   * The words of a denial that Hermes has or may have, by the prompt they answer. A denial that is
+   * tried again, because its own confirmation was lost, must not hand them over twice, and a steer
+   * carries no id Hermes could know a repeat by. Emptied when the turn ends.
+   */
+  readonly told: { readonly [promptId: string]: { readonly text: string; readonly went: Exclude<Told, 'next'> } }
 }
 
 export interface Tracked {
@@ -275,7 +283,7 @@ export function emptyTracked(id: SessionId): Tracked {
   return {
     content: { id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], requests: [], queue: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, yolo: null, tuning: UNTUNED },
     gate: { at: 'detached', why: 'new', cursor: null },
-    fence: { revision: 0, text: null, older: null, admissions: {}, sent: {}, settledThrough: null, generation: null, attaches: 0, totalsEpoch: 0, closed: [] }
+    fence: { revision: 0, text: null, older: null, admissions: {}, sent: {}, settledThrough: null, generation: null, attaches: 0, totalsEpoch: 0, closed: [], told: {} }
   }
 }
 
@@ -492,7 +500,8 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       generation: newest(fence.generation, snapshot.generation),
       attaches: fence.attaches,
       totalsEpoch: fence.totalsEpoch + 1,
-      closed: fence.closed
+      closed: fence.closed,
+      told: fence.told
     }
   }
   return listed(seeded, snapshot.queue)
@@ -616,6 +625,12 @@ function act(state: Tracked, action: LocalAction): Tracked {
     case 'steered': {
       const { run } = content
       return run.state === 'running' && run.generation === action.during ? editTurn(state, turn => pushItem(turn, { kind: 'steer', text: action.text })) : state
+    }
+    case 'told': {
+      const { promptId, text, went } = action
+      const held = state.fence.told[promptId]
+      if (held?.text === text && held.went === went) return state
+      return { ...state, fence: { ...state.fence, told: { ...state.fence.told, [promptId]: { text, went } } } }
     }
     case 'answer': {
       if ('requestId' in action) return withRequests(state, answering(heldOf(state), action.requestId, action.reply))
@@ -935,7 +950,7 @@ function settle(
   const settled: Tracked = {
     ...state,
     content: { ...content, history: [...content.history, turn], run: IDLE },
-    fence: { ...patch(fence, { text: null, settledThrough: highestRow(fence.settledThrough, rows) }), totalsEpoch: fence.totalsEpoch + 1 }
+    fence: { ...patch(fence, { text: null, settledThrough: highestRow(fence.settledThrough, rows) }), totalsEpoch: fence.totalsEpoch + 1, told: {} }
   }
   return setUsage(settled, { totals, context: usage?.context ?? before.context })
 }
