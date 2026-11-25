@@ -9,8 +9,8 @@ import type {
 import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import type { Served } from './wire/link'
 import {
-  parseBranched, parseBusy, parseContextBreakdown, parseCorrection, parseDirective, parseModelMenu, parseModelReceipt, parsePathMatches, parseShown, parseTranscript,
-  type Correction
+  beginsAtTurn, parseBranched, parseBusy, parseContextBreakdown, parseCorrection, parseDirective, parseModelMenu, parseModelReceipt, parsePathMatches, parseShown,
+  parseTranscript, type Correction
 } from './wire/parse'
 
 /** `versions` stays with the hub: reading a chat's versions must not attach it. */
@@ -59,8 +59,6 @@ const UPLOAD_GONE = 'An attachment is no longer available. Remove it and attach 
 export const NOTHING_TO_SHOW: Outcome<string | null> = { ok: true, value: null }
 
 const showing = (outcome: Outcome, words: string | null = null): Outcome<string | null> => (outcome.ok ? { ok: true, value: words } : outcome)
-
-const holdsWholeTurns = (page: { readonly rows: readonly { readonly role?: unknown }[] }) => page.rows[0]?.role === 'user'
 
 /** Hermes extends a cut at an assistant row through the tool rows after it (persistence/sqlite/authority/_mutation_publish.py `_branch_boundary`). */
 function branchPoint(content: SessionContent, rowId: number): { readonly through: number; readonly text: string } | null {
@@ -184,7 +182,7 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
         return page
       }
       pages.push(page.value)
-      if (page.value.next_cursor === null || holdsWholeTurns(page.value)) break
+      if (page.value.next_cursor === null || beginsAtTurn(page.value)) break
       cursor = page.value.next_cursor
     }
     port.earlier(parseTranscript(pages))

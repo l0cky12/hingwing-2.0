@@ -356,6 +356,10 @@ Hermes keeps one queue of messages per chat, for every client. Each
 - Hermes stores steered words as a user row with `display_kind: "steer"`
   (`agent/prompt_builder.py:585-592`, `tui_gateway/session_history.py:329-332`).
   Highwing reads that row as an item of the turn it sits in, not as a new turn.
+  A page of older rows that begins at one therefore begins inside a turn, and
+  "Show earlier turns" reads on to the page that holds that turn's request. A
+  user row with `display_kind: "skill_invocation"` is a request, and opens a
+  turn (`tui_gateway/session_history.py:360-363`).
 - A queued message that Hermes hands to the turn leaves the list when the turn
   settles. It comes back as a queued row when the turn never read it
   (`gateway/session_queued_controls.py:104-116,184-200`).

@@ -754,6 +754,9 @@ export function parseTranscript(pages: readonly StoredTranscriptResult[]): Histo
   return { ...parseRows(oldestFirst.flatMap(page => page.rows)), older: cursor === null ? null : { cursor } }
 }
 
+/** Whether the page's first row opens a turn, as `parseRows` reads it. If not, the turn its first rows belong to began on an older page. */
+export const beginsAtTurn = (page: StoredTranscriptResult): boolean => usable(() => storedRow(page.rows[0], 0))?.opensTurn === true
+
 interface TurnInProgress {
   readonly request: string | null
   readonly requestRow: number | null
@@ -780,7 +783,7 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   rows.forEach((value, index) => {
     const row = usable(() => storedRow(value, index))
     if (row === null) return
-    if (row.role === 'user' && !row.steers) turns.push({ request: row.text, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [] })
+    if (row.opensTurn) turns.push({ request: row.text, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [] })
     if (row.items.length > 0 && turns.length === 0) turns.push({ request: null, requestRow: null, began: null, items: [], rows: [] })
     const turn = turns.at(-1)
     turn?.items.push(...row.items)
@@ -835,7 +838,7 @@ function storedRow(value: unknown, index: number) {
       status: { s: 'done', durationS: null, diffs: [], image: null, result: content === undefined ? NO_RESULT : parseToolResult(content, null, false) }
     }]
   })()
-  return { role, steers, text, rowId, at, items }
+  return { opensTurn: role === 'user' && !steers, text, rowId, at, items }
 }
 
 export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<SidebarRow, 'badge'>[] {

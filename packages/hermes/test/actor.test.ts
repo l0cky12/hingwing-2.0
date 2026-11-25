@@ -654,6 +654,29 @@ describe('mutate and loadEarlier', () => {
     expect(actor.session.earlier).toBe('none')
   })
 
+  it('reads past a page that begins at steered words, to the page that begins at their turn\'s request', async () => {
+    const { actor, command, calls, answer } = stage()
+    actor.attach()
+    await answer('session.resume', snapshot({ messages: [{ archived_truncated: true }], display_messages: [{ role: 'user', text: 'third', row_id: 7 }, { role: 'assistant', text: 'ok', row_id: 8 }] }))
+    const loaded = command({ do: 'loadEarlier', sessionId: ID })
+    await answer('session.transcript', {
+      session_id: ID, next_cursor: 'c1', reset: false,
+      rows: [{ role: 'user', display_kind: 'steer', text: 'use the staging db', row_id: 5 }, { role: 'assistant', text: 'second answer', row_id: 6 }]
+    })
+    expect(calls[0], 'the turn those words were steered into began on an older page').toMatchObject({ method: 'session.transcript', params: { cursor: 'c1' } })
+    await answer('session.transcript', {
+      session_id: ID, next_cursor: 'c2', reset: false,
+      rows: [{ role: 'user', display_kind: 'skill_invocation', text: '/release-notes second', row_id: 3 }, { role: 'tool', name: 'terminal', tool_call_id: 't1' }]
+    })
+    expect(await loaded).toEqual({ ok: true, value: undefined })
+    expect(calls, 'a skill invocation is a request, so that page holds whole turns').toEqual([])
+    expect(actor.session.history.map(turn => [turn.request?.text, turn.items.map(item => item.kind)])).toEqual([
+      ['/release-notes second', ['tool', 'steer', 'text']],
+      ['third', ['text']]
+    ])
+    expect(actor.session.earlier).toBe('more')
+  })
+
   it('goes back to "more" when the read fails', async () => {
     const { actor, command, answer } = stage()
     actor.attach()
