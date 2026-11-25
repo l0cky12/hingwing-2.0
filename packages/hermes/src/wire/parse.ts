@@ -1062,8 +1062,15 @@ export function parseReactions(raw: unknown): readonly Reaction[] {
   })
 }
 
-export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<SidebarRow, 'badge'>[] {
-  return rows.map(row => {
+/**
+ * Sources of chats a job runs rather than a person, which Hermes Desktop also leaves out of its chat list
+ * (apps/desktop/src/app/session/hooks/use-session-list-actions.ts:74). Hermes refuses a send into a
+ * scheduled job's chat (gateway/session_cron.py:292-305).
+ */
+const JOB_SOURCES: ReadonlySet<string | null> = new Set(['acp', 'cron', 'kanban', 'oneshot', 'subagent', 'tool'])
+
+export function parseUserChats(rows: readonly CanonicalSessionListRow[]): Omit<SidebarRow, 'badge'>[] {
+  return rows.filter(row => !JOB_SOURCES.has(row.source)).map(row => {
     const seconds = row.last_active_at ?? row.started_at
     return {
       id: row.session_id as SessionId,

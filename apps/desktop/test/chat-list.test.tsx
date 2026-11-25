@@ -16,7 +16,7 @@ const ROWS = [
   row('s3', '  ', { badge: 'running' }),
   row('s4', 'Clean up Downloads', { lastActiveAt: NOW - 2 * 86_400_000 })
 ]
-const listing = (bot: BotId | null, rows: readonly SidebarRow[] = ROWS, status: Sidebar['status'] = 'ready'): Sidebar => ({ bot, status, rows })
+const listing = (bot: BotId | null, rows: readonly SidebarRow[] = ROWS, status: Sidebar['status'] = 'ready'): Sidebar => ({ bot, status, rows, complete: true })
 const NO_DRAFTS: ReadonlySet<SessionId> = new Set()
 const showing = (bot: BotId | null, sessionId: string | null = 's2'): OpenChat =>
   ({ shown: { kind: 'chat', bot, sessionId: sessionId as SessionId }, opening: null })

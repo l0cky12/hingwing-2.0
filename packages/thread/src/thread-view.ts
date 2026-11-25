@@ -129,7 +129,7 @@ export type ThreadEnd =
   | { readonly kind: 'tip'; readonly words: Phrase; readonly elapsed: string | null }
   | { readonly kind: 'paused'; readonly words: string }
   | { readonly kind: 'done'; readonly words: string }
-  | { readonly kind: 'failed'; readonly words: string }
+  | { readonly kind: 'failed'; readonly words: string; readonly remedy: FailureRemedy | null }
   | { readonly kind: 'stopped'; readonly words: string }
   | { readonly kind: 'lost'; readonly words: string }
   | { readonly kind: 'none' }
@@ -856,14 +856,14 @@ const NO_END: ThreadEnd = { kind: 'none' }
 function settledEnd(outcome: Outcome): ThreadEnd {
   switch (outcome.kind) {
     case 'complete': return { kind: 'done', words: 'Done' }
-    case 'failed': return { kind: 'failed', words: failureWords(outcome) }
+    case 'failed': return { kind: 'failed', words: failureWords(outcome), remedy: outcome.code !== null && Object.hasOwn(FAILURE_REMEDIES, outcome.code) ? FAILURE_REMEDIES[outcome.code]! : null }
     case 'stopped': return { kind: 'stopped', words: 'Stopped' }
     case 'lost': return { kind: 'lost', words: LOST_WORDS }
     case 'interlude': return NO_END
   }
 }
 
-/** Codes are Hermes's `FailoverReason` values (`agent/error_classifier.py`). */
+/** Codes are Hermes's `FailoverReason` values (`agent/error_classifier.py`) and its gateway's `error_surface` codes. */
 const FAILURE_WORDS: { readonly [code: string]: string } = {
   auth_permanent: "Hermes couldn't sign in to its model provider. Check the provider's key or sign-in in Hermes.",
   auth: 'The model provider turned down Hermes\'s sign-in.',
@@ -875,7 +875,16 @@ const FAILURE_WORDS: { readonly [code: string]: string } = {
   timeout: 'The model provider took too long to answer.',
   context_overflow: 'This chat is too long for the model.',
   model_not_found: "The model provider doesn't offer the chosen model.",
-  content_policy_blocked: 'The model provider refused this request.'
+  content_policy_blocked: 'The model provider refused this request.',
+  cron_session_read_only: 'This chat runs a scheduled job, so your message was not run. Start a new chat to send it.'
+}
+
+/** What the user can do next about a failure. `newChat`: send the message in a new chat instead. */
+export type FailureRemedy = 'newChat'
+
+/** A chat a scheduled job owns runs only that job, and refuses every message (gateway/session_cron.py:292-305). */
+const FAILURE_REMEDIES: { readonly [code: string]: FailureRemedy } = {
+  cron_session_read_only: 'newChat'
 }
 
 export function failureWords(outcome: Extract<Outcome, { kind: 'failed' }>): string {

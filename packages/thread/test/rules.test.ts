@@ -67,7 +67,14 @@ describe('end marks', () => {
     [null, 'HTTP 401 from provider']
   ])('words a failed turn with code %s in plain language, falling back to the gateway message', (code, words) => {
     const failed: Outcome = { kind: 'failed', message: 'HTTP 401 from provider', code, retryable: false }
-    expect(turnOf(session({ history: [settled([], failed)] })).end).toEqual({ kind: 'failed', words })
+    expect(turnOf(session({ history: [settled([], failed)] })).end).toEqual({ kind: 'failed', words, remedy: null })
+  })
+
+  it('offers a new chat for a message a scheduled job\'s chat refused', () => {
+    const refused: Outcome = { kind: 'failed', message: '⚠️ This chat belongs to a scheduled job and only runs that job.', code: 'cron_session_read_only', retryable: false }
+    expect(turnOf(session({ history: [settled([], refused)] })).end).toEqual({
+      kind: 'failed', words: 'This chat runs a scheduled job, so your message was not run. Start a new chat to send it.', remedy: 'newChat'
+    })
   })
 
   it('pauses an open turn when the link is not live, and disables its prompt', () => {

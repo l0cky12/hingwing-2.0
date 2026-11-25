@@ -39,4 +39,4 @@ Recipes, with `O="--fixture fixtures/errand.jsonl --profiles fixtures/profiles/c
 - `see Draft` can wait on the wrong element. `see` matches any case, and a hidden preview such as "I drafted the reminder." comes first. Read the row in a shot's ARIA text instead.
 - `drafts <n>` counts every `*.json` file, including one this build cannot read. Such a file loads as no draft and is never deleted.
 - The open chat's row never says "Draft". Its text is in the box.
-- A list of 100 chats or more never sweeps, because Hermes lists at most that many and an older chat may be left out.
+- A list never sweeps when Hermes returned a full page of 100 stored chats, because an older chat may be left out. That holds even when leaving out job chats brings the Chats column under 100 rows.

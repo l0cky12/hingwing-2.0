@@ -1,4 +1,4 @@
-import { STORED_ROWS, type Attachment, type AttachmentId, type SessionId, type Shown, type Sidebar } from '@highwing/hermes/domain'
+import { type Attachment, type AttachmentId, type BotId, type SessionId, type Shown, type Sidebar } from '@highwing/hermes/domain'
 import { useSyncExternalStore } from 'react'
 import { isEmptyDraft, type Draft, type DraftKey } from '../../ipc-contract'
 
@@ -96,6 +96,12 @@ export function seedDraft(slot: NonNullable<DraftSlot>, text: string) {
   changed()
 }
 
+export function carryToNewChat(bot: BotId | null, text: string) {
+  const slot = { key: 'new', bot } as const
+  const held = heldOf(slot).text
+  put(slot, { text: held === '' ? text : `${held}\n\n${text}` }, 'now')
+}
+
 export const detach = (slot: DraftSlot, id: AttachmentId) => put(slot, { attachments: heldOf(slot).attachments.filter(held => held.id !== id) }, 'now')
 
 /** Moves an attachment one place earlier (-1) or later (1). Nothing moves past either end. */
@@ -125,7 +131,7 @@ export function draftSent(slot: DraftSlot, text: string, sent: ReadonlySet<Attac
 }
 
 export function sweepDrafts(sidebar: Sidebar | undefined, open: DraftKey | null) {
-  if (sidebar?.status !== 'ready' || sidebar.rows.length >= STORED_ROWS) return
+  if (sidebar?.status !== 'ready' || !sidebar.complete) return
   const listed = new Set<string>(sidebar.rows.map(row => `chat:${row.id}`))
   const gone = [...restored].flatMap(key => {
     const draft = drafts.get(key)
