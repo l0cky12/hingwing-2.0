@@ -598,7 +598,7 @@ describe('attachments', () => {
     const queued: QueuedMessage = { admissionId: 'a1' as AdmissionId, inputId: 'i1' as InputId, text: 'Summarise this', from: 'here', attachments: sent, state: { s: 'queued', can: [] } }
     const view = threadView(session({ queue: [queued] }), CLOCK)
     expect(view.pending[0]?.attachments).toEqual(sent)
-    expect(outline(view)).toBe(['+ [image] error.png  [file] contract.pdf', '⋯ Summarise this  (queued)'].join('\n'))
+    expect(outline(view)).toBe(['+ [image] error.png  [file] contract.pdf', '⋯ Summarise this  (queued, cancel)'].join('\n'))
   })
 })
 

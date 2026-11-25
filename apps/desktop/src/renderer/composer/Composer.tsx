@@ -28,7 +28,8 @@ interface ComposerProps {
   readonly onSend: (text: string, attachments: readonly AttachmentId[]) => Promise<CommandOutcome<string | null>>
   readonly onStop: () => void
   readonly onInput: () => void
-  readonly plan?: SendPlan['by']
+  /** How a send holding these attachments would reach Hermes now. */
+  readonly planFor?: (attachments: readonly Attachment[]) => SendPlan['by']
   readonly editing?: Editing | null
   readonly onCancelEdit?: () => void
   readonly above?: ReactNode
@@ -37,6 +38,7 @@ interface ComposerProps {
 }
 
 const NO_CATALOG: SlashCatalog = []
+const SUBMIT_ALWAYS = (): SendPlan['by'] => 'submit'
 const HINT_ID = 'composer-busy'
 const MENU_ID = 'composer-menu'
 const optionId = (index: number) => `composer-option-${index}`
@@ -113,7 +115,7 @@ export function admitted(results: readonly StageResult[], held: readonly Attachm
 
 const draggingFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') === true
 
-export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, plan = 'submit', editing = null, onCancelEdit, above, onEscape, children }: ComposerProps) {
+export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, planFor = SUBMIT_ALWAYS, editing = null, onCancelEdit, above, onEscape, children }: ComposerProps) {
   const catalog = useTopic('slash') ?? NO_CATALOG
   const roster = useTopic('bots')
   const relay = useTopic('relay')
@@ -140,7 +142,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   const caretTo = useRef<number | null>(null)
   const typed = menuOf(draft, caret, sources, { active, dismissed })
   const menu = focused ? typed : { open: false as const }
-  const hint = busyHint(plan, draft, catalog, editing)
+  const hint = busyHint(planFor(attachments), draft, catalog, editing)
 
   const shownActive = menu.open ? menu.active : null
   useLayoutEffect(() => {

@@ -7,7 +7,7 @@ import { marked, pressedOf, unmarked, type MarkEvent } from '../src/renderer/cha
 import { Pending, type QueueControls, type QueuedRow } from '../src/renderer/chat/Thread'
 
 const row = (more: Partial<QueuedRow>): QueuedRow =>
-  ({ status: 'queued', key: 'input-1', text: 'Also update the changelog.', admissionId: 'adm-1' as AdmissionId, from: 'here', actions: ['sendNow', 'edit', 'cancel'], ...more }) as QueuedRow
+  ({ status: 'queued', key: 'input-1', text: 'Also update the changelog.', attachments: [], admissionId: 'adm-1' as AdmissionId, from: 'here', actions: ['sendNow', 'edit', 'cancel'], ...more }) as QueuedRow
 const controls = (more: Partial<QueueControls> = {}): QueueControls => ({ canAct: true, pressed: new Map(), onAct: () => {}, ...more })
 const draw = (pending: PendingRow, more?: Partial<QueueControls>) => renderToStaticMarkup(<Pending row={pending} queue={controls(more)} />)
 const buttons = (markup: string) => Array.from(markup.matchAll(/<button([^>]*)>([^<]*)<\/button>/g), ([, attributes, name]) => `${name}${attributes?.includes('disabled') ? ' (disabled)' : ''}`)
@@ -91,8 +91,8 @@ describe('a press on a queued row', () => {
 
 describe('a message Hermes has not listed', () => {
   it('reads Sending with no buttons, and a refused one shows why', () => {
-    expect(words(draw({ status: 'sending', key: 'k', text: 'Hi' }))).toEqual(['Sending'])
-    expect(buttons(draw({ status: 'sending', key: 'k', text: 'Hi' }))).toEqual([])
-    expect(draw({ status: 'failed', key: 'k', text: 'Hi', detail: 'Hermes refused it.' })).toMatch(/<p class="err"[^>]*>Hermes refused it\.<\/p>/)
+    expect(words(draw({ status: 'sending', key: 'k', text: 'Hi', attachments: [] }))).toEqual(['Sending'])
+    expect(buttons(draw({ status: 'sending', key: 'k', text: 'Hi', attachments: [] }))).toEqual([])
+    expect(draw({ status: 'failed', key: 'k', text: 'Hi', attachments: [], detail: 'Hermes refused it.' })).toMatch(/<p class="err"[^>]*>Hermes refused it\.<\/p>/)
   })
 })
