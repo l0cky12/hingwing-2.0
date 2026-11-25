@@ -1274,6 +1274,23 @@ describe('tuning', () => {
   })
 })
 
+describe('a rewrite of the stored rows', () => {
+  it('reads the chat again from a live gate, as a replay gap does', () => {
+    const rewritten = feed(live(), event(1, started('t1')), event(2, delta('Hello')), event(3, { type: 'meta', revision: 4, rewritten: true }, null))
+    expect(rewritten.gate).toMatchObject({ at: 'attaching', plan: { mode: 'rebuild' } })
+    expect(syncOf(rewritten.gate, { state: 'online' }).state).toBe('rebuilding')
+  })
+
+  it('takes a rewrite heard in a replay as a reason to rebuild instead of catching up', () => {
+    const reattaching = feed(live(), { in: 'link.lost' }, { in: 'attach' })
+    const after = reduce(reattaching, {
+      in: 'attached', attempt: 2, snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 1 } }),
+      replay: { snapshotRequired: false, epoch: EPOCH, events: [{ stamp: { epoch: EPOCH, seq: 1, generation: null }, event: { type: 'meta', revision: 4, rewritten: true }, seenAt: null }] }
+    })
+    expect(after.gate).toMatchObject({ at: 'attaching', plan: { mode: 'rebuild' } })
+  })
+})
+
 describe('side questions and background prompts', () => {
   const started = (id: string, kind: SideTask['kind'] = 'btw', asked = 'Which file was it?'): SessionInput =>
     ({ in: 'local', action: { did: 'side.started', id: id as SideId, kind, asked } })

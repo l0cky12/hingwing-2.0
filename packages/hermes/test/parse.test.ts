@@ -543,6 +543,19 @@ describe('usage', () => {
   })
 })
 
+describe('rewrites', () => {
+  const receipt = (payload: Record<string, unknown>) => ({ type: 'session.updated', session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload: { session_id: SESSION, revision: 4, execution_generation: 2, ...payload } })
+
+  it.each(['compress', 'reset'])('reads a %s receipt from any client as a rewrite of the stored rows', operation => {
+    expect(parseEvent(receipt({ operation }))).toMatchObject({ event: { type: 'meta', revision: 4, generation: 2, rewritten: true } })
+  })
+
+  it('reads the other receipts for what they change', () => {
+    expect(parseEvent(receipt({ operation: 'rewind', target_message: { id: 7 } }))).toMatchObject({ event: { type: 'meta', cutBefore: 7 } })
+    expect(parseEvent(receipt({ operation: 'workspace', cwd: '/work/docs' }))).toMatchObject({ event: { type: 'meta', revision: 4 } })
+  })
+})
+
 describe('side answers', () => {
   const frame = (type: string, payload: Record<string, unknown>) => ({ type, session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload })
 

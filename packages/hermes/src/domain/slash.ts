@@ -39,7 +39,9 @@ export const OWN_COMMANDS = {
   /** A bare `/title` is Hermes's: it shows the title. */
   title: (sessionId, title) => (title === '' ? null : { do: 'rename', sessionId, title }),
   btw: (sessionId, text) => (text === '' ? { usage: '/btw <question>' } : { do: 'side', sessionId, kind: 'btw', text }),
-  bg: (sessionId, text) => (text === '' ? { usage: '/bg <prompt>' } : { do: 'side', sessionId, kind: 'background', text })
+  bg: (sessionId, text) => (text === '' ? { usage: '/bg <prompt>' } : { do: 'side', sessionId, kind: 'background', text }),
+  /** `here [N]` and `--preview` are Hermes's own forms, which Highwing does not send, so Hermes answers those lines. */
+  compress: (sessionId, focus) => (/^(-|here\b)/.test(focus) ? null : { do: 'compress', sessionId, focus: focus === '' ? null : focus })
 } as const satisfies { readonly [name: string]: (sessionId: SessionId, arg: string) => Own }
 
 export function ownCommand({ entry, arg }: SlashLine, sessionId: SessionId): Own {

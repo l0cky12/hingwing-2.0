@@ -119,3 +119,104 @@ describe('the slash commands Highwing runs itself', () => {
     expect(bare.sent()).toEqual([['command.dispatch', { session_id: ID, name: 'title' }]])
   })
 })
+
+describe('complete', () => {
+  it('asks for the word alone, rooted at the chat, and answers each row with its label and note', async () => {
+    const { command, sent, answer } = await stage()
+    const done = command({ do: 'complete', sessionId: ID, word: '@no' })
+    expect(sent()).toEqual([['complete.path', { session_id: ID, word: '@no' }]])
+    await answer('complete.path', { items: [{ text: '@file:notes.md', display: 'notes.md', meta: '' }, { text: '@folder:docs/', display: 'docs/', meta: 'dir' }, { text: '' }] })
+    expect(await done).toEqual({ ok: true, value: [{ text: '@file:notes.md', label: 'notes.md', detail: null }, { text: '@folder:docs/', label: 'docs/', detail: 'dir' }] })
+  })
+})
+
+describe('move', () => {
+  it('moves the chat with a fenced workspace mutate, and takes the folder from the session.info Hermes pushes', async () => {
+    const { actor, command, sent, answer, event } = await stage()
+    const done = command({ do: 'move', sessionId: ID, cwd: '/work/docs' })
+    expect(sent()).toEqual([['session.mutate', { session_id: ID, request_id: 'id-1', expected_revision: 3, expected_generation: 0, operation: 'workspace', payload: { cwd: '/work/docs' } }]])
+    event({ type: 'meta', cwd: '/work/docs' }, null)
+    await answer('session.mutate', { session_id: ID, operation: 'workspace', revision: 4, execution_generation: 1, cwd: '/work/docs' })
+    expect(await done).toEqual(DONE)
+    expect(actor.session.cwd).toBe('/work/docs')
+  })
+
+  it('is refused while a turn runs, and sends nothing', async () => {
+    const { command, sent, event } = await stage()
+    event(started)
+    expect(await command({ do: 'move', sessionId: ID, cwd: '/work/docs' })).toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    expect(sent()).toEqual([])
+  })
+
+  it('says the folder is not there when Hermes cannot find it', async () => {
+    const { command, answer } = await stage()
+    const done = command({ do: 'move', sessionId: ID, cwd: '/nowhere' })
+    await answer('session.mutate', refusal('invalid_params'))
+    expect(await done).toEqual({ ok: false, refusal: { kind: 'rejected', message: "That folder isn't on the machine Hermes runs on." } })
+  })
+})
+
+describe('compress', () => {
+  const summary = { headline: 'Compressed: 12 → 4 messages', token_line: 'Approx request size: ~9,000 → ~2,000 tokens', note: null }
+
+  it('sends the focus with a fenced compress mutate, answers Hermes\'s report, and reads the chat again', async () => {
+    const { actor, command, sent, answer, event } = await stage()
+    const done = command({ do: 'compress', sessionId: ID, focus: 'the changelog' })
+    expect(sent()).toEqual([['session.mutate', { session_id: ID, request_id: 'id-1', expected_revision: 3, expected_generation: 0, operation: 'compress', payload: { focus: 'the changelog' } }]])
+    event({ type: 'meta', revision: 4, rewritten: true }, null)
+    await answer('session.mutate', { session_id: ID, operation: 'compress', revision: 4, execution_generation: 1, summary })
+    expect(await done).toEqual({ ok: true, value: 'Compressed: 12 → 4 messages\nApprox request size: ~9,000 → ~2,000 tokens' })
+    expect(actor.session.sync.state).toBe('rebuilding')
+    expect(sent().at(-1)).toEqual(['session.resume', { session_id: ID, display_projection: true }])
+  })
+
+  it('sends no focus when none is given, and shows the report of a compression that removed nothing', async () => {
+    const { actor, command, sent, answer } = await stage()
+    const done = command({ do: 'compress', sessionId: ID, focus: null })
+    expect(sent()).toMatchObject([['session.mutate', { operation: 'compress', payload: {} }]])
+    await answer('session.mutate', { session_id: ID, operation: 'compress', status: 'noop', summary: { headline: 'No changes from compression: 2 messages', token_line: '', note: null } })
+    expect(await done).toEqual({ ok: true, value: 'No changes from compression: 2 messages' })
+    expect(actor.session.sync.state).toBe('live')
+  })
+
+  it('is refused while a turn runs, and sends nothing', async () => {
+    const { command, sent, event } = await stage()
+    event(started)
+    expect(await command({ do: 'compress', sessionId: ID, focus: null })).toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    expect(sent()).toEqual([])
+  })
+
+  it.each([
+    ['/compress', {}],
+    ['/compress the changelog', { focus: 'the changelog' }]
+  ])('%s runs the compress command', async (text, payload) => {
+    const { sent, command } = await stage({ hub: { settledCatalog: async () => [...CATALOG, { kind: 'command', name: 'compress', description: 'Compress' }] } })
+    void command({ do: 'send', sessionId: ID, text })
+    await settle()
+    expect(sent()).toMatchObject([['session.mutate', { operation: 'compress', payload }]])
+  })
+
+  it.each(['/compress here 3', '/compress --preview'])('leaves %s, a form Highwing does not send, to Hermes', async text => {
+    const { sent, command } = await stage({ hub: { settledCatalog: async () => [...CATALOG, { kind: 'command', name: 'compress', description: 'Compress' }] } })
+    void command({ do: 'send', sessionId: ID, text })
+    await settle()
+    expect(sent()).toMatchObject([['command.dispatch', { name: 'compress' }]])
+  })
+})
+
+describe('export', () => {
+  it('asks Hermes to render the chat in the format, and answers the file name and text', async () => {
+    const { command, sent, answer } = await stage()
+    const done = command({ do: 'export', sessionId: ID, format: 'md' })
+    expect(sent()).toEqual([['session.export', { session_id: ID, format: 'md' }]])
+    await answer('session.export', { format: 'md', filename: 'hermes_session_s1.md', content: '# Session: s1' })
+    expect(await done).toEqual({ ok: true, value: { filename: 'hermes_session_s1.md', content: '# Session: s1' } })
+  })
+
+  it('says when the chat is too large to export', async () => {
+    const { command, answer } = await stage()
+    const done = command({ do: 'export', sessionId: ID, format: 'json' })
+    await answer('session.export', refusal('export_too_large'))
+    expect(await done).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'This chat is too large for Hermes to export.' } })
+  })
+})

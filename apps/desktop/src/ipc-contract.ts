@@ -1,5 +1,5 @@
 import {
-  EFFORTS, targetOf,
+  EFFORTS, EXPORT_FORMATS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptId,
   type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply, type ResultOf, type Session, type SessionId, type SettledTurn,
@@ -66,7 +66,10 @@ export const isPreviewCommand = (command: AppCommand): command is PreviewCommand
 export type AppCommand = Command | SetupCommand | PreviewCommand
 /** A new picture's bytes come only from main's file picker. */
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' }>
-export type AppResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
+/** What the hub answers a command. */
+export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
+/** What a window gets back. Main saves an export through a save dialog, so the window gets the saved file's path, or null when the user cancelled. */
+export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
 
 /** Every topic with one value per connection, and what it carries. */
 export interface AppTopics {
@@ -297,6 +300,23 @@ export const validators: Validators = {
   side: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && (raw.kind === 'btw' || raw.kind === 'background') && filled(raw.text) ? { do: 'side', sessionId, kind: raw.kind, text: raw.text } : null
+  },
+  complete: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && filled(raw.word) ? { do: 'complete', sessionId, word: raw.word } : null
+  },
+  move: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && filled(raw.cwd) ? { do: 'move', sessionId, cwd: raw.cwd } : null
+  },
+  compress: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && (raw.focus === null || filled(raw.focus)) ? { do: 'compress', sessionId, focus: raw.focus } : null
+  },
+  export: raw => {
+    const sessionId = sessionIdOf(raw)
+    const format = EXPORT_FORMATS.find(held => held === raw.format)
+    return sessionId && format !== undefined ? { do: 'export', sessionId, format } : null
   },
   rewind: raw => {
     const sessionId = sessionIdOf(raw)
