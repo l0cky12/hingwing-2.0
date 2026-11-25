@@ -2,7 +2,7 @@ import type { Hermes } from '@highwing/hermes'
 import type { Bots, Link, OpenChat, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyPush, CHANNEL, isWebLink, parseCommand, parseFileRequest, validators, type AppTopics, type FileOutcome, type ImageOutcome, type ImageRequest, type Push, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Push, type Topic } from '../src/ipc-contract'
 import { pinnedConnection } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
@@ -228,7 +228,12 @@ function harness() {
     open: async path => (opened.push({ action: 'open', path }), { ok: true }),
     show: async path => (opened.push({ action: 'show', path }), { ok: true })
   }
-  const served = serveWindows(pinnedConnection(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) })
+  const kept: Draft[] = []
+  const stored: readonly Draft[] = [{ key: 'new', bot: null, text: 'kept on disk' }]
+  const served = serveWindows(
+    pinnedConnection(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
+    { keep: draft => void kept.push(draft), load: async () => stored }
+  )
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
     catalogListeners.forEach(listener => listener(next))
@@ -241,7 +246,7 @@ function harness() {
     open = next
     openListeners.forEach(listener => listener(next))
   }
-  return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, served, setCatalog, setBots, setOpen }
+  return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, stored, served, setCatalog, setBots, setOpen }
 }
 
 describe('serveWindows', () => {
@@ -461,6 +466,41 @@ describe('the image call', () => {
     const { handlers, served } = harness()
     served.dispose()
     expect(handlers.has(CHANNEL.image)).toBe(false)
+  })
+})
+
+describe('the draft calls', () => {
+  const draft = { key: 'chat:local-0102', bot: 'research', text: 'half a thought' }
+
+  it('keep a draft from the app page and hand back the stored ones', async () => {
+    const rig = harness()
+    rig.listeners.get(CHANNEL.keepDraft)!(rig.event(), draft)
+    rig.listeners.get(CHANNEL.keepDraft)!(rig.event(), { ...draft, text: '' })
+    expect(rig.kept).toEqual([draft, { ...draft, text: '' }])
+    await expect(rig.handlers.get(CHANNEL.drafts)!(rig.event())).resolves.toEqual(rig.stored)
+  })
+
+  it('refuse a foreign frame and a malformed draft', async () => {
+    const rig = harness()
+    const keep = rig.listeners.get(CHANNEL.keepDraft)!
+    keep(rig.event('https://example.com/'), draft)
+    for (const raw of [null, 'x', { ...draft, key: 'session:local-0102' }, { ...draft, key: 'bot:' }, { ...draft, text: 7 }, { ...draft, bot: '' }]) keep(rig.event(), raw)
+    expect(rig.kept).toEqual([])
+    await expect(rig.handlers.get(CHANNEL.drafts)!(rig.event('https://example.com/'))).resolves.toEqual([])
+  })
+
+  it('stop answering once disposed', () => {
+    const { handlers, listeners, served } = harness()
+    served.dispose()
+    expect(handlers.has(CHANNEL.drafts)).toBe(false)
+    expect(listeners.has(CHANNEL.keepDraft)).toBe(false)
+  })
+})
+
+describe('parseDraft', () => {
+  it('keeps the three known fields of each kind of key', () => {
+    expect(parseDraft({ key: 'bot:research', bot: 'research', text: 'x', extra: 1 })).toEqual({ key: 'bot:research', bot: 'research', text: 'x' })
+    expect(parseDraft({ key: 'new', bot: null, text: '' })).toEqual({ key: 'new', bot: null, text: '' })
   })
 })
 

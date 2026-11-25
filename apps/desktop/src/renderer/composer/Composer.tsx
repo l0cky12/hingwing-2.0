@@ -1,11 +1,13 @@
 import type { CommandOutcome, SlashCatalog, SlashEntry } from '@highwing/hermes/domain'
 import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { useTopic } from '../store'
+import { draftSent, useDraft, writeDraft, type DraftSlot } from './drafts'
 import type { Editing } from './edit'
 import { RemoveDialog } from './RemoveDialog'
 import { completionOf, menuOf, type Menu } from './slash-menu'
 
 interface ComposerProps {
+  readonly slot: DraftSlot
   readonly inputRef?: RefObject<HTMLTextAreaElement | null>
   readonly autoFocus?: boolean
   readonly canSend: boolean
@@ -26,9 +28,9 @@ const GROUPS = [
   { kind: 'skill', label: 'Skills' }
 ] as const
 
-export function Composer({ inputRef, autoFocus, canSend, showStop, onSend, onStop, onInput, editing = null, onCancelEdit, children }: ComposerProps) {
+export function Composer({ slot, inputRef, autoFocus, canSend, showStop, onSend, onStop, onInput, editing = null, onCancelEdit, children }: ComposerProps) {
   const catalog = useTopic('slash') ?? NO_CATALOG
-  const [draft, setDraft] = useState('')
+  const draft = useDraft(slot)
   const [active, setActive] = useState(0)
   const [dismissedDraft, setDismissedDraft] = useState<string | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -65,14 +67,14 @@ export function Composer({ inputRef, autoFocus, canSend, showStop, onSend, onSto
   useLayoutEffect(() => {
     if (editing === null) return
     caretToEnd.current = true
-    setDraft(editing.text)
+    writeDraft(slot, editing.text)
     setRefusal(null)
     setConfirming(false)
     box.current?.focus()
   }, [press, box])
 
   const edit = (next: string) => {
-    setDraft(next)
+    writeDraft(slot, next)
     setActive(0)
     setDismissedDraft(null)
     onInput()
@@ -90,7 +92,7 @@ export function Composer({ inputRef, autoFocus, canSend, showStop, onSend, onSto
   }
 
   const cancelEdit = () => {
-    setDraft('')
+    writeDraft(slot, '')
     setConfirming(false)
     onCancelEdit?.()
     box.current?.focus()
@@ -110,7 +112,7 @@ export function Composer({ inputRef, autoFocus, canSend, showStop, onSend, onSto
     setRefusal(outcome.ok ? null : outcome.refusal.message)
     if (!outcome.ok) return
     setOutput(outcome.value)
-    setDraft(held => (held.trim() === text ? '' : held))
+    draftSent(slot, text)
   }
 
   const onMenuKey = (event: KeyboardEvent<HTMLTextAreaElement>, open: Extract<Menu, { open: true }>): boolean => {

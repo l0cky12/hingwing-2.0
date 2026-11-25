@@ -52,10 +52,11 @@ highwing-2.0/
   apps/desktop/
     src/ipc-contract.ts          shared by all three      AppTopics, Topic, Push, Bridge, applyPush, Setup, SetupCommand
     src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows), files.ts (openablePath)
-      settings.ts                no Electron              parseSettings, loadSettings, saveSettings: connection.json, the only state on disk
+      settings.ts                no Electron              parseSettings, loadSettings, saveSettings: connection.json
+      drafts.ts                  no Electron              readDraft, draftStore: drafts/, one file per chat's unsent draft
       connection.ts              no Electron              ownConnection, nextSetup, pinnedConnection: the setup state, the saved target, the live Hermes
-    src/preload/index.ts         preload                  exposes Bridge: watch, run and file
-    src/renderer/                renderer                 store.ts (useTopic), setup/, bots/, chat/, composer/, chrome/, styles/
+    src/preload/index.ts         preload                  exposes Bridge: watch, run, file, image, drafts and keepDraft
+    src/renderer/                renderer                 store.ts (useTopic), setup/, bots/, chats/, chat/, composer/ (drafts.ts: useDraft), chrome/, styles/
   fixtures/                                               *.jsonl, make_fixture.py (run with Hermes's interpreter), profiles/*.json (canned `profiles.list` replies)
   scripts/                                                sync-contract.ts, contract-drift.ts
 ```
@@ -79,7 +80,8 @@ highwing-2.0/
 | Where Hermes runs, which screen shows, and which `Hermes` is live | `ownConnection` in `main/connection.ts`, changed only through `nextSetup` | windows read the `setup` topic and send `checkTarget`, `editTarget`, `keepTarget`, `openChat` |
 | The saved connection on disk | `main/settings.ts` | nobody. `ownConnection` gets `loaded` and `save` as arguments |
 | A window's copy of a topic | `renderer/store.ts` in that window, written only by `applyPush` | components read with `useTopic` |
-| Open rows, composer drafts | React state in that window | not shared; not Hermes's state |
+| A chat's unsent draft | `renderer/composer/drafts.ts` in that window, kept on disk by `main/drafts.ts` | the composer reads it with `useDraft`, the chat list with `useChatDrafts`; not Hermes's state |
+| Open rows | React state in that window | not shared; not Hermes's state |
 | The bot search text and the last refusal of a click | React state in that window's sidebar. The selected bot is derived from the `open` topic and the roster on each render | not shared; not Hermes's state |
 | The design C view | nobody; `threadView(session, clock)` recomputes it and memoises settled turns by reference | |
 | When a turn began | `reduce`: the stored request row's time, or the clock reading the hub attaches to a live frame | nobody. The view derives every shown time from it |
@@ -94,7 +96,7 @@ Two windows on one session read the same actor through two IPC subscriptions. Th
 4. `packages/hermes` never imports `electron`. It takes a `Dialer` and a `Clock` instead of reaching for globals.
 5. The renderer imports `@highwing/hermes/domain`, `@highwing/thread` and `ipc-contract.ts`. It cannot import `@highwing/hermes` or `./testing`, which need Node.
 6. Main imports `@highwing/hermes` and `ipc-contract.ts`. Only `main/index.ts` imports `./testing`, to honour `HIGHWING_FIXTURE` and `HIGHWING_RECORD`.
-7. `main/settings.ts` and `main/connection.ts` never import `electron`. They take the settings directory, the check and the route as arguments.
+7. `main/settings.ts`, `main/drafts.ts` and `main/connection.ts` never import `electron`. They take the settings directory, the drafts directory, the check and the route as arguments.
 
 Rules 2, 3 and 5 are enforced by `exports` maps and by the renderer's tsconfig having no Node types. Rules 1, 3 and 4 inside the package, and rule 7, are enforced by one ESLint `no-restricted-imports` block per folder. CI runs both.
 

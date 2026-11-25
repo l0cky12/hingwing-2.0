@@ -1,7 +1,8 @@
 import type { Hermes } from '@highwing/hermes'
 import type { CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
-import { CHANNEL, isAppTopic, parseCommand, parseFileRequest, parseImageRequest, parseTopic, type AppTopic, type FileOutcome, type ImageOutcome, type Push, type SessionPatch, type Setup, type Tail, type Topic } from '../ipc-contract'
+import { CHANNEL, isAppTopic, parseCommand, parseDraft, parseFileRequest, parseImageRequest, parseTopic, type AppTopic, type FileOutcome, type ImageOutcome, type Push, type SessionPatch, type Setup, type Tail, type Topic } from '../ipc-contract'
 import type { ConnectionOwner } from './connection'
+import type { DraftStore } from './drafts'
 import { openablePath, type Opener } from './files'
 import type { ImageLoader } from './images'
 
@@ -104,7 +105,7 @@ const IMAGE_REFUSED: ImageOutcome = { ok: false }
 
 const isLocal = (setup: Setup) => setup.at === 'pinned' || setup.live?.target.kind === 'local'
 
-export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader): { dispose(): void } {
+export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>): { dispose(): void } {
   const windows = new Map<number, Map<number, Served>>()
   const trusted = ({ senderFrame }: IpcEvent) => senderFrame !== null && senderFrame.parent === null && isAppUrl(senderFrame.url)
 
@@ -157,6 +158,12 @@ export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl:
     return images.load(request, { session: watched?.current() as Session | undefined, local: isLocal(owner.setup.get()) })
   })
 
+  ipc.handle(CHANNEL.drafts, async event => (trusted(event) ? drafts.load() : []))
+  ipc.on(CHANNEL.keepDraft, (event, raw) => {
+    const draft = parseDraft(raw)
+    if (trusted(event) && draft !== null) drafts.keep(draft)
+  })
+
   return {
     dispose() {
       for (const windowId of [...windows.keys()]) stopWindow(windowId)
@@ -165,6 +172,8 @@ export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl:
       ipc.removeHandler(CHANNEL.run)
       ipc.removeHandler(CHANNEL.file)
       ipc.removeHandler(CHANNEL.image)
+      ipc.removeHandler(CHANNEL.drafts)
+      ipc.removeAllListeners(CHANNEL.keepDraft)
     }
   }
 }
