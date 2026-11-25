@@ -65,12 +65,13 @@ def derive(lines: list[str], request: str, reply: str) -> str:
     return "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in out)
 
 
-source = (HERE / "markdown.jsonl").read_text()
-lines = source.splitlines()
-if sys.argv[1:] == ["--check"]:
-    rows = [json.loads(line) for line in lines]
-    own_reply = next(row for row in rows[-1]["stored"] if row["role"] == "assistant")["text"]
-    same = derive(lines, rows[1]["params"]["text"], own_reply) == source
-    print("PASS: markdown.jsonl derives from itself byte for byte" if same else "FAIL: markdown.jsonl does not derive from itself")
-    sys.exit(0 if same else 1)
-(HERE / "math.jsonl").write_text(derive(lines, REQUEST, REPLY))
+if __name__ == "__main__":
+    source = (HERE / "markdown.jsonl").read_text()
+    lines = source.splitlines()
+    if sys.argv[1:] == ["--check"]:
+        rows = [json.loads(line) for line in lines]
+        own_reply = next(row for row in rows[-1]["stored"] if row["role"] == "assistant")["text"]
+        same = derive(lines, rows[1]["params"]["text"], own_reply) == source
+        print("PASS: markdown.jsonl derives from itself byte for byte" if same else "FAIL: markdown.jsonl does not derive from itself")
+        sys.exit(0 if same else 1)
+    (HERE / "math.jsonl").write_text(derive(lines, REQUEST, REPLY))
