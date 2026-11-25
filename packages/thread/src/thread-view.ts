@@ -249,7 +249,6 @@ const VIEW_STATE = {
   opening: 'opening', live: 'ready', offline: 'ready', 'catching-up': 'ready', rebuilding: 'ready', unavailable: 'unavailable'
 } as const satisfies Record<Sync['state'], ThreadView['state']>
 
-/** A settled turn's view holds from `from` until `until`, when one of its notices stops showing. */
 interface Memo { readonly view: TurnView; readonly from: number; readonly until: number | null }
 
 const settledViews = new WeakMap<SettledTurn, Memo>()
@@ -298,7 +297,6 @@ function earliest(times: readonly (number | null)[]): number | null {
   return due.length === 0 ? null : Math.min(...due)
 }
 
-/** What Hermes said between turns, once every line of it has stopped showing. */
 const isEmptyInterlude = (turn: TurnView) => turn.request === null && turn.end.kind === 'none' && turn.nodes.length === 0
 
 function settledView(turn: SettledTurn, time: string | null, now: number): Memo {
