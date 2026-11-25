@@ -534,6 +534,7 @@ describe('the scripted gateway branches a chat as Hermes does', () => {
     expect(made.result).toEqual({ session_id: SESSION, operation: 'branch', branched_session_id: 'branch-default-1', copied_messages: 4, revision: 1 })
     expect(script.branchesMade).toBe(1)
     expect(frames.filter(frame => frame.params?.type === 'session.updated').map(frame => frame.params?.payload)).toEqual([made.result])
+    expect(frames.filter(frame => frame.params?.type === 'session.info').map(frame => frame.params?.payload), 'names the parent by its own title').toEqual([{ revision: 1, title: 'Notes heading', running: false }])
 
     const child = await call('session.resume', { session_id: 'branch-default-1', display_projection: true })
     expect(child.result).toMatchObject({ info: { title: 'Notes heading #2' }, revision: 0 })

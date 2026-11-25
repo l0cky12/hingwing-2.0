@@ -716,14 +716,15 @@ export class ScriptedGateway {
 
   storyParent(): Parent {
     const { view } = this
+    const title = view.title || this.listedTitle()
     return {
-      id: this.sessionId, profile: this.home, title: view.title || this.listedTitle(), rows: this.stored.filter(isObject),
+      id: this.sessionId, profile: this.home, title, rows: this.stored.filter(isObject),
       generation: view.generation, busy: view.running || view.pending.length > 0, revision: view.revision,
       commit: result => {
         view.revision++
         view.branchesCommitted++
         this.branchesMade++
-        this.emit('session.info', { revision: view.revision, title: view.title, running: view.running })
+        this.emit('session.info', { revision: view.revision, title, running: view.running })
         this.emit('session.updated', { ...result, revision: view.revision })
         return view.revision
       }
