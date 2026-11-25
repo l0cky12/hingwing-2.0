@@ -129,6 +129,10 @@ function Confirm({ words, label, command, onCancel, onConfirm }: ConfirmProps) {
     <dialog
       ref={dialog} className="confirm-dialog" aria-labelledby={title} aria-describedby={body}
       onCancel={event => { event.preventDefault(); onCancel() }}
+      onKeyDown={event => {
+        // The thread's find bar closes on an Escape nobody claimed, and its handler would stop the dialog's own cancel.
+        if (event.key === 'Escape') event.stopPropagation()
+      }}
     >
       <h2 id={title}>{words.title}</h2>
       <p id={body}>{words.body}</p>
