@@ -9,7 +9,6 @@ import { parseCatalog, parseDirective } from '../src/wire/parse'
 const SLASH = loadFixture(fileURLToPath(new URL('../../../fixtures/slash.jsonl', import.meta.url)))
 const CATALOG = SLASH.header.catalog as CommandsCatalogResult
 
-/** The offered commands `command_verdict` runs bare, and `/new` and `OWN_COMMANDS`, which Highwing runs, in registry order (docs/compatibility.md). */
 const RUNS = [
   'new', 'title', 'compress', 'bg', 'btw', 'goal', 'heartbeat', 'refine', 'review', 'loop', 'plan', 'moa', 'subgoal', 'status', 'egress', 'context',
   'whoami', 'profile', 'codex-runtime', 'personality', 'diff', 'yolo', 'approvals', 'reasoning', 'autoprune', 'skills',
@@ -66,7 +65,7 @@ describe('OWN_COMMANDS', () => {
     expect(own(text)).toEqual({ usage })
   })
 
-  it.each(['/title', '/compress here 3', '/compress --preview', '/goal ship it'])('leaves %s to Hermes', text => {
+  it.each(['/title', '/compress here 3', '/compress --preview', '/compress the release plan --preview', '/goal ship it'])('leaves %s to Hermes', text => {
     expect(own(text)).toBeNull()
   })
 })
