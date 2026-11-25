@@ -12,6 +12,7 @@ import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
 import { drawnView } from './drawn'
 import { ImageSessionContext } from './Image'
 import { forget, landAt, landed, pressFor } from './landing'
+import { marked, pressedOf, unmarked } from './marks'
 import { FOLLOW_WITHIN, FOLLOWING, placeAfter, progressOf, type Place } from './place'
 import { Sides } from './Sides'
 import { closeSide, sideCards, useClosedSides } from './sides'
@@ -29,8 +30,6 @@ type Held = { readonly id: SessionId | null; readonly press: number; readonly te
   | { readonly kind: 'sent'; readonly rowId: number }
   | { readonly kind: 'queued'; readonly admissionId: AdmissionId }
 )
-
-const sameRow = (a: QueuedRow, b: QueuedRow) => JSON.stringify(a) === JSON.stringify(b)
 
 const holdsText = (target: EventTarget | null) =>
   (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) && target.value !== ''
@@ -199,17 +198,10 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     const at = view.turns.findIndex(turn => turn.rowId === held.rowId)
     return at < 0 ? null : { kind: 'sent', press, rowId: held.rowId, later: view.turns.length - 1 - at, text }
   }, [held, id, view, listed])
-  const [sent, setSent] = useState<ReadonlyMap<AdmissionId, { readonly action: QueuedAction; readonly row: QueuedRow }>>(new Map())
-  const pressed = useMemo(() => new Map([...sent].flatMap(([admissionId, { action, row }]) => {
-    const now = listed.get(admissionId)
-    return now !== undefined && sameRow(now, row) ? [[admissionId, action] as const] : []
-  })), [sent, listed])
-  const mark = useCallback((row: QueuedRow, action: QueuedAction | null) => setSent(marks => {
-    const next = new Map(marks)
-    if (action === null) next.delete(row.admissionId)
-    else next.set(row.admissionId, { action, row })
-    return next
-  }), [])
+  const [marks, dispatchMark] = useReducer(marked, listed, unmarked)
+  if (marks.listed !== listed) dispatchMark({ kind: 'listed', listed })
+  const pressed = useMemo(() => pressedOf(marks), [marks])
+  const mark = useCallback((row: QueuedRow, action: QueuedAction | null) => dispatchMark(action === null ? { kind: 'refused', row } : { kind: 'pressed', row, action }), [])
   const [refused, setRefused] = useState<{ readonly id: SessionId | null; readonly message: string } | null>(null)
   const [rewriting, setRewriting] = useState(false)
   const [branching, setBranching] = useState(false)

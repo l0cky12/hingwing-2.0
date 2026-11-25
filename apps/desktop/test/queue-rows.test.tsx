@@ -3,6 +3,7 @@ import type { PendingRow } from '@highwing/thread'
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { marked, pressedOf, unmarked, type MarkEvent } from '../src/renderer/chat/marks'
 import { Pending, type QueueControls, type QueuedRow } from '../src/renderer/chat/Thread'
 
 const row = (more: Partial<QueuedRow>): QueuedRow =>
@@ -62,6 +63,29 @@ describe('a queued row', () => {
     const listed = row({})
     press(<Pending row={listed} queue={controls({ onAct: (pressedRow, action) => acted.push([pressedRow.text, action]) })} />, 'Send now')
     expect(acted).toEqual([['Also update the changelog.', 'sendNow']])
+  })
+})
+
+describe('a press on a queued row', () => {
+  const queued = row({})
+  const listing = (...rows: QueuedRow[]): MarkEvent => ({ kind: 'listed', listed: new Map(rows.map(listed => [listed.admissionId, listed])) })
+  const after = (...events: MarkEvent[]) => pressedOf(events.reduce(marked, unmarked(new Map([[queued.admissionId, queued]]))))
+
+  it('holds while Hermes lists the row unchanged', () => {
+    expect(after({ kind: 'pressed', row: queued, action: 'sendNow' }, listing(queued))).toEqual(new Map([[queued.admissionId, 'sendNow']]))
+  })
+
+  it('ends for good once Hermes lists the row differently, even when the row later reads as it did', () => {
+    const steering = row({ status: 'steering', actions: [] })
+    expect(after({ kind: 'pressed', row: queued, action: 'sendNow' }, listing(steering), listing(queued))).toEqual(new Map())
+  })
+
+  it('ends for good once Hermes stops listing the row, even when the row comes back', () => {
+    expect(after({ kind: 'pressed', row: queued, action: 'cancel' }, listing(), listing(queued))).toEqual(new Map())
+  })
+
+  it('ends when Hermes refuses it', () => {
+    expect(after({ kind: 'pressed', row: queued, action: 'cancel' }, { kind: 'refused', row: queued })).toEqual(new Map())
   })
 })
 
