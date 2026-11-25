@@ -23,6 +23,33 @@ export interface GatewayOptions {
   readonly ringFrames: number
   readonly drop: { readonly afterPush: number; readonly missed: number } | null
   readonly onReceived?: (frame: unknown) => void
+  /** Holds every reply this long after its call arrived, as a busy Hermes takes. Default 0. */
+  readonly latencyMs?: number
+}
+
+/**
+ * Writes each reply `ms` after the gateway wrote it, and every other frame at once unless a held
+ * frame is still ahead of it, so the client reads frames in the order the gateway wrote them.
+ */
+function repliesHeld(peer: Peer, ms: number, clock: Clock): Peer {
+  const queue: { readonly due: number; readonly send: () => void }[] = []
+  let waiting = false
+  const drain = () => {
+    waiting = false
+    while (queue[0] !== undefined && queue[0].due <= clock.now()) queue.shift()?.send()
+    if (queue[0] === undefined) return
+    waiting = true
+    clock.setTimeout(drain, queue[0].due - clock.now())
+  }
+  const enqueue = (due: number, send: () => void) => {
+    queue.push({ due: Math.max(due, queue.at(-1)?.due ?? due), send })
+    if (!waiting) drain()
+  }
+  const isReply = (frame: unknown) => isObject(frame) && !('method' in frame) && 'id' in frame
+  return {
+    write: frame => enqueue(clock.now() + (isReply(frame) ? ms : 0), () => peer.write(frame)),
+    close: code => enqueue(clock.now(), () => peer.close(code))
+  }
 }
 
 /** The replay ring's bound per session (Hermes's tui_gateway/event_replay.py:30). */
@@ -923,14 +950,17 @@ export class ScriptedGateway {
     this.profiles = isObject(profiles) && Array.isArray(profiles.profiles) ? profiles.profiles.filter(isObject) : []
     this.home = this.profiles.map(row => (row.is_default === true ? row.name : undefined)).find(isText) ?? 'default'
     this.storyIsBotChatOf = fixture.header.homeBotChat === false ? null : this.home
+    const seededChats = Object.entries(fixture.header.chats ?? {}).flatMap(([profile, seeds]) => seeds.map(seed => seeded(profile, seed)))
     for (const { name, canonical_session: named } of this.profiles) {
       const id = isObject(named) ? named.resolved_id || named.id : undefined
       if (!isText(name) || !isObject(named) || !isText(id) || name === this.storyIsBotChatOf) continue
-      const chat = new EchoChat(id, name, BOT_CHAT, true)
-      if (isText(named.preview)) chat.rows.push({ role: 'assistant', text: named.preview, timestamp: named.last_active ?? null, row_id: 1 })
+      const seed = seededChats.find(chat => chat.id === id && chat.profile === name)
+      const chat = seed ?? new EchoChat(id, name, BOT_CHAT, true)
+      if (seed === undefined && isText(named.preview)) chat.rows.push({ role: 'assistant', text: named.preview, timestamp: named.last_active ?? null, row_id: 1 })
       this.botChats.set(name, chat)
     }
-    this.seeded = Object.entries(fixture.header.chats ?? {}).flatMap(([profile, seeds]) => seeds.map(seed => seeded(profile, seed)))
+    const botChats = new Set(this.botChats.values())
+    this.seeded = seededChats.filter(chat => !botChats.has(chat))
     this.souls = new Map(Object.entries(fixture.header.souls ?? {}))
     const clash = fixture.header.configureClash
     this.clash = clash === undefined ? undefined : typeof clash === 'string' ? { title: clash, left: 1 } : { title: clash.title, left: clash.times }
@@ -955,7 +985,9 @@ export class ScriptedGateway {
   }
 
   /** A new socket, opened with a ticket of that reach. The gateway speaks first (tui_gateway/ws.py:656-664). */
-  accept(peer: Peer, reach: Reach = this.reach): { text(text: string): void; closed(): void } {
+  accept(given: Peer, reach: Reach = this.reach): { text(text: string): void; closed(): void } {
+    const { latencyMs = 0 } = this.options
+    const peer = latencyMs > 0 ? repliesHeld(given, latencyMs, this.options.clock) : given
     const socket: Socket = { peer, reach, subscriptionId: `subscription-${++this.dials}`, subscriptions: new Map(), replayCursors: new Map() }
     this.sockets.add(socket)
     peer.write({

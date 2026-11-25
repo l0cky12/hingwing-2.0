@@ -7,7 +7,7 @@ import type { Reach } from '../wire/link'
 
 export { play, playToEnd, type Moment } from './play'
 export { maskedFrame, recordingDialer } from './record'
-export { scriptedDialer, type ScriptedDialer, type ScriptOptions } from './script'
+export { fixtureLatency, scriptedDialer, type ScriptedDialer, type ScriptOptions } from './script'
 
 /**
  * A fixture is a JSONL file: one header line, then steps in order.

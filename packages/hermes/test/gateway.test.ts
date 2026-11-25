@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { manualClock, settle } from '../src/testing/clock'
-import { MASKED, scriptedDialer, type Fixture, type FixtureStep, type Images, type Pets, type ScriptOptions } from '../src/testing/fixture'
+import { fixtureLatency, MASKED, scriptedDialer, type Fixture, type FixtureStep, type Images, type Pets, type ScriptOptions } from '../src/testing/fixture'
 import {
   BOUND, BRANCH, BRANCH_OLD, DOWNLOADS, ERRAND, INVOICES, LAUNCH, LAUNCH_NO_GROUPS, NO_HOME_CHAT, paramsOf, PICK_ASK, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH,
   SORTED, SORTED_2, SORTED_3, SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, withGroups, type Added
@@ -1408,5 +1408,47 @@ describe('the scripted gateway and the session panels', () => {
     expect(await call('subagent.interrupt', { session_id: SESSION, subagent_id: 'sa-0-1', text: 'go on' })).toMatchObject(refusal('invalid_params'))
     expect(await call('subagent.interrupt', { session_id: 'other', subagent_id: 'sa-0-1' })).toMatchObject(refusal('not_found'))
     expect(await call('subagent.interrupt', { session_id: SESSION, subagent_id: 'sa-0-1' })).toMatchObject({ result: { found: true, subagent_id: 'sa-0-1' } })
+  })
+})
+
+describe('the scripted gateway with latency', () => {
+  it('holds each reply for the latency, and writes the events that follow a reply after it', async () => {
+    const { post, frames, clock } = await rawSocket({ latencyMs: 75 }, WITH_CHATS)
+    const resume = post('session.resume', { profile: 'research', session_id: INVOICES })
+    await clock.advance(74)
+    expect(frames.some(frame => frame.id === resume), 'not before the latency').toBe(false)
+    await clock.advance(1)
+    expect(frames.some(frame => frame.id === resume), 'at the latency').toBe(true)
+    const submit = post('prompt.submit', { profile: 'research', session_id: INVOICES, text: 'hello', input_id: 'input-1' })
+    await clock.advance(0)
+    const at = frames.length
+    await clock.advance(75)
+    expect(frames.slice(at).map(frame => frame.id ?? frame.params?.type)).toEqual([submit, 'session.info', 'message.start', 'message.delta', 'message.complete'])
+  })
+
+  it('writes at once with no latency', async () => {
+    const { post, frames } = await rawSocket({}, WITH_CHATS)
+    const resume = post('session.resume', { profile: 'research', session_id: INVOICES })
+    await settle()
+    expect(frames.some(frame => frame.id === resume)).toBe(true)
+  })
+
+  it('reads its latency from a whole number of ms, and refuses anything else', () => {
+    expect([undefined, '', '0', '75'].map(fixtureLatency)).toEqual([0, 0, 0, 75])
+    for (const text of ['-5', '7.5', 'fast', '75ms']) expect(() => fixtureLatency(text), text).toThrow(/whole number/)
+  })
+})
+
+describe("the scripted gateway and a Bot Chat seeded with rows", () => {
+  const rows = [{ role: 'user', text: 'one' }, { role: 'assistant', text: 'two' }, { role: 'user', text: 'three' }] as const
+  const fixture: Fixture = { ...WITH_BOTS, header: { ...WITH_BOTS.header, chats: { research: [{ id: RESEARCH_CHAT, title: 'Bot Chat', hidden: true, last_active: 1795250000, rows }] } } }
+
+  it('resumes the Bot Chat with the seeded rows, and lists it once', async () => {
+    const { call } = await rawSocket({}, fixture)
+    const resumed = await call('session.resume', { profile: 'research', session_id: RESEARCH_CHAT, display_projection: true })
+    expect((resumed.result?.messages as { text: string }[]).map(row => row.text)).toEqual(['one', 'two', 'three'])
+    const listed = await call('session.list', { profile: 'research', scope: 'stored', include_hidden: true })
+    expect((listed.result?.sessions as { session_id: string }[]).map(row => row.session_id)).toEqual([RESEARCH_CHAT])
+    expect((await call('session.list', { profile: 'research', title: 'Bot Chat' })).result?.sessions).toMatchObject([{ session_id: RESEARCH_CHAT }])
   })
 })

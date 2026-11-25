@@ -25,6 +25,8 @@ export interface ScriptOptions {
   readonly clock?: Clock
   /** Called with every frame the client sends, as it arrives. */
   readonly onReceived?: (frame: unknown) => void
+  /** Holds every reply this long after its call arrived. Events keep their place after the replies written before them. Default 0. */
+  readonly latencyMs?: number
 }
 
 export interface ScriptedDialer extends Dialer {
@@ -43,6 +45,13 @@ export interface ScriptedDialer extends Dialer {
   readonly upgrades: readonly Upgrade[]
   /** Stops the loopback listener. */
   close(): Promise<void>
+}
+
+/** Reads `HIGHWING_FIXTURE_LATENCY_MS`: unset or empty is 0, anything but a whole number of ms throws. */
+export function fixtureLatency(text: string | undefined): number {
+  if (text === undefined || text === '') return 0
+  if (!/^\d+$/.test(text)) throw new Error(`HIGHWING_FIXTURE_LATENCY_MS must be a whole number of ms, not ${JSON.stringify(text)}`)
+  return Number(text)
 }
 
 function memorySocket(gateway: ScriptedGateway): WireSocket {
@@ -112,7 +121,8 @@ export function scriptedDialer(fixture: Fixture, options: ScriptOptions = {}): S
   const clock = options.clock ?? systemClock
   const gateway = new ScriptedGateway(fixture, {
     clock, timing: options.timing ?? 'instant', ringFrames: options.ringFrames ?? RING_FRAMES, drop: options.drop ?? null,
-    ...(options.onReceived === undefined ? {} : { onReceived: options.onReceived })
+    ...(options.onReceived === undefined ? {} : { onReceived: options.onReceived }),
+    ...(options.latencyMs === undefined ? {} : { latencyMs: options.latencyMs })
   })
   const { transport = 'memory' } = options
   let listener: Promise<Loopback> | null = null
