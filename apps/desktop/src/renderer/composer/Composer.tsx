@@ -344,7 +344,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
       )}
       {editing !== null && (
         <div className="editing">
-          <span>{EDITING_WORDS[editing.kind]}</span>
+          <span>{editing.kind === 'gone' ? editing.why : EDITING_WORDS[editing.kind]}</span>
           <button type="button" onClick={cancelEdit}>Cancel</button>
         </div>
       )}

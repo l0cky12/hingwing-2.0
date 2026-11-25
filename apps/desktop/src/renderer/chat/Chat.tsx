@@ -1,10 +1,10 @@
-import { activityOf, modelViewOf, sendPlan, type AdmissionId, type AttachmentId, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type Version } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, sendPlan, type AttachmentId, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
 import { slotOf } from '../composer/drafts'
 import { ContextMeter } from '../composer/ContextMeter'
-import type { Editing } from '../composer/edit'
+import { editingOf, type EditTarget } from '../composer/edit'
 import { ModelPicker } from '../composer/ModelPicker'
 import { YoloPill } from '../composer/YoloPill'
 import { run, useTopic } from '../store'
@@ -26,10 +26,7 @@ const NO_VERSIONS: ChatVersions = []
 
 const distanceFrom = (element: HTMLElement) => element.scrollHeight - element.scrollTop - element.clientHeight
 
-type Held = { readonly id: SessionId | null; readonly press: number; readonly text: string } & (
-  | { readonly kind: 'sent'; readonly rowId: number }
-  | { readonly kind: 'queued'; readonly admissionId: AdmissionId }
-)
+type Held = { readonly id: SessionId | null } & EditTarget
 
 const holdsText = (target: EventTarget | null) =>
   (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) && target.value !== ''
@@ -191,13 +188,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const waiting = view !== null && view.pending.some(message => message.status !== 'failed')
   const listed = useMemo(() => new Map((view?.pending ?? []).flatMap(row => ('admissionId' in row ? [[row.admissionId, row] as const] : []))), [view])
   const [held, setEditing] = useState<Held | null>(null)
-  const editing = useMemo((): Editing | null => {
-    if (held === null || held.id !== id || view === null) return null
-    const { press, text } = held
-    if (held.kind === 'queued') return listed.get(held.admissionId)?.actions.includes('edit') === true ? { kind: 'queued', press, admissionId: held.admissionId, text } : null
-    const at = view.turns.findIndex(turn => turn.rowId === held.rowId)
-    return at < 0 ? null : { kind: 'sent', press, rowId: held.rowId, later: view.turns.length - 1 - at, text }
-  }, [held, id, view, listed])
+  const editing = useMemo(() => (held === null || held.id !== id ? null : editingOf(held, view?.turns ?? [], listed)), [held, id, view, listed])
   const [marks, dispatchMark] = useReducer(marked, listed, unmarked)
   if (marks.listed !== listed) dispatchMark({ kind: 'listed', listed })
   const pressed = useMemo(() => pressedOf(marks), [marks])
@@ -257,6 +248,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     if (chat.sessionId === null) return run({ do: 'start', chat, text, attachments })
     if (editing === null) return run({ do: 'send', sessionId: chat.sessionId, text, attachments })
     const { press } = editing
+    if (editing.kind === 'gone') return { ok: false, refusal: { kind: 'stale', message: editing.why } }
     if (editing.kind === 'sent') {
       const outcome = await rewrite(chat.sessionId, editing.rowId, text)
       if (!outcome.ok) return outcome
