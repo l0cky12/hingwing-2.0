@@ -1,4 +1,4 @@
-import { botsIn, GROUP_SIZE, type Bot, type Bots, type Groups, type Link, type OpenChat } from '@highwing/hermes/domain'
+import { botsIn, GROUP_SIZE, shownUnasked, type Bot, type Bots, type Groups, type Link, type OpenChat } from '@highwing/hermes/domain'
 import { botNameOf } from '../chats/chat-list'
 import { newChatKeys } from '../new-chat'
 import { NEW_BOT_BLOCKS, newBotBlock, NOTES } from './roster-view'
@@ -15,7 +15,7 @@ export const TOO_FEW = `A group chat needs at least ${GROUP_SIZE.min} bots.`
 export function seatableIn(bots: Bots | undefined, groups: Groups | undefined): readonly Bot[] {
   if (bots?.state !== 'listed' || groups?.state !== 'listed') return []
   const { seatable } = groups
-  return botsIn(bots.roster).filter(bot => seatable === null || seatable.includes(bot.id))
+  return botsIn(bots.roster).filter(bot => shownUnasked(bot) && (seatable === null || seatable.includes(bot.id)))
 }
 
 /**

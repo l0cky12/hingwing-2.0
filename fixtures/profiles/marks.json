@@ -1,0 +1,627 @@
+{
+  "profiles": [
+    {
+      "name": "default",
+      "path": "/tmp/hermes-proto-home",
+      "is_default": true,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Hermes",
+          "color": "#ef4444",
+          "shape": "blobatar::round",
+          "created": 1793000000000,
+          "hidden": true
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "editor",
+      "path": "/tmp/hermes-proto-home/profiles/editor",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0001",
+        "resolved_id": "local-0001",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "Tightened the intro paragraph",
+        "started_at": 1795164600,
+        "last_active": 1795251000,
+        "message_count": 4
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Editor",
+          "sectionId": "sec-writing0a1-4k7",
+          "sectionName": "Writing",
+          "color": "#f97316",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "copywriter",
+      "path": "/tmp/hermes-proto-home/profiles/copywriter",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Copywriter",
+          "sectionId": "sec-writing0a1-4k7",
+          "sectionName": "Writing",
+          "color": "#22c55e",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "researcher",
+      "path": "/tmp/hermes-proto-home/profiles/researcher",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0003",
+        "resolved_id": "local-0003",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "Found three papers on the topic",
+        "started_at": 1795165800,
+        "last_active": 1795252200,
+        "message_count": 4
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Researcher",
+          "sectionId": "sec-research0a1-8k7",
+          "sectionName": "Research",
+          "color": "#38bdf8",
+          "shape": "blobatar::round",
+          "created": 1793000000000,
+          "pinned": true
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "archivist",
+      "path": "/tmp/hermes-proto-home/profiles/archivist",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0004",
+        "resolved_id": "local-0004",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "Filed the March notes",
+        "started_at": 1795166400,
+        "last_active": 1795252800,
+        "message_count": 4
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Archivist",
+          "sectionId": "sec-research0a1-8k7",
+          "sectionName": "Research",
+          "color": "#8b5cf6",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "indexer",
+      "path": "/tmp/hermes-proto-home/profiles/indexer",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Indexer",
+          "sectionId": "sec-research0a1-8k7",
+          "sectionName": "Research",
+          "color": "#f43f5e",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "bursar",
+      "path": "/tmp/hermes-proto-home/profiles/bursar",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0006",
+        "resolved_id": "local-0006",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "Paid the two open invoices",
+        "started_at": 1795167600,
+        "last_active": 1795254000,
+        "message_count": 4
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Bursar",
+          "sectionId": "sec-ops0a1-3k7",
+          "sectionName": "Ops",
+          "color": "#eab308",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "dispatcher",
+      "path": "/tmp/hermes-proto-home/profiles/dispatcher",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Dispatcher",
+          "sectionId": "sec-ops0a1-3k7",
+          "sectionName": "Ops",
+          "color": "#ef4444",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "forecaster",
+      "path": "/tmp/hermes-proto-home/profiles/forecaster",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0008",
+        "resolved_id": "local-0008",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "Rain on Thursday",
+        "started_at": 1795168800,
+        "last_active": 1795255200,
+        "message_count": 4
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Forecaster",
+          "sectionId": "sec-ops0a1-3k7",
+          "sectionName": "Ops",
+          "color": "#f97316",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "janitor",
+      "path": "/tmp/hermes-proto-home/profiles/janitor",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Janitor",
+          "sectionId": "sec-ops0a1-3k7",
+          "sectionName": "Ops",
+          "color": "#22c55e",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "navigator",
+      "path": "/tmp/hermes-proto-home/profiles/navigator",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Navigator",
+          "sectionId": "sec-ops0a1-3k7",
+          "sectionName": "Ops",
+          "color": "#38bdf8",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "ranger",
+      "path": "/tmp/hermes-proto-home/profiles/ranger",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Ranger",
+          "sectionId": "sec-ops0a1-3k7",
+          "sectionName": "Ops",
+          "color": "#8b5cf6",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "scout",
+      "path": "/tmp/hermes-proto-home/profiles/scout",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0012",
+        "resolved_id": "local-0012",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "Checked the release notes",
+        "started_at": 1795171200,
+        "last_active": 1795257600,
+        "message_count": 4
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Scout",
+          "color": "#f43f5e",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "translator",
+      "path": "/tmp/hermes-proto-home/profiles/translator",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0013",
+        "resolved_id": "local-0013",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "Done: 12 strings",
+        "started_at": 1795171800,
+        "last_active": 1795258200,
+        "message_count": 4
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Translator",
+          "color": "#eab308",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "gardener",
+      "path": "/tmp/hermes-proto-home/profiles/gardener",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Gardener",
+          "color": "#ef4444",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "herald",
+      "path": "/tmp/hermes-proto-home/profiles/herald",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Herald",
+          "color": "#f97316",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "keeper",
+      "path": "/tmp/hermes-proto-home/profiles/keeper",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Keeper",
+          "color": "#22c55e",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "librarian",
+      "path": "/tmp/hermes-proto-home/profiles/librarian",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Librarian",
+          "color": "#38bdf8",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "old-helper",
+      "path": "/tmp/hermes-proto-home/profiles/old-helper",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0018",
+        "resolved_id": "local-0018",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "Last used in March",
+        "started_at": 1795174800,
+        "last_active": 1795261200,
+        "message_count": 4
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Old Helper",
+          "color": "#8b5cf6",
+          "shape": "blobatar::round",
+          "created": 1793000000000,
+          "hidden": true
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "test-bot",
+      "path": "/tmp/hermes-proto-home/profiles/test-bot",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Test Bot",
+          "sectionId": "sec-writing0a1-4k7",
+          "sectionName": "Writing",
+          "color": "#f43f5e",
+          "shape": "blobatar::round",
+          "created": 1793000000000,
+          "hidden": true,
+          "pinned": true
+        }
+      },
+      "has_avatar": false
+    }
+  ],
+  "bot_mode_protocol": true,
+  "install_id": "fixture"
+}
