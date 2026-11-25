@@ -1028,13 +1028,16 @@ function storedRow(value: unknown, index: number) {
   const row = fields<StoredTranscriptRow>(value)
   const role = row.optStr('role')
   const text = row.optStr('text') ?? ''
-  const rowId = row.optInt('row_id')
+  // A handoff carries the id of the row it was stored on, which is the compacted chat's continuation, not the turn before it
+  // (gateway/session_transcript_rows.py:25-31).
+  const handoff = row.optStr('row_kind') === 'compaction'
+  const rowId = handoff ? null : row.optInt('row_id')
   const seconds = row.optNum('timestamp')
   const at = seconds !== null && seconds > 0 ? Math.round(seconds * 1000) : null
   // Words steered into a turn are stored as a user row of their own, among the turn's rows (agent/prompt_builder.py:585-592).
   const steers = role === 'user' && row.optStr('display_kind') === 'steer'
   const items = ((): Item<'settled'>[] => {
-    if (row.optStr('row_kind') === 'compaction') return [{ kind: 'notice', what: 'said', tone: 'info', text }]
+    if (handoff) return [{ kind: 'notice', what: 'said', tone: 'info', text }]
     if (steers) return [{ kind: 'steer', text }]
     if (role === 'assistant') {
       const reasoning = row.optStr('reasoning') ?? ''

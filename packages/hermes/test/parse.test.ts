@@ -426,7 +426,7 @@ describe('parseTranscript', () => {
     const oldest = { ...page([...stored, compaction], 'cursor-1') }
     const history = parseTranscript([page(newer, null), { ...oldest, rows: oldest.rows.map(row => (row.row_id === 50 ? { ...row, row_kind: 'compaction' as const } : row)) }])
     expect(history.older).toEqual({ cursor: 'cursor-1' })
-    expect(history.turns.map(turn => turn.rows)).toEqual([[1, 2, 6, 10, 50], [101, 102, 106, 110]])
+    expect(history.turns.map(turn => turn.rows)).toEqual([[1, 2, 6, 10], [101, 102, 106, 110]])
     expect(history.turns.map(turn => turn.outcome.kind)).toEqual(['complete', 'complete'])
     expect(history.turns[0]?.items.at(-1)).toEqual({ kind: 'notice', what: 'said', tone: 'info', text: 'Earlier work summarised.' })
   })
