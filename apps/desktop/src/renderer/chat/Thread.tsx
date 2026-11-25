@@ -260,6 +260,8 @@ export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer }
       return <Moa node={node} open={isOpen(state, node.key, false)} onToggle={onToggle} />
     case 'status':
       return <p className="notice said" data-find={fieldId(node.key, 'text')}>{node.text}</p>
+    case 'steer':
+      return <p className="steer" data-find={fieldId(node.key, 'text')}>{node.text}</p>
   }
 }
 

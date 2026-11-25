@@ -68,6 +68,7 @@ function fields(view: ThreadView): Field[] {
           if (node.detail !== null) add(node.key, 'detail', node.detail, [node.key])
           break
         case 'status':
+        case 'steer':
           add(node.key, 'text', node.text)
           break
         case 'moa':

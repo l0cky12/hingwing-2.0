@@ -1,4 +1,4 @@
-import { activityOf, modelViewOf, type AdmissionId, type AttachmentId, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type Version } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, sendPlan, type AdmissionId, type AttachmentId, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
@@ -295,6 +295,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const fill = session?.usage.context ?? null
   const yolo = id !== null && live ? (session?.tuning.yolo ?? null) : null
   const online = useTopic('link')?.state === 'online'
+  const plan = session !== undefined && live ? sendPlan(session).by : 'submit'
 
   const closed = useClosedSides(id)
   const cards = useMemo(() => sideCards(session?.sides ?? [], closed), [session?.sides, closed])
@@ -344,6 +345,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         canAttach={online}
         showStop={session?.run.state === 'running'}
         onSend={onSend}
+        plan={plan}
         editing={editing}
         onCancelEdit={() => setEditing(null)}
         above={id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} />}

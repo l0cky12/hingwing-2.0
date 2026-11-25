@@ -82,6 +82,11 @@ describe('words outside steps', () => {
     expect(findInThread(asking, 'timed out').map(match => match.field)).toEqual([fieldId('run:1/9', 'error')])
   })
 
+  it('finds words the user steered into the turn', () => {
+    const steered = { ...view, turns: [{ ...turn, nodes: [...turn.nodes, { kind: 'steer', key: 'run:1/8', text: 'Use ISO dates.' } as const] }] }
+    expect(findInThread(steered, 'iso dates')).toEqual([{ field: fieldId('run:1/8', 'text'), start: 4, end: 13, opens: [] }])
+  })
+
   it('does not search the Done words, which only screen readers hear', () => {
     expect(findInThread(view, 'done').every(match => match.field !== fieldId(turn.key, 'end'))).toBe(true)
   })
