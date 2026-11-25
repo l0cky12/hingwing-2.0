@@ -306,17 +306,19 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
       cancelEdit()
       return
     }
-    if (event.key === 'Escape') {
-      if (onEscape?.() === true) event.preventDefault()
-      return
-    }
     if (event.key !== 'Enter' || event.shiftKey) return
     event.preventDefault()
     void submit()
   }
+  // The model and context popovers and the remove dialog sit in this footer too, and close on their own Escape.
+  const onFooterKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
+    if (!(event.target instanceof Element) || event.target.closest('form, .sides') === null) return
+    if (onEscape?.() === true) event.preventDefault()
+  }
 
   return (
-    <footer className={dragging && canAttach ? 'composer dragging' : 'composer'}>
+    <footer className={dragging && canAttach ? 'composer dragging' : 'composer'} onKeyDown={onFooterKeyDown}>
       {above}
       {menu.open && (
         <div className="slash-anchor">
