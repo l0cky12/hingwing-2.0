@@ -13,7 +13,7 @@ import { drawnView } from './drawn'
 import { ImageSessionContext } from './Image'
 import { forget, landAt, landed, pressFor } from './landing'
 import { FOLLOW_WITHIN, FOLLOWING, placeAfter, progressOf, type Place } from './place'
-import { Thread } from './Thread'
+import { Thread, type SecretAnswer } from './Thread'
 
 const PAGE = 0.875
 const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -162,10 +162,14 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     if (!shown && document.activeElement === jumper.current) composer.current?.focus()
   }, [shown])
 
-  const notice = place.kind !== 'reading' ? '' : asking ? 'Waiting for your OK' : progress !== place.since ? 'New steps below' : ''
+  const secretAsked = view !== null && view.asks.length > 0
+  const notice = place.kind !== 'reading' ? '' : asking ? 'Waiting for your OK' : secretAsked ? 'Waiting for your answer' : progress !== place.since ? 'New steps below' : ''
 
   const onAnswer = useCallback((promptId: PromptId, reply: PromptReply) => {
     if (id !== null) void run({ do: 'answer', sessionId: id, promptId, reply })
+  }, [id])
+  const onAnswerRequest = useCallback<SecretAnswer>((requestId, reply) => {
+    if (id !== null) void run({ do: 'answer', sessionId: id, requestId, reply })
   }, [id])
   const onLoadEarlier = useCallback(() => {
     if (id !== null) void run({ do: 'loadEarlier', sessionId: id })
@@ -251,7 +255,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
           <FileCallContext value={fileCall}>
             <ImageSessionContext value={id}>
               <Thread
-                view={view} relays={relays} onAnswer={onAnswer} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
+                view={view} relays={relays} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
                 canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
                 canBranch={canBranch} onBranch={onBranch} versions={versions} onVersion={onVersion}
               />
@@ -259,7 +263,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
           </FileCallContext>
         )}
       </main>
-      <div className={`jump${shown ? ' shown' : ''}${asking ? ' asking' : ''}`}>
+      <div className={`jump${shown ? ' shown' : ''}${asking || secretAsked ? ' asking' : ''}`}>
         <button ref={jumper} type="button" aria-label="Jump to latest" aria-describedby={words} onClick={jump}>
           <svg aria-hidden="true" viewBox="0 0 12 12" width="12" height="12"><path d="M6 2v8M2.5 6.5 6 10l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>

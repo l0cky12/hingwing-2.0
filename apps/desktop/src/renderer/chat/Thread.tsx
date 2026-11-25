@@ -1,5 +1,5 @@
-import { versionLabel, type ChatVersions, type Landing, type PromptId, type PromptReply, type Relay, type Version, type Versions } from '@highwing/hermes/domain'
-import { fieldId, findInThread, type FindMatch, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
+import { versionLabel, type ChatVersions, type Landing, type PromptId, type PromptReply, type Relay, type RequestId, type RequestReply, type Version, type Versions } from '@highwing/hermes/domain'
+import { fieldId, findInThread, type AskCard, type FindMatch, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Avatar } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
@@ -13,6 +13,7 @@ import { cx, Elapsed, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
 
 type Answer = (promptId: PromptId, reply: PromptReply) => void
+export type SecretAnswer = (requestId: RequestId, reply: Extract<RequestReply, { kind: 'secret' | 'skip' }>) => void
 
 interface NodeProps {
   readonly node: ThreadNode
@@ -73,6 +74,43 @@ function Prompt({ nodeKey, card, asking, onAnswer }: PromptProps) {
   )
 }
 
+function SecretCard({ card, onAnswer }: { readonly card: AskCard; readonly onAnswer: SecretAnswer }) {
+  const field = useRef<HTMLInputElement>(null)
+  const [empty, setEmpty] = useState(true)
+  const send = (event: FormEvent) => {
+    event.preventDefault()
+    const input = field.current
+    if (input === null || input.value === '' || card.busy) return
+    onAnswer(card.requestId, { kind: 'secret', value: input.value })
+    input.value = ''
+    setEmpty(true)
+  }
+  const skip = () => {
+    if (field.current !== null) field.current.value = ''
+    setEmpty(true)
+    onAnswer(card.requestId, { kind: 'skip' })
+  }
+  return (
+    <article className="turn">
+      <div className="thread">
+        <div className="approval live" role="group" aria-label={card.heading} data-end="asking">
+          <h3 data-find={fieldId(card.key, 'heading')}>{card.heading}</h3>
+          {card.command !== null && <Command nodeKey={card.key} command={card.command} />}
+          {card.why !== null && <p className="why" data-find={fieldId(card.key, 'why')}>{card.why}</p>}
+          {card.name !== null && <p className="why"><code data-find={fieldId(card.key, 'name')}>{card.name}</code></p>}
+          {card.waits !== null && <p className="why" data-find={fieldId(card.key, 'waits')}>{card.waits}</p>}
+          <form className="answer" onSubmit={send}>
+            <input ref={field} type="password" autoComplete="off" aria-label={card.label} onInput={event => setEmpty(event.currentTarget.value === '')} />
+            <button type="button" disabled={card.busy} onClick={skip}>Skip</button>
+            <button type="submit" className="primary" disabled={empty || card.busy}>Send</button>
+          </form>
+          {card.error !== null && <p className="err" data-find={fieldId(card.key, 'error')}>{card.error}</p>}
+        </div>
+      </div>
+    </article>
+  )
+}
+
 export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer }: NodeProps) {
   const { opened } = state
   const live = endTone === 'live'
@@ -113,6 +151,8 @@ export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer }
       return <Plan nodeKey={node.key} plan={node.plan} open={isOpen(state, node.key, node.plan.openByDefault)} live={live} elapsed={elapsed} onToggle={onToggle} />
     case 'notice':
       return <p className={node.tone === 'error' ? 'err' : 'notice'} data-find={fieldId(node.key, 'text')}>{node.text}</p>
+    case 'closed':
+      return node.words === null ? null : <div className="approval answered"><p data-find={fieldId(node.key, 'words')}>{node.words}</p></div>
     case 'moa':
     case 'status':
       return null
@@ -235,6 +275,7 @@ interface ThreadProps {
   /** The messages handed to other bots from this chat, oldest first. */
   readonly relays: readonly Relay[]
   readonly onAnswer: Answer
+  readonly onAnswerRequest: SecretAnswer
   readonly onLoadEarlier: () => void
   readonly onFindClosed: () => void
   readonly onFindScrolled: () => void
@@ -252,7 +293,7 @@ interface ThreadProps {
 const landingOf = ({ versions, current }: Versions) => versions[current]?.landing
 const NO_GROUPS: readonly Versions[] = []
 
-export function Thread({ view, relays, onAnswer, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, versions, onVersion }: ThreadProps) {
+export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, versions, onVersion }: ThreadProps) {
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
   const transcript = useRef<HTMLDivElement>(null)
@@ -375,6 +416,7 @@ export function Thread({ view, relays, onAnswer, onLoadEarlier, onFindClosed, on
         ))}
         {relayTurns(relayed.last)}
         {atEnd.length > 0 && <p className="versions-end">{atEnd.map(group => <VersionSwitch key={group.versions[0]?.sessionId} versions={group} onVersion={onVersion} />)}</p>}
+        {view.asks.map(card => <SecretCard key={card.key} card={card} onAnswer={onAnswerRequest} />)}
         {view.pending.map(message => (
           <article key={message.key} className="turn pending">
             <SentAttachments attachments={message.attachments} />
