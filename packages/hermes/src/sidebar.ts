@@ -23,6 +23,8 @@ export interface SessionList {
    * once, `stale` and with no `running`, until its refresh answers. An answer for a bot it left is kept for that bot.
    */
   follow(bot: BotId | null): void
+  /** List each of these bots not listed yet, one at a time and only while no other list is asked for, so a first visit shows kept rows too. */
+  warm(bots: readonly BotId[]): void
   retitle(id: SessionId, title: string): void
   drop(id: SessionId): void
   stale(): void
@@ -49,6 +51,11 @@ const LIVE_HIDDEN = { scope: 'live', include_hidden: true } as const
 interface Listing { readonly rows: readonly ListRow[]; readonly complete: boolean }
 
 const NONE: ReadonlySet<SessionId> = new Set()
+/**
+ * The most bots `warm` lists ahead. Each is three `session.list` calls of 45 to 72 ms on a real host, one bot at a time,
+ * so this many is about a second of background reads once per connection. A larger roster lists the rest on their first visit.
+ */
+const WARM_LIMIT = 16
 
 /** `owned` hears which bot each listed chat lives in before `changed` runs, so an actor made on `changed` reaches the right profile. */
 export function sessionList(conn: Connection, owned: (bot: BotId, sessions: readonly SessionId[]) => void, changed: () => void): SessionList {
@@ -58,6 +65,7 @@ export function sessionList(conn: Connection, owned: (bot: BotId, sessions: read
   let running = NONE
   /** bot -> whether it is to be listed again once the fetch in flight for it answers. */
   const fetching = new Map<BotId | null, boolean>()
+  let warming: readonly BotId[] = []
 
   const fetch = async (asked: BotId | null) => {
     fetching.set(asked, false)
@@ -79,7 +87,15 @@ export function sessionList(conn: Connection, owned: (bot: BotId, sessions: read
       const again = fetching.get(asked) === true
       fetching.delete(asked)
       if (again) void fetch(asked)
+      warmNext()
     }
+  }
+
+  const warmNext = () => {
+    if (fetching.size > 0) return
+    const [next, ...rest] = warming.filter(each => !lists.has(each))
+    warming = rest
+    if (next !== undefined) void fetch(next)
   }
 
   const refresh = () => {
@@ -112,6 +128,10 @@ export function sessionList(conn: Connection, owned: (bot: BotId, sessions: read
       status = lists.has(next) ? 'stale' : 'loading'
       changed()
       refresh()
+    },
+    warm: bots => {
+      warming = bots.filter(each => !lists.has(each)).slice(0, WARM_LIMIT)
+      warmNext()
     },
     retitle: (id, title) => edit(rows => (rows.some(row => row.id === id && row.title !== title) ? rows.map(row => (row.id === id ? { ...row, title } : row)) : rows)),
     drop: id => edit(rows => (rows.some(row => row.id === id) ? rows.filter(row => row.id !== id) : rows)),

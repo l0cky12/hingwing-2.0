@@ -288,6 +288,8 @@ export function openHermes(options: HermesOptions): Hermes {
   const roster = botList(conn, () => {
     bots.set(roster.bots)
     settle()
+    const listed = roster.bots
+    if (conn.reach === 'host' && listed.state === 'listed') list.warm(botsIn(listed.roster).map(bot => bot.id))
   })
   const bots = feed<Bots>(roster.bots)
 

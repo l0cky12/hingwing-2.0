@@ -744,7 +744,10 @@ describe("a bot's chats", () => {
 
     expect(opened.sent().filter(call => call.method === 'session.create')).toEqual([])
     const lists = opened.sent().filter(call => call.method === 'session.list' && !('title' in (call.params ?? {})))
-    expect(lists.map(call => call.params?.profile), "the socket's own profile until the open chat names a bot").toEqual([undefined, undefined, undefined, EMU, EMU, EMU, RESEARCH, RESEARCH, RESEARCH])
+    const each = (...bots: (BotId | undefined)[]) => bots.flatMap(bot => [bot, bot, bot])
+    expect(lists.map(call => call.params?.profile), "the socket's own profile until the open chat names a bot, then every other bot behind it, then Research again on its click").toEqual(
+      each(undefined, EMU, ...['dr-eggbot', 'research', 'timothy', 'hermes-dev', 'highwing'] as BotId[], RESEARCH)
+    )
   })
 
   it('mark a hidden chat that waits on an approval, with no window on it', async () => {
@@ -778,20 +781,29 @@ describe("a bot's chats", () => {
     expect(listsOf(opened, EMU), 'listed again').toHaveLength(6)
   })
 
-  it("keep an answer that comes after the user left its bot for that bot, and never show it under another", async () => {
+  it('list every other bot behind the open one, one at a time, so a first visit shows its rows at once', async () => {
     const opened = open(WITH_CHATS, { latencyMs: 75 })
-    await opened.clock.advance(2_000)
     const seen = shown(opened)
-
-    void opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
-    await opened.clock.advance(90)
-    void opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: EMU } })
-    await opened.clock.advance(100)
-    expect(seen, "Research's answer came while Emu was open").toEqual([`${RESEARCH}:loading:`, `${EMU}:stale:${SESSION}`, `${EMU}:ready:${SESSION}`])
+    while (listsOf(opened, EMU).length === 0) await opened.clock.advance(5)
+    expect(listsOf(opened, 'dr-eggbot' as BotId), 'nothing behind the open bot while its list is on its way').toHaveLength(0)
+    await opened.clock.advance(76)
+    expect(listsOf(opened, 'dr-eggbot' as BotId), 'the first bot behind it, once that answered').toHaveLength(3)
+    expect(listsOf(opened, RESEARCH), 'the next, after that one answers').toHaveLength(0)
+    await opened.clock.advance(1_000)
+    expect(listsOf(opened, RESEARCH)).toHaveLength(3)
+    expect(seen.every(each => each.startsWith(`${EMU}:`)), 'no other bot\'s answer is shown under the open one').toBe(true)
 
     void opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
     await opened.clock.advance(80)
-    expect(seen.at(-1), 'once its title lookup answers, shown from the answer it kept').toBe(`${RESEARCH}:stale:${[REMINDER, INVOICES, DOWNLOADS].join()}`)
+    expect(seen.at(-1), 'once its title lookup answers, shown from the answer kept for it').toBe(`${RESEARCH}:stale:${[REMINDER, INVOICES, DOWNLOADS].join()}`)
+    await opened.clock.advance(80)
+    expect(seen.at(-1)).toBe(`${RESEARCH}:ready:${[REMINDER, INVOICES, DOWNLOADS].join()}`)
+  })
+
+  it('list no bot behind the open one on a Hermes whose socket reaches one profile', async () => {
+    const opened = open(BOUND)
+    await opened.clock.advance(1_000)
+    expect(opened.sent().filter(call => call.method === 'session.list' && call.params?.profile !== undefined)).toEqual([])
   })
 
   it('ask for the new bot at once while the list of the bot it left is still on its way', async () => {
@@ -799,10 +811,11 @@ describe("a bot's chats", () => {
     await opened.clock.advance(2_000)
     void opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
     await opened.clock.advance(90)
+    const asked = { research: listsOf(opened, RESEARCH).length, emu: listsOf(opened, EMU).length }
     void opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: EMU } })
     await opened.clock.advance(1)
-    expect(listsOf(opened, RESEARCH), "Research's list has not answered").toHaveLength(3)
-    expect(listsOf(opened, EMU)).toHaveLength(6)
+    expect(listsOf(opened, RESEARCH), "Research's refresh has not answered").toHaveLength(asked.research)
+    expect(listsOf(opened, EMU)).toHaveLength(asked.emu + 3)
   })
 })
 
@@ -825,9 +838,8 @@ describe('a chat link', () => {
 
   it('looks through every bot for a chat only a list names, and opens it as that bot', async () => {
     const opened = open(WITH_CHATS)
-    await opened.clock.advance(0)
     const outcome = opened.hermes.run(linked(INVOICES))
-    expect(opened.hermes.open.get().opening).toEqual({ kind: 'link', sessionId: INVOICES })
+    expect(opened.hermes.open.get().opening, 'asked before any list could name it').toEqual({ kind: 'link', sessionId: INVOICES })
     await opened.clock.advance(0)
     expect(await outcome).toEqual({ ok: true, value: INVOICES })
     expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'chat', bot: RESEARCH, sessionId: INVOICES }, opening: null, missing: null })
