@@ -412,10 +412,10 @@ export const SHOWN: { readonly [type: string]: Shown } = {
   'approval.settled': promptSettled,
   'clarify.settled': promptSettled,
   'approval.cancelled': payload => ({ type: 'prompts.cancelled', ids: fields<ApprovalCancelledPayload>(payload).strs('request_ids') as PromptId[] }),
-  /** A reason outside Hermes's own five reads as withdrawn (`RequestCancelReason`, tui_gateway/contracts/server_requests.py:372-377). */
-  /** A side agent's answer, published on the chat's stream with no generation (gateway/session_tui_side.py:139-151). */
+  /** A side agent's answer, published on the chat's stream with no generation (gateway/session_tui_side.py:156-158). */
   'btw.complete': payload => sideAnswer(payload, 'btw'),
   'background.complete': payload => sideAnswer(payload, 'background'),
+  /** A reason outside Hermes's own five reads as withdrawn (`RequestCancelReason`, tui_gateway/contracts/server_requests.py:372-377). */
   'request.cancel': payload => {
     const p = fields<RequestCancelPayload>(payload)
     return { type: 'request.cancelled', id: p.str('id') as RequestId, why: CANCEL_WHY[p.str('reason')] ?? 'withdrawn' }
@@ -470,7 +470,7 @@ export const FOR_WINDOW: { readonly [type: string]: (payload: unknown) => PaneAs
   'preview.close': payload => ({ do: 'close', url: nonBlank(fields<PreviewClosePayload>(payload).optStr('url')) })
 }
 
-/** The receipts of operations that replace the chat's stored rows (gateway/session_mutations.py:383-397). A rewind names its cut instead. */
+/** The receipts of operations that replace the chat's stored rows (gateway/session_mutations.py:381-383). A rewind names its cut instead. */
 const REWRITES: ReadonlySet<string> = new Set(['compress', 'reset'])
 
 export const UNSHOWN: ReadonlySet<string> = new Set([
@@ -1299,7 +1299,6 @@ const GATEWAY_RUNS: ReadonlySet<string> = new Set([
   'insights', 'platforms', 'version', 'debug'
 ])
 
-/** `/new` opens a chat, which only the hub can. The rest are rows of `OWN_COMMANDS`. */
 const HIGHWING_RUNS: ReadonlySet<string> = new Set(['new', ...Object.keys(OWN_COMMANDS)])
 
 /** `desktop` is `null` for a command a desktop app should offer, else the reason it should not. */

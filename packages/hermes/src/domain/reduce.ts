@@ -63,7 +63,6 @@ export type SessionEvent =
   | { readonly type: 'notice.shown'; readonly notice: ShownNotice }
   | { readonly type: 'notice.cleared'; readonly key: string }
   | { readonly type: 'request.cancelled'; readonly id: RequestId; readonly why: CloseWhy }
-  /** A side question's or a background prompt's answer, by any client's task. */
   | { readonly type: 'side.answered'; readonly id: SideId; readonly kind: SideTask['kind']; readonly asked: string | null; readonly text: string }
   | { readonly type: 'connect'; readonly card: CardRequest; readonly settled: CloseWhy | null }
   | {
@@ -73,14 +72,12 @@ export type SessionEvent =
       readonly queue?: readonly Admission[]
       readonly model?: ModelRef
       readonly cwd?: string
-      /** Switches Hermes pushes for every viewer of the chat. */
       readonly tuning?: Partial<Said>
       readonly pick?: PickOutcome
       /** The session's generation now, which a policy change such as a model switch moves without a turn. */
       readonly generation?: Generation
       /** Hermes cut the chat before this stored row, here or in another client. */
       readonly cutBefore?: number
-      /** Hermes rewrote the chat's stored rows (a compression or a reset, from any client), so it is read again. */
       readonly rewritten?: true
       /**
        * A committed model switch. Hermes drops the chat's agent (gateway/session_mutations.py:362) and the next
@@ -140,7 +137,6 @@ export type ServerRequest =
 export type CardRequest = Extract<ServerRequest, { kind: 'card' }>
 export type BridgeRequest = Extract<ServerRequest, { kind: 'bridge' }>
 
-/** The switches Hermes says on every attach and pushes in `session.info`. The rest are read (`facts`). */
 export type Said = Pick<Tuning, 'effort' | 'fast' | 'yolo'>
 
 /** A parsed attach reply (`session.create` / `session.resume`). */

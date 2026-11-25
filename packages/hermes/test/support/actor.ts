@@ -18,7 +18,6 @@ const SNAPSHOT = {
   last_sequence: 0, subscription_id: 'sub-1', revision: 3, execution_generation: 0, pending: [], prompts: [], info: {}, open_requests: []
 }
 
-/** One actor, attached, whose calls wait until the test answers them. */
 export async function stage({ watched = false, hub: over = {} }: { readonly watched?: boolean; readonly hub?: Partial<Hub> } = {}) {
   const calls: Call[] = []
   const state: { link: Link } = { link: { state: 'online' } }
@@ -58,10 +57,6 @@ export async function stage({ watched = false, hub: over = {} }: { readonly watc
   await answer('session.resume', SNAPSHOT)
   return {
     actor, calls, answer, event, drop,
-    /**
-     * The socket drops with every call unanswered. Hermes then answers the attach on the next socket with `held`.
-     * `replay: 'lost'` is a Hermes that no longer has the missed frames, so the chat is read again whole.
-     */
     redial: async (held: Record<string, unknown> = {}, replay: 'kept' | 'lost' = 'kept') => {
       drop()
       state.link = { state: 'online' }

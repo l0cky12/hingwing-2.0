@@ -83,7 +83,6 @@ interface View {
   turnsEnded: number
   /** null until the header or a recorded frame names it. */
   yolo: boolean | null
-  /** The attach reply's `info` fields the header and the recorded session.info frames name, as Hermes said them last. */
   info: Obj
 }
 
@@ -146,7 +145,6 @@ const correction: Check = (_gateway, _socket, params) =>
     : 'invalid_params'
 const isString = (value: unknown): value is string => typeof value === 'string'
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
-/** A closed key set: every key named, and each value of its type. */
 const closed = (keys: Readonly<Record<string, (value: unknown) => boolean>>): Check => (_gateway, _socket, params) =>
   Object.entries(params).every(([key, value]) => Object.hasOwn(keys, key) && keys[key]!(value)) ? null : 'invalid_params'
 /** gateway/session_tui_side.py:33-38 */
@@ -165,9 +163,9 @@ const PAYLOADS: Readonly<Record<string, (payload: Obj) => boolean>> = {
 }
 const EFFORT_WORDS: ReadonlySet<string> = new Set(['none', 'false', 'disabled', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
 const COMPRESS_FIELDS: Readonly<Record<string, (value: unknown) => boolean>> = { focus: isString, preview: isBoolean, partial: isBoolean, keep_last: isInt }
-/** Operations that need `expected_generation` (gateway/session_mutations.py:20,150, persistence/authority/runtime.py:74). */
+/** Operations that need `expected_generation` (gateway/session_mutations.py:20,154, persistence/authority/runtime.py:75). */
 const FENCED: ReadonlySet<string> = new Set(['model', 'reasoning', 'workspace', 'editor_mcp', 'edit_policy', 'delete', 'rewind', 'reset', 'branch', 'compress'])
-/** gateway/session_mutations.py:146-152: the closed field set, the generation an operation needs, then its payload. */
+/** gateway/session_mutations.py:150-154: the closed field set, the generation an operation needs, then its payload. */
 const mutation: Check = (_gateway, _socket, params) => {
   const { operation, payload } = params
   const fields = Object.keys(params).filter(key => key !== 'expected_generation')
@@ -230,7 +228,7 @@ const ownCard: Check = (gateway, _socket, params) =>
 const UNREPLAYED: ReadonlySet<string> = new Set(['terminal.read', 'preview.read', 'preview.act', 'window.read', 'theme.apply', 'tour'])
 
 const AFTER: Readonly<Record<string, (view: View, params: Obj, reply: unknown) => void>> = {
-  /** gateway/session_tui_config.py:357-377: a YOLO set sends no session.info, so a later attach reply is the only other word of it. */
+  /** gateway/session_busy_controls.py:137-166: a YOLO set sends no session.info, so a later attach reply is the only other word of it. */
   'config.set': (view, params, reply) => {
     if (params.key === 'yolo' && isObject(reply) && (reply.value === '1' || reply.value === '0')) view.yolo = reply.value === '1'
   },
@@ -953,7 +951,6 @@ export class ScriptedGateway {
     this.pump()
   }
 
-  /** Whether the story waits for a call of this method now. A config.set it records is the story's, and the header answers any other. */
   awaits(method: string): boolean {
     const step = this.fixture.steps[this.step]
     return step !== undefined && 'await' in step && step.await === method

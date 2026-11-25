@@ -739,7 +739,6 @@ function ownDisplay() {
 
 const ANSWER_CALLS = new Set(['clarify.lock', 'connection.respond'])
 const ALWAYS = () => true
-/** The calls `--acted-elsewhere` leaves to another client, by method, each with the recorded params it covers. The window has no control for them yet. */
 const ACTED_CALLS = {
   'prompt.resolve_unknown': ALWAYS, 'prompt.replace_queued': ALWAYS, 'prompt.cancel': ALWAYS, 'prompt.steer_queued': ALWAYS, 'session.steer': ALWAYS, 'session.redirect': ALWAYS,
   'session.export': ALWAYS,

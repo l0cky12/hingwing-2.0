@@ -256,7 +256,7 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
 
   tune: (port, command) => port.whenLive(async () => {
     if (command.set === 'effort') {
-      // A committed level comes back in a session.info before the reply. One set during a turn is held for the next (gateway/session_mutations.py:129-137).
+      // A committed level comes back in a session.info before the reply. One set during a turn is held for the next (gateway/session_mutations.py:136-143,370-377).
       const set = await port.mutate('reasoning', { effort: command.to === 'default' ? null : command.to }, port.fence.generation ?? 0)
       return set.ok ? DONE : set
     }
@@ -271,7 +271,6 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
 type Switched = Exclude<Extract<SessionCommand, { do: 'tune' }>, { set: 'effort' }>
 interface Switch { readonly key: string; readonly value: string; said(reply: Served['config.set']['result']): Partial<Tuning> }
 
-/** The `config.set` of each switch, and what Hermes's reply says it is now. Hermes pushes no session.info for most of them, so the reply is the word. */
 const SWITCHES: { readonly [S in Switched['set']]: (command: Extract<Switched, { set: S }>) => Switch } = {
   busy: ({ to }) => ({ key: 'busy', value: to, said: reply => ({ busy: parseBusy(reply) ?? to }) }),
   reasoning: ({ on }) => ({ key: 'show_reasoning', value: on ? 'on' : 'off', said: reply => ({ reasoning: parseShown(reply) ?? on }) }),

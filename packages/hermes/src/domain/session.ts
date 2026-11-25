@@ -121,7 +121,7 @@ export interface SideTask {
   readonly asked: string | null
   readonly state:
     | { readonly s: 'running' }
-    /** Hermes's answer. A failure is words too, starting `error:` (gateway/session_tui_side.py:139-146). */
+    /** Hermes's answer. A failure is words too, starting `error:` (gateway/session_tui_side.py:143-154). */
     | { readonly s: 'done'; readonly text: string }
     /** The chat was read again while it ran, so its answer may have gone by unseen. */
     | { readonly s: 'lost' }

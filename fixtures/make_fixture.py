@@ -1482,7 +1482,6 @@ async def commands_main():
     await asyncio.wait_for(recorder.push_of("background.complete"), 60)
     await story_call("config.set", {"session_id": session_id, "key": "yolo", "value": "on"})
     compressed = await story_call("session.mutate", await mutate("compress", {"focus": FOCUS}))
-    # The rows a rebuild reads once the compression's receipt is out, placed before it as the gateway's store has them.
     recorder.steps.insert(compressed + 1, {"at": recorder.steps[compressed]["at"], "stored": await stored_rows()})
     completed = await call(socket, "complete.path", {"session_id": session_id, "word": "@no"})
     await story_call("session.mutate", await mutate("reasoning", {"effort": "high"}))

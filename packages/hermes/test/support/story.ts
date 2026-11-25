@@ -10,7 +10,6 @@ import type { Generation, InputId, Item, PromptId, RequestId, SessionContent, Se
 export type Beat =
   | { readonly kind: 'frame'; readonly frame: StampedEvent }
   | { readonly kind: 'user'; readonly inputs: readonly SessionInput[] }
-  /** From here on Hermes stores these rows, which a rebuild reads. */
   | { readonly kind: 'stored'; readonly rows: readonly unknown[] }
 
 export interface Story {
@@ -181,7 +180,6 @@ function open(story: Story): Tracked {
 
 export interface Moment { readonly beat: number; readonly state: Tracked }
 
-/** Every beat in order. A rebuild the beats start (a rewrite of the stored rows) is answered with the rows Hermes stores by then. */
 export function fold(story: Story, onMoment?: (moment: Moment) => void): Tracked {
   let state = open(story)
   let stored = story.fixture.header.stored
