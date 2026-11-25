@@ -81,7 +81,11 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     if (element === null || id === null || landing === null || view === null || view.turns.length === 0) return
     if (landing === 'end') return landed(id)
     const request = element.querySelector(`.turn[data-row="${landing}"] > .request`)
-    if (request === null) return
+    if (request === null) {
+      if (view.earlier === 'more') void run({ do: 'loadEarlier', sessionId: id })
+      else if (view.earlier === 'none') landed(id)
+      return
+    }
     landed(id)
     request.scrollIntoView({ block: 'center', behavior: 'instant' })
     setPlace(held => placeAfter(held, distanceFrom(element), progress))

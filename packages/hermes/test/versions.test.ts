@@ -33,7 +33,8 @@ const TRANSCRIPTS: Readonly<Record<string, readonly (readonly [string, string])[
   parent: [...SHARED, ['user', 'Group by customer'], ['assistant', 'Grouped by customer.'], ['user', 'Who owes most?'], ['assistant', 'Acme.']],
   second: [...SHARED, ['user', 'Group by month'], ['assistant', 'Grouped by month.']],
   third: [...SHARED, ['user', 'Group by amount'], ['assistant', 'Grouped by amount.']],
-  grandchild: [...SHARED, ['user', 'Group by month'], ['assistant', 'Grouped by month.'], ['user', 'And by week'], ['assistant', 'Done.']]
+  grandchild: [...SHARED, ['user', 'Group by month'], ['assistant', 'Grouped by month.'], ['user', 'And by week'], ['assistant', 'Done.']],
+  retry: [...SHARED, ['user', 'Group by week'], ['assistant', 'Grouped by week.']]
 }
 
 const pointsFor = (pairs: readonly (readonly [parent: string, child: string])[]) =>
@@ -60,6 +61,16 @@ describe('the chats that are versions of one message', () => {
       ['1 / 2', [[SECOND, 'end'], [GRANDCHILD, 5]]]
     ])
     expect(familiesOf(rows, GRANDCHILD)).toEqual({ above: { parent: SECOND, children: [GRANDCHILD] }, below: [] })
+  })
+
+  it('a branch branched again at the same message shows both families there, so each chat reaches the other', () => {
+    const RETRY = id('retry')
+    const family = { above: { parent: PARENT, children: [SECOND, THIRD] }, below: [RETRY] }
+    const versions = versionsOf(SECOND, family, pointsFor([['parent', 'second'], ['parent', 'third'], ['second', 'retry']]))
+    expect(labels(versions)).toEqual([
+      ['2 / 3', [[PARENT, 3], [SECOND, 3], [THIRD, 3]]],
+      ['1 / 2', [[SECOND, 3], [RETRY, 3]]]
+    ])
   })
 
   it('a compression continuation is not counted, though it names the chat as its parent', () => {

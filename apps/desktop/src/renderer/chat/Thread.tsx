@@ -1,4 +1,4 @@
-import { versionLabel, type ChatVersions, type PromptId, type PromptReply, type Relay, type Version, type Versions } from '@highwing/hermes/domain'
+import { versionLabel, type ChatVersions, type Landing, type PromptId, type PromptReply, type Relay, type Version, type Versions } from '@highwing/hermes/domain'
 import { fieldId, findInThread, type FindMatch, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Avatar } from '../bots/Bots'
@@ -168,7 +168,7 @@ interface TurnProps {
   readonly onEdit: Rewrite
   readonly onRegenerate: Rewrite
   readonly onBranch: (rowId: number) => void
-  readonly versions: Versions | null
+  readonly versions: readonly Versions[]
   readonly onVersion: (version: Version) => void
 }
 
@@ -182,7 +182,7 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit
         <p className="request" data-find={fieldId(turn.key, 'request')}>
           {request}
           <span className="actions">
-            {versions !== null && <VersionSwitch versions={versions} onVersion={onVersion} />}
+            {versions.map(group => <VersionSwitch key={group.versions[0]?.sessionId} versions={group} onVersion={onVersion} />)}
             <CopyButton text={request} name="Copy request" />
             {rowId !== null && <button type="button" className="copy edit" aria-label="Edit message" disabled={!canEdit} onClick={() => onEdit(rowId, request)}><Pencil /></button>}
             {rowId !== null && <button type="button" className="copy branch" aria-label="Branch from here" disabled={!canBranch} onClick={() => onBranch(rowId)}><Fork /></button>}
@@ -245,6 +245,7 @@ interface ThreadProps {
 }
 
 const landingOf = ({ versions, current }: Versions) => versions[current]?.landing
+const NO_GROUPS: readonly Versions[] = []
 
 export function Thread({ view, relays, onAnswer, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, versions, onVersion }: ThreadProps) {
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
@@ -258,8 +259,12 @@ export function Thread({ view, relays, onAnswer, onLoadEarlier, onFindClosed, on
     setFind(held => (held?.openedByFind.has(key) ? { ...held, openedByFind: new Set([...held.openedByFind].filter(row => row !== key)) } : held))
   }, [])
 
-  const atEnd = versions.find(group => landingOf(group) === 'end')
-  const versionsAt = (rowId: number | null) => (rowId === null ? null : versions.find(group => landingOf(group) === rowId) ?? null)
+  const groupsAt = useMemo(() => {
+    const held = new Map<Landing | undefined, Versions[]>()
+    for (const group of versions) held.set(landingOf(group), [...(held.get(landingOf(group)) ?? []), group])
+    return (landing: Landing | null): readonly Versions[] => (landing === null ? undefined : held.get(landing)) ?? NO_GROUPS
+  }, [versions])
+  const atEnd = groupsAt('end')
 
   const relayed = useMemo(() => placeRelays(relays, view.turns.map(turn => turn.key)), [relays, view.turns])
   const relayTurns = (held: readonly Relay[] = []) => held.map(relay => <RelayTurn key={relay.id} relay={relay} />)
@@ -358,13 +363,13 @@ export function Thread({ view, relays, onAnswer, onLoadEarlier, onFindClosed, on
             <Turn
               turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer}
               canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} canBranch={canBranch}
-              onEdit={onEdit} onRegenerate={onRegenerate} onBranch={onBranch} versions={versionsAt(turn.rowId)} onVersion={onVersion}
+              onEdit={onEdit} onRegenerate={onRegenerate} onBranch={onBranch} versions={groupsAt(turn.rowId)} onVersion={onVersion}
             />
             {relayTurns(relayed.after.get(turn.key))}
           </Fragment>
         ))}
         {relayTurns(relayed.last)}
-        {atEnd !== undefined && <p className="versions-end"><VersionSwitch versions={atEnd} onVersion={onVersion} /></p>}
+        {atEnd.length > 0 && <p className="versions-end">{atEnd.map(group => <VersionSwitch key={group.versions[0]?.sessionId} versions={group} onVersion={onVersion} />)}</p>}
         {view.pending.map(message => (
           <article key={message.key} className="turn pending">
             <p className="request" data-find={fieldId(message.key, 'text')}>{message.text}</p>

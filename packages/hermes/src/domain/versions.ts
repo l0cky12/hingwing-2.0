@@ -78,7 +78,7 @@ export function versionsOf(asked: SessionId, family: Family, points: ReadonlyMap
       { sessionId: asked, landing: at(children[0] as SessionId)?.parent ?? null },
       ...children.map(child => ({ sessionId: child, landing: at(child)?.child ?? null }))
     ])
-    return group === null || group.versions[0]?.landing === asChild?.versions[asChild.current]?.landing ? [] : [group]
+    return group === null ? [] : [group]
   })
   return [...(asChild === null ? [] : [asChild]), ...asParent]
 }

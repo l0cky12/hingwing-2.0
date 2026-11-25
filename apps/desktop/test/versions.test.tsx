@@ -15,7 +15,7 @@ const at = (current: number): Versions => ({ versions: TRIES, current })
 const turn: TurnView = { key: 't1', time: null, request: 'Group them by month', rowId: 3, tokens: null, nodes: [], end: { kind: 'done', words: 'Done' } }
 const props = (more: Partial<Props>): Props => ({
   turn, open: NONE_OPEN, onToggle: () => {}, onAnswer: () => {}, canEdit: true, showsRegenerate: false, canRegenerate: false,
-  canBranch: true, onEdit: () => {}, onRegenerate: () => {}, onBranch: () => {}, versions: at(1), onVersion: () => {}, ...more
+  canBranch: true, onEdit: () => {}, onRegenerate: () => {}, onBranch: () => {}, versions: [at(1)], onVersion: () => {}, ...more
 })
 const draw = (more: Partial<Props>) => renderToStaticMarkup(<Turn {...props(more)} />)
 
@@ -37,13 +37,20 @@ describe('the version switcher', () => {
   })
 
   it('is not there for a message with one try', () => {
-    expect(draw({ versions: null })).not.toContain('Versions')
+    expect(draw({ versions: [] })).not.toContain('Versions')
   })
 
   it('has no Previous on the first version and no Next on the last', () => {
-    expect(draw({ versions: at(0) })).toMatch(/<button[^>]*aria-label="Previous version"[^>]*disabled/)
-    expect(draw({ versions: at(0) })).toContain('1 / 3')
-    expect(draw({ versions: at(2) })).toMatch(/<button[^>]*aria-label="Next version"[^>]*disabled/)
+    expect(draw({ versions: [at(0)] })).toMatch(/<button[^>]*aria-label="Previous version"[^>]*disabled/)
+    expect(draw({ versions: [at(0)] })).toContain('1 / 3')
+    expect(draw({ versions: [at(2)] })).toMatch(/<button[^>]*aria-label="Next version"[^>]*disabled/)
+  })
+
+  it('shows both families of a chat that is a branch and was branched again at the same message', () => {
+    const own: Versions = { versions: [{ sessionId: SECOND, landing: 3 }, { sessionId: 's4' as SessionId, landing: 3 }], current: 0 }
+    const markup = draw({ versions: [at(1), own] })
+    expect(markup.match(/role="group" aria-label="Versions"/g)).toHaveLength(2)
+    expect(markup.indexOf('2 / 3')).toBeLessThan(markup.indexOf('1 / 2'))
   })
 
   it('asks for the version beside the shown one, with where its message sits', () => {
