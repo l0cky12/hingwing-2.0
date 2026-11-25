@@ -1,6 +1,6 @@
 import type { ThreadNode, ThreadView, TurnView } from '@highwing/thread'
 
-const undrawn = (node: ThreadNode) => node.kind === 'moa' || node.kind === 'status' || node.kind === 'steer' || (node.kind === 'closed' && node.words === null)
+const undrawn = (node: ThreadNode) => node.kind === 'steer' || (node.kind === 'closed' && node.words === null)
 
 const drawnTurns = new WeakMap<TurnView, TurnView | null>()
 

@@ -3,7 +3,7 @@ import type {
   AdmissionId, FileDiff, Generation, HelperId, HelperItem, HermesRequest, InputId, Item, NoticeItem, Outcome, PlanEntry, PlanItem, PromptId, PromptItem, QueuedMessage, ReasoningItem,
   RequestId, Session, SettledTurn, Sync, ToolId, ToolItem, ToolResult, TurnId
 } from '../../hermes/src/domain/session'
-import { checkThread, outline, threadView, type HelperView, type PlanView, type StepView, type ThreadNode, type ThreadView } from '../src/thread-view'
+import { checkThread, findInThread, outline, threadView, type HelperView, type PlanView, type StepView, type ThreadNode, type ThreadView } from '../src/thread-view'
 
 const CLOCK = { now: 1_800_000_000_000, timeZone: 'UTC' }
 const COMPLETE: Outcome = { kind: 'complete' }
@@ -570,7 +570,7 @@ describe('checkThread on helpers, plans and reasoning', () => {
   it('claims the keys of helper steps and plan entries', () => {
     expect(checkThread(turn([helperNode('t1/0', 'working'), { kind: 'prose', key: 't1/0/s0', markdown: 'x', streaming: false }], live('t1/0'))))
       .toEqual(['key t1/0/s0 is used twice'])
-    expect(checkThread(turn([planNode('t1/0'), { kind: 'notice', key: 't1/0/e1', tone: 'info', text: 'x' }], live('t1/0'))))
+    expect(checkThread(turn([planNode('t1/0'), { kind: 'notice', key: 't1/0/e1', tone: 'info', text: 'x', detail: null }], live('t1/0'))))
       .toEqual(['key t1/0/e1 is used twice'])
   })
 })
@@ -610,17 +610,72 @@ describe('what Hermes says', () => {
   const interlude = (items: readonly Item<'settled'>[], id = 'interlude:2'): SettledTurn =>
     ({ id: id as TurnId, request: null, began: null, items, outcome: { kind: 'interlude' }, rows: [], tokens: null, reply: null })
 
-  it('prints a glyph line for a MoA round, a status line and a notice', () => {
+  const timed = (seenAt: number | null, ttlMs: number | null, over: Partial<Extract<Item, { kind: 'status'; what: 'notice' }>> = {}): Item<'settled'> =>
+    ({ kind: 'status', what: 'notice', key: 'sync', level: 'info', text: 'Synced.', detail: null, ttlMs, seenAt, state: 'shown', ...over })
+  const at = (now: number) => ({ ...CLOCK, now })
+
+  it('prints a glyph line for a MoA round and a status line, and leaves out a cleared notice', () => {
     const turn = running([moa, goal, notice('shown'), notice('cleared')])
     expect(lines(turn)).toEqual([
       '> Do the errand',
-      '≋ MoA 2/3 · 1 references · aggregating with judge',
+      '≋ Asking 3 models · Combining their answers',
       '· goal: Goal met.',
-      '※ warn: Credits are low.',
-      '※ warn: Credits are low.  (cleared)',
+      '! warn: Credits are low.',
       '◉ Thinking'
     ])
     expect(checkThread(threadView(turn, CLOCK))).toEqual([])
+  })
+
+  it('says how many models a MoA round asks and how many answered, and opens to each answer', () => {
+    const round = (progress: { done: number; total: number } | null, phase: Extract<Item, { kind: 'moa' }>['phase'] = { is: 'advising' }): Item<'settled'> =>
+      ({ kind: 'moa', progress, references: [], phase })
+    expect(lines(running([round(null)]))[1]).toBe('≋ Asking models')
+    expect(lines(running([round({ done: 0, total: 1 })]))[1]).toBe('≋ Asking 1 model · 0 answered')
+    expect(lines(running([round({ done: 2, total: 3 })]))[1]).toBe('≋ Asking 3 models · 2 answered')
+    expect(lines(running([round({ done: 3, total: 3 }, { is: 'aggregating', by: null })]))[1]).toBe('≋ Asking 3 models · Combining their answers')
+    expect(lines(running([moa]), new Set(['t9/0'])).slice(1, 3)).toEqual(['≋ Asking 3 models · Combining their answers', '    a: Use rm.'])
+  })
+
+  it('gives a notice the tone of its level, and its detail behind a press', () => {
+    const levels = (['info', 'success', 'warn', 'error'] as const).map(level => timed(null, null, { level, text: level }))
+    expect(lines(running(levels)).slice(1, 5)).toEqual(['! info', '! success', '! warn: warn', '! error: error'])
+    const detailed = running([timed(null, null, { detail: 'The full story.\nSecond line.' })])
+    expect(lines(detailed).slice(1, 2)).toEqual(['! Synced.'])
+    expect(lines(detailed, new Set(['t9/0'])).slice(1, 4)).toEqual(['! Synced.', '    The full story.', '    Second line.'])
+  })
+
+  it('finds the words of a notice\'s detail and of each MoA answer, and opens their node to show them', () => {
+    const view = threadView(running([timed(null, null, { detail: 'Prune the cache?' }), moa, goal]), CLOCK)
+    expect(findInThread(view, 'cache').map(match => match.opens)).toEqual([['t9/0']])
+    expect(findInThread(view, 'Use rm').map(match => match.opens)).toEqual([['t9/1']])
+    expect(findInThread(view, 'Combining').map(match => match.opens)).toEqual([[]])
+    expect(findInThread(view, 'Goal met').map(match => match.opens)).toEqual([[]])
+  })
+
+  it('shows a notice until its time to live runs out, and says when the view changes for it', () => {
+    const shown = CLOCK.now - 1_000
+    const idle = session({ history: [settled([text('Done.'), timed(shown, 5_000)])] })
+    const before = threadView(idle, CLOCK)
+    expect(outline(before).split('\n')).toEqual(['> Do the errand', '| Done.', '! Synced.', '✓ Done'])
+    expect(before.changesAt).toBe(shown + 5_000)
+    const after = threadView(idle, at(shown + 5_000))
+    expect(outline(after).split('\n')).toEqual(['> Do the errand', '| Done.', '✓ Done'])
+    expect(after.changesAt).toBeNull()
+  })
+
+  it('takes the earliest notice to run out, in the open turn and the interlude alike, and none that has run out', () => {
+    const now = CLOCK.now
+    expect(threadView(session({ interlude: [timed(now - 10, 100), timed(now, 50, { key: 'b' })] }), CLOCK).changesAt).toBe(now + 50)
+    expect(threadView(running([timed(now - 10, 100)]), CLOCK).changesAt).toBe(now + 90)
+    expect(threadView(running([timed(now - 200, 100), timed(null, null, { key: 'b' })]), CLOCK).changesAt).toBeNull()
+  })
+
+  it('drops an interlude once nothing in it shows, and keeps one that still says something', () => {
+    const history = [settled([text('Done.')]), interlude([notice('cleared')]), settled([text('Again.')], COMPLETE, 't3')]
+    expect(threadView(session({ history }), CLOCK).turns.map(turn => turn.key)).toEqual(['t1', 't3'])
+    expect(threadView(session({ history: [settled([text('Done.')])], interlude: [notice('cleared')] }), CLOCK).turns.map(turn => turn.key)).toEqual(['t1'])
+    expect(threadView(session({ interlude: [timed(CLOCK.now, 10)] }), at(CLOCK.now + 10)).turns).toEqual([])
+    expect(threadView(session({ interlude: [notice('cleared'), goal] }), CLOCK).turns.map(turn => turn.nodes.map(node => node.kind))).toEqual([['status']])
   })
 
   it('shows the live interlude after the last turn, with no request and no end mark', () => {

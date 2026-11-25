@@ -3,7 +3,7 @@ import type { Phrase, StepView, ThreadView } from './thread-view'
 
 export type FieldPart =
   | 'request' | 'title' | 'heading' | 'command' | 'why' | 'name' | 'waits' | 'error' | 'words' | 'text' | 'detail' | 'end'
-  | `block ${number}` | `path ${number}` | `line ${number} ${number}` | `body ${number}`
+  | `block ${number}` | `path ${number}` | `line ${number} ${number}` | `body ${number}` | `label ${number}`
 
 export const fieldId = (key: string, part: FieldPart) => `${key} ${part}`
 
@@ -65,6 +65,18 @@ function fields(view: ThreadView): Field[] {
         }
         case 'notice':
           add(node.key, 'text', node.text)
+          if (node.detail !== null) add(node.key, 'detail', node.detail, [node.key])
+          break
+        case 'status':
+          add(node.key, 'text', node.text)
+          break
+        case 'moa':
+          add(node.key, 'title', node.title)
+          if (node.meta !== null) add(node.key, 'words', node.meta)
+          node.references.forEach(({ label, text }, index) => {
+            add(node.key, `label ${index}`, label, [node.key])
+            add(node.key, `body ${index}`, text, [node.key])
+          })
           break
         case 'closed':
           if (node.words !== null) add(node.key, 'words', node.words)
