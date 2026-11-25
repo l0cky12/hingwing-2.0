@@ -2,9 +2,10 @@ import {
   turnActivityOf,
   type Asked, type Attachment, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type HermesRequest, type Item, type MoaItem, type NoticeItem,
   type Outcome, type PlanEntry, type PlanItem, type PromptId, type PromptItem, type PromptReply, type ReasoningItem, type RequestEnd, type RequestId,
-  type SecretFor, type Session, type SettledTurn, type StatusItem, type Sync, type Tokens, type ToolItem, type Turn, type TurnActivity, type TurnId
+  type SecretFor, type Session, type SettledTurn, type StatusAbout, type Sync, type Tokens, type ToolItem, type Turn, type TurnActivity, type TurnId
 } from '@highwing/hermes/domain'
 import { multiAnswers } from './multi'
+import { hidesAt, isShownAt, moaWords, NOTICE_TONES } from './says'
 import { changesAt, elapsedWords, timeLines, timeOfDay, type ViewClock } from './when'
 
 export type { ViewClock }
@@ -32,7 +33,8 @@ export interface ThreadView {
   readonly earlier: Session['earlier']
   /**
    * The earliest instant after the clock's `now` at which the same session would read differently
-   * (an elapsed time ticks over, a time line appears or says a new day), or null when none will.
+   * (an elapsed time ticks over, a time line appears or says a new day, a notice's time runs out), or
+   * null when none will.
    */
   readonly changesAt: number | null
 }
@@ -87,7 +89,8 @@ export type ThreadNode =
       readonly steps: readonly StepView[]
     }
   | { readonly kind: 'prompt'; readonly key: string; readonly card: PromptCard }
-  | { readonly kind: 'notice'; readonly key: string; readonly tone: 'error' | 'info'; readonly text: string }
+  /** Hermes's own words, or what Highwing did for it. `detail`: the full text behind a short notice, shown on request. */
+  | { readonly kind: 'notice'; readonly key: string; readonly tone: 'error' | 'warn' | 'info'; readonly text: string; readonly detail: string | null }
   /** One reasoning block, collapsed until pressed. The text is plain, never Markdown. */
   | {
       readonly kind: 'reasoning'
@@ -101,8 +104,10 @@ export type ThreadNode =
   | { readonly kind: 'helper'; readonly key: string; readonly helper: HelperView }
   /** The turn's to-do list. At most one per turn. */
   | { readonly kind: 'plan'; readonly key: string; readonly plan: PlanView }
-  | { readonly kind: 'moa'; readonly key: string; readonly moa: MoaItem }
-  | { readonly kind: 'status'; readonly key: string; readonly status: StatusItem }
+  /** One round of mixture-of-agents, collapsed until pressed. Each reference model's answer is plain text. */
+  | { readonly kind: 'moa'; readonly key: string; readonly title: string; readonly meta: string | null; readonly references: MoaItem['references'] }
+  /** A line Hermes showed beside the conversation, in its own words. */
+  | { readonly kind: 'status'; readonly key: string; readonly about: StatusAbout; readonly text: string }
   /** Words the user put into the turn while it ran. */
   | { readonly kind: 'steer'; readonly key: string; readonly text: string }
   /** Where a request closed. `words` is null for a kind with no card. */
@@ -244,7 +249,10 @@ const VIEW_STATE = {
   opening: 'opening', live: 'ready', offline: 'ready', 'catching-up': 'ready', rebuilding: 'ready', unavailable: 'unavailable'
 } as const satisfies Record<Sync['state'], ThreadView['state']>
 
-const settledViews = new WeakMap<SettledTurn, TurnView>()
+/** A settled turn's view holds from `from` until `until`, when one of its notices stops showing. */
+interface Memo { readonly view: TurnView; readonly from: number; readonly until: number | null }
+
+const settledViews = new WeakMap<SettledTurn, Memo>()
 
 const LIVE_INTERLUDE = 'interlude:live' as TurnId
 
@@ -259,17 +267,20 @@ export function threadView(session: Session, clock: ViewClock): ThreadView {
   const turns: readonly Turn[] = run.state === 'running' ? [...session.history, run.turn] : session.history
   const starts = turns.map(turn => turn.began?.at ?? null)
   const lines = timeLines(starts, clock)
-  const settled = session.history.map((turn, index) => settledView(turn, lines[index] ?? null))
+  const settled = session.history.map((turn, index) => settledView(turn, lines[index] ?? null, clock.now))
   const open = run.state === 'running'
-    ? turnView(run.turn, lines.at(-1) ?? null, sync.state === 'live', nodes => openEnd(run.turn, nodes, turnActivityOf(run), sync.state, clock))
+    ? turnView(run.turn, lines.at(-1) ?? null, sync.state === 'live', clock.now, nodes => openEnd(run.turn, nodes, turnActivityOf(run), sync.state, clock))
     : null
-  const interlude = session.interlude.length === 0
-    ? null
-    : turnView({ id: LIVE_INTERLUDE, request: null, items: session.interlude }, null, false, () => NO_END)
+  const interlude = turnView({ id: LIVE_INTERLUDE, request: null, items: session.interlude }, null, false, clock.now, () => NO_END)
   const elapsing = open !== null && (open.end.kind === 'tip' || (open.end.kind === 'at' && open.end.tone === 'live'))
+  const hides = [
+    ...settled.map(memo => memo.until),
+    hidesAt(session.interlude, clock.now),
+    run.state === 'running' ? hidesAt(run.turn.items, clock.now) : null
+  ]
   return {
     state: VIEW_STATE[sync.state],
-    turns: [...settled, ...(interlude === null ? [] : [interlude]), ...(open === null ? [] : [open])],
+    turns: [...settled.map(memo => memo.view), interlude, ...(open === null ? [] : [open])].filter(turn => !isEmptyInterlude(turn)),
     pending: [
       ...session.queue.flatMap(row => (row.from === 'here' ? [{ key: row.inputId, text: row.text, attachments: row.attachments, status: 'queued' as const, detail: null }] : [])),
       ...session.outbox.map(entry => ({
@@ -278,23 +289,33 @@ export function threadView(session: Session, clock: ViewClock): ThreadView {
     ],
     asks: session.requests.flatMap(request => askCard(request, sync.state === 'live', clock)),
     earlier: session.earlier,
-    changesAt: changesAt(starts, lines, elapsing ? starts.at(-1) ?? null : null, clock)
+    changesAt: earliest([changesAt(starts, lines, elapsing ? starts.at(-1) ?? null : null, clock), ...hides])
   }
 }
 
-function settledView(turn: SettledTurn, time: string | null): TurnView {
-  const memo = settledViews.get(turn)
-  if (memo?.time === time) return memo
-  const view = memo === undefined ? turnView(turn, time, false, () => settledEnd(turn.outcome)) : { ...memo, time }
-  settledViews.set(turn, view)
-  return view
+function earliest(times: readonly (number | null)[]): number | null {
+  const due = times.filter(at => at !== null)
+  return due.length === 0 ? null : Math.min(...due)
 }
 
-function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<SettledTurn, 'tokens'>>, time: string | null, live: boolean, end: (nodes: readonly ThreadNode[]) => ThreadEnd): TurnView {
+/** What Hermes said between turns, once every line of it has stopped showing. */
+const isEmptyInterlude = (turn: TurnView) => turn.request === null && turn.end.kind === 'none' && turn.nodes.length === 0
+
+function settledView(turn: SettledTurn, time: string | null, now: number): Memo {
+  const memo = settledViews.get(turn)
+  const current = memo !== undefined && memo.from <= now && (memo.until === null || now < memo.until)
+  if (current && memo.view.time === time) return memo
+  const view = current ? { ...memo.view, time } : turnView(turn, time, false, now, () => settledEnd(turn.outcome))
+  const held = current ? { ...memo, view } : { view, from: now, until: hidesAt(turn.items, now) }
+  settledViews.set(turn, held)
+  return held
+}
+
+function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<SettledTurn, 'tokens'>>, time: string | null, live: boolean, now: number, end: (nodes: readonly ThreadNode[]) => ThreadEnd): TurnView {
   const at = (index: number) => `${turn.id}/${index}`
   const helpers = new Map(turn.items.flatMap(item => (item.kind === 'helper' ? [[item.id, item] as const] : [])))
   const asked = new Set(turn.items.flatMap(item => (item.kind === 'prompt' && item.ask.kind === 'approval' && (item.state.s === 'waiting' || item.state.s === 'sending') ? [item.ask.command] : [])))
-  const nodes = groupRuns(placeApprovals(turn.items).filter(placed => isShown(placed, turn.items, helpers))).map((run): ThreadNode => {
+  const nodes = groupRuns(placeApprovals(turn.items).filter(placed => isShown(placed, turn.items, helpers, now))).map((run): ThreadNode => {
     if ('tools' in run) {
       const steps = run.tools.map(placed => stepView(placed.item, at(placed.at), placed.partner !== null))
       const [first] = steps
@@ -325,9 +346,11 @@ function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<Se
       case 'plan':
         return { kind: 'plan', key, plan: planView(item, key, !('outcome' in turn)) }
       case 'moa':
-        return { kind: 'moa', key, moa: item }
+        return { kind: 'moa', key, ...moaWords(item), references: item.references }
       case 'status':
-        return { kind: 'status', key, status: item }
+        return item.what === 'line'
+          ? { kind: 'status', key, about: item.about, text: item.text }
+          : { kind: 'notice', key, tone: NOTICE_TONES[item.level], text: item.text, detail: item.detail }
       case 'steer':
         return { kind: 'steer', key, text: item.text }
     }
@@ -391,8 +414,10 @@ function placeApprovals(items: readonly Item[]): readonly Placed[] {
 
 type Helpers = ReadonlyMap<HelperId, HelperItem>
 
-function isShown({ item, partner }: Placed, items: readonly Item[], helpers: Helpers): boolean {
+function isShown({ item, partner }: Placed, items: readonly Item[], helpers: Helpers, now: number): boolean {
   switch (item.kind) {
+    case 'status':
+      return isShownAt(item, now)
     case 'text':
       return trimBlankLines(item.markdown) !== ''
     case 'reasoning':
@@ -822,10 +847,10 @@ const DECLINED_WORDS: { readonly [method: string]: string } = {
   setup_beat: "Hermes asked to show a setup step. Highwing can't show that yet, so it said no."
 }
 
-function noticeWords(notice: Exclude<NoticeItem, { what: 'closed' }>): { readonly tone: 'error' | 'info'; readonly text: string } {
-  if (notice.what === 'said') return { tone: notice.tone, text: notice.text }
+function noticeWords(notice: Exclude<NoticeItem, { what: 'closed' }>): { readonly tone: 'error' | 'info'; readonly text: string; readonly detail: null } {
+  if (notice.what === 'said') return { tone: notice.tone, text: notice.text, detail: null }
   const method = notice.method.split('.')[0] ?? notice.method
-  return { tone: 'info', text: DECLINED_WORDS[method] ?? `Hermes sent a request Highwing can't show yet (${notice.method}), so it said no.` }
+  return { tone: 'info', text: DECLINED_WORDS[method] ?? `Hermes sent a request Highwing can't show yet (${notice.method}), so it said no.`, detail: null }
 }
 
 const PAUSED_WORDS = {
@@ -916,10 +941,9 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
  *   ● Ran `ls -la && ls scratch`                               step
  *   ○ You allowed this once.                                   answered prompt
  *   ◆ Run this command?                                        asking prompt, its command, reason and buttons indented
- *   ! Hermes asked for your sudo password. ...                 notice
- *   ≋ MoA 2/3 · 2 references · aggregating                     MoA round
- *   · Goal: not done yet ...                                   status line, its kind when not `other`
- *   ※ warn: Credits are low  (cleared)                         keyed notice
+ *   ! Hermes asked for your sudo password. ...                 notice, `! warn:` or `! error:` for those tones
+ *   ≋ Asking 3 models · Combining their answers                MoA round, its references indented when opened
+ *   · goal: Goal achieved ...                                  status line, its kind when not `other`
  *   ○ You sent a password.                                     where a request with a card closed, in its words
  *   ◇ code: elsewhere                                          where a request with no card closed, and how
  *   » use trash-put instead                                    words the user put into the running turn
@@ -1004,8 +1028,10 @@ function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, open
         ...(card.error === null ? [] : [`    ! ${card.error}`])
       ]
     }
-    case 'notice':
-      return [`! ${node.text}`]
+    case 'notice': {
+      const head = `! ${node.tone === 'info' ? '' : `${node.tone}: `}${firstLine(node.text)}`
+      return node.detail !== null && opened.has(node.key) ? [head, ...node.detail.split('\n').map(line => `    ${line}`)] : [head]
+    }
     case 'closed':
       return [node.words === null ? `◇ ${node.asked}: ${node.end}` : `○ ${node.words}`]
     case 'reasoning': {
@@ -1024,18 +1050,11 @@ function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, open
     case 'steer':
       return [`» ${firstLine(node.text)}`]
     case 'moa': {
-      const { progress, references, phase } = node.moa
-      return [[
-        `≋ MoA${progress === null ? '' : ` ${progress.done}/${progress.total}`}`,
-        `${references.length} references`,
-        ...(phase.is === 'aggregating' ? [`aggregating${phase.by === null ? '' : ` with ${phase.by}`}`] : [])
-      ].join(' · ')]
+      const head = `≋ ${node.title}${node.meta === null ? '' : ` · ${node.meta}`}`
+      return opened.has(node.key) ? [head, ...node.references.map(({ label, text }) => `    ${label}: ${firstLine(text)}`)] : [head]
     }
-    case 'status': {
-      const { status } = node
-      if (status.what === 'line') return [`· ${status.about === 'other' ? '' : `${status.about}: `}${firstLine(status.text)}`]
-      return [`※ ${status.level}: ${firstLine(status.text)}${status.state === 'cleared' ? '  (cleared)' : ''}`]
-    }
+    case 'status':
+      return [`· ${node.about === 'other' ? '' : `${node.about}: `}${firstLine(node.text)}`]
   }
 }
 

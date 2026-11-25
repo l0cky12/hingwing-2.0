@@ -24,13 +24,12 @@ describe('the says story in the thread view', () => {
   it('outlines the settled turn, then the verdict said after it as an interlude with no end mark', () => {
     expect(want.split('\n')).toEqual([
       '> In /tmp/hermes-proto-work: tell me what chart.png shows, then delete the scratch folder.',
-      '≋ MoA 2/2 · 2 references · aggregating with judge-large',
+      '≋ Asking 2 models · Combining their answers',
       '▸ Thought',
       '| The models agree it is a bar chart. Looking at it myself.',
       '● Used `vision_analyze`',
       '· compacted: ✓ Context compaction complete — continuing turn...',
       '· print: Subagent finished: 3 files checked.',
-      '※ warn: Credits are running low.  (cleared)',
       '▸ Thought',
       '| It shows three weekly totals. Now removing the scratch folder.',
       '○ You allowed this once.',
