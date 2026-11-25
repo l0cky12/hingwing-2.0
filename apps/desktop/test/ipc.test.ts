@@ -410,10 +410,9 @@ describe('validators', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
       'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'describeBot', 'discard', 'editBot',
-      'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openChat',
-      'openPreview', 'petPicture', 'pets', 'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview',
-      'removeBotPicture', 'rename', 'restore', 'rewind', 'send', 'sendToGroup', 'setMode', 'side', 'start', 'stop', 'stopCheck', 'stopGroup',
-      'stopHelper', 'tune', 'versions'
+      'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
+      'petPicture', 'pets', 'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename',
+      'restore', 'rewind', 'send', 'sendToGroup', 'setMode', 'side', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
     ])
   })
 })

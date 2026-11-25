@@ -40,7 +40,7 @@ describe('nextSetup', () => {
     ['Cancel stops a running check and stays on the form', CHECKING, { do: 'stopCheck' }, EDITING],
     ['Cancel stops a wait for a sign-in and stays on the form', { ...CHECKING, step: 'sign-in' }, { do: 'stopCheck' }, EDITING],
     ['Cancel stops a failed check and stays on the form', { ...FAILED, live: LIVE }, { do: 'stopCheck' }, EDITING],
-    ['Open chat leaves the saved screen', SAVED, { do: 'openChat' }, { at: 'chat', live: NEXT }],
+    ['Open chat leaves the first run\'s saved screen', { ...SAVED, from: 'first-run' }, { do: 'keepTarget' }, { at: 'chat', live: NEXT }],
     ['Close leaves Settings after a save', SAVED, { do: 'keepTarget' }, { at: 'chat', live: NEXT }],
     ['Connect in Settings after a save checks again', SAVED, { do: 'checkTarget', target: OTHER }, { at: 'checking', live: NEXT, target: OTHER, step: 'tailscale' }]
   ])('%s', (_what, from, event, to) => {
@@ -58,7 +58,6 @@ describe('nextSetup', () => {
     ['Cancel after a check passed', SAVED, { do: 'stopCheck' }],
     ['a second check while one runs', CHECKING, { do: 'checkTarget', target: OTHER }],
     ['a check from the chat', { at: 'chat', live: LIVE }, { do: 'checkTarget', target: REMOTE }],
-    ['Open chat before anything is saved', EDITING, { do: 'openChat' }],
     ['a step when no check runs', EDITING, { do: 'step', step: 'ssh' }],
     ['a result when no check runs', FAILED, { do: 'connect', live: NEXT }],
     ['the Settings button on the saved screen', SAVED, { do: 'editTarget' }],
@@ -151,7 +150,7 @@ describe('ownConnection, checking a target', () => {
     expect(saved).toEqual([REMOTE])
     expect(opened.map(({ target }) => target)).toEqual([REMOTE])
 
-    await owner.run({ do: 'openChat' })
+    await owner.run({ do: 'keepTarget' })
     expect(at()).toEqual({ at: 'chat', live: { target: REMOTE, epoch: 1 } })
   })
 
@@ -205,7 +204,7 @@ describe('ownConnection, checking a target', () => {
     await pass()
     expect([at(), saved, opened.length]).toEqual([{ at: 'saved', live: { target: here, epoch: 1 }, from: 'settings' }, [], 1])
 
-    await owner.run({ do: 'openChat' })
+    await owner.run({ do: 'keepTarget' })
     await owner.run({ do: 'editTarget' })
     await owner.run({ do: 'checkTarget', target: there })
     checks.at(-1)!.step('sign-in')
@@ -331,7 +330,6 @@ describe('ownConnection, checking a target', () => {
   it('refuses a command the screen it is on has no use for, and changes nothing', async () => {
     const { owner, checks, at } = harness({ state: 'none' })
     expect(await owner.run({ do: 'keepTarget' })).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
-    expect(await owner.run({ do: 'openChat' })).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
     expect(at()).toEqual({ at: 'form', live: null, notice: null })
     expect(checks).toEqual([])
   })
@@ -361,7 +359,7 @@ describe('ownConnection, checking a target', () => {
 })
 
 describe('ownConnection, opening a chat while Settings is up', () => {
-  const openChat = (sessionId: string) => ({ do: 'open', ref: { kind: 'chat', sessionId: sessionId as SessionId } }) as const
+  const opening = (sessionId: string) => ({ do: 'open', ref: { kind: 'chat', sessionId: sessionId as SessionId } }) as const
   const LINKED = { do: 'open', ref: { kind: 'link', sessionId: 'local-0001' } }
   const holdSave = () => {
     let finishSave = () => {}
@@ -372,10 +370,10 @@ describe('ownConnection, opening a chat while Settings is up', () => {
     const { owner, checks, opened, at } = harness({ state: 'saved', target: LOCAL })
     await owner.run({ do: 'editTarget' })
     await owner.run({ do: 'checkTarget', target: REMOTE })
-    expect(await owner.run(openChat('s1'))).toEqual({ ok: true, value: undefined })
+    expect(await owner.run(opening('s1'))).toEqual({ ok: true, value: undefined })
     expect(at()).toEqual({ at: 'chat', live: { target: LOCAL, epoch: 1 } })
     expect(checks[0]!.signal.aborted).toBe(true)
-    expect(opened[0]!.commands).toEqual([openChat('s1')])
+    expect(opened[0]!.commands).toEqual([opening('s1')])
   })
 
   it('closes Settings after a save, and opens on the new connection', async () => {
@@ -383,9 +381,9 @@ describe('ownConnection, opening a chat while Settings is up', () => {
     await owner.run({ do: 'editTarget' })
     await owner.run({ do: 'checkTarget', target: REMOTE })
     await pass()
-    await owner.run(openChat('s1'))
+    await owner.run(opening('s1'))
     expect(at()).toEqual({ at: 'chat', live: { target: REMOTE, epoch: 2 } })
-    expect(opened[1]!.commands).toEqual([openChat('s1')])
+    expect(opened[1]!.commands).toEqual([opening('s1')])
   })
 
   it('refuses an open at the save step, and changes nothing', async () => {
@@ -395,7 +393,7 @@ describe('ownConnection, opening a chat while Settings is up', () => {
     await owner.run({ do: 'checkTarget', target: REMOTE })
     await pass()
     const before = states.length
-    expect(await owner.run(openChat('s1'))).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(await owner.run(opening('s1'))).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
     expect(states).toHaveLength(before)
     expect(checks[0]!.signal.aborted).toBe(false)
     expect(opened[0]!.commands).toEqual([])
@@ -406,18 +404,18 @@ describe('ownConnection, opening a chat while Settings is up', () => {
 
   it('just opens from the chat', async () => {
     const { owner, opened, states } = harness({ state: 'saved', target: LOCAL })
-    expect(await owner.run(openChat('s1'))).toEqual({ ok: true, value: undefined })
+    expect(await owner.run(opening('s1'))).toEqual({ ok: true, value: undefined })
     expect(states).toEqual([{ at: 'chat', live: { target: LOCAL, epoch: 1 } }])
-    expect(opened[0]!.commands).toEqual([openChat('s1')])
+    expect(opened[0]!.commands).toEqual([opening('s1')])
   })
 
   it('runs two opens sent together from Settings, so the second one shows', async () => {
     const { owner, opened, at } = harness({ state: 'saved', target: LOCAL })
     await owner.run({ do: 'editTarget' })
-    const outcomes = await Promise.all([owner.run(openChat('s1')), owner.run(openChat('s2'))])
+    const outcomes = await Promise.all([owner.run(opening('s1')), owner.run(opening('s2'))])
     expect(outcomes).toEqual([{ ok: true, value: undefined }, { ok: true, value: undefined }])
     expect(at()).toEqual({ at: 'chat', live: { target: LOCAL, epoch: 1 } })
-    expect(opened[0]!.commands).toEqual([openChat('s1'), openChat('s2')])
+    expect(opened[0]!.commands).toEqual([opening('s1'), opening('s2')])
   })
 
   it('closes Settings for a bot made from the sidebar, which the hub opens', async () => {
@@ -434,9 +432,9 @@ describe('ownConnection, opening a chat while Settings is up', () => {
     await owner.run({ do: 'editTarget' })
     await owner.run({ do: 'checkTarget', target: REMOTE })
     await fail('host-offline')
-    await owner.run(openChat('s1'))
+    await owner.run(opening('s1'))
     expect(at()).toEqual({ at: 'chat', live: { target: LOCAL, epoch: 1 } })
-    expect(opened[0]!.commands).toEqual([openChat('s1')])
+    expect(opened[0]!.commands).toEqual([opening('s1')])
   })
 
   it('closes Settings for a chat link, and holds one that comes during a save until the save ends', async () => {

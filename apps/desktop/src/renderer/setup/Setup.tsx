@@ -35,7 +35,7 @@ export function Saved({ target }: { readonly target: Target }) {
           <h2><span className="glyph" />Highwing now uses the Hermes on {machineOf(target)}.</h2>
           <p className="lead">This connection is saved, and Highwing opens on the chat from now on. To change it, open Settings from the top bar.</p>
           <div className="actions">
-            <button type="button" className="primary" autoFocus onClick={() => void run({ do: 'openChat' })}>Open chat</button>
+            <button type="button" className="primary" autoFocus onClick={() => void run({ do: 'keepTarget' })}>Open chat</button>
           </div>
         </div>
       </main>

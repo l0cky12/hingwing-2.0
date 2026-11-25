@@ -28,7 +28,6 @@ export type SetupCommand =
   | { readonly do: 'editTarget' }
   | { readonly do: 'keepTarget' }
   | { readonly do: 'stopCheck' }
-  | { readonly do: 'openChat' }
 
 /** How a page main draws in its own view is doing. `failed` hides the view, so the window shows the reason in its place. */
 export type PageLoad = { readonly at: 'loading' } | { readonly at: 'shown' } | { readonly at: 'failed'; readonly reason: string }
@@ -523,7 +522,6 @@ export const validators: Validators = {
   editTarget: () => ({ do: 'editTarget' }),
   keepTarget: () => ({ do: 'keepTarget' }),
   stopCheck: () => ({ do: 'stopCheck' }),
-  openChat: () => ({ do: 'openChat' }),
   preview: raw => (webPage(raw.url) ? { do: 'preview', url: raw.url } : null),
   browse: raw => (webPage(raw.url) ? { do: 'browse', url: raw.url } : null),
   reloadPreview: () => ({ do: 'reloadPreview' }),

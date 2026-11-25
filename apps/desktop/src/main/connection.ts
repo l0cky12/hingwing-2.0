@@ -53,7 +53,7 @@ const MOVES: { readonly [A in Setup['at']]: { readonly [E in SetupEvent['do']]?:
     stopCheck: setup => (setup.step === 'save' ? null : stop(setup))
   },
   failed: { checkTarget: check, keepTarget: keep, stopCheck: stop },
-  saved: { openChat: keep, keepTarget: keep, checkTarget: check },
+  saved: { keepTarget: keep, checkTarget: check },
   pinned: {}
 }
 
@@ -84,7 +84,7 @@ const refused = (kind: 'rejected' | 'offline', message: string) => ({ ok: false,
 const NOT_NOW = refused('rejected', "Highwing can't do that from this screen.")
 const NOT_CONNECTED = refused('offline', "Highwing isn't connected to Hermes yet.")
 
-const SETUP_VERBS: Readonly<Record<SetupCommand['do'], true>> = { checkTarget: true, editTarget: true, keepTarget: true, stopCheck: true, openChat: true }
+const SETUP_VERBS: Readonly<Record<SetupCommand['do'], true>> = { checkTarget: true, editTarget: true, keepTarget: true, stopCheck: true }
 const isSetupCommand = (command: ConnectionCommand): command is SetupCommand => command.do in SETUP_VERBS
 
 export function feed<T>(initial: T): Feed<T> & { set(next: T): void } {
