@@ -449,6 +449,14 @@ describe('helpers', () => {
     expect(long.endsWith('…')).toBe(true)
   })
 
+  it('names the helper to stop while one the agent started is queued or working, and none once it ended or for a helper of a helper', () => {
+    expect(nodeOf(helper('sa-1', { s: 'queued' })).stop).toBe('sa-1')
+    expect(nodeOf(helper('sa-1', WORKING)).stop).toBe('sa-1')
+    expect(nodeOf(helper('sa-1', ended('interrupted'))).stop).toBeNull()
+    expect(nodeOf(helper('sa-2', WORKING, { parentId: 'sa-1' as HelperId, depth: 1 })).stop, 'shown as a node of its own, its parent unknown').toBeNull()
+    expect(helperOf(nodesOf(session({ history: [settled([helper('sa-1', WORKING)])] }))[0]).stop, 'its turn settled, it still works').toBe('sa-1')
+  })
+
   it('gives a duration of a second or more and the summary only once it ended', () => {
     expect(nodeOf(helper('sa-1', ended('completed', 3.27, '\n\nAll good.\n'), { toolCount: 1 }))).toMatchObject({ duration: '3.3 s', summary: 'All good.' })
     expect(nodeOf(helper('sa-1', ended('completed', 0.4, '  \n')))).toMatchObject({ duration: null, summary: null })
@@ -553,7 +561,7 @@ describe('checkThread on helpers, plans and reasoning', () => {
   const planNode = (key: string): ThreadNode => ({ kind: 'plan', key, plan: { done: 0, total: 1, cancelled: 0, openByDefault: true, entries: [{ key: `${key}/e1`, text: 'x', state: 'todo', depth: 0 }] } })
   const reasoningNode = (key: string, streaming: boolean): ThreadNode => ({ kind: 'reasoning', key, text: 'x', streaming, duration: null })
   const helperNode = (key: string, state: HelperView['state']): ThreadNode => ({
-    kind: 'helper', key, helper: { goal: 'x', state, ended: null, now: null, count: 0, duration: null, steps: [{ kind: 'step', key: `${key}/s0`, title: [], latest: false }], summary: null }
+    kind: 'helper', key, helper: { goal: 'x', stop: null, state, ended: null, now: null, count: 0, duration: null, steps: [{ kind: 'step', key: `${key}/s0`, title: [], latest: false }], summary: null }
   })
   const live = (nodeKey: string) => ({ kind: 'at', nodeKey, tone: 'live', elapsed: null }) as const
 

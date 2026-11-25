@@ -38,7 +38,7 @@ const reasoning = (more: Partial<Extract<ThreadNode, { kind: 'reasoning' }>> = {
   ({ kind: 'reasoning', key: 't1/0', text: 'The disk is the likelier cause.\n\nCheck df first.', streaming: false, duration: '12 s', ...more })
 
 const helperView = (more: Partial<HelperView> = {}): HelperView => ({
-  goal: 'Check free space on the backup disk', state: 'done', ended: null, now: null, count: 3, duration: '41 s',
+  goal: 'Check free space on the backup disk', stop: null, state: 'done', ended: null, now: null, count: 3, duration: '41 s',
   steps: [
     { kind: 'step', key: 't1/1/s0', title: [{ t: 'text', v: 'Ran ' }, { t: 'code', v: 'df -h' }], latest: false },
     { kind: 'step', key: 't1/1/s1', title: [{ t: 'text', v: 'Read ' }, { t: 'code', v: 'fstab' }], latest: true },
