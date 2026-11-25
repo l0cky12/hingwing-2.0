@@ -81,6 +81,17 @@ export type Bots =
   /** The newest roster Hermes gave. It stays while the connection is down or a later ask is refused. */
   | { readonly state: 'listed'; readonly roster: Roster }
 
+export const BOT_MARKS = ['pin', 'unpin', 'hide', 'show'] as const
+export type BotMark = typeof BOT_MARKS[number]
+export type BotFlag = 'pinned' | 'hidden'
+
+export const MARK_SETS: { readonly [M in BotMark]: { readonly flag: BotFlag; readonly on: boolean } } = {
+  pin: { flag: 'pinned', on: true },
+  unpin: { flag: 'pinned', on: false },
+  hide: { flag: 'hidden', on: true },
+  show: { flag: 'hidden', on: false }
+}
+
 export interface BotDraft {
   readonly name: string
   readonly description: string

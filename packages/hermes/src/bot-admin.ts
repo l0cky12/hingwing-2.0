@@ -1,5 +1,5 @@
 import { refusalOf } from './actor'
-import { GENERATED_MAX_BYTES, PICTURE_RULE, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotId, type PetChoice } from './domain/bots'
+import { GENERATED_MAX_BYTES, MARK_SETS, PICTURE_RULE, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotId, type BotMark, type PetChoice } from './domain/bots'
 import type { ModelMenu, Outcome, Refusal } from './domain/command'
 import { NOT_CONNECTED } from './open'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
@@ -81,27 +81,36 @@ const SECTION_WORDS: { readonly [section: string]: string } = { ui_meta: 'name',
 
 const inWords = (items: readonly string[]) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`)
 
-function edited(configured: Configured): Outcome {
+const unsaved = (sections: readonly string[]): Outcome =>
+  ({ ok: false, refusal: { kind: 'rejected', message: `Hermes didn't save the ${inWords(sections.map(section => SECTION_WORDS[section] ?? section))}.` } })
+
+function edited(configured: Configured, sent: readonly string[]): Outcome {
   switch (configured.is) {
     case 'saved': return DONE
     case 'clash': return CLASH
-    case 'unsaved': return { ok: false, refusal: { kind: 'rejected', message: `Hermes didn't save the ${inWords(configured.sections.map(section => SECTION_WORDS[section] ?? section))}.` } }
+    case 'unsaved': return unsaved(configured.sections)
+    case 'unreported': return unsaved(sent)
   }
 }
 
 /**
- * The name shown is the Bots plugin's `title`, not the profile's name, which stays the bot's id. Hermes replaces
- * the plugin's record whole, so a rename writes the record as Hermes holds it now with the new title.
+ * Hermes replaces the Bots plugin's record whole, so a write is the record as Hermes holds it now with `patch` on
+ * top. `revision` is the one the record was read at, so a write made elsewhere since is refused; null for a Hermes
+ * that keeps no revisions.
  */
-async function renamed(conn: Wire, bot: BotId, name: string, revision: number | null) {
-  const record = parseBotRecord(await conn.call('profiles.list', LIST_ROWS), bot)
-  if (record === null) return null
+function recordWrite(meta: { readonly [key: string]: unknown }, patch: { readonly [key: string]: unknown }, revision: number | null) {
   // Hermes's own Bots plugin drops `chat` on every write of the record (hermes-bots/data.ts:388).
-  const kept = Object.fromEntries(Object.entries(record.meta).filter(([key]) => key !== 'chat'))
+  const kept = Object.fromEntries(Object.entries(meta).filter(([key]) => key !== 'chat'))
   return {
-    ui_meta: { 'hermes-bots': { ...kept, title: name.trim() } },
+    ui_meta: { 'hermes-bots': { ...kept, ...patch } },
     ...(revision === null ? {} : { ui_meta_expected_revisions: { 'hermes-bots': revision } })
   }
+}
+
+/** The name shown is the Bots plugin's `title`, not the profile's name, which stays the bot's id. */
+async function renamed(conn: Wire, bot: BotId, name: string, revision: number | null) {
+  const record = parseBotRecord(await conn.call('profiles.list', LIST_ROWS), bot)
+  return record === null ? null : recordWrite(record.meta, { title: name.trim() }, revision)
 }
 
 export const editBot = (conn: Wire, bot: BotId, { name, description, persona }: BotEdit, revision: number | null): Promise<Outcome> =>
@@ -110,7 +119,41 @@ export const editBot = (conn: Wire, bot: BotId, { name, description, persona }: 
     if (rename === null) return GONE
     const params = { name: bot, ...rename, ...(description === undefined ? {} : { description }), ...(persona === undefined ? {} : { soul: persona }) }
     const sent = Object.keys(SECTION_WORDS).filter(section => section in params)
-    return edited(parseConfigured(await conn.call('profiles.configure', params), sent))
+    return edited(parseConfigured(await conn.call('profiles.configure', params), sent), sent)
+  })
+
+const NO_CHANGES: Refusal = { kind: 'unsupported', message: "This Hermes can't change bots from Highwing." }
+const MARK_REASONS: Reasons = { [METHOD_NOT_FOUND]: () => NO_CHANGES }
+const MARK_ATTEMPTS = 3
+const NO_PROFILE = 4064
+
+const didnt = (kind: 'conflict' | 'rejected', mark: BotMark, name: string): Outcome<never> =>
+  ({ ok: false, refusal: { kind, message: `Hermes didn't ${mark} ${name}. Try again.` } })
+
+export const markBot = (conn: Wire, bot: BotId, mark: BotMark): Promise<Outcome> =>
+  guarded(MARK_REASONS, async () => {
+    const { flag, on } = MARK_SETS[mark]
+    const read = async () => parseBotRecord(await conn.call('profiles.list', LIST_ROWS), bot)
+    let name: string = bot
+    for (let attempt = 0; attempt < MARK_ATTEMPTS; attempt++) {
+      const record = await read()
+      if (record === null) return GONE
+      name = record.name
+      const reply = await conn.call('profiles.configure', { name: bot, ...recordWrite(record.meta, { [flag]: on }, record.revision) }).catch(async (error: unknown) => {
+        // Hermes also answers 4064 when the profile or its config is unavailable, so only a read that misses the bot means it is gone.
+        if (error instanceof RpcRefusal && error.code === NO_PROFILE && (await read()) === null) return null
+        throw error
+      })
+      if (reply === null) return GONE
+      const configured = parseConfigured(reply, ['ui_meta'])
+      switch (configured.is) {
+        case 'saved': return DONE
+        case 'clash': continue
+        case 'unsaved': return didnt('rejected', mark, name)
+        case 'unreported': return { ok: false, refusal: NO_CHANGES }
+      }
+    }
+    return didnt('conflict', mark, name)
   })
 
 export const setBotPicture = (conn: Wire, bot: BotId, data: string | null): Promise<Outcome> =>
