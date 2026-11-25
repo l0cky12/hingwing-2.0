@@ -64,7 +64,7 @@ No call site names a generation, a revision, a stored row id, an admission statu
 |---|---|---|
 | `interlude: Item[]` | `reduce`, from events that arrive while `run` is idle | Status lines, notices and verdicts between turns. When the next turn starts, its settled items move into `history` as one entry whose outcome is `interlude`. A turn's settle never touches it. |
 | `requests: HermesRequest[]` | `reduce`, from live server requests, the snapshot's `open_requests` and `pending_connection`, `request.cancel`, and this client's answers | Sudo, secret, vault, question batches, plugin choices and the connector card. Their life is the socket request's, not the turn's. |
-| `queue: QueuedMessage[]` | `reduce`, from each pending list, replaced whole | Hermes's FIFO. |
+| `queue: QueuedMessage[]` | `reduce`, from each pending list, replaced whole. A turn's start takes out the row it names | Hermes's FIFO. Each row says whether this client sent it (`from`). |
 | `outbox: OutboxEntry[]` | `reduce`, from local actions. An entry leaves when a pending list or `message.start` names its input id. | `sending` and `failed` only. |
 | `tuning` | `reduce`, from `session.info` and the reads below | Busy mode, the reasoning gate, effort and fast. |
 | `panel` | `reduce`, from events and reads (U4) | Usage, todos, subagents, processes, goal and loop state, side answers. |
@@ -111,7 +111,7 @@ Each unit is one PR, stacked on the one before it. Each ends with:
 | B0 | Groundwork, no behaviour change | none | `SessionPatch.changed` with only the changed fields, and the `SessionPort` and `session-commands.ts` with today's commands moved onto it. Every existing test passes unchanged, and `applyPush(a, sessionPatch(a, b))` equals `b` for each pair of consecutive sessions of every fixture. Each later unit adds the scripted gateway handlers its own calls need. |
 | B1 | What Hermes says | #8 (the reasoning switch), #9, #11, #12, #13, #16 | `says.jsonl`: the reasoning switch, MoA, a tool image, status lines, a notice, an approval with `timeout_s`, and a goal verdict while idle. The `declined` phantom turn is gone. |
 | B2 | What Hermes asks | #20, #21, #22 | `asks.jsonl`: sudo answered (the recorded result is masked), a secret skipped, a vault code another viewer answers, so it closes by `request.cancel`, a two-question batch, a plugin choice while idle, a connector card, and a Desktop bridge (`theme.pick`) declined only while watched. |
-| B3 | Queue and steer | #3, #4, #6, #17 | `queue.jsonl`: another client's queued row, cancel, send now, edit, a lost row released, steer, redirect, a rejected steer resubmitted, and deny-and-tell. |
+| B3 | Queue and steer | #3, #4, #6, #17 | `queue.jsonl`: a chat opened on a row Hermes lost to a restart, that row released, another client's queued row, edit, cancel, send now, steer, redirect, deny-and-tell, and a redirect no agent saw, submitted as a message. Hermes holds a steer for a turn that has no agent yet, so only a redirect is answered `delivered: false` there. |
 | B4 | Side prompts and chat commands | #30, #32, #33, #35, #36, #38, #45, #55 | `commands.jsonl`: `complete.path`, `/btw` and `/bg` with their answers, effort, fast, the chat's folder, export and compress. |
 | B5 | Session panels | #42, #43, #44, #46 | `panels.jsonl`: processes, a goal card, checkpoints and a reaction. |
 | B6 | Undo, rewrites from other windows, pin and delete | #24, #26, #53, #54 | Builds on #96's rewind and #69's chat list once they merge. |
@@ -164,14 +164,14 @@ Each limit comes from a backend choice or a gateway fact, and bounds what a wind
 
 **B3, queue, steer and rewind**
 
-15. A queued row can be edited or sent now only when its `can` says so. Editing moves it to the back. There is no reorder. A row handed to the turn may come back to the queue.
-16. A lost row keeps the queue paused until someone releases it. Hermes never runs it again, so "send again" is a new `send`.
-17. Busy mode is read when the chat is watched. A change made in another client shows at the next read. While it is unknown, a send queues.
-18. Deny-and-tell is one call. If the running turn could not take the words, they go as the next message instead, and the window learns which from the outcome.
+15. A queued row can be edited or sent now only when its `can` says so. Editing moves it to the back. There is no reorder. A row handed to the turn may come back to the queue. Until the turn settles it stays in `queue` as `steering`, and its words are also a `steer` item of the open turn, which stays if the row comes back. A row is `from: 'here'` only when this Highwing sent it since it started. After Highwing restarts, its own queued messages read `elsewhere`. An edit shows as a `sending` outbox entry beside the old row until Hermes lists the new one. A row changes only by Hermes's next list, so an action's outcome says only that Hermes took the call.
+16. A lost row keeps the queue paused until someone releases it. Hermes never runs it again, so "send again" is a new `send`. Its turn is in the thread with the outcome `lost`. Highwing does not stay attached to a chat for its queue alone, because Hermes releases a lost row itself once the last viewer closes.
+17. Busy mode is read when the chat is watched. A change made in another client shows at the next read. While it is unknown, a send queues. A send also queues, whatever the mode, while the turn waits on an approval, a question or a request, and while it is stopping. A line that runs a slash command is never steered. `sendPlan(session)` gives the same answer to a window that wants to label its button. A steer or redirect that Hermes rejects without saying the words went unread is refused and never sent again: the window still has the text, and the refusal says Hermes may have read it.
+18. Deny-and-tell is one call. If the running turn could not take the words, they go as the next message instead, and the window learns which from the outcome: `turn`, `next`, or `unsure` when Hermes did not say and the words were not sent again. The card reads `sending` from the steer until the denial is confirmed. If the steer is refused outright, nothing is denied and the card waits again.
 19. `rewind` is refused while a turn runs and for a request that a compression summarised. It never undoes file changes. Afterwards the chat is read again: the pane shows `rebuilding`, pages loaded with "Show earlier turns" are dropped, and the remaining turns lose live-only detail such as diffs and durations.
 20. Only a turn with a known request row can be rewound or branched. A live turn whose receipt Hermes omitted cannot until the chat is read again.
 21. A change from another client shows as the same rebuild, with no hint of what changed.
-22. A steered message's place in a live turn is where Highwing learned of it. The stored position replaces it after a rebuild.
+22. A steered message's place in a live turn is where Highwing learned of it. The stored position replaces it after a rebuild. Words another client steers with `session.steer` or `session.redirect` are not shown live at all, because Hermes publishes nothing for them: they appear at the next rebuild. A `steer` item has no state and no sender.
 
 **B4, attachments**
 
