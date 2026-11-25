@@ -1,7 +1,8 @@
-import type { RequestId, RequestReply } from '@highwing/hermes/domain'
-import { fieldId, type AskCard as Card, type SecretCard as Secret } from '@highwing/thread'
-import { useRef, useState, type FormEvent, type ReactNode } from 'react'
+import type { Answer, RequestId, RequestReply } from '@highwing/hermes/domain'
+import { fieldId, type AskCard as Card, type QuestionsCard as Questions, type QuestionView, type SecretCard as Secret } from '@highwing/thread'
+import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Command } from './Copy'
+import { answerOf, draftOf, openQuestion, OTHER, picked, sendWords, type Draft } from './questions'
 
 export type RequestAnswer = (requestId: RequestId, reply: RequestReply) => void
 
@@ -69,11 +70,94 @@ function SecretCard({ card, onAnswer }: CardProps<Secret>) {
   )
 }
 
+interface QuestionProps {
+  readonly card: Questions
+  readonly question: QuestionView
+  readonly draft: Draft
+  readonly onDraft: (draft: Draft) => void
+  readonly onLock: (answer: Answer) => void
+}
+
+function Question({ card, question, draft, onDraft, onLock }: QuestionProps) {
+  const group = useId()
+  const busy = card.busy !== null
+  const answer = answerOf(draft)
+  const type = question.multi ? 'checkbox' : 'radio'
+  const send = (event: FormEvent) => {
+    event.preventDefault()
+    if (answer !== null && !busy) onLock(answer)
+  }
+  const choice = (label: string | typeof OTHER, checked: boolean, words: string) => (
+    <label key={words} className="pick">
+      <input type={type} name={group} checked={checked} onChange={event => onDraft(picked(question, draft, label, event.currentTarget.checked))} />
+      {words}
+    </label>
+  )
+  return (
+    <form className="question" onSubmit={send}>
+      <fieldset disabled={busy}>
+        <legend data-find={fieldId(card.key, `question ${card.questions.indexOf(question)}`)}>{question.text}</legend>
+        {question.multi && <p className="hint">Pick all that apply</p>}
+        {question.choices.map(label => choice(label, draft.picks.includes(label), label))}
+        {question.choices.length > 0 && choice(OTHER, draft.other !== null, 'Other')}
+        {draft.other !== null && (
+          <input
+            className="other" aria-label="Your answer" value={draft.other} autoFocus={question.choices.length > 0}
+            onChange={event => onDraft({ ...draft, other: event.currentTarget.value })}
+          />
+        )}
+      </fieldset>
+      <div className="choices">
+        <button type="submit" className="primary" disabled={answer === null || busy}>{card.busy === 'sending' ? SENDING : sendWords(card, question)}</button>
+        <button type="button" className="deny" disabled={busy} onClick={() => onLock(null)}>Skip question</button>
+      </div>
+    </form>
+  )
+}
+
+/** One question at a time. Locked answers are listed above it, each with Change, until the last one is sent. */
+function QuestionsCard({ card, onAnswer }: CardProps<Questions>) {
+  const [changing, setChanging] = useState<string | null>(null)
+  const [drafts, setDrafts] = useState<{ readonly [question: string]: Draft }>({})
+  const open = openQuestion(card, changing)
+  const locked = card.questions.flatMap((question, index) => (question.locked === null || question === open ? [] : [{ question, index, words: question.locked.words }]))
+  return (
+    <Frame card={card}>
+      {card.progress !== null && <p className="why" data-find={fieldId(card.key, 'progress')}>{card.progress}</p>}
+      <Waits card={card} />
+      {locked.length > 0 && (
+        <ul className="locked">
+          {locked.map(({ question, index, words }) => (
+            <li key={question.id}>
+              <span className="asked" data-find={fieldId(card.key, `question ${index}`)}>{question.text}</span>
+              <span className="said" data-find={fieldId(card.key, `answer ${index}`)}>{words}</span>
+              {open !== undefined && (
+                <button type="button" disabled={card.busy !== null} aria-label={`Change: ${question.text}`} onClick={() => setChanging(question.id)}>Change</button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {open !== undefined && (
+        <Question
+          key={open.id} card={card} question={open} draft={drafts[open.id] ?? draftOf(open)}
+          onDraft={draft => setDrafts(held => ({ ...held, [open.id]: draft }))}
+          onLock={answer => {
+            onAnswer(card.requestId, { kind: 'lock', question: open.id, answer })
+            setChanging(null)
+          }}
+        />
+      )}
+    </Frame>
+  )
+}
+
 export function AskCard({ card, onAnswer }: CardProps<Card>) {
   switch (card.kind) {
     case 'secret':
       return <SecretCard card={card} onAnswer={onAnswer} />
     case 'questions':
+      return <QuestionsCard card={card} onAnswer={onAnswer} />
     case 'connect':
       return null
   }
