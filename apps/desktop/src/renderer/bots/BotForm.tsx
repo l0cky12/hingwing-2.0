@@ -22,13 +22,14 @@ export function BotForm({ title, submitLabel, initial, problemOf, models, onSubm
     if (dialog.current?.open === false) dialog.current.showModal()
   }, [])
 
-  const problem = send.at === 'sending' ? null : problemOf(draft.name)
+  const sending = send.at === 'sending'
+  const problem = sending ? null : problemOf(draft.name)
   const nameWords = problem ?? (send.at === 'refused' && send.refusal.field === 'name' ? send.refusal.message : null)
   const otherWords = send.at === 'refused' && send.refusal.field !== 'name' ? send.refusal.message : null
   const options = models?.options ?? []
   const chosen = draft.model
   const picked = chosen === null ? -1 : options.findIndex(option => sameModel(chosen, option))
-  const ready = send.at !== 'sending' && canSubmit(draft, problem)
+  const ready = !sending && canSubmit(draft, problem)
 
   const type = (more: Partial<BotDraft>) => dispatch({ on: 'typed', draft: { ...draft, ...more } })
   const submit = async (event: FormEvent) => {
@@ -41,7 +42,7 @@ export function BotForm({ title, submitLabel, initial, problemOf, models, onSubm
   }
 
   return (
-    <dialog ref={dialog} className="bot-form" aria-labelledby={`${ids}-title`} onCancel={event => { event.preventDefault(); onClose() }}>
+    <dialog ref={dialog} className="bot-form" aria-labelledby={`${ids}-title`} onCancel={event => { event.preventDefault(); if (!sending) onClose() }}>
       <form onSubmit={event => void submit(event)} noValidate>
         <h2 id={`${ids}-title`}>{title}</h2>
         <div className="field">
@@ -77,8 +78,9 @@ export function BotForm({ title, submitLabel, initial, problemOf, models, onSubm
         </div>
         {otherWords !== null && <p className="form-refused" role="alert">{otherWords}</p>}
         <div className="form-choices">
-          <button type="button" onClick={onClose}>Cancel</button>
-          <button type="submit" className="primary" disabled={!ready} aria-busy={send.at === 'sending' || undefined}>{submitLabel}</button>
+          {/* A create already sent finishes in this form, so its answer never lands on a form opened after it. */}
+          <button type="button" disabled={sending} onClick={onClose}>Cancel</button>
+          <button type="submit" className="primary" disabled={!ready} aria-busy={sending || undefined}>{submitLabel}</button>
         </div>
       </form>
     </dialog>
