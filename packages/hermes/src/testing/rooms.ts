@@ -10,11 +10,8 @@ type Obj = { readonly [key: string]: unknown }
 
 export interface RoomsDeps {
   readonly clock: Clock
-  /** Every profile the gateway serves. */
   readonly profiles: readonly string[]
-  /** Throws Hermes's refusal: `reason`, and the `field` and `detail` of the check that fired when it names them. */
   refuse(reason: string, named?: { readonly field: string; readonly detail: string }): never
-  /** A `groups.*` method Hermes has and this gateway does not play. Fails the run. */
   unserved(method: string): never
 }
 
@@ -27,7 +24,7 @@ const FIELDS: { readonly [method: string]: readonly string[] } = {
 
 /** gateway/hosted_room_discussion.py:30-31 */
 const MEMBERS = { min: 2, max: 6 }
-/** gateway/hosted_rooms_common.py:19 and the 128-character cap every identifier has. */
+/** gateway/hosted_rooms_common.py:19, and the 128-character cap every identifier has at :23. */
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 /** gateway/hosted_rooms.py:37, :40 and :46 */
 const MAX_NAME = 200
@@ -63,7 +60,6 @@ const wire = ({ room_id, name, members, at }: Room) =>
   ({ room_id, name, members, authority_gateway_id: GATEWAY, authority_epoch: 1, revision: 1, created_at: at, updated_at: at, latest_seq: 0 })
 
 export class ScriptedRooms {
-  /** Most recently changed first. */
   private readonly rooms: Room[]
   private readonly seatable: readonly string[] | null
 
@@ -86,7 +82,7 @@ export class ScriptedRooms {
     }
   }
 
-  /** gateway/session_group_controls.py:166-177 */
+  /** gateway/session_group_controls.py:173-184 */
   private capabilities(): unknown {
     return {
       protocol_version: 1, driver: this.script.driver ?? true, persistent_process: true, authority_gateway_id: GATEWAY,
@@ -96,14 +92,14 @@ export class ScriptedRooms {
     }
   }
 
-  /** `listing` (gateway/session_group_controls.py:179-192) over a store with no hosted-room service. */
+  /** `listing` (gateway/session_group_controls.py:186-219) over a store with no hosted-room service. */
   private list({ limit = MAX_LIST, offset = 0, include_disbanded = false }: Obj): unknown {
     if (!isInt(limit) || limit < 1 || limit > MAX_LIST || !isInt(offset) || offset < 0 || typeof include_disbanded !== 'boolean') this.deps.refuse('invalid_params')
     const page = this.rooms.slice(offset, offset + limit)
     return { rooms: page.map(wire), next_offset: page.length === limit ? offset + limit : null }
   }
 
-  /** `create` (gateway/session_group_controls.py:221-246): the unseatable bots, then the roster, then the room. */
+  /** `create` (gateway/session_group_controls.py:221-244): the unseatable bots, then the roster, then the room. */
   private create(params: Obj): unknown {
     const seats = this.roster(params.members)
     const id = identifier(params.room_id)

@@ -221,7 +221,6 @@ const editOf = (raw: unknown): BotEdit | null => {
   const edit = { ...(name === undefined ? {} : { name }), ...(description === undefined ? {} : { description }), ...(persona === undefined ? {} : { persona }) }
   return Object.keys(edit).length > 0 ? edit : null
 }
-/** The boundary for a new group: past it the hub trusts the draft. */
 const groupDraftOf = (raw: unknown): GroupDraft | null => {
   if (!isObject(raw) || !isGroupId(raw.group) || !filled(raw.name) || raw.name.trim().length > GROUP_NAME_MAX || !Array.isArray(raw.bots)) return null
   const bots = raw.bots.map(botIdOf)
