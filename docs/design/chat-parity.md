@@ -129,9 +129,9 @@ These rows were in the first plan. Issues #66 and #69 to #78 now cover them, bui
 | #40 todos, #41 subagents, and the drawing of #8 reasoning | #72 |
 | #27 branch | #75 |
 | #28 images, #29 files | #70 |
-| #56 chat list | #69 |
+| #56 chat list | #69, merged as #102 |
 | #59 drafts | #73 |
-| yolo pill | #78 |
+| yolo pill | #78, merged as #101 |
 
 B1 still parses reasoning, because it landed first. Whichever of B1 and #72 merges second keeps one parser.
 
