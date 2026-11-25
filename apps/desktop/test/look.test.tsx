@@ -112,27 +112,18 @@ describe('a pet tile', () => {
   const tileOf = (thumb: Parameters<typeof PetTile>[0]['thumb']) =>
     renderToStaticMarkup(<PetTile pet={DUNE} thumb={thumb} pressed={false} onShown={() => {}} onPick={() => {}} />).match(/<button[^>]*>/)![0].replaceAll('&#x27;', "'")
 
-  it('is disabled until its picture comes, and says Hermes has none only when Hermes answered so', () => {
+  it('is disabled until its picture comes, and says when none came', () => {
     expect([attr(tileOf(undefined), 'title'), tileOf(undefined).includes('disabled')]).toEqual(['Dune', true])
-    expect([attr(tileOf({ at: 'read', picture: null }), 'title'), tileOf({ at: 'read', picture: null }).includes('disabled')]).toEqual(['Hermes has no picture of Dune', true])
-    expect([attr(tileOf({ at: 'refused' }), 'title'), tileOf({ at: 'refused' }).includes('disabled')]).toEqual(["Highwing couldn't load Dune's picture", true])
+    expect([attr(tileOf({ at: 'missing' }), 'title'), tileOf({ at: 'missing' }).includes('disabled')]).toEqual(['No picture of Dune yet', true])
     expect([attr(tileOf({ at: 'read', picture: PICTURE }), 'title'), tileOf({ at: 'read', picture: PICTURE }).includes('disabled')]).toEqual(['Dune', false])
   })
 })
 
 describe("a pet's thumb", () => {
-  const DUNE = { slug: 'dune', name: 'Dune', url: 'https://cdn.petdex.dev/pets/dune/spritesheet.webp' }
-  const BASIL = { slug: 'basil', name: 'Basil', url: null }
-
-  it('is refused when the ask fails, or when Hermes sends none for a pet it fetches, since a failed fetch answers the same', () => {
-    expect(thumbOf(DUNE, { ok: false, refusal: { kind: 'offline', message: 'offline' } })).toEqual({ at: 'refused' })
-    expect(thumbOf(DUNE, { ok: true, value: null })).toEqual({ at: 'refused' })
-    expect(thumbOf(DUNE, { ok: true, value: PICTURE })).toEqual({ at: 'read', picture: PICTURE })
-  })
-
-  it('is none only for a pet Hermes holds', () => {
-    expect(thumbOf(BASIL, { ok: true, value: null })).toEqual({ at: 'read', picture: null })
-    expect(thumbOf(BASIL, { ok: true, value: PICTURE })).toEqual({ at: 'read', picture: PICTURE })
+  it('is missing, so asked for again, when the ask fails or Hermes sends none, since a failed fetch or read answers the same', () => {
+    expect(thumbOf({ ok: false, refusal: { kind: 'offline', message: 'offline' } })).toEqual({ at: 'missing' })
+    expect(thumbOf({ ok: true, value: null })).toEqual({ at: 'missing' })
+    expect(thumbOf({ ok: true, value: PICTURE })).toEqual({ at: 'read', picture: PICTURE })
   })
 })
 

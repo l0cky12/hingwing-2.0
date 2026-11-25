@@ -1,5 +1,5 @@
 import type { CommandOutcome, PetChoice } from '@highwing/hermes/domain'
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { PictureFile } from '../../ipc-contract'
 import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_COLORS, FACE_SHAPES, faceSvg, lookWords, shapeFor, surpriseFor, titleOf, type Face, type FaceColor, type FaceShape, type Look } from './look'
 import { blobUrlOf, decodes } from './pictures'
@@ -29,21 +29,22 @@ type Tab = typeof TABS[number][0]
 /** `none`: Hermes has no image model. `busy`: Hermes is drawing. `words`: why the last ask failed. */
 type Drawing = { readonly at: 'unknown' | 'checking' | 'none' | 'ready'; readonly words: string | null } | { readonly at: 'busy' }
 type PetList = { readonly at: 'unread' | 'reading' } | { readonly at: 'read'; readonly pets: readonly PetChoice[] } | { readonly at: 'refused'; readonly words: string }
-/** A pet's idle frame. `refused`: the ask failed, so it is made again when the tile is next shown. `picture`: null when Hermes has none. */
-type Thumb = { readonly at: 'loading' | 'refused' } | { readonly at: 'read'; readonly picture: string | null }
+/** A pet's idle frame. `missing`: none came, so it is asked for again when the tile is next shown. */
+type Thumb = { readonly at: 'loading' | 'missing' } | { readonly at: 'read'; readonly picture: string }
 
 /**
- * Hermes answers `pet.thumb` with no picture both for a petdex fetch that failed and for a pet with none, and keeps nothing
- * on a failure (agent/pet/store.py:240-246). So only a pet it holds, with no `url`, surely has none.
+ * Hermes answers `pet.thumb` with no picture alike for a pet with none and for a fetch or read that failed, and keeps nothing on
+ * a failure (agent/pet/store.py:233-246). So no picture is never taken as final.
  */
-export const thumbOf = (pet: PetChoice, outcome: CommandOutcome<string | null>): Thumb =>
-  !outcome.ok || (outcome.value === null && pet.url !== null) ? { at: 'refused' } : { at: 'read', picture: outcome.value }
+export const thumbOf = (outcome: CommandOutcome<string | null>): Thumb =>
+  outcome.ok && outcome.value !== null ? { at: 'read', picture: outcome.value } : { at: 'missing' }
 
 const SHOWN_PETS = 24
 const SHOWN_SHARE = 0.1
 const HOW = 'Click it to pick a shape, generate a picture, upload one or choose a pet.'
 const UNASKED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: "Highwing couldn't ask Hermes to draw it." } }
-const UNREADABLE: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: "Highwing couldn't read that picture." } }
+const UNREADABLE_WORDS = "Highwing couldn't read that picture."
+const UNREADABLE: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: UNREADABLE_WORDS } }
 
 type Source = 'generate' | 'upload'
 const WAITING: { readonly [S in Source]: string } = { generate: 'Drawing a picture…', upload: 'Reading the picture…' }
@@ -114,10 +115,9 @@ interface PetTileProps {
   readonly onPick: (picture: string) => void
 }
 
-const titleOfTile = (pet: PetChoice, thumb: Thumb | undefined) =>
-  thumb?.at === 'refused' ? `Highwing couldn't load ${pet.name}'s picture` : thumb?.at === 'read' && thumb.picture === null ? `Hermes has no picture of ${pet.name}` : pet.name
+const titleOfTile = (pet: PetChoice, thumb: Thumb | undefined) => (thumb?.at === 'missing' ? `No picture of ${pet.name} yet` : pet.name)
 
-/** A pet is picked by its picture, so a tile is disabled until Hermes sends one, and stays so when Hermes has none. */
+/** A pet is picked by its picture, so a tile is disabled until Hermes sends one. */
 export function PetTile({ pet, thumb, pressed, onShown, onPick }: PetTileProps) {
   const picture = thumb?.at === 'read' ? thumb.picture : null
   const url = useBlobUrl(picture)
@@ -159,10 +159,12 @@ export function LookPicker({ look, name, calls, onLook, onWaiting }: LookPickerP
   const [query, setQuery] = useState('')
   const [thumbs, setThumbs] = useState<ReadonlyMap<string, Thumb>>(new Map())
   const [awaiting, setAwaiting] = useState<Source | null>(null)
-  const [pending] = useState(() => pendingLook(source => {
-    setAwaiting(source)
-    onWaiting(source === null ? null : WAITING[source])
-  }))
+  /** Main is showing the file dialog or reading the file. Create waits, though only a picture main hands back takes over the look. */
+  const [choosing, setChoosing] = useState(false)
+  const [pending] = useState(() => pendingLook(setAwaiting))
+  const waiting = awaiting !== null ? WAITING[awaiting] : choosing ? WAITING.upload : null
+  // Before paint, so Create is never shown enabled between a click and its wait.
+  useLayoutEffect(() => onWaiting(waiting), [waiting])
   const root = useRef<HTMLDivElement>(null)
   const button = useRef<HTMLButtonElement>(null)
   const pop = useRef<HTMLDivElement>(null)
@@ -198,9 +200,9 @@ export function LookPicker({ look, name, calls, onLook, onWaiting }: LookPickerP
   // Hermes reads thumbs on a small pool shared with every slow call, so only a tile the user can see asks for its own.
   const readThumb = (pet: PetChoice) => {
     const held = thumbs.get(pet.slug)
-    if (held !== undefined && held.at !== 'refused') return
+    if (held !== undefined && held.at !== 'missing') return
     setThumbs(now => new Map(now).set(pet.slug, { at: 'loading' }))
-    void calls.petPicture(pet).then(outcome => setThumbs(now => new Map(now).set(pet.slug, thumbOf(pet, outcome))))
+    void calls.petPicture(pet).then(outcome => setThumbs(now => new Map(now).set(pet.slug, thumbOf(outcome))))
   }
 
   const show = (next: Tab) => {
@@ -244,15 +246,17 @@ export function LookPicker({ look, name, calls, onLook, onWaiting }: LookPickerP
     setDrawing({ at: 'ready', words: wanted && !result.ok ? result.refusal.message : null })
     if (wanted && result.ok) onLook({ from: 'generate', picture: result.value })
   }
-  const readUpload = async (): Promise<CommandOutcome<PictureFile>> => {
-    const outcome = await calls.choose()
-    return outcome.ok && outcome.value !== 'cancelled' && !(await decodes(outcome.value)) ? UNREADABLE : outcome
-  }
+  // A cancel or a refused file is no pick, so it leaves a drawing on its way be.
   const choose = async () => {
     setUpload({ busy: true, words: null })
-    const { wanted, result } = await pending.run('upload', readUpload, UNREADABLE)
-    setUpload({ busy: false, words: wanted && !result.ok ? result.refusal.message : null })
-    if (wanted && result.ok && result.value !== 'cancelled') onLook({ from: 'upload', picture: result.value })
+    setChoosing(true)
+    const chosen = await calls.choose().catch((): CommandOutcome<PictureFile> => UNREADABLE)
+    setChoosing(false)
+    if (!chosen.ok || chosen.value === 'cancelled') return setUpload({ busy: false, words: chosen.ok ? null : chosen.refusal.message })
+    const picture = chosen.value
+    const { wanted, result } = await pending.run('upload', () => decodes(picture), false)
+    setUpload({ busy: false, words: wanted && !result ? UNREADABLE_WORDS : null })
+    if (wanted && result) onLook({ from: 'upload', picture })
   }
 
   const shapeInstead = look.from !== 'face' && <button type="button" className="look-reset" onClick={backToFace}>Use a shape instead</button>
