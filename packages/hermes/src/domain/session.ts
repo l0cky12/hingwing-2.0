@@ -17,6 +17,8 @@ export type ToolId = Brand<string, 'ToolId'>
 export type PromptId = Brand<string, 'PromptId'>
 /** Hermes's `subagent_id`: one helper the agent handed part of the errand to. */
 export type HelperId = Brand<string, 'HelperId'>
+/** Hermes's `task_id` for a side question or a background prompt. */
+export type SideId = Brand<string, 'SideId'>
 
 /** A request Hermes holds open on the socket. For a connector card it is the operation's id. */
 export type RequestId = Brand<string, 'RequestId'>
@@ -104,6 +106,25 @@ export interface SessionContent {
   readonly model: SessionModel
   readonly usage: SessionUsage
   readonly tuning: Tuning
+  /** Side questions and background prompts, oldest first, by whichever client asked. Live only: Hermes stores neither. */
+  readonly sides: readonly SideTask[]
+}
+
+/**
+ * A side question (`btw`: about this chat, which it leaves as it was) or a background prompt
+ * (`background`: run apart by an agent of its own). Its answer comes whole, and it cannot be stopped.
+ */
+export interface SideTask {
+  readonly id: SideId
+  readonly kind: 'btw' | 'background'
+  /** null: asked in another client, and Hermes repeats only a side question's words. */
+  readonly asked: string | null
+  readonly state:
+    | { readonly s: 'running' }
+    /** Hermes's answer. A failure is words too, starting `error:` (gateway/session_tui_side.py:139-146). */
+    | { readonly s: 'done'; readonly text: string }
+    /** The chat was read again while it ran, so its answer may have gone by unseen. */
+    | { readonly s: 'lost' }
 }
 
 /**

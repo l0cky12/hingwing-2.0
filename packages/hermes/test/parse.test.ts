@@ -543,6 +543,20 @@ describe('usage', () => {
   })
 })
 
+describe('side answers', () => {
+  const frame = (type: string, payload: Record<string, unknown>) => ({ type, session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload })
+
+  it('reads a side question\'s answer with its words, and a background answer without', () => {
+    expect(parseEvent(frame('btw.complete', { task_id: 'btw_1', question: 'Which file?', text: 'notes.md' }))).toMatchObject({
+      stamp: { seq: 9, generation: null }, event: { type: 'side.answered', id: 'btw_1', kind: 'btw', asked: 'Which file?', text: 'notes.md' }
+    })
+    expect(parseEvent(frame('background.complete', { task_id: 'bg_1', text: 'error: no provider' }))).toMatchObject({
+      event: { type: 'side.answered', id: 'bg_1', kind: 'background', asked: null, text: 'error: no provider' }
+    })
+    expect(parseEvent(frame('btw.complete', { task_id: '', text: 'x' }))).toMatchObject({ event: null, skipped: 'invalid' })
+  })
+})
+
 describe('the switches Hermes says', () => {
   const frame = (payload: Record<string, unknown>) => ({ type: 'session.info', session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload })
 

@@ -7,7 +7,7 @@ import type { ModelMenu } from '../src/domain/command'
 import { modelViewOf, sameModel } from '../src/domain/model'
 import type {
   AdmissionId, Ask, ContextFill, Generation, HelperId, HelperItem, InputId, Item, Link, ModelId, ModelRef, OpenTurn, Outcome, PromptId, RequestId, SessionContent, SessionId,
-  SessionUsage, SettledTurn, StatusAbout, Tokens, ToolId, ToolResult, TurnId
+  SessionUsage, SettledTurn, SideId, SideTask, StatusAbout, Tokens, ToolId, ToolResult, TurnId
 } from '../src/domain/session'
 
 const EPOCH = 'e1'
@@ -310,7 +310,7 @@ describe('attached', () => {
       snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 9 }, history: { turns, unfinished: null, older: { cursor: 'c1' } } })
     })
     expect(state.gate).toEqual({ at: 'live', cursor: { epoch: EPOCH, seq: 9 }, subscriptionId: 'sub-1' })
-    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null } })
+    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [] })
   })
 
   it('B: opens the unfinished turn of a running snapshot with its waiting prompts, then the parked frames above the watermark', () => {
@@ -1271,5 +1271,43 @@ describe('tuning', () => {
     expect(reduce(tuned, { in: 'local', action: { did: 'tuned', tuning: { reasoning: true } } }).content).toBe(tuned.content)
     const rebuilt = feed(tuned, { in: 'gap' }, { in: 'attached', attempt: 2, snapshot: snapshot(), replay: null })
     expect(rebuilt.content.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
+  })
+})
+
+describe('side questions and background prompts', () => {
+  const started = (id: string, kind: SideTask['kind'] = 'btw', asked = 'Which file was it?'): SessionInput =>
+    ({ in: 'local', action: { did: 'side.started', id: id as SideId, kind, asked } })
+  const answered = (seq: number, id: string, text: string, kind: SideTask['kind'] = 'btw', asked: string | null = 'Which file was it?'): SessionInput =>
+    event(seq, { type: 'side.answered', id: id as SideId, kind, asked, text }, null)
+
+  it('runs from the reply that names the task until its answer, which arrives whole', () => {
+    const running = feed(live(), started('btw_1'))
+    expect(running.content.sides).toEqual([{ id: 'btw_1', kind: 'btw', asked: 'Which file was it?', state: { s: 'running' } }])
+    const done = reduce(running, answered(1, 'btw_1', 'notes.md'))
+    expect(done.content.sides).toEqual([{ id: 'btw_1', kind: 'btw', asked: 'Which file was it?', state: { s: 'done', text: 'notes.md' } }])
+    expect(reduce(done, started('btw_1')), 'a late reply changes nothing').toBe(done)
+  })
+
+  it("keeps an answer that came before the reply, and one to another client's task", () => {
+    const early = feed(live(), answered(1, 'btw_1', 'notes.md'), started('btw_1'))
+    expect(early.content.sides).toMatchObject([{ id: 'btw_1', state: { s: 'done', text: 'notes.md' } }])
+    const theirs = reduce(live(), answered(1, 'bg_9', 'Tidied.', 'background', null))
+    expect(theirs.content.sides).toEqual([{ id: 'bg_9', kind: 'background', asked: null, state: { s: 'done', text: 'Tidied.' } }])
+  })
+
+  it('marks a running one lost when the chat is read again, keeps the answered ones, and takes an answer that still comes', () => {
+    const before = feed(live(), started('btw_1'), answered(1, 'btw_1', 'notes.md'), started('bg_2', 'background', 'Tidy the notes'))
+    const rebuilt = feed(before, { in: 'gap' }, { in: 'attached', attempt: 2, snapshot: snapshot(), replay: null })
+    expect(rebuilt.content.sides.map(side => [side.id, side.state.s])).toEqual([['btw_1', 'done'], ['bg_2', 'lost']])
+    expect(reduce(rebuilt, answered(1, 'bg_2', 'Tidied.', 'background', null)).content.sides[1]).toMatchObject({ asked: 'Tidy the notes', state: { s: 'done', text: 'Tidied.' } })
+  })
+
+  it('keeps a running one through a replayed reattach, which delivers its answer', () => {
+    const before = feed(live(), started('btw_1'), { in: 'link.lost' }, { in: 'attach' })
+    const caughtUp = reduce(before, {
+      in: 'attached', attempt: 2, snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 1 } }),
+      replay: { snapshotRequired: false, epoch: EPOCH, events: [{ stamp: { epoch: EPOCH, seq: 1, generation: null }, event: { type: 'side.answered', id: 'btw_1' as SideId, kind: 'btw', asked: 'Which file was it?', text: 'notes.md' }, seenAt: null }] }
+    })
+    expect(caughtUp.content.sides).toMatchObject([{ id: 'btw_1', state: { s: 'done', text: 'notes.md' } }])
   })
 })

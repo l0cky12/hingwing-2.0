@@ -294,6 +294,10 @@ export const validators: Validators = {
     const attachments = attachmentIdsOf(raw.attachments)
     return sessionId && attachments && filled(raw.text) ? { do: 'send', sessionId, text: raw.text, attachments } : null
   },
+  side: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && (raw.kind === 'btw' || raw.kind === 'background') && filled(raw.text) ? { do: 'side', sessionId, kind: raw.kind, text: raw.text } : null
+  },
   rewind: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && Number.isInteger(raw.rowId) && (raw.rowId as number) > 0 && filled(raw.text)

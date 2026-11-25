@@ -11,24 +11,24 @@ import type { CloseWhy } from '../domain/requests'
 import { EFFORTS } from '../domain/session'
 import type {
   AdmissionId, Answer, Ask, Began, BusyMode, ConnectTarget, FileDiff, Generation, HelperEnd, HelperId, InputId, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, PromptId,
-  Question, RequestId, SessionId, SessionUsage, SettledTurn, SidebarRow, StatusAbout, ToolId, ToolResult, TurnId
+  Question, RequestId, SessionId, SessionUsage, SettledTurn, SideId, SidebarRow, SideTask, StatusAbout, ToolId, ToolResult, TurnId
 } from '../domain/session'
 import type { PathMatch } from '../domain/path'
 import type { RelayState } from '../domain/relay'
-import type { SlashCatalog, SlashEntry } from '../domain/slash'
+import { OWN_COMMANDS, type SlashCatalog, type SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
 import type {
-  AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalPendingPrompt,
-  CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
-  CommandDispatchResult, CommandsCatalogResult, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget,
-  ConnectionRequestPayload, ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload,
-  MessageDeltaPayload, MessageInterimPayload, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload, MoaProgressPayload, MoaReferencePayload,
-  ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PreviewClosePayload, PreviewOpenPayload,
-  ProfilesConfigureResult, ProfilesCreateResult, ProfilesDescribeResult, ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane,
-  ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, RequestCancelPayload, SecretRequestParams, SessionContextBreakdownResult, SessionLiveInfo,
-  SessionMutateResult, SessionStats, SessionTitlePayload, SessionUsagePayload, StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow,
-  StreamDeltaPayload, SubagentEventPayload, SudoRequestParams, TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload,
-  ToolStartPayload, Usage, VaultCodeRequestParams, VaultSaveLoginRequestParams, VaultUnlockRequestParams
+  AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
+  CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
+  CommandDispatchResult, CommandsCatalogResult, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
+  ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload,
+  MessageInterimPayload, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload, MoaProgressPayload, MoaReferencePayload, ModelOptionProvider,
+  ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PreviewClosePayload, PreviewOpenPayload, ProfilesConfigureResult,
+  ProfilesCreateResult, ProfilesDescribeResult, ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo,
+  ProjectTreeSession, RequestCancelPayload, SecretRequestParams, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult, SessionStats,
+  SessionTitlePayload, SessionUsagePayload, SideAgentCompletePayload, StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload,
+  SubagentEventPayload, SudoRequestParams, TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage,
+  VaultCodeRequestParams, VaultSaveLoginRequestParams, VaultUnlockRequestParams
 } from './contract.generated'
 
 export type ParsedEvent =
@@ -181,6 +181,13 @@ function admissionOf(value: unknown): Admission {
 }
 
 type Shown = (payload: Obj, envelope: Obj) => SessionEvent | null
+
+function sideAnswer(payload: Obj, kind: SideTask['kind']): SessionEvent {
+  const p = fields<SideAgentCompletePayload>(payload)
+  const id = p.str('task_id')
+  if (id === '') throw new Unusable()
+  return { type: 'side.answered', id: id as SideId, kind, asked: p.optStr('question') || null, text: stripAnsi(p.str('text')) }
+}
 
 interface MetaFields {
   readonly title?: string | null
@@ -404,6 +411,9 @@ export const SHOWN: { readonly [type: string]: Shown } = {
   'clarify.settled': promptSettled,
   'approval.cancelled': payload => ({ type: 'prompts.cancelled', ids: fields<ApprovalCancelledPayload>(payload).strs('request_ids') as PromptId[] }),
   /** A reason outside Hermes's own five reads as withdrawn (`RequestCancelReason`, tui_gateway/contracts/server_requests.py:372-377). */
+  /** A side agent's answer, published on the chat's stream with no generation (gateway/session_tui_side.py:139-151). */
+  'btw.complete': payload => sideAnswer(payload, 'btw'),
+  'background.complete': payload => sideAnswer(payload, 'background'),
   'request.cancel': payload => {
     const p = fields<RequestCancelPayload>(payload)
     return { type: 'request.cancelled', id: p.str('id') as RequestId, why: CANCEL_WHY[p.str('reason')] ?? 'withdrawn' }
@@ -460,8 +470,8 @@ export const FOR_WINDOW: { readonly [type: string]: (payload: unknown) => PaneAs
 export const UNSHOWN: ReadonlySet<string> = new Set([
   /** Every canonical turn publishes it (`gateway/run_turn_progress.py:1092`); not in the generated contract. */
   'agent.step',
-  'agent.terminal.output', 'background.complete', 'billing.step_up.verification', 'bot_relay.outbox.pending',
-  'browser.progress', 'btw.complete', 'cron.changed', 'display.install.done',
+  'agent.terminal.output', 'billing.step_up.verification', 'bot_relay.outbox.pending',
+  'browser.progress', 'cron.changed', 'display.install.done',
   'display.install.log', 'display.lease', 'display.status', 'free_tier.challenge', 'gateway.ready', 'groups.changed',
   'message.reaction', 'notice', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
   'pet.hatch.progress', 'platforms.changed', 'preview.restart.complete',
@@ -1276,7 +1286,8 @@ const GATEWAY_RUNS: ReadonlySet<string> = new Set([
   'insights', 'platforms', 'version', 'debug'
 ])
 
-const HIGHWING_RUNS: ReadonlySet<string> = new Set(['new'])
+/** `/new` opens a chat, which only the hub can. The rest are rows of `OWN_COMMANDS`. */
+const HIGHWING_RUNS: ReadonlySet<string> = new Set(['new', ...Object.keys(OWN_COMMANDS)])
 
 /** `desktop` is `null` for a command a desktop app should offer, else the reason it should not. */
 const offered = (meta: unknown) => isObject(meta) && (meta.desktop === null || meta.desktop === undefined)
