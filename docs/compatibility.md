@@ -174,10 +174,11 @@ no cache, plan, rate-limit or money field from any of them.
 
 - If Hermes doesn't send `yolo` with a chat's state, or answers `config.set`
   with an unknown-method error, Highwing shows no YOLO pill and the chat works
-  as before. The pill writes only the open chat's setting: it names the chat
-  and the key `yolo`, sends no `scope`, and says "on" or "off" outright. Hermes
-  refuses any scope but "global", which would flip every chat of the profile,
-  and takes a missing value to mean "toggle". See `packages/hermes/src/session-commands.ts`.
+  as before. The pill sends `tune yolo`, which writes only the open chat's
+  setting: it names the chat and the key `yolo`, sends no `scope`, and says
+  "on" or "off" outright. Hermes refuses any scope but "global", which would
+  flip every chat of the profile, and takes a missing value to mean "toggle".
+  See `SWITCHES` in `packages/hermes/src/session-commands.ts`.
 
 ## Attachments
 
@@ -389,6 +390,58 @@ Hermes keeps one queue of messages per chat, for every client. Each
   generation (`gateway/session_authority.py:878-893`). Highwing does not read
   it as the end of the running turn.
 
+## Chat commands
+
+Hermes 0.23.3 serves each of these on the canonical route. `Session.tuning`
+holds every switch Hermes keeps for the chat, for all its clients. Effort, fast
+and YOLO come with each attach reply's `info` and with each `session.info`
+(`gateway/session_local.py:486-503,520-560`), so Highwing reads none of them
+with `config.get`. `Session.cwd` is the chat's folder, from the same places.
+
+| A window's command | Highwing calls | Hermes source |
+|---|---|---|
+| `complete` | `complete.path {session_id, word}` | `gateway/session_complete_path.py:15-40` |
+| `side` btw, or a typed `/btw <question>` | `prompt.btw {session_id, text}`, answered `{task_id}` | `gateway/session_tui_side.py:197-224` |
+| `side` background, or a typed `/bg <prompt>` | `prompt.background {session_id, text}`, answered `{task_id}` | `gateway/session_tui_side.py:175-193` |
+| `tune` effort | `session.mutate reasoning {effort}`, `null` for the model's own level, with `expected_generation` | `persistence/authority/runtime.py:299-316`, `gateway/session_mutation_policy.py` |
+| `tune` fast | `config.set {session_id, key: "fast", value: "fast" \| "normal"}` | `gateway/session_tui_config.py:274-298` |
+| `tune` yolo | `config.set {session_id, key: "yolo", value: "on" \| "off"}` | `gateway/session_tui_config.py:187-193,357-377` |
+| `move` | `session.mutate workspace {cwd}`, with `expected_generation` | `gateway/session_mutation_policy.py:37-55` |
+| `compress`, or a typed `/compress [focus]` | `session.mutate compress {focus?}`, with `expected_generation` | `gateway/session_mutation_compress.py:32-113` |
+| `export` | `session.export {session_id, format}`, `md`, `json` or `html` | `gateway/session_tui_ops.py:89-122` |
+
+- `btw.complete {task_id, question, text}` and `background.complete {task_id, text}`
+  carry the answer on the chat's stream, with no generation. Each is one entry
+  of `Session.sides`, by task, from any client. A failed side agent answers
+  `error: ...` as its text (`gateway/session_tui_side.py:139-151`). Hermes
+  stores neither answer, so one that was running when the chat was read again
+  reads `lost`.
+- Hermes takes a side prompt only from a socket that has the chat attached,
+  and refuses any other with `permission_denied`.
+- A committed effort or folder comes back in a `session.info` before the reply
+  (`gateway/session_mutations.py:376-380`). An effort set during a turn is held
+  for the next turn (`gateway/session_mutations.py:129-137`). A move is
+  refused while a turn runs. Highwing refuses it before it sends anything.
+  Hermes refuses a folder that is not on its machine with `invalid_params` and
+  no field (`gateway/session_mutation_policy.py:45-49`).
+- `config.set` of `fast` answers the tier's word and pushes `{service_tier, fast}`
+  in a `session.info` (`gateway/session_busy_controls.py:111-131`). Hermes
+  refuses it with `fast_unavailable` for a model with no fast tier. A later
+  `session.info` from a policy change (an effort, a folder or a model) reads the
+  frozen policy's tier, not the chat's `/fast` pin, so it says fast is off
+  while no agent is built (`gateway/session_local.py:467-477,543`).
+- A compression is refused while a turn runs. Its receipt is a `session.updated`
+  with `operation: "compress"` and Hermes's report in `summary`. The command
+  answers the report's headline, size line and note. A compression that
+  removes nothing answers `status: "noop"` and publishes nothing.
+- A `session.updated` with operation `compress` or `reset`, from any client,
+  starts the rebuild that a replay gap takes, because both rewrite the stored
+  rows. A `rewind` receipt cuts the chat in place instead.
+- `session.export` renders the chat and writes nothing on Hermes's machine.
+  Main saves it through a save dialog, so the window gets the saved file's
+  path and never the text. `HIGHWING_SAVE_DIR` names a folder to save into
+  with no dialog, which a verify run sets.
+
 ## When a change needs a newer Hermes route
 
 1. Install the newer Hermes, then run `pnpm contract:drift` to see which
@@ -479,9 +532,13 @@ Of the 66 listed commands whose `desktop` is `null`, the gateway runs 33:
 `/blueprint` `/help` `/usage` `/topup` `/version` `/debug`
 
 The gateway refuses the other 33 offered commands, among them `/new`,
-`/compress`, `/retry`, `/undo`, `/resume` and `/stop`. A client runs these as
-its own actions. Highwing runs a bare `/new` itself: it opens a new chat in the
-bot of the chat it was typed in. The menu lists it with the 33 the gateway runs.
+`/compress`, `/bg`, `/btw`, `/retry`, `/undo`, `/resume` and `/stop`. A client
+runs these as its own actions. Highwing runs a bare `/new` itself: it opens a
+new chat in the bot of the chat it was typed in. It also runs every name in
+`OWN_COMMANDS` (`packages/hermes/src/domain/slash.ts`): `/title` with a title,
+`/btw`, `/bg` and `/compress`. Hermes's own forms of `/compress` (`here [N]`,
+`--preview`) go to the gateway, which refuses them. The menu lists `/new` and
+those names with the 33 the gateway runs.
 The Hermes `/stop` stops background processes, not the current turn, so it is
 not Highwing's Stop.
 

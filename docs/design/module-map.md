@@ -30,7 +30,7 @@ highwing-2.0/
           requests.ts                                     the life of what Hermes asks outside the turn: opened, reconciled with a snapshot, answered, closed
           queue.ts                                        Hermes's queue: queueOf (a pending list becomes `queue`), offeredBy (what a row's state offers), sendPlan (submit, steer or redirect)
           command.ts                                      Command, ResultOf, Outcome, Refusal: data the renderer sends and gets back
-          slash.ts                                        SlashEntry, SlashCatalog, slashLineOf: the slash menu's rows
+          slash.ts                                        SlashEntry, SlashCatalog, slashLineOf: the slash menu's rows. OWN_COMMANDS, ownCommand: the lines Highwing runs itself
           bots.ts                                         Bots, Roster, Bot, BotFacts, rosterOf: the sidebar's bots, grouped and painted
           open.ts                                         OpenChat, Shown, ChatRef, nextDesk, launchChat: the open chat and every move it can make
           reach.ts                                        Target, SshHost, CheckStep, CheckFailure, CHECK_FAILURES: where Hermes runs and what can stop Highwing reaching it
@@ -54,7 +54,7 @@ highwing-2.0/
       src/when.ts                                         the words and thresholds for turn times (internal)
   apps/desktop/
     src/ipc-contract.ts          shared by all three      AppTopics, Topic, Push, Bridge, applyPush, Setup, SetupCommand
-    src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows), files.ts (openablePath)
+    src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows), files.ts (openablePath), saves.ts (dialogSaver, folderSaver: where an export is written)
       settings.ts                no Electron              parseSettings, loadSettings, saveSettings: connection.json
       drafts.ts                  no Electron              readDraft, draftStore: drafts/, one file per chat's unsent draft
       attachments.ts             no Electron              attachmentStore: attachments/, the files staged for messages; desktopSources: the file dialog and clipboard, or HIGHWING_PICK_FILES
@@ -82,7 +82,10 @@ highwing-2.0/
 | What Hermes waits on outside the turn (`requests`), and which request ids it has closed | the same actor, through `reduce`, by the rules in `domain/requests.ts`: a request frame or a connector card's event opens one, each snapshot's `open_requests` and `pending_connection` reconcile them, `request.cancel` or the card's settlement closes one | windows send `answer` with a `requestId`. A turn that starts or settles never touches them. No state holds a typed value |
 | Whether a request with no card is refused | the hub's `bridge`: refused only while a window watches the chat | nobody. A request with a card is never refused |
 | Where a message sent during a turn goes | nobody stores it. `sendPlan` derives it from `run`, `requests` and `tuning.busy` each time | the `send` row asks it. A window can ask it too, to label its button |
-| Hermes's switches for a chat (`tuning`) | the same actor, through `reduce`: a `facts` input tagged with the attach it was read under, and `tuned` after this client's `config.set` | windows send `tune` |
+| Hermes's switches for a chat (`tuning`) | the same actor, through `reduce`: effort, fast and YOLO from each attach reply and `session.info`, busy and reasoning from a `facts` input tagged with the attach it was read under, and `tuned` after this client's `config.set` | windows send `tune` |
+| Side questions and background prompts (`sides`) | the same actor, through `reduce`: `side.started` from this client's `side` reply, the answer from `btw.complete` or `background.complete`, by any client's task. A rebuild marks a running one `lost` | windows send `side`, or type `/btw` or `/bg` |
+| The slash commands Highwing runs itself | `OWN_COMMANDS` in `domain/slash.ts`, from a typed line to a `Command`. `parseCatalog` offers its names | the `send` row runs the command a listed line stands for. `/new` stays the hub's |
+| An exported chat's text | nobody keeps it. Main's `Saver` (`main/saves.ts`) writes it where the user says | windows send `export` and get the saved path |
 | Which windows watch a chat | the hub, as a count per chat. A command waiting for an attach watches too and is not counted | the actor asks `watched()` before it reads facts |
 | Stored list rows and the set of running sessions | `sidebar.ts` | `Sidebar` is derived from them plus each actor's session when published |
 | What Highwing knows about the bots: loading, offline, unsupported, refused, or a roster | `roster.ts`, changed only through its `after` function | read through `Hermes.bots` and the `bots` topic. The hub says when to ask |
