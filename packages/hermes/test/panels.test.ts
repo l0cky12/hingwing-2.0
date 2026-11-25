@@ -18,7 +18,7 @@ const control = (goal: object | null) => ({ goal, loop: null, heartbeat: null, r
 const feed = (state: Tracked, ...inputs: SessionInput[]): Tracked => inputs.reduce(reduce, state)
 const SNAPSHOT: Snapshot = {
   id: ID, title: 'Notes', cwd: null, model: null, tuning: { effort: null, fast: null, yolo: null }, running: false, generation: 1 as Generation, revision: 1, subscriptionId: 'sub-1',
-  watermark: { epoch: EPOCH, seq: 0 }, queue: [], prompts: [], history: null, openRequests: []
+  watermark: { epoch: EPOCH, seq: 0 }, queue: [], prompts: [], history: null, openRequests: [], plan: null
 }
 const ended = (replyRow: number | null): SessionEvent => ({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [], userRow: null, replyRow, usage: null })
 

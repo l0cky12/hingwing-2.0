@@ -259,6 +259,20 @@ const PLAN_STATUSES: readonly string[] = ['pending', 'in_progress', 'completed',
 
 const idOf = (raw: unknown): string | null => (isString(raw) && raw !== '' ? raw : isFiniteNumber(raw) ? String(raw) : null)
 
+/**
+ * A whole to-do list, as `todo.updated` and a snapshot's `todo_state` carry it. null for Hermes's unused store, an empty list
+ * at revision 0, which holds no plan; an empty list at a later revision is a real clear (tui_gateway/tool_progress.py:117-130).
+ */
+function planOf(raw: unknown): Snapshot['plan'] {
+  const p = fields<TodoUpdatedPayload>(raw)
+  const todos = p.optList('todos')
+  if (todos === null) throw new Unusable()
+  const revision = p.int('revision')
+  if (todos.length === 0 && revision === 0) return null
+  const entries = todos.flatMap(planEntryOf)
+  return { revision, entries: entries.filter((entry, index) => entries.findIndex(other => other.id === entry.id) === index) }
+}
+
 function planEntryOf(raw: unknown): PlanEntry[] {
   if (!isObject(raw)) return []
   const id = idOf(raw.id)
@@ -346,11 +360,8 @@ export const SHOWN: { readonly [type: string]: Shown } = {
   /** The whole block, which may repeat the deltas Hermes already streamed for it. */
   'reasoning.available': payload => ({ type: 'reasoning', text: fields<StreamDeltaPayload>(payload).str('text'), whole: true }),
   'todo.updated': payload => {
-    const p = fields<TodoUpdatedPayload>(payload)
-    const todos = p.optList('todos')
-    if (todos === null) throw new Unusable()
-    const entries = todos.flatMap(planEntryOf)
-    return { type: 'plan', revision: p.int('revision'), entries: entries.filter((entry, index) => entries.findIndex(other => other.id === entry.id) === index) }
+    const plan = planOf(payload)
+    return plan === null ? null : { type: 'plan', ...plan }
   },
   'subagent.spawn_requested': helperFrame(() => ({ is: 'queued' })),
   'subagent.start': helperFrame(() => ({ is: 'working', doing: null })),
@@ -616,6 +627,7 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
       const parsed = usable(() => promptOf(prompt))
       return parsed === null ? [] : [{ id: parsed.id, generation: parsed.generation, ask: parsed.ask }]
     }),
+    plan: usable(() => planOf(reply.todo_state)),
     history: reply.messages_omitted === true ? null : {
       ...parseRows(reply.display_messages ?? []),
       older: first?.['archived_truncated'] === true ? { cursor: null } : null

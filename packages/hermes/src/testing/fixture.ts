@@ -114,6 +114,11 @@ export interface Fixture {
      * step changes them. Absent: the gateway refuses that read as an unknown method, as a Hermes without it does.
      */
     readonly reads?: Reads
+    /**
+     * The story session's to-do list before the story starts, as an attach reply's `todo_state` carries it. A recorded
+     * `todo.updated` frame replaces it. Absent: the session has none.
+     */
+    readonly todo_state?: { readonly todos: readonly unknown[]; readonly revision: number }
   }
   readonly steps: readonly FixtureStep[]
 }
@@ -286,6 +291,10 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   const { reads } = value
   if (reads !== undefined && !isReads(reads)) return `"reads" must map ${READS.join(' or ')} to a reply`
+  const { todo_state: todoState } = value
+  if (todoState !== undefined && !(isObject(todoState) && Array.isArray(todoState.todos) && Number.isSafeInteger(todoState.revision) && (todoState.revision as number) >= 0)) {
+    return '"todo_state" must be { todos, revision } with "revision" a whole number'
+  }
   const { chats } = value
   if (chats !== undefined && !(isObject(chats) && Object.values(chats).every(seeds => Array.isArray(seeds) && seeds.every(isSeed)))) {
     return '"chats" must map a profile to its chats, each with id, title, last_active and rows'
@@ -320,7 +329,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),
     ...(relay === undefined ? {} : { relay: relay as { readonly [profile: string]: RelayScript } }),
     ...(paths === undefined ? {} : { paths: paths as NonNullable<Fixture['header']['paths']> }),
-    ...(reads === undefined ? {} : { reads })
+    ...(reads === undefined ? {} : { reads }),
+    ...(todoState === undefined ? {} : { todo_state: todoState as NonNullable<Fixture['header']['todo_state']> })
   }
 }
 

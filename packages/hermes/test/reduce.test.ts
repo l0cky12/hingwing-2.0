@@ -6,7 +6,7 @@ import {
 import type { ModelMenu } from '../src/domain/command'
 import { modelViewOf, sameModel } from '../src/domain/model'
 import type {
-  AdmissionId, Ask, ContextFill, Generation, HelperId, HelperItem, InputId, Item, Link, ModelId, ModelRef, OpenTurn, Outcome, PromptId, RequestId, SessionContent, SessionId,
+  AdmissionId, Ask, ContextFill, Generation, HelperId, HelperItem, InputId, Item, Json, Link, ModelId, ModelRef, OpenTurn, Outcome, PromptId, RequestId, SessionContent, SessionId,
   SessionUsage, SettledTurn, SideId, SideTask, StatusAbout, Tokens, ToolId, ToolResult, TurnId
 } from '../src/domain/session'
 
@@ -56,6 +56,7 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
     prompts: [],
     history: { turns: [], unfinished: null, older: null },
     openRequests: [],
+    plan: null,
     ...over
   }
 }
@@ -987,6 +988,60 @@ describe('reasoning, the plan and helpers', () => {
       const state = feed(live(), event(1, started('t1')), event(2, plan(1)), event(3, ended(COMPLETE)), event(4, started('t2'), 2), event(5, plan(3), 2))
       expect(state.content.history[0]?.items).toMatchObject([{ kind: 'plan', revision: 1 }])
       expect(openItems(state)).toMatchObject([{ kind: 'plan', revision: 3 }])
+    })
+
+    describe('read from a snapshot', () => {
+      const PLAN: NonNullable<Snapshot['plan']> = { revision: 2, entries: [{ id: '1', text: 'step 1', status: 'in_progress', parentId: null }] }
+      const tool = (id: string, name: string, args: { readonly [key: string]: Json } = {}): Item<'settled'> =>
+        ({ kind: 'tool', id: toolId(id), name, args, status: { s: 'done', durationS: null, diffs: [], result: OUTPUT, image: null } })
+      const said = (markdown: string): Item<'settled'> => ({ kind: 'text', markdown, sealed: true })
+      const turn = (id: string, ...items: Item<'settled'>[]): SettledTurn => ({ ...storedTurn(id, []), items })
+      const shapes = (items: readonly Item<'open' | 'settled'>[]) => items.map(item => (item.kind === 'tool' ? item.id : item.kind === 'text' ? item.markdown : item.kind))
+      const opened = (over: Partial<Snapshot>) => feed(emptyTracked('s1' as SessionId), { in: 'attach' }, { in: 'attached', attempt: 1, snapshot: snapshot({ plan: PLAN, ...over }), replay: null })
+      const page = (turns: readonly SettledTurn[], unfinished: readonly Item<'settled'>[] | null = null): Snapshot['history'] =>
+        ({ turns, unfinished: unfinished === null ? null : { request: 'Go on', began: null, items: unfinished }, older: null })
+      const bridged = (id: string, name: string) => tool(id, 'tool_call', { calls: [{ name, arguments: {} }] })
+
+      it('puts the plan right after the newest todo call of the newest turn that made one', () => {
+        const state = opened({ history: page([
+          turn('a', tool('a1', 'todo'), said('first')),
+          turn('b', bridged('b1', 'todo_list'), tool('b2', 'terminal'), bridged('b3', 'todo_list'), said('second')),
+          turn('c', tool('c1', 'terminal'), bridged('c2', 'read_file'), said('third'))
+        ]) })
+        expect(state.content.history.map(held => shapes(held.items))).toEqual([
+          ['a1', 'first'], ['b1', 'b2', 'b3', 'plan', 'second'], ['c1', 'c2', 'third']
+        ])
+        expect(state.content.history[1]?.items[3]).toEqual({ kind: 'plan', ...PLAN })
+      })
+
+      it('puts it in the running turn after the todo call it made', () => {
+        const state = opened({ running: true, history: page([turn('a', tool('a1', 'todo_list'), said('first'))], [tool('r1', 'todo'), tool('r2', 'terminal')]) })
+        expect(state.content.history.map(held => shapes(held.items))).toEqual([['a1', 'first']])
+        expect(shapes(openItems(state))).toEqual(['r1', 'plan', 'r2'])
+      })
+
+      it('puts it at the end of the running turn when no loaded turn called the todo tool, before the prompt it waits on', () => {
+        const state = opened({ running: true, prompts: [{ id: promptId('p1'), generation: generation(1), ask: APPROVAL }], history: page([turn('a', said('first'))], [tool('r1', 'terminal')]) })
+        expect(shapes(openItems(state))).toEqual(['r1', 'plan', 'prompt'])
+      })
+
+      it('shows no plan when no loaded turn called the todo tool and none runs', () => {
+        const state = opened({ history: page([turn('a', tool('a1', 'terminal'), said('first'))]) })
+        expect(state.content.history.flatMap(held => held.items).some(item => item.kind === 'plan')).toBe(false)
+      })
+
+      it('shows no plan when the snapshot holds none', () => {
+        const state = opened({ plan: null, history: page([turn('a', tool('a1', 'todo'), said('first'))]) })
+        expect(shapes(state.content.history[0]!.items)).toEqual(['a1', 'first'])
+      })
+
+      it('replaces the plan of the running turn with a newer revision from the stream', () => {
+        const state = opened({ running: true, history: page([], [tool('r1', 'todo'), tool('r2', 'terminal')]) })
+        const newer = reduce(state, event(1, plan(3, '1')))
+        expect(shapes(openItems(newer))).toEqual(['r1', 'plan', 'r2'])
+        expect(openItems(newer)[1]).toMatchObject({ revision: 3, entries: [{ status: 'completed' }, { status: 'pending' }] })
+        expect(reduce(state, event(1, plan(2, '1'))).content).toBe(state.content)
+      })
     })
   })
 

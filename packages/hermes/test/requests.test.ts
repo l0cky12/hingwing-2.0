@@ -22,7 +22,7 @@ const answer = (requestId: string, kind: 'withheld' | 'skip' = 'withheld'): Sess
 function snapshot(over: Partial<Snapshot> = {}): Snapshot {
   return {
     id: SESSION, title: '', cwd: null, model: null, tuning: { effort: null, fast: null, yolo: null }, running: false, generation: 1 as Generation, revision: 1, subscriptionId: 'sub-1',
-    watermark: { epoch: EPOCH, seq: 0 }, queue: [], prompts: [], history: { turns: [], unfinished: null, older: null }, openRequests: [], ...over
+    watermark: { epoch: EPOCH, seq: 0 }, queue: [], prompts: [], history: { turns: [], unfinished: null, older: null }, openRequests: [], plan: null, ...over
   }
 }
 

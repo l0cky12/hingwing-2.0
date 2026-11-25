@@ -867,6 +867,26 @@ describe('attachments, as Hermes stages them', () => {
   })
 })
 
+describe('the scripted gateway\'s to-do list', () => {
+  const PLAN = { todos: [{ id: '1', content: 'Check disk', status: 'pending' }], revision: 2 }
+  const todo = (seq: number, todoState: Record<string, unknown>): FixtureStep =>
+    ({ at: 0, push: { jsonrpc: '2.0', method: 'event', params: { type: 'todo.updated', session_id: SESSION, replay_epoch: 'e', seq, payload: todoState } } })
+  const todoState = async (call: Awaited<ReturnType<typeof rawSocket>>['call']) => (await call('session.resume', { session_id: SESSION })).result?.todo_state
+
+  it('answers an attach with the list the header holds, then with the newest a todo.updated frame published', async () => {
+    const newer = { todos: [{ id: '1', content: 'Check disk', status: 'completed' }], revision: 3 }
+    const { call, played } = await rawSocket({}, { header: { ...ERRAND.header, todo_state: PLAN }, steps: [todo(1, newer), todo(2, PLAN)] })
+    expect(await todoState(call)).toEqual(PLAN)
+    await played()
+    expect(await todoState(call), 'an older revision does not replace it').toEqual(newer)
+  })
+
+  it('answers null when the session has no list', async () => {
+    const { call } = await rawSocket()
+    expect(await todoState(call)).toBeNull()
+  })
+})
+
 describe('the scripted gateway and what Hermes asks', () => {
   const story = (...steps: readonly Added[]): Fixture => ({ header: ERRAND.header, steps: steps.map((step): FixtureStep => ({ at: 0, ...step })) })
   const event = (seq: number, type: string, payload: Record<string, unknown>) =>

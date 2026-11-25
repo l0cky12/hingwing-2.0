@@ -4,7 +4,7 @@ import type { SessionEvent } from '../src/domain/reduce'
 import type { FileDiff, ToolResult } from '../src/domain/session'
 import { loadFixture } from '../src/testing/fixture'
 import type {
-  CanonicalEventsResult, CanonicalPendingPrompt, CanonicalSessionListRow, CanonicalSnapshot, CompletionItemsResult, SessionContextBreakdownResult, SessionStats,
+  CanonicalEventsResult, CanonicalPendingPrompt, CanonicalSessionListRow, CanonicalSnapshot, CompletionItemsResult, SessionContextBreakdownResult, SessionStats, TodoState,
   StoredTranscriptResult, TranscriptMessage
 } from '../src/wire/contract.generated'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
@@ -372,6 +372,22 @@ describe('parseSnapshot', () => {
     expect(snapshot.openRequests).toEqual([{ kind: 'card', requestId: 'req-1', method: 'sudo', sessionId: SESSION, waitS: 120, ask: { kind: 'secret', for: { is: 'sudo', command: 'apt install x' } } }])
   })
 
+  it('reads the to-do list Hermes holds, with its entries parsed as a todo.updated frame\'s', () => {
+    const todos = [{ id: 1, content: ' Check disk ', status: 'in_progress' }, { id: '1', content: 'Again', status: 'completed' }, { id: '2', content: 'Read the log', status: 'odd' }]
+    expect(parseSnapshot(snapshotReply({ todo_state: { todos, revision: 3 } })).plan).toEqual({
+      revision: 3, entries: [{ id: '1', text: 'Check disk', status: 'in_progress', parentId: null }, { id: '2', text: 'Read the log', status: 'pending', parentId: null }]
+    })
+    expect(parseSnapshot(snapshotReply({ todo_state: { todos: [], revision: 2 } })).plan).toEqual({ revision: 2, entries: [] })
+  })
+
+  it.each<[string, unknown]>([
+    ['missing', undefined], ['null', null], ['Hermes\'s unused store', { todos: [], revision: 0 }], ['a list that is not one', { todos: 'none', revision: 1 }],
+    ['no revision', { todos: [{ id: '1', content: 'Check disk' }] }], ['a negative revision', { todos: [], revision: -1 }], ['not an object', 'todos']
+  ])('reads no plan from a to-do list that is %s', (_, todoState) => {
+    const reply = snapshotReply(todoState === undefined ? {} : { todo_state: todoState as TodoState | null })
+    expect(parseSnapshot(reply).plan).toBeNull()
+  })
+
   it('says older rows exist when the first stored row was cut by the byte budget', () => {
     const history = parseSnapshot(snapshotReply({ messages: [{ role: 'user', text: 'old', archived_truncated: true }] })).history
     expect(history?.older).toEqual({ cursor: null })
@@ -725,6 +741,11 @@ describe('parseEvent on helpers, the plan and reasoning', () => {
   it('cannot use a to-do list without a list or a revision', () => {
     expect(parseEvent(frame('todo.updated', { todos: 'none', revision: 1 }))).toMatchObject({ event: null, skipped: 'invalid' })
     expect(parseEvent(frame('todo.updated', { todos: [] }))).toMatchObject({ event: null, skipped: 'invalid' })
+  })
+
+  it('reads Hermes\'s unused store as no plan, and an empty list at a later revision as a cleared one', () => {
+    expect(parseEvent(frame('todo.updated', { todos: [], revision: 0 }))).toMatchObject({ event: null, skipped: 'unshown' })
+    expect(parsed('todo.updated', { todos: [], revision: 4 })).toEqual({ type: 'plan', revision: 4, entries: [] })
   })
 
   it('reads each recorded subagent frame as an update of one helper', () => {

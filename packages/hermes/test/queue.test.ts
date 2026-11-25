@@ -13,7 +13,7 @@ const row = (admissionId: string, inputId: string, text: string, state: Admissio
 function snapshot(over: Partial<Snapshot> = {}): Snapshot {
   return {
     id: 's1' as SessionId, title: '', cwd: null, model: null, tuning: { effort: null, fast: null, yolo: null }, running: false, generation: 1 as Generation, revision: 1, subscriptionId: 'sub-1',
-    watermark: { epoch: EPOCH, seq: 0 }, queue: [], prompts: [], history: { turns: [], unfinished: null, older: null }, openRequests: [], ...over
+    watermark: { epoch: EPOCH, seq: 0 }, queue: [], prompts: [], history: { turns: [], unfinished: null, older: null }, openRequests: [], plan: null, ...over
   }
 }
 

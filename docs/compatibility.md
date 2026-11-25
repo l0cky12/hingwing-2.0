@@ -236,6 +236,13 @@ no turn runs goes into `Session.interlude`, and never opens a turn.
   (`tui_gateway/session_history.py:275-281,365`). A rebuild reads it from there. MoA
   progress, status lines, notices and tool images are not stored, so a rebuild
   drops them.
+- `todo.updated` carries the whole to-do list at a revision. Hermes keeps the
+  newest one and answers it as the attach reply's `todo_state`
+  (`tui_gateway/tool_progress.py:117-162`). A chat read from a snapshot shows
+  it as the plan of the newest turn that called the todo tool, right after
+  that turn's newest todo call, or of the running turn when no loaded turn
+  called it. An older turn's plan lived only on the stream, so a rebuild drops
+  it. Hermes's unused store, an empty list at revision 0, is no plan.
 - A notice with a time to live (`kind: "ttl"`) that Highwing hears through
   replay is dropped, because its time runs on this client's clock.
 - No gateway method returns a tool image's bytes. Main's one image loader,
