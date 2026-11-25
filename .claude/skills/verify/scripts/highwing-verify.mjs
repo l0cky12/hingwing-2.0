@@ -362,6 +362,21 @@ const STEPS = {
       if (held !== value) throw new Error(`${role} "${name}" has aria-pressed ${JSON.stringify(held)}, not ${value}`)
     }
   },
+  avatar: {
+    arity: 2,
+    run: async (ctx, name, drawn) => {
+      if (drawn !== 'picture' && drawn !== 'letter') throw new Error(`avatar takes "picture" or "letter", not "${drawn}"`)
+      const row = byRole(ctx.page, 'button', name)
+      const read = () => row.evaluate(button => {
+        const image = button.querySelector('img.avatar')
+        if (image !== null) return image.complete && image.naturalWidth > 0 ? 'picture' : 'broken picture'
+        return button.querySelector('span.avatar')?.textContent ? 'letter' : 'nothing'
+      }, undefined, { timeout: ctx.timeout })
+      const held = await poll(ctx, read, found => found === drawn)
+      log(ctx, `  the avatar of "${name}" draws ${held}`)
+      if (held !== drawn) throw new Error(`the avatar of "${name}" draws ${held}, not a ${drawn}`)
+    }
+  },
   drafts: {
     arity: 1,
     run: async (ctx, n) => {
@@ -697,7 +712,7 @@ function serveInDeltas(steps, origin) {
   }
 }
 
-function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, paths, createWarnings, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, origin }, out) {
+function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, paths, createWarnings, configureClash, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, origin }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const header = JSON.parse(lines[0])
   const steps = lines.slice(1).map(line => JSON.parse(line))
@@ -709,13 +724,15 @@ function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, p
   if (guarded) header.guarded = guarded.split(',')
   if (usage) header.usage = JSON.parse(readFileSync(resolve(process.cwd(), usage), 'utf8'))
   if (profiles) {
-    const { chats, relay, ...reply } = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
+    const { chats, relay, souls, ...reply } = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
     header.profiles = reply
     if (chats !== undefined) header.chats = chats
     if (relay !== undefined) header.relay = relay
+    if (souls !== undefined) header.souls = souls
   }
   if (paths) header.paths = JSON.parse(readFileSync(resolve(process.cwd(), paths), 'utf8'))
   if (createWarnings) header.createWarnings = JSON.parse(readFileSync(resolve(process.cwd(), createWarnings), 'utf8'))
+  if (configureClash) header.configureClash = configureClash
   if (bound) header.reach = 'profile'
   if (noBotChat) header.homeBotChat = false
   if (tree) header.tree = true
@@ -764,18 +781,19 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
   if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
   const site = options.serve ? await serve(options.serve) : null
-  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], origin: site?.origin }
+  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], origin: site?.origin }
   const edited = Object.values(edits).some(Boolean)
   if (options.yolo && options.yolo !== 'on' && options.yolo !== 'off') fail(`--yolo takes on or off, not "${options.yolo}"`)
   if (!options.yolo && (options['yolo-denied'] || options['yolo-elsewhere-after'])) fail('--yolo-denied and --yolo-elsewhere-after need --yolo, because a Hermes with no YOLO answers neither')
   if (options.tree && !options.profiles) fail('--tree needs --profiles, because the tree lists the chats that file seeds')
-  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --paths, --create-warnings, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after and --serve edit the fixture a --fixture run replays. They do nothing with --fake-host')
+  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after and --serve edit the fixture a --fixture run replays. They do nothing with --fake-host')
+  if (options['configure-clash'] && !options.profiles) fail('--configure-clash needs --profiles: without it Hermes has no bots to rename')
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
   if (options.size && !/^[1-9]\d*x[1-9]\d*$/.test(options.size)) fail(`--size takes <width>x<height>, not "${options.size}"`)
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')
@@ -811,6 +829,8 @@ async function run(argv) {
   if (!host) Object.assign(env, { HIGHWING_FIXTURE: fixture, HIGHWING_FIXTURE_CALLS: calls })
   rmSync(ctx.opens, { force: true })
   env.HIGHWING_OPEN_LOG = ctx.opens
+  delete env.HIGHWING_PICK_FILE
+  if (options['pick-file']) env.HIGHWING_PICK_FILE = resolve(process.cwd(), options['pick-file'])
 
   const { _electron } = requireDesktop('playwright-core')
   log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"` : `HIGHWING_FIXTURE=${fixture}`}${Object.keys(media).length > 0 ? `, emulating ${JSON.stringify(media)}` : ''}`)
