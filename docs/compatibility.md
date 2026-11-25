@@ -101,6 +101,10 @@ machine, then reconnect."
 - If Hermes doesn't answer `commands.catalog`, Highwing shows no slash menu
   and no error, and sends a `/` line to the agent as text. See
   `packages/hermes/src/hub.ts`.
+- If Hermes answers `bot_relay.deliver` with an unknown-method error, `@`
+  opens no list of bots, and a message that names a bot goes to the chat's own
+  bot as text. Highwing asks once per connection, with no params, which Hermes
+  refuses before it admits anything. See `packages/hermes/src/relay.ts`.
 - If Hermes answers `model.options` with an unknown-method error, Highwing
   shows no model readout under the message box and the chat works as before.
   The model is switched with `session.mutate` operation `model`, never with
@@ -318,6 +322,16 @@ A click on a bot opens its Bot Chat, the session of that profile titled exactly
 The slash menu lists the commands of the profile Highwing connected through, in
 every bot's chat. `commands.catalog` is read once per connection. A command
 still runs in the chat's own profile.
+
+A message that names another bot (`@Rae`) is handed to that bot with
+`bot_relay.deliver`, sent with the bot's `profile` and no `author`, because the
+message is the user's own. Hermes puts it in the bot's Bot Chat and answers
+with a receipt when that turn ends, so Highwing waits up to 25 minutes for the
+one reply. The relay outbox (`bot_relay.outbox.drain`, `bot_relay.reply`)
+carries messages between bots on different connections only, and Highwing
+lists the bots of one Hermes, so it calls neither. The handed message and its
+reply live in Highwing while it is connected. They are not in the history of
+the chat they were sent from.
 
 Highwing can't create a bot. `profiles.create` is not a canonical method, so
 New bot is shown as unavailable. Avatar images are not shown either, because

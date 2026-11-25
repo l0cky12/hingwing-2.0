@@ -41,6 +41,8 @@ const STATES = {
   offline: page => page.getByRole('status', { name: 'Connection' }),
   regenerate: page => page.getByRole('button', { name: 'Regenerate', exact: true, disabled: false }),
   'slash-menu': page => page.getByRole('listbox', { name: 'Commands and skills' }),
+  mentions: page => page.getByRole('listbox', { name: 'Mentions' }),
+  'relay-waiting': page => page.locator('.turn.relay [role="status"]'),
   bots: page => page.locator('aside[data-state="listed"]'),
   unstarted: page => page.locator('main#scroll:empty'),
   'helper-running': page => page.locator('.helper[data-end="live"]').filter({ has: page.locator('> .head > .sr', { hasText: /^working$/ }) })
@@ -124,7 +126,7 @@ const STEPS = {
         const scroller = document.querySelector('#scroll')
         const footer = document.querySelector('footer')
         if (!scroller || !footer) return null
-        const rows = scroller.querySelectorAll('.request, .thread > *, .turn.pending > *')
+        const rows = scroller.querySelectorAll('.request, .thread > *, .turn.pending > *, .relay-reply > *')
         const last = rows[rows.length - 1] ?? scroller
         const view = scroller.getBoundingClientRect()
         const row = last.getBoundingClientRect()
@@ -570,9 +572,10 @@ function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, c
   if (guarded) header.guarded = guarded.split(',')
   if (usage) header.usage = JSON.parse(readFileSync(resolve(process.cwd(), usage), 'utf8'))
   if (profiles) {
-    const { chats, ...reply } = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
+    const { chats, relay, ...reply } = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
     header.profiles = reply
     if (chats !== undefined) header.chats = chats
+    if (relay !== undefined) header.relay = relay
   }
   if (createWarnings) header.createWarnings = JSON.parse(readFileSync(resolve(process.cwd(), createWarnings), 'utf8'))
   if (bound) header.reach = 'profile'
