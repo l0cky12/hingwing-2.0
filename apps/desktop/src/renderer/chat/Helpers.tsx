@@ -1,4 +1,4 @@
-import { fieldId, type HelperView, type PlanEntryView, type PlanView } from '@highwing/thread'
+import { fieldId, type HelperView, type PlanEntryView, type PlanView, type ThreadNode } from '@highwing/thread'
 import { cx, Elapsed } from './Step'
 import { PhraseText } from './text'
 
@@ -29,6 +29,46 @@ export function Reasoning({ nodeKey, text, streaming, duration, open, live, elap
         <span className="title">{title}</span><Elapsed elapsed={elapsed} /><span className="chev" aria-hidden="true" />
       </button>
       <p className="text" id={body} hidden={!open} data-find={fieldId(nodeKey, 'text')}>{text}</p>
+    </div>
+  )
+}
+
+type Disclosure = Pick<NodeState, 'open' | 'onToggle'>
+
+export function Moa({ node, open, onToggle }: { readonly node: Extract<ThreadNode, { kind: 'moa' }> } & Disclosure) {
+  const body = idOf('moa', node.key)
+  return (
+    <div className={cx('moa', open && 'open')}>
+      <button className="head" aria-expanded={open} aria-controls={body} onClick={() => onToggle(node.key)}>
+        <span className="title" data-find={fieldId(node.key, 'title')}>{node.title}</span>
+        {node.meta !== null && <span className="count" data-find={fieldId(node.key, 'words')}>{node.meta}</span>}
+        <span className="chev" aria-hidden="true" />
+      </button>
+      <div className="answers" id={body} hidden={!open}>
+        {node.references.map(({ label, text }, index) => (
+          <div key={index}>
+            <h4 data-find={fieldId(node.key, `label ${index}`)}>{label}</h4>
+            <p className="text" data-find={fieldId(node.key, `body ${index}`)}>{text}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const TONE_CLASS = { info: 'notice', warn: 'notice caution', error: 'err' } as const
+
+export function Notice({ node, open, onToggle }: { readonly node: Extract<ThreadNode, { kind: 'notice' }> } & Disclosure) {
+  const { key, tone, text, detail } = node
+  if (detail === null) return <p className={TONE_CLASS[tone]} data-find={fieldId(key, 'text')}>{text}</p>
+  const body = idOf('detail', key)
+  return (
+    <div className={cx(TONE_CLASS[tone], 'detailed', open && 'open')}>
+      <p>
+        <span data-find={fieldId(key, 'text')}>{text}</span>
+        <button type="button" className="details" aria-expanded={open} aria-controls={body} onClick={() => onToggle(key)}>Details<span className="chev" aria-hidden="true" /></button>
+      </p>
+      <p className="detail" id={body} hidden={!open} data-find={fieldId(key, 'detail')}>{detail}</p>
     </div>
   )
 }

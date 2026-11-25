@@ -16,23 +16,28 @@ const session = (history: readonly SettledTurn[]): Session => ({
 })
 
 const goal: Item<'settled'> = { kind: 'status', what: 'line', about: 'goal', text: 'Goal met.' }
+const closed: Item<'settled'> = { kind: 'notice', what: 'closed', requestId: 'srq-1' as RequestId, asked: 'sudo', end: 'answered' }
+const steer: Item<'settled'> = { kind: 'steer', text: 'use trash-put instead' }
 
 describe('the view the window draws', () => {
-  it('keeps reasoning, helpers and plans, and leaves out only the MoA rounds and status lines nothing draws yet', () => {
+  it('keeps MoA rounds, status lines, reasoning, helpers and plans, and leaves out only closed requests and steers nothing draws yet', () => {
     const items: Item<'settled'>[] = [
       { kind: 'moa', progress: null, references: [], phase: { is: 'advising' } },
+      closed,
       { kind: 'reasoning', text: 'Look first.', sealed: true, startedAt: null, endedAt: null },
       goal,
+      steer,
       { kind: 'helper', id: 'sa-1' as HelperId, parentId: null, depth: 0, goal: 'Check', state: { s: 'queued' }, toolCount: null, steps: [] },
       { kind: 'plan', revision: 1, entries: [{ id: '1', text: 'Read', status: 'pending', parentId: null }] },
       { kind: 'text', markdown: 'Done.', sealed: true }
     ]
     const [drawn] = drawnView(threadView(session([turn('t1', items)]), CLOCK)).turns
-    expect(drawn?.nodes.map(node => node.kind)).toEqual(['reasoning', 'helper', 'plan', 'prose'])
+    expect(drawn?.nodes.map(node => node.kind)).toEqual(['moa', 'reasoning', 'status', 'helper', 'plan', 'prose'])
   })
 
-  it('drops an interlude that holds only lines nothing draws, and keeps the view whole when nothing is left out', () => {
-    expect(drawnView(threadView(session([turn('t1', [goal]), turn('i2', [goal], null)]), CLOCK)).turns.map(drawn => drawn.key)).toEqual(['t1'])
+  it('drops an interlude that holds only lines nothing draws, keeps one that says something, and keeps the view whole when nothing is left out', () => {
+    expect(drawnView(threadView(session([turn('t1', [goal]), turn('i2', [closed], null)]), CLOCK)).turns.map(drawn => drawn.key)).toEqual(['t1'])
+    expect(drawnView(threadView(session([turn('t1', [goal]), turn('i2', [closed, goal], null)]), CLOCK)).turns.map(drawn => drawn.key)).toEqual(['t1', 'i2'])
     const plain = threadView(session([turn('t1', [{ kind: 'reasoning', text: 'Hmm', sealed: true, startedAt: null, endedAt: null }])]), CLOCK)
     expect(drawnView(plain)).toBe(plain)
   })

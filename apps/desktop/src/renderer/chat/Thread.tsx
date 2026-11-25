@@ -5,7 +5,7 @@ import { Avatar } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
 import { CopyButton } from './Copy'
 import { isCommandKey } from '../keys'
-import { Helper, Plan, Reasoning } from './Helpers'
+import { Helper, Moa, Notice, Plan, Reasoning } from './Helpers'
 import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find'
 import { isOpen, NONE_OPEN, toggled, type OpenState } from './open'
 import { placeRelays } from './relays'
@@ -253,12 +253,13 @@ export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer }
     case 'plan':
       return <Plan nodeKey={node.key} plan={node.plan} open={isOpen(state, node.key, node.plan.openByDefault)} live={live} elapsed={elapsed} onToggle={onToggle} />
     case 'notice':
-      return <p className={node.tone === 'error' ? 'err' : 'notice'} data-find={fieldId(node.key, 'text')}>{node.text}</p>
+      return <Notice node={node} open={isOpen(state, node.key, false)} onToggle={onToggle} />
     case 'closed':
       return node.words === null ? null : <div className="approval answered"><p data-find={fieldId(node.key, 'words')}>{node.words}</p></div>
     case 'moa':
+      return <Moa node={node} open={isOpen(state, node.key, false)} onToggle={onToggle} />
     case 'status':
-      return null
+      return <p className="notice said" data-find={fieldId(node.key, 'text')}>{node.text}</p>
   }
 }
 
@@ -323,7 +324,7 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit
   const { end, rowId, request } = turn
   const live = end.kind === 'tip' || (end.kind === 'at' && end.tone === 'live')
   return (
-    <article className={cx('turn', live && 'live-turn')} data-row={rowId ?? undefined}>
+    <article className={cx('turn', live && 'live-turn', end.kind === 'none' && 'interlude')} data-row={rowId ?? undefined}>
       {turn.time !== null && <p className="when">{turn.time}</p>}
       <SentAttachments attachments={turn.attachments} />
       {request !== null && (
