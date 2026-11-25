@@ -1,8 +1,8 @@
-import { botsIn, type Bot, type BotId, type Refusal } from '@highwing/hermes/domain'
+import { botsIn, type Bot, type BotId, type GroupId, type Refusal } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { GroupForm } from '../src/renderer/groups/GroupForm'
-import { groupFormOf, nextGroupForm, startGroupForm, type GroupFormEvent } from '../src/renderer/groups/group-form'
+import { groupFormOf, madeBy, nextGroupForm, startGroupForm, type GroupFormEvent } from '../src/renderer/groups/group-form'
 import { fact, listed } from './support/bots'
 
 const ROSTER = listed(
@@ -70,6 +70,23 @@ describe('the New group chat dialog, as Hermes answers', () => {
     expect(new Set(ids).size).toBe(3)
   })
 
+  it('holds the name and the bots while a create is on its way, so one press sends one create', () => {
+    const sending = after(...filled, { on: 'sent' })
+    expect(nextGroupForm(sending, { on: 'named', name: 'Release' })).toBe(sending)
+    expect(nextGroupForm(sending, tick('juno')[0]!)).toBe(sending)
+    expect(groupFormOf(sending, OFFERED).draft?.name).toBe('Launch plan')
+  })
+
+  it('knows its group was made once Hermes lists any id it sent, even after a lost answer and a refused retry', () => {
+    const lost = sentAndRefused(refusal({ kind: 'offline' }))
+    const retried = nextGroupForm(nextGroupForm(lost, { on: 'sent' }), { on: 'refused', refusal: refusal() })
+    const first = groupFormOf(lost, OFFERED).draft!.group
+    expect(madeBy(retried, [first])).toBe(true)
+    expect(madeBy(retried, [groupFormOf(retried, OFFERED).draft!.group])).toBe(true)
+    expect(madeBy(retried, ['another-group' as GroupId])).toBe(false)
+    expect(madeBy(after(...filled), [])).toBe(false)
+  })
+
   it('puts Hermes\'s words about the bots under the list, and any other words above the buttons', () => {
     expect(groupFormOf(sentAndRefused(refusal({ field: 'members', message: "Hermes can't seat these bots." })), OFFERED)).toMatchObject({ membersWords: "Hermes can't seat these bots.", otherWords: null })
     expect(groupFormOf(sentAndRefused(refusal()), OFFERED)).toMatchObject({ membersWords: null, otherWords: 'Hermes said no.' })
@@ -84,7 +101,7 @@ describe('the New group chat dialog, as Hermes answers', () => {
 })
 
 describe('the New group chat dialog, drawn', () => {
-  const markup = renderToStaticMarkup(<GroupForm offered={OFFERED} onCreate={async () => ({ ok: true, value: undefined })} onClose={() => {}} />)
+  const markup = renderToStaticMarkup(<GroupForm offered={OFFERED} listed={[]} onCreate={async () => ({ ok: true, value: undefined })} onClose={() => {}} />)
   const decoded = (text: string) => text.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&')
   const attr = (tag: string, name: string) => new RegExp(` ${name}="([^"]*)"`).exec(tag)?.[1]
   const textOf = (id: string | undefined) => decoded(new RegExp(`id="${id}"[^>]*>([^<]*)<`).exec(markup)?.[1] ?? '')

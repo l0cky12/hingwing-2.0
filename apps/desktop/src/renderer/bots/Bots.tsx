@@ -86,6 +86,7 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
   const [refused, setRefused] = useState<string | null>(null)
   const [form, setForm] = useState<{ readonly models: ModelMenu | 'loading' } | null>(null)
   const [grouping, setGrouping] = useState(false)
+  const closeGroupForm = () => setGrouping(false)
   const [made, setMade] = useState<BotCreated | null>(null)
   const [editing, setEditing] = useState<BotDetails | null>(null)
   const [query, setQuery] = useState<string | null>(null)
@@ -192,7 +193,7 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
           models={form.models} onSubmit={create} onClose={() => setForm(null)}
         />
       )}
-      {grouping && <GroupForm offered={seatableIn(bots, groups)} onCreate={onCreateGroup} onClose={() => setGrouping(false)} />}
+      {grouping && <GroupForm offered={seatableIn(bots, groups)} listed={groups?.state === 'listed' ? groups.rows.map(row => row.id) : []} onCreate={onCreateGroup} onClose={closeGroupForm} />}
       {editing !== null && (
         <BotEditor
           key={editing.bot} bot={edited ?? { id: editing.bot, name: editing.name, preview: null, description: null, tone: 'slate', picture: false }} details={editing}

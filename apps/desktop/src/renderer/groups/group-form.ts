@@ -1,4 +1,4 @@
-import { GROUP_NAME_MAX, GROUP_SIZE, groupIdFor, type Bot, type BotId, type GroupDraft, type Refusal } from '@highwing/hermes/domain'
+import { GROUP_NAME_MAX, GROUP_SIZE, groupIdFor, type Bot, type BotId, type GroupDraft, type GroupId, type Refusal } from '@highwing/hermes/domain'
 import { namesInWords } from './group-rows'
 
 export type GroupSend = { readonly at: 'editing' } | { readonly at: 'sending' } | { readonly at: 'refused'; readonly refusal: Refusal }
@@ -24,6 +24,7 @@ const EDITING: GroupSend = { at: 'editing' }
 export const startGroupForm = (seed: string): GroupFormState => ({ seed, refusals: 0, name: '', picked: [], query: '', send: EDITING })
 
 export function nextGroupForm(state: GroupFormState, event: GroupFormEvent): GroupFormState {
+  if (state.send.at === 'sending' && (event.on === 'named' || event.on === 'toggled')) return state
   switch (event.on) {
     case 'named':
       return { ...state, name: event.name, send: EDITING }
@@ -68,3 +69,10 @@ export function groupFormOf(state: GroupFormState, offered: readonly Bot[]): Gro
       : { group: groupIdFor(state.seed, state.refusals), name, bots: picked.map(bot => bot.id) }
   }
 }
+
+/**
+ * Whether Hermes lists a group under an id this dialog sent. A create whose answer was lost may still have made it,
+ * and a later try under the next id would make a second one.
+ */
+export const madeBy = (state: GroupFormState, listed: readonly GroupId[]): boolean =>
+  Array.from({ length: state.refusals + 1 }, (_, refusals) => groupIdFor(state.seed, refusals)).some(id => listed.includes(id))

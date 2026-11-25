@@ -1,10 +1,11 @@
-import { GROUP_NAME_MAX, type Bot, type CommandOutcome, type GroupDraft } from '@highwing/hermes/domain'
-import { useId, useLayoutEffect, useReducer, useRef, type FormEvent } from 'react'
+import { GROUP_NAME_MAX, type Bot, type CommandOutcome, type GroupDraft, type GroupId } from '@highwing/hermes/domain'
+import { useEffect, useId, useLayoutEffect, useReducer, useRef, type FormEvent } from 'react'
 import { Avatar } from '../bots/Avatar'
-import { groupFormOf, nextGroupForm, startGroupForm } from './group-form'
+import { groupFormOf, madeBy, nextGroupForm, startGroupForm } from './group-form'
 
 interface GroupFormProps {
   readonly offered: readonly Bot[]
+  readonly listed: readonly GroupId[]
   readonly onCreate: (draft: GroupDraft) => Promise<CommandOutcome>
   readonly onClose: () => void
 }
@@ -12,7 +13,7 @@ interface GroupFormProps {
 const Search = () => <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
 const Tick = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3.5}><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
 
-export function GroupForm({ offered, onCreate, onClose }: GroupFormProps) {
+export function GroupForm({ offered, listed, onCreate, onClose }: GroupFormProps) {
   const [state, dispatch] = useReducer(nextGroupForm, null, () => startGroupForm(crypto.randomUUID()))
   const dialog = useRef<HTMLDialogElement>(null)
   const ids = useId()
@@ -21,6 +22,11 @@ export function GroupForm({ offered, onCreate, onClose }: GroupFormProps) {
     if (shown?.open === false) shown.showModal()
     return () => shown?.close()
   }, [])
+
+  const made = madeBy(state, listed)
+  useEffect(() => {
+    if (made) onClose()
+  }, [made, onClose])
 
   const view = groupFormOf(state, offered)
   const sending = state.send.at === 'sending'
@@ -45,7 +51,7 @@ export function GroupForm({ offered, onCreate, onClose }: GroupFormProps) {
         <div className="stacked">
           <label htmlFor={`${ids}-name`}>Name</label>
           <input
-            id={`${ids}-name`} type="text" value={state.name} maxLength={GROUP_NAME_MAX} autoComplete="off"
+            id={`${ids}-name`} type="text" value={state.name} maxLength={GROUP_NAME_MAX} autoComplete="off" readOnly={sending}
             onChange={event => dispatch({ on: 'named', name: event.target.value })}
           />
         </div>
