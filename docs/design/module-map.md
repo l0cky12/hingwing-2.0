@@ -61,7 +61,7 @@ highwing-2.0/
       connection.ts              no Electron              ownConnection, nextSetup, pinnedConnection: the setup state, the saved target, the live Hermes
       notify.ts                  no Electron              noticeOf, notifyTurnEnds: a desktop notification when the shown chat's turn ends while no window has focus
     src/preload/index.ts         preload                  exposes Bridge: watch, run, file, image, drafts, keepDraft, attachPick, attachPaste and attachDropped
-    src/renderer/                renderer                 store.ts (useTopic), setup/, bots/, chats/, chat/ (Attachments.tsx: chips and sent files; drawn.ts: what the window draws of the view), composer/ (drafts.ts: useDraft, useAttachments), chrome/, styles/
+    src/renderer/                renderer                 store.ts (useTopic), setup/, bots/, chats/, chat/ (Attachments.tsx: chips and sent files), composer/ (drafts.ts: useDraft, useAttachments), chrome/, styles/
   fixtures/                                               *.jsonl, make_fixture.py (run with Hermes's interpreter), profiles/*.json (canned `profiles.list` replies), attach/ (files the attachment recipes stage, from make_attach_files.py)
   scripts/                                                sync-contract.ts, contract-drift.ts
 ```

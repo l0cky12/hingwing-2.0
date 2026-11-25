@@ -7,7 +7,7 @@ import {
 import { askCard, askLines, closedWords, type AskCard } from './asks'
 import { multiAnswers } from './multi'
 import { hidesAt, isShownAt, moaWords, NOTICE_TONES } from './says'
-import { changesAt, elapsedWords, timeLines, timeOfDay, type ViewClock } from './when'
+import { changesAt, elapsedWords, timeLines, type ViewClock } from './when'
 
 export type { ViewClock }
 

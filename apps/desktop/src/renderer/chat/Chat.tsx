@@ -13,7 +13,6 @@ import { folderFieldLabel, thinkingShown } from '../composer/tuning'
 import { YoloPill } from '../composer/YoloPill'
 import { run, useTopic } from '../store'
 import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
-import { drawnView } from './drawn'
 import { ImageSessionContext } from './Image'
 import { forget, landAt, landed, pressFor } from './landing'
 import { marked, pressedOf, unmarked } from './marks'
@@ -43,7 +42,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const session = useTopic(id === null ? null : `session:${id}`)
   const relays = useTopic('relay')?.bySession[id ?? ''] ?? NO_RELAYS
   const [tick, wake] = useReducer((count: number) => count + 1, 0)
-  const view = useMemo(() => (session === undefined ? null : drawnView(threadView(session, { now: Date.now(), timeZone: TIME_ZONE }))), [session, tick])
+  const view = useMemo(() => (session === undefined ? null : threadView(session, { now: Date.now(), timeZone: TIME_ZONE })), [session, tick])
   const progress = useMemo(() => (view === null ? '' : progressOf(view)), [view])
   const scroller = useRef<HTMLElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
