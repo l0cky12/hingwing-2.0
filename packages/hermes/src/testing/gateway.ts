@@ -143,10 +143,13 @@ function suffixOf(name: string): string {
   return ext === undefined ? '' : `.${ext.toLowerCase()}`
 }
 
+/** Checks the characters only. The stricter `BASE64` repeats a group, which overflows the regex stack on a 25 MiB image. */
+const BASE64_CHARS = /^[A-Za-z0-9+/]*={0,2}$/
+
 /** Decoded bytes, or null for a payload Hermes refuses `invalid_params`: not base64, empty, or over `max`. */
 function decoded(text: string, max: number): Buffer | null {
   const cleaned = text.replace(/\s/g, '')
-  if (!BASE64.test(cleaned) || cleaned.length === 0 || Math.floor(cleaned.length * 3 / 4) > max + 2) return null
+  if (!BASE64_CHARS.test(cleaned) || cleaned.length === 0 || Math.floor(cleaned.length * 3 / 4) > max + 2) return null
   const bytes = Buffer.from(cleaned, 'base64')
   return bytes.byteLength === 0 || bytes.byteLength > max ? null : bytes
 }
