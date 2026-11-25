@@ -1,8 +1,8 @@
-import { byKind, CHECK_FAILURES, hostPart, type CheckFailure, type CheckStep, type SshHost, type Target } from '../domain/reach'
+import { byKind, CHECK_FAILURES, hostPart, type CheckStep, type SetupFailure, type SshHost, type Target } from '../domain/reach'
 import type { Clock } from './link'
 import { PROBE, probeHermes, probeOf, runTool, type Probe, type ToolRun } from './ssh'
 
-export type CheckResult = { readonly ok: true } | { readonly ok: false; readonly failure: CheckFailure }
+export type CheckResult = { readonly ok: true } | { readonly ok: false; readonly failure: SetupFailure }
 
 export interface CheckOptions {
   /** Ends the commands of a check that was replaced or cancelled. Its result then means nothing. */

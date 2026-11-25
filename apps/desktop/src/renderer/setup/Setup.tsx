@@ -1,4 +1,4 @@
-import { byKind, CHECK_FAILURES, machineOf, parseSshHost, STEP_WORDS, type Target } from '@highwing/hermes/domain'
+import { byKind, failureOf, machineOf, parseSshHost, STEP_WORDS, type Target } from '@highwing/hermes/domain'
 import { Fragment, useId, useState, type FormEvent } from 'react'
 import type { Setup } from '../../ipc-contract'
 import { Bar } from '../chrome/Chrome'
@@ -67,7 +67,7 @@ export function SetupForm({ setup }: { readonly setup: Editing }) {
     if (target !== null) void run({ do: 'checkTarget', target })
   }
 
-  const failed = setup.at === 'failed' ? CHECK_FAILURES[setup.failure] : null
+  const failed = setup.at === 'failed' ? failureOf(setup.failure) : null
   const machine = setup.at === 'failed' ? machineOf(setup.target) : ''
 
   return (

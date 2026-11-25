@@ -1,5 +1,5 @@
 import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, Route } from '@highwing/hermes'
-import { firstStep, sameTarget, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Target } from '@highwing/hermes/domain'
+import { firstStep, sameTarget, type CheckStep, type Command, type CommandOutcome, type SetupFailure, type Target } from '@highwing/hermes/domain'
 import type { HubResult, Live, Setup, SetupCommand } from '../ipc-contract'
 import type { Settings } from './settings'
 
@@ -26,7 +26,7 @@ export interface ConnectionDeps {
 export type SetupEvent =
   | SetupCommand
   | { readonly do: 'step'; readonly step: CheckStep }
-  | { readonly do: 'fail'; readonly failure: CheckFailure }
+  | { readonly do: 'fail'; readonly failure: SetupFailure }
   | { readonly do: 'connect'; readonly live: Live }
 
 type At<A extends Setup['at']> = Extract<Setup, { at: A }>
