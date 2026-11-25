@@ -1,0 +1,30 @@
+{
+  "cwd": "/home/sam/errands",
+  "words": {
+    "@not": {
+      "items": [
+        { "text": "@notes-bot", "display": "@notes-bot", "meta": "profile" },
+        { "text": "@file:notes.md", "display": "notes.md", "meta": "" },
+        { "text": "@file:archive/notes-2024.md", "display": "notes-2024.md", "meta": "archive" },
+        { "text": "@folder:notebooks/", "display": "notebooks/", "meta": "dir" }
+      ]
+    },
+    "@notebooks/": {
+      "items": [
+        { "text": "@file:notebooks/plan.md", "display": "plan.md", "meta": "notebooks" },
+        { "text": "@file:notebooks/ideas.md", "display": "ideas.md", "meta": "notebooks" }
+      ]
+    },
+    "@sa": {
+      "items": [
+        { "text": "@sam", "display": "@sam", "meta": "profile" },
+        { "text": "@file:sample.txt", "display": "sample.txt", "meta": "" }
+      ]
+    },
+    "@My": {
+      "items": [
+        { "text": "@file:My Notes.md", "display": "My Notes.md", "meta": "" }
+      ]
+    }
+  }
+}
