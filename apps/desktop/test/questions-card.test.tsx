@@ -1,9 +1,9 @@
-import type { HermesRequest, RequestAsk, RequestId, Session } from '@highwing/hermes/domain'
+import type { HermesRequest, RequestAsk, RequestId, RequestReply, Session } from '@highwing/hermes/domain'
 import { drawnQuestions, threadView, type QuestionsCard } from '@highwing/thread'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { AskCard } from '../src/renderer/chat/Asks'
-import { answerOf, draftOf, OTHER, picked, sendWords } from '../src/renderer/chat/questions'
+import { answerOf, draftOf, lockAnswer, OTHER, picked, sendWords } from '../src/renderer/chat/questions'
 
 const CLOCK = { now: 0, timeZone: 'UTC' }
 
@@ -25,7 +25,7 @@ function cardOf(ask: Extract<RequestAsk, { kind: 'questions' }>, state: HermesRe
 
 const batch = (answers: Extract<RequestAsk, { kind: 'questions' }>['answers'] = {}) => cardOf({ kind: 'questions', questions: [WHERE, REGIONS], answers })
 const question = (card: QuestionsCard, id: string) => card.questions.find(asked => asked.id === id)!
-const drawn = (card: QuestionsCard, changing: string | null = null) => renderToStaticMarkup(<AskCard card={card} changing={changing} onChange={() => {}} onAnswer={() => {}} />)
+const drawn = (card: QuestionsCard, changing: string | null = null) => renderToStaticMarkup(<AskCard card={card} changing={changing} onChange={() => {}} onAnswer={async () => true} />)
 const buttons = (markup: string) => Array.from(markup.matchAll(/<button([^>]*)>([^<]*)<\/button>/g), ([, attributes, name]) => `${name}${attributes?.includes('disabled') ? ' (off)' : ''}`)
 
 describe('which question is open', () => {
@@ -122,6 +122,32 @@ describe('the questions card', () => {
     const ask = { kind: 'questions', questions: [WHERE, REGIONS], answers: {} } as const
     expect(buttons(drawn(cardOf(ask, { s: 'sending', reply: { kind: 'lock', question: 'q0', answer: ['production'] } })))).toEqual(['Sending… (off)', 'Skip question (off)'])
     expect(drawn(cardOf(ask, undefined, { state: 'offline' }))).toContain('<fieldset disabled="">')
+  })
+
+  it('keeps a changed question open until Hermes takes its lock, and open with the refusal when Hermes refuses it, with no Send answers', async () => {
+    const ended: null[] = []
+    const replies: RequestReply[] = []
+    let take: (taken: boolean) => void = () => {}
+    const locking = lockAnswer(reply => new Promise(done => {
+      replies.push(reply)
+      take = done
+    }), 'q0', ['staging (Recommended)'], change => ended.push(change))
+    await Promise.resolve()
+    expect(replies).toEqual([{ kind: 'lock', question: 'q0', answer: ['staging (Recommended)'] }])
+    expect(ended).toEqual([])
+    take(false)
+    await locking
+    expect(ended).toEqual([])
+    const refused = drawn(cardOf({ kind: 'questions', questions: [WHERE, REGIONS], answers: { q0: ['production'] } }, { s: 'waiting', error: 'Hermes refused it.' }), 'q0')
+    expect(refused).toContain('<legend data-find="ask:srq-batch question 0">')
+    expect(refused).toContain('Hermes refused it.')
+    expect(buttons(refused)).toEqual(['Next', 'Skip question'])
+  })
+
+  it('ends a change once Hermes takes its lock', async () => {
+    const ended: null[] = []
+    await lockAnswer(async () => true, 'q0', ['staging (Recommended)'], change => ended.push(change))
+    expect(ended).toEqual([null])
   })
 
   it('shows only the locked answers, with no Change, once the last one is sent', () => {

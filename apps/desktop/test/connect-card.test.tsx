@@ -20,7 +20,7 @@ function drawn(targets: readonly ConnectTarget[], state: HermesRequest['state'] 
     model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, tuning: { reasoning: null }, sync
   }
   const [card] = threadView(session, { now: 0, timeZone: 'UTC' }).asks
-  return renderToStaticMarkup(<AskCard card={card!} changing={null} onChange={() => {}} onAnswer={() => {}} />)
+  return renderToStaticMarkup(<AskCard card={card!} changing={null} onChange={() => {}} onAnswer={async () => true} />)
 }
 
 const buttons = (markup: string) => Array.from(markup.matchAll(/<button([^>]*)>([^<]*)<\/button>/g), ([, attributes, name]) => `${name}${attributes?.includes('disabled') ? ' (off)' : ''}`)

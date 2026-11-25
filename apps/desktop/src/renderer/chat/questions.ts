@@ -1,4 +1,4 @@
-import type { Answer } from '@highwing/hermes/domain'
+import type { Answer, RequestReply } from '@highwing/hermes/domain'
 import type { QuestionsCard, QuestionView } from '@highwing/thread'
 
 export interface Draft {
@@ -31,4 +31,9 @@ export function sendWords(card: QuestionsCard, open: QuestionView): string {
   const last = card.questions.every(question => question.id === open.id || question.locked !== null)
   if (!last) return 'Next'
   return card.questions.length === 1 ? 'Send answer' : 'Send answers'
+}
+
+/** Locks an answer. A change ends only once Hermes has taken its lock, so a refused change stays open, with the refusal, to send again. */
+export async function lockAnswer(send: (reply: RequestReply) => Promise<boolean>, question: string, answer: Answer, onChange: (question: null) => void): Promise<void> {
+  if (await send({ kind: 'lock', question, answer })) onChange(null)
 }

@@ -181,9 +181,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     const outcome = await run({ do: 'answer', sessionId: id, promptId, reply })
     return outcome.ok ? outcome.value : undefined
   }, [id])
-  const onAnswerRequest = useCallback<RequestAnswer>((requestId, reply) => {
-    if (id !== null) void run({ do: 'answer', sessionId: id, requestId, reply })
-  }, [id])
+  const onAnswerRequest = useCallback<RequestAnswer>(async (requestId, reply) => id !== null && (await run({ do: 'answer', sessionId: id, requestId, reply })).ok, [id])
   const onLoadEarlier = useCallback(() => {
     if (id !== null) void run({ do: 'loadEarlier', sessionId: id })
   }, [id])

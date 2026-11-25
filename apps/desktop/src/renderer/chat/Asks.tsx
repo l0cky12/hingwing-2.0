@@ -2,9 +2,10 @@ import type { Answer, RequestId, RequestReply } from '@highwing/hermes/domain'
 import { drawnQuestions, fieldId, type AskCard as Card, type ConnectCard as Connect, type QuestionsCard as Questions, type QuestionView, type SecretCard as Secret, type TargetView } from '@highwing/thread'
 import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Command } from './Copy'
-import { answerOf, draftOf, OTHER, picked, sendWords, type Draft } from './questions'
+import { answerOf, draftOf, lockAnswer, OTHER, picked, sendWords, type Draft } from './questions'
 
-export type RequestAnswer = (requestId: RequestId, reply: RequestReply) => void
+/** Resolves with whether Hermes took the answer. */
+export type RequestAnswer = (requestId: RequestId, reply: RequestReply) => Promise<boolean>
 
 interface CardProps<C extends Card> {
   readonly card: C
@@ -145,10 +146,7 @@ function QuestionsCard({ card, changing, onChange, onAnswer }: CardProps<Questio
         <Question
           key={open.id} card={card} question={open} draft={drafts[open.id] ?? draftOf(open)}
           onDraft={draft => setDrafts(held => ({ ...held, [open.id]: draft }))}
-          onLock={answer => {
-            onAnswer(card.requestId, { kind: 'lock', question: open.id, answer })
-            onChange(null)
-          }}
+          onLock={answer => void lockAnswer(reply => onAnswer(card.requestId, reply), open.id, answer, onChange)}
         />
       )}
     </Frame>
