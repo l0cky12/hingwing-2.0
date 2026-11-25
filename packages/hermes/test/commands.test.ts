@@ -77,6 +77,14 @@ describe('side', () => {
     expect(actor.session.sides[0]?.state).toEqual({ s: 'done', text: 'notes.md' })
   })
 
+  it('sends nothing while offline, since only a socket that has the chat attached may ask', async () => {
+    const { actor, command, sent, drop } = await stage()
+    drop()
+    expect(await command({ do: 'side', sessionId: ID, kind: 'btw', text: 'why?' })).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(sent()).toEqual([])
+    expect(actor.session.sides).toEqual([])
+  })
+
   it('holds nothing when Hermes refuses a socket that has not attached the chat', async () => {
     const { actor, command, answer } = await stage()
     const done = command({ do: 'side', sessionId: ID, kind: 'btw', text: 'why?' })

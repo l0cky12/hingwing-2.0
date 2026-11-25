@@ -1,89 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { SessionActor, type Upload } from '../src/actor'
+import type { Upload } from '../src/actor'
 import { offeredBy, type Admission } from '../src/domain/queue'
 import type { SessionEvent } from '../src/domain/reduce'
-import type { AdmissionId, AttachmentId, BusyMode, Generation, InputId, Link, PromptId, QueuedAction, Session, SessionId } from '../src/domain/session'
-import { runSessionCommand, type Hub, type SessionCommand } from '../src/session-commands'
-import { manualClock, settle } from '../src/testing/clock'
-import { Offline, RpcRefusal, type Calls } from '../src/wire/link'
+import type { AdmissionId, AttachmentId, BusyMode, Generation, InputId, PromptId, QueuedAction, Session } from '../src/domain/session'
+import type { SessionCommand } from '../src/session-commands'
+import { settle } from '../src/testing/clock'
+import { ID, refusal, stage, started } from './support/actor'
 
-const ID = 's1' as SessionId
-const EPOCH = 'e1'
 const ADMISSION = 'a1' as AdmissionId
-
-interface Call { readonly method: string; readonly params: Record<string, unknown>; resolve(result: unknown): void; reject(error: Error): void }
 
 const SHOT: Upload = { id: 'f1' as AttachmentId, name: 'error.png', kind: 'image', size: 3, mime: 'image/png', bytes: Uint8Array.from([1, 2, 3]) }
 const STAGED_SHOT = { attached: true, path: '/h/cache/images/upload-1.png', mime: 'image/png' }
-const refusal = (reason: string) => new RpcRefusal(4001, reason, reason, null)
+const UPLOADS = { hub: { uploads: { read: async (id: AttachmentId) => (id === SHOT.id ? SHOT : null) } } }
 const row = (state: Admission['state'], admissionId = ADMISSION): Admission => ({ admissionId, inputId: `in-${admissionId}` as InputId, text: 'tidy the notes', state })
-const started: SessionEvent = { type: 'turn.started', turnId: null, admissionId: null, requestText: null }
 const asked: SessionEvent = { type: 'prompt.opened', id: 'p1' as PromptId, generation: 1 as Generation, ask: { kind: 'approval', command: 'rm -rf x', reason: null, choices: ['once', 'deny'] }, timeoutS: null }
 const ack = (status: string, more: Record<string, unknown> = {}) => ({ status, text: 'x', execution_generation: 1, authority_epoch: 1, ...more })
-const SNAPSHOT = {
-  session_id: ID, stored_session_id: ID, messages: [], display_messages: [], message_count: 0, running: false, authority_epoch: 1, replay_epoch: EPOCH,
-  last_sequence: 0, subscription_id: 'sub-1', revision: 3, execution_generation: 0, pending: [], prompts: [], info: {}, open_requests: []
-}
-
-async function stage({ watched = false }: { readonly watched?: boolean } = {}) {
-  const calls: Call[] = []
-  const state: { link: Link } = { link: { state: 'online' } }
-  let ids = 0
-  let seq = 0
-  const conn: Calls = {
-    get link() { return state.link },
-    clarifyBatch: false,
-    call: (method: string, params: unknown) => new Promise<never>((resolve, reject) => {
-      calls.push({ method, params: params as Record<string, unknown>, resolve: resolve as (result: unknown) => void, reject })
-    }),
-    respond: () => {}
-  }
-  const actor = new SessionActor(ID, { conn, clock: manualClock(), publish: () => {}, bridge: () => {}, mintId: () => `id-${++ids}`, watched: () => watched })
-  const hub: Hub = {
-    settledCatalog: async () => [], retitle: () => {}, drop: () => {}, refreshSoon: () => {},
-    settledRelay: async () => {}, mentioned: () => [], relay: () => {}, branchPins: new Map(), branched: () => {},
-    uploads: { read: async (id: AttachmentId) => (id === SHOT.id ? SHOT : null) }
-  }
-  const answer = async (method: string, result: unknown) => {
-    const call = calls.find(held => held.method === method)
-    if (call === undefined) throw new Error(`no ${method} call is waiting. Waiting: ${calls.map(held => held.method).join(', ') || 'none'}`)
-    calls.splice(calls.indexOf(call), 1)
-    if (result instanceof Error) call.reject(result)
-    else call.resolve(result)
-    await settle()
-    return call
-  }
-  const event = (sessionEvent: SessionEvent, generation: number | null = 1) =>
-    actor.feed({ in: 'event', frame: { stamp: { epoch: EPOCH, seq: ++seq, generation: generation as Generation | null }, event: sessionEvent, seenAt: null } })
-  const drop = () => {
-    state.link = { state: 'waiting', attempt: 1, retryAt: 1_000, why: 'dropped', message: 'Reconnecting to Hermes.' }
-    actor.linkChanged()
-    for (const call of calls.splice(0)) call.reject(new Offline('socket closed'))
-  }
-  actor.attach()
-  await answer('session.resume', SNAPSHOT)
-  return {
-    actor, calls, answer, event, drop,
-    /**
-     * The socket drops with every call unanswered. Hermes then answers the attach on the next socket with `held`.
-     * `replay: 'lost'` is a Hermes that no longer has the missed frames, so the chat is read again whole.
-     */
-    redial: async (held: Record<string, unknown> = {}, replay: 'kept' | 'lost' = 'kept') => {
-      drop()
-      state.link = { state: 'online' }
-      actor.linkChanged()
-      const lost = replay === 'lost'
-      await answer('session.events.since', { events: [], latest_seq: seq, last_sequence: seq, epoch: EPOCH, replay_epoch: EPOCH, truncated: lost, snapshot_required: lost, count: 0 })
-      await answer('session.resume', { ...SNAPSHOT, display_messages: undefined, messages_omitted: true, subscription_id: 'sub-2', last_sequence: seq, ...held })
-      if (lost) await answer('session.resume', { ...SNAPSHOT, subscription_id: 'sub-2', last_sequence: seq, ...held })
-    },
-    command: (command: SessionCommand) => runSessionCommand(actor.port, command, hub),
-    list: (...queue: Admission[]) => event({ type: 'meta', queue }, null),
-    tune: (busy: BusyMode) => actor.port.act({ did: 'tuned', tuning: { busy } }),
-    sent: () => calls.filter(call => call.method !== 'session.stats').map(call => [call.method, call.params] as const),
-    items: () => (actor.session.run.state === 'running' ? actor.session.run.turn.items : [])
-  }
-}
 
 const promptState = (session: Session) => (session.run.state === 'running' ? session.run.turn.items.find(item => item.kind === 'prompt')?.state : undefined)
 
@@ -185,7 +116,7 @@ describe('queued', () => {
   })
 
   it('offers only cancel for this client\'s message with attachments, whose row Hermes lists with no steer or replace', async () => {
-    const { actor, command, list, sent, answer } = await stage()
+    const { actor, command, list, sent, answer } = await stage(UPLOADS)
     const done = command({ do: 'send', sessionId: ID, text: 'what is this', attachments: [SHOT.id] })
     await settle()
     await answer('image.attach_bytes', STAGED_SHOT)
@@ -236,7 +167,7 @@ describe('send while a turn runs', () => {
     })
 
   it.each<BusyMode>(['steer', 'interrupt'])('queues a message with attachments whole in %s mode, and hands nothing to the turn', async busy => {
-    const { event, tune, command, sent, answer, items } = await stage()
+    const { event, tune, command, sent, answer, items } = await stage(UPLOADS)
     event(started)
     tune(busy)
     const done = command({ do: 'send', sessionId: ID, text: 'what is this', attachments: [SHOT.id] })
