@@ -1,3 +1,4 @@
+import type { HelperId } from '@highwing/hermes/domain'
 import { fieldId, type HelperView, type PlanEntryView, type PlanView, type ThreadNode } from '@highwing/thread'
 import { cx, Elapsed } from './Step'
 import { PhraseText } from './text'
@@ -75,20 +76,31 @@ export function Notice({ node, open, onToggle }: { readonly node: Extract<Thread
 
 const STATE_WORDS = { queued: 'waiting to start', working: 'working', done: 'done', failed: 'failed' } as const
 
+/** What the window can do to the agent's helpers. null while the chat is not live. */
+export interface HelperControls {
+  /** Helpers asked to stop that Hermes has not ended yet. */
+  readonly stopping: ReadonlySet<HelperId>
+  readonly onStop: (id: HelperId) => void
+}
+
 interface HelperProps extends NodeState {
   readonly nodeKey: string
   readonly helper: HelperView
+  readonly controls: HelperControls | null
 }
 
-export function Helper({ nodeKey, helper, open, live, elapsed, onToggle }: HelperProps) {
+export function Helper({ nodeKey, helper, controls, open, live, elapsed, onToggle }: HelperProps) {
   const sub = idOf('sub', nodeKey)
   const now = idOf('now', nodeKey)
+  const goal = idOf('goal', nodeKey)
   const running = helper.state === 'queued' || helper.state === 'working'
+  const { stop } = helper
+  const stopping = stop !== null && controls !== null && controls.stopping.has(stop)
   return (
     <div className={cx('helper', running && 'working', helper.state === 'failed' && 'failed', open && 'open', live && 'live')} {...liveEnd(live)}>
       <button className="head" aria-expanded={open} {...(open ? { 'aria-controls': sub } : helper.now === null ? {} : { 'aria-describedby': now })} onClick={() => onToggle(nodeKey)}>
         <span className="kind">Helper</span>
-        <span className="title" data-find={fieldId(nodeKey, 'title')}>{helper.goal}</span>
+        <span className="title" id={goal} data-find={fieldId(nodeKey, 'title')}>{helper.goal}</span>
         {helper.count > 0 && <span className="count">{plural(helper.count, 'step')}</span>}
         <Elapsed elapsed={elapsed} />
         <span className="chev" aria-hidden="true" />
@@ -98,6 +110,11 @@ export function Helper({ nodeKey, helper, open, live, elapsed, onToggle }: Helpe
         </span>
         {helper.state !== 'failed' && <span className="sr">{STATE_WORDS[helper.state]}</span>}
       </button>
+      {stop !== null && controls !== null && (
+        <button type="button" className="stop-helper" aria-describedby={goal} disabled={stopping} onClick={() => controls.onStop(stop)}>
+          {stopping ? 'Stopping' : 'Stop'}<span className="sr"> helper</span>
+        </button>
+      )}
       {helper.now !== null && <span className="now" id={now} aria-live="polite"><PhraseText words={helper.now} /></span>}
       {open && (
         <div className="sub" id={sub}>

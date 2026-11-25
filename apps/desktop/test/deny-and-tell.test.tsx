@@ -16,7 +16,7 @@ const card = (more: Partial<Extract<PromptCard, { state: 'asking' }>>): ThreadNo
     ...more
   }
 })
-const draw = (node: ThreadNode) => renderToStaticMarkup(<Node node={node} endTone="asking" elapsed={null} open={NONE_OPEN} onToggle={() => {}} onAnswer={async () => undefined} />)
+const draw = (node: ThreadNode) => renderToStaticMarkup(<Node node={node} endTone="asking" elapsed={null} open={NONE_OPEN} onToggle={() => {}} onAnswer={async () => undefined} helpers={null} />)
 const buttons = (markup: string) => Array.from(markup.matchAll(/<button([^>]*)>([^<]*)<\/button>/g), ([, attributes = '', name = '']) => `${name.replace(/&#x27;/g, "'")}${attributes.includes('disabled') ? ' (disabled)' : ''}`)
 
 describe('telling Hermes what to do instead of running a command', () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Outcome } from '../src/domain/command'
 import { emptyTracked, reduce, type SessionEvent, type SessionInput, type Snapshot, type Tracked } from '../src/domain/reduce'
-import type { BackgroundProcess, CheckpointId, Generation, ProcessId, SessionControl, TurnId } from '../src/domain/session'
+import type { BackgroundProcess, CheckpointId, Generation, HelperId, ProcessId, SessionControl, TurnId } from '../src/domain/session'
 import { settle } from '../src/testing/clock'
 import { parseEvent, parseRows } from '../src/wire/parse'
 import { EPOCH, ID, refusal, stage, started } from './support/actor'
@@ -18,7 +18,7 @@ const control = (goal: object | null) => ({ goal, loop: null, heartbeat: null, r
 const feed = (state: Tracked, ...inputs: SessionInput[]): Tracked => inputs.reduce(reduce, state)
 const SNAPSHOT: Snapshot = {
   id: ID, title: 'Notes', cwd: null, model: null, tuning: { effort: null, fast: null, yolo: null }, running: false, generation: 1 as Generation, revision: 1, subscriptionId: 'sub-1',
-  watermark: { epoch: EPOCH, seq: 0 }, queue: [], prompts: [], history: null, openRequests: []
+  watermark: { epoch: EPOCH, seq: 0 }, queue: [], prompts: [], history: null, openRequests: [], plan: null
 }
 const ended = (replyRow: number | null): SessionEvent => ({ type: 'turn.ended', outcome: { kind: 'complete' }, finalText: null, rows: [], userRow: null, replyRow, usage: null })
 
@@ -87,6 +87,37 @@ describe('the processes', () => {
     const done = command({ do: 'killProcess', sessionId: ID, processId: 'proc_1' as ProcessId })
     await answer('process.kill', reply)
     expect(await done).toEqual(outcome)
+  })
+})
+
+describe('a helper', () => {
+  const STOP = { do: 'stopHelper', sessionId: ID, helperId: 'sa-0-1' as HelperId } as const
+
+  it('is stopped by its own id alone, and leaves its end to the frame Hermes publishes', async () => {
+    const { actor, command, sent, answer } = await stage()
+    const done = command(STOP)
+    expect(sent()).toEqual([['subagent.interrupt', { session_id: ID, subagent_id: 'sa-0-1' }]])
+    const before = actor.session
+    await answer('subagent.interrupt', { found: true, subagent_id: 'sa-0-1' })
+    expect(await done).toEqual(DONE)
+    expect(actor.session, 'the reply changes nothing the thread shows').toEqual(before)
+  })
+
+  it.each([
+    ['a helper Hermes no longer runs', { found: false, subagent_id: 'sa-0-1' }, { ok: false, refusal: { kind: 'rejected', message: 'Hermes is no longer running that helper.' } }],
+    ['a socket without control of the chat', refusal('permission_denied'), { ok: false, refusal: { kind: 'not-attached' } }]
+  ])('answers %s', async (_, reply, outcome) => {
+    const { command, answer } = await stage()
+    const done = command(STOP)
+    await answer('subagent.interrupt', reply)
+    expect(await done).toMatchObject(outcome)
+  })
+
+  it('is not asked to stop while the chat is offline', async () => {
+    const { command, drop, sent } = await stage()
+    drop()
+    expect(await command(STOP)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(sent()).toEqual([])
   })
 })
 

@@ -247,6 +247,13 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .helper.open > .now { display: none; }
 .helper.open > .sub { position: relative; margin: 2px 0 8px; padding-left: 26px; }
 .helper.open > .sub::before { content: ""; position: absolute; left: 7px; top: 4px; bottom: 6px; width: 1.5px; background: var(--rule); }
+.helper > .head:has(~ .stop-helper) { padding-right: 92px; }
+.helper > .stop-helper {
+  position: absolute; top: 4px; right: 2px; z-index: 1; padding: 1px 8px; border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--sheet); color: var(--ink); font: 500 12px/1.5 var(--sans);
+}
+.helper > .stop-helper:hover:not(:disabled) { background: var(--paper); }
+.helper > .stop-helper:disabled { color: var(--graphite); }
 .sub ol { margin: 0; padding: 0; list-style: none; }
 .sub li { position: relative; display: flex; align-items: baseline; gap: 16px; padding: 4px 0; }
 .sub li::before { content: ""; position: absolute; left: -22.5px; top: 11px; width: 7px; height: 7px; border-radius: 50%; background: var(--graphite); }

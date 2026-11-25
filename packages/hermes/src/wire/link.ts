@@ -163,8 +163,8 @@ export class Offline extends Error {}
  * The canonical route also serves methods the generated contract does not list as canonical:
  * `commands.catalog` and `command.dispatch` (`AuthorityConnection.handlers`, gateway/session_controls.py:239-247),
  * `model.options` (gateway/session_config.py:11-13), `session.context_breakdown` (gateway/session_tui_ops.py:33)
- * and `connection.respond` and `connectors.connect` (gateway/session_connections.py:10). So do the panel's calls: `process.list`, `process.kill` and
- * `session.control.read` (gateway/session_ancillary.py:24-34), `session.control` (gateway/session_control_actions.py),
+ * and `connection.respond` and `connectors.connect` (gateway/session_connections.py:10). So do the panel's calls: `process.list`, `process.kill`,
+ * `subagent.interrupt` and `session.control.read` (gateway/session_ancillary.py:24-35), `session.control` (gateway/session_control_actions.py),
  * `rollback.*` (gateway/session_tui_ops.py:29-31) and `message.react` (gateway/session_reactions.py).
  * `complete.path` lists the files under a session's folder (gateway/session_controls.py:286-287).
  * `file.attach` is in gateway/session_ancillary.py:139-180 of a Hermes newer than the vendored contract,
@@ -179,7 +179,7 @@ export class Offline extends Error {}
 export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'connection.respond' | 'connectors.connect' | 'complete.path' | 'file.attach' |
   'profiles.create' | 'profiles.describe' | 'profiles.configure' | 'profiles.set_asset' | 'profiles.get_asset' | 'projects.tree' |
-  'prompt.btw' | 'prompt.background' | 'process.list' | 'process.kill' | 'session.control.read' | 'session.control' | 'rollback.list' |
+  'prompt.btw' | 'prompt.background' | 'process.list' | 'process.kill' | 'subagent.interrupt' | 'session.control.read' | 'session.control' | 'rollback.list' |
   'rollback.diff' | 'rollback.restore' | 'message.react'>
 export type Method = keyof Served
 

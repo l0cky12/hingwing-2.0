@@ -78,6 +78,7 @@ function userInputs({ await: method, params: sent, reply: answered }: Call, next
       return []
     case 'session.export':
     case 'session.control':
+    case 'subagent.interrupt':
     case 'rollback.list':
     case 'rollback.diff':
       return []
@@ -153,6 +154,9 @@ export function snapshotAfter(story: Story, published: readonly StampedEvent[], 
   const attached = header.scope === 'session' && header.event?.type === 'meta' ? header.event : { tuning: {}, cwd: undefined }
   let said: Snapshot['tuning'] = { effort: null, fast: null, yolo: null, ...attached.tuning }
   let cwd: string | null = attached.cwd ?? null
+  const todos = story.fixture.header.todo_state
+  const held = todos === undefined ? null : parseEvent({ type: 'todo.updated', session_id: story.sessionId, seq: 1, replay_epoch: story.epoch, payload: todos })
+  let plan: Snapshot['plan'] = held?.scope === 'session' && held.event?.type === 'plan' ? { revision: held.event.revision, entries: held.event.entries } : null
   const prompts = new Map<PromptId, Snapshot['prompts'][number]>()
   for (const { stamp, event } of published) {
     if (stamp.generation !== null) generation = stamp.generation
@@ -162,6 +166,7 @@ export function snapshotAfter(story: Story, published: readonly StampedEvent[], 
       case 'turn.ended': running = false; prompts.clear(); break
       case 'prompt.opened': prompts.set(event.id, { id: event.id, generation: event.generation, ask: event.ask }); break
       case 'prompt.settled': prompts.delete(event.id); break
+      case 'plan': if (plan === null || event.revision >= plan.revision) plan = { revision: event.revision, entries: event.entries }; break
       case 'prompts.cancelled': for (const id of event.ids) prompts.delete(id); break
       case 'meta':
         if (event.title !== undefined) title = event.title
@@ -176,7 +181,7 @@ export function snapshotAfter(story: Story, published: readonly StampedEvent[], 
   const watermark: Cursor = { epoch: story.epoch, seq: last ? last.stamp.seq : 0 }
   return {
     id: story.sessionId, title, cwd, model: null, tuning: said, running, generation: generation as Generation, revision, subscriptionId,
-    watermark, queue, prompts: [...prompts.values()], history, openRequests: []
+    watermark, queue, prompts: [...prompts.values()], history, openRequests: [], plan
   }
 }
 

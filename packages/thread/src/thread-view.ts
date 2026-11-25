@@ -141,6 +141,8 @@ export type HelperState = 'queued' | 'working' | 'done' | 'failed'
 export interface HelperView {
   /** Hermes's words for the work, first line only. */
   readonly goal: string
+  /** The id a Stop sends, while a helper the agent itself started is queued or working. null: nothing to stop here. */
+  readonly stop: HelperId | null
   /** `failed` covers every end but `completed`. */
   readonly state: HelperState
   /** Brick words beside a helper that did not complete: "Failed", "Timed out", "Stopped". */
@@ -607,6 +609,7 @@ function helperView(helper: HelperItem, key: string, helpers: Helpers, asked: Re
   const latest = state.s === 'working' ? tools.at(-1)?.index ?? null : null
   return {
     goal: clip(firstLine(helper.goal), GOAL_LIMIT),
+    stop: helper.parentId === null && state.s !== 'ended' ? helper.id : null,
     state: helperState(helper),
     ended: state.s === 'ended' ? HELPER_ENDS[state.status].words : null,
     now: asked.has(tools.at(-1)?.step.preview ?? '') ? null : nowOf(state, tools.at(-1)?.step),

@@ -8,7 +8,7 @@ import { queueOf, type Admission } from './queue'
 import { accepted, answering, closed, failed, opened, reconciled, type Change, type CloseWhy, type Held } from './requests'
 import type {
   AdmissionId, Ask, Attachment, BackgroundProcess, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, MoaItem, ModelRef,
-  OpenTurn, OutboxEntry, Outcome, PlanEntry, PromptId, PromptItem, PromptReply, QueuedMessage, Reaction, ReasoningItem, RecordedReply, Request, RequestAsk,
+  OpenTurn, OutboxEntry, Outcome, PlanEntry, PlanItem, PromptId, PromptItem, PromptReply, QueuedMessage, Reaction, ReasoningItem, RecordedReply, Request, RequestAsk,
   RequestId, Run, Session, SessionContent, SessionControl, SessionId, SessionModel, SessionUsage, SettledTurn, SideId, SideTask, StatusAbout, StatusItem, Sync,
   TextItem, Tokens, Told, ToolId,
   ToolItem, ToolResult, Tuning, TurnId
@@ -165,6 +165,8 @@ export interface Snapshot {
    */
   readonly history: HistoryPage | null
   readonly openRequests: readonly ServerRequest[]
+  /** Hermes's to-do list as of `watermark`. null when the session has none. */
+  readonly plan: Pick<PlanItem, 'revision' | 'entries'> | null
 }
 
 /** The answer to `session.events.since`. */
@@ -484,7 +486,7 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
   const leftOpen = snapshot.running ? null : page.unfinished
   const missed = before.state === 'running' && !sameRun && !(fence.settledThrough === null && leftOpen !== null)
   const stored = missed ? markLost(page.turns, fence.settledThrough) : page.turns
-  const history = leftOpen === null ? stored : [...stored, {
+  const { history, doing } = withPlan(leftOpen === null ? stored : [...stored, {
     id: `unfinished:${snapshot.watermark.epoch}:${snapshot.watermark.seq}` as TurnId,
     request: requestOf(leftOpen.request),
     began: leftOpen.began,
@@ -493,8 +495,8 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
     rows: [],
     tokens: null,
     reply: null
-  }]
-  const run: Run = !snapshot.running ? IDLE : {
+  }], snapshot.running ? page.unfinished?.items ?? [] : null, snapshot.plan)
+  const run: Run = doing === null ? IDLE : {
     state: 'running',
     generation: snapshot.generation,
     stop: sameRun ? before.stop : 'none',
@@ -502,7 +504,7 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       id: runTurnId(snapshot.generation),
       request: requestOf(page.unfinished?.request ?? null) ?? startedRequest(state, snapshot.queue),
       began: page.unfinished?.began ?? (before.state === 'running' && sameRun ? before.turn.began : null),
-      items: [...(page.unfinished?.items ?? []), ...snapshot.prompts.map(prompt => waitingPrompt(prompt, null))],
+      items: [...doing, ...snapshot.prompts.map(prompt => waitingPrompt(prompt, null))],
       announced: null
     }
   }
@@ -544,6 +546,37 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
   }
   return listed(seeded, snapshot.queue)
 }
+
+/**
+ * Puts a snapshot's plan where the live `todo.updated` put it: right after the newest todo call, in the newest turn that made
+ * one. With no such turn, a running turn holds it after what it has done so far. `doing` is that turn's items, null when idle.
+ */
+function withPlan(turns: readonly SettledTurn[], doing: readonly Item[] | null, plan: Snapshot['plan']) {
+  if (plan === null) return { history: turns, doing }
+  const item: PlanItem = { kind: 'plan', revision: plan.revision, entries: plan.entries }
+  const after = <I extends Item>(items: readonly I[]): readonly (I | PlanItem)[] | null => {
+    const at = items.findLastIndex(callsTodo)
+    return at === -1 ? null : [...items.slice(0, at + 1), item, ...items.slice(at + 1)]
+  }
+  const running = doing === null ? null : after(doing)
+  if (running !== null) return { history: turns, doing: running }
+  const newest = turns.findLastIndex(turn => turn.items.some(callsTodo))
+  const settled = turns[newest]
+  if (settled !== undefined) return { history: turns.with(newest, { ...settled, items: after(settled.items) ?? settled.items }), doing }
+  return { history: turns, doing: doing === null ? null : [...doing, item] }
+}
+
+const TODO_TOOLS: ReadonlySet<string> = new Set(['todo', 'todo_list'])
+
+/** A call of Hermes's todo tool. Stored rows record one made through Hermes's `tool_call` bridge as a `tool_call` holding it. */
+function callsTodo(item: Item): boolean {
+  if (item.kind !== 'tool') return false
+  const calls = item.name === 'tool_call' ? item.args['calls'] : null
+  return TODO_TOOLS.has(item.name) || (Array.isArray(calls) && calls.some(call => isNamed(call) && TODO_TOOLS.has(call.name)))
+}
+
+const isNamed = (value: Json): value is { readonly name: string } =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) && typeof (value as { readonly [key: string]: Json })['name'] === 'string'
 
 function markLost(turns: readonly SettledTurn[], settledThrough: number | null): readonly SettledTurn[] {
   const lost = (turn: SettledTurn): SettledTurn => turn.outcome.kind === 'lost' ? turn : { ...turn, outcome: LOST }

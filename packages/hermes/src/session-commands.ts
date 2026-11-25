@@ -54,6 +54,7 @@ const WRONG_ANSWER = refused('rejected', "That isn't an answer this question tak
 const NOT_QUEUED = refused('stale', 'That message is no longer in the queue.')
 const NOT_OFFERED = refused('rejected', "Hermes doesn't offer that for this message.")
 const MAYBE_READ = refused('rejected', "Hermes didn't confirm it took that. It may have read it, so Highwing hasn't sent it again.")
+const HELPER_GONE = refused('rejected', 'Hermes is no longer running that helper.')
 const NOT_STORED = refused('rejected', "That answer isn't stored, so it can't take a reaction.")
 /** `message.react` answers `not_found` for a row the chat no longer shows, such as one a rewind took back (gateway/session_reactions.py:52-53). */
 const ROW_GONE = { not_found: GONE } as const
@@ -271,6 +272,13 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
       case 'error':
         return refused('rejected', killed.value.error ? `Hermes couldn't stop it: ${killed.value.error}` : "Hermes couldn't stop it.")
     }
+  }),
+
+  /** The reply says only whether Hermes found the helper running (gateway/session_ancillary.py:38-55). */
+  stopHelper: (port, { helperId }) => port.whenLive(async () => {
+    const stopped = await port.call('subagent.interrupt', { session_id: port.id, subagent_id: helperId })
+    if (!stopped.ok) return stopped
+    return stopped.value.found ? DONE : HELPER_GONE
   }),
 
   /** Hermes publishes the new state to every viewer as `session.control.update`, so the reply's own copy is not read. */

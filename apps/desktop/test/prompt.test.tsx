@@ -14,7 +14,7 @@ const question = (busy: boolean): ThreadNode => ({
 })
 
 const markup = (node: ThreadNode) =>
-  renderToStaticMarkup(<Node node={node} endTone="asking" elapsed={null} open={NONE_OPEN} onToggle={() => {}} onAnswer={async () => undefined} />)
+  renderToStaticMarkup(<Node node={node} endTone="asking" elapsed={null} open={NONE_OPEN} onToggle={() => {}} onAnswer={async () => undefined} helpers={null} />)
 
 describe('a question that takes several answers', () => {
   it('is a group named by its heading, with a checkbox per choice and one for Other', () => {

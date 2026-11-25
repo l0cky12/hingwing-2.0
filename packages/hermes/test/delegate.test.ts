@@ -1,10 +1,14 @@
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { activityOf } from '../src/domain/reduce'
-import type { HelperItem, Item, PlanItem, ReasoningItem, SettledTurn } from '../src/domain/session'
-import { delegate, fold, foldWithDrop, type Beat, type Moment } from './support/story'
+import { activityOf, reduce, type Tracked } from '../src/domain/reduce'
+import type { HelperItem, Item, PlanItem, ReasoningItem, Session, SettledTurn } from '../src/domain/session'
+import { loadFixture, play } from '../src/testing/fixture'
+import { parseRows } from '../src/wire/parse'
+import { delegate, fold, foldWithDrop, snapshotAfter, type Beat, type Moment } from './support/story'
 
 const story = delegate()
 
+const plansOf = (turns: readonly SettledTurn[]) => turns.map(turn => turn.items.filter((item): item is PlanItem => item.kind === 'plan'))
 const shape = (item: Item) => (item.kind === 'tool' ? `tool:${item.name}` : item.kind)
 const reasoningSent = (from: number, to: number) => story.frames
   .filter(({ stamp, event }) => stamp.seq >= from && stamp.seq <= to && event?.type === 'reasoning')
@@ -78,5 +82,35 @@ describe('a socket drop after every frame of the delegating errand', () => {
     const got = foldWithDrop(story, afterFrame, 3)
     expect(got.gate.at).toBe('live')
     expect(got.content).toEqual(want)
+  })
+})
+
+describe('the delegating errand, read again from a snapshot after its end', () => {
+  const live = fold(story)
+  const rows = story.beats.flatMap(beat => (beat.kind === 'stored' ? [beat.rows] : [])).at(-1) ?? []
+  const rebuilding = reduce(live, { in: 'gap' })
+  const reread: Tracked = reduce(rebuilding, {
+    in: 'attached', attempt: rebuilding.fence.attaches, replay: null,
+    snapshot: snapshotAfter(story, story.frames, 'sub-2', { ...parseRows(rows), older: null })
+  })
+  it('shows the second turn\'s plan at revision 3, as the live fold holds it, right after that turn\'s last todo call', () => {
+    expect(reread.gate.at).toBe('live')
+    const [first, second] = reread.content.history as [SettledTurn, SettledTurn]
+    expect(plansOf([first, second])).toEqual([[], plansOf(live.content.history)[1]])
+    expect(plansOf([second])[0]?.[0]?.revision).toBe(3)
+    expect(second.items.map(shape)).toEqual(['reasoning', 'tool:terminal', 'reasoning', 'tool:tool_call', 'plan', 'text'])
+  })
+})
+
+describe('the delegating errand, rebuilt through the real client after a drop the ring cannot cover', () => {
+  const fixture = loadFixture(fileURLToPath(new URL('../../../fixtures/delegate.jsonl', import.meta.url)))
+  const pushes = fixture.steps.filter(step => 'push' in step).length
+
+  it('ends with the plan it had', async () => {
+    const seen: Session[] = []
+    for await (const { session } of play(fixture, { drop: { afterPush: pushes - 3, missed: 4 }, ringFrames: 1 })) seen.push(session)
+    const last = seen.at(-1)!
+    expect(seen.map(session => session.sync.state)).toContain('rebuilding')
+    expect(plansOf(last.history)).toEqual([[], plansOf(fold(story).content.history)[1]])
   })
 })

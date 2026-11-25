@@ -6,7 +6,7 @@ import { SentAttachments } from './Attachments'
 import { AskCard, type RequestAnswer } from './Asks'
 import { Command, CopyButton } from './Copy'
 import { isCommandKey } from '../keys'
-import { Helper, Moa, Notice, Plan, Reasoning } from './Helpers'
+import { Helper, Moa, Notice, Plan, Reasoning, type HelperControls } from './Helpers'
 import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find'
 import { isOpen, NONE_OPEN, toggled, type OpenState } from './open'
 import { Given, Reactions } from './Reactions'
@@ -23,6 +23,7 @@ interface NodeProps {
   readonly open: OpenState
   readonly onToggle: (key: string, byDefault?: boolean) => void
   readonly onAnswer: Answer
+  readonly helpers: HelperControls | null
 }
 
 const ROLE_CLASS = { primary: 'primary', plain: null, decline: 'deny' } as const
@@ -201,7 +202,7 @@ function Checks({ choices, busy, onAnswer }: PickProps & { readonly choices: rea
   )
 }
 
-export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer }: NodeProps) {
+export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer, helpers }: NodeProps) {
   const { opened } = state
   const live = endTone === 'live'
   switch (node.kind) {
@@ -236,7 +237,7 @@ export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer }
     case 'reasoning':
       return <Reasoning nodeKey={node.key} text={node.text} streaming={node.streaming} duration={node.duration} open={isOpen(state, node.key, false)} live={live} elapsed={elapsed} onToggle={onToggle} />
     case 'helper':
-      return <Helper nodeKey={node.key} helper={node.helper} open={isOpen(state, node.key, false)} live={live} elapsed={elapsed} onToggle={onToggle} />
+      return <Helper nodeKey={node.key} helper={node.helper} controls={helpers} open={isOpen(state, node.key, false)} live={live} elapsed={elapsed} onToggle={onToggle} />
     case 'plan':
       return <Plan nodeKey={node.key} plan={node.plan} open={isOpen(state, node.key, node.plan.openByDefault)} live={live} elapsed={elapsed} onToggle={onToggle} />
     case 'notice':
@@ -312,9 +313,10 @@ interface TurnProps {
   readonly onVersion: (version: Version) => void
   readonly canReact: boolean
   readonly onReact: ReactOn
+  readonly helpers: HelperControls | null
 }
 
-export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, canReact, onReact }: TurnProps) {
+export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, canReact, onReact, helpers }: TurnProps) {
   const { end, rowId, request, reactions } = turn
   const regenerates = showsRegenerate && rowId !== null && request !== null
   const movesToNewChat = end.kind === 'failed' && end.remedy === 'newChat' && request !== null
@@ -336,7 +338,7 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit
       )}
       <div className="thread">
         {turn.nodes.map(node => (
-          <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} elapsed={end.kind === 'at' && end.tone === 'live' && end.nodeKey === node.key ? end.elapsed : null} open={open} onToggle={onToggle} onAnswer={onAnswer} />
+          <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} elapsed={end.kind === 'at' && end.tone === 'live' && end.nodeKey === node.key ? end.elapsed : null} open={open} onToggle={onToggle} onAnswer={onAnswer} helpers={helpers} />
         ))}
         <End turnKey={turn.key} end={end} />
       </div>
@@ -441,12 +443,13 @@ interface ThreadProps {
   readonly queue: QueueControls
   readonly canReact: boolean
   readonly onReact: ReactOn
+  readonly helpers: HelperControls | null
 }
 
 const landingOf = ({ versions, current }: Versions) => versions[current]?.landing
 const NO_GROUPS: readonly Versions[] = []
 
-export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, queue, canReact, onReact }: ThreadProps) {
+export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, queue, canReact, onReact, helpers }: ThreadProps) {
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
   const [changing, setChanging] = useState<Changing>(new Map())
@@ -570,7 +573,7 @@ export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier,
               turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer}
               canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} canBranch={canBranch}
               onEdit={onEdit} onRegenerate={onRegenerate} onBranch={onBranch} onNewChat={onNewChat} versions={groupsAt(turn.rowId)} onVersion={onVersion}
-              canReact={canReact} onReact={onReact}
+              canReact={canReact} onReact={onReact} helpers={helpers}
             />
             {relayTurns(relayed.after.get(turn.key))}
           </Fragment>

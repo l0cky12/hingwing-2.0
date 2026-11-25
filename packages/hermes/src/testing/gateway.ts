@@ -84,6 +84,8 @@ interface View {
   /** null until the header or a recorded frame names it. */
   yolo: boolean | null
   info: Obj
+  /** The newest to-do list, as the header or the latest `todo.updated` frame said it. Hermes keeps it to answer an attach (tui_gateway/tool_progress.py:133-137). */
+  todos: Obj | null
 }
 
 const TRACK: { readonly [T in SessionEvent['type']]?: (view: View, event: Extract<SessionEvent, { type: T }>, payload: Obj) => void } = {
@@ -92,6 +94,9 @@ const TRACK: { readonly [T in SessionEvent['type']]?: (view: View, event: Extrac
     view.running = false
     view.turnsEnded++
     view.prompts.clear()
+  },
+  plan: (view, event, payload) => {
+    if (!isInt(view.todos?.revision) || event.revision >= view.todos.revision) view.todos = payload
   },
   'prompt.opened': (view, event, payload) => void view.prompts.set(event.id, payload),
   'prompt.settled': (view, event) => void view.prompts.delete(event.id),
@@ -149,6 +154,8 @@ const closed = (keys: Readonly<Record<string, (value: unknown) => boolean>>): Ch
   Object.entries(params).every(([key, value]) => Object.hasOwn(keys, key) && keys[key]!(value)) ? null : 'invalid_params'
 const isWords = (value: unknown): value is string => typeof value === 'string' && value.trim() !== ''
 const escapeHtml = (text: string) => text.replace(/[&<>]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[char]!)
+const helperControl: Check = (gateway, socket, params, routed) =>
+  closed({ session_id: isText, profile: isString, subagent_id: isText })(gateway, socket, params, routed) ?? (isText(params.subagent_id) ? null : 'invalid_params')
 const exportParams = closed({ session_id: isString, profile: isString, format: isString, redact: isBoolean })
 /** gateway/session_tui_side.py:33-38 */
 const sideText: Check = (gateway, socket, params, routed) =>
@@ -313,6 +320,8 @@ const STORY_CHECKS: Readonly<Record<string, readonly Check[]>> = {
   'prompt.resolve_unknown': [known, listed, lostGeneration],
   /** gateway/session_ancillary.py:294-305 */
   'process.kill': [closed({ session_id: isString, profile: isString, process_id: isText }), known],
+  /** gateway/session_ancillary.py:38-47 */
+  'subagent.interrupt': [helperControl, known],
   'session.control': [controlAction, known],
   'rollback.list': [rollback({ undo_since: value => typeof value === 'number', undo_message_id: isInt }), known],
   'rollback.diff': [rollback({ hash: isString }), known],
@@ -453,6 +462,7 @@ interface Held extends Stream {
   readonly prompts: readonly unknown[]
   readonly openRequests: readonly unknown[]
   readonly connection: Obj | null
+  readonly todos: Obj | null
 }
 
 /** The snapshot `session.resume` answers (gateway/session_controls.py:659-769), read at the stream's watermark. */
@@ -461,7 +471,7 @@ function snapshotOf(held: Held, subscriptionId: string, params: Obj): Obj {
   const { model } = held
   return {
     session_id: held.id, stored_session_id: held.id,
-    messages: omit ? [] : held.rows, ...(omit ? { messages_omitted: true } : {}), message_count: held.rows.length, todo_state: null,
+    messages: omit ? [] : held.rows, ...(omit ? { messages_omitted: true } : {}), message_count: held.rows.length, todo_state: held.todos,
     ...(params.display_projection === true ? { display_messages: held.rows } : {}),
     running: held.running, authority_epoch: 1, replay_epoch: held.epoch, last_sequence: held.ring.at(-1)?.seq ?? 0,
     subscription_id: subscriptionId, revision: held.revision, execution_generation: held.generation,
@@ -855,7 +865,7 @@ export class ScriptedGateway {
     this.view = {
       running: false, generation: 0, revision: 0, title: '', pending: fixture.header.pending ?? [], prompts: new Map(), requests: new Map(), connection: null,
       model: modelOf(isObject(models) ? models : undefined), deferred: null, switchesCommitted: 0, branchesCommitted: 0, turnsEnded: 0, yolo: fixture.header.yolo ?? null,
-      info: fixture.header.info ?? {}
+      info: fixture.header.info ?? {}, todos: fixture.header.todo_state ?? null
     }
     this.epoch = fixture.steps.map(epochOf).find(isText) ?? 'fixture-epoch'
     this.done = new Promise((resolve, reject) => { this.settle = { resolve, reject } })
@@ -1305,7 +1315,7 @@ export class ScriptedGateway {
     return snapshotOf({
       id: this.sessionId, rows: this.stored, ring: this.ring, epoch: this.epoch, running: view.running, generation: view.generation,
       revision: view.revision, title: view.title, model: view.model, yolo: view.yolo, info: view.info, pending: view.pending, prompts: [...view.prompts.values()],
-      openRequests: this.openRequestList(), connection: view.connection,
+      openRequests: this.openRequestList(), connection: view.connection, todos: view.todos,
       ...(this.fixture.header.paths?.cwd === undefined ? {} : { cwd: this.fixture.header.paths.cwd })
     }, socket.subscriptionId, params)
   }
@@ -1318,7 +1328,7 @@ export class ScriptedGateway {
     socket.subscriptions.set(chat.id, socket.subscriptionId)
     return snapshotOf({
       id: chat.id, rows: chat.rows, ring: chat.ring, epoch: chat.epoch, running: chat.running, generation: chat.generation,
-      revision: chat.revision, title: chat.title, model: chat.model, yolo: this.yoloAt(chat.yolo), info: {}, pending: [], prompts: chat.asking === null ? [] : [chat.asking], openRequests: [], connection: null
+      revision: chat.revision, title: chat.title, model: chat.model, yolo: this.yoloAt(chat.yolo), info: {}, pending: [], prompts: chat.asking === null ? [] : [chat.asking], openRequests: [], connection: null, todos: null
     }, socket.subscriptionId, params)
   }
 

@@ -3,7 +3,7 @@ import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
 import type {
-  AdmissionId, AttachmentId, BranchId, BusyMode, CheckpointId, ContextFill, ControlAction, Effort, InputId, ModelOption, ModelRef, ProcessId, PromptId,
+  AdmissionId, AttachmentId, BranchId, BusyMode, CheckpointId, ContextFill, ControlAction, Effort, HelperId, InputId, ModelOption, ModelRef, ProcessId, PromptId,
   PromptReply, QueuedAction, RequestId, RequestReply, SessionId, SideTask, Told, TurnId
 } from './session'
 
@@ -101,6 +101,8 @@ export type Command =
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'busy'; readonly to: BusyMode }
   /** Stops a background process of the chat. Hermes lists it as exited on the next read. */
   | { readonly do: 'killProcess'; readonly sessionId: SessionId; readonly processId: ProcessId }
+  /** Stops one helper the agent started. Its end comes as Hermes's own `subagent.complete`, with status `interrupted`. */
+  | { readonly do: 'stopHelper'; readonly sessionId: SessionId; readonly helperId: HelperId }
   /**
    * Presses a goal, loop, heartbeat or criterion button. Answers the words to show under the composer. An
    * action that starts a turn sends its message, as a slash command does.

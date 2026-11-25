@@ -197,6 +197,16 @@ describe('loadFixture', () => {
     }
   })
 
+  it('reads the to-do list the session starts with, and refuses one that is not a list at a revision', () => {
+    const todoState = { todos: [{ id: '1', content: 'Check disk', status: 'pending' }], revision: 2 }
+    expect(loadFixture(write([{ ...header, todo_state: todoState }])).header.todo_state).toEqual(todoState)
+    expect(loadFixture(write([header])).header).not.toHaveProperty('todo_state')
+    for (const todo_state of [{ todos: [] }, { todos: 'none', revision: 1 }, { todos: [], revision: -1 }, null]) {
+      const path = write([{ ...header, todo_state }])
+      expect(() => loadFixture(path)).toThrow(`${path}:1: "todo_state" must be { todos, revision } with "revision" a whole number`)
+    }
+  })
+
   it("reads a profile's seeded chats, and refuses a chat with no rows", () => {
     const chats = { research: [{ id: 'r1', title: 'Sort', last_active: 1, rows: [{ role: 'user', text: 'hi' }], asking: { command: 'ls', description: 'list' } }] }
     expect(loadFixture(write([{ ...header, chats }])).header.chats).toEqual(chats)
