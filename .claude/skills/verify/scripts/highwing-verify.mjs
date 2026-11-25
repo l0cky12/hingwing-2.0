@@ -215,7 +215,7 @@ const STEPS = {
   marks: {
     arity: 1,
     run: async (ctx, count) => {
-      const found = await ctx.page.evaluate(() => ['find', 'find-current'].reduce((total, name) => total + (CSS.highlights.get(name)?.size ?? 0), 0))
+      const found = await ctx.page.evaluate(() => ['find', 'find-current'].reduce((total, name) => total + [...(CSS.highlights.get(name) ?? [])].filter(range => !range.collapsed).length, 0))
       if (found !== Number(count)) throw new Error(`${found} ranges are marked, expected ${count}`)
     }
   },
