@@ -336,7 +336,15 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .request:has(.versions ~ .versions) { max-width: min(62ch, 100% - 272px); }
 .versions + .versions { margin-left: 6px; }
 .versions-end { margin: 22px 0 0 var(--col); }
-.turn-actions { margin: 10px 0 0 var(--col); }
+.turn-actions { display: flex; align-items: center; gap: 6px; margin: 10px 0 0 var(--col); }
+.turn-actions .copy { position: static; }
+.turn:hover > .turn-actions .copy, .copy[aria-expanded="true"] { opacity: 1; }
+.react { position: relative; }
+.react-pick { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 2; display: flex; gap: 2px; padding: 4px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 6px 18px rgb(31 42 38 / 12%); }
+.react-pick button, .reaction { padding: 1px 7px; border: 1px solid transparent; border-radius: 6px; background: none; font: 15px/1.5 var(--sans); }
+.react-pick button:hover { background: var(--paper); }
+.react-pick button[aria-pressed="true"], .reaction { border-color: var(--rule); background: var(--signal-soft); }
+button.reaction:hover:not(:disabled) { border-color: var(--signal); }
 .regenerate, .queued button { padding: 2px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); color: var(--ink); font: 500 13px/1.5 var(--sans); }
 :is(.regenerate, .queued button):hover:not(:disabled) { background: var(--paper); }
 :is(.regenerate, .queued button):disabled { color: var(--graphite); }

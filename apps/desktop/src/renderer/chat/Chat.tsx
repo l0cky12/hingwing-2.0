@@ -1,4 +1,4 @@
-import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type Version } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type TurnId, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
@@ -246,6 +246,12 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     if (outcome.ok || outcome.refusal.kind !== 'offline') branchKeys.current.delete(rowId)
     if (!outcome.ok) setRefused({ id, message: outcome.refusal.message })
   }, [id])
+  const onReact = useCallback(async (turn: TurnId, emoji: string | null) => {
+    if (id === null) return
+    setRefused(null)
+    const outcome = await run({ do: 'react', sessionId: id, turn, emoji })
+    if (!outcome.ok) setRefused({ id, message: outcome.refusal.message })
+  }, [id])
   const onSend = useCallback(async (text: string, attachments: readonly AttachmentId[]): Promise<CommandOutcome<string | null>> => {
     setRefused(null)
     if (chat.sessionId === null) return run({ do: 'start', chat, text, attachments })
@@ -315,7 +321,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
               <Thread
                 view={view} relays={relays} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
                 canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
-                canBranch={canBranch} onBranch={onBranch} versions={versions} onVersion={onVersion} queue={queue}
+                canBranch={canBranch} onBranch={onBranch} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact}
               />
             </ImageSessionContext>
           </FileCallContext>

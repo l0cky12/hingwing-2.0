@@ -1,4 +1,4 @@
-import { versionLabel, type AdmissionId, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Relay, type RequestId, type RequestReply, type Told, type Version, type Versions } from '@highwing/hermes/domain'
+import { versionLabel, type AdmissionId, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Relay, type RequestId, type RequestReply, type Told, type TurnId, type Version, type Versions } from '@highwing/hermes/domain'
 import { fieldId, findInThread, multiReply, type AskCard, type FindMatch, type PendingRow, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Avatar } from '../bots/Avatar'
@@ -8,6 +8,7 @@ import { isCommandKey } from '../keys'
 import { Helper, Moa, Notice, Plan, Reasoning } from './Helpers'
 import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find'
 import { isOpen, NONE_OPEN, toggled, type OpenState } from './open'
+import { Given, Reactions } from './Reactions'
 import { placeRelays } from './relays'
 import { cx, Elapsed, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
@@ -305,6 +306,9 @@ function End({ turnKey, end }: { readonly turnKey: string; readonly end: ThreadE
 /** Acts on a sent message by its stored row and text: `onEdit` puts it in the composer, `onRegenerate` asks again for its reply. */
 export type Rewrite = (rowId: number, text: string) => void
 
+/** Puts your emoji on a settled turn's answer, or takes yours off with `null`. */
+export type ReactOn = (turn: TurnId, emoji: string | null) => void
+
 function Fork() {
   return (
     <svg aria-hidden="true" viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
@@ -347,10 +351,13 @@ interface TurnProps {
   readonly onBranch: (rowId: number) => void
   readonly versions: readonly Versions[]
   readonly onVersion: (version: Version) => void
+  readonly canReact: boolean
+  readonly onReact: ReactOn
 }
 
-export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, versions, onVersion }: TurnProps) {
-  const { end, rowId, request } = turn
+export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, versions, onVersion, canReact, onReact }: TurnProps) {
+  const { end, rowId, request, reactions } = turn
+  const regenerates = showsRegenerate && rowId !== null && request !== null
   const live = end.kind === 'tip' || (end.kind === 'at' && end.tone === 'live')
   return (
     <article className={cx('turn', live && 'live-turn', end.kind === 'none' && 'interlude')} data-row={rowId ?? undefined}>
@@ -374,9 +381,11 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit
         <End turnKey={turn.key} end={end} />
       </div>
       {turn.tokens !== null && <p className="used">{turn.tokens}</p>}
-      {showsRegenerate && rowId !== null && request !== null && (
+      {(regenerates || reactions !== null) && (
         <div className="turn-actions">
-          <button type="button" className="regenerate" disabled={!canRegenerate} onClick={() => onRegenerate(rowId, request)}>Regenerate</button>
+          {reactions !== null && <Given given={reactions.given} disabled={!canReact} onReact={emoji => onReact(reactions.turn, emoji)} />}
+          {regenerates && <button type="button" className="regenerate" disabled={!canRegenerate} onClick={() => onRegenerate(rowId, request)}>Regenerate</button>}
+          {reactions !== null && <Reactions given={reactions.given} disabled={!canReact} onReact={emoji => onReact(reactions.turn, emoji)} />}
         </div>
       )}
     </article>
@@ -468,12 +477,14 @@ interface ThreadProps {
   readonly versions: ChatVersions
   readonly onVersion: (version: Version) => void
   readonly queue: QueueControls
+  readonly canReact: boolean
+  readonly onReact: ReactOn
 }
 
 const landingOf = ({ versions, current }: Versions) => versions[current]?.landing
 const NO_GROUPS: readonly Versions[] = []
 
-export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, versions, onVersion, queue }: ThreadProps) {
+export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, versions, onVersion, queue, canReact, onReact }: ThreadProps) {
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
   const transcript = useRef<HTMLDivElement>(null)
@@ -590,6 +601,7 @@ export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier,
               turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer}
               canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} canBranch={canBranch}
               onEdit={onEdit} onRegenerate={onRegenerate} onBranch={onBranch} versions={groupsAt(turn.rowId)} onVersion={onVersion}
+              canReact={canReact} onReact={onReact}
             />
             {relayTurns(relayed.after.get(turn.key))}
           </Fragment>
