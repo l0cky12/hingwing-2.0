@@ -2,12 +2,10 @@ import type { Exported } from '@highwing/hermes/domain'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 
-/** Writes an exported chat where the user says. Answers the path written, or null when the user cancelled. */
 export interface Saver {
   save(exported: Exported): Promise<string | null>
 }
 
-/** The name Hermes suggests, kept to one file name, so it cannot point the dialog or the folder anywhere else. */
 const fileNameOf = (filename: string) => basename(filename.replaceAll('\\', '/')) || 'chat'
 
 export function dialogSaver(dialog: Pick<Electron.Dialog, 'showSaveDialog'>, folder: () => string): Saver {
@@ -21,7 +19,6 @@ export function dialogSaver(dialog: Pick<Electron.Dialog, 'showSaveDialog'>, fol
   }
 }
 
-/** `HIGHWING_SAVE_DIR`: a verify run saves into its evidence directory under the suggested name, and no dialog opens. */
 export function folderSaver(dir: string): Saver {
   return {
     async save({ filename, content }) {

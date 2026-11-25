@@ -122,7 +122,6 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'completePath' } ? readonly PathMatch[]
   : void
 
-/** `md` is Markdown. */
 export type ExportFormat = 'md' | 'json' | 'html'
 export const EXPORT_FORMATS: readonly ExportFormat[] = ['md', 'json', 'html']
 

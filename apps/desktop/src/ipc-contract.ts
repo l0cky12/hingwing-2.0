@@ -66,9 +66,7 @@ export const isPreviewCommand = (command: AppCommand): command is PreviewCommand
 export type AppCommand = Command | SetupCommand | PreviewCommand
 /** A new picture's bytes come only from main's file picker. */
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' }>
-/** What the hub answers a command. */
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
-/** What a window gets back. Main saves an export through a save dialog, so the window gets the saved file's path, or null when the user cancelled. */
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
 
 /** Every topic with one value per connection, and what it carries. */

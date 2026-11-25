@@ -25,7 +25,6 @@ const sentBy = (moment: Moment, method: string) => moment.script.received.flatMa
   const sent = frame as { method?: string; params?: unknown }
   return sent.method === method ? [sent.params] : []
 })
-/** The ids each side mints fresh are left out. */
 const minted = (params: unknown) => Object.fromEntries(Object.entries(params as Record<string, unknown>).filter(([key]) => key !== 'request_id' && key !== 'input_id'))
 
 describe('the chat commands, from Hermes\'s own gateway', () => {
