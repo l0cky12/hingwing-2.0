@@ -19,20 +19,15 @@ interface LookPickerProps {
   readonly name: string
   readonly calls: LookCalls
   readonly onLook: (look: Look) => void
-  /** True while a picture is being drawn that will become the look. A pick since lets it go, and this turns false. */
-  readonly onDrawing: (drawing: boolean) => void
+  /** What Create waits on, in words, while a picture that will become the look is on its way. Null once it lands or a pick lets it go. Read at mount only. */
+  readonly onWaiting: (words: string | null) => void
 }
 
 const TABS = [['shape', 'Shape'], ['generate', 'Generate'], ['upload', 'Upload'], ['pet', 'Pet']] as const
 type Tab = typeof TABS[number][0]
 
-/**
- * `none`: Hermes has no image model. `busy`: Hermes is drawing, and `wanted` until the user picks something else, since a
- * newer pick wins over the picture. `words`: why the last ask failed.
- */
-type Drawing =
-  | { readonly at: 'unknown' | 'checking' | 'none' | 'ready'; readonly words: string | null }
-  | { readonly at: 'busy'; readonly wanted: boolean }
+/** `none`: Hermes has no image model. `busy`: Hermes is drawing. `words`: why the last ask failed. */
+type Drawing = { readonly at: 'unknown' | 'checking' | 'none' | 'ready'; readonly words: string | null } | { readonly at: 'busy' }
 type PetList = { readonly at: 'unread' | 'reading' } | { readonly at: 'read'; readonly pets: readonly PetChoice[] } | { readonly at: 'refused'; readonly words: string }
 /** A pet's idle frame. `refused`: the ask failed, so it is made again when the tile is next shown. `picture`: null when Hermes has none. */
 type Thumb = { readonly at: 'loading' | 'refused' } | { readonly at: 'read'; readonly picture: string | null }
@@ -47,7 +42,43 @@ export const thumbOf = (pet: PetChoice, outcome: CommandOutcome<string | null>):
 const SHOWN_PETS = 24
 const SHOWN_SHARE = 0.1
 const HOW = 'Click it to pick a shape, generate a picture, upload one or choose a pet.'
-const UNREADABLE = "Highwing couldn't read that picture."
+const UNASKED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: "Highwing couldn't ask Hermes to draw it." } }
+const UNREADABLE: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: "Highwing couldn't read that picture." } }
+
+type Source = 'generate' | 'upload'
+const WAITING: { readonly [S in Source]: string } = { generate: 'Drawing a picture…', upload: 'Reading the picture…' }
+
+/**
+ * The one source whose picture becomes the look when it lands. A newer source, or a pick let go with `letGo`, wins over it,
+ * so its late result is not wanted. A call that throws settles as `failed`, so the wait always ends.
+ */
+export function pendingLook(onAwaiting: (source: Source | null) => void) {
+  let held: symbol | null = null
+  return {
+    letGo() {
+      if (held === null) return
+      held = null
+      onAwaiting(null)
+    },
+    async run<T>(source: Source, work: () => Promise<T>, failed: T): Promise<{ readonly wanted: boolean; readonly result: T }> {
+      const mine = Symbol(source)
+      held = mine
+      onAwaiting(source)
+      let result: T
+      try {
+        result = await work()
+      } catch {
+        result = failed
+      }
+      const wanted = held === mine
+      if (wanted) {
+        held = null
+        onAwaiting(null)
+      }
+      return { wanted, result }
+    }
+  }
+}
 
 const icon = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
 const Pencil = () => <svg {...icon} aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z" /></svg>
@@ -117,7 +148,7 @@ const matchesOf = (pets: readonly PetChoice[], query: string) => {
   return pets.filter(pet => words === '' || pet.name.toLowerCase().includes(words) || pet.slug.toLowerCase().includes(words)).slice(0, SHOWN_PETS)
 }
 
-export function LookPicker({ look, name, calls, onLook, onDrawing }: LookPickerProps) {
+export function LookPicker({ look, name, calls, onLook, onWaiting }: LookPickerProps) {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('shape')
   const [face, setFace] = useState<Face>(look.from === 'face' ? look : DEFAULT_LOOK)
@@ -127,11 +158,14 @@ export function LookPicker({ look, name, calls, onLook, onDrawing }: LookPickerP
   const [petList, setPetList] = useState<PetList>({ at: 'unread' })
   const [query, setQuery] = useState('')
   const [thumbs, setThumbs] = useState<ReadonlyMap<string, Thumb>>(new Map())
+  const [awaiting, setAwaiting] = useState<Source | null>(null)
+  const [pending] = useState(() => pendingLook(source => {
+    setAwaiting(source)
+    onWaiting(source === null ? null : WAITING[source])
+  }))
   const root = useRef<HTMLDivElement>(null)
   const button = useRef<HTMLButtonElement>(null)
   const pop = useRef<HTMLDivElement>(null)
-  /** The drawing whose picture becomes the look when it lands, until a pick lets it go. */
-  const awaited = useRef<symbol | null>(null)
   const ids = useId()
 
   const close = (refocus: boolean) => {
@@ -190,11 +224,7 @@ export function LookPicker({ look, name, calls, onLook, onDrawing }: LookPickerP
   }
 
   const take = (next: Look) => {
-    if (awaited.current !== null) {
-      awaited.current = null
-      setDrawing({ at: 'busy', wanted: false })
-      onDrawing(false)
-    }
+    pending.letGo()
     onLook(next)
   }
   const pickFace = (more: Partial<Face>) => {
@@ -209,25 +239,20 @@ export function LookPicker({ look, name, calls, onLook, onDrawing }: LookPickerP
     document.getElementById(`${ids}-tab-shape`)?.focus()
   }
   const generate = async () => {
-    const mine = Symbol('drawing')
-    awaited.current = mine
-    setDrawing({ at: 'busy', wanted: true })
-    onDrawing(true)
-    const outcome = await calls.generate(prompt.trim())
-    const wanted = awaited.current === mine
-    setDrawing({ at: 'ready', words: wanted && !outcome.ok ? outcome.refusal.message : null })
-    if (!wanted) return
-    awaited.current = null
-    onDrawing(false)
-    if (outcome.ok) onLook({ from: 'generate', picture: outcome.value })
+    setDrawing({ at: 'busy' })
+    const { wanted, result } = await pending.run('generate', () => calls.generate(prompt.trim()), UNASKED)
+    setDrawing({ at: 'ready', words: wanted && !result.ok ? result.refusal.message : null })
+    if (wanted && result.ok) onLook({ from: 'generate', picture: result.value })
+  }
+  const readUpload = async (): Promise<CommandOutcome<PictureFile>> => {
+    const outcome = await calls.choose()
+    return outcome.ok && outcome.value !== 'cancelled' && !(await decodes(outcome.value)) ? UNREADABLE : outcome
   }
   const choose = async () => {
     setUpload({ busy: true, words: null })
-    const outcome = await calls.choose()
-    const picture = outcome.ok && outcome.value !== 'cancelled' ? outcome.value : null
-    const readable = picture !== null && (await decodes(picture))
-    setUpload({ busy: false, words: !outcome.ok ? outcome.refusal.message : picture !== null && !readable ? UNREADABLE : null })
-    if (picture !== null && readable) take({ from: 'upload', picture })
+    const { wanted, result } = await pending.run('upload', readUpload, UNREADABLE)
+    setUpload({ busy: false, words: wanted && !result.ok ? result.refusal.message : null })
+    if (wanted && result.ok && result.value !== 'cancelled') onLook({ from: 'upload', picture: result.value })
   }
 
   const shapeInstead = look.from !== 'face' && <button type="button" className="look-reset" onClick={backToFace}>Use a shape instead</button>
@@ -273,7 +298,7 @@ export function LookPicker({ look, name, calls, onLook, onDrawing }: LookPickerP
             </div>
             {drawing.at === 'busy' && (
               <p className="look-hint" role="status">
-                {drawing.wanted ? 'Hermes is drawing it. This can take a minute.' : "Hermes is still drawing it. You've picked another look since, so it won't be used."}
+                {awaiting === 'generate' ? 'Hermes is drawing it. This can take a minute.' : "Hermes is still drawing it. You've picked another look since, so it won't be used."}
               </p>
             )}
           </>
@@ -285,7 +310,9 @@ export function LookPicker({ look, name, calls, onLook, onDrawing }: LookPickerP
     upload: () => (
       <>
         <div className="look-draw">
-          <button type="button" className="look-quiet" disabled={upload.busy} aria-busy={upload.busy || undefined} onClick={() => void choose()}>Choose a picture…</button>
+          <button type="button" className="look-quiet" disabled={upload.busy} aria-busy={upload.busy || undefined} onClick={() => void choose()}>
+            {upload.busy ? 'Reading the picture…' : 'Choose a picture…'}
+          </button>
           <p className="look-hint">PNG, JPEG or WebP, 2 MB or less.</p>
         </div>
         {upload.words !== null && <p className="form-refused" role="alert">{upload.words}</p>}

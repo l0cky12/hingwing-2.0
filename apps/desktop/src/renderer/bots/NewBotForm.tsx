@@ -17,7 +17,7 @@ const UNDRAWN: Submitted = { ok: false, refusal: { kind: 'rejected', message: "H
 
 export function NewBotForm({ problemOf, models, looks, onCreate, onClose }: NewBotFormProps) {
   const [look, setLook] = useState<Look>(DEFAULT_LOOK)
-  const [drawing, setDrawing] = useState(false)
+  const [waiting, setWaiting] = useState<string | null>(null)
   const create = async (draft: BotDraft): Promise<Submitted> => {
     const picture = await pictureOf(look, draft.name).catch(() => null)
     return picture === null ? UNDRAWN : onCreate(draft, picture)
@@ -25,9 +25,9 @@ export function NewBotForm({ problemOf, models, looks, onCreate, onClose }: NewB
   return (
     <BotForm
       title="New bot" submitLabel="Create" initial={EMPTY_DRAFT} problemOf={problemOf} models={models} onSubmit={create} onClose={onClose} focusName
-      waitingFor={drawing ? 'Drawing a picture…' : null}
+      waitingFor={waiting}
     >
-      {draft => <LookPicker look={look} name={draft.name} calls={looks} onLook={setLook} onDrawing={setDrawing} />}
+      {draft => <LookPicker look={look} name={draft.name} calls={looks} onLook={setLook} onWaiting={setWaiting} />}
     </BotForm>
   )
 }

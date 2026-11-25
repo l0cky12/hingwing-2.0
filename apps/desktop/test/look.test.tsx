@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { BotForm } from '../src/renderer/bots/BotForm'
 import { EMPTY_DRAFT } from '../src/renderer/bots/bot-form'
 import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_SHAPES, faceSvg, lookWords, shapeFor, surpriseFor } from '../src/renderer/bots/look'
-import { LookPicker, PetTile, thumbOf, type LookCalls } from '../src/renderer/bots/LookPicker'
+import { LookPicker, pendingLook, PetTile, thumbOf, type LookCalls } from '../src/renderer/bots/LookPicker'
 import { NewBotForm } from '../src/renderer/bots/NewBotForm'
 
 const NAMES = ['Rae', 'Ada', 'Sam', 'Research', 'Emu', 'Timothy', 'highwing', 'Pip', 'Ledger', 'Juno']
@@ -84,7 +84,7 @@ describe('the words for what is picked', () => {
 })
 
 describe('the picker, closed', () => {
-  const drawn = renderToStaticMarkup(<LookPicker look={DEFAULT_LOOK} name="Rae" calls={CALLS} onLook={() => {}} onDrawing={() => {}} />)
+  const drawn = renderToStaticMarkup(<LookPicker look={DEFAULT_LOOK} name="Rae" calls={CALLS} onLook={() => {}} onWaiting={() => {}} />)
   const button = drawn.match(/<button[^>]*>/)![0]
 
   it('is one avatar button that says it opens a dialog, and is not open', () => {
@@ -101,7 +101,7 @@ describe('the picker, closed', () => {
   })
 
   it('draws a picture as an image in place of the face', () => {
-    const pet = renderToStaticMarkup(<LookPicker look={{ from: 'pet', slug: 'clover', name: 'Clover', picture: PICTURE }} name="Rae" calls={CALLS} onLook={() => {}} onDrawing={() => {}} />)
+    const pet = renderToStaticMarkup(<LookPicker look={{ from: 'pet', slug: 'clover', name: 'Clover', picture: PICTURE }} name="Rae" calls={CALLS} onLook={() => {}} onWaiting={() => {}} />)
     expect(pet).toMatch(/<img class="look-picture pet" src="blob:/)
     expect(pet).toContain('Clover, a pet')
   })
@@ -136,11 +136,69 @@ describe("a pet's thumb", () => {
   })
 })
 
+describe('a picture on its way to becoming the look', () => {
+  const later = <T,>() => {
+    let settle!: (value: T) => void
+    let fail!: (error: Error) => void
+    const promise = new Promise<T>((resolve, reject) => { settle = resolve; fail = reject })
+    return { promise, settle, fail }
+  }
+  const watched = () => {
+    const seen: (string | null)[] = []
+    return { seen, pending: pendingLook(source => seen.push(source)) }
+  }
+
+  it('is wanted when it lands, and Create waits on it until then', async () => {
+    const { seen, pending } = watched()
+    const read = later<string>()
+    const ran = pending.run('upload', () => read.promise, 'failed')
+    expect(seen).toEqual(['upload'])
+    read.settle('picture')
+    expect(await ran).toEqual({ wanted: true, result: 'picture' })
+    expect(seen).toEqual(['upload', null])
+  })
+
+  it('is not wanted once a pick lets it go, and Create stops waiting at the pick', async () => {
+    const { seen, pending } = watched()
+    const read = later<string>()
+    const ran = pending.run('upload', () => read.promise, 'failed')
+    pending.letGo()
+    expect(seen).toEqual(['upload', null])
+    read.settle('picture')
+    expect(await ran).toEqual({ wanted: false, result: 'picture' })
+    expect(seen).toEqual(['upload', null])
+  })
+
+  it('is not wanted once a newer one starts, which Create waits on instead', async () => {
+    const { seen, pending } = watched()
+    const [drawn, read] = [later<string>(), later<string>()]
+    const drawing = pending.run('generate', () => drawn.promise, 'failed')
+    const reading = pending.run('upload', () => read.promise, 'failed')
+    drawn.settle('drawn')
+    expect(await drawing).toEqual({ wanted: false, result: 'drawn' })
+    expect(seen).toEqual(['generate', 'upload'])
+    read.settle('read')
+    expect(await reading).toEqual({ wanted: true, result: 'read' })
+    expect(seen).toEqual(['generate', 'upload', null])
+  })
+
+  it('settles as failed when its call throws, so Create stops waiting', async () => {
+    const { seen, pending } = watched()
+    const drawn = later<string>()
+    const ran = pending.run('generate', () => drawn.promise, 'failed')
+    drawn.fail(new Error('No handler registered for highwing:run'))
+    expect(await ran).toEqual({ wanted: true, result: 'failed' })
+    expect(seen).toEqual(['generate', null])
+    expect(await pending.run('upload', () => { throw new Error('gone') }, 'failed')).toEqual({ wanted: true, result: 'failed' })
+    expect(seen).toEqual(['generate', null, 'upload', null])
+  })
+})
+
 describe('the New bot form', () => {
   it('puts the picker above Name, and hands it the draft as typed', () => {
     const drawn = renderToStaticMarkup(
       <BotForm title="New bot" submitLabel="Create" initial={{ ...EMPTY_DRAFT, name: 'Ada' }} problemOf={() => null} models={MODELS} onSubmit={async () => ({ ok: true })} onClose={() => {}}>
-        {draft => <LookPicker look={DEFAULT_LOOK} name={draft.name} calls={CALLS} onLook={() => {}} onDrawing={() => {}} />}
+        {draft => <LookPicker look={DEFAULT_LOOK} name={draft.name} calls={CALLS} onLook={() => {}} onWaiting={() => {}} />}
       </BotForm>
     )
     expect(drawn.indexOf('Change picture')).toBeLessThan(drawn.indexOf('>Name<'))
