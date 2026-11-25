@@ -112,6 +112,8 @@ export interface SessionPort {
    * is staged with Hermes first, in order. The message is sent only once every one is, and not at all when Hermes refuses one.
    */
   submit(text: string, apiText?: string, uploads?: readonly Upload[]): Promise<Outcome>
+  /** Submits words the caller can no longer give back. Refused for any reason, they stay in the outbox as a failed message. */
+  submitOrKeep(text: string): Promise<Outcome>
   /** Sends `text` in place of a queued row, as a new message at the back. A refusal leaves nothing in the outbox, unless the socket dropped before Hermes answered: the same replacement is then sent again. */
   replace(admissionId: AdmissionId, text: string): Promise<Outcome>
   act(action: LocalAction): void
@@ -154,6 +156,14 @@ export class SessionActor {
       submit: (text, apiText, uploads = []) => this.port.whenLive(() => (uploads.length === 0
         ? this.post(text, apiText, [], null)
         : this.stage(uploads).then(staged => (staged.ok ? this.post(text, apiText, uploads, staged.value) : staged)))),
+      submitOrKeep: async text => {
+        const sending = { inputId: deps.mintId() as InputId, text, attachments: [] }
+        this.act({ did: 'send', ...sending })
+        const sent = await this.port.whenLive(() => this.submit(sending))
+        // `admit` has marked a message Hermes refused. One refused because the chat is not live never reached it.
+        if (!sent.ok) this.act({ did: 'send.failed', inputId: sending.inputId, message: sent.refusal.message })
+        return sent
+      },
       replace: (admissionId, text) => {
         const sending = { inputId: deps.mintId() as InputId, text, attachments: [], replaces: admissionId }
         this.act({ did: 'send', ...sending })

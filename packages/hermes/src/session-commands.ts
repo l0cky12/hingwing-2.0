@@ -329,8 +329,10 @@ async function answerPrompt(port: SessionPort, promptId: PromptId, reply: Prompt
   }
   port.act({ did: 'answer.resolved', promptId, byUs: answered.value.status === 'resolved' })
   if (reply.kind !== 'deny' || told === null) return ANSWERED
-  if (told.value === 'next') await port.submit(reply.tell)
-  return told
+  if (told.value !== 'next') return told
+  // The answered card gives no words back, so a message that cannot be sent stays in the outbox.
+  const sent = await port.submitOrKeep(reply.tell)
+  return sent.ok ? told : sent
 }
 
 type Asking<K extends HermesRequest['ask']['kind']> = HermesRequest & { readonly ask: Extract<HermesRequest['ask'], { kind: K }> }

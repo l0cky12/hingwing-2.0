@@ -53,18 +53,21 @@ async function stage({ watched = false }: { readonly watched?: boolean } = {}) {
   }
   const event = (sessionEvent: SessionEvent, generation: number | null = 1) =>
     actor.feed({ in: 'event', frame: { stamp: { epoch: EPOCH, seq: ++seq, generation: generation as Generation | null }, event: sessionEvent, seenAt: null } })
+  const drop = () => {
+    state.link = { state: 'waiting', attempt: 1, retryAt: 1_000, why: 'dropped', message: 'Reconnecting to Hermes.' }
+    actor.linkChanged()
+    for (const call of calls.splice(0)) call.reject(new Offline('socket closed'))
+  }
   actor.attach()
   await answer('session.resume', SNAPSHOT)
   return {
-    actor, calls, answer, event,
+    actor, calls, answer, event, drop,
     /**
      * The socket drops with every call unanswered. Hermes then answers the attach on the next socket with `held`.
      * `replay: 'lost'` is a Hermes that no longer has the missed frames, so the chat is read again whole.
      */
     redial: async (held: Record<string, unknown> = {}, replay: 'kept' | 'lost' = 'kept') => {
-      state.link = { state: 'waiting', attempt: 1, retryAt: 1_000, why: 'dropped', message: 'Reconnecting to Hermes.' }
-      actor.linkChanged()
-      for (const call of calls.splice(0)) call.reject(new Offline('socket closed'))
+      drop()
       state.link = { state: 'online' }
       actor.linkChanged()
       const lost = replay === 'lost'
@@ -283,6 +286,33 @@ describe('deny and tell', () => {
     await answer('prompt.submit', { admission_id: 'a9', status: 'queued' })
     expect(await done).toEqual({ ok: true, value: 'next' })
     expect(items().map(item => item.kind)).toEqual(['prompt'])
+  })
+
+  describe('whose words the turn could not take, and Hermes then gets no next message', () => {
+    const unread = async () => {
+      const held = await denying()
+      await held.answer('session.steer', ack('rejected', { delivered: false }))
+      return held
+    }
+
+    it('answers Hermes\'s refusal of that message, and keeps the words in the outbox as failed', async () => {
+      const { actor, done, answer } = await unread()
+      await answer('approval.respond', { status: 'resolved', prompt_id: 'p1' })
+      await answer('prompt.submit', refusal('runtime_draining'))
+      expect(await done).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'Hermes is restarting. Try again in a moment.' } })
+      expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'use trash-put instead', attachments: [], state: { s: 'failed', message: 'Hermes is restarting. Try again in a moment.' } }])
+      expect(promptState(actor.session), 'the denial stands').toMatchObject({ s: 'answered' })
+    })
+
+    it('answers that the chat is not connected when the socket drops after the denial, and keeps the words as failed', async () => {
+      const { actor, done, calls, drop, sent } = await unread()
+      calls.find(call => call.method === 'approval.respond')?.resolve({ status: 'resolved', prompt_id: 'p1' })
+      drop()
+      expect(await done).toEqual({ ok: false, refusal: { kind: 'offline', message: "Highwing isn't connected to this chat right now." } })
+      expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'use trash-put instead', attachments: [], state: { s: 'failed', message: "Highwing isn't connected to this chat right now." } }])
+      expect(promptState(actor.session), 'the denial stands').toMatchObject({ s: 'answered' })
+      expect(sent()).toEqual([])
+    })
   })
 
   it('denies and says it is unsure when Hermes rejects words it may have read', async () => {

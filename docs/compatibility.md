@@ -353,6 +353,10 @@ Hermes keeps one queue of messages per chat, for every client. Each
   as new words. Highwing remembers, by prompt, the words Hermes has or may
   have, and the same denial tried again sends only `approval.respond`. A steer
   whose answer the socket lost counts as words Hermes may have.
+- Words that no agent saw go out as the next message once the denial is
+  confirmed. If Hermes refuses that `prompt.submit`, or the chat is no longer
+  attached by then, the `answer` command answers that refusal and the words
+  stay in `Session.outbox` as a failed message. The denial is not undone.
 - Hermes stores steered words as a user row with `display_kind: "steer"`
   (`agent/prompt_builder.py:585-592`, `tui_gateway/session_history.py:329-332`).
   Highwing reads that row as an item of the turn it sits in, not as a new turn.
