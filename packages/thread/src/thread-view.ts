@@ -770,7 +770,8 @@ const FAILURE_WORDS: { readonly [code: string]: string } = {
   content_policy_blocked: 'The model provider refused this request.'
 }
 
-function failureWords(outcome: Extract<Outcome, { kind: 'failed' }>): string {
+/** The words the thread shows for a failed turn. */
+export function failureWords(outcome: Extract<Outcome, { kind: 'failed' }>): string {
   return (outcome.code !== null ? FAILURE_WORDS[outcome.code] : undefined) ?? outcome.message
 }
 
