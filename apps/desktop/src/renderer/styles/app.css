@@ -314,9 +314,21 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .remove::backdrop { background: rgb(31 42 38 / 38%); }
 .remove p { margin: 0; line-height: 1.5; }
 .remove .remove-count { margin-bottom: 4px; font-weight: 700; }
-.remove-choices { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
-.remove-choices button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--ink); background: transparent; color: var(--ink); }
-.remove-choices button.primary { background: var(--ink); color: var(--sheet); }
+.remove-choices, .form-choices { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.remove-choices button, .form-choices button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--ink); background: transparent; color: var(--ink); }
+.remove-choices button.primary, .form-choices button.primary { background: var(--ink); color: var(--sheet); }
+.bot-form { width: min(460px, calc(100% - 32px)); padding: 20px 22px 18px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); color: var(--ink); box-shadow: 0 12px 32px rgb(31 42 38 / 22%); }
+.bot-form::backdrop { background: rgb(31 42 38 / 38%); }
+.bot-form h2 { margin: 0 0 16px; font-size: 14px; font-weight: 700; }
+.bot-form .field { display: grid; grid-template-columns: 88px minmax(0, 1fr); column-gap: 12px; align-items: start; margin-bottom: 12px; }
+.bot-form label { padding-top: 7px; font-size: 13px; color: var(--graphite); }
+.bot-form :is(input, select, textarea) { min-width: 0; padding: 6px 10px; font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; }
+.bot-form textarea { resize: vertical; min-height: 84px; }
+.bot-form :is(input, select, textarea):focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
+.bot-form [aria-invalid] { border-color: var(--brick); }
+.bot-form .field-words { grid-column: 2; margin: 4px 0 0; font-size: 13px; color: var(--brick); }
+.bot-form .form-refused { margin: 0 0 4px; font-size: 13px; color: var(--brick); }
+.form-choices button:disabled { opacity: .45; }
 .composer .refusal { max-width: 760px; margin: 8px auto 0; padding: 0 28px 0 calc(28px + var(--col)); }
 .slash-anchor {
   position: absolute; bottom: calc(100% - 6px); left: 50%; transform: translateX(-50%); z-index: 2;
@@ -515,8 +527,9 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 
   .step.open > .record:not(.bare), .prose pre, .approval pre { border: 1px solid CanvasText; }
   .composer button { border: 1px solid ButtonText; }
-  .editing button, .remove-choices button { border: 1px solid ButtonText; }
-  .remove { border: 2px solid CanvasText; }
+  .editing button, .remove-choices button, .form-choices button { border: 1px solid ButtonText; }
+  .remove, .bot-form { border: 2px solid CanvasText; }
+  .bot-form :is(input, select, textarea):focus { outline: 2px solid Highlight; outline-offset: 2px; }
   textarea:focus { outline: 2px solid Highlight; outline-offset: 2px; }
   .context .gauge, .context .stack .free { box-sizing: border-box; background: Canvas; border: 1px solid CanvasText; }
   .context .gauge span, .context .stack .part { background: CanvasText; }
@@ -565,6 +578,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .tone-umber { background: var(--avatar-umber); }
 .bots-note { margin: 18px 12px; font-size: 13px; color: var(--graphite); }
 .bots-refused { margin: 0; padding: 10px 20px 14px; font-size: 13px; color: var(--brick); border-top: 1px solid var(--rule); }
+.bots-warned { color: var(--caution); }
+.bots-warned span { display: block; }
 .bot[aria-current]:focus-visible { box-shadow: inset 5px 0 0 var(--ink); }
 @media (forced-colors: active) {
   .bot[aria-current] { border-left: 3px solid Highlight; padding-left: 9px; }

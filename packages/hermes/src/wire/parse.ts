@@ -2,7 +2,7 @@
  * The only place gateway shapes become domain shapes. Everything past these functions trusts its types.
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
-import type { BotFacts, BotId } from '../domain/bots'
+import { canonicalBotId, type BotCreated, type BotFacts, type BotId } from '../domain/bots'
 import type { ContextBreakdown, ModelConfirm, ModelMenu } from '../domain/command'
 import type { Admission, HelperUpdate, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type {
@@ -13,7 +13,7 @@ import type { SlashCatalog, SlashEntry } from '../domain/slash'
 import type {
   CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalProfilesResult, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
   CanonicalSnapshot, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
-  MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult,
+  MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, ProfilesCreateResult, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult,
   SessionStats, SessionTitlePayload, SessionUsagePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload, SubagentEventPayload,
   TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage
 } from './contract.generated'
@@ -711,6 +711,18 @@ export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
       chat: isObject(row.canonical_session) ? titledId(row.canonical_session) : null
     }]
   })
+}
+
+/**
+ * `profiles.create`'s reply. Its `name` echoes the typed one, so the bot is the last segment of `path`,
+ * the profile directory Hermes made (tui_gateway/methods_profiles.py:341-347).
+ */
+export function parseCreated(reply: ProfilesCreateResult): BotCreated {
+  const [leaf] = isString(reply.path) ? reply.path.split(/[\\/]/).filter(segment => segment !== '').reverse() : []
+  return {
+    bot: (leaf ?? canonicalBotId(isString(reply.name) ? reply.name : '')) as BotId,
+    warnings: Array.isArray(reply.warnings) ? reply.warnings.flatMap(warning => words(warning) ?? []) : []
+  }
 }
 
 /** The session a Bot Chat is now: `resolved_id` once a compression moved it, as Hermes's Bots plugin opens it (hermes-bots/canonical-chat.ts:530). */

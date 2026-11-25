@@ -89,6 +89,15 @@ describe('validators', () => {
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })).toEqual({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })
   })
 
+  it('keep the four fields of a new bot, and the bot whose models are listed or null for the socket\'s own', () => {
+    const model = { id: 'careful-large', provider: 'acme', providerName: 'Acme' }
+    const draft = { name: 'Rae', description: '', model, persona: 'You write short reports.\n' }
+    expect(parseCommand({ do: 'createBot', draft: { ...draft, extra: 1, model: { ...model, price: 9 } }, extra: 1 })).toEqual({ do: 'createBot', draft })
+    expect(parseCommand({ do: 'createBot', draft: { ...draft, model: null } })).toEqual({ do: 'createBot', draft: { ...draft, model: null } })
+    expect(parseCommand({ do: 'botModels', bot: null, extra: 1 })).toEqual({ do: 'botModels', bot: null })
+    expect(parseCommand({ do: 'botModels', bot: 'research' })).toEqual({ do: 'botModels', bot: 'research' })
+  })
+
   it('keep a rewind to a stored row and the text to send there', () => {
     expect(parseCommand({ do: 'rewind', sessionId: 's1', rowId: 7, text: 'again', extra: 1 })).toEqual({ do: 'rewind', sessionId: 's1', rowId: 7, text: 'again' })
   })
@@ -123,6 +132,14 @@ describe('validators', () => {
     ['a first message to a plain chat', { do: 'start', chat: { kind: 'chat', bot: null, sessionId: null }, text: 'hello' }],
     ['a first message to a chat picked from the list', { do: 'start', chat: { kind: 'chat', sessionId: 's1' }, text: 'hello' }],
     ['an open of a picked chat with no session', { do: 'open', ref: { kind: 'chat', sessionId: ' ' } }],
+    ['a new bot with no name', { do: 'createBot', draft: { name: ' ', description: '', model: null, persona: '' } }],
+    ['a new bot whose description is not text', { do: 'createBot', draft: { name: 'Rae', description: 7, model: null, persona: '' } }],
+    ['a new bot whose persona is missing', { do: 'createBot', draft: { name: 'Rae', description: '', model: null } }],
+    ['a new bot whose model is not a model', { do: 'createBot', draft: { name: 'Rae', description: '', model: { id: 'm' }, persona: '' } }],
+    ['a new bot whose model is left out', { do: 'createBot', draft: { name: 'Rae', description: '', persona: '' } }],
+    ['a new bot with no draft', { do: 'createBot' }],
+    ['a model list for a bot with no name', { do: 'botModels', bot: ' ' }],
+    ['a model list that names no bot', { do: 'botModels' }],
     ['a blank first message', { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: '' }],
     ['a reply of the wrong kind', { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 1 } }],
     ['a non-boolean start', { do: 'reconnect', start: 'yes' }],
@@ -136,7 +153,7 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'checkTarget', 'contextBreakdown', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat',
+      'answer', 'archive', 'botModels', 'checkTarget', 'contextBreakdown', 'createBot', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat',
       'pickModel', 'reconnect', 'rename', 'rewind', 'send', 'setYolo', 'start', 'stop'
     ])
   })

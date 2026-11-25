@@ -9,7 +9,7 @@ import { parseTitled } from './wire/parse'
 /** The title Hermes gives the one chat a bot's row opens (Hermes's hermes-bots/canonical-chat.ts:50). */
 const BOT_CHAT = 'Bot Chat'
 
-const NOT_CONNECTED = refused('offline', "Highwing isn't connected to Hermes right now.")
+export const NOT_CONNECTED = refused('offline', "Highwing isn't connected to Hermes right now.")
 const CANT_START = refused('unsupported', "This Hermes can't start a chat from Highwing.")
 const CANT_SWITCH = refused('unsupported', "This Hermes can't switch bots from Highwing yet. Update Hermes on that machine, then reconnect.")
 

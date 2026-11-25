@@ -1,6 +1,6 @@
 import {
   targetOf,
-  type BotId, type Bots, type ChatRef, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply,
+  type BotDraft, type BotId, type Bots, type ChatRef, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply,
   type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type Unstarted
 } from '@highwing/hermes/domain'
 
@@ -120,6 +120,11 @@ const modelOptionOf = (raw: unknown): ModelOption | null =>
   isObject(raw) && filled(raw.id) && filled(raw.provider) && text(raw.providerName)
     ? { id: raw.id as ModelOption['id'], provider: raw.provider, providerName: raw.providerName }
     : null
+const draftOf = (raw: unknown): BotDraft | null => {
+  if (!isObject(raw) || !filled(raw.name) || !text(raw.description) || !text(raw.persona)) return null
+  const model = raw.model === null ? null : modelOptionOf(raw.model)
+  return raw.model !== null && model === null ? null : { name: raw.name, description: raw.description, model, persona: raw.persona }
+}
 const chatRefOf = (raw: unknown): ChatRef | null => {
   if (!isObject(raw)) return null
   if (raw.kind === 'bot') {
@@ -201,6 +206,14 @@ export const validators: Validators = {
   contextBreakdown: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && { do: 'contextBreakdown', sessionId }
+  },
+  createBot: raw => {
+    const draft = draftOf(raw.draft)
+    return draft && { do: 'createBot', draft }
+  },
+  botModels: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return raw.bot !== null && bot === null ? null : { do: 'botModels', bot }
   },
   setYolo: raw => {
     const sessionId = sessionIdOf(raw)

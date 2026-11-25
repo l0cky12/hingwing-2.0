@@ -264,6 +264,48 @@ function snapshotOf(held: Held, subscriptionId: string, params: Obj): Obj {
 /** gateway/session_controls.py:386-392 */
 const unknownMethod = (method: string) => new Refused('unknown_method', { code: -32601, message: `unknown method: ${method}`, data: { reason: 'unknown_method' } })
 
+/** hermes_constants.py:414 */
+const PROFILE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/
+/** hermes_cli/profiles.py:279 */
+const RESERVED_NAMES: ReadonlySet<string> = new Set(['hermes', 'default', 'test', 'tmp', 'root', 'sudo'])
+/** hermes_cli/profiles.py:348-365 */
+const NAME_RULE = "Use lowercase letters, numbers, '-' or '_', starting with a letter or number, up to 64 characters"
+
+/** `repr` of a Python str, which picks the quote that needs no escape. */
+function pyRepr(text: string): string {
+  const quote = text.includes("'") && !text.includes('"') ? '"' : "'"
+  return `${quote}${text.replaceAll('\\', '\\\\').replaceAll(quote, `\\${quote}`)}${quote}`
+}
+
+/** `_suggest_profile_name` (hermes_cli/profiles.py:354-357). */
+function suggestedName(name: string): string {
+  const candidate = name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[-_]+|[-_]+$/g, '').slice(0, 64)
+  return PROFILE_ID.test(candidate) ? candidate : 'my-work'
+}
+
+/**
+ * A refused create (tui_gateway/methods_profiles.py:332-339): `error.message` is the whole reason, and `data`
+ * repeats it in parts of at most 200 characters (hermes_cli/profile_provision.py:190-202).
+ */
+const refusedCreate = (code: number, message: string, type: string, text: string = message) =>
+  new Refused(message, { code, message, data: { type, message_parts: text.match(/[\s\S]{1,200}/g) ?? [] } })
+
+/** The reason `create_profile` refuses a name (hermes_cli/profiles.py:1372-1373 and :398-415), or null. */
+function nameRefusal(canon: string, taken: (name: string) => boolean): Refused | null {
+  if (canon === 'default') return refusedCreate(4062, "Cannot create a profile named 'default' — it is the built-in profile (~/.hermes).", 'ValueError')
+  if (!PROFILE_ID.test(canon)) {
+    const suggestion = suggestedName(canon)
+    return refusedCreate(4062, `${pyRepr(canon)} is not a valid profile name. ${NAME_RULE} (for example: ${suggestion}). Then run \`hermes profile create ${suggestion}\`.`, 'ValueError')
+  }
+  if (RESERVED_NAMES.has(canon)) {
+    return refusedCreate(4062, `Profile name ${pyRepr(canon)} is reserved — it collides with either the Hermes installation itself or a common system binary.  Pick a different name.`, 'ValueError')
+  }
+  if (taken(canon)) {
+    return refusedCreate(4062, `A profile named '${canon}' already exists. Switch to it with \`hermes profile use ${canon}\`, see all profiles with \`hermes profile list\`, or choose a different name.`, 'FileExistsError')
+  }
+  return null
+}
+
 function offered(models: Obj): Model[] {
   const rows = Array.isArray(models.providers) ? models.providers.filter(isObject) : []
   return rows.flatMap(row => (Array.isArray(row.models) ? row.models.filter(isText) : []).map(model => ({ model, provider: isText(row.slug) ? row.slug : null })))
@@ -373,6 +415,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   },
   /** tui_gateway/methods_profiles.py:271-290 */
   'profiles.list': (gateway, socket) => gateway.roster(socket),
+  /** tui_gateway/methods_profiles.py:296-347 */
+  'profiles.create': (gateway, socket, params) => gateway.create(socket, params),
   'session.mutate': (gateway, socket, params, routed) =>
     (params.operation === 'model' ? gateway.switchModel(params, routed) : gateway.story(socket, 'session.mutate', params, routed)),
   'config.set': (gateway, _socket, params, routed) => gateway.setYolo(params, routed, null),
@@ -413,7 +457,7 @@ export class ScriptedGateway {
   finished = false
 
   private stored: readonly unknown[]
-  private readonly profiles: readonly Obj[]
+  private readonly profiles: Obj[]
   private readonly botChats = new Map<string, EchoChat>()
   private readonly newChats = new Map<string, EchoChat>()
   private readonly seeded: readonly EchoChat[]
@@ -807,11 +851,39 @@ export class ScriptedGateway {
     if (!isObject(profiles)) throw unknownMethod('profiles.list')
     return {
       ...profiles,
-      profiles: (profiles.profiles as readonly unknown[]).map(row => {
-        if (!isObject(row) || !isText(row.name)) return row
+      profiles: this.profiles.map(row => {
+        if (!isText(row.name)) return row
         if (socket.reach === 'profile' && row.name !== this.home) return Object.fromEntries(Object.entries(row).filter(([key]) => !SESSION_FIELDS.has(key)))
         return { ...row, canonical_session: this.canonical(row.name, row.canonical_session) }
       })
+    }
+  }
+
+  /**
+   * `profiles.create` (tui_gateway/methods_profiles.py:296-347). It is no canonical method: only a socket whose grant covers
+   * the interactive purpose reaches the legacy handler (tui_gateway/ws.py:403-411, tui_gateway/ws_legacy_fallback.py:53-62),
+   * so a bound socket gets -32601. The new profile joins the roster, and calls routed to it work like any listed bot's.
+   */
+  create(socket: Socket, params: Obj): unknown {
+    const { profiles, createWarnings = [] } = this.fixture.header
+    if (!isObject(profiles) || socket.reach === 'profile') throw unknownMethod('profiles.create')
+    const asked = (key: string) => (typeof params[key] === 'string' ? params[key].trim() : '')
+    if (asked('name') === '') throw refusedCreate(4061, 'name required', 'ValueError', 'profile name cannot be empty')
+    const canon = asked('name').toLowerCase()
+    const refusal = nameRefusal(canon, name => this.profiles.some(row => row.name === name))
+    if (refusal !== null) throw refusal
+    const [model, provider] = [asked('model'), asked('provider')]
+    const pinned = model !== '' && provider !== ''
+    const soulWritten = typeof params.soul === 'string' && params.soul.trim() !== ''
+    const home = this.profiles.find(row => row.name === this.home)?.path
+    const path = `${isText(home) ? home : '/hermes-home'}/profiles/${canon}`
+    this.profiles.push({
+      name: canon, path, is_default: false, model: pinned ? model : null, provider: pinned ? provider : null, description: asked('description'),
+      display_name: '', skill_count: 0, previous_names: []
+    })
+    return {
+      ok: true, name: asked('name'), path, soul_written: soulWritten, model_set: pinned,
+      mirrored: { env: true, auth: 'shared', model_inherited: !pinned, voice: false }, warnings: createWarnings
     }
   }
 

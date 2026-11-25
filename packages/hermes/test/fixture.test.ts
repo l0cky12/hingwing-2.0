@@ -148,6 +148,13 @@ describe('loadFixture', () => {
     expect(() => loadFixture(path)).toThrow(`${path}:3: not JSON`)
   })
 
+  it('takes the warnings a create answers with as a list of strings', () => {
+    expect(loadFixture(write([{ ...header, createWarnings: ['A step failed.'] }])).header.createWarnings).toEqual(['A step failed.'])
+    expect(loadFixture(write([header])).header).not.toHaveProperty('createWarnings')
+    const path = write([{ ...header, createWarnings: 'A step failed.' }])
+    expect(() => loadFixture(path)).toThrow(`${path}:1: "createWarnings" must be a list of strings`)
+  })
+
   it('refuses a header whose profiles are not a profiles.list reply', () => {
     const path = write([{ ...header, profiles: [{ name: 'default' }] }])
     expect(() => loadFixture(path)).toThrow(`${path}:1: "profiles" must be a profiles.list reply with "profiles"`)

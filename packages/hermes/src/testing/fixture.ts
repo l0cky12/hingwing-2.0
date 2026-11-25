@@ -52,6 +52,8 @@ export interface Fixture {
      * `profiles.list` as an unknown method, as a Hermes older than the call does.
      */
     readonly profiles?: unknown
+    /** The `warnings` every successful `profiles.create` answers with, as Hermes words a step that failed after it made the profile. Default none. */
+    readonly createWarnings?: readonly string[]
     /** `'profile'`: play a Hermes with no `interactive` ticket, whose every socket is bound to the home profile. Default `'host'`. */
     readonly reach?: Reach
     /** false: the home bot has no Bot Chat, and the story session is only a chat of the home profile. Default true. */
@@ -167,6 +169,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (yoloDenied !== undefined && typeof yoloDenied !== 'boolean') return '"yoloDenied" must be true or false'
   const { profiles } = value
   if (profiles !== undefined && !(isObject(profiles) && Array.isArray(profiles.profiles))) return '"profiles" must be a profiles.list reply with "profiles"'
+  const { createWarnings } = value
+  if (createWarnings !== undefined && !(Array.isArray(createWarnings) && createWarnings.every(warning => typeof warning === 'string'))) return '"createWarnings" must be a list of strings'
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
@@ -183,6 +187,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(usage === undefined ? {} : { usage }),
     ...(yolo === undefined ? {} : { yolo }), ...(yoloDenied === undefined ? {} : { yoloDenied }),
     ...(profiles === undefined ? {} : { profiles }),
+    ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } })
