@@ -886,7 +886,7 @@ export class ScriptedGateway {
    * and answers it again there with no `url` (agent/pet/store.py:63-70, :233-235).
    */
   private readonly thumbsKept = new Set<string>()
-  private clash: string | undefined
+  private clash: { readonly title: string; left: number } | undefined
   private readonly botChats = new Map<string, EchoChat>()
   private readonly newChats = new Map<string, EchoChat>()
   private readonly branchChats: EchoChat[] = []
@@ -932,7 +932,8 @@ export class ScriptedGateway {
     }
     this.seeded = Object.entries(fixture.header.chats ?? {}).flatMap(([profile, seeds]) => seeds.map(seed => seeded(profile, seed)))
     this.souls = new Map(Object.entries(fixture.header.souls ?? {}))
-    this.clash = fixture.header.configureClash
+    const clash = fixture.header.configureClash
+    this.clash = clash === undefined ? undefined : typeof clash === 'string' ? { title: clash, left: 1 } : { title: clash.title, left: clash.times }
     const served = this.profiles.flatMap(row => (isText(row.name) ? [row.name] : []))
     this.rooms = fixture.header.groups === undefined ? null : new ScriptedRooms(fixture.header.groups, {
       clock: options.clock,
@@ -1616,10 +1617,11 @@ export class ScriptedGateway {
       const revisions = isObject(row.ui_meta_revisions) ? row.ui_meta_revisions : {}
       const bots = isObject(meta['hermes-bots']) ? meta['hermes-bots'] : {}
       this.patchRow(at, {
-        ui_meta: { ...meta, 'hermes-bots': { ...bots, title: this.clash } },
+        ui_meta: { ...meta, 'hermes-bots': { ...bots, title: this.clash.title } },
         ui_meta_revisions: { ...revisions, 'hermes-bots': (isInt(revisions['hermes-bots']) ? revisions['hermes-bots'] : 0) + 1 }
       })
-      this.clash = undefined
+      this.clash.left--
+      if (this.clash.left === 0) this.clash = undefined
     }
     if (expected !== undefined && expected !== null && !isObject(expected)) return { ui_meta: false }
     const row = this.profiles[at] as Obj

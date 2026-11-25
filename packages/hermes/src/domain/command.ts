@@ -1,4 +1,4 @@
-import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId, PetChoice } from './bots'
+import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId, BotMark, Marked, PetChoice } from './bots'
 import type { GroupDraft } from './groups'
 import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
@@ -107,6 +107,14 @@ export type Command =
    * repeated id with the group it already made.
    */
   | { readonly do: 'createGroup'; readonly draft: GroupDraft }
+  /**
+   * Sets one of Hermes's own flags on the bot (`MARK_SETS`), so Hermes desktop and every machine agree. Saved only
+   * when Hermes says so, and the roster shows the flag before this answers. Any attempt is followed by a fresh read
+   * of the roster.
+   */
+  | { readonly do: 'markBot'; readonly bot: BotId; readonly mark: BotMark }
+  /** Reads the roster again. Hermes sends no event when a profile changes. */
+  | { readonly do: 'refreshBots' }
   /** Sets one of Hermes's switches for the chat, for every client that has it open. */
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'reasoning'; readonly on: boolean }
   /** YOLO: Hermes runs this chat's commands without asking. */
@@ -160,6 +168,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'canGeneratePicture' } ? boolean
   : C extends { do: 'generatePicture' } ? string
   : C extends { do: 'pets' } ? readonly PetChoice[]
+  : C extends { do: 'markBot' } ? Marked
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
   : C extends { do: 'completePath' } ? readonly PathMatch[]

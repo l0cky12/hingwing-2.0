@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { markBot } from '../src/bot-admin'
-import type { BotId, BotMark } from '../src/domain/bots'
+import { botsIn, type BotId, type BotMark, type Bots } from '../src/domain/bots'
+import { openHermes } from '../src/hub'
+import { manualClock } from '../src/testing/clock'
+import { scriptedDialer, type Fixture } from '../src/testing/fixture'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from '../src/wire/link'
+import { BOUND, callsIn, ERRAND, WITH_BOTS } from './support/errand'
 
 const RESEARCH = 'research' as BotId
 
@@ -118,5 +122,76 @@ describe('marking a bot', () => {
   it("says Highwing isn't connected when the link is down", async () => {
     const { conn } = answering({ 'profiles.list': [new Offline('down')] })
     expect(await markBot(conn, RESEARCH, 'pin')).toEqual({ ok: false, refusal: { kind: 'offline', message: "Highwing isn't connected to Hermes right now." } })
+  })
+})
+
+describe('markBot through the hub', () => {
+  async function launched(fixture: Fixture) {
+    const clock = manualClock()
+    const script = scriptedDialer(fixture, { clock })
+    const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
+    await clock.advance(0)
+    const calls = (method: string) => callsIn(script.received).filter(call => call.method === method)
+    return { clock, hermes, calls }
+  }
+  const flagsOf = (bots: Bots, bot: BotId) => {
+    const held = bots.state === 'listed' ? botsIn(bots.roster).find(each => each.id === bot) : undefined
+    return held && { pinned: held.pinned, hidden: held.hidden }
+  }
+  const editionOf = (bots: Bots) => (bots.state === 'listed' ? bots.edition : -1)
+
+  it('answers an edition the roster already holds the flag in, and Hermes keeps it on the next read', async () => {
+    const { clock, hermes, calls } = await launched(WITH_BOTS)
+    const rosterReads = () => calls('profiles.list').filter(call => (call.params as { include_sessions?: boolean }).include_sessions === true).length
+    const reads = rosterReads()
+    const pinned = await hermes.run({ do: 'markBot', bot: RESEARCH, mark: 'pin' })
+    if (!pinned.ok) throw new Error(pinned.refusal.message)
+    expect(editionOf(hermes.bots.get())).toBeGreaterThanOrEqual(pinned.value.edition)
+    expect(flagsOf(hermes.bots.get(), RESEARCH)).toEqual({ pinned: true, hidden: false })
+    await clock.advance(0)
+    expect(rosterReads(), 'the roster is read again').toBe(reads + 1)
+    expect(flagsOf(hermes.bots.get(), RESEARCH)).toEqual({ pinned: true, hidden: false })
+  })
+
+  it('hides and shows a bot again, leaving its pin as it was', async () => {
+    const { clock, hermes } = await launched(WITH_BOTS)
+    await hermes.run({ do: 'markBot', bot: RESEARCH, mark: 'pin' })
+    await hermes.run({ do: 'markBot', bot: RESEARCH, mark: 'hide' })
+    await clock.advance(0)
+    expect(flagsOf(hermes.bots.get(), RESEARCH)).toEqual({ pinned: true, hidden: true })
+    await hermes.run({ do: 'markBot', bot: RESEARCH, mark: 'show' })
+    await clock.advance(0)
+    expect(flagsOf(hermes.bots.get(), RESEARCH)).toEqual({ pinned: true, hidden: false })
+  })
+
+  it('refuses after another client wins three writes in a row, and reads the roster again', async () => {
+    const { clock, hermes, calls } = await launched({ ...WITH_BOTS, header: { ...WITH_BOTS.header, configureClash: { title: 'Robin', times: 3 } } })
+    expect(await hermes.run({ do: 'markBot', bot: RESEARCH, mark: 'pin' })).toEqual({ ok: false, refusal: { kind: 'conflict', message: "Hermes didn't pin Robin. Try again." } })
+    expect(calls('profiles.configure')).toHaveLength(3)
+    await clock.advance(0)
+    expect(flagsOf(hermes.bots.get(), RESEARCH)).toEqual({ pinned: false, hidden: false })
+    expect(botsIn((hermes.bots.get() as Extract<Bots, { state: 'listed' }>).roster).find(bot => bot.id === RESEARCH)?.name).toBe('Robin')
+  })
+
+  it('saves on the second try when another client won the first', async () => {
+    const { hermes, calls } = await launched({ ...WITH_BOTS, header: { ...WITH_BOTS.header, configureClash: 'Robin' } })
+    expect(await hermes.run({ do: 'markBot', bot: RESEARCH, mark: 'hide' })).toMatchObject({ ok: true })
+    expect(calls('profiles.configure')).toHaveLength(2)
+    expect(flagsOf(hermes.bots.get(), RESEARCH)).toEqual({ pinned: false, hidden: true })
+  })
+
+  it('says this Hermes cannot change bots when it has no profiles, or the socket reaches one profile', async () => {
+    for (const fixture of [ERRAND, BOUND]) {
+      const { hermes } = await launched(fixture)
+      expect(await hermes.run({ do: 'markBot', bot: RESEARCH, mark: 'pin' })).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't change bots from Highwing." } })
+    }
+  })
+
+  it('reads the roster again when asked to refresh', async () => {
+    const { clock, hermes, calls } = await launched(WITH_BOTS)
+    const reads = calls('profiles.list').length
+    expect(await hermes.run({ do: 'refreshBots' })).toEqual({ ok: true, value: undefined })
+    await clock.advance(0)
+    expect(calls('profiles.list')).toHaveLength(reads + 1)
   })
 })

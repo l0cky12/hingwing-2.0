@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { DONE, refused, SessionActor, type Upload } from './actor'
-import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, petPicture, setBotPicture } from './bot-admin'
-import { botsIn, type Bot, type Bots } from './domain/bots'
+import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, petPicture, setBotPicture } from './bot-admin'
+import { botsIn, MARK_SETS, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
 import type { Groups } from './domain/groups'
 import { mentionedBots } from './domain/mention'
@@ -444,6 +444,16 @@ export function openHermes(options: HermesOptions): Hermes {
       // A refused edit may still have saved some sections, so the roster is read after any attempt.
       roster.ask()
       return done
+    }
+    if (command.do === 'markBot') {
+      const marked = await markBot(conn, command.bot, command.mark)
+      if (marked.ok) return { ok: true, value: { edition: roster.confirm(command.bot, MARK_SETS[command.mark]) } }
+      roster.ask()
+      return marked
+    }
+    if (command.do === 'refreshBots') {
+      roster.refresh()
+      return DONE
     }
     if (command.do === 'reconnect') {
       conn.retryNow({ start: command.start })

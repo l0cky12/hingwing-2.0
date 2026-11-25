@@ -86,7 +86,7 @@ export interface Fixture {
      * The first `profiles.configure` that writes `ui_meta` finds another client renamed the bot to this title just before,
      * one revision on, as Hermes's revision check would.
      */
-    readonly configureClash?: string
+    readonly configureClash?: string | { readonly title: string; readonly times: number }
     /** Every `profiles.set_asset` that stores a picture fails with 5065 and these words, as Hermes does when it cannot write the file. */
     readonly assetFails?: string
     /**
@@ -355,7 +355,11 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (createWarnings !== undefined && !(Array.isArray(createWarnings) && createWarnings.every(warning => typeof warning === 'string'))) return '"createWarnings" must be a list of strings'
   const { souls, configureClash } = value
   if (souls !== undefined && !(isObject(souls) && Object.values(souls).every(soul => typeof soul === 'string'))) return '"souls" must map a profile to its persona'
-  if (configureClash !== undefined && (typeof configureClash !== 'string' || configureClash.trim() === '')) return '"configureClash" must be the title another client writes'
+  const clashTitle = isObject(configureClash) ? configureClash.title : configureClash
+  const clashTimes = isObject(configureClash) ? configureClash.times : 1
+  if (configureClash !== undefined && (typeof clashTitle !== 'string' || clashTitle.trim() === '' || !Number.isSafeInteger(clashTimes) || (clashTimes as number) < 1)) {
+    return '"configureClash" must be the title another client writes, or { title, times }'
+  }
   const { assetFails } = value
   if (assetFails !== undefined && (typeof assetFails !== 'string' || assetFails.trim() === '')) return '"assetFails" must be the words a failed write gives'
   const { images, pets } = value
@@ -411,7 +415,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(controls === undefined ? {} : { controls: controls as Record<string, string> }),
     ...(profiles === undefined ? {} : { profiles }),
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
-    ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash }),
+    ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
     ...(assetFails === undefined ? {} : { assetFails }),
     ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),

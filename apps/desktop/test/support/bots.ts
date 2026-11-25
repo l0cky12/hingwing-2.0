@@ -3,7 +3,7 @@ import { rosterOf, type BotFacts, type BotId, type Bots } from '@highwing/hermes
 export const fact = (id: string, name: string, more: Partial<BotFacts> = {}): BotFacts =>
   ({ id: id as BotId, name, isDefault: false, section: null, preview: null, description: null, chat: null, picture: false, pinned: false, hidden: false, ...more })
 
-export const listed = (...facts: readonly BotFacts[]): Bots => ({ state: 'listed', roster: rosterOf(facts) })
+export const listed = (...facts: readonly BotFacts[]): Bots => ({ state: 'listed', roster: rosterOf(facts), edition: 1 })
 
 export const APPROVED = listed(
   fact('default', 'Emu', { isDefault: true }),
