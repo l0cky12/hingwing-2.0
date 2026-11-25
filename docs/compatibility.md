@@ -431,6 +431,19 @@ with `config.get`. `Session.cwd` is the chat's folder, from the same places.
   refused while a turn runs. Highwing refuses it before it sends anything.
   Hermes refuses a folder that is not on its machine with `invalid_params` and
   no field (`gateway/session_mutation_policy.py:45-49`).
+- Hermes refuses a rewind of a row a compaction archived with `invalid_params`,
+  field `target_message_id` and a detail that starts `compacted:`
+  (`persistence/authority/runtime.py:68-69`). It refuses a branch through such
+  a row with a bare `invalid_params`, as a Hermes without `branch` refuses any
+  branch (`persistence/sqlite/authority/_mutation_publish.py:60-71`). Edit
+  answers that Hermes compacted that part of the chat on the detail. The
+  thread cannot tell the two branch refusals apart, because `session.resume`
+  leaves the handoffs out of `display_messages`
+  (`gateway/session_controls.py:122-129`). So after a bare
+  refusal of a message the thread holds, Highwing reads `session.transcript`
+  newest first, up to three pages. It answers that Hermes compacted that part
+  of the chat when a `compaction` row comes before the message's row, and that
+  this Hermes can't branch otherwise.
 - `config.set` of `fast` answers the tier's word and pushes `{service_tier, fast}`
   in a `session.info` (`gateway/session_busy_controls.py:111-131`). Hermes
   refuses it with `fast_unavailable` for a model with no fast tier. A later
