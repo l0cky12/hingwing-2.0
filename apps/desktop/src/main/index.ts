@@ -1,5 +1,5 @@
 import { checkTarget, liveDialer, openHermes, remoteRoute, type Dialer, type Route } from '@highwing/hermes'
-import type { BotId, Target } from '@highwing/hermes/domain'
+import { byKind, type BotId, type Target } from '@highwing/hermes/domain'
 import { loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, shell, type OpenDialogOptions } from 'electron'
 import { appendFileSync } from 'node:fs'
@@ -38,7 +38,7 @@ async function choosePicture(): Promise<string | null> {
 const recorded = (dial: Dialer): Dialer => (HIGHWING_RECORD ? recordingDialer(dial, HIGHWING_RECORD) : dial)
 
 const routeFor = (target: Target): Route => {
-  const route = target.kind === 'local' ? { dial: liveDialer(), dispose: () => {} } : remoteRoute(target.host)
+  const route = byKind<Route>(target, { local: () => ({ dial: liveDialer(), dispose: () => {} }), remote: ({ host }) => remoteRoute(host) })
   return { ...route, dial: recorded(route.dial) }
 }
 

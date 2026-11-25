@@ -1,4 +1,4 @@
-import { CHECK_FAILURES, hostPart, type CheckFailure, type CheckStep, type SshHost, type Target } from '../domain/reach'
+import { byKind, CHECK_FAILURES, hostPart, type CheckFailure, type CheckStep, type SshHost, type Target } from '../domain/reach'
 import type { Clock } from './link'
 import { PROBE, probeHermes, probeOf, runTool, type Probe, type ToolRun } from './ssh'
 
@@ -91,5 +91,5 @@ async function checkLocal(options: CheckOptions): Promise<CheckResult> {
  * contacts no gateway.
  */
 export function checkTarget(target: Target, options: CheckOptions): Promise<CheckResult> {
-  return target.kind === 'local' ? checkLocal(options) : checkRemote(target.host, options)
+  return byKind(target, { local: () => checkLocal(options), remote: ({ host }) => checkRemote(host, options) })
 }

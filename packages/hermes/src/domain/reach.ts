@@ -29,6 +29,24 @@ export function targetOf(raw: unknown): Target | null {
   return parsed === null ? null : { kind: 'remote', host: parsed }
 }
 
+/** One handler per kind of target. A kind without one does not compile. */
+export type ByKind<R> = { readonly [K in Target['kind']]: (target: Extract<Target, { readonly kind: K }>) => R }
+
+/** The way code outside this file branches on a target's kind, so a new kind stops the build at every branch. */
+export function byKind<R>(target: Target, handlers: ByKind<R>): R {
+  return (handlers[target.kind] as (target: Target) => R)(target)
+}
+
+export function sameTarget(a: Target, b: Target): boolean {
+  return byKind(a, {
+    local: () => b.kind === 'local',
+    remote: ({ host }) => b.kind === 'remote' && b.host === host
+  })
+}
+
+/** Whether Hermes's files and its localhost are this computer's. */
+export const onThisComputer = (target: Target): boolean => byKind(target, { local: () => true, remote: () => false })
+
 /** The name without any `user@`: what Tailscale lists and what ssh resolves. */
 export const hostPart = (host: SshHost): string => host.slice(host.indexOf('@') + 1)
 
@@ -87,13 +105,20 @@ const ADDRESS = /^[0-9.]+$|:/
 
 /** How the words name a target: "this computer", or the far machine's short name. */
 export function machineOf(target: Target): string {
-  if (target.kind === 'local') return 'this computer'
-  const name = hostPart(target.host)
-  return ADDRESS.test(name) ? name : (name.split('.')[0] as string)
+  return byKind(target, {
+    local: () => 'this computer',
+    remote: ({ host }) => {
+      const name = hostPart(host)
+      return ADDRESS.test(name) ? name : (name.split('.')[0] as string)
+    }
+  })
 }
 
 /** In the order a check runs them. `save` belongs to the connection's owner, after the check passed. */
 export type CheckStep = 'tailscale' | 'peer' | 'ssh' | 'hermes' | 'save'
+
+/** The step a check of `target` begins at, shown before the check reports one. */
+export const firstStep = (target: Target): CheckStep => byKind<CheckStep>(target, { local: () => 'hermes', remote: () => 'tailscale' })
 
 /** ssh's own failures, before any command runs on the far machine. */
 export type SshFailure = 'unreachable' | 'ssh-missing' | 'ssh-denied' | 'ssh-check' | 'host-changed'

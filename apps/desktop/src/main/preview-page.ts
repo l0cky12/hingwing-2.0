@@ -1,4 +1,4 @@
-import { machineOf, type Session } from '@highwing/hermes/domain'
+import { machineOf, onThisComputer, type Session } from '@highwing/hermes/domain'
 import { realpath } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -57,7 +57,7 @@ export interface Reach { readonly session: Session | undefined; readonly local: 
 
 export const reachOf = (setup: Setup, session: Session | undefined): Reach => {
   const target = setup.at === 'pinned' ? null : setup.live?.target ?? null
-  return { session, local: target === null || target.kind === 'local', machine: target === null ? 'this computer' : machineOf(target) }
+  return { session, local: target === null || onThisComputer(target), machine: target === null ? 'this computer' : machineOf(target) }
 }
 
 const LOOPBACK = /^(?:localhost|.+\.localhost|0\.0\.0\.0|\[::1\]|127(?:\.\d{1,3}){3})\.?$/i

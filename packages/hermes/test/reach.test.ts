@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CHECK_FAILURES, machineOf, parseSshHost, STEP_WORDS, targetOf, type CheckStep, type SshHost } from '../src/domain/reach'
-import { isPlainHttp, parseGatewayUrl, URL_PROBLEMS, type GatewayUrl } from '../src/domain/reach'
+import { isPlainHttp, parseGatewayUrl, sameTarget, URL_PROBLEMS, type GatewayUrl } from '../src/domain/reach'
 
 const remote = (host: string) => ({ kind: 'remote', host: host as SshHost }) as const
 
@@ -54,6 +54,19 @@ describe('machineOf', () => {
     [remote('ada@fd7a:115c:a1e0::1'), 'fd7a:115c:a1e0::1']
   ])('names %j as %s', (target, name) => {
     expect(machineOf(target)).toBe(name)
+  })
+})
+
+describe('sameTarget', () => {
+  it.each([
+    [{ kind: 'local' } as const, { kind: 'local' } as const, true],
+    [remote('hermes-host'), remote('hermes-host'), true],
+    [remote('hermes-host'), remote('ada@hermes-host'), false],
+    [remote('hermes-host'), remote('other-host'), false],
+    [{ kind: 'local' } as const, remote('hermes-host'), false],
+    [remote('hermes-host'), { kind: 'local' } as const, false]
+  ])('compares %j with %j as %s', (a, b, same) => {
+    expect(sameTarget(a, b)).toBe(same)
   })
 })
 
