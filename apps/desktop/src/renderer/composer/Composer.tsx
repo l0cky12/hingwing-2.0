@@ -29,6 +29,10 @@ interface ComposerProps {
   readonly onInput: () => void
   readonly editing?: Editing | null
   readonly onCancelEdit?: () => void
+  /** Drawn above the box, in the composer's flow, so the thread gives way to it. */
+  readonly above?: ReactNode
+  /** Escape that neither the slash menu nor an edit took. True when it was used. */
+  readonly onEscape?: () => boolean
   readonly children?: ReactNode
 }
 
@@ -108,7 +112,7 @@ export function admitted(results: readonly StageResult[], held: readonly Attachm
 
 const draggingFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') === true
 
-export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, editing = null, onCancelEdit, children }: ComposerProps) {
+export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, editing = null, onCancelEdit, above, onEscape, children }: ComposerProps) {
   const catalog = useTopic('slash') ?? NO_CATALOG
   const roster = useTopic('bots')
   const relay = useTopic('relay')
@@ -304,6 +308,10 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
       cancelEdit()
       return
     }
+    if (event.key === 'Escape') {
+      if (onEscape?.() === true) event.preventDefault()
+      return
+    }
     if (event.key !== 'Enter' || event.shiftKey) return
     event.preventDefault()
     void submit()
@@ -311,6 +319,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
 
   return (
     <footer className={dragging && canAttach ? 'composer dragging' : 'composer'}>
+      {above}
       {menu.open && (
         <div className="slash-anchor">
           <div className="slash-menu" role="listbox" id={MENU_ID} aria-label={menu.label}>
