@@ -16,8 +16,21 @@ const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"'
 const textOf = (markup: string) => markup.replace(/<br\/>/g, '\n').replace(/<[^>]*>/g, '').replace(/&(amp|lt|gt|quot|#x27|#39);/g, (_, name: string) => ENTITIES[name]!)
 const render = (source: string) => renderToStaticMarkup(<Markdown source={source} caret nodeKey="t1/0" />)
 
+function findText(markup: string): string {
+  let kept = ''
+  let depth = 0
+  for (const [piece, close, attrs] of markup.matchAll(/<(\/?)\w+([^>]*)>|[^<]+/g)) {
+    const opens = close === '' && !attrs!.endsWith('/')
+    const atom = / data-find-text="([^"]*)"/.exec(attrs ?? '')
+    if (depth > 0) depth += attrs === undefined ? 0 : opens ? 1 : close === '/' ? -1 : 0
+    else if (opens && atom !== null) [kept, depth] = [kept + atom[1], 1]
+    else kept += piece
+  }
+  return textOf(kept)
+}
+
 const MARKED = /<(\w+)[^>]* data-find="([^"]*)"[^>]*>([\s\S]*?)<\/\1>/g
-const markedText = (markup: string) => Array.from(markup.matchAll(MARKED), ([, , id, inner]) => [id, textOf(inner!)])
+const markedText = (markup: string) => Array.from(markup.matchAll(MARKED), ([, , id, inner]) => [id, findText(inner!)])
 
 const reply = finalReply('fixtures/markdown.jsonl')
 
@@ -95,6 +108,29 @@ describe('Markdown', () => {
     const markup = render('[run me](javascript:alert(1)) and [read me](file:///etc/passwd)')
     expect(markup).not.toContain('<a')
     expect(textOf(markup)).toBe('run me and read me')
+  })
+
+  it('typesets a formula, labelled with its source, and shows none of that source', () => {
+    const markup = render('so $\\frac{a}{b}$ holds')
+    expect(markup).toMatch(/<span class="math" role="math" aria-label="\\frac\{a\}\{b\}"[^>]*><span aria-hidden="true"><span class="katex">/)
+    expect(textOf(markup)).not.toContain('\\frac')
+  })
+
+  it('shows a formula KaTeX cannot read as its source', () => {
+    let markup = ''
+    expect(() => { markup = render('so $\\frac{a$ holds') }).not.toThrow()
+    expect(markup).toContain('<code class="math" role="math" aria-label="\\frac{a" data-find-text="\\frac{a">\\frac{a</code>')
+  })
+
+  it('typesets a display formula whose TeX an earlier inline formula repeats with a leading $', () => {
+    expect(render('so \\($x\\) fails\n\n$$x$$')).toContain('class="katex-display"')
+  })
+
+  it('gives find the same text around a formula as the field it searches', () => {
+    const source = 'so $\\frac{a}{b}$ holds, $\\frac{a$ fails and\n\n$$\n\\sqrt{x}\n$$'
+    const fields = proseLeaves(parseMarkdown(source)).map((leaf, index) => [fieldId('t1/0', `block ${index}`), leafText(leaf)])
+    expect(markedText(render(source))).toEqual(fields)
+    expect(fields.map(([, text]) => text)).toEqual(['so \\frac{a}{b} holds, \\frac{a fails and', '\\sqrt{x}'])
   })
 
   it('keeps unclosed inline markers and raw HTML as written', () => {

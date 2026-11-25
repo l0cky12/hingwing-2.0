@@ -12,6 +12,8 @@ export default defineConfig({
     build: { externalizeDeps: { exclude: workspace }, rolldownOptions: { output: { format: 'cjs', entryFileNames: '[name].cjs' } } }
   },
   renderer: {
-    plugins: [react()]
+    plugins: [react()],
+    // The page's CSP allows fonts from 'self' only, so a font small enough to inline as a data: URI would be blocked.
+    build: { assetsInlineLimit: file => (/\.(woff2?|ttf)$/.test(file) ? false : undefined) }
   }
 })
