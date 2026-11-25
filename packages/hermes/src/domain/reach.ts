@@ -29,10 +29,8 @@ export function targetOf(raw: unknown): Target | null {
   return parsed === null ? null : { kind: 'remote', host: parsed }
 }
 
-/** One handler per kind of target. A kind without one does not compile. */
 export type ByKind<R> = { readonly [K in Target['kind']]: (target: Extract<Target, { readonly kind: K }>) => R }
 
-/** The way code outside this file branches on a target's kind, so a new kind stops the build at every branch. */
 export function byKind<R>(target: Target, handlers: ByKind<R>): R {
   return (handlers[target.kind] as (target: Target) => R)(target)
 }
@@ -58,7 +56,6 @@ declare const gatewayUrl: unique symbol
  */
 export type GatewayUrl = string & { readonly [gatewayUrl]: true }
 
-/** Why typed text is not a gateway address. */
 export type UrlProblem = 'not-an-address' | 'credentials' | 'extras'
 
 export type ParsedUrl = { readonly ok: true; readonly url: GatewayUrl } | { readonly ok: false; readonly problem: UrlProblem }
@@ -117,7 +114,6 @@ export function machineOf(target: Target): string {
 /** In the order a check runs them. `save` belongs to the connection's owner, after the check passed. */
 export type CheckStep = 'tailscale' | 'peer' | 'ssh' | 'hermes' | 'save'
 
-/** The step a check of `target` begins at, shown before the check reports one. */
 export const firstStep = (target: Target): CheckStep => byKind<CheckStep>(target, { local: () => 'hermes', remote: () => 'tailscale' })
 
 /** ssh's own failures, before any command runs on the far machine. */

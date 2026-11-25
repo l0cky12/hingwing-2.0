@@ -14,7 +14,7 @@ The issue sized this as a parser change and a radio button and put auth out of s
 
 On a default install it offers nothing. The gateway's listener binds `127.0.0.1` on a random port (`gateway/webapp_listener.py:51-55`).
 
-One route exists after the operator turns on the gateway's Webapp listener. The operator sets `webapp.enabled: true` in `~/.hermes/config.yaml`. Then the operator sets `webapp.host` to a wildcard or to one address of the machine, or keeps it on loopback and sets `webapp.public_url` behind a proxy (`webapp_listener.py:1-14`). A non-loopback or public listener is gated by sign-in and needs a provider, such as `dashboard.basic_auth` (`plugins/dashboard_auth/basic`). Hermes serves no TLS. Its docs send you to Tailscale Serve, a tunnel, or a reverse proxy for HTTPS (`website/docs/user-guide/desktop.md:136-143`).
+One route exists after the operator turns on the gateway's Webapp listener. The operator sets `webapp.enabled: true` in `~/.hermes/config.yaml`. Then the operator sets `webapp.host` to a wildcard, or to one address of the machine in builds newer than the host's `caafe5389ae5`, or keeps it on loopback and sets `webapp.public_url` behind a proxy (`webapp_listener.py:1-14`). A non-loopback or public listener is gated by sign-in and needs a provider, such as `dashboard.basic_auth` (`plugins/dashboard_auth/basic`). Hermes serves no TLS. Its docs send you to Tailscale Serve, a tunnel, or a reverse proxy for HTTPS (`website/docs/user-guide/desktop.md:136-143`).
 
 The route has four steps. Each step is in Hermes's source.
 
@@ -27,11 +27,29 @@ Hermes Desktop's "Remote gateway" option uses a different server. It targets the
 
 The real host `hermes` runs 0.23.3 (`caafe5389ae5`). Read-only checks found the following:
 
-- The Webapp listener is off. `config.yaml` has no `webapp:` block, and the gateway listens on `127.0.0.1:8646`.
+- Before 2026-11-25 the Webapp listener was off. `config.yaml` had no `webapp:` block, and the gateway listened on `127.0.0.1:8646`.
 - `:9119` is `hermes dashboard --host 0.0.0.0`. Its `/api/status` answers `auth_required: true` and `auth_flows: ['cookie', 'native_pkce']`, its only provider is `basic`, and `POST /api/auth/ws-ticket` with no bearer answers 401.
 - `:8787`, the port in the issue's example, is a third-party `hermes-webui` container.
 
 A URL connection to this host works only after the operator turns on the Webapp.
+
+### Proven on the real host, 2026-11-25
+
+With the operator's approval, the Webapp was turned on at `127.0.0.1:9120` behind `tailscale serve --https=8480`, and the gateway restarted. The host runs 0.23.3 `caafe5389ae5`. Its `webapp_listener.py:106` accepts only `127.0.0.1`, `::1`, `localhost`, `0.0.0.0` or `::`, so a bind to the tailnet address alone is not possible there. A Python probe then ran every step of the route against the host's `https://<machine>.<tailnet>.ts.net:8480` address, and every step passed:
+
+1. Signed out, `/api/status` answered 200 with exactly the 9 predicted keys. `:9119` answered 34 keys, including `config_version` and `gateway_mode`.
+2. `/auth/native/authorize` redirected to `/login`. `POST /auth/password-login` sent the browser to the loopback callback with a code and a matching `state`. `/auth/native/token` returned an access token, a refresh token, `expires_at`, `provider: basic` and `user_id`. A replay of the code answered 400.
+3. `/api/auth/ws-ticket` with the bearer answered `{ticket, ttl_seconds: 30}`.
+4. The dial with `hermes-gateway-v1, hermes-gateway-ticket.<t>` and no Origin answered 101. The first frame was `gateway.ready` with `session_authority: true`. A replay of the used ticket answered 403.
+5. `/auth/native/refresh` returned a new access token and rotated the refresh token. A ticket from the new token dialed again.
+
+Three findings change the build:
+
+- The refresh token rotates. `gateways.ts` must keep the new one each time, through the one login per URL.
+- `auth_providers` in the status lists the operator's plugin `conduit-local-live`, which has no sign-in page. `/api/auth/providers` lists only `basic`. The `no-sign-in` decision reads `auth_flows` for `native_pkce`, not `auth_providers`.
+- Hermes 0.23.3 has no password-free sign-in for an app when the Webapp is gated. The verify run signs in through the real `/login` page with the password from a one-use secret file, then deletes the file.
+
+The Webapp's browser bundle is not built on the host (`hermes webapp --status`). Highwing needs only the API and the server-rendered `/login`, so it is unaffected.
 
 `docs/design/remote.md` has two stale claims. Its citation `run_api.py:472-493` is now `:521-541`. Its "needs a `0.0.0.0` bind" is outdated, because `webapp.host` also takes `::`, one address of the machine, or loopback with `public_url`. The implementation fixes both.
 

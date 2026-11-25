@@ -10,7 +10,6 @@ export default tseslint.config(
   { ignores: ['docs/**', '**/node_modules/**', 'apps/desktop/out/**', 'packages/hermes/src/wire/contract.generated.ts'] },
   ...tseslint.configs.recommended,
   {
-    // tsc cannot see that `kind === 'local'` reads every other kind as the else branch.
     files: ['apps/**', 'packages/**', 'scripts/**'],
     ignores: ['packages/hermes/src/domain/reach.ts'],
     rules: {

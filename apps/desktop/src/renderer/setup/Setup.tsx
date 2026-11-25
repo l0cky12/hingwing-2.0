@@ -15,12 +15,10 @@ const NOT_A_NAME = "That isn't a machine name. Use the name Tailscale lists, suc
 
 interface Choice {
   readonly label: string
-  /** What the choice asks for under its radio. null: nothing to type. */
   readonly field: { readonly label: string; readonly placeholder: string; readonly hint: string } | null
   readonly target: (text: string) => Target | null
 }
 
-/** In the order the form lists them. */
 const CHOICES: { readonly [K in Target['kind']]: Choice } = {
   remote: {
     label: 'Another machine on my tailnet',
