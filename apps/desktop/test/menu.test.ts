@@ -182,7 +182,13 @@ describe('the files in the @ list', () => {
     expect(mentionWord(inside.text, inside.caret), 'the quote stays open').toBe('@My Folder/')
   })
 
-  it('put a folder whose path holds a double quote in as plain text, since a mention cannot spell it', () => {
+  it('go on into a folder whose path holds a double quote and no space', () => {
+    const next = pick('Open @a', 'a"b/', 7, [{ path: 'a"b/', folder: true }])
+    expect(next).toEqual({ text: 'Open @a"b/', caret: 10 })
+    expect(mentionWord(next.text, next.caret)).toBe('@a"b/')
+  })
+
+  it('put a folder whose path holds a space and a double quote in as plain text, since a quoted mention cannot hold the quote', () => {
     expect(pick('Open @My', 'My "Notes"/', 8, [{ path: 'My "Notes"/', folder: true }])).toEqual({ text: 'Open "My "Notes"/" ', caret: 19 })
   })
 

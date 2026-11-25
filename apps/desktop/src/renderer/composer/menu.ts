@@ -107,8 +107,8 @@ export function menuOf(text: string, caret: number, sources: MenuSources, { acti
 
 /**
  * A file is its plain path and a space. A folder stays a mention with no space, its quote left open, so the
- * caret is still in the word and the list goes on into the folder. A mention can't spell a double quote, so a
- * folder whose path holds one goes in as a file does.
+ * caret is still in the word and the list goes on into the folder. A quoted mention can't hold a double quote, so a
+ * folder whose path holds both a space and a quote goes in as a file does.
  */
 export function completionOf(item: MenuItem): string {
   switch (item.kind) {
@@ -116,7 +116,8 @@ export function completionOf(item: MenuItem): string {
     case 'file': {
       const { path, folder } = item.match
       const spaced = /\s/.test(path)
-      if (folder && !path.includes('"')) return spaced ? `@"${path}` : `@${path}`
+      if (folder && !spaced) return `@${path}`
+      if (folder && !path.includes('"')) return `@"${path}`
       return spaced ? `"${path}" ` : `${path} `
     }
     default: return `/${item.entry.name} `

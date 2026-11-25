@@ -85,6 +85,10 @@ describe('typedMention', () => {
     expect(typedMention('@')).toEqual({ at: 0, query: '' })
   })
 
+  it('keeps a quote inside a bare word, as a sent mention does', () => {
+    expect(typedMention('Open @a"b/')).toEqual({ at: 5, query: 'a"b/' })
+  })
+
   it('runs past spaces inside an open quote, and drops the quote', () => {
     expect(typedMention('Ask @"Timothy ·')).toEqual({ at: 4, query: 'Timothy ·' })
   })
