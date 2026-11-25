@@ -63,6 +63,19 @@ export function nextSetup(setup: Setup, event: SetupEvent): Setup | null {
   return move?.(setup, event) ?? null
 }
 
+const KEEP = { do: 'keepTarget' } as const
+
+/** Settings: setup opened from a chat, shown in the chat's place beside the sidebar. First run and its saved screen show no chat. */
+const inSettings = (setup: Setup): boolean =>
+  setup.at !== 'chat' && setup.at !== 'pinned' && setup.live !== null && !(setup.at === 'saved' && setup.from === 'first-run')
+
+/** Whether an open runs now: in the chat, or in Settings, which it leaves first. It waits through first run, and through a save, which refuses to leave. */
+export const opensNow = (setup: Setup): boolean =>
+  setup.at === 'chat' || setup.at === 'pinned' || (inSettings(setup) && nextSetup(setup, KEEP) !== null)
+
+/** The hub opens a bot it made, so making one is an open too. */
+const opensChat = (command: Command): boolean => command.do === 'open' || command.do === 'createBot'
+
 const firstSetup = (loaded: Settings, live: Live | null): Setup =>
   live === null ? { at: 'form', live, notice: loaded.state === 'unreadable' || loaded.state === 'newer' ? loaded.state : null } : { at: 'chat', live }
 
@@ -159,11 +172,17 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
     return DONE
   }
 
+  /** Every open passes here, from the window, a notification or a link: Settings closes first, as Close does, or the open is refused. */
+  const runChat = async (command: Command): Promise<CommandOutcome<unknown>> => {
+    if (opensChat(command) && inSettings(setup.get()) && !runSetup(KEEP).ok) return NOT_NOW
+    return open?.hermes.run(command) ?? NOT_CONNECTED
+  }
+
   return {
     setup,
     get hermes() { return open?.hermes ?? null },
     run: async <C extends ConnectionCommand>(command: C) => {
-      const outcome = isSetupCommand(command) ? runSetup(command) : await (open?.hermes.run(command) ?? NOT_CONNECTED)
+      const outcome = isSetupCommand(command) ? runSetup(command) : await runChat(command)
       return outcome as CommandOutcome<HubResult<C>>
     },
     close: async () => {

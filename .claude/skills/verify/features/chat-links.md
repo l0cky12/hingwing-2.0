@@ -1,6 +1,6 @@
 # Chat links
 
-A `highwing://chat/<session id>` link opens that chat on the Hermes Highwing is connected to. The link can come from the launch command line, from a second launch while Highwing runs, or from macOS. A second launch hands its link to the running window, brings the window forward, and exits. A link that arrives before Highwing is connected, or while the setup screen is up, waits and opens once the chat shows. When Hermes has no chat with that id, the open chat stays and the composer says "That chat isn't on this Hermes." until the next click. The top bar and each chat row's More menu offer Copy link, which puts the open chat's link, or the row's, on the clipboard.
+A `highwing://chat/<session id>` link opens that chat on the Hermes Highwing is connected to. The link can come from the launch command line, from a second launch while Highwing runs, or from macOS. A second launch hands its link to the running window, brings the window forward, and exits. A link that arrives before Highwing is connected, or during first run, waits and opens once the chat shows. A link that arrives while Settings is up closes Settings and opens, as a sidebar pick does. While Settings is saving a new connection it waits, and opens on the new one. When Hermes has no chat with that id, the open chat stays and the composer says "That chat isn't on this Hermes." until the next click. The top bar and each chat row's More menu offer Copy link, which puts the open chat's link, or the row's, on the clipboard.
 
 ## Sub-features
 
@@ -10,6 +10,7 @@ A `highwing://chat/<session id>` link opens that chat on the Hermes Highwing is 
 - `link-copy` copies a chat's link from the top bar and from a row's More menu.
 - `link-seek` opens a chat whose bot only Hermes's lists name, after searching every bot.
 - `link-held` holds a link through the setup screen and opens it once the chat shows.
+- `link-settings` closes Settings and opens the chat a second launch names.
 
 ## How to get to it (user POV)
 
@@ -31,6 +32,7 @@ Preconditions:
 - **Copy.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/chats.json --mode chats --run link-copy wait window wait bots wait live click button "/^Bot: /" click menuitemradio Research inview button "Bot: Research" see "Sort the invoices" click button "Sort the invoices" current button "Sort the invoices" click button "Copy link" copied highwing://chat/local-0102 see Copied click button "More for Clean up Downloads" click menuitem "Copy link" copied highwing://chat/local-0103 see "Link copied" shot copied current button "Sort the invoices" quiet`. Copying from a row leaves the open chat as it is.
 - **A copied link, found by search.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/chats.json --arg highwing://chat/local-0103 --mode chats --run link-seek wait window wait bots current button "Clean up Downloads" inview button "Bot: Research" see "Research · Clean up Downloads" said "Clean up my Downloads folder." reached session.list '{"scope":"stored","include_hidden":true,"limit":200}' 6 home shot opened quiet`. Use `local-0101` and "Send invoice reminder" for the chat that waits on an approval.
 - **Held through setup.** Set `M=hermes-host.example-tailnet.ts.net`, then run `$H run --fake-host ok --saved none --arg highwing://chat/local-9999 --run link-held wait setup type "Hermes machine" $M click button Connect wait setup-saved shot held-on-saved click button "Open chat" wait live see "That chat isn't on this Hermes." shot delivered quiet`. The fake machine lists no bots, so the search reads the socket's own profile and finds nothing. The notice shows that the link reached the chat after setup closed.
+- **Into Settings.** Make the roster fixture of [Settings](./settings.md) and set `F` as it says, then run `$H run --fake-host ok --fixture $F --saved remote --run link-settings wait live wait bots current button "Emu, default bot" click button Settings wait settings second highwing://chat/local-0001 gone heading Settings current button Research wait live home quiet`. The link closes Settings and opens Research's Bot Chat.
 
 ## Gotchas
 

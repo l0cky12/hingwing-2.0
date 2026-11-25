@@ -1,6 +1,5 @@
 import { createContext, useContext, useSyncExternalStore } from 'react'
-import { applyPush, type Bridge, type Setup, type Topic, type TopicValue } from '../ipc-contract'
-import { screenOf } from './setup/screens'
+import { applyPush, type Bridge, type Topic, type TopicValue } from '../ipc-contract'
 
 declare global {
   interface Window { readonly highwing: Bridge }
@@ -17,8 +16,7 @@ interface Copy {
  * The connection a subtree reads from. A copy belongs to one epoch, so a subtree mounted for a new
  * connection starts empty and never draws what the old connection held.
  */
-const NO_EPOCH = 0
-export const Epoch = createContext(NO_EPOCH)
+export const Epoch = createContext(0)
 
 const copies = new Map<string, Copy>()
 
@@ -65,24 +63,10 @@ const subscribe = (key: string, topic: Topic) => {
 
 const NEVER = () => () => {}
 
-const keyOf = (epoch: number, topic: Topic) => `${epoch} ${topic}`
-
 /** `topic` null: nothing to read yet, as for the session of a chat that has not been started. */
 export function useTopic<T extends Topic>(topic: T | null): TopicValue<T> | undefined {
-  const key = keyOf(useContext(Epoch), topic as T)
+  const key = `${useContext(Epoch)} ${topic}`
   return useSyncExternalStore(topic === null ? NEVER : subscribe(key, topic), () => copies.get(key)?.value as TopicValue<T> | undefined)
 }
 
-function settingsShown(): boolean {
-  const setup = copies.get(keyOf(NO_EPOCH, 'setup'))?.value as Setup | undefined
-  return setup !== undefined && screenOf(setup).show === 'settings'
-}
-
-/** Every open, from the sidebar or the palette, leaves Settings first, and runs only once main agrees. */
-export const run: Bridge['run'] = async command => {
-  if (command.do === 'open' && settingsShown()) {
-    const left = await window.highwing.run({ do: 'keepTarget' })
-    if (!left.ok) return left
-  }
-  return window.highwing.run(command)
-}
+export const run: Bridge['run'] = command => window.highwing.run(command)

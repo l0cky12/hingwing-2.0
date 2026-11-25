@@ -52,7 +52,7 @@ export function noticeOf(before: Session, after: Session): TurnNotice | null {
   return words === null ? null : { sessionId: after.id, turnId: ended.id, ...words }
 }
 
-export function notifyTurnEnds(owner: Pick<ConnectionOwner, 'setup' | 'hermes'>, deps: NotifyDeps): () => void {
+export function notifyTurnEnds(owner: Pick<ConnectionOwner, 'setup' | 'hermes' | 'run'>, deps: NotifyDeps): () => void {
   const told = new Set<string>()
 
   const watchChat = (hermes: Hermes, sessionId: SessionId) => {
@@ -69,7 +69,7 @@ export function notifyTurnEnds(owner: Pick<ConnectionOwner, 'setup' | 'hermes'>,
         // A chat of a connection that was replaced is not this Hermes's to open.
         if (owner.hermes !== hermes) return
         // Opening the shown chat again keeps it and drops a switch to another bot still waiting on its lookup.
-        void hermes.run({ do: 'open', ref: { kind: 'chat', sessionId } })
+        void owner.run({ do: 'open', ref: { kind: 'chat', sessionId } })
       })
     })
   }
