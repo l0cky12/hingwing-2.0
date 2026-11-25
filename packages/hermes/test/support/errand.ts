@@ -6,6 +6,8 @@ export const ERRAND = loadFixture(fileURLToPath(new URL('../../../../fixtures/er
 export const SESSION = ERRAND.header.sessionId
 export const BRANCH = loadFixture(fileURLToPath(new URL('../../../../fixtures/branch.jsonl', import.meta.url)))
 export const BRANCH_OLD = loadFixture(fileURLToPath(new URL('../../../../fixtures/branch-old.jsonl', import.meta.url)))
+export const BRANCH_COMPACTED = loadFixture(fileURLToPath(new URL('../../../../fixtures/branch-compacted.jsonl', import.meta.url)))
+export const EDIT_COMPACTED = loadFixture(fileURLToPath(new URL('../../../../fixtures/edit-compacted.jsonl', import.meta.url)))
 export const SLASH = loadFixture(fileURLToPath(new URL('../../../../fixtures/slash.jsonl', import.meta.url)))
 
 export const PROFILES: unknown = JSON.parse(readFileSync(fileURLToPath(new URL('../../../../fixtures/profiles/roster.json', import.meta.url)), 'utf8'))

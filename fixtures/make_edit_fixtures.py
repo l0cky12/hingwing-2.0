@@ -1,5 +1,5 @@
-"""Write fixtures/edit.jsonl, fixtures/regenerate.jsonl, fixtures/edit-refused.jsonl, fixtures/branch.jsonl
-and fixtures/branch-old.jsonl.
+"""Write fixtures/edit.jsonl, fixtures/regenerate.jsonl, fixtures/edit-refused.jsonl, fixtures/edit-compacted.jsonl,
+fixtures/branch.jsonl, fixtures/branch-old.jsonl and fixtures/branch-compacted.jsonl.
 
 Run with any Python 3:  python3 fixtures/make_edit_fixtures.py
 
@@ -13,10 +13,17 @@ holds a two second tool step, so a live run can see it running. Its `message.com
 - `regenerate` cuts before the last user row and sends the same text again.
 - `edit-refused` answers the rewind with Hermes's refusal for a row that is gone (`invalid_params`, field
   `target_message_id`) and has no step after it.
+- `edit-compacted` is the compacted chat below. It answers a rewind of the first message with Hermes's refusal for a
+  row compaction archived: field `target_message_id` and a `compacted:` detail (persistence/authority/runtime.py:68-69).
 
 - `branch` has no steps and its header says `branches`. Its chat is titled "Notes heading" so a branch has a title to
   number: "Notes heading #2".
 - `branch-old` is the same chat on a Hermes that cannot branch: its header has no `branches`.
+- `branch-compacted` is the compacted chat with `branches`.
+
+The compacted chat is the same three turns after Hermes compacted the first one away: a `row_kind: 'compaction'` row
+sits between the first turn and the second, as `session.transcript` gives it (gateway/session_transcript_rows.py:25-31).
+The rows after it are the continuation's, with larger ids.
 
 Unlike errand.jsonl this is not a recording of Hermes's gateway. The envelope, the `describe` and `list`
 answers and the frame shapes are errand.jsonl's own. The receipt is built from Hermes's rewind
@@ -62,6 +69,13 @@ def rows_of(turns, first_id=1, start=0):
 
 
 STORED = rows_of(TURNS)
+COMPACTED = [
+    *rows_of(TURNS[:1]),
+    {"row_kind": "compaction", "role": "system", "text": "Renamed the heading in notes.md to Plan.", "compacted_messages": 2,
+     "row_id": 3, "timestamp": FIRST_ROW_TIME + 9},
+    *rows_of(TURNS[1:], first_id=4, start=10),
+]
+COMPACTED_DETAIL = "compacted: target user message was summarized when the session was compressed"
 
 
 class Story:
@@ -185,11 +199,10 @@ def story_for(cut_row, kept_turns, text, reply, slug, tool_call):
     return story.steps
 
 
-def refused_story(cut_row):
+def refused_story(cut_row, detail="target user message is no longer in session history"):
     story = Story()
     params, _ = rewind(story, cut_row, [], 0)
-    error = {"code": 4001, "message": "invalid_params", "data": {
-        "reason": "invalid_params", "field": "target_message_id", "detail": "target user message is no longer in session history"}}
+    error = {"code": 4001, "message": "invalid_params", "data": {"reason": "invalid_params", "field": "target_message_id", "detail": detail}}
     story.add({"await": "session.mutate", "params": params, "error": error})
     return story.steps
 
@@ -210,5 +223,7 @@ def write(name, steps, **more):
 write("edit", story_for(3, TURNS[:1], EDITED, EDITED_REPLY, "edit", APPEND))
 write("regenerate", story_for(5, TURNS[:2], TURNS[2][0], REGENERATED_REPLY, "regenerate", LISTING))
 write("edit-refused", refused_story(3))
+write("edit-compacted", refused_story(1, COMPACTED_DETAIL), stored=COMPACTED)
 write("branch", [], list=TITLED, branches=True)
 write("branch-old", [], list=TITLED)
+write("branch-compacted", [], list=TITLED, branches=True, stored=COMPACTED)
