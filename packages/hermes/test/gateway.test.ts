@@ -883,6 +883,7 @@ describe('the scripted gateway draws pictures and lists pets as Hermes does', ()
     expect((await call('pet.thumb', { slug: 'tabby' })).result).toEqual({ ok: false, slug: 'tabby' })
     expect((await call('pet.thumb', { slug: 'tabby', url: TABBY_SHEET })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
     expect((await call('pet.thumb', { slug: 'tabby' })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
+    expect((await call('pet.thumb', { slug: 'tabby', profile: 'research' })).result, 'kept per profile').toEqual({ ok: false, slug: 'tabby' })
   })
 
   it("fails a refused_once slug's first thumb open to ok false, as a fetch that timed out does, and answers it after", async () => {

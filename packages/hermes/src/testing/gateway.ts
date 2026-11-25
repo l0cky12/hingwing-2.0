@@ -879,7 +879,10 @@ export class ScriptedGateway {
   private readonly pictures = new Map<string, { readonly mime: string; readonly size: number; readonly data: string }>()
   /** The slugs of `pets.refused_once` whose one refusal is spent. */
   private readonly thumbsRefused = new Set<string>()
-  /** The slugs `pet.thumb` answered with a picture, which Hermes keeps on disk and answers again with no `url` (agent/pet/store.py:233-235). */
+  /**
+   * `<profile> <slug>` for each thumb `pet.thumb` answered with a picture. Hermes keeps it on disk under the profile it ran as
+   * and answers it again there with no `url` (agent/pet/store.py:63-70, :233-235).
+   */
   private readonly thumbsKept = new Set<string>()
   private clash: string | undefined
   private readonly botChats = new Map<string, EchoChat>()
@@ -1677,8 +1680,9 @@ export class ScriptedGateway {
     }
     const installed = pets.pets.some(pet => isObject(pet) && pet.slug === slug && pet.installed === true)
     const fetched = typeof params.url === 'string' && petdexHost(params.url)
-    const thumb = (installed || fetched || this.thumbsKept.has(slug)) && Object.hasOwn(pets.thumbs, slug) ? pets.thumbs[slug] : undefined
-    if (thumb !== undefined) this.thumbsKept.add(slug)
+    const kept = `${typeof params.profile === 'string' ? params.profile : 'default'} ${slug}`
+    const thumb = (installed || fetched || this.thumbsKept.has(kept)) && Object.hasOwn(pets.thumbs, slug) ? pets.thumbs[slug] : undefined
+    if (thumb !== undefined) this.thumbsKept.add(kept)
     return after(pets.delay_ms, thumb === undefined ? { ok: false, slug } : { ok: true, slug, dataUri: thumb })
   }
 
