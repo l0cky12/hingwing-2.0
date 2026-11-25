@@ -1,5 +1,5 @@
 import { versionLabel, type AdmissionId, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Relay, type Told, type TurnId, type Version, type Versions } from '@highwing/hermes/domain'
-import { fieldId, findInThread, multiReply, type FindMatch, type PendingRow, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
+import { fieldId, findInThread, multiReply, type Changing, type FindMatch, type PendingRow, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Avatar } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
@@ -445,6 +445,7 @@ const NO_GROUPS: readonly Versions[] = []
 export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, versions, onVersion, queue, canReact, onReact }: ThreadProps) {
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
+  const [changing, setChanging] = useState<Changing>(new Map())
   const transcript = useRef<HTMLDivElement>(null)
   const findInput = useRef<HTMLInputElement>(null)
   const navigated = useRef(false)
@@ -465,7 +466,13 @@ export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier,
   const relayTurns = (held: readonly Relay[] = []) => held.map(relay => <RelayTurn key={relay.id} relay={relay} />)
 
   const query = find?.query ?? ''
-  const matches = useMemo(() => findInThread(view, query), [view, query])
+  const matches = useMemo(() => findInThread(view, query, changing), [view, query, changing])
+  const change = (key: string, question: string | null) => setChanging(held => {
+    const next = new Map(held)
+    if (question === null) next.delete(key)
+    else next.set(key, question)
+    return next
+  })
   const at = find?.current ?? null
   const found = at === null ? -1 : matches.findIndex(match => match.field === at.field && match.start === at.start)
   const current = found === -1 ? null : found
@@ -566,7 +573,9 @@ export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier,
         ))}
         {relayTurns(relayed.last)}
         {atEnd.length > 0 && <p className="versions-end">{atEnd.map(group => <VersionSwitch key={group.versions[0]?.sessionId} versions={group} onVersion={onVersion} />)}</p>}
-        {view.asks.map(card => <AskCard key={card.key} card={card} onAnswer={onAnswerRequest} />)}
+        {view.asks.map(card => (
+          <AskCard key={card.key} card={card} changing={changing.get(card.key) ?? null} onChange={question => change(card.key, question)} onAnswer={onAnswerRequest} />
+        ))}
         {view.pending.map(row => <Pending key={row.key} row={row} queue={queue} />)}
       </div>
     </>

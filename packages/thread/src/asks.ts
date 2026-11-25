@@ -66,6 +66,24 @@ export interface TargetView {
   readonly fields: readonly { readonly name: string; readonly label: string; readonly required: boolean; readonly masked: boolean; readonly initial: string }[]
 }
 
+export interface DrawnQuestion { readonly question: QuestionView; readonly index: number }
+
+/**
+ * What a questions card draws while the window changes `changing`, a locked question's id: the
+ * locked answers, then the one question open to answer. The renderer and find both read this.
+ */
+export function drawnQuestions(card: QuestionsCard, changing: string | null): {
+  readonly locked: readonly (DrawnQuestion & { readonly words: string })[]
+  readonly open: DrawnQuestion | null
+} {
+  const changed = card.questions.findIndex(question => question.id === changing && question.locked !== null)
+  const open = changed === -1 ? card.questions.findIndex(question => question.locked === null) : changed
+  return {
+    locked: card.questions.flatMap((question, index) => (question.locked === null || index === open ? [] : [{ question, index, words: question.locked.words }])),
+    open: open === -1 ? null : { question: card.questions[open]!, index: open }
+  }
+}
+
 const value = (label: string, masked = true): SecretField => ({ part: 'value', label, masked })
 
 const SECRET_FORMS = {

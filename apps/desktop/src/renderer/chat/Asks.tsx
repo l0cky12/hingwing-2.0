@@ -1,8 +1,8 @@
 import type { Answer, RequestId, RequestReply } from '@highwing/hermes/domain'
-import { fieldId, type AskCard as Card, type ConnectCard as Connect, type QuestionsCard as Questions, type QuestionView, type SecretCard as Secret, type TargetView } from '@highwing/thread'
+import { drawnQuestions, fieldId, type AskCard as Card, type ConnectCard as Connect, type QuestionsCard as Questions, type QuestionView, type SecretCard as Secret, type TargetView } from '@highwing/thread'
 import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Command } from './Copy'
-import { answerOf, draftOf, openQuestion, OTHER, picked, sendWords, type Draft } from './questions'
+import { answerOf, draftOf, OTHER, picked, sendWords, type Draft } from './questions'
 
 export type RequestAnswer = (requestId: RequestId, reply: RequestReply) => void
 
@@ -114,11 +114,16 @@ function Question({ card, question, draft, onDraft, onLock }: QuestionProps) {
   )
 }
 
-function QuestionsCard({ card, onAnswer }: CardProps<Questions>) {
-  const [changing, setChanging] = useState<string | null>(null)
+interface Changes {
+  /** The id of the locked question the window is changing. */
+  readonly changing: string | null
+  readonly onChange: (question: string | null) => void
+}
+
+function QuestionsCard({ card, changing, onChange, onAnswer }: CardProps<Questions> & Changes) {
   const [drafts, setDrafts] = useState<{ readonly [question: string]: Draft }>({})
-  const open = openQuestion(card, changing)
-  const locked = card.questions.flatMap((question, index) => (question.locked === null || question === open ? [] : [{ question, index, words: question.locked.words }]))
+  const { locked, open: shown } = drawnQuestions(card, changing)
+  const open = shown?.question
   return (
     <Frame card={card}>
       {card.progress !== null && <p className="why" data-find={fieldId(card.key, 'progress')}>{card.progress}</p>}
@@ -130,7 +135,7 @@ function QuestionsCard({ card, onAnswer }: CardProps<Questions>) {
               <span className="asked" data-find={fieldId(card.key, `question ${index}`)}>{question.text}</span>
               <span className="said" data-find={fieldId(card.key, `answer ${index}`)}>{words}</span>
               {open !== undefined && (
-                <button type="button" disabled={card.busy !== null} aria-label={`Change: ${question.text}`} onClick={() => setChanging(question.id)}>Change</button>
+                <button type="button" disabled={card.busy !== null} aria-label={`Change: ${question.text}`} onClick={() => onChange(question.id)}>Change</button>
               )}
             </li>
           ))}
@@ -142,7 +147,7 @@ function QuestionsCard({ card, onAnswer }: CardProps<Questions>) {
           onDraft={draft => setDrafts(held => ({ ...held, [open.id]: draft }))}
           onLock={answer => {
             onAnswer(card.requestId, { kind: 'lock', question: open.id, answer })
-            setChanging(null)
+            onChange(null)
           }}
         />
       )}
@@ -223,12 +228,12 @@ function ConnectCard({ card, onAnswer }: CardProps<Connect>) {
   )
 }
 
-export function AskCard({ card, onAnswer }: CardProps<Card>) {
+export function AskCard({ card, changing, onChange, onAnswer }: CardProps<Card> & Changes) {
   switch (card.kind) {
     case 'secret':
       return <SecretCard card={card} onAnswer={onAnswer} />
     case 'questions':
-      return <QuestionsCard card={card} onAnswer={onAnswer} />
+      return <QuestionsCard card={card} changing={changing} onChange={onChange} onAnswer={onAnswer} />
     case 'connect':
       return <ConnectCard card={card} onAnswer={onAnswer} />
   }

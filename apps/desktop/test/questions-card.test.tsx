@@ -1,9 +1,9 @@
 import type { HermesRequest, RequestAsk, RequestId, Session } from '@highwing/hermes/domain'
-import { threadView, type QuestionsCard } from '@highwing/thread'
+import { drawnQuestions, threadView, type QuestionsCard } from '@highwing/thread'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { AskCard } from '../src/renderer/chat/Asks'
-import { answerOf, draftOf, openQuestion, OTHER, picked, sendWords } from '../src/renderer/chat/questions'
+import { answerOf, draftOf, OTHER, picked, sendWords } from '../src/renderer/chat/questions'
 
 const CLOCK = { now: 0, timeZone: 'UTC' }
 
@@ -25,19 +25,21 @@ function cardOf(ask: Extract<RequestAsk, { kind: 'questions' }>, state: HermesRe
 
 const batch = (answers: Extract<RequestAsk, { kind: 'questions' }>['answers'] = {}) => cardOf({ kind: 'questions', questions: [WHERE, REGIONS], answers })
 const question = (card: QuestionsCard, id: string) => card.questions.find(asked => asked.id === id)!
-const drawn = (card: QuestionsCard) => renderToStaticMarkup(<AskCard card={card} onAnswer={() => {}} />)
+const drawn = (card: QuestionsCard, changing: string | null = null) => renderToStaticMarkup(<AskCard card={card} changing={changing} onChange={() => {}} onAnswer={() => {}} />)
 const buttons = (markup: string) => Array.from(markup.matchAll(/<button([^>]*)>([^<]*)<\/button>/g), ([, attributes, name]) => `${name}${attributes?.includes('disabled') ? ' (off)' : ''}`)
 
 describe('which question is open', () => {
+  const openOf = (card: QuestionsCard, changing: string | null) => drawnQuestions(card, changing).open?.question.id
+
   it('is the first one not answered, or a locked one being changed', () => {
     const card = batch({ q0: ['production'] })
-    expect(openQuestion(card, null)?.id).toBe('q1')
-    expect(openQuestion(card, 'q0')?.id).toBe('q0')
-    expect(openQuestion(batch(), 'q1')?.id).toBe('q0')
+    expect(openOf(card, null)).toBe('q1')
+    expect(openOf(card, 'q0')).toBe('q0')
+    expect(openOf(batch(), 'q1')).toBe('q0')
   })
 
   it('is none once every question is locked', () => {
-    expect(openQuestion(batch({ q0: ['production'], q1: null }), null)).toBeUndefined()
+    expect(openOf(batch({ q0: ['production'], q1: null }), null)).toBeUndefined()
   })
 })
 

@@ -8,9 +8,6 @@ export interface Draft {
 
 export const OTHER = Symbol('other')
 
-export const openQuestion = (card: QuestionsCard, changing: string | null): QuestionView | undefined =>
-  card.questions.find(question => question.id === changing && question.locked !== null) ?? card.questions.find(question => question.locked === null)
-
 export function draftOf(question: QuestionView): Draft {
   const answer = question.locked?.answer ?? null
   if (answer === null) return { picks: [], other: question.choices.length === 0 ? '' : null }

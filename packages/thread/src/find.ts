@@ -1,3 +1,4 @@
+import { drawnQuestions } from './asks'
 import { leafText, parseMarkdown, proseLeaves } from './prose'
 import type { Phrase, StepView, ThreadView } from './thread-view'
 
@@ -20,7 +21,12 @@ interface Field { readonly id: string; readonly text: string; readonly opens: re
 
 const joined = (words: Phrase) => words.map(piece => piece.v).join('')
 
-function fields(view: ThreadView): Field[] {
+/** Card key -> the id of the locked question the window is changing on that card. */
+export type Changing = ReadonlyMap<string, string>
+
+const NOTHING_CHANGING: Changing = new Map()
+
+function fields(view: ThreadView, changing: Changing): Field[] {
   const out: Field[] = []
   const add = (key: string, part: FieldPart, text: string, opens: readonly string[] = []) => out.push({ id: fieldId(key, part), text, opens })
 
@@ -111,12 +117,12 @@ function fields(view: ThreadView): Field[] {
         break
       case 'questions': {
         if (card.progress !== null) add(card.key, 'progress', card.progress)
-        const shown = card.questions.findIndex(question => question.locked === null)
-        card.questions.forEach((question, index) => {
-          if (question.locked === null && index !== shown) return
+        const { locked, open } = drawnQuestions(card, changing.get(card.key) ?? null)
+        for (const { question, index, words } of locked) {
           add(card.key, `question ${index}`, question.text)
-          if (question.locked !== null) add(card.key, `answer ${index}`, question.locked.words)
-        })
+          add(card.key, `answer ${index}`, words)
+        }
+        if (open !== null) add(card.key, `question ${open.index}`, open.question.text)
         break
       }
       case 'connect':
@@ -139,9 +145,9 @@ function fields(view: ThreadView): Field[] {
 
 const escaped = (query: string) => query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-export function findInThread(view: ThreadView, query: string): readonly FindMatch[] {
+export function findInThread(view: ThreadView, query: string, changing = NOTHING_CHANGING): readonly FindMatch[] {
   if (query === '') return []
   const pattern = new RegExp(escaped(query), 'giu')
-  return fields(view).flatMap(field =>
+  return fields(view, changing).flatMap(field =>
     Array.from(field.text.matchAll(pattern), match => ({ field: field.id, start: match.index, end: match.index + match[0].length, opens: field.opens })))
 }

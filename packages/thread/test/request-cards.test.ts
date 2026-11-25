@@ -76,6 +76,13 @@ describe('a batch of questions', () => {
     expect(findInThread(view, 'Which').map(match => match.field)).toEqual(['ask:srq-3 question 0', 'ask:srq-3 question 1'])
     expect(findInThread(view, '1 of 3').map(match => match.field)).toEqual(['ask:srq-3 progress'])
   })
+
+  it('finds only the question being changed while the window changes an answer, as the card draws it', () => {
+    const view = threadView(session([request('srq-3', { kind: 'questions', questions: [WHERE, REGIONS, { ...REGIONS, id: 'q2', text: 'Which zones?' }], answers: { q0: ['production'] } })]), CLOCK)
+    const changing = new Map([['ask:srq-3', 'q0']])
+    expect(findInThread(view, 'production', changing)).toEqual([])
+    expect(findInThread(view, 'Which', changing).map(match => match.field)).toEqual(['ask:srq-3 question 0'])
+  })
 })
 
 describe('a connector card', () => {

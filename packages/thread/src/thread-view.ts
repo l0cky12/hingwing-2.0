@@ -12,8 +12,8 @@ import { changesAt, elapsedWords, timeLines, timeOfDay, type ViewClock } from '.
 export type { ViewClock }
 
 export { leafText, parseMarkdown, proseLeaves, type Align, type Block, type Cell, type CodeBlock, type Inline, type ProseLeaf } from './prose'
-export type { AskCard, ConnectCard, QuestionsCard, QuestionView, SecretCard, SecretField, TargetView } from './asks'
-export { fieldId, findInThread, type FieldPart, type FindMatch } from './find'
+export { drawnQuestions, type AskCard, type ConnectCard, type DrawnQuestion, type QuestionsCard, type QuestionView, type SecretCard, type SecretField, type TargetView } from './asks'
+export { fieldId, findInThread, type Changing, type FieldPart, type FindMatch } from './find'
 export { multiReply } from './multi'
 
 /** Text with literal parts. `code` is set in JetBrains Mono; nothing here is HTML. */
