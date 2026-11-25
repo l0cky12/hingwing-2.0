@@ -722,9 +722,21 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .chat-doing[data-badge="running"] { color: var(--signal); font-weight: 500; }
 .chat-doing[data-badge="asking"] { color: var(--caution); font-weight: 500; }
 .chats-note { margin: 18px 12px; font-size: 13px; color: var(--graphite); }
+/* On hover or focus the row's time gives way to its More button. */
+.chat-item { position: relative; }
+.chat-more { position: absolute; top: 9px; right: 10px; opacity: 0; }
+.chat-item:is(:hover, :focus-within) .chat-more { opacity: 1; }
+.chat-item:is(:hover, :focus-within) button .chat-when { visibility: hidden; }
+.chat-item .file-menu { right: 8px; }
+.chat-item .err { margin: 2px 12px 6px; font-size: 13px; }
+.chat-name { flex: 1; min-width: 0; padding: 0 4px; margin: -1px 0 -1px -5px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); font: inherit; font-weight: 500; color: var(--ink); }
+.chat-name:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
+.chats-saved { flex: none; margin: 0 12px 12px 20px; }
+.chats-saved:empty { margin: 0; }
 @media (forced-colors: active) {
   .chat-row[aria-current] { border-left: 3px solid Highlight; padding-left: 9px; }
   .chat-row[aria-current]:focus-visible { border-left-width: 5px; padding-left: 7px; }
+  .chat-name:focus { outline: 2px solid Highlight; }
 }
 /* The bots, the chats, and the narrowest chat its compact layout fits. Below that the chats column goes first. */
 @media (max-width: 927px) {
