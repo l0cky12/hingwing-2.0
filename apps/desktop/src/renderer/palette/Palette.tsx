@@ -8,7 +8,6 @@ import { activeIn, paletteOf, step, type PaletteItem, type PaletteView, type Row
 
 const composerBox = () => document.querySelector<HTMLTextAreaElement>('.composer textarea')
 
-/** The words at a row's right: what a chat is doing, else when it was last used, or an action's keys. */
 function detailOf(item: PaletteItem, now: number): string | null {
   switch (item.kind) {
     case 'chat': return item.doing ?? (item.lastActiveAt === null ? null : agoOf(item.lastActiveAt, now))
@@ -27,7 +26,6 @@ interface ResultsProps {
 
 const optionId = (listId: string, item: PaletteItem) => `${listId}-${item.key}`
 
-/** The list under the field, or the note in its place. */
 export function Results({ view, active, listId, now, onPick }: ResultsProps) {
   if (view.show === 'note') return <p className="palette-note" role="status">{view.words}</p>
   return (
@@ -60,18 +58,17 @@ export function Results({ view, active, listId, now, onPick }: ResultsProps) {
 
 interface SheetProps {
   readonly target: Target | null
-  /** What had focus when the palette opened. */
-  readonly back: Element | null
+  readonly returnFocusTo: Element | null
   readonly onClose: () => void
 }
 
-function Sheet({ target, back, onClose }: SheetProps) {
+function Sheet({ target, returnFocusTo, onClose }: SheetProps) {
   const sidebar = useTopic('sidebar')
   const bots = useTopic('bots')
   const open = useTopic('open')
   const link = useTopic('link')
   const sessionId = open?.shown?.sessionId ?? null
-  const session = useTopic(sessionId === null ? null : `session:${sessionId}`)
+  const openSession = useTopic(sessionId === null ? null : `session:${sessionId}`)
   const [draftId] = useState(() => crypto.randomUUID())
   const [query, setQuery] = useState('')
   const [picked, setPicked] = useState<string | null>(null)
@@ -80,7 +77,7 @@ function Sheet({ target, back, onClose }: SheetProps) {
   const leaving = useRef(false)
   const listId = useId()
 
-  const view = paletteOf({ sidebar, bots, open, link, session, target, draftId }, query)
+  const view = paletteOf({ sidebar, bots, open, link, openSession, target, draftId }, query)
   const active = activeIn(view, picked)
   const activeId = active === null ? undefined : optionId(listId, active.item)
 
@@ -95,7 +92,7 @@ function Sheet({ target, back, onClose }: SheetProps) {
   const dismiss = () => {
     leaving.current = true
     dialog.current?.close()
-    const held = back instanceof HTMLElement && back !== document.body && back.isConnected ? back : composerBox()
+    const held = returnFocusTo instanceof HTMLElement && returnFocusTo !== document.body && returnFocusTo.isConnected ? returnFocusTo : composerBox()
     held?.focus()
     onClose()
   }
@@ -108,7 +105,6 @@ function Sheet({ target, back, onClose }: SheetProps) {
     }))
   }
 
-  // Every key stops here, so the window's own shortcuts (Ctrl+N, Ctrl+F, End) never act behind the sheet.
   const onKeyDown = (event: KeyboardEvent<HTMLDialogElement>) => {
     event.stopPropagation()
     if (event.nativeEvent.isComposing) return
@@ -120,9 +116,11 @@ function Sheet({ target, back, onClose }: SheetProps) {
     else if (event.key !== 'Tab') return
     event.preventDefault()
   }
-  // Only the field takes focus, so a click on a row or the sheet's padding leaves the keys going to it.
-  const onMouseDown = (event: MouseEvent<HTMLDialogElement>) => {
+  const keepFocusInField = (event: MouseEvent<HTMLDialogElement>) => {
     if (event.target !== field.current) event.preventDefault()
+  }
+  const closeOnBackdrop = (event: MouseEvent<HTMLDialogElement>) => {
+    if (event.target === event.currentTarget) dismiss()
   }
 
   return (
@@ -131,7 +129,7 @@ function Sheet({ target, back, onClose }: SheetProps) {
       onCancel={event => { event.preventDefault(); dismiss() }}
       // The browser closes it outright, with no cancel, when no click or key came since its last cancel.
       onClose={() => { if (!leaving.current) dismiss() }}
-      onKeyDown={onKeyDown} onMouseDown={onMouseDown} onClick={event => { if (event.target === event.currentTarget) dismiss() }}
+      onKeyDown={onKeyDown} onMouseDown={keepFocusInField} onClick={closeOnBackdrop}
     >
       <div className="palette-sheet">
         <input
@@ -161,5 +159,5 @@ export function Palette({ target }: { readonly target: Target | null }) {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [opened])
-  return back === undefined ? null : <Sheet target={target} back={back} onClose={() => setBack(undefined)} />
+  return back === undefined ? null : <Sheet target={target} returnFocusTo={back} onClose={() => setBack(undefined)} />
 }

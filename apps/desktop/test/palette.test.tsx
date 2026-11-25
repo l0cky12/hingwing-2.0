@@ -15,7 +15,7 @@ const row = (id: string, title: string, more: Partial<SidebarRow> = {}): Sidebar
 const showing = (sessionId: SessionId | null): OpenChat => ({ shown: sessionId === null ? { kind: 'bot', bot: RESEARCH, sessionId: null } : { kind: 'chat', bot: RESEARCH, sessionId }, opening: null, missing: null })
 const sceneOf = (rows: readonly SidebarRow[], more: Partial<Scene> = {}): Scene => ({
   sidebar: { bot: RESEARCH, status: 'ready', rows, complete: true }, bots: APPROVED, open: showing(OPEN), link: { state: 'online' },
-  session: undefined, target: null, draftId: 'draft-1', ...more
+  openSession: undefined, target: null, draftId: 'draft-1', ...more
 })
 const chatItem = (title: string, lastActiveAt: number | null, preview: string | null = null): PaletteItem =>
   ({ kind: 'chat', key: `chat:${title}`, title, command: { do: 'open', ref: { kind: 'chat', sessionId: title as SessionId } }, preview, doing: null, badge: 'none', lastActiveAt })
@@ -97,10 +97,10 @@ describe('the actions', () => {
   })
 
   it('offers Stop only while the open chat runs and is live', () => {
-    expect(offered('stop', sceneOf([], { session: running('live') }))).toEqual({ do: 'stop', sessionId: OPEN })
-    expect(offered('stop', sceneOf([], { session: running('offline') })), 'offline').toBeNull()
-    expect(offered('stop', sceneOf([], { session: idle })), 'idle').toBeNull()
-    expect(offered('stop', sceneOf([], { session: running('live'), open: showing(null) })), 'no chat made yet').toBeNull()
+    expect(offered('stop', sceneOf([], { openSession: running('live') }))).toEqual({ do: 'stop', sessionId: OPEN })
+    expect(offered('stop', sceneOf([], { openSession: running('offline') })), 'offline').toBeNull()
+    expect(offered('stop', sceneOf([], { openSession: idle })), 'idle').toBeNull()
+    expect(offered('stop', sceneOf([], { openSession: running('live'), open: showing(null) })), 'no chat made yet').toBeNull()
   })
 
   it('offers Open Connection only with a connection to change', () => {
@@ -118,7 +118,7 @@ describe('the actions', () => {
   })
 
   it('lists only what is offered, in the order of the table', () => {
-    const view = paletteOf(sceneOf([], { link: blocked, session: running('live') }), '')
+    const view = paletteOf(sceneOf([], { link: blocked, openSession: running('live') }), '')
     expect(view.show === 'rows' && view.sections.find(({ heading }) => heading === 'Actions')?.rows.map(({ item }) => item.title)).toEqual(['New chat', 'Stop', 'Reconnect'])
   })
 })

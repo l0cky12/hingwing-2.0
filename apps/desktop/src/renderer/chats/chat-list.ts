@@ -41,17 +41,11 @@ export function agoOf(at: number, now: number): string {
   return `${Math.floor(since / DAY)}d`
 }
 
-/** What a chat row says the chat is doing, by its badge. */
 export const DOING: { readonly [B in SidebarRow['badge']]: string | null } = { none: null, running: 'Working', asking: 'Waiting for your OK' }
 
-/** A chat's title, or `UNTITLED` for a blank one. */
 export const named = (title: string) => (title.trim() === '' ? UNTITLED : title)
 
-/**
- * The open chat's bot's chats. null: not known yet, as `sidebar` or `open` undefined (Electron main
- * has not pushed them) or a list still loading or of another bot, so a switch never shows one bot's
- * chats under another.
- */
+/** The rows are drawn only while they are the open chat's bot's, so a switch never shows one bot's chats under another. */
 export function listedRows(sidebar: Sidebar | undefined, open: OpenChat | undefined): readonly SidebarRow[] | null {
   if (sidebar === undefined || open === undefined || sidebar.status === 'loading' || sidebar.bot !== (open.shown?.bot ?? null)) return null
   return sidebar.rows

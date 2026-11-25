@@ -860,7 +860,6 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .preview-rows { border-top: 1px solid CanvasText; }
   .link-menu { border: 1px solid CanvasText; }
 }
-/* The command palette: a sheet on the paper with no scrim. Its padding sits inside, so a click on the dialog itself is a click on the backdrop. */
 .palette {
   width: min(560px, calc(100% - 32px)); max-width: none; margin: 12vh auto auto; padding: 0;
   border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); color: var(--ink);
