@@ -58,8 +58,8 @@ describe('the id of a new group', () => {
 
 describe('making a group while an earlier try may have made it', () => {
   const ROSTER = [
-    { id: 'default' as BotId, name: 'Ada', preview: null, description: null, tone: 'ink' as const, picture: false },
-    { id: 'sam' as BotId, name: 'Sam', preview: null, description: null, tone: 'slate' as const, picture: false }
+    { id: 'default' as BotId, name: 'Ada', preview: null, description: null, tone: 'ink' as const, picture: false, pinned: false, hidden: false },
+    { id: 'sam' as BotId, name: 'Sam', preview: null, description: null, tone: 'slate' as const, picture: false, pinned: false, hidden: false }
   ]
   const draft = { group: 'g1' as GroupId, name: 'Launch plan', bots: ROSTER.map(bot => bot.id) }
   const room = { room_id: 'g1', name: 'Launch plan', members: [{ member_id: 'default', profile: 'default', handle: 'ada' }, { member_id: 'sam', profile: 'sam', handle: 'sam' }] }

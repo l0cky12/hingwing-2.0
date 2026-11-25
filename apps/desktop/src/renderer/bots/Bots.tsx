@@ -204,7 +204,7 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
       {grouping && <GroupForm offered={seatableIn(bots, groups)} listed={groups?.state === 'listed' ? groups.rows.map(row => row.id) : []} onCreate={onCreateGroup} onClose={closeGroupForm} />}
       {editing !== null && (
         <BotEditor
-          key={editing.bot} bot={edited ?? { id: editing.bot, name: editing.name, preview: null, description: null, tone: 'slate', picture: false }} details={editing}
+          key={editing.bot} bot={edited ?? { id: editing.bot, name: editing.name, preview: null, description: null, tone: 'slate', picture: false, pinned: false, hidden: false }} details={editing}
           {...editor} onClose={() => setEditing(null)}
         />
       )}

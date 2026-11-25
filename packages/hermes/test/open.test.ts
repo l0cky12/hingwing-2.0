@@ -211,7 +211,7 @@ describe('the open chat', () => {
 })
 
 describe('the chat a connection shows before any click', () => {
-  const fact = (id: BotId, isDefault: boolean) => ({ id, name: id, isDefault, section: null, preview: null, description: null, chat: null, picture: false })
+  const fact = (id: BotId, isDefault: boolean) => ({ id, name: id, isDefault, section: null, preview: null, description: null, chat: null, picture: false, pinned: false, hidden: false })
   const WITH_DEFAULT: Bots = { state: 'listed', roster: rosterOf([fact(EMU, true), fact(RESEARCH, false)]) }
   const NO_DEFAULT: Bots = { state: 'listed', roster: rosterOf([fact(RESEARCH, false)]) }
   const READY = { status: 'ready', newest: HOME } as const
@@ -238,7 +238,7 @@ describe('the chat a connection shows before any click', () => {
 
 describe("a linked chat's search", () => {
   type Page = readonly SessionId[]
-  const fact = (id: BotId) => ({ id, name: id, isDefault: id === EMU, section: null, preview: null, description: null, chat: null, picture: false })
+  const fact = (id: BotId) => ({ id, name: id, isDefault: id === EMU, section: null, preview: null, description: null, chat: null, picture: false, pinned: false, hidden: false })
   const LISTED: Bots = { state: 'listed', roster: rosterOf([fact(EMU), fact(RESEARCH), fact(OPS)]) }
   const NOTHING = { status: 'ready', newest: null } as const
   const R3 = 'local-r3' as SessionId

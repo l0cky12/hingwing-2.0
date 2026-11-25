@@ -34,7 +34,7 @@ describe('parseDelivery', () => {
 
 describe('a message handed to another bot', () => {
   const SESSION = 'session-1' as SessionId
-  const RAE: Bot = { id: 'rae' as BotId, name: 'Rae', preview: null, description: null, tone: 'umber', picture: false }
+  const RAE: Bot = { id: 'rae' as BotId, name: 'Rae', preview: null, description: null, tone: 'umber', picture: false, pinned: false, hidden: false }
 
   async function failedWith(error: Error, link: Link) {
     const book = relayBook({ link, call: () => Promise.reject(error), as: () => ({ link, call: () => Promise.reject(error), respond: () => {}, clarifyBatch: false }) }, () => {})

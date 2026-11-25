@@ -99,27 +99,34 @@ describe('a profiles.list reply', () => {
     ])
   })
 
-  it('leaves out a bot the user hid, even the default bot', () => {
+  it('keeps a bot the user hid, marked, and a hidden default bot stays featured', () => {
     const roster = listed({ profiles: [
       row('default', { is_default: true, ...filed({ hidden: true }) }), row('spare', { is_default: true }),
       row('gone', filed({ hidden: true, sectionName: 'Work' })), row('kept', filed({ hidden: false, sectionName: 'Work' })), row('odd', filed({ hidden: 'true' }))
     ] })
-    expect(roster.featured?.id).toBe('spare')
-    expect(roster.sections.map(section => [section.name, section.bots.map(bot => bot.id)])).toEqual([['Work', ['kept']], [null, ['odd']]])
+    expect([roster.featured?.id, roster.featured?.hidden]).toEqual(['default', true])
+    expect(roster.sections.map(section => [section.name, section.bots.map(bot => [bot.id, bot.hidden])])).toEqual([
+      ['Work', [['gone', true], ['kept', false]]], [null, [['spare', false], ['odd', false]]]
+    ])
+  })
+
+  it('reads a pin only when Hermes stored the boolean true', () => {
+    const { sections } = listed({ profiles: [row('pinned', filed({ pinned: true })), row('unpinned', filed({ pinned: false })), row('odd', filed({ pinned: 'true' })), row('bare')] })
+    expect(sections[0]?.bots.map(bot => [bot.id, bot.pinned])).toEqual([['pinned', true], ['unpinned', false], ['odd', false], ['bare', false]])
   })
 
   it.each([
     ['null', null],
     ['an array', ['hermes-bots', { sectionName: 'Work' }]],
-    ['holding the keys at its top level', { title: 'Guessed', section: 'Work', sectionName: 'Work', hidden: true }],
-    ['another plugin\'s', { 'other-plugin': { title: 'Guessed', sectionName: 'Work', hidden: true } }],
+    ['holding the keys at its top level', { title: 'Guessed', section: 'Work', sectionName: 'Work', hidden: true, pinned: true }],
+    ['another plugin\'s', { 'other-plugin': { title: 'Guessed', sectionName: 'Work', hidden: true, pinned: true } }],
     ['holding hermes-bots as null', { 'hermes-bots': null }],
     ['holding hermes-bots as an array', { 'hermes-bots': [{ title: 'Guessed' }] }],
-    ['holding numbers under hermes-bots', { 'hermes-bots': { title: 7, sectionName: 7, hidden: 1 } }],
+    ['holding numbers under hermes-bots', { 'hermes-bots': { title: 7, sectionName: 7, hidden: 1, pinned: 1 } }],
     ['holding blank words under hermes-bots', { 'hermes-bots': { title: ' ', sectionName: '' } }]
   ])('reads a ui_meta that is %s as saying nothing', (_, ui_meta) => {
     expect(listed({ profiles: [row('plain', { ui_meta: ui_meta as never })] }).sections).toEqual([
-      { name: null, bots: [{ id: 'plain', name: 'plain', preview: null, description: null, tone: 'slate', picture: false }] }
+      { name: null, bots: [{ id: 'plain', name: 'plain', preview: null, description: null, tone: 'slate', picture: false, pinned: false, hidden: false }] }
     ])
   })
 
@@ -145,7 +152,6 @@ describe('a profiles.list reply', () => {
 describe('the awkward roster', () => {
   const roster = listed(EDGE)
   const named = (name: string) => inOrder(roster).find(bot => bot.name === name)
-  const shown = EDGE.profiles.filter(profile => (profile.ui_meta?.['hermes-bots'] as { hidden?: boolean } | undefined)?.hidden !== true)
 
   it('features the first default bot in ink and leaves a second one in its section', () => {
     expect(roster.featured?.name).toBe('Hermes Agent')
@@ -153,9 +159,9 @@ describe('the awkward roster', () => {
     expect(inOrder(roster).filter(bot => bot.tone === 'ink').map(bot => bot.name)).toEqual(['Hermes Agent'])
   })
 
-  it('leaves out the hidden bot, and lists the other thirty', () => {
-    expect(inOrder(roster).map(bot => bot.id)).not.toContain('retired')
-    expect(inOrder(roster)).toHaveLength(30)
+  it('keeps the hidden bot in its section, marked, among all thirty-one', () => {
+    expect(roster.sections.find(section => section.name === 'Work')?.bots.filter(bot => bot.hidden).map(bot => bot.id)).toEqual(['retired'])
+    expect(inOrder(roster)).toHaveLength(31)
   })
 
   it('shows the title over the display name, and paints over a hex colour and any other CSS colour', () => {
@@ -174,12 +180,12 @@ describe('the awkward roster', () => {
     expect(roster.sections.find(section => section.bots.some(bot => bot.name === 'zed'))?.name).toBeNull()
   })
 
-  it('lists every shown bot exactly once, however the reply is ordered', () => {
+  it('lists every bot exactly once, however the reply is ordered', () => {
     const random = seeded(7)
     for (let round = 0; round < 50; round++) {
       const profiles = EDGE.profiles.map(profile => ({ profile, key: random() })).sort((a, b) => a.key - b.key).map(({ profile }) => profile)
       const ids = inOrder(listed({ profiles })).map(bot => bot.id)
-      expect([...ids].sort(), `shuffle ${round}`).toEqual(shown.map(profile => profile.name).sort())
+      expect([...ids].sort(), `shuffle ${round}`).toEqual(EDGE.profiles.map(profile => profile.name).sort())
     }
   })
 })
@@ -190,7 +196,7 @@ describe('avatar tones', () => {
     for (let round = 0; round < 200; round++) {
       const facts: BotFacts[] = Array.from({ length: 1 + Math.floor(random() * 24) }, (_, at) => ({
         id: `bot-${at}` as BotFacts['id'], name: `Bot ${at}`, isDefault: random() < 0.1, preview: null, description: null, chat: null, picture: false,
-        section: (['Work', 'Home', null] as const)[Math.floor(random() * 3)] ?? null
+        pinned: random() < 0.2, hidden: random() < 0.2, section: (['Work', 'Home', null] as const)[Math.floor(random() * 3)] ?? null
       }))
       const roster = rosterOf(facts)
       const rows = roster.sections.flatMap(section => section.bots)
@@ -200,5 +206,12 @@ describe('avatar tones', () => {
       })
       expect(roster.featured?.tone ?? 'ink', `round ${round}: the default bot`).toBe('ink')
     }
+  })
+
+  it('stay with each bot when another is hidden, shown, pinned or unpinned', () => {
+    const tones = (reply: unknown) => inOrder(listed(reply)).map(bot => `${bot.id} ${bot.tone}`)
+    const plain = { profiles: [row('a'), row('b'), row('c', filed({ sectionName: 'Work' })), row('d')] }
+    const marked = { profiles: [row('a', filed({ hidden: true })), row('b', filed({ pinned: true })), row('c', filed({ sectionName: 'Work', hidden: true, pinned: true })), row('d')] }
+    expect(tones(marked)).toEqual(tones(plain))
   })
 })
