@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SessionActor, type Upload } from '../src/actor'
-import type { Admission } from '../src/domain/queue'
+import { offeredBy, type Admission } from '../src/domain/queue'
 import type { SessionEvent } from '../src/domain/reduce'
 import type { AdmissionId, AttachmentId, BusyMode, Generation, InputId, Link, PromptId, QueuedAction, Session, SessionId } from '../src/domain/session'
 import { runSessionCommand, type Hub, type SessionCommand } from '../src/session-commands'
@@ -182,6 +182,24 @@ describe('queued', () => {
     expect(await run(command)).toEqual({ ok: false, refusal: { kind: 'rejected', message: "Hermes doesn't offer that for this message." } })
     expect(sent()).toEqual([])
     expect(actor.session.outbox).toEqual([])
+  })
+
+  it('offers only cancel for this client\'s message with attachments, whose row Hermes lists with no steer or replace', async () => {
+    const { actor, command, list, sent, answer } = await stage()
+    const done = command({ do: 'send', sessionId: ID, text: 'what is this', attachments: [SHOT.id] })
+    await settle()
+    await answer('image.attach_bytes', STAGED_SHOT)
+    await answer('prompt.submit', { admission_id: ADMISSION, status: 'queued' })
+    await done
+    // Hermes serves the queued controls only for a payload of text alone (gateway/session_queued_controls.py:51-60).
+    list({ admissionId: ADMISSION, inputId: 'id-1' as InputId, text: 'what is this', state: { s: 'queued', can: [] } })
+    const [queued] = actor.session.queue
+    expect(queued).toMatchObject({ from: 'here', attachments: [{ id: SHOT.id, name: 'error.png', kind: 'image', size: 3 }] })
+    expect(offeredBy(queued!.state)).toEqual(['cancel'])
+    for (const offered of [act('sendNow'), edit]) {
+      expect(await command(offered)).toEqual({ ok: false, refusal: { kind: 'rejected', message: "Hermes doesn't offer that for this message." } })
+    }
+    expect(sent()).toEqual([])
   })
 
   it('refuses a row that is no longer listed, and sends nothing', async () => {
