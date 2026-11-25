@@ -97,7 +97,16 @@ const STEPS = {
   said: { arity: 1, run: async (ctx, text) => ctx.page.locator('#scroll').getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout: ctx.timeout }) },
   click: { arity: 2, run: async (ctx, role, name) => byRole(ctx.page, role, name).click({ timeout: ctx.timeout }) },
   'click-at': { arity: 3, run: async (ctx, role, name, n) => nth(ctx, role, name, n).click({ timeout: ctx.timeout }) },
-  type: { arity: 2, run: async (ctx, label, text) => ctx.page.getByLabel(label, { exact: true }).fill(expand(ctx, text), { timeout: ctx.timeout }) },
+  type: {
+    arity: 2,
+    logs: true,
+    run: async (ctx, label, text) => {
+      const field = ctx.page.getByLabel(label, { exact: true })
+      const secret = (await field.getAttribute('type', { timeout: ctx.timeout })) === 'password'
+      log(ctx, `type ${JSON.stringify(label)} ${secret ? '"•••"' : JSON.stringify(text)}`)
+      await field.fill(expand(ctx, text), { timeout: ctx.timeout })
+    }
+  },
   select: { arity: 2, run: async (ctx, label, option) => void (await ctx.page.getByLabel(label, { exact: true }).selectOption({ label: option }, { timeout: ctx.timeout })) },
   press: { arity: 1, run: async (ctx, key) => ctx.page.keyboard.press(key) },
   reload: { arity: 0, run: async ctx => void await ctx.page.reload() },
@@ -781,15 +790,27 @@ function serveInDeltas(steps, origin) {
   }
 }
 
-function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, paths, createWarnings, configureClash, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, answeredElsewhere, actedElsewhere, origin, attachLimit }, out) {
+const requestMethods = steps => new Map(steps.filter(step => step.push?.method !== undefined && step.push.id !== undefined).map(step => [step.push.id, step.push.method]))
+
+function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, paths, createWarnings, configureClash, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, answeredElsewhere, answerHere, cancel, actedElsewhere, origin, attachLimit }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const header = JSON.parse(lines[0])
   const recorded = lines.slice(1).map(line => JSON.parse(line))
-  const answered = answeredElsewhere ? recorded.filter(step => !('result' in step && 'answer' in step) && !ANSWER_CALLS.has(step.await)) : recorded
-  const steps = actedElsewhere ? answered.filter(step => !isActedElsewhere(step)) : answered
+  const methods = requestMethods(recorded)
+  const here = new Set((answerHere ?? '').split(',').filter(Boolean))
+  const wanted = step => 'answer' in step && 'result' in step && here.has(methods.get(step.answer))
+  const answered = answeredElsewhere ? recorded.filter(step => wanted(step) || (!('result' in step && 'answer' in step) && !ANSWER_CALLS.has(step.await))) : recorded
+  let steps = actedElsewhere ? answered.filter(step => !isActedElsewhere(step)) : answered
   if (origin) {
     serveInDeltas(steps, origin)
     steps.splice(0, steps.length, ...steps.map(step => JSON.parse(JSON.stringify(step).replaceAll(DEV_ORIGIN, origin))))
+  }
+  if (cancel) {
+    const [method, reason] = cancel.split('=')
+    const id = steps.find(step => step.push?.method === method && step.push.id !== undefined)?.push.id ?? fail(`${fixturePath} asks no ${method} request`)
+    const withdrawal = steps.find(step => step.push?.params?.type === 'request.cancel' && step.push.params.payload?.id === id) ?? fail(`${fixturePath} never cancels the ${method} request`)
+    withdrawal.push.params.payload.reason = reason
+    steps = steps.filter(step => step.answer !== id)
   }
   if (models) header.models = JSON.parse(readFileSync(resolve(process.cwd(), models), 'utf8'))
   if (guarded) header.guarded = guarded.split(',')
@@ -822,7 +843,7 @@ function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, p
     steps.splice(at + 1, 0, { at: turnedOnAt, push: info })
   }
   if (dropAfter) {
-    const at = steps.findIndex(step => step.push?.params?.type === dropAfter)
+    const at = steps.findIndex(step => step.push?.params?.type === dropAfter || step.push?.method === dropAfter)
     if (at === -1) fail(`${fixturePath} pushes no ${dropAfter} frame`)
     const dropAt = Math.min(steps[at].at + 50, steps[at + 1]?.at ?? Infinity)
     steps.splice(at + 1, 0, { at: dropAt, drop: 1006 })
@@ -853,18 +874,20 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'answer-here': 'value', cancel: 'value' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
   if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
   const site = options.serve ? await serve(options.serve) : null
-  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], answeredElsewhere: options['answered-elsewhere'], actedElsewhere: options['acted-elsewhere'], origin: site?.origin, attachLimit: options['attach-limit'] }
+  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], answeredElsewhere: options['answered-elsewhere'], answerHere: options['answer-here'], cancel: options.cancel, actedElsewhere: options['acted-elsewhere'], origin: site?.origin, attachLimit: options['attach-limit'] }
   const edited = Object.values(edits).some(Boolean)
   if (options.yolo && options.yolo !== 'on' && options.yolo !== 'off') fail(`--yolo takes on or off, not "${options.yolo}"`)
+  if (options['answer-here'] && !options['answered-elsewhere']) fail('--answer-here needs --answered-elsewhere, because without it the window answers every request')
+  if (options.cancel && !/^[^=]+=[^=]+$/.test(options.cancel)) fail(`--cancel takes <method>=<reason>, not "${options.cancel}"`)
   if (!options.yolo && (options['yolo-denied'] || options['yolo-elsewhere-after'])) fail('--yolo-denied and --yolo-elsewhere-after need --yolo, because a Hermes with no YOLO answers neither')
   if (options.tree && !options.profiles) fail('--tree needs --profiles, because the tree lists the chats that file seeds')
-  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --answered-elsewhere, --acted-elsewhere, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host')
+  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host')
   if (options['configure-clash'] && !options.profiles) fail('--configure-clash needs --profiles: without it Hermes has no bots to rename')
   if (options['attach-limit'] && !/^[1-9]\d*$/.test(options['attach-limit'])) fail(`--attach-limit takes a number of bytes, not "${options['attach-limit']}"`)
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
@@ -951,7 +974,7 @@ async function run(argv) {
     if (site) log(ctx, `serving ${options.serve} at ${site.origin} in place of ${DEV_ORIGIN}`)
     await sizeWindow(ctx, options)
     for (const { verb, args } of steps) {
-      log(ctx, `${verb} ${args.map(arg => JSON.stringify(arg)).join(' ')}`)
+      if (!STEPS[verb].logs) log(ctx, `${verb} ${args.map(arg => JSON.stringify(arg)).join(' ')}`)
       if (verb !== 'shot' && verb !== 'wait') ctx.holding = null
       await STEPS[verb].run(ctx, ...args)
     }

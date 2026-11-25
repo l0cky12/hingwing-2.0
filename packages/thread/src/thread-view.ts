@@ -40,13 +40,9 @@ export interface AskCard {
   readonly key: string
   readonly requestId: RequestId
   readonly heading: string
-  /** The sudo command, redacted by Hermes. */
   readonly command: string | null
-  /** The `prompt` Hermes gave for a secret. */
   readonly why: string | null
-  /** The variable a secret is saved under. */
   readonly name: string | null
-  /** The field's accessible name. */
   readonly label: string
   /** When Hermes stops waiting: "Hermes waits until 14:07." null when Hermes named no limit. */
   readonly waits: string | null
