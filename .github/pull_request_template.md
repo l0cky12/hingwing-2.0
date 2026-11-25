@@ -15,6 +15,14 @@ Closes #
 ## Change
 <!-- How does this fix it? Cleanup, refactors and a second fix go in their own PRs. -->
 
+## Front-end change?
+<!-- Tick exactly one. "Yes" means a user could see the difference: anything under
+     apps/desktop/src/renderer, styles, icons, copy or wording on screen, layout,
+     or main-process changes to windows, menus, dialogs or the tray.
+     If unsure, tick Yes. -->
+- [ ] Yes: the "Front-end evidence" section below is filled in
+- [ ] No: nothing a user sees changes
+
 ## How I verified it
 <!-- What you ran and what you saw. "Tests pass" is not enough.
      Say what you could NOT check (e.g. WebView2, real audio devices). -->
@@ -25,8 +33,23 @@ Closes #
 - Steps and result:
 - Not checked:
 
-## Screenshots / recording
-<!-- Before/after for UI changes. Upload to this PR; don't commit PR-only images. -->
+## Front-end evidence
+<!-- Required when "Front-end change?" is Yes. Write "n/a" if No.
+     Take Before on main and After on this branch, at the same window size and
+     on the same screen or state, so they compare side by side. The verify skill
+     (.claude/skills/verify) can capture both headlessly.
+     Upload images and video to this PR; don't commit PR-only files.
+     Mask secrets, server URLs and personal data before uploading. -->
+
+**Before** (main):
+<!-- screenshot -->
+
+**After** (this branch):
+<!-- screenshot -->
+
+**Recording** of the change in use:
+<!-- Short video or GIF that walks through the new or changed behavior,
+     including any loading, error or empty states it touches. -->
 
 ## Compatibility
 - [ ] No change to stored settings, backups or chat links, or a migration/note is included
@@ -38,5 +61,6 @@ Notes: <!-- One past-tense line for users, e.g. "Fixed SSH reconnect after sleep
 ## Self-review
 - [ ] I read my own diff for quality, security and reliability
 - [ ] One logical change; tests added or updated for new behavior
+- [ ] Front-end change: before and after screenshots and a recording are attached above
 - [ ] Docs, ADRs or CHANGELOG updated if users or design decisions are affected
 - [ ] No secrets, server URLs, passwords or S3 details in the diff, logs or screenshots.
