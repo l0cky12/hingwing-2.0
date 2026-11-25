@@ -51,6 +51,8 @@ Every run names one of two gateways. Hermes, ssh and Tailscale are installed on 
 
 Every run sets `HIGHWING_OPEN_LOG` to `opens.jsonl` in the evidence directory. Main then records each request to open a file, show its folder, or open a link in the browser in that file, and opens nothing on the desktop.
 
+A JavaScript dialog the page opens (`alert`, `confirm` or `prompt`) is logged to `steps.log` as `DIALOG`, dismissed, and fails the run once the steps end. The app never opens one, so a dialog means script ran that should not have.
+
 Ready means the first window has loaded. Use `wait window` as the first step.
 
 The window's content area is 1180x860, the size of the reference screenshots, unless `--size` or `--chat-only` changes it. `run` passes `--ozone-platform=x11`, `--force-device-scale-factor=1` and `--disable-gpu`, and removes `WAYLAND_DISPLAY`. Electron 45 would otherwise pick Wayland and open the window on the real compositor. `run` also checks that the X server on its display was started by its own `xvfb-run`. Plain `xvfb-run -a` gives two runs started together the same display, and the first teardown would then kill the other run.
@@ -67,7 +69,7 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 
 | Step | Arguments | Does |
 |---|---|---|
-| `wait <state>` | a named state | waits until the state's locator is visible |
+| `wait <state>` | a named state | waits until the state's locator is visible, then logs how many ms after launch it appeared |
 | `see <text>` | text | waits until the text is visible anywhere |
 | `said <text>` | text | waits until the text is visible in the thread. A bot's preview in the sidebar does not count |
 | `click <role> <name>` | ARIA role, exact accessible name or `/regex/` | clicks it. A `/regex/` clicks the first match |
@@ -108,6 +110,7 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `reached <method> <json> <n>` | method, JSON object, number | waits until the gateway was sent at least n calls of that method whose params contain the JSON, and fails at the timeout. Unlike `called`, later calls do not fail it. Use it to wait for a call the app makes by itself, such as a refresh. `--fixture` runs only |
 | `drafts <n>` | number | polls until the run's `user-data/drafts` folder holds exactly n `*.json` files, logs each file's key and text, and fails at the timeout. A `--fixture` run keeps that folder for the next run with the same `--run` name |
 | `quiet` | none | fails if the window logged a console error or a page error so far |
+| `quiet-except <pattern>` | `/regex/` | like `quiet`, but lets through the errors that match the regex. It logs how many matched |
 
 A `/regex/` name is any name that starts and ends with a slash, as `count` already takes. It is case-sensitive. A step that finds several matches uses the first, except `count`, `focused` and `gone`, which look at all of them. Use one for a name that holds a time or a goal, such as `button /^Thought/`.
 
@@ -124,6 +127,7 @@ Named states live in the `STATES` table in the helper. Add a state there, not a 
 | `tool-running` | a single step whose title starts with "Running" carries the live end (`[data-end="live"]`) |
 | `approval` | the "Run this command?" card's "Run once" button is enabled |
 | `settled` | the turn's end is the Done ring (`[data-end="done"]`) |
+| `drawn` | the last reply that holds a diagram has none still drawing, so each is drawn or shows why it could not be (`.diagram[data-state]`) |
 | `offline` | the connection banner (`role=status`, name "Connection") is shown |
 | `regenerate` | the thread's "Regenerate" button is enabled, so the chat is idle and its last turn has a stored message to cut before |
 | `slash-menu` | the composer's "Commands and skills" listbox is shown |
