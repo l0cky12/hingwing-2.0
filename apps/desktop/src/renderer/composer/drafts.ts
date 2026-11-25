@@ -1,4 +1,4 @@
-import { STORED_ROWS, type Attachment, type AttachmentId, type SessionId, type Shown, type Sidebar } from '@highwing/hermes/domain'
+import { type Attachment, type AttachmentId, type SessionId, type Shown, type Sidebar } from '@highwing/hermes/domain'
 import { useSyncExternalStore } from 'react'
 import { isEmptyDraft, type Draft, type DraftKey } from '../../ipc-contract'
 
@@ -125,7 +125,7 @@ export function draftSent(slot: DraftSlot, text: string, sent: ReadonlySet<Attac
 }
 
 export function sweepDrafts(sidebar: Sidebar | undefined, open: DraftKey | null) {
-  if (sidebar?.status !== 'ready' || sidebar.rows.length >= STORED_ROWS) return
+  if (sidebar?.status !== 'ready' || !sidebar.complete) return
   const listed = new Set<string>(sidebar.rows.map(row => `chat:${row.id}`))
   const gone = [...restored].flatMap(key => {
     const draft = drafts.get(key)

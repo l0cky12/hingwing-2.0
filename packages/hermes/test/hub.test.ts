@@ -272,7 +272,7 @@ describe('the sidebar', () => {
     const opened = open()
     const badges: string[] = []
     opened.hermes.sidebar.subscribe(sidebar => badges.push(`${sidebar.status}:${sidebar.rows.map(row => row.badge).join()}`))
-    expect(opened.hermes.sidebar.get()).toEqual({ bot: null, status: 'loading', rows: [] })
+    expect(opened.hermes.sidebar.get()).toEqual({ bot: null, status: 'loading', rows: [], complete: false })
     opened.watch()
     await toApproval(opened)
     await approve(opened.hermes)
@@ -471,6 +471,14 @@ describe('the open chat', () => {
     opened.watch()
     await toApproval(opened)
     expect(opened.sent().filter(call => 'profile' in (call.params ?? {}))).toEqual([])
+  })
+
+  it('is the newest chat a user can talk in, not a newer chat a scheduled job runs', async () => {
+    const [chat] = (ERRAND.header.list as { sessions: Record<string, unknown>[] }).sessions
+    const job = { ...chat, session_id: 'local-job', id: 'local-job', title: 'Nightly backup check', source: 'cron', started_at: Number(chat?.started_at) + 60 }
+    const opened = await launched({ ...ERRAND, header: { ...ERRAND.header, list: { sessions: [job, chat], scope: 'live' } } })
+    expect(opened.hermes.open.get().shown).toEqual({ kind: 'chat', bot: null, sessionId: SESSION })
+    expect(opened.hermes.sidebar.get().rows.map(row => row.id)).toEqual([SESSION])
   })
 
   it("is the default bot's Bot Chat at launch, and launching creates nothing", async () => {

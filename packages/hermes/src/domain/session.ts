@@ -729,6 +729,8 @@ export interface Sidebar {
   readonly bot: BotId | null
   readonly status: 'loading' | 'ready' | 'stale'
   readonly rows: readonly SidebarRow[]
+  /** The rows hold every chat: Hermes's stored page was shorter than `STORED_ROWS`. */
+  readonly complete: boolean
 }
 export interface SidebarRow {
   readonly id: SessionId

@@ -115,7 +115,7 @@ function feed<T>(initial: T, same: (a: T, b: T) => boolean = Object.is): Feed<T>
 }
 
 function sameSidebar(a: Sidebar, b: Sidebar): boolean {
-  return a.bot === b.bot && a.status === b.status && a.rows.length === b.rows.length && a.rows.every((row, index) => {
+  return a.bot === b.bot && a.status === b.status && a.complete === b.complete && a.rows.length === b.rows.length && a.rows.every((row, index) => {
     const other = b.rows[index]
     return other !== undefined && row.id === other.id && row.title === other.title && row.preview === other.preview
       && row.lastActiveAt === other.lastActiveAt && row.badge === other.badge

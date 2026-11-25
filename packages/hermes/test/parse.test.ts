@@ -9,7 +9,7 @@ import type {
 } from '../src/wire/contract.generated'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 import {
-  FOR_WINDOW, parseBranched, parseContextBreakdown, parseEvent, parseInlineDiff, parseListRows, parseModelMenu, parseModelReceipt, parsePathMatches,
+  FOR_WINDOW, parseBranched, parseContextBreakdown, parseEvent, parseInlineDiff, parseUserChats, parseModelMenu, parseModelReceipt, parsePathMatches,
   parseReplay, parseRows, parseServerRequest, parseShown, parseSnapshot, parseStats, parseToolResult, parseTranscript, SHOWN, UNSHOWN
 } from '../src/wire/parse'
 
@@ -420,10 +420,16 @@ describe('parseTranscript', () => {
   })
 })
 
-describe('parseListRows and parseServerRequest', () => {
+describe('parseUserChats and parseServerRequest', () => {
   it('reads the fixture list row with its start time in milliseconds', () => {
     const { sessions } = fixture.header.list as { sessions: CanonicalSessionListRow[] }
-    expect(parseListRows(sessions)).toEqual([{ id: SESSION, title: '', preview: null, lastActiveAt: 1795251600000 }])
+    expect(parseUserChats(sessions)).toEqual([{ id: SESSION, title: '', preview: null, lastActiveAt: 1795251600000 }])
+  })
+
+  it('leaves out a chat a scheduled job runs, and keeps one the user talks in', () => {
+    const row = (id: string, source: string): CanonicalSessionListRow =>
+      ({ session_id: id, id, title: id, source, started_at: 1795251600, message_count: 2, running: false })
+    expect(parseUserChats([row('local-job', 'cron'), row('local-chat', 'gui')]).map(listed => listed.id)).toEqual(['local-chat'])
   })
 
   it('reads an app-level request as a bridge with no session', () => {

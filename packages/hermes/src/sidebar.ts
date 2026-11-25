@@ -2,7 +2,7 @@ import type { BotId } from './domain/bots'
 import { activityOf } from './domain/reduce'
 import { STORED_ROWS, type SessionContent, type SessionId, type Sidebar, type SidebarRow } from './domain/session'
 import { Offline, RpcRefusal, type Connection } from './wire/link'
-import { parseListRows } from './wire/parse'
+import { parseUserChats } from './wire/parse'
 
 type ListRow = Omit<SidebarRow, 'badge'>
 
@@ -11,6 +11,7 @@ export interface SessionList {
   readonly bot: BotId | null
   readonly status: Sidebar['status']
   readonly rows: readonly ListRow[]
+  readonly complete: Sidebar['complete']
   /**
    * The live rows whose turn is running now. The stored list cannot say, because its `running`
    * field is always false (gateway/session_listing.py:70).
@@ -46,6 +47,7 @@ export function sessionList(conn: Connection, owned: (bot: BotId, sessions: read
   let bot: BotId | null = null
   let status: Sidebar['status'] = 'loading'
   let rows: readonly ListRow[] = []
+  let complete = false
   let running: ReadonlySet<SessionId> = new Set()
   let fetching = false
   let again = false
@@ -57,7 +59,8 @@ export function sessionList(conn: Connection, owned: (bot: BotId, sessions: read
     try {
       const [live, hidden, stored] = await Promise.all([via.call('session.list', LIVE), via.call('session.list', LIVE_HIDDEN), via.call('session.list', STORED)])
       if (asked === bot) {
-        rows = merged(parseListRows(live.sessions), parseListRows(stored.sessions))
+        rows = merged(parseUserChats(live.sessions), parseUserChats(stored.sessions))
+        complete = stored.sessions.length < STORED_ROWS
         const listed = new Set(rows.map(row => row.id))
         running = new Set(hidden.sessions.filter(row => row.running).map(row => row.session_id as SessionId).filter(id => listed.has(id)))
         status = 'ready'
@@ -84,12 +87,14 @@ export function sessionList(conn: Connection, owned: (bot: BotId, sessions: read
     get bot() { return bot },
     get status() { return status },
     get rows() { return rows },
+    get complete() { return complete },
     get running() { return running },
     refresh,
     follow: next => {
       if (next === bot) return
       bot = next
       rows = []
+      complete = false
       running = new Set()
       status = 'loading'
       changed()
@@ -118,10 +123,11 @@ const BADGES = {
   stopping: 'running', asking: 'asking', answering: 'asking'
 } as const satisfies Record<ReturnType<typeof activityOf>['kind'], SidebarRow['badge']>
 
-export function deriveSidebar(list: Pick<SessionList, 'bot' | 'status' | 'rows' | 'running'>, attached: ReadonlyMap<SessionId, SessionContent>): Sidebar {
+export function deriveSidebar(list: Pick<SessionList, 'bot' | 'status' | 'rows' | 'complete' | 'running'>, attached: ReadonlyMap<SessionId, SessionContent>): Sidebar {
   return {
     bot: list.bot,
     status: list.status,
+    complete: list.complete,
     rows: list.rows.map(row => {
       const session = attached.get(row.id)
       if (session === undefined) return { ...row, badge: list.running.has(row.id) ? 'running' : 'none' }
