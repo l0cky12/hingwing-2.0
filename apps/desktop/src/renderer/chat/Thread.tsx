@@ -307,15 +307,17 @@ interface TurnProps {
   readonly onEdit: Rewrite
   readonly onRegenerate: Rewrite
   readonly onBranch: (rowId: number) => void
+  readonly onNewChat: (text: string) => void
   readonly versions: readonly Versions[]
   readonly onVersion: (version: Version) => void
   readonly canReact: boolean
   readonly onReact: ReactOn
 }
 
-export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, versions, onVersion, canReact, onReact }: TurnProps) {
+export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, canReact, onReact }: TurnProps) {
   const { end, rowId, request, reactions } = turn
   const regenerates = showsRegenerate && rowId !== null && request !== null
+  const movesToNewChat = end.kind === 'failed' && end.remedy === 'newChat' && request !== null
   const live = end.kind === 'tip' || (end.kind === 'at' && end.tone === 'live')
   return (
     <article className={cx('turn', live && 'live-turn', end.kind === 'none' && 'interlude')} data-row={rowId ?? undefined}>
@@ -339,10 +341,11 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit
         <End turnKey={turn.key} end={end} />
       </div>
       {turn.tokens !== null && <p className="used">{turn.tokens}</p>}
-      {(regenerates || reactions !== null) && (
+      {(regenerates || movesToNewChat || reactions !== null) && (
         <div className="turn-actions">
           {reactions !== null && <Given given={reactions.given} disabled={!canReact} onReact={emoji => onReact(reactions.turn, emoji)} />}
           {regenerates && <button type="button" className="regenerate" disabled={!canRegenerate} onClick={() => onRegenerate(rowId, request)}>Regenerate</button>}
+          {movesToNewChat && <button type="button" className="new-chat" onClick={() => onNewChat(request)}>Start a new chat</button>}
           {reactions !== null && <Reactions given={reactions.given} disabled={!canReact} onReact={emoji => onReact(reactions.turn, emoji)} />}
         </div>
       )}
@@ -432,6 +435,7 @@ interface ThreadProps {
   readonly onEdit: Rewrite
   readonly onRegenerate: Rewrite
   readonly onBranch: (rowId: number) => void
+  readonly onNewChat: (text: string) => void
   readonly versions: ChatVersions
   readonly onVersion: (version: Version) => void
   readonly queue: QueueControls
@@ -442,7 +446,7 @@ interface ThreadProps {
 const landingOf = ({ versions, current }: Versions) => versions[current]?.landing
 const NO_GROUPS: readonly Versions[] = []
 
-export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, versions, onVersion, queue, canReact, onReact }: ThreadProps) {
+export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, queue, canReact, onReact }: ThreadProps) {
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
   const [changing, setChanging] = useState<Changing>(new Map())
@@ -565,7 +569,7 @@ export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier,
             <Turn
               turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer}
               canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} canBranch={canBranch}
-              onEdit={onEdit} onRegenerate={onRegenerate} onBranch={onBranch} versions={groupsAt(turn.rowId)} onVersion={onVersion}
+              onEdit={onEdit} onRegenerate={onRegenerate} onBranch={onBranch} onNewChat={onNewChat} versions={groupsAt(turn.rowId)} onVersion={onVersion}
               canReact={canReact} onReact={onReact}
             />
             {relayTurns(relayed.after.get(turn.key))}

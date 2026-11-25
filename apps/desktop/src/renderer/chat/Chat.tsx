@@ -2,7 +2,7 @@ import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, 
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
-import { slotOf } from '../composer/drafts'
+import { carryToNewChat, slotOf } from '../composer/drafts'
 import { ContextMeter } from '../composer/ContextMeter'
 import { editingOf, type EditTarget } from '../composer/edit'
 import { FolderChip } from '../composer/FolderChip'
@@ -246,6 +246,10 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     if (outcome.ok || outcome.refusal.kind !== 'offline') branchKeys.current.delete(rowId)
     if (!outcome.ok) setRefused({ id, message: outcome.refusal.message })
   }, [id])
+  const onNewChat = useCallback((text: string) => {
+    carryToNewChat(chat.bot, text)
+    void run({ do: 'open', ref: { kind: 'new', bot: chat.bot, draftId: crypto.randomUUID() } })
+  }, [chat.bot])
   const onReact = useCallback(async (turn: TurnId, emoji: string | null) => {
     if (id === null) return
     setRefused(null)
@@ -321,7 +325,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
               <Thread
                 view={view} relays={relays} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
                 canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
-                canBranch={canBranch} onBranch={onBranch} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact}
+                canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact}
               />
             </ImageSessionContext>
           </FileCallContext>

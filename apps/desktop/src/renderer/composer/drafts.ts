@@ -1,4 +1,4 @@
-import { type Attachment, type AttachmentId, type SessionId, type Shown, type Sidebar } from '@highwing/hermes/domain'
+import { type Attachment, type AttachmentId, type BotId, type SessionId, type Shown, type Sidebar } from '@highwing/hermes/domain'
 import { useSyncExternalStore } from 'react'
 import { isEmptyDraft, type Draft, type DraftKey } from '../../ipc-contract'
 
@@ -94,6 +94,12 @@ export function seedDraft(slot: NonNullable<DraftSlot>, text: string) {
   if (seeds !== null) return void seeds.push({ ...slot, text, attachments: [] })
   plant({ ...slot, text, attachments: [] })
   changed()
+}
+
+export function carryToNewChat(bot: BotId | null, text: string) {
+  const slot = { key: 'new', bot } as const
+  const held = heldOf(slot).text
+  put(slot, { text: held === '' ? text : `${held}\n\n${text}` }, 'now')
 }
 
 export const detach = (slot: DraftSlot, id: AttachmentId) => put(slot, { attachments: heldOf(slot).attachments.filter(held => held.id !== id) }, 'now')

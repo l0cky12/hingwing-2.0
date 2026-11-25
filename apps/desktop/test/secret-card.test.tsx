@@ -23,7 +23,7 @@ function drawn(requests: readonly HermesRequest[], sync?: Session['sync']) {
   return renderToStaticMarkup(
     <Thread
       view={threadView(session(requests, sync), CLOCK)} relays={[]} onAnswer={async () => undefined} onAnswerRequest={async () => true} onLoadEarlier={none} onFindClosed={none} onFindScrolled={none}
-      canEdit={false} regenerateTurnKey={null} canRegenerate={false} canBranch={false} onEdit={none} onRegenerate={none} onBranch={none} versions={[]} onVersion={none} queue={{ canAct: false, pressed: new Map(), onAct: none }} canReact={false} onReact={none}
+      canEdit={false} regenerateTurnKey={null} canRegenerate={false} canBranch={false} onEdit={none} onRegenerate={none} onBranch={none} onNewChat={none} versions={[]} onVersion={none} queue={{ canAct: false, pressed: new Map(), onAct: none }} canReact={false} onReact={none}
     />
   )
 }

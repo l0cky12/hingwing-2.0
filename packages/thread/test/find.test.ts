@@ -69,7 +69,7 @@ describe('words outside steps', () => {
   if (turn === undefined) throw new Error('the errand has no turn')
 
   it('finds the sentence a failed turn ends with', () => {
-    const failed: ThreadView = { ...view, turns: [{ ...turn, end: { kind: 'failed', words: 'HTTP 401 from provider' } }] }
+    const failed: ThreadView = { ...view, turns: [{ ...turn, end: { kind: 'failed', words: 'HTTP 401 from provider', remedy: null } }] }
     expect(findInThread(failed, 'http 401')).toEqual([{ field: fieldId(turn.key, 'end'), start: 0, end: 8, opens: [] }])
   })
 

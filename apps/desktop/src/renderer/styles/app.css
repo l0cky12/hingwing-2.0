@@ -369,9 +369,9 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .react-pick button:hover { background: var(--paper); }
 .react-pick button[aria-pressed="true"], .reaction { border-color: var(--rule); background: var(--signal-soft); }
 button.reaction:hover:not(:disabled) { border-color: var(--signal); }
-.regenerate, .queued button { padding: 2px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); color: var(--ink); font: 500 13px/1.5 var(--sans); }
-:is(.regenerate, .queued button):hover:not(:disabled) { background: var(--paper); }
-:is(.regenerate, .queued button):disabled { color: var(--graphite); }
+.regenerate, .new-chat, .queued button { padding: 2px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); color: var(--ink); font: 500 13px/1.5 var(--sans); }
+:is(.regenerate, .new-chat, .queued button):hover:not(:disabled) { background: var(--paper); }
+:is(.regenerate, .new-chat, .queued button):disabled { color: var(--graphite); }
 .relay-reply { margin-left: var(--col); }
 .relay-from { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font: 500 13.5px/1.4 var(--sans); }
 .relay-reply > .prose { position: relative; }
