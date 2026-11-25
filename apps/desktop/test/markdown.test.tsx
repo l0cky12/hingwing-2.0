@@ -22,6 +22,12 @@ const reply = finalReply('fixtures/markdown.jsonl')
 
 const find = <K extends Block['kind']>(blocks: readonly Block[], kind: K) => blocks.filter((block): block is Extract<Block, { kind: K }> => block.kind === kind)
 
+const TS_BLOCK = `// Keep each backup for a week.
+const days: number = 7
+function backupName(file: string): string {
+  return file + ".bak"
+}`
+
 describe('Markdown', () => {
   it('renders every prefix of the reply without throwing or showing a fence marker', () => {
     for (let end = 0; end <= reply.length; end++) {
@@ -40,12 +46,15 @@ describe('Markdown', () => {
     }
   })
 
-  it('reads the reply as a two-item list, a level-two heading, a link, a three-column table and an sh block', () => {
+  it('reads the reply as a two-item list, a level-two heading, a link, a three-column table, an sh block and a ts block', () => {
     const blocks = parseMarkdown(reply)
     expect(find(blocks, 'list').map(list => list.items.length)).toEqual([2])
     expect(find(blocks, 'heading').map(heading => heading.level)).toEqual([2])
     expect(find(blocks, 'table').map(table => table.head.length)).toEqual([3])
-    expect(find(blocks, 'code')).toEqual([{ kind: 'code', lang: 'sh', text: 'cp notes.md notes.md.bak', open: false }])
+    expect(find(blocks, 'code')).toEqual([
+      { kind: 'code', lang: 'sh', text: 'cp notes.md notes.md.bak', open: false },
+      { kind: 'code', lang: 'ts', text: TS_BLOCK, open: false }
+    ])
     expect(render(reply)).toContain('<a href="https://example.com/style-guide" target="_blank" rel="noreferrer">style guide</a>')
   })
 
