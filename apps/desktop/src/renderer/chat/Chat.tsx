@@ -1,4 +1,4 @@
-import { activityOf, modelViewOf, type AttachmentId, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type Relay, type SessionId, type Shown, type Version } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, type AttachmentId, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type Relay, type SessionId, type Shown, type SideId, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
@@ -13,6 +13,8 @@ import { drawnView } from './drawn'
 import { ImageSessionContext } from './Image'
 import { forget, landAt, landed, pressFor } from './landing'
 import { FOLLOW_WITHIN, FOLLOWING, placeAfter, progressOf, type Place } from './place'
+import { Sides } from './Sides'
+import { closeSide, sideCards, useClosedSides } from './sides'
 import { Thread, type SecretAnswer } from './Thread'
 
 const PAGE = 0.875
@@ -246,6 +248,20 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const yolo = id !== null && live ? (session?.tuning.yolo ?? null) : null
   const online = useTopic('link')?.state === 'online'
 
+  const closed = useClosedSides(id)
+  const cards = useMemo(() => sideCards(session?.sides ?? [], closed), [session?.sides, closed])
+  const onCloseSide = useCallback((side: SideId) => {
+    if (id === null) return
+    closeSide(id, side)
+    composer.current?.focus()
+  }, [id])
+  const onEscape = () => {
+    const newest = cards.at(-1)
+    if (id === null || newest === undefined) return false
+    closeSide(id, newest.id)
+    return true
+  }
+
   const fileCall = useMemo(() => (id === null ? NO_FILE_CALL : fileCallFor(id)), [id])
 
   return (
@@ -282,6 +298,8 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         onSend={onSend}
         editing={editing}
         onCancelEdit={() => setEditing(null)}
+        above={id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} />}
+        onEscape={onEscape}
         onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}
       >
