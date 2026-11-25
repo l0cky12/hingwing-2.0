@@ -822,7 +822,14 @@ describe('the scripted gateway edits a profile as Hermes does', () => {
 describe('the scripted gateway draws pictures and lists pets as Hermes does', () => {
   const PICTURE = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7]).toString('base64')}`
   const drawing = (images: Images): Fixture => ({ ...WITH_BOTS, header: { ...WITH_BOTS.header, images } })
-  const PETS: Pets = { pets: [{ slug: 'tabby', displayName: 'Tabby', installed: false, spritesheetUrl: 'https://petdex.example/curated/tabby.webp', curated: true }], thumbs: { tabby: PICTURE } }
+  const TABBY_SHEET = 'https://cdn.petdex.dev/curated/tabby/spritesheet.webp'
+  const PETS: Pets = {
+    pets: [
+      { slug: 'tabby', displayName: 'Tabby', installed: false, spritesheetUrl: TABBY_SHEET, curated: true },
+      { slug: 'mochi', displayName: 'Mochi', installed: true, spritesheetUrl: '' }
+    ],
+    thumbs: { tabby: PICTURE, mochi: PICTURE }
+  }
   const unknown = { error: { code: -32601, data: { reason: 'unknown_method' } } }
 
   it('answers a probe with whether it has an image model, and a prompt with the picture as a data URL', async () => {
@@ -857,9 +864,25 @@ describe('the scripted gateway draws pictures and lists pets as Hermes does', ()
   it("lists the gallery, and answers a pet's thumb or fails open to ok false for one with none", async () => {
     const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, pets: PETS } })
     expect((await call('pet.gallery', {})).result).toEqual({ enabled: false, active: '', pets: PETS.pets })
-    expect((await call('pet.thumb', { slug: 'tabby', url: 'https://petdex.example/curated/tabby.webp' })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
-    expect((await call('pet.thumb', { slug: 'nobody' })).result).toEqual({ ok: false, slug: 'nobody' })
+    expect((await call('pet.thumb', { slug: 'tabby', url: TABBY_SHEET })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
+    expect((await call('pet.thumb', { slug: 'nobody', url: 'https://cdn.petdex.dev/pets/nobody/spritesheet.webp' })).result).toEqual({ ok: false, slug: 'nobody' })
     expect(await call('pet.thumb', { slug: ' ' })).toMatchObject({ error: { code: 4004, message: 'missing slug' } })
+  })
+
+  it('crops an installed pet with no url, and fetches any other only from a petdex host', async () => {
+    const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, pets: PETS } })
+    expect((await call('pet.thumb', { slug: 'mochi' })).result).toEqual({ ok: true, slug: 'mochi', dataUri: PICTURE })
+    expect((await call('pet.thumb', { slug: 'tabby', url: 'https://petdex.dev/curated/tabby/spritesheet.webp' })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
+    for (const url of [undefined, '', 'https://petdex.example/curated/tabby.webp', 'https://petdex.dev.example.com/tabby.webp', 'not a url']) {
+      expect((await call('pet.thumb', { slug: 'tabby', ...(url === undefined ? {} : { url }) })).result, String(url)).toEqual({ ok: false, slug: 'tabby' })
+    }
+  })
+
+  it("refuses a refused_once slug's first thumb, and answers it after", async () => {
+    const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, pets: { ...PETS, refused_once: ['tabby'] } } })
+    expect(await call('pet.thumb', { slug: 'tabby', url: TABBY_SHEET })).toMatchObject({ error: { code: 5031, message: 'pet.thumb failed: timed out' } })
+    expect((await call('pet.thumb', { slug: 'tabby', url: TABBY_SHEET })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
+    expect((await call('pet.thumb', { slug: 'mochi' })).result).toEqual({ ok: true, slug: 'mochi', dataUri: PICTURE })
   })
 
   it('knows none of the three calls without the header keys, or on a socket with no interactive grant', async () => {

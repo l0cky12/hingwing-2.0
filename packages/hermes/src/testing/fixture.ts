@@ -140,10 +140,17 @@ export interface Fixture {
 export interface Images { readonly available: boolean; readonly picture?: string; readonly error?: string; readonly delay_ms?: number }
 
 /**
- * `pets`: the gallery's entries as Hermes sends them. `thumbs`: slug -> the PNG data URL `pet.thumb` answers; any other
- * slug answers `{ ok: false }`. `delay_ms`: how long each call takes (default 0).
+ * `pets`: the gallery's entries as Hermes sends them. `thumbs`: slug -> the PNG data URL `pet.thumb` answers for a pet the
+ * gallery lists as installed, or one asked with a petdex `url`; any other ask answers `{ ok: false }`. `delay_ms`: how long
+ * each call takes (default 0). `refused_once`: slugs whose first `pet.thumb` fails with an error, as a call lost to a timeout
+ * or a dropped link would, and is answered as usual after.
  */
-export interface Pets { readonly pets: readonly unknown[]; readonly thumbs: { readonly [slug: string]: string }; readonly delay_ms?: number }
+export interface Pets {
+  readonly pets: readonly unknown[]
+  readonly thumbs: { readonly [slug: string]: string }
+  readonly delay_ms?: number
+  readonly refused_once?: readonly string[]
+}
 
 /** `reply`: the bot's one answer, sent `delay_ms` after the call (default 0). `refuse`: the reason Hermes refuses the delivery with. */
 export type RelayScript = { readonly reply: string; readonly delay_ms?: number } | { readonly refuse: string }
@@ -267,6 +274,7 @@ const isImages = (value: unknown): value is Images =>
 
 const isPets = (value: unknown): value is Pets =>
   isObject(value) && Array.isArray(value.pets) && isObject(value.thumbs) && Object.values(value.thumbs).every(thumb => typeof thumb === 'string') && delay(value.delay_ms)
+  && (value.refused_once === undefined || (Array.isArray(value.refused_once) && value.refused_once.every(slug => typeof slug === 'string')))
 
 const isRelayScript = (value: unknown): value is RelayScript =>
   isObject(value) && ('refuse' in value
@@ -314,7 +322,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (assetFails !== undefined && (typeof assetFails !== 'string' || assetFails.trim() === '')) return '"assetFails" must be the words a failed write gives'
   const { images, pets } = value
   if (images !== undefined && !isImages(images)) return '"images" must be { available, picture?, error?, delay_ms? }'
-  if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms? } with "thumbs" mapping a slug to a data URL'
+  if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'

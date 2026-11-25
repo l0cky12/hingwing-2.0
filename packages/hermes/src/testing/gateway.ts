@@ -591,6 +591,16 @@ function activeRows(rows: readonly Obj[]): readonly Obj[] {
 /** An editor call's refusal, which carries no `data` (tui_gateway/server.py:751-753). */
 const refusedProfile = (code: number, message: string) => new Refused(message, { code, message })
 
+/** `_is_petdex_host` (agent/pet/store.py:215-221) */
+function petdexHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    return host === 'petdex.dev' || host.endsWith('.petdex.dev')
+  } catch {
+    return false
+  }
+}
+
 /** utils/env.py:8 */
 const TRUTHY: ReadonlySet<string> = new Set(['1', 'true', 'yes', 'on'])
 /** `is_truthy_value` (utils/env.py:11-17) */
@@ -867,6 +877,8 @@ export class ScriptedGateway {
   private readonly profiles: Obj[]
   private readonly souls: Map<string, string>
   private readonly pictures = new Map<string, { readonly mime: string; readonly size: number; readonly data: string }>()
+  /** The slugs of `pets.refused_once` whose one refusal is spent. */
+  private readonly thumbsRefused = new Set<string>()
   private clash: string | undefined
   private readonly botChats = new Map<string, EchoChat>()
   private readonly newChats = new Map<string, EchoChat>()
@@ -1647,13 +1659,23 @@ export class ScriptedGateway {
     return after(pets.delay_ms, { enabled: false, active: '', pets: pets.pets })
   }
 
-  /** `pet.thumb` (tui_gateway/methods_session.py:1557-1563): a slug with no thumb fails open to `{ ok: false }`. */
+  /**
+   * `pet.thumb` (tui_gateway/methods_session.py:1557-1563). Hermes crops an installed pet's sheet, and fetches any other pet's
+   * only from the `url` the call names and only from a petdex host (agent/pet/store.py:224-245). Every other ask, and a slug
+   * with no thumb, fails open to `{ ok: false }`.
+   */
   petThumb(socket: Socket, params: Obj): unknown {
     const { pets } = this.fixture.header
     if (pets === undefined || socket.reach === 'profile') throw unknownMethod('pet.thumb')
     const slug = typeof params.slug === 'string' ? params.slug.trim() : ''
     if (slug === '') throw refusedProfile(4004, 'missing slug')
-    const thumb = Object.hasOwn(pets.thumbs, slug) ? pets.thumbs[slug] : undefined
+    if (pets.refused_once?.includes(slug) && !this.thumbsRefused.has(slug)) {
+      this.thumbsRefused.add(slug)
+      throw refusedProfile(5031, 'pet.thumb failed: timed out')
+    }
+    const installed = pets.pets.some(pet => isObject(pet) && pet.slug === slug && pet.installed === true)
+    const fetched = typeof params.url === 'string' && petdexHost(params.url)
+    const thumb = (installed || fetched) && Object.hasOwn(pets.thumbs, slug) ? pets.thumbs[slug] : undefined
     return after(pets.delay_ms, thumb === undefined ? { ok: false, slug } : { ok: true, slug, dataUri: thumb })
   }
 

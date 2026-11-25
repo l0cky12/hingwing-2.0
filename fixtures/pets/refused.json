@@ -1,0 +1,277 @@
+{
+  "pets": [
+    {
+      "slug": "biscuit",
+      "displayName": "Biscuit",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/biscuit/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "juniper",
+      "displayName": "Juniper",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/juniper/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "pip",
+      "displayName": "Pip",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/pip/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "sable",
+      "displayName": "Sable",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/sable/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "maple",
+      "displayName": "Maple",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/maple/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "nimbus",
+      "displayName": "Nimbus",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/nimbus/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "olive",
+      "displayName": "Olive",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/olive/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "pistachio",
+      "displayName": "Pistachio",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/pistachio/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "quill",
+      "displayName": "Quill",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/quill/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "rusty",
+      "displayName": "Rusty",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/rusty/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "saffron",
+      "displayName": "Saffron",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/saffron/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "thistle",
+      "displayName": "Thistle",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/thistle/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "umber",
+      "displayName": "Umber",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/umber/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "velvet",
+      "displayName": "Velvet",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/velvet/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "willow",
+      "displayName": "Willow",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/willow/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "yuzu",
+      "displayName": "Yuzu",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/yuzu/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "ziggy",
+      "displayName": "Ziggy",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/ziggy/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "acorn",
+      "displayName": "Acorn",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/acorn/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "basil",
+      "displayName": "Basil",
+      "installed": true,
+      "spritesheetUrl": "",
+      "generated": false
+    },
+    {
+      "slug": "cinder",
+      "displayName": "Cinder",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/cinder/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "dune",
+      "displayName": "Dune",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/dune/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "fennel",
+      "displayName": "Fennel",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/fennel/spritesheet.webp",
+      "curated": false,
+      "generated": false
+    },
+    {
+      "slug": "tabby",
+      "displayName": "Tabby",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/tabby/spritesheet.webp",
+      "curated": true,
+      "generated": false
+    },
+    {
+      "slug": "clover",
+      "displayName": "Clover",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/clover/spritesheet.webp",
+      "curated": true,
+      "generated": false
+    },
+    {
+      "slug": "bruno",
+      "displayName": "Bruno",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/bruno/spritesheet.webp",
+      "curated": true,
+      "generated": false
+    },
+    {
+      "slug": "ribbit",
+      "displayName": "Ribbit",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/ribbit/spritesheet.webp",
+      "curated": true,
+      "generated": false
+    },
+    {
+      "slug": "hoot",
+      "displayName": "Hoot",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/hoot/spritesheet.webp",
+      "curated": true,
+      "generated": false
+    },
+    {
+      "slug": "ember",
+      "displayName": "Ember",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/ember/spritesheet.webp",
+      "curated": true,
+      "generated": false
+    },
+    {
+      "slug": "mochi",
+      "displayName": "Mochi",
+      "installed": true,
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/mochi/spritesheet.webp",
+      "curated": true,
+      "generated": false
+    },
+    {
+      "slug": "pebble",
+      "displayName": "Pebble",
+      "installed": false,
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/pebble/spritesheet.webp",
+      "curated": true,
+      "generated": false
+    }
+  ],
+  "thumbs": {
+    "biscuit": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABDUlEQVR42u3cSw2AMBBAwTrhxgE5yMIUGEEECsABPTT9T5MngJ3TpqHhOvY3pTD5SZ4fAAAAAAAAAAAAAAAdAggAAAEAIAAABACAAAAQAAACAEAAxgdYtvW33geU+/sAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAHgBSe+6zatPfiAEAAAAAAAAAAAAA0OCAY4tQrNaBAAAAAAAAAAAAAAAYEcAiBgAAAAAAAAAAAABAewC5Hyad/kfs2i/DAgAAAAAAAAAAAACQYcC1F6neFzkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACgBIALGTdiAAAAAAAAAAAAAACUBgiVDwAAAAAAAAAAAAAAEwJ8B8y8g0foQJgAAAAASUVORK5CYII=",
+    "juniper": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABH0lEQVR42u3dsQ2DMBAFUDaho2Ap+ozAAFRMlT3SUrBEsoFJZJ3sI+9Lv0Ti/CpLBg/Lur9LHaQql+sLAAAAAAAAAAAAAECHAIDqFhgAAAAAAAAAAAAAgDsCKAAACgCAAgCgAO4H8DrO0LZegNbzAQAAAAAAAAAAAACQEWCcp2KzA0TPBwAAAAAAAAAAAABARoDojcrzsVXVThgAAAAAAAAAAAAAgHwHs6IBnIwDAAAAAAAAAAAAAKC/g029FwAAAAAAAAAAAAAAAL+/YPbnAQAAAAAAAAAAAAAAYCMGAAAAAAAAAAAAAEAGgOgLCv7+x6ytb4gAAAAAAAAAAAAAACAgtR9QtL6ILfv7AzAAAAAGAADAAAAAiIiIiIiIfJEPfOD/sY+foJEAAAAASUVORK5CYII=",
+    "pip": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABCElEQVR42u3cMQ2AMBAF0DphY8ASUpCDFWTgABHggA7kwl3zfvJXoH3dWtpaJ9u+3pFtPyf9+AAAAAAAAAAAAAAACBhf7wHTMr82O1D0932dHwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACADgAYvMJMAAIACAKAAACgAAAoAgAIAoAAA6AAAvQ2L7AUAAAAAAAAAAAAAAIACAKAAACgAAApgBIDoHxzO6yjd8jdmAQAAAAAAAAAAAABggvMBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPsFzh4lfzmWQAAAAAAAAAAAADO/we84O8VlH58AAAAAAAAAAAAAADUG5+IiIiIiNTLA5LwEsCdCX6PAAAAAElFTkSuQmCC",
+    "sable": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABEklEQVR42u3dvRFAQBCAUZ3IBFq4jhSiMGVIJbqgA4KbdT+emS9f+0LmbkgpXU8Nnqzndb8AAAAAAAAAAAAAAFQIAChvwQAAAAAAAAAAAAAA9AjQO1D4fgAAAAAAAAAAAAAA6BBAAAAIAAABACAAAAQAgAAAEAAAAtA+wDhPj7W+oOj3AwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFoAiG5b1qx8EQMAAAAAAAAAAAAAoD6A89iLBgAAAAAAAAAAAADAHwGiDywqveDSQMVPjAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAauOCg+h+rer9hAgAAAAAAAAAAAACAiAuNzQ8AgPkBADA/AADmB/D1/DdJzwHYHLUNTQAAAABJRU5ErkJggg==",
+    "maple": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABHElEQVR42u3dsQ3CUAwE0GxCR8EIzMOsbMEE9LRhAfRdWJGN8066Osm9Koq+sj0f933VTVIJ9wUAAAAAAAAAAAAAoCEAoNzAAAAAAAAAAAAAAABMBJgOdPg+AAAAAAAAAAAAAAAMBFAAABQAAAUAQAEAON3A1W96AAAAAAAAAAAAAAD8yOf92leNLnC5XZf99wGzzxftCwAAAAAAAAAAAABAR4As0PRm9wMAAAAAAAAAAAAAoAIg+73g6EYvQlGr7z99QgQAAAAAAAAAAAAAgAKA7kDjBwYAAAAAAAAAAAAAoCGAAxgAAAAAAAAAAAAAAMwDcNi6GMiIAAAoAAAKAIAOBBj/gwYAAAAAAAAAAAAAAM73fCIiIiIi0i9f3vTBn3PGia8AAAAASUVORK5CYII=",
+    "nimbus": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABHklEQVR42u3csQ2EMBAEQHdCRvClUQiFkZF++BIJNZBDByaw/GfDWNp87yZCskmp8Py2/SxJCj699wdgAAAADAAAgAEAAGhxgGP9ZhPd/64fAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABPBCi9uPT2AAAAAAAAAAAAAADQIoAlBQNZAgAAAgCAAAAgHQIMnzGb3hdUez4AAAAAAAAAAAAAAHoEqJ1lmoviSxgAAAAAAAAAAAAAgPYA7h5I1A4AAAAAAAAAAAAAAG8EqP1+IHrB0UDhL2QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/xVtf8EAAAAAAAAAAAAAADwQQH8AAPQHAEB/AAD0B/D3/hd7XYH0vudXUgAAAABJRU5ErkJggg==",
+    "olive": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABB0lEQVR42u3csQ2AIBAFUDaxs3AK57N2IlcxcQ3dQApz8Y68n/xWhUcH0lon277ekW0/J/34AAAAAAAAAAAAAAAIGF/vAdMyvzY7UPT3fZ0fAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAOABi8wkwAAgAIAoAAAKAAACgCAAgCgAADoAAC9DYvsBQAAAAAAAAAAAAAAgAIAoAAAKAAACmAEgOgfHM7rKN3yN2YBAAAAAAAAAAAAAGCC8wEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+wXOHiV/OZZAAAAAAAAAAAAAM7/B7zg7xWUfnwAAAAAAAAAAAAAANQbn4iIiIiI1MsDEyKYE8qpBu4AAAAASUVORK5CYII=",
+    "pistachio": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABDklEQVR42u3cOw2AMBRA0TphY8AjUtCBFgywIgEc0KHp/zS5AnhnemloOM79TSlMfpLnBwAAAAAAAAAAAABAhwACAEAAAAgAAAEAIAAABACAAAAQgPEBlm39rfcB5f4+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAoAeA1O7nqtr0N2IAAAAAAAAAAAAAADQ44NgiFKt1IAAAAAAAAAAAAAAARgSwiAEAAAAAAAAAAAAA0B5A7odJp/8Ru/bLsAAAAAAAAAAAAAAAZBhw7UWq90UOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAHgQsaNGAAAAAAAAAAAAAAApQFC5QMAAAAAAAAAAAAAwIQAH8oTBeytYkveAAAAAElFTkSuQmCC",
+    "quill": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABH0lEQVR42u3dsQ2DMBAFUG9Cl4JZmIRBUmUqKnZggywBGziJrJN95H3pl0icX2XJ4PJal7PWIk35uL4AAAAAAAAAAAAAAAwIAKhtgQEAAAAAAAAAAAAAuCOAAgCgAAAoAAAK4H4A72MPbe8F6D0fAAAAAAAAAAAAAAAZAab5UW12gOj5AAAAAAAAAAAAAADICBC9UdnWZ1PthAEAAAAAAAAAAAAAyHcwKxrAyTgAAAAAAAAAAAAAAMY72DR6AQAAAAAAAAAAAAAA8PsLZn8eAAAAAAAAAAAAAAAANmIAAAAAAAAAAAAAAGQAiL6g4O9/zNr7hggAAAAAAAAAAAAAAALS+gFF74vYsr8/AAMAAGAAAAAMAACAiIiIiIjIF7kAqlN7BO0aaGMAAAAASUVORK5CYII=",
+    "rusty": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABHElEQVR42u3dsQ3CUAwE0GxCR0HNFEzLOPSMwABhAfRdWJGN8066Osm9Koq+sj0f933VTVIJ9wUAAAAAAAAAAAAAoCEAoNzAAAAAAAAAAAAAAABMBJgOdPg+AAAAAAAAAAAAAAAMBFAAABQAAAUAQAEAON3A1W96AAAAAAAAAAAAAAD8yOf92leNLnC5XZf99wGzzxftCwAAAAAAAAAAAABAR4As0PRm9wMAAAAAAAAAAAAAoAIg+73g6EYvQlGr7z99QgQAAAAAAAAAAAAAgAKA7kDjBwYAAAAAAAAAAAAAoCGAAxgAAAAAAAAAAAAAAMwDcNi6GMiIAAAoAAAKAIAOBBj/gwYAAAAAAAAAAAAAAM73fCIiIiIi0i9fNKR04yqr+Z4AAAAASUVORK5CYII=",
+    "saffron": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABFElEQVR42u3dvRFAQBCAUZ3IBEpTiCKUI1CBIlQgpQOCm3U/npkvX/tC5q7bl/F6qvMkPa/7BQAAAAAAAAAAAACgQABAaQsGAAAAAAAAAAAAAKBFgNaBwvcDAAAAAAAAAAAAAECDAAIAQAAACAAAAQAgAAAEAIAAABCA+gH6cXis9gVFvx8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQA0B06zQn5YsYAAAAAAAAAAAAAADlAZzHljUAAAAAAAAAAAAAAP4IEH1gUe4F5wbKfmIUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUMEFB8X/WNX6DRMAAAAAAAAAAAAAAERcaGx+AADMDwCA+QEAMD+Ar+e/ASEgM5OFa0+qAAAAAElFTkSuQmCC",
+    "thistle": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABH0lEQVR42u3csQ2EMBAEQHdCRvClUQiFUAQFfPyNkJIQQgcmsPxnw1jafO8mQrJJqfCsy+8sSQo+vfcHYAAAAAwAAIABAABocYB9O7KJ7n/XDwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAJwKUXlx6ewAAAAAAAAAAAAAAaBHAkoKBLAEAAAEAQAAAkA4Bhs+YTe8Lqj0fAAAAAAAAAAAAAAA9AtTOd5qL4ksYAAAAAAAAAAAAAID2AO4eSNQOAAAAAAAAAAAAAABvBKj9fiB6wdFA4S9kAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8VbX/BAAAAAAAAAAAAAAA8EEB/AAD0BwBAfwAA9Afw9/4X7YHN/DhJR9UAAAAASUVORK5CYII=",
+    "umber": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABD0lEQVR42u3cSw2AMBBAwTrhxgEVqEAG4jCBBtSAA3po+p8mTwA7p01Dw3nsb0ph8pM8PwAAAAAAAAAAAAAAOgQQAAACAEAAAAgAAAEAIAAABACAAIwPsGzrb70PKPf3AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD0ApPbcV9WmvxEDAAAAAAAAAAAAAKDBAccWoVitAwEAAAAAAAAAAAAAMCKARQwAAAAAAAAAAAAAgPYAcj9MOv2P2LVfhgUAAAAAAAAAAAAAIMOAay9SvS9yAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAkAFzJuxAAAAAAAAAAAAAAAKA0QKh8AAAAAAAAAAAAAACYE+AD5sa6E5spZEwAAAABJRU5ErkJggg==",
+    "willow": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABCElEQVR42u3cMQ2AMBAF0DphY0AMBnCEMASgAR/ggA7kwl3zfvJXoH3dWtpaJ9u+3pFtPyf9+AAAAAAAAAAAAAAACBhf7wHTMr82O1D0932dHwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACADgAYvMJMAAIACAKAAACgAAAoAgAIAoAAA6AAAvQ2L7AUAAAAAAAAAAAAAAIACAKAAACgAAApgBIDoHxzO6yjd8jdmAQAAAAAAAAAAAABggvMBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPsFzh4lfzmWQAAAAAAAAAAAADO/we84O8VlH58AAAAAAAAAAAAAADUG5+IiIiIiNTLA5SmUtcwUySmAAAAAElFTkSuQmCC",
+    "yuzu": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABIElEQVR42u3dsQ2DMBAFUDaho2AERsogTMQELJA2a1BTJBuYRNbJPvK+9Eskzq+yZPDw2pZ3qYNU5XJ9AQAAAAAAAAAAAADoEABQ3QIDAAAAAAAAAAAAAHBHAAUAQAEAUAAAFMD9AM7jGdrWC9B6PgAAAAAAAAAAAAAAMgKM81RsdoDo+QAAAAAAAAAAAAAAyAgQvVHZH2tV7YQBAAAAAAAAAAAAAMh3MCsawMk4AAAAAAAAAAAAAAD6O9jUewEAAAAAAAAAAAAAAPD7C2Z/HgAAAAAAAAAAAAAAADZiAAAAAAAAAAAAAABkAIi+oODvf8za+oYIAAAAAAAAAAAAAAACUvsBReuL2LK/PwADAABgAAAADAAAgIiIiIiIyBf5AHj2H6mwACgGAAAAAElFTkSuQmCC",
+    "ziggy": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABGklEQVR42u3dsQ2DQBAEQDpx5sA1uEJXSQtU8DSA/oIT+vMxK20M7EQIvdj233fMukkq4b4AAAAAAAAAAAAAABQEAJQbGAAAAAAAAAAAAACAjgDdgW7fBwAAAAAAAAAAAACAhgAKAIACAKAAACgAAI8bePWbHgAAAAAAAAAAAAAAFxnHPmaNLvD6vKf99wGzzxftCwAAAAAAAAAAAABARYAsUPdm9wMAAAAAAAAAAAAAYAVA9nvB3Y1ehKKuvv/0CREAAAAAAAAAAAAAABYAVAdqPzAAAAAAAAAAAAAAAAUBHMAAAAAAAAAAAAAAAKAfgMPWi4GMCACAAgCgAABoQ4D2P2gAAAAAAAAAAAAAAOB5zyciIiIiIvVyAnal+mo7T6vGAAAAAElFTkSuQmCC",
+    "acorn": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABD0lEQVR42u3cSw2AMBBAwTrhxgEtKEELilCBBoyAA3po+p8mTwA7p01Dw3nsb0ph8pM8PwAAAAAAAAAAAAAAOgQQAAACAEAAAAgAAAEAIAAABACAAIwPsGzrb70PKPf3AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD0ApPbcV9WmvxEDAAAAAAAAAAAAAKDBAccWoVitAwEAAAAAAAAAAAAAMCKARQwAAAAAAAAAAAAAgPYAcj9MOv2P2LVfhgUAAAAAAAAAAAAAIMOAay9SvS9yAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAkAFzJuxAAAAAAAAAAAAAAAKA0QKh8AAAAAAAAAAAAAACYE+ADIVrDtfS44twAAAABJRU5ErkJggg==",
+    "basil": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABB0lEQVR42u3csQ2AIBAFUDaxs3APWzdyPVuHcBDdQApz8Y68n/xWhUcH0lon277ekW0/J/34AAAAAAAAAAAAAAAIGF/vAdMyvzY7UPT3fZ0fAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAOABi8wkwAAgAIAoAAAKAAACgCAAgCgAADoAAC9DYvsBQAAAAAAAAAAAAAAgAIAoAAAKAAACmAEgOgfHM7rKN3yN2YBAAAAAAAAAAAAAGCC8wEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+wXOHiV/OZZAAAAAAAAAAAAAM7/B7zg7xWUfnwAAAAAAAAAAAAAANQbn4iIiIiI1MsDk8MGKp8xakIAAAAASUVORK5CYII=",
+    "cinder": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABEElEQVR42u3dOxGAMBBAQZzQUSAlUhCCMFxEDTgIRebIh2Xm9cdtCZMsKaW71OKpel73CwAAAAAAAAAAAABAhwCA6hYMAAAAAAAAAAAAAMCMALMDhe8HAAAAAAAAAAAAAIAJAQQAgAAAEAAAAgBAAAAIAAABACAA4wOs+1Zs9AVFvx8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAkB013FW5YsYAAAAAAAAAAAAAAD9AeScmwYAAAAAAAAAAAAAwB8Bog8sar3g1kDNT4wCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABrjgoPsfq2a/YQIAAAAAAAAAAAAAgIgLjc0PAID5AQAwPwAA5gfw9fwPy2S7hSYdNyIAAAAASUVORK5CYII=",
+    "fennel": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABHUlEQVR42u3dQQqDMBAFUG/izoVH8wzdCXqvXqUI3qK9QWwJQzL2ffhLwclbBaIZHvv6LnWQqlyuLwAAAAAAAAAAAAAAHQIAqltgAAAAAAAAAAAAAADuCKAAACgAAAoAgAK4H8DrPELbegFazwcAAAAAAAAAAAAAQEaAcZ6KzQ4QPR8AAAAAAAAAAAAAABkBojcqz2Wrqp0wAAAAAAAAAAAAAAD5DmZFAzgZBwAAAAAAAAAAAABAfwebei8AAAAAAAAAAAAAAAB+f8HszwMAAAAAAAAAAAAAAMBGDAAAAAAAAAAAAACADADRFxT8/Y9ZW98QAQAAAAAAAAAAAABAQGo/oGh9EVv29wdgAAAADAAAgAEAABAREREREfkiH/foXF7iNMY3AAAAAElFTkSuQmCC",
+    "tabby": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABFElEQVR42u3dvRFAQBCAUZ3IBEpTiCJUY9SgAyUogA4Ibtb9eGa+fO0LmbtuX8brqc6T9LzuFwAAAAAAAAAAAACAAgEApS0YAAAAAAAAAAAAAIAWAVoHCt8PAAAAAAAAAAAAAAANAggAAAEAIAAABACAAAAQAAACAEAA6gfox+Gx2hcU/X4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABADQDRbdOclC9iAAAAAAAAAAAAAACUB3Aea9YAAAAAAAAAAAAAAPgjQPSBRbkXnBso+4lRAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAUXHBT/Y1XrN0wAAAAAAAAAAAAAABBxobH5AQAwPwAA5gcAwPwAvp7/BqPT+4S2B20rAAAAAElFTkSuQmCC",
+    "clover": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABHklEQVR42u3csQ2EMBAEQHdCRvClUQiFkZF+C58hkZFDByaw/GfDWNp87yZCskmp8Ozb7yxJCj699wdgAAAADAAAgAEAAGhxgGP9ZhPd/64fAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABPBCi9uPT2AAAAAAAAAAAAAADQIoAlBQNZAgAAAgCAAAAgHQIMnzGb3hdUez4AAAAAAAAAAAAAAHoEqJ1lmoviSxgAAAAAAAAAAAAAgPYA7h5I1A4AAAAAAAAAAAAAAG8EqP1+IHrB0UDhL2QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/xVtf8EAAAAAAAAAAAAAADwQQH8AAPQHAEB/AAD0B/D3/hdlbRYhQkefnAAAAABJRU5ErkJggg==",
+    "bruno": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABD0lEQVR42u3cSw2AMBBAwTrhxgEtKEELLnCCC9SAA3po+p8mTwA7p01Dw3nsb0ph8pM8PwAAAAAAAAAAAAAAOgQQAAACAEAAAAgAAAEAIAAABACAAIwPsGzrb70PKPf3AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD0ApPbcV9WmvxEDAAAAAAAAAAAAAKDBAccWoVitAwEAAAAAAAAAAAAAMCKARQwAAAAAAAAAAAAAgPYAcj9MOv2P2LVfhgUAAAAAAAAAAAAAIMOAay9SvS9yAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAkAFzJuxAAAAAAAAAAAAAAAKA0QKh8AAAAAAAAAAAAAACYE+ABDo27eFMcKmAAAAABJRU5ErkJggg==",
+    "ribbit": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABCElEQVR42u3cMQ2AMBAF0DphY0AMBnCEGHygAinggA7kwl3zfvJXoH3dWtpaJ9u+3pFtPyf9+AAAAAAAAAAAAAAACBhf7wHTMr82O1D0932dHwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACADgAYvMJMAAIACAKAAACgAAAoAgAIAoAAA6AAAvQ2L7AUAAAAAAAAAAAAAAIACAKAAACgAAApgBIDoHxzO6yjd8jdmAQAAAAAAAAAAAABggvMBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPsFzh4lfzmWQAAAAAAAAAAAADO/we84O8VlH58AAAAAAAAAAAAAADUG5+IiIiIiNTLAyjngch7PMO0AAAAAElFTkSuQmCC",
+    "hoot": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABIElEQVR42u3dsQ2DMBAFUDaho2AylBEYgFmYI3ukYgE2SDYwiayTfeR96ZdInF9lyeBhXfZ3qYNU5XJ9AQAAAAAAAAAAAADoEABQ3QIDAAAAAAAAAAAAAHBHAAUAQAEAUAAAFMD9AI7XGdrWC9B6PgAAAAAAAAAAAAAAMgKM81RsdoDo+QAAAAAAAAAAAAAAyAgQvVF5Praq2gkDAAAAAAAAAAAAAJDvYFY0gJNxAAAAAAAAAAAAAAD0d7Cp9wIAAAAAAAAAAAAAAOD3F8z+PAAAAAAAAAAAAAAAAGzEAAAAAAAAAAAAAADIABB9QcHf/5i19Q0RAAAAAAAAAAAAAAAEpPYDitYXsWV/fwAGAADAAAAAGAAAABERERERkS/yAbOuol5JPyKvAAAAAElFTkSuQmCC",
+    "ember": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABG0lEQVR42u3dsQ3CUAwE0GxCR8EwDMLGzIEEZVgAfRdWZOO8k65Ocq+Koq9sz8d9X3WTVMJ9AQAAAAAAAAAAAABoCAAoNzAAAAAAAAAAAAAAABMBpgMdvg8AAAAAAAAAAAAAAAMBFAAABQBAAQBQAABON3D1mx4AAAAAAAAAAAAAAD/y/rz2VaMLXG7XZf99wOzzRfsCAAAAAAAAAAAAANARIAs0vdn9AAAAAAAAAAAAAACoAMh+Lzi60YtQ1Or7T58QAQAAAAAAAAAAAACgAKA70PiBAQAAAAAAAAAAAABoCOAABgAAAAAAAAAAAAAA8wActi4GMiIAAAoAgAIAoAMBxv+gAQAAAAAAAAAAAACA8z2fiIiIiIj0yxfAlMib7RmpTQAAAABJRU5ErkJggg==",
+    "mochi": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABEUlEQVR42u3dvRFAQBCAUZ3IBEq5UhSiMC2ZIaQDgpt1P56ZL1/7QuZuSCldTw2erOd1vwAAAAAAAAAAAAAAVAgAKG/BAAAAAAAAAAAAAAD0CNA7UPh+AAAAAAAAAAAAAADoEEAAAAgAAAEAIAAABACAAAAQAAAC0D7AOE+Ptb6g6PcDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWgCIblvWrHwRAwAAAAAAAAAAAACgPoDj3IsGAAAAAAAAAAAAAMAfAaIPLCq94NJAxU+MAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABq44KD6H6t6v2ECAAAAAAAAAAAAAICIC43NDwCA+QEAMD8AAOYH8PX8N4aSD6N1zyhdAAAAAElFTkSuQmCC",
+    "pebble": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABoCAYAAAAOy/VVAAABDElEQVR42u3cuwmAMBRA0WxiZ+HIljYOJoJb6AamCPmfwB3Ad6pHMGE/jzelMPlJnh8AAAAAAAAAAAAAAB0CCAAAAQAgAAAEAIAAABAAAAIAQADGB1i29bfeB5T7+wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAeAFK7nrtq09+IAQAAAAAAAAAAAADQ4IBji1Cs1oEAAAAAAAAAAAAAABgRwCIGAAAAAAAAAAAAAEB7ALkfJp3+R+zaL8MCAAAAAAAAAAAAAJBhwLUXqd4XOQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAEgAsZN2IAAAAAAAAAAAAAAJQGCJUPAAAAAAAAAAAAAAATAnwvmef7MbMCnwAAAABJRU5ErkJggg=="
+  },
+  "delay_ms": 200,
+  "refused_once": [
+    "tabby"
+  ]
+}

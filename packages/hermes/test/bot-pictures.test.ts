@@ -156,11 +156,11 @@ describe('pets through the hub', () => {
     const tabby = pets.find(pet => pet.slug === 'tabby')!
     expect(await run({ do: 'petPicture', slug: tabby.slug, url: tabby.url })).toEqual({ ok: true, value: PETS.thumbs.tabby })
     expect(await run({ do: 'petPicture', slug: 'basil', url: null })).toEqual({ ok: true, value: PETS.thumbs.basil })
-    expect(await run({ do: 'petPicture', slug: 'dune', url: 'https://petdex.example/pets/dune/spritesheet.webp' })).toEqual({ ok: true, value: null })
+    expect(await run({ do: 'petPicture', slug: 'dune', url: 'https://cdn.petdex.dev/pets/dune/spritesheet.webp' })).toEqual({ ok: true, value: null })
     expect(calls('pet.thumb').map(call => call.params)).toEqual([
-      { slug: 'tabby', url: 'https://petdex.example/curated/tabby/spritesheet.webp' },
+      { slug: 'tabby', url: 'https://cdn.petdex.dev/curated/tabby/spritesheet.webp' },
       { slug: 'basil' },
-      { slug: 'dune', url: 'https://petdex.example/pets/dune/spritesheet.webp' }
+      { slug: 'dune', url: 'https://cdn.petdex.dev/pets/dune/spritesheet.webp' }
     ])
   })
 

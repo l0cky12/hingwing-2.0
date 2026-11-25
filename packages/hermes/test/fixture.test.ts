@@ -172,7 +172,8 @@ describe('loadFixture', () => {
     for (const [key, value, words] of [
       ['images', { picture: 'x' }, '"images" must be { available, picture?, error?, delay_ms? }'],
       ['images', { available: true, delay_ms: -1 }, '"images" must be { available, picture?, error?, delay_ms? }'],
-      ['pets', { pets: [], thumbs: { tabby: 7 } }, '"pets" must be { pets, thumbs, delay_ms? } with "thumbs" mapping a slug to a data URL'],
+      ['pets', { pets: [], thumbs: {}, refused_once: 'tabby' }, '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'],
+      ['pets', { pets: [], thumbs: { tabby: 7 } }, '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'],
       ['assetFails', ' ', '"assetFails" must be the words a failed write gives']
     ] as const) {
       const path = write([{ ...header, [key]: value }])

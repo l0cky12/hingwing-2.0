@@ -10,6 +10,9 @@ Run:  python3 -I fixtures/make_picture_fixtures.py
   pet.thumb with a 96x104 PNG idle frame, the size Hermes crops (agent/pet/store.py:29-31), except Dune and Velvet,
   which have none.
 - pets/none.json: a Hermes that lists no pets.
+- pets/refused.json: the gallery of gallery.json, whose first pet.thumb for Tabby fails, as a call lost to a timeout would.
+
+Each sheet the gallery names is on a petdex host, the only hosts Hermes fetches a sheet from (agent/pet/store.py:215-221).
 """
 import base64
 import json
@@ -205,7 +208,7 @@ def gallery_entry(slug, name):
     if slug in LOCAL_ONLY:
         return {"slug": slug, "displayName": name, "installed": True, "spritesheetUrl": "", "generated": False}
     shelf = "curated" if slug in CURATED else "pets"
-    return {"slug": slug, "displayName": name, "installed": slug in INSTALLED, "spritesheetUrl": f"https://petdex.example/{shelf}/{slug}/spritesheet.webp",
+    return {"slug": slug, "displayName": name, "installed": slug in INSTALLED, "spritesheetUrl": f"https://cdn.petdex.dev/{shelf}/{slug}/spritesheet.webp",
             "curated": slug in CURATED, "generated": False}
 
 
@@ -217,9 +220,11 @@ def write(path, value):
 write(HERE / "images" / "drawn.json", {"available": True, "picture": data_url(png(256, 256, robot)), "delay_ms": 1200})
 write(HERE / "images" / "none.json", {"available": False})
 write(HERE / "images" / "failing.json", {"available": True, "error": "The image provider is out of credit.", "delay_ms": 300})
-write(HERE / "pets" / "gallery.json", {
+GALLERY = {
     "pets": [gallery_entry(slug, name) for slug, name, *_ in PETS],
     "thumbs": {slug: data_url(idle_frame(kind, fur, belly)) for slug, _, kind, fur, belly in PETS if slug not in WITHOUT_THUMB},
     "delay_ms": 200,
-})
+}
+write(HERE / "pets" / "gallery.json", GALLERY)
+write(HERE / "pets" / "refused.json", {**GALLERY, "refused_once": ["tabby"]})
 write(HERE / "pets" / "none.json", {"pets": [], "thumbs": {}})

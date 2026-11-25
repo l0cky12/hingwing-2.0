@@ -4,7 +4,7 @@
       "slug": "biscuit",
       "displayName": "Biscuit",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/biscuit/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/biscuit/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -12,7 +12,7 @@
       "slug": "juniper",
       "displayName": "Juniper",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/juniper/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/juniper/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -20,7 +20,7 @@
       "slug": "pip",
       "displayName": "Pip",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/pip/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/pip/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -28,7 +28,7 @@
       "slug": "sable",
       "displayName": "Sable",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/sable/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/sable/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -36,7 +36,7 @@
       "slug": "maple",
       "displayName": "Maple",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/maple/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/maple/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -44,7 +44,7 @@
       "slug": "nimbus",
       "displayName": "Nimbus",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/nimbus/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/nimbus/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -52,7 +52,7 @@
       "slug": "olive",
       "displayName": "Olive",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/olive/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/olive/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -60,7 +60,7 @@
       "slug": "pistachio",
       "displayName": "Pistachio",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/pistachio/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/pistachio/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -68,7 +68,7 @@
       "slug": "quill",
       "displayName": "Quill",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/quill/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/quill/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -76,7 +76,7 @@
       "slug": "rusty",
       "displayName": "Rusty",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/rusty/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/rusty/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -84,7 +84,7 @@
       "slug": "saffron",
       "displayName": "Saffron",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/saffron/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/saffron/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -92,7 +92,7 @@
       "slug": "thistle",
       "displayName": "Thistle",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/thistle/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/thistle/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -100,7 +100,7 @@
       "slug": "umber",
       "displayName": "Umber",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/umber/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/umber/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -108,7 +108,7 @@
       "slug": "velvet",
       "displayName": "Velvet",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/velvet/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/velvet/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -116,7 +116,7 @@
       "slug": "willow",
       "displayName": "Willow",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/willow/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/willow/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -124,7 +124,7 @@
       "slug": "yuzu",
       "displayName": "Yuzu",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/yuzu/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/yuzu/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -132,7 +132,7 @@
       "slug": "ziggy",
       "displayName": "Ziggy",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/ziggy/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/ziggy/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -140,7 +140,7 @@
       "slug": "acorn",
       "displayName": "Acorn",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/acorn/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/acorn/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -155,7 +155,7 @@
       "slug": "cinder",
       "displayName": "Cinder",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/cinder/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/cinder/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -163,7 +163,7 @@
       "slug": "dune",
       "displayName": "Dune",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/dune/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/dune/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -171,7 +171,7 @@
       "slug": "fennel",
       "displayName": "Fennel",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/pets/fennel/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/pets/fennel/spritesheet.webp",
       "curated": false,
       "generated": false
     },
@@ -179,7 +179,7 @@
       "slug": "tabby",
       "displayName": "Tabby",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/curated/tabby/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/tabby/spritesheet.webp",
       "curated": true,
       "generated": false
     },
@@ -187,7 +187,7 @@
       "slug": "clover",
       "displayName": "Clover",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/curated/clover/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/clover/spritesheet.webp",
       "curated": true,
       "generated": false
     },
@@ -195,7 +195,7 @@
       "slug": "bruno",
       "displayName": "Bruno",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/curated/bruno/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/bruno/spritesheet.webp",
       "curated": true,
       "generated": false
     },
@@ -203,7 +203,7 @@
       "slug": "ribbit",
       "displayName": "Ribbit",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/curated/ribbit/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/ribbit/spritesheet.webp",
       "curated": true,
       "generated": false
     },
@@ -211,7 +211,7 @@
       "slug": "hoot",
       "displayName": "Hoot",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/curated/hoot/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/hoot/spritesheet.webp",
       "curated": true,
       "generated": false
     },
@@ -219,7 +219,7 @@
       "slug": "ember",
       "displayName": "Ember",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/curated/ember/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/ember/spritesheet.webp",
       "curated": true,
       "generated": false
     },
@@ -227,7 +227,7 @@
       "slug": "mochi",
       "displayName": "Mochi",
       "installed": true,
-      "spritesheetUrl": "https://petdex.example/curated/mochi/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/mochi/spritesheet.webp",
       "curated": true,
       "generated": false
     },
@@ -235,7 +235,7 @@
       "slug": "pebble",
       "displayName": "Pebble",
       "installed": false,
-      "spritesheetUrl": "https://petdex.example/curated/pebble/spritesheet.webp",
+      "spritesheetUrl": "https://cdn.petdex.dev/curated/pebble/spritesheet.webp",
       "curated": true,
       "generated": false
     }
