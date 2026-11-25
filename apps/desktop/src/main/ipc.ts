@@ -35,9 +35,9 @@ const current = <T>(feed: { get(): T; subscribe(listener: (value: T) => void): (
 }
 const NEVER: Source = () => () => {}
 
-/** What a window's commands go to, and its topics come from. */
-export type Pane = Pick<PreviewPane, 'preview' | 'show' | 'run'>
-interface Owners { readonly owner: ConnectionOwner; readonly pane: Pane }
+/** The pane's side of a window: its topic, its commands, and the files a window previews. */
+export type PreviewOwner = Pick<PreviewPane, 'preview' | 'show' | 'run'>
+interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner }
 
 /** A Hermes topic is bound to the connection that is live when the window asks. A window that sees a new epoch asks again. */
 const onHermes = (source: (hermes: Hermes, topic: Topic) => Source) => ({ owner }: Owners, topic: Topic): Source =>
@@ -109,11 +109,14 @@ function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): S
 const REFUSED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Highwing refused a malformed request from its window.' } }
 const FILE_REFUSED: FileOutcome = { ok: false, reason: 'refused' }
 const FILE_DONE: FileOutcome = { ok: true }
+const IMAGE_REFUSED: ImageOutcome = { ok: false }
+
+const isLocal = (setup: Setup) => setup.at === 'pinned' || setup.live?.target.kind === 'local'
 
 type FileActions = { readonly [A in FileAction]: (session: Session, path: string) => Promise<FileOutcome> }
 
 /** Each action takes the path as the window named it. Only a path a finished step of the session named goes anywhere. */
-function fileActions(opener: Opener, pane: Pane): FileActions {
+function fileActions(opener: Opener, pane: PreviewOwner): FileActions {
   const named = (act: (path: string) => Promise<FileOutcome>) => async (session: Session, path: string) => {
     const target = openablePath(session, path)
     return target === null ? FILE_REFUSED : act(target)
@@ -124,11 +127,8 @@ function fileActions(opener: Opener, pane: Pane): FileActions {
     preview: async (session, path) => (pane.show(path, null, session) ? FILE_DONE : FILE_REFUSED)
   }
 }
-const IMAGE_REFUSED: ImageOutcome = { ok: false }
 
-const isLocal = (setup: Setup) => setup.at === 'pinned' || setup.live?.target.kind === 'local'
-
-export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>, pane: Pane): { dispose(): void } {
+export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>, pane: PreviewOwner): { dispose(): void } {
   const windows = new Map<number, Map<number, Served>>()
   const owners: Owners = { owner, pane }
   const files = fileActions(opener, pane)

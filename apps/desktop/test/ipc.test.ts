@@ -6,7 +6,7 @@ import { applyPush, CHANNEL, isWebLink, parseCommand, parseDraft, parseFileReque
 import { pinnedConnection } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
-import { COALESCE_MS, serveWindows, sessionPatch, type IpcEvent, type IpcMainLike, type Pane } from '../src/main/ipc'
+import { COALESCE_MS, serveWindows, sessionPatch, type IpcEvent, type IpcMainLike, type PreviewOwner } from '../src/main/ipc'
 
 const fixture = loadFixture('fixtures/errand.jsonl')
 const topic = `session:${fixture.header.sessionId}` as const
@@ -258,7 +258,7 @@ function harness() {
   const stored: readonly Draft[] = [{ key: 'new', bot: null, text: 'kept on disk' }]
   const previewed: { request: string; label: string | null; session: Session | undefined }[] = []
   const toPane: PreviewCommand[] = []
-  const pane: Pane = {
+  const pane: PreviewOwner = {
     preview: still<Preview>({ state: 'closed' }),
     show: (request, label, session) => (previewed.push({ request, label, session }), request.startsWith('/')),
     run: async command => (toPane.push(command), { ok: true, value: undefined })
