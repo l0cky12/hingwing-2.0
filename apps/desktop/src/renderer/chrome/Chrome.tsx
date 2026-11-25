@@ -1,7 +1,7 @@
 import { machineOf, shownChat, shownGroup, type Link, type Target } from '@highwing/hermes/domain'
 import { useCallback, useEffect, useRef, type ReactNode, type Ref, type RefObject } from 'react'
 import type { WindowCommand } from '../../ipc-contract'
-import { isCommandKey } from '../keys'
+import { isCommandKey, MAC } from '../keys'
 import { CopyLink } from '../chat/Copy'
 import { botNameOf, openChatName } from '../chats/chat-list'
 import { GroupMembers } from '../groups/GroupThread'
@@ -60,7 +60,7 @@ export function TopBar({ target, settingsButton }: { readonly target: Target | n
   return (
     <Bar ref={bar} where={where === '' ? null : where}>
       {group === null
-        ? <button type="button" aria-keyshortcuts={newChatKeys(navigator.userAgent.includes('Mac')).aria} onClick={startChat}>New chat</button>
+        ? <button type="button" aria-keyshortcuts={newChatKeys(MAC).aria} onClick={startChat}>New chat</button>
         : <GroupMembers faces={group.faces} />}
       {target !== null && <button ref={settingsButton} onClick={() => void run({ do: 'editTarget' })}>Settings</button>}
       {sessionId !== null && <CopyLink sessionId={sessionId} />}

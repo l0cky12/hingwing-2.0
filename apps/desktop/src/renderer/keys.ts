@@ -1,4 +1,4 @@
-const MAC = navigator.userAgent.includes('Mac')
+export const MAC = navigator.userAgent.includes('Mac')
 
 export const COMMAND_KEY = MAC ? '⌘' : 'Ctrl'
 
