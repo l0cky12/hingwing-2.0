@@ -38,6 +38,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Open a file](./open-a-file.md) covers the path button in an open record, Show in folder, and Copy path.
 - [Markdown replies](./markdown.md) covers lists, headings, links, tables and code blocks in a reply, the code block's Copy button, and its syntax colors: plain while streaming, no layout jump, Find and Copy inside a colored block, and forced colors.
 - [Math in replies](./math.md) covers inline and display formulas typeset with KaTeX, each labelled with its TeX source, a malformed formula shown as its source, dollar amounts left as text, Find around and inside a formula, and the fonts loading with no network.
+- [Diagrams in replies](./diagram.md) covers a `mermaid` block drawn as a diagram, the Diagram and Source toggle, Copy in both views, a diagram that cannot be drawn, labels that try to run script, drawing with no network, and the app's start time.
 - [Images in the thread](./images.md) covers a reply image, a tool image, the larger view and what main refuses.
 - [Choose the model](./choose-the-model.md) covers the model readout under the composer, the list of models, a switch, a switch during a turn, "No model set up", and a Hermes that does not list its models.
 - [Context meter and tokens per reply](./context-meter.md) covers the token line under a reply, the context meter beside the model readout, its breakdown panel, "nearly full", the stale meter while the link is down, and a Hermes that reports no usage.

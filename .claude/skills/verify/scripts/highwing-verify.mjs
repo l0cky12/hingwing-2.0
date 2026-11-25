@@ -41,6 +41,7 @@ const STATES = {
   'tool-running': page => page.locator('.step[data-end="live"]').filter({ hasText: /^Running / }),
   approval: page => page.getByRole('group', { name: 'Run this command?' }).getByRole('button', { name: 'Run once', exact: true, disabled: false }),
   settled: page => page.locator('[data-end="done"]'),
+  drawn: page => page.locator('.prose:has(.diagram):not(:has(.diagram[data-state="drawing"]))').last(),
   offline: page => page.getByRole('status', { name: 'Connection' }),
   regenerate: page => page.getByRole('button', { name: 'Regenerate', exact: true, disabled: false }),
   'slash-menu': page => page.getByRole('listbox', { name: 'Commands and skills' }),
@@ -420,6 +421,16 @@ const STEPS = {
     run: async ctx => {
       if (ctx.errors.length > 0) throw new Error(`the window logged ${ctx.errors.length} error(s): ${ctx.errors[0]}`)
     }
+  },
+  'quiet-except': {
+    arity: 1,
+    run: async (ctx, pattern) => {
+      if (!isPattern(pattern)) throw new Error(`quiet-except takes a /regex/, not ${JSON.stringify(pattern)}`)
+      const allowed = new RegExp(pattern.slice(1, -1))
+      const [passed, others] = [ctx.errors.filter(error => allowed.test(error)), ctx.errors.filter(error => !allowed.test(error))]
+      log(ctx, `  ${passed.length} error(s) matched ${pattern}`)
+      if (others.length > 0) throw new Error(`the window logged ${others.length} other error(s): ${others[0]}`)
+    }
   }
 }
 
@@ -593,6 +604,7 @@ async function waitFor(ctx, state) {
   while (!(await locator.isVisible())) {
     if (Date.now() > deadline) throw new Error(`state "${state}" did not appear within ${ctx.timeout} ms`)
   }
+  log(ctx, `  ${state} ${Date.now() - ctx.launched} ms after launch`)
   ctx.holding = state
 }
 
@@ -839,7 +851,7 @@ async function run(argv) {
   const calls = join(evidence, 'gateway-calls.jsonl')
   rmSync(calls, { force: true })
   const userData = join(scratch, 'user-data')
-  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null }
+  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [] }
   const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
   const saved = SAVED[options.saved ?? 'none']
@@ -868,6 +880,7 @@ async function run(argv) {
 
   const { _electron } = requireDesktop('playwright-core')
   log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"` : `HIGHWING_FIXTURE=${fixture}`}${Object.keys(media).length > 0 ? `, emulating ${JSON.stringify(media)}` : ''}`)
+  ctx.launched = Date.now()
   const app = await _electron.launch({
     executablePath: electronBinary() ?? fail('electron binary missing; run doctor'),
     args: [MAIN_JS, '--ozone-platform=x11', '--force-device-scale-factor=1', '--disable-gpu', `--user-data-dir=${userData}`],
@@ -897,6 +910,12 @@ async function run(argv) {
       appendFileSync(join(evidence, 'console.log'), `pageerror ${error.stack ?? error}\n`)
       ctx.errors.push(String(error.message ?? error))
     })
+    ctx.page.on('dialog', dialog => {
+      const opened = `${dialog.type()} ${JSON.stringify(dialog.message())}`
+      ctx.dialogs.push(opened)
+      log(ctx, `DIALOG ${opened}`)
+      dialog.dismiss().catch(() => {})
+    })
     await ctx.page.waitForLoadState('domcontentloaded')
     ctx.home = ctx.page.url()
     if (site) log(ctx, `serving ${options.serve} at ${site.origin} in place of ${DEV_ORIGIN}`)
@@ -906,6 +925,7 @@ async function run(argv) {
       if (verb !== 'shot' && verb !== 'wait') ctx.holding = null
       await STEPS[verb].run(ctx, ...args)
     }
+    if (ctx.dialogs.length > 0) throw new Error(`the page opened ${ctx.dialogs.length} dialog(s): ${ctx.dialogs.join(', ')}`)
     for (const check of ctx.called) {
       const seen = callsLike(ctx, check)
       if (seen !== check.n) throw new Error(`by the end of the run the gateway saw ${seen} ${check.method} call(s) containing ${JSON.stringify(check.expected)}, not ${check.n}`)
