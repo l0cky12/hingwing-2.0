@@ -173,7 +173,6 @@ class EchoChat implements Stream {
   readonly rows: Obj[] = []
   readonly epoch: string
   generation = 0
-  /** Moved by each branch made from this chat, as it moves the story's. */
   revision = 0
   asking: SeededApproval | null = null
   yolo = false
@@ -187,7 +186,6 @@ class EchoChat implements Stream {
     return { model: `${this.profile}-model`, provider: null }
   }
 
-  /** A branch copies a tool row with no id, so the next id is not the row count. */
   get nextRowId(): number {
     return Math.max(0, ...this.rows.map(row => (isInt(row.row_id) ? row.row_id : 0))) + 1
   }
@@ -318,7 +316,6 @@ function nameRefusal(canon: string, taken: (name: string) => boolean): Refused |
   return null
 }
 
-/** What a branch reads of its parent and moves in it: the story session, or a chat beside it. */
 interface Parent {
   readonly id: string
   readonly profile: string
@@ -327,21 +324,15 @@ interface Parent {
   readonly generation: number
   readonly busy: boolean
   readonly revision: number
-  /** Moves the parent's revision and publishes the receipt. Answers the new revision. */
   commit(result: Obj): number
 }
 
-/** JSON with every object's keys in order, so two requests that mean the same thing digest the same. */
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
   if (!isObject(value)) return JSON.stringify(value) ?? 'null'
   return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
 }
 
-/**
- * The rows a branch through `through` copies: every row up to it, and the tool rows that follow an assistant row.
- * null: no row has that id.
- */
 function rowsThrough(rows: readonly Obj[], through: number): readonly Obj[] | null {
   const at = rows.findIndex(row => row.row_id === through)
   if (at < 0) return null
@@ -388,7 +379,6 @@ const detach: Handler = (gateway, socket, params, routed) => {
   return { session_id, subscription_id, detached }
 }
 
-/** The operations of `session.mutate` the gateway answers itself, as the story does not await them. */
 const MUTATIONS: Readonly<Record<string, (gateway: ScriptedGateway, params: Obj, routed: string) => unknown>> = {
   model: (gateway, params, routed) => gateway.switchModel(params, routed),
   branch: (gateway, params, routed) => {
@@ -530,7 +520,6 @@ export class ScriptedGateway {
   dials = 0
   step = 0
   finished = false
-  /** Chats a `branch` made. A retry that Hermes answers from its receipt makes none. */
   branchesMade = 0
 
   private stored: readonly unknown[]
@@ -753,8 +742,7 @@ export class ScriptedGateway {
 
   /**
    * `session.mutate` with operation `branch` (persistence/authority/runtime.py:299-310, persistence/sqlite/authority/_mutation_publish.py:60-79),
-   * checked in the handler's order: the params, the receipt, the fences, an idle session, then the cut. The child is a chat
-   * of the parent's profile that holds the copied rows. It is named the next title in the parent's lineage.
+   * checked in the handler's order: the params, the receipt, the fences, an idle session, then the cut.
    */
   branch(parent: Parent, params: Obj, routed: string): unknown {
     const { request_id: requestId, expected_revision: revision, expected_generation: generation, payload } = params
@@ -787,7 +775,6 @@ export class ScriptedGateway {
     return committed
   }
 
-  /** "Sort the invoices" is followed by "Sort the invoices #2", then "#3", skipping a title the profile already has. */
   private nextTitle(parent: string, routed: string): string {
     if (parent === '') return ''
     const taken = new Set(this.echoChats().filter(chat => chat.profile === routed).map(chat => chat.title))
@@ -795,7 +782,6 @@ export class ScriptedGateway {
     for (let at = Number(n) + 1; ; at++) if (!taken.has(`${base} #${at}`)) return `${base} #${at}`
   }
 
-  /** The branch children of a profile, as `session.list {scope: 'stored'}` lists them. */
   branchRows(routed: string, picker: boolean): Obj[] {
     return this.branchChats.filter(chat => chat.profile === routed).map(chat => ({ ...chat.listRow(picker), running: false }))
   }

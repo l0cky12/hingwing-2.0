@@ -163,7 +163,6 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const onBranch = useCallback(async (rowId: number) => {
     if (id === null) return
     setRefused(null)
-    // One key per message until Hermes answers, so a click after a dropped connection is the same request.
     const branchId = branchKeys.current.get(rowId) ?? crypto.randomUUID() as BranchId
     branchKeys.current.set(rowId, branchId)
     setBranching(true)

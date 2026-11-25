@@ -38,7 +38,6 @@ export interface ChatDesk {
   botOf(id: SessionId): BotId | undefined
   /** Hermes listed these chats in the bot's profile, so a click on one opens it in that bot. */
   listed(bot: BotId, sessions: readonly SessionId[]): void
-  /** A branch of `from` made the chat `sessionId`, from the message `text`. It is shown at once when `from` still is. */
   branched(made: { readonly from: SessionId; readonly sessionId: SessionId; readonly text: string }): void
 }
 

@@ -24,13 +24,12 @@ const MOVED_ON: Refusal = { kind: 'stale', message: 'This chat changed while Hig
 const GONE: Refusal = { kind: 'rejected', message: 'That message is no longer in this chat.' }
 const NOT_CONNECTED: Refusal = { kind: 'offline', message: "Highwing isn't connected to this chat right now." }
 const CANT_BRANCH: Refusal = { kind: 'unsupported', message: "This Hermes can't branch a chat." }
+const BRANCH_BUSY: Refusal = { kind: 'stale', message: 'Wait for the reply to finish, then branch.' }
 const BRANCH_REFUSALS: Readonly<Record<string, Refusal>> = {
   unknown_method: CANT_BRANCH,
   runtime_coordination_required: { kind: 'unsupported', message: "Hermes can't branch this chat." },
-  // Hermes also counts a helper still running after its turn as busy.
-  session_busy: { kind: 'stale', message: 'Wait for the reply to finish, then branch.' }
+  session_busy: BRANCH_BUSY
 }
-const BRANCH_BUSY = BRANCH_REFUSALS.session_busy as Refusal
 const NO_CHILD: Refusal = { kind: 'rejected', message: "Hermes made the chat but didn't say which one." }
 const DROPPED_ANSWER = 'The connection dropped before Hermes confirmed your answer.'
 
@@ -40,12 +39,11 @@ export function refusalOf(error: unknown): Refusal {
   throw error
 }
 
-/** The chat a branch made and the message it was made from, which its box starts with. */
 export interface Branched { readonly sessionId: SessionId; readonly text: string }
 
 /**
- * The exact `session.mutate` a request sends. Hermes answers a resend of all of it from its receipt, and refuses
- * any other resend under the same `request_id`, because the receipt's digest covers both fences.
+ * Hermes answers an exact resend from its receipt and refuses any other resend under the same `request_id`: the
+ * receipt's digest covers both fences (persistence/authority/runtime.py `mutation_receipt_key`).
  */
 interface Mutation {
   readonly request_id: string
@@ -56,11 +54,7 @@ interface Mutation {
   readonly expected_generation: number | null
 }
 
-/**
- * Where a branch from the message at `rowId` cuts, and the message's words. The cut is the last stored row of its turn,
- * so the child holds the reply. Hermes adds the tool rows right after an assistant row itself. null: no settled turn
- * began with that row.
- */
+/** Hermes extends a cut at an assistant row through the tool rows after it (persistence/sqlite/authority/_mutation_publish.py `_branch_boundary`). */
 function branchPoint(content: SessionContent, rowId: number): { readonly through: number; readonly text: string } | null {
   const turn = content.history.find(held => held.request?.rowId === rowId)
   return turn?.request == null ? null : { through: Math.max(rowId, ...turn.rows), text: turn.request.text }
@@ -88,7 +82,6 @@ export class SessionActor {
   private tracked: Tracked
   private published: Session
   private restarts: readonly number[] = []
-  /** branchId -> the exact request last sent for it. Kept after a success and after a dropped reply. Dropped when Hermes refuses, since a refusal commits nothing. */
   private readonly branches = new Map<BranchId, Mutation>()
 
   constructor(readonly id: SessionId, private readonly deps: ActorDeps) {
@@ -351,11 +344,7 @@ export class SessionActor {
     }
   }
 
-  /**
-   * Branch through the reply to the message at `rowId`. Asks for no title: Hermes names the child next in the
-   * parent's lineage ("Sort the invoices #2"), as its TUI does. `branchId` is the `request_id`, so a retry resends
-   * the request pinned for it and Hermes answers with the chat the first one made.
-   */
+  /** Sends no title: Hermes names an untitled branch next in the parent's lineage, "Sort the invoices #2" (persistence/sqlite/authority/_mutation_publish.py `branch_in_transaction`). */
   async branch(rowId: number, branchId: BranchId): Promise<Outcome<Branched>> {
     const offline = this.offline()
     if (offline !== null) return offline
@@ -372,12 +361,13 @@ export class SessionActor {
       return sessionId === null ? { ok: false, refusal: NO_CHILD } : { ok: true, value: { sessionId, text: point.text } }
     } catch (error) {
       if (error instanceof Offline) return { ok: false, refusal: NOT_CONNECTED }
+      // Hermes writes a receipt only with a commit, so a refused request leaves nothing to resend exactly.
       this.branches.delete(branchId)
       return { ok: false, refusal: this.branchRefusal(error, rowId) }
     }
   }
 
-  /** A branch and a metadata edit share `invalid_params`, and so does a row that is gone, so only the actor's own history can tell them apart. */
+  /** A gone row, a bad branch payload and a Hermes without `branch` all refuse `invalid_params` (persistence/authority/runtime.py `parse_mutation` reads an unknown operation as a metadata edit), so only the actor's own history can tell them apart. */
   private branchRefusal(error: unknown, rowId: number): Refusal {
     const reason = error instanceof RpcRefusal ? error.reason ?? '' : ''
     if (Object.hasOwn(BRANCH_REFUSALS, reason)) return BRANCH_REFUSALS[reason] as Refusal
@@ -389,7 +379,6 @@ export class SessionActor {
     return { request_id: this.deps.mintId(), operation, payload, expected_revision: this.tracked.fence.revision, expected_generation: generation }
   }
 
-  /** `sent` hears each request as it goes out, so a caller can pin the exact one. */
   private mutation(request: Mutation, sent?: (request: Mutation) => void) {
     const commit = (asked: Mutation) => {
       sent?.(asked)
@@ -398,7 +387,7 @@ export class SessionActor {
     }
     return commit(request).catch((error: unknown) => {
       // The refusal carries both fresh fences (Hermes's gateway/session_controls.py:915-920), so one retry needs no read.
-      // Hermes checks the receipt before the fences, so a fence refusal means this request committed nothing.
+      // Hermes checks the receipt before the fences (persistence/sqlite/authority/_mutation.py `mutate_runtime_session`), so a fence refusal means this request committed nothing.
       if (error instanceof RpcRefusal && FENCE_REFUSALS.has(error.reason ?? '') && error.revision !== null) {
         const { expected_generation: held } = request
         return commit({ ...request, expected_revision: error.revision, expected_generation: held === null ? null : error.generation ?? held })

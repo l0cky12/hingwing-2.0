@@ -11,7 +11,6 @@ interface ComposerProps {
   readonly slot: DraftSlot
   readonly inputRef?: RefObject<HTMLTextAreaElement | null>
   readonly autoFocus?: boolean
-  /** What the box starts with. Read once, when the pane is made. */
   readonly seed?: string
   readonly canSend: boolean
   readonly showStop: boolean

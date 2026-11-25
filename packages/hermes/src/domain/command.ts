@@ -44,7 +44,7 @@ export type Command =
   /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
   | { readonly do: 'reconnect'; readonly start: boolean }
 
-/** `send` and `start` answer the words to show under the composer: a command's output or note, or `null` for none. `branch` answers the new chat. */
+/** `send` and `start` answer the words to show under the composer: a command's output or note, or `null` for none. */
 export type ResultOf<C extends Command> =
   C extends { do: 'open' } ? SessionId | null
   : C extends { do: 'send' | 'start' } ? string | null

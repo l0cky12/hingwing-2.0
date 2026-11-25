@@ -14,11 +14,9 @@ holds a two second tool step, so a live run can see it running. Its `message.com
 - `edit-refused` answers the rewind with Hermes's refusal for a row that is gone (`invalid_params`, field
   `target_message_id`) and has no step after it.
 
-- `branch` has no steps. The gateway answers a `session.mutate` branch itself (the header says `branches`), copies the
-  stored rows through the row asked for into a new chat of the same profile, and titles it the next in the title's
-  lineage. The chat is titled "Notes heading" so the child's title is "Notes heading #2".
-- `branch-old` is the same chat on a Hermes that cannot branch: the header has no `branches`, so the gateway refuses
-  the operation `invalid_params` with no field, as an older one does.
+- `branch` has no steps and its header says `branches`. Its chat is titled "Notes heading" so a branch has a title to
+  number: "Notes heading #2".
+- `branch-old` is the same chat on a Hermes that cannot branch: its header has no `branches`.
 
 Unlike errand.jsonl this is not a recording of Hermes's gateway. The envelope, the `describe` and `list`
 answers and the frame shapes are errand.jsonl's own. The receipt is built from Hermes's rewind

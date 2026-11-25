@@ -82,7 +82,6 @@ export type DeskEvent =
   | { readonly on: 'made'; readonly bot: BotId | null; readonly draftId: string; readonly sessionId: SessionId }
   /** Hermes listed these chats in the bot's profile. Records their owner, and opens nothing. */
   | { readonly on: 'listed'; readonly bot: BotId; readonly sessions: readonly SessionId[] }
-  /** A branch of `from` made `sessionId` in `from`'s profile. Records its owner. Shows it only while `from` is still shown and no bot click is pending. */
   | { readonly on: 'branched'; readonly from: SessionId; readonly sessionId: SessionId; readonly text: string }
 
 /** Look this bot's Bot Chat up by its title. */
