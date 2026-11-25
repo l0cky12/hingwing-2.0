@@ -43,5 +43,14 @@ app.whenReady().then(async () => {
   const close = () => (closed ??= (served.dispose(), Promise.all([owner.close(), drafts.settled()]).then(() => {})))
   app.on('window-all-closed', () => void close().finally(() => app.quit()))
   // A quit from the menu or the session never emits window-all-closed, and a check or an attach still running would outlive the app.
-  app.on('will-quit', () => void close())
+  // Electron does not wait for a will-quit listener, so the quit is held until a draft still being written is on disk.
+  let settled = false
+  app.on('will-quit', event => {
+    if (settled) return
+    event.preventDefault()
+    void close().finally(() => {
+      settled = true
+      app.quit()
+    })
+  })
 })
