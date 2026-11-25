@@ -237,6 +237,13 @@ describe('loadFixture', () => {
     }
   })
 
+  it('reads the attach info the chat starts with, and refuses one that is not an object', () => {
+    expect(loadFixture(write([{ ...header, info: { cwd: '/work', fast: false } }])).header.info).toEqual({ cwd: '/work', fast: false })
+    expect(loadFixture(write([header])).header).not.toHaveProperty('info')
+    const info = write([{ ...header, info: ['cwd'] }])
+    expect(() => loadFixture(info)).toThrow(`${info}:1: "info" must be an object of attach info fields`)
+  })
+
   it('names the line of the prototype\'s envelope', () => {
     const path = write([header, { at: 0, push: { kind: 'event', type: 'message.delta', session_id: 's', seq: 1, payload: {} } }])
     expect(() => loadFixture(path)).toThrow(`${path}:2: "push" must be a JSON-RPC 2.0 frame with a method`)
