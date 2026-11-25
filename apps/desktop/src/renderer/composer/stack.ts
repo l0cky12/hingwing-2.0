@@ -69,13 +69,14 @@ export function countdown(nextAt: number, now: number): string {
   return `Next in ${hours > 0 ? `${hours}:${pad(minutes)}` : minutes}:${pad(left % 60)}`
 }
 
-export const countsDown = (loop: Loop) => loop.status === 'active' && !loop.heldByGoal && loop.nextAt !== null
+export const countsDown = (loop: Loop) => loop.status === 'active' && !loop.heldByGoal && !loop.awaiting && loop.nextAt !== null
 
 export function loopParts(loop: Loop, now: number): readonly string[] {
   const cadence = loop.mode === 'self-paced' ? 'Self-paced' : `Every ${every(loop.everyS)}`
   const state = loop.heldByGoal ? 'Waiting for the goal'
     : loop.status === 'paused' ? 'Paused'
     : loop.status === 'done' ? 'Done'
+    : loop.awaiting ? 'Awaiting response'
     : loop.nextAt === null ? null : countdown(loop.nextAt, now)
   return state === null ? [cadence] : [cadence, state]
 }

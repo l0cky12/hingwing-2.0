@@ -107,7 +107,7 @@ export function StatusStack({ processes, control, disabled, onKill, onControl }:
   return (
     <>
       {(processes.length > 0 || goal !== null || loop !== null || heartbeat !== null) && (
-        <section className="stack" aria-label="Working beside the chat">
+        <section className="status-stack" aria-label="Working beside the chat">
           {processes.length > 0 && (
             <Panel title={processesWords(processes)} parts={[]} open={open.has('processes')} onToggle={() => toggle('processes')}>
               {processes.map(process => (

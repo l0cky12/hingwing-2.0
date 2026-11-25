@@ -1,7 +1,7 @@
 import type { BackgroundProcess, Goal, Heartbeat, Loop, ProcessId } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { every, goalParts, heartbeatParts, loopParts, pressesOf, processesWords, processState } from '../src/renderer/composer/stack'
+import { countsDown, every, goalParts, heartbeatParts, loopParts, pressesOf, processesWords, processState } from '../src/renderer/composer/stack'
 import { StatusStack } from '../src/renderer/composer/StatusStack'
 
 const process = (state: BackgroundProcess['state']): BackgroundProcess => ({ id: 'proc_1' as ProcessId, command: 'npm run dev', state, startedAt: null, tail: '' })
@@ -13,7 +13,7 @@ const GOAL: Goal = {
   contract: { outcome: null, verification: null, constraints: null, boundaries: null, stopWhen: null },
   subgoals: [], gates: [], pausedWhy: null, verdict: null, waiting: null
 }
-const LOOP: Loop = { prompt: 'Check the build', status: 'active', mode: 'interval', everyS: 300, ticks: { fired: 2, max: 0 }, nextAt: null, heldByGoal: false, pausedWhy: null, stoppedWhy: null }
+const LOOP: Loop = { prompt: 'Check the build', status: 'active', mode: 'interval', everyS: 300, ticks: { fired: 2, max: 0 }, nextAt: null, heldByGoal: false, awaiting: false, pausedWhy: null, stoppedWhy: null }
 const HEARTBEAT: Heartbeat = { prompt: 'Any news?', status: 'active', everyS: 1800, fired: 0, lastAt: null }
 const NOW = 1_800_000_000_000
 
@@ -57,6 +57,8 @@ describe('the status stack', () => {
     expect(loopParts({ ...LOOP, nextAt: NOW + 3_725_000 }, NOW)).toEqual(['Every 5 min', 'Next in 1:02:05'])
     expect(loopParts({ ...LOOP, nextAt: NOW - 1 }, NOW)).toEqual(['Every 5 min', 'Due'])
     expect(loopParts({ ...LOOP, nextAt: NOW + 245_000, heldByGoal: true }, NOW)).toEqual(['Every 5 min', 'Waiting for the goal'])
+    expect(loopParts({ ...LOOP, nextAt: NOW + 245_000, awaiting: true }, NOW)).toEqual(['Every 5 min', 'Awaiting response'])
+    expect(countsDown({ ...LOOP, nextAt: NOW + 245_000, awaiting: true })).toBe(false)
     expect(loopParts({ ...LOOP, mode: 'self-paced' }, NOW)).toEqual(['Self-paced'])
     expect(heartbeatParts({ ...HEARTBEAT, status: 'paused' })).toEqual(['Every 30 min', 'Paused'])
     expect([30, 3600, 5400].map(every)).toEqual(['30 s', '1 h', '1 h 30 min'])

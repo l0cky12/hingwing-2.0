@@ -459,7 +459,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .side .err { margin: 0; }
 .side-note { margin: 4px 0 0; text-align: right; font-size: 12px; color: var(--graphite); }
 
-.stack { max-width: 760px; max-height: 40vh; overflow-y: auto; box-sizing: border-box; margin: 0 auto 10px; padding: 0 28px 0 calc(28px + var(--col)); font: 14px/1.5 var(--sans); }
+.status-stack { max-width: 760px; max-height: 40vh; overflow-y: auto; box-sizing: border-box; margin: 0 auto 10px; padding: 0 28px 0 calc(28px + var(--col)); font: 14px/1.5 var(--sans); }
 .panel .record p, .panel .record ol { margin: 0; }
 .panel .record h4 { margin: 0; }
 .panel .quiet, .process-head > span { color: var(--graphite); font-size: 13px; }
@@ -502,10 +502,10 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 :is(.model, .knob) .choice input { width: 14px; height: 14px; margin: 0; accent-color: var(--ink); }
 .model .list .later { margin: 8px 14px 2px; color: var(--graphite); }
 .model .empty { margin: 4px 14px; max-width: 34ch; }
-:is(.model, .stack) .confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; flex-basis: 100%; padding: 8px 12px; background: var(--caution-soft); border-radius: 6px; color: var(--ink); }
-:is(.model, .stack) .confirm p { margin: 0; flex: 1 1 30ch; color: var(--caution); }
-:is(.model, .stack) .confirm button { padding: 4px 12px; border: 0; border-radius: 6px; background: transparent; font: inherit; color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); cursor: pointer; }
-:is(.model, .stack) .confirm button.primary { background: var(--ink); color: var(--sheet); box-shadow: none; }
+:is(.model, .status-stack) .confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; flex-basis: 100%; padding: 8px 12px; background: var(--caution-soft); border-radius: 6px; color: var(--ink); }
+:is(.model, .status-stack) .confirm p { margin: 0; flex: 1 1 30ch; color: var(--caution); }
+:is(.model, .status-stack) .confirm button { padding: 4px 12px; border: 0; border-radius: 6px; background: transparent; font: inherit; color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); cursor: pointer; }
+:is(.model, .status-stack) .confirm button.primary { background: var(--ink); color: var(--sheet); box-shadow: none; }
 .model .err, .yolo .err { flex-basis: 100%; margin: 0; }
 .knob { position: relative; }
 .knob .readout:disabled { cursor: default; opacity: .6; }
@@ -594,7 +594,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .bar { flex-wrap: wrap; gap: 8px; padding: 10px 16px; }
   .banner { padding: 9px 16px; }
   #transcript { padding-left: 16px; padding-right: 16px; }
-  .composer > form, .composer :is(.refusal, .busy), .under, .slash-anchor, .slash-output, .editing, .chips, .attach-refused, .drop-line, .sides, .stack, .stack-said { padding: 0 16px 0 calc(16px + var(--col)); }
+  .composer > form, .composer :is(.refusal, .busy), .under, .slash-anchor, .slash-output, .editing, .chips, .attach-refused, .drop-line, .sides, .status-stack, .stack-said { padding: 0 16px 0 calc(16px + var(--col)); }
   .context .split { right: 16px; }
   .model .list { left: calc(4px + var(--col)); }
   .setup { padding: 36px 16px 40px; }

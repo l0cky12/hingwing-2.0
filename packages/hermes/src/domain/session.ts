@@ -178,6 +178,8 @@ export interface Loop {
   readonly nextAt: number | null
   /** A goal is running, so the loop waits for it. */
   readonly heldByGoal: boolean
+  /** The prompt it fired has not been answered yet, so `nextAt` is not settled. */
+  readonly awaiting: boolean
   readonly pausedWhy: string | null
   readonly stoppedWhy: string | null
 }
