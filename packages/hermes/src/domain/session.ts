@@ -23,6 +23,11 @@ export type InputId = Brand<string, 'InputId'>
 export type BranchId = Brand<string, 'BranchId'>
 /** Hermes's `execution_generation`: one run of the agent. Travels on the thing it fences. */
 export type Generation = Brand<number, 'Generation'>
+/** A file Highwing holds for a message, until the message is sent and for the rest of the app's run after. */
+export type AttachmentId = Brand<string, 'AttachmentId'>
+
+/** A file attached to a message. `kind` comes from the file's bytes, never its name: `image` for PNG, JPEG, GIF and WebP. `size` is in bytes. */
+export interface Attachment { readonly id: AttachmentId; readonly name: string; readonly kind: 'image' | 'file'; readonly size: number }
 
 /** A model as Hermes names it, shown as given. */
 export type ModelId = Brand<string, 'ModelId'>
@@ -168,6 +173,8 @@ export interface Request {
   readonly inputId: InputId | null
   /** The stored row id of this message, the address a rewind cuts before. null until Hermes names it. */
   readonly rowId: number | null
+  /** What this client sent with the message, in order. Empty for a message read from Hermes, which keeps no record of them. */
+  readonly attachments: readonly Attachment[]
 }
 
 export type Outcome =
@@ -322,6 +329,7 @@ export interface OutboxEntry {
   readonly text: string
   /** What the model reads when it differs from the `text` the thread and the stored history show. */
   readonly apiText?: string
+  readonly attachments: readonly Attachment[]
   readonly state: { readonly s: 'sending' } | { readonly s: 'queued' } | { readonly s: 'failed'; readonly message: string }
 }
 

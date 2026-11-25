@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { SessionActor } from '../src/actor'
+import { SessionActor, type Upload } from '../src/actor'
 import type { ServerRequest, SessionEvent } from '../src/domain/reduce'
-import type { BranchId, Generation, InputId, Link, PromptId, Session, SessionId, SessionUsage } from '../src/domain/session'
+import type { AttachmentId, BranchId, Generation, InputId, Link, PromptId, Session, SessionId, SessionUsage } from '../src/domain/session'
 import { manualClock, settle } from '../src/testing/clock'
 import { Offline, RpcRefusal, type Calls } from '../src/wire/link'
 
@@ -283,7 +283,7 @@ describe('send', () => {
     const { actor, open, calls, answer } = stage()
     await open()
     const sent = actor.send('hello')
-    expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'hello', state: { s: 'sending' } }])
+    expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'hello', attachments: [], state: { s: 'sending' } }])
     expect(calls[0]).toMatchObject({ method: 'prompt.submit', params: { session_id: ID, text: 'hello', input_id: 'id-1' } })
     await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
     expect(await sent).toEqual({ ok: true, value: undefined })
@@ -318,7 +318,7 @@ describe('send', () => {
     await answer('session.resume', reconnectSnapshot())
     expect(calls.map(call => [call.method, call.params])).toEqual([['prompt.submit', { session_id: ID, text: 'hello', input_id: 'id-1' }]])
     await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
-    expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'hello', state: { s: 'queued' } }])
+    expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'hello', attachments: [], state: { s: 'queued' } }])
   })
 
   it('shows one text and gives the model another, and sends both again after a drop', async () => {
@@ -333,7 +333,47 @@ describe('send', () => {
     await answer('session.resume', reconnectSnapshot())
     expect(calls.map(call => call.params)).toEqual([{ session_id: ID, text: '/release-notes', input_id: 'id-1', api_text: 'SKILL BODY' }])
     await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
-    expect(actor.session.outbox, 'an admitted message no longer carries the model text').toEqual([{ inputId: 'id-1', text: '/release-notes', state: { s: 'queued' } }])
+    expect(actor.session.outbox, 'an admitted message no longer carries the model text').toEqual([{ inputId: 'id-1', text: '/release-notes', attachments: [], state: { s: 'queued' } }])
+  })
+
+  const screenshot: Upload = { id: 'a-1' as AttachmentId, name: 'error.png', kind: 'image', size: 3, mime: 'image/png', bytes: Uint8Array.from([1, 2, 3]) }
+  const notes: Upload = { id: 'a-2' as AttachmentId, name: 'notes.txt', kind: 'file', size: 2, mime: 'application/octet-stream', bytes: Uint8Array.from([104, 105]) }
+
+  it('stages each attachment in order before the message, and sends the same staged paths and references again after a drop', async () => {
+    const { actor, open, dropAndRedial, answer, calls } = stage()
+    await open()
+    const sent = actor.send('what is this', undefined, [screenshot, notes])
+    await answer('image.attach_bytes', { attached: true, path: '/h/cache/images/upload-1.png', mime: 'image/png' })
+    await answer('file.attach', { attached: true, name: 'notes.txt', path: '/h/notes.txt', ref_path: 'notes.txt', ref_text: '@file:notes.txt', uploaded: true })
+    const submitted = { session_id: ID, text: 'what is this', input_id: 'id-1', api_text: 'what is this\n\n@file:notes.txt', attachments: [{ path: '/h/cache/images/upload-1.png', mime: 'image/png' }] }
+    expect(calls.map(call => call.params)).toEqual([submitted])
+    expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'what is this', attachments: [
+      { id: 'a-1', name: 'error.png', kind: 'image', size: 3 }, { id: 'a-2', name: 'notes.txt', kind: 'file', size: 2 }
+    ], state: { s: 'sending' } }])
+    dropAndRedial()
+    await sent
+    await answer('session.events.since', replay())
+    await answer('session.resume', reconnectSnapshot())
+    expect(calls.map(call => [call.method, call.params])).toEqual([['prompt.submit', submitted]])
+  })
+
+  it('sends nothing when the link drops while an attachment is staged, and names the attachment', async () => {
+    const { actor, open, answer, calls } = stage()
+    await open()
+    const sent = actor.send('what is this', undefined, [screenshot])
+    await answer('image.attach_bytes', new Offline('socket closed'))
+    expect(await sent).toEqual({ ok: false, refusal: { kind: 'offline', message: 'Highwing lost the connection while attaching error.png, so nothing was sent.' } })
+    expect(calls).toEqual([])
+    expect(actor.session.outbox).toEqual([])
+  })
+
+  it('says in plain words that a Hermes too old to take a file refused it', async () => {
+    const { actor, open, answer, calls } = stage()
+    await open()
+    const sent = actor.send('read this', undefined, [notes])
+    await answer('file.attach', new RpcRefusal(-32601, 'unknown_method', 'unknown method: file.attach'))
+    expect(await sent).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "Hermes refused notes.txt: This Hermes doesn't support that." } })
+    expect(calls).toEqual([])
   })
 })
 

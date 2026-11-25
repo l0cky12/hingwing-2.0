@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { PromptId, Session, SessionId } from '../domain/session'
-import { openHermes, type Command, type Hermes } from '../hub'
+import { openHermes, type Command, type Hermes, type Upload } from '../hub'
 import { systemClock } from '../wire/link'
 import { manualClock } from './clock'
 import type { Fixture, FixtureStep } from './fixture'
@@ -37,6 +37,8 @@ export interface PlayOptions extends Omit<ScriptOptions, 'timing' | 'clock'> {
    * reads the final session passes the session it waits for.
    */
   readonly ended?: (session: Session) => boolean
+  /** Files the stand-in user attaches to its first message. The hub reads them from here. */
+  readonly attach?: readonly Upload[]
   /** Called with each command the stand-in user ran and what the hub answered. */
   readonly answered?: (command: Command, outcome: Awaited<ReturnType<Hermes['run']>>) => void
 }
@@ -66,7 +68,12 @@ export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncG
   const clock = virtual ?? systemClock
   const script = scriptedDialer(fixture, { ...options, timing: 'instant', clock })
   const ids = fixture.steps.flatMap(step => ('await' in step && typeof mintedIn(step) === 'string' ? [mintedIn(step) as string] : []))
-  const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-play', version: '0' }, mintId: () => ids.shift() ?? randomUUID() })
+  const attach = options.attach ?? []
+  let attached = attach.length === 0
+  const hermes = openHermes({
+    dial: script, clock, client: { name: 'highwing-play', version: '0' }, mintId: () => ids.shift() ?? randomUUID(),
+    uploads: { read: async id => attach.find(upload => upload.id === id) ?? null }
+  })
 
   const moments: { readonly step: number; readonly session: Session }[] = []
   const asked = new Set<number>()
@@ -78,8 +85,10 @@ export async function* play(fixture: Fixture, options: PlayOptions = {}): AsyncG
     const index = script.step
     const step = fixture.steps[index]
     if (step === undefined || !('await' in step) || session.sync.state !== 'live' || asked.has(index)) return
-    const command = USER[step.await]?.(sessionId, recorded(step), fixture, fixture.steps.slice(index + 1).find(next => 'await' in next))
-    if (command === undefined) throw new Error(`step ${index}: the stand-in user has no command for ${step.await}`)
+    const typed = USER[step.await]?.(sessionId, recorded(step), fixture, fixture.steps.slice(index + 1).find(next => 'await' in next))
+    if (typed === undefined) throw new Error(`step ${index}: the stand-in user has no command for ${step.await}`)
+    const command: Command = typed.do === 'send' && !attached ? { ...typed, attachments: attach.map(upload => upload.id) } : typed
+    if (command.do === 'send') attached = true
     asked.add(index)
     const sendAfter = command.do === 'rewind' ? fixture.steps.findIndex((next, at) => at > index && 'await' in next) : -1
     if (sendAfter >= 0) asked.add(sendAfter)

@@ -1,4 +1,4 @@
-import { activityOf, modelViewOf, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type Relay, type SessionId, type Shown, type Version } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, type AttachmentId, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type Relay, type SessionId, type Shown, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
@@ -214,10 +214,10 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     if (outcome.ok || outcome.refusal.kind !== 'offline') branchKeys.current.delete(rowId)
     if (!outcome.ok) setRefused({ id, message: outcome.refusal.message })
   }, [id])
-  const onSend = useCallback(async (text: string): Promise<CommandOutcome<string | null>> => {
+  const onSend = useCallback(async (text: string, attachments: readonly AttachmentId[]): Promise<CommandOutcome<string | null>> => {
     setRefused(null)
-    if (chat.sessionId === null) return run({ do: 'start', chat, text })
-    if (editing === null) return run({ do: 'send', sessionId: chat.sessionId, text })
+    if (chat.sessionId === null) return run({ do: 'start', chat, text, attachments })
+    if (editing === null) return run({ do: 'send', sessionId: chat.sessionId, text, attachments })
     const { press } = editing
     const outcome = await rewrite(chat.sessionId, editing.rowId, text)
     if (!outcome.ok) return outcome
@@ -239,6 +239,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const model = modelViewOf(menu.id === id ? menu.menu : null, session)
   const fill = session?.usage.context ?? null
   const yolo = id !== null && live ? (session?.yolo ?? null) : null
+  const online = useTopic('link')?.state === 'online'
 
   const fileCall = useMemo(() => (id === null ? NO_FILE_CALL : fileCallFor(id)), [id])
 
@@ -271,6 +272,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         autoFocus={chat.kind === 'branch' || (chat.kind === 'new' && chat.sessionId === null)}
         seed={chat.kind === 'branch' ? chat.text : ''}
         canSend={id === null || live}
+        canAttach={online}
         showStop={session !== undefined && activityOf(session).kind !== 'idle'}
         onSend={onSend}
         editing={editing}

@@ -77,6 +77,8 @@ export interface Fixture {
     readonly homeBotChat?: boolean
     /** Bytes the app's image loader answers with in place of the network and the disk, as base64 under the web URL or absolute path asked for. A key not here is missing. */
     readonly media?: Readonly<Record<string, string>>
+    /** The app's limits on an attachment, in bytes, lower than Hermes's own so a run can stage a file over one. Either may be absent. */
+    readonly attachLimits?: { readonly image?: number; readonly file?: number }
     /** profile -> the chats it has beside its Bot Chat, before the story starts. Not for the home profile, whose list is `list`. */
     readonly chats?: { readonly [profile: string]: readonly ChatSeed[] }
     /**
@@ -224,6 +226,11 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
   const { media } = value
   if (media !== undefined && !(isObject(media) && Object.values(media).every(bytes => typeof bytes === 'string'))) return '"media" must map a url or path to base64 bytes'
+  const { attachLimits } = value
+  const limit = (bytes: unknown) => bytes === undefined || (Number.isSafeInteger(bytes) && (bytes as number) > 0)
+  if (attachLimits !== undefined && !(isObject(attachLimits) && Object.keys(attachLimits).every(key => key === 'image' || key === 'file') && limit(attachLimits.image) && limit(attachLimits.file))) {
+    return '"attachLimits" may hold only "image" and "file", each a number of bytes above 0'
+  }
   const { chats } = value
   if (chats !== undefined && !(isObject(chats) && Object.values(chats).every(seeds => Array.isArray(seeds) && seeds.every(isSeed)))) {
     return '"chats" must map a profile to its chats, each with id, title, last_active and rows'
@@ -251,6 +258,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
+    ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),
     ...(relay === undefined ? {} : { relay: relay as { readonly [profile: string]: RelayScript } }),
     ...(paths === undefined ? {} : { paths: paths as NonNullable<Fixture['header']['paths']> })

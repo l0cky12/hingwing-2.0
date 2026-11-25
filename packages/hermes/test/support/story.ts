@@ -25,7 +25,7 @@ function userInputs(method: string, params: Record<string, unknown>, reply: Reco
     case 'prompt.submit': {
       const inputId = params.input_id as InputId
       return [
-        local({ did: 'send', inputId, text: params.text as string }),
+        local({ did: 'send', inputId, text: params.text as string, attachments: [] }),
         local({ did: 'send.admitted', inputId, admissionId: reply?.admission_id as string, status: reply?.status as Admission['status'] })
       ]
     }

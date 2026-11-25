@@ -1,9 +1,12 @@
 import type { Hermes } from '@highwing/hermes'
 import type { BotId, CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
 import {
-  CHANNEL, isAppTopic, isPreviewCommand, parseBotId, parseCommand, parseDraft, parseFileRequest, parseImageRequest, parseTopic,
-  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type PictureChoice, type Push, type SessionPatch, type Setup, type Tail, type Topic
+  CHANNEL, isAppTopic, isPreviewCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
+  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type PictureChoice, type Push, type SessionPatch, type Setup, type StageResult,
+  type Tail, type Topic
 } from '../ipc-contract'
+import { basename } from 'node:path'
+import type { AttachmentStore, AttachSources, StageSource } from './attachments'
 import type { ConnectionOwner } from './connection'
 import type { DraftStore } from './drafts'
 import { openablePath, type Opener } from './files'
@@ -131,9 +134,11 @@ function fileActions(opener: Opener, pane: PreviewOwner): FileActions {
   }
 }
 
+export interface Attaching { readonly store: Pick<AttachmentStore, 'stage' | 'read'>; readonly sources: AttachSources }
+
 export function serveWindows(
   owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>,
-  pane: PreviewOwner, pickPicture: (bot: BotId) => Promise<CommandOutcome<PictureChoice>>
+  pane: PreviewOwner, pickPicture: (bot: BotId) => Promise<CommandOutcome<PictureChoice>>, attaching: Attaching
 ): { dispose(): void } {
   const windows = new Map<number, Map<number, Served>>()
   const owners: Owners = { owner, pane }
@@ -185,6 +190,10 @@ export function serveWindows(
   ipc.handle(CHANNEL.image, async (event, raw) => {
     const request = parseImageRequest(raw)
     if (!trusted(event) || request === null) return IMAGE_REFUSED
+    if (request.kind === 'attachment') {
+      const held = await attaching.store.read(request.id)
+      return held?.kind === 'image' ? { ok: true, type: held.mime as ImageType, bytes: held.bytes } : IMAGE_REFUSED
+    }
     const watched = request.kind === 'tool' ? [...(windows.get(event.sender.id)?.values() ?? [])].find(served => served.topic === `session:${request.sessionId}`) : undefined
     return images.load(request, { session: watched?.current() as Session | undefined, local: isLocal(owner.setup.get()) })
   })
@@ -200,6 +209,28 @@ export function serveWindows(
     return trusted(event) && bot !== null ? pickPicture(bot) : REFUSED
   })
 
+  const { store, sources } = attaching
+  const notHere = (name: string): StageResult => ({ ok: false, name, reason: `${name} isn't a file on this computer, so Highwing can't attach it.` })
+  const nameOf = (file: StageSource | StageResult) => (typeof file === 'string' ? basename(file) : 'ok' in file ? (file.ok ? file.attachment.name : file.name) : file.name)
+  const overCap = (name: string): StageResult => ({ ok: false, name, reason: `A message holds up to ${MAX_ATTACHMENTS} attachments, so ${name} wasn't attached.` })
+  const stageOneByOne = async (files: readonly (StageSource | StageResult)[]): Promise<readonly StageResult[]> => {
+    const results: StageResult[] = []
+    for (const [index, file] of files.entries()) {
+      if (index >= MAX_ATTACHMENTS) results.push(overCap(nameOf(file)))
+      else results.push(typeof file === 'object' && 'ok' in file ? file : await store.stage(file))
+    }
+    return results
+  }
+  ipc.handle(CHANNEL.attachPick, async event => (trusted(event) ? stageOneByOne(await sources.pick()) : []))
+  ipc.handle(CHANNEL.attachPaste, async event => {
+    const pasted = trusted(event) ? await sources.pasted() : null
+    return pasted === null ? [] : stageOneByOne([pasted])
+  })
+  ipc.handle(CHANNEL.attachDrop, async (event, raw) => {
+    const dropped = parseDropped(raw)
+    return trusted(event) && dropped !== null ? stageOneByOne(dropped.map(({ name, path }) => path ?? notHere(name))) : []
+  })
+
   return {
     dispose() {
       for (const windowId of [...windows.keys()]) stopWindow(windowId)
@@ -211,6 +242,9 @@ export function serveWindows(
       ipc.removeHandler(CHANNEL.drafts)
       ipc.removeAllListeners(CHANNEL.keepDraft)
       ipc.removeHandler(CHANNEL.pickPicture)
+      ipc.removeHandler(CHANNEL.attachPick)
+      ipc.removeHandler(CHANNEL.attachPaste)
+      ipc.removeHandler(CHANNEL.attachDrop)
     }
   }
 }

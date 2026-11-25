@@ -5,7 +5,7 @@
  * its way). Tests feed it event logs.
  */
 import type {
-  Ask, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, ModelRef, OpenTurn, Outcome, OutboxEntry, PlanEntry,
+  Ask, Attachment, Began, FileDiff, Generation, HelperEnd, HelperId, HelperItem, InputId, Item, Json, Link, ModelRef, OpenTurn, Outcome, OutboxEntry, PlanEntry,
   PromptId, PromptItem, PromptReply, ReasoningItem, Request, Run, Session, SessionContent, SessionId, SessionModel, SessionUsage, SettledTurn, Sync,
   TextItem, Tokens, ToolId, ToolItem, ToolResult, TurnId
 } from './session'
@@ -200,7 +200,7 @@ export type SessionInput =
 
 /** What this client did. Folded through the same reducer so a second window sees it too. */
 export type LocalAction =
-  | { readonly did: 'send'; readonly inputId: InputId; readonly text: string; readonly apiText?: string }
+  | { readonly did: 'send'; readonly inputId: InputId; readonly text: string; readonly apiText?: string; readonly attachments: readonly Attachment[] }
   | { readonly did: 'send.admitted'; readonly inputId: InputId; readonly admissionId: string; readonly status: Admission['status'] }
   | { readonly did: 'send.failed'; readonly inputId: InputId; readonly message: string }
   | { readonly did: 'send.discarded'; readonly inputId: InputId }
@@ -468,7 +468,7 @@ function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
 
 function startedRequest(queue: readonly Admission[]): Request | null {
   const started = queue.find(row => row.status === 'started')
-  return started === undefined ? null : { text: started.text, inputId: started.inputId, rowId: null }
+  return started === undefined ? null : { text: started.text, inputId: started.inputId, rowId: null, attachments: [] }
 }
 
 function admission(state: Tracked, row: Pick<Admission, 'inputId' | 'admissionId' | 'status'>): Tracked {
@@ -482,7 +482,7 @@ function admission(state: Tracked, row: Pick<Admission, 'inputId' | 'admissionId
     case 'unknown':
       return remembered
     case 'queued':
-      return entry.state.s === 'queued' ? remembered : setEntry(remembered, { inputId: entry.inputId, text: entry.text, state: { s: 'queued' } })
+      return entry.state.s === 'queued' ? remembered : setEntry(remembered, { inputId: entry.inputId, text: entry.text, attachments: entry.attachments, state: { s: 'queued' } })
     case 'terminal':
       return dropEntry(state, row.inputId)
     case 'started': {
@@ -490,7 +490,7 @@ function admission(state: Tracked, row: Pick<Admission, 'inputId' | 'admissionId
       if (run.state !== 'running') return remembered
       const { request } = run.turn
       if (request !== null && request.inputId !== null && request.inputId !== row.inputId) return remembered
-      const claimed = editTurn(state, turn => ({ ...turn, request: { text: request?.text ?? entry.text, inputId: entry.inputId, rowId: null } }))
+      const claimed = editTurn(state, turn => ({ ...turn, request: { text: request?.text ?? entry.text, inputId: entry.inputId, rowId: null, attachments: entry.attachments } }))
       return dropEntry(claimed, row.inputId)
     }
     default:
@@ -535,7 +535,8 @@ function act(state: Tracked, action: LocalAction): Tracked {
     case 'send': {
       const entry = content.outbox.find(held => held.inputId === action.inputId)
       const sending: OutboxEntry = {
-        inputId: action.inputId, text: action.text, ...(action.apiText === undefined ? {} : { apiText: action.apiText }), state: { s: 'sending' }
+        inputId: action.inputId, text: action.text, ...(action.apiText === undefined ? {} : { apiText: action.apiText }), attachments: action.attachments,
+        state: { s: 'sending' }
       }
       if (entry === undefined) return { ...state, content: { ...content, outbox: [...content.outbox, sending] } }
       return entry.state.s === 'failed' ? setEntry(state, sending) : state
@@ -609,7 +610,7 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
       const settled = settle(state, LOST, null, [], null, null)
       const claimed = claimEntry(settled, event.admissionId, event.requestText)
       const request = claimed !== null
-        ? { text: claimed.text, inputId: claimed.inputId, rowId: null }
+        ? { text: claimed.text, inputId: claimed.inputId, rowId: null, attachments: claimed.attachments }
         : requestOf(event.requestText)
       return openRun(
         claimed === null ? settled : dropEntry(settled, claimed.inputId),
@@ -735,7 +736,7 @@ function runTurnId(generation: Generation): TurnId {
 }
 
 function requestOf(text: string | null): Request | null {
-  return text === null ? null : { text, inputId: null, rowId: null }
+  return text === null ? null : { text, inputId: null, rowId: null, attachments: [] }
 }
 
 function holdsTurn(content: SessionContent, id: TurnId): boolean {

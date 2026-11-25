@@ -1,6 +1,6 @@
 import {
   activityOf,
-  type Activity, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type Item, type NoticeItem, type Outcome, type PlanEntry, type PlanItem,
+  type Activity, type Attachment, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type Item, type NoticeItem, type Outcome, type PlanEntry, type PlanItem,
   type PromptId, type PromptItem, type PromptReply, type ReasoningItem, type Session, type SettledTurn, type Sync, type Tokens, type ToolItem, type Turn
 } from '@highwing/hermes/domain'
 import { changesAt, elapsedWords, timeLines, type ViewClock } from './when'
@@ -17,7 +17,9 @@ export interface ThreadView {
   readonly state: 'opening' | 'ready' | 'unavailable'
   readonly turns: readonly TurnView[]
   /** Messages sent and not yet picked up, shown under the last turn. */
-  readonly pending: readonly { readonly key: string; readonly text: string; readonly status: 'sending' | 'queued' | 'failed'; readonly detail: string | null }[]
+  readonly pending: readonly {
+    readonly key: string; readonly text: string; readonly attachments: readonly Attachment[]; readonly status: 'sending' | 'queued' | 'failed'; readonly detail: string | null
+  }[]
   readonly earlier: Session['earlier']
   /**
    * The earliest instant after the clock's `now` at which the same session would read differently
@@ -32,6 +34,8 @@ export interface TurnView {
   /** The quiet line above the request: "Today 14:05". null draws nothing. Never the empty string. */
   readonly time: string | null
   readonly request: string | null
+  /** What was sent with the request, drawn above it. Empty for a turn with no request. */
+  readonly attachments: readonly Attachment[]
   /** The stored row id of the request, the address an edit or a regenerate cuts before. null for a turn with no request, and for a running turn's until it settles. */
   readonly rowId: number | null
   /** Top to bottom along the thread. */
@@ -218,6 +222,7 @@ export function threadView(session: Session, clock: ViewClock): ThreadView {
     pending: session.outbox.map(entry => ({
       key: entry.inputId,
       text: entry.text,
+      attachments: entry.attachments,
       status: entry.state.s,
       detail: entry.state.s === 'failed' ? entry.state.message : null
     })),
@@ -271,12 +276,14 @@ function turnView(turn: Turn, time: string | null, live: boolean, end: (nodes: r
     }
   })
   return {
-    key: turn.id, time, request: turn.request?.text ?? null, rowId: turn.request?.rowId ?? null, nodes, end: end(nodes),
+    key: turn.id, time, request: turn.request?.text ?? null, attachments: turn.request?.attachments ?? NO_ATTACHMENTS, rowId: turn.request?.rowId ?? null,
+    nodes, end: end(nodes),
     tokens: 'tokens' in turn ? tokenWords(turn.tokens) : null
   }
 }
 
 const COUNT = new Intl.NumberFormat('en-US')
+const NO_ATTACHMENTS: readonly Attachment[] = []
 
 function tokenWords(tokens: Tokens | null): string | null {
   if (tokens === null) return null
@@ -773,6 +780,7 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
  * The view as text, one line per node, for golden tests, bug reports and a replay CLI:
  *
  *   @ Today 14:05                                              time line, when the turn has one
+ *   + [image] error.png  [file] contract.pdf                   what was sent with the request, when anything was
  *   > make notes.md with a three-item todo list ...            request
  *   | I'll create the notes file first, then make the edit.    prose (first line)
  *   ■ Created and edited `notes.md` · 2 steps                  group, its steps indented under it
@@ -801,6 +809,7 @@ export function outline(view: ThreadView, opened: ReadonlySet<string> = new Set(
   view.turns.forEach((turn, index) => {
     if (index > 0) lines.push('')
     if (turn.time !== null) lines.push(`@ ${turn.time}`)
+    if (turn.attachments.length > 0) lines.push(attachmentLine(turn.attachments))
     if (turn.request !== null) lines.push(`> ${firstLine(turn.request)}`)
     const liveKey = turn.end.kind === 'at' ? turn.end.nodeKey : null
     const elapsed = turn.end.kind === 'at' && turn.end.tone === 'live' ? turn.end.elapsed : null
@@ -809,9 +818,14 @@ export function outline(view: ThreadView, opened: ReadonlySet<string> = new Set(
     if (end !== null) lines.push(end)
     if (turn.tokens !== null) lines.push(`  ${turn.tokens}`)
   })
-  for (const message of view.pending) lines.push(`⋯ ${firstLine(message.text)}  (${message.status}${message.detail ? `: ${message.detail}` : ''})`)
+  for (const message of view.pending) {
+    if (message.attachments.length > 0) lines.push(attachmentLine(message.attachments))
+    lines.push(`⋯ ${firstLine(message.text)}  (${message.status}${message.detail ? `: ${message.detail}` : ''})`)
+  }
   return lines.join('\n')
 }
+
+const attachmentLine = (attachments: readonly Attachment[]) => `+ ${attachments.map(({ kind, name }) => `[${kind}] ${name}`).join('  ')}`
 
 function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, opened: ReadonlySet<string>): string[] {
   switch (node.kind) {

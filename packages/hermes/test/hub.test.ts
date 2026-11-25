@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BotId } from '../src/domain/bots'
-import type { BranchId, Item, PromptId, Session, SessionId } from '../src/domain/session'
+import type { AttachmentId, BranchId, Item, PromptId, Session, SessionId } from '../src/domain/session'
 import { DialError, openHermes, RETAIN_MS, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
 import { play, scriptedDialer, type Fixture, type FixtureStep, type Moment, type ScriptOptions } from '../src/testing/fixture'
@@ -976,6 +976,17 @@ describe('mentioning another bot', () => {
     expect(states(opened)).toEqual([{ s: 'answered', reply: RAE_SAID }])
     expect(seen).toEqual(['', 'waiting', 'answered'])
     expect(delivers(opened)).toHaveLength(1)
+  })
+
+  it('refuses a message that carries attachments, and hands nothing to the bot', async () => {
+    const opened = open(TEAM)
+    await opened.clock.advance(0)
+    const outcome = await opened.hermes.run({ do: 'send', sessionId: SESSION, text: ASK, attachments: ['a-1' as AttachmentId] })
+    await opened.clock.advance(0)
+    expect(outcome).toEqual({ ok: false, refusal: { kind: 'rejected', message: "A message to another bot can't carry attachments. Remove them, or send it without the mention." } })
+    expect(relays(opened)).toEqual([])
+    expect(delivers(opened)).toEqual([])
+    expect(opened.sent().filter(call => /attach/.test(call.method))).toEqual([])
   })
 
   it('says in words that a bot is offline, and leaves the message sent', async () => {

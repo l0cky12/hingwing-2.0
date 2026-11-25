@@ -24,7 +24,7 @@ describe('the errand, folded through parse and reduce', () => {
     expect(end.content.history).toHaveLength(1)
     expect(turn.outcome).toEqual({ kind: 'complete' })
     expect(turn.rows).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-    expect(turn.request).toEqual({ text: REQUEST, inputId: 'input_990d3cd8381d422f', rowId: 1 })
+    expect(turn.request).toEqual({ text: REQUEST, inputId: 'input_990d3cd8381d422f', rowId: 1, attachments: [] })
   })
 
   // docs/design/reference/settled-C.png, top to bottom. The approval line sits above "Ran rm -rf" in

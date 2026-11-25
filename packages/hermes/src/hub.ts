@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { DONE, refusalOf, refused, SessionActor, type BranchPin } from './actor'
+import { DONE, refusalOf, refused, SessionActor, type BranchPin, type Upload } from './actor'
 import { botModels, botPicture, createBot, describeBot, editBot, setBotPicture } from './bot-admin'
 import { botsIn, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
@@ -8,7 +8,7 @@ import type { OpenChat } from './domain/open'
 import type { PaneAsk } from './domain/pane'
 import type { ServerRequest } from './domain/reduce'
 import type { RelayDesk } from './domain/relay'
-import type { BranchId, Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
+import type { AttachmentId, BranchId, Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import { chatDesk } from './open'
 import { relayBook } from './relay'
@@ -19,6 +19,7 @@ import { connect, systemClock, type Clock, type Dialer } from './wire/link'
 import { parseCatalog, parseDirective, parseEvent, parseServerRequest, type ParsedEvent } from './wire/parse'
 
 export type { Command, Outcome, Refusal, ResultOf } from './domain/command'
+export type { Upload } from './actor'
 export type { Clock, Dialer, WireSocket } from './wire/link'
 export { checkTarget, type CheckOptions, type CheckResult } from './wire/check'
 export { DialError } from './wire/link'
@@ -85,6 +86,8 @@ export interface HermesOptions {
   readonly onPane?: (ask: PaneAsk, from: Session) => void
   /** Name sent as `client` on `session.create` when the gateway accepts it. */
   readonly client: { readonly name: string; readonly version: string }
+  /** Where a message's attachments are read from when it is sent. null: Highwing no longer holds it. Default: holds none. */
+  readonly uploads?: { read(id: AttachmentId): Promise<Upload | null> }
 }
 
 /** How long a session nothing retains stays attached. */
@@ -133,10 +136,15 @@ const NOTHING_TO_SHOW: Outcome<string | null> = { ok: true, value: null }
 const showing = (outcome: Outcome, words: string | null = null): Outcome<string | null> => (outcome.ok ? { ok: true, value: words } : outcome)
 
 const ATTACHING: ReadonlySet<Session['sync']['state']> = new Set(['opening', 'catching-up', 'rebuilding'])
+const NO_UPLOADS: NonNullable<HermesOptions['uploads']> = { read: async () => null }
+const COMMAND_WITH_ATTACHMENTS = "A command can't carry attachments. Remove them, or send a message instead."
+const MENTION_WITH_ATTACHMENTS = "A message to another bot can't carry attachments. Remove them, or send it without the mention."
+const UPLOAD_GONE = 'An attachment is no longer available. Remove it and attach it again.'
 
 export function openHermes(options: HermesOptions): Hermes {
   const clock = options.clock ?? systemClock
   const mintId = options.mintId ?? randomUUID
+  const uploads = options.uploads ?? NO_UPLOADS
   const count = (kind: 'unshown' | 'invalid' | 'unrouted' | 'declined', type: string) => options.onDiagnostic?.({ kind, type })
 
   const actors = new Map<SessionId, SessionActor>()
@@ -312,13 +320,18 @@ export function openHermes(options: HermesOptions): Hermes {
 
   type Handled<C extends Command> = Outcome<ResultOf<C>> | Promise<Outcome<ResultOf<C>>>
   const sessionCommands: { readonly [K in SessionCommand['do']]: (actor: SessionActor, command: Extract<Command, { do: K }>) => Handled<Extract<Command, { do: K }>> } = {
-    send: async (actor, { text }) => {
+    send: async (actor, { text, attachments = [] }) => {
       if (text.trimStart().startsWith('/')) await catalogRead
       const line = slashLineOf(text, slash.get())
       if (line !== null) return runSlash(actor, line)
       if (text.includes('@')) await relayRead
       const to = mentioned(actor.id, text)
-      if (to.length === 0) return showing(await actor.send(text))
+      if (to.length === 0) {
+        const read = await Promise.all(attachments.map(id => uploads.read(id)))
+        if (read.includes(null)) return refused('stale', UPLOAD_GONE)
+        return showing(await actor.send(text, undefined, read as Upload[]))
+      }
+      if (attachments.length > 0) return refused('rejected', MENTION_WITH_ATTACHMENTS)
       const { run, history } = actor.session
       const after = run.state === 'running' ? run.turn.id : history.at(-1)?.id ?? null
       for (const bot of to) relays.send(actor.id, after, bot, text)
@@ -392,15 +405,22 @@ export function openHermes(options: HermesOptions): Hermes {
     return read
   }
 
+  const carriesCommand = async (command: Extract<Command, { do: 'send' | 'start' }>): Promise<boolean> => {
+    if ((command.attachments ?? []).length === 0 || !command.text.trimStart().startsWith('/')) return false
+    await catalogRead
+    return slashLineOf(command.text, slash.get()) !== null
+  }
+
   const run = async (command: Command): Promise<Outcome<unknown>> => {
     if (command.do === 'send' || command.do === 'start') {
+      if (await carriesCommand(command)) return refused('rejected', COMMAND_WITH_ATTACHMENTS)
       const opened = await typedNew(command)
       if (opened !== null) return opened
     }
     if (command.do === 'open') return desk.ask(command.ref)
     if (command.do === 'start') {
       const started = await desk.start(command.chat)
-      return started.ok ? run({ do: 'send', sessionId: started.value, text: command.text }) : started
+      return started.ok ? run({ do: 'send', sessionId: started.value, text: command.text, attachments: command.attachments ?? [] }) : started
     }
     if (command.do === 'botModels') return botModels(conn, command.bot)
     if (command.do === 'versions') return versions(command.sessionId)

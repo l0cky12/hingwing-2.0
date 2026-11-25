@@ -3,7 +3,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, appendFileSync, openSync, readSync, closeSync } from 'node:fs'
-import { dirname, extname, join, resolve, sep } from 'node:path'
+import { delimiter, dirname, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
@@ -377,6 +377,36 @@ const STEPS = {
       if (held !== drawn) throw new Error(`the avatar of "${name}" draws ${held}, not a ${drawn}`)
     }
   },
+  'paste-image': {
+    arity: 1,
+    run: async (ctx, path) => {
+      const bytes = readFileSync(resolve(process.cwd(), path)).toString('base64')
+      await ctx.app.evaluate(({ clipboard, ClipboardItem }, png) =>
+        clipboard.write([new ClipboardItem({ 'image/png': new Blob([Buffer.from(png, 'base64')], { type: 'image/png' }) })]), bytes)
+      await ctx.page.getByLabel('Message Hermes', { exact: true }).focus({ timeout: ctx.timeout })
+      await ctx.page.keyboard.press('Control+V')
+    }
+  },
+  'drag-file': {
+    arity: 1,
+    run: async (ctx, name) => {
+      ctx.dragged = await ctx.page.evaluateHandle(fileName => {
+        const transfer = new DataTransfer()
+        transfer.items.add(new File([new Uint8Array([1, 2, 3])], fileName))
+        return transfer
+      }, name)
+      const thread = ctx.page.locator('#scroll')
+      for (const type of ['dragenter', 'dragover']) await thread.dispatchEvent(type, { dataTransfer: ctx.dragged }, { timeout: ctx.timeout })
+    }
+  },
+  'drop-file': {
+    arity: 0,
+    run: async ctx => {
+      if (!ctx.dragged) throw new Error('drop-file needs a drag-file step before it')
+      await ctx.page.locator('#scroll').dispatchEvent('drop', { dataTransfer: ctx.dragged }, { timeout: ctx.timeout })
+      ctx.dragged = null
+    }
+  },
   drafts: {
     arity: 1,
     run: async (ctx, n) => {
@@ -712,7 +742,7 @@ function serveInDeltas(steps, origin) {
   }
 }
 
-function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, paths, createWarnings, configureClash, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, origin }, out) {
+function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, paths, createWarnings, configureClash, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, origin, attachLimit }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const header = JSON.parse(lines[0])
   const steps = lines.slice(1).map(line => JSON.parse(line))
@@ -738,6 +768,7 @@ function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, p
   if (tree) header.tree = true
   if (yolo) header.yolo = yolo === 'on'
   if (yoloDenied) header.yoloDenied = true
+  if (attachLimit) header.attachLimits = { image: Number(attachLimit), file: Number(attachLimit) }
   if (yoloElsewhereAfter) {
     const at = steps.findIndex(step => step.push?.params?.type === yoloElsewhereAfter)
     if (at === -1) fail(`${fixturePath} pushes no ${yoloElsewhereAfter} frame`)
@@ -781,19 +812,20 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
   if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
   const site = options.serve ? await serve(options.serve) : null
-  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], origin: site?.origin }
+  const edits = { dropAfter: options['drop-after'], models: options.models, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], origin: site?.origin, attachLimit: options['attach-limit'] }
   const edited = Object.values(edits).some(Boolean)
   if (options.yolo && options.yolo !== 'on' && options.yolo !== 'off') fail(`--yolo takes on or off, not "${options.yolo}"`)
   if (!options.yolo && (options['yolo-denied'] || options['yolo-elsewhere-after'])) fail('--yolo-denied and --yolo-elsewhere-after need --yolo, because a Hermes with no YOLO answers neither')
   if (options.tree && !options.profiles) fail('--tree needs --profiles, because the tree lists the chats that file seeds')
-  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after and --serve edit the fixture a --fixture run replays. They do nothing with --fake-host')
+  if (scenario && edited) fail('--drop-after, --models, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host')
   if (options['configure-clash'] && !options.profiles) fail('--configure-clash needs --profiles: without it Hermes has no bots to rename')
+  if (options['attach-limit'] && !/^[1-9]\d*$/.test(options['attach-limit'])) fail(`--attach-limit takes a number of bytes, not "${options['attach-limit']}"`)
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
   if (options.size && !/^[1-9]\d*x[1-9]\d*$/.test(options.size)) fail(`--size takes <width>x<height>, not "${options.size}"`)
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')
@@ -831,6 +863,8 @@ async function run(argv) {
   env.HIGHWING_OPEN_LOG = ctx.opens
   delete env.HIGHWING_PICK_FILE
   if (options['pick-file']) env.HIGHWING_PICK_FILE = resolve(process.cwd(), options['pick-file'])
+  delete env.HIGHWING_PICK_FILES
+  if (options.pick) env.HIGHWING_PICK_FILES = options.pick.split(',').map(path => resolve(process.cwd(), path)).join(delimiter)
 
   const { _electron } = requireDesktop('playwright-core')
   log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"` : `HIGHWING_FIXTURE=${fixture}`}${Object.keys(media).length > 0 ? `, emulating ${JSON.stringify(media)}` : ''}`)

@@ -793,3 +793,51 @@ describe('the scripted gateway edits a profile as Hermes does', () => {
     }
   })
 })
+
+describe('attachments, as Hermes stages them', () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]).toString('base64')
+
+  it('stages an image only for a socket attached to the session', async () => {
+    const { call } = await rawSocket()
+    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG, ext: 'png' })).toMatchObject(refusal('permission_denied'))
+    await call('session.resume', { session_id: SESSION })
+    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG, ext: 'png' }))
+      .toMatchObject({ result: { attached: true, path: '/hermes/default/cache/images/upload-1.png', mime: 'image/png' } })
+  })
+
+  it('reads the type from the name before the ext hint, and from the bytes only when neither says', async () => {
+    const { call } = await rawSocket()
+    await call('session.resume', { session_id: SESSION })
+    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG, filename: 'photo.heic', ext: 'png' }), 'a name Hermes takes no image type from')
+      .toMatchObject(refusal('invalid_params'))
+    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG, filename: 'photo.JPEG' }))
+      .toMatchObject({ result: { attached: true, path: '/hermes/default/cache/images/upload-1.jpeg', mime: 'image/jpeg' } })
+    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG, ext: '.webp' }))
+      .toMatchObject({ result: { attached: true, mime: 'image/webp' } })
+    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG }))
+      .toMatchObject({ result: { attached: true, mime: 'image/png' } })
+    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: PNG, ext: 'bmp' })).toMatchObject(refusal('invalid_params'))
+  })
+
+  it('refuses an image over 25 MiB', async () => {
+    const { call } = await rawSocket()
+    await call('session.resume', { session_id: SESSION })
+    const big = Buffer.alloc(25 * 1024 * 1024 + 1)
+    Buffer.from(PNG, 'base64').copy(big)
+    expect(await call('image.attach_bytes', { session_id: SESSION, content_base64: big.toString('base64') })).toMatchObject(refusal('invalid_params'))
+  })
+
+  it('refuses a submit that names an image it did not stage', async () => {
+    const { call } = await rawSocket()
+    await call('session.resume', { session_id: SESSION })
+    expect(await call('prompt.submit', { ...SUBMIT, attachments: [{ path: '/etc/passwd', mime: 'image/png' }] })).toMatchObject(refusal('invalid_params'))
+  })
+
+  it('answers a file with the reference the model reads', async () => {
+    const { call } = await rawSocket()
+    await call('session.resume', { session_id: SESSION })
+    expect(await call('file.attach', { session_id: SESSION, name: 'notes.txt', data_url: `data:text/plain;base64,${Buffer.from('hi').toString('base64')}` }))
+      .toMatchObject({ result: { attached: true, ref_text: '@file:/hermes/default/attachments/notes.txt' } })
+    expect(await call('file.attach', { session_id: SESSION, name: 'notes.txt', data_url: 'not a data url' })).toMatchObject(refusal('invalid_params'))
+  })
+})

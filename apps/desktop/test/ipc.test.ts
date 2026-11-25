@@ -1,12 +1,13 @@
 import type { Hermes } from '@highwing/hermes'
-import type { Bots, Link, OpenChat, RelayDesk, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
+import type { AttachmentId, Bots, Link, OpenChat, RelayDesk, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyPush, CHANNEL, isWebLink, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Preview, type PreviewCommand, type Push, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Preview, type PreviewCommand, type Push, type Topic } from '../src/ipc-contract'
 import { pinnedConnection } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
-import { COALESCE_MS, serveWindows, sessionPatch, type IpcEvent, type IpcMainLike, type PreviewOwner } from '../src/main/ipc'
+import type { AttachSources, StageSource } from '../src/main/attachments'
+import { COALESCE_MS, serveWindows, sessionPatch, type Attaching, type IpcEvent, type IpcMainLike, type PreviewOwner } from '../src/main/ipc'
 
 const fixture = loadFixture('fixtures/errand.jsonl')
 const topic = `session:${fixture.header.sessionId}` as const
@@ -17,6 +18,9 @@ beforeAll(async () => {
   for await (const { session } of play(fixture)) sessions.push(session)
   moments = sessions
 })
+
+const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const HELD = { id: 'held-1' as AttachmentId, name: 'error.png', kind: 'image' as const, size: PNG.byteLength, mime: 'image/png', bytes: PNG }
 
 const itemsOf = (session: Session) => (session.run.state === 'running' ? session.run.turn.items : [])
 const patchPush = (rev: number, before: Session, after: Session): Push<typeof topic> => ({ topic, rev, patch: sessionPatch(before, after) })
@@ -71,7 +75,9 @@ describe('applyPush', () => {
 
 describe('validators', () => {
   it('keep only the known fields of a good command', () => {
-    expect(parseCommand({ do: 'send', sessionId: 's1', text: 'hello', extra: 'dropped' })).toEqual({ do: 'send', sessionId: 's1', text: 'hello' })
+    expect(parseCommand({ do: 'send', sessionId: 's1', text: 'hello', extra: 'dropped' })).toEqual({ do: 'send', sessionId: 's1', text: 'hello', attachments: [] })
+    expect(parseCommand({ do: 'send', sessionId: 's1', text: 'what is this', attachments: ['a-1', 'a-2'] }))
+      .toEqual({ do: 'send', sessionId: 's1', text: 'what is this', attachments: ['a-1', 'a-2'] })
     expect(parseCommand({ do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 'once', x: 1 } }))
       .toEqual({ do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 'once' } })
     expect(parseCommand({ do: 'reconnect', start: true })).toEqual({ do: 'reconnect', start: true })
@@ -80,9 +86,9 @@ describe('validators', () => {
     expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: null, draftId: 'd1' } })).toEqual({ do: 'open', ref: { kind: 'new', bot: null, draftId: 'd1' } })
     expect(parseCommand({ do: 'open', ref: { kind: 'chat', sessionId: 's9', bot: 'research' } })).toEqual({ do: 'open', ref: { kind: 'chat', sessionId: 's9' } })
     expect(parseCommand({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null, draftId: 'd1' }, text: 'hello', sessionId: 's9' }))
-      .toEqual({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello' })
+      .toEqual({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello', attachments: [] })
     expect(parseCommand({ do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: null }, text: 'hello' }))
-      .toEqual({ do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: null }, text: 'hello' })
+      .toEqual({ do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: null }, text: 'hello', attachments: [] })
     const model = { id: 'careful-large', provider: 'acme', providerName: 'Acme' }
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model: { ...model, price: 9 } })).toEqual({ do: 'pickModel', sessionId: 's1', model })
     expect(parseCommand({ do: 'setYolo', sessionId: 's1', on: false, extra: 1 })).toEqual({ do: 'setYolo', sessionId: 's1', on: false })
@@ -154,6 +160,11 @@ describe('validators', () => {
     ['an open of a new chat with no draft id', { do: 'open', ref: { kind: 'new', bot: 'research', draftId: ' ' } }],
     ['an open of a new chat whose bot is not a name or null', { do: 'open', ref: { kind: 'new', draftId: 'd1' } }],
     ['a first message with no chat', { do: 'start', text: 'hello' }],
+    ['a message whose attachments are not a list', { do: 'send', sessionId: 's1', text: 'hello', attachments: 'a-1' }],
+    ['a message with a blank attachment id', { do: 'send', sessionId: 's1', text: 'hello', attachments: ['a-1', ' '] }],
+    ['a message that names an attachment by more than its id', { do: 'send', sessionId: 's1', text: 'hello', attachments: [{ id: 'a-1', name: 'x.png', kind: 'image' }] }],
+    ['a message with more attachments than any message could hold', { do: 'send', sessionId: 's1', text: 'hello', attachments: Array.from({ length: 65 }, (_, i) => `a-${i}`) }],
+    ['a first message whose attachments are not a list', { do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: null }, text: 'hello', attachments: {} }],
     ['a first message to a chat that has a session', { do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: 's1' }, text: 'hello' }],
     ['a first message to a chat with no session named', { do: 'start', chat: { kind: 'bot', bot: 'research' }, text: 'hello' }],
     ['a first message to a plain chat', { do: 'start', chat: { kind: 'chat', bot: null, sessionId: null }, text: 'hello' }],
@@ -296,7 +307,7 @@ function harness() {
   }
   const kept: Draft[] = []
   const picked: string[] = []
-  const stored: readonly Draft[] = [{ key: 'new', bot: null, text: 'kept on disk' }]
+  const stored: readonly Draft[] = [{ key: 'new', bot: null, text: 'kept on disk', attachments: [] }]
   const previewed: { request: string; label: string | null; session: Session | undefined }[] = []
   const toPane: PreviewCommand[] = []
   const pane: PreviewOwner = {
@@ -304,10 +315,20 @@ function harness() {
     show: (request, label, session) => (previewed.push({ request, label, session }), request.startsWith('/')),
     run: async command => (toPane.push(command), { ok: true, value: undefined })
   }
+  const staged: StageSource[] = []
+  const store: Attaching['store'] = {
+    stage: async source => {
+      staged.push(source)
+      const name = typeof source === 'string' ? source.slice(source.lastIndexOf('/') + 1) : source.name
+      return name.startsWith('big') ? { ok: false, name, reason: `${name} is too big.` } : { ok: true, attachment: { id: `id-${staged.length}` as AttachmentId, name, kind: 'image', size: 3 } }
+    },
+    read: async id => (id === HELD.id ? HELD : null)
+  }
+  const sources: AttachSources = { pick: async () => ['/home/me/error.png', '/home/me/big.zip'], pasted: async () => ({ name: 'Pasted image 1.png', bytes: PNG }) }
   const served = serveWindows(
     pinnedConnection(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
-    async bot => (picked.push(bot), { ok: true, value: 'cancelled' })
+    async bot => (picked.push(bot), { ok: true, value: 'cancelled' }), { store, sources }
   )
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
@@ -321,7 +342,10 @@ function harness() {
     open = next
     openListeners.forEach(listener => listener(next))
   }
-  return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, stored, previewed, toPane, served, setCatalog, setBots, setOpen }
+  return {
+    listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, stored, previewed, toPane, staged, served,
+    setCatalog, setBots, setOpen
+  }
 }
 
 describe('serveWindows', () => {
@@ -394,7 +418,7 @@ describe('serveWindows', () => {
     expect(pushes).toEqual([{ topic: 'open', rev: 1, full: NOTHING_OPEN }, { topic: 'open', rev: 2, full: research }])
     await handlers.get(CHANNEL.run)!(event(), { do: 'open', ref: { kind: 'bot', bot: 'research' } })
     await handlers.get(CHANNEL.run)!(event(), { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello' })
-    expect(commands).toEqual([{ do: 'open', ref: { kind: 'bot', bot: 'research' } }, { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello' }])
+    expect(commands).toEqual([{ do: 'open', ref: { kind: 'bot', bot: 'research' } }, { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello', attachments: [] }])
   })
 
   it('stops pushing when the window unwatches or is destroyed', () => {
@@ -566,8 +590,61 @@ describe('the image call', () => {
   })
 })
 
+describe('the attach calls', () => {
+  it('hold each picked file in the order picked, and say which were refused', async () => {
+    const rig = harness()
+    await expect(rig.handlers.get(CHANNEL.attachPick)!(rig.event())).resolves.toEqual([
+      { ok: true, attachment: { id: 'id-1', name: 'error.png', kind: 'image', size: 3 } },
+      { ok: false, name: 'big.zip', reason: 'big.zip is too big.' }
+    ])
+    expect(rig.staged).toEqual(['/home/me/error.png', '/home/me/big.zip'])
+  })
+
+  it('hold the clipboard image, and the dropped files that have a path on this computer', async () => {
+    const rig = harness()
+    await expect(rig.handlers.get(CHANNEL.attachPaste)!(rig.event())).resolves.toMatchObject([{ ok: true, attachment: { name: 'Pasted image 1.png' } }])
+    await expect(rig.handlers.get(CHANNEL.attachDrop)!(rig.event(), [{ name: 'shot.png', path: '/tmp/shot.png' }, { name: 'web.png', path: null }])).resolves.toEqual([
+      { ok: true, attachment: { id: 'id-2', name: 'shot.png', kind: 'image', size: 3 } },
+      { ok: false, name: 'web.png', reason: "web.png isn't a file on this computer, so Highwing can't attach it." }
+    ])
+  })
+
+  it('hold no more of a large drop than one message carries, copy none of the rest, and name each one left out', async () => {
+    const rig = harness()
+    const dropped = Array.from({ length: MAX_ATTACHMENTS + 2 }, (_, index) => ({ name: `f${index}.png`, path: `/tmp/f${index}.png` }))
+    const results = await rig.handlers.get(CHANNEL.attachDrop)!(rig.event(), dropped) as readonly { readonly ok: boolean }[]
+    expect(results.filter(result => result.ok)).toHaveLength(MAX_ATTACHMENTS)
+    expect(results.slice(MAX_ATTACHMENTS)).toEqual([MAX_ATTACHMENTS, MAX_ATTACHMENTS + 1].map(index => (
+      { ok: false, name: `f${index}.png`, reason: `A message holds up to ${MAX_ATTACHMENTS} attachments, so f${index}.png wasn't attached.` }
+    )))
+    expect(rig.staged).toHaveLength(MAX_ATTACHMENTS)
+  })
+
+  it('hold nothing for a foreign frame or a drop that names a relative path', async () => {
+    const rig = harness()
+    for (const channel of [CHANNEL.attachPick, CHANNEL.attachPaste]) await expect(rig.handlers.get(channel)!(rig.event('https://example.com/'))).resolves.toEqual([])
+    await expect(rig.handlers.get(CHANNEL.attachDrop)!(rig.event(), [{ name: 'x', path: 'x' }])).resolves.toEqual([])
+    await expect(rig.handlers.get(CHANNEL.attachDrop)!(rig.event('https://example.com/'), [{ name: 'shot.png', path: '/tmp/shot.png' }])).resolves.toEqual([])
+    expect(rig.staged).toEqual([])
+  })
+
+  it('draw an image attachment from the store, and refuse a file or an id it does not hold', async () => {
+    const rig = harness()
+    const call = rig.handlers.get(CHANNEL.image)!
+    await expect(call(rig.event(), { kind: 'attachment', id: HELD.id })).resolves.toEqual({ ok: true, type: 'image/png', bytes: PNG })
+    await expect(call(rig.event(), { kind: 'attachment', id: 'gone' })).resolves.toEqual({ ok: false })
+    expect(rig.loaded).toEqual([])
+  })
+
+  it('stop answering once disposed', () => {
+    const { handlers, served } = harness()
+    served.dispose()
+    for (const channel of [CHANNEL.attachPick, CHANNEL.attachPaste, CHANNEL.attachDrop]) expect(handlers.has(channel)).toBe(false)
+  })
+})
+
 describe('the draft calls', () => {
-  const draft = { key: 'chat:local-0102', bot: 'research', text: 'half a thought' }
+  const draft = { key: 'chat:local-0102', bot: 'research', text: 'half a thought', attachments: [] }
 
   it('keep a draft from the app page and hand back the stored ones', async () => {
     const rig = harness()
@@ -613,9 +690,17 @@ describe('the picture call', () => {
 })
 
 describe('parseDraft', () => {
-  it('keeps the three known fields of each kind of key', () => {
-    expect(parseDraft({ key: 'bot:research', bot: 'research', text: 'x', extra: 1 })).toEqual({ key: 'bot:research', bot: 'research', text: 'x' })
-    expect(parseDraft({ key: 'new', bot: null, text: '' })).toEqual({ key: 'new', bot: null, text: '' })
+  it('keeps the known fields of each kind of key, and no attachments for a draft an earlier build wrote', () => {
+    expect(parseDraft({ key: 'bot:research', bot: 'research', text: 'x', extra: 1 })).toEqual({ key: 'bot:research', bot: 'research', text: 'x', attachments: [] })
+    expect(parseDraft({ key: 'new', bot: null, text: '' })).toEqual({ key: 'new', bot: null, text: '', attachments: [] })
+  })
+
+  it('keeps the known fields of each attachment, and refuses a draft with one it cannot read', () => {
+    const held = { id: 'a-1', name: 'error.png', kind: 'image', size: 2048 }
+    expect(parseDraft({ key: 'new', bot: null, text: '', attachments: [{ ...held, path: '/etc/passwd' }] })).toEqual({ key: 'new', bot: null, text: '', attachments: [held] })
+    for (const attachments of ['a-1', [{ ...held, kind: 'pdf' }], [{ ...held, size: -1 }], [{ ...held, name: '' }]]) {
+      expect(parseDraft({ key: 'new', bot: null, text: '', attachments })).toBeNull()
+    }
   })
 })
 

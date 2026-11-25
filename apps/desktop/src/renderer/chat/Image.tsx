@@ -14,8 +14,14 @@ export type ImageState =
 const LOADING: ImageState = { s: 'loading' }
 const FAILED: ImageState = { s: 'failed' }
 
-const keyOf = (request: ImageRequest | null) =>
-  request === null ? '' : request.kind === 'web' ? `web ${request.url}` : `tool ${request.sessionId} ${request.path}`
+const keyOf = (request: ImageRequest | null): string => {
+  switch (request?.kind) {
+    case undefined: return ''
+    case 'web': return `web ${request.url}`
+    case 'tool': return `tool ${request.sessionId} ${request.path}`
+    case 'attachment': return `attachment ${request.id}`
+  }
+}
 
 /** What a request comes to. The blob URL it holds is the caller's to revoke. */
 export async function settle(request: ImageRequest | null, bridge: Pick<Bridge, 'image'>): Promise<ImageState> {

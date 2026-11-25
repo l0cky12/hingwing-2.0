@@ -123,6 +123,36 @@ const runningGeneration: Check = (gateway, _socket, params) =>
   isInt(params.execution_generation) && gateway.view.running && gateway.view.generation === params.execution_generation ? null : 'stale_generation'
 
 const submissionId: Check = (_gateway, _socket, params) => (isText(params.submission_id || params.input_id) ? null : 'invalid_params')
+const stagedOnly: Check = (gateway, _socket, params, routed) => (gateway.staged(params.attachments, routed) ? null : 'invalid_params')
+
+/** `_ATTACH_BYTES_MAX_BYTES` and `_ATTACHMENT_MAX_BYTES` (tui_gateway/prompt_attachments.py:20). */
+export const IMAGE_MAX_BYTES = 25 * 1024 * 1024
+export const FILE_MAX_BYTES = 256 * 1024 * 1024
+
+const IMAGE_MAGIC: readonly { readonly ext: string; readonly mime: string; readonly at: number; readonly bytes: readonly number[] }[] = [
+  { ext: '.png', mime: 'image/png', at: 0, bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
+  { ext: '.jpg', mime: 'image/jpeg', at: 0, bytes: [0xff, 0xd8, 0xff] },
+  { ext: '.gif', mime: 'image/gif', at: 0, bytes: [0x47, 0x49, 0x46, 0x38] },
+  { ext: '.webp', mime: 'image/webp', at: 8, bytes: [0x57, 0x45, 0x42, 0x50] }
+]
+
+/** `_sniff_image_ext` (tui_gateway/prompt_attachments.py:91-99) reads the type from the name's extension first, then the `ext` hint, then the bytes. */
+const EXT_MIME: Readonly<Record<string, string>> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
+function suffixOf(name: string): string {
+  const ext = /[^/\\]\.([^./\\]+)$/.exec(name)?.[1]
+  return ext === undefined ? '' : `.${ext.toLowerCase()}`
+}
+
+/** Checks the characters only. The stricter `BASE64` repeats a group, which overflows the regex stack on a 25 MiB image. */
+const BASE64_CHARS = /^[A-Za-z0-9+/]*={0,2}$/
+
+/** Decoded bytes, or null for a payload Hermes refuses `invalid_params`: not base64, empty, or over `max`. */
+function decoded(text: string, max: number): Buffer | null {
+  const cleaned = text.replace(/\s/g, '')
+  if (!BASE64_CHARS.test(cleaned) || cleaned.length === 0 || Math.floor(cleaned.length * 3 / 4) > max + 2) return null
+  const bytes = Buffer.from(cleaned, 'base64')
+  return bytes.byteLength === 0 || bytes.byteLength > max ? null : bytes
+}
 
 /**
  * The calls a story answers, each with the checks its handler makes first, in the handler's order.
@@ -132,7 +162,7 @@ const submissionId: Check = (_gateway, _socket, params) => (isText(params.submis
  */
 const STORY_CHECKS: Readonly<Record<string, readonly Check[]>> = {
   /** gateway/session_controls.py:884-895 */
-  'prompt.submit': [attached, submissionId],
+  'prompt.submit': [attached, submissionId, stagedOnly],
   /** gateway/session_controls.py:995-998, gateway/session_authority.py:1106-1117 */
   'approval.respond': [exactly('session_id', 'execution_generation', 'prompt_id', 'choice'), attached, runningGeneration],
   'clarify.respond': [exactly('session_id', 'execution_generation', 'prompt_id', 'answer'), attached, runningGeneration],
@@ -528,6 +558,16 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       status: 'settled', delivery_id: id, profile_home: `/fixture/profiles/${routed}`, session_id: sessionId, message,
       admission_id: `${sessionId}-admission-${id.slice(0, 8)}`, reply: script.reply
     })
+  },
+  'image.attach_bytes': (gateway, socket, params, routed) => {
+    const reason = attached(gateway, socket, params, routed)
+    if (reason !== null) throw new Refused(reason)
+    return gateway.stageImage(params, routed)
+  },
+  'file.attach': (gateway, socket, params, routed) => {
+    const reason = attached(gateway, socket, params, routed)
+    if (reason !== null) throw new Refused(reason)
+    return gateway.stageFile(params, routed)
   }
 }
 
@@ -559,7 +599,7 @@ const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
   'prompt.submit': (gateway, socket, params, routed, chat) => {
     if (!socket.subscriptions.has(chat.id)) throw new Refused('permission_denied')
     const inputId = params.submission_id || params.input_id
-    if (!isText(inputId)) throw new Refused('invalid_params')
+    if (!isText(inputId) || !gateway.staged(params.attachments, routed)) throw new Refused('invalid_params')
     return gateway.echo(chat, inputId, String(params.text ?? ''), routed)
   },
   'session.transcript': (_gateway, _socket, params, _routed, chat) => transcriptPage(chat, params),
@@ -570,7 +610,15 @@ const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
     if (params.operation !== 'branch') throw new Refused('unsupported_command')
     return gateway.branch(gateway.chatParent(chat), params, routed)
   },
-  'session.detach': detach
+  'session.detach': detach,
+  'image.attach_bytes': (gateway, socket, params, routed, chat) => {
+    if (!socket.subscriptions.has(chat.id)) throw new Refused('permission_denied')
+    return gateway.stageImage(params, routed)
+  },
+  'file.attach': (gateway, socket, params, routed, chat) => {
+    if (!socket.subscriptions.has(chat.id)) throw new Refused('permission_denied')
+    return gateway.stageFile(params, routed)
+  }
 }
 
 export class ScriptedGateway {
@@ -603,6 +651,7 @@ export class ScriptedGateway {
   private readonly afterReply: (() => void)[] = []
   private readonly sockets = new Set<Socket>()
   private readonly openRequests = new Map<string, { readonly method: string; readonly params: unknown }>()
+  private readonly stagedImages = new Set<string>()
   private drop: Drop
   private delivered = 0
   private seqShift = 0
@@ -715,6 +764,43 @@ export class ScriptedGateway {
       if (error instanceof Refused) return { error: error.wire }
       throw error
     }
+  }
+
+  /**
+   * `image.attach_bytes` (gateway/session_images.py): stages the image under the profile's `cache/images` and queues
+   * nothing. Only a `prompt.submit` that names the path sends it.
+   */
+  stageImage(params: Obj, routed: string): Obj {
+    if (Object.values(params).some(value => typeof value !== 'string')) throw new Refused('invalid_params')
+    const bytes = decoded(String(params.content_base64 || params.data || ''), IMAGE_MAX_BYTES)
+    if (bytes === null) throw new Refused('invalid_params')
+    const hint = String(params.ext ?? '').trim().toLowerCase().replace(/^\./, '')
+    const ext = suffixOf(String(params.filename ?? '')) || (hint === '' ? '' : `.${hint}`)
+      || (IMAGE_MAGIC.find(({ at, bytes: magic }) => magic.every((byte, index) => bytes[at + index] === byte))?.ext ?? '.png')
+    const mime = EXT_MIME[ext]
+    if (mime === undefined) throw new Refused('invalid_params')
+    const name = `upload-${this.stagedImages.size + 1}${ext}`
+    const path = `/hermes/${routed}/cache/images/${name}`
+    this.stagedImages.add(path)
+    return { attached: true, path, mime, name, count: 1, remainder: '', text: `[User attached image: ${name}]`, bytes: bytes.byteLength }
+  }
+
+  /** `file.attach` with an inline `data_url` (gateway/session_ancillary.py:139-180, tui_gateway/prompt_attachments.py:278-330). */
+  stageFile(params: Obj, routed: string): Obj {
+    if (Object.values(params).some(value => typeof value !== 'string')) throw new Refused('invalid_params')
+    const payload = /^data:[^;,]*(?:;[^;,=]+=[^;,]+)*;base64,(.*)$/is.exec(String(params.data_url ?? ''))?.[1]
+    const bytes = payload === undefined ? null : decoded(payload, FILE_MAX_BYTES)
+    if (bytes === null) throw new Refused('invalid_params')
+    const name = String(params.name || 'attachment').replace(/[\\/]/g, '_')
+    const path = `/hermes/${routed}/attachments/${name}`
+    return { attached: true, name, path, ref_path: path, ref_text: `@file:${path}`, uploaded: true }
+  }
+
+  /** Whether every attachment a submit names is an image this gateway staged for that profile. Absent or empty: nothing to check. */
+  staged(attachments: unknown, routed: string): boolean {
+    if (attachments === undefined || attachments === null) return true
+    return Array.isArray(attachments) && attachments.length <= 10 && attachments.every(held =>
+      isObject(held) && isText(held.path) && this.stagedImages.has(held.path) && held.path.startsWith(`/hermes/${routed}/`))
   }
 
   /** Whether the frame is for the story session, on the profile it lives in. */
