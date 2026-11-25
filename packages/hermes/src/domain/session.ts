@@ -738,6 +738,8 @@ export interface SidebarRow {
   readonly title: string
   readonly preview: string | null
   readonly lastActiveAt: number | null
+  /** As Hermes says. Hermes also pins each bot's own chat, so a pin alone does not mean the user pinned it. */
+  readonly pinned: boolean
   /** The bot's own chat, as Highwing knows it from the roster or a title lookup. Never by its title in the list: a user can title any chat "Bot Chat". */
   readonly botChat: boolean
   /**

@@ -424,6 +424,10 @@ export const validators: Validators = {
     const sessionId = sessionIdOf(raw)
     return sessionId && { do: 'remove', sessionId }
   },
+  pin: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && typeof raw.pinned === 'boolean' ? { do: 'pin', sessionId, pinned: raw.pinned } : null
+  },
   loadEarlier: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && { do: 'loadEarlier', sessionId }

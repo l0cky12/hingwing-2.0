@@ -316,7 +316,7 @@ describe("the scripted gateway lists a bot's chats", () => {
     expect(stored.result).toMatchObject({ scope: 'stored', next_cursor: null })
     expect((stored.result?.sessions as unknown[])[2]).toEqual({
       session_id: INVOICES, id: INVOICES, resolved_id: INVOICES, title: 'Sort the invoices', source: 'gui', started_at: 1795249000, message_count: 2,
-      model: 'research-model', running: false, preview: 'Sorted fourteen invoices by due date; the oldest is due Friday.', last_active_at: 1795249000
+      model: 'research-model', running: false, preview: 'Sorted fourteen invoices by due date; the oldest is due Friday.', last_active_at: 1795249000, pinned: false
     })
     expect(await call('session.list', { profile: 'research', scope: 'live', picker: true })).toMatchObject({ result: { scope: 'live', sessions: [{ session_id: REMINDER, running: true }] } })
     expect((await call('session.list', { profile: 'research', scope: 'stored' })).result?.sessions, 'a picker field only for a picker').not.toContainEqual(expect.objectContaining({ preview: expect.anything() as unknown }))
@@ -874,6 +874,37 @@ describe('the scripted gateway branches a chat as Hermes does', () => {
     expect(await titled()).toEqual([RESEARCH_CHAT])
     await call('session.mutate', { ...RESEARCH, request_id: 'r', expected_revision: 0, operation: 'archive', payload: { archived: true } })
     expect(await titled()).toEqual([])
+  })
+
+  it('pins and unpins a chat beside the story with sidebar, with no generation, and a picker row says so (persistence/authority/runtime.py:344-356, gateway/session_picker_fields.py:42)', async () => {
+    const { call } = await rawSocket({}, WITH_CHATS)
+    const invoices = { profile: 'research', session_id: INVOICES }
+    const pinnedIn = async () => ((await call('session.list', { profile: 'research', scope: 'stored', limit: 100, picker: true })).result?.sessions as { session_id: string; pinned: boolean }[])
+      .filter(row => row.pinned).map(row => row.session_id)
+    const asked = { ...invoices, request_id: 'p', expected_revision: 0, operation: 'sidebar', payload: { pinned: true } }
+    expect(await call('session.mutate', { ...asked, payload: {} })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.mutate', { ...asked, payload: { pinned: 'yes' } })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.mutate', { ...asked, payload: { stars: 3 } })).toMatchObject(refusal('invalid_params'))
+    expect((await call('session.mutate', asked)).result).toMatchObject({ operation: 'sidebar', revision: 1 })
+    expect(await pinnedIn()).toEqual([INVOICES])
+    expect((await call('session.mutate', { ...asked, request_id: 'u', expected_revision: 1, payload: { pinned: false } })).result).toMatchObject({ revision: 2 })
+    expect(await pinnedIn()).toEqual([])
+  })
+
+  it('pins a hidden chat into the lists, but leaves a hidden Bot Chat hidden (persistence/sqlite/conversation/_store/sessions.py:1003-1018)', async () => {
+    const seeds = { research: [{ id: 'local-0301', title: 'Kept aside', last_active: 1795249000, rows: [{ role: 'user' as const, text: 'hi' }], hidden: true }] }
+    const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, chats: seeds } })
+    const shown = async () => ((await call('session.list', { profile: 'research', scope: 'stored', limit: 100, picker: true })).result?.sessions as { session_id: string }[]).map(row => row.session_id)
+    expect(await shown()).toEqual([])
+    await call('session.mutate', { profile: 'research', session_id: 'local-0301', request_id: 'p', expected_revision: 0, operation: 'sidebar', payload: { pinned: true } })
+    await call('session.mutate', { ...RESEARCH, request_id: 'p', expected_revision: 0, operation: 'sidebar', payload: { pinned: true } })
+    expect(await shown()).toEqual(['local-0301'])
+  })
+
+  it("pins a roster's Bot Chat, as the user's Hermes lists them", async () => {
+    const { call } = await rawSocket({}, WITH_BOTS)
+    const stored = await call('session.list', { profile: 'research', scope: 'stored', limit: 100, include_hidden: true, picker: true })
+    expect(stored.result?.sessions).toEqual([expect.objectContaining({ session_id: RESEARCH_CHAT, pinned: true })])
   })
 
   it('refuses to remove a chat while its turn runs (persistence/sqlite/authority/_runtime_guards.py:51-59)', async () => {

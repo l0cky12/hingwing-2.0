@@ -300,7 +300,7 @@ describe('the sidebar', () => {
     await approve(opened.hermes)
     await opened.clock.advance(1_000)
     expect(badges).toEqual(['ready:none', 'ready:running', 'ready:asking', 'ready:running', 'ready:none'])
-    expect(opened.hermes.sidebar.get().rows).toEqual([{ id: SESSION, title: '', preview: null, lastActiveAt: 1795251600000, botChat: false, badge: 'none' }])
+    expect(opened.hermes.sidebar.get().rows).toEqual([{ id: SESSION, title: '', preview: null, lastActiveAt: 1795251600000, pinned: false, botChat: false, badge: 'none' }])
   })
 
   it('goes stale while the socket is gone and reads the lists again when it is back', async () => {
@@ -817,6 +817,22 @@ describe("a bot's chats", () => {
     const opened = open(BOUND)
     await opened.clock.advance(1_000)
     expect(opened.hermes.sidebar.get()).toMatchObject({ bot: null, rows: [{ id: SESSION, botChat: true }] })
+  })
+
+  it('show a pin at once, keep it after the list is read again, and take it off again', async () => {
+    const opened = open(WITH_CHATS)
+    await opened.clock.advance(0)
+    await opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
+    await opened.clock.advance(0)
+    const pins = () => opened.hermes.sidebar.get().rows.filter(row => row.pinned).map(row => row.id)
+
+    expect(await opened.hermes.run({ do: 'pin', sessionId: DOWNLOADS, pinned: true })).toEqual({ ok: true, value: undefined })
+    expect(pins()).toEqual([DOWNLOADS])
+    await opened.clock.advance(1_000)
+    expect(pins(), 'as Hermes lists it').toEqual([DOWNLOADS])
+    expect(await opened.hermes.run({ do: 'pin', sessionId: DOWNLOADS, pinned: false })).toEqual({ ok: true, value: undefined })
+    await opened.clock.advance(1_000)
+    expect(pins()).toEqual([])
   })
 
   it('mark a hidden chat that waits on an approval, with no window on it', async () => {

@@ -1110,7 +1110,8 @@ export function parseUserChats(rows: readonly CanonicalSessionListRow[]): Omit<S
       id: row.session_id as SessionId,
       title: row.title,
       preview: row.preview || null,
-      lastActiveAt: seconds === null ? null : Math.round(seconds * 1000)
+      lastActiveAt: seconds === null ? null : Math.round(seconds * 1000),
+      pinned: row.pinned === true
     }
   })
 }

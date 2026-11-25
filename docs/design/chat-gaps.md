@@ -12,7 +12,7 @@ Hermes has two chat clients that matter: the Ink TUI and the Electron Desktop. T
 
 Highwing today covers the core loop: send, a server-side queue it can see but not edit, streamed text and interim commentary, tool steps with diffs, approvals and single-answer clarify, Stop, history with paging, the model picker, the slash menu for 33 gateway-run commands, Bot Chats, and auto-titles. Almost every gap is in `packages/hermes`. The wire layer drops the event (it is in `UNSHOWN`), or the `Command` union has no verb for a served method. Only voice/read-aloud, and tool images on a remote Hermes, are beyond the contract.
 
-Counts in the gap table (61 rows): **done 13, frontend only 6, backend missing 41, contract can't 1**. Two `backend missing` rows also say what the contract cannot do: tool images on a remote Hermes, and the Desktop window bridges.
+Counts in the gap table (61 rows): **done 16, frontend only 5, backend missing 39, contract can't 1**. Two `backend missing` rows also say what the contract cannot do: tool images on a remote Hermes, and the Desktop window bridges.
 
 ## 2. How chat works in Hermes's clients
 
@@ -143,7 +143,7 @@ Class labels: `done`, `frontend only` (packages/hermes already exposes it, so on
 | 50 | Auto-title | `session.info.title` | Shown in chat and list (parse.ts:272-279; hub.ts:145) | Emitted (GW:run_turn_progress.py:1156-1167) | done |
 | 51 | Rename | Sidebar menu, then `mutate rename` | `/title` only. The `rename` command has no UI (hub.ts:286-290) | Served | frontend only |
 | 52 | Archive | `mutate archive` or `sidebar {archived}` | Archive in a chat row's menu. An open chat that is archived gives way to its bot's own chat, and a Bot Chat's row offers no Archive | Served. Archiving a Bot Chat retires it (H:persistence/sqlite/authority/_mutation.py:153-155) | done |
-| 53 | Pin | `mutate sidebar {pinned}` (Desktop uses REST PATCH) | None | Served (H:persistence/authority/runtime.py:270-281). `session.list {picker:true}` returns `pinned` | backend missing |
+| 53 | Pin | `mutate sidebar {pinned}` (Desktop uses REST PATCH) | Pin and Unpin in a chat row's menu. The list shows the user's pins under Pinned, and every other chat under Sessions. Hermes pins each Bot Chat itself, so a Bot Chat stays under Sessions and offers no Pin | Served (H:persistence/authority/runtime.py:270-281). `session.list {picker:true}` returns `pinned` | done |
 | 54 | Delete | REST DELETE (HD:api/sessions.ts:729) | Remove… in a chat row's menu, after a confirmation, with `expected_generation`. Refused while a reply runs | `mutate delete` served. Needs `expected_generation` (H:persistence/authority/runtime.py:74) | done |
 | 55 | Compress | `/compress [focus]` → `mutate compress` (HD:…/slash.ts:855) | None. The gateway refuses `/compress` through dispatch | Served, `{focus?, preview?, partial?, keep_last?}` (H:persistence/authority/runtime.py:205-213,325-330) | backend missing |
 | 56 | Chat list, search, switch | REST list and search; TUI `session.list` (TUI:components/activeSessionSwitcher.tsx:372-388) | `sidebar` feed unused; `ChatRef` is bot-only | `session.list {scope, query, cursor, picker, workspace}` served (TC:canonical_sessions.py:179-226) | backend missing (+ UI) |

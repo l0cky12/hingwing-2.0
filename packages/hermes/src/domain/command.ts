@@ -77,6 +77,8 @@ export type Command =
   | { readonly do: 'archive'; readonly sessionId: SessionId; readonly archived: boolean }
   /** Hermes deletes the chat and its messages for good. A window that shows it moves to its bot's own chat. Refused while a reply runs. */
   | { readonly do: 'remove'; readonly sessionId: SessionId }
+  /** The list shows the change at once, and puts it back if Hermes refuses. */
+  | { readonly do: 'pin'; readonly sessionId: SessionId; readonly pinned: boolean }
   | { readonly do: 'loadEarlier'; readonly sessionId: SessionId }
   | { readonly do: 'models'; readonly sessionId: SessionId }
   /** `confirm` is the token of a `ModelConfirm`, sent to say yes to it. */

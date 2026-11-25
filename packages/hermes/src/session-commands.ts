@@ -22,6 +22,7 @@ export interface BranchPin { readonly request: Mutation; readonly text: string }
 export interface Hub {
   settledCatalog(): Promise<SlashCatalog>
   retitle(id: SessionId, title: string): void
+  pin(id: SessionId, pinned: boolean): void
   drop(id: SessionId): void
   refreshSoon(): void
   settledRelay(): Promise<void>
@@ -241,6 +242,14 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     }
     hub.refreshSoon()
     return DONE
+  }),
+
+  pin: (port, { pinned }, hub) => port.whenLive(async () => {
+    hub.pin(port.id, pinned)
+    const changed = await port.mutate('sidebar', { pinned }, null)
+    if (!changed.ok) hub.pin(port.id, !pinned)
+    hub.refreshSoon()
+    return changed.ok ? DONE : changed
   }),
 
   /** Hermes deletes the chat with its whole compression chain (persistence/sqlite/authority/_runtime_guards.py `delete_targets`). */

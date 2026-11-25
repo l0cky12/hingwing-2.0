@@ -26,6 +26,7 @@ export interface SessionList {
   /** List each of these bots not listed yet, one at a time and only while no other list is asked for, so a first visit shows kept rows too. */
   warm(bots: readonly BotId[]): void
   retitle(id: SessionId, title: string): void
+  pin(id: SessionId, pinned: boolean): void
   drop(id: SessionId): void
   stale(): void
 }
@@ -134,6 +135,7 @@ export function sessionList(conn: Connection, owned: (bot: BotId, sessions: read
       warmNext()
     },
     retitle: (id, title) => edit(rows => (rows.some(row => row.id === id && row.title !== title) ? rows.map(row => (row.id === id ? { ...row, title } : row)) : rows)),
+    pin: (id, pinned) => edit(rows => (rows.some(row => row.id === id && row.pinned !== pinned) ? rows.map(row => (row.id === id ? { ...row, pinned } : row)) : rows)),
     drop: id => edit(rows => (rows.some(row => row.id === id) ? rows.filter(row => row.id !== id) : rows)),
     stale: () => {
       if (status !== 'ready') return

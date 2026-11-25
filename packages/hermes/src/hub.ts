@@ -135,7 +135,7 @@ function sameSidebar(a: Sidebar, b: Sidebar): boolean {
   return a.bot === b.bot && a.status === b.status && a.complete === b.complete && a.rows.length === b.rows.length && a.rows.every((row, index) => {
     const other = b.rows[index]
     return other !== undefined && row.id === other.id && row.title === other.title && row.preview === other.preview
-      && row.lastActiveAt === other.lastActiveAt && row.badge === other.badge && row.botChat === other.botChat
+      && row.lastActiveAt === other.lastActiveAt && row.badge === other.badge && row.pinned === other.pinned && row.botChat === other.botChat
   })
 }
 
@@ -405,6 +405,7 @@ export function openHermes(options: HermesOptions): Hermes {
       return slash.get()
     },
     retitle: list.retitle,
+    pin: list.pin,
     drop: list.drop,
     refreshSoon,
     settledRelay: () => relayRead,

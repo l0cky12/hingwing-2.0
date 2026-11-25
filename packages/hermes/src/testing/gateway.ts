@@ -200,8 +200,10 @@ const PAYLOADS: Readonly<Record<string, (payload: Obj) => boolean>> = {
     && Object.keys(payload).every(key => key === 'target_message_id' || (key === 'preserve_compaction_handoff' && isBoolean(payload[key]))),
   rename: payload => Object.keys(payload).join() === 'title' && isString(payload.title),
   archive: payload => Object.keys(payload).join() === 'archived' && isBoolean(payload.archived),
-  delete: payload => Object.keys(payload).length === 0
+  delete: payload => Object.keys(payload).length === 0,
+  sidebar: payload => Object.keys(payload).length > 0 && Object.entries(payload).every(([key, value]) => Object.hasOwn(SIDEBAR_FIELDS, key) && SIDEBAR_FIELDS[key]!(value))
 }
+const SIDEBAR_FIELDS: Readonly<Record<string, (value: unknown) => boolean>> = { title: isString, archived: isBoolean, hidden: isBoolean, pinned: isBoolean, unread: isBoolean }
 const EFFORT_WORDS: ReadonlySet<string> = new Set(['none', 'false', 'disabled', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
 const COMPRESS_FIELDS: Readonly<Record<string, (value: unknown) => boolean>> = { focus: isString, preview: isBoolean, partial: isBoolean, keep_last: isInt }
 /** Operations that need `expected_generation` (gateway/session_mutations.py:20,154, persistence/authority/runtime.py:75). */
@@ -226,7 +228,7 @@ interface Kept {
   readonly generation: number
   readonly busy: boolean
   /** Sets the flag, moves the revision on and tells the chat's viewers. Answers the new revision. */
-  archive(archived: boolean): number
+  flag(name: 'archived' | 'pinned', on: boolean): number
   remove(): void
 }
 
@@ -411,12 +413,13 @@ class EchoChat implements Stream {
   revision = 0
   asking: SeededApproval | null = null
   archived = false
+  pinned = false
   yolo = false
   parent: string | null = null
   startedAt = 0
 
   /** `hidden`: out of `session.list` unless it asks for hidden chats, as a Bot Chat is (hermes-bots/canonical-chat.ts:319). */
-  constructor(readonly id: string, readonly profile: string, public title: string, readonly hidden = false) {
+  constructor(readonly id: string, readonly profile: string, public title: string, public hidden = false) {
     this.epoch = `${id}-epoch`
   }
 
@@ -439,7 +442,7 @@ class EchoChat implements Stream {
     return {
       session_id: this.id, id: this.id, resolved_id: this.id, title: this.title, source: 'gui', started_at: said(this.rows[0]),
       message_count: this.rows.length, model: this.model.model, running: this.running,
-      ...(picker ? { preview: this.rows.at(-1)?.text ?? null, last_active_at: said(this.rows.at(-1)) } : {})
+      ...(picker ? { preview: this.rows.at(-1)?.text ?? null, last_active_at: said(this.rows.at(-1)), pinned: this.pinned } : {})
     }
   }
 
@@ -466,6 +469,7 @@ function seeded(profile: string, seed: ChatSeed): EchoChat {
   seed.rows.forEach(({ role, text }, at) => chat.rows.push({ role, text, timestamp: seed.last_active, row_id: at + 1 }))
   chat.parent = seed.branched_from ?? null
   chat.startedAt = seed.last_active
+  chat.pinned = seed.pinned === true
   if (seed.asking === undefined) return chat
   chat.generation = 1
   chat.asking = {
@@ -705,6 +709,10 @@ const MUTATIONS: Readonly<Record<string, (gateway: ScriptedGateway, params: Obj,
     gateway.authorize(params, routed)
     return gateway.archive(params, gateway.storyKept())
   },
+  sidebar: (gateway, params, routed) => {
+    gateway.authorize(params, routed)
+    return gateway.sidebar(params, gateway.storyKept())
+  },
   delete: (gateway, params, routed) => {
     gateway.authorize(params, routed)
     return gateway.remove(params, gateway.storyKept())
@@ -735,7 +743,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const { list } = gateway.fixture.header
     const rows = isObject(list) && Array.isArray(list.sessions) ? list.sessions.filter(isObject) : []
     const shown = rows.filter(row => row.session_id !== gateway.sessionId || gateway.storyListed(params.include_hidden === true))
-    return { sessions: shown.map(row => (row.session_id === gateway.sessionId ? { ...row, running: gateway.view.running } : row)), scope }
+    const story = { running: gateway.view.running, ...(params.picker === true ? { pinned: gateway.storyPinned() } : {}) }
+    return { sessions: shown.map(row => (row.session_id === gateway.sessionId ? { ...row, ...story } : row)), scope }
   },
   /** gateway/session_discovery.py:8-35 */
   'commands.catalog': (gateway, _socket, params, routed) => {
@@ -893,6 +902,7 @@ const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
     if (params.operation === 'rename') return gateway.rename(socket, params, routed, chat)
     if (params.operation === 'archive') return gateway.archive(params, gateway.chatKept(chat))
     if (params.operation === 'delete') return gateway.remove(params, gateway.chatKept(chat))
+    if (params.operation === 'sidebar') return gateway.sidebar(params, gateway.chatKept(chat))
     if (params.operation !== 'branch') throw new Refused('unsupported_command')
     return gateway.branch(gateway.chatParent(chat), params, routed)
   },
@@ -946,7 +956,7 @@ export class ScriptedGateway {
   private readonly newChats = new Map<string, EchoChat>()
   private readonly branchChats: EchoChat[] = []
   private readonly removed = new Set<EchoChat>()
-  private readonly fate = { archived: false, removed: false }
+  private readonly fate = { archived: false, pinned: false, removed: false }
   private readonly receipts = new Map<string, { readonly digest: string; readonly result: Obj }>()
   private readonly seeded: readonly EchoChat[]
   private readonly storyIsBotChatOf: string | null
@@ -985,7 +995,7 @@ export class ScriptedGateway {
       const id = isObject(named) ? named.resolved_id || named.id : undefined
       if (!isText(name) || !isObject(named) || !isText(id) || name === this.storyIsBotChatOf) continue
       const seed = seededChats.find(chat => chat.id === id && chat.profile === name)
-      const chat = seed ?? new EchoChat(id, name, BOT_CHAT, true)
+      const chat = seed ?? Object.assign(new EchoChat(id, name, BOT_CHAT, true), { pinned: true })
       if (seed === undefined && isText(named.preview)) chat.rows.push({ role: 'assistant', text: named.preview, timestamp: named.last_active ?? null, row_id: 1 })
       this.botChats.set(name, chat)
     }
@@ -1187,6 +1197,10 @@ export class ScriptedGateway {
     return !this.fate.removed && (hidden || !this.fate.archived)
   }
 
+  storyPinned(): boolean {
+    return this.fate.pinned
+  }
+
   /** The profile a session lives in, or undefined for a session this gateway does not have. */
   profileOf(sessionId: string): string | undefined {
     return sessionId === this.sessionId ? this.home : this.echoChats().find(chat => chat.id === sessionId)?.profile
@@ -1282,8 +1296,8 @@ export class ScriptedGateway {
     const { view, fate } = this
     return {
       revision: view.revision, generation: view.generation, busy: view.running || view.pending.length > 0,
-      archive: archived => {
-        fate.archived = archived
+      flag: (name, on) => {
+        fate[name] = on
         this.emit('session.info', { revision: ++view.revision, title: view.title || this.listedTitle(), running: view.running })
         return view.revision
       },
@@ -1294,8 +1308,10 @@ export class ScriptedGateway {
   chatKept(chat: EchoChat): Kept {
     return {
       revision: chat.revision, generation: chat.generation, busy: chat.running,
-      archive: archived => {
-        chat.archived = archived
+      flag: (name, on) => {
+        chat[name] = on
+        // A pin unhides a chat, all but the Bot Chat Hermes keeps hidden.
+        if (name === 'pinned' && on && !(chat.hidden && chat.title === BOT_CHAT)) chat.hidden = false
         this.say(chat, 'session.info', { revision: ++chat.revision, title: chat.title, running: chat.running })
         return chat.revision
       },
@@ -1309,7 +1325,17 @@ export class ScriptedGateway {
     if (reason !== null) throw new Refused(reason)
     if (params.expected_revision !== held.revision) throw fenced('revision_conflict', held)
     const archived = (params.payload as Obj).archived === true
-    return { session_id: params.session_id, operation: 'archive', revision: held.archive(archived) }
+    return { session_id: params.session_id, operation: 'archive', revision: held.flag('archived', archived) }
+  }
+
+  /** `sidebar`, a metadata write as `archive` is. Of its fields only `pinned` is played. */
+  sidebar(params: Obj, held: Kept): unknown {
+    const reason = mutationReason(params)
+    if (reason !== null) throw new Refused(reason)
+    const payload = params.payload as Obj
+    if (Object.keys(payload).some(key => key !== 'pinned')) throw new Refused('unsupported_command')
+    if (params.expected_revision !== held.revision) throw fenced('revision_conflict', held)
+    return { session_id: params.session_id, operation: 'sidebar', revision: held.flag('pinned', payload.pinned === true) }
   }
 
   /** `delete`: fenced by the revision and the generation, and refused while a turn runs or a message waits. The chat is then in no list and cannot be resumed. */

@@ -315,3 +315,25 @@ describe('remove', () => {
     expect(gone).toEqual([])
   })
 })
+
+describe('pin', () => {
+  it.each([true, false])('shows pinned %s at once, sends one sidebar write with no generation, and reads the list again', async pinned => {
+    const seen: string[] = []
+    const { command, sent, answer } = await stage({ hub: { pin: (id, to) => void seen.push(`pin ${id} ${to}`), refreshSoon: () => void seen.push('refresh') } })
+    const done = command({ do: 'pin', sessionId: ID, pinned })
+    expect(seen).toEqual([`pin ${ID} ${pinned}`])
+    expect(sent()).toEqual([['session.mutate', { session_id: ID, request_id: 'id-1', operation: 'sidebar', payload: { pinned }, expected_revision: 3 }]])
+    await answer('session.mutate', { session_id: ID, operation: 'sidebar', revision: 4 })
+    expect(await done).toEqual(DONE)
+    expect(seen).toEqual([`pin ${ID} ${pinned}`, 'refresh'])
+  })
+
+  it('puts the row back when Hermes refuses, and says why', async () => {
+    const seen: string[] = []
+    const { command, answer } = await stage({ hub: { pin: (id, to) => void seen.push(`pin ${id} ${to}`) } })
+    const done = command({ do: 'pin', sessionId: ID, pinned: true })
+    await answer('session.mutate', refusal('permission_denied'))
+    expect(await done).toEqual({ ok: false, refusal: { kind: 'not-attached', message: "Hermes won't let Highwing do that in this chat." } })
+    expect(seen).toEqual([`pin ${ID} true`, `pin ${ID} false`])
+  })
+})

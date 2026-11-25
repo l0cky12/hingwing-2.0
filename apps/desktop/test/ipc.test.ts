@@ -206,6 +206,13 @@ describe('validators', () => {
     expect(parseCommand({ do: 'remove' })).toBeNull()
   })
 
+  it('keep a pin or an unpin of a chat, and refuse one that says neither', () => {
+    expect(parseCommand({ do: 'pin', sessionId: 's1', pinned: true, extra: 1 })).toEqual({ do: 'pin', sessionId: 's1', pinned: true })
+    expect(parseCommand({ do: 'pin', sessionId: 's1', pinned: false })).toEqual({ do: 'pin', sessionId: 's1', pinned: false })
+    expect(parseCommand({ do: 'pin', sessionId: 's1' })).toBeNull()
+    expect(parseCommand({ do: 'pin', pinned: true })).toBeNull()
+  })
+
   it('keep an ask for the versions of a chat, and refuse one that names no chat', () => {
     expect(parseCommand({ do: 'versions', sessionId: 's1', extra: 1 })).toEqual({ do: 'versions', sessionId: 's1' })
     expect(parseCommand({ do: 'versions', sessionId: ' ' })).toBeNull()
@@ -419,7 +426,7 @@ describe('validators', () => {
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
       'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'describeBot', 'discard', 'editBot',
       'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
-      'petPicture', 'pets', 'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename',
+      'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename',
       'restore', 'rewind', 'send', 'sendToGroup', 'setMode', 'side', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
     ])
   })

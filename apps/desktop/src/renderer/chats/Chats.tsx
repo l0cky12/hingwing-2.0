@@ -39,6 +39,7 @@ export function ChatsSidebar({ head }: { readonly head: ReactNode }) {
       onOpen={sessionId => void run({ do: 'open', ref: { kind: 'chat', sessionId } })}
       onRename={(sessionId, title) => run({ do: 'rename', sessionId, title })}
       onExport={(sessionId, format) => run({ do: 'export', sessionId, format })}
+      onPin={(sessionId, pinned) => run({ do: 'pin', sessionId, pinned })}
       onArchive={sessionId => run({ do: 'archive', sessionId, archived: true })}
       onRemove={sessionId => run({ do: 'remove', sessionId })}
     />
@@ -49,6 +50,7 @@ interface RowActions {
   readonly onOpen: (sessionId: SessionId) => void
   readonly onRename: (sessionId: SessionId, title: string) => Promise<CommandOutcome<unknown>>
   readonly onExport: (sessionId: SessionId, format: ExportFormat) => Promise<CommandOutcome<string | null>>
+  readonly onPin: (sessionId: SessionId, pinned: boolean) => Promise<CommandOutcome<unknown>>
   readonly onArchive: (sessionId: SessionId) => Promise<CommandOutcome<unknown>>
   readonly onRemove: (sessionId: SessionId) => Promise<CommandOutcome<unknown>>
 }
@@ -67,16 +69,30 @@ export function ChatsPanel({ head, sidebar, open, now, drafts, live, ...actions 
   const view = chatsOf(sidebar, open, now, drafts)
   const [said, setSaid] = useState<{ readonly words: string } | null>(null)
   const list = useRef<HTMLDivElement>(null)
-  const [left, setLeft] = useState<{ readonly id: SessionId; readonly at: number } | null>(null)
-  const rows = view.show === 'rows' ? view.rows : []
+  const [moved, setMoved] = useState<{ readonly id: SessionId; readonly at: number; readonly to: Moved } | null>(null)
+  const pinned = view.show === 'rows' ? view.pinned : []
+  const rows = view.show === 'rows' ? [...pinned, ...view.sessions] : []
   useEffect(() => {
-    if (left === null || rows.some(row => row.id === left.id)) return
-    setLeft(null)
-    // Focus that went with the row's own buttons falls to the page. Focus anywhere else is where the user went since.
+    if (moved === null) return
+    const at = rows.findIndex(row => row.id === moved.id)
+    const arrived = moved.to === 'gone' ? at < 0 : at >= 0 && pinned.some(row => row.id === moved.id) === (moved.to === 'pinned')
+    if (!arrived) return
+    setMoved(null)
+    // Focus on a button that left, or moved, falls to the page. Focus anywhere else is where the user went since.
     const { activeElement } = document
     if (activeElement !== null && activeElement !== document.body) return
-    const openers = list.current?.querySelectorAll<HTMLElement>('button.chat-row') ?? []
-    ;(openers[Math.min(left.at, openers.length - 1)] ?? list.current)?.focus()
+    const drawn = list.current?.querySelectorAll<HTMLElement>('.chat-item') ?? []
+    const target = moved.to === 'gone' ? drawn[Math.min(moved.at, drawn.length - 1)]?.querySelector<HTMLElement>('button.chat-row') : drawn[at]?.querySelector<HTMLElement>('.chat-more')
+    ;(target ?? list.current)?.focus()
+  })
+  const items = (held: readonly ChatRow[], from: number) => held.map((row, index) => {
+    const at = from + index
+    // A session id is any word Hermes mints, so the ids come from the row's place.
+    return (
+      <ChatItem
+        key={`chat:${row.id}`} row={row} ids={`${ids}-${at}`} live={live} {...actions} onSay={words => setSaid({ words })} onMoved={to => setMoved({ id: row.id, at, to })}
+      />
+    )
   })
   useEffect(() => {
     if (said === null) return
@@ -88,12 +104,10 @@ export function ChatsPanel({ head, sidebar, open, now, drafts, live, ...actions 
       <div className="chats-head">{head}</div>
       <div ref={list} className="chats-list" tabIndex={-1} aria-busy={view.show === 'loading' || undefined}>
         {view.show === 'note' && <p className="chats-note" role="status">{view.words}</p>}
-        {rows.map((row, at) => (
-          // A session id is any word Hermes mints, so the ids come from the row's place.
-          <ChatItem
-            key={row.id} row={row} ids={`${ids}-${at}`} live={live} {...actions} onSay={words => setSaid({ words })} onLeft={() => setLeft({ id: row.id, at })}
-          />
-        ))}
+        {/* One list of children, so a row that moves between the groups keeps its state. */}
+        {pinned.length === 0
+          ? items(rows, 0)
+          : [<h3 key="group:pinned" className="chats-group">Pinned</h3>, ...items(pinned, 0), <h3 key="group:sessions" className="chats-group">Sessions</h3>, ...items(rows.slice(pinned.length), pinned.length)]}
       </div>
       <p className="chats-note chats-saved" role="status">{said?.words ?? ''}</p>
     </nav>
@@ -105,11 +119,13 @@ interface ChatItemProps extends RowActions {
   readonly ids: string
   readonly live: boolean
   readonly onSay: (words: string) => void
-  /** The row left the list on this item's word: archived or removed. */
-  readonly onLeft: () => void
+  /** Where this item's word sent the row: out of the list, or into a group. */
+  readonly onMoved: (to: Moved) => void
 }
 
-function ChatItem({ row, ids, live, onOpen, onRename, onExport, onArchive, onRemove, onSay, onLeft }: ChatItemProps) {
+type Moved = 'gone' | 'pinned' | 'unpinned'
+
+function ChatItem({ row, ids, live, onOpen, onRename, onExport, onPin, onArchive, onRemove, onSay, onMoved }: ChatItemProps) {
   const { open: menu, setOpen: setMenu, holder, toggle, onKeyDown } = useMenu<HTMLDivElement, HTMLButtonElement>()
   const items = useRef<HTMLDivElement>(null)
   const opener = useRef<HTMLButtonElement>(null)
@@ -167,7 +183,14 @@ function ChatItem({ row, ids, live, onOpen, onRename, onExport, onArchive, onRem
     setRefused(outcome.ok ? null : outcome.refusal.message)
     if (!outcome.ok) return
     onSay(words)
-    onLeft()
+    onMoved('gone')
+  }
+  const pin = async (pinned: boolean) => {
+    setMenu(false)
+    toggle.current?.focus()
+    const outcome = await onPin(row.id, pinned)
+    setRefused(outcome.ok ? null : outcome.refusal.message)
+    onMoved(outcome.ok === pinned ? 'pinned' : 'unpinned')
   }
   /** A modal dialog makes the rest of the page inert, so it closes before focus goes back. */
   const stopConfirming = () => {
@@ -176,6 +199,8 @@ function ChatItem({ row, ids, live, onOpen, onRename, onExport, onArchive, onRem
   }
   const acts: { readonly [A in RowAction]: () => void } = {
     rename: () => { setMenu(false); setRefused(null); setNaming('typing') },
+    pin: () => void pin(true),
+    unpin: () => void pin(false),
     'export-md': () => void exportAs('md'),
     'export-json': () => void exportAs('json'),
     'export-html': () => void exportAs('html'),
