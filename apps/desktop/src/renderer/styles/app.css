@@ -299,6 +299,10 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .regenerate { padding: 2px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); color: var(--ink); font: 500 13px/1.5 var(--sans); }
 .regenerate:hover:not(:disabled) { background: var(--paper); }
 .regenerate:disabled { color: var(--graphite); }
+.relay-reply { margin-left: var(--col); }
+.relay-from { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font: 500 13.5px/1.4 var(--sans); }
+.relay-reply > .prose { position: relative; }
+.relay-reply > :is(.notice, .err) { margin: 0; }
 .chip > .copy { position: static; padding: 0 6px; border: 0; background: none; color: var(--graphite); font: inherit; opacity: 1; }
 .chip > .copy:hover, .chip > .copy.shown { color: var(--ink); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
