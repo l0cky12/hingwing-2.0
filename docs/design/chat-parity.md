@@ -112,7 +112,7 @@ Each unit is one PR, stacked on the one before it. Each ends with:
 | B1 | What Hermes says | #8 (the reasoning switch), #9, #11, #12, #13, #16 | `says.jsonl`: the reasoning switch, MoA, a tool image, status lines, a notice, an approval with `timeout_s`, and a goal verdict while idle. The `declined` phantom turn is gone. |
 | B2 | What Hermes asks | #20, #21, #22 | `asks.jsonl`: sudo answered (the recorded result is masked), a secret skipped, a vault code another viewer answers, so it closes by `request.cancel`, a two-question batch, a plugin choice while idle, a connector card, and a Desktop bridge (`theme.pick`) declined only while watched. |
 | B3 | Queue and steer | #3, #4, #6, #17 | `queue.jsonl`: a chat opened on a row Hermes lost to a restart, that row released, another client's queued row, edit, cancel, send now, steer, redirect, deny-and-tell, and a redirect no agent saw, submitted as a message. Hermes holds a steer for a turn that has no agent yet, so only a redirect is answered `delivered: false` there. |
-| B4 | Side prompts and chat commands | #30, #32, #33, #35, #36, #38, #45, #55 | `commands.jsonl`: `complete.path`, `/btw` and `/bg` with their answers, effort, fast, the chat's folder, export and compress. |
+| B4 | Side prompts and chat commands | #30, #32, #33, #35, #36, #38, #45, #55 | `commands.jsonl`: `complete.path` as a header the gateway answers from (#112's `completePath`), `/btw` and `/bg` with their answers, effort, fast, the chat's folder, export and compress. |
 | B5 | Session panels | #42, #43, #44, #46 | `panels.jsonl`: processes, a goal card, checkpoints and a reaction. |
 | B6 | Undo, rewrites from other windows, pin and delete | #24, #26, #53, #54 | Builds on #96's rewind and #69's chat list once they merge. |
 

@@ -83,6 +83,7 @@ interface View {
   turnsEnded: number
   /** null until the header or a recorded frame names it. */
   yolo: boolean | null
+  info: Obj
 }
 
 const TRACK: { readonly [T in SessionEvent['type']]?: (view: View, event: Extract<SessionEvent, { type: T }>, payload: Obj) => void } = {
@@ -104,10 +105,16 @@ const TRACK: { readonly [T in SessionEvent['type']]?: (view: View, event: Extrac
   meta: (view, event, payload) => {
     if (event.title !== undefined) view.title = event.title
     if (event.revision !== undefined) view.revision = event.revision
-    if (event.yolo !== undefined) view.yolo = event.yolo
+    if (event.generation !== undefined) view.generation = Math.max(view.generation, event.generation)
+    if (event.tuning?.yolo !== undefined) view.yolo = event.tuning.yolo
     if (Array.isArray(payload.pending)) view.pending = payload.pending
+    const said = Object.entries(payload).filter(([key]) => INFO_KEYS.has(key))
+    if (said.length > 0) view.info = { ...view.info, ...Object.fromEntries(said) }
   }
 }
+
+/** The `info` fields of a session.info that an attach reply repeats (gateway/session_local.py:520-560). */
+const INFO_KEYS: ReadonlySet<string> = new Set(['cwd', 'reasoning_effort', 'service_tier', 'fast'])
 
 type Drop =
   | { readonly at: 'armed'; readonly afterPush: number; readonly missed: number }
@@ -136,6 +143,37 @@ const correction: Check = (_gateway, _socket, params) =>
   Object.keys(params).every(key => ['session_id', 'profile', 'text', 'execution_generation'].includes(key)) && isText(params.text) && params.text.trim() !== '' && isInt(params.execution_generation)
     ? null
     : 'invalid_params'
+const isString = (value: unknown): value is string => typeof value === 'string'
+const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
+const closed = (keys: Readonly<Record<string, (value: unknown) => boolean>>): Check => (_gateway, _socket, params) =>
+  Object.entries(params).every(([key, value]) => Object.hasOwn(keys, key) && keys[key]!(value)) ? null : 'invalid_params'
+/** gateway/session_tui_side.py:33-38 */
+const sideText: Check = (gateway, socket, params, routed) =>
+  closed({ session_id: isString, profile: isString, text: isString })(gateway, socket, params, routed) ?? (String(params.text).trim() === '' ? 'invalid_params' : null)
+
+/** The operations whose payload the story checks, each closed as Hermes parses it (persistence/authority/runtime.py:299-366). */
+const PAYLOADS: Readonly<Record<string, (payload: Obj) => boolean>> = {
+  reasoning: payload => Object.keys(payload).join() === 'effort' && (payload.effort === null || EFFORT_WORDS.has(String(payload.effort).trim().toLowerCase())),
+  workspace: payload => Object.keys(payload).join() === 'cwd' && isText(payload.cwd) && payload.cwd.trim() !== '',
+  compress: payload => Object.entries(payload).every(([key, value]) => key in COMPRESS_FIELDS && COMPRESS_FIELDS[key]!(value)),
+  rewind: payload => isInt(payload.target_message_id) && payload.target_message_id > 0
+    && Object.keys(payload).every(key => key === 'target_message_id' || (key === 'preserve_compaction_handoff' && isBoolean(payload[key]))),
+  rename: payload => Object.keys(payload).join() === 'title' && isString(payload.title),
+  archive: payload => Object.keys(payload).join() === 'archived' && isBoolean(payload.archived)
+}
+const EFFORT_WORDS: ReadonlySet<string> = new Set(['none', 'false', 'disabled', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
+const COMPRESS_FIELDS: Readonly<Record<string, (value: unknown) => boolean>> = { focus: isString, preview: isBoolean, partial: isBoolean, keep_last: isInt }
+/** Operations that need `expected_generation` (gateway/session_mutations.py:20,154, persistence/authority/runtime.py:75). */
+const FENCED: ReadonlySet<string> = new Set(['model', 'reasoning', 'workspace', 'editor_mcp', 'edit_policy', 'delete', 'rewind', 'reset', 'branch', 'compress'])
+/** gateway/session_mutations.py:150-154: the closed field set, the generation an operation needs, then its payload. */
+const mutation: Check = (_gateway, _socket, params) => {
+  const { operation, payload } = params
+  const fields = Object.keys(params).filter(key => key !== 'expected_generation')
+  if (fields.length !== 5 || !['session_id', 'request_id', 'expected_revision', 'operation', 'payload'].every(key => fields.includes(key))) return 'invalid_params'
+  if (!isText(operation) || !isObject(payload) || (FENCED.has(operation) && !isInt(params.expected_generation))) return 'invalid_params'
+  return PAYLOADS[operation]?.(payload) === false ? 'invalid_params' : null
+}
+
 const pendingRow = (gateway: ScriptedGateway, params: Obj) => gateway.view.pending.filter(isObject).find(row => row.admission_id === params.admission_id)
 /** gateway/session_authority.py:817-821: a receipt is read only for a row of this session. The story knows the rows of its latest pending list. */
 const listed: Check = (gateway, _socket, params) => (pendingRow(gateway, params) === undefined ? 'not_found' : null)
@@ -190,6 +228,10 @@ const ownCard: Check = (gateway, _socket, params) =>
 const UNREPLAYED: ReadonlySet<string> = new Set(['terminal.read', 'preview.read', 'preview.act', 'window.read', 'theme.apply', 'tour'])
 
 const AFTER: Readonly<Record<string, (view: View, params: Obj, reply: unknown) => void>> = {
+  /** gateway/session_busy_controls.py:137-166: a YOLO set sends no session.info, so a later attach reply is the only other word of it. */
+  'config.set': (view, params, reply) => {
+    if (params.key === 'yolo' && isObject(reply) && (reply.value === '1' || reply.value === '0')) view.yolo = reply.value === '1'
+  },
   /** gateway/session_server_requests.py:149-168: a lock is listed with the request until the last one settles it. */
   'clarify.lock': (view, params, reply) => {
     const id = String(params.request_id)
@@ -216,6 +258,14 @@ const STORY_CHECKS: Readonly<Record<string, readonly Check[]>> = {
   'session.interrupt': [known, (gateway, _socket, params) => (gateway.view.generation === params.execution_generation ? null : 'stale_generation')],
   'clarify.lock': [lockable],
   'connection.respond': [ownCard],
+  /** gateway/session_tui_side.py:33-45: the answer rides this socket's subscription, so the chat must be attached on it. */
+  'prompt.btw': [sideText, known, attached],
+  'prompt.background': [sideText, known, attached],
+  /** gateway/session_tui_ops.py:89-101 */
+  'session.export': [closed({ session_id: isString, profile: isString, format: isString, redact: isBoolean }), known],
+  /** gateway/session_tui_config.py:187-199: a set the story records, with no `scope`. */
+  'config.set': [closed({ session_id: isString, profile: isString, key: isString, value: () => true }), known],
+  'session.mutate': [mutation, known],
   /** gateway/session_commands.py:422-425 */
   'command.dispatch': [known, dispatchable],
   /** gateway/session_busy_controls.py:181-200 */
@@ -352,6 +402,7 @@ interface Held extends Stream {
   readonly model: Model | null
   readonly yolo: boolean | null
   readonly cwd?: string
+  readonly info: Obj
   readonly pending: readonly unknown[]
   readonly prompts: readonly unknown[]
   readonly openRequests: readonly unknown[]
@@ -370,7 +421,7 @@ function snapshotOf(held: Held, subscriptionId: string, params: Obj): Obj {
     subscription_id: subscriptionId, revision: held.revision, execution_generation: held.generation,
     pending: held.pending, prompts: held.prompts,
     info: {
-      desktop_protocol: GATEWAY_PROTOCOL, title: held.title,
+      ...held.info, desktop_protocol: GATEWAY_PROTOCOL, title: held.title,
       ...(model === null ? {} : { model: model.model, ...(model.provider === null ? {} : { provider: model.provider }) }),
       ...(held.yolo === null ? {} : { yolo: held.yolo }),
       ...(held.cwd === undefined ? {} : { cwd: held.cwd })
@@ -616,7 +667,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   /** gateway/session_config.py:65-73 hands the session controls to gateway/session_busy_controls.py:30-56. */
   'config.get': (gateway, _socket, params, routed) => gateway.control(params, routed, false),
   /** gateway/session_tui_config.py:187-193 */
-  'config.set': (gateway, _socket, params, routed) => (params.key === 'yolo' || gateway.fixture.header.controls === undefined ? gateway.setYolo(params, routed, null) : gateway.control(params, routed, true)),
+  'config.set': (gateway, socket, params, routed) => {
+    if (gateway.awaits('config.set')) return gateway.story(socket, 'config.set', params, routed)
+    return params.key === 'yolo' || gateway.fixture.header.controls === undefined ? gateway.setYolo(params, routed, null) : gateway.control(params, routed, true)
+  },
   'session.detach': detach,
   /**
    * `_delivery_params` (gateway/session_bot.py:804-827), with the id rule of tools/bot_live_delivery.py:131-134,
@@ -742,7 +796,8 @@ export class ScriptedGateway {
     const { models } = fixture.header
     this.view = {
       running: false, generation: 0, revision: 0, title: '', pending: fixture.header.pending ?? [], prompts: new Map(), requests: new Map(), connection: null,
-      model: modelOf(isObject(models) ? models : undefined), deferred: null, switchesCommitted: 0, branchesCommitted: 0, turnsEnded: 0, yolo: fixture.header.yolo ?? null
+      model: modelOf(isObject(models) ? models : undefined), deferred: null, switchesCommitted: 0, branchesCommitted: 0, turnsEnded: 0, yolo: fixture.header.yolo ?? null,
+      info: fixture.header.info ?? {}
     }
     this.epoch = fixture.steps.map(epochOf).find(isText) ?? 'fixture-epoch'
     this.done = new Promise((resolve, reject) => { this.settle = { resolve, reject } })
@@ -894,6 +949,11 @@ export class ScriptedGateway {
     this.view.requests.delete(id)
     this.step++
     this.pump()
+  }
+
+  awaits(method: string): boolean {
+    const step = this.fixture.steps[this.step]
+    return step !== undefined && 'await' in step && step.await === method
   }
 
   /** Whether the frame is for the story session, on the profile it lives in. */
@@ -1166,7 +1226,7 @@ export class ScriptedGateway {
     const { view } = this
     return snapshotOf({
       id: this.sessionId, rows: this.stored, ring: this.ring, epoch: this.epoch, running: view.running, generation: view.generation,
-      revision: view.revision, title: view.title, model: view.model, yolo: view.yolo, pending: view.pending, prompts: [...view.prompts.values()],
+      revision: view.revision, title: view.title, model: view.model, yolo: view.yolo, info: view.info, pending: view.pending, prompts: [...view.prompts.values()],
       openRequests: this.openRequestList(), connection: view.connection,
       ...(this.fixture.header.paths?.cwd === undefined ? {} : { cwd: this.fixture.header.paths.cwd })
     }, socket.subscriptionId, params)
@@ -1180,7 +1240,7 @@ export class ScriptedGateway {
     socket.subscriptions.set(chat.id, socket.subscriptionId)
     return snapshotOf({
       id: chat.id, rows: chat.rows, ring: chat.ring, epoch: chat.epoch, running: chat.running, generation: chat.generation,
-      revision: chat.revision, title: chat.title, model: chat.model, yolo: this.yoloAt(chat.yolo), pending: [], prompts: chat.asking === null ? [] : [chat.asking], openRequests: [], connection: null
+      revision: chat.revision, title: chat.title, model: chat.model, yolo: this.yoloAt(chat.yolo), info: {}, pending: [], prompts: chat.asking === null ? [] : [chat.asking], openRequests: [], connection: null
     }, socket.subscriptionId, params)
   }
 

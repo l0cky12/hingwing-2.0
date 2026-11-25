@@ -6,28 +6,29 @@ import { canonicalBotId, type BotCreated, type BotDetails, type BotFacts, type B
 import type { ContextBreakdown, ModelConfirm, ModelMenu } from '../domain/command'
 import type { PaneAsk } from '../domain/pane'
 import type { Admission } from '../domain/queue'
-import type { CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
+import type { CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, Said as SaidTuning, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type { CloseWhy } from '../domain/requests'
+import { EFFORTS } from '../domain/session'
 import type {
   AdmissionId, Answer, Ask, Began, BusyMode, ConnectTarget, FileDiff, Generation, HelperEnd, HelperId, InputId, Item, Json, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, PromptId,
-  Question, RequestId, SessionId, SessionUsage, SettledTurn, SidebarRow, StatusAbout, ToolId, ToolResult, TurnId
+  Question, RequestId, SessionId, SessionUsage, SettledTurn, SideId, SidebarRow, SideTask, StatusAbout, ToolId, ToolResult, TurnId
 } from '../domain/session'
 import type { PathMatch } from '../domain/path'
 import type { RelayState } from '../domain/relay'
-import type { SlashCatalog, SlashEntry } from '../domain/slash'
+import { OWN_COMMANDS, type SlashCatalog, type SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
 import type {
-  AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalPendingPrompt,
-  CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
-  CommandDispatchResult, CommandsCatalogResult, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget,
-  ConnectionRequestPayload, ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload,
-  MessageDeltaPayload, MessageInterimPayload, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload, MoaProgressPayload, MoaReferencePayload,
-  ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PreviewClosePayload, PreviewOpenPayload,
-  ProfilesConfigureResult, ProfilesCreateResult, ProfilesDescribeResult, ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane,
-  ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, RequestCancelPayload, SecretRequestParams, SessionContextBreakdownResult, SessionLiveInfo,
-  SessionMutateResult, SessionStats, SessionTitlePayload, SessionUsagePayload, StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow,
-  StreamDeltaPayload, SubagentEventPayload, SudoRequestParams, TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload,
-  ToolStartPayload, Usage, VaultCodeRequestParams, VaultSaveLoginRequestParams, VaultUnlockRequestParams
+  AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
+  CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
+  CommandDispatchResult, CommandsCatalogResult, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
+  ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload,
+  MessageInterimPayload, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload, MoaProgressPayload, MoaReferencePayload, ModelOptionProvider,
+  ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PreviewClosePayload, PreviewOpenPayload, ProfilesConfigureResult,
+  ProfilesCreateResult, ProfilesDescribeResult, ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo,
+  ProjectTreeSession, RequestCancelPayload, SecretRequestParams, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult, SessionStats,
+  SessionTitlePayload, SessionUsagePayload, SideAgentCompletePayload, StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload,
+  SubagentEventPayload, SudoRequestParams, TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage,
+  VaultCodeRequestParams, VaultSaveLoginRequestParams, VaultUnlockRequestParams
 } from './contract.generated'
 
 export type ParsedEvent =
@@ -181,29 +182,40 @@ function admissionOf(value: unknown): Admission {
 
 type Shown = (payload: Obj, envelope: Obj) => SessionEvent | null
 
+function sideAnswer(payload: Obj, kind: SideTask['kind']): SessionEvent {
+  const p = fields<SideAgentCompletePayload>(payload)
+  const id = p.str('task_id')
+  if (id === '') throw new Unusable()
+  return { type: 'side.answered', id: id as SideId, kind, asked: p.optStr('question') || null, text: stripAnsi(p.str('text')) }
+}
+
 interface MetaFields {
   readonly title?: string | null
   readonly revision?: number | null
   readonly queue?: readonly Admission[] | null
   readonly model?: ModelRef | null
-  readonly yolo?: boolean | null
+  readonly cwd?: string | null
+  readonly tuning?: Partial<SaidTuning>
   readonly pick?: PickOutcome | null
   readonly generation?: number | null
   readonly cutBefore?: number | null
+  readonly rewritten?: true
   readonly countsRestart?: true
 }
 
-function meta({ title, revision, queue, model, yolo, pick, generation, cutBefore, countsRestart }: MetaFields): SessionEvent {
+function meta({ title, revision, queue, model, cwd, tuning, pick, generation, cutBefore, rewritten, countsRestart }: MetaFields): SessionEvent {
   return {
     type: 'meta',
     ...(title == null ? {} : { title }),
     ...(revision == null ? {} : { revision }),
     ...(queue == null ? {} : { queue }),
     ...(model == null ? {} : { model }),
-    ...(yolo == null ? {} : { yolo }),
+    ...(cwd == null ? {} : { cwd }),
+    ...(tuning === undefined || Object.keys(tuning).length === 0 ? {} : { tuning }),
     ...(pick == null ? {} : { pick }),
     ...(generation == null ? {} : { generation: generation as Generation }),
     ...(cutBefore == null ? {} : { cutBefore }),
+    ...(rewritten === undefined ? {} : { rewritten }),
     ...(countsRestart === undefined ? {} : { countsRestart })
   }
 }
@@ -400,6 +412,9 @@ export const SHOWN: { readonly [type: string]: Shown } = {
   'approval.settled': promptSettled,
   'clarify.settled': promptSettled,
   'approval.cancelled': payload => ({ type: 'prompts.cancelled', ids: fields<ApprovalCancelledPayload>(payload).strs('request_ids') as PromptId[] }),
+  /** A side agent's answer, published on the chat's stream with no generation (gateway/session_tui_side.py:156-158). */
+  'btw.complete': payload => sideAnswer(payload, 'btw'),
+  'background.complete': payload => sideAnswer(payload, 'background'),
   /** A reason outside Hermes's own five reads as withdrawn (`RequestCancelReason`, tui_gateway/contracts/server_requests.py:372-377). */
   'request.cancel': payload => {
     const p = fields<RequestCancelPayload>(payload)
@@ -422,7 +437,7 @@ export const SHOWN: { readonly [type: string]: Shown } = {
     // Its execution_generation is how an attached viewer learns a generation a policy change moved (gateway/session_authority.py:484-495).
     return meta({
       title: p.optStr('title'), revision: p.optInt('revision'), queue: p.optList('pending')?.map(admissionOf) ?? null,
-      model: modelOf(p.optStr('model'), p.optStr('provider')), yolo: p.optBool('yolo'), generation: p.optInt('execution_generation')
+      model: modelOf(p.optStr('model'), p.optStr('provider')), cwd: p.optStr('cwd') || null, tuning: saidIn(payload), generation: p.optInt('execution_generation')
     })
   },
   /** A tick after each model call of a turn (`gateway/session_usage.py:176-186`). */
@@ -436,7 +451,8 @@ export const SHOWN: { readonly [type: string]: Shown } = {
     const target = p.optStr('operation') === 'rewind' ? p.optObj('target_message') : null
     return meta({
       title: p.optStr('title'), revision: p.optInt('revision'), generation: p.optInt('execution_generation'),
-      cutBefore: target === null ? null : fields<{ id?: number }>(target).optInt('id')
+      cutBefore: target === null ? null : fields<{ id?: number }>(target).optInt('id'),
+      ...(REWRITES.has(p.optStr('operation') ?? '') ? { rewritten: true } : {})
     })
   },
   error: payload => ({ type: 'notice', tone: 'error', text: stripAnsi(fields<ErrorPayload>(payload).str('message')) })
@@ -454,11 +470,14 @@ export const FOR_WINDOW: { readonly [type: string]: (payload: unknown) => PaneAs
   'preview.close': payload => ({ do: 'close', url: nonBlank(fields<PreviewClosePayload>(payload).optStr('url')) })
 }
 
+/** The receipts of operations that replace the chat's stored rows (gateway/session_mutations.py:381-383). A rewind names its cut instead. */
+const REWRITES: ReadonlySet<string> = new Set(['compress', 'reset'])
+
 export const UNSHOWN: ReadonlySet<string> = new Set([
   /** Every canonical turn publishes it (`gateway/run_turn_progress.py:1092`); not in the generated contract. */
   'agent.step',
-  'agent.terminal.output', 'background.complete', 'billing.step_up.verification', 'bot_relay.outbox.pending',
-  'browser.progress', 'btw.complete', 'cron.changed', 'display.install.done',
+  'agent.terminal.output', 'billing.step_up.verification', 'bot_relay.outbox.pending',
+  'browser.progress', 'cron.changed', 'display.install.done',
   'display.install.log', 'display.lease', 'display.status', 'free_tier.challenge', 'gateway.ready', 'groups.changed',
   'message.reaction', 'notice', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
   'pet.hatch.progress', 'platforms.changed', 'preview.restart.complete',
@@ -548,6 +567,22 @@ export function parseEvent(params: unknown): ParsedEvent {
 }
 
 /**
+ * The switches a `session.info` names. Hermes says `reasoning_effort` `''` for the model's own level
+ * and `fast` as whether the chat's tier is fast on its model (gateway/session_local.py:486-503).
+ */
+function saidIn(info: unknown): Partial<SaidTuning> {
+  const p = fields<CanonicalSessionInfo>(info)
+  const effort = p.optStr('reasoning_effort')
+  const fast = p.optBool('fast')
+  const yolo = p.optBool('yolo')
+  return {
+    ...(effort === null ? {} : { effort: effort === '' ? 'default' : EFFORTS.find(level => level === effort) ?? null }),
+    ...(fast === null ? {} : { fast }),
+    ...(yolo === null ? {} : { yolo })
+  }
+}
+
+/**
  * `messages_omitted` -> history null. Otherwise history comes from `display_messages`, the gateway's
  * own display rows, through `parseRows`. `older` is set when the first stored row carries
  * `archived_truncated` (`gateway/session_local_recovery.py:388`), which only `messages` keeps.
@@ -559,7 +594,7 @@ export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
     title: reply.info.title ?? '',
     cwd: reply.info.cwd || null,
     model: modelOf(reply.info.model, reply.info.provider),
-    yolo: typeof reply.info.yolo === 'boolean' ? reply.info.yolo : null,
+    tuning: { effort: null, fast: null, yolo: null, ...saidIn(reply.info) },
     running: reply.running,
     generation: reply.execution_generation as Generation,
     revision: reply.revision,
@@ -669,6 +704,18 @@ export function parsePending(rows: readonly unknown[]): Admission[] {
 /** `config.get` and `config.set` of `show_reasoning` answer `'1'` or `'0'` (`gateway/session_busy_controls.py:90-108`). */
 export function parseShown(reply: { readonly value?: unknown }): boolean | null {
   return reply.value === '1' ? true : reply.value === '0' ? false : null
+}
+
+/** The report of a compression, committed or with nothing to remove: Hermes's headline, size line and note (agent/manual_compression_feedback.py:88-96). */
+export function parseCompressed(reply: SessionMutateResult): string | null {
+  const summary = isObject(reply.summary) ? reply.summary : {}
+  const lines = [summary.headline, summary.token_line, summary.note].filter((line): line is string => isString(line) && line.trim() !== '')
+  return lines.length === 0 ? null : lines.map(line => stripAnsi(line).trim()).join('\n')
+}
+
+/** `config.set` of `fast` answers the tier by its word: `fast` or `ultrafast` for a fast one, `normal` for none (agent/fast_mode.py:54-56). */
+export function parseFast(reply: { readonly value?: unknown }): boolean | null {
+  return isString(reply.value) ? reply.value === 'fast' || reply.value === 'ultrafast' : null
 }
 
 const BUSY_MODES: readonly string[] = ['queue', 'steer', 'interrupt'] satisfies BusyMode[]
@@ -1252,7 +1299,7 @@ const GATEWAY_RUNS: ReadonlySet<string> = new Set([
   'insights', 'platforms', 'version', 'debug'
 ])
 
-const HIGHWING_RUNS: ReadonlySet<string> = new Set(['new'])
+const HIGHWING_RUNS: ReadonlySet<string> = new Set(['new', ...Object.keys(OWN_COMMANDS)])
 
 /** `desktop` is `null` for a command a desktop app should offer, else the reason it should not. */
 const offered = (meta: unknown) => isObject(meta) && (meta.desktop === null || meta.desktop === undefined)

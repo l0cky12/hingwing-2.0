@@ -543,20 +543,53 @@ describe('usage', () => {
   })
 })
 
-describe('yolo', () => {
-  const frame = (payload: Record<string, unknown>) => ({ type: 'session.info', session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload })
+describe('rewrites', () => {
+  const receipt = (payload: Record<string, unknown>) => ({ type: 'session.updated', session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload: { session_id: SESSION, revision: 4, execution_generation: 2, ...payload } })
 
-  it('reads the YOLO a session.info names, and nothing when it names none', () => {
-    expect(parseEvent(frame({ yolo: true }))).toMatchObject({ event: { type: 'meta', yolo: true } })
-    expect(parseEvent(frame({ yolo: false }))).toMatchObject({ event: { type: 'meta', yolo: false } })
-    expect(parseEvent(frame({ revision: 3 }))).not.toMatchObject({ event: { yolo: expect.anything() } })
+  it.each(['compress', 'reset'])('reads a %s receipt from any client as a rewrite of the stored rows', operation => {
+    expect(parseEvent(receipt({ operation }))).toMatchObject({ event: { type: 'meta', revision: 4, generation: 2, rewritten: true } })
   })
 
-  it('reads the YOLO an attach reply names, and null when Hermes sends none', () => {
+  it('reads the other receipts for what they change', () => {
+    expect(parseEvent(receipt({ operation: 'rewind', target_message: { id: 7 } }))).toMatchObject({ event: { type: 'meta', cutBefore: 7 } })
+    expect(parseEvent(receipt({ operation: 'workspace', cwd: '/work/docs' }))).toMatchObject({ event: { type: 'meta', revision: 4 } })
+  })
+})
+
+describe('side answers', () => {
+  const frame = (type: string, payload: Record<string, unknown>) => ({ type, session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload })
+
+  it('reads a side question\'s answer with its words, and a background answer without', () => {
+    expect(parseEvent(frame('btw.complete', { task_id: 'btw_1', question: 'Which file?', text: 'notes.md' }))).toMatchObject({
+      stamp: { seq: 9, generation: null }, event: { type: 'side.answered', id: 'btw_1', kind: 'btw', asked: 'Which file?', text: 'notes.md' }
+    })
+    expect(parseEvent(frame('background.complete', { task_id: 'bg_1', text: 'error: no provider' }))).toMatchObject({
+      event: { type: 'side.answered', id: 'bg_1', kind: 'background', asked: null, text: 'error: no provider' }
+    })
+    expect(parseEvent(frame('btw.complete', { task_id: '', text: 'x' }))).toMatchObject({ event: null, skipped: 'invalid' })
+  })
+})
+
+describe('the switches Hermes says', () => {
+  const frame = (payload: Record<string, unknown>) => ({ type: 'session.info', session_id: SESSION, seq: 9, replay_epoch: EPOCH, payload })
+
+  it('reads the effort, fast, YOLO and folder a session.info names, and nothing it leaves out', () => {
+    expect(parseEvent(frame({ yolo: true }))).toMatchObject({ event: { type: 'meta', tuning: { yolo: true } } })
+    expect(parseEvent(frame({ service_tier: 'priority', fast: true }))).toMatchObject({ event: { type: 'meta', tuning: { fast: true } } })
+    expect(parseEvent(frame({ reasoning_effort: 'high', fast: false, yolo: false, cwd: '/work/docs' }))).toMatchObject({
+      event: { type: 'meta', cwd: '/work/docs', tuning: { effort: 'high', fast: false, yolo: false } }
+    })
+    expect(parseEvent(frame({ reasoning_effort: '' }))).toMatchObject({ event: { tuning: { effort: 'default' } } })
+    expect(parseEvent(frame({ reasoning_effort: 'turbo' }))).toMatchObject({ event: { tuning: { effort: null } } })
+    expect(parseEvent(frame({ revision: 3 }))).not.toMatchObject({ event: { tuning: expect.anything() } })
+    expect(parseEvent(frame({ revision: 3, cwd: '' }))).not.toMatchObject({ event: { cwd: expect.anything() } })
+  })
+
+  it('reads them from an attach reply, each null when Hermes sends none', () => {
     const info = { desktop_protocol: 'hermes-gateway-v1', title: 'Errand' } as const
-    expect(parseSnapshot(snapshotReply({ info: { ...info, yolo: true } })).yolo).toBe(true)
-    expect(parseSnapshot(snapshotReply({ info: { ...info, yolo: false } })).yolo).toBe(false)
-    expect(parseSnapshot(snapshotReply({ info })).yolo).toBeNull()
+    expect(parseSnapshot(snapshotReply({ info: { ...info, yolo: true, reasoning_effort: 'none', fast: true } })).tuning).toEqual({ effort: 'none', fast: true, yolo: true })
+    expect(parseSnapshot(snapshotReply({ info: { ...info, yolo: false } })).tuning).toEqual({ effort: null, fast: null, yolo: false })
+    expect(parseSnapshot(snapshotReply({ info })).tuning).toEqual({ effort: null, fast: null, yolo: null })
   })
 })
 

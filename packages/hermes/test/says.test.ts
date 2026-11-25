@@ -7,7 +7,7 @@ import { fold, ignoringClocks, says } from './support/story'
 const fixture = loadFixture(fileURLToPath(new URL('../../../fixtures/says.jsonl', import.meta.url)))
 const want = fold(says()).content
 const pushes = fixture.steps.filter(step => 'push' in step).length
-const LIVE: Session = { ...want, tuning: { reasoning: true, busy: null }, sync: { state: 'live' } }
+const LIVE: Session = { ...want, tuning: { reasoning: true, busy: null, effort: null, fast: null, yolo: null }, sync: { state: 'live' } }
 
 async function moments(options?: Parameters<typeof play>[1]): Promise<Moment[]> {
   const seen: Moment[] = []

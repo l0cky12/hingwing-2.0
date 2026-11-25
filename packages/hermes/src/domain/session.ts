@@ -17,6 +17,8 @@ export type ToolId = Brand<string, 'ToolId'>
 export type PromptId = Brand<string, 'PromptId'>
 /** Hermes's `subagent_id`: one helper the agent handed part of the errand to. */
 export type HelperId = Brand<string, 'HelperId'>
+/** Hermes's `task_id` for a side question or a background prompt. */
+export type SideId = Brand<string, 'SideId'>
 
 /** A request Hermes holds open on the socket. For a connector card it is the operation's id. */
 export type RequestId = Brand<string, 'RequestId'>
@@ -103,9 +105,26 @@ export interface SessionContent {
   readonly outbox: readonly OutboxEntry[]
   readonly model: SessionModel
   readonly usage: SessionUsage
-  /** Whether Hermes runs this chat's commands without an approval card. null until Hermes says, which an older Hermes never does. */
-  readonly yolo: boolean | null
   readonly tuning: Tuning
+  /** Side questions and background prompts, oldest first, by whichever client asked. Live only: Hermes stores neither. */
+  readonly sides: readonly SideTask[]
+}
+
+/**
+ * A side question (`btw`: about this chat, which it leaves as it was) or a background prompt
+ * (`background`: run apart by an agent of its own). Its answer comes whole, and it cannot be stopped.
+ */
+export interface SideTask {
+  readonly id: SideId
+  readonly kind: 'btw' | 'background'
+  /** null: asked in another client, and Hermes repeats only a side question's words. */
+  readonly asked: string | null
+  readonly state:
+    | { readonly s: 'running' }
+    /** Hermes's answer. A failure is words too, starting `error:` (gateway/session_tui_side.py:143-154). */
+    | { readonly s: 'done'; readonly text: string }
+    /** The chat was read again while it ran, so its answer may have gone by unseen. */
+    | { readonly s: 'lost' }
 }
 
 /**
@@ -117,7 +136,17 @@ export interface Tuning {
   readonly reasoning: boolean | null
   /** What Hermes does with a message sent while a turn runs. While it is null, such a message queues. */
   readonly busy: BusyMode | null
+  /** How hard the model thinks, from the next turn. `default`: the model's own level. */
+  readonly effort: Effort | 'default' | null
+  /** Whether the model answers in its fast tier, from the next turn. false also for a model that has none. */
+  readonly fast: boolean | null
+  /** Whether Hermes runs this chat's commands without an approval card. An older Hermes never says. */
+  readonly yolo: boolean | null
 }
+
+/** The reasoning levels Hermes takes (persistence/authority/runtime.py:84-87). `none` turns reasoning off. */
+export const EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const
+export type Effort = typeof EFFORTS[number]
 
 /** `queue`: it waits its turn. `steer`: the running turn reads it after its next tool. `interrupt`: the model's request is cut short for it. */
 export type BusyMode = 'queue' | 'steer' | 'interrupt'

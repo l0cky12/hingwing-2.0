@@ -12,6 +12,7 @@ import type { DraftStore } from './drafts'
 import { openablePath, type Opener } from './files'
 import type { ImageLoader } from './images'
 import type { PreviewPane } from './preview'
+import type { Saver } from './saves'
 
 export const COALESCE_MS = 16
 
@@ -114,6 +115,7 @@ function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): S
 }
 
 const REFUSED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Highwing refused a malformed request from its window.' } }
+const NOT_SAVED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: "Highwing couldn't write the file." } }
 const FILE_REFUSED: FileOutcome = { ok: false, reason: 'refused' }
 const FILE_DONE: FileOutcome = { ok: true }
 const IMAGE_REFUSED: ImageOutcome = { ok: false }
@@ -139,7 +141,8 @@ export interface Attaching { readonly store: Pick<AttachmentStore, 'stage' | 're
 
 export function serveWindows(
   owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>,
-  pane: PreviewOwner, pickPicture: (bot: BotId) => Promise<CommandOutcome<PictureChoice>>, attaching: Attaching
+  pane: PreviewOwner, pickPicture: (bot: BotId) => Promise<CommandOutcome<PictureChoice>>, attaching: Attaching,
+  saver: Saver
 ): { dispose(): void } {
   const windows = new Map<number, Map<number, Served>>()
   const owners: Owners = { owner, pane }
@@ -177,7 +180,11 @@ export function serveWindows(
   ipc.handle(CHANNEL.run, async (event, raw) => {
     const command = parseCommand(raw)
     if (!trusted(event) || command === null) return REFUSED
-    return isPreviewCommand(command) ? pane.run(command) : owner.run(command)
+    if (isPreviewCommand(command)) return pane.run(command)
+    if (command.do !== 'export') return owner.run(command)
+    const rendered = await owner.run(command)
+    if (!rendered.ok) return rendered
+    return saver.save(rendered.value).then(path => ({ ok: true, value: path }), () => NOT_SAVED)
   })
 
   ipc.handle(CHANNEL.file, async (event, raw) => {

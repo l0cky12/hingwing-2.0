@@ -176,7 +176,8 @@ export class Offline extends Error {}
  */
 export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'connection.respond' | 'complete.path' | 'file.attach' |
-  'profiles.create' | 'profiles.describe' | 'profiles.configure' | 'profiles.set_asset' | 'profiles.get_asset' | 'projects.tree'>
+  'profiles.create' | 'profiles.describe' | 'profiles.configure' | 'profiles.set_asset' | 'profiles.get_asset' | 'projects.tree' |
+  'prompt.btw' | 'prompt.background'>
 export type Method = keyof Served
 
 export type Requested = ServerRequestMap

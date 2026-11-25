@@ -107,6 +107,34 @@ describe('retention', () => {
     expect(opened.detaches()).toHaveLength(1)
   })
 
+  it('keeps a session whose background prompt runs with no window on it, then lets it go 60 s after its answer', async () => {
+    const epoch = (ERRAND.steps[1] as { push: { params: { replay_epoch: string } } }).push.params.replay_epoch
+    const answer = { type: 'background.complete', session_id: SESSION, payload: { task_id: 'bg_1', text: 'Tidied.' }, replay_epoch: epoch, seq: 1 }
+    const opened = open({
+      ...ERRAND,
+      steps: [
+        { at: 0, await: 'prompt.background', params: { session_id: SESSION, text: 'Tidy the notes' }, reply: { task_id: 'bg_1' } },
+        { at: 300_000, push: { jsonrpc: '2.0', method: 'event', params: answer } }
+      ]
+    }, { timing: 'recorded' })
+    const unwatch = opened.watch()
+    await opened.clock.advance(0)
+    expect(await opened.hermes.run({ do: 'side', sessionId: SESSION, kind: 'background', text: 'Tidy the notes' })).toEqual({ ok: true, value: undefined })
+    unwatch()
+    await opened.clock.advance(299_999)
+    expect(opened.detaches(), 'the background prompt is running').toEqual([])
+
+    await opened.clock.advance(1)
+    expect(opened.script.finished).toBe(true)
+    const glance: Session[] = []
+    opened.hermes.watch(SESSION, session => glance.push(session))()
+    expect(glance.at(-1)?.sides, 'its answer reached the chat').toMatchObject([{ id: 'bg_1', state: { s: 'done', text: 'Tidied.' } }])
+    await opened.clock.advance(59_999)
+    expect(opened.detaches()).toEqual([])
+    await opened.clock.advance(1)
+    expect(opened.detaches()).toHaveLength(1)
+  })
+
   it('attaches a session the gateway lists as running, so a chat no window shows turns its row to asking', async () => {
     const first = open()
     first.watch()
@@ -323,7 +351,7 @@ describe('the slash catalog', () => {
     expect(opened.hermes.slash.get()).toEqual([])
     await opened.clock.advance(0)
     const names = opened.hermes.slash.get().map(entry => `${entry.kind}:${entry.name}`)
-    expect(names).toHaveLength(36)
+    expect(names).toHaveLength(39)
     expect(names.slice(0, 2)).toEqual(['command:new', 'command:title'])
     expect(names.slice(-2)).toEqual(['skill:code-review', 'skill:release-notes'])
     expect(opened.sent().filter(call => call.method === 'commands.catalog')).toEqual([{ method: 'commands.catalog', params: {} }])
@@ -343,7 +371,7 @@ describe('the slash catalog', () => {
     await toApproval(opened)
     await opened.clock.advance(1_000)
     expect(opened.sent().filter(call => call.method === 'commands.catalog'), 'once on each of the two sockets').toHaveLength(2)
-    expect(opened.hermes.slash.get()).toHaveLength(36)
+    expect(opened.hermes.slash.get()).toHaveLength(39)
   })
 })
 
@@ -819,9 +847,9 @@ describe('sending a slash line', () => {
 
   it('sends a line whose name is not listed as text', async () => {
     const { opened } = await send(story(
-      { await: 'prompt.submit', params: { session_id: SESSION, text: '/compress', input_id: 'minted' }, reply: RECEIPT }
-    ), '/compress')
-    expect(opened.sent().find(call => call.method === 'prompt.submit')?.params).toMatchObject({ text: '/compress' })
+      { await: 'prompt.submit', params: { session_id: SESSION, text: '/undo', input_id: 'minted' }, reply: RECEIPT }
+    ), '/undo')
+    expect(opened.sent().find(call => call.method === 'prompt.submit')?.params).toMatchObject({ text: '/undo' })
     expect(opened.sent().some(call => call.method === 'command.dispatch')).toBe(false)
   })
 })
@@ -1198,7 +1226,7 @@ describe('the reasoning switch', () => {
     opened.watch()
     await opened.clock.advance(0)
     expect(reads(opened)).toEqual([{ method: 'config.get', params: { session_id: SESSION, key: 'show_reasoning' } }])
-    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: false, busy: null })
+    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: false, busy: null, effort: null, fast: null, yolo: null })
   })
 
   it('reads it again after the chat is attached again', async () => {
@@ -1216,7 +1244,7 @@ describe('the reasoning switch', () => {
     await opened.clock.advance(0)
     expect(await opened.hermes.run({ do: 'tune', sessionId: SESSION, set: 'reasoning', on: true })).toEqual({ ok: true, value: undefined })
     expect(opened.sent().filter(call => call.method === 'config.set')).toEqual([{ method: 'config.set', params: { session_id: SESSION, key: 'show_reasoning', value: 'on' } }])
-    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: true, busy: null })
+    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
   })
 
   it('stays unknown on a Hermes that refuses the read, and says it cannot set it', async () => {
@@ -1224,7 +1252,7 @@ describe('the reasoning switch', () => {
     opened.watch()
     await opened.clock.advance(0)
     expect(reads(opened)).toHaveLength(1)
-    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: null, busy: null })
+    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: null, busy: null, effort: null, fast: null, yolo: null })
     expect(await opened.hermes.run({ do: 'tune', sessionId: SESSION, set: 'reasoning', on: true })).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes doesn't support that." } })
   })
 })

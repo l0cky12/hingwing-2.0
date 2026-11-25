@@ -60,6 +60,11 @@ export interface Fixture {
      * `info.yolo` until a recorded frame names it, and the gateway refuses a `config.set` of `yolo` as an unknown method, as a Hermes without `config.set` does.
      */
     readonly yolo?: boolean
+    /**
+     * Fields of the story session's attach `info` before the story starts, as Hermes said them: `cwd`, `reasoning_effort`,
+     * `fast`, `yolo`. Recorded session.info frames change them. Absent: the attach reply names none of them.
+     */
+    readonly info?: { readonly [key: string]: Json[string] }
     /** Every YOLO set is refused `permission_denied`, as Hermes refuses a viewer without control of the chat. */
     readonly yoloDenied?: boolean
     /**
@@ -244,6 +249,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   const { yolo, yoloDenied } = value
   if (yolo !== undefined && typeof yolo !== 'boolean') return '"yolo" must be true or false'
   if (yoloDenied !== undefined && typeof yoloDenied !== 'boolean') return '"yoloDenied" must be true or false'
+  const { info } = value
+  if (info !== undefined && !isObject(info)) return '"info" must be an object of attach info fields'
   const { controls } = value
   if (controls !== undefined && !(isObject(controls) && Object.values(controls).every(held => typeof held === 'string'))) return '"controls" must map control keys to strings'
   const { profiles } = value
@@ -286,6 +293,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(usage === undefined ? {} : { usage }),
     ...(yolo === undefined ? {} : { yolo }), ...(yoloDenied === undefined ? {} : { yoloDenied }),
     ...(branches === undefined ? {} : { branches }), ...(tree === undefined ? {} : { tree }),
+    ...(info === undefined ? {} : { info }),
     ...(controls === undefined ? {} : { controls: controls as Record<string, string> }),
     ...(profiles === undefined ? {} : { profiles }),
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),

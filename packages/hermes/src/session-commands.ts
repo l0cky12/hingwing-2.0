@@ -4,13 +4,13 @@ import type { Command, ModelConfirm, Outcome, Refusal, ResultOf } from './domain
 import { offeredBy, sendPlan } from './domain/queue'
 import type {
   AttachmentId, BranchId, Generation, HermesRequest, PromptId, PromptReply, QueuedMessage, RecordedReply, RequestId, RequestReply, SessionContent, SessionId,
-  Told, TurnId
+  SideId, Told, Tuning, TurnId
 } from './domain/session'
-import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
+import { ownCommand, slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import type { Served } from './wire/link'
 import {
-  beginsAtTurn, parseBranched, parseBusy, parseContextBreakdown, parseCorrection, parseDirective, parseModelMenu, parseModelReceipt, parsePathMatches, parseShown,
-  parseTranscript, type Correction
+  beginsAtTurn, type Correction, parseBranched, parseBusy, parseCompressed, parseContextBreakdown, parseCorrection, parseDirective,
+  parseFast, parseModelMenu, parseModelReceipt, parsePathMatches, parseShown, parseTranscript
 } from './wire/parse'
 
 /** `versions` stays with the hub: reading a chat's versions must not attach it. */
@@ -37,6 +37,8 @@ export interface Hub {
 type Row<C extends SessionCommand> = (port: SessionPort, command: C, hub: Hub) => Outcome<ResultOf<C>> | Promise<Outcome<ResultOf<C>>>
 
 const MOVED_ON: Refusal = { kind: 'stale', message: 'This chat changed while Highwing was switching its model. Try again.' }
+const MID_TURN = refused('stale', 'Wait for the reply to finish, then try again.')
+const NO_FOLDER: Refusal = { kind: 'rejected', message: "That folder isn't on the machine Hermes runs on." }
 const GONE: Refusal = { kind: 'rejected', message: 'That message is no longer in this chat.' }
 const DROPPED_ANSWER = 'The connection dropped before Hermes confirmed your answer.'
 const CANT_BRANCH: Refusal = { kind: 'unsupported', message: "This Hermes can't branch a chat." }
@@ -105,7 +107,7 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
   },
 
   rewind: (port, { rowId, text }) => port.whenLive(async () => {
-    if (port.content.run.state === 'running') return refused('stale', 'Wait for the reply to finish, then try again.')
+    if (port.content.run.state === 'running') return MID_TURN
     const cut = await port.mutate('rewind', { target_message_id: rowId }, port.fence.generation ?? 0, { field: 'target_message_id', refusal: GONE })
     if (!cut.ok) return cut
     port.act({ did: 'rewound', rowId })
@@ -129,6 +131,32 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     hub.branched({ from: port.id, sessionId, text })
     hub.refreshSoon()
     return { ok: true, value: sessionId }
+  }),
+
+  side: (port, { kind, text }) => port.whenLive(async () => {
+    const asked = await port.call(kind === 'btw' ? 'prompt.btw' : 'prompt.background', { session_id: port.id, text })
+    if (!asked.ok) return asked
+    port.act({ did: 'side.started', id: asked.value.task_id as SideId, kind, asked: text })
+    return DONE
+  }),
+
+
+  move: (port, { cwd }) => port.whenLive(async () => {
+    if (port.content.run.state === 'running') return MID_TURN
+    // Hermes names no field when the folder is not there (gateway/session_mutation_policy.py:45-49). It pushes the new folder in a session.info.
+    const moved = await port.mutate('workspace', { cwd }, port.fence.generation ?? 0, { field: null, refusal: NO_FOLDER })
+    return moved.ok ? DONE : moved
+  }),
+
+  compress: (port, { focus }) => port.whenLive<string | null>(async () => {
+    if (port.content.run.state === 'running') return MID_TURN
+    const compressed = await port.mutate('compress', focus === null ? {} : { focus }, port.fence.generation ?? 0)
+    return compressed.ok ? { ok: true, value: parseCompressed(compressed.value) } : compressed
+  }),
+
+  export: (port, { format }) => port.whenLive(async () => {
+    const rendered = await port.call('session.export', { session_id: port.id, format })
+    return rendered.ok ? { ok: true, value: { filename: rendered.value.filename, content: rendered.value.content } } : rendered
   }),
 
   stop: port => port.whenLive(async () => {
@@ -205,19 +233,6 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     return matches.ok ? { ok: true, value: parsePathMatches(matches.value) } : matches
   }),
 
-  /**
-   * Hermes sends no session.info after this set, so the reply is the only word on the new state. Leaving out `scope`
-   * keeps the change to this chat: any scope but "global" is refused, and "global" flips the whole profile
-   * (gateway/session_tui_config.py:187-193,357-377, gateway/session_busy_controls.py:30-44,134-166). An explicit word, because a missing
-   * value toggles.
-   */
-  setYolo: (port, { on }) => port.whenLive(async () => {
-    const set = await port.call('config.set', { session_id: port.id, key: 'yolo', value: on ? 'on' : 'off' })
-    if (!set.ok) return set
-    port.act({ did: 'yolo', on: set.value.value === '1' || set.value.value === true })
-    return DONE
-  }),
-
   pickModel: (port, { model, confirm }) => port.whenLive<ModelConfirm | null>(async () => {
     const payload = { model: model.id, provider: model.provider, ...(confirm === undefined ? {} : { confirm }) }
     const sent = await port.mutate('model', payload, port.fence.generation ?? 0)
@@ -240,12 +255,33 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
   }),
 
   tune: (port, command) => port.whenLive(async () => {
-    const [key, value] = command.set === 'busy' ? ['busy', command.to] : ['show_reasoning', command.on ? 'on' : 'off']
+    if (command.set === 'effort') {
+      // A committed level comes back in a session.info before the reply. One set during a turn is held for the next (gateway/session_mutations.py:136-143,370-377).
+      const set = await port.mutate('reasoning', { effort: command.to === 'default' ? null : command.to }, port.fence.generation ?? 0)
+      return set.ok ? DONE : set
+    }
+    const { key, value, said } = (SWITCHES[command.set] as (command: Switched) => Switch)(command)
     const set = await port.call('config.set', { session_id: port.id, key, value })
     if (!set.ok) return set
-    port.act({ did: 'tuned', tuning: command.set === 'busy' ? { busy: parseBusy(set.value) ?? command.to } : { reasoning: parseShown(set.value) ?? command.on } })
+    port.act({ did: 'tuned', tuning: said(set.value) })
     return DONE
   })
+}
+
+type Switched = Exclude<Extract<SessionCommand, { do: 'tune' }>, { set: 'effort' }>
+interface Switch { readonly key: string; readonly value: string; said(reply: Served['config.set']['result']): Partial<Tuning> }
+
+const SWITCHES: { readonly [S in Switched['set']]: (command: Extract<Switched, { set: S }>) => Switch } = {
+  busy: ({ to }) => ({ key: 'busy', value: to, said: reply => ({ busy: parseBusy(reply) ?? to }) }),
+  reasoning: ({ on }) => ({ key: 'show_reasoning', value: on ? 'on' : 'off', said: reply => ({ reasoning: parseShown(reply) ?? on }) }),
+  /**
+   * Leaving out `scope` keeps the change to this chat: any scope but "global" is refused, and "global" flips the whole profile
+   * (gateway/session_tui_config.py:187-193,357-377, gateway/session_busy_controls.py:30-44,134-166). An explicit word, because a missing
+   * value toggles.
+   */
+  yolo: ({ on }) => ({ key: 'yolo', value: on ? 'on' : 'off', said: reply => ({ yolo: reply.value === '1' || reply.value === true }) }),
+  /** Hermes answers the tier's word (gateway/session_tui_config.py:274-298). */
+  fast: ({ on }) => ({ key: 'fast', value: on ? 'fast' : 'normal', said: reply => ({ fast: parseFast(reply) ?? on }) })
 }
 
 /**
@@ -415,13 +451,14 @@ async function answerRequest(port: SessionPort, requestId: RequestId, reply: Req
 export const runSessionCommand = (port: SessionPort, command: SessionCommand, hub: Hub) =>
   (sessionCommands[command.do] as Row<SessionCommand>)(port, command, hub)
 
-const highwingRuns: { readonly [name: string]: (port: SessionPort, arg: string, hub: Hub) => Outcome | Promise<Outcome> | null } = {
-  title: (port, title, hub) => (title === '' ? null : sessionCommands.rename(port, { do: 'rename', sessionId: port.id, title }, hub))
-}
-
-async function runSlash(port: SessionPort, { entry, arg }: SlashLine, hub: Hub): Promise<Outcome<string | null>> {
-  const own = entry.kind === 'command' && Object.hasOwn(highwingRuns, entry.name) ? highwingRuns[entry.name]?.(port, arg, hub) : null
-  if (own != null) return showing(await own)
+async function runSlash(port: SessionPort, line: SlashLine, hub: Hub): Promise<Outcome<string | null>> {
+  const own = ownCommand(line, port.id)
+  if (own !== null && 'usage' in own) return refused('rejected', `Type it as ${own.usage}.`)
+  if (own !== null) {
+    const done: Outcome<unknown> = await runSessionCommand(port, own, hub)
+    return done.ok ? { ok: true, value: typeof done.value === 'string' ? done.value : null } : done
+  }
+  const { entry, arg } = line
   const typed = `/${entry.name}${arg === '' ? '' : ` ${arg}`}`
   const reply = await port.call('command.dispatch', { session_id: port.id, name: entry.name, ...(arg === '' ? {} : { arg }) })
   if (!reply.ok) return reply

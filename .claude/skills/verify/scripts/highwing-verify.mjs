@@ -738,7 +738,14 @@ function ownDisplay() {
 }
 
 const ANSWER_CALLS = new Set(['clarify.lock', 'connection.respond'])
-const QUEUE_CALLS = new Set(['prompt.resolve_unknown', 'prompt.replace_queued', 'prompt.cancel', 'prompt.steer_queued', 'session.steer', 'session.redirect'])
+const ALWAYS = () => true
+const ACTED_CALLS = {
+  'prompt.resolve_unknown': ALWAYS, 'prompt.replace_queued': ALWAYS, 'prompt.cancel': ALWAYS, 'prompt.steer_queued': ALWAYS, 'session.steer': ALWAYS, 'session.redirect': ALWAYS,
+  'session.export': ALWAYS,
+  'config.set': params => params?.key === 'fast',
+  'session.mutate': params => params?.operation === 'reasoning' || params?.operation === 'workspace'
+}
+const isActedElsewhere = step => Object.hasOwn(ACTED_CALLS, step.await ?? '') && ACTED_CALLS[step.await](step.params)
 
 /**
  * Hermes streams a reply in pieces and may cut the dev server's URL in two. Each segment's pieces are
@@ -779,7 +786,7 @@ function withEdits(fixturePath, { dropAfter, models, guarded, usage, profiles, p
   const header = JSON.parse(lines[0])
   const recorded = lines.slice(1).map(line => JSON.parse(line))
   const answered = answeredElsewhere ? recorded.filter(step => !('result' in step && 'answer' in step) && !ANSWER_CALLS.has(step.await)) : recorded
-  const steps = actedElsewhere ? answered.filter(step => !QUEUE_CALLS.has(step.await)) : answered
+  const steps = actedElsewhere ? answered.filter(step => !isActedElsewhere(step)) : answered
   if (origin) {
     serveInDeltas(steps, origin)
     steps.splice(0, steps.length, ...steps.map(step => JSON.parse(JSON.stringify(step).replaceAll(DEV_ORIGIN, origin))))
@@ -899,6 +906,7 @@ async function run(argv) {
   if (options['pick-file']) env.HIGHWING_PICK_FILE = resolve(process.cwd(), options['pick-file'])
   delete env.HIGHWING_PICK_FILES
   if (options.pick) env.HIGHWING_PICK_FILES = options.pick.split(',').map(path => resolve(process.cwd(), path)).join(delimiter)
+  env.HIGHWING_SAVE_DIR = join(evidence, 'saves')
 
   const { _electron } = requireDesktop('playwright-core')
   log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"` : `HIGHWING_FIXTURE=${fixture}`}${Object.keys(media).length > 0 ? `, emulating ${JSON.stringify(media)}` : ''}`)

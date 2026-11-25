@@ -3,8 +3,8 @@ import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
 import type {
-  AdmissionId, AttachmentId, BranchId, BusyMode, ContextFill, InputId, ModelOption, ModelRef, PromptId, PromptReply, QueuedAction, RequestId, RequestReply,
-  SessionId, Told
+  AdmissionId, AttachmentId, BranchId, BusyMode, ContextFill, Effort, InputId, ModelOption, ModelRef, PromptId, PromptReply, QueuedAction, RequestId,
+  RequestReply, SessionId, SideTask, Told
 } from './session'
 
 export type Command =
@@ -25,6 +25,8 @@ export type Command =
    * none. A command line with any is refused.
    */
   | { readonly do: 'send'; readonly sessionId: SessionId; readonly text: string; readonly attachments?: readonly AttachmentId[] }
+  /** Asks beside the chat (`btw`) or runs a prompt apart from it (`background`). The answer lands in `sides`. Needs the chat attached. */
+  | { readonly do: 'side'; readonly sessionId: SessionId; readonly kind: SideTask['kind']; readonly text: string }
   /**
    * Cut this chat before the stored row `rowId` (the message it names and everything after it, in the thread and in
    * Hermes's history), then send `text` as a new message. Nothing is sent when Hermes refuses the cut.
@@ -42,6 +44,15 @@ export type Command =
    */
   | { readonly do: 'versions'; readonly sessionId: SessionId }
   | { readonly do: 'stop'; readonly sessionId: SessionId }
+  /** Moves the chat to another folder on the machine Hermes runs on. Refused while a turn runs. */
+  | { readonly do: 'move'; readonly sessionId: SessionId; readonly cwd: string }
+  /**
+   * Summarises the older turns to free context, keeping `focus` in detail. Answers Hermes's report. Hermes then
+   * rewrites the stored rows, so the chat is read again. Refused while a turn runs.
+   */
+  | { readonly do: 'compress'; readonly sessionId: SessionId; readonly focus: string | null }
+  /** The chat rendered as a file for the user to save. Hermes writes nothing. */
+  | { readonly do: 'export'; readonly sessionId: SessionId; readonly format: ExportFormat }
   /** Answers a question of the turn, by `promptId`, or something Hermes asks outside it, by `requestId`. */
   | { readonly do: 'answer'; readonly sessionId: SessionId; readonly promptId: PromptId; readonly reply: PromptReply }
   | { readonly do: 'answer'; readonly sessionId: SessionId; readonly requestId: RequestId; readonly reply: RequestReply }
@@ -79,20 +90,26 @@ export type Command =
   | { readonly do: 'removeBotPicture'; readonly bot: BotId }
   /** The bot's picture as a data URL, or null for none. */
   | { readonly do: 'botPicture'; readonly bot: BotId }
-  | { readonly do: 'setYolo'; readonly sessionId: SessionId; readonly on: boolean }
   /** Sets one of Hermes's switches for the chat, for every client that has it open. */
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'reasoning'; readonly on: boolean }
+  /** YOLO: Hermes runs this chat's commands without asking. */
+  | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'yolo'; readonly on: boolean }
+  /** Fast: the model's fast tier, from the next turn. Refused for a model that has none. */
+  | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'fast'; readonly on: boolean }
+  /** Set during a turn, it applies from the next. The new level shows in `tuning` when Hermes says it. */
+  | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'effort'; readonly to: Effort | 'default' }
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'busy'; readonly to: BusyMode }
   /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
   | { readonly do: 'reconnect'; readonly start: boolean }
 
 /**
- * `send` and `start` answer the words to show under the composer: a command's output or note, or
+ * `send`, `start` and `compress` answer the words to show under the composer: a command's output or note, or
  * `null` for none. `answer` says where the words of a denial went, and nothing for any other reply.
  */
 export type ResultOf<C extends Command> =
   C extends { do: 'open' } ? SessionId | null
-  : C extends { do: 'send' | 'start' } ? string | null
+  : C extends { do: 'send' | 'start' | 'compress' } ? string | null
+  : C extends { do: 'export' } ? Exported
   : C extends { do: 'branch' } ? SessionId
   : C extends { do: 'versions' } ? ChatVersions
   : C extends { do: 'answer' } ? Told | undefined
@@ -104,6 +121,12 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
   : C extends { do: 'completePath' } ? readonly PathMatch[]
   : void
+
+export type ExportFormat = 'md' | 'json' | 'html'
+export const EXPORT_FORMATS: readonly ExportFormat[] = ['md', 'json', 'html']
+
+/** A rendered chat and the file name Hermes suggests for it. */
+export interface Exported { readonly filename: string; readonly content: string }
 
 /** What Hermes offers this chat. `options` empty: nothing is set up. `fallback`: the model Hermes names for it. */
 export interface ModelMenu { readonly options: readonly ModelOption[]; readonly fallback: ModelRef | null }

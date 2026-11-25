@@ -1,5 +1,5 @@
 import {
-  targetOf,
+  EFFORTS, EXPORT_FORMATS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptId,
   type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply, type ResultOf, type Session, type SessionId, type SettledTurn,
@@ -66,7 +66,8 @@ export const isPreviewCommand = (command: AppCommand): command is PreviewCommand
 export type AppCommand = Command | SetupCommand | PreviewCommand
 /** A new picture's bytes come only from main's file picker. */
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' }>
-export type AppResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
+export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
+export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
 
 /** Every topic with one value per connection, and what it carries. */
 export interface AppTopics {
@@ -294,6 +295,23 @@ export const validators: Validators = {
     const attachments = attachmentIdsOf(raw.attachments)
     return sessionId && attachments && filled(raw.text) ? { do: 'send', sessionId, text: raw.text, attachments } : null
   },
+  side: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && (raw.kind === 'btw' || raw.kind === 'background') && filled(raw.text) ? { do: 'side', sessionId, kind: raw.kind, text: raw.text } : null
+  },
+  move: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && filled(raw.cwd) ? { do: 'move', sessionId, cwd: raw.cwd } : null
+  },
+  compress: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && (raw.focus === null || filled(raw.focus)) ? { do: 'compress', sessionId, focus: raw.focus } : null
+  },
+  export: raw => {
+    const sessionId = sessionIdOf(raw)
+    const format = EXPORT_FORMATS.find(held => held === raw.format)
+    return sessionId && format !== undefined ? { do: 'export', sessionId, format } : null
+  },
   rewind: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && Number.isInteger(raw.rowId) && (raw.rowId as number) > 0 && filled(raw.text)
@@ -391,15 +409,25 @@ export const validators: Validators = {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'botPicture', bot }
   },
-  setYolo: raw => {
-    const sessionId = sessionIdOf(raw)
-    return sessionId && typeof raw.on === 'boolean' ? { do: 'setYolo', sessionId, on: raw.on } : null
-  },
   tune: raw => {
     const sessionId = sessionIdOf(raw)
     if (!sessionId) return null
     if (raw.set === 'busy') return text(raw.to) && BUSY_MODES.includes(raw.to) ? { do: 'tune', sessionId, set: 'busy', to: raw.to as BusyMode } : null
-    return raw.set === 'reasoning' && typeof raw.on === 'boolean' ? { do: 'tune', sessionId, set: 'reasoning', on: raw.on } : null
+    if (raw.set === 'effort') {
+      const to = raw.to === 'default' ? 'default' : EFFORTS.find(level => level === raw.to)
+      return to === undefined ? null : { do: 'tune', sessionId, set: 'effort', to }
+    }
+    if (typeof raw.on !== 'boolean') return null
+    switch (raw.set) {
+      case 'reasoning':
+        return { do: 'tune', sessionId, set: 'reasoning', on: raw.on }
+      case 'yolo':
+        return { do: 'tune', sessionId, set: 'yolo', on: raw.on }
+      case 'fast':
+        return { do: 'tune', sessionId, set: 'fast', on: raw.on }
+      default:
+        return null
+    }
   },
   reconnect: raw => (typeof raw.start === 'boolean' ? { do: 'reconnect', start: raw.start } : null),
   checkTarget: raw => {

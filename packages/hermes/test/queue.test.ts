@@ -12,7 +12,7 @@ const row = (admissionId: string, inputId: string, text: string, state: Admissio
 
 function snapshot(over: Partial<Snapshot> = {}): Snapshot {
   return {
-    id: 's1' as SessionId, title: '', cwd: null, model: null, yolo: null, running: false, generation: 1 as Generation, revision: 1, subscriptionId: 'sub-1',
+    id: 's1' as SessionId, title: '', cwd: null, model: null, tuning: { effort: null, fast: null, yolo: null }, running: false, generation: 1 as Generation, revision: 1, subscriptionId: 'sub-1',
     watermark: { epoch: EPOCH, seq: 0 }, queue: [], prompts: [], history: { turns: [], unfinished: null, older: null }, openRequests: [], ...over
   }
 }
@@ -168,7 +168,7 @@ describe('sendPlan', () => {
     ({ state: 'running', generation: 4 as Generation, stop, turn: { id: 't1' as TurnId, request: null, began: null, items, announced: null } })
   const plan = (run: Run, busy: BusyMode | null, requests = 0, attachments: readonly Attachment[] = []) =>
     sendPlan({
-      run, tuning: { reasoning: null, busy },
+      run, tuning: { reasoning: null, busy, effort: null, fast: null, yolo: null },
       requests: Array.from({ length: requests }, (_, index) => ({ id: `r${index}` as RequestId, ask: { kind: 'secret', for: { is: 'sudo', command: 'x' } }, state: { s: 'waiting', error: null }, deadline: null }))
     }, attachments)
   const asking = running('none', [{

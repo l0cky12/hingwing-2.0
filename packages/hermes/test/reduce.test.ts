@@ -7,7 +7,7 @@ import type { ModelMenu } from '../src/domain/command'
 import { modelViewOf, sameModel } from '../src/domain/model'
 import type {
   AdmissionId, Ask, ContextFill, Generation, HelperId, HelperItem, InputId, Item, Link, ModelId, ModelRef, OpenTurn, Outcome, PromptId, RequestId, SessionContent, SessionId,
-  SessionUsage, SettledTurn, StatusAbout, Tokens, ToolId, ToolResult, TurnId
+  SessionUsage, SettledTurn, SideId, SideTask, StatusAbout, Tokens, ToolId, ToolResult, TurnId
 } from '../src/domain/session'
 
 const EPOCH = 'e1'
@@ -46,7 +46,7 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
     title: 'Errand',
     cwd: '/home/u',
     model: null,
-    yolo: null,
+    tuning: { effort: null, fast: null, yolo: null },
     running: false,
     generation: generation(1),
     revision: 1,
@@ -310,7 +310,7 @@ describe('attached', () => {
       snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 9 }, history: { turns, unfinished: null, older: { cursor: 'c1' } } })
     })
     expect(state.gate).toEqual({ at: 'live', cursor: { epoch: EPOCH, seq: 9 }, subscriptionId: 'sub-1' })
-    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, yolo: null, tuning: { reasoning: null, busy: null } })
+    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [] })
   })
 
   it('B: opens the unfinished turn of a running snapshot with its waiting prompts, then the parked frames above the watermark', () => {
@@ -613,23 +613,31 @@ describe('when a turn began', () => {
   })
 })
 
-describe('the session YOLO', () => {
+describe('the switches Hermes says: effort, fast and YOLO', () => {
   it('starts unknown and takes what a snapshot, a session.info and the user\'s own switch say', () => {
-    expect(emptyTracked('s1' as SessionId).content.yolo).toBeNull()
-    const seeded = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, { in: 'attached', attempt: 1, snapshot: snapshot({ yolo: false }), replay: null })
-    expect(seeded.content.yolo).toBe(false)
-    const elsewhere = reduce(seeded, event(1, { type: 'meta', yolo: true }, null))
-    expect(elsewhere.content.yolo).toBe(true)
-    expect(reduce(elsewhere, event(2, { type: 'meta', title: 'Renamed' }, null)).content.yolo).toBe(true)
-    const off = reduce(elsewhere, { in: 'local', action: { did: 'yolo', on: false } })
-    expect(off.content.yolo).toBe(false)
-    expect(reduce(off, { in: 'local', action: { did: 'yolo', on: false } })).toBe(off)
+    expect(emptyTracked('s1' as SessionId).content.tuning.yolo).toBeNull()
+    const seeded = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, { in: 'attached', attempt: 1, snapshot: snapshot({ tuning: { effort: null, fast: null, yolo: false } }), replay: null })
+    expect(seeded.content.tuning.yolo).toBe(false)
+    const elsewhere = reduce(seeded, event(1, { type: 'meta', tuning: { yolo: true } }, null))
+    expect(elsewhere.content.tuning.yolo).toBe(true)
+    expect(reduce(elsewhere, event(2, { type: 'meta', title: 'Renamed' }, null)).content.tuning.yolo).toBe(true)
+    const off = reduce(elsewhere, { in: 'local', action: { did: 'tuned', tuning: { yolo: false } } })
+    expect(off.content.tuning.yolo).toBe(false)
+    expect(reduce(off, { in: 'local', action: { did: 'tuned', tuning: { yolo: false } } })).toBe(off)
+  })
+
+  it('takes the effort, fast and folder a session.info pushes, and keeps the switches it does not name', () => {
+    const seeded = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, { in: 'attached', attempt: 1, snapshot: snapshot({ tuning: { effort: 'default', fast: false, yolo: false } }), replay: null })
+    const moved = reduce(seeded, event(1, { type: 'meta', cwd: '/home/u/docs', tuning: { effort: 'high' } }, null))
+    expect(moved.content.cwd).toBe('/home/u/docs')
+    expect(moved.content.tuning).toMatchObject({ effort: 'high', fast: false, yolo: false })
+    expect(reduce(moved, event(2, { type: 'meta', tuning: { fast: true } }, null)).content.tuning).toMatchObject({ effort: 'high', fast: true })
   })
 
   it('lets a reattach snapshot overwrite what the chat held', () => {
-    const on = reduce(live(), { in: 'local', action: { did: 'yolo', on: true } })
-    const after = feed(on, { in: 'link.lost' }, { in: 'attach' }, { in: 'attached', attempt: 2, snapshot: snapshot({ yolo: false }), replay: null })
-    expect(after.content.yolo).toBe(false)
+    const on = reduce(live(), { in: 'local', action: { did: 'tuned', tuning: { yolo: true } } })
+    const after = feed(on, { in: 'link.lost' }, { in: 'attach' }, { in: 'attached', attempt: 2, snapshot: snapshot({ tuning: { effort: null, fast: null, yolo: false } }), replay: null })
+    expect(after.content.tuning.yolo).toBe(false)
   })
 })
 
@@ -1249,19 +1257,76 @@ describe('what Hermes says', () => {
 describe('tuning', () => {
   it('takes facts read under the current attach, and drops facts read under an older one', () => {
     const state = live()
-    expect(state.content.tuning).toEqual({ reasoning: null, busy: null })
+    expect(state.content.tuning).toEqual({ reasoning: null, busy: null, effort: null, fast: null, yolo: null })
     const read = reduce(state, { in: 'facts', attempt: 1, tuning: { reasoning: true } })
-    expect(read.content.tuning).toEqual({ reasoning: true, busy: null })
+    expect(read.content.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
     const reattached = feed(read, { in: 'link.lost' }, { in: 'attach' })
     expect(reduce(reattached, { in: 'facts', attempt: 1, tuning: { reasoning: false } }).content).toBe(reattached.content)
-    expect(reduce(reattached, { in: 'facts', attempt: 2, tuning: { reasoning: false } }).content.tuning).toEqual({ reasoning: false, busy: null })
+    expect(reduce(reattached, { in: 'facts', attempt: 2, tuning: { reasoning: false } }).content.tuning).toEqual({ reasoning: false, busy: null, effort: null, fast: null, yolo: null })
   })
 
   it('takes a switch this client set, keeps it through a rebuild, and changes nothing when it is the same', () => {
     const tuned = reduce(live(), { in: 'local', action: { did: 'tuned', tuning: { reasoning: true } } })
-    expect(tuned.content.tuning).toEqual({ reasoning: true, busy: null })
+    expect(tuned.content.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
     expect(reduce(tuned, { in: 'local', action: { did: 'tuned', tuning: { reasoning: true } } }).content).toBe(tuned.content)
     const rebuilt = feed(tuned, { in: 'gap' }, { in: 'attached', attempt: 2, snapshot: snapshot(), replay: null })
-    expect(rebuilt.content.tuning).toEqual({ reasoning: true, busy: null })
+    expect(rebuilt.content.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
+  })
+})
+
+describe('a rewrite of the stored rows', () => {
+  it('reads the chat again from a live gate, as a replay gap does', () => {
+    const rewritten = feed(live(), event(1, started('t1')), event(2, delta('Hello')), event(3, { type: 'meta', revision: 4, rewritten: true }, null))
+    expect(rewritten.gate).toMatchObject({ at: 'attaching', plan: { mode: 'rebuild' } })
+    expect(syncOf(rewritten.gate, { state: 'online' }).state).toBe('rebuilding')
+  })
+
+  it('takes a rewrite heard in a replay as a reason to rebuild instead of catching up', () => {
+    const reattaching = feed(live(), { in: 'link.lost' }, { in: 'attach' })
+    const after = reduce(reattaching, {
+      in: 'attached', attempt: 2, snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 1 } }),
+      replay: { snapshotRequired: false, epoch: EPOCH, events: [{ stamp: { epoch: EPOCH, seq: 1, generation: null }, event: { type: 'meta', revision: 4, rewritten: true }, seenAt: null }] }
+    })
+    expect(after.gate).toMatchObject({ at: 'attaching', plan: { mode: 'rebuild' } })
+  })
+})
+
+describe('side questions and background prompts', () => {
+  const started = (id: string, kind: SideTask['kind'] = 'btw', asked = 'Which file was it?'): SessionInput =>
+    ({ in: 'local', action: { did: 'side.started', id: id as SideId, kind, asked } })
+  const answered = (seq: number, id: string, text: string, kind: SideTask['kind'] = 'btw', asked: string | null = 'Which file was it?'): SessionInput =>
+    event(seq, { type: 'side.answered', id: id as SideId, kind, asked, text }, null)
+
+  it('runs from the reply that names the task until its answer, which arrives whole', () => {
+    const running = feed(live(), started('btw_1'))
+    expect(running.content.sides).toEqual([{ id: 'btw_1', kind: 'btw', asked: 'Which file was it?', state: { s: 'running' } }])
+    const done = reduce(running, answered(1, 'btw_1', 'notes.md'))
+    expect(done.content.sides).toEqual([{ id: 'btw_1', kind: 'btw', asked: 'Which file was it?', state: { s: 'done', text: 'notes.md' } }])
+    expect(reduce(done, started('btw_1')), 'a late reply changes nothing').toBe(done)
+  })
+
+  it("keeps an answer that came before the reply, and one to another client's task", () => {
+    const early = feed(live(), answered(1, 'btw_1', 'notes.md'), started('btw_1'))
+    expect(early.content.sides).toMatchObject([{ id: 'btw_1', state: { s: 'done', text: 'notes.md' } }])
+    const earlyBackground = feed(live(), answered(1, 'bg_2', 'Tidied.', 'background', null), started('bg_2', 'background', 'Tidy the notes'))
+    expect(earlyBackground.content.sides, 'its reply fills in what was asked').toEqual([{ id: 'bg_2', kind: 'background', asked: 'Tidy the notes', state: { s: 'done', text: 'Tidied.' } }])
+    const theirs = reduce(live(), answered(1, 'bg_9', 'Tidied.', 'background', null))
+    expect(theirs.content.sides).toEqual([{ id: 'bg_9', kind: 'background', asked: null, state: { s: 'done', text: 'Tidied.' } }])
+  })
+
+  it('marks a running one lost when the chat is read again, keeps the answered ones, and takes an answer that still comes', () => {
+    const before = feed(live(), started('btw_1'), answered(1, 'btw_1', 'notes.md'), started('bg_2', 'background', 'Tidy the notes'))
+    const rebuilt = feed(before, { in: 'gap' }, { in: 'attached', attempt: 2, snapshot: snapshot(), replay: null })
+    expect(rebuilt.content.sides.map(side => [side.id, side.state.s])).toEqual([['btw_1', 'done'], ['bg_2', 'lost']])
+    expect(reduce(rebuilt, answered(1, 'bg_2', 'Tidied.', 'background', null)).content.sides[1]).toMatchObject({ asked: 'Tidy the notes', state: { s: 'done', text: 'Tidied.' } })
+  })
+
+  it('keeps a running one through a replayed reattach, which delivers its answer', () => {
+    const before = feed(live(), started('btw_1'), { in: 'link.lost' }, { in: 'attach' })
+    const caughtUp = reduce(before, {
+      in: 'attached', attempt: 2, snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 1 } }),
+      replay: { snapshotRequired: false, epoch: EPOCH, events: [{ stamp: { epoch: EPOCH, seq: 1, generation: null }, event: { type: 'side.answered', id: 'btw_1' as SideId, kind: 'btw', asked: 'Which file was it?', text: 'notes.md' }, seenAt: null }] }
+    })
+    expect(caughtUp.content.sides).toMatchObject([{ id: 'btw_1', state: { s: 'done', text: 'notes.md' } }])
   })
 })

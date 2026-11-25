@@ -1,15 +1,16 @@
 import { loadFixture, type Fixture, type FixtureStep } from '../../src/testing/fixture'
 import type { Admission } from '../../src/domain/queue'
-import { parseCorrection, parseEvent, parsePending, parseRows, parseServerRequest } from '../../src/wire/parse'
+import { parseCorrection, parseEvent, parseFast, parsePending, parseRows, parseServerRequest } from '../../src/wire/parse'
 import {
   emptyTracked, reduce,
   type Cursor, type SessionInput, type Snapshot, type StampedEvent, type Tracked
 } from '../../src/domain/reduce'
-import type { Generation, InputId, Item, PromptId, RequestId, SessionContent, SessionId, SettledTurn } from '../../src/domain/session'
+import type { Generation, InputId, Item, PromptId, RequestId, SessionContent, SessionId, SettledTurn, SideId } from '../../src/domain/session'
 
 export type Beat =
   | { readonly kind: 'frame'; readonly frame: StampedEvent }
   | { readonly kind: 'user'; readonly inputs: readonly SessionInput[] }
+  | { readonly kind: 'stored'; readonly rows: readonly unknown[] }
 
 export interface Story {
   readonly fixture: Fixture
@@ -64,6 +65,16 @@ function userInputs({ await: method, params: sent, reply: answered }: Call, next
         local({ did: 'answer.accepted', requestId, then: (reply?.remaining as unknown[]).length === 0 ? 'settles' : 'waits' })
       ]
     }
+    case 'prompt.btw':
+    case 'prompt.background':
+      return [local({ did: 'side.started', id: reply?.task_id as SideId, kind: method === 'prompt.btw' ? 'btw' : 'background', asked: params.text as string })]
+    case 'config.set':
+      return [local({ did: 'tuned', tuning: params.key === 'fast' ? { fast: parseFast(reply ?? {}) } : { yolo: reply?.value === '1' } })]
+    case 'session.mutate':
+      if (params.operation === 'rewind') throw new Error('the direct fold has no rewind')
+      return []
+    case 'session.export':
+      return []
     case 'connection.respond': {
       const requestId = params.op_id as RequestId
       return [local({ did: 'answer', requestId, reply: { kind: 'withheld' } }), local({ did: 'answer.accepted', requestId, then: reply?.settled === true ? 'settles' : 'waits' })]
@@ -109,6 +120,8 @@ export function readStory(path: string): Story {
       beats.push({ kind: 'user', inputs: userInputs(step, fixture.steps.slice(fixture.steps.indexOf(step) + 1).find(isCall)) })
     } else if ('answer' in step) {
       beats.push({ kind: 'user', inputs: answerInputs(step) })
+    } else if ('stored' in step) {
+      beats.push({ kind: 'stored', rows: step.stored })
     }
   }
   if (epoch === null) throw new Error('fixture has no frames')
@@ -122,7 +135,10 @@ export function snapshotAfter(story: Story, published: readonly StampedEvent[], 
   let title = ''
   let revision = 0
   let queue: readonly Admission[] = parsePending(story.fixture.header.pending ?? [])
-  let yolo: boolean | null = null
+  const header = parseEvent({ type: 'session.info', session_id: story.sessionId, seq: 1, replay_epoch: story.epoch, payload: story.fixture.header.info ?? {} })
+  const attached = header.scope === 'session' && header.event?.type === 'meta' ? header.event : { tuning: {}, cwd: undefined }
+  let said: Snapshot['tuning'] = { effort: null, fast: null, yolo: null, ...attached.tuning }
+  let cwd: string | null = attached.cwd ?? null
   const prompts = new Map<PromptId, Snapshot['prompts'][number]>()
   for (const { stamp, event } of published) {
     if (stamp.generation !== null) generation = stamp.generation
@@ -137,14 +153,15 @@ export function snapshotAfter(story: Story, published: readonly StampedEvent[], 
         if (event.title !== undefined) title = event.title
         if (event.revision !== undefined) revision = event.revision
         if (event.queue !== undefined) queue = event.queue
-        if (event.yolo !== undefined) yolo = event.yolo
+        if (event.tuning !== undefined) said = { ...said, ...event.tuning }
+        if (event.cwd !== undefined) cwd = event.cwd
         break
     }
   }
   const last = published.at(-1)
   const watermark: Cursor = { epoch: story.epoch, seq: last ? last.stamp.seq : 0 }
   return {
-    id: story.sessionId, title, cwd: null, model: null, yolo, running, generation: generation as Generation, revision, subscriptionId,
+    id: story.sessionId, title, cwd, model: null, tuning: said, running, generation: generation as Generation, revision, subscriptionId,
     watermark, queue, prompts: [...prompts.values()], history, openRequests: []
   }
 }
@@ -165,10 +182,21 @@ export interface Moment { readonly beat: number; readonly state: Tracked }
 
 export function fold(story: Story, onMoment?: (moment: Moment) => void): Tracked {
   let state = open(story)
+  let stored = story.fixture.header.stored
+  const published: StampedEvent[] = []
   story.beats.forEach((beat, index) => {
-    state = beat.kind === 'frame'
-      ? reduce(state, { in: 'event', frame: beat.frame })
-      : beat.inputs.reduce(reduce, state)
+    if (beat.kind === 'frame') {
+      published.push(beat.frame)
+      state = reduce(state, { in: 'event', frame: beat.frame })
+    } else if (beat.kind === 'stored') {
+      stored = beat.rows
+    } else {
+      state = beat.inputs.reduce(reduce, state)
+    }
+    if (state.gate.at === 'attaching') {
+      const snapshot = snapshotAfter(story, published, `sub-${state.gate.attempt}`, { ...parseRows(stored), older: null })
+      state = reduce(state, { in: 'attached', attempt: state.gate.attempt, snapshot, replay: null })
+    }
     onMoment?.({ beat: index, state })
   })
   return state
@@ -184,7 +212,7 @@ export function foldWithDrop(story: Story, afterFrame: number, missed: number): 
       published.push(beat.frame)
       state = reduce(state, { in: 'event', frame: beat.frame })
       seen++
-    } else {
+    } else if (beat.kind === 'user') {
       state = beat.inputs.reduce(reduce, state)
     }
   }
@@ -222,6 +250,7 @@ export const delegate = () => readStory(new URL('../../../../fixtures/delegate.j
 export const says = () => readStory(new URL('../../../../fixtures/says.jsonl', import.meta.url).pathname)
 export const asks = () => readStory(new URL('../../../../fixtures/asks.jsonl', import.meta.url).pathname)
 export const queue = () => readStory(new URL('../../../../fixtures/queue.jsonl', import.meta.url).pathname)
+export const commands = () => readStory(new URL('../../../../fixtures/commands.jsonl', import.meta.url).pathname)
 
 export const ignoringClocks = <T extends { readonly history: readonly SettledTurn[]; readonly interlude: SessionContent['interlude'] }>(session: T): T => {
   const unclocked = <I extends Item<'settled'>>(item: I): I =>

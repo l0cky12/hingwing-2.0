@@ -47,6 +47,13 @@ The stories are in ``STORIES``:
   generation, then ``approval.respond``). The third message's turn is redirected before it has an
   agent, which Hermes answers ``rejected`` with ``delivered: false``, so the story submits those
   words as a message, and they run as the last turn.
+- ``commands`` writes fixtures/commands.jsonl: a chat made in /tmp/hermes-proto-work on ``gpt-5.4``, two short turns,
+  then one call of each chat command. First the ones the window can make: ``prompt.btw`` and ``prompt.background``
+  with their answers, YOLO on (``config.set``), and ``session.mutate compress`` with a focus, whose ``stored`` step
+  holds the rows a rebuild reads. Then the rest: effort ``high`` (``session.mutate reasoning``), fast on
+  (``config.set``), a move to ``docs`` (``session.mutate workspace``) and ``session.export`` as Markdown. The header
+  carries the real ``commands.catalog`` reply, the attach reply's ``cwd``, ``reasoning_effort``, ``fast`` and ``yolo``
+  as ``info``, and the real ``complete.path`` reply for ``@no`` as ``paths``, which the scripted gateway answers from.
 
 The script runs the canonical gateway in-process, the way Hermes's own
 tests/gateway/test_authority_complete_persisted_turn.py does: a real ``SessionAuthority`` over a
@@ -146,6 +153,17 @@ no launch policy to default the busy mode from, so the story sets ``queue`` befo
 Hermes answers a steer in the window before a turn has an agent by holding it for that agent, so the
 ``delivered: false`` verdict in this fixture is a redirect's. The first owner is never shut down: its
 turn waits at a gate that never opens, as a killed process leaves it.
+
+Real in ``commands``: every call and frame of the story through ``AuthorityConnection.dispatch``, on a session with
+a frozen launch policy. The runner is Hermes's own ``GatewayRunner``, built without ``__init__`` as Hermes's tests
+build a partial one, so the policy, its folder, its effort, the /fast pin and the side agents' threads, scopes and
+``*.complete`` events are Hermes's. Each ``session.info`` and ``session.updated`` is the one Hermes publishes, and
+the stored rows after the compression are a real ``session.resume {display_projection: true}``.
+
+Scripted in ``commands``: the model's part, because no provider exists here. The two turns' words, as in the
+stories above; ``/btw``'s answer (``agent.side_question.answer_side_question``); ``/bg``'s agent, which answers its
+prompt at once in place of ``AIAgent``; and the compression's summary (``ContextCompressor.compress``), which keeps
+the last turn as it was.
 
 Not emitted, because only a provider produces them: ``thinking.delta`` (spinner text while a request
 is in flight) and ``session.usage`` (token counts).
@@ -707,8 +725,23 @@ QUEUE = Story(
            "CHANGELOG.md": "# Changelog\n\n## Unreleased\n", "drafts/old.md": "draft\n"},
     doomed=None, answer=None, approves=False)
 
+PLAN_REQUEST = "What does notes.md say about the release?"
+PLAN_REPLY = "notes.md lists three tasks for the release: sketch the chat view, wire the gateway socket and review the screenshots."
+DOCS_REQUEST = "Then outline docs/plan.md."
+DOCS_REPLY = "docs/plan.md has two parts: the release date and who signs it off."
+COMMAND_TURNS = {PLAN_REQUEST: [{"say": PLAN_REPLY, "call": None}], DOCS_REQUEST: [{"say": DOCS_REPLY, "call": None}]}
+BTW = "Which file holds the plan?"
+BTW_ANSWER = "The plan is in docs/plan.md."
+BACKGROUND = "Draft a changelog entry for the notes."
+BACKGROUND_ANSWER = "Changelog: notes.md now lists the release tasks, and docs/plan.md holds the release plan."
+FOCUS = "the release plan"
+COMMANDS = Story(
+    request=PLAN_REQUEST, steps=[], out="commands.jsonl", seed=20261127,
+    files={"notes.md": NOTES, "docs/plan.md": "# Plan\n\n- date: next week\n- sign-off: the owner\n"},
+    doomed=None, answer=None, approves=False)
+
 STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN, "images": IMAGES, "preview": PREVIEW,
-           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "says": SAYS, "asks": ASKS, "queue": QUEUE}
+           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "says": SAYS, "asks": ASKS, "queue": QUEUE, "commands": COMMANDS}
 NAME = sys.argv[1] if len(sys.argv) > 1 else "errand"
 if NAME not in STORIES:
     sys.exit(f"no story named {NAME!r}; pick one of: {', '.join(STORIES)}")
@@ -1335,6 +1368,155 @@ def live_ref(authority, session_id):
     return SessionRef(authority.profile_id, session_id)
 
 
+def policy_owner(db, instance_id, epoch):
+    """``owner`` with Hermes's own ``GatewayRunner``, built without ``__init__`` as Hermes's tests build a partial runner.
+    Its local adapter holds each session's frozen launch policy, which the folder, the effort, fast and the side agents read."""
+    from gateway.run import GatewayRunner
+    store = SessionStore(config=GatewayConfig(), sessions_dir=Path(HOME) / "sessions")
+    store._db, store._persistence_beside = db, lambda pinned: pinned
+    runner = GatewayRunner.__new__(GatewayRunner)
+    runner._draining, runner.session_store, runner.adapters = False, store, {}
+    runner._evict_cached_agent = lambda route, **kwargs: None
+    runner._cached_agent_for = lambda route: None
+    authority = SessionAuthority(runner, profile_id=HOME, instance_id=instance_id, epoch=epoch, persistence=db)
+    runner.session_authority = authority
+    return runner, authority
+
+
+def scripted_side_agents():
+    """The model's part of ``/btw`` and ``/bg``: their answers. The side agents' threads, scopes and events are Hermes's."""
+    import agent.side_question
+    from gateway import session_tui_side
+    agent.side_question.answer_side_question = lambda text, history, **kwargs: BTW_ANSWER
+
+    def background_agent(authority, policy, live, task_id, **overrides):
+        return SimpleNamespace(run_conversation=lambda user_message, task_id: {"final_response": BACKGROUND_ANSWER, "messages": []},
+                               close=lambda: None)
+    session_tui_side._side_agent = background_agent
+
+
+def scripted_summary():
+    """The model's part of ``/compress``: the summary that replaces all but the last turn."""
+    from agent.context_compressor import COMPRESSED_SUMMARY_METADATA_KEY, SUMMARY_PREFIX, ContextCompressor
+
+    def compress(self, messages, **kwargs):
+        summary = {"role": "user", "content": f"{SUMMARY_PREFIX}\nThe user asked what notes.md says about the release: three tasks.",
+                   COMPRESSED_SUMMARY_METADATA_KEY: True}
+        return [summary, *messages[-2:]]
+    ContextCompressor.compress = compress
+
+
+async def commands_main():
+    db = open_persistence(profile_scope(home=HOME))
+    loop = asyncio.get_running_loop()
+    client = {"user_id": USER, "native_bootstrap": True}
+    history = []
+    rpc_id = 0
+
+    async def call(connection, method, params):
+        nonlocal rpc_id
+        rpc_id += 1
+        reply = await connection.dispatch({"jsonrpc": "2.0", "id": rpc_id, "method": method, "params": params})
+        if "error" in reply:
+            stop(f"{method} refused: {reply['error']}")
+        return reply["result"]
+
+    runner, authority = policy_owner(db, "fixture", db.runtime.begin_epoch(instance_id="fixture"))
+
+    async def scripted_execution(authority, ref, row):
+        text = row["payload"]["text"]
+        steps = COMMAND_TURNS[text]
+        turn = turn_of(runner, authority.sessions[ref.session_id], authority, ref, row)
+        call_ids = ["call_" + uuid.uuid4().hex[:24] for _ in steps]
+        result = await asyncio.to_thread(play_turn, turn, db, list(history), call_ids, text, steps, history)
+        authority.pending_results[row["admission_id"]] = {"result": result, "usage": {}}
+        return None
+
+    session_finite.execute_finite_admission = scripted_execution
+    scripted_side_agents()
+    scripted_summary()
+    recorder = Recorder(loop)
+    socket = AuthorityConnection(authority, recorder, client)
+    opened = await call(socket, "session.create", {"source": "gui", "cwd": WORK, "model": "gpt-5.4", "provider": "openai"})
+    session_id = opened["session_id"]
+    live = authority.sessions[session_id]
+    live.event_stream.observers.add(recorder.observe)
+    describe = await call(socket, "runtime.describe", {})
+    listing = await call(socket, "session.list", {})
+    catalog = await call(socket, "commands.catalog", {"session_id": session_id})
+
+    async def fences():
+        held = await call(AuthorityConnection(authority, SimpleNamespace(write=lambda obj: True), client), "session.resume", {"session_id": session_id, "omit_messages": True})
+        return {"expected_revision": held["revision"], "expected_generation": held["execution_generation"]}
+
+    async def story_call(method, params, pause=1500):
+        CLOCK.tick(pause)
+        at, mark = CLOCK.now(), len(recorder.steps)
+        reply = await call(socket, method, params)
+        recorder.steps.insert(mark, {"at": at, "await": method, "params": params, "reply": reply})
+        return mark
+
+    async def settled(text):
+        await story_call("prompt.submit", {"session_id": session_id, "text": text, "input_id": "input_" + uuid.uuid4().hex[:16]})
+        await asyncio.wait_for(recorder.push_of("message.complete"), 60)
+        for _ in range(1200):
+            if not authority._pending_rows(live_ref(authority, session_id)):
+                return
+            await asyncio.sleep(0.01)
+        stop(f"the turn of {text!r} never left the queue")
+
+    async def mutate(operation, payload):
+        return {"session_id": session_id, "request_id": "request_" + uuid.uuid4().hex[:16], **await fences(), "operation": operation, "payload": payload}
+
+    async def stored_rows():
+        reader = AuthorityConnection(authority, SimpleNamespace(write=lambda obj: True), client)
+        return (await call(reader, "session.resume", {"session_id": session_id, "display_projection": True}))["display_messages"]
+
+    recorder.recording = True
+    began = CLOCK.now()
+    await settled(PLAN_REQUEST)
+    await settled(DOCS_REQUEST)
+    await story_call("prompt.btw", {"session_id": session_id, "text": BTW})
+    await asyncio.wait_for(recorder.push_of("btw.complete"), 60)
+    await story_call("prompt.background", {"session_id": session_id, "text": BACKGROUND})
+    await asyncio.wait_for(recorder.push_of("background.complete"), 60)
+    await story_call("config.set", {"session_id": session_id, "key": "yolo", "value": "on"})
+    compressed = await story_call("session.mutate", await mutate("compress", {"focus": FOCUS}))
+    recorder.steps.insert(compressed + 1, {"at": recorder.steps[compressed]["at"], "stored": await stored_rows()})
+    completed = await call(socket, "complete.path", {"session_id": session_id, "word": "@no"})
+    await story_call("session.mutate", await mutate("reasoning", {"effort": "high"}))
+    await story_call("config.set", {"session_id": session_id, "key": "fast", "value": "fast"})
+    await story_call("session.mutate", await mutate("workspace", {"cwd": f"{WORK}/docs"}))
+    await story_call("session.export", {"session_id": session_id, "format": "md"})
+
+    pushes = [step["push"] for step in recorder.steps if "push" in step]
+    for _ in range(100):
+        if len(recorder.written) >= len(pushes):
+            break
+        await asyncio.sleep(0.05)
+    recorder.recording = False
+    if recorder.written != pushes:
+        stop("the socket received other frames than the session published")
+    info = {key: opened["info"][key] for key in ("cwd", "reasoning_effort", "fast", "yolo")}
+    header = {"fixture": 1, "hermes": HERMES_VERSION, "source": "generated", "sessionId": session_id, "describe": describe, "list": listing,
+              "stored": opened["display_messages"] if "display_messages" in opened else opened["messages"], "catalog": catalog, "info": info,
+              "paths": {"words": {"@no": completed}}}
+    with OUT.open("w") as out:
+        for line in [header, *({**step, "at": step["at"] - began} for step in recorder.steps)]:
+            out.write(json.dumps(line, ensure_ascii=False) + "\n")
+        out.flush()
+    print(f"wrote {OUT}: {len(pushes)} pushes, {len(recorder.steps) - len(pushes)} other steps", file=sys.stderr)
+    stop(None)
+
+
+async def commands_story():
+    try:
+        await commands_main()
+    except Exception:
+        import traceback
+        stop(traceback.format_exc())
+
+
 async def queue_story():
     try:
         await queue_main()
@@ -1343,4 +1525,4 @@ async def queue_story():
         stop(traceback.format_exc())
 
 
-asyncio.run(queue_story() if NAME == "queue" else main())
+asyncio.run({"queue": queue_story, "commands": commands_story}.get(NAME, main)())

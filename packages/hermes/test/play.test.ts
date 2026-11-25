@@ -38,7 +38,7 @@ describe('the errand, played through the real client', () => {
       'config.get', 'session.stats', 'prompt.submit', 'approval.respond', 'session.stats'
     ])
     expect(sent.splice(10, 2).map(call => call.params)).toEqual(['show_reasoning', 'busy'].map(key => ({ session_id: fixture.header.sessionId, key })))
-    expect(session.tuning, 'the errand\'s Hermes refuses both reads, so the switches stay unknown').toEqual({ reasoning: null, busy: null })
+    expect(session.tuning, 'the errand\'s Hermes refuses both reads, so the switches stay unknown').toEqual({ reasoning: null, busy: null, effort: null, fast: null, yolo: null })
     expect(sent[2]?.params).toEqual({ session_id: fixture.header.sessionId, display_projection: true })
     expect(sent.slice(3, 6).map(call => call.params)).toEqual([
       { scope: 'live', picker: true }, { scope: 'live', include_hidden: true }, { scope: 'stored', limit: 100, include_hidden: true, picker: true }

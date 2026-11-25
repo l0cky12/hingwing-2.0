@@ -984,3 +984,54 @@ describe("the scripted gateway and Hermes's queue", () => {
     expect(await (await rawSocket()).call('config.get', busy)).toMatchObject({ error: { code: -32601 } })
   })
 })
+
+describe('the scripted gateway and the chat commands', () => {
+  const STORY: Fixture = {
+    header: { ...ERRAND.header, info: { cwd: '/work', reasoning_effort: '', fast: false, yolo: false } },
+    steps: [
+      { at: 0, await: 'prompt.btw', params: {}, reply: { task_id: 'btw_1' } },
+      { at: 0, await: 'config.set', params: {}, reply: { key: 'yolo', value: '1', scope: 'session' } },
+      { at: 0, await: 'session.mutate', params: {}, reply: { session_id: SESSION, operation: 'workspace' } },
+      { at: 0, await: 'session.export', params: {}, reply: { format: 'md', filename: 'chat.md', content: '# Chat' } }
+    ]
+  }
+  const fenced = { session_id: SESSION, request_id: 'r1', expected_revision: 0, expected_generation: 0 }
+
+  it('repeats the header info in the attach reply, and a YOLO set the story records in the next one', async () => {
+    const { call } = await rawSocket({}, STORY)
+    expect((await call('session.resume', { session_id: SESSION })).result?.info).toMatchObject({ cwd: '/work', reasoning_effort: '', fast: false, yolo: false })
+    await call('prompt.btw', { session_id: SESSION, text: 'why?' })
+    expect((await call('config.set', { session_id: SESSION, key: 'yolo', value: 'on' })).result).toEqual({ key: 'yolo', value: '1', scope: 'session' })
+    expect((await call('session.resume', { session_id: SESSION })).result?.info).toMatchObject({ yolo: true })
+  })
+
+  it('refuses each call outside the closed key set Hermes checks', async () => {
+    const { call } = await rawSocket({}, STORY)
+    await call('session.resume', { session_id: SESSION })
+    expect(await call('prompt.btw', { session_id: SESSION, text: ' ' })).toMatchObject(refusal('invalid_params'))
+    expect(await call('prompt.btw', { session_id: SESSION, text: 'why?', now: true })).toMatchObject(refusal('invalid_params'))
+    await call('prompt.btw', { session_id: SESSION, text: 'why?' })
+    expect(await call('config.set', { session_id: SESSION, key: 'yolo', value: 'on', scope: 'session' })).toMatchObject(refusal('invalid_params'))
+    await call('config.set', { session_id: SESSION, key: 'yolo', value: 'on' })
+    expect(await call('session.mutate', { ...fenced, operation: 'workspace', payload: { cwd: ' ' } })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.mutate', { ...without(fenced, 'expected_generation'), operation: 'workspace', payload: { cwd: '/work/docs' } })).toMatchObject(refusal('invalid_params'))
+    expect(await call('session.mutate', { ...fenced, operation: 'workspace', payload: { cwd: '/work/docs' } })).toMatchObject({ result: { operation: 'workspace' } })
+    expect(await call('session.export', { session_id: SESSION, format: 'md', redact: 'no' })).toMatchObject(refusal('invalid_params'))
+  })
+
+  it('takes a side prompt only from a socket that attached the chat, since its answer rides that subscription', async () => {
+    const { call } = await rawSocket({}, { ...STORY, steps: STORY.steps.slice(1) })
+    expect(await call('prompt.btw', { session_id: SESSION, text: 'why?' })).toMatchObject(refusal('permission_denied'))
+    expect(await call('prompt.background', { session_id: 'other', text: 'tidy' })).toMatchObject(refusal('not_found'))
+  })
+
+  it.each([
+    ['an effort Hermes does not take', 'reasoning', { effort: 'turbo' }],
+    ['an effort with a second key', 'reasoning', { effort: 'high', scope: 'global' }],
+    ['a compression with a key Hermes does not parse', 'compress', { focus: 'x', keep: 2 }],
+    ['a compression whose focus is not text', 'compress', { focus: 3 }]
+  ])('refuses %s', async (_, operation, payload) => {
+    const { call } = await rawSocket({}, STORY)
+    expect(await call('session.mutate', { ...fenced, operation, payload })).toMatchObject(refusal('invalid_params'))
+  })
+})
