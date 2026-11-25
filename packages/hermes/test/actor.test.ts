@@ -479,6 +479,19 @@ describe('mutate and loadEarlier', () => {
       await fresh
     })
 
+    it('sends a dropped request again even after the chat started a reply, so Hermes can answer it from its receipt', async () => {
+      const { actor, calls, answer, event } = await opened()
+      const dropped = actor.branch(3, B1)
+      const sent = { ...calls[0]?.params }
+      await answer('session.mutate', new Offline('socket closed'))
+      await dropped
+      event(started)
+      const again = actor.branch(3, B1)
+      expect(calls[0]?.params).toEqual(sent)
+      await answer('session.mutate', receipt('child'))
+      expect(await again).toEqual({ ok: true, value: { sessionId: 'child', text: 'Second' } })
+    })
+
     it.each([
       ['unknown_method', { kind: 'unsupported', message: "This Hermes can't branch a chat." }],
       ['runtime_coordination_required', { kind: 'unsupported', message: "Hermes can't branch this chat." }],
@@ -504,6 +517,17 @@ describe('mutate and loadEarlier', () => {
       void actor.send('hello')
       expect(await actor.branch(3, B1)).toMatchObject({ ok: false, refusal: { kind: 'stale' } })
       expect(methods()).toEqual(['prompt.submit'])
+    })
+
+    it('branches while a message that failed to send sits in the chat', async () => {
+      const { actor, calls, answer } = await opened()
+      const sent = actor.send('hello')
+      await answer('prompt.submit', refusal('invalid_params'))
+      await sent
+      const made = actor.branch(3, B1)
+      expect(calls[0]).toMatchObject({ method: 'session.mutate', params: { operation: 'branch' } })
+      await answer('session.mutate', receipt('child'))
+      expect(await made).toMatchObject({ ok: true })
     })
 
     it('refuses a reply that names no chat', async () => {

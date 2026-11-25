@@ -55,6 +55,9 @@ interface Mutation {
 }
 
 /** Hermes extends a cut at an assistant row through the tool rows after it (persistence/sqlite/authority/_mutation_publish.py `_branch_boundary`). */
+/** The exact request a branch key last sent, and the words of the message it branches from. */
+interface BranchPin { readonly request: Mutation; readonly text: string }
+
 function branchPoint(content: SessionContent, rowId: number): { readonly through: number; readonly text: string } | null {
   const turn = content.history.find(held => held.request?.rowId === rowId)
   return turn?.request == null ? null : { through: Math.max(rowId, ...turn.rows), text: turn.request.text }
@@ -82,7 +85,7 @@ export class SessionActor {
   private tracked: Tracked
   private published: Session
   private restarts: readonly number[] = []
-  private readonly branches = new Map<BranchId, Mutation>()
+  private readonly branches = new Map<BranchId, BranchPin>()
 
   constructor(readonly id: SessionId, private readonly deps: ActorDeps) {
     this.tracked = emptyTracked(id)
@@ -348,23 +351,32 @@ export class SessionActor {
   async branch(rowId: number, branchId: BranchId): Promise<Outcome<Branched>> {
     const offline = this.offline()
     if (offline !== null) return offline
-    const { content, fence } = this.tracked
-    if (content.run.state === 'running' || content.outbox.length > 0) return { ok: false, refusal: BRANCH_BUSY }
-    const point = branchPoint(content, rowId)
-    if (point === null) return { ok: false, refusal: GONE }
-    const sent = this.branches.get(branchId) ?? {
-      request_id: branchId, operation: 'branch', payload: { through_message_id: point.through },
-      expected_revision: fence.revision, expected_generation: fence.generation ?? 0
-    }
+    // A pinned request may have made its chat already, so it skips the local checks and Hermes's receipt answers it.
+    const pin = this.branches.get(branchId) ?? this.branchPin(rowId, branchId)
+    if ('ok' in pin) return pin
+    const { request, text } = pin
     try {
-      const sessionId = parseBranched(await this.mutation(sent, latest => void this.branches.set(branchId, latest)))
-      return sessionId === null ? { ok: false, refusal: NO_CHILD } : { ok: true, value: { sessionId, text: point.text } }
+      const sessionId = parseBranched(await this.mutation(request, latest => void this.branches.set(branchId, { request: latest, text })))
+      return sessionId === null ? { ok: false, refusal: NO_CHILD } : { ok: true, value: { sessionId, text } }
     } catch (error) {
       if (error instanceof Offline) return { ok: false, refusal: NOT_CONNECTED }
       // Hermes writes a receipt only with a commit, so a refused request leaves nothing to resend exactly.
       this.branches.delete(branchId)
       return { ok: false, refusal: this.branchRefusal(error, rowId) }
     }
+  }
+
+  private branchPin(rowId: number, branchId: BranchId): BranchPin | Outcome<never> {
+    const { content, fence } = this.tracked
+    const waiting = content.outbox.some(entry => entry.state.s !== 'failed')
+    if (content.run.state === 'running' || waiting) return { ok: false, refusal: BRANCH_BUSY }
+    const point = branchPoint(content, rowId)
+    if (point === null) return { ok: false, refusal: GONE }
+    const request = {
+      request_id: branchId, operation: 'branch', payload: { through_message_id: point.through },
+      expected_revision: fence.revision, expected_generation: fence.generation ?? 0
+    }
+    return { request, text: point.text }
   }
 
   /** A gone row, a bad branch payload and a Hermes without `branch` all refuse `invalid_params` (persistence/authority/runtime.py `parse_mutation` reads an unknown operation as a metadata edit), so only the actor's own history can tell them apart. */
