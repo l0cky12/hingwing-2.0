@@ -105,6 +105,11 @@ machine, then reconnect."
   opens no list of bots, and a message that names a bot goes to the chat's own
   bot as text. Highwing asks once per connection, with no params, which Hermes
   refuses before it admits anything. See `packages/hermes/src/relay.ts`.
+- If Hermes answers `groups.capabilities` with an unknown-method error, the
+  plus menu's New group chat… row says "This Hermes has no group chats. Update
+  Hermes on that machine, then reconnect.", the Bots column draws no Group chats
+  section, and Highwing asks nothing more until the next connection. See
+  `packages/hermes/src/groups.ts`.
 - If Hermes answers `complete.path` with an unknown-method error or any other
   refusal, the `@` list holds bots alone. Highwing sends only `session_id` and
   `word`, because Hermes refuses a null value, and keeps the rows that start
@@ -743,6 +748,55 @@ carries messages between bots on different connections only, and Highwing
 lists the bots of one Hermes, so it calls neither. The handed message and its
 reply live in Highwing while it is connected. They are not in the history of
 the chat they were sent from.
+
+### Group chats
+
+A group chat is one of Hermes's hosted rooms: 2 to 6 bots of one Hermes on one
+conversation, seated when the group is made and never changed
+(`gateway/hosted_room_discussion.py:30-31`, `validate_roster`). The generated
+contract lists only `groups.create` as canonical, yet the canonical route serves
+every `groups.*` method (`GROUP_METHODS`,
+`gateway/session_group_controls.py:15-35`).
+
+- A group belongs to the profile Highwing connected through. Every `groups.*`
+  call goes out with no `profile` key: Hermes refuses a frame that names
+  another profile `profile_mismatch` (`gateway/session_group_controls.py:67-80`).
+  Each method takes a closed key set (`_FIELDS`, `:36-59`), and one key more is
+  `invalid_params`.
+- Highwing asks `groups.capabilities {}`, then `groups.list {}`, on every new
+  connection and again when sessions change. One page holds every live group:
+  Hermes keeps at most 256 (`MAX_ACTIVE_ROOMS`) and pages 500 by default
+  (`gateway/hosted_rooms.py:46-47`). Hermes's `groups.changed` event is not
+  read yet, so a group made in another client shows after the next session
+  change or connection.
+- New group chat offers only the bots `seatable_profiles` names, the roster
+  `groups.create` accepts from this connection. A Hermes that sends no
+  `seatable_profiles` gets every listed bot offered.
+- `driver: false` means Hermes is not running its group chats now. It still
+  makes one (`create` in `gateway/session_group_controls.py` falls through to
+  `rooms.create_room`), so New group chat stays offered.
+- `groups.create` sends `room_id`, `name` and `members`. Each member is
+  `{member_id, profile, handle}` with the bot's profile as both id and profile,
+  as Hermes Desktop seats a local bot (`hermes-bots/canonical-groups.ts:228`),
+  and no `target` or `display_name`. The handle is the name the sidebar shows,
+  lower case, accents dropped, every run of other characters one `-`, so `@ada`
+  reaches the bot shown as Ada. A handle that is empty, taken, `all` or
+  `everyone` falls back to the profile, then to the profile with a number.
+  Hermes Desktop uses the profile as the handle, so a group made there keeps
+  its own handles.
+- The dialog mints `room_id`. Hermes answers a repeated id with the group it
+  made when the name and members match (`idempotent: true`), and refuses it
+  with a bare `invalid_params` when they differ. So a create whose answer was
+  lost goes out again under the same id, and the next try after a refusal goes
+  out under a new one.
+- Hermes refuses a bot it would not seat, or a roster `validate_roster`
+  rejects, as `invalid_params` with `field: "members"` and its own words in
+  `detail`, which the dialog shows under its list. A bare `invalid_params`
+  reads "Hermes didn't accept this group chat. Try again.", and
+  `permission_denied` or `profile_mismatch` reads "Hermes won't let this
+  connection make group chats."
+- A recording made with `HIGHWING_RECORD` keeps the group calls out of its
+  story and its header, so it plays back as a Hermes without group chats.
 
 Highwing can't create a bot. `profiles.create` is not a canonical method, so
 New bot is shown as unavailable. Avatar images are not shown either, because
