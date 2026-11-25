@@ -118,8 +118,15 @@ export function machineOf(target: Target): string {
   })
 }
 
-/** In the order a check runs them. `save` belongs to the connection's owner, after the check passed. */
-export type CheckStep = 'tailscale' | 'peer' | 'ssh' | 'hermes' | 'save'
+/** The host of the address: how the words name a gateway reached by its address. */
+export const gatewayHost = (url: GatewayUrl): string => new URL(url).hostname
+
+/**
+ * In the order a check runs them. Another machine runs `tailscale`, `peer`, `ssh` and `hermes`, this
+ * computer runs `hermes`, and a gateway address runs `hermes`, `sign-in` and `gateway`. `save`
+ * belongs to the connection's owner, after the check passed.
+ */
+export type CheckStep = 'tailscale' | 'peer' | 'ssh' | 'hermes' | 'sign-in' | 'gateway' | 'save'
 
 export const firstStep = (target: Target): CheckStep => byKind<CheckStep>(target, { local: () => 'hermes', remote: () => 'tailscale' })
 
@@ -133,18 +140,30 @@ export type CheckFailure =
   | 'hermes-not-found' | 'hermes-too-old'
   | 'cant-save'
 
+/** What only the check of a gateway address can fail with. It can also fail with `hermes-too-old`. */
+export type UrlFailure =
+  | 'url-unreachable' | 'url-certificate' | 'not-hermes' | 'no-sign-in' | 'dashboard'
+  | 'sign-in-cancelled' | 'sign-in-timed-out' | 'sign-in-refused'
+  | 'url-no-socket' | 'url-legacy'
+
+export type SetupFailure = CheckFailure | UrlFailure
+
 type Words = (machine: string) => string
+/** The step a check fails at, what to tell the user, and the one thing to try. */
+export interface Failure { readonly step: CheckStep; readonly words: Words; readonly fix: Words }
 
 export const STEP_WORDS: Readonly<Record<CheckStep, Words>> = {
   tailscale: () => 'Checking Tailscale on this computer',
   peer: machine => `Looking for ${machine} on your tailnet`,
   ssh: machine => `Connecting to ${machine}`,
   hermes: machine => `Looking for Hermes on ${machine}`,
+  'sign-in': machine => `Waiting for you to sign in to ${machine} in your browser`,
+  gateway: machine => `Opening the Hermes gateway on ${machine}`,
   save: () => 'Saving this connection'
 }
 
-/** Every way a check can fail: the step it fails at, what to tell the user, and the one thing to try. */
-export const CHECK_FAILURES: Readonly<Record<CheckFailure, { readonly step: CheckStep; readonly words: Words; readonly fix: Words }>> = {
+/** Every way a check of this computer or of another machine can fail. */
+export const CHECK_FAILURES: Readonly<Record<CheckFailure, Failure>> = {
   'tailscale-missing': {
     step: 'tailscale',
     words: () => "Tailscale isn't installed on this computer.",
@@ -211,3 +230,62 @@ export const CHECK_FAILURES: Readonly<Record<CheckFailure, { readonly step: Chec
     fix: () => "Check that Highwing's settings folder can be written to, then try again."
   }
 }
+
+/** Every way only the check of a gateway address can fail. `machine` is `gatewayHost` of the address. */
+export const URL_FAILURES: Readonly<Record<UrlFailure, Failure>> = {
+  'url-unreachable': {
+    step: 'hermes',
+    words: machine => `Highwing can't reach ${machine}.`,
+    fix: () => 'Check the address, and that the machine and its Hermes gateway are on.'
+  },
+  'url-certificate': {
+    step: 'hermes',
+    words: machine => `This computer doesn't trust the certificate of ${machine}.`,
+    fix: () => "Give that address a certificate this computer trusts, such as one from Tailscale Serve or Let's Encrypt."
+  },
+  'not-hermes': {
+    step: 'hermes',
+    words: machine => `Something answers at ${machine}, but it isn't Hermes.`,
+    fix: () => "Use the address of the gateway's Webapp. Add a path only if a proxy serves Hermes under one."
+  },
+  'no-sign-in': {
+    step: 'hermes',
+    words: machine => `The Hermes on ${machine} has no sign-in that Highwing can use.`,
+    fix: () => 'On that machine, give the Webapp a sign-in, such as a username and password under dashboard.basic_auth, then restart the gateway.'
+  },
+  dashboard: {
+    step: 'hermes',
+    words: machine => `What answers at ${machine} is the Hermes dashboard, which Highwing can't chat through.`,
+    fix: () => "On that machine, turn on the gateway's Webapp with webapp.enabled and webapp.host in ~/.hermes/config.yaml, restart the gateway, and use the Webapp's address."
+  },
+  'sign-in-cancelled': {
+    step: 'sign-in',
+    words: machine => `You stopped the sign-in to ${machine}.`,
+    fix: () => 'Press Connect when you want to sign in.'
+  },
+  'sign-in-timed-out': {
+    step: 'sign-in',
+    words: machine => `You didn't finish signing in to ${machine} within 10 minutes.`,
+    fix: () => 'Press Connect to open the sign-in page again.'
+  },
+  'sign-in-refused': {
+    step: 'sign-in',
+    words: machine => `The Hermes on ${machine} didn't accept the sign-in.`,
+    fix: () => 'Press Connect to sign in again.'
+  },
+  'url-no-socket': {
+    step: 'gateway',
+    words: machine => `You signed in to ${machine}, but its chat connection didn't open.`,
+    fix: () => 'If a proxy or tunnel serves this address, let it pass WebSocket connections through to Hermes.'
+  },
+  'url-legacy': {
+    step: 'gateway',
+    words: machine => `You signed in to ${machine}, but it answered with the dashboard's older chat, which Highwing can't use.`,
+    fix: () => "On that machine, turn on the gateway's Webapp and use its address."
+  }
+}
+
+const FAILURES: Readonly<Record<SetupFailure, Failure>> = { ...CHECK_FAILURES, ...URL_FAILURES }
+
+/** The step, words and fix of any failure the setup screen can show, whichever check found it. */
+export const failureOf = (failure: SetupFailure): Failure => FAILURES[failure]
