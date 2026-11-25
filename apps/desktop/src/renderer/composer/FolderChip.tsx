@@ -21,7 +21,7 @@ export function FolderChip({ cwd, field, disabled, running, onMove }: FolderChip
   const to = draft.trim()
 
   const toggle = () => {
-    if (!shown) {
+    if (!shown && asking.at !== 'sending') {
       setDraft(cwd)
       setAsking({ at: 'idle' })
     }
@@ -30,6 +30,7 @@ export function FolderChip({ cwd, field, disabled, running, onMove }: FolderChip
 
   const move = async (event: FormEvent) => {
     event.preventDefault()
+    if (asking.at === 'sending') return
     setAsking({ at: 'sending' })
     const outcome = await onMove(to)
     if (!outcome.ok) return setAsking({ at: 'refused', message: outcome.refusal.message })

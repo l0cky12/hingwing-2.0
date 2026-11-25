@@ -14,7 +14,12 @@ export function usePopover(enabled: boolean) {
       setOpen(false)
       button.current?.focus()
     }
-    const onPress = (event: PointerEvent) => { if (!anchor.current?.contains(event.target as Node)) setOpen(false) }
+    const onPress = (event: PointerEvent) => {
+      if (anchor.current?.contains(event.target as Node)) return
+      setOpen(false)
+      // A press on something that takes no focus would leave it on the page once the popover is gone.
+      setTimeout(() => { if (document.activeElement === document.body) button.current?.focus() })
+    }
     document.addEventListener('keydown', onKey)
     document.addEventListener('pointerdown', onPress)
     return () => {

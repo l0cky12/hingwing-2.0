@@ -19,11 +19,12 @@ export function ThinkingPill({ tuning, disabled, running, onTune }: ThinkingPill
   const boxId = useId()
 
   const toggle = () => {
-    if (!shown) setAsking({ at: 'idle' })
+    if (!shown) setAsking(held => (held.at === 'sending' ? held : { at: 'idle' }))
     setOpen(!shown)
   }
 
   const tune = async (change: ThinkingTune) => {
+    if (asking.at === 'sending') return
     setAsking({ at: 'sending' })
     const outcome = await onTune(change)
     setAsking(outcome.ok ? { at: 'idle' } : { at: 'refused', message: outcome.refusal.message })
