@@ -20,7 +20,10 @@ export function BotForm({ title, submitLabel, initial, problemOf, models, onSubm
   const dialog = useRef<HTMLDialogElement>(null)
   const ids = useId()
   useLayoutEffect(() => {
-    if (dialog.current?.open === false) dialog.current.showModal()
+    const shown = dialog.current
+    if (shown?.open === false) shown.showModal()
+    // Unmounted, the dialog leaves the page without closing, and the browser hands focus back only on close.
+    return () => shown?.close()
   }, [])
 
   const sending = send.at === 'sending'
