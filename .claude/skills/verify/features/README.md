@@ -34,7 +34,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Set up a connection](./set-up-a-connection.md) covers the first-run setup screen, each check failure, the saved screen, the remote chat, and changing the connection from the top bar.
 - [Replay a fixture](./replay-a-fixture.md) covers `HIGHWING_FIXTURE`, the tool-running, approval and settled moments, open records, and the reference composites.
 - [Send a message](./send-a-message.md) covers the composer's Send button, Enter, and Stop while a turn runs.
-- [Answer an approval](./answer-an-approval.md) covers the approval card and "Run once" releasing the story to Done.
+- [Answer an approval](./answer-an-approval.md) covers the approval card, "Run once" releasing the story to Done, the second yes "Always allow" asks for, and a question that takes several answers.
 - [Open a file](./open-a-file.md) covers the path button in an open record, Show in folder, and Copy path.
 - [Markdown replies](./markdown.md) covers lists, headings, links, tables and code blocks in a reply, the code block's Copy button, and its syntax colors: plain while streaming, no layout jump, Find and Copy inside a colored block, and forced colors.
 - [Math in replies](./math.md) covers inline and display formulas typeset with KaTeX, each labelled with its TeX source, a malformed formula shown as its source, dollar amounts left as text, Find around and inside a formula, and the fonts loading with no network.
@@ -70,3 +70,4 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Branch a chat](./branch-a-chat.md) covers "Branch from here" on a sent message: the new chat opening with the message in its box and the thread through its reply, the original staying whole in the Chats list, the next title in the lineage, a Hermes that cannot branch, and the button disabled while a turn runs.
 - [Switch between versions of a message](./switch-versions.md) covers the "2 / 3" switcher on a message that was tried more than once: Previous version and Next version opening the chat of that try at the same message, the same switcher in a fresh profile folder, a chat a branch just made, and a Hermes that refuses the tree.
 - [Attachments](./attachments.md) covers the paperclip and its file dialog, a pasted image, a drop and the "Drop to attach" line, the chips with Remove and Alt+arrow order, a file over the limit named under the chips, a sent request's attachments in the thread, the paperclip disabled while the link is down, and chips kept with the draft.
+- [Turn notifications](./notify.md) covers the desktop notification when the shown chat's turn ends while no window has focus, its words, and the focused window staying quiet.

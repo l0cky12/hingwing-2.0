@@ -206,6 +206,26 @@ const STEPS = {
       if (said?.includes(text) !== true) throw new Error(`the previewed page does not say ${JSON.stringify(text)}: ${JSON.stringify(said?.slice(0, 200) ?? 'no page')}`)
     }
   },
+  blur: {
+    arity: 0,
+    run: async ctx => {
+      const focused = await ctx.app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.blur()
+        return BrowserWindow.getFocusedWindow() !== null
+      })
+      if (focused) throw new Error('a Highwing window still has focus after blur')
+    }
+  },
+  notified: {
+    arity: 2,
+    run: async (ctx, title, n) => {
+      const titled = () => noticesRecorded(ctx).filter(notice => notice.title === title)
+      const held = await poll(ctx, async () => titled(), notices => notices.length >= Number(n))
+      for (const notice of held) log(ctx, `  ${JSON.stringify(notice)}`)
+      if (held.length !== Number(n)) throw new Error(`main recorded ${held.length} notification(s) titled "${title}", not ${n}`)
+      ctx.notified.push({ title, n: Number(n) })
+    }
+  },
   home: {
     arity: 0,
     run: async ctx => {
@@ -648,9 +668,11 @@ function draftsOnDisk(ctx) {
   })
 }
 
-const opensRecorded = ctx => existsSync(ctx.opens)
-  ? readFileSync(ctx.opens, 'utf8').split('\n').filter(line => line.trim() !== '').map(line => JSON.parse(line))
+const jsonLines = file => existsSync(file)
+  ? readFileSync(file, 'utf8').split('\n').filter(line => line.trim() !== '').map(line => JSON.parse(line))
   : []
+const opensRecorded = ctx => jsonLines(ctx.opens)
+const noticesRecorded = ctx => jsonLines(ctx.notices)
 
 async function pollUntil(ctx, read, done) {
   const deadline = Date.now() + ctx.timeout
@@ -947,7 +969,7 @@ async function run(argv) {
   const calls = join(evidence, 'gateway-calls.jsonl')
   rmSync(calls, { force: true })
   const userData = join(scratch, 'user-data')
-  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set() }
+  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set() }
   const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
   const saved = SAVED[options.saved ?? 'none']
@@ -974,6 +996,8 @@ async function run(argv) {
   delete env.HIGHWING_PICK_FILES
   if (options.pick) env.HIGHWING_PICK_FILES = options.pick.split(',').map(path => resolve(process.cwd(), path)).join(delimiter)
   env.HIGHWING_SAVE_DIR = join(evidence, 'saves')
+  rmSync(ctx.notices, { force: true })
+  env.HIGHWING_NOTIFY_LOG = ctx.notices
 
   const { _electron } = requireDesktop('playwright-core')
   log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"` : `HIGHWING_FIXTURE=${fixture}`}${Object.keys(media).length > 0 ? `, emulating ${JSON.stringify(media)}` : ''}`)
@@ -1030,6 +1054,10 @@ async function run(argv) {
     for (const check of ctx.answered) {
       const seen = answersLike(ctx, check)
       if (seen !== check.n) throw new Error(`by the end of the run the gateway saw ${seen} answer(s) to a ${check.method} request containing ${JSON.stringify(check.expected)}, not ${check.n}`)
+    }
+    for (const { title, n } of ctx.notified) {
+      const seen = noticesRecorded(ctx).filter(notice => notice.title === title).length
+      if (seen !== n) throw new Error(`by the end of the run main recorded ${seen} notification(s) titled "${title}", not ${n}`)
     }
   } catch (error) {
     failed = error

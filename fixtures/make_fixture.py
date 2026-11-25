@@ -61,12 +61,16 @@ The stories are in ``STORIES``:
   and restores the folder to the second one (``rollback.restore``), which takes back the second turn. The header's
   ``reads`` and each ``reads`` step are what ``process.list`` and ``session.control.read`` answer from there on, read
   where Hermes's state changed: before each turn's end frame, after each call, and before the goal's first update.
+- ``always`` writes fixtures/always.jsonl: the errand, answered ``always``.
+- ``choose`` writes fixtures/choose.jsonl: the ``clarify`` tool asks one question that takes several
+  answers (``multi_select``). The story answers two of the labels as Highwing encodes them, Hermes's
+  "(Recommended)" mark included, which the tool strips.
 
 The script runs the canonical gateway in-process, the way Hermes's own
 tests/gateway/test_authority_complete_persisted_turn.py does: a real ``SessionAuthority`` over a
 real state.db in a throwaway HERMES_HOME, and a real ``AuthorityConnection`` whose transport
 records every frame through ``tui_gateway.transport.serialize_frame``, the same serializer the
-WebSocket transport uses. The story's calls (``prompt.submit``, ``approval.respond``) go through
+WebSocket transport uses. The story's calls (``prompt.submit``, ``approval.respond``, ``clarify.respond``) go through
 ``AuthorityConnection.dispatch``, so their params pass the gateway's own closed-key check and their
 replies are the gateway's.
 
@@ -79,6 +83,8 @@ Real:
   tool runs through ``model_tools.handle_function_call`` in /tmp/hermes-proto-work;
 - the approval: the real ``terminal`` tool trips Hermes's danger detector and blocks in
   ``tools/approval.py`` until the gateway resolves the prompt;
+- the question: the real ``clarify`` tool asks through the turn's own ``_clarify_callback_sync``, which
+  posts it with Hermes's ``LocalSessionAdapter`` and registers the ``clarify.request``;
 - the stored rows: the turn's messages are flushed by ``AIAgent._flush_messages_to_session_db``,
   the receipt is ``gateway.run_turn_runner._persisted_turn``, and a ``stored`` step is the
   ``display_messages`` of a real ``session.resume {display_projection: true}``.
@@ -204,7 +210,7 @@ import struct
 import time
 import uuid
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -226,10 +232,11 @@ class Story:
     files: dict
     # The folder the story's rm -rf asks to delete, or None when it deletes nothing.
     doomed: str | None
-    # The recorded answer to the approval. None ends the fixture at ``approval.request``.
+    # The recorded answer to the turn's prompt. None ends the fixture at the prompt's request.
     answer: str | None
-    # False for a turn that never asks for an approval. The fixture then ends with the turn's ``stored`` rows.
-    approves: bool = True
+    # The prompt the turn raises: "approval", "clarify", or None for a turn that raises none. The fixture
+    # then ends with the turn's ``stored`` rows.
+    prompt: str | None = "approval"
     # True when the story's turn takes a screenshot, so the script registers the scripted tool.
     screenshots: bool = False
     viewer: bool = False
@@ -370,7 +377,7 @@ function backupName(file: string): string {
 MARKDOWN = Story(
     request="Give me a short plan for backing up notes.md and renaming its heading.",
     steps=[{"say": MARKDOWN_REPLY, "call": None}],
-    out="markdown.jsonl", seed=20261123, files={}, doomed=None, answer=None, approves=False)
+    out="markdown.jsonl", seed=20261123, files={}, doomed=None, answer=None, prompt=None)
 
 IMAGES = Story(
     request="Take a screenshot of the dashboard and chart last week's signups.",
@@ -378,7 +385,7 @@ IMAGES = Story(
         {"say": "I'll capture the dashboard first.", "call": ("screenshot", {}), "ms": 420},
         {"say": f"Here is the chart you asked for.\n\n![a chart]({CHART_URL})", "call": None},
     ],
-    out="images.jsonl", seed=20261124, files={}, doomed=None, answer=None, approves=False, screenshots=True)
+    out="images.jsonl", seed=20261124, files={}, doomed=None, answer=None, prompt=None, screenshots=True)
 
 SITE = f"{WORK}/site"
 DEV_URL = "http://localhost:5173/"
@@ -394,14 +401,27 @@ PREVIEW = Story(
     steps=[*BUILD_PAGE,
            {"say": (f"Preview ready at [the demo]({DEV_URL}). The page is saved as `{SITE}/index.html`, and it "
                     "replaces [the old docs](http://unreachable.invalid/)."), "call": None}],
-    out="preview.jsonl", seed=20261125, files={}, doomed=None, answer=None, approves=False)
+    out="preview.jsonl", seed=20261125, files={}, doomed=None, answer=None, prompt=None)
 
 PREVIEW_CLOSE = Story(
     request="Show me the demo page in /tmp/hermes-proto-work/site, then close it.",
     steps=[*BUILD_PAGE,
            {"say": "Closing the preview now.", "call": ("desktop_preview", {"action": "close"}), "ms": 6, "pause": 2000},
            {"say": "Closed.", "call": None}],
-    out="preview-close.jsonl", seed=20261126, files={}, doomed=None, answer=None, approves=False)
+    out="preview-close.jsonl", seed=20261126, files={}, doomed=None, answer=None, prompt=None)
+
+ALWAYS = replace(ERRAND, out="always.jsonl", seed=20261127, answer="always")
+
+CHOOSE = Story(
+    request="Deploy the build where it needs to go.",
+    steps=[
+        {"say": "I'll check where you want it first.",
+         "call": ("clarify", {"questions": [{"question": "Where should I deploy the build?",
+                                             "choices": ["staging", "production", "canary"], "multi_select": True}]}),
+         "ms": 8},
+        {"say": "Deploying to staging and canary.", "call": None},
+    ],
+    out="choose.jsonl", seed=20261128, files={}, doomed=None, answer='["staging (Recommended)","canary"]', prompt="clarify")
 
 REPORTS = f"{WORK}/reports"
 FILES = Path(__file__).resolve().parent / "preview-files"
@@ -451,7 +471,7 @@ PREVIEW_FILES = Story(
     ],
     out="preview-files.jsonl", seed=20261127,
     files={"reports/big.csv": rows(20000), "reports/huge.csv": rows(200000, 40)},
-    doomed=None, answer=None, approves=False)
+    doomed=None, answer=None, prompt=None)
 
 
 def tiny_png() -> bytes:
@@ -652,7 +672,7 @@ ASKS = Story(
         {"say": "Done. jq is installed, the gif was skipped for want of a Tenor key, and the notes site is deployed to production.",
          "call": None},
     ],
-    out="asks.jsonl", seed=20261125, files={}, doomed=None, answer=None, approves=False, after=plugin_choice,
+    out="asks.jsonl", seed=20261125, files={}, doomed=None, answer=None, prompt=None, after=plugin_choice,
     asks=(("sudo", typed("correct horse battery staple")), ("secret", skipped), ("vault.code", elsewhere),
           ("clarify", locks("production", json.dumps(["eu-west (Recommended)", "us-east"], separators=(",", ":")))), ("connection.request", skip_target),
           ("theme.pick", declined), ("clarify", locks("This week's"))))
@@ -744,7 +764,7 @@ QUEUE = Story(
     request=RENAME, steps=[], out="queue.jsonl", seed=20261126,
     files={"notes/First Note.md": "one\n", "notes/Second Note.md": "two\n", "notes/Third Note.md": "three\n",
            "CHANGELOG.md": "# Changelog\n\n## Unreleased\n", "drafts/old.md": "draft\n"},
-    doomed=None, answer=None, approves=False)
+    doomed=None, answer=None, prompt=None)
 
 PLAN_REQUEST = "What does notes.md say about the release?"
 PLAN_REPLY = "notes.md lists three tasks for the release: sketch the chat view, wire the gateway socket and review the screenshots."
@@ -759,7 +779,7 @@ FOCUS = "the release plan"
 COMMANDS = Story(
     request=PLAN_REQUEST, steps=[], out="commands.jsonl", seed=20261127,
     files={"notes.md": NOTES, "docs/plan.md": "# Plan\n\n- date: next week\n- sign-off: the owner\n"},
-    doomed=None, answer=None, approves=False)
+    doomed=None, answer=None, prompt=None)
 
 SERVE = "echo 'serving the docs on :8000'; exec sleep 600"
 
@@ -788,11 +808,13 @@ PANELS_TURNS = {
                                          "new_string": "- the gateway socket\n" + DATED}), "ms": 15, "checkpoint": True},
         {"say": "release.md now says the release is next Friday.", "call": None}]}
 PANELS = Story(
-    request=PANELS_REQUEST, steps=[], out="panels.jsonl", seed=20261124, files={"notes.md": NOTES}, doomed=None, answer=None, approves=False)
+    request=PANELS_REQUEST, steps=[], out="panels.jsonl", seed=20261124, files={"notes.md": NOTES}, doomed=None, answer=None, prompt=None)
 
 STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN, "images": IMAGES, "preview": PREVIEW,
-           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "says": SAYS, "asks": ASKS, "queue": QUEUE, "commands": COMMANDS,
-           "panels": PANELS}
+           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "always": ALWAYS, "choose": CHOOSE, "says": SAYS,
+           "asks": ASKS, "queue": QUEUE, "commands": COMMANDS, "panels": PANELS}
+PROMPTS = {"approval": ("approval.request", "approval.respond", "choice"),
+           "clarify": ("clarify.request", "clarify.respond", "answer")}
 NAME = sys.argv[1] if len(sys.argv) > 1 else "errand"
 if NAME not in STORIES:
     sys.exit(f"no story named {NAME!r}; pick one of: {', '.join(STORIES)}")
@@ -834,10 +856,12 @@ from gateway.session import SessionStore  # noqa: E402
 from gateway.session_authority import SessionAuthority  # noqa: E402
 from gateway.session_context import clear_session_vars, set_session_vars  # noqa: E402
 from gateway.session_controls import AuthorityConnection  # noqa: E402
+from gateway.session_local import LocalSessionAdapter  # noqa: E402
 from persistence_assembly import open_persistence, profile_scope  # noqa: E402
 from run_agent import AIAgent  # noqa: E402
 from tools.approval import register_gateway_notify, unregister_gateway_notify  # noqa: E402
 from tools.approval_context import reset_current_session_key, set_current_session_key  # noqa: E402
+from tools.clarify_tool import clarify_tool  # noqa: E402
 from tui_gateway.transport import serialize_frame  # noqa: E402
 
 logging.basicConfig(level=logging.ERROR)
@@ -1070,8 +1094,17 @@ def play_turn(turn, db, history, call_ids, request=None, steps=None, kept=None):
             if "stage" in step:
                 step["stage"]()
             asked = [ask(turn, agent) for ask in step.get("during", [])]
-            result = asked[-1] if asked else step["result"] if "result" in step else model_tools.handle_function_call(
-                name, args, task_id=session_id, tool_call_id=call_id, session_id=session_id)
+            if asked:
+                result = asked[-1]
+            elif "result" in step:
+                result = step["result"]
+            elif name == "clarify":
+                # The agent runs clarify inline with its ``clarify_callback`` (agent/inline_tool_executors.py),
+                # which the gateway sets to the turn's ``_clarify_callback_sync``.
+                result = clarify_tool(args["questions"], callback=turn._clarify_callback_sync)
+            else:
+                result = model_tools.handle_function_call(name, args, task_id=session_id, tool_call_id=call_id,
+                                                          session_id=session_id)
             if "after" in step:
                 step["after"](turn, agent)
             CLOCK.tick(step["ms"])
@@ -1111,15 +1144,15 @@ def turn_of(runner, live, authority, ref, row):
     turn = TurnRunner.__new__(TurnRunner)
     turn._runner = runner
     turn._approval_owner = (authority, ref.session_id, row["generation"])
-    # The status fields are what ``_status_callback_sync`` and the notice sinks read; a local turn's
-    # status lines go to the event stream and never reach the adapter they check for.
+    # The status fields are what ``_status_callback_sync``, the notice sinks and ``_clarify_callback_sync`` read.
     turn._ctx = SimpleNamespace(
         source=live.source, session_id=ref.session_id, session_key=live.route,
         _loop_for_step=asyncio.get_running_loop(), _run_still_current=lambda: True,
         _voice_ack_guild=[None], _native_slack_task_cards=False, progress_mode=None, agent_holder=[None],
         _hooks_ref=SimpleNamespace(loaded_hooks=[]), progress_queue=None,
-        mute_notification_reply=False, _status_adapter=SimpleNamespace(), user_config={},
-        run_generation=row["generation"], _status_chat_id=None, _status_thread_metadata=None, _cleanup_progress=False)
+        mute_notification_reply=False, _status_adapter=LocalSessionAdapter(authority), user_config={},
+        run_generation=row["generation"], _status_chat_id=live.source.chat_id, _status_thread_metadata=None,
+        _cleanup_progress=False, stream_consumer_holder=[None], inbound_message_id=None)
     turn._ctx._step_callback_sync = lambda iteration, prev: TurnRunner._step_callback_sync(turn, iteration, prev)
     return turn
 
@@ -1189,11 +1222,12 @@ async def main():
     # A viewer that takes the clarify tool's questions as one request says so with each message.
     await story_call("prompt.submit", {"session_id": session_id, "text": REQUEST, "input_id": "input_" + uuid.uuid4().hex[:16],
                                        **({"clarify_batch": True} if TALE.asks else {})})
-    if TALE.approves:
+    if TALE.prompt is not None:
+        asked, respond, reply_key = PROMPTS[TALE.prompt]
         try:
-            request = await asyncio.wait_for(recorder.push_of("approval.request"), 60)
+            request = await asyncio.wait_for(recorder.push_of(asked), 60)
         except TimeoutError:
-            sys.exit("the gateway never asked to approve the rm -rf")
+            sys.exit(f"the gateway never sent {asked}")
         prompt = request["params"]["payload"]
         answer_to = {"session_id": session_id, "execution_generation": prompt["execution_generation"],
                      "prompt_id": prompt["prompt_id"]}
@@ -1215,7 +1249,7 @@ async def main():
         CLOCK.tick(4)
         recorder.steps.append({"at": CLOCK.now(), "stored": snapshot["display_messages"]})
 
-    if not TALE.approves:
+    if TALE.prompt is None:
         attending = asyncio.create_task(attend())
         await live.task
         if TALE.after is not None:
@@ -1226,11 +1260,12 @@ async def main():
         await record_stored()
     elif TALE.answer is None:
         pushes = await stop_recording()
-        await call(socket, "approval.respond", {**answer_to, "choice": "deny"})
+        # Off the record, so the turn can finish: deny an approval, skip a question with an empty answer.
+        await call(socket, respond, {**answer_to, reply_key: "deny" if reply_key == "choice" else ""})
         await live.task
     else:
         CLOCK.tick(1500)
-        await story_call("approval.respond", {**answer_to, "choice": TALE.answer})
+        await story_call(respond, {**answer_to, reply_key: TALE.answer})
         await live.task
         if TALE.after is not None:
             CLOCK.tick(600)

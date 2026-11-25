@@ -1,7 +1,7 @@
 import { checkTarget, liveDialer, openHermes, remoteRoute, type Dialer, type Route } from '@highwing/hermes'
 import type { BotId, Target } from '@highwing/hermes/domain'
 import { loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, net, shell, type OpenDialogOptions } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, net, Notification, shell, type OpenDialogOptions } from 'electron'
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { attachmentStore, ATTACHMENTS_DIR, desktopSources, HERMES_LIMITS } from './attachments'
@@ -10,6 +10,7 @@ import { desktopOpener, recordingOpener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
 import { draftStore, DRAFTS_DIR } from './drafts'
 import { serveWindows } from './ipc'
+import { desktopNotifier, notifyTurnEnds, recordingNotifier } from './notify'
 import { pickPicture, readHead } from './picture'
 import { previewPane, registerPageScheme } from './preview'
 import { reachOf } from './preview-page'
@@ -17,7 +18,7 @@ import { dialogSaver, folderSaver } from './saves'
 import { loadSettings, saveSettings } from './settings'
 import { isAppUrl, openWindow } from './windows'
 
-const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_RECORD, HIGHWING_OPEN_LOG, HIGHWING_PICK_FILE, HIGHWING_PICK_FILES, HIGHWING_SAVE_DIR } = process.env
+const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_RECORD, HIGHWING_OPEN_LOG, HIGHWING_PICK_FILE, HIGHWING_PICK_FILES, HIGHWING_SAVE_DIR, HIGHWING_NOTIFY_LOG } = process.env
 const fixture = HIGHWING_FIXTURE ? loadFixture(HIGHWING_FIXTURE) : null
 
 const PICTURE_DIALOG: OpenDialogOptions = {
@@ -66,9 +67,20 @@ app.whenReady().then(async () => {
   const served = serveWindows(
     owner, ipcMain, isAppUrl, opener, images, drafts, pane, bot => pickPicture(pictures, bot), { store: attachments, sources }, saver
   )
+  const stopNotices = notifyTurnEnds(owner, {
+    notifier: HIGHWING_NOTIFY_LOG ? recordingNotifier(HIGHWING_NOTIFY_LOG) : desktopNotifier(Notification),
+    focused: () => BrowserWindow.getFocusedWindow() !== null,
+    raise: () => {
+      const window = BrowserWindow.getAllWindows()[0]
+      if (window === undefined) return
+      if (window.isMinimized()) window.restore()
+      window.show()
+      window.focus()
+    }
+  })
   openWindow(opener, pane)
   let closed: Promise<void> | null = null
-  const close = () => (closed ??= (served.dispose(), Promise.all([owner.close(), drafts.settled()]).then(() => {})))
+  const close = () => (closed ??= (served.dispose(), stopNotices(), Promise.all([owner.close(), drafts.settled()]).then(() => {})))
   app.on('window-all-closed', () => void close().finally(() => app.quit()))
   // A quit from the menu or the session never emits window-all-closed, and a check or an attach still running would outlive the app.
   // Electron does not wait for a will-quit listener, so the quit is held until a draft still being written is on disk.

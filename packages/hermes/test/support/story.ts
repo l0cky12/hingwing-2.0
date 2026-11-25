@@ -51,10 +51,12 @@ function userInputs({ await: method, params: sent, reply: answered }: Call, next
         local({ did: 'send.admitted', inputId, admissionId: reply?.admission_id as string })
       ]
     }
-    case 'approval.respond': {
+    case 'approval.respond':
+    case 'clarify.respond': {
       const promptId = params.prompt_id as PromptId
+      const reply = method === 'approval.respond' ? { kind: 'choice', value: params.choice as string } as const : { kind: 'text', value: params.answer as string } as const
       return [
-        local({ did: 'answer', promptId, reply: { kind: 'choice', value: params.choice as string } }),
+        local({ did: 'answer', promptId, reply }),
         local({ did: 'answer.resolved', promptId, byUs: true })
       ]
     }
@@ -272,6 +274,7 @@ export const ignoringStartTimes = <T extends { readonly history: readonly Settle
 
 export const errand = () => readStory(new URL('../../../../fixtures/errand.jsonl', import.meta.url).pathname)
 export const delegate = () => readStory(new URL('../../../../fixtures/delegate.jsonl', import.meta.url).pathname)
+export const choose = () => readStory(new URL('../../../../fixtures/choose.jsonl', import.meta.url).pathname)
 export const says = () => readStory(new URL('../../../../fixtures/says.jsonl', import.meta.url).pathname)
 export const asks = () => readStory(new URL('../../../../fixtures/asks.jsonl', import.meta.url).pathname)
 export const queue = () => readStory(new URL('../../../../fixtures/queue.jsonl', import.meta.url).pathname)
