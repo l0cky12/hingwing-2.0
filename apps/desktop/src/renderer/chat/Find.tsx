@@ -139,15 +139,21 @@ export function useFindMarks(root: RefObject<HTMLElement | null>, matches: reado
 
 const SCROLLS = new Set(['auto', 'scroll'])
 
+/** A match in a drawn diagram's hidden source has no box of its own, so find scrolls to the block that holds it. */
+function boxOf(range: Range): DOMRect {
+  const hidden = range.startContainer.parentElement?.closest('[hidden]')
+  return (hidden?.parentElement ?? range).getBoundingClientRect()
+}
+
 export function reveal(range: Range, scroller: HTMLElement) {
   const centre = (box: DOMRect) => ({ x: box.left + box.width / 2, y: box.top + box.height / 2 })
   for (let element = range.startContainer.parentElement; element !== null && element !== scroller; element = element.parentElement) {
     const { overflowX, overflowY } = getComputedStyle(element)
     if (!SCROLLS.has(overflowX) && !SCROLLS.has(overflowY)) continue
-    const target = centre(range.getBoundingClientRect())
+    const target = centre(boxOf(range))
     const view = centre(element.getBoundingClientRect())
     if (SCROLLS.has(overflowY)) element.scrollTop += target.y - view.y
     if (SCROLLS.has(overflowX)) element.scrollLeft += target.x - view.x
   }
-  scroller.scrollTop += centre(range.getBoundingClientRect()).y - centre(scroller.getBoundingClientRect()).y
+  scroller.scrollTop += centre(boxOf(range)).y - centre(scroller.getBoundingClientRect()).y
 }
