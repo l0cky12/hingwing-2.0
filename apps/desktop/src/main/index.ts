@@ -49,7 +49,6 @@ app.whenReady().then(async () => {
   const settingsDir = app.getPath('userData')
   const attachments = attachmentStore(join(settingsDir, ATTACHMENTS_DIR), { ...HERMES_LIMITS, ...fixture?.header.attachLimits })
   const drafts = draftStore(join(settingsDir, DRAFTS_DIR))
-  // A sent attachment is kept only for the run that sent it: Hermes's history holds no record of it to draw.
   await attachments.sweep(new Set((await drafts.load()).flatMap(draft => draft.attachments.map(held => held.id))))
   const open = (dial: Dialer) => openHermes({ dial, client: { name: 'highwing', version: app.getVersion() }, onPane: pane.ask, uploads: attachments })
   const owner = fixture

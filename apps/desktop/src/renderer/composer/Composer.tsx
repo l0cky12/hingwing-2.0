@@ -181,7 +181,6 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   const take = async (staging: Promise<readonly StageResult[]>) => {
     const results = await staging
     if (results.length === 0) return
-    // Read again after the wait: a drop and a paste can both be on their way.
     const { added, refused } = admitted(results, latestAttachments.current)
     attachTo(slot, added)
     setAttachRefusals(refused)
@@ -268,7 +267,6 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
     sending.current = true
     setPending(true)
     setOutput(null)
-    // A rewind sends the text alone, so the attachments stay for the next message.
     const sent = editing === null ? attachments.map(attachment => attachment.id) : []
     const outcome = await onSend(text, sent).finally(() => {
       sending.current = false

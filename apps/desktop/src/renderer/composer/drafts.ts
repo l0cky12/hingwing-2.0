@@ -53,7 +53,6 @@ function flush() {
 
 const heldOf = (slot: DraftSlot): Held => (slot === null ? loose : drafts.get(slot.key) ?? EMPTY)
 
-/** Typing saves a moment later. A change to the attachments saves at once, since the files they name are already on disk. */
 function put(slot: DraftSlot, change: Partial<Held>, when: 'soon' | 'now') {
   const next = { ...heldOf(slot), ...change }
   if (slot === null) loose = next

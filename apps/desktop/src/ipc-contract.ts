@@ -229,7 +229,6 @@ const webPage = (raw: unknown): raw is string => text(raw) && isWebPage(raw)
 const place = (raw: unknown): raw is number => typeof raw === 'number' && Number.isFinite(raw) && raw >= 0
 const rectOf = (raw: unknown): Rect | null =>
   isObject(raw) && place(raw.x) && place(raw.y) && place(raw.width) && place(raw.height) ? { x: raw.x, y: raw.y, width: raw.width, height: raw.height } : null
-/** Missing: none. Anything but a short list of ids: null, so the command is refused. */
 const attachmentIdsOf = (raw: unknown): readonly AttachmentId[] | null => {
   if (raw === undefined) return []
   return Array.isArray(raw) && raw.length <= MAX_ATTACHMENTS && raw.every(filled) ? (raw as AttachmentId[]) : null

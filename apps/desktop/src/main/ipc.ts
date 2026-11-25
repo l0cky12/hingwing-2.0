@@ -210,20 +210,19 @@ export function serveWindows(
 
   const { store, sources } = attaching
   const notHere = (name: string): StageResult => ({ ok: false, name, reason: `${name} isn't a file on this computer, so Highwing can't attach it.` })
-  /** One at a time, so a batch of large files is never in memory at once. */
-  const stageEach = async (files: readonly (StageSource | StageResult)[]): Promise<readonly StageResult[]> => {
+  const stageOneByOne = async (files: readonly (StageSource | StageResult)[]): Promise<readonly StageResult[]> => {
     const results: StageResult[] = []
     for (const file of files) results.push(typeof file === 'object' && 'ok' in file ? file : await store.stage(file))
     return results
   }
-  ipc.handle(CHANNEL.attachPick, async event => (trusted(event) ? stageEach(await sources.pick()) : []))
+  ipc.handle(CHANNEL.attachPick, async event => (trusted(event) ? stageOneByOne(await sources.pick()) : []))
   ipc.handle(CHANNEL.attachPaste, async event => {
     const pasted = trusted(event) ? await sources.pasted() : null
-    return pasted === null ? [] : stageEach([pasted])
+    return pasted === null ? [] : stageOneByOne([pasted])
   })
   ipc.handle(CHANNEL.attachDrop, async (event, raw) => {
     const dropped = parseDropped(raw)
-    return trusted(event) && dropped !== null ? stageEach(dropped.map(({ name, path }) => path ?? notHere(name))) : []
+    return trusted(event) && dropped !== null ? stageOneByOne(dropped.map(({ name, path }) => path ?? notHere(name))) : []
   })
 
   return {

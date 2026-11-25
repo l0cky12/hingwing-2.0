@@ -405,7 +405,6 @@ export function openHermes(options: HermesOptions): Hermes {
     return read
   }
 
-  /** Checked before `/new` and before a chat is made for the message, so neither happens to a command that would be refused. */
   const carriesCommand = async (command: Extract<Command, { do: 'send' | 'start' }>): Promise<boolean> => {
     if ((command.attachments ?? []).length === 0 || !command.text.trimStart().startsWith('/')) return false
     await catalogRead

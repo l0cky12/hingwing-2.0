@@ -111,7 +111,6 @@ export function attachmentStore(dir: string, limits: AttachLimits): AttachmentSt
         const info = await stat(source)
         if (info.isDirectory()) return refusal(name, `${name} is a folder. Attach the files inside it.`)
         if (!info.isFile()) return unreadable(name)
-        // Checked before the read, so a file far over the limit is never loaded into memory.
         const over = overLimit(name, typeOf(await head(source)).kind, info.size, limits)
         return over ?? await keep(name, await readFile(source))
       } catch {
