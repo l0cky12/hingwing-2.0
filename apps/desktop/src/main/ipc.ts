@@ -79,11 +79,12 @@ export function sessionPatch(pushed: Session, next: Session): SessionPatch {
 
 interface Served {
   readonly topic: Topic
+  readonly servedBy: Hermes | null
   current(): unknown
   stop(): void
 }
 
-function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): Served {
+function serveTopic(topic: Topic, servedBy: Hermes | null, source: Source, send: (push: Push) => void): Served {
   let pushed: unknown
   let latest: unknown
   let rev = 0
@@ -106,6 +107,7 @@ function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): S
   })
   return {
     topic,
+    servedBy,
     current: () => latest,
     stop() {
       stop()
@@ -167,7 +169,7 @@ export function serveWindows(
     if (!trusted(event) || topic === null || typeof id !== 'number') return
     const subscriptions = subscriptionsOf(event.sender)
     subscriptions.get(id)?.stop()
-    subscriptions.set(id, serveTopic(topic, SOURCES[kindOf(topic)](owners, topic), push => {
+    subscriptions.set(id, serveTopic(topic, owner.hermes, SOURCES[kindOf(topic)](owners, topic), push => {
       if (!event.sender.isDestroyed()) event.sender.send(CHANNEL.push, id, push)
     }))
   })
@@ -203,7 +205,7 @@ export function serveWindows(
       return held?.kind === 'image' ? { ok: true, type: held.mime as ImageType, bytes: held.bytes } : IMAGE_REFUSED
     }
     const watched = request.kind === 'tool' ? [...(windows.get(event.sender.id)?.values() ?? [])].find(served => served.topic === `session:${request.sessionId}`) : undefined
-    return images.load(request, { session: watched?.current() as Session | undefined, local: isLocal(owner.setup.get()) })
+    return images.load(request, { session: watched?.current() as Session | undefined, local: watched !== undefined && watched.servedBy === owner.hermes && isLocal(owner.setup.get()) })
   })
 
   ipc.handle(CHANNEL.drafts, async event => (trusted(event) ? drafts.load() : []))
