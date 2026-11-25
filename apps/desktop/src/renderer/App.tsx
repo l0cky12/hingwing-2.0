@@ -1,15 +1,18 @@
 import type { Shown, Target } from '@highwing/hermes/domain'
-import type { ReactNode } from 'react'
-import type { Setup } from '../ipc-contract'
+import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import type { Mode, Setup } from '../ipc-contract'
+import { BotPicker } from './bots/BotPicker'
 import { BotsSidebar } from './bots/Bots'
-import { ChatsSidebar } from './chats/Chats'
+import { useRetryPicturesOnceOnline } from './bots/pictures'
+import { ChatsSidebar, DraftSweep } from './chats/Chats'
 import { Chat } from './chat/Chat'
 import { Banner, TopBar } from './chrome/Chrome'
+import { ModeSwitch } from './chrome/ModeSwitch'
 import { Preview } from './preview/Preview'
 import { Composer } from './composer/Composer'
 import { Palette } from './palette/Palette'
 import { Saved, SetupForm } from './setup/Setup'
-import { Epoch, useTopic } from './store'
+import { Epoch, run, useTopic } from './store'
 
 const NO_CHAT = async () => ({ ok: false, refusal: { kind: 'rejected', message: 'There is no chat to send to.' } }) as const
 
@@ -31,6 +34,7 @@ function OpenPane() {
 
 function ChatScreen({ target }: { readonly target: Target | null }) {
   const link = useTopic('link')
+  useRetryPicturesOnceOnline(link?.state === 'online')
   return (
     <>
       <div className="top">
@@ -42,16 +46,33 @@ function ChatScreen({ target }: { readonly target: Target | null }) {
   )
 }
 
-/** The pane sits beside the chat, or over it in a narrow window. `data-preview` lays the columns out for it. */
-function ChatWindow({ hidden, target }: { readonly hidden: boolean; readonly target: Target | null }) {
+function useSwitchModeKeepingFocus(mode: Mode) {
+  const root = useRef<HTMLDivElement>(null)
+  const switchUnmountedWithItsColumn = useRef(false)
+  useLayoutEffect(() => {
+    if (!switchUnmountedWithItsColumn.current) return
+    switchUnmountedWithItsColumn.current = false
+    if (document.activeElement === document.body) root.current?.querySelector<HTMLButtonElement>('.mode-switch')?.focus()
+  }, [mode])
+  const pick = (next: Mode) => {
+    switchUnmountedWithItsColumn.current = true
+    void run({ do: 'setMode', mode: next })
+  }
+  return { root, pick }
+}
+
+function ChatWindow({ hidden, target, mode }: { readonly hidden: boolean; readonly target: Target | null; readonly mode: Mode }) {
   const preview = useTopic('preview')
+  const { root, pick } = useSwitchModeKeepingFocus(mode)
+  const switcher = <ModeSwitch mode={mode} onPick={pick} />
   return (
-    <div className="window" hidden={hidden} data-preview={preview?.state === 'open' || undefined}>
-      <BotsSidebar />
-      <ChatsSidebar />
-      <div className="screen">
+    <div ref={root} className="window" hidden={hidden} data-preview={preview?.state === 'open' || undefined}>
+      {mode === 'bots' && <BotsSidebar head={switcher} />}
+      {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} />}
+      <div key="screen" className="screen">
         <ChatScreen target={target} />
       </div>
+      <DraftSweep />
       {preview?.state === 'open' && <Preview preview={preview} />}
       {!hidden && <Palette target={target} />}
     </div>
@@ -74,14 +95,15 @@ const SCREENS: { readonly [A in Setup['at']]: (setup: Extract<Setup, { at: A }>)
  */
 export function App() {
   const setup = useTopic('setup')
-  if (setup === undefined) return null
+  const mode = useTopic('mode')
+  if (setup === undefined || mode === undefined) return null
   const over = (SCREENS[setup.at] as (setup: Setup) => ReactNode)(setup)
   const live = setup.at === 'pinned' ? null : setup.live
   return (
     <>
       {(setup.at === 'pinned' || live !== null) && (
         <Epoch key={live?.epoch ?? 0} value={live?.epoch ?? 0}>
-          <ChatWindow hidden={over !== null} target={live?.target ?? null} />
+          <ChatWindow hidden={over !== null} target={live?.target ?? null} mode={mode} />
         </Epoch>
       )}
       {over}

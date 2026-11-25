@@ -57,6 +57,7 @@ highwing-2.0/
     src/main/                    Electron main            index.ts (compose the owner), windows.ts, ipc.ts (serveWindows), files.ts (openablePath), saves.ts (dialogSaver, folderSaver: where an export is written)
       settings.ts                no Electron              parseSettings, loadSettings, saveSettings: connection.json
       drafts.ts                  no Electron              readDraft, draftStore: drafts/, one file per chat's unsent draft
+      mode.ts                    no Electron              readMode, modeStore: mode.json, whether the window shows the bots or the chats beside the chat
       attachments.ts             no Electron              attachmentStore: attachments/, the files staged for messages; desktopSources: the file dialog and clipboard, or HIGHWING_PICK_FILES
       connection.ts              no Electron              ownConnection, nextSetup, pinnedConnection: the setup state, the saved target, the live Hermes
       notify.ts                  no Electron              noticeOf, notifyTurnEnds: a desktop notification when the shown chat's turn ends while no window has focus
@@ -99,8 +100,9 @@ highwing-2.0/
 | Where Hermes runs, which screen shows, and which `Hermes` is live | `ownConnection` in `main/connection.ts`, changed only through `nextSetup` | windows read the `setup` topic and send `checkTarget`, `editTarget`, `keepTarget`, `openChat` |
 | Which turn ends were told as desktop notifications | `notifyTurnEnds` in `main/notify.ts`, one per app, keyed by session and turn id. `noticeOf` decides from two values of the shown chat | windows never notify. `main/index.ts` passes Electron's `Notification`, or a recorder when `HIGHWING_NOTIFY_LOG` is set |
 | The saved connection on disk | `main/settings.ts` | nobody. `ownConnection` gets `loaded` and `save` as arguments |
+| Bot mode or chat mode (`Mode`), and its `mode.json` | `modeStore` in `main/mode.ts`, one per app, loaded before any window is served | windows read the `mode` topic once, in `App`, and send `setMode`. `main/index.ts` waits for its save on quit |
 | A window's copy of a topic | `renderer/store.ts` in that window, written only by `applyPush` | components read with `useTopic` |
-| A chat's unsent draft | `renderer/composer/drafts.ts` in that window, kept on disk by `main/drafts.ts` | the composer reads it with `useDraft`, the chat list with `useChatDrafts`; not Hermes's state |
+| A chat's unsent draft | `renderer/composer/drafts.ts` in that window, kept on disk by `main/drafts.ts` | the composer reads it with `useDraft`, the chat list with `useChatDrafts`, and `DraftSweep` in `chats/Chats.tsx` drops one whose chat its bot's list no longer holds, in either mode; not Hermes's state |
 | The files staged for a message | the bytes: `main/attachments.ts`, under userData `attachments/`; which ones and in what order: the chat's draft | the window holds ids and names only. The hub reads the bytes through its `uploads` option when the message is sent. A launch deletes files no draft names |
 | Open rows | React state in that window | not shared; not Hermes's state |
 | The bot search text and the last refusal of a click | React state in that window's sidebar. The selected bot is derived from the `open` topic and the roster on each render | not shared; not Hermes's state |
@@ -117,7 +119,7 @@ Two windows on one session read the same actor through two IPC subscriptions. Th
 4. `packages/hermes` never imports `electron`. It takes a `Dialer` and a `Clock` instead of reaching for globals.
 5. The renderer imports `@highwing/hermes/domain`, `@highwing/thread` and `ipc-contract.ts`. It cannot import `@highwing/hermes` or `./testing`, which need Node.
 6. Main imports `@highwing/hermes`, `ipc-contract.ts`, and `@highwing/thread` for the words the thread shows. Only `main/index.ts` imports `./testing`, to honour `HIGHWING_FIXTURE` and `HIGHWING_RECORD`.
-7. `main/settings.ts`, `main/drafts.ts`, `main/attachments.ts`, `main/connection.ts` and `main/notify.ts` never import `electron`. They take the settings directory, the drafts directory, the attachments directory, the dialog and clipboard, the check, the route and the notifier as arguments.
+7. `main/settings.ts`, `main/drafts.ts`, `main/mode.ts`, `main/attachments.ts`, `main/connection.ts` and `main/notify.ts` never import `electron`. They take the settings directory, the drafts directory, the attachments directory, the dialog and clipboard, the check, the route and the notifier as arguments.
 
 Rules 2, 3 and 5 are enforced by `exports` maps and by the renderer's tsconfig having no Node types. Rules 1, 3 and 4 inside the package, and rule 7, are enforced by one ESLint `no-restricted-imports` block per folder. CI runs both.
 

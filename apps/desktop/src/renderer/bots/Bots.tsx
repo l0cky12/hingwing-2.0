@@ -1,20 +1,19 @@
 import type { Bot, BotCreated, BotDetails, BotDraft, BotId, Bots, CommandOutcome, Link, ModelMenu, OpenChat } from '@highwing/hermes/domain'
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
+import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { run, useTopic } from '../store'
 import { Avatar } from './Avatar'
 import { BotEditor, type BotEditorProps } from './BotEditor'
 import { BotForm } from './BotForm'
-import { retryOfflinePictures } from './pictures'
 import { EMPTY_DRAFT, nameProblem } from './bot-form'
 import { botIn, listOf, newBotBlock, selectedIn, UNASSIGNED } from './roster-view'
 
 const CARET_KEYS: ReadonlySet<string> = new Set(['PageUp', 'PageDown', 'End'])
 
-export function BotsSidebar() {
+export function BotsSidebar({ head }: { readonly head: ReactNode }) {
   return (
     <BotsPanel
-      bots={useTopic('bots')} open={useTopic('open')} link={useTopic('link')}
+      head={head} bots={useTopic('bots')} open={useTopic('open')} link={useTopic('link')}
       onOpen={bot => run({ do: 'open', ref: { kind: 'bot', bot } })}
       onCreate={draft => run({ do: 'createBot', draft })}
       onModels={() => run({ do: 'botModels', bot: null })}
@@ -29,6 +28,7 @@ export function BotsSidebar() {
 type EditorCalls = Pick<BotEditorProps, 'onDescribe' | 'onEdit' | 'onPickPicture' | 'onRemovePicture'>
 
 interface BotsPanelProps extends EditorCalls {
+  readonly head?: ReactNode
   readonly bots: Bots | undefined
   readonly open: OpenChat | undefined
   readonly link: Link | undefined
@@ -42,14 +42,14 @@ const Search = () => <svg {...icon}><circle cx="11" cy="11" r="7" /><path d="m20
 const Plus = () => <svg {...icon}><path d="M12 5v14M5 12h14" /></svg>
 const Close = () => <svg {...icon}><path d="M6 6l12 12M18 6 6 18" /></svg>
 const Pencil = () => <svg {...icon}><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="m13.5 6.5 4 4" /></svg>
-const Star = () => <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" /></svg>
+export const Star = () => <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" /></svg>
 
 function DetailsButton({ bot, onClick }: { readonly bot: Bot; readonly onClick: () => void }) {
   const label = `Details for ${bot.name}`
   return <button type="button" className="bot-details" aria-label={label} aria-haspopup="dialog" title={label} onClick={onClick}><Pencil /></button>
 }
 
-export function BotsPanel({ bots, open, link, onOpen, onCreate, onModels, ...editor }: BotsPanelProps) {
+export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, onOpen, onCreate, onModels, ...editor }: BotsPanelProps) {
   const [refused, setRefused] = useState<string | null>(null)
   const [form, setForm] = useState<{ readonly models: ModelMenu | 'loading' } | null>(null)
   const [made, setMade] = useState<BotCreated | null>(null)
@@ -60,10 +60,6 @@ export function BotsPanel({ bots, open, link, onOpen, onCreate, onModels, ...edi
   const selected = selectedIn(bots, open)
   const opening = open?.opening?.kind === 'bot' ? open.opening.bot : null
   const block = newBotBlock(link, bots)
-  const online = link?.state === 'online'
-  useEffect(() => {
-    if (online) retryOfflinePictures()
-  }, [online])
   const pick = async (bot: BotId) => {
     setMade(null)
     const outcome = await onOpen(bot)
@@ -105,7 +101,7 @@ export function BotsPanel({ bots, open, link, onOpen, onCreate, onModels, ...edi
         <div className="bots-head" onBlur={event => { if (query === '' && !event.currentTarget.contains(event.relatedTarget)) setQuery(null) }}>
           {query === null
             ? <>
-                <h2>Bots</h2>
+                {head}
                 <button ref={searchButton} type="button" aria-label="Search bots" title="Search bots" onClick={() => setQuery('')}><Search /></button>
                 {block === null
                   ? <button type="button" aria-label="New bot" aria-haspopup="dialog" title="New bot" onClick={openForm}><Plus /></button>

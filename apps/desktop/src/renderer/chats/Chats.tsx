@@ -1,4 +1,4 @@
-import type { Bots, CommandOutcome, ExportFormat, OpenChat, SessionId, Sidebar } from '@highwing/hermes/domain'
+import type { CommandOutcome, ExportFormat, OpenChat, SessionId, Sidebar } from '@highwing/hermes/domain'
 import { useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { chatLink } from '../../chat-link'
@@ -6,7 +6,7 @@ import { baseName } from '../chat/FilePath'
 import { menuStep, useMenu } from '../chat/menu'
 import { slotOf, sweepDrafts, useChatDrafts } from '../composer/drafts'
 import { run, useTopic } from '../store'
-import { botNameOf, CHATS, chatsOf, DRAFT, type ChatRow } from './chat-list'
+import { chatsOf, DRAFT, type ChatRow } from './chat-list'
 
 const TICK_MS = 30_000
 const SAVED_MS = 5_000
@@ -22,16 +22,19 @@ function useNow(): number {
   return now
 }
 
-export function ChatsSidebar() {
+export function DraftSweep() {
   const sidebar = useTopic('sidebar')
-  const open = useTopic('open')
+  const shown = useTopic('open')?.shown ?? null
   const drafts = useChatDrafts()
-  const shown = open?.shown ?? null
   const openKey = shown === null ? null : slotOf(shown).key
   useEffect(() => sweepDrafts(sidebar, openKey), [sidebar, openKey, drafts])
+  return null
+}
+
+export function ChatsSidebar({ head }: { readonly head: ReactNode }) {
   return (
     <ChatsPanel
-      sidebar={sidebar} open={open} bots={useTopic('bots')} now={useNow()} drafts={drafts} live={useTopic('link')?.state === 'online'}
+      head={head} sidebar={useTopic('sidebar')} open={useTopic('open')} now={useNow()} drafts={useChatDrafts()} live={useTopic('link')?.state === 'online'}
       onOpen={sessionId => void run({ do: 'open', ref: { kind: 'chat', sessionId } })}
       onRename={(sessionId, title) => run({ do: 'rename', sessionId, title })}
       onExport={(sessionId, format) => run({ do: 'export', sessionId, format })}
@@ -46,15 +49,15 @@ interface RowActions {
 }
 
 interface ChatsPanelProps extends RowActions {
+  readonly head: ReactNode
   readonly sidebar: Sidebar | undefined
   readonly open: OpenChat | undefined
-  readonly bots: Bots | undefined
   readonly now: number
   readonly drafts: ReadonlySet<SessionId>
   readonly live: boolean
 }
 
-export function ChatsPanel({ sidebar, open, bots, now, drafts, live, ...actions }: ChatsPanelProps) {
+export function ChatsPanel({ head, sidebar, open, now, drafts, live, ...actions }: ChatsPanelProps) {
   const ids = useId()
   const view = chatsOf(sidebar, open, now, drafts)
   const [said, setSaid] = useState<{ readonly words: string } | null>(null)
@@ -65,7 +68,7 @@ export function ChatsPanel({ sidebar, open, bots, now, drafts, live, ...actions 
   }, [said])
   return (
     <nav className="chats" aria-label="Chats">
-      <div className="chats-head"><h2>{botNameOf(bots, open?.shown?.bot ?? null) ?? CHATS}</h2></div>
+      <div className="chats-head">{head}</div>
       <div className="chats-list" aria-busy={view.show === 'loading' || undefined}>
         {view.show === 'note' && <p className="chats-note" role="status">{view.words}</p>}
         {view.show === 'rows' && view.rows.map((row, at) => (

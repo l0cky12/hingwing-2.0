@@ -93,7 +93,7 @@ describe('the chat list', () => {
   const render = (sidebar: Sidebar | undefined, open: OpenChat | undefined, drafts = NO_DRAFTS, live = true) =>
     renderToStaticMarkup(
       <ChatsPanel
-        sidebar={sidebar} open={open} bots={APPROVED} now={NOW} drafts={drafts} live={live} onOpen={() => {}}
+        head={<h2>Chats</h2>} sidebar={sidebar} open={open} now={NOW} drafts={drafts} live={live} onOpen={() => {}}
         onRename={async () => ({ ok: true, value: undefined })} onExport={async () => ({ ok: true, value: null })}
       />
     )
@@ -101,10 +101,9 @@ describe('the chat list', () => {
   const buttons = (markup: string) => (markup.match(/<button[^>]*>/g) ?? []).filter(tag => tag.includes('class="chat-row"'))
   const mores = (markup: string) => (markup.match(/<button[^>]*>/g) ?? []).filter(tag => attr(tag, 'aria-haspopup') === 'menu')
 
-  it('is a landmark named Chats, headed by the open bot, with one button per chat named by its title', () => {
+  it('is a landmark named Chats, with one button per chat named by its title', () => {
     const markup = render(listing(RESEARCH), showing(RESEARCH))
     expect(attr(markup.match(/<nav[^>]*>/)![0], 'aria-label')).toBe('Chats')
-    expect(markup).toContain('<h2>Research</h2>')
     expect(buttons(markup).map(tag => attr(tag, 'aria-label'))).toEqual(['Send invoice reminder', 'Sort the invoices', 'Untitled chat', 'Clean up Downloads'])
     expect(buttons(markup).filter(tag => attr(tag, 'aria-current') !== undefined).map(tag => attr(tag, 'aria-label'))).toEqual(['Sort the invoices'])
   })
@@ -124,8 +123,8 @@ describe('the chat list', () => {
     expect(shown).toEqual([['Draft'], ['Working'], ['Here.']])
   })
 
-  it('is headed Chats when the open chat has no bot, says when there are none, and is busy while it loads', () => {
-    expect(render(listing(null, []), showing(null))).toMatch(/<h2>Chats<\/h2>.*No chats yet\./s)
+  it('says when there are no chats, and is busy while it loads', () => {
+    expect(render(listing(null, []), showing(null))).toContain('No chats yet.')
     expect(render(undefined, showing(RESEARCH))).toMatch(/aria-busy="true"/)
     expect(buttons(render(listing(null), showing(RESEARCH)))).toEqual([])
   })

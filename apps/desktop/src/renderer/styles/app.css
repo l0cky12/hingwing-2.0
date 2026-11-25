@@ -714,15 +714,22 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   :root { --graphite: #434E4A; --rule: #79857E; }
 }
 
-.window { display: grid; grid-template-columns: 288px 248px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; }
+.window { display: grid; grid-template-columns: 288px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; }
 .window[hidden] { display: none; }
 :root { --bots-hover: color-mix(in srgb, var(--sheet) 55%, var(--paper)); --avatar-slate: #3E5C7A; --avatar-plum: #5A4E7C; --avatar-olive: #5B6A34; --avatar-mauve: #7A4A5A; --avatar-umber: #6E5640; }
 .bots { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--rule); background: var(--paper); }
 .bots button { border: 0; background: none; text-align: left; color: inherit; }
 .bots-head { display: flex; align-items: center; gap: 4px; min-height: 56px; padding: 12px 12px 12px 20px; border-bottom: 1px solid var(--rule); }
-.bots-head h2 { margin: 0 auto 0 0; font-size: 14px; font-weight: 700; }
-.bots-head button { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 6px; color: var(--graphite); }
-.bots-head button:hover { background: var(--sheet); color: var(--ink); }
+.mode { position: relative; margin: 0 auto 0 0; }
+.mode h2 { margin: 0; font-size: 14px; font-weight: 700; }
+.mode-switch { display: inline-flex; align-items: center; gap: 4px; margin-left: -6px; padding: 3px 6px; border: 0; border-radius: 6px; background: none; color: var(--ink); }
+.mode-switch svg { color: var(--graphite); }
+.mode-switch:hover, .mode-switch[aria-expanded="true"] { background: var(--sheet); }
+.mode-menu { left: -6px; right: auto; }
+.mode-menu button { display: flex; align-items: center; gap: 6px; padding-left: 6px; color: var(--ink); }
+.mode-check { display: grid; place-items: center; width: 14px; height: 14px; }
+.bots-head > button { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 6px; color: var(--graphite); }
+.bots-head > button:hover { background: var(--sheet); color: var(--ink); }
 .bots-head input { flex: 1; min-width: 0; height: 30px; padding: 0 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); font: inherit; color: var(--ink); }
 .bots-head input::placeholder { color: var(--graphite); }
 .bots-head input:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
@@ -774,8 +781,21 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .bots-head button[aria-disabled="true"] { opacity: .45; cursor: default; }
 .bots-head button[aria-disabled="true"]:hover { background: none; color: var(--graphite); }
 .chats { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--rule); background: var(--paper); }
-.chats-head { display: flex; align-items: center; min-height: 56px; padding: 12px 12px 12px 20px; border-bottom: 1px solid var(--rule); }
-.chats-head h2 { margin: 0; font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chats-head { display: flex; flex-wrap: wrap; align-items: center; min-height: 56px; padding: 12px 12px 12px 20px; border-bottom: 1px solid var(--rule); }
+.bot-pick { position: relative; }
+.bot-pick-button { display: inline-flex; align-items: center; gap: 6px; margin-right: -6px; padding: 3px 6px; border: 0; border-radius: 6px; background: none; color: var(--ink); font-size: 13px; }
+.bot-pick-button > svg { flex: none; color: var(--graphite); }
+.bot-pick-button:hover, .bot-pick-button[aria-expanded="true"] { background: var(--sheet); }
+.bot-pick-button[aria-disabled="true"] { opacity: .45; cursor: default; }
+.bot-pick-button[aria-disabled="true"]:hover { background: none; }
+.bot-pick-button { --name-room-beside-mode-switch: 120px; }
+.bot-pick-button > .bot-pick-name { max-width: var(--name-room-beside-mode-switch); }
+.bot-pick-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bot-pick-menu { width: 240px; max-height: min(420px, 100vh - 80px); overflow-y: auto; }
+.bot-pick-menu button { display: flex; align-items: center; gap: 6px; width: 100%; padding-left: 6px; color: var(--ink); }
+.bot-pick-section { margin: 8px 10px 2px 26px; font-size: 12px; font-weight: 500; color: var(--graphite); }
+.bot-pick-star { display: grid; margin-left: auto; color: var(--graphite); }
+.bot-pick-err { flex-basis: 100%; margin: 6px 0 0; font-size: 13px; }
 .chats-list { flex: 1; overflow-y: auto; padding: 8px 0 16px 8px; scrollbar-width: thin; scrollbar-gutter: stable; scrollbar-color: #78857E transparent; }
 .chat-row { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 12px; border: 0; border-radius: 6px; background: none; text-align: left; color: inherit; }
 .chat-row:hover:not([aria-current]) { background: var(--bots-hover); }
@@ -805,15 +825,10 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .chat-row[aria-current]:focus-visible { border-left-width: 5px; padding-left: 7px; }
   .chat-name:focus { outline: 2px solid Highlight; }
 }
-/* The bots, the chats, and the narrowest chat its compact layout fits. Below that the chats column goes first. */
-@media (max-width: 927px) {
-  .window { grid-template-columns: 288px minmax(0, 1fr); }
-  .chats { display: none; }
-}
 /* 288 px of sidebar plus the narrowest chat its compact layout fits. Below that the chat keeps the whole window. */
 @media (max-width: 679px) {
   .window { grid-template-columns: minmax(0, 1fr); }
-  .bots { display: none; }
+  .bots, .chats { display: none; }
 }
 @media (forced-colors: active) {
   .pic-slot, .pic-failed { border: 1px solid CanvasText; }
@@ -821,7 +836,6 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 }
 /* The pane beside the chat. Main draws the page itself over .preview-page, so this box only holds what shows when there is no page. */
 .window[data-preview] { grid-template-columns: 288px minmax(0, 1fr) minmax(0, 1fr); }
-.window[data-preview] .chats { display: none; }
 .preview { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--rule); background: var(--paper); }
 .preview-head { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 12px 12px 12px 20px; border-bottom: 1px solid var(--rule); }
 .preview-head h2 { flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

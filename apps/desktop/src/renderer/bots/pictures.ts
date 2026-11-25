@@ -56,6 +56,12 @@ export function retryOfflinePictures(): void {
   if (offline.length > 0) changed()
 }
 
+export function useRetryPicturesOnceOnline(online: boolean): void {
+  useEffect(() => {
+    if (online) retryOfflinePictures()
+  }, [online])
+}
+
 export function usePicture(bot: BotId | null): string | null {
   const key = `${useContext(Epoch)} ${bot}`
   useSyncExternalStore(subscribe, snapshot, snapshot)
