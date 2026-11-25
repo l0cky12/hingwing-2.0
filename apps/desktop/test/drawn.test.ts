@@ -16,7 +16,7 @@ const session = (history: readonly SettledTurn[]): Session => ({
 })
 
 const goal: Item<'settled'> = { kind: 'status', what: 'line', about: 'goal', text: 'Goal met.' }
-const closed: Item<'settled'> = { kind: 'notice', what: 'closed', requestId: 'srq-1' as RequestId, asked: 'sudo', end: 'answered' }
+const closed: Item<'settled'> = { kind: 'notice', what: 'closed', requestId: 'srq-1' as RequestId, asked: 'code', end: 'elsewhere' }
 const steer: Item<'settled'> = { kind: 'steer', text: 'use trash-put instead' }
 
 describe('the view the window draws', () => {
