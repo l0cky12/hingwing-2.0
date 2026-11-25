@@ -10,9 +10,8 @@ const ROSTER = listed(
   fact('rae', 'Rae'), fact('juno', 'Juno'), fact('otto', 'Otto'), fact('mia', 'Mia'), fact('kit', 'Kit')
 )
 const OFFERED: readonly Bot[] = ROSTER.state === 'listed' ? botsIn(ROSTER.roster) : []
-const ORDER = OFFERED.map(bot => bot.id)
 const DIALOG = '0f7c2a52-6a5f-4a0b-9d0e-6a3a4f1f2c11'
-const tick = (...bots: string[]): GroupFormEvent[] => bots.map(bot => ({ on: 'toggled', bot: bot as BotId, order: ORDER }))
+const tick = (...bots: string[]): GroupFormEvent[] => bots.map(bot => ({ on: 'toggled', bot: bot as BotId }))
 const after = (...events: GroupFormEvent[]) => events.reduce(nextGroupForm, startGroupForm(DIALOG))
 const viewAfter = (...events: GroupFormEvent[]) => groupFormOf(after(...events), OFFERED)
 const named: GroupFormEvent = { on: 'named', name: ' Launch plan ' }

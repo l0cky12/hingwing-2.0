@@ -1,7 +1,6 @@
 /**
  * Group chats: Hermes's hosted rooms, where 2 to 6 bots answer one conversation. Plain JSON data and pure functions,
- * like `session.ts`, because `Groups` crosses Electron IPC. The desk and its news, at the end, belong to the hub alone
- * and are not exported from `index.ts`.
+ * like `session.ts`, because `Groups` crosses Electron IPC.
  */
 import type { Bot, BotId } from './bots'
 
@@ -17,7 +16,7 @@ export const GROUP_SIZE = { min: 2, max: 6 } as const
 /** `MAX_ROOM_NAME_CHARS` (gateway/hosted_rooms.py:37). */
 export const GROUP_NAME_MAX = 200
 
-/** `IDENTIFIER_RE` and its 128-character cap (gateway/hosted_rooms_common.py:19), which Hermes holds a room id and a handle to. */
+/** `IDENTIFIER_RE` and its 128-character cap (gateway/hosted_rooms_common.py:19 and :23), which Hermes holds a room id and a handle to. */
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 
 export const isGroupId = (raw: unknown): raw is GroupId => typeof raw === 'string' && IDENTIFIER.test(raw)
@@ -27,7 +26,7 @@ export const isGroupId = (raw: unknown): raw is GroupId => typeof raw === 'strin
  * the creates Hermes refused. So a create whose answer was lost goes out again under the same id, which Hermes
  * answers with the group the first one made, and an id Hermes refused is never sent again.
  */
-export const groupIdFor = (dialog: string, tries: number): GroupId => (tries === 0 ? dialog : `${dialog}-${tries}`) as GroupId
+export const groupIdFor = (seed: string, refusals: number): GroupId => (refusals === 0 ? seed : `${seed}-${refusals}`) as GroupId
 
 /** One bot's seat in a group. Frozen when the group is made. */
 export interface GroupMember {
@@ -69,7 +68,6 @@ export function seatsFor(picked: readonly Pick<Bot, 'id' | 'name'>[]): readonly 
   })
 }
 
-/** One row of the sidebar's Group chats section. */
 export interface GroupRow {
   readonly id: GroupId
   readonly name: string
@@ -77,7 +75,6 @@ export interface GroupRow {
   readonly members: readonly GroupMember[]
 }
 
-/** What Highwing knows about this Hermes's group chats. Exactly one of these at a time, as `Bots` is. The `groups` topic. */
 export type Groups =
   /** Asked, or about to ask. */
   | { readonly state: 'loading' }
@@ -97,21 +94,16 @@ export type Groups =
       readonly rows: readonly GroupRow[]
     }
 
-/** What `groups.capabilities` said, or how it was refused. */
 export type GroupSupport =
   | { readonly is: 'unknown' }
   | { readonly is: 'unsupported' }
   | { readonly is: 'refused' }
   | { readonly is: 'able'; readonly driver: boolean; readonly seatable: readonly BotId[] | null }
 
-/** The one record of this Hermes's group chats. Owned by `groupBook`, changed only by `nextGroups`, read by `groupsOf`. */
 export interface GroupDesk {
-  /** The link went down before Hermes answered. Until a first dial fails, a desk with no answer is loading. */
   readonly offline: boolean
   readonly support: GroupSupport
-  /** Hermes's order, most recently changed first. null: no list has answered yet. */
   readonly listed: readonly GroupId[] | null
-  /** Every group a list or a create named, by id. */
   readonly held: { readonly [group: string]: GroupRow }
 }
 
@@ -119,23 +111,18 @@ export const EMPTY_GROUPS: GroupDesk = { offline: false, support: { is: 'unknown
 
 export type GroupNews =
   | { readonly on: 'link'; readonly offline: boolean }
-  /** `groups.capabilities` answered, or was refused. */
   | { readonly on: 'support'; readonly support: Exclude<GroupSupport, { readonly is: 'unknown' }> }
-  /** `groups.list` answered with every group. A group it leaves out is dropped. */
   | { readonly on: 'listed'; readonly groups: readonly GroupRow[] }
-  /** `groups.create` answered. The group goes to the top of the list at once. */
   | { readonly on: 'made'; readonly group: GroupRow }
 
-/**
- * Every change to what Highwing knows about group chats. Pure, and the same news twice is the same as once. A
- * refusal never hides a list Hermes gave, as a refused roster keeps its bots.
- */
+const refusalKeepsList = (desk: GroupDesk, support: GroupSupport) => support.is === 'refused' && desk.listed !== null
+
 export function nextGroups(desk: GroupDesk, news: GroupNews): GroupDesk {
   switch (news.on) {
     case 'link':
       return { ...desk, offline: news.offline }
     case 'support':
-      return news.support.is === 'refused' && desk.listed !== null ? desk : { ...desk, support: news.support }
+      return refusalKeepsList(desk, news.support) ? desk : { ...desk, support: news.support }
     case 'listed':
       return { ...desk, listed: news.groups.map(group => group.id), held: Object.fromEntries(news.groups.map(group => [group.id, group])) }
     case 'made':
@@ -146,7 +133,6 @@ export function nextGroups(desk: GroupDesk, news: GroupNews): GroupDesk {
 const LOADING: Groups = { state: 'loading' }
 const OFFLINE: Groups = { state: 'offline' }
 
-/** The `groups` topic's value. `listed` needs both an able Hermes and a list. */
 export function groupsOf({ offline, support, listed, held }: GroupDesk): Groups {
   if (support.is === 'unsupported' || support.is === 'refused') return { state: support.is }
   if (support.is === 'unknown' || listed === null) return offline ? OFFLINE : LOADING

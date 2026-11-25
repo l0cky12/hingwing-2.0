@@ -20,7 +20,7 @@ const attr = (tag: string, name: string) => {
 
 describe('the plus menu', () => {
   it('starts a new chat with the open bot, then a group chat, then, under a rule, a bot', () => {
-    expect(plusMenuOf(scene()).map(item => [item.label, item.keys?.shown ?? null, item.block, item.ruled])).toEqual([
+    expect(plusMenuOf(scene()).map(item => [item.label, item.keys?.shown ?? null, item.block, item.dividerAbove])).toEqual([
       ['New chat with Emu', 'Ctrl+N', null, false],
       ['New group chat…', null, null, false],
       ['New bot…', null, null, true]

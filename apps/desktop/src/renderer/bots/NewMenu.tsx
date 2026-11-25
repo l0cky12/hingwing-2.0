@@ -10,7 +10,6 @@ const ICONS: { readonly [I in PlusItem['id']]: ReactNode } = {
   'new-bot': <svg {...icon}><rect x="5" y="8" width="14" height="11" rx="3" /><path d="M12 8V5M9.5 13h.01M14.5 13h.01" /></svg>
 }
 
-/** The plus in the Bots column's header and its menu. A blocked row stays focusable and says why it does nothing, as New bot did on its own. */
 export function NewMenu({ items, onPick }: { readonly items: readonly PlusItem[]; readonly onPick: (id: PlusItem['id']) => void }) {
   const { open, setOpen, holder, toggle, onKeyDown } = useMenu<HTMLDivElement, HTMLButtonElement>()
   const menu = useRef<HTMLDivElement>(null)
@@ -50,11 +49,10 @@ export function NewMenu({ items, onPick }: { readonly items: readonly PlusItem[]
   )
 }
 
-/** The rows of the open menu. A blocked row's reason is its description, kept out of its name. */
 export function PlusItems({ items, idPrefix, onPick }: { readonly items: readonly PlusItem[]; readonly idPrefix: string; readonly onPick: (item: PlusItem) => void }) {
   return items.map(item => (
     <Fragment key={item.id}>
-      {item.ruled && <hr />}
+      {item.dividerAbove && <hr />}
       <button
         type="button" role="menuitem" aria-keyshortcuts={item.keys?.aria} title={item.block ?? undefined}
         aria-disabled={item.block !== null || undefined} aria-describedby={item.block === null ? undefined : `${idPrefix}-${item.id}`}

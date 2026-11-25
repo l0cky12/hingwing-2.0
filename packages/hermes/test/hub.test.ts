@@ -1445,7 +1445,7 @@ describe('group chats', () => {
     expect(creates(opened)).toHaveLength(2)
 
     expect(await opened.hermes.run({ do: 'createGroup', draft: draft(['default', 'sam'], { name: 'Release' }) })).toEqual({
-      ok: false, refusal: { kind: 'conflict', message: "Hermes didn't accept this group chat. Try again." }
+      ok: false, refusal: { kind: 'rejected', message: "Hermes didn't accept this group chat. Try again." }
     })
     await opened.clock.advance(0)
     expect(rows(opened)).toEqual([['Launch plan', 'ada sam']])

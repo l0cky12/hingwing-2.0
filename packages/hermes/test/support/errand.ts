@@ -32,9 +32,7 @@ export const TEAM: Fixture = { ...TEAM_NO_RELAY, header: { ...TEAM_NO_RELAY.head
 export const RAE_SAID = (RELAY.rae as { reply: string }).reply
 
 const { groups: GROUPS, ...LAUNCH_PROFILES } = JSON.parse(readFileSync(fileURLToPath(new URL('../../../../fixtures/profiles/launch.json', import.meta.url)), 'utf8')) as { groups: GroupsScript }
-/** Ada, the default bot, with Sam, Rae, Juno, Otto, Mia and Kit, on a Hermes with no group chats. */
 export const LAUNCH_NO_GROUPS: Fixture = { ...ERRAND, header: { ...ERRAND.header, profiles: LAUNCH_PROFILES } }
-/** The same seven on a Hermes that has group chats, before any is made. */
 export const LAUNCH: Fixture = { ...LAUNCH_NO_GROUPS, header: { ...LAUNCH_NO_GROUPS.header, groups: GROUPS } }
 export const withGroups = (groups: GroupsScript): Fixture => ({ ...LAUNCH, header: { ...LAUNCH.header, groups } })
 

@@ -4,7 +4,6 @@ import { Avatar } from '../bots/Avatar'
 import { groupFormOf, nextGroupForm, startGroupForm } from './group-form'
 
 interface GroupFormProps {
-  /** The bots Hermes would seat, in the roster's order. */
   readonly offered: readonly Bot[]
   readonly onCreate: (draft: GroupDraft) => Promise<CommandOutcome>
   readonly onClose: () => void
@@ -13,7 +12,6 @@ interface GroupFormProps {
 const Search = () => <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
 const Tick = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3.5}><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
 
-/** New group chat. It closes itself once Hermes makes the group, and the row arrives by the `groups` topic, as a new bot's does by `bots`. */
 export function GroupForm({ offered, onCreate, onClose }: GroupFormProps) {
   const [state, dispatch] = useReducer(nextGroupForm, null, () => startGroupForm(crypto.randomUUID()))
   const dialog = useRef<HTMLDialogElement>(null)
@@ -26,7 +24,6 @@ export function GroupForm({ offered, onCreate, onClose }: GroupFormProps) {
 
   const view = groupFormOf(state, offered)
   const sending = state.send.at === 'sending'
-  const order = offered.map(bot => bot.id)
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     const { draft } = view
@@ -64,15 +61,14 @@ export function GroupForm({ offered, onCreate, onClose }: GroupFormProps) {
           </div>
           <ul className="pick-list" aria-labelledby={`${ids}-bots`}>
             {view.rows.map(({ bot, picked, locked }) => {
-              // A profile name may hold a space, which would split an id list, so the ids come from the bot's place.
-              const at = `${ids}-${order.indexOf(bot.id)}`
+              const at = `${ids}-${bot.id}`
               return (
                 <li key={bot.id}>
                   <label>
                     <input
                       type="checkbox" checked={picked} disabled={locked || sending} aria-labelledby={`${at}-name`}
                       aria-describedby={bot.description === null ? undefined : `${at}-about`}
-                      onChange={() => dispatch({ on: 'toggled', bot: bot.id, order })}
+                      onChange={() => dispatch({ on: 'toggled', bot: bot.id })}
                     />
                     <Avatar bot={bot} size={28} />
                     <span className="bot-text">

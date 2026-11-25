@@ -3,7 +3,6 @@ import { botNameOf } from '../chats/chat-list'
 import { newChatKeys } from '../new-chat'
 import { NEW_BOT_BLOCKS, newBotBlock, NOTES } from './roster-view'
 
-/** One line for every state of `groups` in which Highwing cannot make a group, as `NEW_BOT_BLOCKS` is for a bot. */
 export const NEW_GROUP_BLOCKS: { readonly [S in Exclude<Groups['state'], 'listed'>]: string } = {
   loading: 'Highwing is still asking this Hermes about group chats.',
   offline: "Highwing isn't connected to Hermes right now.",
@@ -13,7 +12,6 @@ export const NEW_GROUP_BLOCKS: { readonly [S in Exclude<Groups['state'], 'listed
 const ROSTER_BLOCKS: { readonly [S in Exclude<Bots['state'], 'listed'>]: string } = { ...NOTES, loading: NEW_BOT_BLOCKS.loading }
 export const TOO_FEW = `A group chat needs at least ${GROUP_SIZE.min} bots.`
 
-/** The bots the dialog offers: the roster's, in its order, that Hermes would seat. All of them when Hermes does not say. */
 export function seatableIn(bots: Bots | undefined, groups: Groups | undefined): readonly Bot[] {
   if (bots?.state !== 'listed' || groups?.state !== 'listed') return []
   const { seatable } = groups
@@ -38,8 +36,7 @@ export interface PlusItem {
   readonly label: string
   readonly keys: ReturnType<typeof newChatKeys> | null
   readonly block: string | null
-  /** A rule above this row. */
-  readonly ruled: boolean
+  readonly dividerAbove: boolean
 }
 
 export interface PlusScene {
@@ -50,12 +47,11 @@ export interface PlusScene {
   readonly mac: boolean
 }
 
-/** The menu under the sidebar's plus button, top to bottom. */
 export function plusMenuOf({ link, bots, groups, open, mac }: PlusScene): readonly PlusItem[] {
   const bot = botNameOf(bots, open?.shown?.bot ?? null)
   return [
-    { id: 'new-chat', label: bot === null ? 'New chat' : `New chat with ${bot}`, keys: newChatKeys(mac), block: null, ruled: false },
-    { id: 'new-group', label: 'New group chat…', keys: null, block: newGroupBlock(link, bots, groups), ruled: false },
-    { id: 'new-bot', label: 'New bot…', keys: null, block: newBotBlock(link, bots), ruled: true }
+    { id: 'new-chat', label: bot === null ? 'New chat' : `New chat with ${bot}`, keys: newChatKeys(mac), block: null, dividerAbove: false },
+    { id: 'new-group', label: 'New group chat…', keys: null, block: newGroupBlock(link, bots, groups), dividerAbove: false },
+    { id: 'new-bot', label: 'New bot…', keys: null, block: newBotBlock(link, bots), dividerAbove: true }
   ]
 }

@@ -17,8 +17,8 @@ export interface GroupWire {
   call<M extends GroupMethod>(method: M, params: Served[M]['params'], timeoutMs?: number): Promise<Served[M]['result']>
 }
 
-/** Hermes reads every bot it could seat for `groups.capabilities`, so a slow disk can stall it. */
-const READ_TIMEOUT_MS = 10_000
+/** Hermes reads every bot it could seat for `groups.capabilities` and `groups.create`, so a slow disk can stall either. */
+const CALL_TIMEOUT_MS = 10_000
 
 const DONE: Outcome = { ok: true, value: undefined }
 const NO_GROUPS: Refusal = { kind: 'unsupported', message: 'This Hermes has no group chats. Update Hermes on that machine, then reconnect.' }
@@ -29,8 +29,7 @@ const GONE_BOT: Outcome<never> = { ok: false, refusal: { kind: 'rejected', field
 const CREATE_REASONS = new Map<string | null, (error: RpcRefusal) => Refusal>([
   ['invalid_params', ({ field, detail }) => field === 'members'
     ? { kind: 'rejected', field: 'members', message: detail === null ? "Hermes can't seat these bots." : `Hermes can't seat these bots: ${detail}` }
-    // An id Hermes holds for another group, or once held for a disbanded one. The dialog's next try is under a new id.
-    : { kind: 'conflict', message: "Hermes didn't accept this group chat. Try again." }],
+    : { kind: 'rejected', message: detail === null ? "Hermes didn't accept this group chat. Try again." : `Hermes didn't accept this group chat: ${detail}` }],
   ['permission_denied', () => NOT_ALLOWED],
   ['profile_mismatch', () => NOT_ALLOWED]
 ])
@@ -44,25 +43,11 @@ function refusedCreate(error: unknown): Outcome<never> {
 export interface GroupBook {
   readonly groups: Groups
   linked(state: Link['state']): void
-  /**
-   * Asks what this Hermes can do with groups, then for its list. For a new socket: whatever the last one said, this
-   * Hermes may know more. One ask is in flight at a time, and asking during it runs one more after it.
-   */
   ask(): void
-  /** Sessions changed, and so may the bots Hermes would seat or the groups another client made. Asks again, except of a Hermes with no group chats. */
   refresh(): void
-  /**
-   * Makes the group and lists it at once. `roster` is the bots Highwing lists now, which name the seats. Hermes is
-   * asked again after any try, because a create whose answer was lost may have made the group.
-   */
   create(draft: GroupDraft, roster: readonly Bot[]): Promise<Outcome>
 }
 
-/**
- * The one owner of what Highwing knows about group chats, for the hub's lifetime. It holds one `GroupDesk`, changes it
- * only through `nextGroups`, and makes every `groups.*` call. `changed` runs after every change of `groups`, and never
- * for an answer that changed nothing.
- */
 export function groupBook(conn: GroupWire, changed: () => void): GroupBook {
   let desk = EMPTY_GROUPS
   let groups = groupsOf(desk)
@@ -80,8 +65,8 @@ export function groupBook(conn: GroupWire, changed: () => void): GroupBook {
   const fetch = async () => {
     asking = true
     try {
-      take({ on: 'support', support: parseGroupSupport(await conn.call('groups.capabilities', {}, READ_TIMEOUT_MS)) })
-      take({ on: 'listed', groups: parseGroupList(await conn.call('groups.list', {}, READ_TIMEOUT_MS)) })
+      take({ on: 'support', support: parseGroupSupport(await conn.call('groups.capabilities', {}, CALL_TIMEOUT_MS)) })
+      take({ on: 'listed', groups: parseGroupList(await conn.call('groups.list', {}, CALL_TIMEOUT_MS)) })
     } catch (error) {
       if (error instanceof RpcRefusal) take({ on: 'support', support: { is: error.code === METHOD_NOT_FOUND ? 'unsupported' : 'refused' } })
       else if (!(error instanceof Offline)) throw error
@@ -114,7 +99,7 @@ export function groupBook(conn: GroupWire, changed: () => void): GroupBook {
       if (picked.length !== draft.bots.length) return GONE_BOT
       const members = seatsFor(picked).map(({ id, bot, handle }) => ({ member_id: id, profile: bot, handle }))
       try {
-        const made = parseGroupMade(await conn.call('groups.create', { room_id: draft.group, name: draft.name, members }))
+        const made = parseGroupMade(await conn.call('groups.create', { room_id: draft.group, name: draft.name, members }, CALL_TIMEOUT_MS))
         if (made !== null) take({ on: 'made', group: made })
         return DONE
       } catch (error) {
