@@ -101,9 +101,7 @@ const STEPS = {
     arity: 2,
     logs: true,
     run: async (ctx, label, text) => {
-      const field = ctx.page.getByLabel(label, { exact: true })
-      const secret = (await field.getAttribute('type', { timeout: ctx.timeout })) === 'password'
-      log(ctx, `type ${JSON.stringify(label)} ${secret ? '"•••"' : JSON.stringify(text)}`)
+      const field = await secretField(ctx, 'type', label, text)
       await field.fill(expand(ctx, text), { timeout: ctx.timeout })
     }
   },
@@ -224,10 +222,13 @@ const STEPS = {
   },
   value: {
     arity: 2,
+    logs: true,
     run: async (ctx, label, text) => {
+      const field = await secretField(ctx, 'value', label, text)
       await rendered(ctx.page)
-      const held = await ctx.page.getByLabel(label, { exact: true }).inputValue({ timeout: ctx.timeout })
-      if (held !== text) throw new Error(`"${label}" holds ${JSON.stringify(held)}, not ${JSON.stringify(text)}`)
+      const held = await field.inputValue({ timeout: ctx.timeout })
+      if (held === text) return
+      throw new Error(ctx.secretLabels.has(label) ? `"${label}" does not hold the expected value` : `"${label}" holds ${JSON.stringify(held)}, not ${JSON.stringify(text)}`)
     }
   },
   focused: {
@@ -586,10 +587,24 @@ function requestText(fixturePath) {
   fail(`${fixturePath} has no prompt.submit step, so @request means nothing`)
 }
 
+const MASK = '•••'
 const expand = (ctx, text) => (text === '@request' ? requestText(ctx.fixture ?? fail('@request needs --fixture')) : text)
 
+/** Logs the step. For a password field, remembers its text so that no log line or snapshot can hold it. */
+async function secretField(ctx, verb, label, text) {
+  const field = ctx.page.getByLabel(label, { exact: true })
+  if ((await field.getAttribute('type', { timeout: ctx.timeout })) === 'password') {
+    ctx.secretLabels.add(label)
+    if (text !== '') ctx.secrets.add(text)
+  }
+  log(ctx, `${verb} ${JSON.stringify(label)} ${JSON.stringify(text)}`)
+  return field
+}
+
+const masked = (ctx, text) => [...ctx.secrets].reduce((out, secret) => out.split(secret).join(MASK), text)
+
 function log(ctx, line) {
-  const stamped = `${new Date().toISOString()} ${line}`
+  const stamped = `${new Date().toISOString()} ${masked(ctx, line)}`
   console.log(stamped)
   appendFileSync(join(ctx.evidence, 'steps.log'), `${stamped}\n`)
 }
@@ -687,7 +702,9 @@ async function shoot(ctx, name) {
   await ctx.page.mouse.move(0, 0)
   await ctx.page.screenshot({ path, animations: 'disabled', caret: 'hide', ...(ctx.clip && { clip: ctx.clip }) })
   await drawPreview(ctx, path)
-  writeFileSync(join(ctx.evidence, `${name}.aria.txt`), await ctx.page.locator('body').ariaSnapshot())
+  const typed = await ctx.page.locator('input[type=password]').evaluateAll(fields => fields.map(field => field.value).filter(value => value !== ''))
+  for (const value of typed) ctx.secrets.add(value)
+  writeFileSync(join(ctx.evidence, `${name}.aria.txt`), masked(ctx, await ctx.page.locator('body').ariaSnapshot()))
   const size = pngSize(path)
   if (size.width !== ctx.size.width || size.height !== ctx.size.height) throw new Error(`${name}.png is ${size.width}x${size.height}, not ${ctx.size.width}x${ctx.size.height}`)
   if (ctx.holding && !(await STATES[ctx.holding](ctx.page).isVisible())) {
@@ -903,7 +920,7 @@ async function run(argv) {
   const calls = join(evidence, 'gateway-calls.jsonl')
   rmSync(calls, { force: true })
   const userData = join(scratch, 'user-data')
-  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [] }
+  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set() }
   const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
   const saved = SAVED[options.saved ?? 'none']

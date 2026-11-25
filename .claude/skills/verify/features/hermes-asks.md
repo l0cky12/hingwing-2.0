@@ -23,7 +23,7 @@ Hermes can ask the people watching a chat for a sudo password, a secret, a one-t
 Preconditions:
 
 - `fixtures/asks.jsonl`, sent with `@request`.
-- The test password is `hunter2`. A `type` step into a password field logs `"•••"`, and `gateway-calls.jsonl` writes the value as `•••`, so no evidence file holds it.
+- The test password is `hunter2`. The helper writes it as `•••` in `steps.log` and in each `.aria.txt`, and `gateway-calls.jsonl` writes the value as `•••`. So no evidence file holds it, even for a shot taken while the field is filled.
 - The card's **Send** shares its name with the composer's, so press it with `click-at button Send 1`. The card comes first in the page.
 
 - **Left open.** Run `$H run --fixture fixtures/asks.jsonl --run asks-waiting wait live type "Message Hermes" @request click button Send wait tool-running shot waiting answered sudo '{}' 0 quiet`. `waiting.aria.txt` ends with `text: Running` and `code: sudo apt-get install -y jq`, then `group "Hermes needs your sudo password"` holding the command, `Hermes waits until <time>.`, `textbox "Password"`, `button "Skip"` and a disabled `button "Send"`. The story stops here: it waits for the window's answer.
