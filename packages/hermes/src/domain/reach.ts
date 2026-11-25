@@ -75,18 +75,24 @@ export const URL_PROBLEMS: Readonly<Record<UrlProblem, { readonly words: string;
   }
 }
 
-const SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i
+const SCHEME = /^[a-z][a-z0-9+.-]*:(?!\d)/i
+const UNRESERVED = /[A-Za-z0-9._~-]/
 const MAX_URL = 2048
 
 /** The one maker of a `GatewayUrl`. Text with no scheme is read as https. */
 export function parseGatewayUrl(raw: string): ParsedUrl {
   const text = raw.trim()
+  if (text.length > MAX_URL) return { ok: false, problem: 'not-an-address' }
   const url = URL.parse(SCHEME.test(text) ? text : `https://${text}`)
   if (url === null || (url.protocol !== 'https:' && url.protocol !== 'http:') || url.port === '0') return { ok: false, problem: 'not-an-address' }
   if (url.username !== '' || url.password !== '') return { ok: false, problem: 'credentials' }
   // `URL` drops an empty `?` or `#`, so only the text shows one was typed.
   if (/[?#]/.test(text)) return { ok: false, problem: 'extras' }
-  const canonical = `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, '')}`
+  const path = url.pathname.replace(/\/+$/, '').replace(/%[0-9a-f]{2}/gi, escape => {
+    const char = String.fromCharCode(parseInt(escape.slice(1), 16))
+    return UNRESERVED.test(char) ? char : escape.toUpperCase()
+  })
+  const canonical = `${url.protocol}//${url.host}${path}`
   return canonical.length <= MAX_URL ? { ok: true, url: canonical as GatewayUrl } : { ok: false, problem: 'not-an-address' }
 }
 

@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint'
 const contract = { group: ['**/contract.generated*', '**/contract.openrpc.json'], message: 'Gateway shapes stay inside wire/ and testing/.' }
 
 const TARGET_KIND = '/^(local|remote|url)$/'
-const KIND = side => `[${side}.property.name='kind'], [${side}.expression.property.name='kind'], [${side}.name='kind']`
+const KIND = side => `[${side}.property.name='kind'], [${side}.property.value='kind'], [${side}.expression.property.name='kind'], [${side}.expression.property.value='kind'], [${side}.name='kind']`
 const byKindOnly = 'Branch on a target with byKind from @highwing/hermes/domain, or a table keyed by Target[\'kind\'], so a new kind of target stops the build here.'
 
 export default tseslint.config(

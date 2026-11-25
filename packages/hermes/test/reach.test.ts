@@ -112,7 +112,9 @@ describe('parseGatewayUrl', () => {
     ['box.example/hermes/', 'https://box.example/hermes'],
     ['https://box.example/proxied/hermes//', 'https://box.example/proxied/hermes'],
     ['http://[FD7A:115C:A1E0:0:0:0:0:1]:9120/', 'http://[fd7a:115c:a1e0::1]:9120'],
-    ['[::1]:9120', 'https://[::1]:9120']
+    ['[::1]:9120', 'https://[::1]:9120'],
+    ['https:/box.example', 'https://box.example'],
+    ['https://box.example/%7ehermes/%2f', 'https://box.example/~hermes/%2F']
   ])('reads %j as %s', (text, url) => {
     expect(parseGatewayUrl(text)).toEqual({ ok: true, url })
   })
@@ -138,6 +140,8 @@ describe('parseGatewayUrl', () => {
   it.each([
     ['nothing', '', 'not-an-address'],
     ['another scheme', 'ftp://box.example', 'not-an-address'],
+    ['another scheme with one slash', 'ftp:/box.example', 'not-an-address'],
+    ['over 2048 characters before the slashes are dropped', `https://box.example${'/'.repeat(2048)}`, 'not-an-address'],
     ['a script', 'javascript:alert(1)', 'not-an-address'],
     ['no host', 'https://', 'not-an-address'],
     ['port 0', 'https://box.example:0', 'not-an-address'],
