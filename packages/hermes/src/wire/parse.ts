@@ -713,10 +713,8 @@ export function parseListRows(rows: readonly CanonicalSessionListRow[]): Omit<Si
 type TreeSession = ProjectTreeSession & { _branched_from?: string | null }
 
 /**
- * The chats of a `projects.tree` reply, each once: a project's preview rows and the rows of its repos' lanes. A chat is
- * a version of its parent only when `_branched_from` names that parent, which a branch writes
- * (persistence/sqlite/authority/_mutation_publish.py:124). A compression's continuation and a reset carry
- * `parent_session_id` alone. Archived chats are left out. null: the reply is not a tree Highwing can read.
+ * A chat is a version of its parent only when `_branched_from` names that parent, which a branch writes
+ * (persistence/sqlite/authority/_mutation_publish.py:124).
  */
 export function parseTreeRows(reply: ProjectsTreeResult): TreeRow[] | null {
   return usable(() => {
@@ -738,10 +736,6 @@ export function parseTreeRows(reply: ProjectsTreeResult): TreeRow[] | null {
   })
 }
 
-/**
- * One `session.transcript` page as what each row says. A row's key leaves out its `row_id` and `timestamp`, which a
- * branch writes anew for the rows it copies. null: the reply is not a page Highwing can read.
- */
 export function parseSaid(reply: StoredTranscriptResult): { readonly said: readonly Said[]; readonly next: string | null; readonly reset: boolean } | null {
   return usable(() => {
     const page = fields<StoredTranscriptResult>(reply)

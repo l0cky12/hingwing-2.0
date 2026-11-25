@@ -304,7 +304,6 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .versions > button { padding: 1px 7px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); color: var(--ink); }
 .versions > button:hover:not(:disabled) { background: var(--paper); }
 .versions > span { padding: 0 4px; }
-/* The switcher takes its place in the margin beside the three actions. */
 .request:has(.versions) { max-width: min(62ch, 100% - 188px); }
 .versions-end { margin: 22px 0 0 var(--col); }
 .turn-actions { margin: 10px 0 0 var(--col); }

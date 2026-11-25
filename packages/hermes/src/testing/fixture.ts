@@ -168,7 +168,6 @@ const isSeed = (value: unknown): value is ChatSeed =>
   && (value.asking === undefined || (isObject(value.asking) && typeof value.asking.command === 'string' && typeof value.asking.description === 'string'))
   && (value.branched_from === undefined || (typeof value.branched_from === 'string' && value.branched_from !== '' && value.branched_from !== value.id))
 
-/** A chat is branched from a chat of its own profile. */
 const parentsListed = (seeds: readonly ChatSeed[]) => seeds.every(seed => seed.branched_from === undefined || seeds.some(other => other.id === seed.branched_from))
 
 const isRelayScript = (value: unknown): value is RelayScript =>

@@ -48,7 +48,6 @@ export const callsIn = (received: readonly unknown[]): Sent[] =>
   })
 
 const { chats: FAMILY, ...FAMILY_PROFILES } = JSON.parse(readFileSync(fileURLToPath(new URL('../../../../fixtures/profiles/versions.json', import.meta.url)), 'utf8')) as { chats: NonNullable<Fixture['header']['chats']> }
-/** Research holds "Sort the invoices", two chats branched from it at its second message, and a chat never branched. This Hermes lists no tree. */
 export const NO_TREE: Fixture = { ...ERRAND, header: { ...ERRAND.header, profiles: FAMILY_PROFILES, chats: FAMILY, branches: true } }
 export const WITH_VERSIONS: Fixture = { ...NO_TREE, header: { ...NO_TREE.header, tree: true } }
 export const [SORTED, SORTED_2, SORTED_3] = ['local-0201', 'local-0202', 'local-0203'] as (typeof SESSION)[] as [typeof SESSION, typeof SESSION, typeof SESSION]

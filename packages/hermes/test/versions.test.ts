@@ -76,14 +76,14 @@ describe('the chats that are versions of one message', () => {
 
   it('a branch that says the same as its parent so far is no version yet', () => {
     const family = { above: null, below: [SECOND, THIRD] }
-    expect(versionsOf(PARENT, family, new Map<SessionId, BranchPoint | null>([[SECOND, null], [THIRD, { turn: 1, a: 3, b: 3 }]])))
+    expect(versionsOf(PARENT, family, new Map<SessionId, BranchPoint | null>([[SECOND, null], [THIRD, { turn: 1, parent: 3, child: 3 }]])))
       .toEqual([{ versions: [{ sessionId: PARENT, landing: 3 }, { sessionId: THIRD, landing: 3 }], current: 0 }])
     expect(versionsOf(PARENT, family, new Map<SessionId, BranchPoint | null>([[SECOND, null], [THIRD, null]]))).toEqual([])
   })
 
   it('a version that cannot be placed is left out, and a message the asked chat cannot be placed at has no group', () => {
     const above = { parent: PARENT, children: [SECOND, THIRD] }
-    const unplaced = new Map<SessionId, BranchPoint | null>([[SECOND, { turn: 1, a: 3, b: 3 }], [THIRD, { turn: 1, a: 3, b: null }]])
+    const unplaced = new Map<SessionId, BranchPoint | null>([[SECOND, { turn: 1, parent: 3, child: 3 }], [THIRD, { turn: 1, parent: 3, child: null }]])
     expect(versionsOf(SECOND, { above, below: [] }, unplaced)).toEqual([{ versions: [{ sessionId: PARENT, landing: 3 }, { sessionId: SECOND, landing: 3 }], current: 1 }])
     expect(versionsOf(THIRD, { above, below: [] }, unplaced)).toEqual([])
   })
@@ -98,18 +98,18 @@ describe('the message two chats part at', () => {
   it('is the third message when the transcripts differ there, in both chats', () => {
     const a = read([['user', 'u1'], ['assistant', 'a1'], ['user', 'u2'], ['assistant', 'a2']])
     const b = read([['user', 'u1'], ['assistant', 'a1'], ['user', 'u2 again'], ['assistant', 'a2 again']])
-    expect(branchPoint(a, b)).toEqual({ turn: 1, a: 3, b: 3 })
+    expect(branchPoint(a, b)).toEqual({ turn: 1, parent: 3, child: 3 })
   })
 
   it('is the same message when only its reply differs', () => {
     const a = read([['user', 'u1'], ['assistant', 'a1'], ['user', 'u2'], ['assistant', 'a2']])
     const b = read([['user', 'u1'], ['assistant', 'a1'], ['user', 'u2'], ['assistant', 'another a2']])
-    expect(branchPoint(a, b)).toEqual({ turn: 1, a: 3, b: 3 })
+    expect(branchPoint(a, b)).toEqual({ turn: 1, parent: 3, child: 3 })
   })
 
   it('is the end of the chat that stops first', () => {
     const a = read([['user', 'u1'], ['assistant', 'a1'], ['user', 'u2'], ['assistant', 'a2']])
-    expect(branchPoint(a, a.slice(0, 2))).toEqual({ turn: 1, a: 3, b: 'end' })
+    expect(branchPoint(a, a.slice(0, 2))).toEqual({ turn: 1, parent: 3, child: 'end' })
   })
 
   it('is nowhere when the chats say the same, whatever their row ids and times', () => {
@@ -121,7 +121,7 @@ describe('the message two chats part at', () => {
   it('cannot be placed in a chat whose turn there has no stored request', () => {
     const a = read([['assistant', 'a note before any request'], ['user', 'u1']])
     const b = read([['assistant', 'another note'], ['user', 'u1']])
-    expect(branchPoint(a, b)).toEqual({ turn: 0, a: null, b: null })
+    expect(branchPoint(a, b)).toEqual({ turn: 0, parent: null, child: null })
   })
 })
 

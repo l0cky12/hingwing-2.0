@@ -50,7 +50,6 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     return () => clearTimeout(id)
   }, [view])
 
-  // Read from Hermes each time a chat opens, and kept nowhere else: a refusal or an older answer shows no switcher.
   const [read, setRead] = useState<{ readonly id: SessionId; readonly versions: ChatVersions } | null>(null)
   useEffect(() => {
     if (id === null) return
@@ -76,7 +75,6 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     else setPlace(held => placeAfter(held, distanceFrom(element), progress))
   }, [view, progress, relays, versions])
 
-  // A press on a version lands at the same message of the chat it opens. A chat that stops before that message is followed to its end, as any chat is.
   useLayoutEffect(() => {
     const element = scroller.current
     const landing = id === null ? null : landingFor(id)

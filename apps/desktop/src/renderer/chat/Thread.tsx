@@ -147,7 +147,6 @@ function Pencil() {
   )
 }
 
-/** Always shown, unlike the actions beside it: it says the message has other tries before the pointer is on it. */
 export function VersionSwitch({ versions, onVersion }: { readonly versions: Versions; readonly onVersion: (version: Version) => void }) {
   const { versions: all, current } = versions
   const step = (by: 1 | -1) => {
@@ -169,7 +168,6 @@ interface TurnProps {
   readonly onEdit: Rewrite
   readonly onRegenerate: Rewrite
   readonly onBranch: (rowId: number) => void
-  /** The tries of this turn's message, when it has more than one. */
   readonly versions: Versions | null
   readonly onVersion: (version: Version) => void
 }
@@ -242,7 +240,6 @@ interface ThreadProps {
   readonly onEdit: Rewrite
   readonly onRegenerate: Rewrite
   readonly onBranch: (rowId: number) => void
-  /** The messages of this chat that have versions. One whose landing is 'end' is a try this chat has not made yet, and shows after its last turn. */
   readonly versions: ChatVersions
   readonly onVersion: (version: Version) => void
 }

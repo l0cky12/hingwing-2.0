@@ -92,7 +92,6 @@ export const RETAIN_MS = 60_000
 const LIST_DEBOUNCE_MS = 300
 const CANT_SHOW = "Highwing can't show this prompt yet, so it said no."
 
-/** `versions` names a chat and asks nothing of its attachment. */
 type SessionCommand = Exclude<Extract<Command, { readonly sessionId: SessionId }>, { readonly do: 'versions' }>
 
 function feed<T>(initial: T, same: (a: T, b: T) => boolean = Object.is): Feed<T> & { set(next: T): void } {
@@ -385,7 +384,6 @@ export function openHermes(options: HermesOptions): Hermes {
     return opened.ok ? NOTHING_TO_SHOW : opened
   }
 
-  /** The chats named are of the asked chat's bot, so a press on one opens it in that bot's profile. */
   const versions = async (sessionId: SessionId) => {
     const bot = desk.botOf(sessionId)
     const read = await readVersions(bot === undefined ? conn : conn.as(bot), sessionId)

@@ -176,9 +176,7 @@ class EchoChat implements Stream {
   revision = 0
   asking: SeededApproval | null = null
   yolo = false
-  /** The chat this one was branched from. */
   parent: string | null = null
-  /** Seconds since the epoch. */
   startedAt = 0
 
   /** `hidden`: out of `session.list` unless it asks for hidden chats, as a Bot Chat is (hermes-bots/canonical-chat.ts:319). */
@@ -503,9 +501,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 }
 
 /**
- * `session.transcript` (gateway/session_stored_reads.py), for a chat with no compaction and no subagent. A cursor is the
- * order and the number of rows read so far. Oldest order answers the rows after it and a cursor that is never null,
- * so the page after the last row is empty. Latest order pages back from the newest row and ends in a null cursor.
+ * `session.transcript` (gateway/session_stored_reads.py). Oldest order answers the rows after it and a cursor that is
+ * never null, so the page after the last row is empty. Latest order pages back from the newest row and ends in a null cursor.
  */
 function transcriptPage(chat: EchoChat, params: Obj): Obj {
   const { cursor, limit = 200, order = 'latest', subagent_id: subagent } = params
@@ -1060,11 +1057,9 @@ export class ScriptedGateway {
   }
 
   /**
-   * `projects.tree` (tui_gateway/methods_config.py:137-150) for the routed profile: one Home project whose preview rows
-   * are the profile's chats beside the story, newest first. It is no canonical method (gateway/session_controls.py:239-247
-   * lists the handlers), so like `profiles.create` only a socket with the interactive grant reaches it. The story session
-   * is never listed and never named as a parent, so no read of it follows. A project previews its three newest chats
-   * unless `preview_limit` asks for more (tui_gateway/project_tree.py:439-442).
+   * `projects.tree` (tui_gateway/methods_config.py:137-150). It is no canonical method (gateway/session_controls.py:239-247
+   * lists the handlers), so like `profiles.create` only a socket with the interactive grant reaches it. A project previews
+   * its three newest chats unless `preview_limit` asks for more (tui_gateway/project_tree.py:439-442).
    */
   tree(socket: Socket, params: Obj, routed: string): unknown {
     if (this.fixture.header.tree !== true || socket.reach === 'profile') throw unknownMethod('projects.tree')

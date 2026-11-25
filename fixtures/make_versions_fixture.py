@@ -2,11 +2,6 @@
 that was branched twice at its second message, and one chat that was never branched.
 
 Run with any Python 3:  python3 fixtures/make_versions_fixture.py
-
-"Sort the invoices" has three requests. "Sort the invoices #2" and "#3" are `branched_from` it: each holds its first
-request and reply, then a second request of its own. Their `last_active` puts them in order of creation: the chat they
-were branched from, then #2, then #3. The third reply of the first chat is long, so its thread is taller than the window
-and a switch to it has to scroll to the second request.
 """
 import json
 from pathlib import Path

@@ -34,11 +34,6 @@ async function transcript(via: Calls, sessionId: SessionId): Promise<readonly Sa
   throw new Unreadable()
 }
 
-/**
- * The versions of each message of one chat, as Hermes has them now. One `projects.tree` says which chats were branched
- * from which. Then each chat of the family is read once, since neither the tree nor a branch's receipt says at which
- * message a branch was made. A chat with no family costs the tree call alone. A refusal means "cannot say", never "none".
- */
 export async function readVersions(via: Calls, sessionId: SessionId): Promise<Outcome<ChatVersions>> {
   try {
     const rows = parseTreeRows(await via.call('projects.tree', TREE))
