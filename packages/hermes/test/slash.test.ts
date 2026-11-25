@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import type { Outcome } from '../src/domain/command'
 import type { SessionId } from '../src/domain/session'
-import { ownCommand, slashLineOf, type SlashCatalog } from '../src/domain/slash'
+import { ownCommand, slashLineOf, type RunOwn, type SlashCatalog } from '../src/domain/slash'
 import { loadFixture } from '../src/testing/fixture'
 import type { CommandsCatalogResult } from '../src/wire/contract.generated'
 import { parseCatalog, parseDirective } from '../src/wire/parse'
@@ -11,7 +12,7 @@ const CATALOG = SLASH.header.catalog as CommandsCatalogResult
 
 const RUNS = [
   'new', 'title', 'compress', 'bg', 'btw', 'goal', 'heartbeat', 'refine', 'review', 'loop', 'plan', 'moa', 'subgoal', 'status', 'egress', 'context',
-  'whoami', 'profile', 'codex-runtime', 'personality', 'diff', 'yolo', 'approvals', 'reasoning', 'autoprune', 'skills',
+  'whoami', 'profile', 'codex-runtime', 'personality', 'diff', 'yolo', 'approvals', 'reasoning', 'fast', 'busy', 'autoprune', 'skills',
   'memory', 'bundles', 'learn', 'init', 'suggestions', 'blueprint', 'help', 'usage', 'topup', 'version', 'debug'
 ]
 
@@ -22,6 +23,12 @@ describe('parseCatalog', () => {
     expect(listed.filter(entry => entry.kind === 'command').map(entry => entry.name)).toEqual(RUNS)
     expect(listed.filter(entry => entry.kind === 'skill').map(entry => entry.name)).toEqual(['code-review', 'release-notes'])
     expect(listed.findIndex(entry => entry.kind === 'skill')).toBe(RUNS.length)
+  })
+
+  it('offers the settings Highwing runs itself, which Hermes marks for its terminal', () => {
+    expect(CATALOG.commands?.['/busy']).toMatchObject({ desktop: 'terminal' })
+    expect(CATALOG.commands?.['/fast']).toMatchObject({ desktop: 'advanced' })
+    expect(listed.map(entry => entry.name)).toEqual(expect.arrayContaining(['busy', 'fast']))
   })
 
   it('leaves out commands the gateway refuses, terminal and hidden commands, and terminal display rows', () => {
@@ -62,6 +69,53 @@ describe('OWN_COMMANDS', () => {
     ['/compress up to heresy', { do: 'compress', sessionId: 's1', focus: 'heresy' }]
   ])('turns %s into its command', (text, command) => {
     expect(own(text)).toEqual(command)
+  })
+
+  /** Runs the line's answer, each command answered in turn by `replies`, and says what it ran and showed. */
+  const answered = async (text: string, ...replies: Outcome<unknown>[]) => {
+    const line = own(text)
+    if (line === null || !('answer' in line)) throw new Error(`${text} has no answer`)
+    const ran: unknown[] = []
+    const run = (async (command: unknown) => {
+      ran.push(command)
+      return replies.shift() ?? { ok: true, value: undefined }
+    }) as RunOwn
+    return { ran, shown: await line.answer(run) }
+  }
+  const shows = (value: string) => ({ ok: true, value })
+
+  it.each([
+    ['/busy steer', { set: 'busy', to: 'steer' }, 'busy input mode: steer'],
+    ['/busy QUEUE', { set: 'busy', to: 'queue' }, 'busy input mode: queue'],
+    ['/busy interrupt', { set: 'busy', to: 'interrupt' }, 'busy input mode: interrupt'],
+    ['/fast on', { set: 'fast', on: true }, 'fast mode: fast'],
+    ['/fast Fast', { set: 'fast', on: true }, 'fast mode: fast'],
+    ['/fast off', { set: 'fast', on: false }, 'fast mode: normal'],
+    ['/fast normal', { set: 'fast', on: false }, 'fast mode: normal'],
+    ['/reasoning high', { set: 'effort', to: 'high' }, 'reasoning: high'],
+    ['/reasoning none', { set: 'effort', to: 'none' }, 'reasoning: none'],
+    ['/reasoning Ultra --session', { set: 'effort', to: 'ultra' }, 'reasoning: ultra'],
+    ['/reasoning reset', { set: 'effort', to: 'default' }, 'Session reasoning override cleared; falling back to global config.'],
+    ['/reasoning show', { set: 'reasoning', on: true }, 'reasoning: show'],
+    ['/reasoning on', { set: 'reasoning', on: true }, 'reasoning: show'],
+    ['/reasoning hide', { set: 'reasoning', on: false }, 'reasoning: hide'],
+    ['/reasoning off', { set: 'reasoning', on: false }, 'reasoning: hide']
+  ])('sets %s for this chat with tune, and says so', async (text, set, says) => {
+    expect(await answered(text)).toEqual({ ran: [{ do: 'tune', sessionId: 's1', ...set }], shown: shows(says) })
+  })
+
+  it('shows the refusal of a switch in place of its line', async () => {
+    const refusal = { ok: false, refusal: { kind: 'rejected', message: "This chat's model has no fast mode." } } as const
+    expect((await answered('/fast on', refusal)).shown).toEqual(refusal)
+  })
+
+  it.each([
+    '/busy', '/busy status', '/busy later',
+    '/fast', '/fast status', '/fast auto', '/fast cold', '/fast ultrafast', '/fast ultra', '/fast toggle', '/fast on --global',
+    '/reasoning', '/reasoning high --global', '/reasoning --global show', '/reasoning reset --global', '/reasoning full', '/reasoning clamp',
+    '/reasoning disabled', '/reasoning hgih', '/reasoning high low'
+  ])('leaves the setting %s to Hermes', text => {
+    expect(own(text)).toBeNull()
   })
 
   it.each([['/btw', '/btw <question>'], ['/bg', '/bg <prompt>']])('says how to type %s with nothing after it', (text, usage) => {

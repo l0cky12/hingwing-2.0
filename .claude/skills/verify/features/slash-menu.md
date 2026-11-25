@@ -21,13 +21,13 @@ The user types `/` at the start of the message box and a list of Hermes commands
 
 Preconditions:
 
-- `fixtures/slash.jsonl`, the errand with a real catalog from `fixtures/make_slash_fixture.py`. Highwing lists 39 of its 100 rows: the 33 commands the gateway runs, `/new`, `/compress`, `/bg` and `/btw`, which Highwing runs itself, and 2 skills.
+- `fixtures/slash.jsonl`, the errand with a real catalog from `fixtures/make_slash_fixture.py`. Highwing lists 41 of its 100 rows: the 33 commands the gateway runs, `/new`, `/compress`, `/bg`, `/btw`, `/busy` and `/fast`, which Highwing runs itself, and 2 skills.
 - `fixtures/errand.jsonl` has no catalog, so its gateway answers the call with -32601, as an older Hermes does.
 
-- **Open.** Run `$H run --fixture fixtures/slash.jsonl --run slash-open wait live type "Message Hermes" / wait slash-menu tally option 39 shot slash-open`. `slash-open.aria.txt` shows `listbox "Commands and skills"` with `group "Commands"` and `group "Skills"`.
+- **Open.** Run `$H run --fixture fixtures/slash.jsonl --run slash-open wait live type "Message Hermes" / wait slash-menu tally option 41 shot slash-open`. `slash-open.aria.txt` shows `listbox "Commands and skills"` with `group "Commands"` and `group "Skills"`.
 - **Narrow and complete.** Run `$H run --fixture fixtures/slash.jsonl --run slash-narrow wait live type "Message Hermes" / wait slash-menu press c press o tally option 4 shot slash-narrowed press Tab value "Message Hermes" "/compress " tally listbox 0`.
 - **Escape.** Run `$H run --fixture fixtures/slash.jsonl --run slash-escape wait live type "Message Hermes" / wait slash-menu press c press o press Escape tally listbox 0 value "Message Hermes" /co press Backspace press Backspace press Backspace press / press c press o tally option 4`. Escape closes the list only until the text changes, so typing `/co` again opens it.
-- **Focus.** Run `$H run --fixture fixtures/slash.jsonl --run slash-focus wait live type "Message Hermes" / wait slash-menu press Shift+Tab tally listbox 0 click textbox "Message Hermes" tally option 39`.
+- **Focus.** Run `$H run --fixture fixtures/slash.jsonl --run slash-focus wait live type "Message Hermes" / wait slash-menu press Shift+Tab tally listbox 0 click textbox "Message Hermes" tally option 41`.
 - **Mid-sentence.** Run `$H run --fixture fixtures/slash.jsonl --run slash-mid wait live type "Message Hermes" "Please run " press / tally listbox 0 value "Message Hermes" "Please run /"`.
 - **No catalog.** Run `$H run --fixture fixtures/errand.jsonl --run slash-none wait live type "Message Hermes" / tally listbox 0 value "Message Hermes" / shot slash-none`. `slash-none.aria.txt` shows the textbox and Send, and no refusal words.
 - **Wrap.** Run `$H run --fixture fixtures/slash.jsonl --run slash-wrap wait live type "Message Hermes" / wait slash-menu press ArrowUp shot slash-wrapped press Enter value "Message Hermes" "/release-notes " tally listbox 0`.
