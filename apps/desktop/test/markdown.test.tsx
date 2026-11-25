@@ -139,6 +139,10 @@ describe('Markdown with the grammars loaded', () => {
     for (const fence of ['```', '```elixir', '```text']) expect(render(`${fence}\nconst days = 7\n\`\`\``)).not.toMatch(COLORED)
   })
 
+  it('knows no grammar for a fence named after a built-in object property', () => {
+    for (const lang of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) expect(grammarFor(lang), lang).toBeNull()
+  })
+
   it('leaves a block over 100,000 characters plain', () => {
     const long = 'const days = 7\n'.repeat(7_000).trimEnd()
     expect(long.length).toBeGreaterThan(100_000)

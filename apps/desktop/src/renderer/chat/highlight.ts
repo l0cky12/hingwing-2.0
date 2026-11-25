@@ -62,7 +62,10 @@ const FENCES: Readonly<Record<string, Grammar>> = {
   ps1: 'powershell', powershell: 'powershell'
 }
 
-export const grammarFor = (lang: string | null): Grammar | null => (lang === null ? null : FENCES[lang.toLowerCase()] ?? null)
+export function grammarFor(lang: string | null): Grammar | null {
+  const name = lang?.toLowerCase()
+  return name !== undefined && Object.hasOwn(FENCES, name) ? FENCES[name]! : null
+}
 
 let core: Promise<HLJSApi> | undefined
 let ready: HLJSApi | undefined
