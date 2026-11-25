@@ -1,11 +1,11 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
-import type { Hermes } from '@highwing/hermes'
-import type { AttachmentId, Bots, CommandOutcome, Exported, Link, OpenChat, RelayDesk, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
+import type { Hermes, Route } from '@highwing/hermes'
+import type { AttachmentId, Bots, CommandOutcome, Exported, Link, OpenChat, RelayDesk, Session, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Preview, type PreviewCommand, type Push, type Topic } from '../src/ipc-contract'
-import { pinnedConnection } from '../src/main/connection'
+import { ownConnection, pinnedConnection, type ConnectionOwner } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
 import type { AttachSources, StageSource } from '../src/main/attachments'
@@ -330,7 +330,7 @@ const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] 
 const NOTHING_OPEN: OpenChat = { shown: null, opening: null }
 const NO_RELAYS: RelayDesk = { supported: false, bySession: {} }
 
-function harness() {
+function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection) {
   const listeners = new Map<string, (event: IpcEvent, ...args: unknown[]) => void>()
   const handlers = new Map<string, (event: IpcEvent, ...args: unknown[]) => unknown>()
   const ipc: IpcMainLike = {
@@ -420,7 +420,7 @@ function harness() {
   }
   const sources: AttachSources = { pick: async () => ['/home/me/error.png', '/home/me/big.zip'], pasted: async () => ({ name: 'Pasted image 1.png', bytes: PNG }) }
   const served = serveWindows(
-    pinnedConnection(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
+    ownerOf(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     async bot => (picked.push(bot), { ok: true, value: 'cancelled' }), { store, sources }, saver
   )
@@ -680,6 +680,30 @@ describe('the image call', () => {
     const call = rig.handlers.get(CHANNEL.image)!
     await expect(call(rig.event(), asked)).resolves.toEqual({ ok: false })
     expect(rig.loaded).toEqual([{ request: asked, context: { session: moments[3], local: true } }])
+  })
+
+  it('says not local for a session a remote Hermes served after the connection moves to this computer, until the window watches it again', async () => {
+    let owner: ConnectionOwner | undefined
+    const rig = harness(hermes => (owner = ownConnection({
+      loaded: { state: 'saved', target: { kind: 'remote', host: 'box' as SshHost } },
+      save: async () => {},
+      check: async () => ({ ok: true }),
+      routeFor: () => ({ dial: async () => { throw new Error('the test never dials') }, dispose: () => {} }) as unknown as Route,
+      open: () => ({ ...hermes, close: async () => {} })
+    })))
+    rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
+    rig.emit(moments[3]!)
+    await owner!.run({ do: 'editTarget' })
+    await owner!.run({ do: 'checkTarget', target: { kind: 'local' } })
+    await new Promise(resolve => setImmediate(resolve))
+    expect(owner!.setup.get()).toMatchObject({ at: 'saved', live: { target: { kind: 'local' } } })
+    await rig.handlers.get(CHANNEL.image)!(rig.event(), asked)
+    expect(rig.loaded).toEqual([{ request: asked, context: { session: moments[3], local: false } }])
+
+    rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
+    rig.emit(moments[3]!)
+    await rig.handlers.get(CHANNEL.image)!(rig.event(), asked)
+    expect(rig.loaded[1]).toEqual({ request: asked, context: { session: moments[3], local: true } })
   })
 
   it('gives the loader no session for one this window does not watch', async () => {
