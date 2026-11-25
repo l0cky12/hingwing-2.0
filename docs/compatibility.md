@@ -454,9 +454,9 @@ contract lists them as legacy methods. `Session.processes` and
 | `killProcess` | `process.kill {session_id, process_id}` | `gateway/session_ancillary.py:294-305`, `tools/process_registry.py:2120-2210` |
 | read when a window starts watching the chat, and after each attach | `session.control.read {session_id}` | `gateway/session_ancillary.py:474-500` |
 | `control` | `session.control {session_id, action, args}` | `gateway/session_control_actions.py:141-164` |
-| `checkpoints` | `rollback.list {session_id}` | `gateway/session_tui_ops.py:212-275` |
-| `checkpointDiff` | `rollback.diff {session_id, hash}` | `gateway/session_tui_ops.py:282-299` |
-| `restore` | `rollback.restore {session_id, hash, file_path? \| all?}` | `gateway/session_tui_ops.py:300-312,350-375` |
+| `checkpoints`, or a typed `/rollback [list]` | `rollback.list {session_id}` | `gateway/session_tui_ops.py:212-275` |
+| `checkpointDiff`, or a typed `/rollback diff <n\|hash>` | `rollback.diff {session_id, hash}` | `gateway/session_tui_ops.py:282-299` |
+| `restore`, or a typed `/rollback <n\|hash> [file] [--all]` | `rollback.restore {session_id, hash, file_path? \| all?}` | `gateway/session_tui_ops.py:300-312,350-375` |
 | `react` | `message.react {session_id, row_id, emoji}` | `gateway/session_reactions.py:13-55` |
 
 - A refused read leaves its part null, as for a Hermes without the method.
@@ -490,6 +490,13 @@ contract lists them as legacy methods. `Session.processes` and
   publishes `session.updated` before the reply, and answers `history_removed`.
   Highwing then reads the chat again, and does so too when the socket drops
   before the answer. A restore of one file only touches the disk.
+- A typed `/rollback` reads as Hermes Desktop reads it, and also takes the TUI's
+  `--force` for `--all`. Its `<n|hash>` goes to Hermes as typed: Hermes reads a
+  list number or a hash the same way on every surface (`agent/checkpoints/refs.py`),
+  and answers a number out of range with `Invalid checkpoint number. Use 1-N.`
+  The command answers its result in words under the composer, worded as
+  Hermes Desktop and the CLI word it, and a list or diff with extra words
+  answers the usage line.
 - `message.react` keeps one reaction per author per row. The same emoji again
   clears it, another replaces it, and `emoji: null` clears it. It answers the
   row's reactions, which Highwing shows at once. Hermes publishes no
@@ -594,9 +601,30 @@ The gateway refuses the other 33 offered commands, among them `/new`,
 runs these as its own actions. Highwing runs a bare `/new` itself: it opens a
 new chat in the bot of the chat it was typed in. It also runs every name in
 `OWN_COMMANDS` (`packages/hermes/src/domain/slash.ts`): `/title` with a title,
-`/btw`, `/bg` and `/compress`. Hermes's own forms of `/compress` (`here [N]`,
+`/btw`, `/bg`, `/compress`, `/rollback` (see [Session panels](#session-panels)),
+and the forms of `/busy`, `/fast` and `/reasoning` that set a switch Highwing
+models. Hermes's own forms of `/compress` (`here [N]`,
 `--preview`) go to the gateway, which refuses them. The menu lists `/new` and
-those names with the 33 the gateway runs.
+those names with the 33 the gateway runs. It lists `/busy` and `/fast` too,
+though Hermes marks them `terminal` and `advanced`.
+
+The settings run `tune` for this chat, so `Session.tuning` takes the state Hermes
+answers, and show the line Hermes's TUI shows (`busy input mode: steer`,
+`fast mode: fast`, `reasoning: high`):
+
+| Typed | `tune` |
+| --- | --- |
+| `/busy queue\|steer\|interrupt` | busy, that mode |
+| `/fast fast\|on`, `/fast normal\|off` | fast on, fast off |
+| `/reasoning <level>`, one of `EFFORTS` | effort, that level |
+| `/reasoning reset` | effort, the model's own level |
+| `/reasoning show\|on`, `/reasoning hide\|off` | reasoning shown, hidden |
+
+The words are case-blind, and `/reasoning` takes the TUI's `--session` too. Every
+other form goes to the gateway as before: a bare or `status` read, `--global`,
+the tiers `auto`, `cold` and `ultrafast`, and the display words `full` and
+`clamp`. The gateway's own `/busy` and `/reasoning show|hide` also save the
+choice to `config.yaml`. `tune` sets only this chat, as Hermes's TUI does.
 The Hermes `/stop` stops background processes, not the current turn, so it is
 not Highwing's Stop.
 

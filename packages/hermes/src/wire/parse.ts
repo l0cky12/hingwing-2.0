@@ -1494,7 +1494,7 @@ export function parseCatalog(reply: CommandsCatalogResult): SlashCatalog {
     seen.add(key)
     if (Object.hasOwn(skills, key)) {
       skillRows.push({ kind: 'skill', name, description })
-    } else if ((GATEWAY_RUNS.has(name) || HIGHWING_RUNS.has(name) || Object.hasOwn(plugins, name)) && offered(meta[key])) {
+    } else if (isObject(meta[key]) && (HIGHWING_RUNS.has(name) || ((GATEWAY_RUNS.has(name) || Object.hasOwn(plugins, name)) && offered(meta[key])))) {
       commands.push({ kind: 'command', name, description })
     }
   }

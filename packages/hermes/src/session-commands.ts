@@ -514,6 +514,9 @@ export const runSessionCommand = (port: SessionPort, command: SessionCommand, hu
 async function runSlash(port: SessionPort, line: SlashLine, hub: Hub): Promise<Outcome<string | null>> {
   const own = ownCommand(line, port.id)
   if (own !== null && 'usage' in own) return refused('rejected', `Type it as ${own.usage}.`)
+  if (own !== null && 'answer' in own) {
+    return own.answer(async <C extends SessionCommand>(command: C) => (await runSessionCommand(port, command, hub)) as Outcome<ResultOf<C>>)
+  }
   if (own !== null) {
     const done: Outcome<unknown> = await runSessionCommand(port, own, hub)
     return done.ok ? { ok: true, value: typeof done.value === 'string' ? done.value : null } : done

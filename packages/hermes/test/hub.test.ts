@@ -351,7 +351,7 @@ describe('the slash catalog', () => {
     expect(opened.hermes.slash.get()).toEqual([])
     await opened.clock.advance(0)
     const names = opened.hermes.slash.get().map(entry => `${entry.kind}:${entry.name}`)
-    expect(names).toHaveLength(39)
+    expect(names).toHaveLength(42)
     expect(names.slice(0, 2)).toEqual(['command:new', 'command:title'])
     expect(names.slice(-2)).toEqual(['skill:code-review', 'skill:release-notes'])
     expect(opened.sent().filter(call => call.method === 'commands.catalog')).toEqual([{ method: 'commands.catalog', params: {} }])
@@ -371,7 +371,7 @@ describe('the slash catalog', () => {
     await toApproval(opened)
     await opened.clock.advance(1_000)
     expect(opened.sent().filter(call => call.method === 'commands.catalog'), 'once on each of the two sockets').toHaveLength(2)
-    expect(opened.hermes.slash.get()).toHaveLength(39)
+    expect(opened.hermes.slash.get()).toHaveLength(42)
   })
 })
 

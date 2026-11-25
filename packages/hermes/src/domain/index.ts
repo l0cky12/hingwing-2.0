@@ -1,4 +1,4 @@
-/** `@highwing/hermes/domain`: what the renderer and `@highwing/thread` may import. Types, one selector, and the tables that name a target and its failures. */
+/** `@highwing/hermes/domain`: what the renderer and `@highwing/thread` may import. Types, pure selectors, and the tables that name a target and its failures. */
 export type * from './session'
 export { EFFORTS, PLAIN_CONTROLS, STORED_ROWS } from './session'
 export {
@@ -6,6 +6,7 @@ export {
   type ResultOf
 } from './command'
 export { activityOf, turnActivityOf, type Activity, type TurnActivity } from './reduce'
+export { offeredBy, sendPlan, type SendPlan } from './queue'
 export type { SlashCatalog, SlashEntry } from './slash'
 export { BOT_TONES, botsIn, canonicalBotId, PICTURE_MAX_BYTES, PICTURE_RULE, pictureTypeOf, rosterOf, type AvatarTone, type Bot, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotFacts, type BotId, type Bots, type BotSection, type BotTone, type PictureType, type Roster } from './bots'
 export type { PathMatch } from './path'
