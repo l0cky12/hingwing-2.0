@@ -47,11 +47,10 @@ export function Chips({ attachments, onRemove, onMove }: ChipsProps) {
     <ul className="chips" aria-label="Attachments" ref={row}>
       {attachments.map(({ id, name, kind }) => (
         <li
-          key={id} className="chip" tabIndex={0} data-attachment={id} aria-label={name} aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
+          key={id} className={kind === 'image' ? 'chip image' : 'chip'} title={kind === 'image' ? name : undefined} tabIndex={0} data-attachment={id} aria-label={name} aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
           onKeyDown={event => onKeyDown(event, id)}
         >
-          {kind === 'image' ? <Thumb id={id} /> : <span className="mark" aria-hidden="true">{markOf(name)}</span>}
-          <span className="name">{name}</span>
+          {kind === 'image' ? <Thumb id={id} /> : <><span className="mark" aria-hidden="true">{markOf(name)}</span><span className="name">{name}</span></>}
           <button type="button" className="unchip" aria-label={`Remove ${name}`} onClick={() => onRemove(id)}>
             <svg aria-hidden="true" viewBox="0 0 10 10" width="10" height="10"><path d="M2 2l6 6M8 2 2 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
           </button>
