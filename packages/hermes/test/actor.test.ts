@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { SessionActor, type Upload } from '../src/actor'
 import type { ServerRequest, SessionEvent } from '../src/domain/reduce'
-import type { AttachmentId, BranchId, Generation, InputId, Link, PromptId, Session, SessionId, SessionUsage } from '../src/domain/session'
+import type { AttachmentId, BranchId, Generation, InputId, Link, ModelOption, PromptId, Session, SessionId, SessionUsage } from '../src/domain/session'
+import { runSessionCommand, type Hub, type SessionCommand } from '../src/session-commands'
 import { manualClock, settle } from '../src/testing/clock'
 import { Offline, RpcRefusal, type Calls } from '../src/wire/link'
 
@@ -37,7 +38,13 @@ function stage() {
       (method === 'session.stats' ? usageReads : calls).push({ method, params: params as Record<string, unknown>, resolve: resolve as (result: unknown) => void, reject })
     })
   }
-  const actor = new SessionActor(ID, { conn, clock, publish: session => published.push(session), refuse: request => refusedRequests.push(request), mintId: () => `id-${++state.ids}`, branches: new Map() })
+  const actor = new SessionActor(ID, { conn, clock, publish: session => published.push(session), refuse: request => refusedRequests.push(request), mintId: () => `id-${++state.ids}` })
+  const branched: Parameters<Hub['branched']>[0][] = []
+  const hub: Hub = {
+    settledCatalog: async () => [], retitle: () => {}, drop: () => {}, refreshSoon: () => {},
+    settledRelay: async () => {}, mentioned: () => [], relay: () => {}, branchPins: new Map(), branched: made => void branched.push(made),
+    uploads: { read: async () => null }
+  }
   let seq = 0
   const answer = async (method: string, result: unknown) => {
     const call = calls.find(held => held.method === method)
@@ -56,7 +63,8 @@ function stage() {
     await settle()
   }
   return {
-    clock, calls, usageReads, published, refusedRequests, actor, answer, answerUsageRead,
+    clock, calls, usageReads, published, refusedRequests, actor, answer, answerUsageRead, branched,
+    command: (command: SessionCommand) => runSessionCommand(actor.port, command, hub),
     sync: () => actor.session.sync,
     methods: () => calls.map(call => call.method),
     event: (event: SessionEvent | null, generation: number | null = 1) =>
@@ -222,7 +230,7 @@ describe('usage', () => {
     const { actor, open, usageReads, answer, answerUsageRead, event } = stage()
     await open()
     await answerUsageRead(stats({ input_tokens: 100, output_tokens: 10 }))
-    const sent = actor.send('hello')
+    const sent = actor.port.submit('hello')
     expect(usageReads).toHaveLength(1)
     await answerUsageRead(stats())
     await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
@@ -241,9 +249,9 @@ describe('usage', () => {
   })
 
   it('answers what fills the context window, and a refusal in plain words', async () => {
-    const { actor, open, calls, answer } = stage()
+    const { open, calls, answer, command } = stage()
     await open()
-    const asked = actor.contextBreakdown()
+    const asked = command({ do: 'contextBreakdown', sessionId: ID })
     expect(calls[0]).toMatchObject({ method: 'session.context_breakdown', params: { session_id: ID } })
     await answer('session.context_breakdown', {
       categories: [{ id: 'system_prompt', label: 'System', tokens: 6000, color: '#888' }], context_used: 68_000, context_max: 200_000,
@@ -253,7 +261,7 @@ describe('usage', () => {
       ok: true,
       value: { model: 'fast-small', used: 68_000, max: 200_000, percent: 34, estimated: true, categories: [{ id: 'system_prompt', label: 'System', tokens: 6000 }] }
     })
-    const refusedRead = actor.contextBreakdown()
+    const refusedRead = command({ do: 'contextBreakdown', sessionId: ID })
     await answer('session.context_breakdown', new RpcRefusal(-32601, 'unknown_method', 'unknown method'))
     expect(await refusedRead).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes doesn't support that." } })
   })
@@ -261,18 +269,18 @@ describe('usage', () => {
 
 describe('completePath', () => {
   it('asks Hermes for the word alone, and keeps only the files and folders it lists', async () => {
-    const { actor, open, calls, answer } = stage()
+    const { open, calls, answer, command } = stage()
     await open()
-    const asked = actor.completePath('@not')
+    const asked = command({ do: 'completePath', sessionId: ID, word: '@not' })
     expect(calls[0]).toMatchObject({ method: 'complete.path', params: { session_id: ID, word: '@not' } })
     await answer('complete.path', { items: [{ text: '@file:notes.md', display: 'notes.md', meta: '' }, { text: '@notes-bot' }, { text: '@folder:notebooks/', meta: 'dir' }] })
     expect(await asked).toEqual({ ok: true, value: [{ path: 'notes.md', folder: false }, { path: 'notebooks/', folder: true }] })
   })
 
   it('refuses in plain words on a Hermes that does not serve it', async () => {
-    const { actor, open, answer } = stage()
+    const { open, answer, command } = stage()
     await open()
-    const asked = actor.completePath('@not')
+    const asked = command({ do: 'completePath', sessionId: ID, word: '@not' })
     await answer('complete.path', new RpcRefusal(-32601, 'unknown_method', 'unknown method'))
     expect(await asked).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes doesn't support that." } })
   })
@@ -282,7 +290,7 @@ describe('send', () => {
   it('shows the message as sending, then as the gateway admitted it', async () => {
     const { actor, open, calls, answer } = stage()
     await open()
-    const sent = actor.send('hello')
+    const sent = actor.port.submit('hello')
     expect(actor.session.outbox).toEqual([{ inputId: 'id-1', text: 'hello', attachments: [], state: { s: 'sending' } }])
     expect(calls[0]).toMatchObject({ method: 'prompt.submit', params: { session_id: ID, text: 'hello', input_id: 'id-1' } })
     await answer('prompt.submit', { admission_id: 'a1', status: 'queued' })
@@ -292,25 +300,25 @@ describe('send', () => {
 
   it('refuses while the session is not live, and files nothing', async () => {
     const { actor } = stage()
-    expect(await actor.send('hello')).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(await actor.port.submit('hello')).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
     expect(actor.session.outbox).toEqual([])
   })
 
   it('marks the message failed with the gateway\'s reason in plain words', async () => {
-    const { actor, open, answer } = stage()
+    const { actor, command, open, answer } = stage()
     await open()
-    const sent = actor.send('hello')
+    const sent = actor.port.submit('hello')
     await answer('prompt.submit', refusal('session_busy'))
     expect(await sent).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'Hermes is busy with this chat. Try again in a moment.' } })
     expect(actor.session.outbox[0]?.state).toEqual({ s: 'failed', message: 'Hermes is busy with this chat. Try again in a moment.' })
-    expect(actor.discard('id-1' as InputId)).toEqual({ ok: true, value: undefined })
+    expect(command({ do: 'discard', sessionId: ID, inputId: 'id-1' as InputId })).toEqual({ ok: true, value: undefined })
     expect(actor.session.outbox).toEqual([])
   })
 
   it('sends a message again with its original id when the socket dropped before the receipt', async () => {
     const { actor, open, dropAndRedial, answer, calls } = stage()
     await open()
-    const sent = actor.send('hello')
+    const sent = actor.port.submit('hello')
     dropAndRedial()
     expect(await sent, 'the message is kept, not refused').toEqual({ ok: true, value: undefined })
     expect(actor.session.outbox[0]?.state).toEqual({ s: 'sending' })
@@ -324,7 +332,7 @@ describe('send', () => {
   it('shows one text and gives the model another, and sends both again after a drop', async () => {
     const { actor, open, dropAndRedial, answer, calls } = stage()
     await open()
-    const sent = actor.send('/release-notes', 'SKILL BODY')
+    const sent = actor.port.submit('/release-notes', 'SKILL BODY')
     expect(calls.map(call => call.params)).toEqual([{ session_id: ID, text: '/release-notes', input_id: 'id-1', api_text: 'SKILL BODY' }])
     dropAndRedial()
     await sent
@@ -342,7 +350,7 @@ describe('send', () => {
   it('stages each attachment in order before the message, and sends the same staged paths and references again after a drop', async () => {
     const { actor, open, dropAndRedial, answer, calls } = stage()
     await open()
-    const sent = actor.send('what is this', undefined, [screenshot, notes])
+    const sent = actor.port.submit('what is this', undefined, [screenshot, notes])
     await answer('image.attach_bytes', { attached: true, path: '/h/cache/images/upload-1.png', mime: 'image/png' })
     await answer('file.attach', { attached: true, name: 'notes.txt', path: '/h/notes.txt', ref_path: 'notes.txt', ref_text: '@file:notes.txt', uploaded: true })
     const submitted = { session_id: ID, text: 'what is this', input_id: 'id-1', api_text: 'what is this\n\n@file:notes.txt', attachments: [{ path: '/h/cache/images/upload-1.png', mime: 'image/png' }] }
@@ -360,7 +368,7 @@ describe('send', () => {
   it('sends nothing when the link drops while an attachment is staged, and names the attachment', async () => {
     const { actor, open, answer, calls } = stage()
     await open()
-    const sent = actor.send('what is this', undefined, [screenshot])
+    const sent = actor.port.submit('what is this', undefined, [screenshot])
     await answer('image.attach_bytes', new Offline('socket closed'))
     expect(await sent).toEqual({ ok: false, refusal: { kind: 'offline', message: 'Highwing lost the connection while attaching error.png, so nothing was sent.' } })
     expect(calls).toEqual([])
@@ -370,7 +378,7 @@ describe('send', () => {
   it('says in plain words that a Hermes too old to take a file refused it', async () => {
     const { actor, open, answer, calls } = stage()
     await open()
-    const sent = actor.send('read this', undefined, [notes])
+    const sent = actor.port.submit('read this', undefined, [notes])
     await answer('file.attach', new RpcRefusal(-32601, 'unknown_method', 'unknown method: file.attach'))
     expect(await sent).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "Hermes refused notes.txt: This Hermes doesn't support that." } })
     expect(calls).toEqual([])
@@ -388,8 +396,8 @@ describe('answer and stop', () => {
   const promptState = (session: Session) => (session.run.state === 'running' ? session.run.turn.items.find(item => item.kind === 'prompt')?.state : undefined)
 
   it('answers with the generation the prompt carries', async () => {
-    const { actor, calls, answer } = await asking()
-    const answered = actor.answer('p1' as PromptId, { kind: 'choice', value: 'once' })
+    const { actor, command, calls, answer } = await asking()
+    const answered = command({ do: 'answer', sessionId: ID, promptId: 'p1' as PromptId, reply: { kind: 'choice', value: 'once' } })
     expect(calls[0]).toMatchObject({ method: 'approval.respond', params: { session_id: ID, execution_generation: 1, prompt_id: 'p1', choice: 'once' } })
     expect(promptState(actor.session)).toEqual({ s: 'sending', reply: { kind: 'choice', value: 'once' } })
     await answer('approval.respond', { status: 'resolved', prompt_id: 'p1' })
@@ -398,21 +406,21 @@ describe('answer and stop', () => {
   })
 
   it('reads already_resolved as answered from somewhere else', async () => {
-    const { actor, answer } = await asking()
-    void actor.answer('p1' as PromptId, { kind: 'choice', value: 'once' })
+    const { actor, command, answer } = await asking()
+    void command({ do: 'answer', sessionId: ID, promptId: 'p1' as PromptId, reply: { kind: 'choice', value: 'once' } })
     await answer('approval.respond', { status: 'already_resolved', prompt_id: 'p1' })
     expect(promptState(actor.session)).toEqual({ s: 'answered', reply: null })
   })
 
   it('puts the card back with the reason when the gateway refuses, or the socket drops first', async () => {
     const refusedOnce = await asking()
-    const first = refusedOnce.actor.answer('p1' as PromptId, { kind: 'choice', value: 'once' })
+    const first = refusedOnce.command({ do: 'answer', sessionId: ID, promptId: 'p1' as PromptId, reply: { kind: 'choice', value: 'once' } })
     await refusedOnce.answer('approval.respond', refusal('stale_generation'))
     expect(await first).toMatchObject({ ok: false, refusal: { kind: 'stale' } })
     expect(promptState(refusedOnce.actor.session)).toEqual({ s: 'waiting', error: 'That turn has already ended.' })
 
     const dropped = await asking()
-    const second = dropped.actor.answer('p1' as PromptId, { kind: 'choice', value: 'once' })
+    const second = dropped.command({ do: 'answer', sessionId: ID, promptId: 'p1' as PromptId, reply: { kind: 'choice', value: 'once' } })
     dropped.dropAndRedial()
     expect(await second).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
     await dropped.answer('session.events.since', replay({ latest_seq: 2, last_sequence: 2 }))
@@ -421,14 +429,14 @@ describe('answer and stop', () => {
   })
 
   it('refuses an answer to a prompt that is not waiting', async () => {
-    const { actor, calls } = await asking()
-    expect(await actor.answer('other' as PromptId, { kind: 'choice', value: 'once' })).toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    const { command, calls } = await asking()
+    expect(await command({ do: 'answer', sessionId: ID, promptId: 'other' as PromptId, reply: { kind: 'choice', value: 'once' } })).toMatchObject({ ok: false, refusal: { kind: 'stale' } })
     expect(calls).toEqual([])
   })
 
   it('stops the running generation, and takes stale_generation as already stopped', async () => {
-    const { actor, calls, answer } = await asking()
-    const stopped = actor.stop()
+    const { actor, command, calls, answer } = await asking()
+    const stopped = command({ do: 'stop', sessionId: ID })
     expect(calls[0]).toMatchObject({ method: 'session.interrupt', params: { session_id: ID, execution_generation: 1 } })
     expect(actor.session.run).toMatchObject({ stop: 'requested' })
     await answer('session.interrupt', refusal('stale_generation'))
@@ -438,18 +446,18 @@ describe('answer and stop', () => {
 
 describe('mutate and loadEarlier', () => {
   it('renames with the revision it holds', async () => {
-    const { actor, open, calls, answer } = stage()
+    const { command, open, calls, answer } = stage()
     await open()
-    const renamed = actor.mutate({ title: 'Notes' })
+    const renamed = command({ do: 'rename', sessionId: ID, title: 'Notes' })
     expect(calls[0]).toMatchObject({ method: 'session.mutate', params: { session_id: ID, request_id: 'id-1', expected_revision: 3, operation: 'rename', payload: { title: 'Notes' } } })
     await answer('session.mutate', { session_id: ID, operation: 'rename', revision: 4, title: 'Notes' })
     expect(await renamed).toEqual({ ok: true, value: undefined })
   })
 
   it('retries a revision conflict once, with the same request id and the revision the refusal carries', async () => {
-    const { actor, open, calls, answer } = stage()
+    const { command, open, calls, answer } = stage()
     await open()
-    const archived = actor.mutate({ archived: true })
+    const archived = command({ do: 'archive', sessionId: ID, archived: true })
     await answer('session.mutate', refusal('revision_conflict', 9))
     expect(calls[0]).toMatchObject({ params: { request_id: 'id-1', expected_revision: 9, operation: 'archive', payload: { archived: true } } })
     await answer('session.mutate', refusal('revision_conflict', 10))
@@ -458,10 +466,10 @@ describe('mutate and loadEarlier', () => {
   })
 
   it('retries a model switch refused as stale once, with both fences the refusal carries', async () => {
-    const { actor, open, calls, answer } = stage()
+    const { command, open, calls, answer } = stage()
     await open()
-    const careful = { id: 'careful-large', provider: 'acme', providerName: 'Acme' } as Parameters<typeof actor.pickModel>[0]
-    const picked = actor.pickModel(careful, null)
+    const careful = { id: 'careful-large', provider: 'acme', providerName: 'Acme' } as ModelOption
+    const picked = command({ do: 'pickModel', sessionId: ID, model: careful })
     expect(calls[0]).toMatchObject({ params: { expected_revision: 3, expected_generation: 0, operation: 'model' } })
     await answer('session.mutate', new RpcRefusal(4001, 'stale_generation', 'stale_generation', 5, 2))
     expect(calls[0]).toMatchObject({ params: { request_id: 'id-1', expected_revision: 5, expected_generation: 2, payload: { model: 'careful-large', provider: 'acme' } } })
@@ -470,10 +478,10 @@ describe('mutate and loadEarlier', () => {
   })
 
   it('says the chat moved on when a model switch is still stale after its retry', async () => {
-    const { actor, open, answer } = stage()
+    const { command, open, answer } = stage()
     await open()
-    const careful = { id: 'careful-large', provider: 'acme', providerName: 'Acme' } as Parameters<typeof actor.pickModel>[0]
-    const picked = actor.pickModel(careful, null)
+    const careful = { id: 'careful-large', provider: 'acme', providerName: 'Acme' } as ModelOption
+    const picked = command({ do: 'pickModel', sessionId: ID, model: careful })
     await answer('session.mutate', new RpcRefusal(4001, 'stale_generation', 'stale_generation', 5, 2))
     await answer('session.mutate', new RpcRefusal(4001, 'stale_generation', 'stale_generation', 6, 3))
     expect(await picked).toEqual({ ok: false, refusal: { kind: 'stale', message: 'This chat changed while Highwing was switching its model. Try again.' } })
@@ -493,16 +501,17 @@ describe('mutate and loadEarlier', () => {
     const receipt = (id: string) => ({ session_id: ID, operation: 'branch', revision: 4, branched_session_id: id, copied_messages: 4 })
 
     it('cuts through the last row of the turn, with the key as the request id, and answers the chat and the words', async () => {
-      const { actor, calls, answer } = await opened()
-      const made = actor.branch(3, B1)
+      const { command, branched, calls, answer } = await opened()
+      const made = command({ do: 'branch', sessionId: ID, rowId: 3, branchId: B1 })
       expect(calls[0]).toMatchObject({ method: 'session.mutate', params: { session_id: ID, request_id: B1, expected_revision: 3, expected_generation: 0, operation: 'branch', payload: { through_message_id: 4 } } })
       await answer('session.mutate', receipt('child'))
-      expect(await made).toEqual({ ok: true, value: { sessionId: 'child', text: 'Second' } })
+      expect(await made).toEqual({ ok: true, value: 'child' })
+      expect(branched).toEqual([{ from: ID, sessionId: 'child', text: 'Second' }])
     })
 
     it('retries a stale fence with the fresh ones and the same key', async () => {
-      const { actor, calls, answer } = await opened()
-      const made = actor.branch(1, B1)
+      const { command, calls, answer } = await opened()
+      const made = command({ do: 'branch', sessionId: ID, rowId: 1, branchId: B1 })
       await answer('session.mutate', new RpcRefusal(4001, 'revision_conflict', 'revision_conflict', 9, 2))
       expect(calls[0]).toMatchObject({ params: { request_id: B1, expected_revision: 9, expected_generation: 2, payload: { through_message_id: 2 } } })
       await answer('session.mutate', receipt('child'))
@@ -510,45 +519,46 @@ describe('mutate and loadEarlier', () => {
     })
 
     it('sends a retry of the key as it last sent it, whatever the chat has heard since', async () => {
-      const { actor, calls, answer } = await opened()
-      const first = actor.branch(3, B1)
+      const { command, calls, answer } = await opened()
+      const first = command({ do: 'branch', sessionId: ID, rowId: 3, branchId: B1 })
       await answer('session.mutate', new RpcRefusal(4001, 'revision_conflict', 'revision_conflict', 9, 2))
       const sent = { ...calls[0]?.params }
       await answer('session.mutate', receipt('child'))
       await first
-      const again = actor.branch(3, B1)
+      const again = command({ do: 'branch', sessionId: ID, rowId: 3, branchId: B1 })
       expect(calls[0]?.params).toEqual(sent)
       await answer('session.mutate', receipt('child'))
-      expect(await again).toMatchObject({ ok: true, value: { sessionId: 'child' } })
+      expect(await again).toEqual({ ok: true, value: 'child' })
     })
 
     it('keeps the request when the connection drops, and sends a fresh one after Hermes refuses', async () => {
-      const { actor, calls, answer } = await opened()
-      const dropped = actor.branch(3, B1)
+      const { command, calls, answer } = await opened()
+      const dropped = command({ do: 'branch', sessionId: ID, rowId: 3, branchId: B1 })
       const sent = { ...calls[0]?.params }
       await answer('session.mutate', new Offline('socket closed'))
       expect(await dropped).toEqual({ ok: false, refusal: { kind: 'offline', message: "Highwing isn't connected to this chat right now." } })
-      const again = actor.branch(3, B1)
+      const again = command({ do: 'branch', sessionId: ID, rowId: 3, branchId: B1 })
       expect(calls[0]?.params, 'the same request again').toEqual(sent)
       await answer('session.mutate', refusal('invalid_params'))
       expect(await again).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't branch a chat." } })
-      const fresh = actor.branch(3, B1)
+      const fresh = command({ do: 'branch', sessionId: ID, rowId: 3, branchId: B1 })
       expect(calls[0]?.params).toEqual(sent)
       await answer('session.mutate', receipt('child'))
       await fresh
     })
 
     it('sends a dropped request again even after the chat started a reply, so Hermes can answer it from its receipt', async () => {
-      const { actor, calls, answer, event } = await opened()
-      const dropped = actor.branch(3, B1)
+      const { command, branched, calls, answer, event } = await opened()
+      const dropped = command({ do: 'branch', sessionId: ID, rowId: 3, branchId: B1 })
       const sent = { ...calls[0]?.params }
       await answer('session.mutate', new Offline('socket closed'))
       await dropped
       event(started)
-      const again = actor.branch(3, B1)
+      const again = command({ do: 'branch', sessionId: ID, rowId: 3, branchId: B1 })
       expect(calls[0]?.params).toEqual(sent)
       await answer('session.mutate', receipt('child'))
-      expect(await again).toEqual({ ok: true, value: { sessionId: 'child', text: 'Second' } })
+      expect(await again).toEqual({ ok: true, value: 'child' })
+      expect(branched).toEqual([{ from: ID, sessionId: 'child', text: 'Second' }])
     })
 
     it.each([
@@ -557,53 +567,53 @@ describe('mutate and loadEarlier', () => {
       ['session_busy', { kind: 'stale', message: 'Wait for the reply to finish, then branch.' }],
       ['permission_denied', { kind: 'not-attached', message: "Hermes won't let Highwing do that in this chat." }]
     ])('says in words why Hermes refused with %s', async (reason, expected) => {
-      const { actor, answer } = await opened()
-      const made = actor.branch(3, B1)
+      const { command, answer } = await opened()
+      const made = command({ do: 'branch', sessionId: ID, rowId: 3, branchId: B1 })
       await answer('session.mutate', refusal(reason))
       expect(await made).toEqual({ ok: false, refusal: expected })
     })
 
     it('asks nothing while a reply runs or a message waits, and for a message the chat does not hold', async () => {
-      const { actor, calls, event } = await opened()
-      expect(await actor.branch(99, B1)).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'That message is no longer in this chat.' } })
+      const { command, calls, event } = await opened()
+      expect(await command({ do: 'branch', sessionId: ID, rowId: 99, branchId: B1 })).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'That message is no longer in this chat.' } })
       event(started)
-      expect(await actor.branch(3, B1)).toEqual({ ok: false, refusal: { kind: 'stale', message: 'Wait for the reply to finish, then branch.' } })
+      expect(await command({ do: 'branch', sessionId: ID, rowId: 3, branchId: B1 })).toEqual({ ok: false, refusal: { kind: 'stale', message: 'Wait for the reply to finish, then branch.' } })
       expect(calls).toEqual([])
     })
 
     it('asks nothing while a message of its own waits to be sent', async () => {
-      const { actor, methods } = await opened()
-      void actor.send('hello')
-      expect(await actor.branch(3, B1)).toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+      const { actor, command, methods } = await opened()
+      void actor.port.submit('hello')
+      expect(await command({ do: 'branch', sessionId: ID, rowId: 3, branchId: B1 })).toMatchObject({ ok: false, refusal: { kind: 'stale' } })
       expect(methods()).toEqual(['prompt.submit'])
     })
 
     it('branches while a message that failed to send sits in the chat', async () => {
-      const { actor, calls, answer } = await opened()
-      const sent = actor.send('hello')
+      const { actor, command, calls, answer } = await opened()
+      const sent = actor.port.submit('hello')
       await answer('prompt.submit', refusal('invalid_params'))
       await sent
-      const made = actor.branch(3, B1)
+      const made = command({ do: 'branch', sessionId: ID, rowId: 3, branchId: B1 })
       expect(calls[0]).toMatchObject({ method: 'session.mutate', params: { operation: 'branch' } })
       await answer('session.mutate', receipt('child'))
       expect(await made).toMatchObject({ ok: true })
     })
 
     it('refuses a reply that names no chat', async () => {
-      const { actor, answer } = await opened()
-      const made = actor.branch(3, B1)
+      const { command, answer } = await opened()
+      const made = command({ do: 'branch', sessionId: ID, rowId: 3, branchId: B1 })
       await answer('session.mutate', { session_id: ID, operation: 'branch', revision: 4 })
       expect(await made).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
     })
   })
 
   it('reads earlier pages until one begins at a user row, and puts the turns above the ones it holds', async () => {
-    const { actor, calls, answer } = stage()
+    const { actor, command, calls, answer } = stage()
     actor.attach()
     await answer('session.resume', snapshot({ messages: [{ archived_truncated: true }], display_messages: [{ role: 'user', text: 'third', row_id: 7 }, { role: 'assistant', text: 'ok', row_id: 8 }] }))
     expect(actor.session.earlier).toBe('more')
 
-    const loaded = actor.loadEarlier()
+    const loaded = command({ do: 'loadEarlier', sessionId: ID })
     expect(actor.session.earlier).toBe('loading')
     expect(calls[0]).toMatchObject({ method: 'session.transcript', params: { session_id: ID, order: 'latest', limit: 200 } })
     await answer('session.transcript', { session_id: ID, rows: [{ role: 'assistant', text: 'second answer', row_id: 6 }], next_cursor: 'c1', reset: false })
@@ -615,10 +625,10 @@ describe('mutate and loadEarlier', () => {
   })
 
   it('goes back to "more" when the read fails', async () => {
-    const { actor, answer } = stage()
+    const { actor, command, answer } = stage()
     actor.attach()
     await answer('session.resume', snapshot({ messages: [{ archived_truncated: true }] }))
-    const loaded = actor.loadEarlier()
+    const loaded = command({ do: 'loadEarlier', sessionId: ID })
     await answer('session.transcript', refusal('session_busy'))
     expect(await loaded).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
     expect(actor.session.earlier).toBe('more')

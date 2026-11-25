@@ -1,9 +1,8 @@
-import type { ContextBreakdown, ModelConfirm, ModelMenu, Outcome, Refusal } from './domain/command'
-import type { PathMatch } from './domain/path'
-import { emptyTracked, reduce, sessionOf, type Gate, type LocalAction, type ServerRequest, type SessionInput, type Tracked } from './domain/reduce'
-import type { Attachment, BranchId, InputId, ModelOption, OutboxEntry, PromptId, PromptReply, Session, SessionContent, SessionId } from './domain/session'
-import { Offline, RpcRefusal, type Calls, type Clock } from './wire/link'
-import { parseBranched, parseContextBreakdown, parsePathMatches, parseModelMenu, parseModelReceipt, parseReplay, parseSnapshot, parseStats, parseTranscript } from './wire/parse'
+import type { Outcome, Refusal } from './domain/command'
+import { emptyTracked, reduce, sessionOf, type Fence, type Gate, type HistoryPage, type LocalAction, type ServerRequest, type SessionInput, type Tracked } from './domain/reduce'
+import type { Attachment, InputId, OutboxEntry, Session, SessionContent, SessionId } from './domain/session'
+import { Offline, RpcRefusal, type Calls, type Clock, type Method, type Served } from './wire/link'
+import { parseReplay, parseSnapshot, parseStats } from './wire/parse'
 
 export const DONE: Outcome = { ok: true, value: undefined }
 export const refused = (kind: Refusal['kind'], message: string): Outcome<never> => ({ ok: false, refusal: { kind, message } })
@@ -21,32 +20,13 @@ const REFUSALS: Readonly<Record<string, Refusal>> = {
   unknown_method: { kind: 'unsupported', message: "This Hermes doesn't support that." }
 }
 const FENCE_REFUSALS: ReadonlySet<string> = new Set(['revision_conflict', 'stale_generation'])
-const MOVED_ON: Refusal = { kind: 'stale', message: 'This chat changed while Highwing was switching its model. Try again.' }
-const GONE: Refusal = { kind: 'rejected', message: 'That message is no longer in this chat.' }
 const NOT_CONNECTED: Refusal = { kind: 'offline', message: "Highwing isn't connected to this chat right now." }
-const CANT_BRANCH: Refusal = { kind: 'unsupported', message: "This Hermes can't branch a chat." }
-const BRANCH_BUSY: Refusal = { kind: 'stale', message: 'Wait for the reply to finish, then branch.' }
-const BRANCH_REFUSALS: Readonly<Record<string, Refusal>> = {
-  unknown_method: CANT_BRANCH,
-  runtime_coordination_required: { kind: 'unsupported', message: "Hermes can't branch this chat." },
-  session_busy: BRANCH_BUSY
-}
-const NO_CHILD: Refusal = { kind: 'rejected', message: "Hermes made the chat but didn't say which one." }
-const DROPPED_ANSWER = 'The connection dropped before Hermes confirmed your answer.'
-
-export function refusalOf(error: unknown): Refusal {
-  if (error instanceof Offline) return NOT_CONNECTED
-  if (error instanceof RpcRefusal) return REFUSALS[error.reason ?? ''] ?? { kind: 'rejected', message: `Hermes refused: ${error.message}` }
-  throw error
-}
-
-export interface Branched { readonly sessionId: SessionId; readonly text: string }
 
 /**
  * Hermes answers an exact resend from its receipt and refuses any other resend under the same `request_id`: the
  * receipt's digest covers both fences (persistence/authority/runtime.py `mutation_receipt_key`).
  */
-interface Mutation {
+export interface Mutation {
   readonly request_id: string
   readonly operation: string
   readonly payload: Record<string, unknown>
@@ -55,18 +35,22 @@ interface Mutation {
   readonly expected_generation: number | null
 }
 
-/** Hermes extends a cut at an assistant row through the tool rows after it (persistence/sqlite/authority/_mutation_publish.py `_branch_boundary`). */
-/** The exact request a branch key last sent, and the words of the message it branches from. */
-export interface BranchPin { readonly request: Mutation; readonly text: string }
+export function refusalOf(error: unknown): Refusal {
+  if (error instanceof Offline) return NOT_CONNECTED
+  if (error instanceof RpcRefusal) return REFUSALS[error.reason ?? ''] ?? { kind: 'rejected', message: `Hermes refused: ${error.message}` }
+  throw error
+}
 
-function branchPoint(content: SessionContent, rowId: number): { readonly through: number; readonly text: string } | null {
-  const turn = content.history.find(held => held.request?.rowId === rowId)
-  return turn?.request == null ? null : { through: Math.max(rowId, ...turn.rows), text: turn.request.text }
+async function outcomeOf<T>(call: () => Promise<T>, explain: (error: unknown) => Refusal = refusalOf): Promise<Outcome<T>> {
+  try {
+    return { ok: true, value: await call() }
+  } catch (error) {
+    return { ok: false, refusal: explain(error) }
+  }
 }
 
 export const RESTART_LIMIT = { count: 4, withinMs: 60_000 } as const
 const KEEPS_RESTARTING = 'Hermes keeps restarting this chat.'
-const EARLIER = { pageRows: 200, pages: 3 } as const
 
 type Attaching = Extract<Gate, { at: 'attaching' }>
 
@@ -96,22 +80,70 @@ export interface ActorDeps {
   readonly publish: (session: Session, previous: Session) => void
   readonly refuse: (request: ServerRequest) => void
   readonly mintId: () => string
-  /** Branch keys -> their pins. The hub owns it, so a pin outlives an actor that was detached and made again. */
-  readonly branches: Map<BranchId, BranchPin>
 }
 
-/** A page that begins with a user row holds whole turns, so the read can stop there. */
-const startsAtTurn = (page: { readonly rows: readonly { readonly role?: unknown }[] }) => page.rows[0]?.role === 'user'
+export interface SessionPort {
+  readonly id: SessionId
+  readonly content: SessionContent
+  readonly fence: Fence
+  call<M extends Method>(method: M, params: Served[M]['params']): Promise<Outcome<Served[M]['result']>>
+  /** `invalid` stands in for the general refusal when Hermes names that payload field as the invalid one. */
+  mutate(
+    operation: string,
+    payload: Record<string, unknown>,
+    expectedGeneration: number | null,
+    invalid?: { readonly field: string; readonly refusal: Refusal }
+  ): Promise<Outcome<Served['session.mutate']['result']>>
+  /**
+   * The request exactly as the row built it, with the same one retry on a fence refusal. `sent` hears each request
+   * as it goes. `explain` turns Hermes's refusal reason into the refusal at the moment it fails, and null keeps the general one.
+   */
+  resend(
+    request: Mutation,
+    sent: (request: Mutation) => void,
+    explain: (reason: string) => Refusal | null
+  ): Promise<Outcome<Served['session.mutate']['result']>>
+  /**
+   * `apiText` is what the model reads when it differs from the `text` the thread and the stored history show. Each upload
+   * is staged with Hermes first, in order. The message is sent only once every one is, and not at all when Hermes refuses one.
+   */
+  submit(text: string, apiText?: string, uploads?: readonly Upload[]): Promise<Outcome>
+  act(action: LocalAction): void
+  earlier(page: HistoryPage): void
+  whenLive<T>(run: () => Promise<Outcome<T>>): Promise<Outcome<T>>
+}
 
 export class SessionActor {
   private tracked: Tracked
   private published: Session
   private restarts: readonly number[] = []
   private readonly resubmits = new Map<InputId, Resubmit>()
+  readonly port: SessionPort
 
   constructor(readonly id: SessionId, private readonly deps: ActorDeps) {
     this.tracked = emptyTracked(id)
     this.published = sessionOf(this.tracked, deps.conn.link, null)
+    const tracked = () => this.tracked
+    this.port = {
+      id,
+      get content() { return tracked().content },
+      get fence() { return tracked().fence },
+      call: (method, params) => outcomeOf(() => deps.conn.call(method, params)),
+      mutate: (operation, payload, expectedGeneration, invalid) => outcomeOf(
+        () => this.mutation({ request_id: deps.mintId(), operation, payload, expected_revision: this.tracked.fence.revision, expected_generation: expectedGeneration }),
+        error => (invalid !== undefined && error instanceof RpcRefusal && error.reason === 'invalid_params' && error.field === invalid.field ? invalid.refusal : refusalOf(error))
+      ),
+      resend: (request, sent, explain) => outcomeOf(
+        () => this.mutation(request, sent),
+        error => (error instanceof RpcRefusal ? explain(error.reason ?? '') ?? refusalOf(error) : refusalOf(error))
+      ),
+      submit: (text, apiText, uploads = []) => this.port.whenLive(() => (uploads.length === 0
+        ? this.post(text, apiText, [], null)
+        : this.stage(uploads).then(staged => (staged.ok ? this.post(text, apiText, uploads, staged.value) : staged)))),
+      act: action => this.act(action),
+      earlier: page => this.step({ in: 'earlier', page }),
+      whenLive: run => (this.tracked.gate.at === 'live' ? run() : Promise.resolve({ ok: false, refusal: NOT_CONNECTED }))
+    }
   }
 
   get session(): Session {
@@ -210,21 +242,6 @@ export class SessionActor {
     return this.admit(entry)
   }
 
-  private offline(): Outcome<never> | null {
-    return this.tracked.gate.at === 'live' ? null : { ok: false, refusal: NOT_CONNECTED }
-  }
-
-  /**
-   * `apiText` is what the model reads when it differs from the `text` the thread and the stored history show. Each upload is
-   * staged with Hermes first, in order. The message is sent only once every one is, and not at all when Hermes refuses one.
-   */
-  send(text: string, apiText?: string, uploads: readonly Upload[] = []): Promise<Outcome> {
-    const offline = this.offline()
-    if (offline !== null) return Promise.resolve(offline)
-    if (uploads.length === 0) return this.post(text, apiText, [], null)
-    return this.stage(uploads).then(staged => (staged.ok ? this.post(text, apiText, uploads, staged.value) : staged))
-  }
-
   private post(text: string, apiText: string | undefined, uploads: readonly Upload[], staged: Staged | null): Promise<Outcome> {
     const inputId = this.deps.mintId() as InputId
     if (staged !== null) {
@@ -261,206 +278,18 @@ export class SessionActor {
   private async admit({ inputId, text, apiText }: Pick<OutboxEntry, 'inputId' | 'text' | 'apiText'>): Promise<Outcome> {
     const resubmit = this.resubmits.get(inputId)
     const apiTextSent = resubmit === undefined ? apiText : resubmit.apiText
-    try {
-      const receipt = await this.deps.conn.call('prompt.submit', {
-        session_id: this.id, text, input_id: inputId, ...(apiTextSent === undefined ? {} : { api_text: apiTextSent }),
-        ...(resubmit === undefined || resubmit.attachments.length === 0 ? {} : { attachments: [...resubmit.attachments] })
-      })
-      if ('admission_id' in receipt) this.act({ did: 'send.admitted', inputId, admissionId: receipt.admission_id, status: receipt.status })
+    const receipt = await this.port.call('prompt.submit', {
+      session_id: this.id, text, input_id: inputId, ...(apiTextSent === undefined ? {} : { api_text: apiTextSent }),
+      ...(resubmit === undefined || resubmit.attachments.length === 0 ? {} : { attachments: [...resubmit.attachments] })
+    })
+    if (receipt.ok) {
+      if ('admission_id' in receipt.value) this.act({ did: 'send.admitted', inputId, admissionId: receipt.value.admission_id, status: receipt.value.status })
       else this.act({ did: 'send.discarded', inputId })
       return DONE
-    } catch (error) {
-      if (error instanceof Offline) return DONE
-      const refusal = refusalOf(error)
-      this.act({ did: 'send.failed', inputId, message: refusal.message })
-      return { ok: false, refusal }
     }
-  }
-
-  /** Cuts the chat before the stored row, then sends `text`. The thread is cut only once Hermes has said yes. */
-  async rewind(rowId: number, text: string): Promise<Outcome> {
-    const offline = this.offline()
-    if (offline !== null) return offline
-    if (this.tracked.content.run.state === 'running') return refused('stale', 'Wait for the reply to finish, then try again.')
-    try {
-      await this.mutation(this.request('rewind', { target_message_id: rowId }, this.tracked.fence.generation ?? 0))
-    } catch (error) {
-      const vanished = error instanceof RpcRefusal && error.reason === 'invalid_params' && error.field === 'target_message_id'
-      return { ok: false, refusal: vanished ? GONE : refusalOf(error) }
-    }
-    this.act({ did: 'rewound', rowId })
-    return this.send(text)
-  }
-
-  discard(inputId: InputId): Outcome {
-    this.act({ did: 'send.discarded', inputId })
-    return DONE
-  }
-
-  async stop(): Promise<Outcome> {
-    const { run } = this.tracked.content
-    const offline = this.offline()
-    if (offline !== null) return offline
-    if (run.state !== 'running') return refused('stale', 'Nothing is running in this chat.')
-    this.act({ did: 'stop' })
-    try {
-      await this.deps.conn.call('session.interrupt', { session_id: this.id, execution_generation: run.generation })
-      return DONE
-    } catch (error) {
-      const refusal = refusalOf(error)
-      return refusal.kind === 'stale' ? DONE : { ok: false, refusal }
-    }
-  }
-
-  async answer(promptId: PromptId, reply: PromptReply): Promise<Outcome> {
-    const { run } = this.tracked.content
-    const offline = this.offline()
-    if (offline !== null) return offline
-    const prompt = run.state === 'running' ? run.turn.items.find(item => item.kind === 'prompt' && item.id === promptId) : undefined
-    if (prompt?.kind !== 'prompt' || prompt.state.s !== 'waiting') return refused('stale', 'That question is no longer open.')
-    this.act({ did: 'answer', promptId, reply })
-    const fence = { session_id: this.id, execution_generation: prompt.generation, prompt_id: promptId }
-    try {
-      const { status } = await (prompt.ask.kind === 'approval'
-        ? this.deps.conn.call('approval.respond', { ...fence, choice: reply.value })
-        : this.deps.conn.call('clarify.respond', { ...fence, answer: reply.value }))
-      this.act({ did: 'answer.resolved', promptId, byUs: status === 'resolved' })
-      return DONE
-    } catch (error) {
-      const refusal = refusalOf(error)
-      this.act({ did: 'answer.failed', promptId, message: refusal.kind === 'offline' ? DROPPED_ANSWER : refusal.message })
-      return { ok: false, refusal }
-    }
-  }
-
-  async mutate(change: { readonly title: string } | { readonly archived: boolean }): Promise<Outcome> {
-    const offline = this.offline()
-    if (offline !== null) return offline
-    try {
-      await this.mutation(this.request('title' in change ? 'rename' : 'archive', { ...change }, null))
-      return DONE
-    } catch (error) {
-      return { ok: false, refusal: refusalOf(error) }
-    }
-  }
-
-  async models(): Promise<Outcome<ModelMenu>> {
-    const offline = this.offline()
-    if (offline !== null) return offline
-    try {
-      // explicit_only leaves out providers that only look signed in through ambient credentials.
-      return { ok: true, value: parseModelMenu(await this.deps.conn.call('model.options', { session_id: this.id, explicit_only: true })) }
-    } catch (error) {
-      return { ok: false, refusal: refusalOf(error) }
-    }
-  }
-
-  async contextBreakdown(): Promise<Outcome<ContextBreakdown>> {
-    const offline = this.offline()
-    if (offline !== null) return offline
-    try {
-      return { ok: true, value: parseContextBreakdown(await this.deps.conn.call('session.context_breakdown', { session_id: this.id })) }
-    } catch (error) {
-      return { ok: false, refusal: refusalOf(error) }
-    }
-  }
-
-  async completePath(word: string): Promise<Outcome<readonly PathMatch[]>> {
-    const offline = this.offline()
-    if (offline !== null) return offline
-    try {
-      return { ok: true, value: parsePathMatches(await this.deps.conn.call('complete.path', { session_id: this.id, word })) }
-    } catch (error) {
-      return { ok: false, refusal: refusalOf(error) }
-    }
-  }
-
-  async pickModel(model: ModelOption, confirm: string | null): Promise<Outcome<ModelConfirm | null>> {
-    const offline = this.offline()
-    if (offline !== null) return offline
-    const payload = { model: model.id, provider: model.provider, ...(confirm === null ? {} : { confirm }) }
-    try {
-      const receipt = parseModelReceipt(await this.mutation(this.request('model', payload, this.tracked.fence.generation ?? 0)))
-      switch (receipt.status) {
-        case 'confirm':
-          return { ok: true, value: receipt.confirm }
-        case 'confirm-without-token':
-          return refused('rejected', receipt.message)
-        case 'deferred': {
-          const { run } = this.tracked.content
-          const during = receipt.during ?? (run.state === 'running' ? run.generation : null)
-          if (during !== null) this.act({ did: 'model.deferred', model: { id: model.id, provider: model.provider }, during })
-          return { ok: true, value: null }
-        }
-        case 'committed':
-          return { ok: true, value: null }
-      }
-    } catch (error) {
-      const refusal = refusalOf(error)
-      return { ok: false, refusal: refusal.kind === 'stale' ? MOVED_ON : refusal }
-    }
-  }
-
-  /**
-   * Hermes sends no session.info after this set, so the reply is the only word on the new state. Leaving out `scope`
-   * keeps the change to this chat: any scope but "global" is refused, and "global" flips the whole profile
-   * (gateway/session_tui_config.py:187-193,357-377, gateway/session_busy_controls.py:30-44,134-166). An explicit word, because a missing
-   * value toggles.
-   */
-  async setYolo(on: boolean): Promise<Outcome> {
-    const offline = this.offline()
-    if (offline !== null) return offline
-    try {
-      const { value } = await this.deps.conn.call('config.set', { session_id: this.id, key: 'yolo', value: on ? 'on' : 'off' })
-      this.act({ did: 'yolo', on: value === '1' || value === true })
-      return DONE
-    } catch (error) {
-      return { ok: false, refusal: refusalOf(error) }
-    }
-  }
-
-  /** Sends no title: Hermes names an untitled branch next in the parent's lineage, "Sort the invoices #2" (persistence/sqlite/authority/_mutation_publish.py `branch_in_transaction`). */
-  async branch(rowId: number, branchId: BranchId): Promise<Outcome<Branched>> {
-    const offline = this.offline()
-    if (offline !== null) return offline
-    // A pinned request may have made its chat already, so it skips the local checks and Hermes's receipt answers it.
-    const pin = this.deps.branches.get(branchId) ?? this.branchPin(rowId, branchId)
-    if ('ok' in pin) return pin
-    const { request, text } = pin
-    try {
-      const sessionId = parseBranched(await this.mutation(request, latest => void this.deps.branches.set(branchId, { request: latest, text })))
-      return sessionId === null ? { ok: false, refusal: NO_CHILD } : { ok: true, value: { sessionId, text } }
-    } catch (error) {
-      if (error instanceof Offline) return { ok: false, refusal: NOT_CONNECTED }
-      // Hermes writes a receipt only with a commit, so a refused request leaves nothing to resend exactly.
-      this.deps.branches.delete(branchId)
-      return { ok: false, refusal: this.branchRefusal(error, rowId) }
-    }
-  }
-
-  private branchPin(rowId: number, branchId: BranchId): BranchPin | Outcome<never> {
-    const { content, fence } = this.tracked
-    const waiting = content.outbox.some(entry => entry.state.s !== 'failed')
-    if (content.run.state === 'running' || waiting) return { ok: false, refusal: BRANCH_BUSY }
-    const point = branchPoint(content, rowId)
-    if (point === null) return { ok: false, refusal: GONE }
-    const request = {
-      request_id: branchId, operation: 'branch', payload: { through_message_id: point.through },
-      expected_revision: fence.revision, expected_generation: fence.generation ?? 0
-    }
-    return { request, text: point.text }
-  }
-
-  /** A gone row, a bad branch payload and a Hermes without `branch` all refuse `invalid_params` (persistence/authority/runtime.py `parse_mutation` reads an unknown operation as a metadata edit), so only the actor's own history can tell them apart. */
-  private branchRefusal(error: unknown, rowId: number): Refusal {
-    const reason = error instanceof RpcRefusal ? error.reason ?? '' : ''
-    if (Object.hasOwn(BRANCH_REFUSALS, reason)) return BRANCH_REFUSALS[reason] as Refusal
-    if (reason === 'invalid_params') return branchPoint(this.tracked.content, rowId) === null ? GONE : CANT_BRANCH
-    return refusalOf(error)
-  }
-
-  private request(operation: string, payload: Record<string, unknown>, generation: number | null): Mutation {
-    return { request_id: this.deps.mintId(), operation, payload, expected_revision: this.tracked.fence.revision, expected_generation: generation }
+    if (receipt.refusal.kind === 'offline') return DONE
+    this.act({ did: 'send.failed', inputId, message: receipt.refusal.message })
+    return receipt
   }
 
   private mutation(request: Mutation, sent?: (request: Mutation) => void) {
@@ -478,36 +307,6 @@ export class SessionActor {
       }
       throw error
     })
-  }
-
-  /** Runs one Hermes command in this chat and answers its directive as Hermes sent it. Rejects with what `refusalOf` reads. */
-  dispatch(name: string, arg: string) {
-    return this.deps.conn.call('command.dispatch', { session_id: this.id, name, ...(arg === '' ? {} : { arg }) })
-  }
-
-  async loadEarlier(): Promise<Outcome> {
-    const { older } = this.tracked.fence
-    const offline = this.offline()
-    if (offline !== null) return offline
-    if (older === null) return refused('rejected', 'There is nothing earlier in this chat.')
-    this.act({ did: 'earlier.requested' })
-    const pages: Parameters<typeof parseTranscript>[0][number][] = []
-    try {
-      for (let cursor = older.cursor; pages.length < EARLIER.pages;) {
-        const page = await this.deps.conn.call('session.transcript', {
-          session_id: this.id, order: 'latest', limit: EARLIER.pageRows, ...(cursor === null ? {} : { cursor })
-        })
-        pages.push(page)
-        if (page.next_cursor === null || startsAtTurn(page)) break
-        cursor = page.next_cursor
-      }
-      this.step({ in: 'earlier', page: parseTranscript(pages) })
-      return DONE
-    } catch (error) {
-      const refusal = refusalOf(error)
-      this.step({ in: 'earlier', page: { turns: [], unfinished: null, older } })
-      return { ok: false, refusal }
-    }
   }
 
   async detach(): Promise<void> {

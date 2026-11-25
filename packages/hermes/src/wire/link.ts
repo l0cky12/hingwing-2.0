@@ -173,10 +173,10 @@ export class Offline extends Error {}
  * `projects.tree` reaches its legacy handler the same way (tui_gateway/methods_config.py:137), and a -32601 from it
  * means this Hermes cannot say which chats were branched from which.
  */
-type Served = CanonicalRpcMethods & Pick<RpcMethods,
+export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'complete.path' | 'file.attach' |
   'profiles.create' | 'profiles.describe' | 'profiles.configure' | 'profiles.set_asset' | 'profiles.get_asset' | 'projects.tree'>
-type Method = keyof Served
+export type Method = keyof Served
 
 export interface Connection {
   readonly link: Link

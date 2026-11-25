@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { isDeepStrictEqual } from 'node:util'
 import type { Hermes } from '@highwing/hermes'
 import type { AttachmentId, Bots, Link, OpenChat, RelayDesk, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
@@ -70,6 +72,30 @@ describe('applyPush', () => {
     const [before, after] = [moments[0]!, moments[1]!]
     expect(applyPush(before, 3, patchPush(5, before, after))).toBe('need-full')
     expect(applyPush(undefined, 0, patchPush(1, before, after))).toBe('need-full')
+  })
+
+  const fixtures = readdirSync('fixtures').filter(name => name.endsWith('.jsonl'))
+  const onlyTextGrew = (before: Session, after: Session) => {
+    const [held, grown] = [itemsOf(before), itemsOf(after)]
+    const [last, next] = [held.at(-1), grown.at(-1)]
+    return last?.kind === 'text' && next?.kind === 'text' && next.markdown.length > last.markdown.length
+      && isDeepStrictEqual({ ...after, run: { ...after.run, turn: { ...(after.run as Extract<Session['run'], { state: 'running' }>).turn, items: held } } }, before)
+  }
+
+  it.each(fixtures)('rebuilds every published moment of %s from the one before, and sends no field a text delta left alone', async name => {
+    const sessions: Session[] = []
+    for await (const { session } of play(loadFixture(`fixtures/${name}`))) sessions.push(session)
+    const streams = readFileSync(`fixtures/${name}`, 'utf8').includes('"message.delta"')
+    let deltas = 0
+    for (let index = 1; index < sessions.length; index++) {
+      const [before, after] = [sessions[index - 1]!, sessions[index]!]
+      const patch = sessionPatch(before, after)
+      expect(applyPush(before, 0, { topic, rev: 1, patch }), `moment ${index}`).toEqual({ value: after, rev: 1 })
+      if (!onlyTextGrew(before, after)) continue
+      deltas++
+      expect(patch.changed, `moment ${index}`).toEqual({})
+    }
+    expect(deltas > 0, 'a text delta sends no changed field whenever the fixture streams text').toBe(streams)
   })
 })
 

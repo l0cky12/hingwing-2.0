@@ -162,7 +162,7 @@ no cache, plan, rate-limit or money field from any of them.
   as before. The pill writes only the open chat's setting: it names the chat
   and the key `yolo`, sends no `scope`, and says "on" or "off" outright. Hermes
   refuses any scope but "global", which would flip every chat of the profile,
-  and takes a missing value to mean "toggle". See `packages/hermes/src/actor.ts`.
+  and takes a missing value to mean "toggle". See `packages/hermes/src/session-commands.ts`.
 
 ## Attachments
 

@@ -19,7 +19,8 @@ highwing-2.0/
     hermes/                      @highwing/hermes        Node. No Electron, no DOM.
       src/
         hub.ts                   public entry "."         openHermes, Hermes, Command, Feed, liveDialer, remoteRoute, Route, checkTarget
-        actor.ts                 private                  one session: owns its Tracked state, makes the calls a state asks for
+        actor.ts                 private                  one session: owns its Tracked state, makes the calls a state asks for, lends commands a SessionPort
+        session-commands.ts      private                  one row per command about one chat, over that chat's SessionPort. `versions` stays in hub.ts: it must not attach the chat
         sidebar.ts               private                  stored rows, the running set, deriveSidebar
         roster.ts                private                  botList: what Highwing knows about the bots and their Bot Chats, and when it asks Hermes
         open.ts                  private                  chatDesk: which chat is open, the lookups and the create a change asks for
@@ -108,7 +109,7 @@ A `message.delta` frame becomes pixels in four steps.
 
 1. `hub.ts` receives the frame from `link.ts`, calls `parseEvent` (`wire/parse.ts`) and hands the result to the actor.
 2. `actor.ts` calls `reduce` (`domain/reduce.ts`). The gate inside the reducer applies, parks or drops the frame. The actor publishes the new `Session`.
-3. `main/ipc.ts` sends a `Push` holding only the changed tail. `renderer/store.ts` applies it.
+3. `main/ipc.ts` sends a `Push` holding only the changed tail and the other fields whose reference changed. `renderer/store.ts` applies it.
 4. `threadView` (`@highwing/thread`) derives the view, and the `Thread` component draws it.
 
 ## How it is tested
