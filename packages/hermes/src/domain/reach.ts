@@ -32,6 +32,57 @@ export function targetOf(raw: unknown): Target | null {
 /** The name without any `user@`: what Tailscale lists and what ssh resolves. */
 export const hostPart = (host: SshHost): string => host.slice(host.indexOf('@') + 1)
 
+declare const gatewayUrl: unique symbol
+/**
+ * Where a Hermes gateway serves its Webapp, spelled one way: `scheme://host[:port][/prefix]`.
+ * Only `parseGatewayUrl` makes one, so it is http or https, holds no username, password, `?` or `#`
+ * part, and two of them name the same gateway exactly when they are equal strings.
+ */
+export type GatewayUrl = string & { readonly [gatewayUrl]: true }
+
+/** Why typed text is not a gateway address. */
+export type UrlProblem = 'not-an-address' | 'credentials' | 'extras'
+
+export type ParsedUrl = { readonly ok: true; readonly url: GatewayUrl } | { readonly ok: false; readonly problem: UrlProblem }
+
+export const URL_PROBLEMS: Readonly<Record<UrlProblem, { readonly words: string; readonly fix: string }>> = {
+  'not-an-address': {
+    words: "That isn't a web address.",
+    fix: "Type the address of the gateway's Webapp, such as https://hermes.example.com."
+  },
+  credentials: {
+    words: 'That address has a username or password in it.',
+    fix: "Take them out. Highwing asks you to sign in on Hermes's own page instead."
+  },
+  extras: {
+    words: 'That address has a ? or # part, which can hold a sign-in secret.',
+    fix: 'Use the address up to the ? or #.'
+  }
+}
+
+const SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i
+const MAX_URL = 2048
+
+/** The one maker of a `GatewayUrl`. Text with no scheme is read as https. */
+export function parseGatewayUrl(raw: string): ParsedUrl {
+  const text = raw.trim()
+  const url = URL.parse(SCHEME.test(text) ? text : `https://${text}`)
+  if (url === null || (url.protocol !== 'https:' && url.protocol !== 'http:') || url.port === '0') return { ok: false, problem: 'not-an-address' }
+  if (url.username !== '' || url.password !== '') return { ok: false, problem: 'credentials' }
+  // `URL` drops an empty `?` or `#`, so only the text shows one was typed.
+  if (/[?#]/.test(text)) return { ok: false, problem: 'extras' }
+  const canonical = `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, '')}`
+  return canonical.length <= MAX_URL ? { ok: true, url: canonical as GatewayUrl } : { ok: false, problem: 'not-an-address' }
+}
+
+const LOOPBACK = /^(?:localhost|\[::1\]|127\.\d+\.\d+\.\d+)$/
+
+/** Whether the address sends a sign-in and chats unencrypted across a network. */
+export function isPlainHttp(url: GatewayUrl): boolean {
+  const { protocol, hostname } = new URL(url)
+  return protocol === 'http:' && !LOOPBACK.test(hostname)
+}
+
 const ADDRESS = /^[0-9.]+$|:/
 
 /** How the words name a target: "this computer", or the far machine's short name. */

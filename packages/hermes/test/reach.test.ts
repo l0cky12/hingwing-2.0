@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CHECK_FAILURES, machineOf, parseSshHost, STEP_WORDS, targetOf, type CheckStep, type SshHost } from '../src/domain/reach'
+import { isPlainHttp, parseGatewayUrl, URL_PROBLEMS, type GatewayUrl } from '../src/domain/reach'
 
 const remote = (host: string) => ({ kind: 'remote', host: host as SshHost }) as const
 
@@ -79,4 +80,85 @@ describe('the words of a check', () => {
     expect(steps).toEqual([...steps].sort((a, b) => a - b))
     expect(Object.keys(STEP_WORDS)).toEqual(ORDER)
   })
+})
+
+const gatewayUrl = (text: string): GatewayUrl => {
+  const parsed = parseGatewayUrl(text)
+  if (!parsed.ok) throw new Error(`${text} is ${parsed.problem}`)
+  return parsed.url
+}
+
+describe('parseGatewayUrl', () => {
+  it.each([
+    ['hermes.example.com', 'https://hermes.example.com'],
+    ['  HTTPS://Hermes.Example.COM:443/ ', 'https://hermes.example.com'],
+    ['https://hermes.example.com/', 'https://hermes.example.com'],
+    ['http://hermes-host:80', 'http://hermes-host'],
+    ['https://hermes.example.com:8443', 'https://hermes.example.com:8443'],
+    ['localhost:9120', 'https://localhost:9120'],
+    ['box.example/hermes/', 'https://box.example/hermes'],
+    ['https://box.example/proxied/hermes//', 'https://box.example/proxied/hermes'],
+    ['http://[FD7A:115C:A1E0:0:0:0:0:1]:9120/', 'http://[fd7a:115c:a1e0::1]:9120'],
+    ['[::1]:9120', 'https://[::1]:9120']
+  ])('reads %j as %s', (text, url) => {
+    expect(parseGatewayUrl(text)).toEqual({ ok: true, url })
+  })
+
+  it('gives every spelling of one gateway the same string, and keeps that string as it is', () => {
+    const spellings = ['Hermes.Example.com/hermes', 'https://hermes.example.com:443/hermes/', 'HTTPS://HERMES.EXAMPLE.COM/hermes']
+    const urls = new Set(spellings.map(gatewayUrl))
+    expect([...urls]).toEqual(['https://hermes.example.com/hermes'])
+    expect(gatewayUrl('https://hermes.example.com/hermes')).toBe('https://hermes.example.com/hermes')
+  })
+
+  it('tells two gateways apart by scheme, port and path', () => {
+    const urls = ['https://box.example', 'http://box.example', 'https://box.example:8443', 'https://box.example/hermes'].map(gatewayUrl)
+    expect(new Set(urls).size).toBe(4)
+  })
+
+  it('keeps an address of 2048 characters and refuses a longer one', () => {
+    const at = (length: number) => `https://box.example/${'p'.repeat(length - 'https://box.example/'.length)}`
+    expect(parseGatewayUrl(at(2048))).toEqual({ ok: true, url: at(2048) })
+    expect(parseGatewayUrl(at(2049))).toEqual({ ok: false, problem: 'not-an-address' })
+  })
+
+  it.each([
+    ['nothing', '', 'not-an-address'],
+    ['another scheme', 'ftp://box.example', 'not-an-address'],
+    ['a script', 'javascript:alert(1)', 'not-an-address'],
+    ['no host', 'https://', 'not-an-address'],
+    ['port 0', 'https://box.example:0', 'not-an-address'],
+    ['a port past 65535', 'https://box.example:65536', 'not-an-address'],
+    ['a space in the name', 'hermes host', 'not-an-address'],
+    ['a username and password', 'https://ada:secret@box.example', 'credentials'],
+    ['a username', 'ada@box.example', 'credentials'],
+    ['a query', 'https://box.example/?token=abc', 'extras'],
+    ['an empty query', 'https://box.example/?', 'extras'],
+    ['a fragment', 'box.example/#/chat', 'extras'],
+    ['an empty fragment', 'https://box.example#', 'extras']
+  ])('refuses %s', (_what, text, problem) => {
+    expect(parseGatewayUrl(text)).toEqual({ ok: false, problem })
+  })
+
+  it('gives every problem a sentence and a different sentence to try', () => {
+    for (const [problem, { words, fix }] of Object.entries(URL_PROBLEMS)) {
+      expect(words, problem).toMatch(/^[A-Z].+\.$/)
+      expect(fix, problem).toMatch(/^[A-Z].+\.$/)
+      expect(fix, problem).not.toBe(words)
+    }
+  })
+})
+
+describe('isPlainHttp', () => {
+  it.each(['http://192.168.1.20:9120', 'http://hermes-host:9120', 'http://hermes.example.com', 'http://[fd7a:115c:a1e0::1]'])(
+    'takes plain http to %s, and says it is plain', text => {
+      expect(isPlainHttp(gatewayUrl(text))).toBe(true)
+    }
+  )
+
+  it.each(['http://127.0.0.1:9120', 'http://127.4.5.6', 'http://localhost:9120', 'http://LOCALHOST', 'http://[::1]:9120', 'https://192.168.1.20', 'hermes.example.com'])(
+    'does not call %s plain', text => {
+      expect(isPlainHttp(gatewayUrl(text))).toBe(false)
+    }
+  )
 })
