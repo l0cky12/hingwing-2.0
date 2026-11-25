@@ -90,12 +90,19 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', canSend, showSt
     caretTo.current = null
   }, [draft, caret, press])
 
+  // The box may end up holding a saved draft rather than the seed, and only once the saved drafts load.
+  const caretAtEnd = useRef(false)
   useLayoutEffect(() => {
     if (seed === '' || slot === null) return
-    caretTo.current = seed.length
-    setCaret(seed.length)
+    caretAtEnd.current = true
     seedDraft(slot, seed)
   }, [])
+  useLayoutEffect(() => {
+    if (!caretAtEnd.current || draft === '') return
+    caretAtEnd.current = false
+    box.current?.setSelectionRange(draft.length, draft.length)
+    setCaret(draft.length)
+  }, [draft, box])
 
   const wasConfirming = useRef(false)
   useLayoutEffect(() => {
