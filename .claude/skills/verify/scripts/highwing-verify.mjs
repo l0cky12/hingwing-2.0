@@ -590,18 +590,43 @@ function requestText(fixturePath) {
 const MASK = '•••'
 const expand = (ctx, text) => (text === '@request' ? requestText(ctx.fixture ?? fail('@request needs --fixture')) : text)
 
-/** Logs the step. For a password field, remembers its text so that no log line or snapshot can hold it. */
+/** Logs the step, with the text of a password field as `•••`. The text is remembered so `leaked` can prove no evidence file holds it. */
 async function secretField(ctx, verb, label, text) {
   const field = ctx.page.getByLabel(label, { exact: true })
-  if ((await field.getAttribute('type', { timeout: ctx.timeout })) === 'password') {
+  const secret = (await field.getAttribute('type', { timeout: ctx.timeout })) === 'password'
+  if (secret) {
     ctx.secretLabels.add(label)
     if (text !== '') ctx.secrets.add(text)
   }
-  log(ctx, `${verb} ${JSON.stringify(label)} ${JSON.stringify(text)}`)
+  log(ctx, `${verb} ${JSON.stringify(label)} ${secret ? JSON.stringify(MASK) : JSON.stringify(text)}`)
   return field
 }
 
-const masked = (ctx, text) => [...ctx.secrets].reduce((out, secret) => out.split(secret).join(MASK), text)
+/** Each way a typed password can be written: as typed, and escaped inside a JSON or YAML string. */
+const writtenForms = secret => [secret, JSON.stringify(secret).slice(1, -1)]
+
+const masked = (ctx, text) => [...ctx.secrets].flatMap(writtenForms).reduce((out, form) => out.split(form).join(MASK), text)
+
+/** A snapshot writes a textbox's value after its name, escaped. A password field's value is replaced before anything matches on it. */
+function maskedSnapshot(snapshot, labels) {
+  const names = labels.map(label => `- textbox ${JSON.stringify(label)}`)
+  return snapshot.split('\n').map(line => {
+    const head = line.trimStart()
+    if (!names.some(name => head === name || head.startsWith(`${name}:`) || head.startsWith(`${name} [`))) return line
+    const colon = line.indexOf(': ', line.length - head.length)
+    return colon === -1 ? line : `${line.slice(0, colon)}: ${MASK}`
+  }).join('\n')
+}
+
+/** The evidence files that hold a typed password in any written form. */
+function leaked(ctx) {
+  const forms = [...ctx.secrets].flatMap(writtenForms)
+  if (forms.length === 0) return []
+  return readdirSync(ctx.evidence, { recursive: true, withFileTypes: true })
+    .filter(entry => entry.isFile() && !entry.name.endsWith('.png'))
+    .map(entry => join(entry.parentPath, entry.name))
+    .filter(path => forms.some(form => readFileSync(path, 'utf8').includes(form)))
+}
 
 function log(ctx, line) {
   const stamped = `${new Date().toISOString()} ${masked(ctx, line)}`
@@ -702,9 +727,10 @@ async function shoot(ctx, name) {
   await ctx.page.mouse.move(0, 0)
   await ctx.page.screenshot({ path, animations: 'disabled', caret: 'hide', ...(ctx.clip && { clip: ctx.clip }) })
   await drawPreview(ctx, path)
-  const typed = await ctx.page.locator('input[type=password]').evaluateAll(fields => fields.map(field => field.value).filter(value => value !== ''))
-  for (const value of typed) ctx.secrets.add(value)
-  writeFileSync(join(ctx.evidence, `${name}.aria.txt`), masked(ctx, await ctx.page.locator('body').ariaSnapshot()))
+  const fields = await ctx.page.locator('input[type=password]').evaluateAll(inputs => inputs.map(input => ({ label: input.getAttribute('aria-label') ?? '', value: input.value })))
+  for (const { value } of fields) if (value !== '') ctx.secrets.add(value)
+  const snapshot = maskedSnapshot(await ctx.page.locator('body').ariaSnapshot(), [...ctx.secretLabels, ...fields.map(field => field.label)])
+  writeFileSync(join(ctx.evidence, `${name}.aria.txt`), masked(ctx, snapshot))
   const size = pngSize(path)
   if (size.width !== ctx.size.width || size.height !== ctx.size.height) throw new Error(`${name}.png is ${size.width}x${size.height}, not ${ctx.size.width}x${ctx.size.height}`)
   if (ctx.holding && !(await STATES[ctx.holding](ctx.page).isVisible())) {
@@ -1026,6 +1052,11 @@ async function run(argv) {
       host.child.kill()
       rmSync(join(scratch, 'host-pid'), { force: true })
     }
+  }
+  const leaks = leaked(ctx)
+  if (leaks.length > 0 && !failed) {
+    failed = new Error(`a typed password is in ${leaks.join(', ')}`)
+    log(ctx, `FAILED: ${failed.message}`)
   }
   log(ctx, `${failed ? 'FAIL' : 'PASS'} evidence in ${evidence}`)
   process.exit(failed ? 1 : 0)

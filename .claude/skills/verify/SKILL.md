@@ -83,7 +83,7 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `see <text>` | text | waits until the text is visible anywhere |
 | `said <text>` | text | waits until the text is visible in the thread. A bot's preview in the sidebar does not count |
 | `click <role> <name>` | ARIA role, exact accessible name or `/regex/` | clicks it. A `/regex/` clicks the first match |
-| `type <label> <text>` | exact label, text or `@request` | fills the field. `@request` is the text of the fixture's first `prompt.submit` step. Text typed into a password field is written as `•••` in `steps.log`, in every later log line and in each `.aria.txt`. A failed `value` check on that field does not name either value |
+| `type <label> <text>` | exact label, text or `@request` | fills the field. `@request` is the text of the fixture's first `prompt.submit` step. Text typed into a password field is written as `•••` in `steps.log`, and a password field's value is `•••` in each `.aria.txt`. A failed `value` check on that field names neither value. The run fails if any evidence file holds a typed password, as typed or escaped |
 | `select <label> <option>` | exact label, exact option text | picks that option of the labelled select |
 | `press <key>` | Playwright key name | presses it |
 | `reload` | none | reloads the window, as Ctrl+R in a browser does. Main and the gateway keep running, so the open chat stays. Follow it with `wait live` |
