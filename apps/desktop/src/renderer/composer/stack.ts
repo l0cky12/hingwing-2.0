@@ -2,9 +2,8 @@ import type { BackgroundProcess, ControlAction, Goal, GoalVerdict, Heartbeat, Lo
 
 export type Card = keyof SessionControl
 
-/** A card's button. `ask`: the question a press must answer yes to first. */
 export interface Press {
-  readonly words: 'Pause' | 'Resume' | 'Clear' | 'Stop'
+  readonly words: 'Pause' | 'Resume' | 'Resume now' | 'Clear' | 'Stop'
   readonly act: Exclude<ControlAction['act'], 'subgoal.add' | 'subgoal.remove'>
   readonly ask: string | null
 }
@@ -15,8 +14,11 @@ const ENDS = {
   heartbeat: { words: 'Clear', act: 'heartbeat.clear', ask: 'Clear the heartbeat?' }
 } as const satisfies Record<Card, Press>
 
-/** The buttons Hermes serves for a card in this state (gateway/session_control_actions.py:15-22). */
-export function pressesOf(card: Card, status: Goal['status'] | Loop['status'] | Heartbeat['status']): readonly Press[] {
+// A goal waiting on its barrier offers Resume now and Pause, as Hermes Desktop's goal card does.
+export function pressesOf(card: Card, status: Goal['status'] | Loop['status'] | Heartbeat['status'], waiting = false): readonly Press[] {
+  if (card === 'goal' && waiting && status === 'active') {
+    return [{ words: 'Resume now', act: 'goal.unwait', ask: null }, { words: 'Pause', act: 'goal.pause', ask: null }, ENDS.goal]
+  }
   const toggle: readonly Press[] = status === 'active'
     ? [{ words: 'Pause', act: `${card}.pause`, ask: null }]
     : status === 'paused' ? [{ words: 'Resume', act: `${card}.resume`, ask: null }] : []
@@ -50,7 +52,6 @@ export const VERDICT_WORDS = {
   done: 'Met', blocked: 'Blocked', continue: 'Not met yet', wait: 'Waiting', skipped: 'Skipped'
 } as const satisfies Record<GoalVerdict, string>
 
-/** "30 s", "5 min", "2 h", "1 h 30 min". */
 export function every(seconds: number): string {
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
@@ -60,7 +61,6 @@ export function every(seconds: number): string {
 
 const pad = (value: number) => String(value).padStart(2, '0')
 
-/** Counts down on this client's clock to Hermes's `nextAt`: "Next in 4:05", "Next in 1:02:05", then "Due". */
 export function countdown(nextAt: number, now: number): string {
   const left = Math.ceil((nextAt - now) / 1000)
   if (left <= 0) return 'Due'
@@ -69,7 +69,6 @@ export function countdown(nextAt: number, now: number): string {
   return `Next in ${hours > 0 ? `${hours}:${pad(minutes)}` : minutes}:${pad(left % 60)}`
 }
 
-/** Whether the loop's header counts down, and so needs the clock to tick. */
 export const countsDown = (loop: Loop) => loop.status === 'active' && !loop.heldByGoal && loop.nextAt !== null
 
 export function loopParts(loop: Loop, now: number): readonly string[] {

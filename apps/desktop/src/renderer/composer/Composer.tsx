@@ -34,7 +34,6 @@ interface ComposerProps {
   readonly onCancelEdit?: () => void
   readonly above?: ReactNode
   readonly onEscape?: () => boolean
-  /** Drawn above the box. */
   readonly stack?: ReactNode
   readonly children?: ReactNode
 }

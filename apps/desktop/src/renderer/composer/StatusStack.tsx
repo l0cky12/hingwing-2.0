@@ -3,12 +3,10 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { countsDown, goalParts, heartbeatParts, loopParts, pressesOf, processesWords, processState, ranWords, VERDICT_WORDS, type Card, type Press } from './stack'
 
 interface StatusStackProps {
-  /** As Hermes last listed them. Empty draws no row. */
   readonly processes: readonly BackgroundProcess[]
   readonly control: SessionControl | null
   readonly disabled: boolean
   readonly onKill: (processId: ProcessId) => Promise<CommandOutcome>
-  /** Answers the words to show. */
   readonly onControl: (action: ControlAction) => Promise<CommandOutcome<string | null>>
 }
 
@@ -47,7 +45,6 @@ function Panel({ title, parts, open, onToggle, children }: PanelProps) {
   )
 }
 
-/** What keeps working beside the chat: the background processes, then the goal, loop and heartbeat, each a row that opens. */
 export function StatusStack({ processes, control, disabled, onKill, onControl }: StatusStackProps) {
   const [open, setOpen] = useState<ReadonlySet<Row>>(new Set())
   const [sending, setSending] = useState(false)
@@ -79,10 +76,10 @@ export function StatusStack({ processes, control, disabled, onKill, onControl }:
     trigger.current?.focus()
   }
 
-  const presses = (card: Card, status: Parameters<typeof pressesOf>[1]) => (
+  const presses = (card: Card, status: Parameters<typeof pressesOf>[1], waiting = false) => (
     <>
       <div className="presses">
-        {pressesOf(card, status).map(press => (
+        {pressesOf(card, status, waiting).map(press => (
           <button
             key={press.act} type="button" aria-label={`${press.words} ${card}`} disabled={off}
             onClick={event => {
@@ -137,7 +134,7 @@ export function StatusStack({ processes, control, disabled, onKill, onControl }:
                   <ol>{goal.subgoals.map((criterion, index) => <li key={index}>{criterion}</li>)}</ol>
                 </>
               )}
-              {presses('goal', goal.status)}
+              {presses('goal', goal.status, goal.waiting !== null)}
             </Panel>
           )}
           {loop !== null && (

@@ -2,7 +2,6 @@ import type { Reaction } from '@highwing/hermes/domain'
 import { useLayoutEffect, useRef, type KeyboardEvent } from 'react'
 import { usePopover } from '../composer/popover'
 
-/** Hermes Desktop's quick reactions (apps/desktop/src/store/reactions.ts:9), with the words a screen reader says for each. */
 export const QUICK_REACTIONS = [
   { emoji: '❤️', name: 'Heart' },
   { emoji: '👍', name: 'Thumbs up' },
@@ -25,14 +24,12 @@ interface ReactionsProps {
   readonly onReact: (emoji: string | null) => void
 }
 
-/** A chip for each reaction given. Yours takes itself off when pressed; Hermes's can't be pressed. */
 export function Given({ given, disabled, onReact }: ReactionsProps) {
   return given.map(({ emoji, by }) => (by === 'user'
     ? <button key={`${by}${emoji}`} type="button" className="reaction" aria-label={`Remove your ${emoji}`} disabled={disabled} onClick={() => onReact(null)}>{emoji}</button>
     : <span key={`${by}${emoji}`} className="reaction" role="img" aria-label={`Hermes reacted ${emoji}`}>{emoji}</span>))
 }
 
-/** A React button whose picker puts your reaction on, replaces it, or takes it off. */
 export function Reactions({ given, disabled, onReact }: ReactionsProps) {
   const { shown, setOpen, anchor, button } = usePopover(!disabled)
   const picker = useRef<HTMLDivElement>(null)

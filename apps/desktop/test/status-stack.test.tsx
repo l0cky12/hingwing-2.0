@@ -67,6 +67,7 @@ describe('the status stack', () => {
     expect(offered('goal', 'active')).toEqual([['goal.pause', false], ['goal.clear', true]])
     expect(offered('goal', 'paused')).toEqual([['goal.resume', false], ['goal.clear', true]])
     expect(offered('goal', 'done')).toEqual([['goal.clear', true]])
+    expect(offered('goal', 'active', true)).toEqual([['goal.unwait', false], ['goal.pause', false], ['goal.clear', true]])
     expect(offered('loop', 'active')).toEqual([['loop.pause', false], ['loop.stop', true]])
     expect(offered('heartbeat', 'paused')).toEqual([['heartbeat.resume', false], ['heartbeat.clear', true]])
   })

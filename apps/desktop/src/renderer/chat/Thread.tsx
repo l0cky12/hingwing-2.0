@@ -306,7 +306,6 @@ function End({ turnKey, end }: { readonly turnKey: string; readonly end: ThreadE
 /** Acts on a sent message by its stored row and text: `onEdit` puts it in the composer, `onRegenerate` asks again for its reply. */
 export type Rewrite = (rowId: number, text: string) => void
 
-/** Puts your emoji on a settled turn's answer, or takes yours off with `null`. */
 export type ReactOn = (turn: TurnId, emoji: string | null) => void
 
 function Fork() {
