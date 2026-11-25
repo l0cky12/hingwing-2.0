@@ -23,6 +23,10 @@ export type Setup =
   /** `HIGHWING_FIXTURE` plays a recorded gateway. There is nothing to set up. */
   | { readonly at: 'pinned' }
 
+/** Whether `setup` is Settings: opened from a chat, shown in the chat's place beside the sidebar. First run and its Saved screen show no chat. */
+export const showsSettings = (setup: Setup): boolean =>
+  setup.at !== 'chat' && setup.at !== 'pinned' && setup.live !== null && !(setup.at === 'saved' && setup.from === 'first-run')
+
 export type SetupCommand =
   /** Check a target and, when it passes, save it and connect to it. */
   | { readonly do: 'checkTarget'; readonly target: Target }

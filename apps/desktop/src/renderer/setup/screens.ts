@@ -1,4 +1,4 @@
-import type { Live, Setup } from '../../ipc-contract'
+import { showsSettings, type Live, type Setup } from '../../ipc-contract'
 
 type At<A extends Setup['at']> = Extract<Setup, { at: A }>
 
@@ -10,16 +10,8 @@ export type Screen =
   | { readonly show: 'saved'; readonly live: Live }
   | { readonly show: 'settings'; readonly setup: CardSetup }
 
-const CHAT: Screen = { show: 'chat' }
-const editing = (setup: At<'form' | 'checking' | 'failed'>): Screen => (setup.live === null ? { show: 'first-run', setup } : { show: 'settings', setup })
-
-const SCREENS: { readonly [A in Setup['at']]: (setup: At<A>) => Screen } = {
-  chat: () => CHAT,
-  pinned: () => CHAT,
-  form: editing,
-  checking: editing,
-  failed: editing,
-  saved: setup => (setup.from === 'first-run' ? { show: 'saved', live: setup.live } : { show: 'settings', setup })
+export function screenOf(setup: Setup): Screen {
+  if (setup.at === 'chat' || setup.at === 'pinned') return { show: 'chat' }
+  if (showsSettings(setup)) return { show: 'settings', setup }
+  return setup.at === 'saved' ? { show: 'saved', live: setup.live } : { show: 'first-run', setup }
 }
-
-export const screenOf = (setup: Setup): Screen => (SCREENS[setup.at] as (setup: Setup) => Screen)(setup)

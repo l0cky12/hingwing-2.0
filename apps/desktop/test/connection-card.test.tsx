@@ -1,7 +1,7 @@
 import { URL_FAILURES, type GatewayUrl, type Link, type SshHost, type Target, type UrlFailure } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import type { Live, Setup } from '../src/ipc-contract'
+import { showsSettings, type Live, type Setup } from '../src/ipc-contract'
 import { cardOf } from '../src/renderer/setup/card-view'
 import { ConnectionCard } from '../src/renderer/setup/ConnectionCard'
 import { screenOf, type CardSetup } from '../src/renderer/setup/screens'
@@ -26,8 +26,9 @@ describe('which screen the window shows', () => {
     ['a check from Settings', { at: 'checking', live: LIVE, target: LAB, step: 'ssh' }, 'settings'],
     ['a check from Settings that failed', { at: 'failed', live: LIVE, target: LAB, failure: 'host-offline' }, 'settings'],
     ['a check from Settings that passed', { at: 'saved', live: { target: LAB, epoch: 2 }, from: 'settings' }, 'settings']
-  ])('shows %s on %j', (_what, setup, show) => {
+  ])('shows %s on %j, by the rule main uses for Settings', (_what, setup, show) => {
     expect(screenOf(setup).show).toBe(show)
+    expect(showsSettings(setup)).toBe(show === 'settings')
   })
 })
 

@@ -1,6 +1,6 @@
 import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, Route } from '@highwing/hermes'
 import { firstStep, sameTarget, type CheckStep, type Command, type CommandOutcome, type SetupFailure, type Target } from '@highwing/hermes/domain'
-import type { HubResult, Live, Setup, SetupCommand } from '../ipc-contract'
+import { showsSettings, type HubResult, type Live, type Setup, type SetupCommand } from '../ipc-contract'
 import type { Settings } from './settings'
 
 /** The commands a connection carries out. The pane beside the chat has its own owner. */
@@ -65,13 +65,9 @@ export function nextSetup(setup: Setup, event: SetupEvent): Setup | null {
 
 const KEEP = { do: 'keepTarget' } as const
 
-/** Settings: setup opened from a chat, shown in the chat's place beside the sidebar. First run and its saved screen show no chat. */
-const inSettings = (setup: Setup): boolean =>
-  setup.at !== 'chat' && setup.at !== 'pinned' && setup.live !== null && !(setup.at === 'saved' && setup.from === 'first-run')
-
 /** Whether an open runs now: in the chat, or in Settings, which it leaves first. It waits through first run, and through a save, which refuses to leave. */
 export const opensNow = (setup: Setup): boolean =>
-  setup.at === 'chat' || setup.at === 'pinned' || (inSettings(setup) && nextSetup(setup, KEEP) !== null)
+  setup.at === 'chat' || setup.at === 'pinned' || (showsSettings(setup) && nextSetup(setup, KEEP) !== null)
 
 /** The hub opens a bot it made, so making one is an open too. */
 const opensChat = (command: Command): boolean => command.do === 'open' || command.do === 'createBot'
@@ -180,7 +176,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
 
   /** Every open passes here, from the window, a notification or a link: Settings closes first, as Close does, or the open is refused. */
   const runChat = async (command: Command): Promise<CommandOutcome<unknown>> => {
-    if (opensChat(command) && inSettings(setup.get()) && !runSetup(KEEP).ok) return NOT_NOW
+    if (opensChat(command) && showsSettings(setup.get()) && !runSetup(KEEP).ok) return NOT_NOW
     return open?.hermes.run(command) ?? NOT_CONNECTED
   }
 
