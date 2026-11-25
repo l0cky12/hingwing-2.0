@@ -1,6 +1,6 @@
 import {
   targetOf,
-  type BotDraft, type BotId, type Bots, type BranchId, type ChatRef, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply,
+  type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type ChatRef, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Item, type Link, type ModelOption, type OpenChat, type OpenTurn, type PromptReply,
   type RelayDesk, type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type Unstarted
 } from '@highwing/hermes/domain'
 
@@ -172,6 +172,15 @@ const draftOf = (raw: unknown): BotDraft | null => {
   const model = raw.model === null ? null : modelOptionOf(raw.model)
   return raw.model !== null && model === null ? null : { name: raw.name, description: raw.description, model, persona: raw.persona }
 }
+const editOf = (raw: unknown): BotEdit | null => {
+  if (!isObject(raw)) return null
+  const { name, description, persona } = raw
+  if (!(name === undefined || filled(name)) || !(description === undefined || text(description)) || !(persona === undefined || text(persona))) return null
+  const edit = { ...(name === undefined ? {} : { name }), ...(description === undefined ? {} : { description }), ...(persona === undefined ? {} : { persona }) }
+  return Object.keys(edit).length > 0 ? edit : null
+}
+const revisionOf = (raw: unknown): number | null | undefined =>
+  raw === null ? null : Number.isInteger(raw) && (raw as number) >= 0 ? (raw as number) : undefined
 const chatRefOf = (raw: unknown): ChatRef | null => {
   if (!isObject(raw)) return null
   if (raw.kind === 'bot') {
@@ -279,6 +288,25 @@ export const validators: Validators = {
   botModels: raw => {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     return raw.bot !== null && bot === null ? null : { do: 'botModels', bot }
+  },
+  describeBot: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && { do: 'describeBot', bot }
+  },
+  editBot: raw => {
+    const bot = botIdOf(raw.bot)
+    const edit = editOf(raw.edit)
+    const revision = revisionOf(raw.revision)
+    return bot && edit && revision !== undefined ? { do: 'editBot', bot, edit, revision } : null
+  },
+  // A window only removes a picture. A new one comes from main's file picker, so a window never sends file bytes.
+  setBotPicture: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && raw.data === null ? { do: 'setBotPicture', bot, data: null } : null
+  },
+  botPicture: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && { do: 'botPicture', bot }
   },
   setYolo: raw => {
     const sessionId = sessionIdOf(raw)

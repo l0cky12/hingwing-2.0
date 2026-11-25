@@ -102,6 +102,15 @@ describe('validators', () => {
     expect(parseCommand({ do: 'completePath', sessionId: 's1', word: '@not', extra: 1 })).toEqual({ do: 'completePath', sessionId: 's1', word: '@not' })
   })
 
+  it("keep a bot's edited fields as sent, with the revision it was read at, and a window's removal of a picture", () => {
+    expect(parseCommand({ do: 'describeBot', bot: 'rae', extra: 1 })).toEqual({ do: 'describeBot', bot: 'rae' })
+    expect(parseCommand({ do: 'editBot', bot: 'rae', edit: { persona: ' Plain.\n', extra: 1 }, revision: 2 })).toEqual({ do: 'editBot', bot: 'rae', edit: { persona: ' Plain.\n' }, revision: 2 })
+    expect(parseCommand({ do: 'editBot', bot: 'rae', edit: { name: 'Ray', description: '' }, revision: null }))
+      .toEqual({ do: 'editBot', bot: 'rae', edit: { name: 'Ray', description: '' }, revision: null })
+    expect(parseCommand({ do: 'setBotPicture', bot: 'rae', data: null })).toEqual({ do: 'setBotPicture', bot: 'rae', data: null })
+    expect(parseCommand({ do: 'botPicture', bot: 'rae' })).toEqual({ do: 'botPicture', bot: 'rae' })
+  })
+
   it('keep a rewind to a stored row and the text to send there', () => {
     expect(parseCommand({ do: 'rewind', sessionId: 's1', rowId: 7, text: 'again', extra: 1 })).toEqual({ do: 'rewind', sessionId: 's1', rowId: 7, text: 'again' })
   })
@@ -158,6 +167,16 @@ describe('validators', () => {
     ['a new bot with no draft', { do: 'createBot' }],
     ['a model list for a bot with no name', { do: 'botModels', bot: ' ' }],
     ['a model list that names no bot', { do: 'botModels' }],
+    ['details of a bot with no name', { do: 'describeBot', bot: '' }],
+    ['an edit that changes nothing', { do: 'editBot', bot: 'rae', edit: {}, revision: 2 }],
+    ['an edit to a blank name', { do: 'editBot', bot: 'rae', edit: { name: '  ' }, revision: 2 }],
+    ['an edit whose persona is not text', { do: 'editBot', bot: 'rae', edit: { persona: 7 }, revision: 2 }],
+    ['an edit with no revision', { do: 'editBot', bot: 'rae', edit: { persona: 'x' } }],
+    ['an edit at a negative revision', { do: 'editBot', bot: 'rae', edit: { persona: 'x' }, revision: -1 }],
+    ['an edit at a fractional revision', { do: 'editBot', bot: 'rae', edit: { persona: 'x' }, revision: 1.5 }],
+    ['a picture a window sends as bytes', { do: 'setBotPicture', bot: 'rae', data: 'data:image/png;base64,iVBORw0KGgo=' }],
+    ['a picture change that names no picture', { do: 'setBotPicture', bot: 'rae' }],
+    ['the picture of a bot with no name', { do: 'botPicture', bot: ' ' }],
     ['a blank first message', { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: '' }],
     ['a reply of the wrong kind', { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 1 } }],
     ['a non-boolean start', { do: 'reconnect', start: 'yes' }],
@@ -196,8 +215,9 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'botModels', 'branch', 'browse', 'checkTarget', 'closePreview', 'completePath', 'contextBreakdown', 'createBot', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat',
-      'pickModel', 'placePreview', 'preview', 'reconnect', 'reloadPreview', 'rename', 'rewind', 'send', 'setYolo', 'start', 'stop', 'versions'
+      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'closePreview', 'completePath', 'contextBreakdown', 'createBot', 'describeBot',
+      'discard', 'editBot', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat', 'pickModel', 'placePreview', 'preview', 'reconnect', 'reloadPreview',
+      'rename', 'rewind', 'send', 'setBotPicture', 'setYolo', 'start', 'stop', 'versions'
     ])
   })
 })

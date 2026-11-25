@@ -4,6 +4,7 @@
  * header seeds, and the chats an untitled create makes. Each rule cites the Hermes 0.23.3 source it
  * copies.
  */
+import { PICTURE_MAX_BYTES, pictureTypeOf } from '../domain/bots'
 import type { SessionEvent } from '../domain/reduce'
 import { GATEWAY_PROTOCOL, type Clock, type Reach } from '../wire/link'
 import { parseEvent } from '../wire/parse'
@@ -370,6 +371,13 @@ function rowsThrough(rows: readonly Obj[], through: number): readonly Obj[] | nu
   return rows.slice(0, end)
 }
 
+/** An editor call's refusal, which carries no `data` (tui_gateway/server.py:751-753). */
+const refusedProfile = (code: number, message: string) => new Refused(message, { code, message })
+
+/** utils/env.py:8 */
+const TRUTHY: ReadonlySet<string> = new Set(['1', 'true', 'yes', 'on'])
+const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+
 function offered(models: Obj): Model[] {
   const rows = Array.isArray(models.providers) ? models.providers.filter(isObject) : []
   return rows.flatMap(row => (Array.isArray(row.models) ? row.models.filter(isText) : []).map(model => ({ model, provider: isText(row.slug) ? row.slug : null })))
@@ -491,6 +499,14 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   /** tui_gateway/methods_profiles.py:296-347 */
   'profiles.create': (gateway, socket, params) => gateway.create(socket, params),
   'projects.tree': (gateway, socket, params, routed) => gateway.tree(socket, params, routed),
+  /** tui_gateway/methods_profiles.py:350-384 */
+  'profiles.describe': (gateway, socket, params) => gateway.describeProfile(socket, params),
+  /** tui_gateway/methods_profiles.py:387-410 */
+  'profiles.configure': (gateway, socket, params) => gateway.configure(socket, params),
+  /** tui_gateway/methods_profiles.py:413-448 */
+  'profiles.set_asset': (gateway, socket, params) => gateway.setAsset(socket, params),
+  /** tui_gateway/methods_profiles.py:451-465 */
+  'profiles.get_asset': (gateway, socket, params) => gateway.getAsset(socket, params),
   'session.mutate': (gateway, socket, params, routed) => {
     const mutation = typeof params.operation === 'string' && Object.hasOwn(MUTATIONS, params.operation) ? MUTATIONS[params.operation] : undefined
     return mutation === undefined ? gateway.story(socket, 'session.mutate', params, routed) : mutation(gateway, params, routed)
@@ -575,6 +591,9 @@ export class ScriptedGateway {
 
   private stored: readonly unknown[]
   private readonly profiles: Obj[]
+  private readonly souls: Map<string, string>
+  private readonly pictures = new Map<string, { readonly mime: string; readonly size: number; readonly data: string }>()
+  private clash: string | undefined
   private readonly botChats = new Map<string, EchoChat>()
   private readonly newChats = new Map<string, EchoChat>()
   private readonly branchChats: EchoChat[] = []
@@ -615,6 +634,8 @@ export class ScriptedGateway {
       this.botChats.set(name, chat)
     }
     this.seeded = Object.entries(fixture.header.chats ?? {}).flatMap(([profile, seeds]) => seeds.map(seed => seeded(profile, seed)))
+    this.souls = new Map(Object.entries(fixture.header.souls ?? {}))
+    this.clash = fixture.header.configureClash
   }
 
   get latest(): number {
@@ -1108,6 +1129,7 @@ export class ScriptedGateway {
     const soulWritten = typeof params.soul === 'string' && params.soul.trim() !== ''
     const home = this.profiles.find(row => row.name === this.home)?.path
     const path = `${isText(home) ? home : '/hermes-home'}/profiles/${canon}`
+    if (typeof params.soul === 'string') this.souls.set(canon, params.soul)
     this.profiles.push({
       name: canon, path, is_default: false, model: pinned ? model : null, provider: pinned ? provider : null, description: asked('description'),
       display_name: '', skill_count: 0, previous_names: []
@@ -1116,6 +1138,115 @@ export class ScriptedGateway {
       ok: true, name: asked('name'), path, soul_written: soulWritten, model_set: pinned,
       mirrored: { env: true, auth: 'shared', model_inherited: !pinned, voice: false }, warnings: createWarnings
     }
+  }
+
+  /** `_resolve_profile` (tui_gateway/methods_profiles.py:67-79) for an editor call, which reaches only the legacy handler, as `profiles.create` does. */
+  private profileAt(socket: Socket, method: string, params: Obj): number {
+    this.reachesEditor(socket, method)
+    const name = typeof params.name === 'string' ? params.name.trim() : ''
+    if (name === '') throw refusedProfile(4063, 'name required')
+    const at = this.profiles.findIndex(row => row.name === name)
+    if (at < 0) throw refusedProfile(4064, `profile '${name}' not found`)
+    return at
+  }
+
+  private reachesEditor(socket: Socket, method: string): void {
+    if (!isObject(this.fixture.header.profiles) || socket.reach === 'profile') throw unknownMethod(method)
+  }
+
+  private patchRow(at: number, changes: Obj): void {
+    this.profiles[at] = { ...this.profiles[at], ...changes }
+  }
+
+  describeProfile(socket: Socket, params: Obj): unknown {
+    const row = this.profiles[this.profileAt(socket, 'profiles.describe', params)] as Obj
+    const name = row.name as string
+    return {
+      name, description: typeof row.description === 'string' ? row.description : '', soul: this.souls.get(name) ?? '',
+      model: { provider: isText(row.provider) ? row.provider : '', default: isText(row.model) ? row.model : '' },
+      skills: [], toolsets: [], toolsets_pinned: false, mcp_servers: []
+    }
+  }
+
+  /** Each section is applied on its own, and `applied` reports each one sent (tui_gateway/methods_profiles.py:387-410). */
+  configure(socket: Socket, params: Obj): unknown {
+    const at = this.profileAt(socket, 'profiles.configure', params)
+    const applied: Record<string, unknown> = {}
+    if (isObject(params.ui_meta)) Object.assign(applied, this.writeUiMeta(at, params.ui_meta, params.ui_meta_expected_revisions))
+    if (typeof params.soul === 'string') {
+      this.souls.set(this.profiles[at]?.name as string, params.soul)
+      applied.soul = true
+    }
+    if (typeof params.description === 'string') {
+      this.patchRow(at, { description: params.description.trim() })
+      applied.description = true
+    }
+    return { ok: Object.values(applied).every(Boolean), applied }
+  }
+
+  /** `_configure_ui_meta` (tui_gateway/methods_profiles.py:496-548): a key-wise merge behind a per-key revision check that rejects the whole write. */
+  private writeUiMeta(at: number, incoming: Obj, expected: unknown): Obj {
+    if (this.clash !== undefined) {
+      const row = this.profiles[at] as Obj
+      const meta = isObject(row.ui_meta) ? row.ui_meta : {}
+      const revisions = isObject(row.ui_meta_revisions) ? row.ui_meta_revisions : {}
+      const bots = isObject(meta['hermes-bots']) ? meta['hermes-bots'] : {}
+      this.patchRow(at, {
+        ui_meta: { ...meta, 'hermes-bots': { ...bots, title: this.clash } },
+        ui_meta_revisions: { ...revisions, 'hermes-bots': (isInt(revisions['hermes-bots']) ? revisions['hermes-bots'] : 0) + 1 }
+      })
+      this.clash = undefined
+    }
+    if (expected !== undefined && expected !== null && !isObject(expected)) return { ui_meta: false }
+    const row = this.profiles[at] as Obj
+    const revisions: Record<string, number> = { ...(isObject(row.ui_meta_revisions) ? row.ui_meta_revisions as Record<string, number> : {}) }
+    const conflicts = Object.fromEntries(Object.keys(isObject(expected) ? incoming : {}).flatMap(key => {
+      const wanted = (expected as Obj)[key]
+      const actual = revisions[key] ?? 0
+      return isInt(wanted) && wanted >= 0 && wanted === actual ? [] : [[key, { expected: wanted ?? null, actual }]]
+    }))
+    if (Object.keys(conflicts).length > 0) {
+      return { ui_meta: false, ui_meta_conflicts: conflicts, ui_meta_revisions: Object.fromEntries(Object.keys(incoming).map(key => [key, revisions[key] ?? 0])) }
+    }
+    const current: Record<string, unknown> = { ...(isObject(row.ui_meta) ? row.ui_meta : {}) }
+    for (const [key, value] of Object.entries(incoming)) {
+      if (value === null) delete current[key]
+      else current[key] = value
+      revisions[key] = (revisions[key] ?? 0) + 1
+    }
+    this.patchRow(at, { ui_meta: Object.keys(current).length > 0 ? current : null, ui_meta_revisions: revisions })
+    return { ui_meta: true, ui_meta_revisions: Object.fromEntries(Object.keys(incoming).map(key => [key, revisions[key]])) }
+  }
+
+  /** The checks and codes of tui_gateway/methods_profiles.py:413-448, in its order. */
+  setAsset(socket: Socket, params: Obj): unknown {
+    this.reachesEditor(socket, 'profiles.set_asset')
+    const asset = (typeof params.asset === 'string' && params.asset.trim() !== '' ? params.asset : 'avatar').trim().toLowerCase()
+    if (typeof params.name !== 'string' || params.name.trim() === '') throw refusedProfile(4063, 'name required')
+    if (asset !== 'avatar') throw refusedProfile(4066, `unknown asset '${asset}' (supported: avatar)`)
+    const at = this.profileAt(socket, 'profiles.set_asset', params)
+    const name = this.profiles[at]?.name as string
+    if (params.clear === true || (typeof params.clear === 'string' && TRUTHY.has(params.clear.trim().toLowerCase()))) {
+      const removed = Number(this.pictures.delete(name))
+      this.patchRow(at, { has_avatar: false })
+      return { ok: true, asset, size: 0, removed }
+    }
+    const data = typeof params.data === 'string' ? params.data : ''
+    if (data === '') throw refusedProfile(4067, 'data required (data URL or base64)')
+    const encoded = /^data:(image\/(?:png|jpeg|webp));base64,([\s\S]*)$/.exec(data)?.[2] ?? data
+    if (!BASE64.test(encoded)) throw refusedProfile(4068, 'data is not valid base64')
+    const blob = Buffer.from(encoded, 'base64')
+    if (blob.length > PICTURE_MAX_BYTES) throw refusedProfile(4069, `asset too large (${blob.length} bytes; max 2MB)`)
+    const mime = pictureTypeOf(blob)
+    if (mime === null) throw refusedProfile(4070, 'unsupported image format (PNG/JPEG/WebP only)')
+    this.pictures.set(name, { mime, size: blob.length, data: `data:${mime};base64,${blob.toString('base64')}` })
+    this.patchRow(at, { has_avatar: true })
+    return { ok: true, asset, size: blob.length }
+  }
+
+  getAsset(socket: Socket, params: Obj): unknown {
+    const picture = this.pictures.get(this.profiles[this.profileAt(socket, 'profiles.get_asset', params)]?.name as string)
+    return picture === undefined ? { found: false } : { found: true, ...picture }
   }
 
   private canonical(profile: string, recorded: unknown): Obj | null {

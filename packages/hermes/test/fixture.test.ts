@@ -155,6 +155,15 @@ describe('loadFixture', () => {
     expect(() => loadFixture(path)).toThrow(`${path}:1: "createWarnings" must be a list of strings`)
   })
 
+  it("takes each bot's persona as text, and the title of a clash as words", () => {
+    const loaded = loadFixture(write([{ ...header, souls: { rae: 'You write.' }, configureClash: 'Robin' }])).header
+    expect([loaded.souls, loaded.configureClash]).toEqual([{ rae: 'You write.' }, 'Robin'])
+    const souls = write([{ ...header, souls: { rae: 7 } }])
+    expect(() => loadFixture(souls)).toThrow(`${souls}:1: "souls" must map a profile to its persona`)
+    const clash = write([{ ...header, configureClash: ' ' }])
+    expect(() => loadFixture(clash)).toThrow(`${clash}:1: "configureClash" must be the title another client writes`)
+  })
+
   it('refuses a header whose profiles are not a profiles.list reply', () => {
     const path = write([{ ...header, profiles: [{ name: 'default' }] }])
     expect(() => loadFixture(path)).toThrow(`${path}:1: "profiles" must be a profiles.list reply with "profiles"`)

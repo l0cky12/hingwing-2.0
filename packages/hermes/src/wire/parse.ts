@@ -2,7 +2,7 @@
  * The only place gateway shapes become domain shapes. Everything past these functions trusts its types.
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
-import { canonicalBotId, type BotCreated, type BotFacts, type BotId } from '../domain/bots'
+import { canonicalBotId, type BotCreated, type BotDetails, type BotFacts, type BotId } from '../domain/bots'
 import type { ContextBreakdown, ModelConfirm, ModelMenu } from '../domain/command'
 import type { PaneAsk } from '../domain/pane'
 import type { Admission, HelperUpdate, HistoryPage, PickOutcome, Replay, ServerRequest, SessionEvent, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
@@ -17,7 +17,7 @@ import type { Said, TreeRow } from '../domain/versions'
 import type {
   CanonicalBotDeliverResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission, CanonicalProfilesResult, CommandDispatchResult, CommandsCatalogResult, CanonicalPendingPrompt, CanonicalReplayEvent, CanonicalSessionListRow,
   CanonicalSnapshot, CompletionItem, CompletionItemsResult, ContextCategory, ErrorPayload, ErrorSurface, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload,
-  MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, PreviewClosePayload, PreviewOpenPayload, ProfilesCreateResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult,
+  MessageStartPayload, ModelOptionProvider, ModelOptionsResult, PersistedTurn, PreviewClosePayload, PreviewOpenPayload, ProfilesConfigureResult, ProfilesCreateResult, ProfilesDescribeResult, ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, SessionContextBreakdownResult, SessionLiveInfo, SessionMutateResult,
   SessionStats, SessionTitlePayload, SessionUsagePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload, SubagentEventPayload,
   TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage
 } from './contract.generated'
@@ -763,29 +763,78 @@ export function parseSaid(reply: StoredTranscriptResult): { readonly said: reado
 
 const words = (raw: unknown): string | null => (isString(raw) && raw.trim() !== '' ? raw.trim() : null)
 
+type ProfileRow = Obj & { readonly name: string }
+
+const profileRows = (reply: CanonicalProfilesResult): readonly ProfileRow[] =>
+  (isObject(reply) && Array.isArray(reply.profiles) ? reply.profiles as readonly unknown[] : []).filter((row): row is ProfileRow => isObject(row) && isString(row.name) && row.name.trim() !== '')
+
+/** The shape Hermes's Bots plugin writes: `BotMeta` in apps/desktop/src/plugins/hermes-bots/types.ts. */
+const botMetaOf = (row: ProfileRow): Obj => (isObject(row.ui_meta) && isObject(row.ui_meta['hermes-bots']) ? row.ui_meta['hermes-bots'] : {})
+
+const shownNameOf = (row: ProfileRow): string => words(botMetaOf(row).title) ?? words(row.display_name) ?? row.name
+
 /** `profiles.list` as flat facts, in the reply's order, without the bots the user hid. */
 export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
-  const rows: readonly unknown[] = isObject(reply) && Array.isArray(reply.profiles) ? reply.profiles : []
   const seen = new Set<string>()
-  return rows.flatMap((row): BotFacts[] => {
-    if (!isObject(row) || !isString(row.name) || row.name.trim() === '' || seen.has(row.name)) return []
+  return profileRows(reply).flatMap((row): BotFacts[] => {
+    if (seen.has(row.name)) return []
     seen.add(row.name)
-    // The shape Hermes's Bots plugin writes: `BotMeta` in apps/desktop/src/plugins/hermes-bots/types.ts.
-    const meta: Obj = isObject(row.ui_meta) && isObject(row.ui_meta['hermes-bots']) ? row.ui_meta['hermes-bots'] : {}
+    const meta = botMetaOf(row)
     if (meta.hidden === true) return []
     // A row previews the chat a click opens, as Hermes's own bot row does (hermes-bots/bot-row.tsx:144).
     const session = isObject(row.canonical_session) ? row.canonical_session : row.last_session
     return [{
       id: row.name as BotId,
-      name: words(meta.title) ?? words(row.display_name) ?? row.name,
+      name: shownNameOf(row),
       isDefault: row.is_default === true,
       section: words(meta.sectionName),
       preview: isObject(session) ? words(session.preview) : null,
       description: words(row.description),
-      chat: isObject(row.canonical_session) ? titledId(row.canonical_session) : null
+      chat: isObject(row.canonical_session) ? titledId(row.canonical_session) : null,
+      picture: row.has_avatar === true
     }]
   })
 }
+
+/**
+ * The Bots plugin's record of one bot, which a rename writes back whole, since Hermes replaces a `ui_meta` key whole
+ * (tui_gateway/methods_profiles.py:524-528). `revision` is null for a Hermes whose rows carry no `ui_meta_revisions`,
+ * which predates the per-key check.
+ */
+export function parseBotRecord(reply: CanonicalProfilesResult, bot: BotId): { readonly name: string; readonly meta: Obj; readonly revision: number | null } | null {
+  const row = profileRows(reply).find(held => held.name === bot)
+  if (row === undefined) return null
+  const revisions = row.ui_meta_revisions
+  const revision = isObject(revisions) ? (Number.isInteger(revisions['hermes-bots']) ? Math.max(0, revisions['hermes-bots'] as number) : 0) : null
+  return { name: shownNameOf(row), meta: botMetaOf(row), revision }
+}
+
+export function parseDetails(described: ProfilesDescribeResult, listed: CanonicalProfilesResult, bot: BotId): BotDetails | null {
+  const record = parseBotRecord(listed, bot)
+  if (record === null) return null
+  const text = (raw: unknown) => (isString(raw) ? raw : '')
+  return { bot, name: record.name, description: text(described.description), persona: text(described.soul), revision: record.revision }
+}
+
+/**
+ * What a `profiles.configure` did with the sections sent. A clash wrote nothing of `ui_meta`; the other
+ * sections are applied each on its own (tui_gateway/methods_profiles.py:387-410).
+ */
+export type Configured =
+  | { readonly is: 'saved' }
+  | { readonly is: 'clash' }
+  | { readonly is: 'unsaved'; readonly sections: readonly string[] }
+
+export function parseConfigured(reply: ProfilesConfigureResult, sent: readonly string[]): Configured {
+  const applied: Obj = isObject(reply) && isObject(reply.applied) ? reply.applied : {}
+  if (isObject(applied.ui_meta_conflicts) && Object.keys(applied.ui_meta_conflicts).length > 0) return { is: 'clash' }
+  const sections = sent.filter(section => applied[section] !== true)
+  return sections.length === 0 ? { is: 'saved' } : { is: 'unsaved', sections }
+}
+
+/** `profiles.get_asset`'s picture as the data URL Hermes builds (tui_gateway/methods_profiles.py:451-465), or null for none. */
+export const parsePicture = (reply: ProfilesGetAssetResult): string | null =>
+  isObject(reply) && reply.found === true && isString(reply.data) && reply.data.startsWith('data:image/') ? reply.data : null
 
 /**
  * `profiles.create`'s reply. Its `name` echoes the typed one, so the bot is the last segment of `path`,

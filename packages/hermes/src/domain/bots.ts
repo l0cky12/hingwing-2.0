@@ -32,6 +32,8 @@ export interface BotFacts {
    * read it. It stays out of `Bot`, so a window learns a session only from the open chat.
    */
   readonly chat: SessionId | null
+  /** Hermes holds a picture for this bot. Highwing reads it apart, with `botPicture`. */
+  readonly picture: boolean
 }
 
 export interface Bot {
@@ -40,6 +42,7 @@ export interface Bot {
   readonly preview: string | null
   readonly description: string | null
   readonly tone: AvatarTone
+  readonly picture: boolean
 }
 
 export interface BotSection {
@@ -87,10 +90,48 @@ export interface BotCreated {
   readonly warnings: readonly string[]
 }
 
+export interface BotDetails {
+  readonly bot: BotId
+  /** The name shown, as the sidebar draws it. */
+  readonly name: string
+  readonly description: string
+  readonly persona: string
+  /**
+   * Hermes's revision of the name, which a rename sends back so a rename made elsewhere since is refused.
+   * null: a Hermes that keeps no revisions, so a rename overwrites.
+   */
+  readonly revision: number | null
+}
+
+/** The picture Hermes stores for a bot: a PNG, JPEG or WebP of at most this many bytes (tui_gateway/methods_profiles.py:434-442). */
+export const PICTURE_MAX_BYTES = 2_000_000
+export const PICTURE_RULE = 'Pick a PNG, JPEG or WebP picture of 2 MB or less.'
+
+export type PictureType = 'image/png' | 'image/jpeg' | 'image/webp'
+
+const MAGIC: readonly (readonly [PictureType, readonly (readonly [number, string])[]])[] = [
+  ['image/png', [[0, '89504e470d0a1a0a']]],
+  ['image/jpeg', [[0, 'ffd8ff']]],
+  ['image/webp', [[0, '52494646'], [8, '57454250']]]
+]
+const hexAt = (bytes: Uint8Array, start: number, length: number) =>
+  Array.from(bytes.subarray(start, start + length), byte => byte.toString(16).padStart(2, '0')).join('')
+
+/** The picture type the bytes start with, sniffed as Hermes does (tui_gateway/methods_profiles.py:17-20). A name or a declared type is never trusted. */
+export const pictureTypeOf = (bytes: Uint8Array): PictureType | null =>
+  MAGIC.find(([, marks]) => marks.every(([start, hex]) => hexAt(bytes, start, hex.length / 2) === hex))?.[0] ?? null
+
+/** Only the fields the user changed. */
+export interface BotEdit {
+  readonly name?: string
+  readonly description?: string
+  readonly persona?: string
+}
+
 /** The id Hermes gives a typed name: trimmed and lowercased, `default` in any case (hermes_cli/profiles.py:370-396). */
 export const canonicalBotId = (name: string): BotId => name.trim().toLowerCase() as BotId
 
-const shown = ({ id, name, preview, description }: BotFacts, tone: AvatarTone): Bot => ({ id, name, preview, description, tone })
+const shown = ({ id, name, preview, description, picture }: BotFacts, tone: AvatarTone): Bot => ({ id, name, preview, description, tone, picture })
 
 /** Every bot of a roster, in the order the sidebar draws them. */
 export const botsIn = ({ featured, sections }: Roster): readonly Bot[] => [...(featured === null ? [] : [featured]), ...sections.flatMap(section => section.bots)]

@@ -726,3 +726,70 @@ describe('the scripted gateway pages a chat beside the story', () => {
     expect(await call('session.transcript', page({ newest: true }))).toMatchObject(refusal('invalid_params', { fields: ['newest'] }))
   })
 })
+
+describe('the scripted gateway edits a profile as Hermes does', () => {
+  const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7])
+  const research = (reply: Reply) => (reply.result?.profiles as Record<string, unknown>[]).find(row => row.name === 'research')
+
+  it("describes a profile's description and persona, and refuses a blank or unknown name", async () => {
+    const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, souls: { research: 'You dig.' } } })
+    expect((await call('profiles.describe', { name: 'research' })).result).toMatchObject({ name: 'research', description: '', soul: 'You dig.' })
+    expect(await call('profiles.describe', { name: ' ' })).toMatchObject({ error: { code: 4063, message: 'name required' } })
+    expect(await call('profiles.describe', { name: 'nobody' })).toMatchObject({ error: { code: 4064, message: "profile 'nobody' not found" } })
+  })
+
+  it('applies a ui_meta write at the expected revision, and refuses a stale one with the conflict and nothing written', async () => {
+    const { call } = await rawSocket({}, WITH_BOTS)
+    const write = (revision: number, title: string) =>
+      call('profiles.configure', { name: 'research', ui_meta: { 'hermes-bots': { title } }, ui_meta_expected_revisions: { 'hermes-bots': revision }, soul: 'S' })
+    expect((await write(2, 'Scout')).result).toEqual({ ok: true, applied: { ui_meta: true, ui_meta_revisions: { 'hermes-bots': 3 }, soul: true } })
+    expect((await write(2, 'Stale')).result).toEqual({
+      ok: false,
+      applied: { ui_meta: false, ui_meta_conflicts: { 'hermes-bots': { expected: 2, actual: 3 } }, ui_meta_revisions: { 'hermes-bots': 3 }, soul: true }
+    })
+    const row = research(await call('profiles.list', {}))
+    expect([row?.ui_meta, row?.ui_meta_revisions]).toEqual([{ 'hermes-bots': { title: 'Scout' } }, { 'hermes-bots': 3 }])
+  })
+
+  it('plays one rename from another client ahead of the first ui_meta write when the header names a clash', async () => {
+    const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, configureClash: 'Robin' } })
+    expect((await call('profiles.configure', { name: 'research', description: 'D' })).result).toEqual({ ok: true, applied: { description: true } })
+    const clashed = await call('profiles.configure', { name: 'research', ui_meta: { 'hermes-bots': { title: 'Scout' } }, ui_meta_expected_revisions: { 'hermes-bots': 2 } })
+    expect(clashed.result?.applied).toMatchObject({ ui_meta: false, ui_meta_conflicts: { 'hermes-bots': { expected: 2, actual: 3 } } })
+    expect(research(await call('profiles.list', {}))).toMatchObject({ description: 'D', ui_meta: { 'hermes-bots': { title: 'Robin', color: '#ef4444' } } })
+    const again = await call('profiles.configure', { name: 'research', ui_meta: { 'hermes-bots': { title: 'Scout' } }, ui_meta_expected_revisions: { 'hermes-bots': 3 } })
+    expect(again.result?.applied, 'only once').toMatchObject({ ui_meta: true })
+  })
+
+  it('stores a picture by its bytes, lists the profile as having one, and clears it', async () => {
+    const { call } = await rawSocket({}, WITH_BOTS)
+    expect((await call('profiles.set_asset', { name: 'research', asset: 'avatar', data: PNG_BYTES.toString('base64') })).result).toEqual({ ok: true, asset: 'avatar', size: 9 })
+    expect(research(await call('profiles.list', {}))?.has_avatar).toBe(true)
+    expect((await call('profiles.get_asset', { name: 'research', asset: 'avatar' })).result).toEqual({ found: true, mime: 'image/png', size: 9, data: `data:image/png;base64,${PNG_BYTES.toString('base64')}` })
+    expect((await call('profiles.set_asset', { name: 'research', asset: 'avatar', clear: true })).result).toEqual({ ok: true, asset: 'avatar', size: 0, removed: 1 })
+    expect(research(await call('profiles.list', {}))?.has_avatar).toBe(false)
+    expect((await call('profiles.get_asset', { name: 'research', asset: 'avatar' })).result).toEqual({ found: false })
+  })
+
+  it.each([
+    ['no name', { asset: 'avatar', data: 'x' }, 4063],
+    ['another asset', { name: 'research', asset: 'banner', data: 'x' }, 4066],
+    ['no data', { name: 'research', asset: 'avatar' }, 4067],
+    ['data that is not base64', { name: 'research', asset: 'avatar', data: 'data:image/png;base64,!!!' }, 4068],
+    ['more than 2 MB', { name: 'research', asset: 'avatar', data: Buffer.concat([PNG_BYTES, Buffer.alloc(2_000_000)]).toString('base64') }, 4069],
+    ['bytes of no picture type, whatever the data URL says', { name: 'research', asset: 'avatar', data: `data:image/png;base64,${Buffer.from('GIF89a').toString('base64')}` }, 4070]
+  ])('refuses a picture with %s', async (_, params, code) => {
+    const { call } = await rawSocket({}, WITH_BOTS)
+    expect(await call('profiles.set_asset', params)).toMatchObject({ error: { code } })
+    expect(research(await call('profiles.list', {}))?.has_avatar).toBe(false)
+  })
+
+  it('answers every editor call as an unknown method without profiles, or on a socket with no interactive grant', async () => {
+    for (const fixture of [ERRAND, BOUND]) {
+      const { call } = await rawSocket({}, fixture)
+      for (const method of ['profiles.describe', 'profiles.configure', 'profiles.set_asset', 'profiles.get_asset']) {
+        expect(await call(method, { name: 'research', asset: 'avatar', clear: true })).toMatchObject({ error: { code: -32601 } })
+      }
+    }
+  })
+})

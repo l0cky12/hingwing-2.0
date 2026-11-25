@@ -1,22 +1,40 @@
 import { refusalOf } from './actor'
-import type { BotCreated, BotDraft, BotId } from './domain/bots'
+import { PICTURE_RULE, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotId } from './domain/bots'
 import type { ModelMenu, Outcome, Refusal } from './domain/command'
 import { NOT_CONNECTED } from './open'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
-import { parseCreated, parseModelMenu } from './wire/parse'
+import { parseBotRecord, parseConfigured, parseCreated, parseDetails, parseModelMenu, parsePicture, type Configured } from './wire/parse'
 
 type Wire = Pick<Connection, 'call' | 'as'>
+type Reasons = { readonly [code: number]: (message: string) => Refusal }
 
-const REASONS: { readonly [code: number]: (message: string) => Refusal } = {
+const CREATE_REASONS: Reasons = {
   [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't create bots from Highwing." }),
   4061: message => ({ kind: 'rejected', message, field: 'name' }),
   4062: message => ({ kind: 'rejected', message, field: 'name' }),
   // Not a refusal of the request: Hermes may have failed after it made the profile.
   5062: message => ({ kind: 'rejected', message: `Hermes may not have finished making the bot: ${message}` })
 }
+const EDIT_REASONS: Reasons = {
+  [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't edit bots from Highwing." })
+}
+const PICTURE_REASONS: Reasons = {
+  ...EDIT_REASONS,
+  ...Object.fromEntries([4067, 4068, 4069, 4070].map(code => [code, () => ({ kind: 'rejected', message: PICTURE_RULE })]))
+}
 
-const refusalOfCreate = (error: unknown): Refusal =>
-  error instanceof RpcRefusal ? REASONS[error.code]?.(error.message) ?? refusalOf(error) : refusalOf(error)
+const GONE: Outcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Hermes no longer has this bot.' } }
+const CLASH: Outcome<never> = { ok: false, refusal: { kind: 'conflict', message: 'This bot changed elsewhere.' } }
+const DONE: Outcome = { ok: true, value: undefined }
+
+async function guarded<T>(reasons: Reasons, work: () => Promise<Outcome<T>>): Promise<Outcome<T>> {
+  try {
+    return await work()
+  } catch (error) {
+    if (error instanceof Offline) return NOT_CONNECTED
+    return { ok: false, refusal: error instanceof RpcRefusal ? reasons[error.code]?.(error.message) ?? refusalOf(error) : refusalOf(error) }
+  }
+}
 
 function createParams({ name, description, model, persona }: BotDraft) {
   return {
@@ -28,20 +46,63 @@ function createParams({ name, description, model, persona }: BotDraft) {
 }
 
 /** Hermes copies the launch profile's credentials into the new bot unless told not to, so a new bot has a provider. */
-export async function createBot(conn: Wire, draft: BotDraft): Promise<Outcome<BotCreated>> {
-  try {
-    return { ok: true, value: parseCreated(await conn.call('profiles.create', createParams(draft))) }
-  } catch (error) {
-    return error instanceof Offline ? NOT_CONNECTED : { ok: false, refusal: refusalOfCreate(error) }
+export const createBot = (conn: Wire, draft: BotDraft): Promise<Outcome<BotCreated>> =>
+  guarded(CREATE_REASONS, async () => ({ ok: true, value: parseCreated(await conn.call('profiles.create', createParams(draft))) }))
+
+/** With no session Hermes reads the profile's own config (tui_gateway/methods_complete.py:297-299, :320-334), so a bot with no chat has a list. */
+export const botModels = (conn: Wire, bot: BotId | null): Promise<Outcome<ModelMenu>> =>
+  guarded({}, async () => ({ ok: true, value: parseModelMenu(await (bot === null ? conn : conn.as(bot)).call('model.options', { explicit_only: true })) }))
+
+const LIST_ROWS = { include_sessions: false } as const
+
+export const describeBot = (conn: Wire, bot: BotId): Promise<Outcome<BotDetails>> =>
+  guarded(EDIT_REASONS, async () => {
+    const [described, listed] = await Promise.all([conn.call('profiles.describe', { name: bot }), conn.call('profiles.list', LIST_ROWS)])
+    const details = parseDetails(described, listed, bot)
+    return details === null ? GONE : { ok: true, value: details }
+  })
+
+const SECTION_WORDS: { readonly [section: string]: string } = { ui_meta: 'name', description: 'description', soul: 'persona' }
+
+const inWords = (items: readonly string[]) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`)
+
+function edited(configured: Configured): Outcome {
+  switch (configured.is) {
+    case 'saved': return DONE
+    case 'clash': return CLASH
+    case 'unsaved': return { ok: false, refusal: { kind: 'rejected', message: `Hermes didn't save the ${inWords(configured.sections.map(section => SECTION_WORDS[section] ?? section))}.` } }
   }
 }
 
-/** With no session Hermes reads the profile's own config (tui_gateway/methods_complete.py:297-299, :320-334), so a bot with no chat has a list. */
-export async function botModels(conn: Wire, bot: BotId | null): Promise<Outcome<ModelMenu>> {
-  try {
-    const reply = await (bot === null ? conn : conn.as(bot)).call('model.options', { explicit_only: true })
-    return { ok: true, value: parseModelMenu(reply) }
-  } catch (error) {
-    return error instanceof Offline ? NOT_CONNECTED : { ok: false, refusal: refusalOf(error) }
+/**
+ * The name shown is the Bots plugin's `title`, not the profile's name, which stays the bot's id. Hermes replaces
+ * the plugin's record whole, so a rename writes the record as Hermes holds it now with the new title.
+ */
+async function renamed(conn: Wire, bot: BotId, name: string, revision: number | null) {
+  const record = parseBotRecord(await conn.call('profiles.list', LIST_ROWS), bot)
+  if (record === null) return null
+  // Hermes's own Bots plugin drops `chat` on every write of the record (hermes-bots/data.ts:388).
+  const kept = Object.fromEntries(Object.entries(record.meta).filter(([key]) => key !== 'chat'))
+  return {
+    ui_meta: { 'hermes-bots': { ...kept, title: name.trim() } },
+    ...(revision === null ? {} : { ui_meta_expected_revisions: { 'hermes-bots': revision } })
   }
 }
+
+export const editBot = (conn: Wire, bot: BotId, { name, description, persona }: BotEdit, revision: number | null): Promise<Outcome> =>
+  guarded(EDIT_REASONS, async () => {
+    const rename = name === undefined ? {} : await renamed(conn, bot, name, revision)
+    if (rename === null) return GONE
+    const params = { name: bot, ...rename, ...(description === undefined ? {} : { description }), ...(persona === undefined ? {} : { soul: persona }) }
+    const sent = Object.keys(SECTION_WORDS).filter(section => section in params)
+    return edited(parseConfigured(await conn.call('profiles.configure', params), sent))
+  })
+
+export const setBotPicture = (conn: Wire, bot: BotId, data: string | null): Promise<Outcome> =>
+  guarded(PICTURE_REASONS, async () => {
+    await conn.call('profiles.set_asset', data === null ? { name: bot, asset: 'avatar', clear: true } : { name: bot, asset: 'avatar', data })
+    return DONE
+  })
+
+export const botPicture = (conn: Wire, bot: BotId): Promise<Outcome<string | null>> =>
+  guarded(EDIT_REASONS, async () => ({ ok: true, value: parsePicture(await conn.call('profiles.get_asset', { name: bot, asset: 'avatar' })) }))
