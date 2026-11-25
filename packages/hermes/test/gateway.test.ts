@@ -872,10 +872,17 @@ describe('the scripted gateway draws pictures and lists pets as Hermes does', ()
   it('crops an installed pet with no url, and fetches any other only from a petdex host', async () => {
     const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, pets: PETS } })
     expect((await call('pet.thumb', { slug: 'mochi' })).result).toEqual({ ok: true, slug: 'mochi', dataUri: PICTURE })
-    expect((await call('pet.thumb', { slug: 'tabby', url: 'https://petdex.dev/curated/tabby/spritesheet.webp' })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
     for (const url of [undefined, '', 'https://petdex.example/curated/tabby.webp', 'https://petdex.dev.example.com/tabby.webp', 'not a url']) {
       expect((await call('pet.thumb', { slug: 'tabby', ...(url === undefined ? {} : { url }) })).result, String(url)).toEqual({ ok: false, slug: 'tabby' })
     }
+    expect((await call('pet.thumb', { slug: 'tabby', url: 'https://petdex.dev/curated/tabby/spritesheet.webp' })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
+  })
+
+  it('answers a thumb it fetched again with no url, as Hermes keeps it on disk', async () => {
+    const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, pets: PETS } })
+    expect((await call('pet.thumb', { slug: 'tabby' })).result).toEqual({ ok: false, slug: 'tabby' })
+    expect((await call('pet.thumb', { slug: 'tabby', url: TABBY_SHEET })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
+    expect((await call('pet.thumb', { slug: 'tabby' })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
   })
 
   it("refuses a refused_once slug's first thumb, and answers it after", async () => {

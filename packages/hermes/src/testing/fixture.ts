@@ -141,7 +141,7 @@ export interface Images { readonly available: boolean; readonly picture?: string
 
 /**
  * `pets`: the gallery's entries as Hermes sends them. `thumbs`: slug -> the PNG data URL `pet.thumb` answers for a pet the
- * gallery lists as installed, or one asked with a petdex `url`; any other ask answers `{ ok: false }`. `delay_ms`: how long
+ * gallery lists as installed, one asked with a petdex `url`, or one it answered before; any other ask answers `{ ok: false }`. `delay_ms`: how long
  * each call takes (default 0). `refused_once`: slugs whose first `pet.thumb` fails with an error, as a call lost to a timeout
  * or a dropped link would, and is answered as usual after.
  */

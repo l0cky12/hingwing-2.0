@@ -879,6 +879,8 @@ export class ScriptedGateway {
   private readonly pictures = new Map<string, { readonly mime: string; readonly size: number; readonly data: string }>()
   /** The slugs of `pets.refused_once` whose one refusal is spent. */
   private readonly thumbsRefused = new Set<string>()
+  /** The slugs `pet.thumb` answered with a picture, which Hermes keeps on disk and answers again with no `url` (agent/pet/store.py:233-235). */
+  private readonly thumbsKept = new Set<string>()
   private clash: string | undefined
   private readonly botChats = new Map<string, EchoChat>()
   private readonly newChats = new Map<string, EchoChat>()
@@ -1661,8 +1663,8 @@ export class ScriptedGateway {
 
   /**
    * `pet.thumb` (tui_gateway/methods_session.py:1557-1563). Hermes crops an installed pet's sheet, and fetches any other pet's
-   * only from the `url` the call names and only from a petdex host (agent/pet/store.py:224-245). Every other ask, and a slug
-   * with no thumb, fails open to `{ ok: false }`.
+   * only from the `url` the call names and only from a petdex host (agent/pet/store.py:224-245), and keeps each thumb it made.
+   * Every other ask, and a slug with no thumb, fails open to `{ ok: false }`.
    */
   petThumb(socket: Socket, params: Obj): unknown {
     const { pets } = this.fixture.header
@@ -1675,7 +1677,8 @@ export class ScriptedGateway {
     }
     const installed = pets.pets.some(pet => isObject(pet) && pet.slug === slug && pet.installed === true)
     const fetched = typeof params.url === 'string' && petdexHost(params.url)
-    const thumb = (installed || fetched) && Object.hasOwn(pets.thumbs, slug) ? pets.thumbs[slug] : undefined
+    const thumb = (installed || fetched || this.thumbsKept.has(slug)) && Object.hasOwn(pets.thumbs, slug) ? pets.thumbs[slug] : undefined
+    if (thumb !== undefined) this.thumbsKept.add(slug)
     return after(pets.delay_ms, thumb === undefined ? { ok: false, slug } : { ok: true, slug, dataUri: thumb })
   }
 
