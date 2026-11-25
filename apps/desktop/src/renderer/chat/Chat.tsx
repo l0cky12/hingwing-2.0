@@ -17,7 +17,7 @@ import { drawnView } from './drawn'
 import { ImageSessionContext } from './Image'
 import { forget, landAt, landed, pressFor } from './landing'
 import { marked, pressedOf, unmarked } from './marks'
-import { FOLLOW_WITHIN, FOLLOWING, placeAfter, progressOf, type Place } from './place'
+import { FOLLOW_WITHIN, FOLLOWING, jumpWords, placeAfter, progressOf, type Place } from './place'
 import type { RequestAnswer } from './Asks'
 import { Sides } from './Sides'
 import { closeSide, sideCards, useClosedSides } from './sides'
@@ -167,14 +167,14 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [jump, onScroll])
 
-  const asking = session !== undefined && activityOf(session).kind === 'asking'
+  const activity = session === undefined ? null : activityOf(session).kind
   const shown = place.kind === 'reading' && place.far
   useLayoutEffect(() => {
     if (!shown && document.activeElement === jumper.current) composer.current?.focus()
   }, [shown])
 
-  const secretAsked = view !== null && view.asks.length > 0
-  const notice = place.kind !== 'reading' ? '' : asking ? 'Waiting for your OK' : secretAsked ? 'Waiting for your answer' : progress !== place.since ? 'New steps below' : ''
+  const waitsOnYou = activity === 'asking' || activity === 'answering'
+  const notice = jumpWords(place, activity, progress)
 
   const onAnswer = useCallback(async (promptId: PromptId, reply: PromptReply) => {
     if (id === null) return undefined
@@ -330,7 +330,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
           </FileCallContext>
         )}
       </main>
-      <div className={`jump${shown ? ' shown' : ''}${asking || secretAsked ? ' asking' : ''}`}>
+      <div className={`jump${shown ? ' shown' : ''}${waitsOnYou ? ' asking' : ''}`}>
         <button ref={jumper} type="button" aria-label="Jump to latest" aria-describedby={words} onClick={jump}>
           <svg aria-hidden="true" viewBox="0 0 12 12" width="12" height="12"><path d="M6 2v8M2.5 6.5 6 10l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>

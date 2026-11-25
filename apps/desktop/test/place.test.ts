@@ -1,6 +1,6 @@
 import type { ThreadView, TurnView } from '@highwing/thread'
 import { describe, expect, it } from 'vitest'
-import { FOLLOWING, placeAfter, progressOf } from '../src/renderer/chat/place'
+import { FOLLOWING, jumpWords, placeAfter, progressOf } from '../src/renderer/chat/place'
 
 const turn = (key: string, nodes: number, end: TurnView['end']['kind'] = 'done') =>
   ({ key, request: null, nodes: Array.from({ length: nodes }, (_, index) => ({ kind: 'notice', key: `n${index}`, tone: 'info', text: '' })), end: { kind: end, words: '' } }) as unknown as TurnView
@@ -42,5 +42,18 @@ describe('progressOf', () => {
     const base = progressOf(view([turn('t', 3)]))
     expect(progressOf(view([turn('old', 9), turn('t', 3)]))).toBe(base)
     expect(progressOf(view([turn('t', 3)]))).toBe(base)
+  })
+})
+
+describe('jumpWords', () => {
+  const reading = placeAfter(FOLLOWING, 200, 'a')
+  it('says nothing while following', () => {
+    expect(jumpWords(FOLLOWING, 'answering', 'b')).toBe('')
+  })
+  it('waits for your OK on a prompt, and for your answer on a request Hermes waits on, before new steps', () => {
+    expect(jumpWords(reading, 'asking', 'b')).toBe('Waiting for your OK')
+    expect(jumpWords(reading, 'answering', 'b')).toBe('Waiting for your answer')
+    expect(jumpWords(reading, 'working', 'b')).toBe('New steps below')
+    expect(jumpWords(reading, null, 'a')).toBe('')
   })
 })
