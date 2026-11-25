@@ -25,10 +25,10 @@ describe('what the chat list shows', () => {
     expect(chatsOf(listing(RESEARCH), showing(RESEARCH), NOW, NO_DRAFTS)).toEqual({
       show: 'rows',
       rows: [
-        { id: 's1', name: 'Send invoice reminder', preview: 'I drafted the reminder.', when: 'now', doing: 'Waiting for your OK', badge: 'asking', current: false, draft: false },
-        { id: 's2', name: 'Sort the invoices', preview: null, when: '5m', doing: null, badge: 'none', current: true, draft: false },
-        { id: 's3', name: 'Untitled chat', preview: null, when: 'now', doing: 'Working', badge: 'running', current: false, draft: false },
-        { id: 's4', name: 'Clean up Downloads', preview: null, when: '2d', doing: null, badge: 'none', current: false, draft: false }
+        { id: 's1', name: 'Send invoice reminder', preview: 'I drafted the reminder.', when: 'now', doing: 'Waiting for your OK', badge: 'asking', current: false, showsDraft: false },
+        { id: 's2', name: 'Sort the invoices', preview: null, when: '5m', doing: null, badge: 'none', current: true, showsDraft: false },
+        { id: 's3', name: 'Untitled chat', preview: null, when: 'now', doing: 'Working', badge: 'running', current: false, showsDraft: false },
+        { id: 's4', name: 'Clean up Downloads', preview: null, when: '2d', doing: null, badge: 'none', current: false, showsDraft: false }
       ]
     })
     expect(chatsOf(listing(RESEARCH, [row('s5', 'Fresh', { lastActiveAt: null })]), showing(RESEARCH), NOW, NO_DRAFTS), 'a chat Hermes gave no time')
@@ -38,7 +38,7 @@ describe('what the chat list shows', () => {
   it('marks each chat that holds a draft, except the open one, whose draft is in the box', () => {
     const drafts = new Set(['s1', 's2', 's4'] as SessionId[])
     expect(chatsOf(listing(RESEARCH), showing(RESEARCH), NOW, drafts)).toMatchObject({
-      rows: [{ id: 's1', draft: true }, { id: 's2', draft: false }, { id: 's3', draft: false }, { id: 's4', draft: true }]
+      rows: [{ id: 's1', showsDraft: true }, { id: 's2', showsDraft: false }, { id: 's3', showsDraft: false }, { id: 's4', showsDraft: true }]
     })
   })
 

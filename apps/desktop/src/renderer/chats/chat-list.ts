@@ -11,8 +11,7 @@ export interface ChatRow {
   readonly doing: string | null
   readonly badge: SidebarRow['badge']
   readonly current: boolean
-  /** Holds unsent text. Never the open chat, whose text is in the box. */
-  readonly draft: boolean
+  readonly showsDraft: boolean
 }
 
 /** What the list under the header shows. */
@@ -58,7 +57,7 @@ export function chatsOf(sidebar: Sidebar | undefined, open: OpenChat | undefined
     show: 'rows',
     rows: sidebar.rows.map(row => ({
       id: row.id, name: named(row.title), preview: row.preview, when: row.lastActiveAt === null ? '' : agoOf(row.lastActiveAt, now),
-      doing: DOING[row.badge], badge: row.badge, current: row.id === shown, draft: row.id !== shown && drafts.has(row.id)
+      doing: DOING[row.badge], badge: row.badge, current: row.id === shown, showsDraft: row.id !== shown && drafts.has(row.id)
     }))
   }
 }

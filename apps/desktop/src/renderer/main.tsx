@@ -1,7 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
-import { loadDrafts } from './composer/drafts'
+import { startDrafts } from './composer/drafts'
 import './styles/app.css'
 
-void loadDrafts()
+void startDrafts()
 createRoot(document.getElementById('root')!).render(<App />)

@@ -7,7 +7,6 @@ import { RemoveDialog } from './RemoveDialog'
 import { completionOf, menuOf, type Menu } from './slash-menu'
 
 interface ComposerProps {
-  /** Which chat's draft the box holds. */
   readonly slot: DraftSlot
   readonly inputRef?: RefObject<HTMLTextAreaElement | null>
   readonly autoFocus?: boolean

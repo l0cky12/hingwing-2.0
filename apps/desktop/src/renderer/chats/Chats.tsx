@@ -50,7 +50,7 @@ export function ChatsPanel({ sidebar, open, bots, now, drafts, onOpen }: ChatsPa
         {view.show === 'rows' && view.rows.map((row, at) => {
           // A session id is any word Hermes mints, so the ids come from the row's place.
           const [doing, when, preview] = [`${ids}-${at}-doing`, `${ids}-${at}-when`, `${ids}-${at}-preview`]
-          const words = row.doing ?? (row.draft ? DRAFT : null)
+          const words = row.doing ?? (row.showsDraft ? DRAFT : null)
           return (
             <button
               key={row.id} type="button" className="chat-row" aria-label={row.name} aria-describedby={`${doing} ${when} ${preview}`}

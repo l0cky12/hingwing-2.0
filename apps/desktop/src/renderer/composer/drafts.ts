@@ -2,7 +2,6 @@ import { STORED_ROWS, type SessionId, type Shown, type Sidebar } from '@highwing
 import { useSyncExternalStore } from 'react'
 import type { Draft, DraftKey } from '../../ipc-contract'
 
-/** Where a composer's text belongs. null: nowhere to keep it, as in the composer shown with no chat. */
 export type DraftSlot = Pick<Draft, 'key' | 'bot'> | null
 
 const SAVE_MS = 500
@@ -12,23 +11,19 @@ export function slotOf(shown: Shown): NonNullable<DraftSlot> {
   return { key: shown.kind === 'bot' ? `bot:${shown.bot}` : 'new', bot: shown.bot }
 }
 
-/**
- * Every draft this window holds, for the life of the window rather than of a connection, so a
- * remounted composer reads its chat's text in the same render.
- */
 const drafts = new Map<DraftKey, Draft>()
 const typed = new Set<DraftKey>()
-/** Loaded from disk and not typed in since. Only these are swept. */
 const restored = new Set<DraftKey>()
 const saving = new Map<DraftKey, { readonly draft: Draft; readonly timer: ReturnType<typeof setTimeout> }>()
 let loose = ''
 let chats: ReadonlySet<SessionId> = new Set()
 const listeners = new Set<() => void>()
 
+const sameMembers = (a: ReadonlySet<SessionId>, b: ReadonlySet<SessionId>) => a.size === b.size && [...a].every(id => b.has(id))
+
 function changed() {
   const next = new Set([...drafts.keys()].flatMap(key => (key.startsWith('chat:') ? [key.slice('chat:'.length) as SessionId] : [])))
-  // A keystroke in a chat that already has a draft keeps the same set, so the chat list does not redraw.
-  if (next.size !== chats.size || [...next].some(id => !chats.has(id))) chats = next
+  if (!sameMembers(next, chats)) chats = next
   for (const listener of listeners) listener()
 }
 
@@ -54,8 +49,7 @@ function flush() {
 
 const textOf = (slot: DraftSlot) => (slot === null ? loose : drafts.get(slot.key)?.text ?? '')
 
-/** Once, at startup. A draft typed before the stored ones arrive wins over its stored text. */
-export async function loadDrafts(): Promise<void> {
+export async function startDrafts(): Promise<void> {
   window.addEventListener('pagehide', flush)
   for (const draft of await window.highwing.drafts()) {
     if (typed.has(draft.key)) continue
@@ -71,10 +65,6 @@ export function writeDraft(slot: DraftSlot, text: string) {
   changed()
 }
 
-/**
- * After `text` was sent from `slot`: empties the slot, unless it now holds something else. Pass the
- * slot the text was sent from. A first message moves its chat to a new slot.
- */
 export function draftSent(slot: DraftSlot, text: string) {
   if (textOf(slot).trim() !== text) return
   if (slot === null) loose = ''
@@ -82,10 +72,6 @@ export function draftSent(slot: DraftSlot, text: string) {
   changed()
 }
 
-/**
- * Deletes each restored draft whose chat is missing from a whole list of its bot's chats. A list as
- * long as Hermes lists may have left the chat out, so it proves nothing.
- */
 export function sweepDrafts(sidebar: Sidebar | undefined, open: DraftKey | null) {
   if (sidebar?.status !== 'ready' || sidebar.rows.length >= STORED_ROWS) return
   const listed = new Set<string>(sidebar.rows.map(row => `chat:${row.id}`))
@@ -104,5 +90,4 @@ const subscribe = (listener: () => void) => {
 
 export const useDraft = (slot: DraftSlot): string => useSyncExternalStore(subscribe, () => textOf(slot))
 
-/** The sessions of the chats that hold a draft. */
 export const useChatDrafts = (): ReadonlySet<SessionId> => useSyncExternalStore(subscribe, () => chats)

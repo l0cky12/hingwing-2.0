@@ -90,7 +90,6 @@ export interface Bridge {
   run<C extends AppCommand>(command: C): Promise<CommandOutcome<AppResult<C>>>
   file(request: FileRequest): Promise<FileOutcome>
   image(request: ImageRequest): Promise<ImageOutcome>
-  /** Every draft kept on disk. */
   drafts(): Promise<readonly Draft[]>
   /** Keeps the draft on disk, or deletes it when its text is empty. Applied in the order a window sends them. */
   keepDraft(draft: Draft): void
