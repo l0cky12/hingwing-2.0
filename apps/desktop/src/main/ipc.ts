@@ -1,10 +1,11 @@
 import type { Hermes } from '@highwing/hermes'
 import type { CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
-import { CHANNEL, isAppTopic, parseCommand, parseDraft, parseFileRequest, parseImageRequest, parseTopic, type AppTopic, type FileOutcome, type ImageOutcome, type Push, type SessionPatch, type Setup, type Tail, type Topic } from '../ipc-contract'
+import { CHANNEL, isAppTopic, isPreviewCommand, parseCommand, parseDraft, parseFileRequest, parseImageRequest, parseTopic, type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type Push, type SessionPatch, type Setup, type Tail, type Topic } from '../ipc-contract'
 import type { ConnectionOwner } from './connection'
 import type { DraftStore } from './drafts'
 import { openablePath, type Opener } from './files'
 import type { ImageLoader } from './images'
+import type { PreviewPane } from './preview'
 
 export const COALESCE_MS = 16
 
@@ -34,12 +35,17 @@ const current = <T>(feed: { get(): T; subscribe(listener: (value: T) => void): (
 }
 const NEVER: Source = () => () => {}
 
+/** What a window's commands go to, and its topics come from. */
+export type Pane = Pick<PreviewPane, 'preview' | 'show' | 'run'>
+interface Owners { readonly owner: ConnectionOwner; readonly pane: Pane }
+
 /** A Hermes topic is bound to the connection that is live when the window asks. A window that sees a new epoch asks again. */
-const onHermes = (source: (hermes: Hermes, topic: Topic) => Source) => (owner: ConnectionOwner, topic: Topic): Source =>
+const onHermes = (source: (hermes: Hermes, topic: Topic) => Source) => ({ owner }: Owners, topic: Topic): Source =>
   owner.hermes === null ? NEVER : source(owner.hermes, topic)
 
-const SOURCES: { readonly [K in Kind]: (owner: ConnectionOwner, topic: Topic) => Source } = {
-  setup: owner => current(owner.setup),
+const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source } = {
+  setup: ({ owner }) => current(owner.setup),
+  preview: ({ pane }) => current(pane.preview),
   link: onHermes(hermes => current(hermes.link)),
   sidebar: onHermes(hermes => current(hermes.sidebar)),
   slash: onHermes(hermes => current(hermes.slash)),
@@ -102,12 +108,30 @@ function serveTopic(topic: Topic, source: Source, send: (push: Push) => void): S
 
 const REFUSED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Highwing refused a malformed request from its window.' } }
 const FILE_REFUSED: FileOutcome = { ok: false, reason: 'refused' }
+const FILE_DONE: FileOutcome = { ok: true }
+
+type FileActions = { readonly [A in FileAction]: (session: Session, path: string) => Promise<FileOutcome> }
+
+/** Each action takes the path as the window named it. Only a path a finished step of the session named goes anywhere. */
+function fileActions(opener: Opener, pane: Pane): FileActions {
+  const named = (act: (path: string) => Promise<FileOutcome>) => async (session: Session, path: string) => {
+    const target = openablePath(session, path)
+    return target === null ? FILE_REFUSED : act(target)
+  }
+  return {
+    open: named(path => opener.open(path)),
+    show: named(path => opener.show(path)),
+    preview: async (session, path) => (pane.show(path, null, session) ? FILE_DONE : FILE_REFUSED)
+  }
+}
 const IMAGE_REFUSED: ImageOutcome = { ok: false }
 
 const isLocal = (setup: Setup) => setup.at === 'pinned' || setup.live?.target.kind === 'local'
 
-export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>): { dispose(): void } {
+export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>, pane: Pane): { dispose(): void } {
   const windows = new Map<number, Map<number, Served>>()
+  const owners: Owners = { owner, pane }
+  const files = fileActions(opener, pane)
   const trusted = ({ senderFrame }: IpcEvent) => senderFrame !== null && senderFrame.parent === null && isAppUrl(senderFrame.url)
 
   const stopWindow = (windowId: number) => {
@@ -128,7 +152,7 @@ export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl:
     if (!trusted(event) || topic === null || typeof id !== 'number') return
     const subscriptions = subscriptionsOf(event.sender)
     subscriptions.get(id)?.stop()
-    subscriptions.set(id, serveTopic(topic, SOURCES[kindOf(topic)](owner, topic), push => {
+    subscriptions.set(id, serveTopic(topic, SOURCES[kindOf(topic)](owners, topic), push => {
       if (!event.sender.isDestroyed()) event.sender.send(CHANNEL.push, id, push)
     }))
   })
@@ -140,7 +164,8 @@ export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl:
   })
   ipc.handle(CHANNEL.run, async (event, raw) => {
     const command = parseCommand(raw)
-    return trusted(event) && command !== null ? owner.run(command) : REFUSED
+    if (!trusted(event) || command === null) return REFUSED
+    return isPreviewCommand(command) ? pane.run(command) : owner.run(command)
   })
 
   ipc.handle(CHANNEL.file, async (event, raw) => {
@@ -148,8 +173,7 @@ export function serveWindows(owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl:
     if (!trusted(event) || request === null) return FILE_REFUSED
     const watched = [...(windows.get(event.sender.id)?.values() ?? [])].find(served => served.topic === `session:${request.sessionId}`)
     const session = watched?.current() as Session | undefined
-    const target = session === undefined ? null : openablePath(session, request.path)
-    return target === null ? FILE_REFUSED : opener[request.action](target)
+    return session === undefined ? FILE_REFUSED : files[request.action](session, request.path)
   })
 
   ipc.handle(CHANNEL.image, async (event, raw) => {

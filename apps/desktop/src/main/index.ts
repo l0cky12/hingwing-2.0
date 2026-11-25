@@ -9,6 +9,8 @@ import { desktopOpener, recordingOpener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
 import { draftStore, DRAFTS_DIR } from './drafts'
 import { serveWindows } from './ipc'
+import { previewPane, registerPageScheme } from './preview'
+import { reachOf } from './preview-page'
 import { loadSettings, saveSettings } from './settings'
 import { isAppUrl, openWindow } from './windows'
 
@@ -26,8 +28,12 @@ const routeFor = (target: Target): Route => {
 if (!app.requestSingleInstanceLock()) app.exit(0)
 app.on('second-instance', () => BrowserWindow.getAllWindows()[0]?.focus())
 
+registerPageScheme()
+
 app.whenReady().then(async () => {
-  const open = (dial: Dialer) => openHermes({ dial, client: { name: 'highwing', version: app.getVersion() } })
+  const opener = HIGHWING_OPEN_LOG ? recordingOpener(HIGHWING_OPEN_LOG) : desktopOpener(shell)
+  const pane = previewPane({ opener, isAppUrl, reach: session => reachOf(owner.setup.get(), session) })
+  const open = (dial: Dialer) => openHermes({ dial, client: { name: 'highwing', version: app.getVersion() }, onPane: pane.ask })
   const settingsDir = app.getPath('userData')
   const owner = fixture
     ? pinnedConnection(open(scriptedDialer(fixture, {
@@ -35,10 +41,10 @@ app.whenReady().then(async () => {
       ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(frame)}\n`) } : {})
     })))
     : ownConnection({ loaded: await loadSettings(settingsDir), save: target => saveSettings(settingsDir, target), check: checkTarget, routeFor, open })
-  const opener = HIGHWING_OPEN_LOG ? recordingOpener(HIGHWING_OPEN_LOG) : desktopOpener(shell)
   const drafts = draftStore(join(settingsDir, DRAFTS_DIR))
-  const served = serveWindows(owner, ipcMain, isAppUrl, opener, imageLoader(fixture ? fixtureImageDeps(fixture.header.media) : desktopImageDeps(net)), drafts)
-  openWindow()
+  pane.follow(owner.setup)
+  const served = serveWindows(owner, ipcMain, isAppUrl, opener, imageLoader(fixture ? fixtureImageDeps(fixture.header.media) : desktopImageDeps(net)), drafts, pane)
+  openWindow(opener, pane)
   let closed: Promise<void> | null = null
   const close = () => (closed ??= (served.dispose(), Promise.all([owner.close(), drafts.settled()]).then(() => {})))
   app.on('window-all-closed', () => void close().finally(() => app.quit()))

@@ -26,11 +26,13 @@ export function openablePath(session: Session, path: string): string | null {
 export interface Opener {
   open(path: string): Promise<FileOutcome>
   show(path: string): Promise<FileOutcome>
+  /** A link, in the user's browser or mail app. */
+  browse(url: string): Promise<void>
 }
 
 const MISSING = new Set(['ENOENT', 'ENOTDIR'])
 
-export function desktopOpener(shell: Pick<Electron.Shell, 'openPath' | 'showItemInFolder'>): Opener {
+export function desktopOpener(shell: Pick<Electron.Shell, 'openPath' | 'showItemInFolder' | 'openExternal'>): Opener {
   const present = async (path: string): Promise<FileOutcome> => {
     try {
       await stat(path)
@@ -49,14 +51,15 @@ export function desktopOpener(shell: Pick<Electron.Shell, 'openPath' | 'showItem
       const found = await present(path)
       if (found.ok) shell.showItemInFolder(path)
       return found
-    }
+    },
+    browse: url => shell.openExternal(url).catch(() => {})
   }
 }
 
 export function recordingOpener(logFile: string): Opener {
-  const record = (action: FileAction) => async (path: string): Promise<FileOutcome> => {
+  const record = (action: Exclude<FileAction, 'preview'>) => async (path: string): Promise<FileOutcome> => {
     await appendFile(logFile, `${JSON.stringify({ action, path })}\n`)
     return { ok: true }
   }
-  return { open: record('open'), show: record('show') }
+  return { open: record('open'), show: record('show'), browse: url => appendFile(logFile, `${JSON.stringify({ action: 'browse', url })}\n`) }
 }

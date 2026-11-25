@@ -2,11 +2,11 @@ import type { Hermes } from '@highwing/hermes'
 import type { Bots, Link, OpenChat, RelayDesk, Session, Sidebar, SlashCatalog } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyPush, CHANNEL, isWebLink, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Push, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Preview, type PreviewCommand, type Push, type Topic } from '../src/ipc-contract'
 import { pinnedConnection } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
-import { COALESCE_MS, serveWindows, sessionPatch, type IpcEvent, type IpcMainLike } from '../src/main/ipc'
+import { COALESCE_MS, serveWindows, sessionPatch, type IpcEvent, type IpcMainLike, type Pane } from '../src/main/ipc'
 
 const fixture = loadFixture('fixtures/errand.jsonl')
 const topic = `session:${fixture.header.sessionId}` as const
@@ -151,10 +151,33 @@ describe('validators', () => {
     expect(parseCommand(raw)).toBeNull()
   })
 
+  it('keep a web page to preview or browse, and where the page sits', () => {
+    expect(parseCommand({ do: 'preview', url: 'http://localhost:5173/', label: 'x' })).toEqual({ do: 'preview', url: 'http://localhost:5173/' })
+    expect(parseCommand({ do: 'browse', url: 'https://example.com/docs' })).toEqual({ do: 'browse', url: 'https://example.com/docs' })
+    expect(parseCommand({ do: 'placePreview', rect: { x: 600, y: 56, width: 580, height: 804, z: 1 } })).toEqual({ do: 'placePreview', rect: { x: 600, y: 56, width: 580, height: 804 } })
+    expect(parseCommand({ do: 'placePreview', rect: null })).toEqual({ do: 'placePreview', rect: null })
+  })
+
+  it.each([
+    'mailto:someone@example.com', 'file:///etc/passwd', 'javascript:alert(1)', '/tmp/site/index.html', 'highwing://chat', ''
+  ])('refuse to preview or browse %s', url => {
+    expect(parseCommand({ do: 'preview', url })).toBeNull()
+    expect(parseCommand({ do: 'browse', url })).toBeNull()
+  })
+
+  it.each([
+    ['no rect', {}],
+    ['a negative place', { rect: { x: -1, y: 0, width: 10, height: 10 } }],
+    ['a size that is no number', { rect: { x: 0, y: 0, width: '10', height: 10 } }],
+    ['an endless size', { rect: { x: 0, y: 0, width: Infinity, height: 10 } }]
+  ])('refuse a place for the page with %s', (_, raw) => {
+    expect(parseCommand({ do: 'placePreview', ...raw })).toBeNull()
+  })
+
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'botModels', 'checkTarget', 'contextBreakdown', 'createBot', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat',
-      'pickModel', 'reconnect', 'rename', 'rewind', 'send', 'setYolo', 'start', 'stop'
+      'answer', 'archive', 'botModels', 'browse', 'checkTarget', 'closePreview', 'contextBreakdown', 'createBot', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat',
+      'pickModel', 'placePreview', 'preview', 'reconnect', 'reloadPreview', 'rename', 'rewind', 'send', 'setYolo', 'start', 'stop'
     ])
   })
 })
@@ -228,13 +251,21 @@ function harness() {
   const loaded: { request: ImageRequest; context: ImageContext }[] = []
   const opener: Opener = {
     open: async path => (opened.push({ action: 'open', path }), { ok: true }),
-    show: async path => (opened.push({ action: 'show', path }), { ok: true })
+    show: async path => (opened.push({ action: 'show', path }), { ok: true }),
+    browse: async () => { throw new Error('a window never browses through the opener') }
   }
   const kept: Draft[] = []
   const stored: readonly Draft[] = [{ key: 'new', bot: null, text: 'kept on disk' }]
+  const previewed: { request: string; label: string | null; session: Session | undefined }[] = []
+  const toPane: PreviewCommand[] = []
+  const pane: Pane = {
+    preview: still<Preview>({ state: 'closed' }),
+    show: (request, label, session) => (previewed.push({ request, label, session }), request.startsWith('/')),
+    run: async command => (toPane.push(command), { ok: true, value: undefined })
+  }
   const served = serveWindows(
     pinnedConnection(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
-    { keep: draft => void kept.push(draft), load: async () => stored }
+    { keep: draft => void kept.push(draft), load: async () => stored }, pane
   )
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
@@ -248,7 +279,7 @@ function harness() {
     open = next
     openListeners.forEach(listener => listener(next))
   }
-  return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, stored, served, setCatalog, setBots, setOpen }
+  return { listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, stored, previewed, toPane, served, setCatalog, setBots, setOpen }
 }
 
 describe('serveWindows', () => {
@@ -291,7 +322,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, preview: { state: 'closed' } }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))
@@ -345,6 +376,20 @@ describe('serveWindows', () => {
     listeners.get(CHANNEL.watch)!(event(), 3, 'setup')
     expect(pushes).toEqual([{ topic: 'setup', rev: 1, full: { at: 'pinned' } }])
     await expect(handlers.get(CHANNEL.run)!(event(), { do: 'editTarget' })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(commands).toEqual([])
+  })
+
+  it('passes a command for the pane to the pane, and never to Hermes', async () => {
+    const { handlers, event, commands, toPane } = harness()
+    const run = handlers.get(CHANNEL.run)!
+    const asked: PreviewCommand[] = [
+      { do: 'preview', url: 'http://localhost:5173/' }, { do: 'browse', url: 'https://example.com/' }, { do: 'reloadPreview' },
+      { do: 'placePreview', rect: { x: 600, y: 56, width: 580, height: 804 } }, { do: 'closePreview' }
+    ]
+    for (const command of asked) await expect(run(event(), command)).resolves.toEqual({ ok: true, value: undefined })
+    await expect(run(event('https://example.com/'), { do: 'browse', url: 'https://example.com/' })).resolves.toMatchObject({ ok: false })
+    await expect(run(event(), { do: 'browse', url: 'file:///etc/passwd' })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(toPane).toEqual(asked)
     expect(commands).toEqual([])
   })
 
@@ -425,6 +470,14 @@ describe('the file call', () => {
     for (const raw of [null, 'open', { ...asked('open', NOTES), action: 'delete' }, asked('open', '  '), { action: 'open', path: NOTES }]) {
       await expect(file(raw)).resolves.toEqual({ ok: false, reason: 'refused' })
     }
+    expect(opened).toEqual([])
+  })
+
+  it('previews a path with the watched session, which the pane judges, and refuses what the pane refuses', async () => {
+    const { file, previewed, opened } = watching()
+    await expect(file({ ...asked('open', NOTES), action: 'preview' })).resolves.toEqual({ ok: true })
+    await expect(file({ ...asked('open', 'notes.md'), action: 'preview' })).resolves.toEqual({ ok: false, reason: 'refused' })
+    expect(previewed).toEqual([{ request: NOTES, label: null, session: diffMoment() }, { request: 'notes.md', label: null, session: diffMoment() }])
     expect(opened).toEqual([])
   })
 

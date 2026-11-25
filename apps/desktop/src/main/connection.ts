@@ -1,14 +1,17 @@
 import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, Route } from '@highwing/hermes'
-import type { CheckFailure, CheckStep, CommandOutcome, Target } from '@highwing/hermes/domain'
-import type { AppCommand, AppResult, Live, Setup, SetupCommand } from '../ipc-contract'
+import type { CheckFailure, CheckStep, Command, CommandOutcome, Target } from '@highwing/hermes/domain'
+import type { AppResult, Live, Setup, SetupCommand } from '../ipc-contract'
 import type { Settings } from './settings'
 
-/** What a window is served from: the screen it shows, the Hermes behind the chat, and one way in for every command. */
+/** The commands a connection carries out. The pane beside the chat has its own owner. */
+export type ConnectionCommand = Command | SetupCommand
+
+/** What a window is served from: the screen it shows, the Hermes behind the chat, and one way in for every command of the two. */
 export interface ConnectionOwner {
   readonly setup: Feed<Setup>
   /** The Hermes of the live connection. null until a target is saved. */
   readonly hermes: Hermes | null
-  run<C extends AppCommand>(command: C): Promise<CommandOutcome<AppResult<C>>>
+  run<C extends ConnectionCommand>(command: C): Promise<CommandOutcome<AppResult<C>>>
   close(): Promise<void>
 }
 
@@ -65,7 +68,7 @@ const NOT_NOW = refused('rejected', "Highwing can't do that from this screen.")
 const NOT_CONNECTED = refused('offline', "Highwing isn't connected to Hermes yet.")
 
 const SETUP_VERBS: Readonly<Record<SetupCommand['do'], true>> = { checkTarget: true, editTarget: true, keepTarget: true, openChat: true }
-const isSetupCommand = (command: AppCommand): command is SetupCommand => command.do in SETUP_VERBS
+const isSetupCommand = (command: ConnectionCommand): command is SetupCommand => command.do in SETUP_VERBS
 
 const sameTarget = (a: Target, b: Target) => (a.kind === 'remote' && b.kind === 'remote' ? a.host === b.host : a.kind === b.kind)
 
@@ -152,7 +155,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
   return {
     setup,
     get hermes() { return open?.hermes ?? null },
-    run: async <C extends AppCommand>(command: C) => {
+    run: async <C extends ConnectionCommand>(command: C) => {
       const outcome = isSetupCommand(command) ? runSetup(command) : await (open?.hermes.run(command) ?? NOT_CONNECTED)
       return outcome as CommandOutcome<AppResult<C>>
     },
@@ -170,7 +173,7 @@ export function pinnedConnection(hermes: Hermes): ConnectionOwner {
   return {
     setup: feed<Setup>({ at: 'pinned' }),
     hermes,
-    run: async <C extends AppCommand>(command: C) =>
+    run: async <C extends ConnectionCommand>(command: C) =>
       (isSetupCommand(command) ? NOT_NOW : await hermes.run(command)) as CommandOutcome<AppResult<C>>,
     close: () => hermes.close()
   }
