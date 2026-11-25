@@ -20,7 +20,7 @@ highwing-2.0/
       src/
         hub.ts                   public entry "."         openHermes, Hermes, Command, Feed, liveDialer, remoteRoute, Route, checkTarget
         actor.ts                 private                  one session: owns its Tracked state, makes the calls a state asks for, lends commands a SessionPort
-        session-commands.ts      private                  one row per command about one chat, over that chat's SessionPort
+        session-commands.ts      private                  one row per command about one chat, over that chat's SessionPort. `versions` stays in hub.ts: it must not attach the chat
         sidebar.ts               private                  stored rows, the running set, deriveSidebar
         roster.ts                private                  botList: what Highwing knows about the bots and their Bot Chats, and when it asks Hermes
         open.ts                  private                  chatDesk: which chat is open, the lookups and the create a change asks for
