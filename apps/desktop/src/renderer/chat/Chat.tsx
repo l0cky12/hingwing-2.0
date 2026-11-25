@@ -1,4 +1,4 @@
-import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type Version } from '@highwing/hermes/domain'
+import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, type BackgroundProcess, type BranchId, type ChatVersions, type CommandOutcome, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type TurnId, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Composer } from '../composer/Composer'
@@ -7,6 +7,7 @@ import { ContextMeter } from '../composer/ContextMeter'
 import { editingOf, type EditTarget } from '../composer/edit'
 import { FolderChip } from '../composer/FolderChip'
 import { ModelPicker } from '../composer/ModelPicker'
+import { StatusStack } from '../composer/StatusStack'
 import { ThinkingPill } from '../composer/ThinkingPill'
 import { folderFieldLabel, thinkingShown } from '../composer/tuning'
 import { YoloPill } from '../composer/YoloPill'
@@ -26,6 +27,7 @@ const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 const LONGEST_WAIT_MS = 60_000
 const NO_RELAYS: readonly Relay[] = []
 const NO_VERSIONS: ChatVersions = []
+const NO_PROCESSES: readonly BackgroundProcess[] = []
 
 const distanceFrom = (element: HTMLElement) => element.scrollHeight - element.scrollTop - element.clientHeight
 
@@ -246,6 +248,12 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     if (outcome.ok || outcome.refusal.kind !== 'offline') branchKeys.current.delete(rowId)
     if (!outcome.ok) setRefused({ id, message: outcome.refusal.message })
   }, [id])
+  const onReact = useCallback(async (turn: TurnId, emoji: string | null) => {
+    if (id === null) return
+    setRefused(null)
+    const outcome = await run({ do: 'react', sessionId: id, turn, emoji })
+    if (!outcome.ok) setRefused({ id, message: outcome.refusal.message })
+  }, [id])
   const onSend = useCallback(async (text: string, attachments: readonly AttachmentId[]): Promise<CommandOutcome<string | null>> => {
     setRefused(null)
     if (chat.sessionId === null) return run({ do: 'start', chat, text, attachments })
@@ -315,7 +323,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
               <Thread
                 view={view} relays={relays} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
                 canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
-                canBranch={canBranch} onBranch={onBranch} versions={versions} onVersion={onVersion} queue={queue}
+                canBranch={canBranch} onBranch={onBranch} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact}
               />
             </ImageSessionContext>
           </FileCallContext>
@@ -345,6 +353,12 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         onEscape={onEscape}
         onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}
+        stack={id !== null && session !== undefined && (
+          <StatusStack
+            key={`stack-${id}`} processes={session.processes ?? NO_PROCESSES} control={session.control} disabled={!live}
+            onKill={processId => run({ do: 'killProcess', sessionId: id, processId })} onControl={action => run({ do: 'control', sessionId: id, action })}
+          />
+        )}
       >
         {id !== null && (model.show !== 'hidden' || tuning !== null || cwd !== null || yolo !== null || fill !== null) && (
           <div className="under">

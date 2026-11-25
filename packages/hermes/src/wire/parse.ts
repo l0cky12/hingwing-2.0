@@ -750,6 +750,7 @@ function loopOf(raw: Obj): Loop {
     ticks: { fired: l.int('ticks_fired'), max: l.int('max_ticks') },
     nextAt: unixMs(l.optNum('next_due_at')),
     heldByGoal: l.optBool('deferred_by_goal') ?? false,
+    awaiting: l.optBool('awaiting_response') ?? false,
     pausedWhy: said(l.optStr('paused_reason')),
     stoppedWhy: said(l.optStr('last_stop_reason'))
   }

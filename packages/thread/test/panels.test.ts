@@ -40,6 +40,16 @@ describe('the panels story in the thread view', () => {
     expect(outlined(seen.at(-1) as Session)).toBe(want)
   })
 
+  it('lets each settled turn take a reaction on its stored answer, shows the one given, and offers none on a running turn', async () => {
+    const seen = await sessions()
+    const running = seen.find(session => session.run.state === 'running') as Session
+    expect(threadView(running, AT_PLAY_START).turns.at(-1)?.reactions).toBeNull()
+    const reacted = seen.find(session => session.history.some(turn => (turn.reply?.reactions.length ?? 0) > 0)) as Session
+    const turns = threadView(reacted, AT_PLAY_START).turns
+    expect(turns.map(turn => turn.reactions?.given)).toEqual([[{ emoji: '👍', by: 'user' }], []])
+    expect(turns.map(turn => turn.reactions?.turn)).toEqual(reacted.history.map(turn => turn.id))
+  })
+
   it.each(Array.from({ length: pushes }, (_, index) => index + 1))('a drop after push %i, 3 missed, stays sound and ends in the same outline', async afterPush => {
     const seen = await sessions({ drop: { afterPush, missed: 3 } })
     expect(unsound(seen)).toEqual([])
