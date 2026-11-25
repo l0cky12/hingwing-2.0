@@ -18,6 +18,10 @@ The stories are in ``STORIES``:
   the reply links to that page and to an address that never resolves. It asks for no approval.
 - ``preview-close`` writes fixtures/preview-close.jsonl: the same page opens, and after a 2 s pause
   ``desktop_preview`` closes the pane.
+- ``preview-files`` writes fixtures/preview-files.jsonl: steps write a CSV, a two-page PDF, a CSV whose
+  quoted fields hold a comma and a newline, and a ``.pdf`` that is plain text, all into the work dir's
+  ``reports`` folder. Two more steps edit the header of a 20,000-row CSV and of a CSV over the preview's
+  10 MB limit, which the story puts in the work dir before the turn. It asks for no approval.
 
 The script runs the canonical gateway in-process, the way Hermes's own
 tests/gateway/test_authority_complete_persisted_turn.py does: a real ``SessionAuthority`` over a
@@ -269,8 +273,58 @@ PREVIEW_CLOSE = Story(
            {"say": "Closed.", "call": None}],
     out="preview-close.jsonl", seed=20261126, files={}, doomed=None, answer=None, approves=False)
 
+REPORTS = f"{WORK}/reports"
+FILES = Path(__file__).resolve().parent / "preview-files"
+
+
+def pdf(pages):
+    """A text-only PDF with one line of Helvetica on each page, and a correct xref table."""
+    count = len(pages)
+    objects = ["<< /Type /Catalog /Pages 2 0 R >>",
+               f"<< /Type /Pages /Kids [{' '.join(f'{3 + 2 * i} 0 R' for i in range(count))}] /Count {count} >>"]
+    for i, text in enumerate(pages):
+        stream = f"BT /F1 28 Tf 72 700 Td ({text}) Tj ET"
+        objects.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                       f"/Resources << /Font << /F1 {3 + 2 * count} 0 R >> >> /Contents {4 + 2 * i} 0 R >>")
+        objects.append(f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream")
+    objects.append("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    out, offsets = "%PDF-1.4\n", []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n{body}\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n" + "".join(f"{o:010d} 00000 n \n" for o in offsets)
+    return out + f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n"
+
+
+def rows(count, width=0):
+    return "id,customer,total\n" + "".join(f"{i},customer-{i:06d}{'x' * width},{i % 997}\n" for i in range(1, count + 1))
+
+
+PREVIEW_FILES = Story(
+    request="Export this quarter's sales as CSV and PDF into /tmp/hermes-proto-work/reports, and tidy the old exports.",
+    steps=[
+        {"say": "I'll write the CSV first.",
+         "call": ("write_file", {"path": f"{REPORTS}/report.csv", "content": (FILES / "report.csv").read_text()}), "ms": 9},
+        {"say": "", "call": ("write_file", {"path": f"{REPORTS}/report.pdf",
+                                            "content": pdf(["Quarterly report", "Page two"])}), "ms": 11},
+        {"say": "", "call": ("write_file", {"path": f"{REPORTS}/quoted.csv", "content": (FILES / "quoted.csv").read_text()}), "ms": 8},
+        {"say": "", "call": ("write_file", {"path": f"{REPORTS}/scan.pdf",
+                                            "content": "This scan was saved as plain text, not as a PDF.\n"}), "ms": 7},
+        {"say": "Now the old exports.",
+         "call": ("patch", {"mode": "replace", "path": f"{REPORTS}/big.csv",
+                            "old_string": "id,customer,total", "new_string": "id,customer,amount"}), "ms": 40},
+        {"say": "", "call": ("patch", {"mode": "replace", "path": f"{REPORTS}/huge.csv",
+                                       "old_string": "id,customer,total", "new_string": "id,customer,amount"}), "ms": 90},
+        {"say": "Done. The exports are in `reports`: `report.csv` and `report.pdf`, with `big.csv` and `huge.csv` renamed "
+                "to use `amount`.", "call": None},
+    ],
+    out="preview-files.jsonl", seed=20261127,
+    files={"reports/big.csv": rows(20000), "reports/huge.csv": rows(200000, 40)},
+    doomed=None, answer=None, approves=False)
+
 STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN, "images": IMAGES, "preview": PREVIEW,
-           "preview-close": PREVIEW_CLOSE}
+           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES}
 NAME = sys.argv[1] if len(sys.argv) > 1 else "errand"
 if NAME not in STORIES:
     sys.exit(f"no story named {NAME!r}; pick one of: {', '.join(STORIES)}")
