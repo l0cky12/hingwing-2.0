@@ -51,8 +51,8 @@ export interface GroupBook {
 export function groupBook(conn: GroupWire, changed: () => void): GroupBook {
   let desk = EMPTY_GROUPS
   let groups = groupsOf(desk)
-  let asking = false
-  let again = false
+  let reading: Promise<boolean> | null = null
+  let queued: Promise<boolean> | null = null
 
   const take = (news: GroupNews) => {
     desk = nextGroups(desk, news)
@@ -62,29 +62,33 @@ export function groupBook(conn: GroupWire, changed: () => void): GroupBook {
     changed()
   }
 
-  const fetch = async () => {
-    asking = true
+  /** false: the connection dropped before Hermes answered. */
+  const fetch = async (): Promise<boolean> => {
     try {
       take({ on: 'support', support: parseGroupSupport(await conn.call('groups.capabilities', {}, CALL_TIMEOUT_MS)) })
       take({ on: 'listed', groups: parseGroupList(await conn.call('groups.list', {}, CALL_TIMEOUT_MS)) })
+      return true
     } catch (error) {
-      if (error instanceof RpcRefusal) take({ on: 'support', support: { is: error.code === METHOD_NOT_FOUND ? 'unsupported' : 'refused' } })
-      else if (!(error instanceof Offline)) throw error
-    } finally {
-      asking = false
-    }
-    if (again) {
-      again = false
-      refresh()
+      if (error instanceof Offline) return false
+      if (!(error instanceof RpcRefusal)) throw error
+      take({ on: 'support', support: { is: error.code === METHOD_NOT_FOUND ? 'unsupported' : 'refused' } })
+      return true
     }
   }
 
-  const ask = () => {
-    if (asking) again = true
-    else void fetch()
+  const ask = (): Promise<boolean> => {
+    if (reading === null) {
+      reading = fetch().finally(() => { reading = null })
+      return reading
+    }
+    queued ??= reading.then(() => {
+      queued = null
+      return ask()
+    })
+    return queued
   }
   const refresh = () => {
-    if (desk.support.is !== 'unsupported') ask()
+    if (desk.support.is !== 'unsupported') void ask()
   }
 
   return {
@@ -98,15 +102,17 @@ export function groupBook(conn: GroupWire, changed: () => void): GroupBook {
       const picked = draft.bots.flatMap(id => roster.filter(bot => bot.id === id))
       if (picked.length !== draft.bots.length) return GONE_BOT
       const members = seatsFor(picked).map(({ id, bot, handle }) => ({ member_id: id, profile: bot, handle }))
+      let outcome: Outcome
       try {
         const made = parseGroupMade(await conn.call('groups.create', { room_id: draft.group, name: draft.name, members }, CALL_TIMEOUT_MS))
         if (made !== null) take({ on: 'made', group: made })
-        return DONE
+        outcome = DONE
       } catch (error) {
-        return refusedCreate(error)
-      } finally {
-        ask()
+        outcome = refusedCreate(error)
       }
+      // A refusal moves the dialog to a new id, so the list must first show whether a lost earlier try made the group.
+      const reached = await ask()
+      return outcome.ok || reached ? outcome : NOT_CONNECTED
     }
   }
 }

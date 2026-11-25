@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { BotId } from '../src/domain/bots'
-import { groupIdFor, isGroupId, seatsFor } from '../src/domain/groups'
+import { groupIdFor, isGroupId, seatsFor, type GroupId } from '../src/domain/groups'
+import { groupBook, type GroupWire } from '../src/groups'
+import { Offline, RpcRefusal } from '../src/wire/link'
 
 const bot = (id: string, name: string) => ({ id: id as BotId, name })
 const handlesOf = (...picked: ReturnType<typeof bot>[]) => seatsFor(picked).map(seat => seat.handle)
@@ -51,5 +53,40 @@ describe('the id of a new group', () => {
     ['', false], ['-lead', false], ['has space', false], ['x'.repeat(129), false], [42, false], [null, false]
   ])('is %j a room id Hermes takes: %s', (raw, taken) => {
     expect(isGroupId(raw)).toBe(taken)
+  })
+})
+
+describe('making a group while an earlier try may have made it', () => {
+  const ROSTER = [
+    { id: 'default' as BotId, name: 'Ada', preview: null, description: null, tone: 'ink' as const, picture: false },
+    { id: 'sam' as BotId, name: 'Sam', preview: null, description: null, tone: 'slate' as const, picture: false }
+  ]
+  const draft = { group: 'g1' as GroupId, name: 'Launch plan', bots: ROSTER.map(bot => bot.id) }
+  const room = { room_id: 'g1', name: 'Launch plan', members: [{ member_id: 'default', profile: 'default', handle: 'ada' }, { member_id: 'sam', profile: 'sam', handle: 'sam' }] }
+
+  function wire(list: () => Promise<unknown>) {
+    const call = (method: string) => {
+      if (method === 'groups.capabilities') return Promise.resolve({ driver: true })
+      if (method === 'groups.list') return list()
+      return Promise.reject(new RpcRefusal(4001, 'invalid_params', 'invalid_params'))
+    }
+    return { call } as unknown as GroupWire
+  }
+
+  it('answers a refused create only after Hermes has listed what the earlier try made', async () => {
+    let answer: (value: unknown) => void = () => {}
+    const book = groupBook(wire(() => new Promise(resolve => { answer = resolve })), () => {})
+    let settled = false
+    const outcome = book.create(draft, ROSTER).then(result => { settled = true; return result })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(settled, 'still waiting for the list').toBe(false)
+    answer({ rooms: [room] })
+    expect((await outcome).ok).toBe(false)
+    expect(book.groups).toMatchObject({ state: 'listed', rows: [{ id: 'g1' }] })
+  })
+
+  it('answers a refused create as offline when the list could not be read, so the dialog keeps its id', async () => {
+    const book = groupBook(wire(() => Promise.reject(new Offline('down'))), () => {})
+    expect(await book.create(draft, ROSTER)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
   })
 })
