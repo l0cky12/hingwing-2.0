@@ -1,10 +1,10 @@
 import {
   turnActivityOf,
-  type Asked, type Attachment, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type Item, type MoaItem, type NoticeItem, type Outcome,
-  type PlanEntry, type PlanItem, type PromptId, type PromptItem, type PromptReply, type ReasoningItem, type RequestEnd, type Session, type SettledTurn,
-  type StatusItem, type Sync, type Tokens, type ToolItem, type Turn, type TurnActivity, type TurnId
+  type Asked, type Attachment, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type HermesRequest, type Item, type MoaItem, type NoticeItem,
+  type Outcome, type PlanEntry, type PlanItem, type PromptId, type PromptItem, type PromptReply, type ReasoningItem, type RequestEnd, type RequestId,
+  type SecretFor, type Session, type SettledTurn, type StatusItem, type Sync, type Tokens, type ToolItem, type Turn, type TurnActivity, type TurnId
 } from '@highwing/hermes/domain'
-import { changesAt, elapsedWords, timeLines, type ViewClock } from './when'
+import { changesAt, elapsedWords, timeLines, timeOfDay, type ViewClock } from './when'
 
 export type { ViewClock }
 
@@ -25,12 +25,31 @@ export interface ThreadView {
   readonly pending: readonly {
     readonly key: string; readonly text: string; readonly attachments: readonly Attachment[]; readonly status: 'sending' | 'queued' | 'failed'; readonly detail: string | null
   }[]
+  /** What Hermes waits on you for, oldest first, drawn after the turns. */
+  readonly asks: readonly AskCard[]
   readonly earlier: Session['earlier']
   /**
    * The earliest instant after the clock's `now` at which the same session would read differently
    * (an elapsed time ticks over, a time line appears or says a new day), or null when none will.
    */
   readonly changesAt: number | null
+}
+
+/** A masked field Hermes waits on: a sudo password, or the value of a secret. */
+export interface AskCard {
+  readonly key: string
+  readonly requestId: RequestId
+  readonly heading: string
+  readonly command: string | null
+  readonly why: string | null
+  readonly name: string | null
+  readonly label: string
+  /** When Hermes stops waiting: "Hermes waits until 14:07." null when Hermes named no limit. */
+  readonly waits: string | null
+  /** An answer is on its way, or the link is down. */
+  readonly busy: boolean
+  /** The last answer did not reach Hermes. */
+  readonly error: string | null
 }
 
 export interface TurnView {
@@ -84,7 +103,8 @@ export type ThreadNode =
   | { readonly kind: 'status'; readonly key: string; readonly status: StatusItem }
   /** Words the user put into the turn while it ran. */
   | { readonly kind: 'steer'; readonly key: string; readonly text: string }
-  | { readonly kind: 'closed'; readonly key: string; readonly asked: Asked; readonly end: RequestEnd }
+  /** Where a request closed. `words` is null for a kind with no card. */
+  | { readonly kind: 'closed'; readonly key: string; readonly asked: Asked; readonly end: RequestEnd; readonly words: string | null }
 
 /**
  * The turn's single end mark.
@@ -242,6 +262,7 @@ export function threadView(session: Session, clock: ViewClock): ThreadView {
         key: entry.inputId, text: entry.text, attachments: entry.attachments, status: entry.state.s, detail: entry.state.s === 'failed' ? entry.state.message : null
       }))
     ],
+    asks: session.requests.flatMap(request => askCard(request, sync.state === 'live', clock)),
     earlier: session.earlier,
     changesAt: changesAt(starts, lines, elapsing ? starts.at(-1) ?? null : null, clock)
   }
@@ -282,7 +303,7 @@ function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<Se
       case 'prompt':
         return { kind: 'prompt', key, card: promptCard(item, partner !== null, live) }
       case 'notice':
-        return item.what === 'closed' ? { kind: 'closed', key, asked: item.asked, end: item.end } : { kind: 'notice', key, ...noticeWords(item) }
+        return item.what === 'closed' ? { kind: 'closed', key, asked: item.asked, end: item.end, words: closedWords(item.asked, item.end) } : { kind: 'notice', key, ...noticeWords(item) }
       case 'reasoning':
         return { kind: 'reasoning', key, text: trimBlankLines(item.text), streaming: !item.sealed, duration: thoughtFor(item) }
       case 'helper':
@@ -713,6 +734,53 @@ function answeredWords(prompt: PromptItem, state: Exclude<PromptItem['state'], {
   return known?.answered ?? `You answered “${value}”.`
 }
 
+interface CardWords { readonly heading: string; readonly label: string; readonly answered: string }
+
+const SECRET_WORDS = {
+  sudo: { heading: 'Hermes needs your sudo password', label: 'Password', answered: 'You sent a password.' },
+  env: { heading: 'Hermes needs a secret', label: 'Secret value', answered: 'You sent the secret.' },
+  vault: null,
+  login: null,
+  code: null
+} as const satisfies Record<SecretFor['is'], CardWords | null>
+
+const wordsOfSecret = (is: Asked): CardWords | null => (is in SECRET_WORDS ? SECRET_WORDS[is as SecretFor['is']] : null)
+
+const END_WORDS = {
+  answered: null,
+  skipped: 'You skipped this.',
+  elsewhere: 'Answered from another window.',
+  done: 'Answered from another window.',
+  timeout: 'Nobody answered in time, so Hermes stopped waiting.',
+  interrupted: 'Hermes withdrew this request.',
+  withdrawn: 'Hermes withdrew this request.'
+} as const satisfies Record<RequestEnd, string | null>
+
+function closedWords(asked: Asked, end: RequestEnd): string | null {
+  const card = wordsOfSecret(asked)
+  return card === null ? null : END_WORDS[end] ?? card.answered
+}
+
+function askCard(request: HermesRequest, live: boolean, clock: ViewClock): readonly AskCard[] {
+  const { ask, state, deadline } = request
+  if (ask.kind !== 'secret') return []
+  const words = wordsOfSecret(ask.for.is)
+  if (words === null) return []
+  const { for: secret } = ask
+  return [{
+    key: `ask:${request.id}`,
+    requestId: request.id,
+    heading: words.heading,
+    command: secret.is === 'sudo' ? secret.command : null,
+    why: secret.is === 'env' ? secret.prompt : null,
+    name: secret.is === 'env' ? secret.name : null,
+    label: words.label,
+    waits: deadline === null ? null : `Hermes waits until ${timeOfDay(deadline, clock.timeZone)}.`,
+    busy: state.s === 'sending' || !live,
+    error: state.s === 'waiting' ? state.error : null
+  }]
+}
+
 const DECLINED_WORDS: { readonly [method: string]: string } = {
   setup_beat: "Hermes asked to show a setup step. Highwing can't show that yet, so it said no."
 }
@@ -815,7 +883,8 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
  *   ≋ MoA 2/3 · 2 references · aggregating                     MoA round
  *   · Goal: not done yet ...                                   status line, its kind when not `other`
  *   ※ warn: Credits are low  (cleared)                         keyed notice
- *   ◇ sudo: answered                                           where a request closed, and how
+ *   ○ You sent a password.                                     where a request with a card closed, in its words
+ *   ◇ code: elsewhere                                          where a request with no card closed, and how
  *   » use trash-put instead                                    words the user put into the running turn
  *   ✓ Done                                                     end: ✓ done, ✗ failed, ⊘ stopped, ~ lost, each with its words
  *     1,204 in, 380 out                                        what the reply used, when Hermes said
@@ -824,6 +893,9 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
  *   ◆ Helper Check disk usage · 1 step  3.3 s                  helper: ◆ done or failed, ◇ queued or working,
  *       Started `du -sh`                                       its now line while closed and working
  *   ☐ Plan · 1 of 3 done                                       plan: ☑ once every entry is done
+ *
+ *   ◈ Hermes needs your sudo password                          ask card, after the turns: its command, why, variable
+ *       Hermes waits until 14:07.                               name, wait, its field and buttons, and its error
  *
  * `◉` replaces the glyph of the node that carries the live end, or opens a tip line ("◉ Thinking").
  * Once a minute has passed the live end adds `, 3 min` after its words. `◌` is a paused end. `⋯` is a
@@ -846,6 +918,7 @@ export function outline(view: ThreadView, opened: ReadonlySet<string> = new Set(
     if (end !== null) lines.push(end)
     if (turn.tokens !== null) lines.push(`  ${turn.tokens}`)
   })
+  for (const card of view.asks) lines.push(...askLines(card))
   for (const message of view.pending) {
     if (message.attachments.length > 0) lines.push(attachmentLine(message.attachments))
     lines.push(`⋯ ${firstLine(message.text)}  (${message.status}${message.detail ? `: ${message.detail}` : ''})`)
@@ -854,6 +927,18 @@ export function outline(view: ThreadView, opened: ReadonlySet<string> = new Set(
 }
 
 const attachmentLine = (attachments: readonly Attachment[]) => `+ ${attachments.map(({ kind, name }) => `[${kind}] ${name}`).join('  ')}`
+
+function askLines(card: AskCard): string[] {
+  return [
+    `◈ ${card.heading}${card.busy ? '  (busy)' : ''}`,
+    ...(card.command === null ? [] : [`    ${card.command}`]),
+    ...(card.why === null ? [] : [`    ${card.why}`]),
+    ...(card.name === null ? [] : [`    ${card.name}`]),
+    ...(card.waits === null ? [] : [`    ${card.waits}`]),
+    `    (${card.label}) [Skip] [Send]`,
+    ...(card.error === null ? [] : [`    ! ${card.error}`])
+  ]
+}
 
 function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, opened: ReadonlySet<string>): string[] {
   switch (node.kind) {
@@ -880,7 +965,7 @@ function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, open
     case 'notice':
       return [`! ${node.text}`]
     case 'closed':
-      return [`◇ ${node.asked}: ${node.end}`]
+      return [node.words === null ? `◇ ${node.asked}: ${node.end}` : `○ ${node.words}`]
     case 'reasoning': {
       const head = `${live ? '◉' : '▸'} Thought${node.streaming ? ' …' : ''}${live ? elapsedSuffix(elapsed) : ''}`
       return opened.has(node.key) ? [head, ...node.text.split('\n').map(line => `    ${line}`)] : [head]

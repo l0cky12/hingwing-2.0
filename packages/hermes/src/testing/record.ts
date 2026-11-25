@@ -54,6 +54,16 @@ const masked = (values: unknown) => (isObject(values) ? Object.fromEntries(Objec
 /** The answer to a password, secret or code prompt is `{value}`. An empty one is a skip and says nothing. */
 const maskedResult = (result: unknown) => (isObject(result) && typeof result.value === 'string' && result.value !== '' ? { ...result, value: MASKED } : result)
 
+/**
+ * A frame the client sent, safe to keep in a log: the `{value}` of a typed answer and the credentials of a connector card are `MASKED`.
+ * Anything else is the frame as it was.
+ */
+export function maskedFrame(frame: unknown): unknown {
+  if (!isObject(frame)) return frame
+  if (typeof frame.method === 'string') return isObject(frame.params) ? { ...frame, params: maskedParams(frame.method, frame.params) } : frame
+  return 'result' in frame ? { ...frame, result: maskedResult(frame.result) } : frame
+}
+
 function maskedParams(method: string, params: Obj): Obj {
   if (method !== 'connection.respond' || !isObject(params.result) || !Array.isArray(params.result.targets)) return params
   const targets = params.result.targets.map((target: unknown) => (isObject(target) && 'env' in target ? { ...target, env: masked(target.env) } : target))

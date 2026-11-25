@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import type { PromptId, RequestId } from '../src/domain/session'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { loadFixture, MASKED, playToEnd, recordingDialer, scriptedDialer, type FixtureStep } from '../src/testing/fixture'
+import { loadFixture, MASKED, maskedFrame, playToEnd, recordingDialer, scriptedDialer, type FixtureStep } from '../src/testing/fixture'
 import { ERRAND, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, SESSION, SLASH, SUDO, SUDO_ASK, withSteps } from './support/errand'
 
 async function record(drop?: { afterPush: number; missed: number }, fixture = ERRAND) {
@@ -84,5 +84,14 @@ describe('recordingDialer', () => {
     expect(readFileSync(path, 'utf8')).not.toContain('hunter2')
     const answers = loadFixture(path).steps.flatMap(step => ('answer' in step ? [step] : []))
     expect(answers).toMatchObject([{ answer: SUDO, result: { value: MASKED } }, { answer: PICK, error: PICK_DECLINED.error }])
+  })
+
+  it('masks a typed answer and a connector credential in a frame kept for a log, and leaves a skip and a call as they were', () => {
+    expect(maskedFrame({ jsonrpc: '2.0', id: SUDO, result: { value: 'hunter2' } })).toEqual({ jsonrpc: '2.0', id: SUDO, result: { value: MASKED } })
+    expect(maskedFrame({ jsonrpc: '2.0', id: SUDO, result: { value: '' } })).toEqual({ jsonrpc: '2.0', id: SUDO, result: { value: '' } })
+    const call = { jsonrpc: '2.0', id: 3, method: 'prompt.submit', params: { text: 'hello' } }
+    expect(maskedFrame(call)).toEqual(call)
+    const card = { jsonrpc: '2.0', id: 4, method: 'connection.respond', params: { result: { targets: [{ name: 'github', status: 'approved', env: { TOKEN: 'hunter2' } }] } } }
+    expect(JSON.stringify(maskedFrame(card))).not.toContain('hunter2')
   })
 })
