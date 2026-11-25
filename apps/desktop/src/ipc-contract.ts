@@ -32,6 +32,9 @@ export type SetupCommand =
 /** How a page main draws in its own view is doing. `failed` hides the view, so the window shows the reason in its place. */
 export type PageLoad = { readonly at: 'loading' } | { readonly at: 'shown' } | { readonly at: 'failed'; readonly reason: string }
 
+/** A CSV file's records. The first is the header. `rows` is the first few after it, and `total` counts all of them. */
+export interface Table { readonly header: readonly string[]; readonly rows: readonly (readonly string[])[]; readonly total: number }
+
 /** What the pane shows. One kind per body the window draws. */
 export type PreviewContent = { readonly kind: 'page'; readonly load: PageLoad }
 
