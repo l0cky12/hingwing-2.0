@@ -17,11 +17,11 @@ function session(over: Partial<Session> = {}): Session {
 }
 
 const settled = (items: readonly Item<'settled'>[], outcome: Outcome = COMPLETE, id = 't1'): SettledTurn =>
-  ({ id: id as TurnId, request: { text: 'Do the errand', inputId: null, rowId: null }, began: null, items, outcome, rows: [], tokens: null })
+  ({ id: id as TurnId, request: { text: 'Do the errand', inputId: null, rowId: null, attachments: [] }, began: null, items, outcome, rows: [], tokens: null })
 
 const running = (items: readonly Item[], sync: Sync = { state: 'live' }, announced: string | null = null): Session => session({
   sync,
-  run: { state: 'running', generation: 1 as Generation, stop: 'none', turn: { id: 't9' as TurnId, request: { text: 'Do the errand', inputId: null, rowId: null }, began: null, items, announced } }
+  run: { state: 'running', generation: 1 as Generation, stop: 'none', turn: { id: 't9' as TurnId, request: { text: 'Do the errand', inputId: null, rowId: null, attachments: [] }, began: null, items, announced } }
 })
 
 const text = (markdown: string): Item<'settled'> => ({ kind: 'text', markdown, sealed: true })
@@ -228,10 +228,10 @@ describe('checkThread', () => {
       state: 'ready', pending: [], earlier: 'none', changesAt: null,
       turns: [
         {
-          key: 't1', time: null, request: null, rowId: null, end: { kind: 'at', nodeKey: 't1/7', tone: 'live', elapsed: null }, tokens: '9 in, 1 out',
+          key: 't1', time: null, request: null, attachments: [], rowId: null, end: { kind: 'at', nodeKey: 't1/7', tone: 'live', elapsed: null }, tokens: '9 in, 1 out',
           nodes: [{ kind: 'group', key: 't1/g0', title: [], count: 1, stat: null, steps: [step] }, { kind: 'prose', key: 't1/0', markdown: 'x', streaming: true }]
         },
-        { key: 't2', time: null, request: null, rowId: null, end: { kind: 'done', words: 'Done' }, nodes: [], tokens: null }
+        { key: 't2', time: null, request: null, attachments: [], rowId: null, end: { kind: 'done', words: 'Done' }, nodes: [], tokens: null }
       ]
     }
     expect(checkThread(view)).toEqual([
@@ -526,7 +526,7 @@ describe('the live end while a hidden tool runs', () => {
 
 describe('checkThread on helpers, plans and reasoning', () => {
   const turn = (nodes: ThreadNode[], end: ThreadView['turns'][number]['end']): ThreadView => ({
-    state: 'ready', pending: [], earlier: 'none', changesAt: null, turns: [{ key: 't1', time: null, request: null, rowId: null, tokens: null, nodes, end }]
+    state: 'ready', pending: [], earlier: 'none', changesAt: null, turns: [{ key: 't1', time: null, request: null, attachments: [], rowId: null, tokens: null, nodes, end }]
   })
   const planNode = (key: string): ThreadNode => ({ kind: 'plan', key, plan: { done: 0, total: 1, cancelled: 0, openByDefault: true, entries: [{ key: `${key}/e1`, text: 'x', state: 'todo', depth: 0 }] } })
   const reasoningNode = (key: string, streaming: boolean): ThreadNode => ({ kind: 'reasoning', key, text: 'x', streaming, duration: null })
@@ -557,5 +557,25 @@ describe('checkThread on helpers, plans and reasoning', () => {
       .toEqual(['key t1/0/s0 is used twice'])
     expect(checkThread(turn([planNode('t1/0'), { kind: 'notice', key: 't1/0/e1', tone: 'info', text: 'x' }], live('t1/0'))))
       .toEqual(['key t1/0/e1 is used twice'])
+  })
+})
+
+describe('attachments', () => {
+  const sent = [
+    { id: 'a-1' as never, name: 'error.png', kind: 'image' as const, size: 2048 },
+    { id: 'a-2' as never, name: 'contract.pdf', kind: 'file' as const, size: 4096 }
+  ]
+
+  it('draws what was sent with a request above it, in the order sent', () => {
+    const turn = { ...settled([text('It is a null pointer.')]), request: { text: 'What does this error mean?', inputId: null, rowId: 1, attachments: sent } }
+    const view = threadView(session({ history: [turn] }), CLOCK)
+    expect(view.turns[0]?.attachments).toEqual(sent)
+    expect(outline(view)).toBe(['+ [image] error.png  [file] contract.pdf', '> What does this error mean?', '| It is a null pointer.', '✓ Done'].join('\n'))
+  })
+
+  it('draws them with a message still on its way', () => {
+    const view = threadView(session({ outbox: [{ inputId: 'i1' as never, text: 'Summarise this', attachments: [sent[1]!], state: { s: 'sending' } }] }), CLOCK)
+    expect(view.pending[0]?.attachments).toEqual([sent[1]])
+    expect(outline(view)).toBe(['+ [file] contract.pdf', '⋯ Summarise this  (sending)'].join('\n'))
   })
 })

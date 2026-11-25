@@ -667,7 +667,7 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   return {
     turns: turns.flatMap((turn, index): SettledTurn[] => turn === open ? [] : [{
       id: `stored:${turn.rows[0] ?? `@${index}`}` as TurnId,
-      request: turn.request === null ? null : { text: turn.request, inputId: null, rowId: turn.requestRow },
+      request: turn.request === null ? null : { text: turn.request, inputId: null, rowId: turn.requestRow, attachments: [] },
       began: turn.began,
       items: turn.items,
       outcome: answered(turn) ? COMPLETE : LOST,

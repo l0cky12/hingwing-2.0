@@ -285,7 +285,7 @@ describe('parseRows on the stored errand', () => {
     const { turns, unfinished } = parseRows(stored)
     expect(unfinished).toBeNull()
     const turn = only(turns)
-    expect(turn.request).toEqual({ text: REQUEST, inputId: null, rowId: 1 })
+    expect(turn.request).toEqual({ text: REQUEST, inputId: null, rowId: 1, attachments: [] })
     expect(turn.outcome).toEqual({ kind: 'complete' })
     expect(turn.rows).toEqual(stored.flatMap(row => (typeof row.row_id === 'number' ? [row.row_id] : [])))
     expect(turn.rows).toEqual([1, 2, 6, 10])

@@ -2,7 +2,7 @@ import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId } from './bots'
 import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
-import type { BranchId, ContextFill, InputId, ModelOption, ModelRef, PromptId, PromptReply, SessionId } from './session'
+import type { AttachmentId, BranchId, ContextFill, InputId, ModelOption, ModelRef, PromptId, PromptReply, SessionId } from './session'
 
 export type Command =
   /**
@@ -14,9 +14,12 @@ export type Command =
    * The first message to a chat that has no session yet: makes the session and sends `text` there.
    * Messages sent while it is being made go to that one session, in the order sent.
    */
-  | { readonly do: 'start'; readonly chat: Unstarted; readonly text: string }
-  /** A line that starts with a listed `/name` runs that Hermes command or skill instead of going to the agent as text. */
-  | { readonly do: 'send'; readonly sessionId: SessionId; readonly text: string }
+  | { readonly do: 'start'; readonly chat: Unstarted; readonly text: string; readonly attachments?: readonly AttachmentId[] }
+  /**
+   * A line that starts with a listed `/name` runs that Hermes command or skill instead of going to the agent as text.
+   * `attachments` go with the message in the order given; absent means none. A command line with any is refused.
+   */
+  | { readonly do: 'send'; readonly sessionId: SessionId; readonly text: string; readonly attachments?: readonly AttachmentId[] }
   /**
    * Cut this chat before the stored row `rowId` (the message it names and everything after it, in the thread and in
    * Hermes's history), then send `text` as a new message. Nothing is sent when Hermes refuses the cut.

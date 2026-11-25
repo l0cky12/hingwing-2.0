@@ -1,7 +1,7 @@
 import type { ContextBreakdown, ModelConfirm, ModelMenu, Outcome, Refusal } from './domain/command'
 import type { PathMatch } from './domain/path'
 import { emptyTracked, reduce, sessionOf, type Gate, type LocalAction, type ServerRequest, type SessionInput, type Tracked } from './domain/reduce'
-import type { BranchId, InputId, ModelOption, OutboxEntry, PromptId, PromptReply, Session, SessionContent, SessionId } from './domain/session'
+import type { Attachment, BranchId, InputId, ModelOption, OutboxEntry, PromptId, PromptReply, Session, SessionContent, SessionId } from './domain/session'
 import { Offline, RpcRefusal, type Calls, type Clock } from './wire/link'
 import { parseBranched, parseContextBreakdown, parsePathMatches, parseModelMenu, parseModelReceipt, parseReplay, parseSnapshot, parseStats, parseTranscript } from './wire/parse'
 
@@ -70,6 +70,27 @@ const EARLIER = { pageRows: 200, pages: 3 } as const
 
 type Attaching = Extract<Gate, { at: 'attaching' }>
 
+/** An attachment with its bytes, read from where Highwing keeps it. `mime` is what the bytes are, as Highwing sniffed them. */
+export type Upload = Attachment & { readonly mime: string; readonly bytes: Uint8Array }
+
+/**
+ * What a message's attachments became on the wire: the staged images `prompt.submit` names, and the text the model reads
+ * with each file's `@file:` reference. Kept so a resubmit after a reconnect sends the same thing.
+ */
+interface Wired { readonly attachments: readonly { readonly path: string; readonly mime: string }[]; readonly apiText: string | undefined }
+
+interface Staged { readonly images: Wired['attachments']; readonly refs: readonly string[] }
+
+const attachmentOf = ({ id, name, kind, size }: Upload): Attachment => ({ id, name, kind, size })
+const base64 = (bytes: Uint8Array) => Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('base64')
+
+function attachRefusal(name: string, error: unknown): Refusal {
+  const refusal = refusalOf(error)
+  return refusal.kind === 'offline'
+    ? { kind: 'offline', message: `Highwing lost the connection while attaching ${name}, so nothing was sent.` }
+    : { kind: refusal.kind, message: `Hermes refused ${name}: ${refusal.message}` }
+}
+
 export interface ActorDeps {
   /** The connection for a session of the socket's own profile, `conn.as(bot)` for a bot's. */
   readonly conn: Calls
@@ -88,6 +109,7 @@ export class SessionActor {
   private tracked: Tracked
   private published: Session
   private restarts: readonly number[] = []
+  private readonly wired = new Map<InputId, Wired>()
 
   constructor(readonly id: SessionId, private readonly deps: ActorDeps) {
     this.tracked = emptyTracked(id)
@@ -120,6 +142,7 @@ export class SessionActor {
     const before = this.tracked.gate
     const wasRunning = this.tracked.content.run.state === 'running'
     this.tracked = reduce(this.tracked, input)
+    for (const inputId of this.wired.keys()) if (!this.tracked.content.outbox.some(entry => entry.inputId === inputId)) this.wired.delete(inputId)
     const after = this.tracked.gate
     this.publish()
     const wentLive = after.at === 'live' && before.at !== 'live'
@@ -193,19 +216,58 @@ export class SessionActor {
     return this.tracked.gate.at === 'live' ? null : { ok: false, refusal: NOT_CONNECTED }
   }
 
-  /** `apiText` is what the model reads when it differs from the `text` the thread and the stored history show. */
-  send(text: string, apiText?: string): Promise<Outcome> {
+  /**
+   * `apiText` is what the model reads when it differs from the `text` the thread and the stored history show. Each upload is
+   * staged with Hermes first, in order. The message is sent only once every one is, and not at all when Hermes refuses one.
+   */
+  send(text: string, apiText?: string, uploads: readonly Upload[] = []): Promise<Outcome> {
     const offline = this.offline()
     if (offline !== null) return Promise.resolve(offline)
+    if (uploads.length === 0) return this.post(text, apiText, [], null)
+    return this.stage(uploads).then(staged => (staged.ok ? this.post(text, apiText, uploads, staged.value) : staged))
+  }
+
+  private post(text: string, apiText: string | undefined, uploads: readonly Upload[], staged: Staged | null): Promise<Outcome> {
     const inputId = this.deps.mintId() as InputId
-    const sending = { inputId, text, ...(apiText === undefined ? {} : { apiText }) }
+    if (staged !== null) {
+      const { images, refs } = staged
+      this.wired.set(inputId, { attachments: images, apiText: refs.length === 0 ? apiText : `${apiText ?? text}\n\n${refs.join('\n')}` })
+    }
+    const sending = { inputId, text, ...(apiText === undefined ? {} : { apiText }), attachments: uploads.map(attachmentOf) }
     this.act({ did: 'send', ...sending })
     return this.submit(sending)
   }
 
+  /** `image.attach_bytes` only stages an image: the `prompt.submit` after it names the staged path. `file.attach` answers the reference the model reads. */
+  private async stage(uploads: readonly Upload[]): Promise<Outcome<Staged>> {
+    const images: Wired['attachments'][number][] = []
+    const refs: string[] = []
+    for (const upload of uploads) {
+      try {
+        if (upload.kind === 'image') {
+          const staged = await this.deps.conn.call('image.attach_bytes', { session_id: this.id, content_base64: base64(upload.bytes), filename: upload.name })
+          if (!staged.attached || !staged.path) return refused('rejected', `Hermes didn't take ${upload.name}.`)
+          images.push({ path: staged.path, mime: staged.mime })
+        } else {
+          const staged = await this.deps.conn.call('file.attach', { session_id: this.id, data_url: `data:${upload.mime};base64,${base64(upload.bytes)}`, name: upload.name })
+          if (!staged.attached) return refused('rejected', `Hermes didn't take ${upload.name}.`)
+          refs.push(staged.ref_text)
+        }
+      } catch (error) {
+        return { ok: false, refusal: attachRefusal(upload.name, error) }
+      }
+    }
+    return { ok: true, value: { images, refs } }
+  }
+
   private async admit({ inputId, text, apiText }: Pick<OutboxEntry, 'inputId' | 'text' | 'apiText'>): Promise<Outcome> {
+    const wired = this.wired.get(inputId)
+    const apiTextSent = wired === undefined ? apiText : wired.apiText
     try {
-      const receipt = await this.deps.conn.call('prompt.submit', { session_id: this.id, text, input_id: inputId, ...(apiText === undefined ? {} : { api_text: apiText }) })
+      const receipt = await this.deps.conn.call('prompt.submit', {
+        session_id: this.id, text, input_id: inputId, ...(apiTextSent === undefined ? {} : { api_text: apiTextSent }),
+        ...(wired === undefined || wired.attachments.length === 0 ? {} : { attachments: [...wired.attachments] })
+      })
       if ('admission_id' in receipt) this.act({ did: 'send.admitted', inputId, admissionId: receipt.admission_id, status: receipt.status })
       else this.act({ did: 'send.discarded', inputId })
       return DONE

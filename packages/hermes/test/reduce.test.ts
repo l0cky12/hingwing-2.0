@@ -62,7 +62,7 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
 
 function storedTurn(id: string, rows: readonly number[]): SettledTurn {
   return {
-    id: turnId(id), request: { text: `request ${id}`, inputId: null, rowId: rows[0] ?? null }, items: [{ kind: 'text', markdown: `answer ${id}`, sealed: true }],
+    id: turnId(id), request: { text: `request ${id}`, inputId: null, rowId: rows[0] ?? null, attachments: [] }, items: [{ kind: 'text', markdown: `answer ${id}`, sealed: true }],
     began: null, outcome: COMPLETE, rows, tokens: null
   }
 }
@@ -150,7 +150,7 @@ describe('the fold', () => {
     expect(state.content.run).toEqual({ state: 'idle' })
     expect(state.content.history).toEqual([{
       id: 't1',
-      request: { text: 'Tidy the notes', inputId: null, rowId: null },
+      request: { text: 'Tidy the notes', inputId: null, rowId: null, attachments: [] },
       began: null,
       items: [
         { kind: 'tool', id: 'a', name: 'terminal', args: { command: 'a' }, status: { s: 'cut' } },
@@ -181,7 +181,7 @@ describe('the fold', () => {
       state: 'running',
       generation: 2,
       stop: 'none',
-      turn: { id: 't2', request: { text: 'Next errand', inputId: null, rowId: null }, began: null, items: [], announced: null }
+      turn: { id: 't2', request: { text: 'Next errand', inputId: null, rowId: null, attachments: [] }, began: null, items: [], announced: null }
     })
   })
 
@@ -191,9 +191,9 @@ describe('the fold', () => {
   })
 
   it('hands a starting turn the message this client sent', () => {
-    const send: SessionInput = { in: 'local', action: { did: 'send', inputId: inputId('i1'), text: 'Tidy the notes' } }
+    const send: SessionInput = { in: 'local', action: { did: 'send', inputId: inputId('i1'), text: 'Tidy the notes', attachments: [] } }
     const sent = feed(live(), send, send)
-    expect(sent.content.outbox).toEqual([{ inputId: 'i1', text: 'Tidy the notes', state: { s: 'sending' } }])
+    expect(sent.content.outbox).toEqual([{ inputId: 'i1', text: 'Tidy the notes', attachments: [], state: { s: 'sending' } }])
 
     const running = reduce(sent, event(1, { type: 'turn.started', turnId: turnId('t1'), admissionId: 'adm-1', requestText: null }))
     expect(running.content.outbox).toEqual([])
@@ -203,12 +203,12 @@ describe('the fold', () => {
   it('claims a queued message through its admission, not the one still sending', () => {
     const state = feed(
       live(),
-      { in: 'local', action: { did: 'send', inputId: inputId('i1'), text: 'first' } },
+      { in: 'local', action: { did: 'send', inputId: inputId('i1'), text: 'first', attachments: [] } },
       { in: 'local', action: { did: 'send.admitted', inputId: inputId('i1'), admissionId: 'adm-1', status: 'queued' } },
-      { in: 'local', action: { did: 'send', inputId: inputId('i2'), text: 'second' } },
+      { in: 'local', action: { did: 'send', inputId: inputId('i2'), text: 'second', attachments: [] } },
       event(1, { type: 'turn.started', turnId: turnId('t1'), admissionId: 'adm-1', requestText: 'first' })
     )
-    expect(state.content.outbox).toEqual([{ inputId: 'i2', text: 'second', state: { s: 'sending' } }])
+    expect(state.content.outbox).toEqual([{ inputId: 'i2', text: 'second', attachments: [], state: { s: 'sending' } }])
     expect(state.content.run).toMatchObject({ turn: { request: { text: 'first', inputId: 'i1' } } })
   })
 
@@ -257,7 +257,7 @@ describe('attached', () => {
     expect(state.content.run).toEqual({ state: 'idle' })
     expect(state.content.history).toEqual([{
       id: 't1',
-      request: { text: 'Tidy the notes', inputId: null, rowId: null },
+      request: { text: 'Tidy the notes', inputId: null, rowId: null, attachments: [] },
       began: null,
       items: [{ kind: 'text', markdown: 'Hello world', sealed: true }],
       outcome: COMPLETE,
