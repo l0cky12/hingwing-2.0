@@ -1,9 +1,8 @@
-/** How a message names another bot: `@Rae`, or `@"Timothy · CEO"` for a name with a space. Shared by the composer's menu and the hub. */
+/** How a message names another bot: `@Rae`, or `@"Timothy · CEO"` for a name with a space. */
 import type { Bot } from './bots'
 
 type Named = Pick<Bot, 'id' | 'name'>
 
-/** `@` opens a mention only at the start of the text or after whitespace, so `sam@example` never does. */
 const MENTIONS = /(?<![^\s])@(?:"([^"]+)"|(\S+))/g
 const TYPING = /(?<![^\s])@("[^"]*|[^\s"]*)$/
 const TRAILING = /[.,!?;:)]+$/

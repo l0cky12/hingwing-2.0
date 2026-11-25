@@ -179,7 +179,6 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit
   )
 })
 
-/** A message the user handed to another bot, and under it that bot's one answer. */
 export const RelayTurn = memo(function RelayTurn({ relay }: { readonly relay: Relay }) {
   const { name, state } = relay
   return (

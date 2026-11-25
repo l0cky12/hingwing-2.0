@@ -18,7 +18,6 @@ async function rawSocket(options: ScriptOptions = {}, fixture: Fixture = ERRAND)
   const frames: Reply[] = []
   socket.onText = text => frames.push(JSON.parse(text) as Reply)
   let ids = 0
-  /** Sends a call and answers its id, for a reply that comes later. */
   const post = (method: string, params?: unknown): number => {
     socket.send(JSON.stringify({ jsonrpc: '2.0', id: ++ids, method, params }))
     return ids

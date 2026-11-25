@@ -1,7 +1,4 @@
-/**
- * A message the user handed to another bot from a chat, and what came back. Plain JSON data only,
- * like `session.ts`, because these values cross Electron IPC.
- */
+/** A message the user handed to another bot from a chat, and what came back. */
 import type { AvatarTone, BotId } from './bots'
 import type { TurnId } from './session'
 

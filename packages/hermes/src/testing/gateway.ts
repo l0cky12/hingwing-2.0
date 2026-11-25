@@ -47,7 +47,6 @@ class Refused extends Error {
   }
 }
 
-/** A result the gateway writes `ms` from now, as a call that waits on another bot's turn answers. Dropped when the socket closed first. */
 class Later {
   constructor(readonly ms: number, readonly result: unknown) {}
 }
@@ -429,7 +428,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   /**
    * `_delivery_params` (gateway/session_bot.py:804-827), with the id rule of tools/bot_live_delivery.py:131-134,
    * then the target: a profile that is not running refuses `runtime_unavailable` (tui_gateway/methods_bot_relay.py:122).
-   * The call answers once the target's turn ends, with the receipt of gateway/session_bot.py:830-832.
+   * The call answers once the target's turn ends, with the receipt `_result` builds (gateway/session_bot.py:480-512).
    */
   'bot_relay.deliver': (gateway, _socket, params, routed) => {
     const { id, message } = params

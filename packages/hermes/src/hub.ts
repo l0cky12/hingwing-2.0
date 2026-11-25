@@ -199,7 +199,6 @@ export function openHermes(options: HermesOptions): Hermes {
   const relay = feed<RelayDesk>(relays.desk)
   let relayRead: Promise<void> = Promise.resolve()
 
-  /** The other bots a message names. None on a Hermes that cannot hand a message over, and none before it listed its bots. */
   const mentioned = (sessionId: SessionId, text: string): readonly Bot[] => {
     const listed = bots.get()
     if (!relay.get().supported || listed.state !== 'listed') return []

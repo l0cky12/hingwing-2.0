@@ -16,7 +16,6 @@ export const RELAY_TIMEOUT_MS = 1_500_000
 function failureWords(error: unknown, name: string, online: boolean): string {
   if (error instanceof RpcRefusal) return undeliveredWords(error.reason, name) ?? `${name} couldn't take your message: ${error.message}`
   if (!(error instanceof Offline)) throw error
-  // The socket is still up, so the only thing that gave up is this call's own deadline.
   return online ? `${name} didn't answer in ${RELAY_TIMEOUT_MS / 60_000} minutes.` : `The connection to Hermes dropped before ${name} answered.`
 }
 
@@ -28,10 +27,7 @@ export interface RelayBook {
   send(sessionId: SessionId, after: TurnId | null, to: Bot, text: string): void
 }
 
-/**
- * Owns the messages handed to other bots, for the hub's lifetime: a session's actor detaches after
- * 60 s, and an answer can take 25 minutes. `changed` runs after every change of `desk`.
- */
+/** Owns the messages handed to other bots, for the hub's lifetime. `changed` runs after every change of `desk`. */
 export function relayBook(conn: Pick<Connection, 'call' | 'as' | 'link'>, changed: () => void): RelayBook {
   let desk: RelayDesk = { supported: false, bySession: {} }
   const put = (next: RelayDesk) => {

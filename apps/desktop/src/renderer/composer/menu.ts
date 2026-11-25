@@ -10,7 +10,6 @@ export interface MenuSection {
   readonly items: readonly MenuItem[]
 }
 
-/** What the lists are made from. */
 export interface MenuSources {
   readonly catalog: SlashCatalog
   /** The bots a message from this chat can be handed to. */
@@ -41,7 +40,6 @@ interface Range { readonly from: number; readonly to: number }
 
 interface Trigger {
   readonly label: string
-  /** The text being typed for this list and what a pick replaces, or null when the caret is not in one. */
   typed(text: string, caret: number): (Range & { readonly query: string }) | null
   readonly sections: readonly { readonly label: string; items(query: string, sources: MenuSources): readonly MenuItem[] }[]
 }
@@ -53,7 +51,6 @@ const starts = (word: string, query: string) => word.toLowerCase().startsWith(qu
 const entries = (kind: SlashEntry['kind']) => (query: string, { catalog }: MenuSources): MenuItem[] =>
   catalog.filter(entry => entry.kind === kind && starts(entry.name, query)).map(entry => ({ kind, entry }))
 
-/** The first trigger the caret is in decides the list. A new kind of `@` item is one more section here. */
 const TRIGGERS: readonly Trigger[] = [
   {
     label: 'Commands and skills',
