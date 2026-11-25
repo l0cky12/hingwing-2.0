@@ -1198,7 +1198,7 @@ describe('the reasoning switch', () => {
     opened.watch()
     await opened.clock.advance(0)
     expect(reads(opened)).toEqual([{ method: 'config.get', params: { session_id: SESSION, key: 'show_reasoning' } }])
-    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: false, busy: null })
+    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: false, busy: null, effort: null, fast: null, yolo: null })
   })
 
   it('reads it again after the chat is attached again', async () => {
@@ -1216,7 +1216,7 @@ describe('the reasoning switch', () => {
     await opened.clock.advance(0)
     expect(await opened.hermes.run({ do: 'tune', sessionId: SESSION, set: 'reasoning', on: true })).toEqual({ ok: true, value: undefined })
     expect(opened.sent().filter(call => call.method === 'config.set')).toEqual([{ method: 'config.set', params: { session_id: SESSION, key: 'show_reasoning', value: 'on' } }])
-    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: true, busy: null })
+    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
   })
 
   it('stays unknown on a Hermes that refuses the read, and says it cannot set it', async () => {
@@ -1224,7 +1224,7 @@ describe('the reasoning switch', () => {
     opened.watch()
     await opened.clock.advance(0)
     expect(reads(opened)).toHaveLength(1)
-    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: null, busy: null })
+    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: null, busy: null, effort: null, fast: null, yolo: null })
     expect(await opened.hermes.run({ do: 'tune', sessionId: SESSION, set: 'reasoning', on: true })).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes doesn't support that." } })
   })
 })

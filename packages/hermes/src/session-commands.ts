@@ -4,13 +4,13 @@ import type { Command, ModelConfirm, Outcome, Refusal, ResultOf } from './domain
 import { offeredBy, sendPlan } from './domain/queue'
 import type {
   AttachmentId, BranchId, Generation, HermesRequest, PromptId, PromptReply, QueuedMessage, RecordedReply, RequestId, RequestReply, SessionContent, SessionId,
-  Told, TurnId
+  Told, Tuning, TurnId
 } from './domain/session'
 import { slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import type { Served } from './wire/link'
 import {
-  beginsAtTurn, parseBranched, parseBusy, parseContextBreakdown, parseCorrection, parseDirective, parseModelMenu, parseModelReceipt, parsePathMatches, parseShown,
-  parseTranscript, type Correction
+  beginsAtTurn, parseBranched, parseBusy, parseContextBreakdown, parseCorrection, parseDirective, parseFast, parseModelMenu, parseModelReceipt, parsePathMatches,
+  parseShown, parseTranscript, type Correction
 } from './wire/parse'
 
 /** `versions` stays with the hub: reading a chat's versions must not attach it. */
@@ -205,19 +205,6 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     return matches.ok ? { ok: true, value: parsePathMatches(matches.value) } : matches
   }),
 
-  /**
-   * Hermes sends no session.info after this set, so the reply is the only word on the new state. Leaving out `scope`
-   * keeps the change to this chat: any scope but "global" is refused, and "global" flips the whole profile
-   * (gateway/session_tui_config.py:187-193,357-377, gateway/session_busy_controls.py:30-44,134-166). An explicit word, because a missing
-   * value toggles.
-   */
-  setYolo: (port, { on }) => port.whenLive(async () => {
-    const set = await port.call('config.set', { session_id: port.id, key: 'yolo', value: on ? 'on' : 'off' })
-    if (!set.ok) return set
-    port.act({ did: 'yolo', on: set.value.value === '1' || set.value.value === true })
-    return DONE
-  }),
-
   pickModel: (port, { model, confirm }) => port.whenLive<ModelConfirm | null>(async () => {
     const payload = { model: model.id, provider: model.provider, ...(confirm === undefined ? {} : { confirm }) }
     const sent = await port.mutate('model', payload, port.fence.generation ?? 0)
@@ -240,12 +227,34 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
   }),
 
   tune: (port, command) => port.whenLive(async () => {
-    const [key, value] = command.set === 'busy' ? ['busy', command.to] : ['show_reasoning', command.on ? 'on' : 'off']
+    if (command.set === 'effort') {
+      // A committed level comes back in a session.info before the reply. One set during a turn is held for the next (gateway/session_mutations.py:129-137).
+      const set = await port.mutate('reasoning', { effort: command.to === 'default' ? null : command.to }, port.fence.generation ?? 0)
+      return set.ok ? DONE : set
+    }
+    const { key, value, said } = (SWITCHES[command.set] as (command: Switched) => Switch)(command)
     const set = await port.call('config.set', { session_id: port.id, key, value })
     if (!set.ok) return set
-    port.act({ did: 'tuned', tuning: command.set === 'busy' ? { busy: parseBusy(set.value) ?? command.to } : { reasoning: parseShown(set.value) ?? command.on } })
+    port.act({ did: 'tuned', tuning: said(set.value) })
     return DONE
   })
+}
+
+type Switched = Exclude<Extract<SessionCommand, { do: 'tune' }>, { set: 'effort' }>
+interface Switch { readonly key: string; readonly value: string; said(reply: Served['config.set']['result']): Partial<Tuning> }
+
+/** The `config.set` of each switch, and what Hermes's reply says it is now. Hermes pushes no session.info for most of them, so the reply is the word. */
+const SWITCHES: { readonly [S in Switched['set']]: (command: Extract<Switched, { set: S }>) => Switch } = {
+  busy: ({ to }) => ({ key: 'busy', value: to, said: reply => ({ busy: parseBusy(reply) ?? to }) }),
+  reasoning: ({ on }) => ({ key: 'show_reasoning', value: on ? 'on' : 'off', said: reply => ({ reasoning: parseShown(reply) ?? on }) }),
+  /**
+   * Leaving out `scope` keeps the change to this chat: any scope but "global" is refused, and "global" flips the whole profile
+   * (gateway/session_tui_config.py:187-193,357-377, gateway/session_busy_controls.py:30-44,134-166). An explicit word, because a missing
+   * value toggles.
+   */
+  yolo: ({ on }) => ({ key: 'yolo', value: on ? 'on' : 'off', said: reply => ({ yolo: reply.value === '1' || reply.value === true }) }),
+  /** Hermes answers the tier's word (gateway/session_tui_config.py:274-298). */
+  fast: ({ on }) => ({ key: 'fast', value: on ? 'fast' : 'normal', said: reply => ({ fast: parseFast(reply) ?? on }) })
 }
 
 /**

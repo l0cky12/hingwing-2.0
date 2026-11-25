@@ -239,7 +239,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   useEffect(() => { if (live) void refreshModels() }, [live, refreshModels])
   const model = modelViewOf(menu.id === id ? menu.menu : null, session)
   const fill = session?.usage.context ?? null
-  const yolo = id !== null && live ? (session?.yolo ?? null) : null
+  const yolo = id !== null && live ? (session?.tuning.yolo ?? null) : null
   const online = useTopic('link')?.state === 'online'
 
   const fileCall = useMemo(() => (id === null ? NO_FILE_CALL : fileCallFor(id)), [id])
@@ -290,7 +290,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
                   onPick={(pick, confirm) => run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) })}
                 />
               )}
-              {yolo !== null && <YoloPill key={`yolo-${id}`} on={yolo} onSet={on => run({ do: 'setYolo', sessionId: id, on })} />}
+              {yolo !== null && <YoloPill key={`yolo-${id}`} on={yolo} onSet={on => run({ do: 'tune', sessionId: id, set: 'yolo', on })} />}
             </div>
             {fill !== null && <ContextMeter key={id} fill={fill} stale={!live} onBreakdown={() => run({ do: 'contextBreakdown', sessionId: id })} />}
           </div>

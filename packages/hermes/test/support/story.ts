@@ -122,7 +122,8 @@ export function snapshotAfter(story: Story, published: readonly StampedEvent[], 
   let title = ''
   let revision = 0
   let queue: readonly Admission[] = parsePending(story.fixture.header.pending ?? [])
-  let yolo: boolean | null = null
+  let said: Snapshot['tuning'] = { effort: null, fast: null, yolo: null }
+  let cwd: string | null = null
   const prompts = new Map<PromptId, Snapshot['prompts'][number]>()
   for (const { stamp, event } of published) {
     if (stamp.generation !== null) generation = stamp.generation
@@ -137,14 +138,15 @@ export function snapshotAfter(story: Story, published: readonly StampedEvent[], 
         if (event.title !== undefined) title = event.title
         if (event.revision !== undefined) revision = event.revision
         if (event.queue !== undefined) queue = event.queue
-        if (event.yolo !== undefined) yolo = event.yolo
+        if (event.tuning !== undefined) said = { ...said, ...event.tuning }
+        if (event.cwd !== undefined) cwd = event.cwd
         break
     }
   }
   const last = published.at(-1)
   const watermark: Cursor = { epoch: story.epoch, seq: last ? last.stamp.seq : 0 }
   return {
-    id: story.sessionId, title, cwd: null, model: null, yolo, running, generation: generation as Generation, revision, subscriptionId,
+    id: story.sessionId, title, cwd, model: null, tuning: said, running, generation: generation as Generation, revision, subscriptionId,
     watermark, queue, prompts: [...prompts.values()], history, openRequests: []
   }
 }

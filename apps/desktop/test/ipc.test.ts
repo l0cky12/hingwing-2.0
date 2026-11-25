@@ -123,7 +123,7 @@ describe('validators', () => {
       .toEqual({ do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: null }, text: 'hello', attachments: [] })
     const model = { id: 'careful-large', provider: 'acme', providerName: 'Acme' }
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model: { ...model, price: 9 } })).toEqual({ do: 'pickModel', sessionId: 's1', model })
-    expect(parseCommand({ do: 'setYolo', sessionId: 's1', on: false, extra: 1 })).toEqual({ do: 'setYolo', sessionId: 's1', on: false })
+    expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'yolo', on: false, extra: 1 })).toEqual({ do: 'tune', sessionId: 's1', set: 'yolo', on: false })
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })).toEqual({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })
   })
 
@@ -242,10 +242,10 @@ describe('validators', () => {
     ['an edit with no text', { do: 'queued', sessionId: 's1', admissionId: 'a1', action: 'edit', text: '' }],
     ['a busy mode Hermes does not have', { do: 'tune', sessionId: 's1', set: 'busy', to: 'drop' }],
     ['a non-boolean start', { do: 'reconnect', start: 'yes' }],
-    ['a YOLO switch with a word for on', { do: 'setYolo', sessionId: 's1', on: 'on' }],
+    ['a YOLO switch with a word for on', { do: 'tune', sessionId: 's1', set: 'yolo', on: 'on' }],
     ['a path completion for a word that is not a mention', { do: 'completePath', sessionId: 's1', word: 'not' }],
     ['a path completion with no word', { do: 'completePath', sessionId: 's1' }],
-    ['a YOLO switch with no chat', { do: 'setYolo', on: true }],
+    ['a YOLO switch with no chat', { do: 'tune', set: 'yolo', on: true }],
     ['a pick with no provider', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: '', providerName: '' } }],
     ['a pick with a blank confirm token', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: 'p', providerName: 'P' }, confirm: ' ' }]
   ])('refuse %s', (_, raw) => {
@@ -280,7 +280,7 @@ describe('validators', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'checkTarget', 'closePreview', 'completePath', 'contextBreakdown',
       'createBot', 'describeBot', 'discard', 'editBot', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat', 'openPreview',
-      'pickModel', 'placePreview', 'preview', 'queued', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename', 'rewind', 'send', 'setYolo', 'start',
+      'pickModel', 'placePreview', 'preview', 'queued', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename', 'rewind', 'send', 'start',
       'stop', 'tune', 'versions'
     ])
   })

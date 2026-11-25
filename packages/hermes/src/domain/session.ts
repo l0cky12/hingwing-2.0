@@ -103,8 +103,6 @@ export interface SessionContent {
   readonly outbox: readonly OutboxEntry[]
   readonly model: SessionModel
   readonly usage: SessionUsage
-  /** Whether Hermes runs this chat's commands without an approval card. null until Hermes says, which an older Hermes never does. */
-  readonly yolo: boolean | null
   readonly tuning: Tuning
 }
 
@@ -117,7 +115,17 @@ export interface Tuning {
   readonly reasoning: boolean | null
   /** What Hermes does with a message sent while a turn runs. While it is null, such a message queues. */
   readonly busy: BusyMode | null
+  /** How hard the model thinks, from the next turn. `default`: the model's own level. */
+  readonly effort: Effort | 'default' | null
+  /** Whether the model answers in its fast tier, from the next turn. false also for a model that has none. */
+  readonly fast: boolean | null
+  /** Whether Hermes runs this chat's commands without an approval card. An older Hermes never says. */
+  readonly yolo: boolean | null
 }
+
+/** The reasoning levels Hermes takes (persistence/authority/runtime.py:84-87). `none` turns reasoning off. */
+export const EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const
+export type Effort = typeof EFFORTS[number]
 
 /** `queue`: it waits its turn. `steer`: the running turn reads it after its next tool. `interrupt`: the model's request is cut short for it. */
 export type BusyMode = 'queue' | 'steer' | 'interrupt'
