@@ -1,11 +1,12 @@
 import { checkTarget, liveDialer, openHermes, remoteRoute, type Dialer, type Route } from '@highwing/hermes'
 import type { BotId, Target } from '@highwing/hermes/domain'
 import { loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, net, Notification, shell, type OpenDialogOptions } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, shell, type OpenDialogOptions } from 'electron'
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { attachmentStore, ATTACHMENTS_DIR, desktopSources, HERMES_LIMITS } from './attachments'
 import { ownConnection, pinnedConnection } from './connection'
+import { desktopMenus, recordingMenus } from './context-menu'
 import { desktopOpener, recordingOpener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
 import { draftStore, DRAFTS_DIR } from './drafts'
@@ -19,7 +20,7 @@ import { dialogSaver, folderSaver } from './saves'
 import { loadSettings, saveSettings } from './settings'
 import { isAppUrl, openWindow } from './windows'
 
-const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_RECORD, HIGHWING_OPEN_LOG, HIGHWING_PICK_FILE, HIGHWING_PICK_FILES, HIGHWING_SAVE_DIR, HIGHWING_NOTIFY_LOG } = process.env
+const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_RECORD, HIGHWING_OPEN_LOG, HIGHWING_PICK_FILE, HIGHWING_PICK_FILES, HIGHWING_SAVE_DIR, HIGHWING_NOTIFY_LOG, HIGHWING_MENU_LOG, HIGHWING_MENU_PICK } = process.env
 const fixture = HIGHWING_FIXTURE ? loadFixture(HIGHWING_FIXTURE) : null
 
 const PICTURE_DIALOG: OpenDialogOptions = {
@@ -92,7 +93,7 @@ app.whenReady().then(async () => {
     focused: () => BrowserWindow.getFocusedWindow() !== null,
     raise
   })
-  openWindow(opener, pane)
+  openWindow(opener, pane, HIGHWING_MENU_LOG ? recordingMenus(HIGHWING_MENU_LOG, HIGHWING_MENU_PICK) : desktopMenus(Menu))
   const stopLinks = links.serve(owner, raise)
   let closed: Promise<void> | null = null
   const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), Promise.all([owner.close(), drafts.settled()]).then(() => {})))
