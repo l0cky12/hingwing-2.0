@@ -174,8 +174,10 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const secretAsked = view !== null && view.asks.length > 0
   const notice = place.kind !== 'reading' ? '' : asking ? 'Waiting for your OK' : secretAsked ? 'Waiting for your answer' : progress !== place.since ? 'New steps below' : ''
 
-  const onAnswer = useCallback((promptId: PromptId, reply: PromptReply) => {
-    if (id !== null) void run({ do: 'answer', sessionId: id, promptId, reply })
+  const onAnswer = useCallback(async (promptId: PromptId, reply: PromptReply) => {
+    if (id === null) return undefined
+    const outcome = await run({ do: 'answer', sessionId: id, promptId, reply })
+    return outcome.ok ? outcome.value : undefined
   }, [id])
   const onAnswerRequest = useCallback<SecretAnswer>((requestId, reply) => {
     if (id !== null) void run({ do: 'answer', sessionId: id, requestId, reply })

@@ -1,6 +1,6 @@
-import { versionLabel, type AdmissionId, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Relay, type RequestId, type RequestReply, type Version, type Versions } from '@highwing/hermes/domain'
+import { versionLabel, type AdmissionId, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Relay, type RequestId, type RequestReply, type Told, type Version, type Versions } from '@highwing/hermes/domain'
 import { fieldId, findInThread, multiReply, type AskCard, type FindMatch, type PendingRow, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
-import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Avatar } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
 import { CopyButton } from './Copy'
@@ -12,7 +12,8 @@ import { placeRelays } from './relays'
 import { cx, Elapsed, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
 
-type Answer = (promptId: PromptId, reply: PromptReply) => void
+/** Answers the denial's `Told`, where its words went. */
+type Answer = (promptId: PromptId, reply: PromptReply) => Promise<Told | undefined>
 export type SecretAnswer = (requestId: RequestId, reply: Extract<RequestReply, { kind: 'secret' | 'skip' }>) => void
 
 interface NodeProps {
@@ -37,23 +38,33 @@ interface PromptProps {
   readonly onAnswer: Answer
 }
 
+const TOLD_WORDS = {
+  turn: null,
+  next: "The turn couldn't take this, so it goes as your next message.",
+  unsure: "Hermes didn't confirm it read this, so Highwing didn't send it again."
+} as const satisfies Record<Told, string | null>
+
 function Prompt({ nodeKey, card, asking, onAnswer }: PromptProps) {
+  const [told, setTold] = useState<Told | undefined>(undefined)
+  const toldWords = told === undefined ? null : TOLD_WORDS[told]
   if (card.state === 'answered') {
     return (
       <div className="approval answered">
         <p data-find={fieldId(nodeKey, 'words')}>{card.words}</p>
         {card.command !== null && <Command nodeKey={nodeKey} command={card.command} />}
+        {toldWords !== null && <p className="notice">{toldWords}</p>}
       </div>
     )
   }
-  const answer = (reply: PromptReply) => onAnswer(card.promptId, reply)
+  const answer = (reply: PromptReply) => void onAnswer(card.promptId, reply)
+  const deny = (tell: string) => void onAnswer(card.promptId, { kind: 'deny', tell }).then(setTold)
   return (
     <div className={cx('approval', asking && 'live')} role="group" aria-label={card.heading} {...(asking ? { 'data-end': 'asking' } : {})}>
       <h3 data-find={fieldId(nodeKey, 'heading')}>{card.heading}</h3>
       {card.command !== null && <Command nodeKey={nodeKey} command={card.command} />}
       {card.why !== null && <p className="why" data-find={fieldId(nodeKey, 'why')}>{card.why}</p>}
       {card.pick.kind === 'one'
-        ? <Buttons buttons={card.pick.buttons} freeText={card.pick.freeText} command={card.command} busy={card.busy} onAnswer={answer} />
+        ? <Buttons buttons={card.pick.buttons} freeText={card.pick.freeText} tell={card.tell} command={card.command} busy={card.busy} onAnswer={answer} onTell={deny} />
         : <Checks choices={card.pick.choices} busy={card.busy} onAnswer={answer} />}
       {card.error !== null && <p className="err" data-find={fieldId(nodeKey, 'error')}>{card.error}</p>}
     </div>
@@ -68,16 +79,29 @@ interface PickProps {
 interface ButtonsProps extends PickProps {
   readonly buttons: readonly PromptButton[]
   readonly freeText: boolean
+  /** Offers a denial that carries words for Hermes about what to do instead. */
+  readonly tell: boolean
   readonly command: string | null
+  readonly onTell: (words: string) => void
 }
 
-function Buttons({ buttons, freeText, command, busy, onAnswer }: ButtonsProps) {
+function Buttons({ buttons, freeText, tell, command, busy, onAnswer, onTell }: ButtonsProps) {
   const [text, setText] = useState('')
+  const [telling, setTelling] = useState(false)
   const [confirming, setConfirming] = useState<PromptButton | null>(null)
   if (busy && confirming !== null) setConfirming(null)
+  const words = text.trim()
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (text.trim() !== '') onAnswer({ kind: 'text', value: text.trim() })
+    if (words === '') return
+    if (telling) onTell(words)
+    else onAnswer({ kind: 'text', value: words })
+  }
+  const stopTelling = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    setTelling(false)
+    setText('')
   }
   return (
     <>
@@ -88,10 +112,14 @@ function Buttons({ buttons, freeText, command, busy, onAnswer }: ButtonsProps) {
           </button>
         ))}
       </div>
-      {freeText && (
+      {tell && !telling && <button type="button" className="tell" disabled={busy} onClick={() => setTelling(true)}>Tell Hermes what to do instead</button>}
+      {(freeText || telling) && (
         <form className="answer" onSubmit={submit}>
-          <input aria-label="Type an answer" value={text} disabled={busy} onChange={event => setText(event.target.value)} />
-          <button disabled={busy}>Answer</button>
+          <input
+            aria-label={telling ? 'What Hermes should do instead' : 'Type an answer'} value={text} disabled={busy} autoFocus={telling}
+            onChange={event => setText(event.target.value)} onKeyDown={telling ? stopTelling : undefined}
+          />
+          <button disabled={busy || (telling && words === '')}>{telling ? "Don't run and send" : 'Answer'}</button>
         </form>
       )}
       {confirming !== null && confirming.confirm !== null && (

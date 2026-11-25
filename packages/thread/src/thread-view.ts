@@ -234,6 +234,8 @@ export type PromptCard =
       /** Why Hermes asks: its flagged reason in a sentence, or its question as given. */
       readonly why: string | null
       readonly pick: PromptPick
+      /** An approval that can be denied with words for Hermes about what to do instead. */
+      readonly tell: boolean
       /** An answer is on its way, or the session is not live. Buttons are disabled, the card stays amber. */
       readonly busy: boolean
       readonly error: string | null
@@ -781,6 +783,7 @@ function promptCard(prompt: PromptItem, paired: boolean, live: boolean): PromptC
       command: ask.kind === 'approval' ? ask.command : null,
       why: ask.kind === 'approval' ? (ask.reason === null ? null : `Hermes flagged it as “${ask.reason}”.`) : ask.question,
       pick: promptPick(ask),
+      tell: ask.kind === 'approval' && ask.choices.includes('deny'),
       busy: state.s === 'sending' || !live,
       error: state.s === 'waiting' ? state.error : null
     }

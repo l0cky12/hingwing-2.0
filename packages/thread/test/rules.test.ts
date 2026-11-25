@@ -732,6 +732,17 @@ describe('what Hermes says', () => {
     expect(checkThread(view)).toEqual([])
   })
 
+  it('offers to tell Hermes what to do instead only on an approval that can be denied', () => {
+    const asking = (choices: readonly string[]) => {
+      const card = nodesOf(running([{ ...approval({ s: 'waiting', error: null }), ask: { kind: 'approval', command: 'rm -rf x', reason: null, choices } }]))[0]
+      return card?.kind === 'prompt' && card.card.state === 'asking' ? card.card.tell : null
+    }
+    expect(asking(['once', 'deny'])).toBe(true)
+    expect(asking(['once', 'session'])).toBe(false)
+    const clarify = nodesOf(running([{ ...approval({ s: 'waiting', error: null }), ask: { kind: 'clarify', question: 'Which?', choices: ['a', 'deny'], multi: false } }]))[0]
+    expect(clarify).toMatchObject({ kind: 'prompt', card: { state: 'asking', tell: false } })
+  })
+
   it('words a denial that told Hermes what to do as a denial', () => {
     const denied: PromptItem<'settled'> = {
       kind: 'prompt', id: 'p1' as PromptId, generation: 1 as Generation, ask: { kind: 'approval', command: 'rm -rf x', reason: null, choices: ['once', 'deny'] },
