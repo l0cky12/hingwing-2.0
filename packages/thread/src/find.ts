@@ -111,7 +111,6 @@ function fields(view: ThreadView): Field[] {
         break
       case 'questions': {
         if (card.progress !== null) add(card.key, 'progress', card.progress)
-        // Only the answered questions and the first open one are drawn.
         const shown = card.questions.findIndex(question => question.locked === null)
         card.questions.forEach((question, index) => {
           if (question.locked === null && index !== shown) return

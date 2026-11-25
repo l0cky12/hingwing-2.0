@@ -24,7 +24,6 @@ export function progressOf(view: ThreadView): string {
     : `${last.key}:${last.nodes.reduce((size, node) => size + (node.kind === 'group' ? node.count : 1), 0)}:${last.end.kind}:${view.pending.length}`
 }
 
-/** The words beside the jump control, while you read above the live end. */
 export function jumpWords(place: Place, activity: Activity['kind'] | null, progress: string): string {
   if (place.kind !== 'reading') return ''
   if (activity === 'asking') return 'Waiting for your OK'

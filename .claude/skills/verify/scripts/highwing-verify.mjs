@@ -610,10 +610,8 @@ function requestText(fixturePath) {
 const MASK = '•••'
 const expand = (ctx, text) => (text === '@request' ? requestText(ctx.fixture ?? fail('@request needs --fixture')) : text)
 
-/** A password field, or any field of a masked prompt or a connector card, whose typed text must stay out of the evidence. */
 const PRIVATE_FIELDS = 'input[type=password], [data-private] input'
 
-/** Logs the step, with the text of a private field as `•••`. The text is remembered so `leaked` can prove no evidence file holds it. */
 async function secretField(ctx, verb, label, text) {
   const field = ctx.page.getByLabel(label, { exact: true })
   const secret = await field.evaluate((input, selector) => input.matches(selector), PRIVATE_FIELDS, { timeout: ctx.timeout })
@@ -854,13 +852,11 @@ function serveInDeltas(steps, origin) {
   }
 }
 
-/** The method of each request by its id. A connector card is an event, not a request, and is named `connection` by its `op_id`. */
 const requestMethods = steps => new Map(steps.flatMap(step => {
   if (step.push?.method !== undefined && step.push.id !== undefined) return [[step.push.id, step.push.method]]
   return step.push?.params?.type === 'connection.request' ? [[step.push.params.payload.op_id, 'connection']] : []
 }))
 
-/** The request an answer step or an answer call is for. */
 const answerTo = step => step.answer ?? step.params?.request_id ?? step.params?.op_id
 
 function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, profiles, paths, createWarnings, configureClash, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, answeredElsewhere, answerHere, cancel, actedElsewhere, windowMakes, origin, attachLimit }, out) {

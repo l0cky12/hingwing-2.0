@@ -29,7 +29,6 @@ function Frame({ card, children }: { readonly card: Card; readonly children: Rea
 
 const Waits = ({ card }: { readonly card: Card }) => card.waits !== null && <p className="why" data-find={fieldId(card.key, 'waits')}>{card.waits}</p>
 
-/** The fields are uncontrolled, so what was typed is held by the input alone, read once on send and cleared. */
 function SecretCard({ card, onAnswer }: CardProps<Secret>) {
   const form = useRef<HTMLFormElement>(null)
   const [filled, setFilled] = useState(false)
@@ -115,7 +114,6 @@ function Question({ card, question, draft, onDraft, onLock }: QuestionProps) {
   )
 }
 
-/** One question at a time. Locked answers are listed above it, each with Change, until the last one is sent. */
 function QuestionsCard({ card, onAnswer }: CardProps<Questions>) {
   const [changing, setChanging] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<{ readonly [question: string]: Draft }>({})
@@ -156,12 +154,10 @@ interface TargetProps {
   readonly card: Connect
   readonly target: TargetView
   readonly index: number
-  /** This target's answer is the one on its way. */
   readonly sending: boolean
   readonly onRespond: (as: 'approved' | 'skipped', values?: { readonly [field: string]: string }) => void
 }
 
-/** Its fields are uncontrolled, read once on Connect and cleared. */
 function Target({ card, target, index, sending, onRespond }: TargetProps) {
   const busy = card.busy !== null
   const connect = (event: FormEvent<HTMLFormElement>) => {
@@ -201,7 +197,6 @@ function Target({ card, target, index, sending, onRespond }: TargetProps) {
 
 const THE_REST = Symbol('the rest')
 
-/** One row per target, each connected or skipped on its own. Hermes sends the whole card again with every change. */
 function ConnectCard({ card, onAnswer }: CardProps<Connect>) {
   const [sent, setSent] = useState<string | typeof THE_REST | null>(null)
   const answer = (reply: RequestReply, by: string | typeof THE_REST) => {

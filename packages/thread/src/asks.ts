@@ -1,7 +1,6 @@
 import type { Answer, Asked, ConnectTarget, HermesRequest, RequestEnd, RequestId, SecretFor } from '@highwing/hermes/domain'
 import { timeOfDay, type ViewClock } from './when'
 
-/** What Hermes waits on you for, drawn after the turns. Each is answered by its `requestId`. */
 export type AskCard = SecretCard | QuestionsCard | ConnectCard
 
 interface CardBase {
@@ -16,15 +15,12 @@ interface CardBase {
   readonly error: string | null
 }
 
-/** Masked fields: a sudo password, a secret, a vault's master password, a login, a one-time code. */
 export interface SecretCard extends CardBase {
   readonly kind: 'secret'
   /** The sudo command, redacted by Hermes. */
   readonly command: string | null
   readonly why: string | null
-  /** The variable a secret is saved under. */
   readonly name: string | null
-  /** A login has two, sent together. */
   readonly fields: readonly SecretField[]
   readonly send: string
   readonly skip: string
@@ -33,11 +29,9 @@ export interface SecretCard extends CardBase {
 export interface SecretField {
   readonly part: 'value' | 'identifier'
   readonly label: string
-  /** Typed as dots. A code and a login's username are shown as typed. */
   readonly masked: boolean
 }
 
-/** A batch of questions, answered one at a time, or a plugin command's one choice. */
 export interface QuestionsCard extends CardBase {
   readonly kind: 'questions'
   /** "1 of 2 answered". null for one question. */
@@ -55,7 +49,6 @@ export interface QuestionView {
   readonly locked: { readonly answer: Answer; readonly words: string } | null
 }
 
-/** Connectors, MCP servers, plugins or skills to sign in to while a tool waits. */
 export interface ConnectCard extends CardBase {
   readonly kind: 'connect'
   readonly targets: readonly TargetView[]
@@ -98,7 +91,6 @@ function secretWords(secret: SecretFor): Pick<SecretCard, 'heading' | 'why'> {
   }
 }
 
-/** What this client did, in the past tense. Anything else reads the same for every kind. */
 const CLOSED_WORDS = {
   sudo: { answered: 'You sent a password.', skipped: 'You skipped this.' },
   env: { answered: 'You sent the secret.', skipped: 'You skipped this.' },
@@ -194,7 +186,6 @@ const BUSY_WORDS = { sending: '  (sending)', offline: '  (offline)' } as const
 
 const indented = (lines: readonly (string | null)[], by = '    ') => lines.flatMap(line => (line === null ? [] : [`${by}${line}`]))
 
-/** The outline of a card. `✓` is a locked answer, `?` a question still open, `↗` a sign-in link. */
 export function askLines(card: AskCard): string[] {
   const head = `◈ ${card.heading}${card.busy === null ? '' : BUSY_WORDS[card.busy]}`
   const error = indented([card.error === null ? null : `! ${card.error}`])

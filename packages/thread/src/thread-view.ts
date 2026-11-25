@@ -106,7 +106,6 @@ export type ThreadNode =
   | { readonly kind: 'status'; readonly key: string; readonly about: StatusAbout; readonly text: string }
   /** Words the user put into the turn while it ran. */
   | { readonly kind: 'steer'; readonly key: string; readonly text: string }
-  /** Where a request closed, and how, in words. */
   | { readonly kind: 'closed'; readonly key: string; readonly asked: Asked; readonly end: RequestEnd; readonly words: string }
 
 /**
