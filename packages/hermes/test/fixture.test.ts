@@ -188,6 +188,15 @@ describe('loadFixture', () => {
     }
   })
 
+  it('reads the attachment limits a run sets, and refuses a limit that is not a number of bytes', () => {
+    expect(loadFixture(write([{ ...header, attachLimits: { image: 20000 } }])).header.attachLimits).toEqual({ image: 20000 })
+    expect(loadFixture(write([header])).header).not.toHaveProperty('attachLimits')
+    for (const attachLimits of [{ image: 0 }, { file: '1' }, { pdf: 10 }, 20000]) {
+      const path = write([{ ...header, attachLimits }])
+      expect(() => loadFixture(path)).toThrow(`${path}:1: "attachLimits" may hold only "image" and "file", each a number of bytes above 0`)
+    }
+  })
+
   it("reads a profile's seeded chats, and refuses a chat with no rows", () => {
     const chats = { research: [{ id: 'r1', title: 'Sort', last_active: 1, rows: [{ role: 'user', text: 'hi' }], asking: { command: 'ls', description: 'list' } }] }
     expect(loadFixture(write([{ ...header, chats }])).header.chats).toEqual(chats)
