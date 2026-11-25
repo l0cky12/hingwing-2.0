@@ -49,11 +49,11 @@ export function refusalOf(error: unknown): Refusal {
   throw error
 }
 
-async function outcomeOf<T>(call: () => Promise<T>, explain: (error: unknown) => Refusal = refusalOf): Promise<Outcome<T>> {
+async function outcomeOf<T>(call: () => Promise<T>, explain: (error: unknown) => Refusal | Promise<Refusal> = refusalOf): Promise<Outcome<T>> {
   try {
     return { ok: true, value: await call() }
   } catch (error) {
-    return { ok: false, refusal: explain(error) }
+    return { ok: false, refusal: await explain(error) }
   }
 }
 
@@ -112,7 +112,7 @@ export interface SessionPort {
   resend(
     request: Mutation,
     sent: (request: Mutation) => void,
-    explain: (reason: string) => Refusal | null
+    explain: (reason: string) => Promise<Refusal | null>
   ): Promise<Outcome<Served['session.mutate']['result']>>
   /** Answers a request with a result frame. Hermes sends no reply to one, so `ok` means only that the frame was written. */
   respond<M extends RequestMethod>(requestId: RequestId, method: M, result: Requested[M]['result']): Outcome
@@ -155,7 +155,7 @@ export class SessionActor {
       ),
       resend: (request, sent, explain) => outcomeOf(
         () => this.mutation(request, sent),
-        error => (error instanceof RpcRefusal ? explain(error.reason ?? '') ?? refusalOf(error) : refusalOf(error))
+        async error => (error instanceof RpcRefusal ? await explain(error.reason ?? '') ?? refusalOf(error) : refusalOf(error))
       ),
       respond: (requestId, method, result) => {
         try {

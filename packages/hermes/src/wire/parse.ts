@@ -971,6 +971,18 @@ export function parseTranscript(pages: readonly StoredTranscriptResult[]): Histo
 /** Whether the page's first row opens a turn, as `parseRows` reads it. If not, the turn its first rows belong to began on an older page. */
 export const beginsAtTurn = (page: StoredTranscriptResult): boolean => usable(() => storedRow(page.rows[0], 0))?.opensTurn === true
 
+export type RowPlace = 'before-a-compaction' | 'after-every-compaction' | 'not-on-page'
+
+export function placeOfRow(page: StoredTranscriptResult, rowId: number): RowPlace {
+  const rows: readonly unknown[] = Array.isArray(page.rows) ? page.rows : []
+  for (const row of rows.toReversed()) {
+    if (!isObject(row)) continue
+    if (row.row_kind === 'compaction') return 'before-a-compaction'
+    if (row.row_id === rowId) return 'after-every-compaction'
+  }
+  return 'not-on-page'
+}
+
 interface TurnInProgress {
   readonly request: string | null
   readonly requestRow: number | null
