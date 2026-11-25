@@ -106,6 +106,12 @@ describe('validators', () => {
     expect(parseCommand({ do: 'branch', sessionId: 's1', rowId: 3, branchId: 'b1', extra: 1 })).toEqual({ do: 'branch', sessionId: 's1', rowId: 3, branchId: 'b1' })
   })
 
+  it('keep an ask for the versions of a chat, and refuse one that names no chat', () => {
+    expect(parseCommand({ do: 'versions', sessionId: 's1', extra: 1 })).toEqual({ do: 'versions', sessionId: 's1' })
+    expect(parseCommand({ do: 'versions', sessionId: ' ' })).toBeNull()
+    expect(parseCommand({ do: 'versions' })).toBeNull()
+  })
+
   it('read a target with the parser the settings file uses', () => {
     expect(parseCommand({ do: 'checkTarget', target: { kind: 'remote', host: ' hermes-host.example-tailnet.ts.net ', port: 22 } }))
       .toEqual({ do: 'checkTarget', target: { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' } })
@@ -185,7 +191,7 @@ describe('validators', () => {
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'answer', 'archive', 'botModels', 'branch', 'browse', 'checkTarget', 'closePreview', 'contextBreakdown', 'createBot', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat',
-      'pickModel', 'placePreview', 'preview', 'reconnect', 'reloadPreview', 'rename', 'rewind', 'send', 'setYolo', 'start', 'stop'
+      'pickModel', 'placePreview', 'preview', 'reconnect', 'reloadPreview', 'rename', 'rewind', 'send', 'setYolo', 'start', 'stop', 'versions'
     ])
   })
 })

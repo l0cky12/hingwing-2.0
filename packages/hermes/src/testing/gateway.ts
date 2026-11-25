@@ -176,6 +176,10 @@ class EchoChat implements Stream {
   revision = 0
   asking: SeededApproval | null = null
   yolo = false
+  /** The chat this one was branched from. */
+  parent: string | null = null
+  /** Seconds since the epoch. */
+  startedAt = 0
 
   /** `hidden`: out of `session.list` unless it asks for hidden chats, as a Bot Chat is (hermes-bots/canonical-chat.ts:319). */
   constructor(readonly id: string, readonly profile: string, readonly title: string, readonly hidden = false) {
@@ -204,11 +208,24 @@ class EchoChat implements Stream {
       ...(picker ? { preview: this.rows.at(-1)?.text ?? null, last_active_at: said(this.rows.at(-1)) } : {})
     }
   }
+
+  /** A row of `projects.tree` (tui_gateway/methods_projects.py:335-350, stamped by tui_gateway/project_tree.py `stamp_profile`). A branch names its parent twice. */
+  treeRow(parent: string | null): Obj {
+    const lastActive = this.rows.at(-1)?.timestamp
+    return {
+      id: this.id, _lineage_root_id: this.id, _lineage_ids: null, parent_session_id: parent, _reset_from: null, _branched_from: parent,
+      title: this.title, preview: this.rows.at(-1)?.text ?? null, started_at: this.startedAt, ended_at: null,
+      last_active: typeof lastActive === 'number' ? lastActive : this.startedAt, source: 'gui', archived: false, message_count: this.rows.length,
+      tool_call_count: 0, is_active: false, profile: this.profile
+    }
+  }
 }
 
 function seeded(profile: string, seed: ChatSeed): EchoChat {
   const chat = new EchoChat(seed.id, profile, seed.title, seed.hidden === true)
   seed.rows.forEach(({ role, text }, at) => chat.rows.push({ role, text, timestamp: seed.last_active, row_id: at + 1 }))
+  chat.parent = seed.branched_from ?? null
+  chat.startedAt = seed.last_active
   if (seed.asking === undefined) return chat
   chat.generation = 1
   chat.asking = {
@@ -460,6 +477,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'profiles.list': (gateway, socket) => gateway.roster(socket),
   /** tui_gateway/methods_profiles.py:296-347 */
   'profiles.create': (gateway, socket, params) => gateway.create(socket, params),
+  'projects.tree': (gateway, socket, params, routed) => gateway.tree(socket, params, routed),
   'session.mutate': (gateway, socket, params, routed) => {
     const mutation = typeof params.operation === 'string' && Object.hasOwn(MUTATIONS, params.operation) ? MUTATIONS[params.operation] : undefined
     return mutation === undefined ? gateway.story(socket, 'session.mutate', params, routed) : mutation(gateway, params, routed)
@@ -484,6 +502,25 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   }
 }
 
+/**
+ * `session.transcript` (gateway/session_stored_reads.py), for a chat with no compaction and no subagent. A cursor is the
+ * order and the number of rows read so far. Oldest order answers the rows after it and a cursor that is never null,
+ * so the page after the last row is empty. Latest order pages back from the newest row and ends in a null cursor.
+ */
+function transcriptPage(chat: EchoChat, params: Obj): Obj {
+  const { cursor, limit = 200, order = 'latest', subagent_id: subagent } = params
+  if (!isInt(limit) || limit < 1 || limit > 500 || (order !== 'oldest' && order !== 'latest') || (subagent !== undefined && subagent !== null)) throw new Refused('invalid_params')
+  const [, asked, count] = typeof cursor === 'string' ? /^(oldest|latest):(\d+)$/.exec(cursor) ?? [] : []
+  if (cursor !== undefined && cursor !== null && asked !== order) throw new Refused('invalid_params')
+  const read = Math.min(Number(count ?? 0), chat.rows.length)
+  const rows = order === 'oldest' ? chat.rows.slice(read, read + limit) : chat.rows.slice(Math.max(0, chat.rows.length - read - limit), chat.rows.length - read)
+  const reached = read + rows.length
+  return {
+    session_id: chat.id, rows: rows.map(row => ({ ...row, row_kind: 'message' })), reset: false,
+    next_cursor: order === 'latest' && reached >= chat.rows.length ? null : `${order}:${reached}`
+  }
+}
+
 type ChatHandler = (gateway: ScriptedGateway, socket: Socket, params: Obj, routed: string, chat: EchoChat) => unknown
 
 const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
@@ -497,6 +534,7 @@ const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
     if (!isText(inputId)) throw new Refused('invalid_params')
     return gateway.echo(chat, inputId, String(params.text ?? ''), routed)
   },
+  'session.transcript': (_gateway, _socket, params, _routed, chat) => transcriptPage(chat, params),
   'model.options': (gateway, _socket, _params, _routed, chat) => gateway.modelMenu(chat.model),
   'config.set': (gateway, _socket, params, routed, chat) => gateway.setYolo(params, routed, chat),
   'session.mutate': (gateway, _socket, params, routed, chat) => {
@@ -768,6 +806,8 @@ export class ScriptedGateway {
     const child = new EchoChat(`branch-${routed}-${this.branchChats.length + 1}`, routed, isText(title) ? title : this.nextTitle(parent.title, routed))
     let next = 0
     child.rows.push(...copied.map(row => (isInt(row.row_id) ? { ...row, row_id: ++next } : row)))
+    child.parent = parent.id
+    child.startedAt = this.options.clock.now() / 1000
     this.branchChats.push(child)
     const result = { session_id: parent.id, operation: 'branch', branched_session_id: child.id, copied_messages: copied.length }
     const committed = { ...result, revision: parent.commit(result) }
@@ -1016,6 +1056,25 @@ export class ScriptedGateway {
         if (socket.reach === 'profile' && row.name !== this.home) return Object.fromEntries(Object.entries(row).filter(([key]) => !SESSION_FIELDS.has(key)))
         return { ...row, canonical_session: this.canonical(row.name, row.canonical_session) }
       })
+    }
+  }
+
+  /**
+   * `projects.tree` (tui_gateway/methods_config.py:137-150) for the routed profile: one Home project whose preview rows
+   * are the profile's chats beside the story, newest first. It is no canonical method (gateway/session_controls.py:239-247
+   * lists the handlers), so like `profiles.create` only a socket with the interactive grant reaches it. The story session
+   * is never listed and never named as a parent, so no read of it follows. A project previews its three newest chats
+   * unless `preview_limit` asks for more (tui_gateway/project_tree.py:439-442).
+   */
+  tree(socket: Socket, params: Obj, routed: string): unknown {
+    if (this.fixture.header.tree !== true || socket.reach === 'profile') throw unknownMethod('projects.tree')
+    const chats = this.echoChats().filter(chat => chat.profile === routed && !chat.hidden)
+    const rows = chats.map(chat => chat.treeRow(chats.some(other => other.id === chat.parent) ? chat.parent : null))
+      .sort((a, b) => Number(b.last_active) - Number(a.last_active))
+    const previews = isInt(params.preview_limit) && params.preview_limit !== 0 ? Math.max(0, params.preview_limit) : 3
+    return {
+      projects: [{ id: 'home', label: 'Home', isNoProject: true, sessionCount: rows.length, repos: [], previewSessions: rows.slice(0, previews), sessionIds: rows.map(row => row.id) }],
+      active_id: null, scoped_session_ids: []
     }
   }
 

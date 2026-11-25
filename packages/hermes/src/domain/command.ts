@@ -1,5 +1,6 @@
 import type { BotCreated, BotDraft, BotId } from './bots'
 import type { ChatRef, Unstarted } from './open'
+import type { ChatVersions } from './versions'
 import type { BranchId, ContextFill, InputId, ModelOption, ModelRef, PromptId, PromptReply, SessionId } from './session'
 
 export type Command =
@@ -26,6 +27,11 @@ export type Command =
    * Answers the new chat. Refused while a reply runs or a message waits to be sent.
    */
   | { readonly do: 'branch'; readonly sessionId: SessionId; readonly rowId: number; readonly branchId: BranchId }
+  /**
+   * The messages of this chat that were tried more than once, each with the chats that hold its tries. Read from
+   * Hermes on each ask, never stored. Empty when the chat has none. Refused when Hermes cannot say.
+   */
+  | { readonly do: 'versions'; readonly sessionId: SessionId }
   | { readonly do: 'stop'; readonly sessionId: SessionId }
   | { readonly do: 'answer'; readonly sessionId: SessionId; readonly promptId: PromptId; readonly reply: PromptReply }
   | { readonly do: 'discard'; readonly sessionId: SessionId; readonly inputId: InputId }
@@ -49,6 +55,7 @@ export type ResultOf<C extends Command> =
   C extends { do: 'open' } ? SessionId | null
   : C extends { do: 'send' | 'start' } ? string | null
   : C extends { do: 'branch' } ? SessionId
+  : C extends { do: 'versions' } ? ChatVersions
   : C extends { do: 'models' | 'botModels' } ? ModelMenu
   : C extends { do: 'createBot' } ? BotCreated
   : C extends { do: 'pickModel' } ? ModelConfirm | null
