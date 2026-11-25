@@ -85,6 +85,7 @@ describe('validators', () => {
       .toEqual({ do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: null }, text: 'hello' })
     const model = { id: 'careful-large', provider: 'acme', providerName: 'Acme' }
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model: { ...model, price: 9 } })).toEqual({ do: 'pickModel', sessionId: 's1', model })
+    expect(parseCommand({ do: 'setYolo', sessionId: 's1', on: false, extra: 1 })).toEqual({ do: 'setYolo', sessionId: 's1', on: false })
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })).toEqual({ do: 'pickModel', sessionId: 's1', model, confirm: 'tok' })
   })
 
@@ -125,6 +126,8 @@ describe('validators', () => {
     ['a blank first message', { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: '' }],
     ['a reply of the wrong kind', { do: 'answer', sessionId: 's1', promptId: 'p1', reply: { kind: 'choice', value: 1 } }],
     ['a non-boolean start', { do: 'reconnect', start: 'yes' }],
+    ['a YOLO switch with a word for on', { do: 'setYolo', sessionId: 's1', on: 'on' }],
+    ['a YOLO switch with no chat', { do: 'setYolo', on: true }],
     ['a pick with no provider', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: '', providerName: '' } }],
     ['a pick with a blank confirm token', { do: 'pickModel', sessionId: 's1', model: { id: 'm', provider: 'p', providerName: 'P' }, confirm: ' ' }]
   ])('refuse %s', (_, raw) => {
@@ -134,7 +137,7 @@ describe('validators', () => {
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'answer', 'archive', 'checkTarget', 'contextBreakdown', 'discard', 'editTarget', 'keepTarget', 'loadEarlier', 'models', 'open', 'openChat',
-      'pickModel', 'reconnect', 'rename', 'rewind', 'send', 'start', 'stop'
+      'pickModel', 'reconnect', 'rename', 'rewind', 'send', 'setYolo', 'start', 'stop'
     ])
   })
 })

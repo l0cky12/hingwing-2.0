@@ -29,6 +29,7 @@ export type Command =
   /** `confirm` is the token of a `ModelConfirm`, sent to say yes to it. */
   | { readonly do: 'pickModel'; readonly sessionId: SessionId; readonly model: ModelOption; readonly confirm?: string }
   | { readonly do: 'contextBreakdown'; readonly sessionId: SessionId }
+  | { readonly do: 'setYolo'; readonly sessionId: SessionId; readonly on: boolean }
   /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
   | { readonly do: 'reconnect'; readonly start: boolean }
 

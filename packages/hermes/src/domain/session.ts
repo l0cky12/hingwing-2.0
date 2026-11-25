@@ -71,6 +71,8 @@ export interface SessionContent {
   readonly outbox: readonly OutboxEntry[]
   readonly model: SessionModel
   readonly usage: SessionUsage
+  /** Whether Hermes runs this chat's commands without an approval card. null until Hermes says, which an older Hermes never does. */
+  readonly yolo: boolean | null
 }
 
 /** The value a window reads. */

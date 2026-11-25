@@ -179,6 +179,15 @@ describe('loadFixture', () => {
     expect(() => loadFixture(bad)).toThrow(`${bad}:1: "chats" must map a profile to its chats, each with id, title, last_active and rows`)
   })
 
+  it('reads the YOLO the chat starts in and whether Hermes refuses a switch, and refuses any other value', () => {
+    expect(loadFixture(write([{ ...header, yolo: true, yoloDenied: true }])).header).toMatchObject({ yolo: true, yoloDenied: true })
+    expect(loadFixture(write([header])).header).not.toHaveProperty('yolo')
+    const yolo = write([{ ...header, yolo: 'on' }])
+    expect(() => loadFixture(yolo)).toThrow(`${yolo}:1: "yolo" must be true or false`)
+    const denied = write([{ ...header, yoloDenied: 1 }])
+    expect(() => loadFixture(denied)).toThrow(`${denied}:1: "yoloDenied" must be true or false`)
+  })
+
   it('names the line of the prototype\'s envelope', () => {
     const path = write([header, { at: 0, push: { kind: 'event', type: 'message.delta', session_id: 's', seq: 1, payload: {} } }])
     expect(() => loadFixture(path)).toThrow(`${path}:2: "push" must be a JSON-RPC 2.0 frame with a method`)
