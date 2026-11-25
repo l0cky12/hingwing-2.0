@@ -14,7 +14,7 @@ const AT_PLAY_START = { now: 0, timeZone: 'UTC' }
 const fixture = loadFixture(fileURLToPath(new URL('../../../fixtures/asks.jsonl', import.meta.url)))
 const pushes = fixture.steps.filter(step => 'push' in step).length
 const want = outline(threadView(sessionOf(fold(asks()), { state: 'online' }, null), AT_PLAY_START))
-const ANSWERED_ELSEWHERE = '◇ code: elsewhere'
+const ANSWERED_ELSEWHERE = '○ Answered from another window.'
 
 async function sessions(options?: Parameters<typeof play>[1]): Promise<Session[]> {
   const seen: Session[] = []
@@ -40,17 +40,17 @@ describe('the asks story in the thread view', () => {
       ANSWERED_ELSEWHERE,
       "| You're signed in. Before I deploy, two questions.",
       '● Used `clarify`  3.3 s',
-      '◇ questions: answered',
+      '○ You sent your answers.',
       '| Production in two regions. The deploy needs GitHub connected.',
       '● Used `manage_connections`  1.6 s',
-      '◇ connect: done',
+      '○ Hermes went on with what is connected.',
       "| Skipped, so I'll deploy from the local checkout. Offering an accent colour while it runs.",
       '● Used `set_theme`  1.5 s',
       "! Hermes sent a request Highwing can't show yet (theme.pick), so it said no.",
       '| Done. jq is installed, the gif was skipped for want of a Tenor key, and the notes site is deployed to production.',
       '✓ Done',
       '',
-      '◇ questions: answered'
+      '○ You sent your answers.'
     ])
   })
 

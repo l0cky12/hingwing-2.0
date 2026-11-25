@@ -1,9 +1,10 @@
 import {
   offeredBy, turnActivityOf,
-  type AdmissionId, type Asked, type Attachment, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type HermesRequest, type Item, type MoaItem, type NoticeItem,
+  type AdmissionId, type Asked, type Attachment, type FileDiff, type HelperEnd, type HelperId, type HelperItem, type Item, type MoaItem, type NoticeItem,
   type Outcome, type PlanEntry, type PlanItem, type PromptId, type PromptItem, type PromptReply, type QueuedAction, type QueuedMessage, type QueuedState, type Reaction, type ReasoningItem,
-  type RequestEnd, type RequestId, type SecretFor, type Session, type SettledTurn, type StatusAbout, type Sync, type Tokens, type ToolItem, type Turn, type TurnActivity, type TurnId
+  type RequestEnd, type Session, type SettledTurn, type StatusAbout, type Sync, type Tokens, type ToolItem, type Turn, type TurnActivity, type TurnId
 } from '@highwing/hermes/domain'
+import { askCard, askLines, closedWords, type AskCard } from './asks'
 import { multiAnswers } from './multi'
 import { hidesAt, isShownAt, moaWords, NOTICE_TONES } from './says'
 import { changesAt, elapsedWords, timeLines, timeOfDay, type ViewClock } from './when'
@@ -11,6 +12,7 @@ import { changesAt, elapsedWords, timeLines, timeOfDay, type ViewClock } from '.
 export type { ViewClock }
 
 export { leafText, parseMarkdown, proseLeaves, type Align, type Block, type Cell, type CodeBlock, type Inline, type ProseLeaf } from './prose'
+export type { AskCard, ConnectCard, QuestionsCard, QuestionView, SecretCard, SecretField, TargetView } from './asks'
 export { fieldId, findInThread, type FieldPart, type FindMatch } from './find'
 export { multiReply } from './multi'
 
@@ -31,23 +33,6 @@ export interface ThreadView {
    * null when none will.
    */
   readonly changesAt: number | null
-}
-
-/** A masked field Hermes waits on: a sudo password, or the value of a secret. */
-export interface AskCard {
-  readonly key: string
-  readonly requestId: RequestId
-  readonly heading: string
-  readonly command: string | null
-  readonly why: string | null
-  readonly name: string | null
-  readonly label: string
-  /** When Hermes stops waiting: "Hermes waits until 14:07." null when Hermes named no limit. */
-  readonly waits: string | null
-  /** An answer is on its way, or the link is down. */
-  readonly busy: boolean
-  /** The last answer did not reach Hermes. */
-  readonly error: string | null
 }
 
 export type PendingRow =
@@ -121,8 +106,8 @@ export type ThreadNode =
   | { readonly kind: 'status'; readonly key: string; readonly about: StatusAbout; readonly text: string }
   /** Words the user put into the turn while it ran. */
   | { readonly kind: 'steer'; readonly key: string; readonly text: string }
-  /** Where a request closed. `words` is null for a kind with no card. */
-  | { readonly kind: 'closed'; readonly key: string; readonly asked: Asked; readonly end: RequestEnd; readonly words: string | null }
+  /** Where a request closed, and how, in words. */
+  | { readonly kind: 'closed'; readonly key: string; readonly asked: Asked; readonly end: RequestEnd; readonly words: string }
 
 /**
  * The turn's single end mark.
@@ -294,7 +279,7 @@ export function threadView(session: Session, clock: ViewClock): ThreadView {
     state: VIEW_STATE[sync.state],
     turns: [...settled.map(memo => memo.view), interlude, ...(open === null ? [] : [open])].filter(turn => !isEmptyInterlude(turn)),
     pending: [...session.queue.map(queuedRow), ...session.outbox.map(outboxRow)],
-    asks: session.requests.flatMap(request => askCard(request, sync.state === 'live', clock)),
+    asks: session.requests.map(request => askCard(request, sync.state === 'live', clock)),
     earlier: session.earlier,
     changesAt: earliest([changesAt(starts, lines, elapsing ? starts.at(-1) ?? null : null, clock), ...hides])
   }
@@ -814,53 +799,6 @@ function answeredWords(prompt: PromptItem, state: Exclude<PromptItem['state'], {
   return `You answered ${quoted.length === 0 ? last : `${quoted.join(', ')} and ${last}`}.`
 }
 
-interface CardWords { readonly heading: string; readonly label: string; readonly answered: string }
-
-const SECRET_WORDS = {
-  sudo: { heading: 'Hermes needs your sudo password', label: 'Password', answered: 'You sent a password.' },
-  env: { heading: 'Hermes needs a secret', label: 'Secret value', answered: 'You sent the secret.' },
-  vault: null,
-  login: null,
-  code: null
-} as const satisfies Record<SecretFor['is'], CardWords | null>
-
-const wordsOfSecret = (is: Asked): CardWords | null => (is in SECRET_WORDS ? SECRET_WORDS[is as SecretFor['is']] : null)
-
-const END_WORDS = {
-  answered: null,
-  skipped: 'You skipped this.',
-  elsewhere: 'Answered from another window.',
-  done: 'Answered from another window.',
-  timeout: 'Nobody answered in time, so Hermes stopped waiting.',
-  interrupted: 'Hermes withdrew this request.',
-  withdrawn: 'Hermes withdrew this request.'
-} as const satisfies Record<RequestEnd, string | null>
-
-function closedWords(asked: Asked, end: RequestEnd): string | null {
-  const card = wordsOfSecret(asked)
-  return card === null ? null : END_WORDS[end] ?? card.answered
-}
-
-function askCard(request: HermesRequest, live: boolean, clock: ViewClock): readonly AskCard[] {
-  const { ask, state, deadline } = request
-  if (ask.kind !== 'secret') return []
-  const words = wordsOfSecret(ask.for.is)
-  if (words === null) return []
-  const { for: secret } = ask
-  return [{
-    key: `ask:${request.id}`,
-    requestId: request.id,
-    heading: words.heading,
-    command: secret.is === 'sudo' ? secret.command : null,
-    why: secret.is === 'env' ? secret.prompt : null,
-    name: secret.is === 'env' ? secret.name : null,
-    label: words.label,
-    waits: deadline === null ? null : `Hermes waits until ${timeOfDay(deadline, clock.timeZone)}.`,
-    busy: state.s === 'sending' || !live,
-    error: state.s === 'waiting' ? state.error : null
-  }]
-}
-
 const DECLINED_WORDS: { readonly [method: string]: string } = {
   setup_beat: "Hermes asked to show a setup step. Highwing can't show that yet, so it said no."
 }
@@ -962,8 +900,7 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
  *   ! Hermes asked for your sudo password. ...                 notice, `! warn:` or `! error:` for those tones
  *   ≋ Asking 3 models · Combining their answers                MoA round, its references indented when opened
  *   · goal: Goal achieved ...                                  status line, its kind when not `other`
- *   ○ You sent a password.                                     where a request with a card closed, in its words
- *   ◇ code: elsewhere                                          where a request with no card closed, and how
+ *   ○ You sent a password.                                     where a request closed, in its words
  *   » use trash-put instead                                    words the user put into the running turn
  *   ✓ Done                                                     end: ✓ done, ✗ failed, ⊘ stopped, ~ lost, each with its words
  *     1,204 in, 380 out                                        what the reply used, when Hermes said
@@ -973,8 +910,9 @@ const END_GLYPH = { done: '✓', failed: '✗', stopped: '⊘', lost: '~', pause
  *       Started `du -sh`                                       its now line while closed and working
  *   ☐ Plan · 1 of 3 done                                       plan: ☑ once every entry is done
  *
- *   ◈ Hermes needs your sudo password                          ask card, after the turns: its command, why, variable
- *       Hermes waits until 14:07.                               name, wait, its field and buttons, and its error
+ *   ◈ Hermes needs your sudo password                          ask card, after the turns: a secret's command, why,
+ *       Hermes waits until 14:07.                               variable, wait, fields and buttons; a batch's questions;
+ *                                                               a connector card's targets; and its error
  *
  * `◉` replaces the glyph of the node that carries the live end, or opens a tip line ("◉ Thinking").
  * Once a minute has passed the live end adds `, 3 min` after its words. `◌` is a paused end. `⋯` is a
@@ -1013,18 +951,6 @@ function pendingWords(row: PendingRow): string {
 
 const attachmentLine = (attachments: readonly Attachment[]) => `+ ${attachments.map(({ kind, name }) => `[${kind}] ${name}`).join('  ')}`
 
-function askLines(card: AskCard): string[] {
-  return [
-    `◈ ${card.heading}${card.busy ? '  (busy)' : ''}`,
-    ...(card.command === null ? [] : [`    ${card.command}`]),
-    ...(card.why === null ? [] : [`    ${card.why}`]),
-    ...(card.name === null ? [] : [`    ${card.name}`]),
-    ...(card.waits === null ? [] : [`    ${card.waits}`]),
-    `    (${card.label}) [Skip] [Send]`,
-    ...(card.error === null ? [] : [`    ! ${card.error}`])
-  ]
-}
-
 function pickLine(pick: PromptPick): string {
   if (pick.kind === 'many') return [...pick.choices, 'Other'].map(choice => `[ ] ${choice}`).join('  ') + '  [Answer] [Skip]'
   return `${pick.buttons.map(button => `[${button.label}]`).join(' ')}${pick.freeText ? ' [Type an answer]' : ''}`
@@ -1057,7 +983,7 @@ function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, open
       return node.detail !== null && opened.has(node.key) ? [head, ...node.detail.split('\n').map(line => `    ${line}`)] : [head]
     }
     case 'closed':
-      return [node.words === null ? `◇ ${node.asked}: ${node.end}` : `○ ${node.words}`]
+      return [`○ ${node.words}`]
     case 'reasoning': {
       const head = `${live ? '◉' : '▸'} Thought${node.streaming ? ' …' : ''}${live ? elapsedSuffix(elapsed) : ''}`
       return opened.has(node.key) ? [head, ...node.text.split('\n').map(line => `    ${line}`)] : [head]
@@ -1197,6 +1123,7 @@ export function checkThread(view: ThreadView): string[] {
         problems.push(`${where}: the live end sits on ${node.kind} ${node.key}`)
     }
   })
+  for (const card of view.asks) claim(card.key)
   for (const message of view.pending) claim(message.key)
   return problems
 }

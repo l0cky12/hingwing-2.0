@@ -59,8 +59,45 @@ describe('the card that asks for a sudo password or a secret', () => {
     expect(markup).toMatch(/<button type="submit" class="primary" disabled="">Send<\/button>/)
   })
 
-  it('draws no card for a request nothing here can answer', () => {
-    const code: HermesRequest = { ...sudo, ask: { kind: 'secret', for: { is: 'code', site: null, hint: null } } }
-    expect(drawn([code])).not.toContain('role="group"')
+  it('reads Sending… on the send button while the answer is on its way', () => {
+    const markup = drawn([{ ...sudo, state: { s: 'sending', reply: { kind: 'withheld' } } }])
+    expect(markup).toMatch(/<button type="submit" class="primary" disabled="">Sending…<\/button>/)
+  })
+})
+
+describe('the card for a vault, a login or a one-time code', () => {
+  const asking = (id: string, ask: HermesRequest['ask']): HermesRequest => ({ id: id as RequestId, ask, state: { s: 'waiting', error: null }, deadline: null })
+  const inputs = (markup: string) => Array.from(markup.matchAll(/<input ([^>]*)\/>/g), ([, attributes]) =>
+    Object.fromEntries(Array.from((attributes ?? '').matchAll(/([\w-]+)="([^"]*)"/g), ([, name, value]) => [name, value])))
+  const field = (name: string, type: string, label: string) => ({ name, type, autoComplete: 'off', 'aria-label': label, placeholder: label })
+  const buttons = (markup: string) => Array.from(markup.matchAll(/<button[^>]*>([^<]*)<\/button>/g), ([, name]) => name)
+
+  it('unlocks a vault with a masked master password, or keeps it locked', () => {
+    const markup = drawn([asking('v1', { kind: 'secret', for: { is: 'vault', backend: 'bitwarden', name: 'Bitwarden' } })])
+    expect(markup).toContain('aria-label="Unlock Bitwarden"')
+    expect(inputs(markup)).toEqual([field('value', 'password', 'Master password')])
+    expect(buttons(markup)).toEqual(['Keep locked', 'Unlock'])
+  })
+
+  it('saves a login with a username shown as typed and a masked password, in one form', () => {
+    const markup = drawn([asking('l1', { kind: 'secret', for: { is: 'login', site: 'example.com', origin: 'https://example.com' } })])
+    expect(markup).toContain('aria-label="Save your example.com login?"')
+    expect(markup).toContain('Hermes is on the sign-in page at https://example.com.')
+    expect(inputs(markup)).toEqual([field('identifier', 'text', 'Email or username'), field('value', 'password', 'Password')])
+    expect(buttons(markup)).toEqual(["Don&#x27;t save", 'Save and sign in'])
+  })
+
+  it('takes a one-time code shown as typed, with the hint Hermes gave', () => {
+    const markup = drawn([asking('c1', { kind: 'secret', for: { is: 'code', site: 'example.com', hint: 'the 6-digit code from your authenticator app' } })])
+    expect(markup).toContain('aria-label="Verification code for example.com"')
+    expect(markup).toContain('the 6-digit code from your authenticator app')
+    expect(inputs(markup)).toEqual([field('value', 'text', 'Code')])
+    expect(buttons(markup)).toEqual(['Skip', 'Enter code'])
+  })
+
+  it('keeps every field of a masked prompt out of the find index and the evidence, and holds no value', () => {
+    const markup = drawn([asking('l1', { kind: 'secret', for: { is: 'login', site: 'example.com', origin: 'https://example.com' } })])
+    expect(markup).toContain('<form class="answer" data-private="">')
+    expect(markup).not.toMatch(/<input[^>]*\svalue=/)
   })
 })

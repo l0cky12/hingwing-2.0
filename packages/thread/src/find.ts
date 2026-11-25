@@ -2,8 +2,9 @@ import { leafText, parseMarkdown, proseLeaves } from './prose'
 import type { Phrase, StepView, ThreadView } from './thread-view'
 
 export type FieldPart =
-  | 'request' | 'title' | 'heading' | 'command' | 'why' | 'name' | 'waits' | 'error' | 'words' | 'text' | 'detail' | 'end'
+  | 'request' | 'title' | 'heading' | 'command' | 'why' | 'name' | 'waits' | 'progress' | 'error' | 'words' | 'text' | 'detail' | 'end'
   | `block ${number}` | `path ${number}` | `line ${number} ${number}` | `body ${number}` | `label ${number}`
+  | `question ${number}` | `answer ${number}` | `target ${number}` | `detail ${number}` | `instructions ${number}`
 
 export const fieldId = (key: string, part: FieldPart) => `${key} ${part}`
 
@@ -80,7 +81,7 @@ function fields(view: ThreadView): Field[] {
           })
           break
         case 'closed':
-          if (node.words !== null) add(node.key, 'words', node.words)
+          add(node.key, 'words', node.words)
           break
         case 'reasoning':
           add(node.key, 'text', node.text, [node.key])
@@ -102,9 +103,31 @@ function fields(view: ThreadView): Field[] {
   }
   for (const card of view.asks) {
     add(card.key, 'heading', card.heading)
-    if (card.command !== null) add(card.key, 'command', card.command)
-    if (card.why !== null) add(card.key, 'why', card.why)
-    if (card.name !== null) add(card.key, 'name', card.name)
+    switch (card.kind) {
+      case 'secret':
+        if (card.command !== null) add(card.key, 'command', card.command)
+        if (card.why !== null) add(card.key, 'why', card.why)
+        if (card.name !== null) add(card.key, 'name', card.name)
+        break
+      case 'questions': {
+        if (card.progress !== null) add(card.key, 'progress', card.progress)
+        // Only the answered questions and the first open one are drawn.
+        const shown = card.questions.findIndex(question => question.locked === null)
+        card.questions.forEach((question, index) => {
+          if (question.locked === null && index !== shown) return
+          add(card.key, `question ${index}`, question.text)
+          if (question.locked !== null) add(card.key, `answer ${index}`, question.locked.words)
+        })
+        break
+      }
+      case 'connect':
+        card.targets.forEach((target, index) => {
+          add(card.key, `target ${index}`, target.heading)
+          if (target.detail !== null) add(card.key, `detail ${index}`, target.detail)
+          if (target.instructions !== null) add(card.key, `instructions ${index}`, target.instructions)
+        })
+        break
+    }
     if (card.waits !== null) add(card.key, 'waits', card.waits)
     if (card.error !== null) add(card.key, 'error', card.error)
   }

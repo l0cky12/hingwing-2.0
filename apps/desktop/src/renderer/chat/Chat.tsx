@@ -18,9 +18,10 @@ import { ImageSessionContext } from './Image'
 import { forget, landAt, landed, pressFor } from './landing'
 import { marked, pressedOf, unmarked } from './marks'
 import { FOLLOW_WITHIN, FOLLOWING, placeAfter, progressOf, type Place } from './place'
+import type { RequestAnswer } from './Asks'
 import { Sides } from './Sides'
 import { closeSide, sideCards, useClosedSides } from './sides'
-import { Thread, type QueueControls, type QueuedRow, type SecretAnswer } from './Thread'
+import { Thread, type QueueControls, type QueuedRow } from './Thread'
 
 const PAGE = 0.875
 const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -180,7 +181,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     const outcome = await run({ do: 'answer', sessionId: id, promptId, reply })
     return outcome.ok ? outcome.value : undefined
   }, [id])
-  const onAnswerRequest = useCallback<SecretAnswer>((requestId, reply) => {
+  const onAnswerRequest = useCallback<RequestAnswer>((requestId, reply) => {
     if (id !== null) void run({ do: 'answer', sessionId: id, requestId, reply })
   }, [id])
   const onLoadEarlier = useCallback(() => {

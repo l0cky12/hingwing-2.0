@@ -1,9 +1,10 @@
-import { versionLabel, type AdmissionId, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Relay, type RequestId, type RequestReply, type Told, type TurnId, type Version, type Versions } from '@highwing/hermes/domain'
-import { fieldId, findInThread, multiReply, type AskCard, type FindMatch, type PendingRow, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
+import { versionLabel, type AdmissionId, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Relay, type Told, type TurnId, type Version, type Versions } from '@highwing/hermes/domain'
+import { fieldId, findInThread, multiReply, type FindMatch, type PendingRow, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Avatar } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
-import { CopyButton } from './Copy'
+import { AskCard, type RequestAnswer } from './Asks'
+import { Command, CopyButton } from './Copy'
 import { isCommandKey } from '../keys'
 import { Helper, Moa, Notice, Plan, Reasoning } from './Helpers'
 import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find'
@@ -14,7 +15,6 @@ import { cx, Elapsed, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
 
 type Answer = (promptId: PromptId, reply: PromptReply) => Promise<Told | undefined>
-export type SecretAnswer = (requestId: RequestId, reply: Extract<RequestReply, { kind: 'secret' | 'skip' }>) => void
 
 interface NodeProps {
   readonly node: ThreadNode
@@ -26,10 +26,6 @@ interface NodeProps {
 }
 
 const ROLE_CLASS = { primary: 'primary', plain: null, decline: 'deny' } as const
-
-function Command({ nodeKey, command }: { readonly nodeKey: string; readonly command: string }) {
-  return <div className="copyable"><pre data-find={fieldId(nodeKey, 'command')}>{command}</pre><CopyButton text={command} name="Copy command" /></div>
-}
 
 interface PromptProps {
   readonly nodeKey: string
@@ -205,43 +201,6 @@ function Checks({ choices, busy, onAnswer }: PickProps & { readonly choices: rea
   )
 }
 
-function SecretCard({ card, onAnswer }: { readonly card: AskCard; readonly onAnswer: SecretAnswer }) {
-  const field = useRef<HTMLInputElement>(null)
-  const [empty, setEmpty] = useState(true)
-  const send = (event: FormEvent) => {
-    event.preventDefault()
-    const input = field.current
-    if (input === null || input.value === '' || card.busy) return
-    onAnswer(card.requestId, { kind: 'secret', value: input.value })
-    input.value = ''
-    setEmpty(true)
-  }
-  const skip = () => {
-    if (field.current !== null) field.current.value = ''
-    setEmpty(true)
-    onAnswer(card.requestId, { kind: 'skip' })
-  }
-  return (
-    <article className="turn">
-      <div className="thread">
-        <div className="approval live" role="group" aria-label={card.heading} data-end="asking">
-          <h3 data-find={fieldId(card.key, 'heading')}>{card.heading}</h3>
-          {card.command !== null && <Command nodeKey={card.key} command={card.command} />}
-          {card.why !== null && <p className="why" data-find={fieldId(card.key, 'why')}>{card.why}</p>}
-          {card.name !== null && <p className="why"><code data-find={fieldId(card.key, 'name')}>{card.name}</code></p>}
-          {card.waits !== null && <p className="why" data-find={fieldId(card.key, 'waits')}>{card.waits}</p>}
-          <form className="answer" onSubmit={send}>
-            <input ref={field} type="password" autoComplete="off" aria-label={card.label} onInput={event => setEmpty(event.currentTarget.value === '')} />
-            <button type="button" disabled={card.busy} onClick={skip}>Skip</button>
-            <button type="submit" className="primary" disabled={empty || card.busy}>Send</button>
-          </form>
-          {card.error !== null && <p className="err" data-find={fieldId(card.key, 'error')}>{card.error}</p>}
-        </div>
-      </div>
-    </article>
-  )
-}
-
 export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer }: NodeProps) {
   const { opened } = state
   const live = endTone === 'live'
@@ -283,7 +242,7 @@ export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer }
     case 'notice':
       return <Notice node={node} open={isOpen(state, node.key, false)} onToggle={onToggle} />
     case 'closed':
-      return node.words === null ? null : <div className="approval answered"><p data-find={fieldId(node.key, 'words')}>{node.words}</p></div>
+      return <div className="approval answered"><p data-find={fieldId(node.key, 'words')}>{node.words}</p></div>
     case 'moa':
       return <Moa node={node} open={isOpen(state, node.key, false)} onToggle={onToggle} />
     case 'status':
@@ -462,7 +421,7 @@ interface ThreadProps {
   /** The messages handed to other bots from this chat, oldest first. */
   readonly relays: readonly Relay[]
   readonly onAnswer: Answer
-  readonly onAnswerRequest: SecretAnswer
+  readonly onAnswerRequest: RequestAnswer
   readonly onLoadEarlier: () => void
   readonly onFindClosed: () => void
   readonly onFindScrolled: () => void
@@ -607,7 +566,7 @@ export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier,
         ))}
         {relayTurns(relayed.last)}
         {atEnd.length > 0 && <p className="versions-end">{atEnd.map(group => <VersionSwitch key={group.versions[0]?.sessionId} versions={group} onVersion={onVersion} />)}</p>}
-        {view.asks.map(card => <SecretCard key={card.key} card={card} onAnswer={onAnswerRequest} />)}
+        {view.asks.map(card => <AskCard key={card.key} card={card} onAnswer={onAnswerRequest} />)}
         {view.pending.map(row => <Pending key={row.key} row={row} queue={queue} />)}
       </div>
     </>

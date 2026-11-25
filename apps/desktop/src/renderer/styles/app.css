@@ -291,8 +291,8 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .approval .choices button:hover { background: var(--sheet); }
 .approval .choices button.primary { background: var(--ink); color: var(--sheet); }
 .approval .choices button.deny { margin-left: auto; }
-.approval .answer { display: flex; gap: 8px; margin-top: 10px; }
-.approval .answer input { flex: 1; padding: 6px 10px; font: inherit; background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; }
+.approval .answer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.approval .answer input { flex: 1 1 160px; min-width: 0; padding: 6px 10px; font: inherit; background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; }
 .approval .answer button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--ink); background: transparent; }
 .approval .picks { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 12px 0 0; padding: 0; border: 0; }
 .approval .picks legend { padding: 0; margin-bottom: 6px; color: var(--graphite); font-size: 13px; }

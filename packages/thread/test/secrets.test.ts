@@ -33,8 +33,9 @@ describe('ask cards', () => {
   it('asks for a sudo password with its redacted command, the time Hermes waits until and a password field', () => {
     const view = threadView(session({ requests: [SUDO] }), CLOCK)
     expect(view.asks).toEqual([{
-      key: expect.any(String), requestId: 'srq-sudo', heading: 'Hermes needs your sudo password', command: 'sudo apt-get install -y jq',
-      why: null, name: null, label: 'Password', waits: 'Hermes waits until 14:07.', busy: false, error: null
+      kind: 'secret', key: expect.any(String), requestId: 'srq-sudo', heading: 'Hermes needs your sudo password', command: 'sudo apt-get install -y jq',
+      why: null, name: null, fields: [{ part: 'value', label: 'Password', masked: true }], send: 'Send', skip: 'Skip',
+      waits: 'Hermes waits until 14:07.', busy: null, error: null
     }])
   })
 
@@ -45,8 +46,9 @@ describe('ask cards', () => {
 
   it('asks for a secret with its reason and variable name, and says nothing of a wait Hermes did not name', () => {
     expect(threadView(session({ requests: [TENOR] }), CLOCK).asks).toEqual([{
-      key: expect.any(String), requestId: 'srq-env', heading: 'Hermes needs a secret', command: null,
-      why: 'Tenor API key', name: 'TENOR_API_KEY', label: 'Secret value', waits: null, busy: false, error: null
+      kind: 'secret', key: expect.any(String), requestId: 'srq-env', heading: 'Hermes needs a secret', command: null,
+      why: 'Tenor API key', name: 'TENOR_API_KEY', fields: [{ part: 'value', label: 'Secret value', masked: true }], send: 'Send', skip: 'Skip',
+      waits: null, busy: null, error: null
     }])
   })
 
@@ -69,33 +71,47 @@ describe('ask cards', () => {
     expect(checkThread(view)).toEqual([])
   })
 
-  it('is busy while the answer is on its way, and shows no value', () => {
+  it('is sending while the answer is on its way, and shows no value', () => {
     const reply: RecordedReply = { kind: 'withheld' }
     const view = threadView(session({ requests: [{ ...SUDO, state: { s: 'sending', reply } }] }), CLOCK)
-    expect(view.asks[0]).toMatchObject({ busy: true, error: null })
-    expect(outline(view)).toContain('◈ Hermes needs your sudo password  (busy)')
+    expect(view.asks[0]).toMatchObject({ busy: 'sending', error: null })
+    expect(outline(view)).toContain('◈ Hermes needs your sudo password  (sending)')
   })
 
-  it.each(['offline', 'catching-up', 'rebuilding'] as const)('is busy while the link is %s, because an answer could not be sent', state => {
-    expect(threadView(session({ requests: [TENOR], sync: { state } }), CLOCK).asks[0]?.busy).toBe(true)
+  it.each(['offline', 'catching-up', 'rebuilding'] as const)('is offline while the link is %s, because an answer could not be sent', state => {
+    expect(threadView(session({ requests: [TENOR], sync: { state } }), CLOCK).asks[0]?.busy).toBe('offline')
   })
 
   it('shows why the last answer did not reach Hermes, and is free to answer again', () => {
     const view = threadView(session({ requests: [{ ...SUDO, state: { s: 'waiting', error: "Hermes didn't get your answer." } }] }), CLOCK)
-    expect(view.asks[0]).toMatchObject({ busy: false, error: "Hermes didn't get your answer." })
+    expect(view.asks[0]).toMatchObject({ busy: null, error: "Hermes didn't get your answer." })
     expect(outline(view)).toContain("    ! Hermes didn't get your answer.")
   })
 
-  it('draws no card for a vault, login or code request, a batch of questions or a connector card', () => {
-    const others: HermesRequest[] = [
-      request('srq-vault', { kind: 'secret', for: { is: 'vault', backend: '1password', name: 'deploy key' } }),
-      request('srq-login', { kind: 'secret', for: { is: 'login', site: 'example.com', origin: 'https://example.com' } }),
-      request('srq-code', { kind: 'secret', for: { is: 'code', site: null, hint: null } }),
-      request('srq-questions', { kind: 'questions', questions: [{ id: 'q0', text: 'Where?', choices: [], multi: false }], answers: {} }),
-      request('srq-connect', { kind: 'connect', rev: 1, targets: [], suggested: [] })
-    ]
-    const view = threadView(session({ requests: [...others, SUDO] }), CLOCK)
-    expect(view.asks.map(card => card.requestId)).toEqual(['srq-sudo'])
+  it('asks to unlock a vault by its name, with a master password field and Unlock or Keep locked', () => {
+    const view = threadView(session({ requests: [request('srq-vault', { kind: 'secret', for: { is: 'vault', backend: 'bitwarden', name: 'Bitwarden' } })] }), CLOCK)
+    expect(view.asks[0]).toMatchObject({
+      kind: 'secret', heading: 'Unlock Bitwarden', why: null, fields: [{ part: 'value', label: 'Master password', masked: true }], send: 'Unlock', skip: 'Keep locked'
+    })
+  })
+
+  it('asks to save a login with a username shown as typed and a masked password, sent together', () => {
+    const view = threadView(session({ requests: [request('srq-login', { kind: 'secret', for: { is: 'login', site: 'example.com', origin: 'https://example.com' } })] }), CLOCK)
+    expect(view.asks[0]).toMatchObject({
+      heading: 'Save your example.com login?', why: 'Hermes is on the sign-in page at https://example.com.',
+      fields: [{ part: 'identifier', label: 'Email or username', masked: false }, { part: 'value', label: 'Password', masked: true }],
+      send: 'Save and sign in', skip: "Don't save"
+    })
+    expect(outline(view)).toContain("    (Email or username) (Password) [Don't save] [Save and sign in]")
+  })
+
+  it('asks for a one-time code shown as typed, with Hermes\'s hint, and names the site when Hermes does', () => {
+    const code = (site: string | null) => request('srq-code', { kind: 'secret', for: { is: 'code', site, hint: 'the 6-digit code from your authenticator app' } })
+    expect(threadView(session({ requests: [code('example.com')] }), CLOCK).asks[0]).toMatchObject({
+      heading: 'Verification code for example.com', why: 'the 6-digit code from your authenticator app',
+      fields: [{ part: 'value', label: 'Code', masked: false }], send: 'Enter code', skip: 'Skip'
+    })
+    expect(threadView(session({ requests: [code(null)] }), CLOCK).asks[0]?.heading).toBe('Verification code')
   })
 })
 
@@ -104,7 +120,6 @@ describe('where a request closed', () => {
     ['answered', 'You sent a password.'],
     ['skipped', 'You skipped this.'],
     ['elsewhere', 'Answered from another window.'],
-    ['done', 'Answered from another window.'],
     ['timeout', 'Nobody answered in time, so Hermes stopped waiting.'],
     ['interrupted', 'Hermes withdrew this request.'],
     ['withdrawn', 'Hermes withdrew this request.']
@@ -118,10 +133,21 @@ describe('where a request closed', () => {
     expect(closedNode('env', 'answered')).toMatchObject({ words: 'You sent the secret.' })
   })
 
-  it.each(['vault', 'login', 'code', 'questions', 'connect'] as const)('has no words for a closed %s, so nothing is drawn for it', asked => {
-    const view = threadView(running([closed(asked, 'answered')]), CLOCK)
-    expect(view.turns[0]?.nodes).toEqual([expect.objectContaining({ kind: 'closed', asked, words: null })])
-    expect(outline(view)).toContain(`◇ ${asked}: answered`)
+  it.each<[Extract<NoticeItem, { what: 'closed' }>['asked'], RequestEnd, string]>([
+    ['vault', 'answered', 'You unlocked the vault.'],
+    ['vault', 'skipped', 'You kept the vault locked.'],
+    ['login', 'answered', 'You saved the login.'],
+    ['login', 'skipped', "You didn't save the login."],
+    ['code', 'answered', 'You entered the code.'],
+    ['code', 'skipped', 'You skipped the code.'],
+    ['code', 'elsewhere', 'Answered from another window.'],
+    ['questions', 'answered', 'You sent your answers.'],
+    ['questions', 'elsewhere', 'Answered from another window.'],
+    ['questions', 'timeout', 'Nobody answered in time, so Hermes stopped waiting.'],
+    ['connect', 'done', 'Hermes went on with what is connected.'],
+    ['connect', 'interrupted', 'Hermes withdrew this request.']
+  ])('reads a %s that ended %s as "%s"', (asked, end, words) => {
+    expect(closedNode(asked, end)).toMatchObject({ kind: 'closed', asked, end, words })
   })
 })
 

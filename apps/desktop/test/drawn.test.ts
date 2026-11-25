@@ -42,11 +42,12 @@ describe('the view the window draws', () => {
     expect(drawnView(plain)).toBe(plain)
   })
 
-  it('draws where a sudo or secret closed, and nothing where a request with no card did', () => {
+  it('draws where every kind of request closed, in its words', () => {
     const closed = (asked: 'sudo' | 'env' | 'code' | 'questions', end: 'answered' | 'skipped' | 'elsewhere'): Item<'settled'> =>
       ({ kind: 'notice', what: 'closed', requestId: 'srq-1' as RequestId, asked, end })
     const items = [closed('sudo', 'answered'), closed('code', 'elsewhere'), closed('env', 'skipped'), closed('questions', 'answered')]
     const [drawn] = drawnView(threadView(session([turn('t1', items)]), CLOCK)).turns
-    expect(drawn?.nodes.map(node => node.kind === 'closed' ? node.words : node.kind)).toEqual(['You sent a password.', 'You skipped this.'])
+    expect(drawn?.nodes.map(node => node.kind === 'closed' ? node.words : node.kind))
+      .toEqual(['You sent a password.', 'Answered from another window.', 'You skipped this.', 'You sent your answers.'])
   })
 })

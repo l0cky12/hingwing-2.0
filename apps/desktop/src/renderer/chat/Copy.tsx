@@ -1,3 +1,4 @@
+import { fieldId } from '@highwing/thread'
 import { useEffect, useRef, useState } from 'react'
 
 const SHOWN_MS = 2000
@@ -26,4 +27,8 @@ export function CopyButton({ text, name }: { readonly text: string; readonly nam
       <span className="sr" aria-live="polite">{outcome === null ? '' : WORDS[outcome]}</span>
     </>
   )
+}
+
+export function Command({ nodeKey, command }: { readonly nodeKey: string; readonly command: string }) {
+  return <div className="copyable"><pre data-find={fieldId(nodeKey, 'command')}>{command}</pre><CopyButton text={command} name="Copy command" /></div>
 }
