@@ -1472,7 +1472,6 @@ const GATEWAY_RUNS: ReadonlySet<string> = new Set([
   'insights', 'platforms', 'version', 'debug'
 ])
 
-/** Offered whatever `desktop` says: Hermes marks `/busy` and `/fast` for its terminal, and Highwing runs their settings itself. */
 const HIGHWING_RUNS: ReadonlySet<string> = new Set(['new', ...Object.keys(OWN_COMMANDS)])
 
 /** `desktop` is `null` for a command a desktop app should offer, else the reason it should not. */

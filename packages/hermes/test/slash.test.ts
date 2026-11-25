@@ -74,7 +74,6 @@ describe('OWN_COMMANDS', () => {
   const NOTHING: Readonly<Record<string, unknown>> = {
     checkpoints: { kept: 'off' }, checkpointDiff: { stat: '', patch: '' }, restore: { files: null, kept: [], lastTurn: 'kept' }
   }
-  /** Runs the line's answer, each command answered in turn by `replies`, and says what it ran and showed. */
   const answered = async (text: string, ...replies: Outcome<unknown>[]) => {
     const line = own(text)
     if (line === null || !('answer' in line)) throw new Error(`${text} has no answer`)

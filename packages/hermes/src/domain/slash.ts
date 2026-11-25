@@ -30,7 +30,6 @@ type OwnCommand = Exclude<Extract<Command, { readonly sessionId: SessionId }>, {
 
 export type RunOwn = <C extends OwnCommand>(command: C) => Promise<Outcome<ResultOf<C>>>
 
-/** `answer`: runs the line's command with `run` and words what it did, for the line under the composer. */
 export type Own = OwnCommand | { readonly answer: (run: RunOwn) => Promise<Outcome<string>> } | { readonly usage: string } | null
 
 export const OWN_COMMANDS = {
@@ -137,7 +136,6 @@ function listed(checkpoints: Checkpoints): string {
 
 const diffed = ({ stat, patch }: CheckpointDiff): string => [stat, patch].filter(part => part !== '').join('\n') || 'No changes since that checkpoint.'
 
-/** The first five names, as Hermes's CLI lists what a restore left alone (hermes_cli/cli_commands_session_tools.py `_rollback_kept`). */
 const named = (files: readonly string[]) => files.slice(0, 5).join(', ') + (files.length > 5 ? ` (+${files.length - 5} more)` : '')
 
 function restored(checkpoint: string, scope: RestoreScope, { kept, lastTurn }: Restored): string {
