@@ -70,7 +70,7 @@ describe('the processes', () => {
     const { actor, command, sent, answer } = await stage({ watched: true })
     await answer('process.list', { processes: [BUILD] })
     const done = command({ do: 'killProcess', sessionId: ID, processId: 'proc_1' as ProcessId })
-    expect(sent()).toEqual([['config.get', { session_id: ID, key: 'show_reasoning' }], ['config.get', { session_id: ID, key: 'busy' }], ['process.kill', { session_id: ID, process_id: 'proc_1' }]])
+    expect(sent()).toEqual([['config.get', { session_id: ID, key: 'show_reasoning' }], ['config.get', { session_id: ID, key: 'busy' }], ['config.get', { session_id: ID, key: 'approval_mode' }], ['process.kill', { session_id: ID, process_id: 'proc_1' }]])
     await answer('process.kill', { status: 'killed', session_id: 'proc_1', completion_reason: 'killed' })
     expect(await done).toEqual(DONE)
     await answer('process.list', { processes: [BUILT] })

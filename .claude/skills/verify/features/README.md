@@ -45,7 +45,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Images in the thread](./images.md) covers a reply image, a tool image, the larger view and what main refuses.
 - [Choose the model](./choose-the-model.md) covers the model readout under the composer, the list of models, a switch, a switch during a turn, "No model set up", and a Hermes that does not list its models.
 - [Context meter and tokens per reply](./context-meter.md) covers the token line under a reply, the context meter beside the model readout, its breakdown panel, "nearly full", the stale meter while the link is down, and a Hermes that reports no usage.
-- [Switch YOLO](./yolo.md) covers the YOLO pill beside the model readout, its confirmation, turning it off, one chat's state staying out of another's, another client turning it on, a refusal, and a Hermes without the key.
+- [Switch YOLO](./yolo.md) covers the YOLO pill beside the model readout, its confirmation, turning it off, one chat's state staying out of another's, another client turning it on, a refusal, a Hermes without the key, the bot's Smart or Manual approvals beside the pill, and moving a bot on `off` to Smart.
 - [Offline banner](./offline-banner.md) covers the blocked banner with Retry, the dropped banner with disabled buttons, and recovery.
 - [Copy a block](./copy-a-block.md) covers the Copy control on the request, a reply, an approval command, a command that ran and an open step's record, its keyboard reach, and the closed thread without controls.
 - [Grow the composer](./grow-the-composer.md) covers the message box growing with its text, its cap and scrollbar, the thread staying pinned, and shrinking back to one line.

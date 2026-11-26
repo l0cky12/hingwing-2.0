@@ -16,7 +16,7 @@ function cardOf(ask: Extract<RequestAsk, { kind: 'questions' }>, state: HermesRe
   const request: HermesRequest = { id: 'srq-batch' as RequestId, ask, state, deadline: null }
   const session: Session = {
     id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, interlude: [], requests: [request], queue: [], outbox: [],
-    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [], processes: null, control: null, sync
+    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null, sync
   }
   const [card] = threadView(session, CLOCK).asks
   if (card?.kind !== 'questions') throw new Error('no questions card')

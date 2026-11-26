@@ -9,7 +9,7 @@ import {
 import { ownCommand, slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import type { Served } from './wire/link'
 import {
-  beginsAtTurn, parseBranched, parseBusy, parseCheckpointDiff, parseCheckpoints, parseCompressed, parseContextBreakdown, parseCorrection, parseDirective, parseFast,
+  beginsAtTurn, parseApprovalMode, parseBranched, parseBusy, parseCheckpointDiff, parseCheckpoints, parseCompressed, parseContextBreakdown, parseCorrection, parseDirective, parseFast,
   parseModelMenu, parseModelReceipt, parsePathMatches, parseReactions, parseRestored, parseShown, parseTranscript, placeOfRow, type Correction, type Directive
 } from './wire/parse'
 
@@ -409,6 +409,8 @@ const SWITCHES: { readonly [S in Switched['set']]: (command: Extract<Switched, {
    * value toggles.
    */
   yolo: ({ on }) => ({ key: 'yolo', value: on ? 'on' : 'off', said: reply => ({ yolo: reply.value === '1' || reply.value === true }) }),
+  /** A profile write, as `/approvals <mode>` is. Hermes sends no session.info for it, so the reply is the only word (gateway/session_tui_config.py:202-203,337-350). */
+  approvals: ({ to }) => ({ key: 'approval_mode', value: to, said: reply => ({ approvals: parseApprovalMode(reply.value) ?? to }) }),
   /** Hermes answers the tier's word (gateway/session_tui_config.py:274-298). */
   fast: ({ on }) => ({ key: 'fast', value: on ? 'fast' : 'normal', said: reply => ({ fast: parseFast(reply) ?? on }) })
 }

@@ -4,7 +4,7 @@ import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
 import type {
-  AdmissionId, AttachmentId, BranchId, BusyMode, CheckpointId, ContextFill, ControlAction, Effort, HelperId, InputId, ModelOption, ModelRef, ProcessId, PromptId,
+  AdmissionId, ApprovalMode, AttachmentId, BranchId, BusyMode, CheckpointId, ContextFill, ControlAction, Effort, HelperId, InputId, ModelOption, ModelRef, ProcessId, PromptId,
   PromptReply, QueuedAction, RequestId, RequestReply, SessionId, SideTask, Told, TurnId
 } from './session'
 
@@ -138,6 +138,8 @@ export type Command =
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'reasoning'; readonly on: boolean }
   /** YOLO: Hermes runs this chat's commands without asking. */
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'yolo'; readonly on: boolean }
+  /** The bot's approval mode. It changes every chat the bot has, not only this one. */
+  | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'approvals'; readonly to: ApprovalMode }
   /** Fast: the model's fast tier, from the next turn. Refused for a model that has none. */
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'fast'; readonly on: boolean }
   /** Set during a turn, it applies from the next. The new level shows in `tuning` when Hermes says it. */

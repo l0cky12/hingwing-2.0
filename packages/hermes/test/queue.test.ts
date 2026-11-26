@@ -168,7 +168,7 @@ describe('sendPlan', () => {
     ({ state: 'running', generation: 4 as Generation, stop, turn: { id: 't1' as TurnId, request: null, began: null, items, announced: null } })
   const plan = (run: Run, busy: BusyMode | null, requests = 0, attachments: readonly Attachment[] = []) =>
     sendPlan({
-      run, tuning: { reasoning: null, busy, effort: null, fast: null, yolo: null },
+      run, tuning: { reasoning: null, busy, effort: null, fast: null, yolo: null, approvals: null },
       requests: Array.from({ length: requests }, (_, index) => ({ id: `r${index}` as RequestId, ask: { kind: 'secret', for: { is: 'sudo', command: 'x' } }, state: { s: 'waiting', error: null }, deadline: null }))
     }, attachments)
   const asking = running('none', [{

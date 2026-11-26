@@ -314,7 +314,7 @@ describe('attached', () => {
       snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 9 }, history: { turns, unfinished: null, older: { cursor: 'c1' } } })
     })
     expect(state.gate).toEqual({ at: 'live', cursor: { epoch: EPOCH, seq: 9 }, subscriptionId: 'sub-1' })
-    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null }, sides: [], processes: null, control: null })
+    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null })
   })
 
   it('B: opens the unfinished turn of a running snapshot with its waiting prompts, then the parked frames above the watermark', () => {
@@ -1315,20 +1315,20 @@ describe('what Hermes says', () => {
 describe('tuning', () => {
   it('takes facts read under the current attach, and drops facts read under an older one', () => {
     const state = live()
-    expect(state.content.tuning).toEqual({ reasoning: null, busy: null, effort: null, fast: null, yolo: null })
+    expect(state.content.tuning).toEqual({ reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null })
     const read = reduce(state, { in: 'facts', attempt: 1, heard: UNHEARD, tuning: { reasoning: true } })
-    expect(read.content.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
+    expect(read.content.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null, approvals: null })
     const reattached = feed(read, { in: 'link.lost' }, { in: 'attach' })
     expect(reduce(reattached, { in: 'facts', attempt: 1, heard: UNHEARD, tuning: { reasoning: false } }).content).toBe(reattached.content)
-    expect(reduce(reattached, { in: 'facts', attempt: 2, heard: UNHEARD, tuning: { reasoning: false } }).content.tuning).toEqual({ reasoning: false, busy: null, effort: null, fast: null, yolo: null })
+    expect(reduce(reattached, { in: 'facts', attempt: 2, heard: UNHEARD, tuning: { reasoning: false } }).content.tuning).toEqual({ reasoning: false, busy: null, effort: null, fast: null, yolo: null, approvals: null })
   })
 
   it('takes a switch this client set, keeps it through a rebuild, and changes nothing when it is the same', () => {
     const tuned = reduce(live(), { in: 'local', action: { did: 'tuned', tuning: { reasoning: true } } })
-    expect(tuned.content.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
+    expect(tuned.content.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null, approvals: null })
     expect(reduce(tuned, { in: 'local', action: { did: 'tuned', tuning: { reasoning: true } } }).content).toBe(tuned.content)
     const rebuilt = feed(tuned, { in: 'gap' }, { in: 'attached', attempt: 2, snapshot: snapshot(), replay: null })
-    expect(rebuilt.content.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
+    expect(rebuilt.content.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null, approvals: null })
   })
 })
 

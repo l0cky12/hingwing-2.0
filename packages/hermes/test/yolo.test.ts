@@ -67,3 +67,34 @@ describe('switching a chat\'s YOLO through the scripted gateway', () => {
     expect(last.session.tuning.yolo).toBe(false)
   })
 })
+
+describe('the bot\'s approval mode', () => {
+  const live = (seen: readonly Session[]) => seen.findLast(session => session.sync.state === 'live')
+  const watched = (header: Partial<Fixture['header']>) => playWith(withYolo(header), () => null)
+
+  it('is read with config.get once the chat is live, beside the chat\'s own YOLO', async () => {
+    const { last, seen } = await watched({ approvals: 'smart' })
+    expect(live(seen)?.tuning).toMatchObject({ approvals: 'smart', yolo: false })
+    expect(callsIn(last.script.received).filter(call => call.method === 'config.get' && call.params?.key === 'approval_mode')).toHaveLength(1)
+  })
+
+  it('reads a bot on off as off, while the chat\'s own flag stays false as Hermes says it', async () => {
+    const { seen } = await watched({ approvals: 'off' })
+    expect(live(seen)?.tuning).toMatchObject({ approvals: 'off', yolo: false })
+  })
+
+  it('moves the bot to Smart with one config.set of approval_mode', async () => {
+    const { last, result } = await playWith(withYolo({ approvals: 'off' }), ({ hermes, session }) =>
+      session.sync.state === 'live' && session.tuning.approvals === 'off' && session.run.state === 'idle' && session.history.length === 0
+        ? hermes.run({ do: 'tune', sessionId: SESSION, set: 'approvals', to: 'smart' })
+        : null)
+    expect(await result).toEqual({ ok: true, value: undefined })
+    expect(sets(last).map(call => call.params)).toEqual([{ session_id: SESSION, key: 'approval_mode', value: 'smart' }])
+    expect(last.session.tuning).toMatchObject({ approvals: 'smart', yolo: false })
+  })
+
+  it('names no mode when Hermes refuses the read', async () => {
+    const { seen } = await watched({})
+    expect(live(seen)?.tuning.approvals).toBeNull()
+  })
+})

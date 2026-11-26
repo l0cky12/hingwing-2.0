@@ -1,5 +1,5 @@
 import {
-  BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
+  APPROVAL_MODES, BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type HelperId, type Item, type Link, type ModelOption,
   type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
@@ -498,6 +498,10 @@ export const validators: Validators = {
     if (raw.set === 'effort') {
       const to = raw.to === 'default' ? 'default' : EFFORTS.find(level => level === raw.to)
       return to === undefined ? null : { do: 'tune', sessionId, set: 'effort', to }
+    }
+    if (raw.set === 'approvals') {
+      const to = APPROVAL_MODES.find(mode => mode === raw.to)
+      return to === undefined ? null : { do: 'tune', sessionId, set: 'approvals', to }
     }
     if (typeof raw.on !== 'boolean') return null
     switch (raw.set) {

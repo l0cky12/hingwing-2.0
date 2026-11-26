@@ -9,7 +9,7 @@ import type { PaneAsk } from '../domain/pane'
 import type { Admission } from '../domain/queue'
 import type { CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, Said as SaidTuning, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type { CloseWhy } from '../domain/requests'
-import { EFFORTS } from '../domain/session'
+import { APPROVAL_MODES, EFFORTS, type ApprovalMode } from '../domain/session'
 import type {
   AdmissionId, Answer, Ask, BackgroundProcess, Began, BusyMode, CheckpointId, ConnectTarget, FileDiff, Generation, Goal, GoalPart, GoalVerdict, GoalWait, Heartbeat, HelperEnd,
   HelperId, InputId, Item, Json, Loop, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, ProcessId, PromptId, Question, Reaction, RequestId, SessionControl, SessionId,
@@ -893,6 +893,11 @@ export function parseFast(reply: { readonly value?: unknown }): boolean | null {
 }
 
 const BUSY_MODES: readonly string[] = ['queue', 'steer', 'interrupt'] satisfies BusyMode[]
+
+/** `config.get` and `config.set` of `approval_mode` answer the bot's mode by name (gateway/session_config.py:107-108, gateway/session_tui_config.py:337-350). */
+export function parseApprovalMode(value: unknown): ApprovalMode | null {
+  return APPROVAL_MODES.find(mode => mode === value) ?? null
+}
 
 /** `config.get` and `config.set` of `busy` answer the mode by name (`gateway/session_busy_controls.py:30-72`). */
 export function parseBusy(reply: { readonly value?: unknown }): BusyMode | null {

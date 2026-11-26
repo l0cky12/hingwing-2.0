@@ -242,7 +242,20 @@ export interface Tuning {
   readonly fast: boolean | null
   /** Whether Hermes runs this chat's commands without an approval card. An older Hermes never says. */
   readonly yolo: boolean | null
+  /**
+   * The bot's `approvals.mode`, for every chat it has, read with `config.get` when the chat goes live. `off` runs every chat's
+   * commands without asking, though `yolo`, the chat's own flag, stays false (gateway/session_local.py:576-578). An older Hermes never says.
+   */
+  readonly approvals: ApprovalMode | null
 }
+
+/**
+ * Hermes's approval modes (tools/approval_context.py:276, hermes_cli/approval_mode.py). A command Hermes flags as risky asks
+ * first under `manual`. Under `smart` Hermes's own judge runs what it finds safe, refuses what it finds dangerous, and asks
+ * about the rest. `off` runs everything. Hermes starts a bot on `smart` (hermes_cli/config_defaults.py:1624).
+ */
+export const APPROVAL_MODES = ['manual', 'smart', 'off'] as const
+export type ApprovalMode = typeof APPROVAL_MODES[number]
 
 /** The reasoning levels Hermes takes (persistence/authority/runtime.py:84-87). `none` turns reasoning off. */
 export const EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const

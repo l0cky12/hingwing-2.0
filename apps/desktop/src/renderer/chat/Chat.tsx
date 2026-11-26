@@ -387,7 +387,13 @@ export function Chat({ chat }: { readonly chat: Shown }) {
                   onMove={to => run({ do: 'move', sessionId: id, cwd: to })}
                 />
               )}
-              {yolo !== null && <YoloPill key={`yolo-${id}`} on={yolo} onSet={on => run({ do: 'tune', sessionId: id, set: 'yolo', on })} />}
+              {yolo !== null && (
+                <YoloPill
+                  key={`yolo-${id}`} on={yolo} approvals={session?.tuning.approvals ?? null}
+                  onSet={on => run({ do: 'tune', sessionId: id, set: 'yolo', on })}
+                  onApprovals={to => run({ do: 'tune', sessionId: id, set: 'approvals', to })}
+                />
+              )}
             </div>
             {fill !== null && <ContextMeter key={id} fill={fill} stale={!live} onBreakdown={() => run({ do: 'contextBreakdown', sessionId: id })} />}
           </div>

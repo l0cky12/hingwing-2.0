@@ -2,7 +2,7 @@
  * `@highwing/hermes/testing`: a recorded or generated gateway, played back through the real client.
  */
 import { readFileSync } from 'node:fs'
-import type { SessionId } from '../domain/session'
+import { APPROVAL_MODES, type ApprovalMode, type SessionId } from '../domain/session'
 import type { Reach } from '../wire/link'
 
 export { play, playToEnd, type Moment } from './play'
@@ -67,6 +67,11 @@ export interface Fixture {
     readonly info?: { readonly [key: string]: Json[string] }
     /** Every YOLO set is refused `permission_denied`, as Hermes refuses a viewer without control of the chat. */
     readonly yoloDenied?: boolean
+    /**
+     * Every bot's `approvals.mode` at the start, which `config.get` of `approval_mode` answers and `config.set` of it changes.
+     * `info.yolo` stays the chat's own flag, as on Hermes. Absent: Hermes refuses both, as for a key it does not know.
+     */
+    readonly approvals?: ApprovalMode
     /**
      * The story session's controls as `config.get` answers them, by key: `{ "show_reasoning": "1" }`.
      * `config.set` changes them, except a set of key `yolo`, which `yolo` serves. Absent: the gateway refuses both as unknown methods, as a Hermes
@@ -387,8 +392,9 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (value.usage !== undefined && usage === undefined) {
     return '"usage" must hold "before" and "after" session.stats replies and a "breakdown" session.context_breakdown reply'
   }
-  const { yolo, yoloDenied } = value
+  const { yolo, yoloDenied, approvals } = value
   if (yolo !== undefined && typeof yolo !== 'boolean') return '"yolo" must be true or false'
+  if (approvals !== undefined && !APPROVAL_MODES.some(mode => mode === approvals)) return '"approvals" must be manual, smart or off'
   if (yoloDenied !== undefined && typeof yoloDenied !== 'boolean') return '"yoloDenied" must be true or false'
   const { info } = value
   if (info !== undefined && !isObject(info)) return '"info" must be an object of attach info fields'
@@ -457,7 +463,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...('catalog' in value ? { catalog: value.catalog } : {}),
     ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] }),
     ...(usage === undefined ? {} : { usage }),
-    ...(yolo === undefined ? {} : { yolo }), ...(yoloDenied === undefined ? {} : { yoloDenied }),
+    ...(yolo === undefined ? {} : { yolo }), ...(yoloDenied === undefined ? {} : { yoloDenied }), ...(approvals === undefined ? {} : { approvals: approvals as ApprovalMode }),
     ...(branches === undefined ? {} : { branches }), ...(tree === undefined ? {} : { tree }),
     ...(info === undefined ? {} : { info }),
     ...(controls === undefined ? {} : { controls: controls as Record<string, string> }),
