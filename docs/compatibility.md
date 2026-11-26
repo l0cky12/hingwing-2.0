@@ -801,6 +801,12 @@ in the same place.
   `profiles.configure` that is an unknown method, says "This Hermes can't
   change bots from Highwing." Error 4064, or a read that no longer lists the
   bot, says "Hermes no longer has this bot."
+- Hermes has no gateway method to delete a profile. `hermes profile delete`
+  runs only on the Hermes machine, and never deletes the default profile. So
+  Delete… in a bot's menu asks for confirmation, then says "This Hermes can't
+  delete bots from Highwing. To delete Editor, run hermes profile delete
+  editor on the Hermes machine." and changes nothing. On the default bot it
+  asks nothing and says "The default bot can't be deleted."
 - Once saved, Highwing shows the flag at once and reads the roster again. If
   that read fails, the flag stays shown until the next one.
 

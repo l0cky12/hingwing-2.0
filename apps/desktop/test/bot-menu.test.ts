@@ -21,6 +21,11 @@ describe("a bot's menu", () => {
     expect(words('hidden')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Show in list'], ['Delete…']])
   })
 
+  it('offers Delete… last in every menu except the default bot\'s card', () => {
+    expect(MENUS.card.flat()).not.toContain('delete')
+    for (const place of ['pinned', 'section', 'hidden'] as const) expect(MENUS[place].flat().at(-1), place).toBe('delete')
+  })
+
   it('says how to delete a bot on the Hermes machine, and that Hermes keeps its default bot', () => {
     const bots = listed(fact('default', 'Hermes', { isDefault: true, hidden: true }), fact('editor', 'Editor'))
     if (bots.state !== 'listed' || bots.roster.featured === null) throw new Error('expected a listed roster with a default bot')
