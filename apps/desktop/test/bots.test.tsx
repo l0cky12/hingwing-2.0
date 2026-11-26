@@ -18,7 +18,7 @@ const showing = (bots: Bots | undefined, open: OpenChat | undefined, link: Link 
     <BotsPanel
       bots={bots} open={open} link={link} groups={groups} onOpen={async () => ({ ok: true, value: null })} onNewChat={() => {}} onNew={async () => ({ ok: true, value: null })}
       onMark={async () => ({ ok: true, value: { edition: 2 } })}
-      onCreate={async () => ({ ok: true, value: { bot: 'rae' as BotId, warnings: [] } })} onCreateGroup={async () => ({ ok: true, value: undefined })}
+      onCreate={async () => ({ ok: true, value: { bot: 'rae' as BotId, warnings: [] } })} onCreateGroup={async () => ({ ok: true, value: undefined })} onOpenGroup={() => {}}
       onModels={async () => ({ ok: true, value: { options: [], fallback: null } })}
       onDescribe={async bot => ({ ok: true, value: { bot, name: 'Rae', description: '', persona: '', revision: 2 } })} onEdit={async () => ({ ok: true, value: undefined })}
       onPickPicture={async () => ({ ok: true, value: 'cancelled' })} onRemovePicture={async () => ({ ok: true, value: undefined })} looks={NO_LOOKS}
@@ -115,14 +115,31 @@ describe('the bots sidebar', () => {
   const groups = (...rows: [string, string, ...ReturnType<typeof seat>[]][]): Groups =>
     ({ state: 'listed', driver: true, seatable: null, rows: rows.map(([id, name, ...members]) => ({ id: id as GroupId, name, members, answering: [] })) })
   const section = (html: string) => /<section><h3>Group chats<\/h3>(.*?)<\/section>/s.exec(html)?.[1] ?? null
-  const rowsIn = (html: string) => Array.from((section(html) ?? '').matchAll(/<li class="group-row">(.*?)<\/li>/gs), ([, row]) => row!)
-  const textOf = (row: string) => Array.from(row.matchAll(/<span class="bot-(?:name|preview)">([^<]*)</g), ([, text]) => text)
+  const rowsIn = (html: string) => Array.from((section(html) ?? '').matchAll(/<div class="bot-row">(.*?)<\/div>/gs), ([, row]) => row!)
+  const textOf = (row: string) => Array.from(row.matchAll(/<span class="bot-(?:name|preview)(?: live)?"[^>]*>([^<]*)</g), ([, text]) => text)
+  const IN_PLAN: OpenChat = { shown: { kind: 'group', group: 'plan' as GroupId, over: 'default' as BotId }, opening: null, missing: null }
 
   it("lists the group chats between the default bot and the sections, each named and followed by its members' names", () => {
     const html = showing(APPROVED, AT_LAUNCH, ONLINE, groups(['plan', 'Launch plan', seat('default', 'emu'), seat('research'), seat('timothy')], ['ops', 'Ops', seat('highwing'), seat('hermes-dev')]))
     expect(html).toMatch(/class="bot-row bot-row-feature".*<h3>Group chats<\/h3>.*<h3>New section<\/h3>/s)
     expect(rowsIn(html).map(textOf)).toEqual([['Launch plan', 'Emu, Research and Timothy · CEO'], ['Ops', 'highwing and Hermes']])
-    expect(section(html), 'not yet a control').not.toMatch(/<button|tabindex/)
+  })
+
+  it('makes each group a button named for the group and its members, described by its second line', () => {
+    const html = showing(APPROVED, AT_LAUNCH, ONLINE, groups(['plan', 'Launch plan', seat('default', 'emu'), seat('research'), seat('timothy')]))
+    const [tag] = buttons(section(html) ?? '')
+    expect(attr(tag!, 'aria-label')).toBe('Launch plan, group chat with Emu, Research and Timothy · CEO')
+    expect(html).toContain(`id="${attr(tag!, 'aria-describedby')}">Emu, Research and Timothy · CEO<`)
+    expect(attr(tag!, 'aria-current')).toBeUndefined()
+  })
+
+  it("marks the open group's row as the current one, and no bot's, and says in the signal colour who is answering", () => {
+    const answering: Groups = { state: 'listed', driver: true, seatable: null, rows: [{ id: 'plan' as GroupId, name: 'Launch plan', members: [seat('default'), seat('research')], answering: [{ member: 'research' as MemberId, doing: 'thinking', tool: null }] }] }
+    const html = showing(APPROVED, IN_PLAN, ONLINE, answering)
+    const [tag] = buttons(section(html) ?? '')
+    expect(attr(tag!, 'aria-current')).toBe('true')
+    expect(buttons(html).filter(button => attr(button, 'aria-current') !== undefined)).toEqual([tag])
+    expect(section(html)).toMatch(/<span class="bot-preview live" id="[^"]*">Research is thinking<\/span>/)
   })
 
   const facesIn = (row: string) => Array.from(row.matchAll(/<span class="avatar tone-(\w+)"[^>]*>(\w)<|<span class="stack-more">([^<]*)</g), ([, tone, letter, more]) => (more ?? `${letter} ${tone}`))

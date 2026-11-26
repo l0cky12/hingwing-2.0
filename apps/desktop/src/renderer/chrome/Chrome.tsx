@@ -1,36 +1,38 @@
-import { machineOf, shownChat, type Link, type Target } from '@highwing/hermes/domain'
-import { useCallback, useEffect, useRef, type ReactNode } from 'react'
+import { machineOf, shownChat, shownGroup, type Link, type Target } from '@highwing/hermes/domain'
+import { useCallback, useEffect, useRef, type ReactNode, type Ref, type RefObject } from 'react'
 import type { WindowCommand } from '../../ipc-contract'
 import { isCommandKey } from '../keys'
 import { CopyLink } from '../chat/Copy'
 import { botNameOf, openChatName } from '../chats/chat-list'
+import { GroupMembers } from '../groups/GroupThread'
+import { faceOf } from '../groups/group-rows'
 import { newChatIn, newChatKeys } from '../new-chat'
 import { run, useTopic } from '../store'
 
 /** The bar every screen has. `children` is what the screen puts at its right end. */
-export function Bar({ where, children }: { readonly where: string | null; readonly children?: ReactNode }) {
+export function Bar({ where, children, ref }: { readonly where: string | null; readonly children?: ReactNode; readonly ref?: Ref<HTMLElement> }) {
   return (
-    <header className="bar">
+    <header ref={ref} className="bar">
       <h1><span className="brand">Hermes</span>{where === null ? null : ` ${where}`}</h1>
       {children}
     </header>
   )
 }
 
-function NewChat() {
+/** Ctrl+N starts a chat with the bot the Chats column lists, a group chat's included, while the bar shows. */
+function useNewChat(bar: RefObject<HTMLElement | null>) {
   const open = useTopic('open')
-  const button = useRef<HTMLButtonElement>(null)
   const start = useCallback(() => void run(newChatIn(open, crypto.randomUUID())), [open])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isCommandKey(event, 'n') || button.current?.checkVisibility() !== true) return
+      if (!isCommandKey(event, 'n') || bar.current?.checkVisibility() !== true) return
       event.preventDefault()
       if (!event.repeat) start()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [start])
-  return <button ref={button} type="button" aria-keyshortcuts={newChatKeys(navigator.userAgent.includes('Mac')).aria} onClick={start}>New chat</button>
+  }, [start, bar])
+  return start
 }
 
 function useOpenChatName(): string | null {
@@ -40,14 +42,27 @@ function useOpenChatName(): string | null {
   return openChatName(bot, title)
 }
 
-/** `target` is null in a fixture run, which has no connection to name or to change. */
+function useOpenGroup() {
+  const group = shownGroup(useTopic('open'))
+  const groups = useTopic('groups')
+  const bots = useTopic('bots')
+  const row = group === null || groups?.state !== 'listed' ? undefined : groups.rows.find(held => held.id === group)
+  return row === undefined ? null : { name: row.name, faces: row.members.map(member => faceOf(member, bots)) }
+}
+
+/** `target` is null in a fixture run, which has no connection to name or to change. A group chat's bar names its members in place of New chat and Copy link. */
 export function TopBar({ target }: { readonly target: Target | null }) {
+  const bar = useRef<HTMLElement>(null)
+  const startChat = useNewChat(bar)
   const chat = useOpenChatName()
+  const group = useOpenGroup()
   const sessionId = shownChat(useTopic('open'))?.sessionId ?? null
-  const where = [chat, target === null ? null : `on ${machineOf(target)}`].filter(part => part !== null).join(' ')
+  const where = [group?.name ?? chat, target === null ? null : `on ${machineOf(target)}`].filter(part => part !== null).join(' ')
   return (
-    <Bar where={where === '' ? null : where}>
-      <NewChat />
+    <Bar ref={bar} where={where === '' ? null : where}>
+      {group === null
+        ? <button type="button" aria-keyshortcuts={newChatKeys(navigator.userAgent.includes('Mac')).aria} onClick={startChat}>New chat</button>
+        : <GroupMembers faces={group.faces} />}
       {target !== null && <button onClick={() => void run({ do: 'editTarget' })}>Connection</button>}
       {sessionId !== null && <CopyLink sessionId={sessionId} />}
     </Bar>

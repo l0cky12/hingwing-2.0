@@ -1,5 +1,5 @@
 import type { Feed, Hermes } from '@highwing/hermes'
-import type { Command, OpenChat, Outcome, Session, SessionId, SettledTurn } from '@highwing/hermes/domain'
+import type { Command, GroupId, OpenChat, Outcome, Session, SessionId, SettledTurn } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Setup } from '../src/ipc-contract'
@@ -111,6 +111,14 @@ function observe(hermes: Hermes, focused = false) {
 }
 
 describe('notifyTurnEnds', () => {
+  it('watches no chat while a group chat is open, so the chat it covers ends its turn unsaid', () => {
+    const stub = stubHermes(running)
+    const { shown } = observe(stub.hermes)
+    stub.open.set({ shown: { kind: 'group', group: 'launch-plan' as GroupId, over: null }, opening: null, missing: null })
+    stub.publish(ended)
+    expect(shown).toEqual([])
+  })
+
   it('notifies once when the shown chat ends a turn while no window has focus', () => {
     const stub = stubHermes(running)
     const { shown } = observe(stub.hermes)

@@ -12,10 +12,16 @@ export interface MenuSection {
   readonly items: readonly MenuItem[]
 }
 
+/** A bot the `@` list offers, and the text a pick puts in the box: `@Rae ` in a chat, `@sam ` in a group chat. */
+export interface Mention {
+  readonly bot: Bot
+  readonly word: string
+}
+
 export interface MenuSources {
   readonly catalog: SlashCatalog
-  /** The bots a message from this chat can be handed to. */
-  readonly bots: readonly Bot[]
+  /** The bots a message from this chat can be handed to, or a group chat's members. */
+  readonly bots: readonly Mention[]
   readonly files: PathFiles
 }
 
@@ -82,8 +88,8 @@ const MENTIONS: Trigger = {
     {
       label: 'Bots',
       items: (query, { bots }) => bots
-        .filter(bot => (query !== '' || shownUnasked(bot)) && (starts(bot.name, query) || starts(bot.id, query)))
-        .map(bot => ({ kind: 'bot', bot, mention: mentionOf(bot, bots) }))
+        .filter(({ bot, word }) => (query !== '' || shownUnasked(bot)) && [bot.name, bot.id, word.slice(1)].some(name => starts(name, query)))
+        .map(({ bot, word }) => ({ kind: 'bot', bot, mention: word }))
     },
     { label: 'Files', items: (query, { files }) => files.matches.map(match => ({ kind: 'file', match, current: files.word === `@${query}` })) }
   ]
@@ -140,6 +146,7 @@ export function picked(text: string, { from, to }: Range, item: MenuItem): { rea
  * The bots the `@` list offers: every listed bot but the open chat's own, and none on a Hermes that
  * cannot hand a message to another bot. `undefined`: Electron main has not pushed the topic yet.
  */
-export function mentionable(bots: Bots | undefined, relay: RelayDesk | undefined, own: BotId | null): readonly Bot[] {
-  return relay?.supported === true && bots?.state === 'listed' ? botsIn(bots.roster).filter(bot => bot.id !== own) : []
+export function mentionable(bots: Bots | undefined, relay: RelayDesk | undefined, own: BotId | null): readonly Mention[] {
+  const others = relay?.supported === true && bots?.state === 'listed' ? botsIn(bots.roster).filter(bot => bot.id !== own) : []
+  return others.map(bot => ({ bot, word: mentionOf(bot, others) }))
 }

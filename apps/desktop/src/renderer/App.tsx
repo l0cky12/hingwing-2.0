@@ -6,6 +6,7 @@ import { BotsSidebar } from './bots/Bots'
 import { useRetryPicturesOnceOnline } from './bots/pictures'
 import { ChatsSidebar, DraftSweep } from './chats/Chats'
 import { Chat } from './chat/Chat'
+import { GroupPane } from './groups/GroupPane'
 import { Banner, TopBar } from './chrome/Chrome'
 import { ModeSwitch } from './chrome/ModeSwitch'
 import { Preview } from './preview/Preview'
@@ -28,9 +29,8 @@ function samePaneOnFirstMessage(shown: Shown | ShownGroup): string {
 
 function OpenPane() {
   const shown = useTopic('open')?.shown ?? null
-  return shown === null || shown.kind === 'group'
-    ? <><main id="scroll" /><Composer slot={null} canSend={false} canAttach={false} showStop={false} onSend={NO_CHAT} onStop={() => {}} onInput={() => {}} /></>
-    : <Chat key={samePaneOnFirstMessage(shown)} chat={shown} />
+  if (shown === null) return <><main id="scroll" /><Composer slot={null} canSend={false} canAttach={false} showStop={false} onSend={NO_CHAT} onStop={() => {}} onInput={() => {}} /></>
+  return shown.kind === 'group' ? <GroupPane key={samePaneOnFirstMessage(shown)} shown={shown} /> : <Chat key={samePaneOnFirstMessage(shown)} chat={shown} />
 }
 
 function ChatScreen({ target }: { readonly target: Target | null }) {

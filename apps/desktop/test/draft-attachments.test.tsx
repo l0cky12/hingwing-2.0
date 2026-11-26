@@ -1,4 +1,4 @@
-import type { Attachment, AttachmentId } from '@highwing/hermes/domain'
+import type { Attachment, AttachmentId, BotId, GroupId } from '@highwing/hermes/domain'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { MAX_ATTACHMENTS, parseDraft, type Bridge, type Draft, type DraftKey, type StageResult } from '../src/ipc-contract'
 import { admitted } from '../src/renderer/composer/Composer'
@@ -12,6 +12,13 @@ const drafts = () => import('../src/renderer/composer/drafts')
 const attachment = (id: string, kind: Attachment['kind'] = 'image'): Attachment => ({ id: id as AttachmentId, name: `${id}.${kind === 'image' ? 'png' : 'pdf'}`, kind, size: 10 })
 const slot = (key: string) => ({ key: key as DraftKey, bot: null })
 const last = () => saved.at(-1)
+
+describe('the place to type in a group chat', () => {
+  it('is keyed by the group, with no bot of its own', async () => {
+    const { slotOf } = await drafts()
+    expect(slotOf({ kind: 'group', group: 'launch-plan' as GroupId, over: 'sam' as BotId })).toEqual({ key: 'group:launch-plan', bot: null })
+  })
+})
 
 describe('a draft with attachments', () => {
   it('saves each attachment change at once, in the order the chips show', async () => {

@@ -237,7 +237,7 @@ describe('the word Hermes completes', () => {
 })
 
 describe('the bots a message can be handed to', () => {
-  const ids = (...args: Parameters<typeof mentionable>) => mentionable(...args).map(bot => bot.id)
+  const ids = (...args: Parameters<typeof mentionable>) => mentionable(...args).map(({ bot }) => bot.id)
 
   it('are every listed bot but the one of the open chat', () => {
     expect(ids(TEAM, CAN_RELAY, 'sam' as BotId)).toEqual(['default', 'rae-writer', 'timothy', 'samira'])

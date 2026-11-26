@@ -17,20 +17,17 @@ import type { HelperControls } from './Helpers'
 import { ImageSessionContext } from './Image'
 import { forget, landAt, landed, pressFor } from './landing'
 import { marked, pressedOf, unmarked } from './marks'
-import { FOLLOW_WITHIN, FOLLOWING, jumpWords, placeAfter, progressOf, type Place } from './place'
+import { distanceFrom, FOLLOW_WITHIN, FOLLOWING, jumpWords, placeAfter, progressOf, type Place } from './place'
 import type { RequestAnswer } from './Asks'
 import { Sides } from './Sides'
 import { closeSide, sideCards, useClosedSides } from './sides'
 import { Thread, type QueueControls, type QueuedRow } from './Thread'
+import { TIME_ZONE, useWakeAt } from './wake'
 
 const PAGE = 0.875
-const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
-const LONGEST_WAIT_MS = 60_000
 const NO_RELAYS: readonly Relay[] = []
 const NO_VERSIONS: ChatVersions = []
 const NO_PROCESSES: readonly BackgroundProcess[] = []
-
-const distanceFrom = (element: HTMLElement) => element.scrollHeight - element.scrollTop - element.clientHeight
 
 type Held = { readonly id: SessionId | null } & EditTarget
 
@@ -54,13 +51,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
 
   following.current = place.kind === 'following'
 
-  useEffect(() => {
-    const at = view?.changesAt ?? null
-    if (at === null) return
-    // A timer does not count the time the machine sleeps, so a long wait is cut into short ones.
-    const id = setTimeout(wake, Math.min(Math.max(0, at - Date.now()) + 25, LONGEST_WAIT_MS))
-    return () => clearTimeout(id)
-  }, [view])
+  useWakeAt(view?.changesAt ?? null, tick, wake)
 
   const [read, setRead] = useState<{ readonly id: SessionId; readonly versions: ChatVersions } | null>(null)
   useEffect(() => {

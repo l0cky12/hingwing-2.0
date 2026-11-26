@@ -1,5 +1,5 @@
 import { GROUP_NAME_MAX, GROUP_SIZE, groupIdFor, type Bot, type BotId, type GroupDraft, type GroupId, type Refusal } from '@highwing/hermes/domain'
-import { namesInWords } from './group-rows'
+import { namesInWords } from '@highwing/thread'
 
 export type GroupSend = { readonly at: 'editing' } | { readonly at: 'sending' } | { readonly at: 'refused'; readonly refusal: Refusal }
 
