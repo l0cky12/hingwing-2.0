@@ -76,12 +76,12 @@ describe('the connection row', () => {
 
 describe('the editor in Settings', () => {
   it('opens on Change, from the live connection, with the note and a Cancel that folds it', () => {
-    expect(cardOf(AT_REST, ONLINE, true).editor).toEqual({ seed: HOST, disabled: false, problem: null, foot: { show: 'note' }, hint: null, cancel: 'fold' })
+    expect(cardOf(AT_REST, ONLINE, true).editor).toEqual({ seed: HOST, disabled: false, problem: null, foot: { show: 'note' }, cancel: 'fold' })
   })
 
   it('stays open and disabled while a check runs, with the step in the note\'s place and a Cancel that stops it', () => {
     const view = cardOf({ at: 'checking', live: LIVE, target: LAB, step: 'ssh' }, ONLINE, false)
-    expect(view.editor).toEqual({ seed: LAB, disabled: true, problem: null, foot: { show: 'progress', words: 'Connecting to hermes-lab' }, hint: null, cancel: 'stop' })
+    expect(view.editor).toEqual({ seed: LAB, disabled: true, problem: null, foot: { show: 'progress', words: 'Connecting to hermes-lab', hint: null }, cancel: 'stop' })
     expect(view.summary).toMatchObject({ title: 'hermes-host', online: true })
   })
 
@@ -93,7 +93,7 @@ describe('the editor in Settings', () => {
   it('says why a check failed under the field, keeps the draft, and still shows the current connection online', () => {
     const view = cardOf({ at: 'failed', live: LIVE, target: LAB, failure: 'host-offline' }, ONLINE, false)
     expect(view.editor).toEqual({
-      seed: LAB, disabled: false, foot: { show: 'note' }, hint: null, cancel: 'stop',
+      seed: LAB, disabled: false, foot: { show: 'note' }, cancel: 'stop',
       problem: { words: 'Your tailnet lists hermes-lab, but it is offline.', fix: 'Turn that machine on, or start Tailscale on it.' }
     })
     expect(view.summary).toMatchObject({ title: 'hermes-host', online: true })
@@ -109,7 +109,7 @@ describe('the editor in Settings', () => {
 describe('the editor on a first run', () => {
   it('is open with no summary, no note and no Cancel', () => {
     expect(cardOf({ at: 'form', live: null, notice: null }, undefined, false))
-      .toEqual({ summary: null, editor: { seed: null, disabled: false, problem: null, foot: { show: 'nothing' }, hint: null, cancel: null }, news: null })
+      .toEqual({ summary: null, editor: { seed: null, disabled: false, problem: null, foot: { show: 'nothing' }, cancel: null }, news: null })
   })
 
   it('puts the step in the empty slot while checking, and the failure under the field', () => {
@@ -137,10 +137,18 @@ const buttons = (markup: string) => [...markup.matchAll(/<button[^>]*>(.*?)<\/bu
 describe('the card while a check waits for a sign-in', () => {
   const waiting = (live: Live | null): CardSetup => ({ at: 'checking', live, target: HOST, step: 'sign-in' })
 
-  it('says the browser has the sign-in page, and that Highwing never sees the password', () => {
+  it('says under the step that the browser has the sign-in page, and that Highwing never sees the password', () => {
     expect(text(render(waiting(null)))).toContain(
-      'Highwing opened the sign-in page in your browser. It never sees your password. Waiting for you to sign in to hermes-host in your browser'
+      'Waiting for you to sign in to hermes-host in your browser Highwing opened the sign-in page in your browser. It never sees your password.'
     )
+  })
+
+  it('offers no Sign in in the row while a check runs, since the card runs one check at a time, and keeps Retry', () => {
+    const signedOut: Link = { state: 'blocked', why: 'signed-out', message: 'Sign in to Hermes again.' }
+    expect(cardOf(waiting(LIVE), signedOut, false).summary).toMatchObject({ linkMessage: 'Sign in to Hermes again.', action: null })
+    expect(cardOf({ at: 'checking', live: LIVE, target: HOST, step: 'save' }, signedOut, false).summary).toMatchObject({ action: null })
+    expect(cardOf(waiting(LIVE), { state: 'blocked', why: 'auth', message: 'Hermes turned Highwing away.' }, false).summary)
+      .toMatchObject({ action: { label: 'Retry', run: [{ do: 'reconnect', start: false }] } })
   })
 
   it('offers Stop waiting on a first run, which ends the check, and in Settings the Cancel that goes back to the form', () => {

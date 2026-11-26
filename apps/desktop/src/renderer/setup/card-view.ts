@@ -12,14 +12,16 @@ export interface Summary {
   readonly action: BannerAction | null
 }
 
-export type Foot = { readonly show: 'note' } | { readonly show: 'progress'; readonly words: string } | { readonly show: 'nothing' }
+export type Foot =
+  | { readonly show: 'note' }
+  | { readonly show: 'progress'; readonly words: string; readonly hint: string | null }
+  | { readonly show: 'nothing' }
 
 export interface Editor {
   readonly seed: Target | null
   readonly disabled: boolean
   readonly problem: { readonly words: string; readonly fix: string } | null
   readonly foot: Foot
-  readonly hint: string | null
   readonly cancel: 'fold' | 'stop' | 'saving' | 'stop-waiting' | null
 }
 
@@ -34,6 +36,10 @@ const NOTHING: Foot = { show: 'nothing' }
 
 // Settings is open already, and main refuses to open it again, which would stop the commands after it.
 const inSettings = ({ label, run }: BannerAction): BannerAction => ({ label, run: run.filter(command => command.do !== 'editTarget') })
+
+// Main runs one check at a time, so Sign in, which starts one, waits for the running check to end.
+const oneCheckAtATime = (summary: Summary | null): Summary | null =>
+  summary?.action?.run.some(command => command.do === 'checkTarget') === true ? { ...summary, action: null } : summary
 
 function summaryOf(target: Target, link: Link | undefined): Summary {
   const title = byKind(target, { local: () => 'This computer', remote: remote => machineOf(remote), url: gateway => machineOf(gateway) })
@@ -53,7 +59,7 @@ export function cardOf(setup: CardSetup, link: Link | undefined, editing: boolea
   const first = setup.live === null
   const summary = setup.live === null ? null : summaryOf(setup.live.target, link)
   const atRest = (seed: Target | null): Editor | null =>
-    (first || editing ? { seed, disabled: false, problem: null, foot: first ? NOTHING : NOTE, hint: null, cancel: first ? null : 'fold' } : null)
+    (first || editing ? { seed, disabled: false, problem: null, foot: first ? NOTHING : NOTE, cancel: first ? null : 'fold' } : null)
   switch (setup.at) {
     case 'form': return { summary, editor: atRest(setup.live?.target ?? null), news: null }
     case 'saved': return { summary, editor: atRest(setup.live.target), news: `Highwing now uses the Hermes on ${machineOf(setup.live.target)}.` }
@@ -61,13 +67,14 @@ export function cardOf(setup: CardSetup, link: Link | undefined, editing: boolea
       const words = STEP_WORDS[setup.step](machineOf(setup.target))
       const signIn = setup.step === 'sign-in'
       const cancel = first ? (signIn ? 'stop-waiting' : null) : setup.step === 'save' ? 'saving' : 'stop'
-      return { summary, editor: { seed: setup.target, disabled: true, problem: null, foot: { show: 'progress', words }, hint: signIn ? SIGN_IN_HINT : null, cancel }, news: null }
+      const foot: Foot = { show: 'progress', words, hint: signIn ? SIGN_IN_HINT : null }
+      return { summary: oneCheckAtATime(summary), editor: { seed: setup.target, disabled: true, problem: null, foot, cancel }, news: null }
     }
     case 'failed': {
       const failure = failureOf(setup.failure)
       const machine = machineOf(setup.target)
       const problem = { words: failure.words(machine), fix: failure.fix(machine) }
-      return { summary, editor: { seed: setup.target, disabled: false, problem, foot: first ? NOTHING : NOTE, hint: null, cancel: first ? null : 'stop' }, news: null }
+      return { summary, editor: { seed: setup.target, disabled: false, problem, foot: first ? NOTHING : NOTE, cancel: first ? null : 'stop' }, news: null }
     }
   }
 }

@@ -96,7 +96,7 @@ function Editor({ setup, view, onFold }: { readonly setup: CardSetup; readonly v
     if (typed.ok) void run({ do: 'checkTarget', target: typed.target })
   }
   const problem = typo ?? view.problem
-  const { foot, hint, cancel } = view
+  const { foot, cancel } = view
   const asks = CHOICES[kind].field
   const warning = asks?.warning(texts[kind]) ?? null
 
@@ -130,10 +130,14 @@ function Editor({ setup, view, onFold }: { readonly setup: CardSetup; readonly v
           {problem.fix !== null && <p>{problem.fix}</p>}
         </div>
       )}
-      {hint !== null && <p className="hint wait">{hint}</p>}
       <div className="edit-foot">
         {foot.show === 'note' && <p className="note">Highwing keeps the current connection until a check passes.</p>}
-        {foot.show === 'progress' && <p className="note progress" role="status" aria-label="Checking"><span className="glyph" />{foot.words}</p>}
+        {foot.show === 'progress' && (
+          <div className="note">
+            <p className="progress" role="status" aria-label="Checking"><span className="glyph" />{foot.words}</p>
+            {foot.hint !== null && <p className="hint">{foot.hint}</p>}
+          </div>
+        )}
         {cancel !== null && (
           <button type="button" className="btn" disabled={cancel === 'saving'} onClick={cancel === 'fold' ? onFold : () => void run({ do: cancel === 'stop' ? 'stopCheck' : 'keepTarget' })}>
             {cancel === 'stop-waiting' ? 'Stop waiting' : 'Cancel'}

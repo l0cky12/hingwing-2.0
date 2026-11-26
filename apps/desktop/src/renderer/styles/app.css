@@ -717,7 +717,6 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 :is(.settings, .setup) .card .field input:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
 :is(.settings, .setup) .card .hint { margin: 0; font-size: 13px; line-height: 1.45; color: var(--graphite); }
 :is(.settings, .setup) .card .field .caution { margin: 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--caution); font-size: 13px; line-height: 1.45; color: var(--caution); overflow-wrap: anywhere; }
-:is(.settings, .setup) .edit-form > .wait { padding: 0 18px; }
 :is(.settings, .setup) .edit-form .problem { margin: 0 18px 2px; padding: 11px 14px 12px; border-radius: 8px; background: var(--caution-soft); overflow-wrap: anywhere; }
 :is(.settings, .setup) .edit-form .problem h4 { margin: 0; font-size: 14px; font-weight: 700; color: var(--caution); }
 :is(.settings, .setup) .edit-form .problem p { margin: 2px 0 0; color: var(--ink); }
@@ -725,7 +724,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 :is(.settings, .setup) .problem + .edit-foot { padding-top: 12px; }
 :is(.settings, .setup) .edit-foot .note { flex: 1; min-width: 0; margin: 0; font-size: 13px; color: var(--graphite); overflow-wrap: anywhere; }
 :is(.settings, .setup) .edit-foot .btn { padding: 6px 18px; }
-:is(.settings, .setup) .edit-foot .progress { display: flex; align-items: center; gap: 10px; line-height: 1.45; font-weight: 500; color: var(--signal); }
+:is(.settings, .setup) .edit-foot .progress { display: flex; align-items: center; gap: 10px; margin: 0; line-height: 1.45; font-weight: 500; color: var(--signal); }
+:is(.settings, .setup) .edit-foot .progress + .hint { margin-top: 2px; padding-left: 22px; }
 :is(.settings, .setup) .edit-foot .progress .glyph { flex: none; width: 10px; height: 10px; margin: 0 1px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 3px rgb(15 106 91 / .2); animation: halo 1.6s ease-out infinite; }
 
 :is(.settings, .setup) .short .row { min-height: 44px; padding-top: 8px; padding-bottom: 8px; }
