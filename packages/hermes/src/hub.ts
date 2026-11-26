@@ -303,6 +303,10 @@ export function openHermes(options: HermesOptions): Hermes {
     changed: () => {
       groups.set(book.groups)
       groupChat.set(book.chat)
+    },
+    disbanded: group => {
+      desk.disbanded(group)
+      settle()
     }
   })
   const groups = feed<Groups>(book.groups)
@@ -470,14 +474,7 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'sendToGroup') return book.send(command.group, command.text)
     if (command.do === 'stopGroup') return book.stop(command.group)
     if (command.do === 'renameGroup') return book.rename(command.group, command.name)
-    if (command.do === 'deleteGroup') {
-      const deleted = await book.disband(command.group)
-      if (deleted.ok) {
-        desk.disbanded(command.group)
-        settle()
-      }
-      return deleted
-    }
+    if (command.do === 'deleteGroup') return book.disband(command.group)
     if (command.do === 'describeBot') return describeBot(conn, command.bot)
     if (command.do === 'botPicture') return botPicture(conn, command.bot)
     if (command.do === 'canGeneratePicture') return canGeneratePicture(conn)

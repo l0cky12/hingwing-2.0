@@ -24,6 +24,8 @@ export interface GroupBookDeps {
   readonly clock: Clock
   readonly mintId: () => string
   readonly changed: () => void
+  /** The user's delete of this group went through, including one whose answer was lost. */
+  readonly disbanded: (group: GroupId) => void
 }
 
 /** Hermes reads every bot it could seat for `groups.capabilities` and `groups.create`, so a slow disk can stall either. */
@@ -122,7 +124,19 @@ export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
   let queued: Promise<boolean> | null = null
   const reads = new Map<GroupId, 'once' | 'again'>()
   const unanswered = new Map<GroupId, { readonly text: string; readonly key: string }>()
+  /**
+   * Deletes whose answer was lost. Hermes stops a group's turns before it deletes it, which can outlast the call's
+   * timeout, so a group from here that Hermes no longer has was deleted by the user, not lost.
+   */
+  const lostDeletes = new Set<GroupId>()
   let cancelPoll: (() => void) | null = null
+
+  const deleted = (group: GroupId) => {
+    lostDeletes.delete(group)
+    unanswered.delete(group)
+    take({ on: 'disbanded', group })
+    deps.disbanded(group)
+  }
 
   const take = (news: GroupNews) => {
     desk = nextGroups(desk, news)
@@ -187,7 +201,8 @@ export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
       if (!(error instanceof RpcRefusal)) throw error
       // Highwing's params are a fixed, closed set, so a bare `invalid_params` is Hermes's word for a room it does not have (session_group_controls.py:97-102).
       if (error.reason === 'invalid_params') {
-        take({ on: 'missing', group })
+        if (lostDeletes.has(group)) deleted(group)
+        else take({ on: 'missing', group })
         void ask()
       }
       return
@@ -319,10 +334,10 @@ export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
       try {
         await conn.call('groups.disband', { room_id: group }, CALL_TIMEOUT_MS)
       } catch (error) {
+        if (error instanceof Offline) lostDeletes.add(group)
         return refuseAndReread(error, group, 'disband')
       }
-      unanswered.delete(group)
-      take({ on: 'disbanded', group })
+      deleted(group)
       void ask()
       return DONE
     },

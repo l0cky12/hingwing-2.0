@@ -67,7 +67,7 @@ describe('making a group while an earlier try may have made it', () => {
   const draft = { group: 'g1' as GroupId, name: 'Launch plan', bots: ROSTER.map(bot => bot.id) }
   const room = { room_id: 'g1', name: 'Launch plan', members: [{ member_id: 'default', profile: 'default', handle: 'ada' }, { member_id: 'sam', profile: 'sam', handle: 'sam' }] }
 
-  const DEPS = { clock: manualClock(), mintId: () => 'minted', changed: () => {} }
+  const DEPS = { clock: manualClock(), mintId: () => 'minted', changed: () => {}, disbanded: () => {} }
 
   function wire(list: () => Promise<unknown>) {
     const call = (method: string) => {
@@ -191,7 +191,7 @@ describe('a rename or a delete Hermes refuses', () => {
       if (method === 'groups.list') return Promise.resolve({ rooms: [] })
       return Promise.reject(error)
     }
-    return groupBook({ call } as unknown as GroupWire, { clock: manualClock(), mintId: () => 'k1', changed: () => {} })
+    return groupBook({ call } as unknown as GroupWire, { clock: manualClock(), mintId: () => 'k1', changed: () => {}, disbanded: () => {} })
   }
 
   it.each([
@@ -216,6 +216,45 @@ describe('a rename or a delete Hermes refuses', () => {
   })
 })
 
+describe('a delete whose answer was lost', () => {
+  const PLAN = 'launch-plan' as GroupId
+  const book = (disband: () => Promise<unknown>) => {
+    const deleted: GroupId[] = []
+    const call = (method: string) => {
+      if (method === 'groups.capabilities') return Promise.resolve({ driver: true })
+      if (method === 'groups.list') return Promise.resolve({ rooms: [] })
+      if (method === 'groups.disband') return disband()
+      return Promise.reject(new RpcRefusal(4001, 'invalid_params', 'invalid_params'))
+    }
+    return { deleted, book: groupBook({ call } as unknown as GroupWire, { clock: manualClock(), mintId: () => 'k1', changed: () => {}, disbanded: group => deleted.push(group) }) }
+  }
+  const settled = () => new Promise(resolve => setTimeout(resolve, 0))
+
+  it("ends as the user's delete once Hermes no longer has the group, not as a missing group", async () => {
+    const { deleted, book: lost } = book(() => Promise.reject(new Offline('groups.disband got no reply in 10000 ms')))
+    expect(await lost.disband(PLAN)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(deleted, 'not yet known to be deleted').toEqual([])
+    lost.follow(PLAN)
+    await settled()
+    expect(deleted).toEqual([PLAN])
+    expect(lost.chat?.at).not.toBe('missing')
+  })
+
+  it('leaves a group Hermes lost without a delete shown as missing', async () => {
+    const { deleted, book: unasked } = book(() => Promise.resolve({ tombstone: { room_id: PLAN } }))
+    unasked.follow(PLAN)
+    await settled()
+    expect(deleted).toEqual([])
+    expect(unasked.chat).toEqual({ group: PLAN, at: 'missing' })
+  })
+
+  it('reports a delete Hermes answered at once', async () => {
+    const { deleted, book: answered } = book(() => Promise.resolve({ tombstone: { room_id: PLAN, disbanded_at: 1, idempotent: false } }))
+    expect(await answered.disband(PLAN)).toEqual({ ok: true, value: undefined })
+    expect(deleted).toEqual([PLAN])
+  })
+})
+
 describe('a message while Hermes stops running group chats', () => {
   it('is refused in the same words as before, and Hermes is asked again so the window learns it', async () => {
     let driver = true
@@ -227,7 +266,7 @@ describe('a message while Hermes stops running group chats', () => {
       driver = false
       return Promise.reject(new RpcRefusal(4001, 'runtime_coordination_required', 'runtime_coordination_required'))
     }
-    const book = groupBook({ call } as unknown as GroupWire, { clock: manualClock(), mintId: () => 'k1', changed: () => {} })
+    const book = groupBook({ call } as unknown as GroupWire, { clock: manualClock(), mintId: () => 'k1', changed: () => {}, disbanded: () => {} })
     book.online()
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(book.groups).toMatchObject({ state: 'listed', driver: true })
