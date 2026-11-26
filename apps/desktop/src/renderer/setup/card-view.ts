@@ -1,4 +1,4 @@
-import { failureOf, machineOf, STEP_WORDS, type Link, type Target } from '@highwing/hermes/domain'
+import { byKind, failureOf, machineOf, STEP_WORDS, type Link, type Target } from '@highwing/hermes/domain'
 import { bannerOf, type BannerAction } from '../chrome/Chrome'
 import { SIGN_IN_HINT } from './form'
 import type { CardSetup } from './screens'
@@ -36,13 +36,13 @@ const NOTHING: Foot = { show: 'nothing' }
 const inSettings = ({ label, run }: BannerAction): BannerAction => ({ label, run: run.filter(command => command.do !== 'editTarget') })
 
 function summaryOf(target: Target, link: Link | undefined): Summary {
-  const title = target.kind === 'local' ? 'This computer' : machineOf(target)
-  const saved = target.kind === 'remote' ? target.host : target.kind === 'url' ? target.url : null
+  const title = byKind(target, { local: () => 'This computer', remote: remote => machineOf(remote), url: gateway => machineOf(gateway) })
+  const saved = byKind<string | null>(target, { local: () => null, remote: ({ host }) => host, url: ({ url }) => url })
   const action = link === undefined ? null : (bannerOf(link, target)?.action ?? null)
   return {
     kind: target.kind,
     title,
-    host: saved !== title ? saved : null,
+    host: saved === title ? null : saved,
     linkMessage: link?.state === 'waiting' || link?.state === 'blocked' ? link.message : null,
     online: link?.state === 'online',
     action: action && inSettings(action)
