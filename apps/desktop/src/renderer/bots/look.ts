@@ -9,6 +9,7 @@ export const FACE_COLORS = {
   coral: '#D96A4E', brick: '#B04A34', rose: '#C26A86', plum: '#7A68A8', umber: '#8C6A4C', graphite: '#7C8783'
 } as const
 export type FaceColor = keyof typeof FACE_COLORS
+export const rimOf = (color: FaceColor): string | null => (color === 'ink' ? FACE_COLORS.graphite : null)
 export const FACE_COLOR_NAMES = Object.keys(FACE_COLORS) as readonly FaceColor[]
 
 export type Face = { readonly from: 'face'; readonly shape: FaceShape | 'auto'; readonly color: FaceColor }
@@ -90,7 +91,9 @@ const EYES = '<rect x="38" y="40" width="7.5" height="17" rx="3.75" transform="r
 export function faceSvg(shape: FaceShape, color: FaceColor, size: number): string {
   const { body, eyes: [dx, dy] = [0, 0] } = SHAPES[shape]
   const eye = color === 'ink' ? '#F6F7F3' : FACE_COLORS.ink
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true">${body(FACE_COLORS[color])}`
+  const rim = rimOf(color)
+  const behind = rim === null ? '' : `<g transform="translate(50 50) scale(1.08) translate(-50 -50)">${body(rim)}</g>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true">${behind}${body(FACE_COLORS[color])}`
     + `<g fill="${eye}" transform="translate(${dx} ${dy})">${EYES}</g></svg>`
 }
 
