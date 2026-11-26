@@ -11,7 +11,8 @@ import { BotEditor, type BotEditorProps } from './BotEditor'
 import { nameProblem } from './bot-form'
 import type { LookCalls } from './LookPicker'
 import { NewBotForm } from './NewBotForm'
-import { isMenuKey, type Box, type MenuAction, type OpenMenu, type Opener } from './bot-menu'
+import { DeleteDialog } from './DeleteDialog'
+import { DELETE_REFUSED, isMenuKey, type Box, type MenuAction, type OpenMenu, type Opener } from './bot-menu'
 import { elementIn, fallbackOf, focusIn, openerTarget, stayedIn, type FocusTarget } from './focus'
 import { busyIn, focusAfter, runsAt, SAID, type MarkRun } from './marks'
 import { NewMenu } from './NewMenu'
@@ -193,6 +194,7 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
   const closeGroupForm = () => setGrouping(false)
   const [made, setMade] = useState<BotCreated | null>(null)
   const [editing, setEditing] = useState<BotDetails | null>(null)
+  const [deleting, setDeleting] = useState<Bot | null>(null)
   const [query, setQuery] = useState<string | null>(null)
   const [hidden, setHidden] = useState(HIDDEN_CLOSED)
   const [menu, setMenu] = useState<OpenMenu | null>(null)
@@ -280,12 +282,18 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
     pin: bot => mark(bot, 'pin'),
     unpin: bot => mark(bot, 'unpin'),
     hide: bot => mark(bot, 'hide'),
-    show: bot => mark(bot, 'show')
+    show: bot => mark(bot, 'show'),
+    delete: bot => setDeleting(bot)
   }
   const choose = (bot: Bot, action: MenuAction) => {
     setMenu(null)
     focus([{ to: 'row', bot: bot.id }], 'scroll')
     ACTIONS[action](bot)
+  }
+  const closeDelete = (bot: Bot) => {
+    // The dialog closes here, and the browser gives focus back to the bot's row, if it is still there.
+    flushSync(() => setDeleting(null))
+    if (document.activeElement === document.body) focus(fallbackOf({ to: 'row', bot: bot.id }, view), 'in-view')
   }
   const menuRow = menu === null ? undefined : rows.find(row => row.bot.id === menu.bot)
 
@@ -358,6 +366,7 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
         {menu !== null && menuRow !== undefined && (
           <RowMenu
             key={JSON.stringify([menu.bot, menu.opener])} bot={menu.bot} name={menuRow.bot.name} place={menuRow.place} opener={menu.opener}
+            isDefault={list.show === 'roster' && list.featured?.id === menu.bot}
             measure={() => ({ row: boxOf({ to: 'row', bot: menu.bot }), more: boxOf({ to: 'more', bot: menu.bot }) })}
             onChoose={action => choose(menuRow.bot, action)} onClose={closeMenu}
           />
@@ -382,6 +391,16 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
             // The dialog closes here, and the browser gives focus back to the bot's row, which Edit… focused, if it is still there.
             flushSync(() => setEditing(null))
             if (document.activeElement === document.body) focus(fallbackOf({ to: 'row', bot: editing.bot }, view), 'in-view')
+          }}
+        />
+      )}
+      {deleting !== null && (
+        <DeleteDialog
+          name={deleting.name}
+          onCancel={() => closeDelete(deleting)}
+          onConfirm={() => {
+            closeDelete(deleting)
+            setRefused(DELETE_REFUSED)
           }}
         />
       )}

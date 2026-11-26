@@ -1,6 +1,6 @@
 import type { BotId } from '@highwing/hermes/domain'
 import { Fragment, useEffect, useLayoutEffect, useRef, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react'
-import { anchorOf, keyMove, LABELS, MENUS, placeMenu, type Box, type MenuAction, type Opener } from './bot-menu'
+import { anchorOf, keyMove, LABELS, menuOf, placeMenu, type Box, type MenuAction, type Opener } from './bot-menu'
 import type { BotPlace } from './sidebar-view'
 
 const icon = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true } as const
@@ -14,20 +14,22 @@ const ICONS: { readonly [A in MenuAction]: ReactNode } = {
   pin: <svg {...icon}><path d={PIN} /><path d="M12 15v6" /></svg>,
   unpin: <svg {...icon}><path d={PIN} /><path d="M12 15v6M3 3l18 18" /></svg>,
   hide: <svg {...icon}><path d="M10.7 5.1A10 10 0 0 1 12 5c7 0 10 7 10 7a13 13 0 0 1-1.7 2.7M6.6 6.6A13.5 13.5 0 0 0 2 12s3 7 10 7a9.7 9.7 0 0 0 5.4-1.6" /><path d="M14.1 14.1a3 3 0 1 1-4.2-4.2M3 3l18 18" /></svg>,
-  show: <svg {...icon}><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
+  show: <svg {...icon}><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>,
+  delete: <svg {...icon}><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /><path d="M10 11v6M14 11v6" /></svg>
 }
 
 export interface RowMenuProps {
   readonly bot: BotId
   readonly name: string
   readonly place: BotPlace
+  readonly isDefault: boolean
   readonly opener: Opener
   readonly measure: () => { readonly row: Box; readonly more: Box }
   readonly onChoose: (action: MenuAction) => void
   readonly onClose: (how: 'escape' | 'tab' | 'away') => void
 }
 
-export function RowMenu({ bot, name, place, opener, measure, onChoose, onClose }: RowMenuProps) {
+export function RowMenu({ bot, name, place, isDefault, opener, measure, onChoose, onClose }: RowMenuProps) {
   const menu = useRef<HTMLDivElement>(null)
   const staysFor = (target: EventTarget | null) =>
     target instanceof Element && (menu.current?.contains(target) === true || target.closest('[data-more]')?.getAttribute('data-more') === bot)
@@ -67,7 +69,7 @@ export function RowMenu({ bot, name, place, opener, measure, onChoose, onClose }
 
   return (
     <div ref={menu} className="file-menu bot-menu" role="menu" aria-label={`More for ${name}`} onKeyDown={onKeyDown} onBlur={onBlur} onContextMenu={event => event.preventDefault()}>
-      {MENUS[place].map((group, at) => (
+      {menuOf(place, isDefault).map((group, at) => (
         <Fragment key={group.join()}>
           {at > 0 && <div role="separator" />}
           {group.map(action => (

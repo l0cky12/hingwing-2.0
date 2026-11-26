@@ -2,13 +2,13 @@ import type { BotId, BotMark } from '@highwing/hermes/domain'
 import { menuStep } from '../chat/menu'
 import type { BotPlace } from './sidebar-view'
 
-export type MenuAction = 'open' | 'new' | 'edit' | BotMark
+export type MenuAction = 'open' | 'new' | 'edit' | BotMark | 'delete'
 
 export const MENUS: { readonly [P in BotPlace]: readonly (readonly MenuAction[])[] } = {
-  section: [['open', 'new'], ['edit'], ['pin', 'hide']],
-  pinned: [['open', 'new'], ['edit'], ['unpin', 'hide']],
+  section: [['open', 'new'], ['edit'], ['pin', 'hide'], ['delete']],
+  pinned: [['open', 'new'], ['edit'], ['unpin', 'hide'], ['delete']],
   card: [['open', 'new'], ['edit'], ['hide']],
-  hidden: [['open', 'new'], ['edit'], ['show']]
+  hidden: [['open', 'new'], ['edit'], ['show'], ['delete']]
 }
 
 export const LABELS: { readonly [A in MenuAction]: string } = {
@@ -18,8 +18,16 @@ export const LABELS: { readonly [A in MenuAction]: string } = {
   pin: 'Pin to top',
   unpin: 'Unpin',
   hide: 'Hide from list',
-  show: 'Show in list'
+  show: 'Show in list',
+  delete: 'Delete…'
 }
+
+/** The default bot is Hermes's launch profile, so its menu has no Delete… wherever it is drawn, hidden included. */
+export const menuOf = (place: BotPlace, isDefault: boolean): readonly (readonly MenuAction[])[] =>
+  isDefault ? MENUS[place].filter(group => !group.includes('delete')) : MENUS[place]
+
+// Hermes has no gateway method to delete a profile. `hermes profile delete` runs only on the Hermes machine.
+export const DELETE_REFUSED = "This Hermes can't delete bots from Highwing."
 
 export type Opener =
   | { readonly by: 'pointer'; readonly x: number; readonly y: number }
