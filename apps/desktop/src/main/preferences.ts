@@ -4,11 +4,11 @@ import { join } from 'node:path'
 import { isMode, isSnoozes, isTheme, type Mode, type SnoozeCommand, type Snoozes, type Theme } from '../ipc-contract'
 import { feed } from './connection'
 
-export interface Preference<T> {
+export interface Preference<T, Missing = T> {
   readonly file: string
   readonly key: string
   readonly is: (raw: unknown) => raw is T
-  readonly fallback: T
+  readonly fallback: Missing
 }
 
 export const MODE: Preference<Mode> = { file: 'mode.json', key: 'mode', is: isMode, fallback: 'bots' }
@@ -29,7 +29,7 @@ export interface PreferenceStore<T> extends Feed<T> {
   settled(): Promise<void>
 }
 
-export function readPreference<T>({ key, is, fallback }: Preference<T>, text: string): T {
+export function readPreference<T, Missing = T>({ key, is, fallback }: Preference<T, Missing>, text: string): T | Missing {
   let raw: unknown
   try {
     raw = JSON.parse(text)
@@ -52,9 +52,9 @@ async function write(file: string, key: string, value: unknown): Promise<void> {
   await rename(`${file}.tmp`, file)
 }
 
-export async function preferenceStore<T>(dir: string, preference: Preference<T>): Promise<PreferenceStore<T>> {
+export async function preferenceStore<T, Missing = T>(dir: string, preference: Preference<T, Missing>): Promise<PreferenceStore<T | Missing>> {
   const file = join(dir, preference.file)
-  const shown = feed<T>(await readFile(file, 'utf8').then(text => readPreference(preference, text), () => preference.fallback))
+  const shown = feed<T | Missing>(await readFile(file, 'utf8').then(text => readPreference(preference, text), () => preference.fallback))
   let chain: Promise<void> = Promise.resolve()
   return {
     get: shown.get,

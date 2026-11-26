@@ -58,8 +58,9 @@ export const EXAMPLE_REQUESTS: readonly [string, string, string] = [
 
 const NONE: readonly string[] = []
 
-/** `featured` undefined: the roster has not answered. null: it has, and no bot is the default. */
-export function examplesFor(intro: Intro, shown: Shown | ShownGroup | null, featured: BotId | null | undefined): readonly string[] {
-  if (intro.at !== 'examples' || featured === undefined || shown === null || shown.kind === 'group') return NONE
-  return featured === null || shown.bot === featured ? EXAMPLE_REQUESTS : NONE
+export type DefaultBot = { readonly at: 'pending' } | { readonly at: 'listed'; readonly id: BotId | null }
+
+export function examplesFor(intro: Intro, shown: Shown | ShownGroup | null, featured: DefaultBot): readonly string[] {
+  if (intro.at !== 'examples' || featured.at === 'pending' || shown === null || shown.kind === 'group') return NONE
+  return featured.id === null || shown.bot === featured.id ? EXAMPLE_REQUESTS : NONE
 }

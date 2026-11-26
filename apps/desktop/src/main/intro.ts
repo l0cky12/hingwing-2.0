@@ -3,10 +3,11 @@ import { DONE, DUE, EXAMPLES, nextIntro, OFF, type Intro, type IntroEvent } from
 import { feed } from './connection'
 import { preferenceStore, type Preference } from './preferences'
 
-/** A stored phase. `off` is only the fallback, so a file that says it reads as off. */
-export const isIntroPhase = (raw: unknown): raw is Intro['at'] => raw === 'due' || raw === 'examples' || raw === 'done'
+type StoredIntro = Exclude<Intro['at'], 'off'>
 
-export const INTRO: Preference<Intro['at']> = { file: 'intro.json', key: 'intro', is: isIntroPhase, fallback: 'off' }
+export const isIntroPhase = (raw: unknown): raw is StoredIntro => raw === 'due' || raw === 'examples' || raw === 'done'
+
+export const INTRO: Preference<StoredIntro, 'off'> = { file: 'intro.json', key: 'intro', is: isIntroPhase, fallback: 'off' }
 
 const PHASE = { off: OFF, due: DUE, examples: EXAMPLES, done: DONE } as const
 

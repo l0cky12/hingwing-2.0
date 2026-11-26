@@ -67,7 +67,7 @@ export function notifyTurnEnds(owner: Pick<ConnectionOwner, 'setup' | 'hermes' |
       told.add(key)
       deps.notifier.show(notice, () => {
         deps.raise()
-        // A replaced connection's chat is not this Hermes's to open, and a click must not move the chat under the intro.
+        // A chat of a connection that was replaced is not this Hermes's to open.
         if (owner.hermes !== hermes || introInFront(owner.setup.get(), intro.get())) return
         // Opening the shown chat again keeps it and drops a switch to another bot still waiting on its lookup.
         void owner.run({ do: 'open', ref: { kind: 'chat', sessionId } })

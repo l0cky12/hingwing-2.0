@@ -68,7 +68,7 @@ export function nextSetup(setup: Setup, event: SetupEvent): Setup | null {
 const KEEP = { do: 'keepTarget' } as const
 const STOP = { do: 'stopCheck' } as const
 
-/** Whether an open runs now: in the chat, or in Settings, which it leaves first. It waits through first run, through a save, which refuses to leave, and while the intro covers the screen. */
+/** Whether an open runs now: in the chat, or in Settings, which it leaves first. It waits through first run, and through a save, which refuses to leave. */
 export const opensNow = (setup: Setup, intro: Intro): boolean =>
   !introInFront(setup, intro) && (setup.at === 'chat' || setup.at === 'pinned' || (showsSettings(setup) && nextSetup(setup, KEEP) !== null))
 

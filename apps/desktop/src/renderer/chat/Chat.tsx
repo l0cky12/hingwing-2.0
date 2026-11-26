@@ -278,7 +278,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     return { ok: true, value: null }
   }, [chat, editing, rewrite, listed, mark])
   const bots = useTopic('bots')
-  const featured = bots?.state === 'listed' ? bots.roster.featured?.id ?? null : undefined
+  const featured = bots?.state === 'listed' ? { at: 'listed' as const, id: bots.roster.featured?.id ?? null } : { at: 'pending' as const }
   const requests = examplesFor(useTopic('intro') ?? OFF, chat, featured)
   const onSend = useCallback(async (text: string, attachments: readonly AttachmentId[]): Promise<CommandOutcome<string | null>> => {
     const offered = requests.length > 0

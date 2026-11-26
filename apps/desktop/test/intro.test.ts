@@ -98,19 +98,19 @@ describe('the example requests', () => {
     ['no chat', null, EMU, []],
     ['the shown chat when no bot is the default', OWN, null, EXAMPLE_REQUESTS],
     ['the shown chat of a named bot when no bot is the default', UNSTARTED, null, EXAMPLE_REQUESTS]
-  ] as const)('offers them on %s', (_where, shown, featured, requests) => {
-    expect(examplesFor(EXAMPLES, shown, featured)).toEqual(requests)
+  ] as const)('offers them on %s', (_where, shown, id, requests) => {
+    expect(examplesFor(EXAMPLES, shown, { at: 'listed', id })).toEqual(requests)
   })
 
   it('offers nothing until the roster has answered, and nothing before the requests are up', () => {
-    expect(examplesFor(EXAMPLES, UNSTARTED, undefined)).toEqual([])
-    expect(examplesFor(EXAMPLES, UNSTARTED, undefined)).toBe(examplesFor(DUE, OCCUPIED, EMU))
-    for (const intro of [OFF, DUE, DONE]) expect(examplesFor(intro, UNSTARTED, EMU)).toEqual([])
+    expect(examplesFor(EXAMPLES, UNSTARTED, { at: 'pending' })).toEqual([])
+    expect(examplesFor(EXAMPLES, UNSTARTED, { at: 'pending' })).toBe(examplesFor(DUE, OCCUPIED, { at: 'listed', id: EMU }))
+    for (const intro of [OFF, DUE, DONE]) expect(examplesFor(intro, UNSTARTED, { at: 'listed', id: EMU })).toEqual([])
   })
 
   it('keeps one list for every chat that shows them', () => {
-    expect(examplesFor(EXAMPLES, UNSTARTED, EMU)).toBe(EXAMPLE_REQUESTS)
-    expect(examplesFor(EXAMPLES, OCCUPIED, EMU)).toBe(EXAMPLE_REQUESTS)
-    expect(examplesFor(EXAMPLES, OWN, null)).toBe(EXAMPLE_REQUESTS)
+    expect(examplesFor(EXAMPLES, UNSTARTED, { at: 'listed', id: EMU })).toBe(EXAMPLE_REQUESTS)
+    expect(examplesFor(EXAMPLES, OCCUPIED, { at: 'listed', id: EMU })).toBe(EXAMPLE_REQUESTS)
+    expect(examplesFor(EXAMPLES, OWN, { at: 'listed', id: null })).toBe(EXAMPLE_REQUESTS)
   })
 })
