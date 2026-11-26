@@ -1,5 +1,5 @@
 import type { CheckResult, Dialer, Hermes, Route } from '@highwing/hermes'
-import type { BotId, CheckFailure, CheckStep, CommandOutcome, SessionId, SshHost, Target } from '@highwing/hermes/domain'
+import type { BotId, CheckFailure, CheckStep, CommandOutcome, GroupId, SessionId, SshHost, Target } from '@highwing/hermes/domain'
 import type { GatewayUrl } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { Live, Setup } from '../src/ipc-contract'
@@ -427,12 +427,13 @@ describe('ownConnection, opening a chat while Settings is up', () => {
   })
 
   const RAE = 'rae' as BotId
-  const MENU_OPENS = [
-    ['Open chat', { do: 'open', ref: { kind: 'bot', bot: RAE } }],
-    ['New chat', { do: 'open', ref: { kind: 'new', bot: RAE, draftId: 'd1' }, upFront: true }]
+  const SIDEBAR_OPENS = [
+    ["the bot menu's Open chat", { do: 'open', ref: { kind: 'bot', bot: RAE } }],
+    ["the bot menu's New chat", { do: 'open', ref: { kind: 'new', bot: RAE, draftId: 'd1' }, upFront: true }],
+    ["a group chat's row", { do: 'open', ref: { kind: 'group', group: 'launch-plan' as GroupId } }]
   ] as const
 
-  it.each(MENU_OPENS)("closes Settings for the bot menu's %s, aborts its check, and opens", async (_item, command) => {
+  it.each(SIDEBAR_OPENS)('closes Settings for %s, aborts its check, and opens', async (_item, command) => {
     const { owner, checks, opened, at } = harness({ state: 'saved', target: LOCAL })
     await owner.run({ do: 'editTarget' })
     await owner.run({ do: 'checkTarget', target: REMOTE })
@@ -442,7 +443,7 @@ describe('ownConnection, opening a chat while Settings is up', () => {
     expect(opened[0]!.commands).toEqual([command])
   })
 
-  it.each(MENU_OPENS)("refuses the bot menu's %s at the save step, and changes nothing", async (_item, command) => {
+  it.each(SIDEBAR_OPENS)('refuses %s at the save step, and changes nothing', async (_item, command) => {
     const held = holdSave()
     const { owner, opened, states, pass, at } = harness({ state: 'saved', target: LOCAL }, held.save)
     await owner.run({ do: 'editTarget' })
