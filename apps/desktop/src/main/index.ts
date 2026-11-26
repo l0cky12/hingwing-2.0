@@ -1,16 +1,17 @@
-import { checkTarget, liveDialer, openHermes, remoteRoute, type Dialer, type Route } from '@highwing/hermes'
-import { byKind, type BotId, type Target } from '@highwing/hermes/domain'
+import { checkTarget, gatewaysByUrl, liveDialer, openHermes, remoteRoute, type Dialer, type Hermes, type Route } from '@highwing/hermes'
+import { byKind, type BotId, type GatewayUrl, type Target } from '@highwing/hermes/domain'
 import { loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, shell, type OpenDialogOptions } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, safeStorage, shell, type OpenDialogOptions } from 'electron'
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { attachmentStore, ATTACHMENTS_DIR, desktopSources, HERMES_LIMITS } from './attachments'
-import { ownConnection, pinnedConnection } from './connection'
+import { ownConnection, pinnedConnection, type ConnectionOwner } from './connection'
 import { desktopMenus, recordingMenus } from './context-menu'
-import { desktopOpener, recordingOpener } from './files'
+import { desktopOpener, recordingOpener, type Opener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
 import { draftStore, DRAFTS_DIR } from './drafts'
 import { serveWindows } from './ipc'
+import { dbusSend, hasSecretService } from './keyring'
 import { chatLinks } from './links'
 import { modeStore } from './mode'
 import { desktopNotifier, notifyTurnEnds, recordingNotifier } from './notify'
@@ -19,9 +20,10 @@ import { previewPane, registerPageScheme } from './preview'
 import { reachOf } from './preview-page'
 import { dialogSaver, folderSaver } from './saves'
 import { loadSettings, saveSettings } from './settings'
+import { keyringSeal, signInStore, UNSEALED } from './sign-ins'
 import { isAppUrl, openWindow } from './windows'
 
-const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_RECORD, HIGHWING_OPEN_LOG, HIGHWING_PICK_FILE, HIGHWING_PICK_FILES, HIGHWING_SAVE_DIR, HIGHWING_NOTIFY_LOG, HIGHWING_MENU_LOG, HIGHWING_MENU_PICK } = process.env
+const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_RECORD, HIGHWING_OPEN_LOG, HIGHWING_PICK_FILE, HIGHWING_PICK_FILES, HIGHWING_SAVE_DIR, HIGHWING_NOTIFY_LOG, HIGHWING_MENU_LOG, HIGHWING_MENU_PICK, HIGHWING_SIGN_IN_MS, HIGHWING_TEST_KEYRING } = process.env
 const fixture = HIGHWING_FIXTURE ? loadFixture(HIGHWING_FIXTURE) : null
 
 const PICTURE_DIALOG: OpenDialogOptions = {
@@ -37,9 +39,38 @@ async function pictureFile(): Promise<string | null> {
 
 const recorded = (dial: Dialer): Dialer => (HIGHWING_RECORD ? recordingDialer(dial, HIGHWING_RECORD) : dial)
 
-const routeFor = (target: Target): Route => {
-  const route = byKind<Route>(target, { local: () => ({ dial: liveDialer(), dispose: () => {} }), remote: ({ host }) => remoteRoute(host) })
-  return { ...route, dial: recorded(route.dial) }
+const addressOf = (target: Target) => byKind<GatewayUrl | null>(target, { local: () => null, remote: () => null, url: ({ url }) => url })
+
+async function savedConnection(settingsDir: string, opener: Opener, open: (dial: Dialer) => Hermes): Promise<ConnectionOwner> {
+  // An installed build takes neither variable: one would keep sign-ins unsealed, the other would cut a real sign-in short.
+  const verifying = !app.isPackaged
+  const signInMs = verifying && /^[1-9]\d*$/.test(HIGHWING_SIGN_IN_MS ?? '') ? Number(HIGHWING_SIGN_IN_MS) : null
+  const keep = signInStore(settingsDir, async () => (verifying && HIGHWING_TEST_KEYRING ? UNSEALED : keyringSeal(safeStorage, process.platform)))
+  const gateways = gatewaysByUrl({ keep, browse: opener.browse, ...(signInMs === null ? {} : { signInMs }) })
+
+  const routeFor = (target: Target): Route => {
+    const route = byKind<Route>(target, {
+      local: () => ({ dial: liveDialer(), dispose: () => {} }),
+      remote: ({ host }) => remoteRoute(host),
+      url: ({ url }) => gateways.route(url)
+    })
+    return { ...route, dial: recorded(route.dial) }
+  }
+
+  const loaded = await loadSettings(settingsDir)
+  // A file this build cannot read may name an address, so its sign-in stays until a save replaces the file.
+  if (loaded.state === 'saved') await gateways.keepOnly(addressOf(loaded.target))
+  if (loaded.state === 'none') await gateways.keepOnly(null)
+  return ownConnection({
+    loaded,
+    save: async target => {
+      await saveSettings(settingsDir, target)
+      await gateways.keepOnly(addressOf(target))
+    },
+    check: (target, options) => checkTarget(target, { ...options, gateways }),
+    routeFor,
+    open
+  })
 }
 
 const raise = () => {
@@ -62,6 +93,10 @@ app.on('open-url', (event, url) => {
   links.holdLatest([url])
 })
 links.holdLatest(process.argv)
+// Chromium picks a keyring by the desktop's name, and takes none on a desktop it does not know, even where a Secret Service runs.
+if (process.platform === 'linux' && fixture === null && !app.commandLine.hasSwitch('password-store') && hasSecretService(dbusSend(process.env))) {
+  app.commandLine.appendSwitch('password-store', 'gnome-libsecret')
+}
 // Only an installed build claims the scheme: a dev or verify run would point the user's desktop at a build that goes away.
 if (app.isPackaged) app.setAsDefaultProtocolClient('highwing')
 
@@ -81,7 +116,7 @@ app.whenReady().then(async () => {
       timing: 'recorded',
       ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(maskedFrame(frame))}\n`) } : {})
     })))
-    : ownConnection({ loaded: await loadSettings(settingsDir), save: target => saveSettings(settingsDir, target), check: checkTarget, routeFor, open })
+    : await savedConnection(settingsDir, opener, open)
   pane.follow(owner.setup)
   const pictureDeps = { choose: pictureFile, read: readHead, set: (bot: BotId, data: string) => owner.run({ do: 'setBotPicture', bot, data }) }
   const sources = desktopSources({ dialog, clipboard, focused: () => BrowserWindow.getFocusedWindow() }, HIGHWING_PICK_FILES)

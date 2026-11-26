@@ -1,5 +1,5 @@
 import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, Route } from '@highwing/hermes'
-import { firstStep, sameTarget, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Target } from '@highwing/hermes/domain'
+import { firstStep, sameTarget, type CheckStep, type Command, type CommandOutcome, type SetupFailure, type Target } from '@highwing/hermes/domain'
 import type { HubResult, Live, Setup, SetupCommand } from '../ipc-contract'
 import type { Settings } from './settings'
 
@@ -26,7 +26,7 @@ export interface ConnectionDeps {
 export type SetupEvent =
   | SetupCommand
   | { readonly do: 'step'; readonly step: CheckStep }
-  | { readonly do: 'fail'; readonly failure: CheckFailure }
+  | { readonly do: 'fail'; readonly failure: SetupFailure }
   | { readonly do: 'connect'; readonly live: Live }
 
 type At<A extends Setup['at']> = Extract<Setup, { at: A }>
@@ -36,6 +36,8 @@ type Editing = At<'form' | 'checking' | 'failed'>
 const check = ({ live }: Editing, { target }: On<'checkTarget'>): Setup =>
   ({ at: 'checking', live, target, step: firstStep(target) })
 const keep = ({ live }: Editing): Setup | null => (live === null ? null : { at: 'chat', live })
+const stopWaiting = ({ target, step }: At<'checking'>): Setup | null =>
+  (step === 'sign-in' ? { at: 'failed', live: null, target, failure: 'sign-in-cancelled' } : null)
 
 /** Every move the setup screen can make. A state with no row for an event refuses it. */
 const MOVES: { readonly [A in Setup['at']]: { readonly [E in SetupEvent['do']]?: (setup: At<A>, event: On<E>) => Setup | null } } = {
@@ -46,7 +48,7 @@ const MOVES: { readonly [A in Setup['at']]: { readonly [E in SetupEvent['do']]?:
     fail: ({ live, target }, { failure }) => ({ at: 'failed', live, target, failure }),
     connect: (_setup, { live }) => ({ at: 'saved', live }),
     // The target is going to disk. Cancelling now would leave the file and the chat on different machines.
-    keepTarget: setup => (setup.step === 'save' ? null : keep(setup))
+    keepTarget: setup => (setup.step === 'save' ? null : keep(setup) ?? stopWaiting(setup))
   },
   failed: { checkTarget: check, keepTarget: keep },
   saved: { openChat: ({ live }) => ({ at: 'chat', live }) },
@@ -90,7 +92,8 @@ export function feed<T>(initial: T): Feed<T> & { set(next: T): void } {
 /**
  * The single owner of the setup state, the saved target and the live `Hermes`. A check that passes
  * saves its target, opens a `Hermes` on the new route, and only then closes the old one and ends
- * the old route's processes. A check that fails, or one for the target already live, changes neither.
+ * the old route's processes. A check that fails changes neither, and one that passes for the target
+ * already live only retries its link.
  */
 export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
   type Open = { readonly live: Live; readonly hermes: Hermes; readonly route: Route }
@@ -124,7 +127,11 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
     const result = await deps.check(target, { signal: life.signal, onStep: step => void (stale() || apply({ do: 'step', step })) })
     if (stale()) return
     if (!result.ok) return void apply({ do: 'fail', failure: result.failure })
-    if (open !== null && sameTarget(open.live.target, target)) return void apply({ do: 'connect', live: open.live })
+    if (open !== null && sameTarget(open.live.target, target)) {
+      // A link that was blocked until this check passed, as one waiting for a sign-in is, would otherwise stay blocked.
+      void open.hermes.run({ do: 'reconnect', start: false })
+      return void apply({ do: 'connect', live: open.live })
+    }
     apply({ do: 'step', step: 'save' })
     try {
       await deps.save(target)

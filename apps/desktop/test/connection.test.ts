@@ -1,5 +1,6 @@
 import type { CheckResult, Dialer, Hermes, Route } from '@highwing/hermes'
 import type { CheckFailure, CheckStep, SshHost, Target } from '@highwing/hermes/domain'
+import type { GatewayUrl } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { Live, Setup } from '../src/ipc-contract'
 import { nextSetup, ownConnection, pinnedConnection, type ConnectionDeps, type SetupEvent } from '../src/main/connection'
@@ -17,6 +18,7 @@ describe('nextSetup', () => {
   const CHECKING: Setup = { at: 'checking', live: LIVE, target: REMOTE, step: 'tailscale' }
   const SAVING: Setup = { ...CHECKING, step: 'save' }
   const FAILED: Setup = { at: 'failed', live: null, target: REMOTE, failure: 'host-not-found' }
+  const FIRST_CHECK: Setup = { at: 'checking', live: null, target: REMOTE, step: 'hermes' }
   const SAVED: Setup = { at: 'saved', live: NEXT }
 
   it.each<[string, Setup, SetupEvent, Setup]>([
@@ -31,6 +33,8 @@ describe('nextSetup', () => {
     ['Cancel leaves the form for the chat', EDITING, { do: 'keepTarget' }, { at: 'chat', live: LIVE }],
     ['Cancel leaves a running check for the chat', CHECKING, { do: 'keepTarget' }, { at: 'chat', live: LIVE }],
     ['Cancel leaves a failure for the chat', { ...FAILED, live: LIVE }, { do: 'keepTarget' }, { at: 'chat', live: LIVE }],
+    ['Cancel leaves a wait for a sign-in for the chat', { ...CHECKING, step: 'sign-in' }, { do: 'keepTarget' }, { at: 'chat', live: LIVE }],
+    ['Stop waiting ends the sign-in of a first run as a failure', { ...FIRST_CHECK, step: 'sign-in' }, { do: 'keepTarget' }, { at: 'failed', live: null, target: REMOTE, failure: 'sign-in-cancelled' }],
     ['Open chat leaves the saved screen', SAVED, { do: 'openChat' }, { at: 'chat', live: NEXT }]
   ])('%s', (_what, from, event, to) => {
     expect(nextSetup(from, event)).toEqual(to)
@@ -40,6 +44,7 @@ describe('nextSetup', () => {
     ['Cancel with no connection to go back to', FIRST_RUN, { do: 'keepTarget' }],
     ['Cancel of a failure with no connection to go back to', FAILED, { do: 'keepTarget' }],
     ['Cancel while the target is being saved', SAVING, { do: 'keepTarget' }],
+    ['Cancel of a first run\'s check that waits for no one', FIRST_CHECK, { do: 'keepTarget' }],
     ['a second check while one runs', CHECKING, { do: 'checkTarget', target: OTHER }],
     ['a check from the chat', { at: 'chat', live: LIVE }, { do: 'checkTarget', target: REMOTE }],
     ['Open chat before anything is saved', EDITING, { do: 'openChat' }],
@@ -179,6 +184,37 @@ describe('ownConnection, checking a target', () => {
     expect(opened).toMatchObject([{ closed: false, disposed: false }])
   })
 
+  it('switches from one gateway address to another, and not to the address already live', async () => {
+    const here: Target = { kind: 'url', url: 'https://hermes.example.com' as GatewayUrl }
+    const there: Target = { kind: 'url', url: 'https://hermes.example.com:8443' as GatewayUrl }
+    const { owner, checks, saved, opened, states, pass, at } = harness({ state: 'saved', target: here })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: { ...here } })
+    expect(at()).toEqual({ at: 'checking', live: { target: here, epoch: 1 }, target: here, step: 'hermes' })
+    await pass()
+    expect([at(), saved, opened.length]).toEqual([{ at: 'saved', live: { target: here, epoch: 1 } }, [], 1])
+
+    await owner.run({ do: 'openChat' })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: there })
+    checks.at(-1)!.step('sign-in')
+    checks.at(-1)!.step('gateway')
+    await pass()
+    expect(at()).toEqual({ at: 'saved', live: { target: there, epoch: 2 } })
+    expect(saved).toEqual([there])
+    expect(opened).toMatchObject([{ target: here, closed: true, disposed: true }, { target: there, closed: false, disposed: false }])
+    expect(states.flatMap(setup => (setup.at === 'checking' && setup.target === there ? [setup.step] : []))).toEqual(['hermes', 'sign-in', 'gateway', 'save'])
+  })
+
+  it('retries the link of the live connection when the target checked is the one already live', async () => {
+    const { owner, opened, pass } = harness({ state: 'saved', target: REMOTE })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    expect(opened[0]!.commands).toEqual([])
+    await pass()
+    expect(opened[0]!.commands).toEqual([{ do: 'reconnect', start: false }])
+  })
+
   it('fails with cant-save and keeps the live connection when the save rejects', async () => {
     const { owner, opened, pass, at } = harness({ state: 'saved', target: LOCAL }, async () => { throw new Error('EACCES') })
     await owner.run({ do: 'editTarget' })
@@ -201,6 +237,23 @@ describe('ownConnection, checking a target', () => {
     expect(at()).toEqual({ at: 'chat', live: { target: LOCAL, epoch: 1 } })
     expect(saved).toEqual([])
     expect(opened).toHaveLength(1)
+  })
+
+  it('stops a first run\'s wait for a sign-in, aborts the check and drops what it finds later', async () => {
+    const { owner, checks, saved, opened, pass, at } = harness({ state: 'none' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    expect(await owner.run({ do: 'keepTarget' })).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(checks[0]!.signal.aborted).toBe(false)
+
+    checks[0]!.step('sign-in')
+    expect(await owner.run({ do: 'keepTarget' })).toEqual({ ok: true, value: undefined })
+    expect(checks[0]!.signal.aborted).toBe(true)
+    expect(at()).toEqual({ at: 'failed', live: null, target: REMOTE, failure: 'sign-in-cancelled' })
+
+    await pass()
+    expect(at()).toEqual({ at: 'failed', live: null, target: REMOTE, failure: 'sign-in-cancelled' })
+    expect(saved).toEqual([])
+    expect(opened).toEqual([])
   })
 
   it('drops the steps of a check that a later check replaced', async () => {

@@ -1,9 +1,9 @@
 import {
   EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type BusyMode, type ChatRef,
-  type CheckFailure, type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupDraft, type Groups, type HelperId, type Item, type Link, type ModelOption,
+  type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupDraft, type Groups, type HelperId, type Item, type Link, type ModelOption,
   type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
-  type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
+  type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 
 /** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
@@ -17,7 +17,7 @@ export type Setup =
   | { readonly at: 'chat'; readonly live: Live }
   | { readonly at: 'form'; readonly live: Live | null; readonly notice: 'unreadable' | 'newer' | null }
   | { readonly at: 'checking'; readonly live: Live | null; readonly target: Target; readonly step: CheckStep }
-  | { readonly at: 'failed'; readonly live: Live | null; readonly target: Target; readonly failure: CheckFailure }
+  | { readonly at: 'failed'; readonly live: Live | null; readonly target: Target; readonly failure: SetupFailure }
   | { readonly at: 'saved'; readonly live: Live }
   /** `HIGHWING_FIXTURE` plays a recorded gateway. There is nothing to set up. */
   | { readonly at: 'pinned' }
@@ -27,7 +27,6 @@ export type SetupCommand =
   | { readonly do: 'checkTarget'; readonly target: Target }
   /** Open the setup screen over the chat. */
   | { readonly do: 'editTarget' }
-  /** Cancel: back to the chat on the connection it has. */
   | { readonly do: 'keepTarget' }
   | { readonly do: 'openChat' }
 

@@ -78,6 +78,51 @@ bots, and highlights no bot. A click on a bot changes nothing and the sidebar
 says "This Hermes can't switch bots from Highwing yet. Update Hermes on that
 machine, then reconnect."
 
+## Hermes at a web address
+
+Highwing reaches a gateway by its address through the gateway's Webapp listener
+(Hermes's `gateway/webapp_listener.py`). The operator turns the listener on with
+`webapp.enabled: true` in `~/.hermes/config.yaml`, gives it an address other
+machines can reach, and gives it a sign-in such as `dashboard.basic_auth`.
+Highwing runs no command on that machine. A default Hermes install serves none
+of these routes to another machine.
+
+| Step | What Highwing sends | When |
+| --- | --- | --- |
+| Status | `GET /api/status`, with no sign-in | At the start of every setup check |
+| Sign-in | The browser opens `/auth/native/authorize` with an S256 PKCE challenge and a redirect to `http://127.0.0.1:<port>/callback` | In the setup check, when Highwing holds no sign-in that Hermes still takes |
+| Token | `POST /auth/native/token` with the code and the verifier | After the browser reaches the callback |
+| Refresh | `POST /auth/native/refresh` with the refresh token | When Hermes answers 401 to the access token, and before the first dial after launch |
+| Ticket | `POST /api/auth/ws-ticket` with `Authorization: Bearer <access token>` | Before every dial |
+| Socket | `<address>/api/ws` with the subprotocols `hermes-gateway-v1` and `hermes-gateway-ticket.<ticket>`, and no `Origin` | For each dial |
+
+Hermes shows its own `/login` page in the browser, so Highwing never sees the
+password. Hermes rotates the refresh token on each refresh, and Highwing keeps
+the new one. See `packages/hermes/src/wire/gateways.ts`.
+
+What Highwing does with each answer to the status:
+
+| What the status holds | What Highwing does |
+| --- | --- |
+| No `version` text, no `gateway_running` flag, or a reply that is not JSON | The setup check fails with "Something answers at <host>, but it isn't Hermes." |
+| No `auth_flows` list | The Hermes predates the sign-in for apps. The setup check fails with "The Hermes on <host> is too old for Highwing." |
+| An `auth_flows` list without `native_pkce` | The setup check fails with "The Hermes on <host> has no sign-in that Highwing can use." |
+| `auth_required: true` with `config_version` or `gateway_mode` | The address is the standalone `hermes dashboard`, whose socket Highwing can't chat through. The setup check fails and names the dashboard. |
+
+Highwing does not read `auth_providers`. The status lists a provider there
+whether or not the provider has a sign-in page.
+
+After the sign-in, the setup check opens one socket and waits for `gateway.ready`
+with `session_authority: true`. A socket that does not open fails the check as a
+proxy that passes no WebSocket. A `gateway.ready` without the session authority
+fails the check as the dashboard's older chat. Highwing saves an address only
+after this check passes.
+
+A dial through a saved address never opens the browser. When Hermes refuses the
+refresh token, the banner says "Your sign-in to the Hermes on <host> has ended."
+and offers **Sign in**, which runs the setup check again. A gateway by address is
+never started from Highwing, so its banner never offers **Start Hermes**.
+
 ## When Hermes is too old or too new
 
 - If `hermes gateway attach` exits with code 2 or 3, or its reply can't be read,
@@ -90,6 +135,10 @@ machine, then reconnect."
   `packages/hermes/src/wire/ssh.ts`.
 - If no `hermes` is found on the far machine, Highwing shows "Hermes isn't
   installed on <machine>."
+- If the `/api/status` of a gateway address holds no `auth_flows` list, the
+  Hermes there predates the sign-in for apps. The setup screen shows "The Hermes
+  on <host> is too old for Highwing." and saves nothing. See
+  `packages/hermes/src/wire/gateways.ts`.
 - If the probe reports a Windows service session, Highwing never passes
   `--start`, as the contract's rule 2 requires.
 - If Hermes can't start a chat from the desktop app, Highwing refuses the

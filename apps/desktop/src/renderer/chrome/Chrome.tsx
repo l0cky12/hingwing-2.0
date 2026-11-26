@@ -1,5 +1,6 @@
 import { machineOf, type Link, type Target } from '@highwing/hermes/domain'
 import { useCallback, useEffect, useRef, type ReactNode } from 'react'
+import type { WindowCommand } from '../../ipc-contract'
 import { isCommandKey } from '../keys'
 import { CopyLink } from '../chat/Copy'
 import { botNameOf, openChatName } from '../chats/chat-list'
@@ -53,27 +54,40 @@ export function TopBar({ target }: { readonly target: Target | null }) {
   )
 }
 
+type Press = Extract<WindowCommand, { readonly do: 'reconnect' | 'editTarget' | 'checkTarget' }>
+
 interface BannerCopy {
   readonly words: string
-  readonly action: { readonly label: string; readonly start: boolean } | null
+  readonly action: { readonly label: string; readonly run: readonly Press[] } | null
 }
 
-function bannerOf(link: Link): BannerCopy | null {
+const reconnect = (label: string, start: boolean): BannerCopy['action'] => ({ label, run: [{ do: 'reconnect', start }] })
+
+export function bannerOf(link: Link, target: Target | null): BannerCopy | null {
   switch (link.state) {
-    case 'blocked': return { words: link.message, action: { label: 'Retry', start: false } }
-    case 'waiting': return { words: link.message, action: link.why === 'not-running' ? { label: 'Start Hermes', start: true } : null }
+    case 'blocked': return {
+      words: link.message,
+      action: link.why === 'signed-out' && target !== null
+        ? { label: 'Sign in', run: [{ do: 'editTarget' }, { do: 'checkTarget', target }] }
+        : reconnect('Retry', false)
+    }
+    case 'waiting': return { words: link.message, action: link.why === 'not-running' ? reconnect('Start Hermes', true) : null }
     default: return null
   }
 }
 
-export function Banner({ link }: { readonly link: Link }) {
-  const copy = bannerOf(link)
+async function press(commands: readonly Press[]): Promise<void> {
+  for (const command of commands) if (!(await run(command)).ok) return
+}
+
+export function Banner({ link, target }: { readonly link: Link; readonly target: Target | null }) {
+  const copy = bannerOf(link, target)
   if (copy === null) return null
   const { action } = copy
   return (
     <div className="banner" role="status" aria-label="Connection">
       <p>{copy.words}</p>
-      {action !== null && <button onClick={() => void run({ do: 'reconnect', start: action.start })}>{action.label}</button>}
+      {action !== null && <button onClick={() => void press(action.run)}>{action.label}</button>}
     </div>
   )
 }

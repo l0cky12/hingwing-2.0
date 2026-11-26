@@ -11,7 +11,7 @@ This directory is the maintained source for verifying what a Highwing user sees 
 
 ## Driving conventions
 
-- Start every recipe from a fresh `run` name. A `--fake-host` run empties its user-data directory, so the saved connection is what `--saved` wrote. A `--fixture` run keeps the directory, and the drafts in it, for the next run with the same name. `$H cleanup --run <name>` empties it.
+- Start every recipe from a fresh `run` name. A `--fake-host`, `--fake-webapp` or `--webapp-url` run empties its user-data directory, so the saved connection is what `--saved` wrote. A `--fixture` run keeps the directory, and the drafts in it, for the next run with the same name. `$H cleanup --run <name>` empties it.
 - Prefer ARIA roles and accessible names (`click button "Send"`) and the named states in the helper's `STATES` table over CSS selectors.
 - Wait on a named state, never on a fixed sleep.
 - Treat every command as literal. Keep quoted names unchanged.
@@ -33,6 +33,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 
 - [Open the app](./open-the-app.md) covers launching a window at the reference size.
 - [Set up a connection](./set-up-a-connection.md) covers the first-run setup screen, each check failure, the saved screen, the remote chat, and changing the connection from the top bar.
+- [Connect by URL](./connect-by-url.md) covers the setup screen's web-address choice, the words for a bad address, the plain http warning, the sign-in in the browser with Stop waiting, each failure of the check, the chat through the fake Webapp, the restart with and without a keyring, the Sign in banner, and a run against a real gateway.
 - [Replay a fixture](./replay-a-fixture.md) covers `HIGHWING_FIXTURE`, the tool-running, approval and settled moments, open records, and the reference composites.
 - [Send a message](./send-a-message.md) covers the composer's Send button, Enter, and Stop while a turn runs.
 - [Answer an approval](./answer-an-approval.md) covers the approval card, "Run once" releasing the story to Done, the second yes "Always allow" asks for, and a question that takes several answers.

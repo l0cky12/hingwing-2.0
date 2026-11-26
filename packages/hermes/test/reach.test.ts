@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CHECK_FAILURES, machineOf, parseSshHost, STEP_WORDS, targetOf, type CheckStep, type SshHost } from '../src/domain/reach'
 import { isPlainHttp, parseGatewayUrl, sameTarget, URL_PROBLEMS, type GatewayUrl } from '../src/domain/reach'
 import { failureOf, gatewayHost, URL_FAILURES } from '../src/domain/reach'
+import { byKind, firstStep, onThisComputer, type Target } from '../src/domain/reach'
 
 const remote = (host: string) => ({ kind: 'remote', host: host as SshHost }) as const
 
@@ -219,5 +220,70 @@ describe('the words of a check by address', () => {
     expect(failureOf('url-legacy')).toBe(URL_FAILURES['url-legacy'])
     expect(failureOf('hermes-too-old')).toBe(CHECK_FAILURES['hermes-too-old'])
     expect(failureOf('cant-save').step).toBe('save')
+  })
+})
+
+describe('a target that is a gateway address', () => {
+  const at = (text: string): Target => ({ kind: 'url', url: gatewayUrl(text) })
+  const HERE = at('https://hermes.example.com')
+
+  it.each(['https://hermes.example.com', 'http://hermes-host:9120', 'https://box.example:8443/proxied/hermes', 'http://[fd7a:115c:a1e0::1]:9120', 'https://box.example/~hermes/%2F'])(
+    'reads %s back from the JSON the settings file holds, and keeps nothing else', url => {
+      const saved: unknown = JSON.parse(JSON.stringify({ ...at(url), token: 'never kept' }))
+      expect(targetOf(saved)).toEqual({ kind: 'url', url })
+    }
+  )
+
+  it.each([
+    ['no address', { kind: 'url' }],
+    ['an address that is no text', { kind: 'url', url: 7 }],
+    ['a host in place of the address', { kind: 'url', host: 'hermes.example.com' }],
+    ['another scheme', { kind: 'url', url: 'ftp://box.example' }],
+    ['a script', { kind: 'url', url: 'javascript:alert(1)' }],
+    ['a username and password', { kind: 'url', url: 'https://ada:secret@box.example' }],
+    ['a query, which can hold a sign-in secret', { kind: 'url', url: 'https://box.example/?token=abc' }],
+    ['a fragment', { kind: 'url', url: 'https://box.example#chat' }],
+    ['an address with no scheme', { kind: 'url', url: 'hermes.example.com' }],
+    ['a trailing slash', { kind: 'url', url: 'https://hermes.example.com/' }],
+    ['the default port', { kind: 'url', url: 'https://hermes.example.com:443' }],
+    ['capital letters in the host', { kind: 'url', url: 'https://Hermes.Example.com' }],
+    ['spaces around the address', { kind: 'url', url: ' https://hermes.example.com ' }],
+    ['an address over 2048 characters', { kind: 'url', url: `https://box.example/${'p'.repeat(2048)}` }]
+  ])('refuses %s', (_what, raw) => {
+    expect(targetOf(raw)).toBeNull()
+  })
+
+  it.each([
+    [HERE, at('hermes.example.com:443/'), true],
+    [HERE, at('https://other.example.com'), false],
+    [HERE, at('http://hermes.example.com'), false],
+    [HERE, at('https://hermes.example.com:8443'), false],
+    [HERE, at('https://hermes.example.com/hermes'), false],
+    [HERE, remote('hermes.example.com'), false],
+    [remote('hermes.example.com'), HERE, false],
+    [HERE, { kind: 'local' } as const, false],
+    [{ kind: 'local' } as const, HERE, false]
+  ])('compares %j with %j as %s', (a, b, same) => {
+    expect(sameTarget(a, b)).toBe(same)
+  })
+
+  it.each([
+    [HERE, 'hermes.example.com'],
+    [at('http://hermes-host:9120/hermes'), 'hermes-host'],
+    [at('https://100.101.102.103:8443'), '100.101.102.103'],
+    [at('http://[fd7a:115c:a1e0::1]:9120'), '[fd7a:115c:a1e0::1]']
+  ])('names %j by the host of its address, %s', (target, name) => {
+    expect(machineOf(target)).toBe(name)
+  })
+
+  it('starts its check at Hermes, and is never taken for this computer', () => {
+    expect(firstStep(HERE)).toBe('hermes')
+    expect(onThisComputer(HERE)).toBe(false)
+    expect(onThisComputer(at('http://127.0.0.1:9120'))).toBe(false)
+  })
+
+  it('is one of three kinds, and byKind hands each kind to its own branch', () => {
+    const branch = (target: Target) => byKind(target, { local: () => 'local', remote: ({ host }) => `remote ${host}`, url: ({ url }) => `url ${url}` })
+    expect([{ kind: 'local' } as const, remote('hermes-host'), HERE].map(branch)).toEqual(['local', 'remote hermes-host', 'url https://hermes.example.com'])
   })
 })

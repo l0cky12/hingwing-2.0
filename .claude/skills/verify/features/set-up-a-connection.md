@@ -1,6 +1,6 @@
 # Set up a connection
 
-With no saved connection Highwing opens on a setup screen that asks where Hermes runs: another machine of the tailnet, named in the "Hermes machine" field, or this computer. Connect checks the choice one step at a time and shows the step it is at. A check that fails says what is wrong and one thing to try, and saves nothing. A check that passes saves the connection and shows the saved screen, and "Open chat" shows the chat. From then on Highwing opens on the chat. The Connection button in the top bar opens the setup screen again, and Cancel goes back to the chat with its draft unchanged.
+With no saved connection Highwing opens on a setup screen that asks where Hermes runs: another machine of the tailnet, named in the "Hermes machine" field, a gateway at a web address, or this computer. [Connect by URL](./connect-by-url.md) covers the web address. Connect checks the choice one step at a time and shows the step it is at. A check that fails says what is wrong and one thing to try, and saves nothing. A check that passes saves the connection and shows the saved screen, and "Open chat" shows the chat. From then on Highwing opens on the chat. The Connection button in the top bar opens the setup screen again, and Cancel goes back to the chat with its draft unchanged.
 
 ## Sub-features
 
@@ -27,7 +27,7 @@ Preconditions:
 
 Set `M=hermes-host.example-tailnet.ts.net` first.
 
-- **Empty.** Run `$H run --fake-host ok --saved none --run setup-empty wait setup shot setup-empty`. The shot shows "Where does Hermes run?", the "Hermes machine" field and Connect, and no Cancel.
+- **Empty.** Run `$H run --fake-host ok --saved none --run setup-empty wait setup shot setup-empty`. The shot shows "Where does Hermes run?", the three choices, the "Hermes machine" field and Connect, and no Cancel.
 - **Checking.** Run `$H run --fake-host ok --hold-at ssh --saved none --run setup-checking wait setup type "Hermes machine" $M click button Connect wait setup-checking shot setup-checking disabled button Connect`. The shot shows "Connecting to hermes-host".
 - **A failure.** Run `$H run --fake-host <failure> --saved none --run setup-<failure> wait setup type "Hermes machine" $M click button Connect wait setup-failed shot setup-<failure>`, once per failure scenario. The `.aria.txt` holds the alert's two lines. `ssh-check` needs `--timeout 30000`.
 - **Saved, then the remote chat.** Run `$H run --fake-host ok --saved none --run setup-connect wait setup type "Hermes machine" $M click button Connect wait setup-saved shot setup-saved click button "Open chat" wait live shot remote-chat-live`. The second shot shows "on hermes-host" in the top bar and an enabled Send button.
