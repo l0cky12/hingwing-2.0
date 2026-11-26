@@ -233,6 +233,19 @@ no cache, plan, rate-limit or money field from any of them.
   "on" or "off" outright. Hermes refuses any scope but "global", which would
   flip every chat of the profile, and takes a missing value to mean "toggle".
   See `SWITCHES` in `packages/hermes/src/session-commands.ts`.
+- The bot's approval mode, `manual`, `smart` or `off`, is read with
+  `config.get {session_id, key: "approval_mode"}` when a watched chat goes
+  live, beside `show_reasoning` and `busy` (`gateway/session_config.py:87-108`).
+  A new bot starts on `smart` (`hermes_cli/config_defaults.py:1624`). On the
+  canonical route `info.yolo` is the chat's own flag alone
+  (`gateway/session_local.py:576-578`), yet a bot on `off` runs every chat's
+  commands without asking, so Highwing shows YOLO on when either holds. To
+  leave it, Highwing asks first, then sends `tune approvals smart`:
+  `config.set {session_id, key: "approval_mode", value: "smart"}`, which writes
+  the profile's `approvals.mode` as `/approvals smart` does and sends no
+  `session.info` (`gateway/session_tui_config.py:202-203,337-350`). It sends
+  `tune yolo off` after it only when the chat's own flag is on too. A Hermes
+  that refuses the read shows no mode beside the pill.
 
 ## Attachments
 
@@ -467,6 +480,7 @@ with `config.get`. `Session.cwd` is the chat's folder, from the same places.
 | `tune` effort | `session.mutate reasoning {effort}`, `null` for the model's own level, with `expected_generation` | `persistence/authority/runtime.py:299-316`, `gateway/session_mutation_policy.py` |
 | `tune` fast | `config.set {session_id, key: "fast", value: "fast" \| "normal"}` | `gateway/session_tui_config.py:274-298` |
 | `tune` yolo | `config.set {session_id, key: "yolo", value: "on" \| "off"}` | `gateway/session_tui_config.py:187-193,357-377` |
+| `tune` approvals | `config.set {session_id, key: "approval_mode", value: "manual" \| "smart" \| "off"}`, a write for the whole bot | `gateway/session_tui_config.py:202-203,337-350` |
 | `move` | `session.mutate workspace {cwd}`, with `expected_generation` | `gateway/session_mutation_policy.py:37-55` |
 | `compress`, or a typed `/compress [focus]` | `session.mutate compress {focus?}`, with `expected_generation` | `gateway/session_mutation_compress.py:32-113` |
 | `export` | `session.export {session_id, format}`, `md`, `json` or `html` | `gateway/session_tui_ops.py:89-122` |

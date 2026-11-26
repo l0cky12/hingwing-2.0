@@ -6,6 +6,7 @@
  */
 import { PICTURE_MAX_BYTES, pictureTypeOf } from '../domain/bots'
 import type { SessionEvent } from '../domain/reduce'
+import { APPROVAL_MODES, type ApprovalMode } from '../domain/session'
 import { GATEWAY_PROTOCOL, type Clock, type Reach } from '../wire/link'
 import { parseEvent } from '../wire/parse'
 import { MASKED, type ChatSeed, type Fixture, type FixtureStep, type Reads } from './fixture'
@@ -757,10 +758,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     return mutation === undefined ? gateway.story(socket, 'session.mutate', params, routed) : mutation(gateway, params, routed)
   },
   /** gateway/session_config.py:65-73 hands the session controls to gateway/session_busy_controls.py:30-56. */
-  'config.get': (gateway, _socket, params, routed) => gateway.control(params, routed, false),
+  'config.get': (gateway, _socket, params, routed) => (params.key === 'approval_mode' ? gateway.readApprovals(params, routed, null) : gateway.control(params, routed, false)),
   /** gateway/session_tui_config.py:187-193 */
   'config.set': (gateway, socket, params, routed) => {
     if (gateway.awaits('config.set')) return gateway.story(socket, 'config.set', params, routed)
+    if (params.key === 'approval_mode') return gateway.setApprovals(params, routed, null)
     return params.key === 'yolo' || gateway.fixture.header.controls === undefined ? gateway.setYolo(params, routed, null) : gateway.control(params, routed, true)
   },
   'session.transcript': (gateway, socket, params, routed) => {
@@ -835,7 +837,11 @@ const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
   'session.transcript': (_gateway, _socket, params, _routed, chat) => transcriptPage(chat.id, chat.rows, params),
   'model.options': (gateway, _socket, _params, _routed, chat) => gateway.modelMenu(chat.model),
   'complete.path': (gateway, _socket, params) => pathItems(gateway, params, () => {}),
-  'config.set': (gateway, _socket, params, routed, chat) => gateway.setYolo(params, routed, chat),
+  'config.get': (gateway, _socket, params, routed, chat) => {
+    if (params.key !== 'approval_mode') throw new Refused('unsupported_command')
+    return gateway.readApprovals(params, routed, chat)
+  },
+  'config.set': (gateway, _socket, params, routed, chat) => (params.key === 'approval_mode' ? gateway.setApprovals(params, routed, chat) : gateway.setYolo(params, routed, chat)),
   'session.mutate': (gateway, socket, params, routed, chat) => {
     if (params.operation === 'rename') return gateway.rename(socket, params, routed, chat)
     if (params.operation !== 'branch') throw new Refused('unsupported_command')
@@ -877,6 +883,8 @@ export class ScriptedGateway {
   private stored: readonly unknown[]
   private reads: Reads
   private readonly controls: Record<string, string> | null
+  /** The bot's `approvals.mode`, from the header. Null: Hermes never says one, as an older Hermes does not. */
+  private approvals: ApprovalMode | null
   private readonly profiles: Obj[]
   private readonly souls: Map<string, string>
   private readonly pictures = new Map<string, { readonly mime: string; readonly size: number; readonly data: string }>()
@@ -909,6 +917,7 @@ export class ScriptedGateway {
     this.stored = fixture.header.stored
     this.reads = fixture.header.reads ?? {}
     this.controls = fixture.header.controls === undefined ? null : { ...fixture.header.controls }
+    this.approvals = fixture.header.approvals ?? null
     this.drop = options.drop === null ? { at: 'spent' } : { at: 'armed', ...options.drop }
     const { models } = fixture.header
     this.view = {
@@ -1300,6 +1309,35 @@ export class ScriptedGateway {
 
   private yoloAt(yolo: boolean): boolean | null {
     return this.fixture.header.yolo === undefined ? null : yolo
+  }
+
+  /**
+   * `config.get` for key `approval_mode`, the bot's `approvals.mode` (gateway/session_config.py:87-108). It is the only word
+   * of it: an attach reply's `info.yolo` is the chat's own flag alone (gateway/session_local.py:576-578). One mode serves every bot here.
+   */
+  readApprovals(params: Obj, routed: string, chat: EchoChat | null): unknown {
+    if (this.approvals === null) throw this.noApprovals('config.get', chat)
+    if (Object.keys(params).some(key => !['session_id', 'profile', 'key'].includes(key))) throw new Refused('invalid_params')
+    if (chat === null) this.authorize(params, routed)
+    return { value: this.approvals }
+  }
+
+  /** `config.set` for key `approval_mode`, as `/approvals <mode>` writes it (gateway/session_tui_config.py:202-203,337-350). It sends no session.info. */
+  setApprovals(params: Obj, routed: string, chat: EchoChat | null): unknown {
+    if (this.approvals === null) throw this.noApprovals('config.set', chat)
+    if (Object.keys(params).some(key => !['session_id', 'profile', 'key', 'value'].includes(key))) throw new Refused('invalid_params')
+    if (chat === null) this.authorize(params, routed)
+    const mode = APPROVAL_MODES.find(known => known === params.value)
+    if (mode === undefined) throw new Refused('invalid_params')
+    this.approvals = mode
+    return { key: 'approvals.mode', value: mode }
+  }
+
+  /** What a Hermes with no approval mode answers: the refusal it gives the call anyway, so a header without one plays as before. */
+  private noApprovals(method: 'config.get' | 'config.set', chat: EchoChat | null): Error {
+    if (chat !== null && method === 'config.get') return new Refused('unsupported_command')
+    const served = method === 'config.get' ? this.controls !== null : this.controls !== null || this.fixture.header.yolo !== undefined
+    return served ? new Refused('invalid_params') : unknownMethod(method)
   }
 
   /**

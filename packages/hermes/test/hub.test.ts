@@ -520,10 +520,10 @@ describe('the open chat', () => {
 
     const forResearch = opened.sent().filter(call => call.params?.session_id === RESEARCH_CHAT)
     expect(forResearch.map(call => call.method), 'one resume for the whole visit, a read each time a window began to watch it, and the processes again after the turn').toEqual([
-      'session.resume', 'session.stats', 'config.get', 'config.get', 'session.control.read', 'process.list', 'session.stats', 'prompt.submit', 'session.stats', 'process.list',
-      'config.get', 'config.get', 'session.control.read', 'process.list', 'model.options', 'session.mutate', 'session.detach'
+      'session.resume', 'session.stats', 'config.get', 'config.get', 'config.get', 'session.control.read', 'process.list', 'session.stats', 'prompt.submit', 'session.stats', 'process.list',
+      'config.get', 'config.get', 'config.get', 'session.control.read', 'process.list', 'model.options', 'session.mutate', 'session.detach'
     ])
-    expect(forResearch.map(call => call.params?.profile), 'every call that names the chat names its bot').toEqual(Array(17).fill('research'))
+    expect(forResearch.map(call => call.params?.profile), 'every call that names the chat names its bot').toEqual(Array(19).fill('research'))
     expect(calls(opened, 'session.create')).toEqual([])
   })
 
@@ -737,7 +737,7 @@ describe("a bot's chats", () => {
     await opened.clock.advance(0)
     expect(opened.sent().filter(call => call.params?.session_id === DOWNLOADS && call.method !== 'session.stats').map(call => [call.method, call.params?.profile]), 'a picked chat runs as its bot')
       .toEqual([
-        ['session.resume', 'research'], ['config.get', 'research'], ['config.get', 'research'], ['session.control.read', 'research'], ['process.list', 'research'],
+        ['session.resume', 'research'], ['config.get', 'research'], ['config.get', 'research'], ['config.get', 'research'], ['session.control.read', 'research'], ['process.list', 'research'],
         ['prompt.submit', 'research'], ['process.list', 'research']
       ])
     expect(rowsOf(opened)[2], 'the badge comes from the attached chat').toEqual([DOWNLOADS, 'Clean up Downloads', 'none'])
@@ -1378,7 +1378,7 @@ describe('the reasoning switch', () => {
     opened.watch()
     await opened.clock.advance(0)
     expect(reads(opened)).toEqual([{ method: 'config.get', params: { session_id: SESSION, key: 'show_reasoning' } }])
-    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: false, busy: null, effort: null, fast: null, yolo: null })
+    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: false, busy: null, effort: null, fast: null, yolo: null, approvals: null })
   })
 
   it('reads it again after the chat is attached again', async () => {
@@ -1396,7 +1396,7 @@ describe('the reasoning switch', () => {
     await opened.clock.advance(0)
     expect(await opened.hermes.run({ do: 'tune', sessionId: SESSION, set: 'reasoning', on: true })).toEqual({ ok: true, value: undefined })
     expect(opened.sent().filter(call => call.method === 'config.set')).toEqual([{ method: 'config.set', params: { session_id: SESSION, key: 'show_reasoning', value: 'on' } }])
-    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
+    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null, approvals: null })
   })
 
   it('stays unknown on a Hermes that refuses the read, and says it cannot set it', async () => {
@@ -1404,7 +1404,7 @@ describe('the reasoning switch', () => {
     opened.watch()
     await opened.clock.advance(0)
     expect(reads(opened)).toHaveLength(1)
-    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: null, busy: null, effort: null, fast: null, yolo: null })
+    expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null })
     expect(await opened.hermes.run({ do: 'tune', sessionId: SESSION, set: 'reasoning', on: true })).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes doesn't support that." } })
   })
 })

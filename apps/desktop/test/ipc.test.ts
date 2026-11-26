@@ -128,6 +128,7 @@ describe('validators', () => {
     expect(parseCommand({ do: 'pickModel', sessionId: 's1', model: { ...model, price: 9 } })).toEqual({ do: 'pickModel', sessionId: 's1', model })
     expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'yolo', on: false, extra: 1 })).toEqual({ do: 'tune', sessionId: 's1', set: 'yolo', on: false })
     expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'fast', on: true })).toEqual({ do: 'tune', sessionId: 's1', set: 'fast', on: true })
+    expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'approvals', to: 'smart', on: true })).toEqual({ do: 'tune', sessionId: 's1', set: 'approvals', to: 'smart' })
     expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'effort', to: 'xhigh', on: true })).toEqual({ do: 'tune', sessionId: 's1', set: 'effort', to: 'xhigh' })
     expect(parseCommand({ do: 'tune', sessionId: 's1', set: 'effort', to: 'default' })).toEqual({ do: 'tune', sessionId: 's1', set: 'effort', to: 'default' })
     expect(parseCommand({ do: 'move', sessionId: 's1', cwd: '/work/docs' })).toEqual({ do: 'move', sessionId: 's1', cwd: '/work/docs' })
@@ -320,6 +321,7 @@ describe('validators', () => {
     ['an effort Hermes does not take', { do: 'tune', sessionId: 's1', set: 'effort', to: 'turbo' }],
     ['a fast switch with a word for on', { do: 'tune', sessionId: 's1', set: 'fast', on: 'on' }],
     ['a YOLO switch with a word for on', { do: 'tune', sessionId: 's1', set: 'yolo', on: 'on' }],
+    ['an approval mode Hermes does not have', { do: 'tune', sessionId: 's1', set: 'approvals', to: 'auto' }],
     ['a path completion for a word that is not a mention', { do: 'completePath', sessionId: 's1', word: 'not' }],
     ['a path completion with no word', { do: 'completePath', sessionId: 's1' }],
     ['a YOLO switch with no chat', { do: 'tune', set: 'yolo', on: true }],

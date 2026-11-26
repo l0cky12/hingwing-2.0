@@ -5,7 +5,7 @@ import { FolderChip } from '../src/renderer/composer/FolderChip'
 import { ThinkingChoices } from '../src/renderer/composer/ThinkingPill'
 import { folderFieldLabel, thinkingLabel, thinkingShown } from '../src/renderer/composer/tuning'
 
-const UNREAD: Tuning = { reasoning: null, busy: null, effort: null, fast: null, yolo: null }
+const UNREAD: Tuning = { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }
 const tuning = (said: Partial<Tuning>): Tuning => ({ ...UNREAD, ...said })
 const choices = (said: Partial<Tuning>) => renderToStaticMarkup(<ThinkingChoices tuning={tuning(said)} sending={false} onTune={() => {}} />)
 const named = (markup: string, type: 'radio' | 'checkbox') => [...markup.matchAll(new RegExp(`<label[^>]*><input type="${type}"[^>]*/>([^<]*)</label>`, 'g'))].map(match => match[1])

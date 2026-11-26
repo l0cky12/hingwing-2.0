@@ -596,6 +596,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .foot .pill { order: 1; padding: 2px 0; border: 0; background: transparent; font: inherit; color: var(--graphite); }
 .foot .pill:hover { color: var(--ink); }
 .foot .pill[aria-pressed="true"] { color: var(--signal); font-weight: 500; }
+.foot .approvals { order: 1; padding: 2px 0; color: var(--graphite); }
 .confirm-dialog { width: min(360px, calc(100vw - 32px)); padding: 20px 22px; border: 1px solid var(--rule); border-radius: 10px; background: var(--sheet); color: var(--ink); font: 14px/1.45 var(--sans); }
 .confirm-dialog::backdrop { background: rgba(31, 42, 38, .35); }
 .confirm-dialog h2 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }

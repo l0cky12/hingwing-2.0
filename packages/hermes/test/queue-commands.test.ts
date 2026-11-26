@@ -389,17 +389,21 @@ describe('deny and tell', () => {
 describe('the busy mode', () => {
   it('is read with the reasoning switch once the chat is live and watched', async () => {
     const { actor, sent, answer } = await stage({ watched: true })
-    expect(sent()).toEqual([['config.get', { session_id: ID, key: 'show_reasoning' }], ['config.get', { session_id: ID, key: 'busy' }]])
+    expect(sent()).toEqual([
+      ['config.get', { session_id: ID, key: 'show_reasoning' }], ['config.get', { session_id: ID, key: 'busy' }], ['config.get', { session_id: ID, key: 'approval_mode' }]
+    ])
     await answer('config.get', { key: 'show_reasoning', value: '0', scope: 'session' })
     await answer('config.get', { key: 'busy', value: 'steer', scope: 'session' })
-    expect(actor.session.tuning).toEqual({ reasoning: false, busy: 'steer', effort: null, fast: null, yolo: null })
+    await answer('config.get', { value: 'smart' })
+    expect(actor.session.tuning).toEqual({ reasoning: false, busy: 'steer', effort: null, fast: null, yolo: null, approvals: 'smart' })
   })
 
   it('stays unknown on a Hermes that refuses the read, so a message sent during a turn queues', async () => {
     const { actor, answer, event, command, sent } = await stage({ watched: true })
     await answer('config.get', { key: 'show_reasoning', value: '1', scope: 'session' })
     await answer('config.get', refusal('invalid_params'))
-    expect(actor.session.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null })
+    await answer('config.get', refusal('invalid_params'))
+    expect(actor.session.tuning).toEqual({ reasoning: true, busy: null, effort: null, fast: null, yolo: null, approvals: null })
     event(started)
     void command({ do: 'send', sessionId: ID, text: 'hello' })
     await settle()

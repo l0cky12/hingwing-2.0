@@ -2,7 +2,7 @@ import type { Outcome, Refusal } from './domain/command'
 import { emptyTracked, reduce, sessionOf, type BridgeRequest, type Fence, type Gate, type HistoryPage, type LocalAction, type SessionInput, type Tracked } from './domain/reduce'
 import type { AdmissionId, Attachment, InputId, OutboxEntry, RequestId, Session, SessionContent, SessionId } from './domain/session'
 import { Offline, RpcRefusal, type Calls, type Clock, type Method, type Requested, type RequestMethod, type Served } from './wire/link'
-import { parseBusy, parseControl, parseProcesses, parseReplay, parseShown, parseSnapshot, parseStats } from './wire/parse'
+import { parseApprovalMode, parseBusy, parseControl, parseProcesses, parseReplay, parseShown, parseSnapshot, parseStats } from './wire/parse'
 
 export const DONE: Outcome = { ok: true, value: undefined }
 export const refused = (kind: Refusal['kind'], message: string): Outcome<never> => ({ ok: false, refusal: { kind, message } })
@@ -238,9 +238,12 @@ export class SessionActor {
     const { attaches: attempt, heard } = this.tracked.fence
     const session_id = this.id
     const read = (key: string) => this.port.call('config.get', { session_id, key })
-    void Promise.all([read('show_reasoning'), read('busy')]).then(([shown, busy]) => {
-      if (![shown, busy].some(answer => !answer.ok && answer.refusal.kind === 'offline')) {
-        this.step({ in: 'facts', attempt, heard, tuning: { reasoning: shown.ok ? parseShown(shown.value) : null, busy: busy.ok ? parseBusy(busy.value) : null } })
+    void Promise.all([read('show_reasoning'), read('busy'), read('approval_mode')]).then(([shown, busy, approvals]) => {
+      if (![shown, busy, approvals].some(answer => !answer.ok && answer.refusal.kind === 'offline')) {
+        this.step({
+          in: 'facts', attempt, heard,
+          tuning: { reasoning: shown.ok ? parseShown(shown.value) : null, busy: busy.ok ? parseBusy(busy.value) : null, approvals: approvals.ok ? parseApprovalMode(approvals.value.value) : null }
+        })
       }
     })
     void this.port.call('session.control.read', { session_id }).then(control => {
