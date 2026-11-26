@@ -375,11 +375,13 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
       )}
       {dragging && canAttach && <p className="drop-line" role="status">Drop to attach</p>}
       <form onSubmit={submit}>
-        <button type="button" className="clip" aria-label="Attach files" disabled={!canAttach} onClick={() => void take(window.highwing.attachPick())}>
-          <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16">
-            <path d="M10.5 4.5 5.4 9.6a1.6 1.6 0 0 0 2.3 2.3l5.4-5.4a3 3 0 0 0-4.3-4.3L3.4 7.6a4.4 4.4 0 0 0 6.2 6.2l4-4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+        {group === undefined && (
+          <button type="button" className="clip" aria-label="Attach files" disabled={!canAttach} onClick={() => void take(window.highwing.attachPick())}>
+            <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16">
+              <path d="M10.5 4.5 5.4 9.6a1.6 1.6 0 0 0 2.3 2.3l5.4-5.4a3 3 0 0 0-4.3-4.3L3.4 7.6a4.4 4.4 0 0 0 6.2 6.2l4-4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
         <textarea
           ref={box} autoFocus={autoFocus} rows={1} value={draft}
           placeholder={group === undefined ? 'Ask Hermes to do something' : 'Message the group, or type @ to ask specific bots'}

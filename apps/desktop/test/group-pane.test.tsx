@@ -67,7 +67,7 @@ describe('an open group chat', () => {
     expect(attr(box, 'aria-label')).toBe('Message Launch plan')
     expect(html).toContain(`<p class="busy" id="${attr(box, 'aria-describedby')}">Sam is still answering. If you send now, Sam’s reply won’t be posted.</p>`)
     expect(html).toMatch(/<button type="button" class="stop">Stop<\/button><button type="submit">Send<\/button>/)
-    expect(tagOf(html, /<button type="button" class="clip"[^>]*>/)).toContain('disabled')
+    expect(html, 'a group takes no attachments, so it offers no paperclip').not.toContain('class="clip"')
   })
 
   it("blocks Send in words while Hermes isn't running group chats", () => {
