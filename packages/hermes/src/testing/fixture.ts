@@ -463,6 +463,11 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (relay !== undefined && !(isObject(relay) && Object.values(relay).every(isRelayScript))) {
     return '"relay" must map a profile to { reply, delay_ms? } or { refuse }'
   }
+  const { turnMs, activeList } = value
+  if (turnMs !== undefined && !(isObject(turnMs) && Object.values(turnMs).every(ms => Number.isSafeInteger(ms) && (ms as number) >= 0))) {
+    return '"turnMs" must map a profile to a whole number of ms'
+  }
+  if (activeList !== undefined && typeof activeList !== 'boolean') return '"activeList" must be true or false'
   const { groups } = value
   if (groups !== undefined && !isGroupsScript(groups)) {
     return '"groups" may hold only "driver", "seatable", "rooms", "change_events" and "turns": each room { id, name, members, epoch?, log? } seating 2 to 6 { profile, handle }, and each turn { reply, delay_ms? }, { fail, delay_ms? } or { hold: true }'
@@ -497,6 +502,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),
     ...(relay === undefined ? {} : { relay: relay as { readonly [profile: string]: RelayScript } }),
+    ...(turnMs === undefined ? {} : { turnMs: turnMs as { readonly [profile: string]: number } }), ...(activeList === undefined ? {} : { activeList }),
     ...(groups === undefined ? {} : { groups }),
     ...(paths === undefined ? {} : { paths: paths as NonNullable<Fixture['header']['paths']> }),
     ...(reads === undefined ? {} : { reads }),
