@@ -78,7 +78,7 @@ describe('side', () => {
     expect(await done).toEqual(DONE)
     expect(actor.session.sides).toEqual([{ id: 'task_1', kind, asked: 'Which file was it?', state: { s: 'running' } }])
     event({ type: 'side.answered', id: 'task_1' as SideId, kind, asked: null, text: 'notes.md' }, null)
-    expect(actor.session.sides[0]?.state).toEqual({ s: 'done', text: 'notes.md' })
+    expect(actor.session.sides[0]?.state).toEqual({ s: 'done', text: 'notes.md', after: null })
   })
 
   it('sends nothing while offline, since only a socket that has the chat attached may ask', async () => {

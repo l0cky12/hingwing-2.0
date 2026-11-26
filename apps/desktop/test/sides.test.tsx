@@ -10,12 +10,12 @@ const NONE: ReadonlySet<SideId> = new Set()
 
 describe('sideCards', () => {
   it('waits on a running question, shows an answer, and says when it was missed', () => {
-    const cards = sideCards([side('a', { s: 'running' }), side('b', { s: 'done', text: 'It turns on **dry-run**.' }), side('c', { s: 'lost' })], NONE)
+    const cards = sideCards([side('a', { s: 'running' }), side('b', { s: 'done', text: 'It turns on **dry-run**.', after: null }), side('c', { s: 'lost' })], NONE)
     expect(cards.map(card => card.answer)).toEqual([{ s: 'waiting' }, { s: 'answered', markdown: 'It turns on **dry-run**.' }, { s: 'lost' }])
   })
 
   it('reads Hermes\'s error words as a failure, with the words after them', () => {
-    expect(sideCards([side('a', { s: 'done', text: 'error:  the model refused the request' })], NONE)[0]!.answer)
+    expect(sideCards([side('a', { s: 'done', text: 'error:  the model refused the request', after: null })], NONE)[0]!.answer)
       .toEqual({ s: 'failed', message: 'the model refused the request' })
   })
 
@@ -34,7 +34,7 @@ describe('Sides', () => {
   const markup = (sides: readonly SideTask[]) => renderToStaticMarkup(<Sides cards={sideCards(sides, NONE)} onClose={() => {}} />)
 
   it('draws each card as a region named by its label, with a close button and the quiet note', () => {
-    const html = markup([side('a', { s: 'done', text: 'It turns on **dry-run** mode.' })])
+    const html = markup([side('a', { s: 'done', text: 'It turns on **dry-run** mode.', after: null })])
     const [, labelId] = /<section[^>]*aria-labelledby="([^"]+)"/.exec(html) ?? []
     expect(html).toContain(`<h2 id="${labelId}">Side question</h2>`)
     expect(html).toContain('aria-label="Close side question"')
@@ -50,7 +50,7 @@ describe('Sides', () => {
   })
 
   it('shows a failure as an error, with the question kept', () => {
-    const html = markup([side('a', { s: 'done', text: 'error: no model' })])
+    const html = markup([side('a', { s: 'done', text: 'error: no model', after: null })])
     expect(html).toContain('<p class="err">no model</p>')
     expect(html).toContain('question a')
   })

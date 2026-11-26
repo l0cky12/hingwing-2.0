@@ -1044,7 +1044,7 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
       tokens: null,
       reply: answered(turn) ? turn.reply : null
     }]),
-    unfinished: open === null ? null : { request: open.request, began: open.began, items: open.items }
+    unfinished: open === null ? null : { request: open.request, began: open.began, items: open.items, rows: open.rows }
   }
 }
 

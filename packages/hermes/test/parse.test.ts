@@ -264,6 +264,14 @@ describe('parseRows and when a turn began', () => {
     expect(parseRows(rows).turns.map(turn => turn.request?.rowId)).toEqual([4, 9])
   })
 
+  it('lists the row ids an unfinished turn has stored so far', () => {
+    const { unfinished } = parseRows([
+      { role: 'user', text: 'First', row_id: 4 }, { role: 'assistant', text: 'One.', row_id: 5 },
+      { role: 'user', text: 'Second', row_id: 9 }, { role: 'tool', name: 'terminal' }, { role: 'user', text: 'and the tests', display_kind: 'steer', row_id: 11 }
+    ])
+    expect(unfinished?.rows).toEqual([9, 11])
+  })
+
   it('leaves a request with no stored id unaddressed, and a turn that begins with a reply without a request', () => {
     const { turns } = parseRows([answer('The tail of an older turn.'), user('Next'), answer('Done.')])
     expect(turns.map(turn => turn.request?.rowId ?? null)).toEqual([null, null])

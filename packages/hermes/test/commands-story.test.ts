@@ -33,8 +33,8 @@ describe('the chat commands, from Hermes\'s own gateway', () => {
       ['What does notes.md say about the release?', 'complete'], ['Then outline docs/plan.md.', 'complete']
     ])
     expect(want.sides).toEqual([
-      { id: expect.stringMatching(/^btw_/), kind: 'btw', asked: 'Which file holds the plan?', state: { s: 'done', text: 'The plan is in docs/plan.md.' } },
-      { id: expect.stringMatching(/^bg_/), kind: 'background', asked: 'Draft a changelog entry for the notes.', state: { s: 'done', text: expect.stringMatching(/^Changelog: /) } }
+      { id: expect.stringMatching(/^btw_/), kind: 'btw', asked: 'Which file holds the plan?', state: { s: 'done', text: 'The plan is in docs/plan.md.', after: 'stored:6' } },
+      { id: expect.stringMatching(/^bg_/), kind: 'background', asked: 'Draft a changelog entry for the notes.', state: { s: 'done', text: expect.stringMatching(/^Changelog: /), after: 'stored:6' } }
     ])
     // The move's session.info reads the tier of the frozen policy, not the chat's /fast pin, so it says fast is off (gateway/session_local.py:467-477,543).
     expect(want.tuning).toMatchObject({ effort: 'high', fast: false, yolo: true })

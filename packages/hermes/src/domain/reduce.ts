@@ -180,8 +180,10 @@ export interface Replay {
 /** Stored rows, oldest first, already folded into turns. */
 export interface HistoryPage {
   readonly turns: readonly SettledTurn[]
-  /** Set when the last stored turn has no end yet. On a running session it becomes the open turn's start. */
-  readonly unfinished: { readonly request: string | null; readonly began: Began | null; readonly items: SettledTurn['items'] } | null
+  /** Set when the last stored turn has no end yet. On a running session it becomes the open turn's start. `rows`: the stored row ids it covers so far. */
+  readonly unfinished: {
+    readonly request: string | null; readonly began: Began | null; readonly items: SettledTurn['items']; readonly rows: readonly number[]
+  } | null
   /** null: the gateway holds nothing older. Otherwise where `session.transcript` continues (`cursor` null: from its latest page). */
   readonly older: { readonly cursor: string | null } | null
 }
@@ -306,6 +308,8 @@ export interface Fence {
    */
   readonly told: { readonly [promptId: string]: { readonly [text: string]: Exclude<Told, 'next'> } }
   readonly heard: Heard
+  /** The turn the last snapshot's page left unfinished, by the id `seed` gave it, and the rows Hermes stored for it so far. */
+  readonly unfinished: { readonly id: TurnId; readonly rows: readonly number[] } | null
 }
 
 export interface Tracked {
@@ -323,7 +327,7 @@ export function emptyTracked(id: SessionId): Tracked {
     gate: { at: 'detached', why: 'new', cursor: null },
     fence: {
       revision: 0, text: null, older: null, admissions: {}, sent: {}, settledThrough: null, generation: null, attaches: 0, totalsEpoch: 0, closed: [], told: {},
-      heard: { control: 0, processes: 0 }
+      heard: { control: 0, processes: 0 }, unfinished: null
     }
   }
 }
@@ -493,8 +497,9 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
   const leftOpen = snapshot.running ? null : page.unfinished
   const missed = before.state === 'running' && !sameRun && !(fence.settledThrough === null && leftOpen !== null)
   const stored = missed ? markLost(page.turns, fence.settledThrough) : page.turns
+  const openId = snapshot.running ? runTurnId(snapshot.generation) : `unfinished:${snapshot.watermark.epoch}:${snapshot.watermark.seq}` as TurnId
   const { history, doing } = withPlan(leftOpen === null ? stored : [...stored, {
-    id: `unfinished:${snapshot.watermark.epoch}:${snapshot.watermark.seq}` as TurnId,
+    id: openId,
     request: requestOf(leftOpen.request),
     began: leftOpen.began,
     items: leftOpen.items,
@@ -508,13 +513,16 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
     generation: snapshot.generation,
     stop: sameRun ? before.stop : 'none',
     turn: {
-      id: runTurnId(snapshot.generation),
+      id: openId,
       request: requestOf(page.unfinished?.request ?? null) ?? startedRequest(state, snapshot.queue),
       began: page.unfinished?.began ?? (before.state === 'running' && sameRun ? before.turn.began : null),
       items: [...doing, ...snapshot.prompts.map(prompt => waitingPrompt(prompt, null))],
       announced: null
     }
   }
+  const open = page.unfinished === null ? null : { id: openId, rows: page.unfinished.rows }
+  const unfinished = open ?? (snapshot.running && fence.unfinished?.id === openId ? fence.unfinished : null)
+  const anchored = reanchor(state, { history, run }, { page: open === null ? history : [...history, open], fallback: newestShownTurn({ history, run }), older: page.older !== null })
   const seeded: Tracked = {
     ...state,
     content: {
@@ -532,7 +540,7 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       model: { ...modelFrom(content.model, snapshot.model), next: null, ask: null },
       usage: patch(content.usage, { totals: null }),
       tuning: patch(content.tuning, snapshot.tuning),
-      sides: content.sides.some(side => side.state.s === 'running') ? content.sides.map(side => (side.state.s === 'running' ? { ...side, state: LOST_SIDE } : side)) : content.sides,
+      sides: content.sides.map(side => (side.state.s === 'running' ? { ...side, state: LOST_SIDE } : anchored(side))),
       processes: content.processes,
       control: content.control
     },
@@ -548,7 +556,8 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       totalsEpoch: fence.totalsEpoch + 1,
       closed: fence.closed,
       told: fence.told,
-      heard: fence.heard
+      heard: fence.heard,
+      unfinished
     }
   }
   return listed(seeded, snapshot.queue)
@@ -584,6 +593,35 @@ function callsTodo(item: Item): boolean {
 
 const isNamed = (value: Json): value is { readonly name: string } =>
   typeof value === 'object' && value !== null && !Array.isArray(value) && typeof (value as { readonly [key: string]: Json })['name'] === 'string'
+
+function reanchor(
+  before: Tracked, now: Pick<SessionContent, 'history' | 'run'>,
+  { page, fallback, older }: { readonly page: readonly Pick<SettledTurn, 'id' | 'rows'>[]; readonly fallback: TurnId | null; readonly older: boolean }
+): (side: SideTask) => SideTask {
+  const { history } = before.content
+  const { unfinished } = before.fence
+  const rowsOf = (id: TurnId): readonly number[] => {
+    const own = history.find(turn => turn.id === id)?.rows ?? []
+    return own.length > 0 ? own : unfinished?.id === id ? unfinished.rows : []
+  }
+  const lowest = Math.min(...page.flatMap(turn => turn.rows))
+  const moved = (after: TurnId): TurnId | null => {
+    const rows = rowsOf(after)
+    const holder = page.find(turn => turn.rows.some(row => rows.includes(row)))
+    if (holder !== undefined) return holder.id
+    const olderThanPage = older && rows.length > 0 && Math.max(...rows) < lowest
+    return olderThanPage ? null : fallback
+  }
+  return side => side.state.s === 'done' && side.state.after !== null && !holdsTurn(now, side.state.after)
+    ? { ...side, state: { ...side.state, after: moved(side.state.after) } }
+    : side
+}
+
+function newestShownTurn({ history, run }: Pick<SessionContent, 'history' | 'run'>): TurnId | null {
+  return run.state === 'running' ? run.turn.id : newestShownSettled(history)
+}
+
+const newestShownSettled = (history: readonly SettledTurn[]): TurnId | null => history.findLast(turn => turn.outcome.kind !== 'interlude')?.id ?? null
 
 function markLost(turns: readonly SettledTurn[], settledThrough: number | null): readonly SettledTurn[] {
   const lost = (turn: SettledTurn): SettledTurn => turn.outcome.kind === 'lost' ? turn : { ...turn, outcome: LOST }
@@ -904,10 +942,12 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
       return withRequests(state, closed(heldOf(state), event.id, event.why))
     case 'side.answered': {
       const { sides } = state.content
-      const done: SideTask['state'] = { s: 'done', text: event.text }
       const at = sides.findIndex(side => side.id === event.id)
-      if (at === -1) return { ...state, content: { ...state.content, sides: [...sides, { id: event.id, kind: event.kind, asked: event.asked, state: done }] } }
-      return sides[at]?.state.s === 'done' ? state : { ...state, content: { ...state.content, sides: sides.with(at, { ...sides[at]!, state: done }) } }
+      const held = sides[at]
+      if (held?.state.s === 'done') return state
+      const side: SideTask = { ...(held ?? { id: event.id, kind: event.kind, asked: event.asked }), state: { s: 'done', text: event.text, after: newestShownTurn(state.content) } }
+      const placed = held === undefined ? [...sides, side] : side.kind === 'btw' ? [...sides.toSpliced(at, 1), side] : sides.with(at, side)
+      return { ...state, content: { ...state.content, sides: placed } }
     }
     case 'connect':
       return withRequests(state, event.settled === null
@@ -940,7 +980,10 @@ function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | '
 function cutBefore(state: Tracked, rowId: number): Tracked {
   const { content } = state
   const at = content.history.findIndex(turn => turn.request?.rowId === rowId)
-  return at < 0 ? state : { ...state, content: { ...content, history: content.history.slice(0, at) } }
+  if (at < 0) return state
+  const history = content.history.slice(0, at)
+  const anchored = reanchor(state, { history, run: content.run }, { page: history, fallback: newestShownSettled(history), older: false })
+  return { ...state, content: { ...content, history, sides: content.sides.map(anchored) } }
 }
 
 function openRun(state: Tracked, generation: Generation, id: TurnId, request: Request | null, began: Began | null): Tracked {
@@ -1060,7 +1103,7 @@ function requestOf(text: string | null): Request | null {
   return text === null ? null : { text, inputId: null, rowId: null, attachments: [] }
 }
 
-function holdsTurn(content: SessionContent, id: TurnId): boolean {
+function holdsTurn(content: Pick<SessionContent, 'history' | 'run'>, id: TurnId): boolean {
   return (content.run.state === 'running' && content.run.turn.id === id) || content.history.some(turn => turn.id === id)
 }
 

@@ -31,10 +31,10 @@ describe('side questions asked while a turn runs, played through the real client
 
   it('keeps each answer with its own question, though they came in the other order', async () => {
     const { last } = await played()
-    expect(last.session.sides).toEqual([
-      { id: 'btw_1f0a2c', kind: 'btw', asked: 'why?', state: { s: 'done', text: expect.stringMatching(/^Because the release notes/) } },
-      { id: 'btw_8e41d7', kind: 'btw', asked: 'what does this flag do?', state: { s: 'done', text: 'It turns on **dry-run** mode, so nothing is written.' } },
-      { id: 'btw_elsewhere', kind: 'btw', asked: 'Which branch is this on?', state: { s: 'done', text: 'main.' } }
+    expect(last.session.sides, 'in the order answered, each after the turn that ran').toEqual([
+      { id: 'btw_8e41d7', kind: 'btw', asked: 'what does this flag do?', state: { s: 'done', text: 'It turns on **dry-run** mode, so nothing is written.', after: 'run:1' } },
+      { id: 'btw_1f0a2c', kind: 'btw', asked: 'why?', state: { s: 'done', text: expect.stringMatching(/^Because the release notes/), after: 'run:1' } },
+      { id: 'btw_elsewhere', kind: 'btw', asked: 'Which branch is this on?', state: { s: 'done', text: 'main.', after: 'run:1' } }
     ])
   })
 
