@@ -154,7 +154,7 @@ describe('pinned and hidden bots in the sidebar', () => {
     fact('old', 'Old Helper', { hidden: true }),
     fact('test', 'Test Bot', { hidden: true })
   )
-  const toggleOf = (html: string) => buttons(html).find(tag => attr(tag, 'aria-expanded') !== undefined)
+  const toggleOf = (html: string) => buttons(/<section class="bots-hidden">.*/s.exec(html)?.[0] ?? '').find(tag => attr(tag, 'aria-expanded') !== undefined)
   const rowsOf = (html: string) => buttons(html).filter(tag => /class="bot(-feature)?"/.test(tag)).map(tag => attr(tag, 'aria-label'))
   const headingsOf = (html: string) => Array.from(html.matchAll(/<h3>(?:<button[^>]*>)?(?:<svg.*?<\/svg>)?([^<]*)/g), ([, words]) => words)
 
