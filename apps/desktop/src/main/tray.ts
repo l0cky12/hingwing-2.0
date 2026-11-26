@@ -21,7 +21,7 @@ const GLYPHS = [
   '111001001001001',
   '111101111101111',
   '111101111001111'
-]
+] as const
 
 function record(logPath: string | undefined, line: unknown, png: Buffer | null): void {
   if (logPath === undefined) return
@@ -33,13 +33,13 @@ function record(logPath: string | undefined, line: unknown, png: Buffer | null):
   }
 }
 
-function drawCount(bitmap: Buffer, width: number, height: number, count: number): void {
+export function drawCount(bitmap: Buffer, width: number, height: number, count: number): void {
   const digits = String(count)
   const box = CELL * SCALE
   const gap = SCALE
   const span = digits.length * box + (digits.length - 1) * gap
   const originX = width - 1 - span
-  const originY = height - 1 - box
+  const originY = height - 1 - (GLYPHS[0].length / CELL) * SCALE
   const ink = new Set<number>()
   for (let index = 0; index < digits.length; index++) {
     const glyph = GLYPHS[Number(digits[index])]

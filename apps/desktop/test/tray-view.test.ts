@@ -1,8 +1,11 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@highwing/hermes/domain'
+import { drawCount } from '../src/main/tray'
 import { TRAY_ICON_PNG } from '../src/main/tray-icon'
 import { decideClose, trayView } from '../src/main/tray-view'
+
+vi.mock('electron', () => ({ app: {}, Menu: {}, nativeImage: {}, Tray: class Tray {} }))
 
 const row = (id: string, title: string, badge: 'none' | 'running' | 'asking') => ({ id: id as SessionId, title, badge })
 const show = { kind: 'action', label: 'Show Highwing', action: { do: 'raise' } }
@@ -54,6 +57,21 @@ describe('trayView', () => {
 describe('the tray icon bytes', () => {
   it('embeds the committed png, so the built main shows the same wing', () => {
     expect(Buffer.from(TRAY_ICON_PNG).equals(readFileSync(new URL('../src/main/tray-icon.png', import.meta.url)))).toBe(true)
+  })
+
+  it('draws the whole digit inside the icon', () => {
+    const width = 32
+    const height = 32
+    const bitmap = Buffer.alloc(width * height * 4, 128)
+    drawCount(bitmap, width, height, 1)
+    const rows = new Set<number>()
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) if (bitmap[(y * width + x) * 4] === 255) rows.add(y)
+    }
+    const ys = [...rows].sort((a, b) => a - b)
+    expect(ys[0]).toBe(height - 11)
+    expect(ys.at(-1)).toBe(height - 2)
+    expect(ys).toHaveLength(10)
   })
 })
 
