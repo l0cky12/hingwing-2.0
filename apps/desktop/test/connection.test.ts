@@ -68,7 +68,7 @@ describe('nextSetup', () => {
   })
 })
 
-interface Opened { readonly target: Target; closed: boolean; disposed: boolean; readonly commands: unknown[] }
+interface Opened { readonly target: Target; closed: boolean; disposed: boolean; readonly commands: unknown[]; place?: string }
 
 /** The owner over a check the test settles by hand, and connections that only record what happened to them. */
 type Answer = (command: unknown) => CommandOutcome<unknown> | Promise<CommandOutcome<unknown>>
@@ -94,8 +94,9 @@ function harness(loaded: Settings, save: (target: Target) => Promise<void> = asy
       const dial = Object.assign(async () => { throw new Error('the test never dials') }, { held })
       return { dial, dispose: () => { held.disposed = true; log.push(`dispose ${opened.indexOf(held) + 1}`) } } satisfies Route
     },
-    open: (dial: Dialer) => {
+    open: (dial: Dialer, place: string) => {
       const { held } = dial as Dialer & { readonly held: Opened }
+      held.place = place
       return {
         run: async (command: unknown) => {
           held.commands.push(command)
@@ -156,6 +157,18 @@ describe('ownConnection, checking a target', () => {
 
     await owner.run({ do: 'keepTarget' })
     expect(at()).toEqual({ at: 'chat', live: { target: REMOTE, epoch: 1 } })
+  })
+
+  it("opens each target's Hermes in a place of its own, the same place each time", async () => {
+    const { owner, opened, pass } = harness({ state: 'saved', target: LOCAL })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    await owner.run({ do: 'checkTarget', target: LOCAL })
+    await pass()
+    const [local, remote, again] = opened.map(({ place }) => place)
+    expect(local).not.toBe(remote)
+    expect(again).toBe(local)
   })
 
   it('sends a chat command to the Hermes of the live connection', async () => {
