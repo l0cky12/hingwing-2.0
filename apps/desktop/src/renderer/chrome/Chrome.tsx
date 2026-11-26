@@ -19,7 +19,6 @@ export function Bar({ where, children, ref }: { readonly where: string | null; r
   )
 }
 
-/** Ctrl+N starts a chat with the bot the Chats column lists, a group chat's included, while the bar shows. */
 function useNewChat(bar: RefObject<HTMLElement | null>) {
   const open = useTopic('open')
   const start = useCallback(() => void run(newChatIn(open, crypto.randomUUID())), [open])
@@ -50,7 +49,7 @@ function useOpenGroup() {
   return row === undefined ? null : { name: row.name, faces: row.members.map(member => faceOf(member, bots)) }
 }
 
-/** `target` is null in a fixture run, which has no connection to name or to change. A group chat's bar names its members in place of New chat and Copy link. */
+/** `target` is null in a fixture run, which has no connection to name or to change. */
 export function TopBar({ target }: { readonly target: Target | null }) {
   const bar = useRef<HTMLElement>(null)
   const startChat = useNewChat(bar)

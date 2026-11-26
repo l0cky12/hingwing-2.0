@@ -67,19 +67,16 @@ interface LogEvent {
   readonly created_at: number
 }
 
-/** One member's turn, from the moment it starts until it logs how it ended. */
 interface Turn {
   readonly seat: Seat
   readonly round: number
   readonly about: LogEvent
   readonly started: number
-  /** A newer message came in the same thread while it ran. It runs on, and then logs no reply. */
   superseded: boolean
   readonly hold: boolean
   cancel: () => void
 }
 
-/** The newest message's discussion: who answers next in this round, and how far it has gone. */
 interface Discussion {
   readonly about: LogEvent
   round: number
@@ -251,7 +248,7 @@ export class ScriptedRooms {
     return { events, cursor, latest_seq: room.log.length, has_more: cursor < room.log.length, authority: { gateway_id: GATEWAY, epoch: room.epoch } }
   }
 
-  /** `send` (gateway/session_group_controls.py:315-321) and `validate_user_payload` (gateway/hosted_room_discussion.py:225-237). */
+  /** `send` (gateway/session_group_controls.py:313-319) and `validate_user_payload` (gateway/hosted_room_discussion.py:225-237). */
   private send({ room_id, event_id, payload }: Obj): unknown {
     if (this.script.driver === false) this.deps.refuse('runtime_coordination_required', { admitted: false })
     const room = this.room(room_id)
@@ -329,7 +326,7 @@ export class ScriptedRooms {
     }
   }
 
-  /** `plan_publication` (gateway/hosted_room_discussion.py:1012-1060): a reply then its receipt, or a receipt alone. A superseded turn's result is dropped. */
+  /** `plan_publication` (gateway/hosted_room_discussion.py:1014-1058): a reply then its receipt, or a receipt alone. A superseded turn's result is dropped. */
   private end(room: Room, turn: Turn, status: 'settled' | 'failed' | 'cancelled', extra: Obj, reply?: string): void {
     turn.cancel()
     if (room.running === turn) room.running = null

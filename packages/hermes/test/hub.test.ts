@@ -1552,7 +1552,6 @@ describe('a group chat', () => {
     return { ...opened, chat, calls, say }
   }
 
-  /** Sockets that each reach one of `gateways` in turn, the last one again for every later dial, and a way to drop the open one. */
   function dropping(...gateways: Fixture[]) {
     const clock = manualClock()
     const scripts = gateways.map(fixture => scriptedDialer(fixture, { clock }))

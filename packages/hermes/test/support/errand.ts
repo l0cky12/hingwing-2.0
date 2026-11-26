@@ -35,7 +35,6 @@ const { groups: GROUPS, ...LAUNCH_PROFILES } = JSON.parse(readFileSync(fileURLTo
 export const LAUNCH_NO_GROUPS: Fixture = { ...ERRAND, header: { ...ERRAND.header, profiles: LAUNCH_PROFILES } }
 export const LAUNCH: Fixture = { ...LAUNCH_NO_GROUPS, header: { ...LAUNCH_NO_GROUPS.header, groups: GROUPS } }
 export const withGroups = (groups: GroupsScript): Fixture => ({ ...LAUNCH, header: { ...LAUNCH.header, groups } })
-/** The approved mock, played: Launch plan seats Ada, Sam and Juno. Each answers in 900 ms, Juno asks `@sam` again, and Sam's second turn holds. */
 export const LAUNCH_GROUP = withGroups((JSON.parse(readFileSync(fileURLToPath(new URL('../../../../fixtures/profiles/launch-group.json', import.meta.url)), 'utf8')) as { groups: GroupsScript }).groups)
 
 export const stepOf =(method: string) => ERRAND.steps.findIndex(step => 'await' in step && step.await === method)

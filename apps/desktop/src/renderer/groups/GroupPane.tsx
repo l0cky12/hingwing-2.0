@@ -12,7 +12,6 @@ import { faceOf, namesFrom } from './group-rows'
 
 const NOT_RUNNING = "Hermes isn't running group chats right now."
 
-/** The open group: its thread and its composer. Attachments are off: Highwing sends a group text only. */
 export function GroupPane({ shown }: { readonly shown: ShownGroup }) {
   const { group } = shown
   const chat = useTopic('groupChat')
@@ -42,7 +41,7 @@ export function GroupPane({ shown }: { readonly shown: ShownGroup }) {
   const composer = useMemo((): ComposerGroup => ({
     name: seats?.name ?? 'the group chat',
     mentions: (seats?.members ?? []).map(member => ({ bot: faceOf(member, bots), word: `@${member.handle} ` })),
-    busy: stopped ? NOT_RUNNING : thread?.busy ?? null
+    warning: stopped ? NOT_RUNNING : thread?.busy ?? null
   }), [seats, bots, stopped, thread?.busy])
 
   const send = async (text: string): Promise<CommandOutcome<string | null>> => {

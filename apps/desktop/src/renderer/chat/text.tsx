@@ -8,7 +8,6 @@ import { Formula } from './Formula'
 import { ThreadImage } from './Image'
 import { WebLink } from './WebLink'
 
-/** A group chat's member handles, in lower case. A reply's `@handle` of one is set apart, since Hermes routes the next turn on it. */
 export const MentionHandles = createContext<ReadonlySet<string> | null>(null)
 
 /** `_MENTION_RE` (gateway/hosted_room_discussion.py:43), so a word is set apart exactly when Hermes would route on it. */

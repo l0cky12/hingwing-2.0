@@ -104,10 +104,6 @@ export const chatOf = (desk: Desk, bot: BotId): SessionId | undefined => Object.
 export const ownerOf = (desk: Desk, sessionId: SessionId): BotId | undefined => Object.hasOwn(desk.owners, sessionId) ? desk.owners[sessionId] : undefined
 
 export type DeskEvent =
-  /**
-   * Hermes said more: the chat to show when none is, the Bot Chats its roster names, and the roster's bots with its
-   * default one (null: no roster listed).
-   */
   | { readonly on: 'facts'; readonly launch: Shown | null; readonly named: BotChats; readonly roster: { readonly bots: readonly BotId[]; readonly home: BotId | null } | null }
   | { readonly on: 'asked'; readonly ref: ChatRef }
   /** Hermes answered for one bot's Bot Chat: a lookup's reply, or the chat a first message made. null: it has none. */
@@ -182,8 +178,7 @@ function asked(desk: Desk, ref: ChatRef): { readonly desk: Desk; readonly effect
   }
 }
 
-/** An open group keeps the bot it was opened over while the roster lists it. One the roster dropped gives way to the default bot. */
-function overListed(open: OpenChat, roster: Extract<DeskEvent, { on: 'facts' }>['roster']): OpenChat {
+function withListedOverBot(open: OpenChat, roster: Extract<DeskEvent, { on: 'facts' }>['roster']): OpenChat {
   const { shown } = open
   if (shown?.kind !== 'group' || shown.over === null || roster === null || roster.bots.includes(shown.over)) return open
   return { ...open, shown: { ...shown, over: roster.home } }
@@ -200,7 +195,7 @@ export function nextDesk(desk: Desk, event: DeskEvent): { readonly desk: Desk; r
   switch (event.on) {
     case 'facts': {
       const named = Object.entries(event.named).reduce((held, [bot, sessionId]) => learned(held, bot as BotId, sessionId), desk)
-      const open = overListed(named.open, event.roster)
+      const open = withListedOverBot(named.open, event.roster)
       return done(open.shown === null && event.launch !== null ? { ...named, open: { ...open, shown: event.launch } } : { ...named, open })
     }
     case 'asked':

@@ -11,11 +11,10 @@ import { RemoveDialog } from './RemoveDialog'
 import { mentionable, mentionWord, menuOf, picked, type Mention, type Menu, type MenuItem } from './menu'
 import { usePathFiles } from './paths'
 
-/** A box that writes to a group chat: `@` offers its members by handle, `/` offers nothing, and `busy` is the line under it. */
 export interface ComposerGroup {
   readonly name: string
   readonly mentions: readonly Mention[]
-  readonly busy: string | null
+  readonly warning: string | null
 }
 
 interface ComposerProps {
@@ -156,7 +155,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
   const caretTo = useRef<number | null>(null)
   const typed = menuOf(draft, caret, sources, { active, dismissed })
   const menu = focused ? typed : { open: false as const }
-  const hint = group === undefined ? busyHint(planFor(attachments), draft, catalog, editing) : group.busy
+  const hint = group === undefined ? busyHint(planFor(attachments), draft, catalog, editing) : group.warning
 
   const shownActive = menu.open ? menu.active : null
   useLayoutEffect(() => {

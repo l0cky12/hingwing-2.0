@@ -143,15 +143,12 @@ export type GroupChat =
       readonly sending: readonly { readonly key: string; readonly text: string }[]
     }
 
-// What only the hub holds. Not exported from index.ts.
-
 export type GroupSupport =
   | { readonly is: 'unknown' }
   | { readonly is: 'unsupported' }
   | { readonly is: 'refused' }
   | { readonly is: 'able'; readonly driver: boolean; readonly seatable: readonly BotId[] | null }
 
-/** A group as a list, a state or a create reply names it. `latestSeq` and `epoch` null: that reply did not say. */
 export interface GroupFacts {
   readonly id: GroupId
   readonly name: string
@@ -163,7 +160,7 @@ export interface GroupFacts {
 
 /**
  * A message on its way. `key` is the `event_id` sent and `eventId` the id Hermes files it under (`user:<sha256 of key>`,
- * gateway/hosted_rooms.py:235). It leaves `sending` when a log page holds that id, or when the send is refused.
+ * gateway/hosted_rooms.py:235).
  */
 export interface Outgoing {
   readonly key: string
@@ -171,7 +168,6 @@ export interface Outgoing {
   readonly text: string
 }
 
-/** The part of a group's log Highwing has read: every drawn line with `from < seq <= cursor`, in `epoch`. */
 export interface GroupLog {
   readonly epoch: number | null
   readonly from: number
@@ -182,24 +178,18 @@ export interface GroupLog {
 export interface HeldGroup {
   readonly facts: GroupFacts
   readonly answering: readonly Answering[]
-  /** Whether Hermes pushes `groups.changed` for this group, as its last `groups.state` said. False until it says so. */
   readonly pushes: boolean
-  /** null: not read on this connection since it was last shown, or Hermes's log moved under it. */
   readonly log: GroupLog | null
   readonly sending: readonly Outgoing[]
 }
 
-/** The one record of this Hermes's group chats. Both topics are read off it, so a sidebar row and the open thread never disagree. */
 export interface GroupDesk {
   readonly offline: boolean
   readonly support: GroupSupport
-  /** Hermes's order, most recently changed first. null: no list has answered yet. */
+  /** Hermes's order, most recently changed first. */
   readonly listed: readonly GroupId[] | null
-  /** Every listed group, and the followed one. Keyed by id, so a `groups.changed` finds its group in one step. */
   readonly held: { readonly [group: string]: HeldGroup }
-  /** The group the pane shows. Set from `open`, never by a window. */
   readonly followed: GroupId | null
-  /** The followed group, once Hermes said it has none by that id. */
   readonly missing: GroupId | null
 }
 
@@ -208,13 +198,10 @@ export const EMPTY_GROUPS: GroupDesk = { offline: false, support: { is: 'unknown
 export type GroupNews =
   | { readonly on: 'link'; readonly offline: boolean }
   | { readonly on: 'support'; readonly support: Exclude<GroupSupport, { readonly is: 'unknown' }> }
-  /** `groups.list` answered with every group. A group it leaves out is dropped, unless the pane shows it. */
   | { readonly on: 'listed'; readonly groups: readonly GroupFacts[] }
-  /** `groups.create` answered. The group goes to the top of the list at once. */
   | { readonly on: 'made'; readonly facts: GroupFacts }
   | { readonly on: 'followed'; readonly group: GroupId | null }
   | { readonly on: 'state'; readonly facts: GroupFacts; readonly answering: readonly Answering[]; readonly pushes: boolean }
-  /** `groups.log` answered: the drawn lines after `after`, and `cursor`, where the next read starts. */
   | { readonly on: 'page'; readonly group: GroupId; readonly after: number; readonly epoch: number | null; readonly events: readonly GroupEvent[]; readonly cursor: number }
   | { readonly on: 'missing'; readonly group: GroupId }
   | { readonly on: 'sending'; readonly group: GroupId; readonly message: Outgoing }
@@ -229,7 +216,6 @@ const withFacts = (desk: GroupDesk, facts: GroupFacts): HeldGroup => {
   return held === undefined ? unread(facts) : { ...held, facts }
 }
 
-/** A log read in another epoch, or past where Hermes's log now ends, can't be read on from: it is read again from the start of its window. */
 const otherEpoch = (a: number | null, b: number | null) => a !== null && b !== null && a !== b
 
 const stale = (log: GroupLog | null, { latestSeq, epoch }: GroupFacts) =>
@@ -250,11 +236,6 @@ function paged(held: HeldGroup, news: Extract<GroupNews, { readonly on: 'page' }
   return { ...held, sending, log: { ...read, cursor: news.cursor, events: news.events.length === 0 ? read.events : [...read.events, ...news.events] } }
 }
 
-/**
- * Every change to what Highwing knows about group chats. Pure. Applying the same news twice is the same as applying it
- * once: a page is taken only when it starts at the log's cursor (or the log is unread), a state or a list replaces
- * facts, and a message leaves `sending` once a page holds its event id, whether or not the send's own answer came.
- */
 export function nextGroups(desk: GroupDesk, news: GroupNews): GroupDesk {
   switch (news.on) {
     case 'link':
@@ -313,24 +294,16 @@ export function groupChatOf({ followed, missing, held }: GroupDesk): GroupChat |
   }
 }
 
-/** How many of a group's newest log lines Highwing reads when it first shows it. */
 const LOG_WINDOW = 400
 
-/** Where a group's next log read starts. null: the log has every line Hermes holds, so there is nothing to read. */
 export function logStart({ facts, log }: HeldGroup): number | null {
   if (log === null) return Math.max(0, (facts.latestSeq ?? 0) - LOG_WINDOW)
   return facts.latestSeq !== null && facts.latestSeq <= log.cursor ? null : log.cursor
 }
 
-/** How soon a kept group is read again when Hermes pushes its changes, and when it does not. Hermes Desktop's own two rates (canonical-group-workspace.tsx:48-49). */
 const BACKSTOP_MS = 15_000
 const POLL_MS = 2_000
 
-/**
- * When Highwing reads groups again without being told to, and which. Only the followed group and a group with a member
- * answering are kept fresh: every 15 s behind Hermes's pushes, or every 2 s on a Hermes that does not push. null:
- * nothing to keep fresh, or no connection to read over.
- */
 export function nextPoll(desk: GroupDesk): { readonly ms: number; readonly groups: readonly GroupId[] } | null {
   if (desk.offline || desk.support.is !== 'able') return null
   const kept = Object.values(desk.held).filter(group => group.facts.id === desk.followed || group.answering.length > 0)

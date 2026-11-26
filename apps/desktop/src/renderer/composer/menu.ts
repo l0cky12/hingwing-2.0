@@ -12,7 +12,6 @@ export interface MenuSection {
   readonly items: readonly MenuItem[]
 }
 
-/** A bot the `@` list offers, and the text a pick puts in the box: `@Rae ` in a chat, `@sam ` in a group chat. */
 export interface Mention {
   readonly bot: Bot
   readonly word: string
@@ -20,7 +19,6 @@ export interface Mention {
 
 export interface MenuSources {
   readonly catalog: SlashCatalog
-  /** The bots a message from this chat can be handed to, or a group chat's members. */
   readonly bots: readonly Mention[]
   readonly files: PathFiles
 }

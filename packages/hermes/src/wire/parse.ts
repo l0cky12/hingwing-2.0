@@ -1675,11 +1675,7 @@ function answeringOf(raw: unknown): Answering | null {
   })
 }
 
-/**
- * `driver_status.member_activity` becomes who is answering. `progress_at` is left out: it moves on every frame of a
- * turn, and would push a new value to the window for nothing it draws. `change_events` absent: Hermes does not push.
- * null: a room Highwing cannot use.
- */
+/** `change_events` absent: Hermes does not push (gateway/hosted_room_context.py:52-63). */
 export function parseGroupState(reply: GroupsStateResult): { readonly facts: GroupFacts; readonly answering: readonly Answering[]; readonly pushes: boolean } | null {
   if (!isObject(reply)) return null
   const facts = parseGroupFacts(reply.room)
@@ -1707,11 +1703,6 @@ function groupEventOf(raw: unknown): GroupEvent | null {
   })
 }
 
-/**
- * One page of `groups.log`. A user's message, a member's reply, and a member's turn that failed or was cancelled are
- * drawn. Every other kind (`turn.settled`, `turn.deferred`, `room.*`, routing and assignment) moves `cursor` and shows
- * nothing, as an unshown session frame does.
- */
 export function parseGroupPage(reply: GroupsLogResult): { readonly events: readonly GroupEvent[]; readonly cursor: number; readonly more: boolean; readonly epoch: number | null } | null {
   return usable(() => {
     const page = fields<GroupsLogResult>(reply)

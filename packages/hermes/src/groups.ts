@@ -22,9 +22,7 @@ export interface GroupWire {
 
 export interface GroupBookDeps {
   readonly clock: Clock
-  /** Mints the `event_id` of a message and the `cancel_id` of a stop. */
   readonly mintId: () => string
-  /** Runs after every change of `groups` or `chat`, and never for news that changed neither. */
   readonly changed: () => void
 }
 
@@ -32,11 +30,11 @@ export interface GroupBookDeps {
 const CALL_TIMEOUT_MS = 10_000
 /** `MAX_LOG_LIMIT` (gateway/hosted_rooms.py:44). */
 const LOG_PAGE = 500
-/** `MAX_USER_TEXT_BYTES` (gateway/hosted_room_discussion.py:35). Checked here, so Hermes's `invalid_params` on a send only ever means the group is gone. */
+/** `MAX_USER_TEXT_BYTES` (gateway/hosted_room_discussion.py:35). */
 const TEXT_MAX_BYTES = 64 * 1024
 /**
  * Every message to a group goes out on this one thread. Hermes drops a member's late reply only when a newer message
- * arrived in the same thread (`plan_publication`, gateway/hosted_room_discussion.py:1031-1034), so a second thread id
+ * arrived in the same thread (`plan_publication`, gateway/hosted_room_discussion.py:1032-1034), so a second thread id
  * would let a stale reply land under a newer question.
  */
 const THREAD = 'main'
@@ -75,7 +73,6 @@ const loggedAs = (key: string) => `user:${createHash('sha256').update(key).diges
 
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
-/** A log read that fails leaves the log where it was. The next state read says whether it must start again. */
 const unread = (error: unknown): null => {
   if (error instanceof Offline || error instanceof RpcRefusal) return null
   throw error
@@ -83,35 +80,20 @@ const unread = (error: unknown): null => {
 
 export interface GroupBook {
   readonly groups: Groups
-  /** The followed group's chat. It keeps its identity while nothing in it changed, so a poll that found nothing pushes nothing. */
   readonly chat: GroupChat | null
-  /** Not online: the poll stops. A listed value stays while the link is down. */
   linked(state: Link['state']): void
   /** A new socket: pushes sent while the last one was down are gone, so every listed group is read again. */
   online(): void
-  /** Sessions changed, and so may the bots Hermes would seat or the groups another client made. */
   refresh(): void
-  /** `groups.changed`. Each named group is read. A name it does not hold, or `all`, asks for the list first. */
   moved(rooms: readonly GroupId[] | 'all'): void
-  /** The group the pane shows from now on, or none. Called with `shownGroup(open)` on every change of `open`. */
   follow(group: GroupId | null): void
-  /** `roster`: the bots Highwing lists now. A draft naming a bot not among them is refused before Hermes is asked. */
   create(draft: GroupDraft, roster: readonly Bot[]): Promise<Outcome>
-  /**
-   * A message sent again after its answer was lost goes out under the same `event_id`, so Hermes keeps it once. Only
-   * the same words to the same group count as the same message, and nothing is sent again without the user.
-   */
+  /** A message sent again after its answer was lost goes out under the same `event_id`, so Hermes keeps it once. */
   send(group: GroupId, text: string): Promise<Outcome>
   stop(group: GroupId): Promise<Outcome>
   close(): void
 }
 
-/**
- * The one owner of what Highwing knows about group chats, for the hub's lifetime. It changes its desk only through
- * `nextGroups`, and makes every `groups.*` call. A group is read (its state, then its log from the cursor while the
- * pane shows it) when it is followed, when Hermes says it moved, after a send or a stop, and on the poll `nextPoll`
- * sets. One read per group is in flight, and one asked for during it runs once more after it.
- */
 export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
   let desk = EMPTY_GROUPS
   let groups = groupsOf(desk)
@@ -119,7 +101,6 @@ export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
   let listing: Promise<boolean> | null = null
   let queued: Promise<boolean> | null = null
   const reads = new Map<GroupId, 'once' | 'again'>()
-  /** The last message to each group whose send never answered, kept so the same words go out under the same key. */
   const unanswered = new Map<GroupId, { readonly text: string; readonly key: string }>()
   let cancelPoll: (() => void) | null = null
 
@@ -224,7 +205,6 @@ export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
     })
   }
 
-  /** Why the group can't take a message or a Stop now, from what Hermes last said. null: ask Hermes. */
   const blocked = (): Outcome<never> | null => {
     const { support } = desk
     if (support.is === 'unsupported') return { ok: false, refusal: NO_GROUPS }
@@ -232,8 +212,7 @@ export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
     return support.is === 'able' && !support.driver ? { ok: false, refusal: NOT_RUNNING } : null
   }
 
-  /** A refusal can mean Hermes stopped running group chats, or no longer has this one: the topics learn it too. */
-  const refusedNow = (error: unknown, group: GroupId, during: During): Outcome<never> => {
+  const refuseAndReread = (error: unknown, group: GroupId, during: During): Outcome<never> => {
     if (error instanceof RpcRefusal && error.reason === 'runtime_coordination_required') void ask()
     if (error instanceof RpcRefusal && error.reason === 'invalid_params') read(group)
     return refusedBy(error, during)
@@ -289,7 +268,7 @@ export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
           return NOT_CONNECTED
         }
         unanswered.delete(group)
-        return refusedNow(error, group, 'send')
+        return refuseAndReread(error, group, 'send')
       }
       unanswered.delete(group)
       read(group)
@@ -301,7 +280,7 @@ export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
       try {
         await conn.call('groups.stop', { room_id: group, cancel_id: deps.mintId() }, CALL_TIMEOUT_MS)
       } catch (error) {
-        return refusedNow(error, group, 'stop')
+        return refuseAndReread(error, group, 'stop')
       }
       read(group)
       return DONE

@@ -13,7 +13,6 @@ function Item({ item, face }: { readonly item: GroupItemView; readonly face: Bot
   )
 }
 
-/** The open group's thread: each message, then one item per member's reply under it, and who is answering at its live end. */
 export function GroupThread({ view, faceOf }: { readonly view: GroupThreadView; readonly faceOf: (member: GroupMember) => Bot }) {
   if (view.show === 'loading') return <div id="transcript" />
   if (view.show === 'note') return <div id="transcript"><p className="notice" role="status">{view.words}</p></div>
@@ -40,7 +39,6 @@ export function GroupThread({ view, faceOf }: { readonly view: GroupThreadView; 
   )
 }
 
-/** The top bar's right end while a group is open: its members' faces and names. */
 export function GroupMembers({ faces }: { readonly faces: readonly Bot[] }) {
   return (
     <span className="members">

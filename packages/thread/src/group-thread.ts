@@ -54,13 +54,12 @@ const DOING: { readonly [D in Answering['doing']]: { readonly one: string; reado
 const seatOf = (members: readonly GroupMember[], id: MemberId): GroupMember =>
   members.find(member => member.id === id) ?? { id, bot: id as string as GroupMember['bot'], handle: id, name: id }
 
-/** The members whose turn is running, or, while none is, the ones waiting for theirs. */
 function answeringNow(answering: readonly Answering[]): readonly Answering[] {
   const running = answering.filter(turn => turn.doing !== 'waiting')
   return running.length > 0 ? running : answering
 }
 
-/** "Sam is thinking", "Ada and Sam are thinking". The same words in the thread's live end and the sidebar row. null: nobody is answering. */
+/** "Sam is thinking", "Ada and Sam are thinking". null: nobody is answering. */
 export function answeringWords(answering: readonly Answering[], members: readonly GroupMember[], nameOf: NameOf): string | null {
   const now = answeringNow(answering)
   const [first] = now
@@ -102,8 +101,7 @@ function read({ name, members, events, earlier, answering, sending }: Read, cloc
   const turns: Building[] = []
   const byId = new Map<string, Building>()
   let before: Building | null = null
-  /** A line whose message is older than the window goes first, under no message. */
-  const under = (about: string): Building => {
+  const turnAnswering = (about: string): Building => {
     const held = byId.get(about)
     if (held !== undefined) return held
     if (before === null) {
@@ -121,7 +119,7 @@ function read({ name, members, events, earlier, answering, sending }: Read, cloc
     }
     const member = seatOf(members, event.member)
     const key = `${event.seq}`
-    under(event.about).items.push(event.kind === 'reply'
+    turnAnswering(event.about).items.push(event.kind === 'reply'
       ? { kind: 'reply', key, member, text: event.text }
       : { kind: 'note', key, member, words: SILENT_WORDS[event.why](nameOf(member), event.detail), tone: event.why === 'failed' ? 'error' : 'quiet' })
   }

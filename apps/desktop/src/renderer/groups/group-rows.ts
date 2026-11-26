@@ -14,13 +14,9 @@ export interface GroupRowView {
   readonly name: string
   readonly faces: readonly Bot[]
   readonly more: number
-  /** "Ada, Sam and Juno", or "Sam is thinking" while a member answers. */
   readonly preview: string
-  /** The preview says who is answering now, so it is drawn in the signal colour. */
   readonly live: boolean
-  /** This is the open chat. */
   readonly current: boolean
-  /** "Launch plan, group chat with Ada, Sam and Juno" */
   readonly label: string
 }
 

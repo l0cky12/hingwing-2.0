@@ -549,7 +549,6 @@ export function parseFileRequest(raw: unknown): FileRequest | null {
   return sessionId && filled(raw.path) ? { action: raw.action, sessionId, path: raw.path } : null
 }
 
-/** Every kind of draft key that names what it belongs to after a colon. */
 const DRAFT_KINDS: { readonly [K in Exclude<DraftKey, 'new'> extends `${infer Kind}:${string}` ? Kind : never]: true } = { chat: true, bot: true, group: true }
 const draftKeyOf = (raw: unknown): DraftKey | null => {
   if (raw === 'new') return raw
