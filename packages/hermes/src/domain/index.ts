@@ -12,6 +12,7 @@ export {
   BOT_MARKS, BOT_TONES, botsIn, canonicalBotId, GENERATED_MAX_BYTES, isPetSlug, MARK_SETS, PICTURE_MAX_BYTES, PICTURE_RULE, pictureDataUrlOf, pictureTypeOf, rosterOf, shownUnasked, type AvatarTone, type Bot, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotFacts, type BotFlag, type BotId, type BotMark, type Bots, type BotSection, type BotTone, type Marked, type PetChoice, type PictureType, type Roster
 } from './bots'
 export type { PathMatch } from './path'
+export { isManagerName, MANAGER_NAMES, MANAGERS, type BotManagers, type FirstTime, type Manager, type ManagerFacts, type ManagerName, type ManagerState } from './passwords'
 export { mentionedBots, mentionOf, typedMention } from './mention'
 export type { Relay, RelayDesk, RelayId, RelayState } from './relay'
 export { shownBot, shownChat, shownGroup, type ChatRef, type OpenChat, type Shown, type ShownGroup, type Unstarted } from './open'

@@ -1,6 +1,7 @@
 import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId, BotMark, Marked, PetChoice } from './bots'
 import type { GroupDraft, GroupId } from './groups'
 import type { ChatRef, Unstarted } from './open'
+import type { BotManagers, ManagerName } from './passwords'
 import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
 import type {
@@ -118,6 +119,13 @@ export type Command =
   | { readonly do: 'removeBotPicture'; readonly bot: BotId }
   /** The bot's picture as a data URL, or null for none. */
   | { readonly do: 'botPicture'; readonly bot: BotId }
+  /** The password managers `bot` can use. Each change below answers them read again after it. */
+  | { readonly do: 'passwordManagers'; readonly bot: BotId }
+  /** Turns a manager on or off for `bot`. Off also locks it. */
+  | { readonly do: 'usePasswordManager'; readonly bot: BotId; readonly manager: ManagerName; readonly use: boolean }
+  /** Hermes drops the unlock after 30 idle minutes (agent/vault_backends/unlock.py:29) or on a lock, and the agent then asks for it again in the chat. */
+  | { readonly do: 'unlockPasswordManager'; readonly bot: BotId; readonly manager: ManagerName; readonly password: string }
+  | { readonly do: 'lockPasswordManager'; readonly bot: BotId; readonly manager: ManagerName }
   /**
    * Makes the group chat, lists it in `groups` and shows it. The same draft sent again makes no second group: Hermes
    * answers a repeated id with the group it already made.
@@ -202,6 +210,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'generatePicture' | 'retitle' } ? string
   : C extends { do: 'pets' } ? readonly PetChoice[]
   : C extends { do: 'markBot' } ? Marked
+  : C extends { do: 'passwordManagers' | 'usePasswordManager' | 'unlockPasswordManager' | 'lockPasswordManager' } ? BotManagers
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
   : C extends { do: 'completePath' } ? readonly PathMatch[]
