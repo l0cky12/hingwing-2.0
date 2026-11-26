@@ -103,6 +103,12 @@ export interface Fixture {
     readonly oneshot?: Oneshot
     /** What `pet.gallery` and `pet.thumb` answer. Absent: the gateway refuses both as unknown methods, as a Hermes without pets does. */
     readonly pets?: Pets
+    /**
+     * The Connect apps window's catalog and accounts. Absent: `connectors.catalog`, `connectors.accounts`,
+     * `connectors.accounts.remove` and `connectors.operation.status` are unknown methods, and `connectors.connect`
+     * stays on the story for the in-turn card.
+     */
+    readonly connectors?: Connectors
     /** `'profile'`: play a Hermes with no `interactive` ticket, whose every socket is bound to the home profile. Default `'host'`. */
     readonly reach?: Reach
     /** false: the home bot has no Bot Chat, and the story session is only a chat of the home profile. Default true. */
@@ -165,6 +171,31 @@ export interface Pets {
   readonly thumbs: { readonly [slug: string]: string }
   readonly delay_ms?: number
   readonly refused_once?: readonly string[]
+}
+
+export interface ConnectorCatalogSeed {
+  readonly slug: string
+  readonly name: string
+  readonly description: string
+  readonly category: string
+  readonly logo_url?: string | null
+}
+
+export interface ConnectorAccountSeed {
+  readonly connection_id: string
+  readonly connector: string
+  readonly status: string
+  readonly label: string
+  readonly active: boolean
+  readonly created_at: string
+  readonly updated_at: string
+}
+
+/** `signInUrl` is the http(s) page every connect in this fixture opens. */
+export interface Connectors {
+  readonly catalog: readonly ConnectorCatalogSeed[]
+  readonly accounts: readonly ConnectorAccountSeed[]
+  readonly signInUrl: string
 }
 
 /** `reply`: the bot's one answer, sent `delay_ms` after the call (default 0). `refuse`: the reason Hermes refuses the delivery with. */
@@ -354,6 +385,22 @@ const isRelayScript = (value: unknown): value is RelayScript =>
 
 const isText = (value: unknown): value is string => typeof value === 'string' && value !== ''
 
+const ACCOUNT_STATUS = new Set(['pending', 'active', 'failed', 'expired', 'revoked', 'inactive'])
+
+const isCatalogSeed = (value: unknown): value is ConnectorCatalogSeed =>
+  isObject(value) && isText(value.slug) && isText(value.name) && isText(value.description) && isText(value.category)
+  && (value.logo_url === undefined || value.logo_url === null || typeof value.logo_url === 'string')
+
+const isAccountSeed = (value: unknown): value is ConnectorAccountSeed =>
+  isObject(value) && isText(value.connection_id) && isText(value.connector) && typeof value.status === 'string' && ACCOUNT_STATUS.has(value.status)
+  && isText(value.label) && typeof value.active === 'boolean' && isText(value.created_at) && isText(value.updated_at)
+
+const isConnectors = (value: unknown): value is Connectors =>
+  isObject(value) && Array.isArray(value.catalog) && value.catalog.every(isCatalogSeed)
+  && new Set(value.catalog.map(row => row.slug)).size === value.catalog.length
+  && Array.isArray(value.accounts) && value.accounts.every(isAccountSeed)
+  && typeof value.signInUrl === 'string' && /^https?:\/\//.test(value.signInUrl)
+
 const isDelay = (value: unknown) => value === undefined || (typeof value === 'number' && value >= 0)
 
 const isTurnScript = (value: unknown): value is TurnScript => {
@@ -429,6 +476,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (images !== undefined && !isImages(images)) return '"images" must be { available, picture?, error?, delay_ms? }'
   if (oneshot !== undefined && !isOneshot(oneshot)) return '"oneshot" must be { text?, error?, delay_ms? }'
   if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'
+  const { connectors } = value
+  if (connectors !== undefined && !isConnectors(connectors)) return '"connectors" must be { catalog, accounts, signInUrl } with a unique slug on every app and an http(s) sign-in page'
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
@@ -485,6 +534,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
     ...(assetFails === undefined ? {} : { assetFails }),
     ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }),
+    ...(connectors === undefined ? {} : { connectors }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),

@@ -379,6 +379,26 @@ const STORY_CHECKS: Readonly<Record<string, readonly Check[]>> = {
 }
 const ANY_STORY_CALL: readonly Check[] = [known]
 
+/** Reads the Connect apps window makes. `connectors.connect` joins them only when the fixture has a board. */
+const CONNECTOR_READS: ReadonlySet<string> = new Set(['connectors.catalog', 'connectors.accounts', 'connectors.accounts.remove', 'connectors.operation.status'])
+
+interface HeldAccount {
+  connection_id: string
+  connector: string
+  status: string
+  label: string
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+interface ConnectorOp {
+  readonly slug: string
+  readonly url: string
+  readonly connectionId: string | null
+  polls: number
+}
+
 /** The strict session verbs that drop `profile` before their key check (gateway/session_controls.py:114-120). */
 const PROFILE_IMPLICIT: ReadonlySet<string> = new Set([
   'session.create', 'session.list', 'session.info', 'session.resume', 'session.detach', 'prompt.submit', 'prompt.receipt', 'prompt.cancel',
@@ -979,6 +999,11 @@ export class ScriptedGateway {
   private readonly sockets = new Set<Socket>()
   private readonly stagedImages = new Set<string>()
   private readonly rooms: ScriptedRooms | null
+  private readonly connectorCatalog: readonly { readonly slug: string; readonly name: string; readonly description: string; readonly category: string }[] | null
+  private readonly connectorAccounts: HeldAccount[] | null
+  private readonly signInUrl: string | null
+  private readonly connectorOps = new Map<string, ConnectorOp>()
+  private connectorOpSeq = 0
   private drop: Drop
   private delivered = 0
   private seqShift = 0
@@ -1021,6 +1046,10 @@ export class ScriptedGateway {
     const clash = fixture.header.configureClash
     this.clash = clash === undefined ? undefined : typeof clash === 'string' ? { title: clash, left: 1 } : { title: clash.title, left: clash.times }
     const served = this.profiles.flatMap(row => (isText(row.name) ? [row.name] : []))
+    const board = fixture.header.connectors
+    this.connectorCatalog = board === undefined ? null : board.catalog.map(row => ({ slug: row.slug, name: row.name, description: row.description, category: row.category }))
+    this.connectorAccounts = board === undefined ? null : board.accounts.map(row => ({ ...row }))
+    this.signInUrl = board?.signInUrl ?? null
     this.rooms = fixture.header.groups === undefined ? null : new ScriptedRooms(fixture.header.groups, {
       clock: options.clock,
       profiles: served.length > 0 ? served : [this.home],
@@ -1080,6 +1109,100 @@ export class ScriptedGateway {
   }
 
   /**
+   * The Connect apps board. The first status read stays initiated. The second settles and writes the account,
+   * so a window can show the wait and then the new standing.
+   */
+  private connectors(method: string, params: Obj): unknown {
+    const catalog = this.connectorCatalog
+    const accounts = this.connectorAccounts
+    const url = this.signInUrl
+    if (catalog === null || accounts === null || url === null) throw unknownMethod(method)
+    if (method === 'connectors.catalog') return { connectors: catalog }
+    if (method === 'connectors.accounts') {
+      const { connector } = params
+      if (connector !== undefined && connector !== null && !isText(connector)) throw new Refused('invalid_params')
+      return { accounts: connector === undefined || connector === null ? accounts : accounts.filter(row => row.connector === connector) }
+    }
+    if (method === 'connectors.accounts.remove') {
+      if (!isText(params.connection_id)) throw new Refused('invalid_params')
+      const at = accounts.findIndex(row => row.connection_id === params.connection_id)
+      if (at < 0) throw new Refused('not_found')
+      const [held] = accounts.splice(at, 1)
+      return { connection_id: held?.connection_id, connector: held?.connector, status: 'removed' }
+    }
+    if (method === 'connectors.connect') return this.startSignIn(params, accounts, catalog, url)
+    if (method === 'connectors.operation.status') return this.signInStatus(params, accounts, catalog)
+    throw unknownMethod(method)
+  }
+
+  private ownsAccount(params: Obj): void {
+    const owner = params.owner
+    if (!isObject(owner)) throw new Refused('invalid_params')
+    if (owner.type === 'account') return
+    if (owner.type === 'session' && owner.session_id === this.sessionId) return
+    throw new Refused('invalid_params')
+  }
+
+  private startSignIn(params: Obj, accounts: HeldAccount[], catalog: readonly { readonly slug: string }[], url: string): unknown {
+    this.ownsAccount(params)
+    const listed = params.connectors
+    if (!Array.isArray(listed) || listed.length !== 1 || !isText(listed[0]) || !catalog.some(row => row.slug === listed[0])) throw new Refused('invalid_params')
+    if (params.reconnect !== undefined && typeof params.reconnect !== 'boolean') throw new Refused('invalid_params')
+    const slug = listed[0]
+    const reconnect = params.reconnect === true
+    const named = params.connection_id
+    if (!reconnect && named !== undefined) throw new Refused('invalid_params')
+    let connectionId: string | null = null
+    if (reconnect) {
+      if (named !== undefined && !isText(named)) throw new Refused('invalid_params')
+      const held = accounts.find(row => row.connector === slug && (named === undefined || row.connection_id === named))
+      if (held === undefined) throw new Refused('invalid_params')
+      connectionId = held.connection_id
+    }
+    const seq = ++this.connectorOpSeq
+    const opId = `op-${seq}`
+    this.connectorOps.set(opId, { slug, url, connectionId, polls: 0 })
+    return this.signInReply(opId, seq, false, slug, url, connectionId)
+  }
+
+  private signInStatus(params: Obj, accounts: HeldAccount[], catalog: readonly { readonly slug: string; readonly name: string }[]): unknown {
+    this.ownsAccount(params)
+    if (!isText(params.op_id)) throw new Refused('invalid_params')
+    const op = this.connectorOps.get(params.op_id)
+    if (op === undefined) throw new Refused('not_found')
+    op.polls += 1
+    const settled = op.polls >= 2
+    if (settled) this.upsertAccount(accounts, catalog, op)
+    return this.signInReply(params.op_id, this.connectorOpSeq, settled, op.slug, op.url, op.connectionId)
+  }
+
+  private signInReply(opId: string, seq: number, settled: boolean, slug: string, url: string, connectionId: string | null): unknown {
+    return {
+      op_id: opId,
+      seq,
+      deadline_at: this.options.clock.now() + 600_000,
+      settled,
+      targets: [{ name: slug, kind: 'connector', action: connectionId === null ? 'connect' : 'reconnect', state: settled ? 'connected' : 'initiated', connect_url: url }]
+    }
+  }
+
+  private upsertAccount(accounts: HeldAccount[], catalog: readonly { readonly slug: string; readonly name: string }[], op: ConnectorOp): void {
+    const id = op.connectionId ?? `conn-${op.slug}`
+    const stamp = String(this.options.clock.now())
+    const held = accounts.find(row => row.connection_id === id)
+    if (held !== undefined) {
+      held.status = 'active'
+      held.active = true
+      held.updated_at = stamp
+      return
+    }
+    accounts.push({
+      connection_id: id, connector: op.slug, status: 'active', label: catalog.find(row => row.slug === op.slug)?.name ?? op.slug,
+      active: true, created_at: stamp, updated_at: stamp
+    })
+  }
+
+  /**
    * `AuthorityConnection.dispatch` (gateway/session_controls.py:313-410): the profile the frame
    * names, then the closed key set, then the handler, then its refusal. A method nobody declares
    * is JSON-RPC's -32601.
@@ -1099,6 +1222,16 @@ export class ScriptedGateway {
     const params = named && PROFILE_IMPLICIT.has(method) ? unscoped : raw
     const fields = checkParams(method, params)
     if (fields !== undefined && fields.length > 0) return refusal('invalid_params', { fields })
+    // No board: the four window reads are unknown, and connect stays on the story for the in-turn card's Try again.
+    if (method === 'connectors.connect' ? this.connectorAccounts !== null : CONNECTOR_READS.has(method)) {
+      if (this.connectorAccounts === null) return { error: unknownMethod(method).wire }
+      try {
+        return { result: this.connectors(method, params) }
+      } catch (error) {
+        if (error instanceof Refused) return { error: error.wire }
+        throw error
+      }
+    }
     // `llm.oneshot` only borrows a chat's model through its `session_id`, so it is never a call of that chat.
     const chat = method === 'llm.oneshot' ? undefined : this.echoChats().find(held => held.id === params.session_id && held.profile === routed)
     const handler = HANDLERS[method]
