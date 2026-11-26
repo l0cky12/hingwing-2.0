@@ -203,7 +203,7 @@ describe('a Save of the details dialog', () => {
 describe('the details dialog', () => {
   const shown = (picture: boolean) => renderToStaticMarkup(
     <BotEditor
-      bot={{ id: 'rae' as BotId, name: 'Rae', preview: null, description: null, tone: 'plum', picture }} details={RAE}
+      bot={{ id: 'rae' as BotId, name: 'Rae', preview: null, description: null, tone: 'plum', picture, pinned: false, hidden: false }} details={RAE}
       onDescribe={async () => ({ ok: true, value: RAE })} onEdit={async () => ({ ok: true, value: undefined })}
       onPickPicture={async () => ({ ok: true, value: 'cancelled' })} onRemovePicture={async () => ({ ok: true, value: undefined })} onClose={() => {}}
     />

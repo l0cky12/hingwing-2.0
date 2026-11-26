@@ -1,4 +1,4 @@
-import { botsIn, mentionOf, typedMention, type Bot, type BotId, type Bots, type PathMatch, type RelayDesk, type SlashCatalog, type SlashEntry } from '@highwing/hermes/domain'
+import { botsIn, mentionOf, shownUnasked, typedMention, type Bot, type BotId, type Bots, type PathMatch, type RelayDesk, type SlashCatalog, type SlashEntry } from '@highwing/hermes/domain'
 
 export type MenuItem =
   | { readonly kind: SlashEntry['kind']; readonly entry: SlashEntry }
@@ -79,7 +79,12 @@ const MENTIONS: Trigger = {
     return { from: typed.at, to, query: typed.query }
   },
   sections: [
-    { label: 'Bots', items: (query, { bots }) => bots.filter(bot => starts(bot.name, query) || starts(bot.id, query)).map(bot => ({ kind: 'bot', bot, mention: mentionOf(bot, bots) })) },
+    {
+      label: 'Bots',
+      items: (query, { bots }) => bots
+        .filter(bot => (query !== '' || shownUnasked(bot)) && (starts(bot.name, query) || starts(bot.id, query)))
+        .map(bot => ({ kind: 'bot', bot, mention: mentionOf(bot, bots) }))
+    },
     { label: 'Files', items: (query, { files }) => files.matches.map(match => ({ kind: 'file', match, current: files.word === `@${query}` })) }
   ]
 }

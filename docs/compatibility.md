@@ -741,13 +741,25 @@ reads that key only when it is an object, and no other `ui_meta` key:
   which is always last. Hermes groups by `sectionId` against section records
   that only the desktop which made them stores, so Highwing groups by the name
   Hermes writes beside the id. Two sections with one name show as one.
-- A bot whose `hidden` is `true` is left out, as the plugin's
-  `hidden-bots.ts` hides it.
+- A bot whose `hidden` is `true` is kept and drawn under a collapsed
+  "Hidden (N)" group at the bottom of the sidebar, as the plugin's
+  `hidden-bots.ts` keeps it. Hiding changes only where a bot is drawn. A search
+  in the sidebar or in Ctrl+K finds it, a typed `@` offers it, and a mention
+  of it is still sent to it. The chat-mode bot picker, the Ctrl+K list with
+  nothing typed and a bare `@` leave it out, unless it is the bot already
+  chosen in the picker.
+- A bot whose `pinned` is `true` is drawn under "Pinned", below the default
+  bot. The default bot ignores `pinned` and is never drawn twice. A bot that
+  is both pinned and hidden is under Hidden only.
+- A flag that is not the boolean `true` is off.
 - `color` is ignored. It is any CSS colour, and Highwing paints each avatar in
-  one of its own five tones so that it reads in every theme.
-- `pinned`, `shape`, `description` and the rest are not read.
+  one of its own five tones so that it reads in every theme. The tones are
+  handed out over every bot, hidden ones included, so hiding, showing or
+  pinning a bot never recolours another.
+- `shape`, `description` and the rest are not read.
 
-The default bot is the first row with `is_default`. The preview is of the chat
+The default bot is the first row with `is_default`, hidden or not, and launch
+opens its Bot Chat. The preview is of the chat
 a click on the row opens: `canonical_session.preview` when Hermes reports a
 Bot Chat, else `last_session.preview`, as the plugin's `bot-row.tsx:144`
 picks it.
@@ -757,6 +769,13 @@ every other profile's row (`gateway/session_group_controls.py:366-384`). Those
 bots then show "No messages yet". If Hermes refuses `profiles.list`, the sidebar
 says "Hermes wouldn't list its bots." A recording made with `HIGHWING_RECORD`
 keeps the real reply in its header under `profiles`.
+
+Keeping hidden bots changes two things for an existing user. A default bot
+hidden in Hermes used to be dropped from the roster, so launch opened the newest chat,
+or a second `is_default` row took its place. Launch now opens the hidden
+default bot's Bot Chat, as Hermes does, since hiding is display-only. And a
+user who had hidden bots sees the avatar tones shift once, because the tones
+are now handed out over the hidden bots too.
 
 ### Opening a bot's chat
 

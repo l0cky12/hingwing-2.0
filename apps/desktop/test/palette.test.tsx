@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { ACTIONS, type ActionRow, type Scene } from '../src/renderer/palette/actions'
 import { Results } from '../src/renderer/palette/Palette'
 import { activeIn, GRADE, paletteOf, rank, step, type PaletteItem, type PaletteView } from '../src/renderer/palette/palette-view'
-import { APPROVED } from './support/bots'
+import { APPROVED, fact, listed as listedBots } from './support/bots'
 
 const NOW = Date.UTC(2026, 10, 24, 12)
 const DAY = 86_400_000
@@ -76,6 +76,13 @@ describe('ranking what the palette lists', () => {
     const many = Array.from({ length: 10 }, (_, at) => row(`m${at}`, `Chat ${at}`, { lastActiveAt: NOW - at * DAY }))
     expect(paletteOf(sceneOf(many), '  '), 'at most eight chats').toMatchObject({ sections: [{ heading: 'Chats', rows: { length: 8 } }, {}, {}] })
     expect(paletteOf(sceneOf(many), 'chat'), 'every chat that matches').toMatchObject({ sections: [{ heading: 'Actions' }, { heading: 'Chats', rows: { length: 10 } }] })
+  })
+
+  it('leaves hidden bots out of the list with nothing typed, and finds one by name', () => {
+    const bots = listedBots(fact('default', 'Emu', { isDefault: true, hidden: true }), fact('old', 'Old Helper', { hidden: true }), fact('research', 'Research'))
+    expect(listed(paletteOf(sceneOf([], { bots }), ''))).toEqual([['Bots', ['Research']], ['Actions', ['New chat']]])
+    expect(listed(paletteOf(sceneOf([], { bots }), 'old'))).toEqual([['Bots', ['Old Helper']]])
+    expect(listed(paletteOf(sceneOf([], { bots }), 'emu'))).toEqual([['Bots', ['Emu']]])
   })
 
   it('moves the selection down and up, wrapping at both ends', () => {

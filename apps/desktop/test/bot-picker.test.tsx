@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { BotItems, BotMenu } from '../src/renderer/bots/BotPicker'
 import { listOf, NEW_BOT_BLOCKS, NO_BOTS, NOTES } from '../src/renderer/bots/roster-view'
-import { APPROVED, listed } from './support/bots'
+import { APPROVED, fact, listed } from './support/bots'
 
 const showing = (bot: string | null, opening: string | null = null): OpenChat => ({
   shown: { kind: 'chat', bot: bot as BotId | null, sessionId: 's1' as SessionId },
@@ -35,6 +35,10 @@ describe('the bot picker', () => {
     expect(attr(toggle, 'aria-expanded')).toBe('false')
     expect(attr(toggle, 'aria-disabled')).toBeUndefined()
     expect(attr(markup.match(/<div[^>]*class="bot-pick"[^>]*>/)![0], 'data-state')).toBe('listed')
+  })
+
+  it('is named for a hidden bot the user opened', () => {
+    expect(nameOf(render(listed(fact('old', 'Old Helper', { hidden: true }), fact('scout', 'Scout')), showing('old')))).toBe('Bot: Old Helper')
   })
 
   it('reads "Choose a bot" when there is no bot of the roster to name', () => {

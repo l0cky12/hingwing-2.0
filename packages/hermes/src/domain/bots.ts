@@ -34,6 +34,9 @@ export interface BotFacts {
   readonly chat: SessionId | null
   /** Hermes holds a picture for this bot. Highwing reads it apart, with `botPicture`. */
   readonly picture: boolean
+  /** The Bots plugin's own flags, which Hermes desktop's Pin to top and Hide write too. */
+  readonly pinned: boolean
+  readonly hidden: boolean
 }
 
 export interface Bot {
@@ -43,6 +46,9 @@ export interface Bot {
   readonly description: string | null
   readonly tone: AvatarTone
   readonly picture: boolean
+  /** A hidden bot is still listed, opened, mentioned and found by search. */
+  readonly pinned: boolean
+  readonly hidden: boolean
 }
 
 export interface BotSection {
@@ -53,11 +59,11 @@ export interface BotSection {
 }
 
 /**
- * Every bot once, in the order the sidebar draws them: the default bot, then each section from the
- * top. No two neighbours in that order share a tone.
+ * Every bot once, hidden ones included: the default bot, then each section from the top. No two neighbours in that
+ * order share a tone, so hiding, showing or pinning a bot never recolours another.
  */
 export interface Roster {
-  /** Hermes's default profile. null when Hermes marks none. */
+  /** Hermes's default profile, hidden or not. null when Hermes marks none. */
   readonly featured: Bot | null
   readonly sections: readonly BotSection[]
 }
@@ -163,9 +169,11 @@ export interface BotEdit {
 /** The id Hermes gives a typed name: trimmed and lowercased, `default` in any case (hermes_cli/profiles.py:370-396). */
 export const canonicalBotId = (name: string): BotId => name.trim().toLowerCase() as BotId
 
-const shown = ({ id, name, preview, description, picture }: BotFacts, tone: AvatarTone): Bot => ({ id, name, preview, description, tone, picture })
+const shown = ({ id, name, preview, description, picture, pinned, hidden }: BotFacts, tone: AvatarTone): Bot => ({ id, name, preview, description, tone, picture, pinned, hidden })
 
-/** Every bot of a roster, in the order the sidebar draws them. */
+export const shownUnasked = (bot: Bot): boolean => !bot.hidden
+
+/** Every bot of a roster, hidden ones included, in the roster's order. */
 export const botsIn = ({ featured, sections }: Roster): readonly Bot[] => [...(featured === null ? [] : [featured]), ...sections.flatMap(section => section.bots)]
 
 /** Only the first default bot is featured. */

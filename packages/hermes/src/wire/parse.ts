@@ -1161,14 +1161,12 @@ const botMetaOf = (row: ProfileRow): Obj => (isObject(row.ui_meta) && isObject(r
 
 const shownNameOf = (row: ProfileRow): string => words(botMetaOf(row).title) ?? words(row.display_name) ?? row.name
 
-/** `profiles.list` as flat facts, in the reply's order, without the bots the user hid. */
 export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
   const seen = new Set<string>()
   return profileRows(reply).flatMap((row): BotFacts[] => {
     if (seen.has(row.name)) return []
     seen.add(row.name)
     const meta = botMetaOf(row)
-    if (meta.hidden === true) return []
     // A row previews the chat a click opens, as Hermes's own bot row does (hermes-bots/bot-row.tsx:144).
     const session = isObject(row.canonical_session) ? row.canonical_session : row.last_session
     return [{
@@ -1179,7 +1177,9 @@ export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
       preview: isObject(session) ? words(session.preview) : null,
       description: words(row.description),
       chat: isObject(row.canonical_session) ? titledId(row.canonical_session) : null,
-      picture: row.has_avatar === true
+      picture: row.has_avatar === true,
+      pinned: meta.pinned === true,
+      hidden: meta.hidden === true
     }]
   })
 }

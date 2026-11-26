@@ -94,6 +94,19 @@ describe('the @ list', () => {
     expect(names('Ask @zzz')).toBeNull()
   })
 
+  it('leaves a hidden bot out of a bare @, offers it once a letter is typed, and still names it apart from the bots shown', () => {
+    const team = listed(fact('default', 'Ada', { isDefault: true }), fact('rae', 'Old Helper', { hidden: true }), fact('rae-writer', 'rae'))
+    const sources: MenuSources = { ...SOURCES, bots: mentionable(team, CAN_RELAY, ADA) }
+    const shownFor = (text: string) => {
+      const menu = at(text, text.length, fresh, sources)
+      return menu.open ? menu.items.map(nameOf) : null
+    }
+    expect(shownFor('Ask @')).toEqual(['rae'])
+    expect(shownFor('Ask @o')).toEqual(['Old Helper'])
+    const bare = opened(at('Ask @', 5, fresh, sources))
+    expect(picked('Ask @', bare.range, bare.items[0]!), '@rae would name the hidden bot').toEqual({ text: 'Ask @rae-writer ', caret: 16 })
+  })
+
   it('goes on through spaces inside an open quote, and ignores the quote', () => {
     expect(names('Ask @"timothy · c')).toEqual(['Timothy · CEO'])
     expect(names('Ask @"Ra')).toEqual(['Rae'])

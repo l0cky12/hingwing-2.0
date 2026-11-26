@@ -27,6 +27,7 @@ const render = (bots: Bots | undefined) => showing(bots, AT_LAUNCH)
 const attr = (tag: string, name: string) => new RegExp(` ${name}="([^"]*)"`).exec(tag)?.[1]
 const buttons = (markup: string) => markup.match(/<button[^>]*>/g) ?? []
 const named = (markup: string, label: string) => buttons(markup).find(tag => attr(tag, 'aria-label') === label)
+const marked = (html: string, name: string) => buttons(html).filter(tag => attr(tag, name) !== undefined).map(tag => attr(tag, 'aria-label'))
 const idsIn = (markup: string) => Array.from(markup.matchAll(/ id="([^"]*)"/g), ([, id]) => id)
 
 describe('the bots sidebar', () => {
@@ -45,8 +46,6 @@ describe('the bots sidebar', () => {
     ])
     expect(markup).toMatch(/<h3>New section<\/h3>.*<h3>Unassigned<\/h3>/s)
   })
-
-  const marked = (html: string, name: string) => buttons(html).filter(tag => attr(tag, name) !== undefined).map(tag => attr(tag, 'aria-label'))
 
   it('keeps each details button beside its row, never inside it, so each is its own control', () => {
     expect(markup).not.toMatch(/<button(?:(?!<\/button>)[\s\S])*<button/)
@@ -144,5 +143,44 @@ describe('the bots sidebar', () => {
   it('has a paint for every tone a bot can carry', () => {
     const css = readFileSync('apps/desktop/src/renderer/styles/app.css', 'utf8')
     for (const tone of ['ink', ...BOT_TONES]) expect(css, tone).toMatch(new RegExp(`\\.tone-${tone} \\{ background: var\\(--`))
+  })
+})
+
+describe('pinned and hidden bots in the sidebar', () => {
+  const MARKED = listed(
+    fact('default', 'Hermes', { isDefault: true }),
+    fact('editor', 'Editor', { section: 'Writing' }),
+    fact('researcher', 'Researcher', { section: 'Research', pinned: true }),
+    fact('old', 'Old Helper', { hidden: true }),
+    fact('test', 'Test Bot', { hidden: true })
+  )
+  const toggleOf = (html: string) => buttons(/<section class="bots-hidden">.*/s.exec(html)?.[0] ?? '').find(tag => attr(tag, 'aria-expanded') !== undefined)
+  const rowsOf = (html: string) => buttons(html).filter(tag => /class="bot(-feature)?"/.test(tag)).map(tag => attr(tag, 'aria-label'))
+  const headingsOf = (html: string) => Array.from(html.matchAll(/<h3>(?:<button[^>]*>)?(?:<svg.*?<\/svg>)?([^<]*)/g), ([, words]) => words)
+
+  it('draws Pinned under the card, then the sections, then a collapsed Hidden (N) with no hidden rows', () => {
+    const html = render(MARKED)
+    expect(headingsOf(html)).toEqual(['Pinned', 'Writing', 'Hidden (2)'])
+    expect(rowsOf(html)).toEqual(['Hermes, default bot', 'Researcher', 'Editor'])
+    expect(attr(toggleOf(html)!, 'aria-expanded')).toBe('false')
+  })
+
+  it('draws no card for a hidden default bot', () => {
+    const html = showing(listed(fact('default', 'Hermes', { isDefault: true, hidden: true }), fact('editor', 'Editor')), undefined)
+    expect(rowsOf(html)).toEqual(['Editor'])
+    expect(headingsOf(html)).toEqual(['Unassigned', 'Hidden (1)'])
+  })
+
+  it('opens Hidden at once, at lower emphasis, when every bot is hidden', () => {
+    const html = render(listed(fact('old', 'Old Helper', { hidden: true }), fact('test', 'Test Bot', { hidden: true })))
+    expect(attr(toggleOf(html)!, 'aria-expanded')).toBe('true')
+    expect(rowsOf(html)).toEqual(['Old Helper', 'Test Bot'])
+    expect(html.match(/<div class="bot-row" data-place="hidden">/g)).toHaveLength(2)
+  })
+
+  it('opens Hidden at once when the open chat is a hidden bot', () => {
+    const html = showing(MARKED, { shown: { kind: 'bot', bot: 'old' as BotId, sessionId: null }, opening: null, missing: null })
+    expect(attr(toggleOf(html)!, 'aria-expanded')).toBe('true')
+    expect(marked(html, 'aria-current')).toEqual(['Old Helper'])
   })
 })

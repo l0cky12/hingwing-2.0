@@ -5,7 +5,7 @@ import { Check, Chevron } from '../chrome/ModeSwitch'
 import { run, useTopic } from '../store'
 import { Avatar } from './Avatar'
 import { Star } from './Bots'
-import { botIn, listOf, NEW_BOT_BLOCKS, selectedIn, UNASSIGNED, type ListView } from './roster-view'
+import { botIn, listOf, NEW_BOT_BLOCKS, pickerOf, selectedIn, UNASSIGNED, type ListView } from './roster-view'
 
 export function BotPicker() {
   const [refused, setRefused] = useState<string | null>(null)
@@ -29,7 +29,8 @@ interface BotMenuProps {
 export function BotMenu({ bots, open, refused, onPick }: BotMenuProps) {
   const { open: shown, setOpen, close, holder, toggle, onKeyDown, menuProps } = usePickMenu()
   const ids = useId()
-  const list = listOf(bots, null)
+  const selected = selectedIn(bots, open)
+  const list = pickerOf(listOf(bots, null), selected)
   const showing = open?.shown?.bot ?? null
   const bot = showing === null ? null : botIn(bots, showing)
   const opening = open?.opening?.kind === 'bot' ? open.opening.bot : null
@@ -54,7 +55,7 @@ export function BotMenu({ bots, open, refused, onPick }: BotMenuProps) {
         {block !== null && <span className="sr" id={`${ids}-why`}>{block}</span>}
         {shown && list.show === 'roster' && (
           <div {...menuProps} className="file-menu bot-pick-menu" aria-label="Bots">
-            <BotItems list={list} selected={selectedIn(bots, open)} idPrefix={ids} onPick={pick} />
+            <BotItems list={list} selected={selected} idPrefix={ids} onPick={pick} />
           </div>
         )}
       </div>

@@ -4,6 +4,7 @@ import { flushSync } from 'react-dom'
 import { GroupForm } from '../groups/GroupForm'
 import { groupRowsOf, type GroupRowView } from '../groups/group-rows'
 import { newChatIn } from '../new-chat'
+import { Chevron } from '../chrome/ModeSwitch'
 import { run, useTopic } from '../store'
 import { Avatar } from './Avatar'
 import { BotEditor, type BotEditorProps } from './BotEditor'
@@ -12,7 +13,8 @@ import type { LookCalls } from './LookPicker'
 import { NewBotForm } from './NewBotForm'
 import { NewMenu } from './NewMenu'
 import { plusMenuOf, seatableIn, type PlusItem } from './plus-menu'
-import { botIn, listOf, selectedIn, UNASSIGNED } from './roster-view'
+import { botIn, listOf, selectedIn } from './roster-view'
+import { HIDDEN_CLOSED, hiddenTriggers, nextHidden, sidebarOf, type Row, type RowGroup } from './sidebar-view'
 
 const CARET_KEYS: ReadonlySet<string> = new Set(['PageUp', 'PageDown', 'End'])
 const MAC = navigator.userAgent.includes('Mac')
@@ -93,6 +95,36 @@ function GroupChats({ rows }: { readonly rows: readonly GroupRowView[] }) {
   )
 }
 
+interface BotRowProps {
+  readonly row: Row
+  readonly current: boolean
+  readonly busy: boolean
+  readonly onPick: () => void
+  readonly onDetails: () => void
+}
+
+/** The card or a row, with its details button beside it. */
+function BotRow({ row: { bot, place }, current, busy, onPick, onDetails }: BotRowProps) {
+  const preview = useId()
+  return (
+    <div className={place === 'card' ? 'bot-row bot-row-feature' : 'bot-row'} data-place={place}>
+      {place === 'card'
+        ? <button type="button" className="bot-feature" aria-label={`${bot.name}, default bot`} aria-current={current || undefined} aria-busy={busy || undefined} onClick={onPick}>
+            <span className="bot-badged"><Avatar bot={bot} size={48} /><span className="bot-badge" title="Default bot"><Star /></span></span>
+            <span className="bot-name">{bot.name}</span>
+          </button>
+        : <button type="button" className="bot" aria-label={bot.name} aria-describedby={preview} aria-current={current || undefined} aria-busy={busy || undefined} onClick={onPick}>
+            <Avatar bot={bot} size={32} />
+            <span className="bot-text">
+              <span className="bot-name">{bot.name}</span>
+              <span className="bot-preview" id={preview}>{bot.preview ?? 'No messages yet'}</span>
+            </span>
+          </button>}
+      <DetailsButton bot={bot} onClick={onDetails} />
+    </div>
+  )
+}
+
 export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOpen, onNewChat, onCreate, onCreateGroup, onModels, looks, ...editor }: BotsPanelProps) {
   const [refused, setRefused] = useState<string | null>(null)
   const [form, setForm] = useState<{ readonly models: ModelMenu | 'loading' } | null>(null)
@@ -101,8 +133,8 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
   const [made, setMade] = useState<BotCreated | null>(null)
   const [editing, setEditing] = useState<BotDetails | null>(null)
   const [query, setQuery] = useState<string | null>(null)
+  const [hidden, setHidden] = useState(HIDDEN_CLOSED)
   const searchButton = useRef<HTMLButtonElement>(null)
-  const ids = useId()
   const selected = selectedIn(bots, open)
   const opening = open?.opening?.kind === 'bot' ? open.opening.bot : null
   const pick = async (bot: BotId) => {
@@ -128,8 +160,19 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
   const picks: { readonly [I in PlusItem['id']]: () => void } = { 'new-chat': onNewChat, 'new-group': () => setGrouping(true), 'new-bot': openForm }
   const edited = editing === null ? null : botIn(bots, editing.bot)
   const list = listOf(bots, query)
-  const { featured, sections } = list.show === 'roster' ? list : { featured: null, sections: [] }
   const groupRows = (query ?? '').trim() === '' ? groupRowsOf(groups, bots) : []
+  const disclosure = nextHidden(hidden, { on: 'render', triggers: hiddenTriggers(list, (query ?? '').trim() !== '', selected === null ? null : botIn(bots, selected)) })
+  if (disclosure !== hidden) setHidden(disclosure)
+  const view = sidebarOf(list, disclosure.open, selected)
+  const drawRow = (row: Row) => (
+    <BotRow key={row.bot.id} row={row} current={selected === row.bot.id} busy={opening === row.bot.id} onPick={() => void pick(row.bot.id)} onDetails={() => void describe(row.bot.id)} />
+  )
+  const drawGroup = (group: RowGroup) => (
+    <section key={group.key}>
+      <h3>{group.heading}</h3>
+      {group.bots.map(bot => drawRow({ bot, place: group.place }))}
+    </section>
+  )
   const closeSearch = () => {
     // The Search bots button is back in the page only once this has rendered.
     flushSync(() => setQuery(null))
@@ -157,39 +200,29 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
                 <button type="button" aria-label="Close search" title="Close search" onClick={closeSearch}><Close /></button>
               </>}
         </div>
-        <div className="bots-list" aria-busy={list.show === 'loading' || undefined}>
-          {list.show === 'note' && <p className="bots-note" role="status">{list.words}</p>}
-          {featured !== null && (
-            <div className="bot-row bot-row-feature">
-              <button type="button" className="bot-feature" aria-label={`${featured.name}, default bot`} aria-current={selected === featured.id || undefined} aria-busy={opening === featured.id || undefined} onClick={() => void pick(featured.id)}>
-                <span className="bot-badged"><Avatar bot={featured} size={48} /><span className="bot-badge" title="Default bot"><Star /></span></span>
-                <span className="bot-name">{featured.name}</span>
-              </button>
-              <DetailsButton bot={featured} onClick={() => void describe(featured.id)} />
-            </div>
-          )}
-          {groupRows.length > 0 && <GroupChats rows={groupRows} />}
-          {sections.map((section, at) => (
-            <section key={section.name ?? ''}>
-              <h3>{section.name ?? UNASSIGNED}</h3>
-              {section.bots.map((bot, row) => {
-                // A profile name may hold a space, which would split an id list, so the id comes from the row's place.
-                const preview = `${ids}-${at}-${row}`
-                return (
-                  <div key={bot.id} className="bot-row">
-                    <button type="button" className="bot" aria-label={bot.name} aria-describedby={preview} aria-current={selected === bot.id || undefined} aria-busy={opening === bot.id || undefined} onClick={() => void pick(bot.id)}>
-                      <Avatar bot={bot} size={32} />
-                      <span className="bot-text">
-                        <span className="bot-name">{bot.name}</span>
-                        <span className="bot-preview" id={preview}>{bot.preview ?? 'No messages yet'}</span>
-                      </span>
+        <div className="bots-list" aria-busy={view.show === 'loading' || undefined}>
+          {view.show === 'note' && <p className="bots-note" role="status">{view.words}</p>}
+          {view.show === 'groups' && (
+            <>
+              {view.card !== null && drawRow({ bot: view.card, place: 'card' })}
+              {view.groups.filter(group => group.place === 'pinned').map(drawGroup)}
+              {groupRows.length > 0 && <GroupChats rows={groupRows} />}
+              {view.groups.filter(group => group.place !== 'pinned').map(drawGroup)}
+              {view.hidden !== null && (
+                <section className="bots-hidden">
+                  <h3>
+                    <button
+                      type="button" aria-expanded={view.hidden.open} data-current={(!view.hidden.open && view.hidden.holdsOpenBot) || undefined}
+                      onClick={() => setHidden(held => nextHidden(held, { on: 'click' }))}
+                    >
+                      <Chevron />Hidden ({view.hidden.bots.length})
                     </button>
-                    <DetailsButton bot={bot} onClick={() => void describe(bot.id)} />
-                  </div>
-                )
-              })}
-            </section>
-          ))}
+                  </h3>
+                  {view.hidden.open && view.hidden.bots.map(bot => drawRow({ bot, place: 'hidden' }))}
+                </section>
+              )}
+            </>
+          )}
         </div>
         {refused !== null && <p className="bots-refused" role="alert">{refused}</p>}
         {made !== null && made.warnings.length > 0 && (
@@ -204,7 +237,7 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
       {grouping && <GroupForm offered={seatableIn(bots, groups)} listed={groups?.state === 'listed' ? groups.rows.map(row => row.id) : []} onCreate={onCreateGroup} onClose={closeGroupForm} />}
       {editing !== null && (
         <BotEditor
-          key={editing.bot} bot={edited ?? { id: editing.bot, name: editing.name, preview: null, description: null, tone: 'slate', picture: false }} details={editing}
+          key={editing.bot} bot={edited ?? { id: editing.bot, name: editing.name, preview: null, description: null, tone: 'slate', picture: false, pinned: false, hidden: false }} details={editing}
           {...editor} onClose={() => setEditing(null)}
         />
       )}

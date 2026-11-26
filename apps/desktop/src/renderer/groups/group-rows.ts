@@ -4,7 +4,7 @@ import { botIn } from '../bots/roster-view'
 export const namesInWords = (names: readonly string[]) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`)
 
 export const faceOf = (member: GroupMember, bots: Bots | undefined): Bot =>
-  botIn(bots, member.bot) ?? { id: member.bot, name: member.name, preview: null, description: null, tone: 'slate', picture: false }
+  botIn(bots, member.bot) ?? { id: member.bot, name: member.name, preview: null, description: null, tone: 'slate', picture: false, pinned: false, hidden: false }
 
 const STACK_SLOTS = 3
 
