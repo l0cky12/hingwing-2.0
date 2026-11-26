@@ -13,6 +13,9 @@ const Laptop = ({ size = 15, width = 1.9 }) => <svg {...line(size, width)}><rect
 const Globe = ({ size = 15, width = 1.9 }) => <svg {...line(size, width)}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>
 export const People = () => <svg {...line(15, 1.9)}><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0" /><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8" /></svg>
 export const Bubble = () => <svg {...line(15, 1.9)}><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-5A8 8 0 1 1 21 12z" /></svg>
+export const Monitor = () => <svg {...line(15, 1.9)}><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>
+export const Sun = () => <svg {...line(15, 1.9)}><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" /></svg>
+export const Moon = () => <svg {...line(15, 1.9)}><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" /></svg>
 
 export interface Segment<V extends string> { readonly value: V; readonly label: string; readonly icon: ReactNode }
 
