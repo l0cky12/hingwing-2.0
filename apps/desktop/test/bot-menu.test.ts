@@ -1,6 +1,7 @@
 import { rosterOf, type BotFacts, type BotId, type BotMark, type Bots } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
-import { anchorOf, deleteRefusal, EDGE, GAP, isMenuKey, keyMove, LABELS, MENUS, placeMenu, type Box, type OpenMenu } from '../src/renderer/bots/bot-menu'
+import { anchorOf, deleteRefusal, LABELS, MENUS, type OpenMenu } from '../src/renderer/bots/bot-menu'
+import { EDGE, GAP, isMenuKey, keyMove, placeMenu, type Box } from '../src/renderer/chrome/popup-menu'
 import { fallbackOf, openerTarget } from '../src/renderer/bots/focus'
 import { busyIn, focusAfter, runsAt, SAID, type MarkRun } from '../src/renderer/bots/marks'
 import { listOf } from '../src/renderer/bots/roster-view'

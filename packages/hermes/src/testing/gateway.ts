@@ -418,6 +418,8 @@ class EchoChat implements Stream {
   yolo = false
   parent: string | null = null
   startedAt = 0
+  /** How many of the newest rows a resume shows. null: all of them. */
+  shown: number | null = null
 
   /** `hidden`: out of `session.list` unless it asks for hidden chats, as a Bot Chat is (hermes-bots/canonical-chat.ts:319). */
   constructor(readonly id: string, readonly profile: string, public title: string, public hidden = false) {
@@ -469,6 +471,7 @@ function seeded(profile: string, seed: ChatSeed): EchoChat {
   const chat = new EchoChat(seed.id, profile, seed.title, seed.hidden === true)
   seed.rows.forEach(({ role, text }, at) => chat.rows.push({ role, text, timestamp: seed.last_active, row_id: at + 1 }))
   chat.parent = seed.branched_from ?? null
+  chat.shown = seed.shown ?? null
   chat.startedAt = seed.last_active
   chat.pinned = seed.pinned === true
   if (seed.asking === undefined) return chat
@@ -498,6 +501,9 @@ function replayOf({ ring, epoch }: Stream, ringFrames: number, params: Obj, open
     cursor: missing ? null : events.at(-1)?.seq ?? sequence
   }
 }
+
+/** A resume that leaves older rows out marks its first row `archived_truncated` (gateway/session_local_recovery.py:370-388). */
+const trimmed = (rows: readonly Obj[]): readonly Obj[] => rows.map((row, at) => (at === 0 ? { ...row, archived_truncated: true } : row))
 
 interface Held extends Stream {
   readonly id: string
@@ -811,6 +817,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'profiles.get_asset': (gateway, socket, params) => gateway.getAsset(socket, params),
   /** tui_gateway/methods_images.py:57-96 */
   'image.generate': (gateway, socket, params) => gateway.generate(socket, params),
+  'llm.oneshot': (gateway, socket) => gateway.oneshot(socket),
   /** tui_gateway/methods_session.py:1467-1495 */
   'pet.gallery': (gateway, socket) => gateway.petGallery(socket),
   /** tui_gateway/methods_session.py:1557-1563 */
@@ -1092,7 +1099,8 @@ export class ScriptedGateway {
     const params = named && PROFILE_IMPLICIT.has(method) ? unscoped : raw
     const fields = checkParams(method, params)
     if (fields !== undefined && fields.length > 0) return refusal('invalid_params', { fields })
-    const chat = this.echoChats().find(held => held.id === params.session_id && held.profile === routed)
+    // `llm.oneshot` only borrows a chat's model through its `session_id`, so it is never a call of that chat.
+    const chat = method === 'llm.oneshot' ? undefined : this.echoChats().find(held => held.id === params.session_id && held.profile === routed)
     const handler = HANDLERS[method]
     if (handler === undefined && fields === undefined) return { error: { code: -32601, message: `unknown method: ${method}`, data: { reason: 'unknown_method' } } }
     try {
@@ -1590,7 +1598,7 @@ export class ScriptedGateway {
   open(socket: Socket, chat: EchoChat, params: Obj): unknown {
     socket.subscriptions.set(chat.id, socket.subscriptionId)
     return snapshotOf({
-      id: chat.id, rows: chat.rows, ring: chat.ring, epoch: chat.epoch, running: chat.running, generation: chat.generation,
+      id: chat.id, rows: chat.shown === null || chat.shown >= chat.rows.length ? chat.rows : trimmed(chat.rows.slice(-chat.shown)), ring: chat.ring, epoch: chat.epoch, running: chat.running, generation: chat.generation,
       revision: chat.revision, title: chat.title, model: chat.model, yolo: this.yoloAt(chat.yolo), info: {}, pending: [], prompts: chat.asking === null ? [] : [chat.asking], openRequests: [], connection: null, todos: null
     }, socket.subscriptionId, params)
   }
@@ -1872,6 +1880,14 @@ export class ScriptedGateway {
     const cap = Math.min(isInt(params.max_bytes) && params.max_bytes > 0 ? params.max_bytes : 8_000_000, 16_000_000)
     const fits = images.picture !== undefined && Buffer.from(images.picture.slice(images.picture.indexOf(',') + 1), 'base64').byteLength <= cap
     return after(images.delay_ms, { available: true, success: true, image: '/hermes-home/cache/images/generated.png', ...(fits ? { image_data: images.picture } : {}) })
+  }
+
+  /** `llm.oneshot` (tui_gateway/methods_session.py:1249-1276), which a socket with no interactive grant does not reach. */
+  oneshot(socket: Socket): unknown {
+    const { oneshot } = this.fixture.header
+    if (oneshot === undefined || socket.reach === 'profile') throw unknownMethod('llm.oneshot')
+    if (oneshot.error !== undefined) throw refusedProfile(5030, `one-shot generation failed: ${oneshot.error}`)
+    return after(oneshot.delay_ms, { text: oneshot.text ?? '' })
   }
 
   /** `pet.gallery` (tui_gateway/methods_session.py:1467-1495), which a socket with no interactive grant does not reach. */

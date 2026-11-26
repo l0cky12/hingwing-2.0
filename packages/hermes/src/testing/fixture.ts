@@ -99,6 +99,8 @@ export interface Fixture {
      * A socket bound to one profile is refused it too, since it reaches no legacy handler.
      */
     readonly images?: Images
+    /** What `llm.oneshot` answers. Absent: the gateway refuses it as an unknown method, as a Hermes without it does, and so does a socket bound to one profile. */
+    readonly oneshot?: Oneshot
     /** What `pet.gallery` and `pet.thumb` answer. Absent: the gateway refuses both as unknown methods, as a Hermes without pets does. */
     readonly pets?: Pets
     /** `'profile'`: play a Hermes with no `interactive` ticket, whose every socket is bound to the home profile. Default `'host'`. */
@@ -148,6 +150,9 @@ export interface Fixture {
  * `delay_ms`: how long a generation takes (default 0).
  */
 export interface Images { readonly available: boolean; readonly picture?: string; readonly error?: string; readonly delay_ms?: number }
+
+/** What `llm.oneshot` answers: `text` as the model wrote it (default empty) after `delay_ms` (default 0), or a failure with `error` in its words. */
+export interface Oneshot { readonly text?: string; readonly error?: string; readonly delay_ms?: number }
 
 /**
  * `pets`: the gallery's entries as Hermes sends them. `thumbs`: slug -> the PNG data URL `pet.thumb` answers for a pet the
@@ -219,7 +224,8 @@ export interface ChatSeed {
   readonly title: string
   /** Seconds since the epoch, as Hermes stamps a row. Every row of the chat has it. */
   readonly last_active: number
-  readonly rows: readonly { readonly role: 'user' | 'assistant'; readonly text: string }[]
+  /** A `tool` row is one step of the turn, stored with no name or arguments. */
+  readonly rows: readonly { readonly role: 'user' | 'assistant' | 'tool'; readonly text: string }[]
   /** Out of `session.list` unless it asks for hidden chats, as a Bot Chat is. */
   readonly hidden?: boolean
   /** Pinned by the user. A Bot Chat the roster names is pinned unless it is seeded. */
@@ -228,6 +234,8 @@ export interface ChatSeed {
   readonly asking?: { readonly command: string; readonly description: string }
   /** The id of the chat of the same profile this one was branched from. */
   readonly branched_from?: string
+  /** How many of its newest rows a resume shows, as Hermes trims a long chat. `session.transcript` still pages every row. */
+  readonly shown?: number
 }
 
 export type FixtureStep =
@@ -316,11 +324,12 @@ function parseStep(value: unknown, previousAt: number): FixtureStep | string {
 
 const isSeed = (value: unknown): value is ChatSeed =>
   isObject(value) && typeof value.id === 'string' && value.id !== '' && typeof value.title === 'string' && typeof value.last_active === 'number'
-  && Array.isArray(value.rows) && value.rows.every(row => isObject(row) && (row.role === 'user' || row.role === 'assistant') && typeof row.text === 'string')
+  && Array.isArray(value.rows) && value.rows.every(row => isObject(row) && (row.role === 'user' || row.role === 'assistant' || row.role === 'tool') && typeof row.text === 'string')
   && (value.hidden === undefined || typeof value.hidden === 'boolean')
   && (value.pinned === undefined || typeof value.pinned === 'boolean')
   && (value.asking === undefined || (isObject(value.asking) && typeof value.asking.command === 'string' && typeof value.asking.description === 'string'))
   && (value.branched_from === undefined || (typeof value.branched_from === 'string' && value.branched_from !== '' && value.branched_from !== value.id))
+  && (value.shown === undefined || (Number.isInteger(value.shown) && (value.shown as number) > 0))
 
 const parentsListed = (seeds: readonly ChatSeed[]) => seeds.every(seed => seed.branched_from === undefined || seeds.some(other => other.id === seed.branched_from))
 
@@ -329,6 +338,9 @@ const delay = (value: unknown) => value === undefined || (typeof value === 'numb
 const isImages = (value: unknown): value is Images =>
   isObject(value) && typeof value.available === 'boolean' && (value.picture === undefined || typeof value.picture === 'string')
   && (value.error === undefined || typeof value.error === 'string') && delay(value.delay_ms)
+
+const isOneshot = (value: unknown): value is Oneshot =>
+  isObject(value) && (value.text === undefined || typeof value.text === 'string') && (value.error === undefined || typeof value.error === 'string') && delay(value.delay_ms)
 
 const isPets = (value: unknown): value is Pets =>
   isObject(value) && Array.isArray(value.pets) && isObject(value.thumbs) && Object.values(value.thumbs).every(thumb => typeof thumb === 'string') && delay(value.delay_ms)
@@ -413,8 +425,9 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   const { assetFails } = value
   if (assetFails !== undefined && (typeof assetFails !== 'string' || assetFails.trim() === '')) return '"assetFails" must be the words a failed write gives'
-  const { images, pets } = value
+  const { images, pets, oneshot } = value
   if (images !== undefined && !isImages(images)) return '"images" must be { available, picture?, error?, delay_ms? }'
+  if (oneshot !== undefined && !isOneshot(oneshot)) return '"oneshot" must be { text?, error?, delay_ms? }'
   if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
@@ -471,7 +484,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
     ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
     ...(assetFails === undefined ? {} : { assetFails }),
-    ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }),
+    ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),

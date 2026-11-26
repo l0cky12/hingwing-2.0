@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileS
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { MODE, preferenceStore, readPreference, THEME, type Preference } from '../src/main/preferences'
+import type { SessionId } from '@highwing/hermes/domain'
+import { MODE, preferenceStore, readPreference, SNOOZES, snoozed, THEME, type Preference } from '../src/main/preferences'
 
 const text = (value: unknown) => JSON.stringify(value)
 const emptyDir = () => mkdtempSync(join(tmpdir(), 'highwing-preference-'))
@@ -107,4 +108,42 @@ it('keeps mode.json as earlier builds wrote it', async () => {
   store.set('bots')
   await store.settled()
   expect(readFileSync(join(dir, 'mode.json'), 'utf8')).toBe('{"version":1,"mode":"bots"}\n')
+})
+
+describe('the snoozes.json preference', () => {
+  it('reads the snoozes this build wrote, and none from a file holding one it cannot read', () => {
+    expect(readPreference(SNOOZES, text({ version: 1, snoozes: { s1: 1_800_000_000_000, s2: 1_800_000_060_000 } }))).toEqual({ s1: 1_800_000_000_000, s2: 1_800_000_060_000 })
+    for (const snoozes of [{ s1: 'tomorrow' }, { s1: -5 }, { s1: 1.5 }, { ' ': 1_800_000_000_000 }, ['s1'], null]) {
+      expect(readPreference(SNOOZES, text({ version: 1, snoozes })), JSON.stringify(snoozes)).toEqual({})
+    }
+  })
+
+  it('starts with none, and the next launch starts with the snoozes kept', async () => {
+    const dir = emptyDir()
+    const store = await preferenceStore(dir, SNOOZES)
+    expect(store.get()).toEqual({})
+    store.set({ ['s1' as SessionId]: 1_800_000_000_000 })
+    await store.settled()
+    expect((await preferenceStore(dir, SNOOZES)).get()).toEqual({ s1: 1_800_000_000_000 })
+  })
+})
+
+describe('a snooze or a wake', () => {
+  const NOW = 1_000_000
+  const held = { ['s1' as SessionId]: 2_000_000, ['s2' as SessionId]: 3_000_000 }
+  const chat = (id: string) => id as SessionId
+
+  it('snoozes a chat until the time picked, and moves the time of one already snoozed', () => {
+    expect(snoozed(held, { sessionId: chat('s3'), until: 4_000_000 }, NOW)).toEqual({ s1: 2_000_000, s2: 3_000_000, s3: 4_000_000 })
+    expect(snoozed(held, { sessionId: chat('s1'), until: 5_000_000 }, NOW)).toEqual({ s1: 5_000_000, s2: 3_000_000 })
+  })
+
+  it('wakes a chat, and wakes one snoozed to a time already past', () => {
+    expect(snoozed(held, { sessionId: chat('s1'), until: null }, NOW)).toEqual({ s2: 3_000_000 })
+    expect(snoozed(held, { sessionId: chat('s1'), until: NOW }, NOW)).toEqual({ s2: 3_000_000 })
+  })
+
+  it('drops every snooze whose time has passed', () => {
+    expect(snoozed(held, { sessionId: chat('s3'), until: 4_000_000 }, 2_500_000)).toEqual({ s2: 3_000_000, s3: 4_000_000 })
+  })
 })

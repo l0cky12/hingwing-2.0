@@ -963,10 +963,14 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .bot-row:is(:hover, [data-menu], :has(.bot-more:focus-visible)) .bot { padding-right: 44px; }
 .bot-row[data-menu] :is(.bot, .bot-feature):not([aria-current]) { background: var(--bots-hover); }
 .bot-row[data-menu] .bot-feature:not([aria-current]) .bot-badge { box-shadow: 0 0 0 2px var(--bots-hover); }
-.bot-menu { position: fixed; top: 0; right: auto; left: 0; z-index: 3; }
-.bot-menu button { display: flex; align-items: center; gap: 10px; color: var(--ink); white-space: nowrap; }
-.bot-menu svg { flex: none; color: var(--graphite); }
-.bot-menu [role="separator"] { height: 1px; margin: 3px 6px; background: var(--rule); }
+.popup { display: contents; }
+.popup-menu { position: fixed; top: 0; right: auto; left: 0; z-index: 3; max-height: calc(100vh - 16px); overflow-y: auto; }
+.popup-menu button { display: flex; align-items: center; gap: 10px; color: var(--ink); white-space: nowrap; }
+.popup-menu svg { flex: none; color: var(--graphite); }
+.popup-menu [role="separator"] { height: 1px; margin: 3px 6px; background: var(--rule); }
+.popup-menu button[aria-expanded="true"] { background: var(--signal-soft); }
+.popup-menu .popup-more { margin-left: auto; }
+.popup-hint { margin-left: auto; padding-left: 16px; font-size: 12.5px; color: var(--graphite); font-variant-numeric: tabular-nums; }
 .bots-said { flex: none; margin: 0 12px 12px 20px; }
 .bots-said:empty { margin: 0; }
 .bot-row[data-place="hidden"] .avatar { opacity: .6; }
@@ -1016,7 +1020,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .look-color, .look-face { forced-color-adjust: none; }
   :is(.look-shape, .look-color)[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: 2px; }
   .look-pet[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
-  .bot-menu [role="separator"] { background: CanvasText; }
+  .popup-menu [role="separator"] { background: CanvasText; }
   .bot[aria-current]:focus-visible { border-left-width: 5px; padding-left: 7px; }
   .pick-list .box { border: 1.5px solid CanvasText; box-shadow: none; }
   .pick-list label:has(input:checked) .box { background: Highlight; border-color: Highlight; color: HighlightText; }
@@ -1050,16 +1054,16 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .chat-when { flex: none; font-size: 12.5px; color: var(--graphite); font-variant-numeric: tabular-nums; }
 .chat-doing, .chat-preview { font-size: 13px; color: var(--graphite); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-doing:empty, .chat-preview:empty { display: none; }
-.chat-doing[data-badge="running"] { color: var(--signal); font-weight: 500; }
+.chat-doing:is([data-badge="running"], [data-badge="naming"]) { color: var(--signal); font-weight: 500; }
 .chat-doing[data-badge="asking"] { color: var(--caution); font-weight: 500; }
 .chats-note { margin: 18px 12px; font-size: 13px; color: var(--graphite); }
 .chats-group { margin: 18px 12px 4px; font-size: 13px; font-weight: 500; color: var(--graphite); }
 .chats-group:first-child { margin-top: 4px; }
 .chat-item { position: relative; }
 .chat-more { position: absolute; top: 9px; right: 10px; opacity: 0; }
-.chat-item:is(:hover, :focus-within) .chat-more { opacity: 1; }
-.chat-item:is(:hover, :focus-within) button .chat-when { visibility: hidden; }
-.chat-item .file-menu { right: 8px; }
+.chat-item:is(:hover, :focus-within, [data-menu]) .chat-more { opacity: 1; }
+.chat-item:is(:hover, :focus-within, [data-menu]) button .chat-when { visibility: hidden; }
+.chat-item[data-menu] .chat-row:not([aria-current]) { background: var(--bots-hover); }
 .chat-item .err { margin: 2px 12px 6px; font-size: 13px; }
 .chat-name { flex: 1; min-width: 0; padding: 0 4px; margin: -1px 0 -1px -5px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); font: inherit; font-weight: 500; color: var(--ink); }
 .chat-name:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }

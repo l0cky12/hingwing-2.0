@@ -795,7 +795,7 @@ describe("a bot's chats", () => {
     opened.hermes.watch(DOWNLOADS, () => {})
     await opened.clock.advance(0)
 
-    expect(await opened.hermes.run({ do: 'remove', sessionId: REMINDER })).toEqual({ ok: false, refusal: { kind: 'stale', message: 'Wait for the reply to finish, then remove this chat.' } })
+    expect(await opened.hermes.run({ do: 'remove', sessionId: REMINDER })).toEqual({ ok: false, refusal: { kind: 'stale', message: 'Wait for the reply to finish, then delete this chat.' } })
     expect(await opened.hermes.run({ do: 'remove', sessionId: DOWNLOADS })).toEqual({ ok: true, value: undefined })
     expect(opened.sent().filter(call => call.method === 'session.mutate').map(call => call.params))
       .toEqual([{ profile: 'research', session_id: DOWNLOADS, request_id: expect.any(String), operation: 'delete', payload: {}, expected_revision: 0, expected_generation: 0 }])

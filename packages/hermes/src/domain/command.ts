@@ -73,6 +73,11 @@ export type Command =
   | { readonly do: 'queued'; readonly sessionId: SessionId; readonly admissionId: AdmissionId; readonly action: Exclude<QueuedAction, 'edit'> }
   | { readonly do: 'queued'; readonly sessionId: SessionId; readonly admissionId: AdmissionId; readonly action: 'edit'; readonly text: string }
   | { readonly do: 'rename'; readonly sessionId: SessionId; readonly title: string }
+  /**
+   * Asks the chat's model for a short title from its first and latest messages, then saves it as `rename` does.
+   * Answers the title. Refused while a turn runs, and by a Hermes without `llm.oneshot`.
+   */
+  | { readonly do: 'retitle'; readonly sessionId: SessionId }
   /** Archived, the chat leaves every list, and a window that shows it moves to its bot's own chat. */
   | { readonly do: 'archive'; readonly sessionId: SessionId; readonly archived: boolean }
   /** Hermes deletes the chat and its messages for good. A window that shows it moves to its bot's own chat. Refused while a reply runs. */
@@ -187,7 +192,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'describeBot' } ? BotDetails
   : C extends { do: 'botPicture' | 'petPicture' } ? string | null
   : C extends { do: 'canGeneratePicture' } ? boolean
-  : C extends { do: 'generatePicture' } ? string
+  : C extends { do: 'generatePicture' | 'retitle' } ? string
   : C extends { do: 'pets' } ? readonly PetChoice[]
   : C extends { do: 'markBot' } ? Marked
   : C extends { do: 'pickModel' } ? ModelConfirm | null
