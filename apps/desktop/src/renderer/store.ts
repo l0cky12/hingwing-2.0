@@ -1,4 +1,5 @@
 import { createContext, useContext, useSyncExternalStore } from 'react'
+import type { BotId } from '@highwing/hermes/domain'
 import { applyPush, epochOf, type Bridge, type Setup, type Topic, type TopicValue, type WindowCommand } from '../ipc-contract'
 
 declare global {
@@ -73,3 +74,4 @@ export function useTopic<T extends Topic>(topic: T | null): TopicValue<T> | unde
 }
 
 export const run = <C extends WindowCommand>(command: C) => window.highwing.run(command, epoch)
+export const pickBotPicture = (bot: BotId) => window.highwing.pickBotPicture(bot, epoch)

@@ -5,7 +5,7 @@ import { GroupForm } from '../groups/GroupForm'
 import { groupRowsOf, type GroupRowView } from '../groups/group-rows'
 import { newChatIn } from '../new-chat'
 import { Chevron } from '../chrome/ModeSwitch'
-import { run, useTopic } from '../store'
+import { pickBotPicture, run, useTopic } from '../store'
 import { Avatar } from './Avatar'
 import { BotEditor, type BotEditorProps } from './BotEditor'
 import { nameProblem } from './bot-form'
@@ -47,7 +47,7 @@ export function BotsSidebar({ head }: { readonly head: ReactNode }) {
       onModels={() => run({ do: 'botModels', bot: null })}
       onDescribe={bot => run({ do: 'describeBot', bot })}
       onEdit={(bot, edit, revision) => run({ do: 'editBot', bot, edit, revision })}
-      onPickPicture={bot => window.highwing.pickBotPicture(bot)}
+      onPickPicture={pickBotPicture}
       onRemovePicture={bot => run({ do: 'removeBotPicture', bot })}
       looks={LOOKS}
     />

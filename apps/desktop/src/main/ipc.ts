@@ -1,7 +1,7 @@
 import type { Hermes } from '@highwing/hermes'
 import { onThisComputer, type BotId, type CommandOutcome, type Session, type SessionId } from '@highwing/hermes/domain'
 import {
-  CHANNEL, epochOf, isAppTopic, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
+  CHANNEL, epochOf, isAppTopic, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
   type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type PictureChoice, type PictureFile, type Push, type SessionPatch, type Setup, type StageResult,
   type Tail, type Topic
 } from '../ipc-contract'
@@ -123,7 +123,6 @@ function serveTopic(topic: Topic, servedBy: Hermes | null, source: Source, send:
 
 const DONE: CommandOutcome<void> = { ok: true, value: undefined }
 const REFUSED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Highwing refused a malformed request from its window.' } }
-const OTHER_CONNECTION: CommandOutcome<never> = { ok: false, refusal: { kind: 'stale', message: "Highwing switched to another Hermes, so it didn't send that." } }
 const NOT_SAVED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: "Highwing couldn't write the file." } }
 const FILE_REFUSED: FileOutcome = { ok: false, reason: 'refused' }
 const FILE_DONE: FileOutcome = { ok: true }
@@ -149,7 +148,8 @@ function fileActions(opener: Opener, pane: PreviewOwner): FileActions {
 export interface Attaching { readonly store: Pick<AttachmentStore, 'stage' | 'read'>; readonly sources: AttachSources }
 
 export interface Pictures {
-  pick(bot: BotId): Promise<CommandOutcome<PictureChoice>>
+  /** `live`: whether the connection the window asked for is still live. It can change while the file picker is open. */
+  pick(bot: BotId, live: () => boolean): Promise<CommandOutcome<PictureChoice>>
   choose(): Promise<CommandOutcome<PictureFile>>
 }
 
@@ -231,9 +231,11 @@ export function serveWindows(
     if (trusted(event) && draft !== null) drafts.keep(draft)
   })
 
-  ipc.handle(CHANNEL.pickPicture, async (event, raw) => {
+  ipc.handle(CHANNEL.pickPicture, async (event, raw, epoch) => {
     const bot = parseBotId(raw)
-    return trusted(event) && bot !== null ? pictures.pick(bot) : REFUSED
+    if (!trusted(event) || bot === null) return REFUSED
+    const live = () => epoch === epochOf(owner.setup.get())
+    return live() ? pictures.pick(bot, live) : OTHER_CONNECTION
   })
   ipc.handle(CHANNEL.choosePicture, async event => (trusted(event) ? pictures.choose() : REFUSED))
 

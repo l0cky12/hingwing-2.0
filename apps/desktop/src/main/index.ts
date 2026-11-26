@@ -123,7 +123,7 @@ app.whenReady().then(async () => {
   const images = imageLoader(fixture ? fixtureImageDeps(fixture.header.media) : desktopImageDeps(net))
   const saver = HIGHWING_SAVE_DIR ? folderSaver(HIGHWING_SAVE_DIR) : dialogSaver(dialog, () => app.getPath('downloads'))
   const served = serveWindows(
-    owner, ipcMain, isAppUrl, opener, images, drafts, pane, { pick: bot => pickPicture(pictureDeps, bot), choose: () => choosePicture(pictureDeps) },
+    owner, ipcMain, isAppUrl, opener, images, drafts, pane, { pick: (bot, live) => pickPicture(pictureDeps, bot, live), choose: () => choosePicture(pictureDeps) },
     { store: attachments, sources }, saver, mode
   )
   const stopNotices = notifyTurnEnds(owner, {

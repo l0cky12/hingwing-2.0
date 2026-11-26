@@ -164,7 +164,7 @@ type Live = { target: Target; epoch: number }
 | `saved` | `keepTarget` (Open chat, or Close and Esc in Settings) | `chat` |
 | `saved` | `checkTarget(t)` (Connect in Settings) | `checking` at the first step |
 
-The Bridge keeps its two methods, `watch` and `run`. `run` also carries `epochOf` the newest setup the window has, and main refuses a chat command sent for any epoch but the live one, since the ids it names belong to that connection. `Topic` gains `'setup'`. `Command` gains `checkTarget`, `editTarget`, `keepTarget` and `stopCheck`, each with a row in `validators`.
+The Bridge keeps its two methods, `watch` and `run`. `run` also carries `epochOf` the newest setup the window has, and main refuses a chat command sent for any epoch but the live one, since the ids it names belong to that connection. `pickBotPicture` carries it too, and main checks it again once the file picker closes, since a check can pass while the picker is open. `Topic` gains `'setup'`. `Command` gains `checkTarget`, `editTarget`, `keepTarget` and `stopCheck`, each with a row in `validators`.
 
 Saving a target goes in this order:
 

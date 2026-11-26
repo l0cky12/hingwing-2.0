@@ -25,6 +25,8 @@ export type Setup =
 
 /** The epoch of the connection `setup` keeps the chat on. 0 when it keeps none, as on a first run or in a fixture run. */
 export const epochOf = (setup: Setup): number => (setup.at === 'pinned' || setup.live === null ? 0 : setup.live.epoch)
+/** Main's answer to a chat command a window sent for a connection that is no longer live. Nothing went to Hermes. */
+export const OTHER_CONNECTION: CommandOutcome<never> = { ok: false, refusal: { kind: 'stale', message: "Highwing switched to another Hermes, so it didn't send that." } }
 
 /** Whether `setup` is Settings: opened from a chat, shown in the chat's place beside the sidebar. First run and its Saved screen show no chat. */
 export const showsSettings = (setup: Setup): boolean =>
@@ -171,8 +173,8 @@ export interface Bridge {
   drafts(): Promise<readonly Draft[]>
   /** Keeps the draft on disk, or deletes it when it is empty. Applied in the order a window sends them. */
   keepDraft(draft: Draft): void
-  /** Main shows a file picker, checks the picked file and sends it as the bot's picture. */
-  pickBotPicture(bot: BotId): Promise<CommandOutcome<PictureChoice>>
+  /** Main shows a file picker, checks the picked file and sends it as the bot's picture. `epoch` is as for `run`: main refuses a bot of an older connection. */
+  pickBotPicture(bot: BotId, epoch: number): Promise<CommandOutcome<PictureChoice>>
   /** Main shows the same picker and checks the file the same way, and answers the picture. Nothing is sent to Hermes. */
   choosePicture(): Promise<CommandOutcome<PictureFile>>
   /** Opens the file dialog and holds each file picked, in the order picked. Nothing picked: an empty list. */

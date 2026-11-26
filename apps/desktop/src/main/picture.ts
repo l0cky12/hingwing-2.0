@@ -1,6 +1,6 @@
 import { PICTURE_MAX_BYTES, PICTURE_RULE, pictureTypeOf, type BotId, type CommandOutcome } from '@highwing/hermes/domain'
 import { open } from 'node:fs/promises'
-import type { PictureChoice, PictureFile } from '../ipc-contract'
+import { OTHER_CONNECTION, type PictureChoice, type PictureFile } from '../ipc-contract'
 
 export function pictureDataUrl(bytes: Uint8Array): string | null {
   if (bytes.length > PICTURE_MAX_BYTES) return null
@@ -32,10 +32,12 @@ export async function choosePicture(deps: Pick<PictureDeps, 'choose' | 'read'>):
   return data === null ? NOT_A_PICTURE : { ok: true, value: data }
 }
 
-export async function pickPicture(deps: PictureDeps, bot: BotId): Promise<CommandOutcome<PictureChoice>> {
+/** `live`: whether the connection the bot belongs to is still live. The picker may stay open across a switch. */
+export async function pickPicture(deps: PictureDeps, bot: BotId, live: () => boolean): Promise<CommandOutcome<PictureChoice>> {
   const chosen = await choosePicture(deps)
   if (!chosen.ok) return chosen
   if (chosen.value === 'cancelled') return { ok: true, value: 'cancelled' }
+  if (!live()) return OTHER_CONNECTION
   const set = await deps.set(bot, chosen.value)
   return set.ok ? { ok: true, value: 'set' } : set
 }
