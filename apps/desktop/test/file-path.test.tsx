@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { FilePath } from '../src/renderer/chat/FilePath'
+import { FilePath, FilesHereContext } from '../src/renderer/chat/FilePath'
 
 describe('a file path', () => {
   it.each(['report.csv', 'data.TSV', 'report.pdf', 'index.html'])('offers Preview beside %s', name => {
@@ -9,5 +9,17 @@ describe('a file path', () => {
 
   it('offers no Preview for a file the pane cannot show', () => {
     expect(renderToStaticMarkup(<FilePath path="/w/notes.md" findId="f" />)).not.toContain('Preview')
+  })
+
+  it('on another machine shows the path as text, with no Open and no Preview', () => {
+    const html = renderToStaticMarkup(
+      <FilesHereContext value={false}>
+        <FilePath path="/w/index.html" findId="f" />
+      </FilesHereContext>
+    )
+    expect(html).toContain('/w/index.html')
+    expect(html).not.toContain('Open index.html')
+    expect(html).not.toContain('Preview')
+    expect(html).toContain('More for index.html')
   })
 })

@@ -1,5 +1,5 @@
 import {
-  APPROVAL_MODES, BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
+  APPROVAL_MODES, BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type HelperId, type Item, type Link, type ModelOption,
   type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
@@ -25,6 +25,8 @@ export type Setup =
 
 /** The epoch of the connection `setup` keeps the chat on. 0 when it keeps none, as on a first run or in a fixture run. */
 export const epochOf = (setup: Setup): number => (setup.at === 'pinned' || setup.live === null ? 0 : setup.live.epoch)
+
+export const isLocal = (setup: Setup): boolean => setup.at === 'pinned' || (setup.live !== null && onThisComputer(setup.live.target))
 /** Main's answer to a command the screen it is on has no use for, such as an open while a new connection is saved. Nothing went to Hermes. */
 export const NOT_NOW: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: "Highwing can't do that from this screen." } }
 /** Main's answer to a chat command a window sent for a connection that is no longer live. Nothing went to Hermes. */

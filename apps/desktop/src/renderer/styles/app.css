@@ -227,7 +227,7 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .file { margin: 0 0 6px; }
 .file-row { display: flex; align-items: flex-start; gap: 4px; }
 .file-open { min-width: 0; padding: 0; border: 0; background: none; text-align: left; overflow-wrap: anywhere; font: 12.5px var(--mono); color: var(--graphite); }
-.file-open:hover { color: var(--signal); text-decoration: underline; text-underline-offset: 2px; }
+button.file-open:hover { color: var(--signal); text-decoration: underline; text-underline-offset: 2px; }
 .file-side { position: relative; flex: none; }
 .file-more { width: 20px; height: 16px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--graphite); font: 12.5px/16px var(--sans); opacity: .55; }
 .file-row:hover .file-more, .file-more:focus-visible, .file-more[aria-expanded="true"] { opacity: 1; }

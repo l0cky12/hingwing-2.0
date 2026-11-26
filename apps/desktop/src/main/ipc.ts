@@ -1,8 +1,8 @@
 import type { Hermes } from '@highwing/hermes'
-import { onThisComputer, type BotId, type CommandOutcome, type Session, type SessionId } from '@highwing/hermes/domain'
+import type { BotId, CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
 import {
-  CHANNEL, epochOf, isAppTopic, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
-  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type PictureChoice, type PictureFile, type Push, type SessionPatch, type Setup, type StageResult,
+  CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
+  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type PictureChoice, type PictureFile, type Push, type SessionPatch, type StageResult,
   type Snoozes, type Tail, type Theme, type Topic
 } from '../ipc-contract'
 import { basename } from 'node:path'
@@ -131,8 +131,6 @@ const FILE_REFUSED: FileOutcome = { ok: false, reason: 'refused' }
 const FILE_DONE: FileOutcome = { ok: true }
 const IMAGE_REFUSED: ImageOutcome = { ok: false }
 
-const isLocal = (setup: Setup) => setup.at === 'pinned' || (setup.live !== null && onThisComputer(setup.live.target))
-
 type FileActions = { readonly [A in FileAction]: (session: Session, path: string) => Promise<FileOutcome> }
 
 /** Each action takes the path as the window named it. Only a path a finished step of the session named goes anywhere. */
@@ -165,6 +163,7 @@ export function serveWindows(
   const owners: Owners = { owner, pane, preferences }
   const files = fileActions(opener, pane)
   const trusted = ({ senderFrame }: IpcEvent) => senderFrame !== null && senderFrame.parent === null && isAppUrl(senderFrame.url)
+  const servedHere = (served: Served | undefined) => served !== undefined && served.servedBy === owner.hermes && isLocal(owner.setup.get())
 
   const stopWindow = (windowId: number) => {
     for (const served of windows.get(windowId)?.values() ?? []) served.stop()
@@ -222,7 +221,7 @@ export function serveWindows(
     if (!trusted(event) || request === null) return FILE_REFUSED
     const watched = [...(windows.get(event.sender.id)?.values() ?? [])].find(served => served.topic === `session:${request.sessionId}`)
     const session = watched?.current() as Session | undefined
-    return session === undefined ? FILE_REFUSED : files[request.action](session, request.path)
+    return session === undefined || !servedHere(watched) ? FILE_REFUSED : files[request.action](session, request.path)
   })
 
   ipc.handle(CHANNEL.image, async (event, raw) => {
@@ -233,7 +232,7 @@ export function serveWindows(
       return held?.kind === 'image' ? { ok: true, type: held.mime as ImageType, bytes: held.bytes } : IMAGE_REFUSED
     }
     const watched = request.kind === 'tool' ? [...(windows.get(event.sender.id)?.values() ?? [])].find(served => served.topic === `session:${request.sessionId}`) : undefined
-    return images.load(request, { session: watched?.current() as Session | undefined, local: watched !== undefined && watched.servedBy === owner.hermes && isLocal(owner.setup.get()) })
+    return images.load(request, { session: watched?.current() as Session | undefined, local: servedHere(watched) })
   })
 
   ipc.handle(CHANNEL.drafts, async event => (trusted(event) ? drafts.load() : []))
