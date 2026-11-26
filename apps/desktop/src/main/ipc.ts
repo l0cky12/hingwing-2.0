@@ -2,7 +2,7 @@ import type { Hermes } from '@highwing/hermes'
 import { onThisComputer, type BotId, type CommandOutcome, type Session, type SessionId } from '@highwing/hermes/domain'
 import {
   CHANNEL, epochOf, isAppTopic, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
-  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type PictureChoice, type PictureFile, type Push, type SessionPatch, type Setup, type StageResult,
+  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type PictureChoice, type PictureFile, type Push, type SessionPatch, type Setup, type StageResult,
   type Tail, type Topic
 } from '../ipc-contract'
 import { basename } from 'node:path'
@@ -11,7 +11,7 @@ import type { ConnectionOwner } from './connection'
 import type { DraftStore } from './drafts'
 import { openablePath, type Opener } from './files'
 import type { ImageLoader } from './images'
-import type { ModeStore } from './mode'
+import type { PreferenceStore } from './preferences'
 import type { PreviewPane } from './preview'
 import type { Saver } from './saves'
 
@@ -45,7 +45,7 @@ const NEVER: Source = () => () => {}
 
 /** The pane's side of a window: its topic, its commands, and the files a window previews. */
 export type PreviewOwner = Pick<PreviewPane, 'preview' | 'show' | 'run'>
-export type ModeOwner = Pick<ModeStore, 'mode' | 'set'>
+export type ModeOwner = Pick<PreferenceStore<Mode>, 'get' | 'subscribe' | 'set'>
 interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner; readonly mode: ModeOwner }
 
 /** A Hermes topic is bound to the connection that is live when the window asks. A window that sees a new epoch asks again. */
@@ -55,7 +55,7 @@ const onHermes = (source: (hermes: Hermes, topic: Topic) => Source) => ({ owner 
 const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source } = {
   setup: ({ owner }) => current(owner.setup),
   preview: ({ pane }) => current(pane.preview),
-  mode: ({ mode }) => current(mode.mode),
+  mode: ({ mode }) => current(mode),
   link: onHermes(hermes => current(hermes.link)),
   sidebar: onHermes(hermes => current(hermes.sidebar)),
   slash: onHermes(hermes => current(hermes.slash)),

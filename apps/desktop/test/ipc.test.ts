@@ -548,7 +548,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
     ownerOf(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
-    { store, sources }, saver, { mode, set: next => mode.set(next) }
+    { store, sources }, saver, mode
   )
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
