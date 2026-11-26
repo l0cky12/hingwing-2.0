@@ -1,11 +1,11 @@
 import { DONE, refused, type Mutation, type SessionPort, type Upload } from './actor'
 import type { Bot } from './domain/bots'
 import type { Command, ModelConfirm, Outcome, Refusal, Restored, ResultOf } from './domain/command'
-import { cleanTitle, TITLE_INSTRUCTIONS, titleInput } from './domain/title'
+import { cleanTitle, TITLE_INSTRUCTIONS, titleInput, type TitleTurn } from './domain/title'
 import { offeredBy, sendPlan } from './domain/queue'
 import {
   reissues, type AttachmentId, type BranchId, type Generation, type HermesRequest, type PromptId, type PromptReply, type QueuedMessage, type RecordedReply,
-  type RequestId, type RequestReply, type SessionContent, type SessionId, type SettledTurn, type SideId, type Told, type Tuning, type TurnId
+  type RequestId, type RequestReply, type SessionContent, type SessionId, type SideId, type Told, type Tuning, type TurnId
 } from './domain/session'
 import { ownCommand, slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import type { Served } from './wire/link'
@@ -86,12 +86,17 @@ export const NOTHING_TO_SHOW: Outcome<string | null> = { ok: true, value: null }
 
 const showing = (outcome: Outcome, words: string | null = null): Outcome<string | null> => (outcome.ok ? { ok: true, value: words } : outcome)
 
-/** A long chat opens with only its newest turns loaded, so its first turn is read from the start of `session.transcript`. */
-async function withOpening(port: SessionPort): Promise<readonly SettledTurn[]> {
+/**
+ * A long chat opens with only its newest turns loaded, so its first turn is read from the start of `session.transcript`.
+ * An opening turn longer than the page comes back unfinished, which still holds its message.
+ */
+async function withOpening(port: SessionPort): Promise<readonly TitleTurn[]> {
   const { history, earlier } = port.content
   if (earlier === 'none') return history
   const page = await port.call('session.transcript', { session_id: port.id, order: 'oldest', limit: OPENING_ROWS })
-  const opening = page.ok ? parseTranscript([page.value]).turns[0] : undefined
+  if (!page.ok) return history
+  const { turns: [first], unfinished } = parseTranscript([page.value])
+  const opening = first ?? (unfinished === null ? undefined : { request: unfinished.request === null ? null : { text: unfinished.request }, items: unfinished.items })
   return opening === undefined ? history : [opening, ...history]
 }
 

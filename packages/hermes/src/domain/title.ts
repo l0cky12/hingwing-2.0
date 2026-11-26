@@ -1,5 +1,8 @@
 import type { SettledTurn } from './session'
 
+/** A turn as a title reads it: its message and what was said in it. */
+export type TitleTurn = Pick<SettledTurn, 'items'> & { readonly request: { readonly text: string } | null }
+
 /** What `llm.oneshot` is asked to do with the lines `titleInput` makes. */
 export const TITLE_INSTRUCTIONS =
   'Write a short title for this chat, 2 to 6 words, in sentence case. Reply with the title only: no quotes, no label and no period at the end.'
@@ -13,8 +16,8 @@ const clipped = (text: string, most: number) => (text.length <= most ? text : `$
 const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim()
 
 /** The chat's first turn and its last three, as `User:` and `Assistant:` lines. Empty for a chat with no words in it. */
-export function titleInput(history: readonly SettledTurn[]): string {
-  const turns = history.length <= LATEST + 1 ? history : [history[0] as SettledTurn, ...history.slice(-LATEST)]
+export function titleInput(history: readonly TitleTurn[]): string {
+  const turns = history.length <= LATEST + 1 ? history : [history[0] as TitleTurn, ...history.slice(-LATEST)]
   const lines = turns.flatMap(turn => {
     const asked = oneLine(turn.request?.text ?? '')
     const answered = oneLine(turn.items.flatMap(item => (item.kind === 'text' ? [item.markdown] : [])).join(' '))

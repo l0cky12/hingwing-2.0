@@ -98,6 +98,14 @@ describe('renaming a chat with AI', () => {
     expect(String(calls('llm.oneshot')[0]?.input).split('\n').filter(line => line.startsWith('User:'))).toEqual(['User: ask one', 'User: ask five', 'User: ask six'])
   })
 
+  it('reads the message of an opening turn longer than the page it is read from', async () => {
+    const said = [{ role: 'user' as const, text: 'ask one' }, ...Array.from({ length: 24 }, (_, at) => ({ role: 'tool' as const, text: `step ${at}` })), { role: 'assistant' as const, text: 'did one' }, { role: 'user' as const, text: 'ask two' }, { role: 'assistant' as const, text: 'did two' }]
+    const long = { id: 'local-0111', title: 'Long', last_active: 1795250500, rows: said, shown: 2 }
+    const { retitle, calls } = await launched({ text: 'Long chat' }, { chats: { research: [...(WITH_CHATS.header.chats?.research ?? []), long] } })
+    expect(await retitle('local-0111' as SessionId)).toEqual({ ok: true, value: 'Long chat' })
+    expect(String(calls('llm.oneshot')[0]?.input).split('\n').filter(line => line.startsWith('User:'))).toEqual(['User: ask one', 'User: ask two'])
+  })
+
   it('refuses while a reply runs, and asks Hermes nothing', async () => {
     const { retitle, calls } = await launched({ text: 'Reminder' })
     expect(await retitle(REMINDER)).toEqual({ ok: false, refusal: { kind: 'stale', message: 'Wait for the reply to finish, then try again.' } })

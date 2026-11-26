@@ -224,7 +224,8 @@ export interface ChatSeed {
   readonly title: string
   /** Seconds since the epoch, as Hermes stamps a row. Every row of the chat has it. */
   readonly last_active: number
-  readonly rows: readonly { readonly role: 'user' | 'assistant'; readonly text: string }[]
+  /** A `tool` row is one step of the turn, stored with no name or arguments. */
+  readonly rows: readonly { readonly role: 'user' | 'assistant' | 'tool'; readonly text: string }[]
   /** Out of `session.list` unless it asks for hidden chats, as a Bot Chat is. */
   readonly hidden?: boolean
   /** Pinned by the user. A Bot Chat the roster names is pinned unless it is seeded. */
@@ -323,7 +324,7 @@ function parseStep(value: unknown, previousAt: number): FixtureStep | string {
 
 const isSeed = (value: unknown): value is ChatSeed =>
   isObject(value) && typeof value.id === 'string' && value.id !== '' && typeof value.title === 'string' && typeof value.last_active === 'number'
-  && Array.isArray(value.rows) && value.rows.every(row => isObject(row) && (row.role === 'user' || row.role === 'assistant') && typeof row.text === 'string')
+  && Array.isArray(value.rows) && value.rows.every(row => isObject(row) && (row.role === 'user' || row.role === 'assistant' || row.role === 'tool') && typeof row.text === 'string')
   && (value.hidden === undefined || typeof value.hidden === 'boolean')
   && (value.pinned === undefined || typeof value.pinned === 'boolean')
   && (value.asking === undefined || (isObject(value.asking) && typeof value.asking.command === 'string' && typeof value.asking.description === 'string'))
