@@ -209,10 +209,13 @@ export type GroupNews =
 
 const refusalKeepsList = (desk: GroupDesk, support: GroupSupport) => support.is === 'refused' && desk.listed !== null
 
+/** A room id is any identifier Hermes takes, `constructor` included, so a lookup must not reach `Object.prototype`. */
+export const heldIn = (held: GroupDesk['held'], group: string): HeldGroup | undefined => (Object.hasOwn(held, group) ? held[group] : undefined)
+
 const unread = (facts: GroupFacts): HeldGroup => ({ facts, answering: [], pushes: false, log: null, sending: [] })
 
 const withFacts = (desk: GroupDesk, facts: GroupFacts): HeldGroup => {
-  const held = desk.held[facts.id]
+  const held = heldIn(desk.held, facts.id)
   return held === undefined ? unread(facts) : { ...held, facts }
 }
 
@@ -222,9 +225,11 @@ const stale = (log: GroupLog | null, { latestSeq, epoch }: GroupFacts) =>
   log !== null && (otherEpoch(epoch, log.epoch) || (latestSeq !== null && latestSeq < log.cursor))
 
 const changing = (desk: GroupDesk, group: GroupId, change: (held: HeldGroup) => HeldGroup): GroupDesk => {
-  const held = desk.held[group]
+  const held = heldIn(desk.held, group)
   return held === undefined ? desk : { ...desk, held: { ...desk.held, [group]: change(held) } }
 }
+
+const logs = (held: HeldGroup, eventId: string) => held.log?.events.some(event => event.kind === 'said' && event.id === eventId) ?? false
 
 function paged(held: HeldGroup, news: Extract<GroupNews, { readonly on: 'page' }>): HeldGroup {
   const { log } = held
@@ -244,7 +249,7 @@ export function nextGroups(desk: GroupDesk, news: GroupNews): GroupDesk {
       return refusalKeepsList(desk, news.support) ? desk : { ...desk, support: news.support }
     case 'listed': {
       const held = Object.fromEntries(news.groups.map(facts => [facts.id, withFacts(desk, facts)]))
-      const followed = desk.followed === null ? undefined : desk.held[desk.followed]
+      const followed = desk.followed === null ? undefined : heldIn(desk.held, desk.followed)
       return { ...desk, listed: news.groups.map(facts => facts.id), held: followed === undefined ? held : { [followed.facts.id]: followed, ...held } }
     }
     case 'made':
@@ -263,7 +268,7 @@ export function nextGroups(desk: GroupDesk, news: GroupNews): GroupDesk {
       return { ...desk, held, listed: desk.listed?.filter(id => id !== news.group) ?? null, missing: desk.followed === news.group ? news.group : desk.missing }
     }
     case 'sending':
-      return changing(desk, news.group, held => (held.sending.some(message => message.key === news.message.key) ? held : { ...held, sending: [...held.sending, news.message] }))
+      return changing(desk, news.group, held => (held.sending.some(message => message.key === news.message.key) || logs(held, news.message.eventId) ? held : { ...held, sending: [...held.sending, news.message] }))
     case 'unsent':
       return changing(desk, news.group, held => ({ ...held, sending: held.sending.filter(message => message.key !== news.key) }))
   }
@@ -276,7 +281,7 @@ export function groupsOf({ offline, support, listed, held }: GroupDesk): Groups 
   if (support.is === 'unsupported' || support.is === 'refused') return { state: support.is }
   if (support.is === 'unknown' || listed === null) return offline ? OFFLINE : LOADING
   const rows = listed.flatMap(id => {
-    const group = held[id]
+    const group = heldIn(held, id)
     return group === undefined ? [] : [{ id, name: group.facts.name, members: group.facts.members, answering: group.answering }]
   })
   return { state: 'listed', driver: support.driver, seatable: support.seatable, rows }
@@ -285,7 +290,7 @@ export function groupsOf({ offline, support, listed, held }: GroupDesk): Groups 
 export function groupChatOf({ followed, missing, held }: GroupDesk): GroupChat | null {
   if (followed === null) return null
   if (missing === followed) return { group: followed, at: 'missing' }
-  const group = held[followed]
+  const group = heldIn(held, followed)
   if (group?.log == null) return { group: followed, at: 'loading' }
   const { facts, log, answering, sending } = group
   return {

@@ -124,6 +124,21 @@ describe('what Highwing holds of a group chat', () => {
     expect(groupChatOf(nextGroups(sending, page(0, [said(1, 'user:abc')])))).toMatchObject({ events: [{ id: 'user:abc' }], sending: [] })
   })
 
+  it('does not put a re-sent message on its way again once the log already holds it', () => {
+    const delivered = after(...opened, page(0, [said(1, 'user:abc')]))
+    const resent = nextGroups(delivered, { on: 'sending', group: PLAN, message: { key: 'k1', eventId: 'user:abc', text: 'message 1' } })
+    expect(groupChatOf(resent)).toMatchObject({ events: [{ id: 'user:abc' }], sending: [] })
+  })
+
+  it('holds a group whose id is a name every object has, and finds none for one it does not hold', () => {
+    const odd = 'constructor' as GroupId
+    const desk = after(able, { on: 'listed', groups: [facts({ id: odd })] }, { on: 'followed', group: odd })
+    expect(groupsOf(desk)).toMatchObject({ state: 'listed', rows: [{ id: 'constructor', answering: [] }] })
+    const other = after(able, { on: 'listed', groups: [facts()] }, { on: 'followed', group: 'toString' as GroupId })
+    expect(groupChatOf(other)).toEqual({ group: 'toString', at: 'loading' })
+    expect(groupsOf(nextGroups(other, { on: 'page', group: 'valueOf' as GroupId, after: 0, epoch: 1, events: [], cursor: 0 }))).toMatchObject({ rows: [{ id: PLAN }] })
+  })
+
   it('reads the log again from the start of its window once Hermes is in a new epoch, or its log ends before the cursor', () => {
     const read = after(...opened, page(0, [said(1), said(2), said(3)]))
     for (const moved of [facts({ epoch: 2 }), facts({ latestSeq: 1 })]) {

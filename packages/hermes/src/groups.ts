@@ -3,7 +3,7 @@ import { refusalOf } from './actor'
 import type { Bot } from './domain/bots'
 import type { Outcome, Refusal } from './domain/command'
 import {
-  EMPTY_GROUPS, groupChatOf, groupsOf, logStart, nextGroups, nextPoll, seatsFor, type GroupChat, type GroupDraft, type GroupId, type GroupNews, type Groups
+  EMPTY_GROUPS, heldIn, groupChatOf, groupsOf, logStart, nextGroups, nextPoll, seatsFor, type GroupChat, type GroupDraft, type GroupId, type GroupNews, type Groups
 } from './domain/groups'
 import type { Link } from './domain/session'
 import { NOT_CONNECTED } from './open'
@@ -172,7 +172,7 @@ export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
       }
       return
     }
-    const held = desk.held[group]
+    const held = heldIn(desk.held, group)
     let start = held === undefined || desk.followed !== group ? null : logStart(held)
     while (start !== null && desk.followed === group) {
       const reply = await conn.call('groups.log', { room_id: group, since_seq: start, limit: LOG_PAGE }, CALL_TIMEOUT_MS).catch(unread)
