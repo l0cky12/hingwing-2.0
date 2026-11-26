@@ -59,7 +59,9 @@ const STATES = {
   bots: page => page.locator('aside[data-state="listed"], .bot-pick[data-state="listed"]'),
   unstarted: page => page.locator('main#scroll:empty'),
   'helper-running': page => page.locator('.helper[data-end="live"]').filter({ has: page.locator('> .head > .sr', { hasText: /^working$/ }) }),
-  preview: page => page.getByRole('region', { name: 'Preview', exact: true })
+  preview: page => page.getByRole('region', { name: 'Preview', exact: true }),
+  'group-thinking': page => page.locator('#transcript .tip.thinking').filter({ hasText: / (?:is|are) thinking$/ }),
+  'group-replied': page => page.locator('#transcript:has(.said-by):not(:has(.tip))')
 }
 
 const rendered = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))

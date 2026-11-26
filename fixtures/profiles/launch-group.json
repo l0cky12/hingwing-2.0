@@ -236,6 +236,10 @@
         },
         {
           "hold": true
+        },
+        {
+          "reply": "Started the staging run. I’ll post the result here in about an hour.",
+          "delay_ms": 900
         }
       ],
       "juno": [
