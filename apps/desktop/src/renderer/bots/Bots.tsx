@@ -7,10 +7,12 @@ import { GroupForm } from '../groups/GroupForm'
 import { groupRowsOf, type GroupRowView } from '../groups/group-rows'
 import { newChatIn } from '../new-chat'
 import { Chevron } from '../chrome/ModeSwitch'
-import { pickBotPicture, run, useTopic } from '../store'
+import { run, useTopic } from '../store'
 import { Avatar } from './Avatar'
-import { BotEditor, type BotEditorProps } from './BotEditor'
-import { nameProblem } from './bot-form'
+import { BotEditor } from './BotEditor'
+import type { PictureCalls } from './BotPicture'
+import { nameProblem, type EditCalls } from './bot-form'
+import { EDIT_CALLS } from './edit-calls'
 import type { LookCalls } from './LookPicker'
 import { NewBotForm } from './NewBotForm'
 import { DeleteDialog } from './DeleteDialog'
@@ -51,18 +53,13 @@ export function BotsSidebar({ head }: { readonly head: ReactNode }) {
       onRenameGroup={(group, name) => run({ do: 'renameGroup', group, name })}
       onDeleteGroup={group => run({ do: 'deleteGroup', group })}
       onModels={() => run({ do: 'botModels', bot: null })}
-      onDescribe={bot => run({ do: 'describeBot', bot })}
-      onEdit={(bot, edit, revision) => run({ do: 'editBot', bot, edit, revision })}
-      onPickPicture={pickBotPicture}
-      onRemovePicture={bot => run({ do: 'removeBotPicture', bot })}
+      {...EDIT_CALLS}
       looks={LOOKS}
     />
   )
 }
 
-type EditorCalls = Pick<BotEditorProps, 'onDescribe' | 'onEdit' | 'onPickPicture' | 'onRemovePicture'>
-
-interface BotsPanelProps extends EditorCalls {
+interface BotsPanelProps extends EditCalls, PictureCalls {
   readonly head?: ReactNode
   readonly bots: Bots | undefined
   readonly open: OpenChat | undefined
