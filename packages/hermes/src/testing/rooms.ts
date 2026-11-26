@@ -3,6 +3,7 @@
  * gateway's, so a client bug fails a fixture test instead of waiting for a live Hermes. The numbers are copied from
  * Hermes, never imported from the client, because this is the oracle the client is tested against.
  */
+import { isDeepStrictEqual } from 'node:util'
 import type { Clock } from '../wire/link'
 import type { GroupsScript } from './fixture'
 
@@ -139,7 +140,7 @@ export class ScriptedRooms {
       const profile = identifier(member.profile) ?? refuse(`invalid member ${index} profile`)
       const handle = identifier(member.handle) ?? refuse(`invalid member ${index} handle`)
       const { target, display_name: label = '' } = member
-      if (target !== undefined && target !== null && !(isObject(target) && target.kind === 'local' && target.profile === profile && Object.keys(target).length === 2)) {
+      if (target !== undefined && target !== null && !isDeepStrictEqual(target, { kind: 'local', profile })) {
         refuse(`member ${index} target must be a local target for its profile`)
       }
       if (!this.deps.profiles.includes(profile)) refuse(`member ${index} profile '${profile}' is not local to this gateway`)
