@@ -19,6 +19,7 @@ import type { HelperControls } from './Helpers'
 import { ImageSessionContext } from './Image'
 import { forget, landAt, landed, pressFor } from './landing'
 import { marked, pressedOf, unmarked } from './marks'
+import { refusalOnPane, type PaneRefusal } from './refusal'
 import { distanceFrom, FOLLOW_WITHIN, FOLLOWING, jumpWords, placeAfter, progressOf, type Place } from './place'
 import type { RequestAnswer } from './Asks'
 import { Sides } from './Sides'
@@ -196,7 +197,11 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   if (marks.listed !== listed) dispatchMark({ kind: 'listed', listed })
   const pressed = useMemo(() => pressedOf(marks), [marks])
   const mark = useCallback((row: QueuedRow, action: QueuedAction | null) => dispatchMark(action === null ? { kind: 'refused', row } : { kind: 'pressed', row, action }), [])
-  const [refused, setRefused] = useState<{ readonly id: SessionId | null; readonly message: string } | null>(null)
+  const [refused, setRefused] = useState<PaneRefusal | null>(null)
+  const visibleRefusal = refusalOnPane(refused, id)
+  useEffect(() => {
+    if (visibleRefusal !== null && visibleRefusal !== refused) setRefused(visibleRefusal)
+  }, [visibleRefusal, refused])
   const [rewriting, setRewriting] = useState(false)
   const [branching, setBranching] = useState(false)
   const branchKeys = useRef(new Map<number, BranchId>())
@@ -417,7 +422,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
             {fill !== null && <ContextMeter key={id} fill={fill} stale={!live} onBreakdown={() => run({ do: 'contextBreakdown', sessionId: id })} />}
           </div>
         )}
-        {refused !== null && refused.id === id && <p className="err refusal">{refused.message}</p>}
+        {visibleRefusal !== null && <p className="err refusal">{visibleRefusal.message}</p>}
       </Composer>
     </>
   )
