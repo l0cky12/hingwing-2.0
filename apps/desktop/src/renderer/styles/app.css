@@ -792,6 +792,25 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 :is(.settings, .setup) .short .row { min-height: 44px; padding-top: 8px; padding-bottom: 8px; }
 :is(.settings, .setup) .card .where { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--rule); font-size: 12px; font-weight: 400; color: var(--graphite); vertical-align: 1px; }
 :is(.settings, .setup) .card kbd { display: inline-block; min-width: 22px; padding: 0 6px; font: 500 11.5px/18px var(--sans); text-align: center; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 5px; }
+.settings .card > * + .manager { border-top: 1px solid var(--hair); }
+.settings .card a.btn { display: inline-block; color: var(--ink); text-decoration: none; }
+.settings .managers .btn:disabled { opacity: .5; cursor: default; }
+.settings .managers .problem-line { flex: 1; min-width: 0; margin: 0; font-weight: 500; color: var(--caution); overflow-wrap: anywhere; }
+.settings .bot-choose .bot-pick-button { --name-room-beside-mode-switch: 220px; margin-right: 0; padding: 5px 10px 5px 8px; box-shadow: inset 0 0 0 1px var(--rule); }
+.settings .bot-choose .bot-pick-button:enabled:hover, .settings .bot-choose .bot-pick-button[aria-expanded="true"] { background: var(--paper); }
+.settings .manager .label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.settings .manager .state { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 7px; border-radius: 999px; font: 500 12px/20px var(--sans); }
+.settings .manager .state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.settings .manager .state.signal { color: var(--signal); background: var(--signal-soft); }
+.settings .manager .state.caution { color: var(--caution); background: var(--caution-soft); }
+.settings .manager .state.quiet { color: var(--graphite); background: var(--paper); box-shadow: inset 0 0 0 1px var(--hair); }
+.settings .manager .unlock { display: grid; gap: 6px; margin: -4px 0 0; padding: 0 18px 14px; }
+.settings .manager .unlock label { font-size: 13px; font-weight: 500; }
+.settings .manager .unlock-line { display: flex; gap: 8px; }
+.settings .manager .unlock input { flex: 1; min-width: 0; max-width: 320px; padding: 6px 11px; font: 13px/1.45 var(--sans); color: var(--ink); background: var(--paper); border: 1px solid var(--edge); border-radius: 7px; }
+.settings .manager .unlock input:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
+.settings .manager .unlock code { padding: 1px 5px; border-radius: 4px; font-size: 12.5px; color: var(--ink); background: var(--paper); box-shadow: inset 0 0 0 1px var(--hair); overflow-wrap: anywhere; }
+.settings .manager .problem { margin: 0 18px 14px; padding: 9px 12px; border-left: 3px solid var(--caution); border-radius: 0 8px 8px 0; color: var(--ink); background: var(--caution-soft); overflow-wrap: anywhere; }
 
 @container (max-width: 660px) {
   .settings { padding: 24px 16px; }
@@ -805,6 +824,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   :is(.settings, .setup) .machine .text { flex-basis: 160px; }
   :is(.settings, .setup) .edit-foot { flex-wrap: wrap; }
   :is(.settings, .setup) .edit-foot .note { flex-basis: 100%; }
+  .settings .manager .unlock input { max-width: none; }
 }
 
 @media (forced-colors: active) {
@@ -814,6 +834,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   :is(.settings, .setup) .machine .state, :is(.settings, .setup) .card .where, :is(.settings, .setup) .edit-form .problem { border: 1px solid CanvasText; }
   :is(.settings, .setup) .machine .state::before { box-sizing: border-box; background: none; border: 3.5px solid CanvasText; }
   :is(.settings, .setup) .edit-foot .progress .glyph { background: none; border: 5px solid CanvasText; }
+  .settings .manager .state, .settings .manager .problem, .settings .bot-choose .bot-pick-button { border: 1px solid CanvasText; }
+  .settings .manager .state::before { box-sizing: border-box; background: none; border: 3.5px solid CanvasText; }
 }
 
 .jump {
