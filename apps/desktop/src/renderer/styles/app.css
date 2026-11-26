@@ -963,10 +963,14 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .bot-row:is(:hover, [data-menu], :has(.bot-more:focus-visible)) .bot { padding-right: 44px; }
 .bot-row[data-menu] :is(.bot, .bot-feature):not([aria-current]) { background: var(--bots-hover); }
 .bot-row[data-menu] .bot-feature:not([aria-current]) .bot-badge { box-shadow: 0 0 0 2px var(--bots-hover); }
-.bot-menu { position: fixed; top: 0; right: auto; left: 0; z-index: 3; }
-.bot-menu button { display: flex; align-items: center; gap: 10px; color: var(--ink); white-space: nowrap; }
-.bot-menu svg { flex: none; color: var(--graphite); }
-.bot-menu [role="separator"] { height: 1px; margin: 3px 6px; background: var(--rule); }
+.popup { display: contents; }
+.popup-menu { position: fixed; top: 0; right: auto; left: 0; z-index: 3; }
+.popup-menu button { display: flex; align-items: center; gap: 10px; color: var(--ink); white-space: nowrap; }
+.popup-menu svg { flex: none; color: var(--graphite); }
+.popup-menu [role="separator"] { height: 1px; margin: 3px 6px; background: var(--rule); }
+.popup-menu button[aria-expanded="true"] { background: var(--signal-soft); }
+.popup-menu .popup-more { margin-left: auto; }
+.popup-hint { margin-left: auto; padding-left: 16px; font-size: 12.5px; color: var(--graphite); font-variant-numeric: tabular-nums; }
 .bots-said { flex: none; margin: 0 12px 12px 20px; }
 .bots-said:empty { margin: 0; }
 .bot-row[data-place="hidden"] .avatar { opacity: .6; }
@@ -1016,7 +1020,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .look-color, .look-face { forced-color-adjust: none; }
   :is(.look-shape, .look-color)[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: 2px; }
   .look-pet[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
-  .bot-menu [role="separator"] { background: CanvasText; }
+  .popup-menu [role="separator"] { background: CanvasText; }
   .bot[aria-current]:focus-visible { border-left-width: 5px; padding-left: 7px; }
   .pick-list .box { border: 1.5px solid CanvasText; box-shadow: none; }
   .pick-list label:has(input:checked) .box { background: Highlight; border-color: Highlight; color: HighlightText; }
