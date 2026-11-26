@@ -253,6 +253,17 @@ describe('a delete whose answer was lost', () => {
     expect(deleted, 'reported once').toEqual([PLAN])
   })
 
+  it("ends as the user's delete when a retry is refused while the first delete still runs", async () => {
+    const answers = [new Offline('groups.disband got no reply in 10000 ms'), new RpcRefusal(4001, 'room_disbanding_retry', 'room_disbanding_retry')]
+    const { deleted, book: retried } = book(() => Promise.reject(answers.shift()))
+    expect(await retried.disband(PLAN)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(await retried.disband(PLAN)).toMatchObject({ ok: false, refusal: { message: "Hermes couldn't finish deleting this group chat. Try Delete again." } })
+    retried.follow(PLAN)
+    await settled()
+    expect(deleted).toEqual([PLAN])
+    expect(retried.chat?.at).not.toBe('missing')
+  })
+
   it('leaves a group Hermes lost without a delete shown as missing', async () => {
     const { deleted, book: unasked } = book(() => Promise.resolve({ tombstone: { room_id: PLAN } }))
     unasked.follow(PLAN)

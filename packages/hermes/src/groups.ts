@@ -125,9 +125,9 @@ export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
   const reads = new Map<GroupId, 'once' | 'again'>()
   const unanswered = new Map<GroupId, { readonly text: string; readonly key: string }>()
   /**
-   * Deletes sent and not yet known to be done, including one whose answer was lost. Hermes stops a group's turns before
-   * it deletes it, which can outlast the call's timeout, and a `groups.changed` can come first. So a group from here that
-   * Hermes no longer has was deleted by the user, not lost.
+   * Deletes sent and not yet known to be done, including one whose answer was lost or whose retry Hermes refused while
+   * the first still ran. Hermes stops a group's turns before it deletes it, which can outlast the call's timeout, and a
+   * `groups.changed` can come first. So a group from here that Hermes no longer has was deleted by the user, not lost.
    */
   const deleting = new Set<GroupId>()
   let cancelPoll: (() => void) | null = null
@@ -336,7 +336,6 @@ export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
       try {
         await conn.call('groups.disband', { room_id: group }, CALL_TIMEOUT_MS)
       } catch (error) {
-        if (!(error instanceof Offline)) deleting.delete(group)
         return refuseAndReread(error, group, 'disband')
       }
       deleted(group)
