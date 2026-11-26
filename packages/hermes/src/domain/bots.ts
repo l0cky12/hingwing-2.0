@@ -78,8 +78,28 @@ export type Bots =
   | { readonly state: 'unsupported' }
   /** Hermes has the call and would not answer it. Asked again when sessions change. */
   | { readonly state: 'refused' }
-  /** The newest roster Hermes gave. It stays while the connection is down or a later ask is refused. */
-  | { readonly state: 'listed'; readonly roster: Roster }
+  /**
+   * The newest roster Hermes gave. It stays while the connection is down or a later ask is refused. `edition` counts
+   * the rosters this connection has published, from 1, and only grows. A command that changes the roster answers the
+   * edition that first holds its change, so a window knows its copy has caught up whichever of the two arrives first.
+   */
+  | { readonly state: 'listed'; readonly roster: Roster; readonly edition: number }
+
+export const BOT_MARKS = ['pin', 'unpin', 'hide', 'show'] as const
+export type BotMark = typeof BOT_MARKS[number]
+export type BotFlag = 'pinned' | 'hidden'
+
+export const MARK_SETS: { readonly [M in BotMark]: { readonly flag: BotFlag; readonly on: boolean } } = {
+  pin: { flag: 'pinned', on: true },
+  unpin: { flag: 'pinned', on: false },
+  hide: { flag: 'hidden', on: true },
+  show: { flag: 'hidden', on: false }
+}
+
+/** Hermes saved the flag. The window's roster holds it once `bots.edition >= edition`. */
+export interface Marked {
+  readonly edition: number
+}
 
 export interface BotDraft {
   readonly name: string

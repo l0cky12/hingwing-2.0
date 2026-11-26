@@ -1,4 +1,4 @@
-import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId, PetChoice } from './bots'
+import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId, BotMark, Marked, PetChoice } from './bots'
 import type { GroupDraft } from './groups'
 import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
@@ -14,6 +14,12 @@ export type Command =
    * makes a session, and a refusal leaves the open chat as it was.
    */
   | { readonly do: 'open'; readonly ref: ChatRef }
+  /**
+   * A new chat in a bot that must be able to start now. When its first message could not be sent (no connection, a
+   * socket bound to one profile, a Hermes that makes no chat for Highwing), it is refused and the open chat stays.
+   * A plain `open` of a new chat opens the draft anyway, and its first send says why.
+   */
+  | { readonly do: 'open'; readonly ref: { readonly kind: 'new'; readonly bot: BotId; readonly draftId: string }; readonly upFront: true }
   /**
    * The first message to a chat that has no session yet: makes the session and sends `text` there.
    * Messages sent while it is being made go to that one session, in the order sent.
@@ -107,6 +113,14 @@ export type Command =
    * repeated id with the group it already made.
    */
   | { readonly do: 'createGroup'; readonly draft: GroupDraft }
+  /**
+   * Sets one of Hermes's own flags on the bot (`MARK_SETS`), so Hermes desktop and every machine agree. Saved only
+   * when Hermes says so, and the roster shows the flag before this answers. Any attempt is followed by a fresh read
+   * of the roster.
+   */
+  | { readonly do: 'markBot'; readonly bot: BotId; readonly mark: BotMark }
+  /** Reads the roster again. Hermes sends no event when a profile changes. */
+  | { readonly do: 'refreshBots' }
   /** Sets one of Hermes's switches for the chat, for every client that has it open. */
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'reasoning'; readonly on: boolean }
   /** YOLO: Hermes runs this chat's commands without asking. */
@@ -160,6 +174,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'canGeneratePicture' } ? boolean
   : C extends { do: 'generatePicture' } ? string
   : C extends { do: 'pets' } ? readonly PetChoice[]
+  : C extends { do: 'markBot' } ? Marked
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
   : C extends { do: 'completePath' } ? readonly PathMatch[]

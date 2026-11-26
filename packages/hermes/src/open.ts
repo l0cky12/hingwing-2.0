@@ -13,6 +13,8 @@ export const NOT_CONNECTED = refused('offline', "Highwing isn't connected to Her
 const CANT_START = refused('unsupported', "This Hermes can't start a chat from Highwing.")
 const CANT_SWITCH = refused('unsupported', "This Hermes can't switch bots from Highwing yet. Update Hermes on that machine, then reconnect.")
 
+type Creation = NonNullable<Connection['creation']>
+
 /** The largest `session.list` page the gateway serves. */
 const SEEK_ROWS = 200
 
@@ -34,6 +36,7 @@ export interface ChatDesk {
    * for. A new chat, or a chat picked from the list, is shown at once and asks Hermes nothing.
    */
   ask(ref: ChatRef): Promise<Outcome<SessionId | null>>
+  askUpFront(ref: { readonly kind: 'new'; readonly bot: BotId; readonly draftId: string }): Promise<Outcome<null>>
   /**
    * The session a first message goes to. A bot's: the Bot Chat Hermes has by now, else a new one. A
    * new chat's: the session made with its `draftId`. Calls made while it is being made share it.
@@ -169,10 +172,7 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
   }
 
   /** Hermes answers an exact retry of a `request_id` with the session it made (gateway/session_local.py:308, :365), so the draft's `draftId` is the `request_id`. */
-  const makeNew = async (bot: BotId | null, draftId: string): Promise<Outcome<SessionId>> => {
-    const { creation } = conn
-    if (creation === null) return NOT_CONNECTED
-    if (!creation.sources.includes('gui')) return CANT_START
+  const makeNew = async (bot: BotId | null, draftId: string, creation: Creation): Promise<Outcome<SessionId>> => {
     const asked = { source: 'gui', request_id: draftId, follow_profile_config: true, client: deps.client }
     try {
       const made = await (bot === null ? conn : conn.as(bot)).call('session.create', offered(asked, creation.parameters))
@@ -200,6 +200,14 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
 
   const reachable = (): Outcome<never> | null => (conn.reach === 'host' ? null : conn.reach === null ? NOT_CONNECTED : CANT_SWITCH)
 
+  const startable = (bot: BotId | null): Outcome<Creation> => {
+    const unreachable = bot === null ? null : reachable()
+    if (unreachable !== null) return unreachable
+    const { creation } = conn
+    if (creation === null) return NOT_CONNECTED
+    return creation.sources.includes('gui') ? { ok: true, value: creation } : CANT_START
+  }
+
   const startBot = (bot: BotId): Promise<Outcome<SessionId>> => {
     const unreachable = reachable()
     if (unreachable !== null) return Promise.resolve(unreachable)
@@ -213,11 +221,11 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
   }
 
   const startNew = (bot: BotId | null, draftId: string): Promise<Outcome<SessionId>> => {
-    const unreachable = bot === null ? null : reachable()
-    if (unreachable !== null) return Promise.resolve(unreachable)
+    const able = startable(bot)
+    if (!able.ok) return Promise.resolve(able)
     const held = draftSessions.get(draftId)
     if (held !== undefined) return held
-    const started = makeNew(bot, draftId).then(outcome => {
+    const started = makeNew(bot, draftId, able.value).then(outcome => {
       if (!outcome.ok) draftSessions.delete(draftId)
       return outcome
     })
@@ -249,6 +257,12 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
       if (unreachable !== null) return unreachable
       for (const effect of take({ on: 'asked', ref })) if ('find' in effect) find(effect.find)
       return finds.get(ref.bot) ?? { ok: true, value: chatOf(desk, ref.bot) ?? null }
+    },
+    askUpFront: async ref => {
+      const able = startable(ref.bot)
+      if (!able.ok) return able
+      take({ on: 'asked', ref })
+      return { ok: true, value: null }
     },
     start: chat => (chat.kind === 'bot' ? startBot(chat.bot) : startNew(chat.bot, chat.draftId)),
     botOf: id => ownerOf(desk, id),

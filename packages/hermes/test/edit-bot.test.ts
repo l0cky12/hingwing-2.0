@@ -112,6 +112,11 @@ describe('editBot against one Hermes reply', () => {
     expect(await editBot(conn, 'rae' as BotId, { name: 'Ray', persona: 'x', description: 'y' }, null)).toEqual({ ok: false, refusal: { kind: 'rejected', message: "Hermes didn't save the name and persona." } })
   })
 
+  it('names every section sent as not saved when Hermes reports nothing it applied', async () => {
+    const { conn } = answering({ 'profiles.list': OLD_ROW, 'profiles.configure': { ok: true } })
+    expect(await editBot(conn, 'rae' as BotId, { name: 'Ray', persona: 'x' }, null)).toEqual({ ok: false, refusal: { kind: 'rejected', message: "Hermes didn't save the name and persona." } })
+  })
+
   it('refuses a rename of a bot the list no longer holds, and sends nothing', async () => {
     const { conn, sent } = answering({ 'profiles.list': { profiles: [] } })
     expect(await editBot(conn, 'rae' as BotId, { name: 'Ray' }, 2)).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'Hermes no longer has this bot.' } })

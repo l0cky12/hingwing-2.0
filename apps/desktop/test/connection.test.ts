@@ -3,7 +3,7 @@ import type { CheckFailure, CheckStep, SshHost, Target } from '@highwing/hermes/
 import type { GatewayUrl } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { Live, Setup } from '../src/ipc-contract'
-import { nextSetup, ownConnection, pinnedConnection, type ConnectionDeps, type SetupEvent } from '../src/main/connection'
+import { nextSetup, ownConnection, pinnedConnection, refreshBotsOnFocus, type ConnectionDeps, type SetupEvent } from '../src/main/connection'
 import type { Settings } from '../src/main/settings'
 
 const REMOTE: Target = { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' as SshHost }
@@ -306,5 +306,19 @@ describe('pinnedConnection', () => {
     expect(await owner.run({ do: 'checkTarget', target: LOCAL })).toMatchObject({ ok: false })
     await owner.run({ do: 'reconnect', start: false })
     expect(commands).toEqual([{ do: 'reconnect', start: false }])
+  })
+})
+
+describe('the bots on window focus', () => {
+  it('are read again each time a window gains focus, until the app stops listening', () => {
+    const listeners = new Set<() => void>()
+    const app = { on: (_: 'browser-window-focus', listener: () => void) => listeners.add(listener), off: (_: 'browser-window-focus', listener: () => void) => listeners.delete(listener) }
+    const sent: unknown[] = []
+    const stop = refreshBotsOnFocus(app, { run: async command => { sent.push(command); return { ok: true, value: undefined } as never } })
+    for (const listener of listeners) listener()
+    for (const listener of listeners) listener()
+    expect(sent).toEqual([{ do: 'refreshBots' }, { do: 'refreshBots' }])
+    stop()
+    expect(listeners.size).toBe(0)
   })
 })

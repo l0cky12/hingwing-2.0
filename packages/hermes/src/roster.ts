@@ -1,4 +1,4 @@
-import { rosterOf, type Bots, type Roster } from './domain/bots'
+import { rosterOf, type BotFacts, type BotFlag, type BotId, type Bots } from './domain/bots'
 import type { BotChats } from './domain/open'
 import type { Link } from './domain/session'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
@@ -7,19 +7,23 @@ import { parseBots } from './wire/parse'
 type News =
   | { readonly is: 'online' }
   | { readonly is: 'offline' }
-  | { readonly is: 'listed'; readonly roster: Roster }
+  | { readonly is: 'listed'; readonly facts: readonly BotFacts[] }
   | { readonly is: 'unsupported' }
   | { readonly is: 'refused' }
 
-const LOADING: Bots = { state: 'loading' }
+type Held =
+  | { readonly state: 'loading' | 'offline' | 'unsupported' | 'refused' }
+  | { readonly state: 'listed'; readonly facts: readonly BotFacts[] }
 
-function after(bots: Bots, news: News): Bots {
+const LOADING: { readonly state: 'loading' } = { state: 'loading' }
+
+function after(held: Held, news: News): Held {
   switch (news.is) {
-    case 'online': return bots.state === 'offline' ? LOADING : bots
-    case 'offline': return bots.state === 'loading' ? { state: 'offline' } : bots
-    case 'listed': return { state: 'listed', roster: news.roster }
+    case 'online': return held.state === 'offline' ? LOADING : held
+    case 'offline': return held.state === 'loading' ? { state: 'offline' } : held
+    case 'listed': return { state: 'listed', facts: news.facts }
     case 'unsupported': return { state: 'unsupported' }
-    case 'refused': return bots.state === 'loading' ? { state: 'refused' } : bots
+    case 'refused': return held.state === 'loading' ? { state: 'refused' } : held
   }
 }
 
@@ -28,7 +32,8 @@ const LINK_NEWS: { readonly [S in Link['state']]: 'online' | 'offline' | null } 
 /** Hermes reads every profile's newest session for this call, so a slow disk can stall it. */
 const ROSTER_TIMEOUT_MS = 10_000
 
-const same = (a: Bots, b: Bots): boolean => a === b || JSON.stringify(a) === JSON.stringify(b)
+const chatsOf = (facts: readonly BotFacts[]): BotChats => Object.fromEntries(facts.flatMap(bot => (bot.chat === null ? [] : [[bot.id, bot.chat]])))
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
 
 export interface BotList {
   readonly bots: Bots
@@ -39,6 +44,7 @@ export interface BotList {
   ask(): void
   /** Sessions changed, so a preview may have. Asks again, except of a Hermes that has no `profiles.list`. */
   refresh(): void
+  confirm(bot: BotId, set: { readonly flag: BotFlag; readonly on: boolean }): number
 }
 
 /**
@@ -47,26 +53,34 @@ export interface BotList {
  * that changed neither. One ask is in flight at a time, and asking during it runs one more after it.
  */
 export function botList(conn: Pick<Connection, 'call'>, changed: () => void): BotList {
-  let bots = LOADING
+  let held: Held = LOADING
+  let bots: Bots = LOADING
   let chats: BotChats = {}
+  let edition = 0
+  let writes = 0
   let asking = false
   let again = false
 
-  const take = (news: News, named: BotChats = chats) => {
-    const next = after(bots, news)
-    if (same(next, bots) && JSON.stringify(named) === JSON.stringify(chats)) return
-    bots = next
+  const take = (next: Held) => {
+    const drawn: Bots = next.state === 'listed' ? { state: 'listed', roster: rosterOf(next.facts), edition } : next
+    const named = next.state === 'listed' ? chatsOf(next.facts) : chats
+    held = next
+    const moved = !same(drawn, bots)
+    if (!moved && same(named, chats)) return
+    if (moved) bots = drawn.state === 'listed' ? { ...drawn, edition: ++edition } : drawn
     chats = named
     changed()
   }
 
   const fetch = async () => {
     asking = true
+    const began = writes
     try {
       const facts = parseBots(await conn.call('profiles.list', { include_sessions: true }, ROSTER_TIMEOUT_MS))
-      take({ is: 'listed', roster: rosterOf(facts) }, Object.fromEntries(facts.flatMap(bot => (bot.chat === null ? [] : [[bot.id, bot.chat]]))))
+      if (began === writes) take(after(held, { is: 'listed', facts }))
+      else again = true
     } catch (error) {
-      if (error instanceof RpcRefusal) take({ is: error.code === METHOD_NOT_FOUND ? 'unsupported' : 'refused' })
+      if (error instanceof RpcRefusal) take(after(held, { is: error.code === METHOD_NOT_FOUND ? 'unsupported' : 'refused' }))
       else if (!(error instanceof Offline)) throw error
     } finally {
       asking = false
@@ -82,7 +96,7 @@ export function botList(conn: Pick<Connection, 'call'>, changed: () => void): Bo
     else void fetch()
   }
   const refresh = () => {
-    if (bots.state !== 'unsupported') ask()
+    if (held.state !== 'unsupported') ask()
   }
 
   return {
@@ -90,9 +104,15 @@ export function botList(conn: Pick<Connection, 'call'>, changed: () => void): Bo
     get chats() { return chats },
     linked: state => {
       const is = LINK_NEWS[state]
-      if (is !== null) take({ is })
+      if (is !== null) take(after(held, { is }))
     },
     ask,
-    refresh
+    refresh,
+    confirm: (bot, { flag, on }) => {
+      writes++
+      if (held.state === 'listed') take({ state: 'listed', facts: held.facts.map(fact => (fact.id === bot ? { ...fact, [flag]: on } : fact)) })
+      ask()
+      return edition
+    }
   }
 }

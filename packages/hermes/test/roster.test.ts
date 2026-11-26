@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { botsIn, type BotId, type Bots } from '../src/domain/bots'
 import { botList } from '../src/roster'
 import { settle } from '../src/testing/clock'
 import { Offline, RpcRefusal, type Connection } from '../src/wire/link'
@@ -7,6 +8,12 @@ import { PROFILES } from './support/errand'
 const UNKNOWN_METHOD = new RpcRefusal(-32601, 'unknown_method', 'unknown method: profiles.list')
 const DENIED = new RpcRefusal(4001, 'permission_denied', 'permission_denied')
 const ONE_BOT = { profiles: [{ name: 'solo', path: '/profiles/solo' }] }
+const RESEARCH = 'research' as BotId
+const editionOf = (bots: Bots) => (bots.state === 'listed' ? bots.edition : null)
+const flagsOf = (bots: Bots, bot: BotId) => {
+  const held = bots.state === 'listed' ? botsIn(bots.roster).find(each => each.id === bot) : undefined
+  return held && { pinned: held.pinned, hidden: held.hidden }
+}
 
 function hermes() {
   const waiting: { resolve(reply: unknown): void; reject(error: Error): void }[] = []
@@ -126,5 +133,61 @@ describe('what Highwing knows about the bots', () => {
     list.refresh()
     await answer(ask => ask.reject(DENIED))
     expect(list.chats, 'kept through a refusal, as the roster is').toMatchObject({ research: 'local-0001-compressed' })
+  })
+
+  it('counts the rosters it publishes from 1, and not an answer that drew the same roster', async () => {
+    const { list, answer } = hermes()
+    await answer(ask => ask.resolve(PROFILES))
+    expect(editionOf(list.bots)).toBe(1)
+    const moved = structuredClone(PROFILES) as { profiles: { canonical_session: { resolved_id: string } | null }[] }
+    moved.profiles[2]!.canonical_session!.resolved_id = 'local-0001-compressed'
+    list.refresh()
+    await answer(ask => ask.resolve(moved))
+    expect(editionOf(list.bots), 'only a Bot Chat moved').toBe(1)
+    list.refresh()
+    await answer(ask => ask.resolve(ONE_BOT))
+    expect(editionOf(list.bots)).toBe(2)
+  })
+})
+
+describe('a flag Hermes confirmed', () => {
+  it('shows at once in a new edition, which it answers, and the roster is asked for again', async () => {
+    const { list, state, answer } = hermes()
+    await answer(ask => ask.resolve(PROFILES))
+    expect(list.confirm(RESEARCH, { flag: 'pinned', on: true })).toBe(2)
+    expect([editionOf(list.bots), flagsOf(list.bots, RESEARCH)]).toEqual([2, { pinned: true, hidden: false }])
+    expect(state.changes).toBe(2)
+    expect(state.asked).toBe(2)
+  })
+
+  it('is not put back by an answer to an ask sent before it, which is asked for again', async () => {
+    const { list, state, answer } = hermes()
+    await answer(ask => ask.resolve(PROFILES))
+    list.refresh()
+    list.confirm(RESEARCH, { flag: 'hidden', on: true })
+    await answer(ask => ask.resolve(PROFILES))
+    expect(flagsOf(list.bots, RESEARCH), 'the answer from before the write').toEqual({ pinned: false, hidden: true })
+    expect(state.asked).toBe(3)
+    await answer(ask => ask.resolve(PROFILES))
+    expect(flagsOf(list.bots, RESEARCH), 'an answer from after the write').toEqual({ pinned: false, hidden: false })
+  })
+
+  it('stays when the read after it is refused or gets no reply', async () => {
+    for (const failure of [DENIED, new Offline('profiles.list got no reply in 10000 ms')]) {
+      const { list, answer } = hermes()
+      await answer(ask => ask.resolve(PROFILES))
+      list.confirm(RESEARCH, { flag: 'pinned', on: true })
+      await answer(ask => ask.reject(failure))
+      expect(flagsOf(list.bots, RESEARCH)).toEqual({ pinned: true, hidden: false })
+    }
+  })
+
+  it('changes nothing for a bot the roster does not list, answers the edition it has, and still asks', async () => {
+    const { list, state, answer } = hermes()
+    await answer(ask => ask.resolve(PROFILES))
+    const listed = list.bots
+    expect(list.confirm('gone' as BotId, { flag: 'pinned', on: true })).toBe(1)
+    expect(list.bots).toBe(listed)
+    expect(state.asked).toBe(2)
   })
 })

@@ -16,7 +16,8 @@ const NO_LOOKS: LookCalls = {
 const showing = (bots: Bots | undefined, open: OpenChat | undefined, link: Link | undefined = ONLINE, groups: Groups | undefined = NO_GROUPS) =>
   renderToStaticMarkup(
     <BotsPanel
-      bots={bots} open={open} link={link} groups={groups} onOpen={async () => ({ ok: true, value: null })} onNewChat={() => {}}
+      bots={bots} open={open} link={link} groups={groups} onOpen={async () => ({ ok: true, value: null })} onNewChat={() => {}} onNew={async () => ({ ok: true, value: null })}
+      onMark={async () => ({ ok: true, value: { edition: 2 } })}
       onCreate={async () => ({ ok: true, value: { bot: 'rae' as BotId, warnings: [] } })} onCreateGroup={async () => ({ ok: true, value: undefined })}
       onModels={async () => ({ ok: true, value: { options: [], fallback: null } })}
       onDescribe={async bot => ({ ok: true, value: { bot, name: 'Rae', description: '', persona: '', revision: 2 } })} onEdit={async () => ({ ok: true, value: undefined })}
@@ -39,19 +40,24 @@ describe('the bots sidebar', () => {
     expect(markup).not.toMatch(/<footer|id="scroll"/)
   })
 
-  it("names each row by its bot, and the default bot as the default bot, each followed by its details button", () => {
+  it("names each row by its bot, and the default bot as the default bot, each followed by its More button", () => {
     expect(buttons(markup).map(tag => attr(tag, 'aria-label'))).toEqual([
-      'Search bots', 'New', 'Emu, default bot', 'Details for Emu', 'dr eggbot', 'Details for dr eggbot', 'Research', 'Details for Research',
-      'Timothy · CEO', 'Details for Timothy · CEO', 'Hermes', 'Details for Hermes', 'highwing', 'Details for highwing'
+      'Search bots', 'New', 'Emu, default bot', 'More for Emu', 'dr eggbot', 'More for dr eggbot', 'Research', 'More for Research',
+      'Timothy · CEO', 'More for Timothy · CEO', 'Hermes', 'More for Hermes', 'highwing', 'More for highwing'
     ])
     expect(markup).toMatch(/<h3>New section<\/h3>.*<h3>Unassigned<\/h3>/s)
   })
 
-  it('keeps each details button beside its row, never inside it, so each is its own control', () => {
+  it('keeps each More button beside its row, never inside it, as a closed menu button', () => {
     expect(markup).not.toMatch(/<button(?:(?!<\/button>)[\s\S])*<button/)
-    const details = buttons(markup).filter(tag => attr(tag, 'class') === 'bot-details')
-    expect(details).toHaveLength(6)
-    expect(details.every(tag => attr(tag, 'aria-haspopup') === 'dialog')).toBe(true)
+    const more = buttons(markup).filter(tag => attr(tag, 'class') === 'bot-more')
+    expect(more).toHaveLength(6)
+    expect(more.every(tag => attr(tag, 'aria-haspopup') === 'menu' && attr(tag, 'aria-expanded') === 'false')).toBe(true)
+    expect(markup, 'no menu is drawn until one is opened').not.toContain('role="menu"')
+  })
+
+  it('keeps an empty live region in the page, so a screen reader hears it fill', () => {
+    expect(markup).toContain('<p class="bots-note bots-said" role="status"></p>')
   })
 
   it("draws a bot's letter while its picture has not loaded", () => {
@@ -154,7 +160,7 @@ describe('pinned and hidden bots in the sidebar', () => {
     fact('old', 'Old Helper', { hidden: true }),
     fact('test', 'Test Bot', { hidden: true })
   )
-  const toggleOf = (html: string) => buttons(/<section class="bots-hidden">.*/s.exec(html)?.[0] ?? '').find(tag => attr(tag, 'aria-expanded') !== undefined)
+  const toggleOf = (html: string) => buttons(html).find(tag => tag.includes('data-hidden-toggle'))
   const rowsOf = (html: string) => buttons(html).filter(tag => /class="bot(-feature)?"/.test(tag)).map(tag => attr(tag, 'aria-label'))
   const headingsOf = (html: string) => Array.from(html.matchAll(/<h3>(?:<button[^>]*>)?(?:<svg.*?<\/svg>)?([^<]*)/g), ([, words]) => words)
 

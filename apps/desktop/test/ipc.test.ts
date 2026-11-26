@@ -165,6 +165,9 @@ describe('validators', () => {
 
   it("keep a bot's edited fields as sent, with the revision it was read at, and a window's removal of a picture", () => {
     expect(parseCommand({ do: 'describeBot', bot: 'rae', extra: 1 })).toEqual({ do: 'describeBot', bot: 'rae' })
+    expect(parseCommand({ do: 'markBot', bot: 'rae', mark: 'hide', extra: 1 })).toEqual({ do: 'markBot', bot: 'rae', mark: 'hide' })
+    expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: 'rae', draftId: 'd1', upFront: true }, upFront: true }))
+      .toEqual({ do: 'open', ref: { kind: 'new', bot: 'rae', draftId: 'd1' }, upFront: true })
     expect(parseCommand({ do: 'editBot', bot: 'rae', edit: { persona: ' Plain.\n', extra: 1 }, revision: 2 })).toEqual({ do: 'editBot', bot: 'rae', edit: { persona: ' Plain.\n' }, revision: 2 })
     expect(parseCommand({ do: 'editBot', bot: 'rae', edit: { name: 'Ray', description: '' }, revision: null }))
       .toEqual({ do: 'editBot', bot: 'rae', edit: { name: 'Ray', description: '' }, revision: null })
@@ -282,6 +285,12 @@ describe('validators', () => {
     ['a model list that names no bot', { do: 'botModels' }],
     ['details of a bot with no name', { do: 'describeBot', bot: '' }],
     ['an edit that changes nothing', { do: 'editBot', bot: 'rae', edit: {}, revision: 2 }],
+    ['a mark that is not one of the four', { do: 'markBot', bot: 'rae', mark: 'flip' }],
+    ['an up-front open of a bot\'s chat', { do: 'open', ref: { kind: 'bot', bot: 'rae' }, upFront: true }],
+    ['an up-front open of a new chat in no bot', { do: 'open', ref: { kind: 'new', bot: null, draftId: 'd1' }, upFront: true }],
+    ['an up-front flag that is not true', { do: 'open', ref: { kind: 'new', bot: 'rae', draftId: 'd1' }, upFront: false }],
+    ['a mark for a bot with no name', { do: 'markBot', bot: ' ', mark: 'pin' }],
+    ['a roster refresh, which only Electron main asks for', { do: 'refreshBots' }],
     ['an edit to a blank name', { do: 'editBot', bot: 'rae', edit: { name: '  ' }, revision: 2 }],
     ['an edit whose persona is not text', { do: 'editBot', bot: 'rae', edit: { persona: 7 }, revision: 2 }],
     ['an edit with no revision', { do: 'editBot', bot: 'rae', edit: { persona: 'x' } }],
@@ -385,8 +394,8 @@ describe('validators', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints', 'closePreview',
       'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'describeBot', 'discard', 'editBot', 'editTarget', 'export',
-      'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'models', 'move', 'open', 'openChat', 'openPreview', 'petPicture', 'pets', 'pickModel',
-      'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename', 'restore', 'rewind', 'send', 'setMode', 'side',
+      'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openChat', 'openPreview', 'petPicture', 'pets',
+      'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename', 'restore', 'rewind', 'send', 'setMode', 'side',
       'start', 'stop', 'stopHelper', 'tune', 'versions'
     ])
   })
@@ -395,7 +404,7 @@ describe('validators', () => {
 const still = <T>(value: T) => ({ get: () => value, subscribe: () => () => {} })
 const LINK: Link = { state: 'blocked', why: 'hermes-missing', message: 'A link of this test.' }
 const SIDEBAR: Sidebar = { bot: null, status: 'stale', rows: [], complete: true }
-const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] } }
+const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] }, edition: 1 }
 const NOTHING_OPEN: OpenChat = { shown: null, opening: null, missing: null }
 const NO_RELAYS: RelayDesk = { supported: false, bySession: {} }
 const NO_GROUPS: Groups = { state: 'unsupported' }

@@ -1206,15 +1206,18 @@ export function parseDetails(described: ProfilesDescribeResult, listed: Canonica
 
 /**
  * What a `profiles.configure` did with the sections sent. A clash wrote nothing of `ui_meta`; the other
- * sections are applied each on its own (tui_gateway/methods_profiles.py:387-410).
+ * sections are applied each on its own (tui_gateway/methods_profiles.py:387-410). `unreported`: a reply with no
+ * `applied`, from a Hermes that says nothing of what it saved, as Hermes desktop reads it.
  */
 export type Configured =
   | { readonly is: 'saved' }
   | { readonly is: 'clash' }
   | { readonly is: 'unsaved'; readonly sections: readonly string[] }
+  | { readonly is: 'unreported' }
 
 export function parseConfigured(reply: ProfilesConfigureResult, sent: readonly string[]): Configured {
-  const applied: Obj = isObject(reply) && isObject(reply.applied) ? reply.applied : {}
+  if (!isObject(reply) || !isObject(reply.applied)) return { is: 'unreported' }
+  const applied: Obj = reply.applied
   if (isObject(applied.ui_meta_conflicts) && Object.keys(applied.ui_meta_conflicts).length > 0) return { is: 'clash' }
   const sections = sent.filter(section => applied[section] !== true)
   return sections.length === 0 ? { is: 'saved' } : { is: 'unsaved', sections }

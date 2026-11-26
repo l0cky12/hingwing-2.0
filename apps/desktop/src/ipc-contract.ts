@@ -1,6 +1,6 @@
 import {
-  EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
-  type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type BusyMode, type ChatRef,
+  BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
+  type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupDraft, type Groups, type HelperId, type Item, type Link, type ModelOption,
   type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
   type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
@@ -68,7 +68,7 @@ export type ModeCommand = { readonly do: 'setMode'; readonly mode: Mode }
 export const isMode = (raw: unknown): raw is Mode => raw === 'bots' || raw === 'chats'
 
 export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand
-export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' }>
+export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' | 'refreshBots' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
 
@@ -206,6 +206,7 @@ const text = (value: unknown): value is string => typeof value === 'string'
 const filled = (value: unknown): value is string => text(value) && value.trim() !== ''
 const sessionIdOf = (raw: Obj) => (filled(raw.sessionId) ? (raw.sessionId as SessionId) : null)
 const botIdOf = (raw: unknown) => (filled(raw) ? (raw as BotId) : null)
+const isBotMark = (raw: unknown): raw is BotMark => (BOT_MARKS as readonly unknown[]).includes(raw)
 const modelOptionOf = (raw: unknown): ModelOption | null =>
   isObject(raw) && filled(raw.id) && filled(raw.provider) && text(raw.providerName)
     ? { id: raw.id as ModelOption['id'], provider: raw.provider, providerName: raw.providerName }
@@ -312,7 +313,8 @@ type Validators = { readonly [K in WindowCommand['do']]: (raw: Obj) => Extract<W
 export const validators: Validators = {
   open: raw => {
     const ref = chatRefOf(raw.ref)
-    return ref && { do: 'open', ref }
+    if (raw.upFront === undefined) return ref && { do: 'open', ref }
+    return raw.upFront === true && ref?.kind === 'new' && ref.bot !== null ? { do: 'open', ref: { kind: 'new', bot: ref.bot, draftId: ref.draftId }, upFront: true } : null
   },
   start: raw => {
     const chat = unstartedOf(raw.chat)
@@ -446,6 +448,10 @@ export const validators: Validators = {
   createGroup: raw => {
     const draft = groupDraftOf(raw.draft)
     return draft && { do: 'createGroup', draft }
+  },
+  markBot: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && isBotMark(raw.mark) ? { do: 'markBot', bot, mark: raw.mark } : null
   },
   tune: raw => {
     const sessionId = sessionIdOf(raw)

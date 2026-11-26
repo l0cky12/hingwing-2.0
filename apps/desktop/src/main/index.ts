@@ -5,7 +5,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { attachmentStore, ATTACHMENTS_DIR, desktopSources, HERMES_LIMITS } from './attachments'
-import { ownConnection, pinnedConnection, type ConnectionOwner } from './connection'
+import { ownConnection, pinnedConnection, refreshBotsOnFocus, type ConnectionOwner } from './connection'
 import { desktopMenus, recordingMenus } from './context-menu'
 import { desktopOpener, recordingOpener, type Opener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
@@ -133,8 +133,9 @@ app.whenReady().then(async () => {
   })
   openWindow(opener, pane, HIGHWING_MENU_LOG ? recordingMenus(HIGHWING_MENU_LOG, HIGHWING_MENU_PICK) : desktopMenus(Menu))
   const stopLinks = links.serve(owner, raise)
+  const stopRefresh = refreshBotsOnFocus(app, owner)
   let closed: Promise<void> | null = null
-  const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), Promise.all([owner.close(), drafts.settled(), mode.settled()]).then(() => {})))
+  const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), stopRefresh(), Promise.all([owner.close(), drafts.settled(), mode.settled()]).then(() => {})))
   app.on('window-all-closed', () => void close().finally(() => app.quit()))
   // A quit from the menu or the session never emits window-all-closed, and a check or an attach still running would outlive the app.
   // Electron does not wait for a will-quit listener, so the quit is held until a draft or the mode still being written is on disk.
