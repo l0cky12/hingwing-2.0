@@ -924,6 +924,36 @@ describe('the file call', () => {
     served.dispose()
     expect(handlers.has(CHANNEL.file)).toBe(false)
   })
+
+  it('refuses open, show and preview for a session the live Hermes is serving on another machine', async () => {
+    const rig = harness(switchable)
+    rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
+    rig.emit(diffMoment())
+    const file = rig.handlers.get(CHANNEL.file)!
+    for (const action of ['open', 'show', 'preview'] as const) {
+      await expect(file(rig.event(), { ...asked('open', NOTES), action })).resolves.toEqual({ ok: false, reason: 'refused' })
+    }
+    expect(rig.opened).toEqual([])
+    expect(rig.previewed).toEqual([])
+  })
+
+  it('refuses a path a remote Hermes served after the connection moves to this computer, until the window watches the session again', async () => {
+    let owner: ConnectionOwner | undefined
+    const rig = harness(hermes => (owner = switchable(hermes)))
+    rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
+    rig.emit(diffMoment())
+    await owner!.run({ do: 'editTarget' })
+    await owner!.run({ do: 'checkTarget', target: { kind: 'local' } })
+    await new Promise(resolve => setImmediate(resolve))
+    const file = rig.handlers.get(CHANNEL.file)!
+    await expect(file(rig.event(), asked('open', NOTES))).resolves.toEqual({ ok: false, reason: 'refused' })
+    expect(rig.opened).toEqual([])
+
+    rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
+    rig.emit(diffMoment())
+    await expect(file(rig.event(), asked('open', NOTES))).resolves.toEqual({ ok: true })
+    expect(rig.opened).toEqual([{ action: 'open', path: NOTES }])
+  })
 })
 
 describe('the image call', () => {
