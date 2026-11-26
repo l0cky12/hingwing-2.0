@@ -15,7 +15,7 @@ export const fallbackOf = (wanted: FocusTarget, view: SidebarView): readonly Foc
 
 const ATTRIBUTES: { readonly [T in FocusTarget['to']]: string } = { row: 'data-bot', more: 'data-more', hidden: 'data-hidden-toggle', search: 'data-bots-search' }
 
-function elementOf(sidebar: HTMLElement, target: FocusTarget): HTMLElement | undefined {
+export function elementIn(sidebar: HTMLElement, target: FocusTarget): HTMLElement | undefined {
   const attribute = ATTRIBUTES[target.to]
   const found = [...sidebar.querySelectorAll<HTMLElement>(`[${attribute}]`)]
   return 'bot' in target ? found.find(element => element.getAttribute(attribute) === target.bot) : found[0]
@@ -30,7 +30,7 @@ function inView(element: HTMLElement): boolean {
 
 export function focusIn(sidebar: HTMLElement, targets: readonly FocusTarget[], how: 'scroll' | 'in-view'): boolean {
   for (const target of targets) {
-    const element = elementOf(sidebar, target)
+    const element = elementIn(sidebar, target)
     if (element === undefined || (how === 'in-view' && !inView(element))) continue
     element.focus({ preventScroll: how === 'in-view' })
     return true

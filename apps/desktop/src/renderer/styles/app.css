@@ -191,6 +191,7 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .file-menu { position: absolute; z-index: 1; top: calc(100% + 2px); right: 0; display: flex; flex-direction: column; min-width: 140px; padding: 3px; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); box-shadow: 0 2px 8px rgb(31 42 38 / .12); }
 .file-menu button { padding: 5px 10px; border: 0; border-radius: 4px; background: none; text-align: left; font-size: 13px; }
 .file-menu button:hover { background: var(--signal-soft); }
+.file-menu button:focus-visible { outline-offset: -2px; }
 .file-note { margin: 4px 0 0; font-size: 13px; color: var(--caution); }
 .web-link { position: relative; }
 .link-menu { position: absolute; z-index: 1; top: calc(100% + 2px); left: 0; display: flex; flex-direction: column; min-width: 150px; padding: 3px; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); box-shadow: 0 2px 8px rgb(31 42 38 / .12); font: 400 13px/1.5 var(--sans); white-space: nowrap; }
@@ -831,11 +832,20 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .avatar { display: grid; place-items: center; flex: none; border-radius: 50%; font-weight: 700; color: var(--sheet); text-transform: uppercase; }
 .avatar-picture { object-fit: cover; }
 .bot-row { position: relative; }
-.bots .bot-details { position: absolute; top: 50%; right: 8px; translate: 0 -50%; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; color: var(--graphite); background: var(--sheet); opacity: 0; }
-.bot-row-feature .bot-details { top: 8px; translate: none; }
-.bot-row:hover .bot-details, .bot-details:focus-visible { opacity: 1; }
-.bots .bot-details:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--rule); }
-.bot-details:focus-visible { outline-offset: -2px; }
+.bots .bot-more { position: absolute; top: 50%; right: 8px; translate: 0 -50%; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; color: var(--graphite); background: var(--sheet); font-size: 16px; letter-spacing: 1px; opacity: 0; }
+.bot-row-feature .bot-more { top: 8px; translate: none; }
+.bot-row:hover .bot-more, .bot-more:focus-visible, .bot-row[data-menu] .bot-more { opacity: 1; }
+.bots .bot-more:hover, .bots .bot-more[data-opener] { color: var(--ink); box-shadow: inset 0 0 0 1px var(--rule); }
+.bot-more:focus-visible { outline-offset: -2px; }
+.bot-row:is(:hover, [data-menu], :has(.bot-more:focus-visible)) .bot { padding-right: 44px; }
+.bot-row[data-menu] :is(.bot, .bot-feature):not([aria-current]) { background: var(--bots-hover); }
+.bot-row[data-menu] .bot-feature:not([aria-current]) .bot-badge { box-shadow: 0 0 0 2px var(--bots-hover); }
+.bot-menu { position: fixed; top: 0; right: auto; left: 0; z-index: 3; }
+.bot-menu button { display: flex; align-items: center; gap: 10px; color: var(--ink); white-space: nowrap; }
+.bot-menu svg { flex: none; color: var(--graphite); }
+.bot-menu [role="separator"] { height: 1px; margin: 3px 6px; background: var(--rule); }
+.bots-said { flex: none; margin: 0 12px 12px 20px; }
+.bots-said:empty { margin: 0; }
 .bot-row[data-place="hidden"] .avatar { opacity: .6; }
 .bot-row[data-place="hidden"] .bot-name { color: var(--graphite); }
 .bots-list .bots-hidden h3 { margin-inline: 0; }
@@ -874,7 +884,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .bot-feature[aria-current] .avatar { outline: 2px solid Highlight; outline-offset: 2px; }
   .bots-head input:focus { outline: 2px solid Highlight; outline-offset: 2px; }
   .avatar, .bot-badge { border: 1px solid CanvasText; }
-  .bots .bot-details, .bot-picture button { border: 1px solid ButtonText; }
+  .bots .bot-more, .bot-picture button { border: 1px solid ButtonText; }
   .look-pop { border: 2px solid CanvasText; }
   .look-badge { border: 1px solid CanvasText; }
   .look-button:focus-visible { outline-color: Highlight; }
@@ -883,6 +893,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .look-color, .look-face { forced-color-adjust: none; }
   :is(.look-shape, .look-color)[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: 2px; }
   .look-pet[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  .bot-menu [role="separator"] { background: CanvasText; }
   .bot[aria-current]:focus-visible { border-left-width: 5px; padding-left: 7px; }
   .pick-list .box { border: 1.5px solid CanvasText; box-shadow: none; }
   .pick-list label:has(input:checked) .box { background: Highlight; border-color: Highlight; color: HighlightText; }

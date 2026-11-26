@@ -88,7 +88,7 @@ describe('keys in the menu', () => {
 })
 
 describe('focus when the menu closes', () => {
-  const menu = (by: 'pointer' | 'more' | 'keys'): OpenMenu => ({ bot: id('scout'), opener: by === 'pointer' ? { by, x: 1, y: 1 } : { by }, above: '[]' })
+  const menu = (by: 'pointer' | 'more' | 'keys'): OpenMenu => ({ bot: id('scout'), opener: by === 'pointer' ? { by, x: 1, y: 1 } : { by }, above: '[]', scrolled: 0 })
 
   it('goes back to ⋯ only when ⋯ opened the menu, and to the row otherwise', () => {
     expect(openerTarget(menu('more'))).toEqual({ to: 'more', bot: 'scout' })

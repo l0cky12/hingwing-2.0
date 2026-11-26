@@ -33,6 +33,7 @@ export interface OpenMenu {
   readonly bot: BotId
   readonly opener: Opener
   readonly above: string
+  readonly scrolled: number
 }
 
 export interface Box { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
