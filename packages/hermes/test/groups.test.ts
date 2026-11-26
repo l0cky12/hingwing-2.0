@@ -166,6 +166,54 @@ describe('what Highwing holds of a group chat', () => {
     expect(groupsOf(desk)).toMatchObject({ rows: [] })
     expect(groupChatOf(nextGroups(desk, { on: 'missing', group: PLAN }))).toEqual({ group: PLAN, at: 'missing' })
   })
+
+  it('lists a renamed group first under its new name, and keeps its thread', () => {
+    const standup = facts({ id: 'standup' as GroupId, name: 'Standup' })
+    const desk = after(able, { on: 'listed', groups: [standup, facts()] }, { on: 'followed', group: PLAN }, page(0, [said(1)]))
+    const renamed = nextGroups(desk, { on: 'made', facts: facts({ name: 'Ship plan', latestSeq: 4 }) })
+    expect(groupsOf(renamed)).toMatchObject({ rows: [{ id: PLAN, name: 'Ship plan' }, { id: 'standup', name: 'Standup' }] })
+    expect(groupChatOf(renamed)).toMatchObject({ name: 'Ship plan', events: [{ seq: 1 }] })
+  })
+
+  it('takes a deleted group out of the list and never says it is missing, as it does for one Hermes lost', () => {
+    const desk = nextGroups(after(...opened, page(0, [said(1)])), { on: 'disbanded', group: PLAN })
+    expect(groupsOf(desk)).toMatchObject({ rows: [] })
+    expect(groupChatOf(desk)?.at).not.toBe('missing')
+    expect(nextPoll(nextGroups(desk, { on: 'followed', group: null })), 'nothing left to read').toBeNull()
+  })
+})
+
+describe('a rename or a delete Hermes refuses', () => {
+  const PLAN = 'launch-plan' as GroupId
+  const refusing = (error: Error) => {
+    const call = (method: string) => {
+      if (method === 'groups.capabilities') return Promise.resolve({ driver: true })
+      if (method === 'groups.list') return Promise.resolve({ rooms: [] })
+      return Promise.reject(error)
+    }
+    return groupBook({ call } as unknown as GroupWire, { clock: manualClock(), mintId: () => 'k1', changed: () => {} })
+  }
+
+  it.each([
+    ['a member on a machine Hermes cannot reach', 'peer_unreachable', "A member's machine couldn't be reached. Try Delete again when it's back."],
+    ['a Stop Hermes is still waiting on', 'room_stop_pending', 'Hermes is still stopping this group chat. Try Delete again in a moment.'],
+    ['a grant Hermes has yet to revoke', 'room_disbanding_retry', "Hermes couldn't finish deleting this group chat. Try Delete again."],
+    ['a group Hermes no longer has', 'invalid_params', 'Hermes no longer has this group chat.']
+  ])('says in words why a delete failed for %s', async (_, reason, message) => {
+    expect(await refusing(new RpcRefusal(4001, reason, reason)).disband(PLAN)).toMatchObject({ ok: false, refusal: { message } })
+  })
+
+  it('says a Hermes without the calls cannot rename or delete group chats, and to update it', async () => {
+    const book = refusing(new RpcRefusal(-32601, null, 'Method not found'))
+    expect(await book.rename(PLAN, 'Ship plan')).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't rename group chats. Update Hermes on that machine, then reconnect." } })
+    expect(await book.disband(PLAN)).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't delete group chats. Update Hermes on that machine, then reconnect." } })
+  })
+
+  it('says a rename or a delete with no connection could not reach Hermes', async () => {
+    const book = refusing(new Offline('down'))
+    expect(await book.rename(PLAN, 'Ship plan')).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(await book.disband(PLAN)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+  })
 })
 
 describe('a message while Hermes stops running group chats', () => {

@@ -47,25 +47,41 @@ const GONE_BOT: Outcome<never> = { ok: false, refusal: { kind: 'rejected', field
 const GONE_GROUP: Refusal = { kind: 'stale', message: "Hermes no longer has this group chat." }
 const TOO_LONG: Outcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'This message is too long for a group chat. Hermes takes up to 64 KB of text.' } }
 
-type During = 'create' | 'send' | 'stop'
+type During = 'create' | 'send' | 'stop' | 'rename' | 'disband'
 
-/** Every group refusal is code 4001, so Hermes's `reason` tells them apart (`dispatch_group_control`). */
+/** What a -32601 means: a Hermes older than group chats, or than renaming and deleting one. */
+const UNSERVED: { readonly [D in During]: Refusal } = {
+  create: NO_GROUPS,
+  send: NO_GROUPS,
+  stop: NO_GROUPS,
+  rename: { kind: 'unsupported', message: "This Hermes can't rename group chats. Update Hermes on that machine, then reconnect." },
+  disband: { kind: 'unsupported', message: "This Hermes can't delete group chats. Update Hermes on that machine, then reconnect." }
+}
+
+/**
+ * Every group refusal is code 4001, so Hermes's `reason` tells them apart (`dispatch_group_control`). Highwing checks a
+ * new name as Hermes does (`_validate_room_name`), so a bare `invalid_params` to anything but a create means the group
+ * is gone (`RoomNotFoundError`, persistence/gateway/hosted_rooms.py:143).
+ */
 const REASONS = new Map<string | null, (error: RpcRefusal, during: During) => Refusal>([
   ['invalid_params', ({ field, detail }, during) => {
     if (during !== 'create') return GONE_GROUP
     if (field === 'members') return { kind: 'rejected', field: 'members', message: detail === null ? "Hermes can't seat these bots." : `Hermes can't seat these bots: ${detail}` }
     return { kind: 'rejected', message: detail === null ? "Hermes didn't accept this group chat. Try again." : `Hermes didn't accept this group chat: ${detail}` }
   }],
+  ['room_history_expired', () => GONE_GROUP],
   ['permission_denied', () => NOT_ALLOWED],
   ['profile_mismatch', () => NOT_ALLOWED],
   ['runtime_coordination_required', () => NOT_RUNNING],
-  ['room_stop_pending', () => ({ kind: 'rejected', message: 'Hermes is already stopping this group chat.' })]
+  ['room_stop_pending', (_, during) => ({ kind: 'rejected', message: during === 'disband' ? 'Hermes is still stopping this group chat. Try Delete again in a moment.' : 'Hermes is already stopping this group chat.' })],
+  ['peer_unreachable', () => ({ kind: 'rejected', message: "A member's machine couldn't be reached. Try Delete again when it's back." })],
+  ['room_disbanding_retry', () => ({ kind: 'rejected', message: "Hermes couldn't finish deleting this group chat. Try Delete again." })]
 ])
 
 function refusedBy(error: unknown, during: During): Outcome<never> {
   if (error instanceof Offline) return NOT_CONNECTED
   if (!(error instanceof RpcRefusal)) throw error
-  return { ok: false, refusal: error.code === METHOD_NOT_FOUND ? NO_GROUPS : REASONS.get(error.reason)?.(error, during) ?? refusalOf(error) }
+  return { ok: false, refusal: error.code === METHOD_NOT_FOUND ? UNSERVED[during] : REASONS.get(error.reason)?.(error, during) ?? refusalOf(error) }
 }
 
 /** `user_event_id` (gateway/hosted_rooms.py:235): the id Hermes files a message under, from the `event_id` it was sent with. */
@@ -91,6 +107,10 @@ export interface GroupBook {
   /** A message sent again after its answer was lost goes out under the same `event_id`, so Hermes keeps it once. */
   send(group: GroupId, text: string): Promise<Outcome>
   stop(group: GroupId): Promise<Outcome>
+  /** `name` is trimmed, 1 to `GROUP_NAME_MAX` characters. */
+  rename(group: GroupId, name: string): Promise<Outcome>
+  /** Hermes stops the group's running turns, then deletes it for good. A group it already deleted answers as deleted. */
+  disband(group: GroupId): Promise<Outcome>
   close(): void
 }
 
@@ -283,6 +303,27 @@ export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
         return refuseAndReread(error, group, 'stop')
       }
       read(group)
+      return DONE
+    },
+    rename: async (group, name) => {
+      try {
+        const renamed = parseGroupMade(await conn.call('groups.rename', { room_id: group, event_id: deps.mintId(), name }, CALL_TIMEOUT_MS))
+        if (renamed !== null) take({ on: 'made', facts: renamed })
+      } catch (error) {
+        return refuseAndReread(error, group, 'rename')
+      }
+      read(group)
+      return DONE
+    },
+    disband: async group => {
+      try {
+        await conn.call('groups.disband', { room_id: group }, CALL_TIMEOUT_MS)
+      } catch (error) {
+        return refuseAndReread(error, group, 'disband')
+      }
+      unanswered.delete(group)
+      take({ on: 'disbanded', group })
+      void ask()
       return DONE
     },
     close: stopPoll

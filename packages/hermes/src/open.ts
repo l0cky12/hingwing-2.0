@@ -2,6 +2,7 @@ import { refusalOf, refused } from './actor'
 import { botsIn, type BotId, type Bots } from './domain/bots'
 import type { Outcome } from './domain/command'
 import { EMPTY_DESK, chatOf, launchChat, ownerOf, nextDesk, type BotChats, type ChatRef, type DeskEvent, type OpenChat, type Unstarted, type Whereabouts } from './domain/open'
+import type { GroupId } from './domain/groups'
 import type { SessionId } from './domain/session'
 import { Offline, type Calls, type Connection } from './wire/link'
 import { parseListPage, parseTitled } from './wire/parse'
@@ -48,6 +49,11 @@ export interface ChatDesk {
   isBotChat(id: SessionId): boolean
   /** Hermes archived or removed this chat. A window that shows it moves to its bot's own chat. */
   gone(sessionId: SessionId): void
+  /**
+   * The user deleted this group chat. A window that shows it moves to the bot it was opened over, or, opened over the
+   * socket's own profile, to nothing until the next `settle` picks a chat.
+   */
+  disbanded(group: GroupId): void
   /** Hermes listed these chats in the bot's profile, so a click on one opens it in that bot. */
   listed(bot: BotId, sessions: readonly SessionId[]): void
   branched(made: { readonly from: SessionId; readonly sessionId: SessionId; readonly text: string }): void
@@ -277,6 +283,7 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
     botOf: id => ownerOf(desk, id),
     isBotChat: id => Object.values(desk.chats).includes(id),
     gone: sessionId => void take({ on: 'gone', sessionId }),
+    disbanded: group => void take({ on: 'disbanded', group }),
     listed: (bot, sessions) => void take({ on: 'listed', bot, sessions }),
     branched: made => void take({ on: 'branched', ...made }),
     online: () => {

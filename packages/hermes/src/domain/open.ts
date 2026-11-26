@@ -119,6 +119,8 @@ export type DeskEvent =
   | { readonly on: 'unsought'; readonly sessionId: SessionId }
   /** Hermes archived or removed this chat. */
   | { readonly on: 'gone'; readonly sessionId: SessionId }
+  /** The user deleted this group chat. */
+  | { readonly on: 'disbanded'; readonly group: GroupId }
 
 /** Where Hermes's lists put a session: in a bot's profile, in the socket's own, or in none it lists. */
 export type Whereabouts = { readonly in: 'bot'; readonly bot: BotId } | { readonly in: 'own' } | { readonly in: 'none' }
@@ -239,6 +241,12 @@ export function nextDesk(desk: Desk, event: DeskEvent): { readonly desk: Desk; r
       return done(waitsForLink(desk.open, event.sessionId) ? { ...desk, open: { ...desk.open, opening: null } } : desk)
     case 'gone':
       return done(gone(desk, event.sessionId))
+    case 'disbanded': {
+      const { shown } = desk.open
+      if (shown?.kind !== 'group' || shown.group !== event.group) return done(desk)
+      const { over } = shown
+      return done({ ...desk, open: { ...desk.open, shown: over === null ? null : { kind: 'bot', bot: over, sessionId: chatOf(desk, over) ?? null } } })
+    }
   }
 }
 
