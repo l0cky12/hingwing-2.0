@@ -613,8 +613,8 @@ describe('serveWindows', () => {
     const research = { shown: { kind: 'bot', bot: 'research', sessionId: 'local-0001' }, opening: null, missing: null } as OpenChat
     setOpen(research)
     expect(pushes).toEqual([{ topic: 'open', rev: 1, full: NOTHING_OPEN }, { topic: 'open', rev: 2, full: research }])
-    await handlers.get(CHANNEL.run)!(event(), { do: 'open', ref: { kind: 'bot', bot: 'research' } })
-    await handlers.get(CHANNEL.run)!(event(), { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello' })
+    await handlers.get(CHANNEL.run)!(event(), { do: 'open', ref: { kind: 'bot', bot: 'research' } }, 0)
+    await handlers.get(CHANNEL.run)!(event(), { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello' }, 0)
     expect(commands).toEqual([{ do: 'open', ref: { kind: 'bot', bot: 'research' } }, { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello', attachments: [] }])
   })
 
@@ -673,7 +673,7 @@ describe('serveWindows', () => {
 
   it('saves an export through the saver and answers the window the path, never the text', async () => {
     const { handlers, event, saves } = harness()
-    const answered = await handlers.get(CHANNEL.run)!(event(), { do: 'export', sessionId: 's1', format: 'md' })
+    const answered = await handlers.get(CHANNEL.run)!(event(), { do: 'export', sessionId: 's1', format: 'md' }, 0)
     expect(saves).toEqual([{ filename: 'chat.md', content: '# Notes' }])
     expect(answered).toEqual({ ok: true, value: '/home/u/Downloads/chat.md' })
   })
@@ -685,17 +685,50 @@ describe('serveWindows', () => {
   ] as const)('answers an export with %s', async (_, rendered, path, want, saved) => {
     const { handlers, event, saves, exportsAs } = harness()
     exportsAs(rendered, path)
-    await expect(handlers.get(CHANNEL.run)!(event(), { do: 'export', sessionId: 's1', format: 'html' })).resolves.toEqual(want)
+    await expect(handlers.get(CHANNEL.run)!(event(), { do: 'export', sessionId: 's1', format: 'html' }, 0)).resolves.toEqual(want)
     expect(saves).toHaveLength(saved)
   })
 
   it('runs a valid command from the app page and refuses a malformed one or a foreign frame', async () => {
     const { handlers, event, commands } = harness()
     const run = handlers.get(CHANNEL.run)!
-    await expect(run(event(), { do: 'stop', sessionId: 's1' })).resolves.toEqual({ ok: true, value: undefined })
-    await expect(run(event(), { do: 'stop' })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
-    await expect(run(event('https://example.com/'), { do: 'stop', sessionId: 's1' })).resolves.toMatchObject({ ok: false })
+    await expect(run(event(), { do: 'stop', sessionId: 's1' }, 0)).resolves.toEqual({ ok: true, value: undefined })
+    await expect(run(event(), { do: 'stop' }, 0)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    await expect(run(event('https://example.com/'), { do: 'stop', sessionId: 's1' }, 0)).resolves.toMatchObject({ ok: false })
     expect(commands).toEqual([{ do: 'stop', sessionId: 's1' }])
+  })
+
+  it('refuses a chat command a window sent for a connection that is no longer live, and passes setup, pane and mode commands whatever it sent', async () => {
+    let owner: ConnectionOwner | undefined
+    const { handlers, event, commands, toPane, mode } = harness(hermes => (owner = ownConnection({
+      loaded: { state: 'saved', target: { kind: 'remote', host: 'box' as SshHost } },
+      save: async () => {},
+      check: async () => ({ ok: true }),
+      routeFor: () => ({ dial: async () => { throw new Error('the test never dials') }, dispose: () => {} }) as unknown as Route,
+      open: () => ({ ...hermes, close: async () => {} })
+    })))
+    const run = handlers.get(CHANNEL.run)!
+    const pick = { do: 'open', ref: { kind: 'chat', sessionId: 'box-0001' } }
+    await expect(run(event(), { do: 'editTarget' }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    await expect(run(event(), { do: 'checkTarget', target: { kind: 'local' } }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    await new Promise(resolve => setImmediate(resolve))
+    expect(owner!.setup.get()).toMatchObject({ at: 'saved', live: { target: { kind: 'local' }, epoch: 2 } })
+
+    for (const sent of [1, undefined, '2']) {
+      await expect(run(event(), pick, sent)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    }
+    expect(commands, 'the old sidebar\'s chat never reaches the new Hermes').toEqual([])
+    expect(owner!.setup.get(), 'a refused pick leaves Settings up').toMatchObject({ at: 'saved' })
+
+    await expect(run(event(), { do: 'closePreview' }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    await expect(run(event(), { do: 'setMode', mode: 'bots' }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    expect(toPane).toEqual([{ do: 'closePreview' }])
+    expect(mode.get()).toBe('bots')
+
+    await expect(run(event(), pick, 2)).resolves.toEqual({ ok: true, value: undefined })
+    expect(commands).toEqual([pick])
+    expect(owner!.setup.get()).toEqual({ at: 'chat', live: { target: { kind: 'local' }, epoch: 2 } })
+    await expect(run(event(), { do: 'editTarget' }, 1)).resolves.toEqual({ ok: true, value: undefined })
   })
 })
 

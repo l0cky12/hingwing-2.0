@@ -23,6 +23,9 @@ export type Setup =
   /** `HIGHWING_FIXTURE` plays a recorded gateway. There is nothing to set up. */
   | { readonly at: 'pinned' }
 
+/** The epoch of the connection `setup` keeps the chat on. 0 when it keeps none, as on a first run or in a fixture run. */
+export const epochOf = (setup: Setup): number => (setup.at === 'pinned' || setup.live === null ? 0 : setup.live.epoch)
+
 /** Whether `setup` is Settings: opened from a chat, shown in the chat's place beside the sidebar. First run and its Saved screen show no chat. */
 export const showsSettings = (setup: Setup): boolean =>
   setup.at !== 'chat' && setup.at !== 'pinned' && setup.live !== null && !(setup.at === 'saved' && setup.from === 'first-run')
@@ -36,6 +39,9 @@ export type SetupCommand =
   | { readonly do: 'keepTarget' }
   /** Abort the running check, or drop the failed one, and stay in Settings on the form. Cancel sends it. Refused while the check writes its target to disk. */
   | { readonly do: 'stopCheck' }
+
+const SETUP_VERBS: { readonly [K in SetupCommand['do']]: true } = { checkTarget: true, editTarget: true, keepTarget: true, stopCheck: true }
+export const isSetupCommand = (command: AppCommand): command is SetupCommand => Object.hasOwn(SETUP_VERBS, command.do)
 
 /** How a page main draws in its own view is doing. `failed` hides the view, so the window shows the reason in its place. */
 export type PageLoad = { readonly at: 'loading' } | { readonly at: 'shown' } | { readonly at: 'failed'; readonly reason: string }
@@ -158,7 +164,8 @@ export type PictureFile = string | 'cancelled'
 
 export interface Bridge {
   watch<T extends Topic>(topic: T, onPush: (push: Push<T>) => void): () => void
-  run<C extends WindowCommand>(command: C): Promise<CommandOutcome<AppResult<C>>>
+  /** `epoch`: the connection the window sent it for, which is `epochOf` the newest setup it has. Main refuses a chat command sent for any other. */
+  run<C extends WindowCommand>(command: C, epoch: number): Promise<CommandOutcome<AppResult<C>>>
   file(request: FileRequest): Promise<FileOutcome>
   image(request: ImageRequest): Promise<ImageOutcome>
   drafts(): Promise<readonly Draft[]>

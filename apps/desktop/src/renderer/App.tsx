@@ -1,6 +1,6 @@
 import type { Shown, ShownGroup, Target } from '@highwing/hermes/domain'
 import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react'
-import type { Mode } from '../ipc-contract'
+import { epochOf, type Mode } from '../ipc-contract'
 import { BotPicker } from './bots/BotPicker'
 import { BotsSidebar } from './bots/Bots'
 import { useRetryPicturesOnceOnline } from './bots/pictures'
@@ -118,7 +118,7 @@ export function App() {
   return (
     <>
       {(setup.at === 'pinned' || live !== null) && (
-        <Epoch key={live?.epoch ?? 0} value={live?.epoch ?? 0}>
+        <Epoch key={epochOf(setup)} value={epochOf(setup)}>
           <ChatWindow hidden={screen.show === 'saved'} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} />
         </Epoch>
       )}

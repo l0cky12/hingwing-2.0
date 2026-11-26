@@ -15,7 +15,7 @@ const bridge: Bridge = {
       if (subscribers.delete(id)) ipcRenderer.send(CHANNEL.unwatch, id)
     }
   },
-  run: command => ipcRenderer.invoke(CHANNEL.run, command),
+  run: (command, epoch) => ipcRenderer.invoke(CHANNEL.run, command, epoch),
   file: request => ipcRenderer.invoke(CHANNEL.file, request),
   image: request => ipcRenderer.invoke(CHANNEL.image, request),
   drafts: () => ipcRenderer.invoke(CHANNEL.drafts),

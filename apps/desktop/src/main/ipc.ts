@@ -1,7 +1,7 @@
 import type { Hermes } from '@highwing/hermes'
 import { onThisComputer, type BotId, type CommandOutcome, type Session, type SessionId } from '@highwing/hermes/domain'
 import {
-  CHANNEL, isAppTopic, isPreviewCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
+  CHANNEL, epochOf, isAppTopic, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
   type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type PictureChoice, type PictureFile, type Push, type SessionPatch, type Setup, type StageResult,
   type Tail, type Topic
 } from '../ipc-contract'
@@ -123,6 +123,7 @@ function serveTopic(topic: Topic, servedBy: Hermes | null, source: Source, send:
 
 const DONE: CommandOutcome<void> = { ok: true, value: undefined }
 const REFUSED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Highwing refused a malformed request from its window.' } }
+const OTHER_CONNECTION: CommandOutcome<never> = { ok: false, refusal: { kind: 'stale', message: "Highwing switched to another Hermes, so it didn't send that." } }
 const NOT_SAVED: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: "Highwing couldn't write the file." } }
 const FILE_REFUSED: FileOutcome = { ok: false, reason: 'refused' }
 const FILE_DONE: FileOutcome = { ok: true }
@@ -190,7 +191,7 @@ export function serveWindows(
     subscriptions.get(id)?.stop()
     subscriptions.delete(id)
   })
-  ipc.handle(CHANNEL.run, async (event, raw) => {
+  ipc.handle(CHANNEL.run, async (event, raw, epoch) => {
     const command = parseCommand(raw)
     if (!trusted(event) || command === null) return REFUSED
     if (isPreviewCommand(command)) return pane.run(command)
@@ -198,6 +199,7 @@ export function serveWindows(
       mode.set(command.mode)
       return DONE
     }
+    if (!isSetupCommand(command) && epoch !== epochOf(owner.setup.get())) return OTHER_CONNECTION
     if (command.do !== 'export') return owner.run(command)
     const rendered = await owner.run(command)
     if (!rendered.ok) return rendered
