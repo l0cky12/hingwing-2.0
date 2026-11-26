@@ -1,4 +1,4 @@
-import { machineOf, type BotId, type Shown, type ShownGroup, type Target } from '@highwing/hermes/domain'
+import { machineOf, type BotId, type SessionId, type Shown, type ShownGroup, type Target, type Unstarted } from '@highwing/hermes/domain'
 
 export type Intro = { readonly at: 'off' } | { readonly at: 'due' } | { readonly at: 'examples' } | { readonly at: 'done' }
 
@@ -63,4 +63,13 @@ export type DefaultBot = { readonly at: 'pending' } | { readonly at: 'listed'; r
 export function examplesFor(intro: Intro, shown: Shown | ShownGroup | null, featured: DefaultBot): readonly string[] {
   if (intro.at !== 'examples' || featured.at === 'pending' || shown === null || shown.kind === 'group') return NONE
   return featured.id === null || shown.bot === featured.id ? EXAMPLE_REQUESTS : NONE
+}
+
+export type ExampleCommand =
+  | { readonly do: 'start'; readonly chat: Unstarted; readonly text: string; readonly attachments: readonly [] }
+  | { readonly do: 'send'; readonly sessionId: SessionId; readonly text: string; readonly attachments: readonly [] }
+
+export function exampleCommand(shown: Shown, text: string): ExampleCommand {
+  if (shown.sessionId === null) return { do: 'start', chat: shown, text, attachments: [] }
+  return { do: 'send', sessionId: shown.sessionId, text, attachments: [] }
 }

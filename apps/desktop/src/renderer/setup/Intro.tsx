@@ -35,11 +35,22 @@ export function Intro({ target }: { readonly target: Target }) {
   )
 }
 
-export function ExampleRequests({ requests, onSend }: { readonly requests: readonly string[]; readonly onSend: (text: string) => void }) {
+export function ExampleRequests({ requests, onSend }: { readonly requests: readonly string[]; readonly onSend: (text: string) => Promise<unknown> }) {
+  const held = useRef(false)
+  const [busy, setBusy] = useState(false)
   if (requests.length === 0) return null
+  const send = (text: string) => {
+    if (held.current) return
+    held.current = true
+    setBusy(true)
+    void onSend(text).finally(() => {
+      held.current = false
+      setBusy(false)
+    })
+  }
   return (
     <div className="examples">
-      {requests.map(text => <button key={text} type="button" onClick={() => onSend(text)}>{text}</button>)}
+      {requests.map(text => <button key={text} type="button" disabled={busy} onClick={() => send(text)}>{text}</button>)}
     </div>
   )
 }

@@ -11,7 +11,7 @@ import { StatusStack } from '../composer/StatusStack'
 import { ThinkingPill } from '../composer/ThinkingPill'
 import { folderFieldLabel, thinkingShown } from '../composer/tuning'
 import { YoloPill } from '../composer/YoloPill'
-import { examplesFor, OFF } from '../../intro'
+import { exampleCommand, examplesFor, OFF } from '../../intro'
 import { run, useTopic } from '../store'
 import { ExampleRequests } from '../setup/Intro'
 import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
@@ -286,6 +286,13 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     if (outcome.ok && offered) void run({ do: 'done' })
     return outcome
   }, [deliver, requests])
+  const onExample = useCallback(async (text: string): Promise<CommandOutcome<string | null>> => {
+    setRefused(null)
+    const outcome = await run(exampleCommand(chat, text))
+    if (!outcome.ok) setRefused({ id: chat.sessionId, message: outcome.refusal.message })
+    if (outcome.ok && requests.length > 0) void run({ do: 'done' })
+    return outcome
+  }, [chat, requests])
   const queue = useMemo((): QueueControls => ({ canAct: live, pressed, onAct: onQueued }), [live, pressed, onQueued])
   const [stopping, setStopping] = useState<ReadonlySet<HelperId>>(new Set())
   const onStopHelper = useCallback(async (helperId: HelperId) => {
@@ -370,7 +377,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         planFor={planFor}
         editing={editing}
         onCancelEdit={() => setEditing(null)}
-        above={<>{id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} returnFocus={returnFocus} />}<ExampleRequests requests={requests} onSend={text => void onSend(text, [])} /></>}
+        above={<>{id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} returnFocus={returnFocus} />}<ExampleRequests requests={requests} onSend={onExample} /></>}
         onEscape={onEscape}
         onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}

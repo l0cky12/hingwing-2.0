@@ -1,7 +1,7 @@
 import type { BotId, GatewayUrl, GroupId, SessionId, SshHost } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { Setup } from '../src/ipc-contract'
-import { DONE, DUE, EXAMPLE_REQUESTS, EXAMPLES, examplesFor, introInFront, introSteps, nextIntro, OFF } from '../src/intro'
+import { DONE, DUE, EXAMPLE_REQUESTS, EXAMPLES, exampleCommand, examplesFor, introInFront, introSteps, nextIntro, OFF } from '../src/intro'
 
 const LOCAL = { kind: 'local' } as const
 const REMOTE = { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' as SshHost } as const
@@ -106,6 +106,11 @@ describe('the example requests', () => {
     expect(examplesFor(EXAMPLES, UNSTARTED, { at: 'pending' })).toEqual([])
     expect(examplesFor(EXAMPLES, UNSTARTED, { at: 'pending' })).toBe(examplesFor(DUE, OCCUPIED, { at: 'listed', id: EMU }))
     for (const intro of [OFF, DUE, DONE]) expect(examplesFor(intro, UNSTARTED, { at: 'listed', id: EMU })).toEqual([])
+  })
+
+  it('sends a new message, including in a chat that already has one', () => {
+    expect(exampleCommand(UNSTARTED, EXAMPLE_REQUESTS[0])).toEqual({ do: 'start', chat: UNSTARTED, text: EXAMPLE_REQUESTS[0], attachments: [] })
+    expect(exampleCommand(OCCUPIED, EXAMPLE_REQUESTS[1])).toEqual({ do: 'send', sessionId: CHAT, text: EXAMPLE_REQUESTS[1], attachments: [] })
   })
 
   it('keeps one list for every chat that shows them', () => {
