@@ -4,7 +4,7 @@ import type { Hermes, Route } from '@highwing/hermes'
 import type { AttachmentId, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, SessionId, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type Preview, type PreviewCommand, type Push, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type PaneLayout, type Preview, type PreviewCommand, type Push, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
 import { feed, ownConnection, pinnedConnection, type ConnectionOwner } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
@@ -543,11 +543,11 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   const picked: string[] = []
   const lives: (() => boolean)[] = []
   const stored: readonly Draft[] = [{ key: 'new', bot: null, text: 'kept on disk', attachments: [] }]
-  const previewed: { request: string; label: string | null; session: Session | undefined }[] = []
+  const previewed: { request: string; label: string | null; session: Session | undefined; layout: PaneLayout }[] = []
   const toPane: PreviewCommand[] = []
   const pane: PreviewOwner = {
     preview: still<Preview>({ state: 'closed' }),
-    show: (request, label, session) => (previewed.push({ request, label, session }), request.startsWith('/')),
+    show: (request, label, session, layout) => (previewed.push({ request, label, session, layout }), request.startsWith('/')),
     run: async command => (toPane.push(command), { ok: true, value: undefined })
   }
   const staged: StageSource[] = []
@@ -915,8 +915,15 @@ describe('the file call', () => {
     const { file, previewed, opened } = watching()
     await expect(file({ ...asked('open', NOTES), action: 'preview' })).resolves.toEqual({ ok: true })
     await expect(file({ ...asked('open', 'notes.md'), action: 'preview' })).resolves.toEqual({ ok: false, reason: 'refused' })
-    expect(previewed).toEqual([{ request: NOTES, label: null, session: diffMoment() }, { request: 'notes.md', label: null, session: diffMoment() }])
+    expect(previewed).toEqual([{ request: NOTES, label: null, session: diffMoment(), layout: 'beside' }, { request: 'notes.md', label: null, session: diffMoment(), layout: 'beside' }])
     expect(opened).toEqual([])
+  })
+
+  it("opens a page full window under Hermes's label, and refuses what the pane refuses", async () => {
+    const { file, previewed } = watching()
+    await expect(file({ ...asked('open', NOTES), action: 'page', label: 'Notes' })).resolves.toEqual({ ok: true })
+    await expect(file({ ...asked('open', 'notes.md'), action: 'page', label: null })).resolves.toEqual({ ok: false, reason: 'refused' })
+    expect(previewed).toEqual([{ request: NOTES, label: 'Notes', session: diffMoment(), layout: 'full' }, { request: 'notes.md', label: null, session: diffMoment(), layout: 'full' }])
   })
 
   it('stops answering once disposed', () => {
@@ -1133,5 +1140,12 @@ describe('parseDraft', () => {
 describe('parseFileRequest', () => {
   it('keeps the three known fields', () => {
     expect(parseFileRequest({ action: 'show', sessionId: 's1', path: '/a/b', extra: 1 })).toEqual({ action: 'show', sessionId: 's1', path: '/a/b' })
+  })
+
+  it("carries Hermes's label with a page, and only with a page", () => {
+    expect(parseFileRequest({ action: 'page', sessionId: 's1', path: '/a/r.html', label: 'Report' })).toEqual({ action: 'page', sessionId: 's1', path: '/a/r.html', label: 'Report' })
+    expect(parseFileRequest({ action: 'page', sessionId: 's1', path: '/a/r.html', label: null })).toMatchObject({ label: null })
+    expect(parseFileRequest({ action: 'page', sessionId: 's1', path: '/a/r.html' })).toBeNull()
+    expect(parseFileRequest({ action: 'preview', sessionId: 's1', path: '/a/r.html', label: 'Report' })).toEqual({ action: 'preview', sessionId: 's1', path: '/a/r.html' })
   })
 })

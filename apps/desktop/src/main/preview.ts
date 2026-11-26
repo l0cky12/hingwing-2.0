@@ -4,7 +4,7 @@ import { net, protocol, session as sessions, WebContentsView, type BrowserWindow
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
-import type { PageLoad, Preview, PreviewCommand, Rect, Setup } from '../ipc-contract'
+import type { PageLoad, PaneLayout, Preview, PreviewCommand, Rect, Setup } from '../ipc-contract'
 import type { Opener } from './files'
 import { formatOf, MISSING, readPreviewFile, type FileContents, type Format } from './preview-file'
 import {
@@ -15,7 +15,7 @@ import {
 export interface PreviewPane {
   readonly preview: Feed<Preview>
   /** A web URL, a path or a `file:` URL, judged against the chat that named it. false: refused, and the pane is as it was. */
-  show(request: string, label: string | null, session: Session | undefined): boolean
+  show(request: string, label: string | null, session: Session | undefined, layout: PaneLayout): boolean
   ask(ask: PaneAsk, from: Session): void
   run(command: PreviewCommand): Promise<CommandOutcome<void>>
   attach(window: BrowserWindow): void
@@ -140,15 +140,15 @@ export function previewPane(deps: PreviewDeps): PreviewPane {
     csv: (_path, table) => apply({ on: 'tabled', table })
   }
 
-  const show: PreviewPane['show'] = (request, label, session) => {
+  const show: PreviewPane['show'] = (request, label, session, layout) => {
     const verdict = pageFor(request, deps.reach(session))
     if (verdict === null) return false
     generation++
-    retry = () => show(request, label, session)
+    retry = () => show(request, label, session, layout)
     const page = 'page' in verdict ? verdict.page : null
     const file = page?.kind === 'file' ? page.path : null
     const format = file === null ? null : formatOf(file)
-    const shows = (state: PageLoad) => apply({ on: 'show', asked: request, address: verdict.address, file, label, load: state })
+    const shows = (state: PageLoad) => apply({ on: 'show', asked: request, address: verdict.address, file, label, layout, load: state })
     if (file !== null && format !== null) {
       drop()
       shows({ at: 'loading' })
@@ -176,7 +176,7 @@ export function previewPane(deps: PreviewDeps): PreviewPane {
   }
 
   const COMMANDS: { readonly [K in PreviewCommand['do']]: (command: Extract<PreviewCommand, { do: K }>) => unknown } = {
-    preview: ({ url }) => show(url, null, undefined),
+    preview: ({ url }) => show(url, null, undefined, 'beside'),
     browse: ({ url }) => deps.opener.browse(url),
     reloadPreview: () => (view === null || served?.kind === 'pdf' ? retry?.() : view.webContents.reload()),
     closePreview: close,
@@ -197,7 +197,7 @@ export function previewPane(deps: PreviewDeps): PreviewPane {
     },
     show,
     ask: (ask, from) => {
-      if (ask.do === 'open') show(ask.url, ask.label, from)
+      if (ask.do === 'open') show(ask.url, ask.label, from, pane?.layout ?? 'beside')
       else if (ask.url === null || ask.url === pane?.asked || ask.url === pane?.address) close()
     },
     run: async command => {

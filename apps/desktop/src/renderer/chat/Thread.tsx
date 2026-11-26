@@ -14,6 +14,7 @@ import { placeByTurn } from './relays'
 import { SideTurn } from './Sides'
 import type { SideRow } from './sides'
 import { cx, Elapsed, Stat, Step } from './Step'
+import { PageCard } from './PageCard'
 import { Markdown, PhraseText } from './text'
 
 type Answer = (promptId: PromptId, reply: PromptReply) => Promise<Told | undefined>
@@ -234,6 +235,8 @@ export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer, 
         </div>
       )
     }
+    case 'page':
+      return <PageCard page={node.page} nodeKey={node.key} />
     case 'prompt':
       return <Prompt nodeKey={node.key} card={node.card} asking={endTone === 'asking'} onAnswer={onAnswer} />
     case 'reasoning':

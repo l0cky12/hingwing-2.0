@@ -70,6 +70,9 @@ function fields(view: ThreadView, changing: Changing): Field[] {
           }
           break
         }
+        case 'page':
+          add(node.key, 'title', node.page.title)
+          break
         case 'notice':
           add(node.key, 'text', node.text)
           if (node.detail !== null) add(node.key, 'detail', node.detail, [node.key])

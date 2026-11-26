@@ -2,7 +2,7 @@ import { machineOf, onThisComputer, type Session } from '@highwing/hermes/domain
 import { realpath } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { isWebPage, type PageLoad, type Preview, type Setup, type Table } from '../ipc-contract'
+import { isWebPage, type PageLoad, type PaneLayout, type Preview, type Setup, type Table } from '../ipc-contract'
 import { openablePath } from './files'
 
 export type Page = { readonly kind: 'web'; readonly url: string } | { readonly kind: 'file'; readonly path: string }
@@ -113,6 +113,7 @@ export interface Pane {
   readonly address: string
   readonly file: string | null
   readonly label: string | null
+  readonly layout: PaneLayout
   readonly pageTitle: string | null
   readonly load: PageLoad
   readonly painted: boolean
@@ -120,7 +121,7 @@ export interface Pane {
 }
 
 export type PaneEvent =
-  | { readonly on: 'show'; readonly asked: string; readonly address: string; readonly file: string | null; readonly label: string | null; readonly load: PageLoad }
+  | { readonly on: 'show'; readonly asked: string; readonly address: string; readonly file: string | null; readonly label: string | null; readonly layout: PaneLayout; readonly load: PageLoad }
   | { readonly on: 'navigated'; readonly address: string }
   | { readonly on: 'loading' }
   | { readonly on: 'loaded' }
@@ -142,8 +143,8 @@ const MOVES: { readonly [E in Exclude<PaneEvent['on'], 'show' | 'close'>]: Move<
 
 export function nextPane(pane: Pane | null, event: PaneEvent): Pane | null {
   if (event.on === 'show') {
-    const { asked, address, file, label, load } = event
-    return { asked, address, file, label, pageTitle: null, load, painted: false, table: null }
+    const { asked, address, file, label, layout, load } = event
+    return { asked, address, file, label, layout, pageTitle: null, load, painted: false, table: null }
   }
   if (pane === null || event.on === 'close') return null
   return (MOVES[event.on] as Move<typeof event.on>)(pane, event)
@@ -157,6 +158,7 @@ export const previewOf = (pane: Pane | null): Preview =>
         title: pane.label ?? pane.pageTitle ?? (pane.file === null ? pane.address : basename(pane.address)),
         address: pane.address,
         file: pane.file !== null,
+        layout: pane.layout,
         content: pane.table === null ? { kind: 'page', load: pane.load } : { kind: 'table', table: pane.table }
       }
 

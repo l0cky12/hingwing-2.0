@@ -5,7 +5,7 @@ import { Preview } from '../src/renderer/preview/Preview'
 
 const REPORT = '/tmp/hermes-proto-work/report.csv'
 const open = (content: PreviewContent, file = true, address = REPORT): Extract<PreviewState, { state: 'open' }> =>
-  ({ state: 'open', title: 'report.csv', address, file, content })
+  ({ state: 'open', title: 'report.csv', address, file, layout: 'beside', content })
 const render = (preview: Extract<PreviewState, { state: 'open' }>) => renderToStaticMarkup(<Preview preview={preview} />)
 const statusOf = (html: string) => /<p class="preview-rows" role="status">([^<]*)<\/p>/.exec(html)?.[1]
 

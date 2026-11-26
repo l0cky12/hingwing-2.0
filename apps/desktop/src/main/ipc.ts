@@ -2,7 +2,7 @@ import type { Hermes } from '@highwing/hermes'
 import { onThisComputer, type BotId, type CommandOutcome, type Session, type SessionId } from '@highwing/hermes/domain'
 import {
   CHANNEL, epochOf, isAppTopic, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
-  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type PictureChoice, type PictureFile, type Push, type SessionPatch, type Setup, type StageResult,
+  type AppTopic, type FileAction, type FileOutcome, type FileRequest, type ImageOutcome, type ImageType, type Mode, type PictureChoice, type PictureFile, type Push, type SessionPatch, type Setup, type StageResult,
   type Snoozes, type Tail, type Theme, type Topic
 } from '../ipc-contract'
 import { basename } from 'node:path'
@@ -133,18 +133,19 @@ const IMAGE_REFUSED: ImageOutcome = { ok: false }
 
 const isLocal = (setup: Setup) => setup.at === 'pinned' || (setup.live !== null && onThisComputer(setup.live.target))
 
-type FileActions = { readonly [A in FileAction]: (session: Session, path: string) => Promise<FileOutcome> }
+type FileActions = { readonly [A in FileAction]: (session: Session, request: Extract<FileRequest, { action: A }>) => Promise<FileOutcome> }
 
 /** Each action takes the path as the window named it. Only a path a finished step of the session named goes anywhere. */
 function fileActions(opener: Opener, pane: PreviewOwner): FileActions {
-  const named = (act: (path: string) => Promise<FileOutcome>) => async (session: Session, path: string) => {
+  const named = (act: (path: string) => Promise<FileOutcome>) => async (session: Session, { path }: FileRequest) => {
     const target = openablePath(session, path)
     return target === null ? FILE_REFUSED : act(target)
   }
   return {
     open: named(path => opener.open(path)),
     show: named(path => opener.show(path)),
-    preview: async (session, path) => (pane.show(path, null, session) ? FILE_DONE : FILE_REFUSED)
+    preview: async (session, { path }) => (pane.show(path, null, session, 'beside') ? FILE_DONE : FILE_REFUSED),
+    page: async (session, { path, label }) => (pane.show(path, label, session, 'full') ? FILE_DONE : FILE_REFUSED)
   }
 }
 
@@ -222,7 +223,7 @@ export function serveWindows(
     if (!trusted(event) || request === null) return FILE_REFUSED
     const watched = [...(windows.get(event.sender.id)?.values() ?? [])].find(served => served.topic === `session:${request.sessionId}`)
     const session = watched?.current() as Session | undefined
-    return session === undefined ? FILE_REFUSED : files[request.action](session, request.path)
+    return session === undefined ? FILE_REFUSED : (files[request.action] as (session: Session, request: FileRequest) => Promise<FileOutcome>)(session, request)
   })
 
   ipc.handle(CHANNEL.image, async (event, raw) => {

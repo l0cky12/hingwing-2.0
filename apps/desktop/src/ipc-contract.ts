@@ -60,10 +60,13 @@ export type PreviewContent = { readonly kind: 'page'; readonly load: PageLoad } 
  * The pane beside the chat. Owned by Electron main, one per window, and kept across chats.
  * `address` is the web URL or the absolute path shown. `title` is Hermes's label, else the page's own title, else the address
  * or the file's name. `file`: a file on this computer, which the user's own program can open.
+ * `layout`: `full` fills the window with the page and keeps the chat as a side panel, as a page card's Open asks.
  */
 export type Preview =
   | { readonly state: 'closed' }
-  | { readonly state: 'open'; readonly title: string; readonly address: string; readonly file: boolean; readonly content: PreviewContent }
+  | { readonly state: 'open'; readonly title: string; readonly address: string; readonly file: boolean; readonly layout: PaneLayout; readonly content: PreviewContent }
+
+export type PaneLayout = 'beside' | 'full'
 
 export interface Rect { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 
@@ -145,9 +148,11 @@ export type Push<T extends Topic = Topic> =
   | { readonly topic: T; readonly rev: number; readonly full: TopicValue<T> }
   | (T extends `session:${string}` ? { readonly topic: T; readonly rev: number; readonly patch: SessionPatch } : never)
 
-/** `preview` shows the file in the pane beside the chat. */
-export type FileAction = 'open' | 'show' | 'preview'
-export interface FileRequest { readonly action: FileAction; readonly sessionId: SessionId; readonly path: string }
+/** `preview` shows the file in the pane beside the chat. `page` shows it full window under Hermes's label. */
+export type FileAction = 'open' | 'show' | 'preview' | 'page'
+export type FileRequest =
+  | { readonly action: Exclude<FileAction, 'page'>; readonly sessionId: SessionId; readonly path: string }
+  | { readonly action: 'page'; readonly sessionId: SessionId; readonly path: string; readonly label: string | null }
 export type FileOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: 'refused' | 'missing' | 'failed' }
 
 export type ImageRequest =
@@ -597,9 +602,11 @@ export function parseCommand(raw: unknown): WindowCommand | null {
 export const parseBotId = botIdOf
 
 export function parseFileRequest(raw: unknown): FileRequest | null {
-  if (!isObject(raw) || (raw.action !== 'open' && raw.action !== 'show' && raw.action !== 'preview')) return null
+  if (!isObject(raw) || (raw.action !== 'open' && raw.action !== 'show' && raw.action !== 'preview' && raw.action !== 'page')) return null
   const sessionId = sessionIdOf(raw)
-  return sessionId && filled(raw.path) ? { action: raw.action, sessionId, path: raw.path } : null
+  if (!sessionId || !filled(raw.path)) return null
+  if (raw.action !== 'page') return { action: raw.action, sessionId, path: raw.path }
+  return raw.label === null || typeof raw.label === 'string' ? { action: raw.action, sessionId, path: raw.path, label: raw.label } : null
 }
 
 const DRAFT_KINDS: { readonly [K in Exclude<DraftKey, 'new'> extends `${infer Kind}:${string}` ? Kind : never]: true } = { chat: true, bot: true, group: true }

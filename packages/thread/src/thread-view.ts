@@ -70,6 +70,13 @@ export interface TurnView {
   readonly reactions: { readonly turn: TurnId; readonly given: readonly Reaction[] } | null
 }
 
+/** A document the bot built and showed with `desktop_preview`: a file on the machine Hermes runs on. */
+export interface PageView {
+  readonly path: string
+  readonly label: string | null
+  readonly title: string
+}
+
 export type ThreadNode =
   | { readonly kind: 'prose'; readonly key: string; readonly markdown: string; readonly streaming: boolean }
   /** A run of one tool call. */
@@ -86,6 +93,7 @@ export type ThreadNode =
       readonly steps: readonly StepView[]
     }
   | { readonly kind: 'prompt'; readonly key: string; readonly card: PromptCard }
+  | { readonly kind: 'page'; readonly key: string; readonly page: PageView }
   /** Hermes's own words, or what Highwing did for it. `detail`: the full text behind a short notice, shown on request. */
   | { readonly kind: 'notice'; readonly key: string; readonly tone: 'error' | 'warn' | 'info'; readonly text: string; readonly detail: string | null }
   /** One reasoning block, collapsed until pressed. The text is plain, never Markdown. */
@@ -319,6 +327,7 @@ function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<Se
   const helpers = new Map(turn.items.flatMap(item => (item.kind === 'helper' ? [[item.id, item] as const] : [])))
   const asked = new Set(turn.items.flatMap(item => (item.kind === 'prompt' && item.ask.kind === 'approval' && (item.state.s === 'waiting' || item.state.s === 'sending') ? [item.ask.command] : [])))
   const nodes = groupRuns(placeApprovals(turn.items).filter(placed => isShown(placed, turn.items, helpers, now))).map((run): ThreadNode => {
+    if ('page' in run) return { kind: 'page', key: at(run.page.at), page: run.page.view }
     if ('tools' in run) {
       const steps = run.tools.map(placed => stepView(placed.item, at(placed.at), placed.partner !== null))
       const [first] = steps
@@ -454,13 +463,18 @@ const isPending = (prompt: PromptItem) => prompt.state.s === 'waiting' || prompt
 
 const trimBlankLines = (markdown: string) => markdown.replace(/^(?:[ \t]*\n)+/, '').replace(/(?:\n[ \t]*)+$/, '')
 
-type Run = { readonly tools: readonly Placed<ToolItem>[] } | { readonly other: Placed<Exclude<Item, ToolItem>> }
+type Run =
+  | { readonly tools: Placed<ToolItem>[] }
+  | { readonly other: Placed<Exclude<Item, ToolItem>> }
+  | { readonly page: { readonly at: number; readonly view: PageView } }
 
 function groupRuns(placed: readonly Placed[]): readonly Run[] {
-  const runs: ({ tools: Placed<ToolItem>[] } | { other: Placed<Exclude<Item, ToolItem>> })[] = []
+  const runs: Run[] = []
   for (const entry of placed) {
     const last = runs.at(-1)
-    if (!isTool(entry)) runs.push({ other: entry as Placed<Exclude<Item, ToolItem>> })
+    const view = isTool(entry) ? pageOf(entry.item) : null
+    if (view !== null) runs.push({ page: { at: entry.at, view } })
+    else if (!isTool(entry)) runs.push({ other: entry as Placed<Exclude<Item, ToolItem>> })
     else if (last && 'tools' in last) last.tools.push(entry)
     else runs.push({ tools: [entry] })
   }
@@ -468,6 +482,25 @@ function groupRuns(placed: readonly Placed[]): readonly Run[] {
 }
 
 const isTool = (placed: Placed): placed is Placed<ToolItem> => placed.item.kind === 'tool'
+
+const filePathOf = (url: string): string | null => {
+  try {
+    return decodeURIComponent(new URL(url).pathname)
+  } catch {
+    return null
+  }
+}
+
+/** A finished `desktop_preview` open of a file. A web address is no page: it keeps drawing as a step. */
+export function pageOf(tool: ToolItem): PageView | null {
+  if (tool.name !== 'desktop_preview' || tool.args.action !== 'open' || tool.status.s !== 'done' || isError(tool.status.result)) return null
+  const url = text(tool.args.url)
+  const path = url === null ? null : url.startsWith('file:') ? filePathOf(url) : url.includes('://') ? null : url
+  if (path === null) return null
+  const label = text(tool.args.label)?.trim() || null
+  const name = basename(path)
+  return name === null ? null : { path, label, title: label ?? name }
+}
 
 interface ToolWords {
   readonly done: string
@@ -994,6 +1027,8 @@ function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, open
       const head = `! ${node.tone === 'info' ? '' : `${node.tone}: `}${firstLine(node.text)}`
       return node.detail !== null && opened.has(node.key) ? [head, ...node.detail.split('\n').map(line => `    ${line}`)] : [head]
     }
+    case 'page':
+      return [`▤ ${node.page.title}  [Open]`]
     case 'closed':
       return [`○ ${node.words}`]
     case 'reasoning': {

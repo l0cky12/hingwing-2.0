@@ -3,14 +3,16 @@ import { createContext, useContext, useState } from 'react'
 import type { FileAction, FileOutcome } from '../../ipc-contract'
 import { useMenu } from './menu'
 
-export type FileCall = (action: FileAction, path: string) => Promise<FileOutcome>
+/** `label` goes with a `page`, as Hermes named it. */
+export type FileCall = (action: FileAction, path: string, label?: string | null) => Promise<FileOutcome>
 
 /** What a path answers where no session is watched. */
 export const NO_FILE_CALL: FileCall = async () => ({ ok: false, reason: 'refused' })
 
 export const FileCallContext = createContext(NO_FILE_CALL)
 
-export const fileCallFor = (sessionId: SessionId): FileCall => (action, path) => window.highwing.file({ action, sessionId, path })
+export const fileCallFor = (sessionId: SessionId): FileCall => (action, path, label = null) =>
+  window.highwing.file(action === 'page' ? { action, sessionId, path, label } : { action, sessionId, path })
 
 export const baseName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
 

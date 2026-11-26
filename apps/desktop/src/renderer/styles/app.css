@@ -239,6 +239,18 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .file-menu button:hover { background: var(--signal-soft); }
 .file-menu button:focus-visible { outline-offset: -2px; }
 .file-note { margin: 4px 0 0; font-size: 13px; color: var(--caution); }
+
+.page-card { margin: 0; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); }
+/* The rail is drawn from the padding box, so it reaches past the card's border to meet its neighbours. */
+.thread > .page-card::after { left: calc(var(--thread-x) - var(--col) - 1px); top: -1px; bottom: calc(-1 * var(--gap) - 1px); }
+.page-card-row { display: flex; align-items: center; gap: 12px; }
+.page-card-icon { flex: none; color: var(--graphite); }
+.page-card-words { flex: 1; min-width: 0; }
+.page-card h3 { margin: 0; font-size: 14.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-card p { margin: 2px 0 0; font: 12.5px var(--mono); color: var(--graphite); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-card button { flex: none; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--ink); background: transparent; }
+.page-card button:hover { background: var(--code-bg); }
+.page-card .page-card-note { margin: 8px 0 0; font: 13px var(--sans); color: var(--caution); white-space: normal; }
 .web-link { position: relative; }
 .link-menu { position: absolute; z-index: 1; top: calc(100% + 2px); left: 0; display: flex; flex-direction: column; min-width: 150px; padding: 3px; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); box-shadow: 0 2px 8px rgb(var(--shade) / .12); font: 400 13px/1.5 var(--sans); white-space: nowrap; }
 .link-menu button { padding: 5px 10px; border: 0; border-radius: 4px; background: none; text-align: left; }
@@ -1090,6 +1102,9 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 }
 /* The pane beside the chat. Main draws the page itself over .preview-page, so this box only holds what shows when there is no page. */
 .window[data-preview] { grid-template-columns: 288px minmax(0, 1fr) minmax(0, 1fr); }
+/* A page opened from its card fills the window, and the chat stays as a panel beside it. */
+.window[data-preview="full"] { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); }
+.window[data-preview="full"] > :is(.bots, .chats) { display: none; }
 .preview { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--rule); background: var(--paper); }
 .preview-head { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 12px 12px 12px 20px; border-bottom: 1px solid var(--rule); }
 .preview-head h2 { flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1112,6 +1127,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 @media (max-width: 899px) {
   .window[data-preview] { grid-template-columns: 288px minmax(0, 1fr); }
   .window[data-preview] .screen { display: none; }
+  .window[data-preview="full"] { grid-template-columns: minmax(0, 1fr); }
   .preview { border-left: 0; }
   .preview-head .preview-back { display: block; }
   .preview-head .preview-close { display: none; }
@@ -1121,6 +1137,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 }
 @media (forced-colors: active) {
   .preview { border-left: 1px solid CanvasText; }
+  .page-card { border: 1px solid CanvasText; }
+  .page-card button { border: 1px solid ButtonText; }
   .preview-head { border-bottom: 1px solid CanvasText; }
   .preview-head button, .preview-failed button { border: 1px solid ButtonText; }
   .preview-table th { background: Canvas; }

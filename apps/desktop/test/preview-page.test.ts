@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Session, SshHost, Target } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
-import type { Setup } from '../src/ipc-contract'
+import type { PaneLayout, Setup } from '../src/ipc-contract'
 import { failureOf, nextPane, pageFor, pageInView, pageUrlOf, pathOfPageUrl, previewOf, reachable, reachOf, servedPath, type Pane, type PaneEvent } from '../src/main/preview-page'
 
 const SITE = '/tmp/hermes-proto-work/site/index.html'
@@ -83,8 +83,8 @@ describe('failureOf', () => {
 
 describe('the pane', () => {
   const run = (...events: PaneEvent[]) => events.reduce<Pane | null>(nextPane, null)
-  const show = (label: string | null = null, address = 'http://localhost:5173/', file: string | null = null): PaneEvent =>
-    ({ on: 'show', asked: address, address, file, label, load: { at: 'loading' } })
+  const show = (label: string | null = null, address = 'http://localhost:5173/', file: string | null = null, layout: PaneLayout = 'beside'): PaneEvent =>
+    ({ on: 'show', asked: address, address, file, label, layout, load: { at: 'loading' } })
 
   it("is titled by Hermes's label, else by the page's own title, else by its address", () => {
     expect(previewOf(run(show('demo'), { on: 'titled', title: 'Vite App' }))).toMatchObject({ state: 'open', title: 'demo' })
@@ -94,7 +94,7 @@ describe('the pane', () => {
 
   it('draws the page once it has loaded, and keeps it in view while it reloads', () => {
     const loading = run(show())
-    expect(previewOf(loading)).toEqual({ state: 'open', title: 'http://localhost:5173/', address: 'http://localhost:5173/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
+    expect(previewOf(loading)).toEqual({ state: 'open', title: 'http://localhost:5173/', address: 'http://localhost:5173/', file: false, layout: 'beside', content: { kind: 'page', load: { at: 'loading' } } })
     expect(pageInView(loading)).toBe(false)
     const shown = nextPane(loading, { on: 'loaded' })
     expect(previewOf(shown)).toMatchObject({ content: { load: { at: 'shown' } } })
@@ -118,8 +118,14 @@ describe('the pane', () => {
     const table = { header: ['name', 'total'], rows: [['Alice', '120']], total: 1 }
     const report = '/tmp/hermes-proto-work/report.csv'
     expect(previewOf(run(show(null, report, report), { on: 'tabled', table })))
-      .toEqual({ state: 'open', title: 'report.csv', address: report, file: true, content: { kind: 'table', table } })
+      .toEqual({ state: 'open', title: 'report.csv', address: report, file: true, layout: 'beside', content: { kind: 'table', table } })
     expect(previewOf(run(show('Q3 report', report, report), { on: 'tabled', table }))).toMatchObject({ title: 'Q3 report' })
+  })
+
+  it("fills the window for a page card's Open, and stays beside the chat otherwise", () => {
+    const report = '/tmp/hermes-proto-work/pages/report.html'
+    expect(previewOf(run(show('Weekly sign-ups', report, report, 'full')))).toMatchObject({ title: 'Weekly sign-ups', layout: 'full' })
+    expect(previewOf(run(show()))).toMatchObject({ layout: 'beside' })
   })
 
   it('offers to open a file with its reason when it fails, and nothing for a web page', () => {
@@ -139,7 +145,7 @@ describe('the pane', () => {
 
   it('starts a new page with nothing of the last one', () => {
     expect(previewOf(run(show('demo'), { on: 'loaded' }, show(null, 'https://example.com/'))))
-      .toEqual({ state: 'open', title: 'https://example.com/', address: 'https://example.com/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
+      .toEqual({ state: 'open', title: 'https://example.com/', address: 'https://example.com/', file: false, layout: 'beside', content: { kind: 'page', load: { at: 'loading' } } })
   })
 })
 
