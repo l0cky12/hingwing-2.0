@@ -4,6 +4,7 @@ import { fixtureLatency, loadFixture, maskedFrame, recordingDialer, scriptedDial
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, safeStorage, shell, type OpenDialogOptions } from 'electron'
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { version } from '../../package.json'
 import { attachmentStore, ATTACHMENTS_DIR, desktopSources, HERMES_LIMITS } from './attachments'
 import { ownConnection, pinnedConnection, refreshBotsOnFocus, type ConnectionOwner } from './connection'
 import { desktopMenus, recordingMenus } from './context-menu'
@@ -119,8 +120,9 @@ app.whenReady().then(async () => {
   theme.subscribe(source => (nativeTheme.themeSource = source))
   await attachments.sweep(new Set((await drafts.load()).flatMap(draft => draft.attachments.map(held => held.id))))
   const unread = unreadStore(join(settingsDir, UNREAD_DIR))
+  // Unpackaged Electron reports its own version. The desktop package is the app version.
   const open = (dial: Dialer, place: string) => openHermes({
-    dial, client: { name: 'highwing', version: app.getVersion() }, onPane: pane.ask, uploads: attachments,
+    dial, client: { name: 'highwing', version }, onPane: pane.ask, uploads: attachments,
     unread: { chats: unread.load(place), keep: chats => unread.keep(place, chats) }
   })
   const owner = fixture

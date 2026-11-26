@@ -473,7 +473,7 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
+      'accountUsage', 'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
       'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard',
       'editBot', 'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models',
       'move', 'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react',
@@ -486,6 +486,7 @@ describe('validators', () => {
 
 const still = <T>(value: T) => ({ get: () => value, subscribe: () => () => {} })
 const LINK: Link = { state: 'blocked', why: 'hermes-missing', message: 'A link of this test.' }
+const ABOUT = { app: '0.1.0', hermes: { state: 'offline' } } as const
 const SIDEBAR: Sidebar = { bot: null, status: 'stale', rows: [], complete: true }
 const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] }, edition: 1 }
 const NOTHING_OPEN: OpenChat = { shown: null, opening: null, missing: null }
@@ -529,6 +530,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   const openListeners = new Set<(value: OpenChat) => void>()
   const hermes = {
     link: still(LINK),
+    about: still(ABOUT),
     sidebar: still(SIDEBAR),
     open: {
       get: () => open,
@@ -666,7 +668,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, activity: RESEARCH_WAITING, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {} }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, about: ABOUT, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, activity: RESEARCH_WAITING, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {} }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))

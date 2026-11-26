@@ -55,6 +55,12 @@ export interface Fixture {
      * unknown methods, as a Hermes older than them does, and no frame carries usage.
      */
     readonly usage?: { readonly before: Json; readonly after: Json; readonly breakdown: Json }
+    /** Canned `session.account_usage`. Absent: the gateway refuses it as an unknown method. */
+    readonly accountUsage?: Json
+    /** Canned `usage.bars`. Absent: the gateway refuses it as an unknown method. */
+    readonly usageBars?: Json
+    /** Canned `insights.get`. Absent: the gateway refuses it as an unknown method. */
+    readonly insights?: Json
     /**
      * The story chat's YOLO at the start; every Bot Chat starts off. Absent: attach replies carry no
      * `info.yolo` until a recorded frame names it, and the gateway refuses a `config.set` of `yolo` as an unknown method, as a Hermes without `config.set` does.
