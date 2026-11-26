@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { activityDesk } from '../src/activity'
+import { activityDesk, type Attached } from '../src/activity'
 import { activityIn, botActivitiesOf, unreadAfter, type Busy, type ChatBusy, type UnreadChat } from '../src/domain/activity'
 import type { BotId } from '../src/domain/bots'
 import type { SessionId } from '../src/domain/session'
@@ -64,10 +64,10 @@ describe('activityDesk', () => {
   const row = (id: SessionId, status: string, count: number) => ({
     current: false, id, session_key: id, last_active: 0, started_at: 0, message_count: count, model: '', preview: '', title: '', status
   })
-  const desk = (replies: (readonly ReturnType<typeof row>[])[], shown: ReadonlySet<SessionId> = NOTHING_SHOWN) => {
+  const desk = (replies: (readonly ReturnType<typeof row>[])[], shown: ReadonlySet<SessionId> = NOTHING_SHOWN, attached: ReadonlyMap<SessionId, Attached> = new Map()) => {
     const kept: (readonly UnreadChat[])[] = []
     const conn = { reach: 'host', as: () => ({ call: async () => ({ sessions: replies.shift() ?? [] }) }) } as unknown as Parameters<typeof activityDesk>[0]
-    const made = activityDesk(conn, { unread: [], keep: chats => kept.push(chats), local: () => ({ attached: new Map(), shown }), changed: () => {} })
+    const made = activityDesk(conn, { unread: [], keep: chats => kept.push(chats), local: () => ({ attached, shown }), changed: () => {} })
     return { made, kept }
   }
   const settle = () => new Promise(resolve => setTimeout(resolve, 0))
@@ -95,5 +95,15 @@ describe('activityDesk', () => {
     await settle()
     expect(fresh.made.activity).toEqual({})
     expect(fresh.kept).toEqual([])
+  })
+
+  it('marks nothing when a late sweep counts a turn an attached chat already showed', async () => {
+    const { made, kept } = desk([[row(ONE, 'idle', 2)], [row(ONE, 'idle', 4)]], NOTHING_SHOWN, new Map([[ONE, { bot: ADA, busy: null }]]))
+    made.roster([ADA])
+    await settle()
+    made.poll()
+    await settle()
+    expect(made.activity).toEqual({})
+    expect(kept).toEqual([])
   })
 })

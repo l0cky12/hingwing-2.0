@@ -51,7 +51,7 @@ export function activityDesk(conn: Pick<Connection, 'reach' | 'as'>, deps: Activ
   const polled = new Map<BotId, ReadonlyMap<SessionId, ChatBusy>>()
   /** Each live chat's message count at the last sweep. A turn can start and end between two sweeps, and only its count says so. */
   const counts = new Map<SessionId, number>()
-  /** Chats a sweep found idle with more messages than the sweep before: a turn ended unseen by any sweep. */
+  /** Chats a sweep found idle with more messages than the sweep before: a turn ended unseen by any sweep. An attached chat says for itself. */
   let ended = new Map<SessionId, Busy>()
   let unsupported = false
   let sweeping = false
@@ -66,7 +66,8 @@ export function activityDesk(conn: Pick<Connection, 'reach' | 'as'>, deps: Activ
       if (known.busy === null || bot === undefined) after.delete(chat)
       else after.set(chat, { bot, busy: known.busy })
     }
-    const next = unreadAfter(unread, new Map([...ended, ...busy]), after, shown)
+    const unseen = [...ended].filter(([chat]) => !attached.has(chat))
+    const next = unreadAfter(unread, new Map([...unseen, ...busy]), after, shown)
     busy = after
     ended = new Map()
     if (next !== unread) {
