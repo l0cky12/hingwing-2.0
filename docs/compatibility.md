@@ -864,9 +864,51 @@ every `groups.*` method (`GROUP_METHODS`,
 - Highwing asks `groups.capabilities {}`, then `groups.list {}`, on every new
   connection and again when sessions change. One page holds every live group:
   Hermes keeps at most 256 (`MAX_ACTIVE_ROOMS`) and pages 500 by default
-  (`gateway/hosted_rooms.py:46-47`). Hermes's `groups.changed` event is not
-  read yet, so a group made in another client shows after the next session
-  change or connection.
+  (`gateway/hosted_rooms.py:46-47`).
+- `groups.changed` carries no session id, so Highwing routes it apart from
+  session frames. It reads each group the event's `room_ids` names. An event
+  with no `room_ids`, or one naming a group Highwing has not listed, asks for
+  the list first. On every new connection Highwing reads every listed group,
+  because the events sent while it was away are gone.
+- Reading a group is `groups.state {room_id}`, then, for the group on screen
+  only, `groups.log {room_id, since_seq, limit: 500}` from the last cursor.
+  The first read of a group starts 400 lines before `latest_seq`, and the
+  thread says older messages aren't shown. A log read in another
+  `authority.epoch`, or past where `latest_seq` now ends, starts again from
+  that window. `driver_status.member_activity` says who is answering: the
+  sidebar row and the thread's live end read "Sam is thinking".
+- A group on screen, and a group with a member answering, are read again every
+  15 s when `groups.state` says `change_events: true`, and every 2 s when it
+  does not, Hermes Desktop's own two rates. With neither, Highwing does not
+  poll.
+- `groups.log` lines Highwing draws: `message.user`, `message.member`,
+  `turn.failed` ("Juno couldn't answer: …"), and `turn.cancelled`. A
+  cancellation with reason `superseded_by_newer_user_event` reads "Ada's reply
+  wasn't posted, because a newer message came first."; any other reads "Ada
+  was stopped." Every other kind moves the cursor and draws nothing. A member's
+  line sits under the message its `discussion_event_id` names.
+- `groups.send` sends `room_id`, `event_id` and `payload: {text, thread_id}`,
+  with `thread_id` always `main`. Hermes drops a member's late reply only when
+  a newer message reached the same thread (`plan_publication`,
+  `gateway/hosted_room_discussion.py:1012-1034`), which the busy line under
+  the box says: "Sam is still answering. If you send now, Sam's reply won't be
+  posted." Highwing refuses text over 64 KB (`MAX_USER_TEXT_BYTES`) before it
+  sends, so a send's `invalid_params` means Hermes no longer has the group.
+  A send whose answer is lost to a dropped connection is not sent again on
+  its own. The text stays in the box, and the same text sent to the same
+  group reuses its `event_id`, so Hermes keeps one message.
+- A bare `invalid_params` on `groups.state` is Hermes's word for a room it
+  does not have (`gateway/session_group_controls.py:97-102`), since
+  Highwing's params are a closed set. The open group then reads "This group
+  chat isn't on this Hermes any more." and Highwing asks for the list again.
+- Stop sends `groups.stop {room_id, cancel_id}` with a fresh `cancel_id`.
+  `room_stop_pending` reads "Hermes is already stopping this group chat."
+- With `driver: false`, or a send or stop refused
+  `runtime_coordination_required`, the group's box says "Hermes isn't running
+  group chats right now." and Send is off.
+- A group chat takes text only. Highwing sends no attachments to it, and its
+  replies raise no desktop notification. Groups are not in the command
+  palette.
 - New group chat offers only the bots `seatable_profiles` names, the roster
   `groups.create` accepts from this connection. A Hermes that sends no
   `seatable_profiles` gets every listed bot offered.

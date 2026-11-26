@@ -3,6 +3,7 @@
  * `session.ts`, because `OpenChat` crosses Electron IPC.
  */
 import type { BotId, Bots } from './bots'
+import type { GroupId } from './groups'
 import type { SessionId } from './session'
 
 /**
@@ -17,6 +18,8 @@ export type ChatRef =
   | { readonly kind: 'chat'; readonly sessionId: SessionId }
   /** A chat named from outside Highwing by its session id alone. Hermes is asked where it lives before it opens. */
   | { readonly kind: 'link'; readonly sessionId: SessionId }
+  /** A group chat from the sidebar's Group chats section. */
+  | { readonly kind: 'group'; readonly group: GroupId }
 
 /** A chat no message has made yet. Its first message makes it. */
 export type Unstarted =
@@ -41,10 +44,24 @@ export type Shown =
    */
   | { readonly kind: 'branch'; readonly bot: BotId | null; readonly sessionId: SessionId; readonly text: string }
 
+/**
+ * A group chat in the pane. It has no bot and no session of its own, so it has neither field, and code that reads
+ * `open.shown.bot` or `open.shown.sessionId` has to say what it means with a group open (`shownChat`, `shownBot`).
+ */
+export interface ShownGroup {
+  readonly kind: 'group'
+  readonly group: GroupId
+  /**
+   * The bot of the chat the group was opened over (null: the socket's own profile). The Chats column keeps listing that
+   * bot's chats and New chat starts one with it, so opening a group moves neither.
+   */
+  readonly over: BotId | null
+}
+
 /** The one answer to "which chat is open". Owned by the hub, read by every window as the `open` topic. */
 export interface OpenChat {
   /** null: Hermes has not said enough to pick a chat yet, or it has none to show. */
-  readonly shown: Shown | null
+  readonly shown: Shown | ShownGroup | null
   /** The bot or linked chat a click asked for and Hermes has not answered about. The pane keeps `shown` meanwhile. */
   readonly opening: Extract<ChatRef, { kind: 'bot' | 'link' }> | null
   /** A link named this chat and Hermes has none by that id. The composer says so until the next ask. */
@@ -68,6 +85,18 @@ export interface Desk {
   readonly finding: readonly BotId[]
 }
 
+/** The chat with one bot that the pane shows. null: nothing is open, or a group chat is. */
+export const shownChat = (open: OpenChat | undefined): Shown | null => (open?.shown?.kind === 'group' ? null : open?.shown ?? null)
+
+/** The bot whose chats the Chats column lists and a new chat starts with. null: the socket's own profile. A group chat answers the bot it was opened over. */
+export const shownBot = (open: OpenChat | undefined): BotId | null => {
+  const shown = open?.shown ?? null
+  return shown === null ? null : shown.kind === 'group' ? shown.over : shown.bot
+}
+
+/** The group chat the pane shows, or null. */
+export const shownGroup = (open: OpenChat | undefined): GroupId | null => (open?.shown?.kind === 'group' ? open.shown.group : null)
+
 export const EMPTY_DESK: Desk = { open: { shown: null, opening: null, missing: null }, chats: {}, owners: {}, finding: [] }
 
 /** Profile names are any word Hermes allows, `constructor` included, so a lookup reads the desk's own keys only. */
@@ -75,8 +104,7 @@ export const chatOf = (desk: Desk, bot: BotId): SessionId | undefined => Object.
 export const ownerOf = (desk: Desk, sessionId: SessionId): BotId | undefined => Object.hasOwn(desk.owners, sessionId) ? desk.owners[sessionId] : undefined
 
 export type DeskEvent =
-  /** Hermes said more: the chat to show when none is, and the Bot Chats its roster names. */
-  | { readonly on: 'facts'; readonly launch: Shown | null; readonly named: BotChats }
+  | { readonly on: 'facts'; readonly launch: Shown | null; readonly named: BotChats; readonly roster: { readonly bots: readonly BotId[]; readonly home: BotId | null } | null }
   | { readonly on: 'asked'; readonly ref: ChatRef }
   /** Hermes answered for one bot's Bot Chat: a lookup's reply, or the chat a first message made. null: it has none. */
   | { readonly on: 'found'; readonly bot: BotId; readonly sessionId: SessionId | null }
@@ -107,7 +135,7 @@ function showing(desk: Desk, bot: BotId, sessionId: SessionId | null): Desk {
 }
 
 function picking(desk: Desk, sessionId: SessionId): Desk {
-  const { shown } = desk.open
+  const shown = shownChat(desk.open)
   const keepsItsPaneAndDraft = shown?.sessionId === sessionId
   return { ...desk, open: { shown: keepsItsPaneAndDraft ? shown : { kind: 'chat', bot: ownerOf(desk, sessionId) ?? null, sessionId }, opening: null, missing: null } }
 }
@@ -139,10 +167,21 @@ function asked(desk: Desk, ref: ChatRef): { readonly desk: Desk; readonly effect
       return done(picking(desk, ref.sessionId))
     case 'link': {
       const { sessionId } = ref
-      if (desk.open.shown?.sessionId === sessionId || ownerOf(desk, sessionId) !== undefined) return done(picking(desk, sessionId))
+      if (shownChat(desk.open)?.sessionId === sessionId || ownerOf(desk, sessionId) !== undefined) return done(picking(desk, sessionId))
       return { desk: { ...desk, open: { ...desk.open, opening: ref, missing: null } }, effects: [{ seek: sessionId }] }
     }
+    case 'group': {
+      const { shown } = desk.open
+      const same = shown?.kind === 'group' && shown.group === ref.group
+      return done({ ...desk, open: { shown: same ? shown : { kind: 'group', group: ref.group, over: shownBot(desk.open) }, opening: null, missing: null } })
+    }
   }
+}
+
+function withListedOverBot(open: OpenChat, roster: Extract<DeskEvent, { on: 'facts' }>['roster']): OpenChat {
+  const { shown } = open
+  if (shown?.kind !== 'group' || shown.over === null || roster === null || roster.bots.includes(shown.over)) return open
+  return { ...open, shown: { ...shown, over: roster.home } }
 }
 
 /**
@@ -156,7 +195,8 @@ export function nextDesk(desk: Desk, event: DeskEvent): { readonly desk: Desk; r
   switch (event.on) {
     case 'facts': {
       const named = Object.entries(event.named).reduce((held, [bot, sessionId]) => learned(held, bot as BotId, sessionId), desk)
-      return done(named.open.shown === null && event.launch !== null ? { ...named, open: { ...named.open, shown: event.launch } } : named)
+      const open = withListedOverBot(named.open, event.roster)
+      return done(open.shown === null && event.launch !== null ? { ...named, open: { ...open, shown: event.launch } } : { ...named, open })
     }
     case 'asked':
       return asked(desk, event.ref)
@@ -184,8 +224,7 @@ export function nextDesk(desk: Desk, event: DeskEvent): { readonly desk: Desk; r
     case 'branched': {
       const bot = ownerOf(desk, event.from) ?? null
       const owned: Desk = bot === null ? desk : { ...desk, owners: { ...desk.owners, [event.sessionId]: bot } }
-      const { shown, opening } = desk.open
-      const stillThere = shown?.sessionId === event.from && opening === null
+      const stillThere = shownChat(desk.open)?.sessionId === event.from && desk.open.opening === null
       return done(stillThere ? { ...owned, open: { shown: { kind: 'branch', bot, sessionId: event.sessionId, text: event.text }, opening: null, missing: null } } : owned)
     }
     case 'sought': {

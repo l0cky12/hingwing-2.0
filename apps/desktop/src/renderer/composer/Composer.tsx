@@ -1,4 +1,4 @@
-import type { Attachment, AttachmentId, CommandOutcome, PathMatch, SendPlan, SessionId, SlashCatalog } from '@highwing/hermes/domain'
+import { shownChat, type Attachment, type AttachmentId, type CommandOutcome, type PathMatch, type SendPlan, type SessionId, type SlashCatalog } from '@highwing/hermes/domain'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { MAX_ATTACHMENTS, type StageResult } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
@@ -8,11 +8,18 @@ import { busyHint } from './busy'
 import { attachTo, detach, draftSent, moveAttachment, moveDraft, seedDraft, stagingFor, useAttachments, useDraft, useStaging, writeDraft, type DraftSlot } from './drafts'
 import { EDITING_WORDS, type Editing } from './edit'
 import { RemoveDialog } from './RemoveDialog'
-import { mentionable, mentionWord, menuOf, picked, type Menu, type MenuItem } from './menu'
+import { mentionable, mentionWord, menuOf, picked, type Mention, type Menu, type MenuItem } from './menu'
 import { usePathFiles } from './paths'
+
+export interface ComposerGroup {
+  readonly name: string
+  readonly mentions: readonly Mention[]
+  readonly warning: string | null
+}
 
 interface ComposerProps {
   readonly slot: DraftSlot
+  readonly group?: ComposerGroup
   readonly inputRef?: RefObject<HTMLTextAreaElement | null>
   readonly autoFocus?: boolean
   readonly seed?: string
@@ -39,6 +46,7 @@ interface ComposerProps {
 }
 
 const NO_CATALOG: SlashCatalog = []
+const NO_FILES = { word: null, matches: [] } as const
 const SUBMIT_ALWAYS = (): SendPlan['by'] => 'submit'
 const HINT_ID = 'composer-busy'
 const MENU_ID = 'composer-menu'
@@ -116,17 +124,20 @@ export function admitted(results: readonly StageResult[], held: readonly Attachm
 
 const draggingFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') === true
 
-export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, planFor = SUBMIT_ALWAYS, editing = null, onCancelEdit, above, onEscape, stack, children }: ComposerProps) {
+export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, planFor = SUBMIT_ALWAYS, editing = null, onCancelEdit, above, onEscape, stack, children }: ComposerProps) {
   const catalog = useTopic('slash') ?? NO_CATALOG
   const roster = useTopic('bots')
   const relay = useTopic('relay')
   const open = useTopic('open')
-  const own = open?.shown?.bot ?? null
+  const own = shownChat(open)?.bot ?? null
   const draft = useDraft(slot)
   const [caret, setCaret] = useState(0)
   const [focused, setFocused] = useState(false)
   const files = usePathFiles(sessionId, focused ? mentionWord(draft, caret) : null)
-  const sources = useMemo(() => ({ catalog, bots: mentionable(roster, relay, own), files }), [catalog, roster, relay, own, files])
+  const sources = useMemo(
+    () => (group === undefined ? { catalog, bots: mentionable(roster, relay, own), files } : { catalog: NO_CATALOG, bots: group.mentions, files: NO_FILES }),
+    [group, catalog, roster, relay, own, files]
+  )
   const attachments = useAttachments(slot)
   const [attachRefusals, setAttachRefusals] = useState<readonly string[]>([])
   const [dragging, setDragging] = useState(false)
@@ -144,7 +155,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   const caretTo = useRef<number | null>(null)
   const typed = menuOf(draft, caret, sources, { active, dismissed })
   const menu = focused ? typed : { open: false as const }
-  const hint = busyHint(planFor(attachments), draft, catalog, editing)
+  const hint = group === undefined ? busyHint(planFor(attachments), draft, catalog, editing) : group.warning
 
   const shownActive = menu.open ? menu.active : null
   useLayoutEffect(() => {
@@ -363,13 +374,17 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
       )}
       {dragging && canAttach && <p className="drop-line" role="status">Drop to attach</p>}
       <form onSubmit={submit}>
-        <button type="button" className="clip" aria-label="Attach files" disabled={!canAttach} onClick={() => void take(window.highwing.attachPick())}>
-          <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16">
-            <path d="M10.5 4.5 5.4 9.6a1.6 1.6 0 0 0 2.3 2.3l5.4-5.4a3 3 0 0 0-4.3-4.3L3.4 7.6a4.4 4.4 0 0 0 6.2 6.2l4-4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+        {group === undefined && (
+          <button type="button" className="clip" aria-label="Attach files" disabled={!canAttach} onClick={() => void take(window.highwing.attachPick())}>
+            <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16">
+              <path d="M10.5 4.5 5.4 9.6a1.6 1.6 0 0 0 2.3 2.3l5.4-5.4a3 3 0 0 0-4.3-4.3L3.4 7.6a4.4 4.4 0 0 0 6.2 6.2l4-4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
         <textarea
-          ref={box} autoFocus={autoFocus} rows={1} placeholder="Ask Hermes to do something" aria-label="Message Hermes" value={draft}
+          ref={box} autoFocus={autoFocus} rows={1} value={draft}
+          placeholder={group === undefined ? 'Ask Hermes to do something' : 'Message the group, or type @ to ask specific bots'}
+          aria-label={group === undefined ? 'Message Hermes' : `Message ${group.name}`}
           aria-autocomplete="list" aria-controls={menu.open ? MENU_ID : undefined}
           aria-activedescendant={menu.open ? optionId(menu.active) : undefined} aria-describedby={hint === null ? undefined : HINT_ID}
           onChange={event => edit(event.target.value, event.target.selectionStart)} onKeyDown={onKeyDown} onPaste={onPaste}

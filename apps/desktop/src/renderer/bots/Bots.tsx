@@ -1,4 +1,4 @@
-import type { Bot, BotCreated, BotDetails, BotDraft, BotId, BotMark, Bots, CommandOutcome, GroupDraft, Groups, Link, Marked, ModelMenu, OpenChat } from '@highwing/hermes/domain'
+import type { Bot, BotCreated, BotDetails, BotDraft, BotId, BotMark, Bots, CommandOutcome, GroupDraft, GroupId, Groups, Link, Marked, ModelMenu, OpenChat } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { GroupForm } from '../groups/GroupForm'
@@ -43,6 +43,7 @@ export function BotsSidebar({ head }: { readonly head: ReactNode }) {
       onMark={(bot, mark) => run({ do: 'markBot', bot, mark })}
       onCreate={(draft, picture) => run({ do: 'createBot', draft, picture })}
       onCreateGroup={draft => run({ do: 'createGroup', draft })}
+      onOpenGroup={group => void run({ do: 'open', ref: { kind: 'group', group } })}
       onModels={() => run({ do: 'botModels', bot: null })}
       onDescribe={bot => run({ do: 'describeBot', bot })}
       onEdit={(bot, edit, revision) => run({ do: 'editBot', bot, edit, revision })}
@@ -67,6 +68,7 @@ interface BotsPanelProps extends EditorCalls {
   readonly onMark: (bot: BotId, mark: BotMark) => Promise<CommandOutcome<Marked>>
   readonly onCreate: (draft: BotDraft, picture: string) => Promise<CommandOutcome<BotCreated>>
   readonly onCreateGroup: (draft: GroupDraft) => Promise<CommandOutcome>
+  readonly onOpenGroup: (group: GroupId) => void
   readonly onModels: () => Promise<CommandOutcome<ModelMenu>>
   readonly looks: LookCalls
 }
@@ -76,24 +78,25 @@ const Search = () => <svg {...icon}><circle cx="11" cy="11" r="7" /><path d="m20
 const Close = () => <svg {...icon}><path d="M6 6l12 12M18 6 6 18" /></svg>
 export const Star = () => <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" /></svg>
 
-function GroupChats({ rows }: { readonly rows: readonly GroupRowView[] }) {
+function GroupChats({ rows, onOpen }: { readonly rows: readonly GroupRowView[]; readonly onOpen: (group: GroupId) => void }) {
+  const ids = useId()
   return (
     <section>
       <h3>Group chats</h3>
-      <ul className="group-rows">
-        {rows.map(row => (
-          <li key={row.id} className="group-row">
+      {rows.map((row, at) => (
+        <div key={row.id} className="bot-row">
+          <button type="button" className="bot" aria-label={row.label} aria-describedby={`${ids}-${at}`} aria-current={row.current || undefined} onClick={() => onOpen(row.id)}>
             <span className="stack" aria-hidden="true">
               {row.faces.map(face => <Avatar key={face.id} bot={face} size={24} />)}
               {row.more > 0 && <span className="stack-more">+{row.more}</span>}
             </span>
             <span className="bot-text">
               <span className="bot-name">{row.name}</span>
-              <span className="bot-preview">{row.preview}</span>
+              <span className={row.live ? 'bot-preview live' : 'bot-preview'} id={`${ids}-${at}`}>{row.preview}</span>
             </span>
-          </li>
-        ))}
-      </ul>
+          </button>
+        </div>
+      ))}
     </section>
   )
 }
@@ -183,7 +186,7 @@ function useMarks({ bots, onMark, onRefused, onLanded }: MarkCalls) {
 
 const NO_BOX: Box = { left: 0, top: 0, right: 0, bottom: 0 }
 
-export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOpen, onNewChat, onNew, onMark, onCreate, onCreateGroup, onModels, looks, ...editor }: BotsPanelProps) {
+export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOpen, onNewChat, onNew, onMark, onCreate, onCreateGroup, onOpenGroup, onModels, looks, ...editor }: BotsPanelProps) {
   const [refused, setRefused] = useState<string | null>(null)
   const [form, setForm] = useState<{ readonly models: ModelMenu | 'loading' } | null>(null)
   const [grouping, setGrouping] = useState(false)
@@ -228,7 +231,7 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
   const picks: { readonly [I in PlusItem['id']]: () => void } = { 'new-chat': onNewChat, 'new-group': () => setGrouping(true), 'new-bot': openForm }
   const edited = editing === null ? null : botIn(bots, editing.bot)
   const list = listOf(bots, query)
-  const groupRows = (query ?? '').trim() === '' ? groupRowsOf(groups, bots) : []
+  const groupRows = (query ?? '').trim() === '' ? groupRowsOf(groups, bots, open) : []
   const disclosure = nextHidden(hidden, { on: 'render', triggers: hiddenTriggers(list, (query ?? '').trim() !== '', selected === null ? null : botIn(bots, selected)) })
   if (disclosure !== hidden) setHidden(disclosure)
   const view = sidebarOf(list, disclosure.open, selected)
@@ -334,7 +337,7 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
             <>
               {view.card !== null && drawRow({ bot: view.card, place: 'card' })}
               {view.groups.filter(group => group.place === 'pinned').map(drawGroup)}
-              {groupRows.length > 0 && <GroupChats rows={groupRows} />}
+              {groupRows.length > 0 && <GroupChats rows={groupRows} onOpen={onOpenGroup} />}
               {view.groups.filter(group => group.place !== 'pinned').map(drawGroup)}
               {view.hidden !== null && (
                 <section className="bots-hidden">

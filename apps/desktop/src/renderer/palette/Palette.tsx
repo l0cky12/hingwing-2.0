@@ -1,4 +1,4 @@
-import type { Target } from '@highwing/hermes/domain'
+import { shownChat, type Target } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { Avatar } from '../bots/Avatar'
 import { agoOf } from '../chats/chat-list'
@@ -67,7 +67,7 @@ function Sheet({ target, returnFocusTo, onClose }: SheetProps) {
   const bots = useTopic('bots')
   const open = useTopic('open')
   const link = useTopic('link')
-  const sessionId = open?.shown?.sessionId ?? null
+  const sessionId = shownChat(open)?.sessionId ?? null
   const openSession = useTopic(sessionId === null ? null : `session:${sessionId}`)
   const [draftId] = useState(() => crypto.randomUUID())
   const [query, setQuery] = useState('')

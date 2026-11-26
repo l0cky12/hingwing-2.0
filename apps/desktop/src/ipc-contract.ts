@@ -1,7 +1,7 @@
 import {
   BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
-  type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupDraft, type Groups, type HelperId, type Item, type Link, type ModelOption,
+  type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type HelperId, type Item, type Link, type ModelOption,
   type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
   type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
@@ -83,14 +83,16 @@ export interface AppTopics {
   readonly open: OpenChat
   /** Whether Hermes can hand a message to another bot, and the messages handed over from each chat. */
   readonly relay: RelayDesk
-  /** The group chats, whether this Hermes can make one, and the bots it would seat. */
+  /** The group chats, who is answering in each, whether this Hermes can make one, and the bots it would seat. */
   readonly groups: Groups
+  /** The group chat `open` shows, or null while it shows anything else. */
+  readonly groupChat: GroupChat | null
   readonly preview: Preview
   readonly mode: Mode
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, preview: true, mode: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, preview: true, mode: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -127,10 +129,10 @@ export type ImageType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' 
 export type ImageOutcome = { readonly ok: true; readonly type: ImageType; readonly bytes: Uint8Array } | { readonly ok: false }
 
 /**
- * One place to type a message: a chat that has a session, a bot's unstarted chat, or the one
- * new-chat view.
+ * One place to type a message: a chat that has a session, a bot's unstarted chat, the one
+ * new-chat view, or a group chat.
  */
-export type DraftKey = `chat:${SessionId}` | `bot:${BotId}` | 'new'
+export type DraftKey = `chat:${SessionId}` | `bot:${BotId}` | 'new' | `group:${GroupId}`
 /** `bot` is the bot of the chat the draft was typed in, so it can be matched to that bot's list. Empty `text` and no attachments: no draft. */
 export interface Draft { readonly key: DraftKey; readonly bot: BotId | null; readonly text: string; readonly attachments: readonly Attachment[] }
 
@@ -231,24 +233,32 @@ const groupDraftOf = (raw: unknown): GroupDraft | null => {
 }
 const revisionOf = (raw: unknown): number | null | undefined =>
   raw === null ? null : Number.isInteger(raw) && (raw as number) >= 0 ? (raw as number) : undefined
-const chatRefOf = (raw: unknown): ChatRef | null => {
-  if (!isObject(raw)) return null
-  if (raw.kind === 'bot') {
+const REFS: { readonly [K in ChatRef['kind']]: (raw: Obj) => Extract<ChatRef, { kind: K }> | null } = {
+  bot: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { kind: 'bot', bot }
-  }
-  if (raw.kind === 'chat' || raw.kind === 'link') {
+  },
+  new: raw => {
+    if (!filled(raw.draftId)) return null
+    if (raw.bot === null) return { kind: 'new', bot: null, draftId: raw.draftId }
+    const bot = botIdOf(raw.bot)
+    return bot && { kind: 'new', bot, draftId: raw.draftId }
+  },
+  chat: raw => {
     const sessionId = sessionIdOf(raw)
-    return sessionId && { kind: raw.kind, sessionId }
-  }
-  if (raw.kind !== 'new' || !filled(raw.draftId)) return null
-  if (raw.bot === null) return { kind: 'new', bot: null, draftId: raw.draftId }
-  const bot = botIdOf(raw.bot)
-  return bot && { kind: 'new', bot, draftId: raw.draftId }
+    return sessionId && { kind: 'chat', sessionId }
+  },
+  link: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && { kind: 'link', sessionId }
+  },
+  group: raw => (isGroupId(raw.group) ? { kind: 'group', group: raw.group } : null)
 }
+const chatRefOf = (raw: unknown): ChatRef | null =>
+  isObject(raw) && text(raw.kind) && Object.hasOwn(REFS, raw.kind) ? REFS[raw.kind as ChatRef['kind']](raw) : null
 const unstartedOf = (raw: unknown): Unstarted | null => {
   const ref = isObject(raw) && raw.sessionId === null ? chatRefOf(raw) : null
-  return ref === null || ref.kind === 'chat' || ref.kind === 'link' ? null : { ...ref, sessionId: null }
+  return ref?.kind === 'bot' || ref?.kind === 'new' ? { ...ref, sessionId: null } : null
 }
 const webPage = (raw: unknown): raw is string => text(raw) && isWebPage(raw)
 const place = (raw: unknown): raw is number => typeof raw === 'number' && Number.isFinite(raw) && raw >= 0
@@ -453,6 +463,8 @@ export const validators: Validators = {
     const bot = botIdOf(raw.bot)
     return bot && isBotMark(raw.mark) ? { do: 'markBot', bot, mark: raw.mark } : null
   },
+  sendToGroup: raw => (isGroupId(raw.group) && filled(raw.text) ? { do: 'sendToGroup', group: raw.group, text: raw.text } : null),
+  stopGroup: raw => (isGroupId(raw.group) ? { do: 'stopGroup', group: raw.group } : null),
   tune: raw => {
     const sessionId = sessionIdOf(raw)
     if (!sessionId) return null
@@ -537,8 +549,13 @@ export function parseFileRequest(raw: unknown): FileRequest | null {
   return sessionId && filled(raw.path) ? { action: raw.action, sessionId, path: raw.path } : null
 }
 
-const draftKeyOf = (raw: unknown): DraftKey | null =>
-  raw === 'new' || (text(raw) && /^(?:chat|bot):/.test(raw) && filled(raw.slice(raw.indexOf(':') + 1))) ? (raw as DraftKey) : null
+const DRAFT_KINDS: { readonly [K in Exclude<DraftKey, 'new'> extends `${infer Kind}:${string}` ? Kind : never]: true } = { chat: true, bot: true, group: true }
+const draftKeyOf = (raw: unknown): DraftKey | null => {
+  if (raw === 'new') return raw
+  if (!text(raw)) return null
+  const colon = raw.indexOf(':')
+  return colon > 0 && Object.hasOwn(DRAFT_KINDS, raw.slice(0, colon)) && filled(raw.slice(colon + 1)) ? (raw as DraftKey) : null
+}
 
 /** `attachments` may be missing, as in a draft an earlier build wrote. */
 export function parseDraft(raw: unknown): Draft | null {

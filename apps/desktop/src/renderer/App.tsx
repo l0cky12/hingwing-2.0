@@ -1,4 +1,4 @@
-import type { Shown, Target } from '@highwing/hermes/domain'
+import type { Shown, ShownGroup, Target } from '@highwing/hermes/domain'
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import type { Mode, Setup } from '../ipc-contract'
 import { BotPicker } from './bots/BotPicker'
@@ -6,6 +6,7 @@ import { BotsSidebar } from './bots/Bots'
 import { useRetryPicturesOnceOnline } from './bots/pictures'
 import { ChatsSidebar, DraftSweep } from './chats/Chats'
 import { Chat } from './chat/Chat'
+import { GroupPane } from './groups/GroupPane'
 import { Banner, TopBar } from './chrome/Chrome'
 import { ModeSwitch } from './chrome/ModeSwitch'
 import { Preview } from './preview/Preview'
@@ -16,20 +17,20 @@ import { Epoch, run, useTopic } from './store'
 
 const NO_CHAT = async () => ({ ok: false, refusal: { kind: 'rejected', message: 'There is no chat to send to.' } }) as const
 
-function samePaneOnFirstMessage(shown: Shown): string {
+function samePaneOnFirstMessage(shown: Shown | ShownGroup): string {
   switch (shown.kind) {
     case 'bot': return `bot:${shown.bot}`
     case 'new': return `new:${shown.draftId}`
     case 'chat': return `chat:${shown.sessionId}`
     case 'branch': return `branch:${shown.sessionId}`
+    case 'group': return `group:${shown.group}`
   }
 }
 
 function OpenPane() {
   const shown = useTopic('open')?.shown ?? null
-  return shown === null
-    ? <><main id="scroll" /><Composer slot={null} canSend={false} canAttach={false} showStop={false} onSend={NO_CHAT} onStop={() => {}} onInput={() => {}} /></>
-    : <Chat key={samePaneOnFirstMessage(shown)} chat={shown} />
+  if (shown === null) return <><main id="scroll" /><Composer slot={null} canSend={false} canAttach={false} showStop={false} onSend={NO_CHAT} onStop={() => {}} onInput={() => {}} /></>
+  return shown.kind === 'group' ? <GroupPane key={samePaneOnFirstMessage(shown)} shown={shown} /> : <Chat key={samePaneOnFirstMessage(shown)} chat={shown} />
 }
 
 function ChatScreen({ target }: { readonly target: Target | null }) {

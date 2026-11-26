@@ -18,6 +18,7 @@ describe('readDraft', () => {
     expect(readDraft(text({ version: 1, ...CHAT }))).toEqual(CHAT)
     expect(readDraft(text({ version: 1, key: 'new', bot: null, text: 'x' }))).toEqual({ key: 'new', bot: null, text: 'x', attachments: [] })
     expect(readDraft(text({ version: 1, ...CHAT, text: '', attachments: [SHOT] }))).toEqual({ ...CHAT, text: '', attachments: [SHOT] })
+    expect(readDraft(text({ version: 1, key: 'group:launch-plan', bot: null, text: '@sam go' }))).toEqual({ key: 'group:launch-plan', bot: null, text: '@sam go', attachments: [] })
   })
 
   it.each([

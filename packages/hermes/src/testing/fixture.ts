@@ -160,7 +160,10 @@ export interface Pets {
 /** `reply`: the bot's one answer, sent `delay_ms` after the call (default 0). `refuse`: the reason Hermes refuses the delivery with. */
 export type RelayScript = { readonly reply: string; readonly delay_ms?: number } | { readonly refuse: string }
 export interface GroupsScript {
-  /** What `groups.capabilities` says of `driver`: whether Hermes runs its group chats now. Default true. Hermes makes a group either way. */
+  /**
+   * What `groups.capabilities` says of `driver`: whether Hermes runs its group chats now. Default true. Hermes makes a
+   * group either way. false: `groups.send` and `groups.stop` are refused `runtime_coordination_required`.
+   */
   readonly driver?: boolean
   /**
    * The profiles `groups.capabilities` names as seatable, and the only ones `groups.create` seats: any other is
@@ -170,6 +173,13 @@ export interface GroupsScript {
   readonly seatable?: readonly string[] | null
   /** The groups before the story starts, most recently changed first. */
   readonly rooms?: readonly RoomSeed[]
+  /** false: `groups.state` carries no `change_events` and the gateway pushes no `groups.changed`, as behind a forwarding backend. Default true. */
+  readonly change_events?: boolean
+  /**
+   * What each profile's bot does with each turn it is given, in order, across every group. A bot with no turn left, or
+   * no entry, passes: its turn settles and posts nothing.
+   */
+  readonly turns?: { readonly [profile: string]: readonly TurnScript[] }
 }
 
 /** A group as `groups.create` would have made it. Each seat's id is its profile, and its handle follows Highwing's own rule: `ada` for the bot shown as Ada. */
@@ -178,7 +188,21 @@ export interface RoomSeed {
   readonly name: string
   /** In the order they answer. */
   readonly members: readonly { readonly profile: string; readonly handle: string }[]
+  /** Hermes's `authority_epoch` for the room. Default 1. */
+  readonly epoch?: number
+  /** What was said before the story starts, oldest first. A member's line answers the user's line before it. */
+  readonly log?: readonly ({ readonly user: string } | { readonly member: string; readonly text: string })[]
 }
+
+/**
+ * One turn of one bot. It shows as running in `groups.state` from the moment it starts until it ends. `reply`: it
+ * posts this after `delay_ms` (default 0). `fail`: it fails with these words after `delay_ms`. `hold`: it runs until a
+ * `groups.stop` or a newer message ends it.
+ */
+export type TurnScript =
+  | { readonly reply: string; readonly delay_ms?: number }
+  | { readonly fail: string; readonly delay_ms?: number }
+  | { readonly hold: true }
 
 /** Hermes's answer to each read a client makes when it starts watching a chat, by method. */
 export type Reads = Readonly<Partial<Record<typeof READS[number], unknown>>>
@@ -310,15 +334,33 @@ const isRelayScript = (value: unknown): value is RelayScript =>
 
 const isText = (value: unknown): value is string => typeof value === 'string' && value !== ''
 
+const isDelay = (value: unknown) => value === undefined || (typeof value === 'number' && value >= 0)
+
+const isTurnScript = (value: unknown): value is TurnScript => {
+  if (!isObject(value)) return false
+  if ('hold' in value) return value.hold === true && Object.keys(value).length === 1
+  const words = 'fail' in value ? 'fail' : 'reply'
+  return isText(value[words]) && isDelay(value.delay_ms) && Object.keys(value).every(key => key === words || key === 'delay_ms')
+}
+
+const isSeededLine = (value: unknown) =>
+  isObject(value) && ((isText(value.user) && Object.keys(value).length === 1) || (isText(value.member) && isText(value.text) && Object.keys(value).length === 2))
+
 const isRoomSeed = (value: unknown): value is RoomSeed =>
   isObject(value) && isText(value.id) && isText(value.name) && Array.isArray(value.members)
   && value.members.length >= 2 && value.members.length <= 6 && value.members.every(seat => isObject(seat) && isText(seat.profile) && isText(seat.handle))
+  && (value.epoch === undefined || (Number.isInteger(value.epoch) && (value.epoch as number) >= 1))
+  && (value.log === undefined || (Array.isArray(value.log) && value.log.every(isSeededLine)))
+
+const GROUPS_KEYS = ['driver', 'seatable', 'rooms', 'change_events', 'turns']
 
 const isGroupsScript = (value: unknown): value is GroupsScript =>
-  isObject(value) && Object.keys(value).every(key => key === 'driver' || key === 'seatable' || key === 'rooms')
+  isObject(value) && Object.keys(value).every(key => GROUPS_KEYS.includes(key))
   && (value.driver === undefined || typeof value.driver === 'boolean')
+  && (value.change_events === undefined || typeof value.change_events === 'boolean')
   && (value.seatable === undefined || value.seatable === null || (Array.isArray(value.seatable) && value.seatable.every(isText)))
   && (value.rooms === undefined || (Array.isArray(value.rooms) && value.rooms.every(isRoomSeed)))
+  && (value.turns === undefined || (isObject(value.turns) && Object.values(value.turns).every(turns => Array.isArray(turns) && turns.every(isTurnScript))))
 
 function parseHeader(value: unknown): Fixture['header'] | string {
   if (!isObject(value)) return 'the header must be an object'
@@ -394,11 +436,14 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   const { groups } = value
   if (groups !== undefined && !isGroupsScript(groups)) {
-    return '"groups" may hold only "driver", "seatable" (a list of profiles, or null) and "rooms", each room { id, name, members } seating 2 to 6 { profile, handle }'
+    return '"groups" may hold only "driver", "seatable", "rooms", "change_events" and "turns": each room { id, name, members, epoch?, log? } seating 2 to 6 { profile, handle }, and each turn { reply, delay_ms? }, { fail, delay_ms? } or { hold: true }'
   }
   const served = new Set(isObject(profiles) && Array.isArray(profiles.profiles) ? profiles.profiles.flatMap(row => (isObject(row) && isText(row.name) ? [row.name] : [])) : ['default'])
-  const unserved = (groups?.rooms ?? []).flatMap(room => room.members.filter(seat => !served.has(seat.profile)).map(seat => `${room.id}: ${seat.profile}`))
-  if (unserved.length > 0) return `"groups" seats profiles the header's "profiles" does not list (${unserved.join(', ')})`
+  const unserved = [
+    ...(groups?.rooms ?? []).flatMap(room => [...room.members.map(seat => seat.profile), ...(room.log ?? []).flatMap(line => ('member' in line ? [line.member] : []))].filter(profile => !served.has(profile)).map(profile => `${room.id}: ${profile}`)),
+    ...Object.keys(groups?.turns ?? {}).filter(profile => !served.has(profile)).map(profile => `turns: ${profile}`)
+  ]
+  if (unserved.length > 0) return `"groups" names profiles the header's "profiles" does not list (${unserved.join(', ')})`
   const { paths } = value
   if (paths !== undefined && !(isObject(paths) && isObject(paths.words) && (paths.cwd === undefined || typeof paths.cwd === 'string'))) {
     return '"paths" must be { cwd?, words } with "words" mapping a typed word to its complete.path reply'

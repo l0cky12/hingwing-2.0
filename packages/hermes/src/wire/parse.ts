@@ -4,7 +4,7 @@
  */
 import { canonicalBotId, GENERATED_MAX_BYTES, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, type BotCreated, type BotDetails, type BotFacts, type BotId, type PetChoice } from '../domain/bots'
 import type { CheckpointDiff, Checkpoints, ContextBreakdown, ModelConfirm, ModelMenu, Outcome as CommandOutcome, Restored } from '../domain/command'
-import { isGroupId, type GroupMember, type GroupRow, type GroupSupport, type MemberId } from '../domain/groups'
+import { isGroupId, type Answering, type GroupEvent, type GroupFacts, type GroupId, type GroupMember, type GroupSupport, type MemberId } from '../domain/groups'
 import type { PaneAsk } from '../domain/pane'
 import type { Admission } from '../domain/queue'
 import type { CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, Said as SaidTuning, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
@@ -22,7 +22,7 @@ import type { Said, TreeRow } from '../domain/versions'
 import type {
   AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
   CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
-  CommandDispatchResult, CommandsCatalogResult, GroupsCapabilitiesResult, GroupsCreateResult, GroupsListResult, Room, RoomMember, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
+  CommandDispatchResult, CommandsCatalogResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
   ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, ImageGenerateResult, LoopSnapshot,
   MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
   MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PetGalleryResult, PetThumbResult,
@@ -53,6 +53,11 @@ export type ParsedEvent =
   | { readonly scope: 'gap'; readonly sessionId: SessionId }
   /** `sessions.changed`: the sidebar should refetch. */
   | { readonly scope: 'app'; readonly event: 'sessions.changed' }
+  /**
+   * `groups.changed`: these groups' logs or who is answering in them moved. `all`: the payload names no rooms, which is
+   * Hermes saying anything may have moved (tui_gateway/change_watcher.py:434-441).
+   */
+  | { readonly scope: 'groups'; readonly rooms: readonly GroupId[] | 'all' }
   /**
    * A session event with no session id, or a frame with no stream position.
    * Never guessed into a session, because one socket serves many of them. Counted as `unrouted`.
@@ -501,7 +506,7 @@ export const UNSHOWN: ReadonlySet<string> = new Set([
   'agent.step',
   'agent.terminal.output', 'billing.step_up.verification', 'bot_relay.outbox.pending',
   'browser.progress', 'cron.changed', 'display.install.done',
-  'display.install.log', 'display.lease', 'display.status', 'free_tier.challenge', 'gateway.ready', 'groups.changed',
+  'display.install.log', 'display.lease', 'display.status', 'free_tier.challenge', 'gateway.ready',
   'message.reaction', 'notice', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
   'pet.hatch.progress', 'platforms.changed', 'preview.restart.complete',
   'preview.restart.progress', 'projects.changed', 'reaction',
@@ -572,6 +577,7 @@ export function parseEvent(params: unknown): ParsedEvent {
   if (!isObject(params) || typeof params.type !== 'string' || params.type === '') return { scope: 'unrouted', type: '', why: 'not an event' }
   const { type, session_id: id, payload } = params
   if (type === 'sessions.changed') return { scope: 'app', event: 'sessions.changed' }
+  if (type === 'groups.changed') return { scope: 'groups', rooms: roomsMoved(payload) }
   if (typeof id !== 'string' || id === '') return { scope: 'unrouted', type, why: 'no session id' }
   const sessionId = id as SessionId
   if (type === 'session.replay_gap') return { scope: 'gap', sessionId }
@@ -1623,19 +1629,22 @@ function seatOf(raw: unknown): GroupMember {
   return { id: id as MemberId, bot: bot as BotId, handle, name: words(seat.raw('display_name')) ?? handle }
 }
 
+const roomsMoved = (payload: unknown): readonly GroupId[] | 'all' =>
+  usable(() => fields<GroupsChangedPayload>(payload).optList('room_ids'))?.filter(isGroupId) ?? 'all'
+
 /**
- * A room as a list or a create reply carries it. null: a room Highwing cannot use, left out of the list. A seat with
- * no `member_id`, `profile` or `handle`, as a room from before Hermes normalised rosters may hold, makes the whole
- * room unusable, because nothing could say who is in it.
+ * A room as a list, a state or a create reply carries it. null: a room Highwing cannot use, left out of the list. A
+ * seat with no `member_id`, `profile` or `handle`, as a room from before Hermes normalised rosters may hold, makes the
+ * whole room unusable, because nothing could say who is in it.
  */
-export function parseGroupRow(room: Room): GroupRow | null {
+export function parseGroupFacts(room: Room): GroupFacts | null {
   return usable(() => {
     const read = fields<Room>(room)
     const id = read.str('room_id')
     const name = words(read.raw('name'))
     const seats = read.optList('members')
     if (!isGroupId(id) || name === null || seats === null) throw new Unusable()
-    return { id, name, members: seats.map(seatOf) }
+    return { id, name, members: seats.map(seatOf), latestSeq: read.optInt('latest_seq'), epoch: read.optInt('authority_epoch') }
   })
 }
 
@@ -1643,9 +1652,65 @@ export function parseGroupRow(room: Room): GroupRow | null {
  * One `groups.list` page holds every live group: Hermes keeps at most 256 (`MAX_ACTIVE_ROOMS`) and pages 500 by
  * default (`MAX_ROOM_LIST_LIMIT`, gateway/hosted_rooms.py:46-47), so `next_offset` never names a second page.
  */
-export function parseGroupList(reply: GroupsListResult): readonly GroupRow[] {
+export function parseGroupList(reply: GroupsListResult): readonly GroupFacts[] {
   const rooms = isObject(reply) && Array.isArray(reply.rooms) ? reply.rooms as readonly Room[] : []
-  return rooms.flatMap(room => parseGroupRow(room) ?? [])
+  return rooms.flatMap(room => parseGroupFacts(room) ?? [])
 }
 
-export const parseGroupMade = (reply: GroupsCreateResult): GroupRow | null => (isObject(reply) ? parseGroupRow(reply.room) : null)
+export const parseGroupMade = (reply: GroupsCreateResult): GroupFacts | null => (isObject(reply) ? parseGroupFacts(reply.room) : null)
+
+const DOING: { readonly [status: string]: (tool: string | null) => Answering['doing'] } = {
+  queued: () => 'waiting',
+  running: tool => (tool === null ? 'thinking' : 'working'),
+  stopping: () => 'stopping'
+}
+
+function answeringOf(raw: unknown): Answering | null {
+  return usable(() => {
+    const task = fields<RoomMemberActivity>(raw)
+    const status = task.str('status')
+    const tool = words(task.raw('tool'))
+    if (!Object.hasOwn(DOING, status)) return null
+    return { member: task.str('member_id') as MemberId, doing: DOING[status]!(tool), tool }
+  })
+}
+
+/** `change_events` absent: Hermes does not push (gateway/hosted_room_context.py:52-63). */
+export function parseGroupState(reply: GroupsStateResult): { readonly facts: GroupFacts; readonly answering: readonly Answering[]; readonly pushes: boolean } | null {
+  if (!isObject(reply)) return null
+  const facts = parseGroupFacts(reply.room)
+  if (facts === null) return null
+  const tasks = isObject(reply.driver_status) && Array.isArray(reply.driver_status.member_activity) ? reply.driver_status.member_activity : []
+  return { facts, answering: tasks.flatMap(task => answeringOf(task) ?? []), pushes: reply.change_events === true }
+}
+
+const SILENT: { readonly [kind: string]: (payload: { readonly [key: string]: unknown }) => Pick<Extract<GroupEvent, { kind: 'silent' }>, 'why' | 'detail'> } = {
+  'turn.failed': payload => ({ why: 'failed', detail: words(payload.error) }),
+  'turn.cancelled': payload => ({ why: payload.reason === 'superseded_by_newer_user_event' ? 'superseded' : 'stopped', detail: null })
+}
+
+function groupEventOf(raw: unknown): GroupEvent | null {
+  return usable(() => {
+    const event = fields<RoomEvent>(raw)
+    const kind = event.str('kind')
+    const payload = event.optObj('payload') ?? {}
+    const line = { seq: event.int('seq'), at: (event.optNum('created_at') ?? 0) * 1000 }
+    if (kind === 'message.user') return { kind: 'said', ...line, id: event.str('event_id'), text: stripAnsi(fields<{ text: string }>(payload).str('text')) }
+    if (kind !== 'message.member' && !Object.hasOwn(SILENT, kind)) return null
+    const turn = fields<{ member_id: string; discussion_event_id: string; text: string }>(payload)
+    const said = { ...line, member: turn.str('member_id') as MemberId, about: turn.str('discussion_event_id') }
+    return kind === 'message.member' ? { kind: 'reply', ...said, text: stripAnsi(turn.str('text')) } : { kind: 'silent', ...said, ...SILENT[kind]!(payload) }
+  })
+}
+
+export function parseGroupPage(reply: GroupsLogResult): { readonly events: readonly GroupEvent[]; readonly cursor: number; readonly more: boolean; readonly epoch: number | null } | null {
+  return usable(() => {
+    const page = fields<GroupsLogResult>(reply)
+    const events = page.optList('events') ?? []
+    const authority = page.optObj('authority')
+    return {
+      events: events.flatMap(event => groupEventOf(event) ?? []), cursor: page.int('cursor'), more: page.optBool('has_more') === true,
+      epoch: authority === null ? null : fields<{ epoch: number }>(authority).optInt('epoch')
+    }
+  })
+}

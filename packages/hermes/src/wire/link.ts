@@ -190,13 +190,14 @@ export class Offline extends Error {}
  * `projects.tree` reaches its legacy handler the same way (tui_gateway/methods_config.py:137), and a -32601 from it
  * means this Hermes cannot say which chats were branched from which.
  * The canonical route serves every `groups.*` method (`GROUP_METHODS`, gateway/session_group_controls.py:15-35), though of
- * the three Highwing calls the contract lists only `groups.create` as canonical (tui_gateway/contracts/canonical_projections.py:126). A -32601 from `groups.capabilities` means this Hermes has no group chats.
+ * the calls Highwing makes the contract lists only `groups.create` as canonical (tui_gateway/contracts/canonical_projections.py:126). A -32601 from `groups.capabilities` means this Hermes has no group chats.
  */
 export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'connection.respond' | 'connectors.connect' | 'complete.path' | 'file.attach' |
   'profiles.create' | 'profiles.describe' | 'profiles.configure' | 'profiles.set_asset' | 'profiles.get_asset' | 'projects.tree' |
   'prompt.btw' | 'prompt.background' | 'process.list' | 'process.kill' | 'subagent.interrupt' | 'session.control.read' | 'session.control' | 'rollback.list' |
-  'rollback.diff' | 'rollback.restore' | 'message.react' | 'groups.capabilities' | 'groups.list' | 'image.generate' | 'pet.gallery' | 'pet.thumb'>
+  'rollback.diff' | 'rollback.restore' | 'message.react' | 'groups.capabilities' | 'groups.list' | 'groups.state' | 'groups.log' | 'groups.send' | 'groups.stop' |
+  'image.generate' | 'pet.gallery' | 'pet.thumb'>
 export type Method = keyof Served
 
 export type Requested = ServerRequestMap

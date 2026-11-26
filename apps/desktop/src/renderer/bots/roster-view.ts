@@ -1,4 +1,4 @@
-import { shownUnasked, type Bot, type BotId, type Bots, type BotSection, type Link, type OpenChat } from '@highwing/hermes/domain'
+import { shownChat, shownUnasked, type Bot, type BotId, type Bots, type BotSection, type Link, type OpenChat } from '@highwing/hermes/domain'
 
 /** What the list under the header shows. */
 export type ListView =
@@ -53,7 +53,7 @@ export function newBotBlock(link: Link | undefined, bots: Bots | undefined): str
 
 /** The highlighted bot: the bot of the open chat while the roster lists it, else none. */
 export function selectedIn(bots: Bots | undefined, open: OpenChat | undefined): BotId | null {
-  const bot = open?.shown?.bot ?? null
+  const bot = shownChat(open)?.bot ?? null
   return bot !== null && botIn(bots, bot) !== null ? bot : null
 }
 

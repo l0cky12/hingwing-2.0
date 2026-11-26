@@ -1,5 +1,5 @@
 import type { Hermes } from '@highwing/hermes'
-import type { OpenChat, Session, SessionId, SettledTurn, TurnId } from '@highwing/hermes/domain'
+import { shownChat, type OpenChat, type Session, type SessionId, type SettledTurn, type TurnId } from '@highwing/hermes/domain'
 import { failureWords } from '@highwing/thread'
 import { appendFile } from 'node:fs/promises'
 import type { ConnectionOwner } from './connection'
@@ -78,7 +78,7 @@ export function notifyTurnEnds(owner: Pick<ConnectionOwner, 'setup' | 'hermes'>,
     let shown: SessionId | null = null
     let unwatch = () => {}
     const follow = (open: OpenChat) => {
-      const next = open.shown?.sessionId ?? null
+      const next = shownChat(open)?.sessionId ?? null
       if (next === shown) return
       unwatch()
       shown = next

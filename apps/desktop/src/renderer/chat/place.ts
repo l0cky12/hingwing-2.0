@@ -8,6 +8,8 @@ export type Place =
 export const FOLLOWING: Place = { kind: 'following' }
 
 export const FOLLOW_WITHIN = 60
+
+export const distanceFrom = (element: HTMLElement) => element.scrollHeight - element.scrollTop - element.clientHeight
 const FAR_BEYOND = 80
 
 export function placeAfter(held: Place, distance: number, progress: string): Place {

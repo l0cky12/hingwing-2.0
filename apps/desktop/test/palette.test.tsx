@@ -1,4 +1,4 @@
-import type { BotId, Link, OpenChat, Session, SessionId, SidebarRow, Target } from '@highwing/hermes/domain'
+import type { BotId, GroupId, Link, OpenChat, Session, SessionId, SidebarRow, Target } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { ACTIONS, type ActionRow, type Scene } from '../src/renderer/palette/actions'
@@ -114,6 +114,14 @@ describe('the actions', () => {
     expect(offered('stop', sceneOf([], { openSession: running('offline') })), 'offline').toBeNull()
     expect(offered('stop', sceneOf([], { openSession: idle })), 'idle').toBeNull()
     expect(offered('stop', sceneOf([], { openSession: running('live'), open: showing(null) })), 'no chat made yet').toBeNull()
+  })
+
+  it('offers no Stop and a new chat with the bot behind a group chat while one is open, and leaves no chat out as the open one', () => {
+    const grouped: OpenChat = { shown: { kind: 'group', group: 'launch-plan' as GroupId, over: RESEARCH }, opening: null, missing: null }
+    expect(offered('stop', sceneOf([], { open: grouped, openSession: running('live') }))).toBeNull()
+    expect(offered('new-chat', sceneOf([], { open: grouped }))).toEqual({ do: 'open', ref: { kind: 'new', bot: RESEARCH, draftId: 'draft-1' } })
+    const recent = paletteOf(sceneOf([row(OPEN, 'Open chat'), SORT], { open: grouped }), '')
+    expect(keysIn(recent).filter(key => key.startsWith('chat:'))).toHaveLength(2)
   })
 
   it('offers Open Connection only with a connection to change', () => {

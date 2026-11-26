@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { BotId } from '../src/domain/bots'
-import type { GroupDraft, GroupId } from '../src/domain/groups'
+import type { GroupChat, GroupDraft, GroupId } from '../src/domain/groups'
+import { shownChat } from '../src/domain/open'
 import type { AttachmentId, BranchId, Item, PromptId, RequestId, Session, SessionId } from '../src/domain/session'
 import { DialError, openHermes, RETAIN_MS, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { MASKED, play, scriptedDialer, type Fixture, type FixtureStep, type Moment, type ScriptOptions } from '../src/testing/fixture'
+import { MASKED, play, scriptedDialer, type Fixture, type FixtureStep, type GroupsScript, type Moment, type ScriptOptions } from '../src/testing/fixture'
 import {
-  BOUND, BRANCH, BRANCH_COMPACTED, BRANCH_OLD, callsIn, DOWNLOADS, EDIT_COMPACTED, ERRAND, INVOICES, LAUNCH, LAUNCH_NO_GROUPS, NO_HOME_CHAT, NO_TREE, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, RAE_SAID,
+  BOUND, BRANCH, BRANCH_COMPACTED, BRANCH_OLD, callsIn, DOWNLOADS, EDIT_COMPACTED, ERRAND, INVOICES, LAUNCH, LAUNCH_GROUP, LAUNCH_NO_GROUPS, NO_HOME_CHAT, NO_TREE, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, RAE_SAID,
   REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, SORTED, SORTED_2, SORTED_3, SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, withGroups, withSteps
 } from './support/errand'
 
@@ -1353,7 +1354,7 @@ describe('the pane', () => {
 
   it('drops an ask from a chat the window does not show', async () => {
     const hidden = await asked(asking('preview.open', OPEN), opened => opened.hermes.run({ do: 'open', ref: { kind: 'new', bot: null, draftId: 'draft-1' } }))
-    expect(hidden.hermes.open.get().shown?.sessionId).toBeNull()
+    expect(shownChat(hidden.hermes.open.get())?.sessionId).toBeNull()
     expect(hidden.asks).toEqual([])
     expect((await asked(asking('preview.open', OPEN, 'local-elsewhere'))).asks).toEqual([])
   })
@@ -1438,15 +1439,18 @@ describe('group chats', () => {
     })
   })
 
-  it('are listed with their seats, most recently changed first, with the bots Hermes would seat', async () => {
+  it('are listed with their seats, most recently changed first, with the bots Hermes would seat and who is answering in each', async () => {
     const opened = await launched(withGroups({ seatable: ['default', 'sam', 'juno'], rooms: [{ id: 'launch-plan', name: 'Launch plan', members: [{ profile: 'default', handle: 'ada' }, { profile: 'sam', handle: 'sam' }] }, STANDUP] }))
     expect(opened.hermes.groups.get()).toEqual({
       state: 'listed', driver: true, seatable: ['default', 'juno', 'sam'], rows: [
-        { id: 'launch-plan', name: 'Launch plan', members: [{ id: 'default', bot: 'default', handle: 'ada', name: 'ada' }, { id: 'sam', bot: 'sam', handle: 'sam', name: 'sam' }] },
-        { id: 'standup', name: 'Standup', members: [{ id: 'otto', bot: 'otto', handle: 'otto', name: 'otto' }, { id: 'mia', bot: 'mia', handle: 'mia', name: 'mia' }] }
+        { id: 'launch-plan', name: 'Launch plan', members: [{ id: 'default', bot: 'default', handle: 'ada', name: 'ada' }, { id: 'sam', bot: 'sam', handle: 'sam', name: 'sam' }], answering: [] },
+        { id: 'standup', name: 'Standup', members: [{ id: 'otto', bot: 'otto', handle: 'otto', name: 'otto' }, { id: 'mia', bot: 'mia', handle: 'mia', name: 'mia' }], answering: [] }
       ]
     })
-    expect(groupCalls(opened), 'both on the socket\'s own profile').toEqual([{ method: 'groups.capabilities', params: {} }, { method: 'groups.list', params: {} }])
+    expect(groupCalls(opened), 'all on the socket\'s own profile, and no log of a group nobody looks at').toEqual([
+      { method: 'groups.capabilities', params: {} }, { method: 'groups.list', params: {} },
+      { method: 'groups.state', params: { room_id: 'launch-plan' } }, { method: 'groups.state', params: { room_id: 'standup' } }
+    ])
   })
 
   it('list a new group first as soon as Hermes makes it, each bot asked by the name the sidebar shows', async () => {
@@ -1522,5 +1526,259 @@ describe('group chats', () => {
     await opened.hermes.run({ do: 'reconnect', start: true })
     await opened.clock.advance(0)
     expect(rows(opened)).toEqual([])
+  })
+})
+
+describe('a group chat', () => {
+  const PLAN = 'launch-plan' as GroupId
+  const ROOM = { id: PLAN, name: 'Launch plan', members: [{ profile: 'default', handle: 'ada' }, { profile: 'sam', handle: 'sam' }, { profile: 'juno', handle: 'juno' }] }
+  const STANDUP = { id: 'standup', name: 'Standup', members: [{ profile: 'otto', handle: 'otto' }, { profile: 'mia', handle: 'mia' }] }
+  const ASK = 'Can we ship the login fix on Thursday? Sam, how close is it? Juno, what else is on that release?'
+  const replies = Object.fromEntries(Object.entries(LAUNCH_GROUP.header.groups?.turns ?? {}).map(([profile, [first]]) => [profile, first !== undefined && 'reply' in first ? first.reply : '']))
+  const room = (more: GroupsScript = {}) => withGroups({ rooms: [ROOM], ...more })
+
+  const readOf = (chat: GroupChat | null) => (chat?.at === 'read' ? chat : null)
+  const thread = (chat: GroupChat | null) => readOf(chat)?.events.map(event => (event.kind === 'said' ? ['said', event.text] : [event.member, event.kind === 'reply' ? event.text : event.why])) ?? null
+  const who = (chat: GroupChat | null) => readOf(chat)?.answering.map(turn => [turn.member, turn.doing]) ?? null
+
+  async function shown(fixture: Fixture = LAUNCH_GROUP, options: Partial<HermesOptions> = {}) {
+    const opened = open(fixture, options)
+    await opened.clock.advance(0)
+    expect(await opened.hermes.run({ do: 'open', ref: { kind: 'group', group: PLAN } })).toEqual({ ok: true, value: null })
+    await opened.clock.advance(0)
+    const chat = () => opened.hermes.groupChat.get()
+    const calls = (method: string) => opened.sent().filter(call => call.method === method)
+    const say = (text: string, group = PLAN) => opened.hermes.run({ do: 'sendToGroup', group, text })
+    return { ...opened, chat, calls, say }
+  }
+
+  function dropping(...gateways: Fixture[]) {
+    const clock = manualClock()
+    const scripts = gateways.map(fixture => scriptedDialer(fixture, { clock }))
+    let socket: WireSocket | null = null
+    let dials = 0
+    const dial: Dialer = async request => (socket = await scripts[Math.min(dials++, scripts.length - 1)]!(request))
+    const hermes = openHermes({ dial, clock, client: CLIENT })
+    const sent = () => scripts.flatMap(script => callsIn(script.received))
+    return { clock, hermes, scripts, sent, drop: () => socket?.onClose?.(1006, 'dropped') }
+  }
+
+  it('shows who is thinking, then each reply in roster order, and a member a reply asks for answers again', async () => {
+    const opened = await shown()
+    expect(opened.chat()).toEqual({ group: PLAN, at: 'read', name: 'Launch plan', members: expect.any(Array), events: [], earlier: false, answering: [], sending: [] })
+    expect(await opened.say(ASK)).toEqual({ ok: true, value: undefined })
+    await opened.clock.advance(0)
+    expect(thread(opened.chat())).toEqual([['said', ASK]])
+    expect(who(opened.chat()), 'Ada is thinking').toEqual([['default', 'thinking']])
+    await opened.clock.advance(900)
+    expect(thread(opened.chat())).toEqual([['said', ASK], ['default', replies.default]])
+    expect(who(opened.chat())).toEqual([['sam', 'thinking']])
+    await opened.clock.advance(1_800)
+    expect(thread(opened.chat())).toEqual([['said', ASK], ['default', replies.default], ['sam', replies.sam], ['juno', replies.juno]])
+    expect(who(opened.chat()), "Juno's @sam gives Sam another turn").toEqual([['sam', 'thinking']])
+    expect(opened.hermes.groups.get(), 'the sidebar row says so too').toMatchObject({ rows: [{ id: PLAN, answering: [{ member: 'sam', doing: 'thinking' }] }] })
+    expect(opened.calls('groups.send').map(call => call.params)).toEqual([{ room_id: PLAN, event_id: expect.any(String), payload: { text: ASK, thread_id: 'main' } }])
+  })
+
+  it('stops the member that is answering, and shows that it was stopped', async () => {
+    const opened = await shown()
+    await opened.say(ASK)
+    await opened.clock.advance(2_700)
+    expect(who(opened.chat())).toEqual([['sam', 'thinking']])
+    expect(await opened.hermes.run({ do: 'stopGroup', group: PLAN })).toEqual({ ok: true, value: undefined })
+    await opened.clock.advance(0)
+    expect(who(opened.chat())).toEqual([])
+    expect(thread(opened.chat())?.at(-1)).toEqual(['sam', 'stopped'])
+    expect(opened.hermes.groups.get()).toMatchObject({ rows: [{ id: PLAN, answering: [] }] })
+    expect(opened.calls('groups.stop').map(call => call.params)).toEqual([{ room_id: PLAN, cancel_id: expect.any(String) }])
+  })
+
+  it('shows a reply a newer message came before as not posted, under the message it answered, and then the newer one\'s', async () => {
+    const opened = await shown(room({ turns: { default: [{ reply: 'Thursday.', delay_ms: 900 }, { reply: 'Friday, then.', delay_ms: 900 }] } }))
+    await opened.say('Ship Thursday?')
+    await opened.clock.advance(300)
+    await opened.say('Or Friday?')
+    await opened.clock.advance(0)
+    expect(who(opened.chat()), "Hermes lets Ada's first turn run on").toEqual([['default', 'thinking']])
+    await opened.clock.advance(600)
+    expect(thread(opened.chat())).toEqual([['said', 'Ship Thursday?'], ['said', 'Or Friday?'], ['default', 'superseded']])
+    const [first, , late] = readOf(opened.chat())?.events ?? []
+    expect(late, 'it answered the first message').toMatchObject({ kind: 'silent', about: first?.kind === 'said' ? first.id : null })
+    await opened.clock.advance(900)
+    expect(thread(opened.chat())?.at(-1)).toEqual(['default', 'Friday, then.'])
+    expect(new Set(opened.calls('groups.send').map(call => (call.params?.payload as { thread_id: string }).thread_id)), 'one thread for every message').toEqual(new Set(['main']))
+  })
+
+  it('reads a group again when Hermes says it moved, with a slow backstop behind the pushes', async () => {
+    const opened = await shown()
+    await opened.say(ASK)
+    await opened.clock.advance(900)
+    expect(thread(opened.chat())?.at(-1), 'the reply lands with the push, not at the next poll').toEqual(['default', replies.default])
+    await opened.clock.advance(1_800)
+    const states = opened.calls('groups.state').length
+    await opened.clock.advance(14_999)
+    expect(opened.calls('groups.state')).toHaveLength(states)
+    await opened.clock.advance(1)
+    expect(opened.calls('groups.state')).toHaveLength(states + 1)
+  })
+
+  it('lists a group another client made as soon as Hermes says it moved', async () => {
+    const opened = await shown(room())
+    const other = opened.client()
+    await opened.clock.advance(0)
+    expect(await other.run({ do: 'createGroup', draft: { group: 'standup' as GroupId, name: 'Standup', bots: ['otto', 'mia'] as BotId[] } })).toEqual({ ok: true, value: undefined })
+    await opened.clock.advance(0)
+    expect(opened.hermes.groups.get()).toMatchObject({ rows: [{ id: 'standup' }, { id: PLAN }] })
+  })
+
+  it('asks every 2 s on a Hermes that does not push, only while a group is shown or busy, and then not at all', async () => {
+    const opened = await shown(room({ change_events: false, turns: { default: [{ reply: 'Thursday.', delay_ms: 900 }] } }))
+    await opened.say('Ship Thursday?')
+    await opened.clock.advance(1_999)
+    expect(thread(opened.chat()), 'nothing pushed, and the next ask is due at 2 s').toEqual([['said', 'Ship Thursday?']])
+    await opened.clock.advance(1)
+    expect(thread(opened.chat())?.at(-1)).toEqual(['default', 'Thursday.'])
+    const shownStates = opened.calls('groups.state').length
+    await opened.clock.advance(10_000)
+    expect(opened.calls('groups.state').length - shownStates, 'a shown group is asked about every 2 s').toBe(5)
+
+    await opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: 'default' as BotId } })
+    const idle = opened.calls('groups.state').length
+    await opened.clock.advance(60_000)
+    expect(opened.calls('groups.state'), 'nothing shown and nothing busy').toHaveLength(idle)
+  })
+
+  it('keeps asking about a busy group nobody looks at on a Hermes that does not push, until nobody answers in it', async () => {
+    const opened = await shown(room({ change_events: false, turns: { default: [{ reply: 'Thursday.', delay_ms: 5_000 }] } }))
+    await opened.say('Ship Thursday?')
+    await opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: 'default' as BotId } })
+    await opened.clock.advance(4_000)
+    expect(opened.hermes.groups.get()).toMatchObject({ rows: [{ answering: [{ member: 'default' }] }] })
+    await opened.clock.advance(2_000)
+    expect(opened.hermes.groups.get()).toMatchObject({ rows: [{ answering: [] }] })
+    const idle = opened.calls('groups.state').length
+    await opened.clock.advance(60_000)
+    expect(opened.calls('groups.state')).toHaveLength(idle)
+    expect(opened.calls('groups.log').every(call => call.params?.room_id === PLAN)).toBe(true)
+  })
+
+  it.each([
+    ['a new authority epoch', { epoch: 2, log: [{ user: 'Ship it?' }, { member: 'juno', text: 'Not yet.' }, { user: 'When?' }] }, [['said', 'Ship it?'], ['juno', 'Not yet.'], ['said', 'When?']]],
+    ['a log that now ends before where Highwing read to', { log: [{ user: 'Fresh start' }] }, [['said', 'Fresh start']]]
+  ])('reads the log again from the start after %s, and shows each line once', async (_, after, then) => {
+    const before = room({ rooms: [{ ...ROOM, log: [{ user: 'Ship it?' }, { member: 'sam', text: 'Yes.' }] }] })
+    const opened = dropping(before, room({ rooms: [{ ...ROOM, ...after }] }))
+    await opened.clock.advance(0)
+    await opened.hermes.run({ do: 'open', ref: { kind: 'group', group: PLAN } })
+    await opened.clock.advance(0)
+    expect(thread(opened.hermes.groupChat.get())).toEqual([['said', 'Ship it?'], ['sam', 'Yes.']])
+    opened.drop()
+    await opened.clock.advance(1_000)
+    expect(opened.hermes.link.get()).toEqual({ state: 'online' })
+    expect(thread(opened.hermes.groupChat.get())).toEqual(then)
+  })
+
+  it('reads every listed group on a new socket, so a group that got busy meanwhile says who is answering', async () => {
+    const opened = dropping(withGroups({ change_events: false, rooms: [ROOM, STANDUP], turns: { default: [{ hold: true }] } }))
+    await opened.clock.advance(0)
+    expect(opened.hermes.groups.get()).toMatchObject({ rows: [{ id: PLAN, answering: [] }, { id: 'standup', answering: [] }] })
+    const other = openHermes({ dial: opened.scripts[0]!, clock: opened.clock, client: CLIENT })
+    await opened.clock.advance(0)
+    expect(await other.run({ do: 'sendToGroup', group: PLAN, text: 'Ship it?' })).toEqual({ ok: true, value: undefined })
+    await opened.clock.advance(60_000)
+    expect(opened.hermes.groups.get(), 'no push, and nothing shown or busy to ask about').toMatchObject({ rows: [{ id: PLAN, answering: [] }, { id: 'standup', answering: [] }] })
+    const states = (room: string) => opened.sent().filter(call => call.method === 'groups.state' && call.params?.room_id === room).length
+    const before = [states(PLAN), states('standup')]
+    opened.drop()
+    await opened.clock.advance(1_000)
+    expect([states(PLAN), states('standup')]).toEqual(before.map(count => count + 1))
+    expect(opened.hermes.groups.get()).toMatchObject({ rows: [{ id: PLAN, answering: [{ member: 'default', doing: 'thinking' }] }, { id: 'standup', answering: [] }] })
+  })
+
+  it('refuses a message and a Stop while Hermes is not running group chats, in words, and sends neither', async () => {
+    const opened = await shown(room({ driver: false }))
+    const words = { ok: false, refusal: { kind: 'rejected', message: "Hermes isn't running group chats right now." } }
+    expect(await opened.say('Ship it?')).toEqual(words)
+    expect(await opened.hermes.run({ do: 'stopGroup', group: PLAN })).toEqual(words)
+    expect([...opened.calls('groups.send'), ...opened.calls('groups.stop')]).toEqual([])
+    expect(readOf(opened.chat())?.sending).toEqual([])
+  })
+
+  it('refuses text over 64 KB before Hermes is asked, and sends text of exactly that size', async () => {
+    const opened = await shown(room())
+    expect(await opened.say('é'.repeat(32_769))).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'This message is too long for a group chat. Hermes takes up to 64 KB of text.' } })
+    expect(opened.calls('groups.send')).toEqual([])
+    expect(await opened.say('a'.repeat(65_536))).toEqual({ ok: true, value: undefined })
+  })
+
+  it('sends the same words again under the same key after an answer that never came, so Hermes keeps one message', async () => {
+    let keys = 0
+    const clock = manualClock()
+    const script = scriptedDialer(room(), { clock })
+    let lost: number | null = null
+    const dial: Dialer = async request => {
+      const socket = await script(request)
+      return {
+        reach: socket.reach,
+        send: text => {
+          const frame = JSON.parse(text) as { id: number; method: string }
+          if (frame.method === 'groups.send' && lost === null) lost = frame.id
+          socket.send(text)
+        },
+        close: () => socket.close(),
+        get onText() { return socket.onText },
+        set onText(listener) { socket.onText = listener && (text => (lost !== null && text.includes(`"id":${lost},`) ? undefined : listener(text))) },
+        get onClose() { return socket.onClose },
+        set onClose(listener) { socket.onClose = listener }
+      } satisfies WireSocket
+    }
+    const hermes = openHermes({ dial, clock, client: CLIENT, mintId: () => `key-${++keys}` })
+    await clock.advance(0)
+    await hermes.run({ do: 'open', ref: { kind: 'group', group: PLAN } })
+    await clock.advance(0)
+    const first = hermes.run({ do: 'sendToGroup', group: PLAN, text: 'Ship it?' })
+    await clock.advance(10_000)
+    expect(await first).toEqual({ ok: false, refusal: { kind: 'offline', message: "Highwing isn't connected to Hermes right now." } })
+    expect(readOf(hermes.groupChat.get())?.sending, 'the words stay in the box, not in the thread').toEqual([])
+    expect(await hermes.run({ do: 'sendToGroup', group: PLAN, text: 'Ship it?' })).toEqual({ ok: true, value: undefined })
+    await clock.advance(0)
+    expect(await hermes.run({ do: 'sendToGroup', group: PLAN, text: 'And Friday?' })).toEqual({ ok: true, value: undefined })
+    await clock.advance(0)
+    const sends = callsIn(script.received).filter(call => call.method === 'groups.send').map(call => call.params?.event_id)
+    expect(sends).toEqual([sends[0], sends[0], expect.not.stringMatching(String(sends[0]))])
+    expect(thread(hermes.groupChat.get())?.filter(([kind]) => kind === 'said')).toEqual([['said', 'Ship it?'], ['said', 'And Friday?']])
+  })
+
+  it('shows a group it makes at once, over the chat it was made from', async () => {
+    const opened = open(room({ rooms: [] }))
+    await opened.clock.advance(0)
+    const draft = { group: PLAN, name: 'Launch plan', bots: ['default', 'sam'] as BotId[] }
+    expect(await opened.hermes.run({ do: 'createGroup', draft })).toEqual({ ok: true, value: undefined })
+    expect(opened.hermes.open.get().shown).toEqual({ kind: 'group', group: PLAN, over: 'default' })
+    await opened.clock.advance(0)
+    expect(opened.hermes.groupChat.get()).toMatchObject({ group: PLAN, at: 'read', name: 'Launch plan', events: [] })
+  })
+
+  it('keeps the Chats column on the bot it was opened over, and shows no chat while a group is open', async () => {
+    const opened = open(room())
+    await opened.clock.advance(0)
+    await opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: 'sam' as BotId } })
+    await opened.clock.advance(0)
+    const lists = opened.sent().filter(call => call.method === 'session.list').length
+    await opened.hermes.run({ do: 'open', ref: { kind: 'group', group: PLAN } })
+    await opened.clock.advance(0)
+    expect(opened.hermes.open.get().shown).toEqual({ kind: 'group', group: PLAN, over: 'sam' })
+    expect(shownChat(opened.hermes.open.get())).toBeNull()
+    expect(opened.hermes.sidebar.get().bot).toBe('sam')
+    expect(opened.sent().filter(call => call.method === 'session.list'), 'no list of another bot\'s chats').toHaveLength(lists)
+  })
+
+  it('says a group Hermes does not have is missing, and refuses a message to it', async () => {
+    const opened = open(room())
+    await opened.clock.advance(0)
+    await opened.hermes.run({ do: 'open', ref: { kind: 'group', group: 'disbanded' as GroupId } })
+    await opened.clock.advance(0)
+    expect(opened.hermes.groupChat.get()).toEqual({ group: 'disbanded', at: 'missing' })
+    expect(await opened.hermes.run({ do: 'sendToGroup', group: 'disbanded' as GroupId, text: 'Anyone?' })).toEqual({ ok: false, refusal: { kind: 'stale', message: 'Hermes no longer has this group chat.' } })
   })
 })

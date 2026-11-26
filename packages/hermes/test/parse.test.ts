@@ -9,7 +9,7 @@ import type {
 } from '../src/wire/contract.generated'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 import {
-  FOR_WINDOW, parseBranched, parseContextBreakdown, parseEvent, parseGroupList, parseGroupMade, parseGroupSupport, parseInlineDiff, parseUserChats, parseModelMenu, parseModelReceipt, parsePathMatches,
+  FOR_WINDOW, parseBranched, parseContextBreakdown, parseEvent, parseGroupList, parseGroupMade, parseGroupPage, parseGroupState, parseGroupSupport, parseInlineDiff, parseUserChats, parseModelMenu, parseModelReceipt, parsePathMatches,
   parseReplay, parseRows, parseServerRequest, parseShown, parseSnapshot, parseStats, parseToolResult, parseTranscript, SHOWN, UNSHOWN
 } from '../src/wire/parse'
 
@@ -220,7 +220,7 @@ describe('parseEvent outside the happy path', () => {
   })
 
   it('covers every generated event type as shown, for the window, unshown or app-wide', () => {
-    const unlisted = GATEWAY_EVENT_TYPES.filter(type => !(type in SHOWN) && !(type in FOR_WINDOW) && !UNSHOWN.has(type) && parseEvent({ type }).scope !== 'app')
+    const unlisted = GATEWAY_EVENT_TYPES.filter(type => !(type in SHOWN) && !(type in FOR_WINDOW) && !UNSHOWN.has(type) && !['app', 'groups'].includes(parseEvent({ type }).scope))
     expect(unlisted).toEqual([])
     expect([...Object.keys(SHOWN), ...Object.keys(FOR_WINDOW)].filter(type => UNSHOWN.has(type))).toEqual([])
   })
@@ -1006,7 +1006,7 @@ describe('group chats, parsed', () => {
 
   it('reads a room as its id, its name and its seats in the order they answer', () => {
     expect(parseGroupList({ rooms: [room()], next_offset: null })).toEqual([{
-      id: 'launch-plan', name: 'Launch plan',
+      id: 'launch-plan', name: 'Launch plan', latestSeq: 0, epoch: 1,
       members: [{ id: 'default', bot: 'default', handle: 'ada', name: 'ada' }, { id: 'sam', bot: 'sam', handle: 'sam', name: 'Sam the fixer' }]
     }])
     expect(parseGroupMade({ room: room() })?.id).toBe('launch-plan')
@@ -1026,6 +1026,50 @@ describe('group chats, parsed', () => {
     expect(parseGroupList(null as never)).toEqual([])
     expect(parseGroupList({ rooms: 'none' } as never)).toEqual([])
     expect(parseGroupMade({} as never)).toBeNull()
+  })
+
+  it('reads who is answering from the driver, a tool as working, and nothing it cannot use', () => {
+    const activity = [
+      { member_id: 'sam', status: 'running', thread_id: 'main', progress_at: 99 }, { member_id: 'juno', status: 'running', tool: 'terminal' },
+      { member_id: 'ada', status: 'queued' }, { member_id: 'mia', status: 'stopping' }, { member_id: 'kit', status: 'parked' }, { status: 'running' }
+    ]
+    expect(parseGroupState({ room: room(), change_events: true, driver_status: { member_activity: activity } as never })).toEqual({
+      facts: expect.objectContaining({ id: 'launch-plan', latestSeq: 0, epoch: 1 }), pushes: true,
+      answering: [
+        { member: 'sam', doing: 'thinking', tool: null }, { member: 'juno', doing: 'working', tool: 'terminal' },
+        { member: 'ada', doing: 'waiting', tool: null }, { member: 'mia', doing: 'stopping', tool: null }
+      ]
+    })
+    expect(parseGroupState({ room: room() }), 'no driver, and a Hermes that does not push').toMatchObject({ answering: [], pushes: false })
+    expect(parseGroupState({ room: room({ room_id: 'has space' }) })).toBeNull()
+  })
+
+  it('reads a log page as the lines the thread draws, the cursor past every line, and the authority epoch', () => {
+    const turn = { member_id: 'sam', discussion_event_id: 'user:1' }
+    const event = (seq: number, kind: string, payload: { readonly [key: string]: unknown }) => ({ room_id: 'launch-plan', seq, event_id: `e${seq}`, kind, actor: { kind: 'user', id: 'user' }, payload, created_at: 10 + seq })
+    expect(parseGroupPage({
+      cursor: 7, latest_seq: 9, has_more: true, authority: { gateway_id: 'gw', epoch: 2 },
+      events: [
+        event(1, 'message.user', { text: 'Ship it?', thread_id: 'main' }), event(2, 'message.member', { ...turn, text: 'Close.\u001b[0m' }), event(3, 'turn.settled', { ...turn, passed: false }),
+        event(4, 'turn.failed', { ...turn, error: 'No model is set up.' }), event(5, 'turn.cancelled', { ...turn, reason: 'superseded_by_newer_user_event' }),
+        event(6, 'turn.cancelled', { ...turn, reason: 'member turn cancelled' }), event(7, 'message.member', { text: 'no seat' })
+      ]
+    })).toEqual({
+      cursor: 7, more: true, epoch: 2,
+      events: [
+        { kind: 'said', seq: 1, at: 11_000, id: 'e1', text: 'Ship it?' },
+        { kind: 'reply', seq: 2, at: 12_000, member: 'sam', about: 'user:1', text: 'Close.' },
+        { kind: 'silent', seq: 4, at: 14_000, member: 'sam', about: 'user:1', why: 'failed', detail: 'No model is set up.' },
+        { kind: 'silent', seq: 5, at: 15_000, member: 'sam', about: 'user:1', why: 'superseded', detail: null },
+        { kind: 'silent', seq: 6, at: 16_000, member: 'sam', about: 'user:1', why: 'stopped', detail: null }
+      ]
+    })
+    expect(parseGroupPage({ events: [] } as never), 'no cursor').toBeNull()
+  })
+
+  it('routes groups.changed by the rooms it names, and every room when it names none', () => {
+    expect(parseEvent({ type: 'groups.changed', payload: { room_ids: ['launch-plan', 'not an id'], broadcast_id: 'p:1' } })).toEqual({ scope: 'groups', rooms: ['launch-plan'] })
+    expect(parseEvent({ type: 'groups.changed', payload: { broadcast_id: 'p:2' } })).toEqual({ scope: 'groups', rooms: 'all' })
   })
 
   it('reads what Hermes can do with groups, and offers every bot when it does not name the seatable ones', () => {

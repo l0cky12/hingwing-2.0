@@ -938,7 +938,10 @@ export class ScriptedGateway {
     this.rooms = fixture.header.groups === undefined ? null : new ScriptedRooms(fixture.header.groups, {
       clock: options.clock,
       profiles: served.length > 0 ? served : [this.home],
-      refuse: (reason, named) => { throw new Refused(reason, { code: 4001, message: reason, data: { reason, ...named } }) },
+      broadcast: frame => {
+        for (const socket of this.sockets) socket.peer.write(frame)
+      },
+      refuse: (reason, data) => { throw new Refused(reason, { code: 4001, message: reason, data: { reason, ...data } }) },
       unserved: method => {
         const unexpected = `the scripted gateway plays no ${method}`
         this.settle.reject(new Error(unexpected))

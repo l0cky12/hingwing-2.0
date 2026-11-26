@@ -1,4 +1,4 @@
-import type { BotId, Bots, Groups, Link, OpenChat, SessionId } from '@highwing/hermes/domain'
+import type { BotId, Bots, GroupId, Groups, Link, OpenChat, SessionId } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { PlusItems } from '../src/renderer/bots/NewMenu'
@@ -34,6 +34,12 @@ describe('the plus menu', () => {
   it('starts the new chat the top bar and the palette start: in the open bot, under the window\'s draft id', () => {
     expect(newChatIn(AT_EMU, 'd1')).toEqual({ do: 'open', ref: { kind: 'new', bot: 'default', draftId: 'd1' } })
     expect(newChatIn(undefined, 'd2')).toEqual({ do: 'open', ref: { kind: 'new', bot: null, draftId: 'd2' } })
+  })
+
+  it('starts the new chat with the bot behind an open group chat, and names that bot', () => {
+    const grouped: OpenChat = { shown: { kind: 'group', group: 'launch-plan' as GroupId, over: 'research' as BotId }, opening: null, missing: null }
+    expect(newChatIn(grouped, 'd3')).toEqual({ do: 'open', ref: { kind: 'new', bot: 'research', draftId: 'd3' } })
+    expect(rowOf('new-chat', { open: grouped }).label).toBe('New chat with Research')
   })
 
   it.each([

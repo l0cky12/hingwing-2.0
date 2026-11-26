@@ -1,5 +1,5 @@
 import { fieldId, parseMarkdown, proseLeaves, type Block, type Inline, type Phrase, type ProseLeaf } from '@highwing/thread'
-import { Fragment, useMemo, type ReactNode } from 'react'
+import { createContext, Fragment, useContext, useMemo, type ReactNode } from 'react'
 import { isWebLink, isWebPage } from '../../ipc-contract'
 import { Code } from './Code'
 import { Diagram } from './Diagram'
@@ -8,6 +8,25 @@ import { Formula } from './Formula'
 import { ThreadImage } from './Image'
 import { WebLink } from './WebLink'
 
+export const MentionHandles = createContext<ReadonlySet<string> | null>(null)
+
+/** `_MENTION_RE` (gateway/hosted_room_discussion.py:43), so a word is set apart exactly when Hermes would route on it. */
+const MENTION = /@([A-Za-z0-9][A-Za-z0-9._:-]*)/g
+
+function Words({ text }: { readonly text: string }) {
+  const handles = useContext(MentionHandles)
+  if (handles === null) return text
+  const parts: ReactNode[] = []
+  let from = 0
+  for (const { 0: word, 1: handle = '', index } of text.matchAll(MENTION)) {
+    if (!handles.has(handle.toLowerCase())) continue
+    parts.push(text.slice(from, index), <span key={index} className="mention">{word}</span>)
+    from = index + word.length
+  }
+  parts.push(text.slice(from))
+  return parts
+}
+
 export function PhraseText({ words }: { readonly words: Phrase }) {
   return words.map((piece, index) => (piece.t === 'code' ? <code key={index}>{piece.v}</code> : <Fragment key={index}>{piece.v}</Fragment>))
 }
@@ -15,7 +34,7 @@ export function PhraseText({ words }: { readonly words: Phrase }) {
 function inline(nodes: readonly Inline[]): ReactNode[] {
   return nodes.map((node, index) => {
     switch (node.t) {
-      case 'text': return <Fragment key={index}>{node.v}</Fragment>
+      case 'text': return <Words key={index} text={node.v} />
       case 'code': return <code key={index}>{node.v}</code>
       case 'strong': return <strong key={index}>{inline(node.children)}</strong>
       case 'em': return <em key={index}>{inline(node.children)}</em>

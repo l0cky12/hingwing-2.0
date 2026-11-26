@@ -14,8 +14,10 @@ export {
 export type { PathMatch } from './path'
 export { mentionedBots, mentionOf, typedMention } from './mention'
 export type { Relay, RelayDesk, RelayId, RelayState } from './relay'
-export type { ChatRef, OpenChat, Shown, Unstarted } from './open'
-export { GROUP_NAME_MAX, GROUP_SIZE, groupIdFor, isGroupId, seatsFor, type GroupDraft, type GroupId, type GroupMember, type GroupRow, type Groups, type MemberId } from './groups'
+export { shownBot, shownChat, shownGroup, type ChatRef, type OpenChat, type Shown, type ShownGroup, type Unstarted } from './open'
+export {
+  GROUP_NAME_MAX, GROUP_SIZE, groupIdFor, isGroupId, seatsFor, type Answering, type GroupChat, type GroupDraft, type GroupEvent, type GroupId, type GroupMember, type GroupRow, type Groups, type MemberId
+} from './groups'
 export type { PaneAsk } from './pane'
 export { label as versionLabel, type ChatVersions, type Landing, type Version, type Versions } from './versions'
 export { modelViewOf, sameModel, type ModelView } from './model'

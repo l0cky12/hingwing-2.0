@@ -611,6 +611,104 @@ describe('the scripted gateway keeps group chats as Hermes does', () => {
   })
 })
 
+describe('the scripted gateway runs a group chat\'s turns as Hermes does', () => {
+  const ROOM = { id: 'launch-plan', name: 'Launch plan', members: [{ profile: 'default', handle: 'ada' }, { profile: 'sam', handle: 'sam' }, { profile: 'juno', handle: 'juno' }] }
+  let keys = 0
+  const said = (text: string, event_id = `key-${++keys}`) => ({ room_id: 'launch-plan', event_id, payload: { text, thread_id: 'main' } })
+  type Logged = { seq: number; kind: string; payload: { member_id?: string; text?: string; reason?: string } }
+  async function room(groups: Parameters<typeof withGroups>[0] = {}) {
+    const socket = await rawSocket({}, withGroups({ rooms: [ROOM], ...groups }))
+    const log = async (since_seq = 0) => ((await socket.call('groups.log', { room_id: 'launch-plan', since_seq, limit: 500 })).result as { events: Logged[] }).events
+    const lines = async () => (await log()).flatMap(({ kind, payload }) =>
+      kind === 'message.user' ? [`user: ${payload.text}`] : kind === 'message.member' ? [`${payload.member_id}: ${payload.text}`] : kind.startsWith('turn.') && kind !== 'turn.settled' ? [`${payload.member_id} ${kind} ${payload.reason ?? ''}`.trim()] : [])
+    const running = async () => ((await socket.call('groups.state', { room_id: 'launch-plan' })).result as { driver_status: { member_activity: { member_id: string }[] } }).driver_status.member_activity.map(task => task.member_id)
+    const pushes = () => socket.frames.filter(frame => (frame as { params?: { type?: string } }).params?.type === 'groups.changed').length
+    return { ...socket, log, lines, running, pushes }
+  }
+
+  it('asks every member in roster order, then a member a reply @mentions, one turn at a time', async () => {
+    const group = await room({ turns: { default: [{ reply: 'Notes.', delay_ms: 100 }], sam: [{ reply: 'Close.', delay_ms: 100 }, { reply: 'Starting it.', delay_ms: 100 }], juno: [{ reply: '@sam start staging.', delay_ms: 100 }] } })
+    expect((await group.call('groups.send', said('Ship it?', 'k1'))).result).toMatchObject({ accepted: true, client_event_id: 'k1', event: { kind: 'message.user', event_id: expect.stringMatching(/^user:[0-9a-f]{64}$/) } })
+    expect(await group.running()).toEqual(['default'])
+    await group.clock.advance(100)
+    expect(await group.running()).toEqual(['sam'])
+    await group.clock.advance(500)
+    expect(await group.lines()).toEqual(['user: Ship it?', 'default: Notes.', 'sam: Close.', 'juno: @sam start staging.', 'sam: Starting it.'])
+    expect(await group.running()).toEqual([])
+  })
+
+  it('asks only the members a message @mentions, and a member with no turn left passes', async () => {
+    const group = await room({ turns: { juno: [{ reply: 'On it.' }] } })
+    await group.call('groups.send', said('@Juno and @nobody: check the export menu'))
+    await group.clock.advance(0)
+    expect(await group.lines()).toEqual(['user: @Juno and @nobody: check the export menu', 'juno: On it.'])
+    await group.call('groups.send', said('Anyone?'))
+    await group.clock.advance(0)
+    expect((await group.lines()).slice(2), 'everyone passed').toEqual(['user: Anyone?'])
+  })
+
+  it('lets a turn a newer message came before run to its end, then logs it cancelled in place of its reply', async () => {
+    const group = await room({ turns: { default: [{ reply: 'Thursday.', delay_ms: 900 }, { reply: 'Friday.', delay_ms: 900 }] } })
+    await group.call('groups.send', said('Ship Thursday?'))
+    await group.clock.advance(300)
+    await group.call('groups.send', said('Or Friday?'))
+    expect(await group.running()).toEqual(['default'])
+    await group.clock.advance(600)
+    expect(await group.lines()).toEqual(['user: Ship Thursday?', 'user: Or Friday?', 'default turn.cancelled superseded_by_newer_user_event'])
+    await group.clock.advance(900)
+    expect((await group.lines()).at(-1)).toBe('default: Friday.')
+  })
+
+  it('keeps a held turn running until a Stop, which fences the log and cancels it', async () => {
+    const group = await room({ turns: { default: [{ hold: true }] } })
+    await group.call('groups.send', said('Ship it?'))
+    await group.clock.advance(60_000)
+    expect(await group.running()).toEqual(['default'])
+    expect((await group.call('groups.stop', { room_id: 'launch-plan', cancel_id: 'stop-1' })).result).toEqual({ cancelled: 1 })
+    expect(await group.running()).toEqual([])
+    expect((await group.log()).slice(-2).map(event => event.kind)).toEqual(['room.stop_requested', 'turn.cancelled'])
+  })
+
+  it('keeps one message per event_id, and refuses a payload Hermes would not take', async () => {
+    const group = await room()
+    const first = (await group.call('groups.send', said('Ship it?', 'k1'))).result as { event: { seq: number } }
+    expect((await group.call('groups.send', said('Ship it?', 'k1'))).result).toMatchObject({ event: { seq: first.event.seq, idempotent: true } })
+    expect((await group.lines()).filter(line => line.startsWith('user:'))).toEqual(['user: Ship it?'])
+    for (const bad of [{ ...said('x'), payload: { text: 'x' } }, { ...said('x'), payload: { text: 'x', thread_id: 'main', color: 1 } }, said('  '), said('é'.repeat(32_769)), said('x', '-bad'), { ...said('x'), room_id: 'nope' }]) {
+      expect(await group.call('groups.send', bad), JSON.stringify(bad).slice(0, 80)).toMatchObject(refusal('invalid_params'))
+    }
+  })
+
+  it('pages the log forward, refuses a read past its end, and says the room\'s epoch', async () => {
+    const group = await room({ rooms: [{ ...ROOM, epoch: 3, log: [{ user: 'a' }, { member: 'sam', text: 'b' }, { user: 'c' }] }] })
+    expect((await group.call('groups.log', { room_id: 'launch-plan', since_seq: 1, limit: 1 })).result).toMatchObject({ cursor: 2, latest_seq: 3, has_more: true, authority: { epoch: 3 } })
+    expect((await group.call('groups.state', { room_id: 'launch-plan' })).result).toMatchObject({ room: { latest_seq: 3, authority_epoch: 3 }, change_events: true })
+    expect(await group.call('groups.log', { room_id: 'launch-plan', since_seq: 4 })).toMatchObject(refusal('invalid_params'))
+    expect(await group.call('groups.state', { room_id: 'nope' })).toMatchObject(refusal('invalid_params'))
+    expect(await group.call('groups.state', { room_id: 'launch-plan', since_seq: 0 })).toMatchObject(refusal('invalid_params'))
+  })
+
+  it('pushes groups.changed after each move, and nothing when the header says it does not', async () => {
+    const pushing = await room({ turns: { default: [{ reply: 'Notes.' }] } })
+    await pushing.call('groups.send', said('Ship it?'))
+    await pushing.clock.advance(0)
+    expect(pushing.pushes()).toBeGreaterThan(0)
+    expect(pushing.frames.find(frame => (frame as { params?: { type?: string } }).params?.type === 'groups.changed')).toMatchObject({ params: { payload: { room_ids: ['launch-plan'] } } })
+    const quiet = await room({ change_events: false, turns: { default: [{ reply: 'Notes.' }] } })
+    await quiet.call('groups.send', said('Ship it?'))
+    await quiet.clock.advance(0)
+    expect(quiet.pushes()).toBe(0)
+    expect((await quiet.call('groups.state', { room_id: 'launch-plan' })).result).not.toHaveProperty('change_events')
+  })
+
+  it('refuses a message and a Stop while it is not running group chats', async () => {
+    const group = await room({ driver: false })
+    expect(await group.call('groups.send', said('Ship it?'))).toMatchObject(refusal('runtime_coordination_required', { admitted: false }))
+    expect(await group.call('groups.stop', { room_id: 'launch-plan', cancel_id: 'stop-1' })).toMatchObject(refusal('runtime_coordination_required'))
+    expect((await group.call('groups.state', { room_id: 'launch-plan' })).result).not.toHaveProperty('driver_status')
+  })
+})
+
 describe('the scripted gateway branches a chat as Hermes does', () => {
   const branch = (more: Record<string, unknown> = {}, payload: Record<string, unknown> = { through_message_id: 4 }) =>
     ({ session_id: SESSION, request_id: 'branch-1', expected_revision: 0, expected_generation: 0, operation: 'branch', payload, ...more })

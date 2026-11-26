@@ -1,0 +1,253 @@
+{
+  "profiles": [
+    {
+      "name": "default",
+      "path": "/tmp/hermes-proto-home",
+      "is_default": true,
+      "model": null,
+      "provider": null,
+      "description": "Default bot. General help",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Ada",
+          "color": "#f5f5f4",
+          "shape": "blobatar::round",
+          "created": 1793000000000
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "sam",
+      "path": "/tmp/hermes-proto-home/profiles/sam",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "Finds and fixes bugs",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0301",
+        "resolved_id": "local-0301",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "Fixed the token refresh bug",
+        "started_at": 1795164600,
+        "last_active": 1795251001,
+        "message_count": 2
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Sam",
+          "color": "#f5f5f4",
+          "shape": "blobatar::round",
+          "created": 1793000000001
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "rae",
+      "path": "/tmp/hermes-proto-home/profiles/rae",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "Writes and edits docs",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Rae",
+          "color": "#f5f5f4",
+          "shape": "blobatar::round",
+          "created": 1793000000002
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "juno",
+      "path": "/tmp/hermes-proto-home/profiles/juno",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "Plans releases",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": {
+        "id": "local-0303",
+        "resolved_id": "local-0303",
+        "root_title": "Bot Chat",
+        "title": "Bot Chat",
+        "preview": "Release checklist is ready",
+        "started_at": 1795164600,
+        "last_active": 1795251003,
+        "message_count": 2
+      },
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Juno",
+          "color": "#f5f5f4",
+          "shape": "blobatar::round",
+          "created": 1793000000003
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "otto",
+      "path": "/tmp/hermes-proto-home/profiles/otto",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "Watches servers and logs",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Otto",
+          "color": "#f5f5f4",
+          "shape": "blobatar::round",
+          "created": 1793000000004
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "mia",
+      "path": "/tmp/hermes-proto-home/profiles/mia",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "Designs screens",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Mia",
+          "color": "#f5f5f4",
+          "shape": "blobatar::round",
+          "created": 1793000000005
+        }
+      },
+      "has_avatar": false
+    },
+    {
+      "name": "kit",
+      "path": "/tmp/hermes-proto-home/profiles/kit",
+      "is_default": false,
+      "model": null,
+      "provider": null,
+      "description": "Answers support tickets",
+      "display_name": "",
+      "skill_count": 0,
+      "previous_names": [],
+      "last_session": null,
+      "worker_session": null,
+      "canonical_session": null,
+      "ui_meta_revisions": {
+        "hermes-bots": 2
+      },
+      "ui_meta": {
+        "hermes-bots": {
+          "title": "Kit",
+          "color": "#f5f5f4",
+          "shape": "blobatar::round",
+          "created": 1793000000006
+        }
+      },
+      "has_avatar": false
+    }
+  ],
+  "groups": {
+    "rooms": [
+      {
+        "id": "launch-plan",
+        "name": "Launch plan",
+        "members": [
+          {
+            "profile": "default",
+            "handle": "ada"
+          },
+          {
+            "profile": "sam",
+            "handle": "sam"
+          },
+          {
+            "profile": "juno",
+            "handle": "juno"
+          }
+        ]
+      }
+    ],
+    "turns": {
+      "default": [
+        {
+          "reply": "I’ll draft the release notes once the date is set.",
+          "delay_ms": 900
+        }
+      ],
+      "sam": [
+        {
+          "reply": "Close. The token refresh bug is fixed and the tests pass. I still want one run against staging, which takes about an hour.",
+          "delay_ms": 900
+        },
+        {
+          "hold": true
+        },
+        {
+          "reply": "Started the staging run. I’ll post the result here in about an hour.",
+          "delay_ms": 900
+        }
+      ],
+      "juno": [
+        {
+          "reply": "Thursday works if Sam’s fix lands by Wednesday noon. The release also carries the new export menu, which is already merged. @sam can you start that staging run now?",
+          "delay_ms": 900
+        }
+      ]
+    }
+  }
+}
