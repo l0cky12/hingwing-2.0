@@ -1,5 +1,5 @@
-import { CHECK_FAILURES, machineOf, parseSshHost, STEP_WORDS, type Target } from '@highwing/hermes/domain'
-import { useId, useState, type FormEvent } from 'react'
+import { byKind, CHECK_FAILURES, machineOf, parseSshHost, STEP_WORDS, type Target } from '@highwing/hermes/domain'
+import { Fragment, useId, useState, type FormEvent } from 'react'
 import type { Setup } from '../../ipc-contract'
 import { Bar } from '../chrome/Chrome'
 import { run } from '../store'
@@ -12,6 +12,28 @@ const NOTICES = {
 } as const
 
 const NOT_A_NAME = "That isn't a machine name. Use the name Tailscale lists, such as hermes-host."
+
+interface Choice {
+  readonly label: string
+  readonly field: { readonly label: string; readonly placeholder: string; readonly hint: string } | null
+  readonly target: (text: string) => Target | null
+}
+
+const CHOICES: { readonly [K in Target['kind']]: Choice } = {
+  remote: {
+    label: 'Another machine on my tailnet',
+    field: { label: 'Hermes machine', placeholder: 'hermes-host', hint: 'Its Tailscale name. Add user@ in front to log in as someone else.' },
+    target: text => {
+      const host = parseSshHost(text)
+      return host && { kind: 'remote', host }
+    }
+  },
+  local: { label: 'This computer', field: null, target: () => ({ kind: 'local' }) }
+}
+
+const KINDS = Object.keys(CHOICES) as readonly Target['kind'][]
+
+const textOf = (shown: Target | undefined): string => (shown === undefined ? '' : byKind(shown, { local: () => '', remote: ({ host }) => host }))
 
 function Progress({ setup }: { readonly setup: Extract<Setup, { at: 'checking' }> }) {
   return (
@@ -33,15 +55,14 @@ function Problem({ words, fix }: { readonly words: string; readonly fix: string 
 export function SetupForm({ setup }: { readonly setup: Editing }) {
   const shown = setup.at === 'form' ? setup.live?.target : setup.target
   const [kind, setKind] = useState<Target['kind']>(shown?.kind ?? 'remote')
-  const [host, setHost] = useState(shown?.kind === 'remote' ? shown.host : '')
+  const [text, setText] = useState(textOf(shown))
   const [notAName, setNotAName] = useState(false)
   const hint = useId()
   const busy = setup.at === 'checking'
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    const parsed = parseSshHost(host)
-    const target: Target | null = kind === 'local' ? { kind } : parsed && { kind, host: parsed }
+    const target = CHOICES[kind].target(text)
     setNotAName(target === null)
     if (target !== null) void run({ do: 'checkTarget', target })
   }
@@ -59,23 +80,28 @@ export function SetupForm({ setup }: { readonly setup: Editing }) {
           {setup.at === 'form' && setup.notice !== null && <p className="kept" role="note">{NOTICES[setup.notice]}</p>}
           <fieldset disabled={busy}>
             <legend className="sr">Where Hermes runs</legend>
-            <label className="choice">
-              <input type="radio" name="kind" checked={kind === 'remote'} onChange={() => setKind('remote')} />
-              Another machine on my tailnet
-            </label>
-            <div className="field" hidden={kind !== 'remote'}>
-              <label htmlFor={`${hint}-host`}>Hermes machine</label>
-              <input
-                id={`${hint}-host`} type="text" spellCheck={false} autoCapitalize="off" autoComplete="off" autoFocus
-                placeholder="hermes-host" aria-describedby={hint} value={host}
-                onChange={event => { setHost(event.target.value); setNotAName(false) }}
-              />
-              <p id={hint} className="hint">Its Tailscale name. Add user@ in front to log in as someone else.</p>
-            </div>
-            <label className="choice">
-              <input type="radio" name="kind" checked={kind === 'local'} onChange={() => { setKind('local'); setNotAName(false) }} />
-              This computer
-            </label>
+            {KINDS.map(choice => {
+              const { label, field } = CHOICES[choice]
+              return (
+                <Fragment key={choice}>
+                  <label className="choice">
+                    <input type="radio" name="kind" checked={kind === choice} onChange={() => { setKind(choice); setNotAName(false) }} />
+                    {label}
+                  </label>
+                  {field !== null && (
+                    <div className="field" hidden={kind !== choice}>
+                      <label htmlFor={`${hint}-host`}>{field.label}</label>
+                      <input
+                        id={`${hint}-host`} type="text" spellCheck={false} autoCapitalize="off" autoComplete="off" autoFocus
+                        placeholder={field.placeholder} aria-describedby={hint} value={text}
+                        onChange={event => { setText(event.target.value); setNotAName(false) }}
+                      />
+                      <p id={hint} className="hint">{field.hint}</p>
+                    </div>
+                  )}
+                </Fragment>
+              )
+            })}
           </fieldset>
           {setup.at === 'checking' && <Progress setup={setup} />}
           {notAName

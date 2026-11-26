@@ -1,5 +1,5 @@
 import type { Hermes } from '@highwing/hermes'
-import type { BotId, CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
+import { onThisComputer, type BotId, type CommandOutcome, type Session, type SessionId } from '@highwing/hermes/domain'
 import {
   CHANNEL, isAppTopic, isPreviewCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
   type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type PictureChoice, type PictureFile, type Push, type SessionPatch, type Setup, type StageResult,
@@ -126,7 +126,7 @@ const FILE_REFUSED: FileOutcome = { ok: false, reason: 'refused' }
 const FILE_DONE: FileOutcome = { ok: true }
 const IMAGE_REFUSED: ImageOutcome = { ok: false }
 
-const isLocal = (setup: Setup) => setup.at === 'pinned' || setup.live?.target.kind === 'local'
+const isLocal = (setup: Setup) => setup.at === 'pinned' || (setup.live !== null && onThisComputer(setup.live.target))
 
 type FileActions = { readonly [A in FileAction]: (session: Session, path: string) => Promise<FileOutcome> }
 

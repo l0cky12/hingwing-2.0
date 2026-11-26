@@ -1,5 +1,5 @@
 import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, Route } from '@highwing/hermes'
-import type { CheckFailure, CheckStep, Command, CommandOutcome, Target } from '@highwing/hermes/domain'
+import { firstStep, sameTarget, type CheckFailure, type CheckStep, type Command, type CommandOutcome, type Target } from '@highwing/hermes/domain'
 import type { HubResult, Live, Setup, SetupCommand } from '../ipc-contract'
 import type { Settings } from './settings'
 
@@ -34,7 +34,7 @@ type On<E extends SetupEvent['do']> = Extract<SetupEvent, { do: E }>
 type Editing = At<'form' | 'checking' | 'failed'>
 
 const check = ({ live }: Editing, { target }: On<'checkTarget'>): Setup =>
-  ({ at: 'checking', live, target, step: target.kind === 'local' ? 'hermes' : 'tailscale' })
+  ({ at: 'checking', live, target, step: firstStep(target) })
 const keep = ({ live }: Editing): Setup | null => (live === null ? null : { at: 'chat', live })
 
 /** Every move the setup screen can make. A state with no row for an event refuses it. */
@@ -69,8 +69,6 @@ const NOT_CONNECTED = refused('offline', "Highwing isn't connected to Hermes yet
 
 const SETUP_VERBS: Readonly<Record<SetupCommand['do'], true>> = { checkTarget: true, editTarget: true, keepTarget: true, openChat: true }
 const isSetupCommand = (command: ConnectionCommand): command is SetupCommand => command.do in SETUP_VERBS
-
-const sameTarget = (a: Target, b: Target) => (a.kind === 'remote' && b.kind === 'remote' ? a.host === b.host : a.kind === b.kind)
 
 export function feed<T>(initial: T): Feed<T> & { set(next: T): void } {
   let value = initial

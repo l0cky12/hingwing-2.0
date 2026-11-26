@@ -2,9 +2,23 @@ import tseslint from 'typescript-eslint'
 
 const contract = { group: ['**/contract.generated*', '**/contract.openrpc.json'], message: 'Gateway shapes stay inside wire/ and testing/.' }
 
+const TARGET_KIND = '/^(local|remote|url)$/'
+const KIND = side => `[${side}.property.name='kind'], [${side}.property.value='kind'], [${side}.expression.property.name='kind'], [${side}.expression.property.value='kind'], [${side}.name='kind']`
+const byKindOnly = 'Branch on a target with byKind from @highwing/hermes/domain, or a table keyed by Target[\'kind\'], so a new kind of target stops the build here.'
+
 export default tseslint.config(
   { ignores: ['docs/**', '**/node_modules/**', 'apps/desktop/out/**', 'packages/hermes/src/wire/contract.generated.ts'] },
   ...tseslint.configs.recommended,
+  {
+    files: ['apps/**', 'packages/**', 'scripts/**'],
+    ignores: ['packages/hermes/src/domain/reach.ts'],
+    rules: {
+      'no-restricted-syntax': ['error',
+        { selector: `BinaryExpression[operator=/^[!=]==?$/]:matches([right.value=${TARGET_KIND}]:matches(${KIND('left')}), [left.value=${TARGET_KIND}]:matches(${KIND('right')}))`, message: byKindOnly },
+        { selector: `SwitchStatement:matches(${KIND('discriminant')}) > SwitchCase[test.value=${TARGET_KIND}]`, message: byKindOnly }
+      ]
+    }
+  },
   {
     files: ['packages/hermes/src/domain/**'],
     rules: { 'no-restricted-imports': ['error', { patterns: [{ group: ['../*', 'node:*', '@highwing/*'], message: 'domain/ imports nothing outside itself.' }] }] }
