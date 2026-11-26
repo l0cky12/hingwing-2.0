@@ -33,7 +33,8 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 ## Features
 
 - [Open the app](./open-the-app.md) covers launching a window at the reference size.
-- [Set up a connection](./set-up-a-connection.md) covers the first-run setup screen, each check failure, the saved screen, the remote chat, and changing the connection from Settings.
+- [Set up a connection](./set-up-a-connection.md) covers the first-run setup screen, each check failure, the remote chat, and changing the connection from Settings.
+- [First-run intro](./first-run-intro.md) covers the three steps after the first successful connection, Skip, and the example requests on the default bot's chat.
 - [Connect by URL](./connect-by-url.md) covers the connection card's Web address choice, the words for a bad address, the plain http warning, the sign-in in the browser with Stop waiting, each failure of the check, the chat through the fake Webapp, the restart with and without a keyring, the Sign in banner, and a run against a real gateway.
 - [Settings](./settings.md) covers Settings in the chat column: opening and closing it with focus, the connection card's failed, running, cancelled and passed checks, a blocked link, the sidebar and palette picks that close it, a group chat opened or made beside it, the Appearance and Sidebar cards, a narrow window and forced colors.
 - [Theme](./theme.md) covers the System, Light and Dark picks in Settings, System following the desktop at launch and live, a pick kept across a restart, diagrams redrawn on a switch, and the dark palette with more contrast and in forced colors.

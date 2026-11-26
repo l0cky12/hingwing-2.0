@@ -52,6 +52,7 @@ const STATES = {
   'setup-checking': page => page.getByRole('status', { name: 'Checking' }),
   'setup-failed': page => page.getByRole('alert'),
   'setup-saved': page => page.getByRole('button', { name: 'Open chat', exact: true }),
+  intro: page => page.getByRole('region', { name: 'Intro', exact: true }),
   settings: page => page.getByRole('heading', { name: 'Settings', exact: true, level: 2 }),
   live: page => page.getByRole('button', { name: 'Send', exact: true, disabled: false }),
   'tool-running': page => page.locator('.step[data-end="live"]').filter({ hasText: /^Running / }),
