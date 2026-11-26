@@ -35,6 +35,8 @@ Every run names one gateway: `--fixture`, `--fake-host`, `--fake-webapp` or `--w
 - `--sign-in-ms <ms>` needs `--fake-webapp` or `--webapp-url`. It sets `HIGHWING_SIGN_IN_MS`, which shortens the wait for the browser in a build that is not installed.
 - `--saved none|local|remote|url|unreadable|newer` needs `--fake-host`, `--fake-webapp` or `--webapp-url`. It writes that `connection.json` into the run's user-data directory before launch. The default is `none`, a first run. `remote` saves the fake machine, and `local` saves this computer, where the fake `hermes` answers. Both need `--fake-host`. `url` saves the address of the run's Webapp, and needs `--fake-webapp` or `--webapp-url`.
 - `--mode bots|chats` writes `{"version":1,"mode":…}` to `mode.json` in the run's user-data directory before launch, creating the directory on a first run, so the window opens in bot mode or chat mode. With `--fake-host` it is written after the user-data directory is emptied. Without it the directory is left as it was, so a run with a name used before opens in the mode that run left.
+- `--theme system|light|dark` writes `{"version":1,"theme":…}` to `theme.json` in the run's user-data directory before launch, as `--mode` writes `mode.json`, so the window opens with that pick in Settings' Theme row. With System and no `--system-theme`, the window follows the desktop's own setting.
+- `--system-theme light|dark` gives the app a D-Bus session of the run's own, whose desktop portal reports that light or dark setting, so a window on System follows it. The bus, `xdg-desktop-portal` and the GTK backend it starts run with `HOME` and every `XDG_*` directory inside the scratch directory and `GSETTINGS_BACKEND=keyfile`, and the app gets only the bus's address. The desktop's own setting is never touched: the run reads `org.gnome.desktop.interface color-scheme` before and after, and fails if it changed. Teardown stops the bus and everything it started. It does not go with `--keyring system`, since the run's bus has no keyring.
 - `--hold-at tailscale|ssh|attach|relay` needs `--fake-host`. The fake tool that reaches that moment waits for the rest of the run. `ssh` pins the setup check at "Connecting to hermes-host".
 - `--drop-after <event type or request method>` is verification scaffolding. It writes a copy of the fixture whose gateway closes the socket 50 ms after the first frame of that event type, or the first request frame of that method (`sudo`), and plays the copy instead. The copy is saved as `fixture-edited.jsonl` in the evidence directory. The client shows the dropped link until its redial lands about 1 s later.
 - `--answered-elsewhere` is verification scaffolding for a fixture in which Hermes asks for things the window would otherwise have to answer, such as the requests of `fixtures/asks.jsonl`. It writes a copy of the fixture without the steps that wait for this client's answer to a request: each `answer` step that carries a result, and each `clarify.lock` and `connection.respond` call. The gateway then plays the `request.cancel` that follows each one as if another client had answered, so the story runs to its end. An `answer` step that carries an error stays, because the app sends that decline itself. It combines with the other fixture edits into one `fixture-edited.jsonl`.
@@ -78,6 +80,8 @@ Every run names one gateway: `--fixture`, `--fake-host`, `--fake-webapp` or `--w
 - `--timeout <ms>` is the per-step limit. The default is 15000.
 
 Every run sets `HIGHWING_OPEN_LOG` to `opens.jsonl` in the evidence directory. Main then records each request to open a file, show its folder, or open a link in the browser in that file, and opens nothing on the desktop. A run without `--pick-file` removes any `HIGHWING_PICK_FILE` it inherited. Every run also sets `HIGHWING_SAVE_DIR` to `saves/` in the evidence directory. Main then writes an exported chat there under Hermes's file name, and opens no save dialog.
+
+A run with neither `--theme` nor `--system-theme` emulates a light `prefers-color-scheme`, as every run did before the theme existed, so its shots stay comparable whatever the desktop is set to. A Dark pick in Settings then changes nothing on the page. A run with either one turns the emulation off, so the page draws what main and the desktop ask for.
 
 Every run also sets `HIGHWING_NOTIFY_LOG` to `notices.jsonl` in the evidence directory. Main then records each desktop notification there as a JSON line (`sessionId`, `turnId`, `title`, `body`) and shows nothing on the desktop.
 
@@ -139,6 +143,8 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `menu <key> <label>` | Playwright key name, exact entry label | presses the key, such as `ContextMenu`, and waits for main to record a new menu in `menus.jsonl`. It presses again, 200 ms later, until a recorded menu holds the label, and fails at the timeout naming the last menu. It logs the menu that held the label and how many presses it took. The spellchecker marks a word a second or so after it is typed, so the first menus may lack the suggestions |
 | `native-menus <n>` | number | waits half a second, logs each menu `menus.jsonl` holds, and fails unless main recorded exactly n native context menus in the whole run |
 | `menu-without <key> <label>` | Playwright key name, exact entry label | as `menu`, until a recorded menu lacks the label. It proves something only after a `menu` that showed the label |
+| `system-theme <light\|dark>` | `light` or `dark` | sets the run's desktop to that setting, as a user flipping it while Highwing runs. Needs `--system-theme`. Follow it with `palette` |
+| `palette <light\|dark>` | `light` or `dark` | waits until the page draws that palette (its `prefers-color-scheme`) and every drawn diagram holds the page's `--signal-soft`, so none is left in the other palette, and fails at the timeout. It logs `--paper`, `--graphite`, the body's background and the diagrams it checked |
 | `relaunch` | none | closes the app and launches it again with the same arguments, environment and user-data directory, as a restart of the computer's Highwing. The fake machine or Webapp keeps running. Follow it with a `wait` |
 | `webapp <order>` | `sign-out` | tells the fake Webapp that Hermes ends every sign-in. The app finds out at its next dial, such as after a `relaunch`. `--fake-webapp` runs only |
 | `browsed <n>` | number | waits until main has asked the browser for the gateway's sign-in page n times, and fails on any other count. It is checked again when the steps end |
@@ -212,6 +218,7 @@ Each run writes to `/tmp/highwing-verify/<run>/`:
 - `sign-in-page-<n>.png` is Hermes's sign-in page before the run typed into it (`--login-form` and `--webapp-url` runs).
 - `notices.jsonl` holds one JSON line for each desktop notification main would have shown.
 - `menus.jsonl` holds one JSON line for each context menu main would have shown.
+- `bus.log` holds what the run's own D-Bus session and the services it started printed (`--system-theme` runs).
 - `main.log` holds the Electron main process's stdout and stderr. `console.log` holds the renderer console and page errors.
 - `failure.png` is the window when a step failed.
 - `video.webm` is the recording of a `--video` run.
@@ -233,7 +240,7 @@ Proof standards:
 
 ## Cleanup
 
-`$H cleanup --run <name>` or `$H cleanup --all` kills only the PIDs this skill recorded in `/tmp/highwing-verify-scratch/<run>/pid`, `host-pid`, `second-pid` and `browser-pid`: the app, its fake host or fake Webapp, a second instance and the sign-in browser. It then deletes that scratch directory, which holds the Electron user-data dir. It never touches `/tmp/highwing-verify/`. Never kill Electron by process name, because the user may be running their own.
+`$H cleanup --run <name>` or `$H cleanup --all` kills only the PIDs this skill recorded in `/tmp/highwing-verify-scratch/<run>/pid`, `host-pid`, `second-pid`, `browser-pid` and `bus-pid`: the app, its fake host or fake Webapp, a second instance, the sign-in browser and the run's own D-Bus session. The portal services that bus started exit once it is gone. It then deletes that scratch directory, which holds the Electron user-data dir. It never touches `/tmp/highwing-verify/`. Never kill Electron by process name, because the user may be running their own.
 
 ## Feature map
 
