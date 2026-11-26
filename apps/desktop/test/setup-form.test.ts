@@ -5,7 +5,7 @@ import { parseCommand } from '../src/ipc-contract'
 
 describe('the choices of the setup form', () => {
   it('are another machine, a web address and this computer, in that order', () => {
-    expect(KINDS.map(kind => CHOICES[kind].label)).toEqual(['Another machine on my tailnet', 'A Hermes gateway at a web address', 'This computer'])
+    expect(KINDS.map(kind => CHOICES[kind].label)).toEqual(['Tailnet machine', 'Web address', 'This computer'])
     expect(KINDS.map(kind => CHOICES[kind].field?.label ?? null)).toEqual(['Hermes machine', 'Gateway address', null])
   })
 

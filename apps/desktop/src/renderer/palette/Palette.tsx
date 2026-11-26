@@ -58,11 +58,12 @@ export function Results({ view, active, listId, now, onPick }: ResultsProps) {
 
 interface SheetProps {
   readonly target: Target | null
+  readonly settingsOpen: boolean
   readonly returnFocusTo: Element | null
   readonly onClose: () => void
 }
 
-function Sheet({ target, returnFocusTo, onClose }: SheetProps) {
+function Sheet({ target, settingsOpen, returnFocusTo, onClose }: SheetProps) {
   const sidebar = useTopic('sidebar')
   const bots = useTopic('bots')
   const open = useTopic('open')
@@ -77,7 +78,7 @@ function Sheet({ target, returnFocusTo, onClose }: SheetProps) {
   const leaving = useRef(false)
   const listId = useId()
 
-  const view = paletteOf({ sidebar, bots, open, link, openSession, target, draftId }, query)
+  const view = paletteOf({ sidebar, bots, open, link, openSession, target, settingsOpen, draftId }, query)
   const active = activeIn(view, picked)
   const activeId = active === null ? undefined : optionId(listId, active.item)
 
@@ -145,8 +146,8 @@ function Sheet({ target, returnFocusTo, onClose }: SheetProps) {
   )
 }
 
-/** Ctrl+K (Cmd+K on macOS) opens the palette over the chat window. */
-export function Palette({ target }: { readonly target: Target | null }) {
+/** Ctrl+K (Cmd+K on macOS) opens the palette over the chat window, and over Settings beside it. */
+export function Palette({ target, settingsOpen }: { readonly target: Target | null; readonly settingsOpen: boolean }) {
   const [back, setBack] = useState<Element | null | undefined>(undefined)
   const opened = back !== undefined
   useEffect(() => {
@@ -159,5 +160,5 @@ export function Palette({ target }: { readonly target: Target | null }) {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [opened])
-  return back === undefined ? null : <Sheet target={target} returnFocusTo={back} onClose={() => setBack(undefined)} />
+  return back === undefined ? null : <Sheet target={target} settingsOpen={settingsOpen} returnFocusTo={back} onClose={() => setBack(undefined)} />
 }

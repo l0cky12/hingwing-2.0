@@ -9,6 +9,7 @@ export interface Scene {
   readonly link: Link | undefined
   readonly openSession: Session | undefined
   readonly target: Target | null
+  readonly settingsOpen: boolean
   readonly draftId: string
 }
 
@@ -30,7 +31,7 @@ export const ACTIONS: readonly ActionRow[] = [
       return sessionId !== null && session?.run.state === 'running' && session.sync.state === 'live' ? { do: 'stop', sessionId } : null
     }
   },
-  { id: 'connection', label: 'Open Connection', keys: null, offer: ({ target }) => (target === null ? null : { do: 'editTarget' }) },
+  { id: 'settings', label: 'Open Settings', keys: null, offer: ({ target, settingsOpen }) => (target === null || settingsOpen ? null : { do: 'editTarget' }) },
   { id: 'reconnect', label: 'Reconnect', keys: null, offer: ({ link }) => (link?.state === 'blocked' ? { do: 'reconnect', start: false } : null) },
   {
     id: 'start-hermes', label: 'Start Hermes', keys: null,

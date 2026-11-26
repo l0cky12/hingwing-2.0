@@ -15,7 +15,7 @@ const row = (id: string, title: string, more: Partial<SidebarRow> = {}): Sidebar
 const showing = (sessionId: SessionId | null): OpenChat => ({ shown: sessionId === null ? { kind: 'bot', bot: RESEARCH, sessionId: null } : { kind: 'chat', bot: RESEARCH, sessionId }, opening: null, missing: null })
 const sceneOf = (rows: readonly SidebarRow[], more: Partial<Scene> = {}): Scene => ({
   sidebar: { bot: RESEARCH, status: 'ready', rows, complete: true }, bots: APPROVED, open: showing(OPEN), link: { state: 'online' },
-  openSession: undefined, target: null, draftId: 'draft-1', ...more
+  openSession: undefined, target: null, settingsOpen: false, draftId: 'draft-1', ...more
 })
 const chatItem = (title: string, lastActiveAt: number | null, preview: string | null = null): PaletteItem =>
   ({ kind: 'chat', key: `chat:${title}`, title, command: { do: 'open', ref: { kind: 'chat', sessionId: title as SessionId } }, preview, doing: null, badge: 'none', lastActiveAt })
@@ -124,9 +124,10 @@ describe('the actions', () => {
     expect(keysIn(recent).filter(key => key.startsWith('chat:'))).toHaveLength(2)
   })
 
-  it('offers Open Connection only with a connection to change', () => {
-    expect(offered('connection', sceneOf([], { target: local }))).toEqual({ do: 'editTarget' })
-    expect(offered('connection', sceneOf([])), 'a fixture run').toBeNull()
+  it('offers Open Settings only with a connection to change, and not while Settings is open', () => {
+    expect(offered('settings', sceneOf([], { target: local }))).toEqual({ do: 'editTarget' })
+    expect(offered('settings', sceneOf([])), 'a fixture run').toBeNull()
+    expect(offered('settings', sceneOf([], { target: local, settingsOpen: true })), 'Settings open').toBeNull()
   })
 
   it('offers Reconnect while the link is blocked, and Start Hermes while it waits on a Hermes that is not running', () => {

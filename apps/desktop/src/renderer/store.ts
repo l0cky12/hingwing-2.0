@@ -1,5 +1,6 @@
 import { createContext, useContext, useSyncExternalStore } from 'react'
-import { applyPush, type Bridge, type Topic, type TopicValue } from '../ipc-contract'
+import { applyPush, type Bridge, type Setup, type Topic, type TopicValue } from '../ipc-contract'
+import { screenOf } from './setup/screens'
 
 declare global {
   interface Window { readonly highwing: Bridge }
@@ -63,10 +64,24 @@ const subscribe = (key: string, topic: Topic) => {
 
 const NEVER = () => () => {}
 
+const keyOf = (epoch: number, topic: Topic) => `${epoch} ${topic}`
+
 /** `topic` null: nothing to read yet, as for the session of a chat that has not been started. */
 export function useTopic<T extends Topic>(topic: T | null): TopicValue<T> | undefined {
-  const key = `${useContext(Epoch)} ${topic}`
+  const key = keyOf(useContext(Epoch), topic as T)
   return useSyncExternalStore(topic === null ? NEVER : subscribe(key, topic), () => copies.get(key)?.value as TopicValue<T> | undefined)
 }
 
-export const run: Bridge['run'] = command => window.highwing.run(command)
+/**
+ * Opening a bot or chat while Settings is up leaves Settings first, and opens only once main agrees.
+ * While main saves a new connection it refuses, and nothing moves. The sidebar and the palette both
+ * open through here. App reads the setup state outside any epoch.
+ */
+export const run: Bridge['run'] = async command => {
+  const setup = copies.get(keyOf(0, 'setup'))?.value as Setup | undefined
+  if (command.do === 'open' && setup !== undefined && screenOf(setup).show === 'settings') {
+    const left = await window.highwing.run({ do: 'keepTarget' })
+    if (!left.ok) return left
+  }
+  return window.highwing.run(command)
+}
