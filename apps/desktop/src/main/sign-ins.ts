@@ -87,15 +87,17 @@ export function signInStore(dir: string, sealOf: () => Promise<Seal | null>): Ke
     return kept.length === Object.keys(held).length ? held : Object.fromEntries(kept)
   }
 
-  let writes: Promise<void> = Promise.resolve()
-  const rewrite = (edit: (held: SignIns) => SignIns): Promise<void> => {
-    const done = writes.then(async () => {
-      const held = await read()
-      const next = edit(held)
-      if (next !== held) await write(dir, file, next)
-    })
-    writes = done.catch(() => {})
+  let changes: Promise<void> = Promise.resolve()
+  // A save sealed before a later keepOnly must land before it, or it would bring back a forgotten sign-in.
+  const inTurn = (change: () => Promise<void>): Promise<void> => {
+    const done = changes.then(change)
+    changes = done.catch(() => {})
     return done
+  }
+  const rewrite = async (edit: (held: SignIns) => SignIns): Promise<void> => {
+    const held = await read()
+    const next = edit(held)
+    if (next !== held) await write(dir, file, next)
   }
 
   return {
@@ -106,16 +108,16 @@ export function signInStore(dir: string, sealOf: () => Promise<Seal | null>): Ke
       const sealed = (await read())[url]
       return sealed === undefined ? null : found.open(Buffer.from(sealed, 'base64')).catch(() => null)
     },
-    save: async (url, secret) => {
+    save: (url, secret) => inTurn(async () => {
       const found = await seal()
       if (found === null) return memory.save(url, secret)
       if (secret === null) return rewrite(held => only(held, at => at !== url))
       const sealed = (await found.seal(secret)).toString('base64')
       await rewrite(held => ({ ...held, [url]: sealed }))
-    },
-    keepOnly: async url => {
+    }),
+    keepOnly: url => inTurn(async () => {
       await memory.keepOnly(url)
       await rewrite(held => only(held, at => at === url))
-    }
+    })
   }
 }

@@ -46,6 +46,29 @@ describe('signInStore on a computer with a keyring', () => {
     expect([await store.load(HERE), await store.load(THERE)]).toEqual(['second', 'other'])
   })
 
+  it('does not bring back a sign-in that a keepOnly called after its save forgot, however slow the keyring seals', async () => {
+    let release = () => {}
+    const sealed = new Promise<void>(resolve => { release = resolve })
+    const slow: Seal = { ...sealWith('this-account'), seal: async text => { await sealed; return sealWith('this-account').seal(text) } }
+    const store = signInStore(emptyDir(), async () => slow)
+    const saving = store.save(THERE, 'old')
+    const keeping = store.keepOnly(HERE)
+    release()
+    await Promise.all([saving, keeping])
+    expect(await store.load(THERE)).toBeNull()
+  })
+
+  it('does the same with no keyring', async () => {
+    let release = () => {}
+    const asked = new Promise<null>(resolve => { release = () => resolve(null) })
+    const store = signInStore(emptyDir(), () => asked)
+    const saving = store.save(THERE, 'old')
+    const keeping = store.keepOnly(HERE)
+    release()
+    await Promise.all([saving, keeping])
+    expect(await store.load(THERE)).toBeNull()
+  })
+
   it('keeps every one of several sign-ins saved at once', async () => {
     const dir = emptyDir()
     const store = signInStore(dir, keyring())
