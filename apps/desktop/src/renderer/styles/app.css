@@ -63,6 +63,8 @@ code, pre { font-family: var(--mono); }
 .screen > .composer { grid-row: 3; grid-column: 1; }
 main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: thin; scrollbar-color: #78857E transparent; }
 #transcript { max-width: 760px; margin: 0 auto; padding: 36px 28px 56px; }
+/* The skipped box clips what it paints at its edge. The margin lets a menu or a halo that hangs over the edge show whole. */
+.turn > .thread { content-visibility: auto; contain-intrinsic-size: auto 400px; overflow-clip-margin: 240px; }
 .turn + .turn { margin-top: 44px; }
 .turn.pending .request { color: var(--graphite); border-left-color: var(--rule); }
 .queued { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-left: var(--col); }
