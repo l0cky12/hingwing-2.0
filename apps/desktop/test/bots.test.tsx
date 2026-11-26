@@ -113,7 +113,7 @@ describe('the bots sidebar', () => {
 
   const seat = (bot: string, handle = bot) => ({ id: bot as MemberId, bot: bot as BotId, handle, name: handle })
   const groups = (...rows: [string, string, ...ReturnType<typeof seat>[]][]): Groups =>
-    ({ state: 'listed', driver: true, seatable: null, rows: rows.map(([id, name, ...members]) => ({ id: id as GroupId, name, members })) })
+    ({ state: 'listed', driver: true, seatable: null, rows: rows.map(([id, name, ...members]) => ({ id: id as GroupId, name, members, answering: [] })) })
   const section = (html: string) => /<section><h3>Group chats<\/h3>(.*?)<\/section>/s.exec(html)?.[1] ?? null
   const rowsIn = (html: string) => Array.from((section(html) ?? '').matchAll(/<li class="group-row">(.*?)<\/li>/gs), ([, row]) => row!)
   const textOf = (row: string) => Array.from(row.matchAll(/<span class="bot-(?:name|preview)">([^<]*)</g), ([, text]) => text)

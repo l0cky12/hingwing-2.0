@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { BotId } from '../src/domain/bots'
-import { groupIdFor, isGroupId, seatsFor, type GroupId } from '../src/domain/groups'
+import {
+  EMPTY_GROUPS, groupChatOf, groupIdFor, groupsOf, isGroupId, logStart, nextGroups, nextPoll, seatsFor, type GroupDesk, type GroupEvent, type GroupFacts, type GroupId, type GroupNews, type MemberId
+} from '../src/domain/groups'
 import { groupBook, type GroupWire } from '../src/groups'
+import { manualClock } from '../src/testing/clock'
 import { Offline, RpcRefusal } from '../src/wire/link'
 
 const bot = (id: string, name: string) => ({ id: id as BotId, name })
@@ -64,6 +67,8 @@ describe('making a group while an earlier try may have made it', () => {
   const draft = { group: 'g1' as GroupId, name: 'Launch plan', bots: ROSTER.map(bot => bot.id) }
   const room = { room_id: 'g1', name: 'Launch plan', members: [{ member_id: 'default', profile: 'default', handle: 'ada' }, { member_id: 'sam', profile: 'sam', handle: 'sam' }] }
 
+  const DEPS = { clock: manualClock(), mintId: () => 'minted', changed: () => {} }
+
   function wire(list: () => Promise<unknown>) {
     const call = (method: string) => {
       if (method === 'groups.capabilities') return Promise.resolve({ driver: true })
@@ -75,7 +80,7 @@ describe('making a group while an earlier try may have made it', () => {
 
   it('answers a refused create only after Hermes has listed what the earlier try made', async () => {
     let answer: (value: unknown) => void = () => {}
-    const book = groupBook(wire(() => new Promise(resolve => { answer = resolve })), () => {})
+    const book = groupBook(wire(() => new Promise(resolve => { answer = resolve })), DEPS)
     let settled = false
     const outcome = book.create(draft, ROSTER).then(result => { settled = true; return result })
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -86,7 +91,86 @@ describe('making a group while an earlier try may have made it', () => {
   })
 
   it('answers a refused create as offline when the list could not be read, so the dialog keeps its id', async () => {
-    const book = groupBook(wire(() => Promise.reject(new Offline('down'))), () => {})
+    const book = groupBook(wire(() => Promise.reject(new Offline('down'))), DEPS)
     expect(await book.create(draft, ROSTER)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+  })
+})
+
+describe('what Highwing holds of a group chat', () => {
+  const PLAN = 'launch-plan' as GroupId
+  const facts = (more: Partial<GroupFacts> = {}): GroupFacts => ({ id: PLAN, name: 'Launch plan', members: [], latestSeq: 3, epoch: 1, ...more })
+  const said = (seq: number, id = `user:${seq}`): GroupEvent => ({ kind: 'said', seq, at: seq * 1000, id, text: `message ${seq}` })
+  const able: GroupNews = { on: 'support', support: { is: 'able', driver: true, seatable: null } }
+  const opened = [able, { on: 'listed', groups: [facts()] }, { on: 'followed', group: PLAN }, { on: 'state', facts: facts(), answering: [], pushes: true }] as const
+  const after = (...news: readonly GroupNews[]) => news.reduce(nextGroups, EMPTY_GROUPS)
+  const page = (after: number, events: readonly GroupEvent[], cursor = events.at(-1)?.seq ?? after): GroupNews => ({ on: 'page', group: PLAN, after, epoch: 1, events, cursor })
+  const shown = (desk: GroupDesk) => {
+    const chat = groupChatOf(desk)
+    return chat?.at === 'read' ? chat.events.map(event => event.seq) : chat?.at
+  }
+
+  it('takes a page only where the last one ended, so one taken twice shows once', () => {
+    const once = after(...opened, page(0, [said(1), said(2)]))
+    expect(shown(once)).toEqual([1, 2])
+    expect(shown(nextGroups(once, page(0, [said(1), said(2)])))).toEqual([1, 2])
+    expect(shown(nextGroups(once, page(1, [said(2), said(3)]))), 'a page that overlaps what is shown').toEqual([1, 2])
+    expect(shown(nextGroups(once, page(2, [said(3)])))).toEqual([1, 2, 3])
+  })
+
+  it('lets a message go from on its way to the thread once the log holds it, and keeps it on its way till then', () => {
+    const sending = after(...opened, page(0, []), { on: 'sending', group: PLAN, message: { key: 'k1', eventId: 'user:abc', text: 'Ship it?' } })
+    expect(groupChatOf(sending)).toMatchObject({ sending: [{ key: 'k1', text: 'Ship it?' }] })
+    expect(groupChatOf(nextGroups(sending, page(0, [said(1)])))).toMatchObject({ sending: [{ key: 'k1' }] })
+    expect(groupChatOf(nextGroups(sending, page(0, [said(1, 'user:abc')])))).toMatchObject({ events: [{ id: 'user:abc' }], sending: [] })
+  })
+
+  it('reads the log again from the start of its window once Hermes is in a new epoch, or its log ends before the cursor', () => {
+    const read = after(...opened, page(0, [said(1), said(2), said(3)]))
+    for (const moved of [facts({ epoch: 2 }), facts({ latestSeq: 1 })]) {
+      const desk = nextGroups(read, { on: 'state', facts: moved, answering: [], pushes: true })
+      expect(groupChatOf(desk)).toEqual({ group: PLAN, at: 'loading' })
+      expect(logStart(desk.held[PLAN]!)).toBe(0)
+    }
+    const deep = nextGroups(read, { on: 'state', facts: facts({ latestSeq: 1003 }), answering: [], pushes: true })
+    expect(logStart(deep.held[PLAN]!), 'a log that only grew is read on from the cursor').toBe(3)
+    expect(logStart(after(able, { on: 'listed', groups: [facts({ latestSeq: 1003 })] }).held[PLAN]!), 'a first read starts 400 lines back').toBe(603)
+    expect(logStart(after(...opened, page(0, [said(1), said(2), said(3)])).held[PLAN]!), 'nothing new to read').toBeNull()
+  })
+
+  it('keeps reading only the shown group and a group someone is answering in, every 15 s behind pushes and every 2 s without', () => {
+    const answering = { on: 'state', facts: facts({ id: 'standup' as GroupId }), answering: [{ member: 'mia' as MemberId, doing: 'thinking', tool: null }], pushes: false } as const
+    expect(nextPoll(after(able, { on: 'listed', groups: [facts()] })), 'nothing shown, nobody answering').toBeNull()
+    expect(nextPoll(after(...opened))).toEqual({ ms: 15_000, groups: [PLAN] })
+    expect(nextPoll(after(...opened, answering))).toEqual({ ms: 2_000, groups: [PLAN, 'standup'] })
+    expect(nextPoll(after(...opened, { on: 'link', offline: true }))).toBeNull()
+  })
+
+  it('keeps the shown group when a list leaves it out, and says it is missing once Hermes says it has none', () => {
+    const desk = after(...opened, page(0, [said(1)]), { on: 'listed', groups: [] })
+    expect(shown(desk)).toEqual([1])
+    expect(groupsOf(desk)).toMatchObject({ rows: [] })
+    expect(groupChatOf(nextGroups(desk, { on: 'missing', group: PLAN }))).toEqual({ group: PLAN, at: 'missing' })
+  })
+})
+
+describe('a message while Hermes stops running group chats', () => {
+  it('is refused in the same words as before, and Hermes is asked again so the window learns it', async () => {
+    let driver = true
+    const asked: string[] = []
+    const call = (method: string) => {
+      asked.push(method)
+      if (method === 'groups.capabilities') return Promise.resolve({ driver })
+      if (method === 'groups.list') return Promise.resolve({ rooms: [] })
+      driver = false
+      return Promise.reject(new RpcRefusal(4001, 'runtime_coordination_required', 'runtime_coordination_required'))
+    }
+    const book = groupBook({ call } as unknown as GroupWire, { clock: manualClock(), mintId: () => 'k1', changed: () => {} })
+    book.online()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(book.groups).toMatchObject({ state: 'listed', driver: true })
+    expect(await book.send('launch-plan' as GroupId, 'Ship it?')).toEqual({ ok: false, refusal: { kind: 'rejected', message: "Hermes isn't running group chats right now." } })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(book.groups).toMatchObject({ state: 'listed', driver: false })
+    expect(asked.filter(method => method === 'groups.capabilities')).toHaveLength(2)
   })
 })

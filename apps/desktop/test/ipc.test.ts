@@ -369,6 +369,22 @@ describe('validators', () => {
     expect(parseCommand({ do: 'createGroup', ...raw })).toBeNull()
   })
 
+  it('keep a message and a Stop for a group Hermes could name, and open it by its id', () => {
+    expect(parseCommand({ do: 'sendToGroup', group: 'launch-plan', text: '@sam go', extra: 1 })).toEqual({ do: 'sendToGroup', group: 'launch-plan', text: '@sam go' })
+    expect(parseCommand({ do: 'stopGroup', group: 'launch-plan', cancel: 'all' })).toEqual({ do: 'stopGroup', group: 'launch-plan' })
+    expect(parseCommand({ do: 'open', ref: { kind: 'group', group: 'launch-plan', over: 'sam' } })).toEqual({ do: 'open', ref: { kind: 'group', group: 'launch-plan' } })
+  })
+
+  it.each([
+    ['a message with no words', { do: 'sendToGroup', group: 'launch-plan', text: '  ' }],
+    ['a message to an id Hermes would not take', { do: 'sendToGroup', group: 'launch plan', text: 'hi' }],
+    ['a Stop of no group', { do: 'stopGroup' }],
+    ['an open of a group with no id', { do: 'open', ref: { kind: 'group' } }],
+    ['a first message that would start a group', { do: 'start', chat: { kind: 'group', group: 'launch-plan', sessionId: null }, text: 'hi' }]
+  ])('refuse %s', (_, raw) => {
+    expect(parseCommand(raw)).toBeNull()
+  })
+
   it('keep a mode switch', () => {
     expect(parseCommand({ do: 'setMode', mode: 'chats', extra: 1 })).toEqual({ do: 'setMode', mode: 'chats' })
     expect(parseCommand({ do: 'setMode', mode: 'bots' })).toEqual({ do: 'setMode', mode: 'bots' })
@@ -395,8 +411,8 @@ describe('validators', () => {
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints', 'closePreview',
       'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'describeBot', 'discard', 'editBot', 'editTarget', 'export',
       'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openChat', 'openPreview', 'petPicture', 'pets',
-      'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename', 'restore', 'rewind', 'send', 'setMode', 'side',
-      'start', 'stop', 'stopHelper', 'tune', 'versions'
+      'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename', 'restore', 'rewind', 'send', 'sendToGroup', 'setMode', 'side',
+      'start', 'stop', 'stopGroup', 'stopHelper', 'tune', 'versions'
     ])
   })
 })
@@ -939,6 +955,11 @@ describe('parseDraft', () => {
   it('keeps the known fields of each kind of key, and no attachments for a draft an earlier build wrote', () => {
     expect(parseDraft({ key: 'bot:research', bot: 'research', text: 'x', extra: 1 })).toEqual({ key: 'bot:research', bot: 'research', text: 'x', attachments: [] })
     expect(parseDraft({ key: 'new', bot: null, text: '' })).toEqual({ key: 'new', bot: null, text: '', attachments: [] })
+    expect(parseDraft({ key: 'group:launch-plan', bot: null, text: '@sam go' })).toEqual({ key: 'group:launch-plan', bot: null, text: '@sam go', attachments: [] })
+  })
+
+  it('refuses a key of a kind no place to type has', () => {
+    for (const key of ['room:launch-plan', 'group:', 'chat', ':x', 'newer']) expect(parseDraft({ key, bot: null, text: 'x' }), key).toBeNull()
   })
 
   it('keeps the known fields of each attachment, and refuses a draft with one it cannot read', () => {

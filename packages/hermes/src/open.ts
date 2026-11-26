@@ -33,7 +33,7 @@ export interface ChatDesk {
   settle(facts: { readonly bots: Bots; readonly named: BotChats; readonly list: { readonly status: 'loading' | 'ready' | 'stale'; readonly newest: SessionId | null } }): void
   /**
    * A click. Looks a bot's chat up when Highwing does not know it, once however often it is asked
-   * for. A new chat, or a chat picked from the list, is shown at once and asks Hermes nothing.
+   * for. A new chat, a chat picked from the list, or a group chat is shown at once and asks Hermes nothing.
    */
   ask(ref: ChatRef): Promise<Outcome<SessionId | null>>
   askUpFront(ref: { readonly kind: 'new'; readonly bot: BotId; readonly draftId: string }): Promise<Outcome<null>>
@@ -237,7 +237,8 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
     get open() { return desk.open },
     settle: facts => {
       bots = facts.bots
-      take({ on: 'facts', named: facts.named, launch: launchChat(conn.reach, bots, facts.named, facts.list) })
+      const roster = bots.state === 'listed' ? { bots: botsIn(bots.roster).map(bot => bot.id), home: bots.roster.featured?.id ?? null } : null
+      take({ on: 'facts', named: facts.named, launch: launchChat(conn.reach, bots, facts.named, facts.list), roster })
       if (bots.state !== 'loading' && bots.state !== 'offline') rosterKnown()
     },
     ask: async ref => {
@@ -248,6 +249,10 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
       if (ref.kind === 'chat') {
         take({ on: 'asked', ref })
         return { ok: true, value: ref.sessionId }
+      }
+      if (ref.kind === 'group') {
+        take({ on: 'asked', ref })
+        return { ok: true, value: null }
       }
       if (ref.kind === 'link') {
         for (const effect of take({ on: 'asked', ref })) if ('seek' in effect) seek(effect.seek)

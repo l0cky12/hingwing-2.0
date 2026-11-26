@@ -1,4 +1,4 @@
-import type { Shown, Target } from '@highwing/hermes/domain'
+import type { Shown, ShownGroup, Target } from '@highwing/hermes/domain'
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import type { Mode, Setup } from '../ipc-contract'
 import { BotPicker } from './bots/BotPicker'
@@ -16,18 +16,19 @@ import { Epoch, run, useTopic } from './store'
 
 const NO_CHAT = async () => ({ ok: false, refusal: { kind: 'rejected', message: 'There is no chat to send to.' } }) as const
 
-function samePaneOnFirstMessage(shown: Shown): string {
+function samePaneOnFirstMessage(shown: Shown | ShownGroup): string {
   switch (shown.kind) {
     case 'bot': return `bot:${shown.bot}`
     case 'new': return `new:${shown.draftId}`
     case 'chat': return `chat:${shown.sessionId}`
     case 'branch': return `branch:${shown.sessionId}`
+    case 'group': return `group:${shown.group}`
   }
 }
 
 function OpenPane() {
   const shown = useTopic('open')?.shown ?? null
-  return shown === null
+  return shown === null || shown.kind === 'group'
     ? <><main id="scroll" /><Composer slot={null} canSend={false} canAttach={false} showStop={false} onSend={NO_CHAT} onStop={() => {}} onInput={() => {}} /></>
     : <Chat key={samePaneOnFirstMessage(shown)} chat={shown} />
 }

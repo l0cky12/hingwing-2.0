@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { BotId, Bots } from '../src/domain/bots'
 import { rosterOf } from '../src/domain/bots'
-import { EMPTY_DESK, launchChat, nextDesk, type Desk, type DeskEffect, type DeskEvent, type OpenChat, type Shown } from '../src/domain/open'
+import type { GroupId } from '../src/domain/groups'
+import { EMPTY_DESK, launchChat, nextDesk, shownBot, shownChat, shownGroup, type Desk, type DeskEffect, type DeskEvent, type OpenChat, type Shown } from '../src/domain/open'
 import type { SessionId } from '../src/domain/session'
 import { chatDesk, type DeskDeps } from '../src/open'
 import { Offline, RpcRefusal } from '../src/wire/link'
@@ -11,7 +12,7 @@ const [HOME, R1, R2, O1] = ['local-home', 'local-r1', 'local-r2', 'local-o1'] as
 
 const asked = (bot: BotId): DeskEvent => ({ on: 'asked', ref: { kind: 'bot', bot } })
 const found = (bot: BotId, sessionId: SessionId | null): DeskEvent => ({ on: 'found', bot, sessionId })
-const facts = (named: Record<string, SessionId>, launch: Shown | null = null): DeskEvent => ({ on: 'facts', named, launch })
+const facts = (named: Record<string, SessionId>, launch: Shown | null = null): DeskEvent => ({ on: 'facts', named, launch, roster: null })
 const askedNew = (bot: BotId | null, draftId: string): DeskEvent => ({ on: 'asked', ref: { kind: 'new', bot, draftId } })
 const made = (bot: BotId | null, draftId: string, sessionId: SessionId): DeskEvent => ({ on: 'made', bot, draftId, sessionId })
 const picked = (sessionId: SessionId): DeskEvent => ({ on: 'asked', ref: { kind: 'chat', sessionId } })
@@ -169,7 +170,7 @@ describe('the open chat', () => {
     ]
     events.reduce((desk, event) => {
       const next = nextDesk(desk, event).desk
-      const { shown } = next.open
+      const shown = shownChat(next.open)
       if (shown !== null && shown.bot !== null && shown.sessionId !== null) expect(next.owners[shown.sessionId], JSON.stringify(event)).toBe(shown.bot)
       return next
     }, EMPTY_DESK)
@@ -340,5 +341,32 @@ describe("a linked chat's search", () => {
     opened.online()
     expect(sent).toHaveLength(3)
     expect(opened.open.shown).toEqual({ kind: 'chat', bot: null, sessionId: R1 })
+  })
+})
+
+describe('a group chat in the pane', () => {
+  const PLAN = 'launch-plan' as GroupId
+  const grouped: DeskEvent = { on: 'asked', ref: { kind: 'group', group: PLAN } }
+  const roster = (bots: readonly BotId[], home: BotId | null = EMU): DeskEvent => ({ on: 'facts', named: {}, launch: null, roster: { bots, home } })
+
+  it('is shown at once over the chat it was opened from, and is no chat and no session', () => {
+    const { desk, effects } = after([grouped], LAUNCHED)
+    expect(effects).toEqual([[]])
+    expect(desk.open).toEqual({ shown: { kind: 'group', group: PLAN, over: EMU }, opening: null, missing: null })
+    expect([shownGroup(desk.open), shownChat(desk.open), shownBot(desk.open)], 'the Chats column keeps the bot behind it').toEqual([PLAN, null, EMU])
+    expect(after([asked(RESEARCH), grouped], LAUNCHED).desk.open.shown).toEqual({ kind: 'group', group: PLAN, over: RESEARCH })
+  })
+
+  it('gives way to a chat picked from the list, a branch made behind it steals nothing, and a roster answer never replaces it', () => {
+    const open = after([grouped], LAUNCHED).desk
+    expect(after([picked(R1)], open).desk.open.shown).toEqual({ kind: 'chat', bot: RESEARCH, sessionId: R1 })
+    expect(after([branched(HOME, B1, 'x'), facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME })], open).desk.open).toBe(open.open)
+  })
+
+  it('keeps the bot it was opened over while the roster lists it, and takes the default bot when the roster drops it', () => {
+    const open = after([picked(R1), grouped], LAUNCHED).desk
+    expect(after([roster([EMU, RESEARCH])], open).desk.open).toBe(open.open)
+    expect(after([roster([EMU, OPS])], open).desk.open.shown).toEqual({ kind: 'group', group: PLAN, over: EMU })
+    expect(after([roster([OPS], null)], open).desk.open.shown).toEqual({ kind: 'group', group: PLAN, over: null })
   })
 })

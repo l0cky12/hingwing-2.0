@@ -1,5 +1,5 @@
 import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId, BotMark, Marked, PetChoice } from './bots'
-import type { GroupDraft } from './groups'
+import type { GroupDraft, GroupId } from './groups'
 import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
@@ -109,8 +109,8 @@ export type Command =
   /** The bot's picture as a data URL, or null for none. */
   | { readonly do: 'botPicture'; readonly bot: BotId }
   /**
-   * Makes the group chat and lists it in `groups`. The same draft sent again makes no second group: Hermes answers a
-   * repeated id with the group it already made.
+   * Makes the group chat, lists it in `groups` and shows it. The same draft sent again makes no second group: Hermes
+   * answers a repeated id with the group it already made.
    */
   | { readonly do: 'createGroup'; readonly draft: GroupDraft }
   /**
@@ -121,6 +121,14 @@ export type Command =
   | { readonly do: 'markBot'; readonly bot: BotId; readonly mark: BotMark }
   /** Reads the roster again. Hermes sends no event when a profile changes. */
   | { readonly do: 'refreshBots' }
+  /**
+   * Says `text` to the group. `@handle` asks only those members, and no mention asks them all. A newer message keeps a
+   * member's late reply out of the thread. Answers once Hermes has the message or refuses it, and the replies arrive in
+   * `groupChat`. Refused while Hermes is not running group chats, and for text over 64 KB.
+   */
+  | { readonly do: 'sendToGroup'; readonly group: GroupId; readonly text: string }
+  /** Stops every member's running turn in the group. */
+  | { readonly do: 'stopGroup'; readonly group: GroupId }
   /** Sets one of Hermes's switches for the chat, for every client that has it open. */
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'reasoning'; readonly on: boolean }
   /** YOLO: Hermes runs this chat's commands without asking. */

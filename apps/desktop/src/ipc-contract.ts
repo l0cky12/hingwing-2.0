@@ -1,7 +1,7 @@
 import {
   BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
-  type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupDraft, type Groups, type HelperId, type Item, type Link, type ModelOption,
+  type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupDraft, type GroupId, type Groups, type HelperId, type Item, type Link, type ModelOption,
   type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
   type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
@@ -127,10 +127,10 @@ export type ImageType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' 
 export type ImageOutcome = { readonly ok: true; readonly type: ImageType; readonly bytes: Uint8Array } | { readonly ok: false }
 
 /**
- * One place to type a message: a chat that has a session, a bot's unstarted chat, or the one
- * new-chat view.
+ * One place to type a message: a chat that has a session, a bot's unstarted chat, the one
+ * new-chat view, or a group chat.
  */
-export type DraftKey = `chat:${SessionId}` | `bot:${BotId}` | 'new'
+export type DraftKey = `chat:${SessionId}` | `bot:${BotId}` | 'new' | `group:${GroupId}`
 /** `bot` is the bot of the chat the draft was typed in, so it can be matched to that bot's list. Empty `text` and no attachments: no draft. */
 export interface Draft { readonly key: DraftKey; readonly bot: BotId | null; readonly text: string; readonly attachments: readonly Attachment[] }
 
@@ -249,13 +249,14 @@ const REFS: { readonly [K in ChatRef['kind']]: (raw: Obj) => Extract<ChatRef, { 
   link: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && { kind: 'link', sessionId }
-  }
+  },
+  group: raw => (isGroupId(raw.group) ? { kind: 'group', group: raw.group } : null)
 }
 const chatRefOf = (raw: unknown): ChatRef | null =>
   isObject(raw) && text(raw.kind) && Object.hasOwn(REFS, raw.kind) ? REFS[raw.kind as ChatRef['kind']](raw) : null
 const unstartedOf = (raw: unknown): Unstarted | null => {
   const ref = isObject(raw) && raw.sessionId === null ? chatRefOf(raw) : null
-  return ref === null || ref.kind === 'chat' || ref.kind === 'link' ? null : { ...ref, sessionId: null }
+  return ref?.kind === 'bot' || ref?.kind === 'new' ? { ...ref, sessionId: null } : null
 }
 const webPage = (raw: unknown): raw is string => text(raw) && isWebPage(raw)
 const place = (raw: unknown): raw is number => typeof raw === 'number' && Number.isFinite(raw) && raw >= 0
@@ -460,6 +461,8 @@ export const validators: Validators = {
     const bot = botIdOf(raw.bot)
     return bot && isBotMark(raw.mark) ? { do: 'markBot', bot, mark: raw.mark } : null
   },
+  sendToGroup: raw => (isGroupId(raw.group) && filled(raw.text) ? { do: 'sendToGroup', group: raw.group, text: raw.text } : null),
+  stopGroup: raw => (isGroupId(raw.group) ? { do: 'stopGroup', group: raw.group } : null),
   tune: raw => {
     const sessionId = sessionIdOf(raw)
     if (!sessionId) return null
@@ -545,7 +548,7 @@ export function parseFileRequest(raw: unknown): FileRequest | null {
 }
 
 /** Every kind of draft key that names what it belongs to after a colon. */
-const DRAFT_KINDS: { readonly [K in Exclude<DraftKey, 'new'> extends `${infer Kind}:${string}` ? Kind : never]: true } = { chat: true, bot: true }
+const DRAFT_KINDS: { readonly [K in Exclude<DraftKey, 'new'> extends `${infer Kind}:${string}` ? Kind : never]: true } = { chat: true, bot: true, group: true }
 const draftKeyOf = (raw: unknown): DraftKey | null => {
   if (raw === 'new') return raw
   if (!text(raw)) return null

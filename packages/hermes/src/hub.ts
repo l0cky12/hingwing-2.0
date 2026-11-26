@@ -3,9 +3,9 @@ import { DONE, refused, SessionActor, type Upload } from './actor'
 import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, petPicture, setBotPicture } from './bot-admin'
 import { botsIn, MARK_SETS, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
-import type { Groups } from './domain/groups'
+import type { GroupChat, Groups } from './domain/groups'
 import { mentionedBots } from './domain/mention'
-import { shownBot, shownChat, type OpenChat } from './domain/open'
+import { shownBot, shownChat, shownGroup, type OpenChat } from './domain/open'
 import type { PaneAsk } from './domain/pane'
 import type { BridgeRequest, ServerRequest } from './domain/reduce'
 import type { RelayDesk } from './domain/relay'
@@ -61,11 +61,17 @@ export interface Hermes {
    */
   readonly relay: Feed<RelayDesk>
   /**
-   * The group chats of the socket's own profile, whether this Hermes can make one, and the bots it would seat in a
-   * new one. Read on every new socket and again when sessions change. `unsupported` on a Hermes with no
-   * `groups.capabilities`. A listed value stays while the link is down.
+   * The group chats of the socket's own profile, who is answering in each, whether this Hermes can make one, and the
+   * bots it would seat in a new one. Read on every new socket, when sessions change, and on `groups.changed`.
+   * `unsupported` on a Hermes with no `groups.capabilities`. A listed value stays while the link is down.
    */
   readonly groups: Feed<Groups>
+  /**
+   * The group chat `open` shows: its members, its thread, who is answering and what is on its way. null while `open`
+   * shows anything else. Its log is read from the newest lines back, and kept current by `groups.changed`, or by
+   * asking every 2 s on a Hermes that does not push.
+   */
+  readonly groupChat: Feed<GroupChat | null>
   /**
    * Watch one session. The listener gets the current value at once and every later one. A session is
    * kept attached while a window watches it, while the gateway lists it as running, while its own
@@ -206,6 +212,7 @@ export function openHermes(options: HermesOptions): Hermes {
     },
     gap: parsed => actors.get(parsed.sessionId)?.feed({ in: 'gap' }),
     app: refreshSoon,
+    groups: parsed => book.moved(parsed.rooms),
     unrouted: parsed => count('unrouted', parsed.type)
   }
 
@@ -223,7 +230,7 @@ export function openHermes(options: HermesOptions): Hermes {
       catalogRead = readCatalog()
       relayRead = relays.probe()
       roster.ask()
-      book.ask()
+      book.online()
     },
     onEvent: params => {
       const parsed = parseEvent(params)
@@ -265,6 +272,7 @@ export function openHermes(options: HermesOptions): Hermes {
     changed: () => {
       open.set(desk.open)
       list.follow(shownBot(desk.open))
+      book.follow(shownGroup(desk.open))
     }
   })
   const open = feed<OpenChat>(desk.open, sameOpen)
@@ -283,8 +291,15 @@ export function openHermes(options: HermesOptions): Hermes {
   })
   const bots = feed<Bots>(roster.bots)
 
-  const book = groupBook(conn, () => groups.set(book.groups))
+  const book = groupBook(conn, {
+    clock, mintId,
+    changed: () => {
+      groups.set(book.groups)
+      groupChat.set(book.chat)
+    }
+  })
   const groups = feed<Groups>(book.groups)
+  const groupChat = feed<GroupChat | null>(book.chat)
 
   const actorFor = (id: SessionId): SessionActor => {
     const held = actors.get(id)
@@ -430,8 +445,12 @@ export function openHermes(options: HermesOptions): Hermes {
     }
     if (command.do === 'createGroup') {
       const listed = bots.get()
-      return book.create(command.draft, listed.state === 'listed' ? botsIn(listed.roster) : [])
+      const made = await book.create(command.draft, listed.state === 'listed' ? botsIn(listed.roster) : [])
+      if (made.ok) await desk.ask({ kind: 'group', group: command.draft.group })
+      return made
     }
+    if (command.do === 'sendToGroup') return book.send(command.group, command.text)
+    if (command.do === 'stopGroup') return book.stop(command.group)
     if (command.do === 'describeBot') return describeBot(conn, command.bot)
     if (command.do === 'botPicture') return botPicture(conn, command.bot)
     if (command.do === 'canGeneratePicture') return canGeneratePicture(conn)
@@ -471,10 +490,12 @@ export function openHermes(options: HermesOptions): Hermes {
     open,
     relay,
     groups,
+    groupChat,
     watch,
     run: command => run(command) as Promise<Outcome<ResultOf<typeof command>>>,
     close: async () => {
       cancelRefresh?.()
+      book.close()
       for (const cancel of releases.values()) cancel()
       releases.clear()
       conn.close()

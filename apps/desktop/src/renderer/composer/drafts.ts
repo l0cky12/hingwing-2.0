@@ -1,4 +1,4 @@
-import { type Attachment, type AttachmentId, type BotId, type SessionId, type Shown, type Sidebar } from '@highwing/hermes/domain'
+import { type Attachment, type AttachmentId, type BotId, type SessionId, type Shown, type ShownGroup, type Sidebar } from '@highwing/hermes/domain'
 import { useSyncExternalStore } from 'react'
 import { isEmptyDraft, type Draft, type DraftKey } from '../../ipc-contract'
 
@@ -8,7 +8,8 @@ type Held = Pick<Draft, 'text' | 'attachments'>
 const SAVE_MS = 500
 const EMPTY: Held = { text: '', attachments: [] }
 
-export function slotOf(shown: Shown): NonNullable<DraftSlot> {
+export function slotOf(shown: Shown | ShownGroup): NonNullable<DraftSlot> {
+  if (shown.kind === 'group') return { key: `group:${shown.group}`, bot: null }
   if (shown.sessionId !== null) return { key: `chat:${shown.sessionId}`, bot: shown.bot }
   return { key: shown.kind === 'bot' ? `bot:${shown.bot}` : 'new', bot: shown.bot }
 }
