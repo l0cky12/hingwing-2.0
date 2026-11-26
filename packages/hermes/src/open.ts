@@ -44,6 +44,10 @@ export interface ChatDesk {
   start(chat: Unstarted): Promise<Outcome<SessionId>>
   /** The bot whose profile a session lives in. undefined: the socket's own profile, so its calls carry no `profile`. */
   botOf(id: SessionId): BotId | undefined
+  /** Whether this is some bot's own chat, as far as Highwing knows. */
+  isBotChat(id: SessionId): boolean
+  /** Hermes archived or removed this chat. A window that shows it moves to its bot's own chat. */
+  gone(sessionId: SessionId): void
   /** Hermes listed these chats in the bot's profile, so a click on one opens it in that bot. */
   listed(bot: BotId, sessions: readonly SessionId[]): void
   branched(made: { readonly from: SessionId; readonly sessionId: SessionId; readonly text: string }): void
@@ -55,7 +59,7 @@ export interface DeskDeps {
   readonly conn: Pick<Connection, 'reach' | 'creation' | 'as' | 'call'>
   readonly client: { readonly name: string; readonly version: string }
   readonly mintId: () => string
-  /** Runs after every change of `open`. */
+  /** Runs after every change of `open`, and of the Bot Chats Highwing knows. */
   readonly changed: () => void
 }
 
@@ -80,10 +84,10 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
   const nextOnline = () => new Promise<void>(resolve => { backOnline = [...backOnline, resolve] })
 
   const take = (event: DeskEvent) => {
-    const before = desk.open
+    const before = desk
     const next = nextDesk(desk, event)
     desk = next.desk
-    if (desk.open !== before) deps.changed()
+    if (desk.open !== before.open || desk.chats !== before.chats) deps.changed()
     return next.effects
   }
 
@@ -271,6 +275,8 @@ export function chatDesk(deps: DeskDeps): ChatDesk {
     },
     start: chat => (chat.kind === 'bot' ? startBot(chat.bot) : startNew(chat.bot, chat.draftId)),
     botOf: id => ownerOf(desk, id),
+    isBotChat: id => Object.values(desk.chats).includes(id),
+    gone: sessionId => void take({ on: 'gone', sessionId }),
     listed: (bot, sessions) => void take({ on: 'listed', bot, sessions }),
     branched: made => void take({ on: 'branched', ...made }),
     online: () => {

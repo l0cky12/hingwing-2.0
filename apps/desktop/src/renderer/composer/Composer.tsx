@@ -6,7 +6,7 @@ import { Chips } from '../chat/Attachments'
 import { useTopic } from '../store'
 import { busyHint } from './busy'
 import { attachTo, detach, draftSent, moveAttachment, moveDraft, seedDraft, stagingFor, useAttachments, useDraft, useStaging, writeDraft, type DraftSlot } from './drafts'
-import { EDITING_WORDS, type Editing } from './edit'
+import { EDITING_WORDS, removalWords, type Editing } from './edit'
 import { RemoveDialog } from './RemoveDialog'
 import { mentionable, mentionWord, menuOf, picked, type Mention, type Menu, type MenuItem } from './menu'
 import { usePathFiles } from './paths'
@@ -400,7 +400,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
       {open?.missing != null && <p className="err refusal">That chat isn't on this Hermes.</p>}
       {confirming && editing?.kind === 'sent' && (
         <RemoveDialog
-          later={editing.later}
+          title={removalWords(editing.later)} detail="Hermes can’t bring them back." confirm="Remove and send"
           onCancel={() => setConfirming(false)}
           onConfirm={() => void deliver()}
         />

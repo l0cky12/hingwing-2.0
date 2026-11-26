@@ -23,6 +23,33 @@ export interface GatewayOptions {
   readonly ringFrames: number
   readonly drop: { readonly afterPush: number; readonly missed: number } | null
   readonly onReceived?: (frame: unknown) => void
+  /** Holds every reply this long after its call arrived, as a busy Hermes takes. Default 0. */
+  readonly latencyMs?: number
+}
+
+/**
+ * Writes each reply `ms` after the gateway wrote it, and every other frame at once unless a held
+ * frame is still ahead of it, so the client reads frames in the order the gateway wrote them.
+ */
+function repliesHeld(peer: Peer, ms: number, clock: Clock): Peer {
+  const queue: { readonly due: number; readonly send: () => void }[] = []
+  let waiting = false
+  const drain = () => {
+    waiting = false
+    while (queue[0] !== undefined && queue[0].due <= clock.now()) queue.shift()?.send()
+    if (queue[0] === undefined) return
+    waiting = true
+    clock.setTimeout(drain, queue[0].due - clock.now())
+  }
+  const enqueue = (due: number, send: () => void) => {
+    queue.push({ due: Math.max(due, queue.at(-1)?.due ?? due), send })
+    if (!waiting) drain()
+  }
+  const isReply = (frame: unknown) => isObject(frame) && !('method' in frame) && 'id' in frame
+  return {
+    write: frame => enqueue(clock.now() + (isReply(frame) ? ms : 0), () => peer.write(frame)),
+    close: code => enqueue(clock.now(), () => peer.close(code))
+  }
 }
 
 /** The replay ring's bound per session (Hermes's tui_gateway/event_replay.py:30). */
@@ -172,19 +199,37 @@ const PAYLOADS: Readonly<Record<string, (payload: Obj) => boolean>> = {
   rewind: payload => isInt(payload.target_message_id) && payload.target_message_id > 0
     && Object.keys(payload).every(key => key === 'target_message_id' || (key === 'preserve_compaction_handoff' && isBoolean(payload[key]))),
   rename: payload => Object.keys(payload).join() === 'title' && isString(payload.title),
-  archive: payload => Object.keys(payload).join() === 'archived' && isBoolean(payload.archived)
+  archive: payload => Object.keys(payload).join() === 'archived' && isBoolean(payload.archived),
+  delete: payload => Object.keys(payload).length === 0,
+  sidebar: payload => Object.keys(payload).length > 0 && Object.entries(payload).every(([key, value]) => Object.hasOwn(SIDEBAR_FIELDS, key) && SIDEBAR_FIELDS[key]!(value))
 }
+const SIDEBAR_FIELDS: Readonly<Record<string, (value: unknown) => boolean>> = { title: isString, archived: isBoolean, hidden: isBoolean, pinned: isBoolean, unread: isBoolean }
 const EFFORT_WORDS: ReadonlySet<string> = new Set(['none', 'false', 'disabled', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
 const COMPRESS_FIELDS: Readonly<Record<string, (value: unknown) => boolean>> = { focus: isString, preview: isBoolean, partial: isBoolean, keep_last: isInt }
 /** Operations that need `expected_generation` (gateway/session_mutations.py:20,154, persistence/authority/runtime.py:75). */
 const FENCED: ReadonlySet<string> = new Set(['model', 'reasoning', 'workspace', 'editor_mcp', 'edit_policy', 'delete', 'rewind', 'reset', 'branch', 'compress'])
 /** gateway/session_mutations.py:150-154: the closed field set, the generation an operation needs, then its payload. */
-const mutation: Check = (_gateway, _socket, params) => {
+const mutation: Check = (_gateway, _socket, params) => mutationReason(params)
+function mutationReason(params: Obj): string | null {
   const { operation, payload } = params
   const fields = Object.keys(params).filter(key => key !== 'expected_generation')
   if (fields.length !== 5 || !['session_id', 'request_id', 'expected_revision', 'operation', 'payload'].every(key => fields.includes(key))) return 'invalid_params'
   if (!isText(operation) || !isObject(payload) || (FENCED.has(operation) && !isInt(params.expected_generation))) return 'invalid_params'
   return PAYLOADS[operation]?.(payload) === false ? 'invalid_params' : null
+}
+
+/** A fence refusal carries both fresh fences. */
+const fenced = (reason: string, held: Kept) =>
+  new Refused(reason, { code: 4001, message: reason, data: { reason, revision: held.revision, execution_generation: held.generation } })
+
+/** What `archive` and `delete` read and write of a chat: the story, or a chat beside it. */
+interface Kept {
+  readonly revision: number
+  readonly generation: number
+  readonly busy: boolean
+  /** Sets the flag, moves the revision on and tells the chat's viewers. Answers the new revision. */
+  flag(name: 'archived' | 'pinned', on: boolean): number
+  remove(): void
 }
 
 const pendingRow = (gateway: ScriptedGateway, params: Obj) => gateway.view.pending.filter(isObject).find(row => row.admission_id === params.admission_id)
@@ -367,12 +412,14 @@ class EchoChat implements Stream {
   generation = 0
   revision = 0
   asking: SeededApproval | null = null
+  archived = false
+  pinned = false
   yolo = false
   parent: string | null = null
   startedAt = 0
 
   /** `hidden`: out of `session.list` unless it asks for hidden chats, as a Bot Chat is (hermes-bots/canonical-chat.ts:319). */
-  constructor(readonly id: string, readonly profile: string, public title: string, readonly hidden = false) {
+  constructor(readonly id: string, readonly profile: string, public title: string, public hidden = false) {
     this.epoch = `${id}-epoch`
   }
 
@@ -395,7 +442,7 @@ class EchoChat implements Stream {
     return {
       session_id: this.id, id: this.id, resolved_id: this.id, title: this.title, source: 'gui', started_at: said(this.rows[0]),
       message_count: this.rows.length, model: this.model.model, running: this.running,
-      ...(picker ? { preview: this.rows.at(-1)?.text ?? null, last_active_at: said(this.rows.at(-1)) } : {})
+      ...(picker ? { preview: this.rows.at(-1)?.text ?? null, last_active_at: said(this.rows.at(-1)), pinned: this.pinned } : {})
     }
   }
 
@@ -422,6 +469,7 @@ function seeded(profile: string, seed: ChatSeed): EchoChat {
   seed.rows.forEach(({ role, text }, at) => chat.rows.push({ role, text, timestamp: seed.last_active, row_id: at + 1 }))
   chat.parent = seed.branched_from ?? null
   chat.startedAt = seed.last_active
+  chat.pinned = seed.pinned === true
   if (seed.asking === undefined) return chat
   chat.generation = 1
   chat.asking = {
@@ -657,6 +705,18 @@ const detach: Handler = (gateway, socket, params, routed) => {
 
 const MUTATIONS: Readonly<Record<string, (gateway: ScriptedGateway, params: Obj, routed: string) => unknown>> = {
   model: (gateway, params, routed) => gateway.switchModel(params, routed),
+  archive: (gateway, params, routed) => {
+    gateway.authorize(params, routed)
+    return gateway.archive(params, gateway.storyKept())
+  },
+  sidebar: (gateway, params, routed) => {
+    gateway.authorize(params, routed)
+    return gateway.sidebar(params, gateway.storyKept())
+  },
+  delete: (gateway, params, routed) => {
+    gateway.authorize(params, routed)
+    return gateway.remove(params, gateway.storyKept())
+  },
   branch: (gateway, params, routed) => {
     gateway.authorize(params, routed)
     return gateway.branch(gateway.storyParent(), params, routed)
@@ -682,7 +742,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (scope === 'stored') return { sessions: gateway.branchRows(routed, params.picker === true), scope, next_cursor: null }
     const { list } = gateway.fixture.header
     const rows = isObject(list) && Array.isArray(list.sessions) ? list.sessions.filter(isObject) : []
-    return { sessions: rows.map(row => (row.session_id === gateway.sessionId ? { ...row, running: gateway.view.running } : row)), scope }
+    const shown = rows.filter(row => row.session_id !== gateway.sessionId || gateway.storyListed(params.include_hidden === true))
+    const story = { running: gateway.view.running, ...(params.picker === true ? { pinned: gateway.storyPinned() } : {}) }
+    return { sessions: shown.map(row => (row.session_id === gateway.sessionId ? { ...row, ...story } : row)), scope }
   },
   /** gateway/session_discovery.py:8-35 */
   'commands.catalog': (gateway, _socket, params, routed) => {
@@ -838,6 +900,9 @@ const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
   'config.set': (gateway, _socket, params, routed, chat) => gateway.setYolo(params, routed, chat),
   'session.mutate': (gateway, socket, params, routed, chat) => {
     if (params.operation === 'rename') return gateway.rename(socket, params, routed, chat)
+    if (params.operation === 'archive') return gateway.archive(params, gateway.chatKept(chat))
+    if (params.operation === 'delete') return gateway.remove(params, gateway.chatKept(chat))
+    if (params.operation === 'sidebar') return gateway.sidebar(params, gateway.chatKept(chat))
     if (params.operation !== 'branch') throw new Refused('unsupported_command')
     return gateway.branch(gateway.chatParent(chat), params, routed)
   },
@@ -890,6 +955,8 @@ export class ScriptedGateway {
   private readonly botChats = new Map<string, EchoChat>()
   private readonly newChats = new Map<string, EchoChat>()
   private readonly branchChats: EchoChat[] = []
+  private readonly removed = new Set<EchoChat>()
+  private readonly fate = { archived: false, pinned: false, removed: false }
   private readonly receipts = new Map<string, { readonly digest: string; readonly result: Obj }>()
   private readonly seeded: readonly EchoChat[]
   private readonly storyIsBotChatOf: string | null
@@ -923,14 +990,17 @@ export class ScriptedGateway {
     this.profiles = isObject(profiles) && Array.isArray(profiles.profiles) ? profiles.profiles.filter(isObject) : []
     this.home = this.profiles.map(row => (row.is_default === true ? row.name : undefined)).find(isText) ?? 'default'
     this.storyIsBotChatOf = fixture.header.homeBotChat === false ? null : this.home
+    const seededChats = Object.entries(fixture.header.chats ?? {}).flatMap(([profile, seeds]) => seeds.map(seed => seeded(profile, seed)))
     for (const { name, canonical_session: named } of this.profiles) {
       const id = isObject(named) ? named.resolved_id || named.id : undefined
       if (!isText(name) || !isObject(named) || !isText(id) || name === this.storyIsBotChatOf) continue
-      const chat = new EchoChat(id, name, BOT_CHAT, true)
-      if (isText(named.preview)) chat.rows.push({ role: 'assistant', text: named.preview, timestamp: named.last_active ?? null, row_id: 1 })
+      const seed = seededChats.find(chat => chat.id === id && chat.profile === name)
+      const chat = seed ?? Object.assign(new EchoChat(id, name, BOT_CHAT, true), { pinned: true })
+      if (seed === undefined && isText(named.preview)) chat.rows.push({ role: 'assistant', text: named.preview, timestamp: named.last_active ?? null, row_id: 1 })
       this.botChats.set(name, chat)
     }
-    this.seeded = Object.entries(fixture.header.chats ?? {}).flatMap(([profile, seeds]) => seeds.map(seed => seeded(profile, seed)))
+    const botChats = new Set(this.botChats.values())
+    this.seeded = seededChats.filter(chat => !botChats.has(chat))
     this.souls = new Map(Object.entries(fixture.header.souls ?? {}))
     const clash = fixture.header.configureClash
     this.clash = clash === undefined ? undefined : typeof clash === 'string' ? { title: clash, left: 1 } : { title: clash.title, left: clash.times }
@@ -955,7 +1025,9 @@ export class ScriptedGateway {
   }
 
   /** A new socket, opened with a ticket of that reach. The gateway speaks first (tui_gateway/ws.py:656-664). */
-  accept(peer: Peer, reach: Reach = this.reach): { text(text: string): void; closed(): void } {
+  accept(given: Peer, reach: Reach = this.reach): { text(text: string): void; closed(): void } {
+    const { latencyMs = 0 } = this.options
+    const peer = latencyMs > 0 ? repliesHeld(given, latencyMs, this.options.clock) : given
     const socket: Socket = { peer, reach, subscriptionId: `subscription-${++this.dials}`, subscriptions: new Map(), replayCursors: new Map() }
     this.sockets.add(socket)
     peer.write({
@@ -1117,7 +1189,16 @@ export class ScriptedGateway {
 
   /** Whether the frame is for the story session, on the profile it lives in. */
   plays(params: Obj, routed: string): boolean {
-    return params.session_id === this.sessionId && routed === this.home
+    return params.session_id === this.sessionId && routed === this.home && !this.fate.removed
+  }
+
+  /** Whether the home profile's live list names the story. A removed chat is in no list, and an archived one only in a list that asks for hidden chats. */
+  storyListed(hidden: boolean): boolean {
+    return !this.fate.removed && (hidden || !this.fate.archived)
+  }
+
+  storyPinned(): boolean {
+    return this.fate.pinned
   }
 
   /** The profile a session lives in, or undefined for a session this gateway does not have. */
@@ -1126,12 +1207,16 @@ export class ScriptedGateway {
   }
 
   private echoChats(): EchoChat[] {
-    return [...this.botChats.values(), ...this.seeded, ...this.newChats.values(), ...this.branchChats]
+    return [...this.botChats.values(), ...this.seeded, ...this.newChats.values(), ...this.branchChats].filter(chat => !this.removed.has(chat))
   }
 
-  /** Live lists only running chats, where Hermes lists every open one (gateway/session_live_listing.py:77-100). */
+  /**
+   * Live lists only running chats, where Hermes lists every open one (gateway/session_live_listing.py:77-100). An archived
+   * chat is only in a live list that asks for hidden chats, and never in a stored one.
+   */
   listed(routed: string, scope: 'live' | 'stored', hidden: boolean, picker: boolean): Obj {
-    const chats = this.echoChats().filter(chat => chat.profile === routed && (hidden || !chat.hidden) && (scope === 'stored' || chat.running))
+    const chats = this.echoChats().filter(chat =>
+      chat.profile === routed && (hidden || !chat.hidden) && (scope === 'stored' || chat.running) && (!chat.archived || (hidden && scope === 'live')))
     const rows = chats.map(chat => chat.listRow(picker)).sort((a, b) => Number(b.last_active_at ?? b.started_at ?? 0) - Number(a.last_active_at ?? a.started_at ?? 0))
     return scope === 'live' ? { sessions: rows, scope } : { sessions: rows.map(row => ({ ...row, running: false })), scope, next_cursor: null }
   }
@@ -1205,6 +1290,63 @@ export class ScriptedGateway {
         return chat.revision
       }
     }
+  }
+
+  storyKept(): Kept {
+    const { view, fate } = this
+    return {
+      revision: view.revision, generation: view.generation, busy: view.running || view.pending.length > 0,
+      flag: (name, on) => {
+        fate[name] = on
+        this.emit('session.info', { revision: ++view.revision, title: view.title || this.listedTitle(), running: view.running })
+        return view.revision
+      },
+      remove: () => { fate.removed = true }
+    }
+  }
+
+  chatKept(chat: EchoChat): Kept {
+    return {
+      revision: chat.revision, generation: chat.generation, busy: chat.running,
+      flag: (name, on) => {
+        chat[name] = on
+        // A pin unhides a chat, all but the Bot Chat Hermes keeps hidden.
+        if (name === 'pinned' && on && !(chat.hidden && chat.title === BOT_CHAT)) chat.hidden = false
+        this.say(chat, 'session.info', { revision: ++chat.revision, title: chat.title, running: chat.running })
+        return chat.revision
+      },
+      remove: () => void this.removed.add(chat)
+    }
+  }
+
+  /** `archive`, a metadata write: no busy gate and no generation, fenced by the revision. */
+  archive(params: Obj, held: Kept): unknown {
+    const reason = mutationReason(params)
+    if (reason !== null) throw new Refused(reason)
+    if (params.expected_revision !== held.revision) throw fenced('revision_conflict', held)
+    const archived = (params.payload as Obj).archived === true
+    return { session_id: params.session_id, operation: 'archive', revision: held.flag('archived', archived) }
+  }
+
+  /** `sidebar`, a metadata write as `archive` is. Of its fields only `pinned` is played. */
+  sidebar(params: Obj, held: Kept): unknown {
+    const reason = mutationReason(params)
+    if (reason !== null) throw new Refused(reason)
+    const payload = params.payload as Obj
+    if (Object.keys(payload).some(key => key !== 'pinned')) throw new Refused('unsupported_command')
+    if (params.expected_revision !== held.revision) throw fenced('revision_conflict', held)
+    return { session_id: params.session_id, operation: 'sidebar', revision: held.flag('pinned', payload.pinned === true) }
+  }
+
+  /** `delete`: fenced by the revision and the generation, and refused while a turn runs or a message waits. The chat is then in no list and cannot be resumed. */
+  remove(params: Obj, held: Kept): unknown {
+    const reason = mutationReason(params)
+    if (reason !== null) throw new Refused(reason)
+    if (params.expected_revision !== held.revision) throw fenced('revision_conflict', held)
+    if (params.expected_generation !== held.generation) throw fenced('stale_generation', held)
+    if (held.busy) throw new Refused('session_busy')
+    held.remove()
+    return { session_id: params.session_id, operation: 'delete' }
   }
 
   /** `rename`, a metadata write: no busy gate and no generation (gateway/session_mutations.py:18,212). */
@@ -1438,8 +1580,11 @@ export class ScriptedGateway {
     return chat
   }
 
+  /** A Bot Chat archived on purpose is retired, so a title lookup skips it. */
   private botChatId(profile: string): string | undefined {
-    return profile === this.storyIsBotChatOf ? this.sessionId : this.botChats.get(profile)?.id
+    if (profile === this.storyIsBotChatOf) return this.storyListed(false) ? this.sessionId : undefined
+    const chat = this.botChats.get(profile)
+    return chat === undefined || chat.archived || this.removed.has(chat) ? undefined : chat.id
   }
 
   /** The reply rows of `session.list {title: 'Bot Chat'}` (gateway/session_controls.py:617-638): the one session with that title, or none. */

@@ -109,6 +109,8 @@ export interface HermesOptions {
 
 /** How long a session nothing retains stays attached. */
 export const RETAIN_MS = 60_000
+/** How many sessions let go of keep their content for a quick return. Atlas's 160 rows are about 300 KB. */
+export const RELEASED_KEPT = 8
 const LIST_DEBOUNCE_MS = 300
 const NO_BRIDGE = 'Highwing has no part of its window to answer this with.'
 
@@ -133,7 +135,7 @@ function sameSidebar(a: Sidebar, b: Sidebar): boolean {
   return a.bot === b.bot && a.status === b.status && a.complete === b.complete && a.rows.length === b.rows.length && a.rows.every((row, index) => {
     const other = b.rows[index]
     return other !== undefined && row.id === other.id && row.title === other.title && row.preview === other.preview
-      && row.lastActiveAt === other.lastActiveAt && row.badge === other.badge
+      && row.lastActiveAt === other.lastActiveAt && row.badge === other.badge && row.pinned === other.pinned && row.botChat === other.botChat
   })
 }
 
@@ -159,6 +161,8 @@ export function openHermes(options: HermesOptions): Hermes {
   const count = (kind: 'unshown' | 'invalid' | 'unrouted' | 'declined', type: string) => options.onDiagnostic?.({ kind, type })
 
   const actors = new Map<SessionId, SessionActor>()
+  /** Actors let go of, oldest first. Each is detached, so no frame, request or badge reaches it, and keeps its content. */
+  const released = new Map<SessionId, SessionActor>()
   const watchers = new Map<SessionId, Set<(session: Session) => void>>()
   const windows = new Map<SessionId, number>()
   const releases = new Map<SessionId, () => void>()
@@ -264,7 +268,7 @@ export function openHermes(options: HermesOptions): Hermes {
   const publishSidebar = () => {
     const settled = new Map<SessionId, SessionContent>()
     for (const [id, actor] of actors) if (actor.session.sync.state !== 'opening') settled.set(id, actor.session)
-    sidebar.set(deriveSidebar(list, settled))
+    sidebar.set(deriveSidebar(list, settled, desk.isBotChat))
   }
 
   const desk = chatDesk({
@@ -273,6 +277,7 @@ export function openHermes(options: HermesOptions): Hermes {
       open.set(desk.open)
       list.follow(shownBot(desk.open))
       book.follow(shownGroup(desk.open))
+      publishSidebar()
     }
   })
   const open = feed<OpenChat>(desk.open, sameOpen)
@@ -288,6 +293,8 @@ export function openHermes(options: HermesOptions): Hermes {
   const roster = botList(conn, () => {
     bots.set(roster.bots)
     settle()
+    const listed = roster.bots
+    if (conn.reach === 'host' && listed.state === 'listed') list.warm(botsIn(listed.roster).map(bot => bot.id))
   })
   const bots = feed<Bots>(roster.bots)
 
@@ -304,6 +311,13 @@ export function openHermes(options: HermesOptions): Hermes {
   const actorFor = (id: SessionId): SessionActor => {
     const held = actors.get(id)
     if (held !== undefined) return held
+    const kept = released.get(id)
+    if (kept !== undefined) {
+      released.delete(id)
+      actors.set(id, kept)
+      kept.attach()
+      return kept
+    }
     const bot = desk.botOf(id)
     const actor = new SessionActor(id, {
       conn: bot === undefined ? conn : conn.as(bot), clock, mintId, bridge,
@@ -338,7 +352,9 @@ export function openHermes(options: HermesOptions): Hermes {
           const actor = actors.get(id)
           if (actor === undefined || wanted(id)) return
           actors.delete(id)
-          void actor.detach()
+          released.set(id, actor)
+          for (const oldest of [...released.keys()].slice(0, -RELEASED_KEPT)) released.delete(oldest)
+          void actor.release()
           publishSidebar()
         }, RETAIN_MS))
       }
@@ -389,6 +405,7 @@ export function openHermes(options: HermesOptions): Hermes {
       return slash.get()
     },
     retitle: list.retitle,
+    pin: list.pin,
     drop: list.drop,
     refreshSoon,
     settledRelay: () => relayRead,
@@ -396,6 +413,7 @@ export function openHermes(options: HermesOptions): Hermes {
     relay: relays.send,
     branchPins,
     branched: desk.branched,
+    gone: desk.gone,
     uploads
   }
 

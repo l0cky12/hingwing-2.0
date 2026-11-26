@@ -50,8 +50,8 @@ function stage() {
   const actor = new SessionActor(ID, { conn, clock, publish: session => published.push(session), bridge: request => bridges.push(request), mintId: () => `id-${++state.ids}`, watched: () => false })
   const branched: Parameters<Hub['branched']>[0][] = []
   const hub: Hub = {
-    settledCatalog: async () => [], retitle: () => {}, drop: () => {}, refreshSoon: () => {},
-    settledRelay: async () => {}, mentioned: () => [], relay: () => {}, branchPins: new Map(), branched: made => void branched.push(made),
+    settledCatalog: async () => [], retitle: () => {}, pin: () => {}, drop: () => {}, refreshSoon: () => {},
+    settledRelay: async () => {}, mentioned: () => [], relay: () => {}, branchPins: new Map(), branched: made => void branched.push(made), gone: () => {},
     uploads: { read: async () => null }
   }
   let seq = 0
@@ -195,11 +195,13 @@ describe('attach', () => {
     expect(actor.session.requests).toEqual([{ id: 'srq-1', ask: { kind: 'secret', for: { is: 'sudo', command: 'sudo ls' } }, state: { s: 'waiting', error: null }, deadline: null }])
   })
 
-  it('detaches with the subscription the attach gave it', async () => {
+  it('detaches with the subscription the attach gave it when released, and keeps what it shows', async () => {
     const { actor, open, calls } = stage()
     await open()
-    void actor.detach()
+    const shown = actor.session.history
+    void actor.release()
     expect(calls.map(call => [call.method, call.params])).toEqual([['session.detach', { session_id: ID, subscription_id: 'sub-1' }]])
+    expect(actor.session.history).toBe(shown)
   })
 })
 

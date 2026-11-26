@@ -117,6 +117,8 @@ export type DeskEvent =
   | { readonly on: 'branched'; readonly from: SessionId; readonly sessionId: SessionId; readonly text: string }
   | { readonly on: 'sought'; readonly sessionId: SessionId; readonly found: Whereabouts }
   | { readonly on: 'unsought'; readonly sessionId: SessionId }
+  /** Hermes archived or removed this chat. */
+  | { readonly on: 'gone'; readonly sessionId: SessionId }
 
 /** Where Hermes's lists put a session: in a bot's profile, in the socket's own, or in none it lists. */
 export type Whereabouts = { readonly in: 'bot'; readonly bot: BotId } | { readonly in: 'own' } | { readonly in: 'none' }
@@ -235,7 +237,25 @@ export function nextDesk(desk: Desk, event: DeskEvent): { readonly desk: Desk; r
     }
     case 'unsought':
       return done(waitsForLink(desk.open, event.sessionId) ? { ...desk, open: { ...desk.open, opening: null } } : desk)
+    case 'gone':
+      return done(gone(desk, event.sessionId))
   }
+}
+
+/**
+ * The shown chat moves to its bot's own chat, started or not. With no bot it shows nothing, and the
+ * next `facts` picks the newest chat left.
+ */
+function gone(desk: Desk, sessionId: SessionId): Desk {
+  const bot = ownerOf(desk, sessionId)
+  const owners = Object.fromEntries(Object.entries(desk.owners).filter(([held]) => held !== sessionId))
+  const chats = bot !== undefined && chatOf(desk, bot) === sessionId ? Object.fromEntries(Object.entries(desk.chats).filter(([held]) => held !== bot)) : desk.chats
+  const left: Desk = { ...desk, owners, chats }
+  const shown = shownChat(desk.open)
+  if (shown?.sessionId !== sessionId) return left
+  const home = bot ?? shown.bot
+  const next: Shown | null = home === null ? null : { kind: 'bot', bot: home, sessionId: chatOf(left, home) ?? null }
+  return { ...left, open: { ...desk.open, shown: next } }
 }
 
 /**

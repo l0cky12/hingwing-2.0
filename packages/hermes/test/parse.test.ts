@@ -439,7 +439,13 @@ describe('parseTranscript', () => {
 describe('parseUserChats and parseServerRequest', () => {
   it('reads the fixture list row with its start time in milliseconds', () => {
     const { sessions } = fixture.header.list as { sessions: CanonicalSessionListRow[] }
-    expect(parseUserChats(sessions)).toEqual([{ id: SESSION, title: '', preview: null, lastActiveAt: 1795251600000 }])
+    expect(parseUserChats(sessions)).toEqual([{ id: SESSION, title: '', preview: null, lastActiveAt: 1795251600000, pinned: false }])
+  })
+
+  it('keeps the pin a picker row carries (gateway/session_picker_fields.py:42)', () => {
+    const row = (id: string, pinned?: boolean | null): CanonicalSessionListRow =>
+      ({ session_id: id, id, title: id, source: 'gui', started_at: 1795251600, message_count: 2, running: false, ...(pinned === undefined ? {} : { pinned }) })
+    expect(parseUserChats([row('a', true), row('b', false), row('c', null), row('d')]).map(listed => listed.pinned)).toEqual([true, false, false, false])
   })
 
   it('leaves out a chat a scheduled job runs, and keeps one the user talks in', () => {

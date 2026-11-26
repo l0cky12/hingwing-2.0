@@ -98,12 +98,16 @@ export interface SessionPort {
   readonly fence: Fence
   /** `reasons` words a refusal of this call that the general table would word wrongly. */
   call<M extends Method>(method: M, params: Served[M]['params'], reasons?: Readonly<Record<string, Refusal>>): Promise<Outcome<Served[M]['result']>>
-  /** `invalid` stands in for the general refusal when Hermes names that payload field as the invalid one, worded from Hermes's detail. */
+  /**
+   * `invalid` stands in for the general refusal when Hermes names that payload field as the invalid one, worded from Hermes's detail.
+   * `reasons` words a refusal of this operation that the general table would word wrongly.
+   */
   mutate(
     operation: string,
     payload: Record<string, unknown>,
     expectedGeneration: number | null,
-    invalid?: { readonly field: string | null; readonly refusal: (detail: string | null) => Refusal }
+    invalid?: { readonly field: string | null; readonly refusal: (detail: string | null) => Refusal },
+    reasons?: Readonly<Record<string, Refusal>>
   ): Promise<Outcome<Served['session.mutate']['result']>>
   /**
    * The request exactly as the row built it, with the same one retry on a fence refusal. `sent` hears each request
@@ -149,9 +153,13 @@ export class SessionActor {
         () => deps.conn.call(method, params),
         error => (error instanceof RpcRefusal && Object.hasOwn(reasons, error.reason ?? '') ? reasons[error.reason ?? ''] as Refusal : refusalOf(error))
       ),
-      mutate: (operation, payload, expectedGeneration, invalid) => outcomeOf(
+      mutate: (operation, payload, expectedGeneration, invalid, reasons = {}) => outcomeOf(
         () => this.mutation({ request_id: deps.mintId(), operation, payload, expected_revision: this.tracked.fence.revision, expected_generation: expectedGeneration }),
-        error => (invalid !== undefined && error instanceof RpcRefusal && error.reason === 'invalid_params' && error.field === invalid.field ? invalid.refusal(error.detail) : refusalOf(error))
+        error => {
+          if (!(error instanceof RpcRefusal)) return refusalOf(error)
+          if (invalid !== undefined && error.reason === 'invalid_params' && error.field === invalid.field) return invalid.refusal(error.detail)
+          return Object.hasOwn(reasons, error.reason ?? '') ? reasons[error.reason ?? ''] as Refusal : refusalOf(error)
+        }
       ),
       resend: (request, sent, explain) => outcomeOf(
         () => this.mutation(request, sent),
@@ -391,8 +399,10 @@ export class SessionActor {
     })
   }
 
-  async detach(): Promise<void> {
+  /** Detaches from Hermes and keeps the content, so the next `attach` shows it while it catches up. */
+  async release(): Promise<void> {
     const { gate } = this.tracked
+    this.step({ in: 'release' })
     if (gate.at !== 'live') return
     await this.deps.conn.call('session.detach', { session_id: this.id, subscription_id: gate.subscriptionId }).catch(refusalOf)
   }

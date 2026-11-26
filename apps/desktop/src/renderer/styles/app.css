@@ -63,6 +63,8 @@ code, pre { font-family: var(--mono); }
 .screen > .composer { grid-row: 3; grid-column: 1; }
 main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: thin; scrollbar-color: #78857E transparent; }
 #transcript { max-width: 760px; margin: 0 auto; padding: 36px 28px 56px; }
+/* The skipped box clips what it paints at its edge. The margin lets a menu or a halo that hangs over the edge show whole. */
+.turn > .thread { content-visibility: auto; contain-intrinsic-size: auto 400px; overflow-clip-margin: 240px; }
 .turn + .turn { margin-top: 44px; }
 .turn.pending .request { color: var(--graphite); border-left-color: var(--rule); }
 .queued { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-left: var(--col); }
@@ -1011,6 +1013,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .chat-doing[data-badge="running"] { color: var(--signal); font-weight: 500; }
 .chat-doing[data-badge="asking"] { color: var(--caution); font-weight: 500; }
 .chats-note { margin: 18px 12px; font-size: 13px; color: var(--graphite); }
+.chats-group { margin: 18px 12px 4px; font-size: 13px; font-weight: 500; color: var(--graphite); }
+.chats-group:first-child { margin-top: 4px; }
 .chat-item { position: relative; }
 .chat-more { position: absolute; top: 9px; right: 10px; opacity: 0; }
 .chat-item:is(:hover, :focus-within) .chat-more { opacity: 1; }
