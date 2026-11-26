@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Launch, drive and screenshot the Highwing Electron desktop app (apps/desktop) headlessly under Xvfb with Playwright, replaying a recorded Hermes fixture through the real client or connecting through a fake Hermes machine. Use to prove a renderer, IPC or main-process change works in the real window, to drive the setup screen, to capture design screenshots at the reference size, or to compare against the design C references.
+description: Launch, drive and screenshot the Highwing Electron desktop app (apps/desktop) headlessly under Xvfb with Playwright, replaying a recorded Hermes fixture through the real client, or connecting through a fake Hermes machine, a fake Hermes Webapp or a real gateway's address. Use to prove a renderer, IPC or main-process change works in the real window, to drive the setup screen, to capture design screenshots at the reference size, or to compare against the design C references.
 ---
 
 # Verify Highwing
@@ -24,11 +24,16 @@ $H cleanup --run <run> | --all
 
 Options:
 
-Every run names one of two gateways. Hermes, ssh and Tailscale are installed on this machine, and a run that named neither would reach the real ones.
+Every run names one gateway: `--fixture`, `--fake-host`, `--fake-webapp` or `--webapp-url`. Hermes, ssh and Tailscale are installed on this machine, and a run that named none would reach the real ones.
 
 - `--fixture <path>` sets `HIGHWING_FIXTURE`. Main then plays that recorded gateway through the real client, and no socket or process outside Electron is touched. The app has no setup screen in this mode.
 - `--fake-host <scenario>` starts the fake Hermes machine of `packages/hermes/src/testing/fake-host.ts` and launches the app with the fake machine's bin directory as its whole `PATH`. That directory holds a fake `ssh`, `tailscale` and `hermes`, so the app runs its real setup check and its real remote dial and reaches nothing real. A tool the scenario lacks is a real "command not found". The scenarios are `ok`, `ok-bound`, `slow` and one per check failure: `tailscale-missing`, `tailscale-off`, `tailscale-signed-out`, `host-not-found`, `host-offline`, `unreachable`, `ssh-missing`, `ssh-denied`, `ssh-check`, `host-changed`, `hermes-not-found`, `hermes-too-old` and `cant-save`. The fake machine is `hermes-host.example-tailnet.ts.net`. Its gateway plays `fixtures/errand.jsonl`, or the file `--fixture` names. The Hermes of `ok` mints the ticket that reaches every bot, so the app can switch bots. The Hermes of `ok-bound` passes the same check and mints none, as an older Hermes does, so the app reaches one profile and refuses to switch.
-- `--saved none|local|remote|unreadable|newer` needs `--fake-host`. It writes that `connection.json` into the run's user-data directory before launch. The default is `none`, a first run. `remote` saves the fake machine, and `local` saves this computer, where the fake `hermes` answers.
+- `--fake-webapp <scenario>` starts the fake Hermes Webapp of `packages/hermes/src/testing/fake-webapp.ts` in front of a gateway that plays `fixtures/errand.jsonl`, or the file `--fixture` names. The app is launched with an empty directory as its whole `PATH`, so it runs its real check, sign-in and dial by address and can run no real tool. The scenarios are `ok`, `too-old`, `ungated` and one per failure of a check by address: `url-unreachable`, `url-certificate`, `not-hermes`, `no-sign-in`, `dashboard`, `sign-in-cancelled`, `sign-in-timed-out`, `sign-in-refused`, `url-no-socket` and `url-legacy`. The run stands in for the user's browser: it reads each sign-in page main asked for from `opens.jsonl` and has the fake's user follow it. That user signs in at once, except in `sign-in-cancelled` and `sign-in-timed-out`, where the page is left open.
+- `--login-form` needs `--fake-webapp`. The fake's `/login` then serves the form of Hermes's own sign-in page, and signs in only the username and password in the files that `HIGHWING_VERIFY_USER_FILE` and `HIGHWING_VERIFY_PASSWORD_FILE` name. The run opens each sign-in page in a browser window of its own, types the two into the form and submits it. It saves the page as `sign-in-page-<n>.png` before it types, and never writes either value.
+- `--webapp-url <address>` reaches a real gateway's Webapp at that address, with the same empty `PATH`. It signs in on Hermes's `/login` page as `--login-form` does, with the two files. Everything the run writes names the gateway's host as `hermes.example.com`: each shot, each `.aria.txt`, `steps.log`, `opens.jsonl`, `main.log` and `console.log`. It plays no fixture.
+- `--keyring test|system` needs `--fake-webapp` or `--webapp-url`. Without it the app is launched with `--password-store=basic`, so it has no keyring, keeps a sign-in for one run, and the run fails if `sign-ins.json` exists when it ends. `test` sets `HIGHWING_TEST_KEYRING`, and a build that is not installed then keeps sign-ins unsealed in `sign-ins.json`. It is refused with `--webapp-url`. `system` leaves the keyring to the desktop and puts `dbus-send` alone on the app's `PATH`, so the app can ask whether a Secret Service runs.
+- `--sign-in-ms <ms>` needs `--fake-webapp` or `--webapp-url`. It sets `HIGHWING_SIGN_IN_MS`, which shortens the wait for the browser in a build that is not installed.
+- `--saved none|local|remote|url|unreadable|newer` needs `--fake-host`, `--fake-webapp` or `--webapp-url`. It writes that `connection.json` into the run's user-data directory before launch. The default is `none`, a first run. `remote` saves the fake machine, and `local` saves this computer, where the fake `hermes` answers. Both need `--fake-host`. `url` saves the address of the run's Webapp, and needs `--fake-webapp` or `--webapp-url`.
 - `--mode bots|chats` writes `{"version":1,"mode":…}` to `mode.json` in the run's user-data directory before launch, creating the directory on a first run, so the window opens in bot mode or chat mode. With `--fake-host` it is written after the user-data directory is emptied. Without it the directory is left as it was, so a run with a name used before opens in the mode that run left.
 - `--hold-at tailscale|ssh|attach|relay` needs `--fake-host`. The fake tool that reaches that moment waits for the rest of the run. `ssh` pins the setup check at "Connecting to hermes-host".
 - `--drop-after <event type or request method>` is verification scaffolding. It writes a copy of the fixture whose gateway closes the socket 50 ms after the first frame of that event type, or the first request frame of that method (`sudo`), and plays the copy instead. The copy is saved as `fixture-edited.jsonl` in the evidence directory. The client shows the dropped link until its redial lands about 1 s later.
@@ -96,7 +101,7 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `see <text>` | text | waits until the text is visible anywhere |
 | `said <text>` | text | waits until the text is visible in the thread. A bot's preview in the sidebar does not count |
 | `click <role> <name>` | ARIA role, exact accessible name or `/regex/` | clicks it. A `/regex/` clicks the first match |
-| `type <label> <text>` | exact label, text or `@request` | fills the field. `@request` is the text of the fixture's first `prompt.submit` step. Text typed into a password field, or into any field of a masked card or a connector card (`[data-private]`), is written as `•••` in `steps.log`, and that field's value is `•••` in each `.aria.txt`. Each screenshot, the failure screenshot included, is taken with every such field showing `•••`, and the run fails if one showed other text when it was taken. A failed `value` check on that field names neither value. The run fails if any evidence file holds such typed text, as typed or escaped |
+| `type <label> <text>` | exact label, text, `@request` or `@webapp` | fills the field. `@request` is the text of the fixture's first `prompt.submit` step. `@webapp` is the address of the run's Webapp. Text typed into a password field, or into any field of a masked card or a connector card (`[data-private]`), is written as `•••` in `steps.log`, and that field's value is `•••` in each `.aria.txt`. Each screenshot, the failure screenshot included, is taken with every such field showing `•••`, and the run fails if one showed other text when it was taken. A failed `value` check on that field names neither value. The run fails if any evidence file holds such typed text, as typed or escaped |
 | `select <label> <option>` | exact label, exact option text | picks that option of the labelled select |
 | `press <key>` | Playwright key name | presses it |
 | `reload` | none | reloads the window, as Ctrl+R in a browser does. Main and the gateway keep running, so the open chat stays. Follow it with `wait live` |
@@ -124,6 +129,9 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `home` | none | fails unless the app has one window and its address is still the one it launched with |
 | `menu <key> <label>` | Playwright key name, exact entry label | presses the key, such as `ContextMenu`, and waits for main to record a new menu in `menus.jsonl`. It presses again, 200 ms later, until a recorded menu holds the label, and fails at the timeout naming the last menu. It logs the menu that held the label and how many presses it took. The spellchecker marks a word a second or so after it is typed, so the first menus may lack the suggestions |
 | `menu-without <key> <label>` | Playwright key name, exact entry label | as `menu`, until a recorded menu lacks the label. It proves something only after a `menu` that showed the label |
+| `relaunch` | none | closes the app and launches it again with the same arguments, environment and user-data directory, as a restart of the computer's Highwing. The fake machine or Webapp keeps running. Follow it with a `wait` |
+| `webapp <order>` | `sign-out` | tells the fake Webapp that Hermes ends every sign-in. The app finds out at its next dial, such as after a `relaunch`. `--fake-webapp` runs only |
+| `browsed <n>` | number | waits until main has asked the browser for the gateway's sign-in page n times, and fails on any other count. It is checked again when the steps end |
 | `second <arg>` | one argument, such as a `highwing://chat/<session id>` link | starts a second instance with the same electron binary, arguments (less any `--arg`), user-data directory, environment, working directory and display, plus this argument. Waits for it to exit, logs its exit code, and fails if it is still running at the step timeout. Its PID is kept for `cleanup` while it runs |
 | `copied <text>` | text | fails unless the system clipboard holds exactly this text |
 | `gone <role> <name>` | ARIA role, exact accessible name or `/regex/` | polls until no visible element has that role and name, and fails at the timeout. Waits out a fade |
@@ -185,7 +193,8 @@ Each run writes to `/tmp/highwing-verify/<run>/`:
 - `steps.log` lists every step with a timestamp, and ends with `PASS` or `FAIL`.
 - `<name>.png` and `<name>.aria.txt` hold each shot and the ARIA snapshot of the page at that moment.
 - `<name>.clip.txt` holds the clipboard text that a `clipboard` step read.
-- `opens.jsonl` holds one JSON line for each open or show call that main accepted.
+- `opens.jsonl` holds one JSON line for each open or show call that main accepted, and each page main asked the browser for.
+- `sign-in-page-<n>.png` is Hermes's sign-in page before the run typed into it (`--login-form` and `--webapp-url` runs).
 - `notices.jsonl` holds one JSON line for each desktop notification main would have shown.
 - `menus.jsonl` holds one JSON line for each context menu main would have shown.
 - `main.log` holds the Electron main process's stdout and stderr. `console.log` holds the renderer console and page errors.
@@ -200,12 +209,13 @@ Proof standards:
 
 - Drive the real user path. Type into the composer and press Send. Click the approval button. Never call the bridge or set state from the test.
 - Capture the action and the state it caused: a shot before and after, plus the ARIA text that names the change.
-- A fixture is the production boundary for Hermes. In a `--fake-host` run the boundary is the three commands the app runs: `ssh`, `tailscale` and `hermes`. Nothing else is mocked.
-- Never launch the app for a check without `--fixture` or `--fake-host`.
+- A fixture is the production boundary for Hermes. In a `--fake-host` run the boundary is the three commands the app runs: `ssh`, `tailscale` and `hermes`. In a `--fake-webapp` run the boundary is the Webapp's HTTP routes, its socket and the user's browser. Nothing else is mocked.
+- Never launch the app for a check without `--fixture`, `--fake-host`, `--fake-webapp` or `--webapp-url`.
+- A `--fake-webapp` run fails if a token, a code or a ticket the fake made is in any evidence file or in any file under the app's user-data directory.
 
 ## Cleanup
 
-`$H cleanup --run <name>` or `$H cleanup --all` kills only the PIDs this skill recorded in `/tmp/highwing-verify-scratch/<run>/pid`, `host-pid` and `second-pid`: the app, its fake host and a second instance. It then deletes that scratch directory, which holds the Electron user-data dir. It never touches `/tmp/highwing-verify/`. Never kill Electron by process name, because the user may be running their own.
+`$H cleanup --run <name>` or `$H cleanup --all` kills only the PIDs this skill recorded in `/tmp/highwing-verify-scratch/<run>/pid`, `host-pid`, `second-pid` and `browser-pid`: the app, its fake host or fake Webapp, a second instance and the sign-in browser. It then deletes that scratch directory, which holds the Electron user-data dir. It never touches `/tmp/highwing-verify/`. Never kill Electron by process name, because the user may be running their own.
 
 ## Feature map
 

@@ -2,13 +2,14 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, appendFileSync, openSync, readSync, closeSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync, appendFileSync, openSync, readSync, closeSync } from 'node:fs'
 import { delimiter, dirname, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
 const DESKTOP = join(REPO, 'apps/desktop')
 const MAIN_JS = join(DESKTOP, 'out/main/index.js')
+const BROWSER_JS = join(dirname(fileURLToPath(import.meta.url)), 'sign-in-browser.mjs')
 const EVIDENCE_ROOT = '/tmp/highwing-verify'
 const SCRATCH_ROOT = '/tmp/highwing-verify-scratch'
 const REFERENCE = join(REPO, 'docs/design/reference')
@@ -22,17 +23,26 @@ const FAKE_HOST = 'hermes-host.example-tailnet.ts.net'
 const DEV_ORIGIN = 'http://localhost:5173'
 const ERRAND = join(REPO, 'fixtures/errand.jsonl')
 const SETTINGS_FILE = 'connection.json'
+const SIGN_INS_FILE = 'sign-ins.json'
+/** `test` seals nothing, in a build that is not installed. `system` is whatever keyring this desktop has. */
+const KEYRINGS = ['test', 'system']
+const USER_FILES = ['HIGHWING_VERIFY_USER_FILE', 'HIGHWING_VERIFY_PASSWORD_FILE']
 const MODE_FILE = 'mode.json'
 const MODES = ['bots', 'chats']
 
-/** What `--saved` leaves in the user-data directory before launch. null: no file. */
+/** What `--saved` leaves in the user-data directory before launch. null: no file. `url` is the gateway address of the run. */
 const SAVED = {
-  none: null,
-  local: JSON.stringify({ version: 1, target: { kind: 'local' } }),
-  remote: JSON.stringify({ version: 1, target: { kind: 'remote', host: FAKE_HOST } }),
-  unreadable: '{"version": 1, "target"',
-  newer: JSON.stringify({ version: 2, target: { kind: 'relay' } })
+  none: () => null,
+  local: () => JSON.stringify({ version: 1, target: { kind: 'local' } }),
+  remote: () => JSON.stringify({ version: 1, target: { kind: 'remote', host: FAKE_HOST } }),
+  url: url => JSON.stringify({ version: 1, target: { kind: 'url', url } }),
+  unreadable: () => '{"version": 1, "target"',
+  newer: () => JSON.stringify({ version: 2, target: { kind: 'relay' } })
 }
+/** The saved connections that make sense with each kind of gateway. `local` and `remote` would run the real hermes and ssh without the fake machine. */
+const SAVED_WITH = { host: ['none', 'local', 'remote', 'unreadable', 'newer'], webapp: ['none', 'url', 'unreadable', 'newer'] }
+/** What stands in for the real gateway's host in everything a `--webapp-url` run writes. */
+const STAND_IN_HOST = 'hermes.example.com'
 
 const STATES = {
   window: page => page.locator('#root > :not([hidden])').first(),
@@ -232,6 +242,30 @@ const STEPS = {
   },
   menu: { arity: 2, run: async (ctx, key, label) => pressForMenu(ctx, key, label, true) },
   'menu-without': { arity: 2, run: async (ctx, key, label) => pressForMenu(ctx, key, label, false) },
+  relaunch: {
+    arity: 0,
+    run: async ctx => {
+      await quitApp(ctx)
+      await launchApp(ctx)
+      log(ctx, `  relaunched as pid ${ctx.pid}, with the user-data directory and the gateway of the first launch`)
+    }
+  },
+  webapp: {
+    arity: 1,
+    run: async (ctx, command) => {
+      if (!ctx.web?.tell) throw new Error('"webapp" needs --fake-webapp, because only the fake Hermes takes orders')
+      if (command !== 'sign-out') throw new Error(`unknown webapp command "${command}". Known: sign-out`)
+      ctx.web.tell(command)
+    }
+  },
+  browsed: {
+    arity: 1,
+    run: async (ctx, n) => {
+      const pages = await pollUntil(ctx, () => signInPages(ctx), opened => opened.length >= Number(n)).catch(() => signInPages(ctx))
+      if (pages.length !== Number(n)) throw new Error(`main opened the gateway's sign-in page ${pages.length} time(s), not ${n}`)
+      ctx.browsed = Number(n)
+    }
+  },
   second: {
     arity: 1,
     run: async (ctx, arg) => {
@@ -632,7 +666,11 @@ function requestText(fixturePath) {
 }
 
 const MASK = '•••'
-const expand = (ctx, text) => (text === '@request' ? requestText(ctx.fixture ?? fail('@request needs --fixture')) : text)
+function expand(ctx, text) {
+  if (text === '@request') return requestText(ctx.fixture ?? fail('@request needs --fixture'))
+  if (text === '@webapp') return ctx.web?.url ?? fail('@webapp needs --fake-webapp or --webapp-url')
+  return text
+}
 
 const PRIVATE_FIELDS = 'input[type=password], [data-private] input'
 
@@ -650,7 +688,10 @@ async function secretField(ctx, verb, label, text) {
 /** Each way a typed password can be written: as typed, and escaped inside a JSON or YAML string. */
 const writtenForms = secret => [secret, JSON.stringify(secret).slice(1, -1)]
 
-const masked = (ctx, text) => [...ctx.secrets].flatMap(writtenForms).reduce((out, form) => out.split(form).join(MASK), text)
+/** A real gateway's host is written as the stand-in, so what a run leaves can be shown to others. */
+const aliased = (ctx, text) => (ctx.realHost === null ? text : text.split(ctx.realHost).join(STAND_IN_HOST))
+
+const masked = (ctx, text) => aliased(ctx, [...ctx.secrets].flatMap(writtenForms).reduce((out, form) => out.split(form).join(MASK), text))
 
 /** A snapshot writes a textbox's value after its name, escaped. A password field's value is replaced before anything matches on it. */
 function maskedSnapshot(snapshot, labels) {
@@ -666,13 +707,28 @@ function maskedSnapshot(snapshot, labels) {
 /**
  * Takes the screenshot with every private field that holds text showing the mask, then puts the text back.
  * A code or a username is drawn as typed, so only this keeps it out of a PNG. The shot counts as leaked
- * when a private field showed other text once it was taken.
+ * when a private field showed other text once it was taken. In a `--webapp-url` run the page also draws
+ * the stand-in wherever it names the real gateway's host, in its text and in its fields.
  */
 async function capture(ctx, path, options) {
-  await ctx.page.evaluate(([selector, mask]) => {
+  await ctx.page.evaluate(([selector, mask, host, standIn]) => {
     globalThis.highwingVerifyTyped = new Map([...document.querySelectorAll(selector)].filter(input => input.value !== '').map(input => [input, input.value]))
     for (const input of globalThis.highwingVerifyTyped.keys()) input.value = mask
-  }, [PRIVATE_FIELDS, MASK])
+    globalThis.highwingVerifyNamed = []
+    if (host === null) return
+    for (const input of document.querySelectorAll('input, textarea')) {
+      if (globalThis.highwingVerifyTyped.has(input) || !input.value.includes(host)) continue
+      globalThis.highwingVerifyTyped.set(input, input.value)
+      input.value = input.value.split(host).join(standIn)
+    }
+    const texts = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+    for (let node = texts.nextNode(); node !== null; node = texts.nextNode()) {
+      if (!node.data.includes(host)) continue
+      const drawn = node.data.split(host).join(standIn)
+      globalThis.highwingVerifyNamed.push([node, node.data, drawn])
+      node.data = drawn
+    }
+  }, [PRIVATE_FIELDS, MASK, ctx.realHost, STAND_IN_HOST])
   try {
     await ctx.page.screenshot({ path, ...options })
     const shown = await ctx.page.locator(PRIVATE_FIELDS).evaluateAll((inputs, mask) => inputs.filter(input => input.value !== '' && input.value !== mask).length, MASK)
@@ -680,20 +736,34 @@ async function capture(ctx, path, options) {
   } finally {
     await ctx.page.evaluate(() => {
       for (const [input, value] of globalThis.highwingVerifyTyped ?? []) input.value = value
+      // The page may have redrawn a text since. Only a text still showing the stand-in gets its own words back.
+      for (const [node, text, drawn] of globalThis.highwingVerifyNamed ?? []) if (node.data === drawn) node.data = text
       delete globalThis.highwingVerifyTyped
+      delete globalThis.highwingVerifyNamed
     })
   }
 }
 
-/** The evidence files that hold a typed password in any written form, and the screenshots taken while a private field showed one. */
-function leaked(ctx) {
+const filesUnder = dir => (existsSync(dir) ? readdirSync(dir, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile()).map(entry => join(entry.parentPath, entry.name)) : [])
+
+/**
+ * The evidence files that hold a typed password in any written form, and the screenshots taken while a private field showed one.
+ * `tokens` are what the fake Webapp made: its access and refresh tokens, codes and tickets. None may be in any evidence file or
+ * in any file the app wrote. A keyring's sealed sign-in is the one place a refresh token is kept, and there it is sealed bytes in base64, never text.
+ */
+function leaked(ctx, tokens = []) {
   const forms = [...ctx.secrets].flatMap(writtenForms)
-  if (forms.length === 0) return ctx.exposed
-  return [...ctx.exposed, ...readdirSync(ctx.evidence, { recursive: true, withFileTypes: true })
-    .filter(entry => entry.isFile() && !entry.name.endsWith('.png'))
-    .map(entry => join(entry.parentPath, entry.name))
-    .filter(path => forms.some(form => readFileSync(path, 'utf8').includes(form)))]
+  const holds = (path, texts) => texts.length > 0 && texts.some(text => readFileSync(path, 'latin1').includes(text))
+  const evidence = filesUnder(ctx.evidence).filter(path => !path.endsWith('.png'))
+  return [
+    ...ctx.exposed,
+    ...evidence.filter(path => forms.some(form => readFileSync(path, 'utf8').includes(form))),
+    ...[...evidence, ...filesUnder(ctx.userData)].filter(path => holds(path, tokens))
+  ]
 }
+
+/** The pages main asked the browser to open that are the gateway's sign-in, oldest first. */
+const signInPages = ctx => opensRecorded(ctx).filter(call => call.action === 'browse' && call.url.startsWith(`${ctx.web?.url}/auth/native/authorize?`)).map(call => call.url)
 
 function log(ctx, line) {
   const stamped = `${new Date().toISOString()} ${masked(ctx, line)}`
@@ -1014,13 +1084,192 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
   })
 }
 
+/** The address as Highwing spells and saves it, so `--saved url` writes a file the app reads back. */
+function addressOf(text) {
+  const url = URL.parse(text)
+  if (url === null || (url.protocol !== 'https:' && url.protocol !== 'http:') || url.username !== '' || url.search !== '' || url.hash !== '') fail(`--webapp-url takes the http or https address of a gateway's Webapp, with no username, ? or # part`)
+  return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, '')}`
+}
+
+/** One JSON object per line of a child's stdout, handed to whoever asked for the next one. */
+function jsonLinesOf(stream) {
+  const waiting = []
+  const read = []
+  let text = ''
+  stream.on('data', chunk => {
+    text += chunk
+    for (let end = text.indexOf('\n'); end !== -1; end = text.indexOf('\n')) {
+      const line = JSON.parse(text.slice(0, end))
+      text = text.slice(end + 1)
+      const next = waiting.shift()
+      if (next) next(line)
+      else read.push(line)
+    }
+  })
+  return () => (read.length > 0 ? Promise.resolve(read.shift()) : new Promise(resolve => waiting.push(resolve)))
+}
+
+/**
+ * Starts the fake Hermes Webapp in its own process, in front of a gateway that plays `fixture`, and
+ * resolves with the gateway's address. `tell` sends it an order, and `secrets` asks for every token,
+ * code and ticket it has made. With `user`, its `/login` is Hermes's password form for that user.
+ */
+async function startFakeWebapp(scenario, fixture, user, scratch) {
+  const child = spawn(process.execPath, ['--import', tsxLoader() ?? fail('tsx is missing; run doctor'), join(REPO, 'scripts/fake-webapp.ts'), scenario, fixture, ...(user ? [user.usernameFile, user.passwordFile] : [])], {
+    cwd: REPO, stdio: ['pipe', 'pipe', 'inherit']
+  })
+  writeFileSync(join(scratch, 'host-pid'), String(child.pid))
+  child.on('exit', code => fail(`the fake Webapp exited with code ${code} before the run ended`))
+  const nextLine = jsonLinesOf(child.stdout)
+  const tell = order => void child.stdin.write(`${order}\n`)
+  const { url } = await nextLine()
+  return { child, url, tell, secrets: async () => (tell('secrets'), (await nextLine()).secrets) }
+}
+
+/** The username and password of the real gateway's user, from the files two variables name. Read when a sign-in page needs them, and never written anywhere. */
+function credentials(ctx) {
+  const [username, password] = USER_FILES.map(name => readFileSync(process.env[name], 'utf8').replace(/\r?\n$/, ''))
+  ctx.secrets.add(username).add(password)
+  return { username, password }
+}
+
+const CALLBACK = /^http:\/\/127\.0\.0\.1:\d+\/callback\?/
+
+/**
+ * Signs in on Hermes's own `/login` page as a person would: opens the page main asked the browser
+ * for in a browser window of its own, types the username and password into the page's form, and
+ * submits it. Hermes then sends the window to Highwing's callback. `sign-in-page-<n>.png` is the page
+ * before anything is typed.
+ */
+async function signInOnPage(ctx, url, n) {
+  const { username, password } = credentials(ctx)
+  const { _electron } = requireDesktop('playwright-core')
+  const { executable, cwd, env, scratch } = ctx.launch
+  const browser = await _electron.launch({
+    executablePath: executable, cwd, env, timeout: ctx.timeout,
+    args: [BROWSER_JS, '--ozone-platform=x11', '--force-device-scale-factor=1', '--disable-gpu', `--user-data-dir=${join(scratch, 'browser-data')}`]
+  })
+  const { pid } = browser.process()
+  writeFileSync(join(scratch, 'browser-pid'), String(pid))
+  // `Promise.any` takes the first wait that comes true, and leaves no rejection of the other unhandled when the window closes.
+  const first = (what, waits) => Promise.any(waits).catch(() => { throw new Error(`the browser reached ${what} within ${ctx.timeout} ms`) })
+  try {
+    const page = await browser.firstWindow({ timeout: ctx.timeout })
+    await page.goto(url, { timeout: ctx.timeout })
+    const form = page.locator('form.provider-form').first()
+    const reached = await first("neither Hermes's sign-in form nor Highwing's callback", [
+      form.locator('input[name=password]').waitFor({ state: 'visible', timeout: ctx.timeout }).then(() => 'form'),
+      page.waitForURL(CALLBACK, { timeout: ctx.timeout }).then(() => 'callback')
+    ])
+    if (reached === 'form') {
+      await page.screenshot({ path: join(ctx.evidence, `sign-in-page-${n}.png`) })
+      await form.locator('input[name=username]').fill(username)
+      await form.locator('input[name=password]').fill(password)
+      await form.locator('button[type=submit]').click()
+      const refused = form.locator('.form-error')
+      const ended = await first("neither Highwing's callback nor an error on the form", [
+        page.waitForURL(CALLBACK, { timeout: ctx.timeout }).then(() => null),
+        refused.waitFor({ state: 'visible', timeout: ctx.timeout }).then(() => refused.textContent())
+      ])
+      if (ended !== null) throw new Error(`Hermes's sign-in page said: ${ended}`)
+    }
+    log(ctx, `  sign-in ${n}: the browser ${reached === 'form' ? "filled Hermes's form and" : 'was already signed in and'} reached Highwing's callback`)
+  } finally {
+    await Promise.race([browser.close().catch(() => {}), new Promise(done => setTimeout(done, QUIT_MS))])
+    if (alive(pid)) process.kill(pid, 'SIGKILL')
+    rmSync(join(scratch, 'browser-pid'), { force: true })
+  }
+}
+
+/**
+ * The run's stand-in for the user's browser. Main records each page it would open in `opens.jsonl`
+ * and opens nothing, so this reads the file and answers each new request for the gateway's sign-in
+ * page: the plain fake's own user follows it, and Hermes's password form is filled on the page.
+ * A sign-in that fails here fails the run when the steps end.
+ */
+function browseSignIns(ctx, signIn) {
+  let answered = 0
+  let busy = false
+  const timer = setInterval(async () => {
+    const pages = signInPages(ctx)
+    if (busy || pages.length <= answered) return
+    busy = true
+    answered++
+    try {
+      await signIn(pages[answered - 1], answered)
+    } catch (error) {
+      ctx.signInFailures.push(error.message.split('\n')[0])
+      log(ctx, `  sign-in ${answered} FAILED: ${error.message.split('\n')[0]}`)
+    } finally {
+      busy = false
+    }
+  }, 50)
+  return () => clearInterval(timer)
+}
+
+/** Launches the app and waits for its first window. A step that restarts the app runs this again. */
+async function launchApp(ctx) {
+  const { _electron } = requireDesktop('playwright-core')
+  const { executable, args, cwd, env, arg, evidence, scratch, media, options } = ctx.launch
+  ctx.launched = Date.now()
+  const [videoWidth, videoHeight] = (options.size ?? `${SIZE.width}x${SIZE.height}`).split('x').map(Number)
+  ctx.app = await _electron.launch({
+    executablePath: executable, args: arg === undefined ? args : [...args, arg], cwd, env, timeout: ctx.timeout,
+    ...(options.video && { recordVideo: { dir: join(scratch, 'video'), size: { width: videoWidth, height: videoHeight } } })
+  })
+  ctx.pid = ctx.app.process().pid
+  writeFileSync(join(scratch, 'pid'), String(ctx.pid))
+  const mainLog = join(evidence, 'main.log')
+  ctx.app.process().stdout?.on('data', chunk => appendFileSync(mainLog, chunk))
+  ctx.app.process().stderr?.on('data', chunk => appendFileSync(mainLog, chunk))
+  ctx.page = await ctx.app.firstWindow({ timeout: ctx.timeout })
+  if (Object.keys(media).length > 0) await ctx.page.emulateMedia(media)
+  ctx.page.on('console', message => {
+    appendFileSync(join(evidence, 'console.log'), `${message.type()} ${message.text()}\n`)
+    if (message.type() === 'error') ctx.errors.push(message.text())
+  })
+  ctx.page.on('pageerror', error => {
+    appendFileSync(join(evidence, 'console.log'), `pageerror ${error.stack ?? error}\n`)
+    ctx.errors.push(String(error.message ?? error))
+  })
+  ctx.page.on('dialog', dialog => {
+    const opened = `${dialog.type()} ${JSON.stringify(dialog.message())}`
+    ctx.dialogs.push(opened)
+    log(ctx, `DIALOG ${opened}`)
+    dialog.dismiss().catch(() => {})
+  })
+  await ctx.page.waitForLoadState('domcontentloaded')
+  ctx.home = ctx.page.url()
+  await sizeWindow(ctx, options)
+}
+
+/** Closes the app, and kills it by PID if it is still alive. A tool the app left running holds the app's pipes open, and close() would then wait on it for ever. */
+async function quitApp(ctx) {
+  await Promise.race([ctx.app.close().catch(() => {}), new Promise(done => setTimeout(done, QUIT_MS))])
+  if (alive(ctx.pid)) process.kill(ctx.pid, 'SIGKILL')
+  rmSync(join(ctx.launch.scratch, 'pid'), { force: true })
+}
+
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'asset-fails': 'value', images: 'value', pets: 'value', video: 'flag', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', mode: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'asset-fails': 'value', images: 'value', pets: 'value', video: 'flag', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'fake-webapp': 'value', 'webapp-url': 'value', 'login-form': 'flag', keyring: 'value', 'sign-in-ms': 'value', mode: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
-  if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
-  if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
+  const webScenario = options['fake-webapp']
+  const realUrl = options['webapp-url'] ? addressOf(options['webapp-url']) : null
+  const byAddress = Boolean(webScenario || realUrl)
+  if ([scenario, webScenario, realUrl].filter(Boolean).length > 1) fail('--fake-host, --fake-webapp and --webapp-url each name the gateway of a run. Pass one of them')
+  if (!options.fixture && !scenario && !byAddress) fail('pass --fixture <path> to replay a recorded gateway, --fake-host <scenario> to launch against the fake Hermes machine, --fake-webapp <scenario> to launch against the fake Hermes Webapp, or --webapp-url <url> to reach a real one')
+  if (!scenario && !byAddress && options.saved) fail('--saved needs --fake-host, --fake-webapp or --webapp-url: without one the app would run the real ssh, tailscale and hermes')
+  if (!scenario && options['hold-at']) fail('--hold-at needs --fake-host, because it holds one of the fake machine\'s tools')
+  if (realUrl && options.fixture) fail('--webapp-url reaches a real gateway, which plays no fixture')
+  if (options['login-form'] && !webScenario) fail('--login-form needs --fake-webapp, because it puts Hermes\'s password form in front of the fake')
+  if (options.keyring && !KEYRINGS.includes(options.keyring)) fail(`unknown --keyring "${options.keyring}". Known: ${KEYRINGS.join(', ')}`)
+  if (options.keyring && !byAddress) fail('--keyring needs --fake-webapp or --webapp-url, because only a sign-in to a gateway address is kept')
+  if (options.keyring === 'test' && realUrl) fail('--keyring test seals nothing, so it never keeps the sign-in of a real gateway. Use --keyring system, or none')
+  if (options['sign-in-ms'] && (!byAddress || !/^[1-9]\d*$/.test(options['sign-in-ms']))) fail('--sign-in-ms takes a number of milliseconds, and needs --fake-webapp or --webapp-url')
+  const signsInOnPage = Boolean(options['login-form'] || realUrl)
+  if (signsInOnPage) for (const name of USER_FILES) if (!process.env[name]) fail(`set ${name} to a file that holds it, for the sign-in page`)
   const site = options.serve ? await serve(options.serve) : null
   const edits = { dropAfter: options['drop-after'], models: options.models, catalog: options.catalog, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], assetFails: options['asset-fails'], images: options.images, pets: options.pets, bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], answeredElsewhere: options['answered-elsewhere'], answerHere: options['answer-here'], cancel: options.cancel, actedElsewhere: options['acted-elsewhere'], windowMakes: options['window-makes'], origin: site?.origin, attachLimit: options['attach-limit'] }
   const edited = Object.values(edits).some(Boolean)
@@ -1030,11 +1279,13 @@ async function run(argv) {
   if (options.cancel && !/^[^=]+=[^=]+$/.test(options.cancel)) fail(`--cancel takes <method>=<reason>, not "${options.cancel}"`)
   if (!options.yolo && (options['yolo-denied'] || options['yolo-elsewhere-after'])) fail('--yolo-denied and --yolo-elsewhere-after need --yolo, because a Hermes with no YOLO answers neither')
   if (options.tree && !options.profiles) fail('--tree needs --profiles, because the tree lists the chats that file seeds')
-  if (scenario && edited) fail('--drop-after, --models, --catalog, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --asset-fails, --images, --pets, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host')
+  if ((scenario || byAddress) && edited) fail('--drop-after, --models, --catalog, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --asset-fails, --images, --pets, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host, --fake-webapp or --webapp-url')
   if (options['configure-clash'] && !options.profiles) fail('--configure-clash needs --profiles: without it Hermes has no bots to rename')
   if (options['asset-fails'] && !options.profiles) fail('--asset-fails needs --profiles: without it Hermes stores no pictures')
   if (options['attach-limit'] && !/^[1-9]\d*$/.test(options['attach-limit'])) fail(`--attach-limit takes a number of bytes, not "${options['attach-limit']}"`)
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
+  const savedWith = SAVED_WITH[byAddress ? 'webapp' : 'host']
+  if (options.saved && !savedWith.includes(options.saved)) fail(`--saved ${options.saved} does not go with ${byAddress ? 'a gateway address' : '--fake-host'}. Known there: ${savedWith.join(', ')}`)
   if (options.mode && !MODES.includes(options.mode)) fail(`unknown --mode "${options.mode}". Known: ${MODES.join(', ')}`)
   if (options.size && !/^[1-9]\d*x[1-9]\d*$/.test(options.size)) fail(`--size takes <width>x<height>, not "${options.size}"`)
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')
@@ -1043,16 +1294,18 @@ async function run(argv) {
   const scratch = join(SCRATCH_ROOT, runId)
   mkdirSync(evidence, { recursive: true })
   mkdirSync(scratch, { recursive: true })
-  const given = options.fixture ? resolve(process.cwd(), options.fixture) : scenario ? ERRAND : null
+  const given = options.fixture ? resolve(process.cwd(), options.fixture) : scenario || webScenario ? ERRAND : null
   const fixture = edited ? withEdits(given, edits, join(evidence, 'fixture-edited.jsonl')) : given
   const calls = join(evidence, 'gateway-calls.jsonl')
   rmSync(calls, { force: true })
   const userData = join(scratch, 'user-data')
-  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), menus: join(evidence, 'menus.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set(), exposed: [] }
+  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), menus: join(evidence, 'menus.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set(), exposed: [], web: null, realHost: realUrl ? new URL(realUrl).hostname : null, signInFailures: [], pid: null }
   const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
-  const saved = SAVED[options.saved ?? 'none']
-  if (scenario) {
+  const userFiles = options['login-form'] ? { usernameFile: process.env.HIGHWING_VERIFY_USER_FILE, passwordFile: process.env.HIGHWING_VERIFY_PASSWORD_FILE } : null
+  ctx.web = webScenario ? await startFakeWebapp(webScenario, fixture, userFiles, scratch) : realUrl ? { url: realUrl } : null
+  const saved = SAVED[options.saved ?? 'none'](ctx.web?.url)
+  if (scenario || byAddress) {
     rmSync(userData, { recursive: true, force: true })
     mkdirSync(userData, { recursive: true })
     if (saved !== null) writeFileSync(join(userData, SETTINGS_FILE), saved)
@@ -1065,13 +1318,25 @@ async function run(argv) {
   }
   const host = scenario ? await startFakeHost(scenario, fixture, options['hold-at'], scratch) : null
 
-  const env = { ...process.env, ...(host ? { PATH: host.bin } : {}) }
+  // A run by address needs no tool, so its PATH holds none of the real ones. Only `--keyring system` adds dbus-send, which the app asks about a keyring.
+  const noTools = byAddress ? join(scratch, 'bin') : null
+  if (noTools) {
+    rmSync(noTools, { recursive: true, force: true })
+    mkdirSync(noTools, { recursive: true })
+    const dbusSend = options.keyring === 'system' ? spawnSync('which', ['dbus-send'], { encoding: 'utf8' }).stdout.trim() : ''
+    if (dbusSend !== '') symlinkSync(dbusSend, join(noTools, 'dbus-send'))
+  }
+  const env = { ...process.env, ...(host ? { PATH: host.bin } : {}), ...(noTools ? { PATH: noTools } : {}) }
   delete env.WAYLAND_DISPLAY
   delete env.ELECTRON_RENDERER_URL
   delete env.HIGHWING_FIXTURE
   delete env.HIGHWING_RECORD
   delete env.HIGHWING_FIXTURE_CALLS
-  if (!host) Object.assign(env, { HIGHWING_FIXTURE: fixture, HIGHWING_FIXTURE_CALLS: calls })
+  if (!host && !byAddress) Object.assign(env, { HIGHWING_FIXTURE: fixture, HIGHWING_FIXTURE_CALLS: calls })
+  delete env.HIGHWING_SIGN_IN_MS
+  if (options['sign-in-ms']) env.HIGHWING_SIGN_IN_MS = options['sign-in-ms']
+  delete env.HIGHWING_TEST_KEYRING
+  if (options.keyring === 'test') env.HIGHWING_TEST_KEYRING = '1'
   rmSync(ctx.opens, { force: true })
   env.HIGHWING_OPEN_LOG = ctx.opens
   delete env.HIGHWING_PICK_FILE
@@ -1086,53 +1351,19 @@ async function run(argv) {
   delete env.HIGHWING_MENU_PICK
   if (options['menu-pick']) env.HIGHWING_MENU_PICK = options['menu-pick']
 
-  const { _electron } = requireDesktop('playwright-core')
-  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"` : `HIGHWING_FIXTURE=${fixture}`}${Object.keys(media).length > 0 ? `, emulating ${JSON.stringify(media)}` : ''}${options.arg === undefined ? '' : `, with the argument ${JSON.stringify(options.arg)}`}`)
-  ctx.launched = Date.now()
+  const gateway = host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"`
+    : byAddress ? `${webScenario ? `the fake Webapp "${webScenario}"${options['login-form'] ? " behind Hermes's password form" : ''}` : 'a real Webapp'} at ${ctx.web.url}, no tool on the PATH, saved connection "${options.saved ?? 'none'}", ${options.keyring ? `the ${options.keyring} keyring` : 'no keyring'}`
+      : `HIGHWING_FIXTURE=${fixture}`
+  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${gateway}${Object.keys(media).length > 0 ? `, emulating ${JSON.stringify(media)}` : ''}${options.arg === undefined ? '' : `, with the argument ${JSON.stringify(options.arg)}`}`)
   const executable = electronBinary() ?? fail('electron binary missing; run doctor')
-  const args = [MAIN_JS, '--ozone-platform=x11', '--force-device-scale-factor=1', '--disable-gpu', `--user-data-dir=${userData}`]
-  ctx.launch = { executable, args, cwd: REPO, env, secondPid: join(scratch, 'second-pid') }
-  const [videoWidth, videoHeight] = (options.size ?? `${SIZE.width}x${SIZE.height}`).split('x').map(Number)
-  const app = await _electron.launch({
-    executablePath: executable,
-    args: options.arg === undefined ? args : [...args, options.arg],
-    cwd: REPO,
-    env,
-    timeout: ctx.timeout,
-    ...(options.video && { recordVideo: { dir: join(scratch, 'video'), size: { width: videoWidth, height: videoHeight } } })
-  }).catch(error => {
-    log(ctx, `FAILED to launch: ${error.message.split('\n')[0]}`)
-    log(ctx, `FAIL evidence in ${evidence}`)
-    process.exit(1)
-  })
-  ctx.app = app
-  const pid = app.process().pid
-  writeFileSync(join(scratch, 'pid'), String(pid))
-  const mainLog = join(evidence, 'main.log')
-  app.process().stdout?.on('data', chunk => appendFileSync(mainLog, chunk))
-  app.process().stderr?.on('data', chunk => appendFileSync(mainLog, chunk))
+  // Without the system keyring a run must not reach the desktop's own, which could ask the user to unlock it.
+  const args = [MAIN_JS, '--ozone-platform=x11', '--force-device-scale-factor=1', '--disable-gpu', `--user-data-dir=${userData}`, ...(byAddress && options.keyring !== 'system' ? ['--password-store=basic'] : [])]
+  ctx.launch = { executable, args, arg: options.arg, cwd: REPO, env, evidence, scratch, media, options, secondPid: join(scratch, 'second-pid') }
+  const stopBrowsing = ctx.web === null ? () => {} : browseSignIns(ctx, signsInOnPage ? (url, n) => signInOnPage(ctx, url, n) : async url => ctx.web.tell(`browse ${url}`))
   let failed = null
   try {
-    ctx.page = await app.firstWindow({ timeout: ctx.timeout })
-    if (Object.keys(media).length > 0) await ctx.page.emulateMedia(media)
-    ctx.page.on('console', message => {
-      appendFileSync(join(evidence, 'console.log'), `${message.type()} ${message.text()}\n`)
-      if (message.type() === 'error') ctx.errors.push(message.text())
-    })
-    ctx.page.on('pageerror', error => {
-      appendFileSync(join(evidence, 'console.log'), `pageerror ${error.stack ?? error}\n`)
-      ctx.errors.push(String(error.message ?? error))
-    })
-    ctx.page.on('dialog', dialog => {
-      const opened = `${dialog.type()} ${JSON.stringify(dialog.message())}`
-      ctx.dialogs.push(opened)
-      log(ctx, `DIALOG ${opened}`)
-      dialog.dismiss().catch(() => {})
-    })
-    await ctx.page.waitForLoadState('domcontentloaded')
-    ctx.home = ctx.page.url()
+    await launchApp(ctx)
     if (site) log(ctx, `serving ${options.serve} at ${site.origin} in place of ${DEV_ORIGIN}`)
-    await sizeWindow(ctx, options)
     for (const { verb, args } of steps) {
       if (!STEPS[verb].logs) log(ctx, `${verb} ${args.map(arg => JSON.stringify(arg)).join(' ')}`)
       if (verb !== 'shot' && verb !== 'wait') ctx.holding = null
@@ -1140,6 +1371,7 @@ async function run(argv) {
       if (options.video) await ctx.page.waitForTimeout(VIDEO_HOLD_MS)
     }
     if (ctx.dialogs.length > 0) throw new Error(`the page opened ${ctx.dialogs.length} dialog(s): ${ctx.dialogs.join(', ')}`)
+    if (ctx.signInFailures.length > 0) throw new Error(`a sign-in in the browser failed: ${ctx.signInFailures.join('; ')}`)
     for (const check of ctx.called) {
       const seen = callsLike(ctx, check)
       if (seen !== check.n) throw new Error(`by the end of the run the gateway saw ${seen} ${check.method} call(s) containing ${JSON.stringify(check.expected)}, not ${check.n}`)
@@ -1152,21 +1384,21 @@ async function run(argv) {
       const seen = noticesRecorded(ctx).filter(notice => notice.title === title).length
       if (seen !== n) throw new Error(`by the end of the run main recorded ${seen} notification(s) titled "${title}", not ${n}`)
     }
+    if (ctx.browsed !== undefined && signInPages(ctx).length !== ctx.browsed) throw new Error(`by the end of the run main had opened the gateway's sign-in page ${signInPages(ctx).length} time(s), not ${ctx.browsed}`)
   } catch (error) {
     failed = error
     log(ctx, `FAILED: ${error.message.split('\n')[0]}`)
     if (ctx.page) await capture(ctx, join(evidence, 'failure.png')).catch(() => {})
   } finally {
-    // A tool the app left running holds the app's pipes open, and close() would then wait on it for ever.
-    await Promise.race([app.close().catch(() => {}), new Promise(done => setTimeout(done, QUIT_MS))])
-    if (alive(pid)) process.kill(pid, 'SIGKILL')
+    stopBrowsing()
+    if (ctx.app) await quitApp(ctx)
+    // Playwright writes the video when the app closes, so it covers the last launch of a run that restarts the app.
     const video = options.video ? ctx.page?.video() : null
     if (video) {
       const saved = await Promise.race([video.saveAs(join(evidence, 'video.webm')).then(() => true, () => false), new Promise(done => setTimeout(() => done(false), QUIT_MS))])
       log(ctx, saved ? `video saved as ${join(evidence, 'video.webm')}` : 'the video could not be saved')
       if (!saved && !failed) failed = new Error('--video was asked for and the video could not be saved')
     }
-    rmSync(join(scratch, 'pid'), { force: true })
     site?.server.close()
     if (host) {
       const deadline = Date.now() + QUIT_MS
@@ -1181,12 +1413,28 @@ async function run(argv) {
       rmSync(join(scratch, 'host-pid'), { force: true })
     }
   }
-  const leaks = leaked(ctx)
+  const tokens = ctx.web?.secrets ? await ctx.web.secrets() : []
+  if (ctx.web?.child) {
+    ctx.web.child.removeAllListeners('exit')
+    ctx.web.child.kill()
+    rmSync(join(scratch, 'host-pid'), { force: true })
+  }
+  if (ctx.realHost !== null) {
+    for (const path of filesUnder(evidence).filter(file => !file.endsWith('.png'))) {
+      const text = readFileSync(path, 'utf8')
+      if (text.includes(ctx.realHost)) writeFileSync(path, aliased(ctx, text))
+    }
+  }
+  const leaks = leaked(ctx, tokens)
   if (leaks.length > 0 && !failed) {
-    failed = new Error(`a typed password is in ${leaks.join(', ')}`)
+    failed = new Error(`a typed password, or a token the fake Webapp made, is in ${leaks.join(', ')}`)
     log(ctx, `FAILED: ${failed.message}`)
   }
-  log(ctx, `${failed ? 'FAIL' : 'PASS'} evidence in ${evidence}`)
+  if (byAddress && !options.keyring && existsSync(join(userData, SIGN_INS_FILE)) && !failed) {
+    failed = new Error(`the app wrote ${SIGN_INS_FILE} on a run with no keyring`)
+    log(ctx, `FAILED: ${failed.message}`)
+  }
+  log(ctx, `${failed ? 'FAIL' : 'PASS'} evidence in ${evidence}${tokens.length > 0 ? `, and none of the fake Webapp's ${tokens.length} tokens, codes and tickets is written out in it or in the app's files` : ''}`)
   process.exit(failed ? 1 : 0)
 }
 
@@ -1218,7 +1466,7 @@ function cleanup(argv) {
   const targets = options.all ? (existsSync(SCRATCH_ROOT) ? readdirSync(SCRATCH_ROOT) : []) : [options.run]
   for (const runId of targets) {
     const scratch = join(SCRATCH_ROOT, runId)
-    for (const pidFile of [join(scratch, 'pid'), join(scratch, 'host-pid'), join(scratch, 'second-pid')]) {
+    for (const pidFile of [join(scratch, 'pid'), join(scratch, 'host-pid'), join(scratch, 'second-pid'), join(scratch, 'browser-pid')]) {
       if (!existsSync(pidFile)) continue
       const pid = Number(readFileSync(pidFile, 'utf8'))
       if (alive(pid)) process.kill(pid, 'SIGKILL')

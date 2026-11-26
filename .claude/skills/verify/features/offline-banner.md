@@ -1,10 +1,11 @@
 # Offline banner
 
-When the link to Hermes is not online, a banner under the top bar says why. If the user can help, it carries a button: Retry when the link is blocked, or Start Hermes when Hermes isn't running. The thread stays on screen. A running turn's end turns graphite with "Paused while Highwing is disconnected." Send, Stop and the approval buttons are disabled, and the draft is kept. The banner goes when the link comes back.
+When the link to Hermes is not online, a banner under the top bar says why. If the user can help, it carries a button: Retry when the link is blocked, Start Hermes when Hermes isn't running, or Sign in when the sign-in to a gateway address is missing or has ended. The thread stays on screen. A running turn's end turns graphite with "Paused while Highwing is disconnected." Send, Stop and the approval buttons are disabled, and the draft is kept. The banner goes when the link comes back.
 
 ## Sub-features
 
 - `offline-blocked` shows "Highwing can't find the hermes command." with Retry when Hermes is missing.
+- `offline-signed-out` shows the Sign in button, which opens the Connection screen and checks the saved address. [Connect by URL](./connect-by-url.md) drives it.
 - `offline-dropped` shows "Reconnecting to Hermes." with no button after the socket drops, with the buttons disabled.
 - `offline-recovered` removes the banner and makes the approval card answerable again after the redial.
 
