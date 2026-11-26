@@ -1,5 +1,5 @@
 import { sameModel, type CommandOutcome, type ModelConfirm, type ModelOption, type ModelRef, type ModelView } from '@highwing/hermes/domain'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { isEscapeFor } from './popover'
 
 interface ModelPickerProps {
@@ -23,11 +23,17 @@ export function ModelPicker({ view, onOpen, onPick }: ModelPickerProps) {
   const [open, setOpen] = useState(false)
   const [asking, setAsking] = useState<Asking>({ at: 'idle' })
   const anchor = useRef<HTMLDivElement>(null)
+  const readout = useRef<HTMLButtonElement>(null)
   const listId = useId()
 
   useEffect(() => {
     if (!open) return
-    const onKey = (event: KeyboardEvent) => { if (isEscapeFor(event, anchor)) setOpen(false) }
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (!isEscapeFor(event, anchor)) return
+      // The search box goes away with the list, and would leave focus on the page.
+      if (anchor.current?.contains(document.activeElement)) readout.current?.focus()
+      setOpen(false)
+    }
     const onPress = (event: PointerEvent) => { if (!anchor.current?.contains(event.target as Node)) setOpen(false) }
     document.addEventListener('keydown', onKey)
     document.addEventListener('pointerdown', onPress)
@@ -72,6 +78,7 @@ export function ModelPicker({ view, onOpen, onPick }: ModelPickerProps) {
       <div className="anchor" ref={anchor}>
         <button
           type="button"
+          ref={readout}
           className={view.show === 'none' ? 'readout none' : 'readout'}
           aria-expanded={open}
           aria-haspopup="true"
@@ -114,31 +121,69 @@ function Choices({ view, asking, onPick }: {
   readonly onPick: (model: ModelOption) => void
 }) {
   const name = useId()
+  const groupId = useId()
+  const [query, setQuery] = useState('')
   const chosen = view.next ?? view.current
   // A model named without its provider checks only the first provider that offers it.
   const checked = chosen === null ? undefined : view.options.find(option => sameModel(chosen, option))
-  const providers = [...new Set(view.options.map(option => option.provider))]
-  const grouped = providers.length > 1
+  const needle = query.trim().toLowerCase()
+  const matching = view.options.filter(option => option.id.toLowerCase().includes(needle) || option.providerName.toLowerCase().includes(needle))
+  const providers = [...new Set(matching.map(option => option.provider))]
+  const shown = providers.flatMap(provider => matching.filter(option => option.provider === provider))
+  const [highlight, setHighlight] = useState(() => Math.max(0, shown.findIndex(option => option === checked)))
+  useEffect(() => { document.getElementById(`${name}-${highlight}`)?.parentElement?.scrollIntoView({ block: 'nearest' }) }, [name, highlight, needle])
+  const grouped = new Set(view.options.map(option => option.provider)).size > 1
+
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      if (shown.length > 0) setHighlight((highlight + (event.key === 'ArrowDown' ? 1 : -1) + shown.length) % shown.length)
+    } else if (event.key === 'Enter') {
+      // The picker sits inside the composer's form, where Enter would send the message.
+      event.preventDefault()
+      const model = shown[highlight]
+      if (model !== undefined && asking.at !== 'sending') onPick(model)
+    }
+  }
+
   return (
     <>
-      <div role="radiogroup" aria-label="Model">
+      <div className="search">
+        <input
+          type="search"
+          aria-label="Search models"
+          placeholder="Search models"
+          autoFocus
+          value={query}
+          aria-controls={groupId}
+          aria-activedescendant={shown[highlight] === undefined ? undefined : `${name}-${highlight}`}
+          onChange={event => { setQuery(event.target.value); setHighlight(0) }}
+          onKeyDown={onKeyDown}
+        />
+      </div>
+      <div role="radiogroup" aria-label="Model" id={groupId}>
+        {shown.length === 0 && <p className="empty">No models match.</p>}
         {providers.map(provider => {
-          const options = view.options.filter(option => option.provider === provider)
+          const options = shown.filter(option => option.provider === provider)
           return (
             <div key={provider} className="provider">
               {grouped && <p className="name">{options[0]?.providerName}</p>}
-              {options.map(option => (
-                <label key={option.id} className="choice">
-                  <input
-                    type="radio"
-                    name={name}
-                    checked={option === checked}
-                    disabled={asking.at === 'sending'}
-                    onChange={() => onPick(option)}
-                  />
-                  {option.id}
-                </label>
-              ))}
+              {options.map(option => {
+                const index = shown.indexOf(option)
+                return (
+                  <label key={option.id} className="choice" data-active={index === highlight ? '' : undefined}>
+                    <input
+                      type="radio"
+                      id={`${name}-${index}`}
+                      name={name}
+                      checked={option === checked}
+                      disabled={asking.at === 'sending'}
+                      onChange={() => onPick(option)}
+                    />
+                    {option.id}
+                  </label>
+                )
+              })}
             </div>
           )
         })}
