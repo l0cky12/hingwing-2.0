@@ -298,14 +298,14 @@ describe('remove', () => {
   it('refuses while a reply runs, asking Hermes nothing', async () => {
     const { command, sent, event } = await stage()
     event(started)
-    expect(await command({ do: 'remove', sessionId: ID })).toEqual({ ok: false, refusal: { kind: 'stale', message: 'Wait for the reply to finish, then remove this chat.' } })
+    expect(await command({ do: 'remove', sessionId: ID })).toEqual({ ok: false, refusal: { kind: 'stale', message: 'Wait for the reply to finish, then delete this chat.' } })
     expect(sent()).toEqual([])
   })
 
   it.each([
-    ['session_busy', 'Wait for the reply to finish, then remove this chat.'],
-    ['unknown_execution', 'Wait for the reply to finish, then remove this chat.'],
-    ['runtime_coordination_required', "Hermes can't remove this chat. You can archive it instead."]
+    ['session_busy', 'Wait for the reply to finish, then delete this chat.'],
+    ['unknown_execution', 'Wait for the reply to finish, then delete this chat.'],
+    ['runtime_coordination_required', "Hermes can't delete this chat. You can archive it instead."]
   ])('says why Hermes refused with %s in plain words, and keeps the chat', async (reason, message) => {
     const gone: string[] = []
     const { command, answer } = await stage({ hub: { drop: id => void gone.push(id), gone: id => void gone.push(id) } })

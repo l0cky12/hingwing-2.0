@@ -54,7 +54,7 @@ const BRANCH_REFUSALS: Readonly<Record<string, Refusal>> = {
   runtime_coordination_required: { kind: 'unsupported', message: "Hermes can't branch this chat." },
   session_busy: BRANCH_BUSY
 }
-const REMOVE_RUNNING: Refusal = { kind: 'stale', message: 'Wait for the reply to finish, then remove this chat.' }
+const REMOVE_RUNNING: Refusal = { kind: 'stale', message: 'Wait for the reply to finish, then delete this chat.' }
 /**
  * Hermes refuses a delete while a turn runs or might (persistence/sqlite/authority/_runtime_guards.py:51-59), and when its
  * runner can't retire the chat's route (gateway/session_mutations.py:217-221).
@@ -62,7 +62,7 @@ const REMOVE_RUNNING: Refusal = { kind: 'stale', message: 'Wait for the reply to
 const REMOVE_REFUSALS: Readonly<Record<string, Refusal>> = {
   session_busy: REMOVE_RUNNING,
   unknown_execution: REMOVE_RUNNING,
-  runtime_coordination_required: { kind: 'unsupported', message: "Hermes can't remove this chat. You can archive it instead." }
+  runtime_coordination_required: { kind: 'unsupported', message: "Hermes can't delete this chat. You can archive it instead." }
 }
 const NO_WORDS = refused('rejected', 'This chat has no messages to name it from.')
 const NO_TITLE = refused('rejected', "Hermes didn't suggest a title.")
