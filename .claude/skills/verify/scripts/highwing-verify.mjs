@@ -132,6 +132,7 @@ const STEPS = {
   reload: { arity: 0, run: async ctx => void await ctx.page.reload() },
   gone: { arity: 2, run: async (ctx, role, name) => waitGone(ctx, role, name) },
   inview: { arity: 2, run: async (ctx, role, name) => checkInView(ctx, role, name) },
+  inside: { arity: 4, run: async (ctx, role, name, outerRole, outerName) => checkInside(ctx, role, name, outerRole, outerName) },
   reveal: { arity: 2, run: async (ctx, role, name) => byRole(ctx.page, role, name).scrollIntoViewIfNeeded({ timeout: ctx.timeout }) },
   shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
   field: {
@@ -870,6 +871,17 @@ async function checkInView(ctx, role, name) {
     return outside({ top: 0, bottom: innerHeight, left: 0, right: innerWidth }, 'window')
   })
   if (problem) throw new Error(`${role} "${name}" is not fully in view: ${problem}`)
+}
+
+async function checkInside(ctx, role, name, outerRole, outerName) {
+  const [inner, outer] = [byRole(ctx.page, role, name).first(), byRole(ctx.page, outerRole, outerName).first()]
+  await inner.waitFor({ state: 'visible', timeout: ctx.timeout })
+  await outer.waitFor({ state: 'visible', timeout: ctx.timeout })
+  const [box, bounds] = await Promise.all([inner.boundingBox(), outer.boundingBox()])
+  const span = ({ x, y, width, height }) => `x ${Math.round(x)}..${Math.round(x + width)}, y ${Math.round(y)}..${Math.round(y + height)}`
+  if (box.x < bounds.x - 0.5 || box.y < bounds.y - 0.5 || box.x + box.width > bounds.x + bounds.width + 0.5 || box.y + box.height > bounds.y + bounds.height + 0.5) {
+    throw new Error(`${role} "${name}" spans ${span(box)}, outside ${outerRole} "${outerName}" at ${span(bounds)}`)
+  }
 }
 
 async function sizeWindow(ctx, options) {

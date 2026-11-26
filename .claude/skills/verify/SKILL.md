@@ -142,6 +142,7 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `gone <role> <name>` | ARIA role, exact accessible name or `/regex/` | polls until no visible element has that role and name, and fails at the timeout. Waits out a fade |
 | `reveal <role> <name>` | ARIA role, exact accessible name or `/regex/` | scrolls that element into view, as a user scrolling to it does, even while it is disabled |
 | `inview <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that element's box lies fully inside the visible area of every scrolling ancestor and of the window |
+| `inside <role> <name> <role> <name>` | two ARIA roles and exact accessible names or `/regex/` | fails unless the first element's box lies fully inside the second's, as a control inside the card it belongs to. `inview` cannot see an overflow that no scrolling ancestor clips |
 | `enabled <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that control is enabled now |
 | `checked <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that radio or checkbox is checked now |
 | `current <role> <name>` | ARIA role, exact accessible name or `/regex/` | waits until that control carries `aria-current="true"`, as the bot of the open chat does, and fails at the timeout. An ARIA snapshot does not print it |
