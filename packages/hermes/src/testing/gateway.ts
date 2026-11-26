@@ -12,6 +12,7 @@ import { parseEvent } from '../wire/parse'
 import { MASKED, type ChatSeed, type Fixture, type FixtureStep, type Reads } from './fixture'
 import { checkParams } from './params'
 import { ScriptedRooms } from './rooms'
+import { ScriptedVault } from './vault'
 
 export interface Peer {
   write(frame: unknown): void
@@ -830,6 +831,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   /** tui_gateway/methods_images.py:57-96 */
   'image.generate': (gateway, socket, params) => gateway.generate(socket, params),
   'llm.oneshot': (gateway, socket) => gateway.oneshot(socket),
+  /** tui_gateway/methods_vault.py */
+  'vault.sources': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.sources', params, routed),
+  'vault.list': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.list', params, routed),
+  'vault.source.set': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.source.set', params, routed),
+  'vault.unlock': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.unlock', params, routed),
+  'vault.lock': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.lock', params, routed),
   /** tui_gateway/methods_session.py:1467-1495 */
   'pet.gallery': (gateway, socket) => gateway.petGallery(socket),
   /** tui_gateway/methods_session.py:1557-1563 */
@@ -991,6 +998,7 @@ export class ScriptedGateway {
   private readonly sockets = new Set<Socket>()
   private readonly stagedImages = new Set<string>()
   private readonly rooms: ScriptedRooms | null
+  private readonly vault: ScriptedVault | null
   private drop: Drop
   private delivered = 0
   private seqShift = 0
@@ -1046,6 +1054,8 @@ export class ScriptedGateway {
         throw new Refused(unexpected, { code: -32603, message: unexpected })
       }
     })
+    // tui_gateway/methods_vault.py answers every failure with 5095 and its own words.
+    this.vault = fixture.header.vault === undefined ? null : new ScriptedVault(fixture.header.vault, message => { throw new Refused(message, { code: 5095, message }) })
   }
 
   get latest(): number {
@@ -1921,6 +1931,12 @@ export class ScriptedGateway {
     if (oneshot === undefined || socket.reach === 'profile') throw unknownMethod('llm.oneshot')
     if (oneshot.error !== undefined) throw refusedProfile(5030, `one-shot generation failed: ${oneshot.error}`)
     return after(oneshot.delay_ms, { text: oneshot.text ?? '' })
+  }
+
+  /** `vault.*` reaches only the legacy handlers, as `profiles.create` does, each in the profile the call names. */
+  vaultCall(socket: Socket, method: string, params: Obj, routed: string): unknown {
+    if (this.vault === null || socket.reach === 'profile') throw unknownMethod(method)
+    return this.vault.call(method, params, routed)
   }
 
   /** `pet.gallery` (tui_gateway/methods_session.py:1467-1495), which a socket with no interactive grant does not reach. */
