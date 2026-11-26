@@ -106,6 +106,16 @@ const STEPS = {
   said: { arity: 1, run: async (ctx, text) => ctx.page.locator('#scroll').getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout: ctx.timeout }) },
   click: { arity: 2, run: async (ctx, role, name) => byRole(ctx.page, role, name).click({ timeout: ctx.timeout }) },
   'click-at': { arity: 3, run: async (ctx, role, name, n) => nth(ctx, role, name, n).click({ timeout: ctx.timeout }) },
+  'right-click': { arity: 2, run: async (ctx, role, name) => byRole(ctx.page, role, name).click({ button: 'right', timeout: ctx.timeout }) },
+  'select-words': { arity: 1, run: async (ctx, text) => ctx.page.locator('#scroll').getByText(text, { exact: false }).first().click({ clickCount: 3, timeout: ctx.timeout }) },
+  wheel: {
+    arity: 3,
+    run: async (ctx, role, name, dy) => {
+      await byRole(ctx.page, role, name).hover({ timeout: ctx.timeout })
+      await ctx.page.mouse.wheel(0, Number(dy))
+    }
+  },
+  'right-click-words': { arity: 1, run: async (ctx, text) => ctx.page.locator('#scroll').getByText(text, { exact: false }).first().click({ button: 'right', timeout: ctx.timeout }) },
   type: {
     arity: 2,
     logs: true,
@@ -260,6 +270,17 @@ const STEPS = {
       const pages = await pollUntil(ctx, () => signInPages(ctx), opened => opened.length >= Number(n)).catch(() => signInPages(ctx))
       if (pages.length !== Number(n)) throw new Error(`main opened the gateway's sign-in page ${pages.length} time(s), not ${n}`)
       ctx.browsed = Number(n)
+    }
+  },
+  'native-menus': {
+    arity: 1,
+    run: async (ctx, n) => {
+      const deadline = Date.now() + MENU_SETTLE_MS
+      while (Date.now() < deadline && menusRecorded(ctx).length < Number(n)) await new Promise(resolve => setTimeout(resolve, 50))
+      await new Promise(resolve => setTimeout(resolve, MENU_SETTLE_MS))
+      const menus = menusRecorded(ctx)
+      for (const menu of menus) log(ctx, `  ${JSON.stringify(menu)}`)
+      if (menus.length !== Number(n)) throw new Error(`main recorded ${menus.length} native menu(s), not ${n}`)
     }
   },
   second: {
@@ -775,6 +796,7 @@ const noticesRecorded = ctx => jsonLines(ctx.notices)
 const menusRecorded = ctx => jsonLines(ctx.menus)
 
 const MENU_RETRY_MS = 200
+const MENU_SETTLE_MS = 500
 
 /** The spellchecker marks a word some time after it is typed, so the key is pressed again until a menu shows the label, or stops showing it. */
 async function pressForMenu(ctx, key, label, wanted) {

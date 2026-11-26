@@ -105,6 +105,10 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `select <label> <option>` | exact label, exact option text | picks that option of the labelled select |
 | `press <key>` | Playwright key name | presses it |
 | `reload` | none | reloads the window, as Ctrl+R in a browser does. Main and the gateway keep running, so the open chat stays. Follow it with `wait live` |
+| `right-click <role> <name>` | ARIA role, exact accessible name or `/regex/` | right-clicks it with the mouse, so the page gets a real `contextmenu` and main hears it unless the page cancels it |
+| `select-words <text>` | text | triple-clicks that text in the thread, as a user selects a paragraph |
+| `wheel <role> <name> <dy>` | ARIA role, exact accessible name or `/regex/`, pixels | moves the pointer over that control and turns the wheel by `dy`, so whatever scrolls under it scrolls |
+| `right-click-words <text>` | text | right-clicks that text in the thread. Right after `select-words` on it, main records a menu with Copy |
 | `click-at <role> <name> <n>` | ARIA role, exact accessible name, a number | clicks the `n`th such control in page order, counting from 1, for a control the thread repeats on every turn |
 | `shot <name>` | file stem | moves the pointer off the page, then saves `<name>.png` and `<name>.aria.txt` |
 | `disabled <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that control is disabled now |
@@ -128,6 +132,7 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `notified <title> <n>` | title, number | waits until `notices.jsonl` holds n notifications with that title, logs each, and fails on any other count. It is checked again when the steps end |
 | `home` | none | fails unless the app has one window and its address is still the one it launched with |
 | `menu <key> <label>` | Playwright key name, exact entry label | presses the key, such as `ContextMenu`, and waits for main to record a new menu in `menus.jsonl`. It presses again, 200 ms later, until a recorded menu holds the label, and fails at the timeout naming the last menu. It logs the menu that held the label and how many presses it took. The spellchecker marks a word a second or so after it is typed, so the first menus may lack the suggestions |
+| `native-menus <n>` | number | waits half a second, logs each menu `menus.jsonl` holds, and fails unless main recorded exactly n native context menus in the whole run |
 | `menu-without <key> <label>` | Playwright key name, exact entry label | as `menu`, until a recorded menu lacks the label. It proves something only after a `menu` that showed the label |
 | `relaunch` | none | closes the app and launches it again with the same arguments, environment and user-data directory, as a restart of the computer's Highwing. The fake machine or Webapp keeps running. Follow it with a `wait` |
 | `webapp <order>` | `sign-out` | tells the fake Webapp that Hermes ends every sign-in. The app finds out at its next dial, such as after a `relaunch`. `--fake-webapp` runs only |

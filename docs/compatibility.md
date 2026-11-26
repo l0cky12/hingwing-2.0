@@ -724,8 +724,9 @@ directory. Read the install directory from `hermes --version`.
 
 A bot in Highwing's sidebar is a Hermes profile. Highwing reads them with
 `profiles.list`, a canonical method of the vendored contract, on every new
-connection and again when sessions change. Hermes sends no "profiles changed"
-event.
+connection, again when sessions change, and each time a Highwing window
+regains focus. Hermes sends no "profiles changed" event, so a pin or a hide
+made in Hermes desktop reaches Highwing when the user comes back to it.
 
 Highwing reads the reply in the shape `tui_gateway/methods_profiles.py:271-290`
 sends. The contract types `ui_meta` as an open object. Hermes's own desktop
@@ -776,6 +777,35 @@ or a second `is_default` row took its place. Launch now opens the hidden
 default bot's Bot Chat, as Hermes does, since hiding is display-only. And a
 user who had hidden bots sees the avatar tones shift once, because the tones
 are now handed out over the hidden bots too.
+
+### Pinning and hiding a bot
+
+A bot's menu in the sidebar writes the same two flags Hermes desktop's own
+menu writes: Pin to top and Unpin set `pinned`, and Hide from list and Show in
+list set `hidden`, in `ui_meta['hermes-bots']`. Each writes a fixed value,
+`true` or `false`, never a flip of what Hermes holds, so a double click lands
+in the same place.
+
+- Hermes replaces the `hermes-bots` key whole, so Highwing reads the record
+  afresh with `profiles.list {include_sessions: false}` and sends it back with
+  the one flag changed and without `chat`, as Hermes desktop's
+  `persistBotMetaPatch` does (`apps/desktop/src/plugins/hermes-bots/data.ts`).
+  It sends `ui_meta_expected_revisions` with the revision that read gave, when
+  the row carries `ui_meta_revisions`.
+- A reply with `ui_meta_conflicts` wrote nothing. Highwing reads the record
+  again and tries again, three times in all, as Hermes desktop does, and then
+  says "Hermes didn't pin Researcher. Try again."
+- The flag counts as saved only when the reply has `applied.ui_meta: true`.
+  An `applied` object without it, such as a failed disk write or the 64 KB
+  limit, gives the same words. A reply with no `applied` at all, or a
+  `profiles.configure` that is an unknown method, says "This Hermes can't
+  change bots from Highwing." Error 4064, or a read that no longer lists the
+  bot, says "Hermes no longer has this bot."
+- Once saved, Highwing shows the flag at once and reads the roster again. If
+  that read fails, the flag stays shown until the next one.
+
+Hide changes only where the bot is drawn, here as in Hermes desktop. Its chat,
+its mentions and its default-bot status are unchanged, and it keeps its pin.
 
 ### Opening a bot's chat
 
