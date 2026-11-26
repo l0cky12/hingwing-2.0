@@ -19,6 +19,7 @@ const showing = (bots: Bots | undefined, open: OpenChat | undefined, link: Link 
       bots={bots} open={open} link={link} groups={groups} onOpen={async () => ({ ok: true, value: null })} onNewChat={() => {}} onNew={async () => ({ ok: true, value: null })}
       onMark={async () => ({ ok: true, value: { edition: 2 } })}
       onCreate={async () => ({ ok: true, value: { bot: 'rae' as BotId, warnings: [] } })} onCreateGroup={async () => ({ ok: true, value: undefined })} onOpenGroup={() => {}}
+      onRenameGroup={async () => ({ ok: true, value: undefined })} onDeleteGroup={async () => ({ ok: true, value: undefined })}
       onModels={async () => ({ ok: true, value: { options: [], fallback: null } })}
       onDescribe={async bot => ({ ok: true, value: { bot, name: 'Rae', description: '', persona: '', revision: 2 } })} onEdit={async () => ({ ok: true, value: undefined })}
       onPickPicture={async () => ({ ok: true, value: 'cancelled' })} onRemovePicture={async () => ({ ok: true, value: undefined })} looks={NO_LOOKS}
@@ -131,6 +132,16 @@ describe('the bots sidebar', () => {
     expect(attr(tag!, 'aria-label')).toBe('Launch plan, group chat with Emu, Research and Timothy · CEO')
     expect(html).toContain(`id="${attr(tag!, 'aria-describedby')}">Emu, Research and Timothy · CEO<`)
     expect(attr(tag!, 'aria-current')).toBeUndefined()
+  })
+
+  it('follows each group with its own More button, beside the row and never inside it, as a closed menu button', () => {
+    const html = showing(APPROVED, AT_LAUNCH, ONLINE, groups(['plan', 'Launch plan', seat('default', 'emu'), seat('research')], ['ops', 'Ops', seat('highwing'), seat('hermes-dev')]))
+    const inGroups = buttons(section(html) ?? '')
+    expect(inGroups.map(tag => attr(tag, 'aria-label'))).toEqual(['Launch plan, group chat with Emu and Research', 'More for Launch plan', 'Ops, group chat with highwing and Hermes', 'More for Ops'])
+    expect(section(html)).not.toMatch(/<button(?:(?!<\/button>)[\s\S])*<button/)
+    const more = inGroups.filter(tag => attr(tag, 'class') === 'bot-more')
+    expect(more.every(tag => attr(tag, 'aria-haspopup') === 'menu' && attr(tag, 'aria-expanded') === 'false')).toBe(true)
+    expect(more.map(tag => attr(tag, 'data-group-more')), 'kept apart from the bots\' More buttons').toEqual(['plan', 'ops'])
   })
 
   it("marks the open group's row as the current one, and no bot's, and says in the signal colour who is answering", () => {

@@ -61,7 +61,7 @@ const UNSERVED: { readonly [D in During]: Refusal } = {
 /**
  * Every group refusal is code 4001, so Hermes's `reason` tells them apart (`dispatch_group_control`). Highwing checks a
  * new name as Hermes does (`_validate_room_name`), so a bare `invalid_params` to anything but a create means the group
- * is gone (`RoomNotFoundError`, persistence/gateway/hosted_rooms.py:143).
+ * is gone (`RoomNotFoundError`, persistence/gateway/hosted_rooms.py:145).
  */
 const REASONS = new Map<string | null, (error: RpcRefusal, during: During) => Refusal>([
   ['invalid_params', ({ field, detail }, during) => {
