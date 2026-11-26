@@ -14,7 +14,6 @@ export interface CheckOptions {
   readonly tailscaleBin?: string
   readonly hermesBin?: string
   readonly clock?: Clock
-  /** What checks a gateway address. Only a target of that kind needs it, and its check rejects without it. */
   readonly gateways?: Pick<Gateways, 'check'>
 }
 

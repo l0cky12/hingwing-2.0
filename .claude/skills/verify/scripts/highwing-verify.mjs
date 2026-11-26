@@ -24,13 +24,11 @@ const DEV_ORIGIN = 'http://localhost:5173'
 const ERRAND = join(REPO, 'fixtures/errand.jsonl')
 const SETTINGS_FILE = 'connection.json'
 const SIGN_INS_FILE = 'sign-ins.json'
-/** `test` seals nothing, in a build that is not installed. `system` is whatever keyring this desktop has. */
 const KEYRINGS = ['test', 'system']
 const USER_FILES = ['HIGHWING_VERIFY_USER_FILE', 'HIGHWING_VERIFY_PASSWORD_FILE']
 const MODE_FILE = 'mode.json'
 const MODES = ['bots', 'chats']
 
-/** What `--saved` leaves in the user-data directory before launch. null: no file. `url` is the gateway address of the run. */
 const SAVED = {
   none: () => null,
   local: () => JSON.stringify({ version: 1, target: { kind: 'local' } }),
@@ -39,9 +37,7 @@ const SAVED = {
   unreadable: () => '{"version": 1, "target"',
   newer: () => JSON.stringify({ version: 2, target: { kind: 'relay' } })
 }
-/** The saved connections that make sense with each kind of gateway. `local` and `remote` would run the real hermes and ssh without the fake machine. */
 const SAVED_WITH = { host: ['none', 'local', 'remote', 'unreadable', 'newer'], webapp: ['none', 'url', 'unreadable', 'newer'] }
-/** What stands in for the real gateway's host in everything a `--webapp-url` run writes. */
 const STAND_IN_HOST = 'hermes.example.com'
 
 const STATES = {
@@ -688,7 +684,6 @@ async function secretField(ctx, verb, label, text) {
 /** Each way a typed password can be written: as typed, and escaped inside a JSON or YAML string. */
 const writtenForms = secret => [secret, JSON.stringify(secret).slice(1, -1)]
 
-/** A real gateway's host is written as the stand-in, so what a run leaves can be shown to others. */
 const aliased = (ctx, text) => (ctx.realHost === null ? text : text.split(ctx.realHost).join(STAND_IN_HOST))
 
 const masked = (ctx, text) => aliased(ctx, [...ctx.secrets].flatMap(writtenForms).reduce((out, form) => out.split(form).join(MASK), text))
@@ -704,12 +699,6 @@ function maskedSnapshot(snapshot, labels) {
   }).join('\n')
 }
 
-/**
- * Takes the screenshot with every private field that holds text showing the mask, then puts the text back.
- * A code or a username is drawn as typed, so only this keeps it out of a PNG. The shot counts as leaked
- * when a private field showed other text once it was taken. In a `--webapp-url` run the page also draws
- * the stand-in wherever it names the real gateway's host, in its text and in its fields.
- */
 async function capture(ctx, path, options) {
   await ctx.page.evaluate(([selector, mask, host, standIn]) => {
     globalThis.highwingVerifyTyped = new Map([...document.querySelectorAll(selector)].filter(input => input.value !== '').map(input => [input, input.value]))
@@ -736,7 +725,6 @@ async function capture(ctx, path, options) {
   } finally {
     await ctx.page.evaluate(() => {
       for (const [input, value] of globalThis.highwingVerifyTyped ?? []) input.value = value
-      // The page may have redrawn a text since. Only a text still showing the stand-in gets its own words back.
       for (const [node, text, drawn] of globalThis.highwingVerifyNamed ?? []) if (node.data === drawn) node.data = text
       delete globalThis.highwingVerifyTyped
       delete globalThis.highwingVerifyNamed
@@ -746,11 +734,6 @@ async function capture(ctx, path, options) {
 
 const filesUnder = dir => (existsSync(dir) ? readdirSync(dir, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile()).map(entry => join(entry.parentPath, entry.name)) : [])
 
-/**
- * The evidence files that hold a typed password in any written form, and the screenshots taken while a private field showed one.
- * `tokens` are what the fake Webapp made: its access and refresh tokens, codes and tickets. None may be in any evidence file or
- * in any file the app wrote. A keyring's sealed sign-in is the one place a refresh token is kept, and there it is sealed bytes in base64, never text.
- */
 function leaked(ctx, tokens = []) {
   const forms = [...ctx.secrets].flatMap(writtenForms)
   const holds = (path, texts) => texts.length > 0 && texts.some(text => readFileSync(path, 'latin1').includes(text))
@@ -762,7 +745,6 @@ function leaked(ctx, tokens = []) {
   ]
 }
 
-/** The pages main asked the browser to open that are the gateway's sign-in, oldest first. */
 const signInPages = ctx => opensRecorded(ctx).filter(call => call.action === 'browse' && call.url.startsWith(`${ctx.web?.url}/auth/native/authorize?`)).map(call => call.url)
 
 function log(ctx, line) {
@@ -1084,14 +1066,12 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
   })
 }
 
-/** The address as Highwing spells and saves it, so `--saved url` writes a file the app reads back. */
 function addressOf(text) {
   const url = URL.parse(text)
   if (url === null || (url.protocol !== 'https:' && url.protocol !== 'http:') || url.username !== '' || url.search !== '' || url.hash !== '') fail(`--webapp-url takes the http or https address of a gateway's Webapp, with no username, ? or # part`)
   return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, '')}`
 }
 
-/** One JSON object per line of a child's stdout, handed to whoever asked for the next one. */
 function jsonLinesOf(stream) {
   const waiting = []
   const read = []
@@ -1109,11 +1089,6 @@ function jsonLinesOf(stream) {
   return () => (read.length > 0 ? Promise.resolve(read.shift()) : new Promise(resolve => waiting.push(resolve)))
 }
 
-/**
- * Starts the fake Hermes Webapp in its own process, in front of a gateway that plays `fixture`, and
- * resolves with the gateway's address. `tell` sends it an order, and `secrets` asks for every token,
- * code and ticket it has made. With `user`, its `/login` is Hermes's password form for that user.
- */
 async function startFakeWebapp(scenario, fixture, user, scratch) {
   const child = spawn(process.execPath, ['--import', tsxLoader() ?? fail('tsx is missing; run doctor'), join(REPO, 'scripts/fake-webapp.ts'), scenario, fixture, ...(user ? [user.usernameFile, user.passwordFile] : [])], {
     cwd: REPO, stdio: ['pipe', 'pipe', 'inherit']
@@ -1126,7 +1101,6 @@ async function startFakeWebapp(scenario, fixture, user, scratch) {
   return { child, url, tell, secrets: async () => (tell('secrets'), (await nextLine()).secrets) }
 }
 
-/** The username and password of the real gateway's user, from the files two variables name. Read when a sign-in page needs them, and never written anywhere. */
 function credentials(ctx) {
   const [username, password] = USER_FILES.map(name => readFileSync(process.env[name], 'utf8').replace(/\r?\n$/, ''))
   ctx.secrets.add(username).add(password)
@@ -1135,12 +1109,6 @@ function credentials(ctx) {
 
 const CALLBACK = /^http:\/\/127\.0\.0\.1:\d+\/callback\?/
 
-/**
- * Signs in on Hermes's own `/login` page as a person would: opens the page main asked the browser
- * for in a browser window of its own, types the username and password into the page's form, and
- * submits it. Hermes then sends the window to Highwing's callback. `sign-in-page-<n>.png` is the page
- * before anything is typed.
- */
 async function signInOnPage(ctx, url, n) {
   const { username, password } = credentials(ctx)
   const { _electron } = requireDesktop('playwright-core')
@@ -1151,7 +1119,6 @@ async function signInOnPage(ctx, url, n) {
   })
   const { pid } = browser.process()
   writeFileSync(join(scratch, 'browser-pid'), String(pid))
-  // `Promise.any` takes the first wait that comes true, and leaves no rejection of the other unhandled when the window closes.
   const first = (what, waits) => Promise.any(waits).catch(() => { throw new Error(`the browser reached ${what} within ${ctx.timeout} ms`) })
   try {
     const page = await browser.firstWindow({ timeout: ctx.timeout })
@@ -1181,12 +1148,6 @@ async function signInOnPage(ctx, url, n) {
   }
 }
 
-/**
- * The run's stand-in for the user's browser. Main records each page it would open in `opens.jsonl`
- * and opens nothing, so this reads the file and answers each new request for the gateway's sign-in
- * page: the plain fake's own user follows it, and Hermes's password form is filled on the page.
- * A sign-in that fails here fails the run when the steps end.
- */
 function browseSignIns(ctx, signIn) {
   let answered = 0
   let busy = false
@@ -1207,7 +1168,6 @@ function browseSignIns(ctx, signIn) {
   return () => clearInterval(timer)
 }
 
-/** Launches the app and waits for its first window. A step that restarts the app runs this again. */
 async function launchApp(ctx) {
   const { _electron } = requireDesktop('playwright-core')
   const { executable, args, cwd, env, arg, evidence, scratch, media, options } = ctx.launch
@@ -1243,7 +1203,7 @@ async function launchApp(ctx) {
   await sizeWindow(ctx, options)
 }
 
-/** Closes the app, and kills it by PID if it is still alive. A tool the app left running holds the app's pipes open, and close() would then wait on it for ever. */
+/** A tool the app left running holds the app's pipes open, and close() would then wait on it for ever. */
 async function quitApp(ctx) {
   await Promise.race([ctx.app.close().catch(() => {}), new Promise(done => setTimeout(done, QUIT_MS))])
   if (alive(ctx.pid)) process.kill(ctx.pid, 'SIGKILL')
@@ -1318,7 +1278,6 @@ async function run(argv) {
   }
   const host = scenario ? await startFakeHost(scenario, fixture, options['hold-at'], scratch) : null
 
-  // A run by address needs no tool, so its PATH holds none of the real ones. Only `--keyring system` adds dbus-send, which the app asks about a keyring.
   const noTools = byAddress ? join(scratch, 'bin') : null
   if (noTools) {
     rmSync(noTools, { recursive: true, force: true })

@@ -27,7 +27,6 @@ export type SetupCommand =
   | { readonly do: 'checkTarget'; readonly target: Target }
   /** Open the setup screen over the chat. */
   | { readonly do: 'editTarget' }
-  /** Cancel: back to the chat on the connection it has. With none to go back to, it only stops a check that waits for a sign-in. */
   | { readonly do: 'keepTarget' }
   | { readonly do: 'openChat' }
 

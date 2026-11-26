@@ -10,7 +10,6 @@ export type SshHost = string & { readonly [sshHost]: true }
 export type Target =
   | { readonly kind: 'local' }
   | { readonly kind: 'remote'; readonly host: SshHost }
-  /** A gateway reached by its address alone. A `GatewayUrl` holds no secret, so neither does a target. */
   | { readonly kind: 'url'; readonly url: GatewayUrl }
 
 /** A leading "-" would be read by ssh as an option, so no part may start with one. */
@@ -53,7 +52,6 @@ export function sameTarget(a: Target, b: Target): boolean {
   })
 }
 
-/** Whether Hermes's files and its localhost are this computer's. An address is never taken to be, whatever host it names. */
 export const onThisComputer = (target: Target): boolean => byKind(target, { local: () => true, remote: () => false, url: () => false })
 
 /** The name without any `user@`: what Tailscale lists and what ssh resolves. */
@@ -118,7 +116,6 @@ export function isPlainHttp(url: GatewayUrl): boolean {
 
 const ADDRESS = /^[0-9.]+$|:/
 
-/** How the words name a target: "this computer", the far machine's short name, or the host of a gateway's address. */
 export function machineOf(target: Target): string {
   return byKind(target, {
     local: () => 'this computer',

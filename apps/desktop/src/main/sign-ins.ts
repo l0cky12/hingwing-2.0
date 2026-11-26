@@ -5,10 +5,8 @@ import { join } from 'node:path'
 export const SIGN_INS_FILE = 'sign-ins.json'
 const VERSION = 1
 
-/** Turns a secret into bytes that only this account's keyring can turn back. */
 export interface Seal {
   seal(text: string): Promise<Buffer>
-  /** Rejects when this account's keyring did not seal the bytes. */
   open(sealed: Buffer): Promise<string>
 }
 
@@ -43,12 +41,10 @@ export async function keyringSeal(
   }
 }
 
-/** A seal that hides nothing. Only a verify run of a build that is not installed uses it, to prove that a kept sign-in survives a restart. */
 export const UNSEALED: Seal = { seal: async text => Buffer.from(text), open: async sealed => sealed.toString() }
 
 type SignIns = Readonly<Record<string, string>>
 
-/** The only code that knows the file's shape. Anything but a file this build wrote holds no sign-in. */
 function parseSignIns(text: string | null): SignIns {
   let raw: unknown
   try {
@@ -74,15 +70,6 @@ async function write(dir: string, file: string, signIns: SignIns): Promise<void>
   await rename(`${file}.tmp`, file)
 }
 
-/**
- * The sign-ins `gatewaysByUrl` keeps between runs, in `sign-ins.json` beside the saved connection:
- * `{"version":1,"signIns":{"<GatewayUrl>":"<base64 of the sealed secret>"}}`. Only sealed bytes
- * reach the disk, in a file only the user can read, written as the settings file is. With no seal
- * a sign-in is held in memory for this run and nothing is written.
- *
- * `sealOf` is asked once, by the first load or save. `durable` is false until then, and what the
- * seal says from then on.
- */
 export function signInStore(dir: string, sealOf: () => Promise<Seal | null>): Keep {
   const file = join(dir, SIGN_INS_FILE)
   const memory = memoryKeep()
@@ -95,14 +82,12 @@ export function signInStore(dir: string, sealOf: () => Promise<Seal | null>): Ke
 
   const read = async () => parseSignIns(await readFile(file, 'utf8').catch(() => null))
 
-  /** The sign-ins of the addresses `keep` takes. The object it was given when that is all of them, so nothing is written. */
   const only = (held: SignIns, keep: (url: string) => boolean): SignIns => {
     const kept = Object.entries(held).filter(([url]) => keep(url))
     return kept.length === Object.keys(held).length ? held : Object.fromEntries(kept)
   }
 
   let writes: Promise<void> = Promise.resolve()
-  /** One change at a time, each from the file as the last one left it. */
   const rewrite = (edit: (held: SignIns) => SignIns): Promise<void> => {
     const done = writes.then(async () => {
       const held = await read()

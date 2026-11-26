@@ -36,7 +36,6 @@ type Editing = At<'form' | 'checking' | 'failed'>
 const check = ({ live }: Editing, { target }: On<'checkTarget'>): Setup =>
   ({ at: 'checking', live, target, step: firstStep(target) })
 const keep = ({ live }: Editing): Setup | null => (live === null ? null : { at: 'chat', live })
-/** A first run has no chat to go back to. Only the sign-in waits on a person, for up to ten minutes, so only it can be stopped. */
 const stopWaiting = ({ target, step }: At<'checking'>): Setup | null =>
   (step === 'sign-in' ? { at: 'failed', live: null, target, failure: 'sign-in-cancelled' } : null)
 

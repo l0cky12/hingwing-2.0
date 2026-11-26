@@ -11,7 +11,6 @@ const SECRET = '{"refresh":"a-refresh-token","provider":"basic"}'
 const emptyDir = () => mkdtempSync(join(tmpdir(), 'highwing-sign-ins-'))
 const fileIn = (dir: string) => join(dir, SIGN_INS_FILE)
 
-/** Hides the text as hex behind the name of its key, and opens only what that key sealed. */
 const sealWith = (key: string): Seal => ({
   seal: async text => Buffer.from(`${key}:${Buffer.from(text).toString('hex')}`),
   open: async sealed => {

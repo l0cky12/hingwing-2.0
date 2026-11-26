@@ -58,16 +58,11 @@ type Press = Extract<WindowCommand, { readonly do: 'reconnect' | 'editTarget' | 
 
 interface BannerCopy {
   readonly words: string
-  /** `run`: what the button sends, in order, stopping at the first that main refuses. */
   readonly action: { readonly label: string; readonly run: readonly Press[] } | null
 }
 
 const reconnect = (label: string, start: boolean): BannerCopy['action'] => ({ label, run: [{ do: 'reconnect', start }] })
 
-/**
- * A retry of a signed-out link would fail the same way, because only a check opens the browser. Sign in
- * opens the Connection screen and checks the live target, as Connection and then Connect do.
- */
 export function bannerOf(link: Link, target: Target | null): BannerCopy | null {
   switch (link.state) {
     case 'blocked': return {
@@ -85,7 +80,6 @@ async function press(commands: readonly Press[]): Promise<void> {
   for (const command of commands) if (!(await run(command)).ok) return
 }
 
-/** `target` is null in a fixture run, as for `TopBar`. */
 export function Banner({ link, target }: { readonly link: Link; readonly target: Target | null }) {
   const copy = bannerOf(link, target)
   if (copy === null) return null

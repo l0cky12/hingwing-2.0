@@ -3,7 +3,6 @@ import { spawnSync } from 'node:child_process'
 const SECRET_SERVICE = 'org.freedesktop.secrets'
 const ASK_MS = 500
 
-/** One call to the session bus's own driver, answered as `dbus-send --print-reply` prints it. null: no answer. */
 export type AskBus = (method: 'NameHasOwner' | 'ListActivatableNames', ...args: readonly string[]) => string | null
 
 /** Asks with `dbus-send`, and only a bus this session already has: with no address, dbus-send would start one. */

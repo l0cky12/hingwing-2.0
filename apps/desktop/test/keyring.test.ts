@@ -38,7 +38,6 @@ describe('hasSecretService', () => {
 
 describe('dbusSend', () => {
   const ADDRESS = 'unix:path=/nowhere/bus'
-  /** A `dbus-send` that keeps the arguments it was run with beside itself, then answers. */
   const binWith = (script: string) => {
     const dir = mkdtempSync(join(tmpdir(), 'highwing-keyring-'))
     writeFileSync(join(dir, 'dbus-send'), `#!/bin/sh\necho "$@" >> "$0.calls"\n${script}\n`, { mode: 0o755 })

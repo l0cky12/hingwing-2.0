@@ -41,10 +41,6 @@ const recorded = (dial: Dialer): Dialer => (HIGHWING_RECORD ? recordingDialer(di
 
 const addressOf = (target: Target) => byKind<GatewayUrl | null>(target, { local: () => null, remote: () => null, url: ({ url }) => url })
 
-/**
- * The owner of the saved connection. One `gatewaysByUrl` serves the check and the route, so both use
- * the sign-in of an address and its refreshes never race. Only the sign-in of the saved target is kept.
- */
 async function savedConnection(settingsDir: string, opener: Opener, open: (dial: Dialer) => Hermes): Promise<ConnectionOwner> {
   // An installed build takes neither variable: one would keep sign-ins unsealed, the other would cut a real sign-in short.
   const verifying = !app.isPackaged

@@ -8,14 +8,12 @@ export const SIGN_IN_HINT = 'Highwing opened the sign-in page in your browser. I
 
 const NOT_A_NAME = "That isn't a machine name. Use the name Tailscale lists, such as hermes-host."
 
-/** An address that travels unencrypted is allowed, and warned about before anything is sent to it. */
 function plainHttpWarning(text: string): string | null {
   const parsed = parseGatewayUrl(text)
   if (!parsed.ok || !isPlainHttp(parsed.url)) return null
   return `This address uses plain http, so your Hermes sign-in and your chats travel unencrypted. Anyone on the network between here and ${gatewayHost(parsed.url)} could read them. Use https if you can.`
 }
 
-/** What a choice and the text typed under it name: a target to check, or what to say in place of a check. */
 export type Typed =
   | { readonly ok: true; readonly target: Target }
   | { readonly ok: false; readonly words: string; readonly fix: string | null }
@@ -24,19 +22,15 @@ interface Field {
   readonly label: string
   readonly placeholder: string
   readonly hint: string
-  /** What to say under the field about the text it holds, while Connect stays on. null: nothing. */
   readonly warning: (text: string) => string | null
 }
 
 interface Choice {
   readonly label: string
-  /** The field under the choice. null: the choice needs nothing typed. */
   readonly field: Field | null
-  /** Reads the text with the domain's own parser, so the window sends only what `targetOf` in main accepts. */
   readonly read: (text: string) => Typed
 }
 
-/** In the order the form lists them. A kind of target with no row here does not compile. */
 export const CHOICES: { readonly [K in Kind]: Choice } = {
   remote: {
     label: 'Another machine on my tailnet',
@@ -63,7 +57,6 @@ export const CHOICES: { readonly [K in Kind]: Choice } = {
 
 export const KINDS = Object.keys(CHOICES) as readonly Kind[]
 
-/** What each choice's field holds when the form opens on `shown`, the target being edited. */
 export function textsOf(shown: Target | undefined): Readonly<Record<Kind, string>> {
   const typed = shown === undefined ? {} : byKind<Partial<Record<Kind, string>>>(shown, {
     local: () => ({}),

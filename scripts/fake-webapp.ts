@@ -1,12 +1,3 @@
-/**
- * Runs the fake Hermes Webapp for a verify run: `tsx scripts/fake-webapp.ts <scenario> <fixture> [<username file> <password file>]`.
- * It prints one JSON line naming the gateway's address, then serves until it is killed. The gateway
- * behind it plays `fixture` at its recorded pace. It reads commands from stdin, one per line:
- * - `browse <url>`: the scenario's user opens that page, as the fake's `browse` does;
- * - `sign-out`: Hermes ends every sign-in;
- * - `secrets`: prints one JSON line with every token, code and ticket the fake has made.
- * With the two files, `/login` serves the form of Hermes's own page and signs in only that user.
- */
 import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
