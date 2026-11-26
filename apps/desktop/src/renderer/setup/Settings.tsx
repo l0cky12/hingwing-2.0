@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef } from 'react'
-import type { Mode, Theme } from '../../ipc-contract'
+import type { Accent, Mode, Theme } from '../../ipc-contract'
 import { Bar } from '../chrome/Chrome'
 import { COMMAND_KEY } from '../keys'
 import { run, useTopic } from '../store'
@@ -17,13 +17,25 @@ const THEMES: readonly Segment<Theme>[] = [
   { value: 'dark', label: 'Dark', icon: <Moon /> }
 ]
 
+const swatch = (tone: string) => <span className={`swatch tone-${tone}`} aria-hidden="true" />
+
+const ACCENTS: readonly Segment<Accent>[] = [
+  { value: 'bot', label: 'Bot', icon: <People /> },
+  { value: 'ink', label: 'Ink', icon: swatch('ink') },
+  { value: 'slate', label: 'Slate', icon: swatch('slate') },
+  { value: 'plum', label: 'Plum', icon: swatch('plum') },
+  { value: 'olive', label: 'Olive', icon: swatch('olive') },
+  { value: 'mauve', label: 'Mauve', icon: swatch('mauve') },
+  { value: 'umber', label: 'Umber', icon: swatch('umber') }
+]
+
 const SHORTCUTS: readonly { readonly label: string; readonly key: string; readonly onlyIn: string | null }[] = [
   { label: 'Command palette', key: 'K', onlyIn: null },
   { label: 'New chat', key: 'N', onlyIn: 'In a chat' },
   { label: 'Find in chat', key: 'F', onlyIn: 'In a chat' }
 ]
 
-export function Settings({ setup, mode, theme, onRequestClose }: { readonly setup: CardSetup; readonly mode: Mode; readonly theme: Theme; readonly onRequestClose: () => void }) {
+export function Settings({ setup, mode, theme, accent, onRequestClose }: { readonly setup: CardSetup; readonly mode: Mode; readonly theme: Theme; readonly accent: Accent; readonly onRequestClose: () => void }) {
   const saving = setup.at === 'checking' && setup.step === 'save'
   const link = useTopic('link')
   const heading = useRef<HTMLHeadingElement>(null)
@@ -64,6 +76,15 @@ export function Settings({ setup, mode, theme, onRequestClose }: { readonly setu
                 </div>
                 <div className="control">
                   <Segmented labelledBy={`${ids}-theme`} value={theme} segments={THEMES} onPick={picked => void run({ do: 'setTheme', theme: picked })} />
+                </div>
+              </div>
+              <div className="row wrapped">
+                <div className="text">
+                  <p className="label" id={`${ids}-accent`}>Accent</p>
+                  <p className="desc">Bot uses the color of the open chat’s bot.</p>
+                </div>
+                <div className="control">
+                  <Segmented labelledBy={`${ids}-accent`} value={accent} segments={ACCENTS} onPick={picked => void run({ do: 'setAccent', accent: picked })} />
                 </div>
               </div>
             </div>
