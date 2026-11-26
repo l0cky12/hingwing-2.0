@@ -11,7 +11,7 @@ import { BotEditor, type BotEditorProps } from './BotEditor'
 import { nameProblem } from './bot-form'
 import type { LookCalls } from './LookPicker'
 import { NewBotForm } from './NewBotForm'
-import { isMenuKey, type Box, type MenuAction, type OpenMenu, type Opener } from './bot-menu'
+import { deleteRefusal, isMenuKey, type Box, type MenuAction, type OpenMenu, type Opener } from './bot-menu'
 import { elementIn, fallbackOf, focusIn, openerTarget, stayedIn, type FocusTarget } from './focus'
 import { busyIn, focusAfter, runsAt, SAID, type MarkRun } from './marks'
 import { NewMenu } from './NewMenu'
@@ -280,7 +280,8 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
     pin: bot => mark(bot, 'pin'),
     unpin: bot => mark(bot, 'unpin'),
     hide: bot => mark(bot, 'hide'),
-    show: bot => mark(bot, 'show')
+    show: bot => mark(bot, 'show'),
+    delete: bot => setRefused(deleteRefusal(bot, bots?.state === 'listed' && bots.roster.featured?.id === bot.id))
   }
   const choose = (bot: Bot, action: MenuAction) => {
     setMenu(null)

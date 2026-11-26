@@ -1,6 +1,6 @@
 import { rosterOf, type BotFacts, type BotId, type BotMark, type Bots } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
-import { anchorOf, EDGE, GAP, isMenuKey, keyMove, LABELS, MENUS, placeMenu, type Box, type OpenMenu } from '../src/renderer/bots/bot-menu'
+import { anchorOf, deleteRefusal, EDGE, GAP, isMenuKey, keyMove, LABELS, MENUS, placeMenu, type Box, type OpenMenu } from '../src/renderer/bots/bot-menu'
 import { fallbackOf, openerTarget } from '../src/renderer/bots/focus'
 import { busyIn, focusAfter, runsAt, SAID, type MarkRun } from '../src/renderer/bots/marks'
 import { listOf } from '../src/renderer/bots/roster-view'
@@ -12,13 +12,21 @@ const words = (place: BotPlace) => MENUS[place].map(group => group.map(action =>
 
 describe("a bot's menu", () => {
   it('offers a normal row Open chat and New chat, Edit…, then Pin to top and Hide from list', () => {
-    expect(words('section')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Pin to top', 'Hide from list']])
+    expect(words('section')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Pin to top', 'Hide from list'], ['Delete…']])
   })
 
   it('offers Unpin on a pinned row, no Pin on the default bot, and Show in list on a hidden row', () => {
-    expect(words('pinned')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Unpin', 'Hide from list']])
+    expect(words('pinned')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Unpin', 'Hide from list'], ['Delete…']])
     expect(words('card')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Hide from list']])
-    expect(words('hidden')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Show in list']])
+    expect(words('hidden')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Show in list'], ['Delete…']])
+  })
+
+  it('says how to delete a bot on the Hermes machine, and that Hermes keeps its default bot', () => {
+    const bots = listed(fact('default', 'Hermes', { isDefault: true, hidden: true }), fact('editor', 'Editor'))
+    if (bots.state !== 'listed' || bots.roster.featured === null) throw new Error('expected a listed roster with a default bot')
+    const editor = bots.roster.sections.flatMap(section => section.bots).find(bot => bot.id === 'editor')!
+    expect(deleteRefusal(editor, false)).toBe("This Hermes can't delete bots from Highwing. To delete Editor, run hermes profile delete editor on the Hermes machine.")
+    expect(deleteRefusal(bots.roster.featured, true)).toBe("The default bot can't be deleted.")
   })
 
   it('keeps Edit… third in every menu', () => {
