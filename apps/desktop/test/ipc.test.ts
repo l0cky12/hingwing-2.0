@@ -734,6 +734,28 @@ describe('serveWindows', () => {
     expect(owner!.setup.get()).toEqual({ at: 'chat', live: { target: { kind: 'local' }, epoch: 2 } })
     await expect(run(event(), { do: 'editTarget' }, 1)).resolves.toEqual({ ok: true, value: undefined })
   })
+
+  it("refuses the bot menu's mark and New chat sent for an older connection, and passes them for the live one", async () => {
+    let owner: ConnectionOwner | undefined
+    const { handlers, event, commands } = harness(hermes => (owner = switchable(hermes)))
+    const run = handlers.get(CHANNEL.run)!
+    await run(event(), { do: 'editTarget' }, 1)
+    await run(event(), { do: 'checkTarget', target: { kind: 'local' } }, 1)
+    await new Promise(resolve => setImmediate(resolve))
+    const mark = { do: 'markBot', bot: 'box-bot', mark: 'pin' }
+    const fresh = { do: 'open', ref: { kind: 'new', bot: 'box-bot', draftId: 'd1' }, upFront: true }
+
+    for (const command of [mark, fresh]) {
+      await expect(run(event(), command, 1)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    }
+    expect(commands, "the old sidebar's bot never reaches the new Hermes").toEqual([])
+
+    await expect(run(event(), mark, 2)).resolves.toMatchObject({ ok: true })
+    expect(owner!.setup.get(), 'a mark leaves Settings up').toMatchObject({ at: 'saved' })
+    await expect(run(event(), fresh, 2)).resolves.toMatchObject({ ok: true })
+    expect(commands).toEqual([mark, fresh])
+    expect(owner!.setup.get()).toEqual({ at: 'chat', live: { target: { kind: 'local' }, epoch: 2 } })
+  })
 })
 
 describe('isWebLink', () => {
