@@ -160,6 +160,7 @@ type Live = { target: Target; epoch: number }
 | `checking` | the check passes and the save succeeds | `saved` with the new `live`, and `from` `first-run` when nothing was live before, else `settings` |
 | `checking` | the check passes and the save fails | `failed` with `cant-save` |
 | `form`, `checking`, `failed` with `live` | `keepTarget` (Close, Esc) | `chat` with that `live`. A running check is aborted. Refused at step `save`. |
+| `checking` at `sign-in` with no `live` | `keepTarget` (Stop waiting) | `failed` with `sign-in-cancelled`. The check is aborted. |
 | `checking`, `failed` | `stopCheck` (Cancel) | `form` with the same `live`. A running check is aborted. Refused at step `save`. |
 | `saved` | `keepTarget` (Open chat, or Close and Esc in Settings) | `chat` |
 | `saved` | `checkTarget(t)` (Connect in Settings) | `checking` at the first step |
@@ -184,7 +185,7 @@ A failed check never touches the live connection. Re-checking the live target do
 - `form`, `checking` and `failed` with no `live` connection draw the first run, `FirstRun` in `Setup.tsx`, which holds the Connection card alone.
 - `saved` with `from: 'first-run'` draws `Saved` in `Setup.tsx`, with an Open chat button.
 
-The renderer decides nothing from `live` beyond that mapping. While `live` is not null, the chat window stays mounted under Settings, its chat column hidden with the `hidden` attribute, so an unsent draft survives Settings. Only a new `epoch` remounts it, and a switch to another host is the one action that drops a draft. The top bar's Settings button and the palette's Open Settings send `editTarget`, and Close and Esc send `keepTarget`. The Connection card shows the machine folded, with Change. Change opens the editor in the card, Connect sends `checkTarget`, and Cancel folds the editor, or sends `stopCheck` while a check runs or after one failed. The first run's card has no Cancel. The Ctrl+K palette sits outside the window a new `epoch` remounts, so a pick main refused for the old connection comes back over the new one.
+The renderer decides nothing from `live` beyond that mapping. While `live` is not null, the chat window stays mounted under Settings, its chat column hidden with the `hidden` attribute, so an unsent draft survives Settings. Only a new `epoch` remounts it, and a switch to another host is the one action that drops a draft. The top bar's Settings button and the palette's Open Settings send `editTarget`, and Close and Esc send `keepTarget`. The Connection card shows the machine folded, with Change. Change opens the editor in the card, Connect sends `checkTarget`, and Cancel folds the editor, or sends `stopCheck` while a check runs or after one failed. The first run's card has no Cancel, only Stop waiting while a check waits for a sign-in in the browser, which sends `keepTarget`. The Ctrl+K palette sits outside the window a new `epoch` remounts, so a pick main refused for the old connection comes back over the new one.
 
 A switch remounts the chat subtree with the new epoch. Its `watch` calls then unsubscribe and subscribe again through the normal path, so `main/ipc.ts` needs no rebind logic. A window reload was rejected because `serveWindows` drops a window's subscriptions only on `destroyed`, which a reload does not fire. The old subscriptions would leak.
 
