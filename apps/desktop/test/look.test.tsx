@@ -71,6 +71,13 @@ describe('a face', () => {
     expect(faceSvg('circle', 'coral', 48)).toContain('<g fill="#1F2A26"')
     expect(faceSvg('circle', 'ink', 48)).toContain('<g fill="#F6F7F3"')
   })
+
+  it('rims an ink face in graphite in every shape, so it keeps an edge on a dark page, and no other face', () => {
+    for (const shape of FACE_SHAPES) {
+      expect(faceSvg(shape, 'ink', 64), shape).toMatch(/^<svg[^>]*><g transform="translate\(50 50\) scale\(1\.08\) translate\(-50 -50\)">.*#7C8783.*<\/g>.*#1F2A26/)
+      expect(faceSvg(shape, 'slate', 64), shape).not.toContain('#7C8783')
+    }
+  })
 })
 
 describe('the words for what is picked', () => {

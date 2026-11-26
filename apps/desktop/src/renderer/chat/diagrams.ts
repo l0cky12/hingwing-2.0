@@ -17,6 +17,15 @@ const DIAGRAM_CONFIGS = [
 
 const token = (style: CSSStyleDeclaration, name: string) => style.getPropertyValue(name).trim()
 
+export type Palette = 'light' | 'dark'
+const darkQuery = () => matchMedia('(prefers-color-scheme: dark)')
+export const paletteNow = (): Palette => (darkQuery().matches ? 'dark' : 'light')
+export const watchPalette = (listener: () => void) => {
+  const query = darkQuery()
+  query.addEventListener('change', listener)
+  return () => query.removeEventListener('change', listener)
+}
+
 function configFromPage(): MermaidConfig {
   const style = getComputedStyle(document.documentElement)
   return {
@@ -55,38 +64,56 @@ const FAILED: Drawing = { status: 'failed' }
 interface Drawer {
   readonly mermaid: Mermaid
   readonly sanitize: (svg: string) => SanitizedSvg
+  configured: Palette | null
 }
 
 let drawer: Promise<Drawer> | undefined
 
 function loadDrawer(): Promise<Drawer> {
-  drawer ??= Promise.all([import('mermaid'), import('dompurify')]).then(([{ default: mermaid }, { default: purify }]) => {
-    mermaid.initialize(configFromPage())
-    return { mermaid, sanitize: svg => purify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true, mathMl: true }, ADD_TAGS: ['foreignObject'], HTML_INTEGRATION_POINTS: { 'annotation-xml': true, foreignobject: true } }) as SanitizedSvg }
-  })
+  drawer ??= Promise.all([import('mermaid'), import('dompurify')]).then(([{ default: mermaid }, { default: purify }]) => ({
+    mermaid,
+    sanitize: svg => purify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true, mathMl: true }, ADD_TAGS: ['foreignObject'], HTML_INTEGRATION_POINTS: { 'annotation-xml': true, foreignobject: true } }) as SanitizedSvg,
+    configured: null
+  }))
   return drawer
 }
 
 const drawn = new Map<string, Drawing>()
+const keyOf = (source: string, palette: Palette) => `${palette}\n${source}`
 let renders = 0
 
-export function drawnBefore(source: string): Drawing {
-  return drawn.get(source) ?? DRAWING
+export function drawnBefore(source: string, palette: Palette): Drawing {
+  return drawn.get(keyOf(source, palette)) ?? DRAWING
+}
+
+let turn: Promise<unknown> = Promise.resolve()
+
+/** Mermaid queues a render but applies `initialize` at once, so a palette and the renders drawn in it take one turn together. */
+function inTurn<T>(work: () => Promise<T>): Promise<T> {
+  const next = turn.then(work)
+  turn = next.catch(() => {})
+  return next
 }
 
 export async function drawDiagram(source: string): Promise<Drawing> {
-  const known = drawn.get(source)
+  const known = drawn.get(keyOf(source, paletteNow()))
   if (known !== undefined) return known
-  let drawing = FAILED
-  if (source.length <= MAX_DIAGRAM_CHARS) {
-    try {
-      const { mermaid, sanitize } = await loadDrawer()
-      drawing = { status: 'drawn', svg: sanitize((await mermaid.render(`diagram-${++renders}`, source)).svg) }
-    } catch {
-      drawing = FAILED
-    }
-  }
+  const { palette, drawing } = source.length > MAX_DIAGRAM_CHARS
+    ? { palette: paletteNow(), drawing: FAILED }
+    : await inTurn(async () => {
+      try {
+        const loaded = await loadDrawer()
+        const palette = paletteNow()
+        if (loaded.configured !== palette) {
+          loaded.mermaid.initialize(configFromPage())
+          loaded.configured = palette
+        }
+        return { palette, drawing: { status: 'drawn', svg: loaded.sanitize((await loaded.mermaid.render(`diagram-${++renders}`, source)).svg) } satisfies Drawing }
+      } catch {
+        return { palette: paletteNow(), drawing: FAILED }
+      }
+    })
   if (drawn.size >= CACHE_LIMIT) drawn.delete(drawn.keys().next().value!)
-  drawn.set(source, drawing)
+  drawn.set(keyOf(source, palette), drawing)
   return drawing
 }

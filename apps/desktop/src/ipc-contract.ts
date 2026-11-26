@@ -84,12 +84,17 @@ export type Mode = 'bots' | 'chats'
 export type ModeCommand = { readonly do: 'setMode'; readonly mode: Mode }
 export const isMode = (raw: unknown): raw is Mode => raw === 'bots' || raw === 'chats'
 
-export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand
+/** Which palette the window draws: the desktop's light or dark setting, or one the user fixed. Owned by Electron main and kept on disk. */
+export type Theme = 'system' | 'light' | 'dark'
+export type ThemeCommand = { readonly do: 'setTheme'; readonly theme: Theme }
+export const isTheme = (raw: unknown): raw is Theme => raw === 'system' || raw === 'light' || raw === 'dark'
+
+export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' | 'refreshBots' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
 
-/** Every topic and what it carries. Each has one value per connection, except `preview` and `mode`, which belong to the window. */
+/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode` and `theme`, which belong to the window. */
 export interface AppTopics {
   readonly setup: Setup
   readonly link: Link
@@ -106,10 +111,11 @@ export interface AppTopics {
   readonly groupChat: GroupChat | null
   readonly preview: Preview
   readonly mode: Mode
+  readonly theme: Theme
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, preview: true, mode: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, preview: true, mode: true, theme: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -563,7 +569,8 @@ export const validators: Validators = {
     const rect = rectOf(raw.rect)
     return rect && { do: 'placePreview', rect }
   },
-  setMode: raw => (isMode(raw.mode) ? { do: 'setMode', mode: raw.mode } : null)
+  setMode: raw => (isMode(raw.mode) ? { do: 'setMode', mode: raw.mode } : null),
+  setTheme: raw => (isTheme(raw.theme) ? { do: 'setTheme', theme: raw.theme } : null)
 }
 
 export function parseCommand(raw: unknown): WindowCommand | null {

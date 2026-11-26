@@ -28,6 +28,11 @@ const KEYRINGS = ['test', 'system']
 const USER_FILES = ['HIGHWING_VERIFY_USER_FILE', 'HIGHWING_VERIFY_PASSWORD_FILE']
 const MODE_FILE = 'mode.json'
 const MODES = ['bots', 'chats']
+const THEME_FILE = 'theme.json'
+const THEMES = ['system', 'light', 'dark']
+/** What GNOME's portal backend reads for each desktop theme a run can set. */
+const COLOR_SCHEMES = { light: 'default', dark: 'prefer-dark' }
+const BUS_QUIT_MS = 3_000
 
 const SAVED = {
   none: () => null,
@@ -259,6 +264,29 @@ const STEPS = {
   },
   menu: { arity: 2, run: async (ctx, key, label) => pressForMenu(ctx, key, label, true) },
   'menu-without': { arity: 2, run: async (ctx, key, label) => pressForMenu(ctx, key, label, false) },
+  'system-theme': {
+    arity: 1,
+    run: async (ctx, theme) => {
+      if (!ctx.bus) throw new Error('"system-theme" needs --system-theme, because only the run\'s own desktop bus can change')
+      setSystemTheme(ctx.bus, theme)
+    }
+  },
+  palette: {
+    arity: 1,
+    run: async (ctx, palette) => {
+      if (palette !== 'light' && palette !== 'dark') throw new Error(`"palette" takes light or dark, not "${palette}"`)
+      const read = () => ctx.page.evaluate(() => {
+        const token = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+        const fill = token('--signal-soft').toLowerCase()
+        const diagrams = [...document.querySelectorAll('.diagram > .drawn svg')].map(svg => svg.outerHTML.toLowerCase().includes(fill))
+        return { palette: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light', paper: token('--paper'), graphite: token('--graphite'), body: getComputedStyle(document.body).backgroundColor, diagrams: diagrams.length, stale: diagrams.filter(fresh => !fresh).length }
+      })
+      const drawn = await poll(ctx, read, now => now.palette === palette && now.stale === 0)
+      log(ctx, `  the page draws ${drawn.palette}: --paper ${drawn.paper}, --graphite ${drawn.graphite}, body ${drawn.body}, ${drawn.diagrams - drawn.stale} of ${drawn.diagrams} diagram(s) in its colors`)
+      if (drawn.palette !== palette) throw new Error(`the page still draws ${drawn.palette} after ${ctx.timeout} ms`)
+      if (drawn.stale > 0) throw new Error(`${drawn.stale} diagram(s) are still drawn in the other palette after ${ctx.timeout} ms`)
+    }
+  },
   relaunch: {
     arity: 0,
     run: async ctx => {
@@ -1247,6 +1275,60 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
   })
 }
 
+/** dbus-daemon starts activated services with its own environment, so a service started with the user's home would write the user's desktop settings. */
+async function startPrivateBus(scratch, theme, log) {
+  const root = join(scratch, 'bus')
+  rmSync(root, { recursive: true, force: true })
+  const env = { PATH: process.env.PATH, DISPLAY: process.env.DISPLAY, XAUTHORITY: process.env.XAUTHORITY, LANG: 'C.UTF-8', GSETTINGS_BACKEND: 'keyfile', XDG_CURRENT_DESKTOP: 'GNOME' }
+  for (const [name, dir] of Object.entries({ HOME: 'home', XDG_CONFIG_HOME: 'config', XDG_DATA_HOME: 'data', XDG_CACHE_HOME: 'cache', XDG_STATE_HOME: 'state', XDG_RUNTIME_DIR: 'run' })) {
+    env[name] = join(root, dir)
+    mkdirSync(env[name], { recursive: true, mode: 0o700 })
+  }
+  const daemon = spawn('dbus-daemon', ['--session', '--nofork', '--print-address=1'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
+  writeFileSync(join(scratch, 'bus-pid'), String(daemon.pid))
+  daemon.stderr.on('data', log)
+  const address = await new Promise((resolve, reject) => {
+    let text = ''
+    daemon.stdout.on('data', chunk => {
+      text += chunk
+      if (text.includes('\n')) resolve(text.split('\n')[0].trim())
+    })
+    daemon.on('exit', code => reject(new Error(`dbus-daemon exited with code ${code} before it printed its address`)))
+  })
+  const bus = { root, daemon, address, env: { ...env, DBUS_SESSION_BUS_ADDRESS: address } }
+  setSystemTheme(bus, theme)
+  return bus
+}
+
+function setSystemTheme(bus, theme) {
+  if (!(theme in COLOR_SCHEMES)) throw new Error(`the desktop theme is light or dark, not "${theme}"`)
+  const set = spawnSync('gsettings', ['set', 'org.gnome.desktop.interface', 'color-scheme', COLOR_SCHEMES[theme]], { env: bus.env, encoding: 'utf8' })
+  if (set.status !== 0) throw new Error(`gsettings could not set the run's desktop theme: ${set.stderr.trim()}`)
+}
+
+const busProcesses = bus => readdirSync('/proc').filter(name => /^\d+$/.test(name)).filter(pid => {
+  try {
+    return readFileSync(`/proc/${pid}/environ`, 'latin1').split('\0').includes(`HOME=${bus.env.HOME}`)
+  } catch {
+    return false
+  }
+}).map(Number)
+
+/** The document portal mounts a FUSE file system under the run's runtime directory, which outlives a killed portal. */
+async function stopPrivateBus(bus, scratch) {
+  bus.daemon.removeAllListeners('exit')
+  bus.daemon.kill()
+  const deadline = Date.now() + BUS_QUIT_MS
+  while (busProcesses(bus).length > 0 && Date.now() < deadline) await new Promise(done => setTimeout(done, 50))
+  for (const pid of busProcesses(bus)) process.kill(pid, 'SIGKILL')
+  const mounts = readFileSync('/proc/self/mountinfo', 'utf8').split('\n').map(line => line.split(' ')[4]).filter(point => point?.startsWith(`${bus.root}/`))
+  for (const point of mounts) spawnSync('fusermount3', ['-u', '-z', point])
+  rmSync(join(scratch, 'bus-pid'), { force: true })
+  rmSync(bus.root, { recursive: true, force: true })
+}
+
+const desktopColorScheme = () => spawnSync('gsettings', ['get', 'org.gnome.desktop.interface', 'color-scheme'], { encoding: 'utf8' }).stdout.trim()
+
 function addressOf(text) {
   const url = URL.parse(text)
   if (url === null || (url.protocol !== 'https:' && url.protocol !== 'http:') || url.username !== '' || url.search !== '' || url.hash !== '') fail(`--webapp-url takes the http or https address of a gateway's Webapp, with no username, ? or # part`)
@@ -1349,6 +1431,8 @@ function browseSignIns(ctx, signIn) {
   return () => clearInterval(timer)
 }
 
+const lightUnlessThemed = options => (options.theme || options['system-theme'] ? null : 'light')
+
 async function launchApp(ctx) {
   const { _electron } = requireDesktop('playwright-core')
   const { executable, args, cwd, env, arg, evidence, scratch, media, options } = ctx.launch
@@ -1356,6 +1440,7 @@ async function launchApp(ctx) {
   const [videoWidth, videoHeight] = (options.size ?? `${SIZE.width}x${SIZE.height}`).split('x').map(Number)
   ctx.app = await _electron.launch({
     executablePath: executable, args: arg === undefined ? args : [...args, arg], cwd, env, timeout: ctx.timeout,
+    colorScheme: lightUnlessThemed(options),
     ...(options.video && { recordVideo: { dir: join(scratch, 'video'), size: { width: videoWidth, height: videoHeight } } })
   })
   ctx.pid = ctx.app.process().pid
@@ -1393,7 +1478,7 @@ async function quitApp(ctx) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'asset-fails': 'value', images: 'value', pets: 'value', video: 'flag', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', approvals: 'value', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'fake-webapp': 'value', 'webapp-url': 'value', 'login-form': 'flag', keyring: 'value', 'sign-in-ms': 'value', mode: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value', latency: 'value', 'timed-shot': 'value', 'cpu-profile': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'asset-fails': 'value', images: 'value', pets: 'value', video: 'flag', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', approvals: 'value', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'fake-webapp': 'value', 'webapp-url': 'value', 'login-form': 'flag', keyring: 'value', 'sign-in-ms': 'value', mode: 'value', theme: 'value', 'system-theme': 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value', latency: 'value', 'timed-shot': 'value', 'cpu-profile': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   const webScenario = options['fake-webapp']
@@ -1433,6 +1518,9 @@ async function run(argv) {
   if (options.latency !== undefined && !/^\d+$/.test(options.latency)) fail(`--latency takes a whole number of ms, not "${options.latency}"`)
   if (options.latency !== undefined && !options.fixture) fail('--latency holds the replies of the fixture a --fixture run plays, so it needs --fixture')
   if (options['timed-shot'] !== undefined && !/^\d+(,\d+)*$/.test(options['timed-shot'])) fail(`--timed-shot takes ms after the click, such as 30 or 30,105, not "${options['timed-shot']}"`)
+  if (options.theme && !THEMES.includes(options.theme)) fail(`unknown --theme "${options.theme}". Known: ${THEMES.join(', ')}`)
+  if (options['system-theme'] && !(options['system-theme'] in COLOR_SCHEMES)) fail(`unknown --system-theme "${options['system-theme']}". Known: ${Object.keys(COLOR_SCHEMES).join(', ')}`)
+  if (options['system-theme'] && options.keyring === 'system') fail('--system-theme gives the app a desktop bus of the run\'s own, which has no keyring. It does not go with --keyring system')
   if (options.size && !/^[1-9]\d*x[1-9]\d*$/.test(options.size)) fail(`--size takes <width>x<height>, not "${options.size}"`)
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')
   const runId = options.run ?? `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`
@@ -1462,6 +1550,10 @@ async function run(argv) {
   if (options.mode) {
     mkdirSync(userData, { recursive: true })
     writeFileSync(join(userData, MODE_FILE), JSON.stringify({ version: 1, mode: options.mode }))
+  }
+  if (options.theme) {
+    mkdirSync(userData, { recursive: true })
+    writeFileSync(join(userData, THEME_FILE), JSON.stringify({ version: 1, theme: options.theme }))
   }
   const host = scenario ? await startFakeHost(scenario, fixture, options['hold-at'], scratch) : null
 
@@ -1498,10 +1590,13 @@ async function run(argv) {
   delete env.HIGHWING_MENU_PICK
   if (options['menu-pick']) env.HIGHWING_MENU_PICK = options['menu-pick']
 
+  const desktopScheme = options['system-theme'] ? desktopColorScheme() : null
+  ctx.bus = options['system-theme'] ? await startPrivateBus(scratch, options['system-theme'], chunk => appendFileSync(join(evidence, 'bus.log'), chunk)) : null
+  if (ctx.bus) env.DBUS_SESSION_BUS_ADDRESS = ctx.bus.address
   const gateway = host ? `the fake host "${scenario}" as the whole PATH, saved connection "${options.saved ?? 'none'}"`
     : byAddress ? `${webScenario ? `the fake Webapp "${webScenario}"${options['login-form'] ? " behind Hermes's password form" : ''}` : 'a real Webapp'} at ${ctx.web.url}, no tool on the PATH, saved connection "${options.saved ?? 'none'}", ${options.keyring ? `the ${options.keyring} keyring` : 'no keyring'}`
       : `HIGHWING_FIXTURE=${fixture}`
-  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${gateway}${Object.keys(media).length > 0 ? `, emulating ${JSON.stringify(media)}` : ''}${options.arg === undefined ? '' : `, with the argument ${JSON.stringify(options.arg)}`}`)
+  log(ctx, `run ${runId}: launching on ${process.env.DISPLAY} with ${gateway}${ctx.bus ? `, a desktop bus of its own set to ${options['system-theme']}` : ''}${Object.keys(media).length > 0 ? `, emulating ${JSON.stringify(media)}` : ''}${options.arg === undefined ? '' : `, with the argument ${JSON.stringify(options.arg)}`}`)
   const executable = electronBinary() ?? fail('electron binary missing; run doctor')
   // Without the system keyring a run must not reach the desktop's own, which could ask the user to unlock it.
   const args = [MAIN_JS, '--ozone-platform=x11', '--force-device-scale-factor=1', '--disable-gpu', `--user-data-dir=${userData}`, ...(byAddress && options.keyring !== 'system' ? ['--password-store=basic'] : [])]
@@ -1560,6 +1655,14 @@ async function run(argv) {
       rmSync(join(scratch, 'host-pid'), { force: true })
     }
   }
+  if (ctx.bus) {
+    await stopPrivateBus(ctx.bus, scratch)
+    const after = desktopColorScheme()
+    if (after !== desktopScheme && !failed) {
+      failed = new Error(`the desktop's own color-scheme was ${desktopScheme} before the run and is ${after} after it`)
+      log(ctx, `FAILED: ${failed.message}`)
+    }
+  }
   const tokens = ctx.web?.secrets ? await ctx.web.secrets() : []
   if (ctx.web?.child) {
     ctx.web.child.removeAllListeners('exit')
@@ -1613,7 +1716,7 @@ function cleanup(argv) {
   const targets = options.all ? (existsSync(SCRATCH_ROOT) ? readdirSync(SCRATCH_ROOT) : []) : [options.run]
   for (const runId of targets) {
     const scratch = join(SCRATCH_ROOT, runId)
-    for (const pidFile of [join(scratch, 'pid'), join(scratch, 'host-pid'), join(scratch, 'second-pid'), join(scratch, 'browser-pid')]) {
+    for (const pidFile of [join(scratch, 'pid'), join(scratch, 'host-pid'), join(scratch, 'second-pid'), join(scratch, 'browser-pid'), join(scratch, 'bus-pid')]) {
       if (!existsSync(pidFile)) continue
       const pid = Number(readFileSync(pidFile, 'utf8'))
       if (alive(pid)) process.kill(pid, 'SIGKILL')

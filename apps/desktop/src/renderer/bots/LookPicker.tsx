@@ -1,7 +1,7 @@
 import type { CommandOutcome, PetChoice } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { PictureFile } from '../../ipc-contract'
-import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_COLORS, FACE_SHAPES, faceSvg, lookWords, shapeFor, surpriseFor, titleOf, type Face, type FaceColor, type FaceShape, type Look } from './look'
+import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_COLORS, FACE_SHAPES, faceSvg, lookWords, rimOf, shapeFor, surpriseFor, titleOf, type Face, type FaceColor, type FaceShape, type Look } from './look'
 import { blobUrlOf, decodes } from './pictures'
 
 export interface LookCalls {
@@ -260,7 +260,7 @@ export function LookPicker({ look, name, calls, onLook, onWaiting }: LookPickerP
             {FACE_COLOR_NAMES.map(color => (
               <button
                 key={color} type="button" className="look-color" aria-label={titleOf(color)} title={titleOf(color)}
-                aria-pressed={look.from === 'face' && look.color === color} style={{ background: FACE_COLORS[color] }} onClick={() => pickFace({ color })}
+                aria-pressed={look.from === 'face' && look.color === color} style={{ background: FACE_COLORS[color], border: `2px solid ${rimOf(color) ?? FACE_COLORS[color]}` }} onClick={() => pickFace({ color })}
               />
             ))}
           </div>

@@ -1,14 +1,20 @@
 import { useEffect, useId, useLayoutEffect, useRef } from 'react'
-import type { Mode } from '../../ipc-contract'
+import type { Mode, Theme } from '../../ipc-contract'
 import { Bar } from '../chrome/Chrome'
 import { COMMAND_KEY } from '../keys'
 import { run, useTopic } from '../store'
-import { Bubble, ConnectionCard, People, Segmented, type Segment } from './ConnectionCard'
+import { Bubble, ConnectionCard, Monitor, Moon, People, Segmented, Sun, type Segment } from './ConnectionCard'
 import type { CardSetup } from './screens'
 
 const SIDEBAR: readonly Segment<Mode>[] = [
   { value: 'bots', label: 'Bots', icon: <People /> },
   { value: 'chats', label: 'Chats', icon: <Bubble /> }
+]
+
+const THEMES: readonly Segment<Theme>[] = [
+  { value: 'system', label: 'System', icon: <Monitor /> },
+  { value: 'light', label: 'Light', icon: <Sun /> },
+  { value: 'dark', label: 'Dark', icon: <Moon /> }
 ]
 
 const SHORTCUTS: readonly { readonly label: string; readonly key: string; readonly onlyIn: string | null }[] = [
@@ -17,7 +23,7 @@ const SHORTCUTS: readonly { readonly label: string; readonly key: string; readon
   { label: 'Find in chat', key: 'F', onlyIn: 'In a chat' }
 ]
 
-export function Settings({ setup, mode, onRequestClose }: { readonly setup: CardSetup; readonly mode: Mode; readonly onRequestClose: () => void }) {
+export function Settings({ setup, mode, theme, onRequestClose }: { readonly setup: CardSetup; readonly mode: Mode; readonly theme: Theme; readonly onRequestClose: () => void }) {
   const saving = setup.at === 'checking' && setup.step === 'save'
   const link = useTopic('link')
   const heading = useRef<HTMLHeadingElement>(null)
@@ -47,6 +53,20 @@ export function Settings({ setup, mode, onRequestClose }: { readonly setup: Card
           <section className="group" aria-labelledby={`${ids}-connection`}>
             <h3 id={`${ids}-connection`}>Connection</h3>
             <ConnectionCard setup={setup} link={link} />
+          </section>
+          <section className="group" aria-labelledby={`${ids}-appearance`}>
+            <h3 id={`${ids}-appearance`}>Appearance</h3>
+            <div className="card">
+              <div className="row">
+                <div className="text">
+                  <p className="label" id={`${ids}-theme`}>Theme</p>
+                  <p className="desc">System follows your computer’s light or dark setting.</p>
+                </div>
+                <div className="control">
+                  <Segmented labelledBy={`${ids}-theme`} value={theme} segments={THEMES} onPick={picked => void run({ do: 'setTheme', theme: picked })} />
+                </div>
+              </div>
+            </div>
           </section>
           <section className="group" aria-labelledby={`${ids}-sidebar`}>
             <h3 id={`${ids}-sidebar`}>Sidebar</h3>

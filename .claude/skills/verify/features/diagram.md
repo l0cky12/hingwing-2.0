@@ -41,4 +41,4 @@ The reply holds four `mermaid` blocks in this order: a `flowchart LR` that draws
 - `click button Source` fails in strict mode, because the reply has two. Use `click-at`.
 - The toggle and Copy are at opacity 0 until hover or keyboard focus, like a code block's Copy. They are in the ARIA tree at rest.
 - The drawn SVG is itself an `img` in the ARIA tree, inside the named one, so `tally img` counts it, and the bots sidebar's icons too. Count diagrams with `count img /^Diagram/`.
-- The app has no dark theme, so the diagram is drawn once with the light palette and never redrawn for a theme change.
+- A diagram is drawn in the palette the page shows, and drawn again when the palette changes. [Theme](./theme.md) has the recipe. A shot right after a switch can still show the old drawing: follow `system-theme` with `palette`, which waits for every diagram.

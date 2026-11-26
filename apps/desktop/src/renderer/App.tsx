@@ -1,6 +1,6 @@
 import type { Shown, ShownGroup, Target } from '@highwing/hermes/domain'
 import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react'
-import { epochOf, type Mode } from '../ipc-contract'
+import { epochOf, type Mode, type Theme } from '../ipc-contract'
 import { BotPicker } from './bots/BotPicker'
 import { BotsSidebar } from './bots/Bots'
 import { useRetryPicturesOnceOnline } from './bots/pictures'
@@ -86,9 +86,10 @@ interface ChatWindowProps {
   readonly settings: CardSetup | null
   readonly target: Target | null
   readonly mode: Mode
+  readonly theme: Theme
 }
 
-function ChatWindow({ hidden, settings, target, mode }: ChatWindowProps) {
+function ChatWindow({ hidden, settings, target, mode, theme }: ChatWindowProps) {
   const preview = useTopic('preview')
   const { root, pick } = useSwitchModeKeepingFocus(mode)
   const { settingsButton, close } = useCloseSettings(settings !== null)
@@ -101,7 +102,7 @@ function ChatWindow({ hidden, settings, target, mode }: ChatWindowProps) {
       <div key="screen" className="screen" hidden={settings !== null}>
         <ChatScreen target={target} settingsButton={settingsButton} />
       </div>
-      {settings !== null && <Settings setup={settings} mode={mode} onRequestClose={close} />}
+      {settings !== null && <Settings setup={settings} mode={mode} theme={theme} onRequestClose={close} />}
       <DraftSweep />
       {paned && <Preview preview={preview} />}
     </div>
@@ -111,14 +112,15 @@ function ChatWindow({ hidden, settings, target, mode }: ChatWindowProps) {
 export function App() {
   const setup = useTopic('setup')
   const mode = useTopic('mode')
-  if (setup === undefined || mode === undefined) return null
+  const theme = useTopic('theme')
+  if (setup === undefined || mode === undefined || theme === undefined) return null
   const screen = screenOf(setup)
   const live = setup.at === 'pinned' ? null : setup.live
   return (
     <>
       {(setup.at === 'pinned' || live !== null) && (
         <Epoch value={epochOf(setup)}>
-          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved'} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} />
+          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved'} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} />
           {/* Outside the window a new connection remounts, so a pick main refused for the old one comes back over the new one. */}
           {screen.show !== 'saved' && <Palette target={live?.target ?? null} settingsOpen={screen.show === 'settings'} />}
         </Epoch>

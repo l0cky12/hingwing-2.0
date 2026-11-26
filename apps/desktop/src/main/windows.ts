@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, nativeTheme } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isWebLink } from '../ipc-contract'
@@ -17,10 +17,13 @@ export const isAppUrl = (url: string) => {
 /** The content size design C was drawn and reviewed at. */
 const DESIGN_SIZE = { width: 1180, height: 860 } as const
 
+const APP_CSS_PAPER = { light: '#E8EBE4', dark: '#1A1F1C' } as const
+const paper = () => APP_CSS_PAPER[nativeTheme.shouldUseDarkColors ? 'dark' : 'light']
+
 export function openWindow(opener: Pick<Opener, 'browse'>, pane: Pick<PreviewPane, 'attach'>, show: ShowMenu): BrowserWindow {
   const window = new BrowserWindow({
     ...DESIGN_SIZE, useContentSize: true,
-    title: 'Highwing', backgroundColor: '#E8EBE4',
+    title: 'Highwing', backgroundColor: paper(),
     webPreferences: { preload: join(import.meta.dirname, '../preload/index.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: true }
   })
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -28,6 +31,9 @@ export function openWindow(opener: Pick<Opener, 'browse'>, pane: Pick<PreviewPan
     return { action: 'deny' }
   })
   window.webContents.on('will-navigate', event => event.preventDefault())
+  const repaint = () => window.setBackgroundColor(paper())
+  nativeTheme.on('updated', repaint)
+  window.once('closed', () => nativeTheme.off('updated', repaint))
   attachContextMenu(window, show)
   pane.attach(window)
   if (DEV_URL) void window.loadURL(DEV_URL)

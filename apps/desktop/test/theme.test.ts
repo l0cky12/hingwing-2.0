@@ -1,0 +1,140 @@
+import { readFileSync } from 'node:fs'
+import { describe, expect, it, vi } from 'vitest'
+
+interface FakeWindow { background: string; readonly closed: (() => void)[] }
+const electron = vi.hoisted(() => ({ dark: false, updated: new Set<() => void>(), windows: [] as FakeWindow[] }))
+
+vi.mock('electron', () => ({
+  nativeTheme: {
+    get shouldUseDarkColors() { return electron.dark },
+    on: (_event: 'updated', listener: () => void) => electron.updated.add(listener),
+    off: (_event: 'updated', listener: () => void) => electron.updated.delete(listener)
+  },
+  BrowserWindow: class implements FakeWindow {
+    background: string
+    readonly closed: (() => void)[] = []
+    readonly webContents = { setWindowOpenHandler: () => {}, on: () => {} }
+    constructor({ backgroundColor }: { readonly backgroundColor: string }) {
+      this.background = backgroundColor
+      electron.windows.push(this)
+    }
+    setBackgroundColor(color: string) { this.background = color }
+    once(event: string, listener: () => void) { if (event === 'closed') this.closed.push(listener) }
+    loadFile = async () => {}
+    loadURL = async () => {}
+  }
+}))
+
+const { openWindow } = await import('../src/main/windows')
+
+const CSS = readFileSync(new URL('../src/renderer/styles/app.css', import.meta.url), 'utf8')
+
+interface Rule { readonly media: readonly string[]; readonly selector: string; readonly declarations: ReadonlyMap<string, string> }
+
+const declarationsOf = (text: string) => new Map(text.split(';').flatMap(line => {
+  const at = line.indexOf(':')
+  return at < 0 ? [] : [[line.slice(0, at).trim(), line.slice(at + 1).trim()] as const]
+}))
+
+function rulesNestedOnlyInAtRules(css: string): Rule[] {
+  const rules: Rule[] = []
+  const open: string[] = []
+  let text = ''
+  for (const char of css.replace(/\/\*[\s\S]*?\*\//g, '')) {
+    if (char === '{') {
+      open.push(text.trim())
+      text = ''
+    } else if (char === '}') {
+      const selector = open.pop()!
+      if (text.trim() !== '') rules.push({ media: open.filter(prelude => prelude.startsWith('@media')), selector, declarations: declarationsOf(text) })
+      text = ''
+    } else {
+      text += char
+    }
+  }
+  return rules
+}
+
+interface Scheme { readonly dark: boolean; readonly more: boolean }
+const FEATURES: Readonly<Record<string, (scheme: Scheme) => boolean>> = {
+  'prefers-color-scheme: dark': ({ dark }) => dark,
+  'prefers-color-scheme: light': ({ dark }) => !dark,
+  'prefers-contrast: more': ({ more }) => more
+}
+const applies = (media: readonly string[], scheme: Scheme) =>
+  media.every(prelude => Array.from(prelude.matchAll(/\(([^)]+)\)/g), ([, feature]) => FEATURES[feature!.replace(/\s+/g, ' ')]?.(scheme) ?? false).every(Boolean))
+
+const ROOTS = rulesNestedOnlyInAtRules(CSS).filter(rule => rule.selector === ':root')
+const paletteOf = (scheme: Scheme): ReadonlyMap<string, string> =>
+  new Map(ROOTS.filter(rule => applies(rule.media, scheme)).flatMap(rule => [...rule.declarations]))
+
+const isColor = (value: string) => !value.includes('var(') && /^(#[0-9a-f]{3,8}|(rgb|hsl|oklch|oklab|lab|lch)a?\(.*\)|\d+ \d+ \d+)$/i.test(value)
+
+const channels = (hex: string) => {
+  const digits = hex.slice(1).length === 3 ? hex.slice(1).replace(/./g, '$&$&') : hex.slice(1)
+  return [0, 2, 4].map(at => parseInt(digits.slice(at, at + 2), 16) / 255)
+}
+const luminance = (hex: string) => {
+  const [r, g, b] = channels(hex).map(c => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+}
+const contrast = (a: string, b: string) => {
+  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+  return (light! + 0.05) / (dark! + 0.05)
+}
+
+const TEXT = ['ink', 'graphite', 'signal', 'caution', 'brick', 'moss']
+const SURFACES = ['paper', 'sheet', 'code-bg', 'signal-soft', 'caution-soft', 'add', 'del']
+const AVATARS = ['avatar-slate', 'avatar-plum', 'avatar-olive', 'avatar-mauve', 'avatar-umber']
+const PAIRS = [...TEXT.flatMap(text => SURFACES.map(surface => [text, surface, 4.5] as const)), ...AVATARS.map(avatar => ['sheet', avatar, 4.5] as const)]
+const EDGES = ['paper', 'sheet'].map(surface => ['edge', surface, 3] as const)
+
+const SCHEMES: readonly [string, Scheme][] = [
+  ['light', { dark: false, more: false }],
+  ['dark', { dark: true, more: false }],
+  ['light with more contrast', { dark: false, more: true }],
+  ['dark with more contrast', { dark: true, more: true }]
+]
+
+describe('the palettes in app.css', () => {
+  it('redefines every color of the light palette for a dark desktop, and tells Chromium which scheme each one is', () => {
+    const light = paletteOf({ dark: false, more: false })
+    const darkOnly = new Map(ROOTS.filter(rule => rule.media.join() === '@media (prefers-color-scheme: dark)').flatMap(rule => [...rule.declarations]))
+    const colors = [...light].filter(([name, value]) => name.startsWith('--') && isColor(value)).map(([name]) => name)
+    expect(colors.length).toBeGreaterThan(20)
+    expect(colors.filter(name => !darkOnly.has(name)), 'colors the dark palette leaves light').toEqual([])
+    expect(light.get('color-scheme')).toBe('light')
+    expect(darkOnly.get('color-scheme')).toBe('dark')
+  })
+
+  it.each(SCHEMES)('keeps text at 4.5:1 and edges at 3:1 in %s', (_name, scheme) => {
+    const palette = paletteOf(scheme)
+    const colorOf = (name: string) => palette.get(`--${name}`) ?? ''
+    const short = [...PAIRS, ...EDGES].flatMap(([fore, back, least]) => {
+      const ratio = contrast(colorOf(fore), colorOf(back))
+      return ratio >= least ? [] : [`${fore} on ${back}: ${ratio.toFixed(2)}, under ${least}`]
+    })
+    expect(short).toEqual([])
+  })
+})
+
+describe('the window behind the page', () => {
+  const flip = (dark: boolean) => {
+    electron.dark = dark
+    for (const listener of [...electron.updated]) listener()
+  }
+  const paperOf = (dark: boolean) => paletteOf({ dark, more: false }).get('--paper')
+
+  it("is the page's paper in the palette the desktop asks for, and follows each switch until the window closes", () => {
+    electron.dark = true
+    openWindow({ browse: async () => {} }, { attach: () => {} }, () => {})
+    const window = electron.windows.at(-1)!
+    expect(window.background).toBe(paperOf(true))
+    flip(false)
+    expect(window.background).toBe(paperOf(false))
+    flip(true)
+    expect(window.background).toBe(paperOf(true))
+    window.closed.forEach(listener => listener())
+    expect(electron.updated.size).toBe(0)
+  })
+})
