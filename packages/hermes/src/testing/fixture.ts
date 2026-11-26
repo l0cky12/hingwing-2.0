@@ -120,6 +120,13 @@ export interface Fixture {
      */
     readonly relay?: { readonly [profile: string]: RelayScript }
     /**
+     * profile -> how long each turn of its chats takes, in ms. A message starts its turn at once and its reply ends it
+     * this long after, so the bot is seen working. A profile not here answers before the next frame is read.
+     */
+    readonly turnMs?: { readonly [profile: string]: number }
+    /** false: the gateway refuses `session.active_list` as an unknown method, as a Hermes older than it does. Default true. */
+    readonly activeList?: boolean
+    /**
      * The group chats of the home profile and what Hermes says of them. Absent: the gateway refuses every `groups.*`
      * call as an unknown method, as a Hermes without group chats does.
      */

@@ -18,6 +18,7 @@ const OWN_ANSWERS: Readonly<Record<string, (header: Header, reply: Obj, params: 
   'session.detach': () => NOTHING,
   'session.stats': () => NOTHING,
   'session.context_breakdown': () => NOTHING,
+  'session.active_list': () => NOTHING,
   'bot_relay.deliver': () => NOTHING,
   'groups.capabilities': () => NOTHING,
   'groups.list': () => NOTHING,
