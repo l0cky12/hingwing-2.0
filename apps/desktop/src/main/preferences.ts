@@ -1,30 +1,26 @@
 import type { Feed } from '@highwing/hermes'
 import { open, readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
-import { isMode, type Mode } from '../ipc-contract'
+import { isMode, isTheme, type Mode, type Theme } from '../ipc-contract'
 import { feed } from './connection'
 
-/** A choice the window shows, kept on disk as `{"version":1,"<key>":<value>}` in a file of its own. */
 export interface Preference<T> {
   readonly file: string
   readonly key: string
   readonly is: (raw: unknown) => raw is T
-  /** What a first launch shows, and what any file this build did not write reads as. */
   readonly fallback: T
 }
 
 export const MODE: Preference<Mode> = { file: 'mode.json', key: 'mode', is: isMode, fallback: 'bots' }
+export const THEME: Preference<Theme> = { file: 'theme.json', key: 'theme', is: isTheme, fallback: 'system' }
 
 const VERSION = 1
 
 export interface PreferenceStore<T> extends Feed<T> {
-  /** Shows the choice at once and keeps it on disk. Saves apply in call order. A failed save is logged and the shown choice stays. */
   set(value: T): void
-  /** Resolves once every `set` so far has reached the disk or failed. */
   settled(): Promise<void>
 }
 
-/** A preference file never stops the window opening: anything but a value this build wrote reads as the fallback. */
 export function readPreference<T>({ key, is, fallback }: Preference<T>, text: string): T {
   let raw: unknown
   try {

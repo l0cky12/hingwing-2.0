@@ -3,7 +3,7 @@ import { onThisComputer, type BotId, type CommandOutcome, type Session, type Ses
 import {
   CHANNEL, epochOf, isAppTopic, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
   type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type PictureChoice, type PictureFile, type Push, type SessionPatch, type Setup, type StageResult,
-  type Tail, type Topic
+  type Tail, type Theme, type Topic
 } from '../ipc-contract'
 import { basename } from 'node:path'
 import type { AttachmentStore, AttachSources, StageSource } from './attachments'
@@ -45,8 +45,9 @@ const NEVER: Source = () => () => {}
 
 /** The pane's side of a window: its topic, its commands, and the files a window previews. */
 export type PreviewOwner = Pick<PreviewPane, 'preview' | 'show' | 'run'>
-export type ModeOwner = Pick<PreferenceStore<Mode>, 'get' | 'subscribe' | 'set'>
-interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner; readonly mode: ModeOwner }
+type Shown<T> = Pick<PreferenceStore<T>, 'get' | 'subscribe' | 'set'>
+export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme> }
+interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner; readonly preferences: Preferences }
 
 /** A Hermes topic is bound to the connection that is live when the window asks. A window that sees a new epoch asks again. */
 const onHermes = (source: (hermes: Hermes, topic: Topic) => Source) => ({ owner }: Owners, topic: Topic): Source =>
@@ -55,7 +56,8 @@ const onHermes = (source: (hermes: Hermes, topic: Topic) => Source) => ({ owner 
 const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source } = {
   setup: ({ owner }) => current(owner.setup),
   preview: ({ pane }) => current(pane.preview),
-  mode: ({ mode }) => current(mode),
+  mode: ({ preferences }) => current(preferences.mode),
+  theme: ({ preferences }) => current(preferences.theme),
   link: onHermes(hermes => current(hermes.link)),
   sidebar: onHermes(hermes => current(hermes.sidebar)),
   slash: onHermes(hermes => current(hermes.slash)),
@@ -156,10 +158,10 @@ export interface Pictures {
 export function serveWindows(
   owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>,
   pane: PreviewOwner, pictures: Pictures, attaching: Attaching,
-  saver: Saver, mode: ModeOwner
+  saver: Saver, preferences: Preferences
 ): { dispose(): void } {
   const windows = new Map<number, Map<number, Served>>()
-  const owners: Owners = { owner, pane, mode }
+  const owners: Owners = { owner, pane, preferences }
   const files = fileActions(opener, pane)
   const trusted = ({ senderFrame }: IpcEvent) => senderFrame !== null && senderFrame.parent === null && isAppUrl(senderFrame.url)
 
@@ -196,7 +198,11 @@ export function serveWindows(
     if (!trusted(event) || command === null) return REFUSED
     if (isPreviewCommand(command)) return pane.run(command)
     if (command.do === 'setMode') {
-      mode.set(command.mode)
+      preferences.mode.set(command.mode)
+      return DONE
+    }
+    if (command.do === 'setTheme') {
+      preferences.theme.set(command.theme)
       return DONE
     }
     if (!isSetupCommand(command) && epoch !== epochOf(owner.setup.get())) return OTHER_CONNECTION

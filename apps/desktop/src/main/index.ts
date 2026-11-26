@@ -1,7 +1,7 @@
 import { checkTarget, gatewaysByUrl, liveDialer, openHermes, remoteRoute, type Dialer, type Hermes, type Route } from '@highwing/hermes'
 import { byKind, type BotId, type GatewayUrl, type Target } from '@highwing/hermes/domain'
 import { fixtureLatency, loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, safeStorage, shell, type OpenDialogOptions } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, safeStorage, shell, type OpenDialogOptions } from 'electron'
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { attachmentStore, ATTACHMENTS_DIR, desktopSources, HERMES_LIMITS } from './attachments'
@@ -13,7 +13,7 @@ import { draftStore, DRAFTS_DIR } from './drafts'
 import { serveWindows } from './ipc'
 import { dbusSend, hasSecretService } from './keyring'
 import { chatLinks } from './links'
-import { MODE, preferenceStore } from './preferences'
+import { MODE, preferenceStore, THEME } from './preferences'
 import { desktopNotifier, notifyTurnEnds, recordingNotifier } from './notify'
 import { choosePicture, pickPicture, readHead } from './picture'
 import { previewPane, registerPageScheme } from './preview'
@@ -109,6 +109,9 @@ app.whenReady().then(async () => {
   const attachments = attachmentStore(join(settingsDir, ATTACHMENTS_DIR), { ...HERMES_LIMITS, ...fixture?.header.attachLimits })
   const drafts = draftStore(join(settingsDir, DRAFTS_DIR))
   const mode = await preferenceStore(settingsDir, MODE)
+  const theme = await preferenceStore(settingsDir, THEME)
+  nativeTheme.themeSource = theme.get()
+  theme.subscribe(source => (nativeTheme.themeSource = source))
   await attachments.sweep(new Set((await drafts.load()).flatMap(draft => draft.attachments.map(held => held.id))))
   const open = (dial: Dialer) => openHermes({ dial, client: { name: 'highwing', version: app.getVersion() }, onPane: pane.ask, uploads: attachments })
   const owner = fixture
@@ -124,7 +127,7 @@ app.whenReady().then(async () => {
   const saver = HIGHWING_SAVE_DIR ? folderSaver(HIGHWING_SAVE_DIR) : dialogSaver(dialog, () => app.getPath('downloads'))
   const served = serveWindows(
     owner, ipcMain, isAppUrl, opener, images, drafts, pane, { pick: (bot, live) => pickPicture(pictureDeps, bot, live), choose: () => choosePicture(pictureDeps) },
-    { store: attachments, sources }, saver, mode
+    { store: attachments, sources }, saver, { mode, theme }
   )
   const stopNotices = notifyTurnEnds(owner, {
     notifier: HIGHWING_NOTIFY_LOG ? recordingNotifier(HIGHWING_NOTIFY_LOG) : desktopNotifier(Notification),
@@ -135,10 +138,10 @@ app.whenReady().then(async () => {
   const stopLinks = links.serve(owner, raise)
   const stopRefresh = refreshBotsOnFocus(app, owner)
   let closed: Promise<void> | null = null
-  const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), stopRefresh(), Promise.all([owner.close(), drafts.settled(), mode.settled()]).then(() => {})))
+  const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), stopRefresh(), Promise.all([owner.close(), drafts.settled(), mode.settled(), theme.settled()]).then(() => {})))
   app.on('window-all-closed', () => void close().finally(() => app.quit()))
   // A quit from the menu or the session never emits window-all-closed, and a check or an attach still running would outlive the app.
-  // Electron does not wait for a will-quit listener, so the quit is held until a draft or the mode still being written is on disk.
+  // Electron does not wait for a will-quit listener, so the quit is held until a draft or a preference still being written is on disk.
   let settled = false
   app.on('will-quit', event => {
     if (settled) return

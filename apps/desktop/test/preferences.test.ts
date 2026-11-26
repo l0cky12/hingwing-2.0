@@ -2,19 +2,19 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileS
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { MODE, preferenceStore, readPreference, type Preference } from '../src/main/preferences'
+import { MODE, preferenceStore, readPreference, THEME, type Preference } from '../src/main/preferences'
 
 const text = (value: unknown) => JSON.stringify(value)
 const emptyDir = () => mkdtempSync(join(tmpdir(), 'highwing-preference-'))
 
 interface Case<T> {
   readonly preference: Preference<T>
-  /** Every value this build writes, the fallback first. */
   readonly values: readonly [T, T, ...T[]]
   readonly unknown: string
 }
 const CASES: readonly Case<string>[] = [
-  { preference: MODE, values: ['bots', 'chats'], unknown: 'inbox' }
+  { preference: MODE, values: ['bots', 'chats'], unknown: 'inbox' },
+  { preference: THEME, values: ['system', 'dark', 'light'], unknown: 'sepia' }
 ]
 
 describe.each(CASES)('the $preference.file preference', ({ preference, values, unknown }) => {
