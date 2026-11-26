@@ -1148,14 +1148,26 @@ describe('the scripted gateway draws pictures and lists pets as Hermes does', ()
     expect((await call('pet.thumb', { slug: 'mochi' })).result).toEqual({ ok: true, slug: 'mochi', dataUri: PICTURE })
   })
 
-  it('knows none of the three calls without the header keys, or on a socket with no interactive grant', async () => {
-    const bound = { ...BOUND, header: { ...BOUND.header, images: { available: true }, pets: PETS } }
+  it('knows none of the four calls without the header keys, or on a socket with no interactive grant', async () => {
+    const bound = { ...BOUND, header: { ...BOUND.header, images: { available: true }, pets: PETS, oneshot: { text: 'A title' } } }
     for (const fixture of [WITH_BOTS, bound]) {
       const { call } = await rawSocket({}, fixture)
       expect(await call('image.generate', { probe: true })).toMatchObject(unknown)
       expect(await call('pet.gallery', {})).toMatchObject(unknown)
       expect(await call('pet.thumb', { slug: 'tabby' })).toMatchObject(unknown)
+      expect(await call('llm.oneshot', { input: 'hello' })).toMatchObject(unknown)
     }
+  })
+
+  it("answers a one-shot call with the header's text once its delay has passed, for any chat, or fails it in Hermes's words", async () => {
+    const { post, frames, clock } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, oneshot: { text: 'Invoices sorted', delay_ms: 800 } } })
+    const id = post('llm.oneshot', { session_id: 'no-such-chat', instructions: 'Title it.', input: 'User: hello', max_tokens: 40, temperature: 0.3 })
+    await clock.advance(799)
+    expect(frames.filter(frame => frame.id === id)).toEqual([])
+    await clock.advance(1)
+    expect(frames.find(frame => frame.id === id)?.result).toEqual({ text: 'Invoices sorted' })
+    const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, oneshot: { error: 'no auxiliary model' } } })
+    expect(await call('llm.oneshot', { input: 'hello' })).toMatchObject({ error: { code: 5030, message: 'one-shot generation failed: no auxiliary model' } })
   })
 
   it("fails a picture's write in the header's words, and keeps no picture", async () => {

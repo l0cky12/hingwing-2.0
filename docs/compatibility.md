@@ -194,6 +194,13 @@ never started from Highwing, so its banner never offers **Start Hermes**.
   `Session.tuning.busy` stays null. A message sent while a turn runs is then
   submitted and queues, as it did before Highwing read the mode. `tune` then
   answers Hermes's refusal. See "Hermes's queue" below.
+- Rename with AI asks `llm.oneshot` for a title, with the chat's `session_id` so
+  Hermes lends the chat's own model (`tui_gateway/methods_session.py:1249-1276`),
+  then saves it with `session.mutate` operation `rename`. `llm.oneshot` is no
+  canonical method, so it reaches its legacy handler only on a socket with the
+  interactive grant. If Hermes answers it with an unknown-method error, the row
+  says "This Hermes can't suggest a title." and nothing is renamed. See
+  `packages/hermes/src/session-commands.ts`.
 - If a pending row carries no `controls`, as on a Hermes older than the
   queued-row verbs, the row offers only cancel, and `queued` refuses a send-now
   or an edit before any call. If Hermes refuses `prompt.steer_queued`,

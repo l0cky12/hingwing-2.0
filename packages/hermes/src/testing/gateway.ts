@@ -811,6 +811,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'profiles.get_asset': (gateway, socket, params) => gateway.getAsset(socket, params),
   /** tui_gateway/methods_images.py:57-96 */
   'image.generate': (gateway, socket, params) => gateway.generate(socket, params),
+  'llm.oneshot': (gateway, socket) => gateway.oneshot(socket),
   /** tui_gateway/methods_session.py:1467-1495 */
   'pet.gallery': (gateway, socket) => gateway.petGallery(socket),
   /** tui_gateway/methods_session.py:1557-1563 */
@@ -1092,7 +1093,8 @@ export class ScriptedGateway {
     const params = named && PROFILE_IMPLICIT.has(method) ? unscoped : raw
     const fields = checkParams(method, params)
     if (fields !== undefined && fields.length > 0) return refusal('invalid_params', { fields })
-    const chat = this.echoChats().find(held => held.id === params.session_id && held.profile === routed)
+    // `llm.oneshot` only borrows a chat's model through its `session_id`, so it is never a call of that chat.
+    const chat = method === 'llm.oneshot' ? undefined : this.echoChats().find(held => held.id === params.session_id && held.profile === routed)
     const handler = HANDLERS[method]
     if (handler === undefined && fields === undefined) return { error: { code: -32601, message: `unknown method: ${method}`, data: { reason: 'unknown_method' } } }
     try {
@@ -1872,6 +1874,14 @@ export class ScriptedGateway {
     const cap = Math.min(isInt(params.max_bytes) && params.max_bytes > 0 ? params.max_bytes : 8_000_000, 16_000_000)
     const fits = images.picture !== undefined && Buffer.from(images.picture.slice(images.picture.indexOf(',') + 1), 'base64').byteLength <= cap
     return after(images.delay_ms, { available: true, success: true, image: '/hermes-home/cache/images/generated.png', ...(fits ? { image_data: images.picture } : {}) })
+  }
+
+  /** `llm.oneshot` (tui_gateway/methods_session.py:1249-1276), which a socket with no interactive grant does not reach. */
+  oneshot(socket: Socket): unknown {
+    const { oneshot } = this.fixture.header
+    if (oneshot === undefined || socket.reach === 'profile') throw unknownMethod('llm.oneshot')
+    if (oneshot.error !== undefined) throw refusedProfile(5030, `one-shot generation failed: ${oneshot.error}`)
+    return after(oneshot.delay_ms, { text: oneshot.text ?? '' })
   }
 
   /** `pet.gallery` (tui_gateway/methods_session.py:1467-1495), which a socket with no interactive grant does not reach. */

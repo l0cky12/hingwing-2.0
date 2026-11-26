@@ -430,6 +430,10 @@ export const validators: Validators = {
     const sessionId = sessionIdOf(raw)
     return sessionId && filled(raw.title) ? { do: 'rename', sessionId, title: raw.title } : null
   },
+  retitle: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && { do: 'retitle', sessionId }
+  },
   archive: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && typeof raw.archived === 'boolean' ? { do: 'archive', sessionId, archived: raw.archived } : null

@@ -357,6 +357,7 @@ describe('validators', () => {
     ['a mode switch that names no mode', { do: 'setMode' }],
     ['a theme Highwing does not have', { do: 'setTheme', theme: 'sepia' }],
     ['a theme pick that names no theme', { do: 'setTheme' }],
+    ['a rename with AI of no chat', { do: 'retitle' }],
     ['a snooze of no chat', { do: 'snooze', until: 1_800_000_000_000 }],
     ['a snooze to no time', { do: 'snooze', sessionId: 's1' }],
     ['a snooze to a time that is no whole number', { do: 'snooze', sessionId: 's1', until: 1.5 }],
@@ -445,7 +446,7 @@ describe('validators', () => {
       'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'describeBot', 'discard', 'editBot',
       'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
       'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename',
-      'restore', 'rewind', 'send', 'sendToGroup', 'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
+      'restore', 'retitle', 'rewind', 'send', 'sendToGroup', 'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
     ])
   })
 })

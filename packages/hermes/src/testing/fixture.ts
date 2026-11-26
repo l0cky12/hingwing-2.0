@@ -99,6 +99,8 @@ export interface Fixture {
      * A socket bound to one profile is refused it too, since it reaches no legacy handler.
      */
     readonly images?: Images
+    /** What `llm.oneshot` answers. Absent: the gateway refuses it as an unknown method, as a Hermes without it does, and so does a socket bound to one profile. */
+    readonly oneshot?: Oneshot
     /** What `pet.gallery` and `pet.thumb` answer. Absent: the gateway refuses both as unknown methods, as a Hermes without pets does. */
     readonly pets?: Pets
     /** `'profile'`: play a Hermes with no `interactive` ticket, whose every socket is bound to the home profile. Default `'host'`. */
@@ -148,6 +150,9 @@ export interface Fixture {
  * `delay_ms`: how long a generation takes (default 0).
  */
 export interface Images { readonly available: boolean; readonly picture?: string; readonly error?: string; readonly delay_ms?: number }
+
+/** What `llm.oneshot` answers: `text` as the model wrote it (default empty) after `delay_ms` (default 0), or a failure with `error` in its words. */
+export interface Oneshot { readonly text?: string; readonly error?: string; readonly delay_ms?: number }
 
 /**
  * `pets`: the gallery's entries as Hermes sends them. `thumbs`: slug -> the PNG data URL `pet.thumb` answers for a pet the
@@ -330,6 +335,9 @@ const isImages = (value: unknown): value is Images =>
   isObject(value) && typeof value.available === 'boolean' && (value.picture === undefined || typeof value.picture === 'string')
   && (value.error === undefined || typeof value.error === 'string') && delay(value.delay_ms)
 
+const isOneshot = (value: unknown): value is Oneshot =>
+  isObject(value) && (value.text === undefined || typeof value.text === 'string') && (value.error === undefined || typeof value.error === 'string') && delay(value.delay_ms)
+
 const isPets = (value: unknown): value is Pets =>
   isObject(value) && Array.isArray(value.pets) && isObject(value.thumbs) && Object.values(value.thumbs).every(thumb => typeof thumb === 'string') && delay(value.delay_ms)
   && (value.refused_once === undefined || (Array.isArray(value.refused_once) && value.refused_once.every(slug => typeof slug === 'string')))
@@ -413,8 +421,9 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   const { assetFails } = value
   if (assetFails !== undefined && (typeof assetFails !== 'string' || assetFails.trim() === '')) return '"assetFails" must be the words a failed write gives'
-  const { images, pets } = value
+  const { images, pets, oneshot } = value
   if (images !== undefined && !isImages(images)) return '"images" must be { available, picture?, error?, delay_ms? }'
+  if (oneshot !== undefined && !isOneshot(oneshot)) return '"oneshot" must be { text?, error?, delay_ms? }'
   if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
@@ -471,7 +480,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
     ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
     ...(assetFails === undefined ? {} : { assetFails }),
-    ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }),
+    ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),

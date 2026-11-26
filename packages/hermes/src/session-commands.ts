@@ -1,6 +1,7 @@
 import { DONE, refused, type Mutation, type SessionPort, type Upload } from './actor'
 import type { Bot } from './domain/bots'
 import type { Command, ModelConfirm, Outcome, Refusal, Restored, ResultOf } from './domain/command'
+import { cleanTitle, TITLE_INSTRUCTIONS, titleInput } from './domain/title'
 import { offeredBy, sendPlan } from './domain/queue'
 import {
   reissues, type AttachmentId, type BranchId, type Generation, type HermesRequest, type PromptId, type PromptReply, type QueuedMessage, type RecordedReply,
@@ -63,6 +64,9 @@ const REMOVE_REFUSALS: Readonly<Record<string, Refusal>> = {
   unknown_execution: REMOVE_RUNNING,
   runtime_coordination_required: { kind: 'unsupported', message: "Hermes can't remove this chat. You can archive it instead." }
 }
+const NO_WORDS = refused('rejected', 'This chat has no messages to name it from.')
+const NO_TITLE = refused('rejected', "Hermes didn't suggest a title.")
+const CANT_SUGGEST: Readonly<Record<string, Refusal>> = { unknown_method: { kind: 'unsupported', message: "This Hermes can't suggest a title." } }
 const NO_CHILD: Refusal = { kind: 'rejected', message: "Hermes made the chat but didn't say which one." }
 const NOT_OPEN = refused('stale', 'That question is no longer open.')
 const WRONG_ANSWER = refused('rejected', "That isn't an answer this question takes.")
@@ -80,6 +84,13 @@ const UPLOAD_GONE = 'An attachment is no longer available. Remove it and attach 
 export const NOTHING_TO_SHOW: Outcome<string | null> = { ok: true, value: null }
 
 const showing = (outcome: Outcome, words: string | null = null): Outcome<string | null> => (outcome.ok ? { ok: true, value: words } : outcome)
+
+async function saveTitle(port: SessionPort, hub: Hub, title: string): Promise<Outcome> {
+  const renamed = await port.mutate('rename', { title }, null)
+  if (!renamed.ok) return renamed
+  hub.retitle(port.id, title)
+  return DONE
+}
 
 /** Hermes extends a cut at an assistant row through the tool rows after it (persistence/sqlite/authority/_mutation_publish.py `_branch_boundary`). */
 function branchPoint(content: SessionContent, rowId: number): { readonly through: number; readonly text: string } | null {
@@ -226,11 +237,19 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     return done.ok ? DONE : done
   }),
 
-  rename: (port, { title }, hub) => port.whenLive(async () => {
-    const renamed = await port.mutate('rename', { title }, null)
-    if (!renamed.ok) return renamed
-    hub.retitle(port.id, title)
-    return DONE
+  rename: (port, { title }, hub) => port.whenLive(() => saveTitle(port, hub, title)),
+
+  /** A live `session_id` lends the chat's own model to the call (tui_gateway/methods_session.py:1249-1276). */
+  retitle: (port, _command, hub) => port.whenLive<string>(async () => {
+    if (port.content.run.state === 'running') return MID_TURN
+    const input = titleInput(port.content.history)
+    if (input === '') return NO_WORDS
+    const suggested = await port.call('llm.oneshot', { session_id: port.id, instructions: TITLE_INSTRUCTIONS, input, max_tokens: 40, temperature: 0.3 }, CANT_SUGGEST)
+    if (!suggested.ok) return suggested
+    const title = cleanTitle(suggested.value.text)
+    if (title === null) return NO_TITLE
+    const saved = await saveTitle(port, hub, title)
+    return saved.ok ? { ok: true, value: title } : saved
   }),
 
   archive: (port, { archived }, hub) => port.whenLive(async () => {
