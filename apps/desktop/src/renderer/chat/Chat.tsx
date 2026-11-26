@@ -21,6 +21,7 @@ import { distanceFrom, FOLLOW_WITHIN, FOLLOWING, jumpWords, placeAfter, progress
 import type { RequestAnswer } from './Asks'
 import { Sides } from './Sides'
 import { closeSide, sideCards, useClosedSides } from './sides'
+import { useTail } from './tail'
 import { Thread, type QueueControls, type QueuedRow } from './Thread'
 import { TIME_ZONE, useWakeAt } from './wake'
 
@@ -42,6 +43,8 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const [tick, wake] = useReducer((count: number) => count + 1, 0)
   const view = useMemo(() => (session === undefined ? null : threadView(session, { now: Date.now(), timeZone: TIME_ZONE })), [session, tick])
   const progress = useMemo(() => (view === null ? '' : progressOf(view)), [view])
+  const drawn = useTail(view, relays)
+  const whole = drawn?.whole === true
   const scroller = useRef<HTMLElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
   const jumper = useRef<HTMLButtonElement>(null)
@@ -76,7 +79,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     if (element === null) return
     if (following.current) element.scrollTop = element.scrollHeight
     else setPlace(held => placeAfter(held, distanceFrom(element), progress))
-  }, [view, progress, relays, versions])
+  }, [drawn, progress, versions])
 
   const [paging, setPaging] = useState(false)
   useLayoutEffect(() => {
@@ -84,6 +87,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     const press = id === null ? null : pressFor(id)
     if (element === null || id === null || press === null || view === null || view.turns.length === 0) return
     if (press.landing === 'end') return landed(id)
+    if (!whole) return
     const request = element.querySelector(`.turn[data-row="${press.landing}"] > .request`)
     if (request === null) {
       if (view.earlier === 'none') landed(id)
@@ -99,7 +103,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     landed(id)
     request.scrollIntoView({ block: 'center', behavior: 'instant' })
     setPlace(held => placeAfter(held, distanceFrom(element), progress))
-  }, [id, view, progress, paging])
+  }, [id, view, whole, progress, paging])
 
   useLayoutEffect(() => {
     const element = scroller.current
@@ -322,11 +326,11 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   return (
     <>
       <main id="scroll" ref={scroller} onScroll={onScroll}>
-        {view !== null && (
+        {drawn !== null && (
           <FileCallContext value={fileCall}>
             <ImageSessionContext value={id}>
               <Thread
-                view={view} relays={relays} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
+                view={drawn.view} relays={drawn.relays} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
                 canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
                 canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers}
               />

@@ -63,6 +63,8 @@ code, pre { font-family: var(--mono); }
 .screen > .composer { grid-row: 3; grid-column: 1; }
 main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: thin; scrollbar-color: #78857E transparent; }
 #transcript { max-width: 760px; margin: 0 auto; padding: 36px 28px 56px; }
+/* The skipped box clips what it paints at its edge. The margin lets a menu or a halo that hangs over the edge show whole. */
+.turn > .thread { content-visibility: auto; contain-intrinsic-size: auto 400px; overflow-clip-margin: 240px; }
 .turn + .turn { margin-top: 44px; }
 .turn.pending .request { color: var(--graphite); border-left-color: var(--rule); }
 .queued { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-left: var(--col); }
@@ -611,10 +613,15 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 :is(.model, .knob) .readout .chev { width: 6px; height: 6px; margin-bottom: 3px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); }
 :is(.model, .knob) .readout[aria-expanded="true"] .chev { transform: rotate(-135deg); margin: 3px 0 0; }
 .model .list { position: absolute; left: calc(max(0px, (100% - 760px) / 2) + 16px + var(--col)); bottom: calc(100% + 8px); z-index: 5; min-width: 260px; max-height: 360px; overflow-y: auto; padding: 8px 0; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 8px 24px rgba(31, 42, 38, .14); color: var(--ink); }
+.model .search { position: sticky; top: -8px; z-index: 1; margin: -8px 0 4px; padding: 8px 10px 6px; background: var(--sheet); border-bottom: 1px solid var(--rule); }
+.model .search input { box-sizing: border-box; width: 100%; padding: 5px 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper); font: inherit; font-size: 14px; color: var(--ink); }
+.model .search input:focus-visible { outline: 2px solid var(--ink); outline-offset: -1px; }
+.model .search input::-webkit-search-cancel-button { display: none; }
 .model .provider + .provider { margin-top: 4px; }
 .model .provider .name { margin: 6px 14px 2px; font-size: 12px; color: var(--graphite); }
 :is(.model, .knob) .choice { display: flex; align-items: center; gap: 10px; padding: 5px 14px; font-size: 14px; cursor: pointer; }
 :is(.model, .knob) .choice:hover { background: var(--paper); }
+.model .choice[data-active] { background: var(--paper); scroll-margin-top: 44px; }
 :is(.model, .knob) .choice input { width: 14px; height: 14px; margin: 0; accent-color: var(--ink); }
 .model .list .later { margin: 8px 14px 2px; color: var(--graphite); }
 .model .empty { margin: 4px 14px; max-width: 34ch; }
@@ -1007,6 +1014,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .chat-doing[data-badge="running"] { color: var(--signal); font-weight: 500; }
 .chat-doing[data-badge="asking"] { color: var(--caution); font-weight: 500; }
 .chats-note { margin: 18px 12px; font-size: 13px; color: var(--graphite); }
+.chats-group { margin: 18px 12px 4px; font-size: 13px; font-weight: 500; color: var(--graphite); }
+.chats-group:first-child { margin-top: 4px; }
 .chat-item { position: relative; }
 .chat-more { position: absolute; top: 9px; right: 10px; opacity: 0; }
 .chat-item:is(:hover, :focus-within) .chat-more { opacity: 1; }

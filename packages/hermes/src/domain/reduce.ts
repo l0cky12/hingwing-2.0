@@ -191,8 +191,11 @@ export interface HistoryPage {
  * "Attached with no cursor", "attaching and not parking" and "replaying from nowhere" cannot be built.
  */
 export type Gate =
-  /** Not subscribed. Frames are dropped. `cursor` survives so the next attach can replay from it. */
-  | { readonly at: 'detached'; readonly why: 'new' | 'link-lost' | { readonly refused: string }; readonly cursor: Cursor | null }
+  /**
+   * Not subscribed. Frames are dropped. `cursor` survives so the next attach can replay from it.
+   * `released`: this client let the session go, and keeps its content to show while the next attach catches it up.
+   */
+  | { readonly at: 'detached'; readonly why: 'new' | 'link-lost' | 'released' | { readonly refused: string }; readonly cursor: Cursor | null }
   /**
    * An attach is in flight. Live frames park here until it settles. A new `attempt` number abandons
    * the calls of the older one: their replies no longer match and are ignored.
@@ -214,6 +217,8 @@ export type SessionInput =
   /** `refused` null: the socket died first. Otherwise the gateway said no, in words for the user. */
   | { readonly in: 'attach.failed'; readonly attempt: number; readonly refused: string | null }
   | { readonly in: 'link.lost' }
+  /** The hub let the session go and detached it. */
+  | { readonly in: 'release' }
   | { readonly in: 'event'; readonly frame: StampedEvent }
   /** `session.replay_gap`: this socket missed frames the gateway cannot replay. It has no seq of its own. */
   | { readonly in: 'gap' }
@@ -356,6 +361,8 @@ export function reduce(state: Tracked, input: SessionInput): Tracked {
     case 'link.lost':
       if (gate.at === 'detached' && gate.why === 'link-lost') return state
       return { ...state, gate: { at: 'detached', why: 'link-lost', cursor: resumePoint(gate) } }
+    case 'release':
+      return { ...state, gate: { at: 'detached', why: 'released', cursor: resumePoint(gate) } }
     case 'event':
       return admit(state, input.frame)
     case 'gap':

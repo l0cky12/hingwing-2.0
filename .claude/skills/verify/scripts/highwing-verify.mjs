@@ -130,6 +130,13 @@ const STEPS = {
   select: { arity: 2, run: async (ctx, label, option) => void (await ctx.page.getByLabel(label, { exact: true }).selectOption({ label: option }, { timeout: ctx.timeout })) },
   press: { arity: 1, run: async (ctx, key) => ctx.page.keyboard.press(key) },
   reload: { arity: 0, run: async ctx => void await ctx.page.reload() },
+  pause: {
+    arity: 1,
+    run: async (ctx, ms) => {
+      if (!/^\d+$/.test(ms)) throw new Error(`pause takes a whole number of ms, not "${ms}"`)
+      await ctx.page.waitForTimeout(Number(ms))
+    }
+  },
   gone: { arity: 2, run: async (ctx, role, name) => waitGone(ctx, role, name) },
   inview: { arity: 2, run: async (ctx, role, name) => checkInView(ctx, role, name) },
   inside: { arity: 4, run: async (ctx, role, name, outerRole, outerName) => checkInside(ctx, role, name, outerRole, outerName) },
@@ -540,6 +547,7 @@ const STEPS = {
       if (ctx.errors.length > 0) throw new Error(`the window logged ${ctx.errors.length} error(s): ${ctx.errors[0]}`)
     }
   },
+  timed: { arity: 4, run: async (ctx, label, role, name, until) => timeClick(ctx, label, role, name, until) },
   'quiet-except': {
     arity: 1,
     run: async (ctx, pattern) => {
@@ -550,6 +558,141 @@ const STEPS = {
       if (others.length > 0) throw new Error(`the window logged ${others.length} other error(s): ${others[0]}`)
     }
   }
+}
+
+/**
+ * Runs in the page. Arms a capture-phase click listener and resolves with the ms from the next click's
+ * `timeStamp` to the task after the first frame in which `until` holds, so that frame has been produced,
+ * and with the longest wait from the click or a frame to the next frame meanwhile.
+ * The condition is read at the start of each frame, before its layout.
+ */
+function armTimer({ until, timeout }) {
+  const visible = element => element.checkVisibility({ visibilityProperty: true, opacityProperty: true }) && element.getClientRects().length > 0
+  const holding = element => {
+    const inner = [...element.children].filter(child => child.textContent.includes(until.text))
+    return inner.length === 0 ? visible(element) : inner.some(holding)
+  }
+  const holds = () => until.kind === 'visible'
+    ? [...document.querySelectorAll(until.css)].some(visible)
+    : [...document.querySelectorAll(until.css)].some(scope => scope.textContent.includes(until.text) && holding(scope))
+  if (holds()) return { already: true }
+  globalThis.highwingVerifyTimer = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`the condition did not hold within ${timeout} ms of the click`)), timeout)
+    addEventListener('click', event => {
+      const clicked = event.timeStamp
+      globalThis.highwingVerifyClicked = clicked
+      let [last, longest] = [clicked, 0]
+      const frame = () => requestAnimationFrame(at => {
+        longest = Math.max(longest, at - last)
+        last = at
+        if (!holds()) return frame()
+        const painted = new MessageChannel()
+        painted.port1.onmessage = () => {
+          clearTimeout(timer)
+          resolve({ took: performance.now() - clicked, longest })
+        }
+        painted.port2.postMessage(null)
+      })
+      frame()
+    }, { capture: true, once: true })
+  })
+  return { already: false }
+}
+
+function parseUntil(until) {
+  const [, kind, rest] = /^(text|visible):(.+)$/s.exec(until) ?? []
+  if (kind === 'visible') return { kind, css: rest }
+  const colon = rest?.indexOf(':') ?? -1
+  if (kind === 'text' && colon > 0 && colon < rest.length - 1) return { kind, css: rest.slice(0, colon), text: rest.slice(colon + 1) }
+  throw new Error(`timed takes text:<css with no colon>:<text> or visible:<css>, not ${JSON.stringify(until)}`)
+}
+
+/**
+ * Stamps each gateway call with the wall-clock ms at which this process first read it from the calls
+ * file, which main appends to as each call arrives. Read every ms, so a stamp is late by a ms or two.
+ */
+function watchCalls(ctx) {
+  const seen = []
+  let read = existsSync(ctx.calls) ? statSync(ctx.calls).size : 0
+  const take = () => {
+    const size = existsSync(ctx.calls) ? statSync(ctx.calls).size : 0
+    if (size <= read) return
+    const at = Date.now()
+    const fd = openSync(ctx.calls, 'r')
+    const chunk = Buffer.alloc(size - read)
+    readSync(fd, chunk, 0, chunk.length, read)
+    closeSync(fd)
+    const text = chunk.toString('utf8')
+    const whole = text.lastIndexOf('\n') + 1
+    read += Buffer.byteLength(text.slice(0, whole))
+    for (const line of text.slice(0, whole).split('\n').filter(Boolean)) seen.push({ frame: JSON.parse(line), at })
+  }
+  const timer = setInterval(take, 1)
+  return () => {
+    clearInterval(timer)
+    take()
+    return seen.filter(({ frame }) => typeof frame.method === 'string').map(({ frame: { method, params = {} }, at }) => ({
+      call: [method, params.profile, params.session_id ?? params.title, params.scope].filter(part => part !== undefined).join(' '), at
+    }))
+  }
+}
+
+/** Samples the renderer through CDP and main through its own inspector, every 100 µs, until the returned stop is called with a file stem. */
+async function startProfiles(ctx) {
+  const renderer = await ctx.page.context().newCDPSession(ctx.page)
+  await renderer.send('Profiler.enable')
+  await renderer.send('Profiler.setSamplingInterval', { interval: 100 })
+  await renderer.send('Profiler.start')
+  await ctx.app.evaluate(async () => {
+    const { Session } = process.getBuiltinModule('node:inspector')
+    const session = new Session()
+    session.connect()
+    const post = (method, params = {}) => new Promise((done, failed) => session.post(method, params, (error, result) => (error ? failed(error) : done(result))))
+    await post('Profiler.enable')
+    await post('Profiler.setSamplingInterval', { interval: 100 })
+    await post('Profiler.start')
+    globalThis.highwingVerifyProfiler = { session, post }
+  })
+  return async stem => {
+    const { profile } = await renderer.send('Profiler.stop')
+    await renderer.detach()
+    const main = await ctx.app.evaluate(async () => {
+      const { session, post } = globalThis.highwingVerifyProfiler
+      const { profile } = await post('Profiler.stop')
+      session.disconnect()
+      delete globalThis.highwingVerifyProfiler
+      return JSON.stringify(profile)
+    })
+    writeFileSync(join(ctx.evidence, `${stem}.renderer.cpuprofile`), JSON.stringify(profile))
+    writeFileSync(join(ctx.evidence, `${stem}.main.cpuprofile`), main)
+    log(ctx, `  saved ${stem}.renderer.cpuprofile and ${stem}.main.cpuprofile`)
+  }
+}
+
+async function timeClick(ctx, label, role, name, until) {
+  const condition = parseUntil(until)
+  const target = byRole(ctx.page, role, name)
+  await target.waitFor({ state: 'visible', timeout: ctx.timeout })
+  const stopProfiles = ctx.cpuProfile ? await startProfiles(ctx) : null
+  const armed = await ctx.page.evaluate(armTimer, { until: condition, timeout: ctx.timeout })
+  if (armed.already) throw new Error(`${until} already held before the click, so there is nothing to time`)
+  const stopWatching = watchCalls(ctx)
+  await target.click({ timeout: ctx.timeout })
+  const shots = ctx.timedShots.map(async at => {
+    await ctx.page.waitForFunction(at => performance.now() - globalThis.highwingVerifyClicked >= at, at, { polling: 'raf', timeout: ctx.timeout })
+    await ctx.page.screenshot({ path: join(ctx.evidence, `${label}-at-${at}ms.png`), animations: 'disabled', caret: 'hide' })
+  })
+  const { took, longest, clickedAt } = await ctx.page.evaluate(async () => ({ ...(await globalThis.highwingVerifyTimer), clickedAt: performance.timeOrigin + globalThis.highwingVerifyClicked }))
+  const ms = Math.round(took * 10) / 10
+  const frameMs = Math.round(longest * 10) / 10
+  const calls = stopWatching().map(({ call, at }) => ({ call, atMs: Math.round(at - clickedAt) }))
+  await Promise.all(shots)
+  await stopProfiles?.(label)
+  appendFileSync(join(ctx.evidence, 'timings.jsonl'), `${JSON.stringify({ label, ms, frameMs, latencyMs: ctx.latencyMs, calls })}\n`)
+  log(ctx, `timed ${label}: ${ms} ms, longest frame ${frameMs} ms`)
+  const inside = calls.filter(({ atMs }) => atMs <= ms)
+  log(ctx, `  gateway calls before the result was drawn: ${inside.length === 0 ? 'none' : inside.map(({ call, atMs }) => `${call} at ${atMs} ms`).join(', ')}`)
+  for (const at of ctx.timedShots) log(ctx, `  saved ${label}-at-${at}ms.png`)
 }
 
 /** The fixture's dev server, as this run serves it. */
@@ -1250,7 +1393,7 @@ async function quitApp(ctx) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'asset-fails': 'value', images: 'value', pets: 'value', video: 'flag', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', approvals: 'value', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'fake-webapp': 'value', 'webapp-url': 'value', 'login-form': 'flag', keyring: 'value', 'sign-in-ms': 'value', mode: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'asset-fails': 'value', images: 'value', pets: 'value', video: 'flag', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', approvals: 'value', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'fake-webapp': 'value', 'webapp-url': 'value', 'login-form': 'flag', keyring: 'value', 'sign-in-ms': 'value', mode: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value', latency: 'value', 'timed-shot': 'value', 'cpu-profile': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   const webScenario = options['fake-webapp']
@@ -1287,6 +1430,9 @@ async function run(argv) {
   const savedWith = SAVED_WITH[byAddress ? 'webapp' : 'host']
   if (options.saved && !savedWith.includes(options.saved)) fail(`--saved ${options.saved} does not go with ${byAddress ? 'a gateway address' : '--fake-host'}. Known there: ${savedWith.join(', ')}`)
   if (options.mode && !MODES.includes(options.mode)) fail(`unknown --mode "${options.mode}". Known: ${MODES.join(', ')}`)
+  if (options.latency !== undefined && !/^\d+$/.test(options.latency)) fail(`--latency takes a whole number of ms, not "${options.latency}"`)
+  if (options.latency !== undefined && !options.fixture) fail('--latency holds the replies of the fixture a --fixture run plays, so it needs --fixture')
+  if (options['timed-shot'] !== undefined && !/^\d+(,\d+)*$/.test(options['timed-shot'])) fail(`--timed-shot takes ms after the click, such as 30 or 30,105, not "${options['timed-shot']}"`)
   if (options.size && !/^[1-9]\d*x[1-9]\d*$/.test(options.size)) fail(`--size takes <width>x<height>, not "${options.size}"`)
   if (buildIsStale()) fail('the build is missing or older than the sources. Run: highwing-verify.mjs build')
   const runId = options.run ?? `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`
@@ -1298,8 +1444,9 @@ async function run(argv) {
   const fixture = edited ? withEdits(given, edits, join(evidence, 'fixture-edited.jsonl')) : given
   const calls = join(evidence, 'gateway-calls.jsonl')
   rmSync(calls, { force: true })
+  rmSync(join(evidence, 'timings.jsonl'), { force: true })
   const userData = join(scratch, 'user-data')
-  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), menus: join(evidence, 'menus.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set(), exposed: [], web: null, realHost: realUrl ? new URL(realUrl).hostname : null, signInFailures: [], pid: null }
+  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), menus: join(evidence, 'menus.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set(), exposed: [], latencyMs: Number(options.latency ?? 0), timedShots: options['timed-shot']?.split(',').map(Number) ?? [], cpuProfile: options['cpu-profile'] === true, web: null, realHost: realUrl ? new URL(realUrl).hostname : null, signInFailures: [], pid: null }
   const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
 
   const userFiles = options['login-form'] ? { usernameFile: process.env.HIGHWING_VERIFY_USER_FILE, passwordFile: process.env.HIGHWING_VERIFY_PASSWORD_FILE } : null
@@ -1331,7 +1478,8 @@ async function run(argv) {
   delete env.HIGHWING_FIXTURE
   delete env.HIGHWING_RECORD
   delete env.HIGHWING_FIXTURE_CALLS
-  if (!host && !byAddress) Object.assign(env, { HIGHWING_FIXTURE: fixture, HIGHWING_FIXTURE_CALLS: calls })
+  delete env.HIGHWING_FIXTURE_LATENCY_MS
+  if (!host && !byAddress) Object.assign(env, { HIGHWING_FIXTURE: fixture, HIGHWING_FIXTURE_CALLS: calls, HIGHWING_FIXTURE_LATENCY_MS: String(ctx.latencyMs) })
   delete env.HIGHWING_SIGN_IN_MS
   if (options['sign-in-ms']) env.HIGHWING_SIGN_IN_MS = options['sign-in-ms']
   delete env.HIGHWING_TEST_KEYRING

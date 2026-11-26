@@ -34,8 +34,8 @@ export async function stage({ watched = false, hub: over = {} }: { readonly watc
   }
   const actor = new SessionActor(ID, { conn, clock: manualClock(), publish: () => {}, bridge: () => {}, mintId: () => `id-${++ids}`, watched: () => watched })
   const hub: Hub = {
-    settledCatalog: async () => [], retitle: () => {}, drop: () => {}, refreshSoon: () => {},
-    settledRelay: async () => {}, mentioned: () => [], relay: () => {}, branchPins: new Map(), branched: () => {},
+    settledCatalog: async () => [], retitle: () => {}, pin: () => {}, drop: () => {}, refreshSoon: () => {},
+    settledRelay: async () => {}, mentioned: () => [], relay: () => {}, branchPins: new Map(), branched: () => {}, gone: () => {},
     uploads: { read: async () => null }, ...over
   }
   const answer = async (method: string, result: unknown) => {
