@@ -8,6 +8,7 @@ import {
 import { basename } from 'node:path'
 import type { AttachmentStore, AttachSources, StageSource } from './attachments'
 import type { ConnectionOwner } from './connection'
+import type { IntroOwner } from './intro'
 import type { DraftStore } from './drafts'
 import { openablePath, type Opener } from './files'
 import type { ImageLoader } from './images'
@@ -47,7 +48,7 @@ const NEVER: Source = () => () => {}
 export type PreviewOwner = Pick<PreviewPane, 'preview' | 'show' | 'run'>
 type Shown<T> = Pick<PreferenceStore<T>, 'get' | 'subscribe' | 'set'>
 export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme>; readonly snoozes: Shown<Snoozes> }
-interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner; readonly preferences: Preferences }
+interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner; readonly preferences: Preferences; readonly intro: Pick<IntroOwner, 'intro'> }
 
 /** A Hermes topic is bound to the connection that is live when the window asks. A window that sees a new epoch asks again. */
 const onHermes = (source: (hermes: Hermes, topic: Topic) => Source) => ({ owner }: Owners, topic: Topic): Source =>
@@ -59,6 +60,7 @@ const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source 
   mode: ({ preferences }) => current(preferences.mode),
   theme: ({ preferences }) => current(preferences.theme),
   snoozes: ({ preferences }) => current(preferences.snoozes),
+  intro: ({ intro }) => current(intro.intro),
   link: onHermes(hermes => current(hermes.link)),
   sidebar: onHermes(hermes => current(hermes.sidebar)),
   slash: onHermes(hermes => current(hermes.slash)),
@@ -159,10 +161,10 @@ export interface Pictures {
 export function serveWindows(
   owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>,
   pane: PreviewOwner, pictures: Pictures, attaching: Attaching,
-  saver: Saver, preferences: Preferences
+  saver: Saver, preferences: Preferences, intro: Pick<IntroOwner, 'intro' | 'apply'>
 ): { dispose(): void } {
   const windows = new Map<number, Map<number, Served>>()
-  const owners: Owners = { owner, pane, preferences }
+  const owners: Owners = { owner, pane, preferences, intro }
   const files = fileActions(opener, pane)
   const trusted = ({ senderFrame }: IpcEvent) => senderFrame !== null && senderFrame.parent === null && isAppUrl(senderFrame.url)
 
@@ -208,6 +210,18 @@ export function serveWindows(
     }
     if (command.do === 'snooze') {
       preferences.snoozes.set(snoozed(preferences.snoozes.get(), command, Date.now()))
+      return DONE
+    }
+    if (command.do === 'examples' || command.do === 'done') {
+      // Publishing the requests while the saved screen is still up would flash it. Leave first.
+      if (command.do === 'examples' && intro.intro.get().at === 'due') {
+        const setup = owner.setup.get()
+        if (setup.at === 'saved' && setup.from === 'first-run') {
+          const outcome = await owner.run({ do: 'keepTarget' })
+          if (!outcome.ok) return outcome
+        }
+      }
+      await intro.apply(command)
       return DONE
     }
     if (!isSetupCommand(command) && epoch !== epochOf(owner.setup.get())) return OTHER_CONNECTION

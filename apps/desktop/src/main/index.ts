@@ -6,6 +6,7 @@ import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { attachmentStore, ATTACHMENTS_DIR, desktopSources, HERMES_LIMITS } from './attachments'
 import { ownConnection, pinnedConnection, refreshBotsOnFocus, type ConnectionOwner } from './connection'
+import { ownIntro } from './intro'
 import { desktopMenus, recordingMenus } from './context-menu'
 import { desktopOpener, recordingOpener, type Opener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
@@ -41,7 +42,7 @@ const recorded = (dial: Dialer): Dialer => (HIGHWING_RECORD ? recordingDialer(di
 
 const addressOf = (target: Target) => byKind<GatewayUrl | null>(target, { local: () => null, remote: () => null, url: ({ url }) => url })
 
-async function savedConnection(settingsDir: string, opener: Opener, open: (dial: Dialer) => Hermes): Promise<ConnectionOwner> {
+async function savedConnection(settingsDir: string, opener: Opener, open: (dial: Dialer) => Hermes, armIntro: () => Promise<void>): Promise<ConnectionOwner> {
   // An installed build takes neither variable: one would keep sign-ins unsealed, the other would cut a real sign-in short.
   const verifying = !app.isPackaged
   const signInMs = verifying && /^[1-9]\d*$/.test(HIGHWING_SIGN_IN_MS ?? '') ? Number(HIGHWING_SIGN_IN_MS) : null
@@ -69,7 +70,8 @@ async function savedConnection(settingsDir: string, opener: Opener, open: (dial:
     },
     check: (target, options) => checkTarget(target, { ...options, gateways }),
     routeFor,
-    open
+    open,
+    armIntro
   })
 }
 
@@ -111,6 +113,7 @@ app.whenReady().then(async () => {
   const mode = await preferenceStore(settingsDir, MODE)
   const theme = await preferenceStore(settingsDir, THEME)
   const snoozes = await preferenceStore(settingsDir, SNOOZES)
+  const intro = await ownIntro(settingsDir)
   nativeTheme.themeSource = theme.get()
   theme.subscribe(source => (nativeTheme.themeSource = source))
   await attachments.sweep(new Set((await drafts.load()).flatMap(draft => draft.attachments.map(held => held.id))))
@@ -120,7 +123,7 @@ app.whenReady().then(async () => {
       timing: 'recorded', latencyMs: fixtureLatency(HIGHWING_FIXTURE_LATENCY_MS),
       ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(maskedFrame(frame))}\n`) } : {})
     })))
-    : await savedConnection(settingsDir, opener, open)
+    : await savedConnection(settingsDir, opener, open, intro.armIntro)
   pane.follow(owner.setup)
   const pictureDeps = { choose: pictureFile, read: readHead, set: (bot: BotId, data: string) => owner.run({ do: 'setBotPicture', bot, data }) }
   const sources = desktopSources({ dialog, clipboard, focused: () => BrowserWindow.getFocusedWindow() }, HIGHWING_PICK_FILES)
@@ -128,18 +131,18 @@ app.whenReady().then(async () => {
   const saver = HIGHWING_SAVE_DIR ? folderSaver(HIGHWING_SAVE_DIR) : dialogSaver(dialog, () => app.getPath('downloads'))
   const served = serveWindows(
     owner, ipcMain, isAppUrl, opener, images, drafts, pane, { pick: (bot, live) => pickPicture(pictureDeps, bot, live), choose: () => choosePicture(pictureDeps) },
-    { store: attachments, sources }, saver, { mode, theme, snoozes }
+    { store: attachments, sources }, saver, { mode, theme, snoozes }, intro
   )
-  const stopNotices = notifyTurnEnds(owner, {
+  const stopNotices = notifyTurnEnds(owner, intro.intro, {
     notifier: HIGHWING_NOTIFY_LOG ? recordingNotifier(HIGHWING_NOTIFY_LOG) : desktopNotifier(Notification),
     focused: () => BrowserWindow.getFocusedWindow() !== null,
     raise
   })
   openWindow(opener, pane, HIGHWING_MENU_LOG ? recordingMenus(HIGHWING_MENU_LOG, HIGHWING_MENU_PICK) : desktopMenus(Menu))
-  const stopLinks = links.serve(owner, raise)
+  const stopLinks = links.serve(owner, intro.intro, raise)
   const stopRefresh = refreshBotsOnFocus(app, owner)
   let closed: Promise<void> | null = null
-  const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), stopRefresh(), Promise.all([owner.close(), drafts.settled(), mode.settled(), theme.settled(), snoozes.settled()]).then(() => {})))
+  const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), stopRefresh(), Promise.all([owner.close(), drafts.settled(), mode.settled(), theme.settled(), snoozes.settled(), intro.settled()]).then(() => {})))
   app.on('window-all-closed', () => void close().finally(() => app.quit()))
   // A quit from the menu or the session never emits window-all-closed, and a check or an attach still running would outlive the app.
   // Electron does not wait for a will-quit listener, so the quit is held until a draft or a preference still being written is on disk.

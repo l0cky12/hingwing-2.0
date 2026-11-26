@@ -11,7 +11,9 @@ import { StatusStack } from '../composer/StatusStack'
 import { ThinkingPill } from '../composer/ThinkingPill'
 import { folderFieldLabel, thinkingShown } from '../composer/tuning'
 import { YoloPill } from '../composer/YoloPill'
+import { examplesFor, OFF } from '../../intro'
 import { run, useTopic } from '../store'
+import { ExampleRequests } from '../setup/Intro'
 import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
 import type { HelperControls } from './Helpers'
 import { ImageSessionContext } from './Image'
@@ -254,7 +256,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     const outcome = await run({ do: 'react', sessionId: id, turn, emoji })
     if (!outcome.ok) setRefused({ id, message: outcome.refusal.message })
   }, [id])
-  const onSend = useCallback(async (text: string, attachments: readonly AttachmentId[]): Promise<CommandOutcome<string | null>> => {
+  const deliver = useCallback(async (text: string, attachments: readonly AttachmentId[]): Promise<CommandOutcome<string | null>> => {
     setRefused(null)
     if (chat.sessionId === null) return run({ do: 'start', chat, text, attachments })
     if (editing === null) return run({ do: 'send', sessionId: chat.sessionId, text, attachments })
@@ -275,6 +277,15 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     setEditing(current => (current?.press === press ? null : current))
     return { ok: true, value: null }
   }, [chat, editing, rewrite, listed, mark])
+  const bots = useTopic('bots')
+  const featured = bots?.state === 'listed' ? bots.roster.featured?.id ?? null : undefined
+  const requests = examplesFor(useTopic('intro') ?? OFF, chat, featured)
+  const onSend = useCallback(async (text: string, attachments: readonly AttachmentId[]): Promise<CommandOutcome<string | null>> => {
+    const offered = requests.length > 0
+    const outcome = await deliver(text, attachments)
+    if (outcome.ok && offered) void run({ do: 'done' })
+    return outcome
+  }, [deliver, requests])
   const queue = useMemo((): QueueControls => ({ canAct: live, pressed, onAct: onQueued }), [live, pressed, onQueued])
   const [stopping, setStopping] = useState<ReadonlySet<HelperId>>(new Set())
   const onStopHelper = useCallback(async (helperId: HelperId) => {
@@ -359,7 +370,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         planFor={planFor}
         editing={editing}
         onCancelEdit={() => setEditing(null)}
-        above={id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} returnFocus={returnFocus} />}
+        above={<>{id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} returnFocus={returnFocus} />}<ExampleRequests requests={requests} onSend={text => void onSend(text, [])} /></>}
         onEscape={onEscape}
         onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}

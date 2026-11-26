@@ -3,6 +3,7 @@ import type { BotId, CheckFailure, CheckStep, CommandOutcome, GroupId, SessionId
 import type { GatewayUrl } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { Live, Setup } from '../src/ipc-contract'
+import { OFF } from '../src/intro'
 import { feed, nextSetup, ownConnection, pinnedConnection, refreshBotsOnFocus, type ConnectionDeps, type SetupEvent } from '../src/main/connection'
 import { chatLinks } from '../src/main/links'
 import type { Settings } from '../src/main/settings'
@@ -73,7 +74,7 @@ interface Opened { readonly target: Target; closed: boolean; disposed: boolean; 
 /** The owner over a check the test settles by hand, and connections that only record what happened to them. */
 type Answer = (command: unknown) => CommandOutcome<unknown> | Promise<CommandOutcome<unknown>>
 
-function harness(loaded: Settings, save: (target: Target) => Promise<void> = async () => {}) {
+function harness(loaded: Settings, save: (target: Target) => Promise<void> = async () => {}, arm: () => Promise<void> = async () => {}) {
   let answer: Answer = () => ({ ok: true, value: undefined })
   const opened: Opened[] = []
   const saved: Target[] = []
@@ -93,6 +94,10 @@ function harness(loaded: Settings, save: (target: Target) => Promise<void> = asy
       log.push(`open ${opened.length}`)
       const dial = Object.assign(async () => { throw new Error('the test never dials') }, { held })
       return { dial, dispose: () => { held.disposed = true; log.push(`dispose ${opened.indexOf(held) + 1}`) } } satisfies Route
+    },
+    armIntro: async () => {
+      log.push('arm')
+      await arm()
     },
     open: (dial: Dialer) => {
       const { held } = dial as Dialer & { readonly held: Opened }
@@ -142,7 +147,7 @@ describe('ownConnection at launch', () => {
 
 describe('ownConnection, checking a target', () => {
   it('shows each step, then saves, connects and shows the saved screen', async () => {
-    const { owner, checks, saved, opened, states, pass, at } = harness({ state: 'none' })
+    const { owner, checks, saved, opened, states, log, pass, at } = harness({ state: 'none' })
     expect(await owner.run({ do: 'checkTarget', target: REMOTE })).toEqual({ ok: true, value: undefined })
     checks[0]!.step('tailscale')
     checks[0]!.step('peer')
@@ -153,6 +158,7 @@ describe('ownConnection, checking a target', () => {
     expect(at()).toEqual({ at: 'saved', live: { target: REMOTE, epoch: 1 }, from: 'first-run' })
     expect(saved).toEqual([REMOTE])
     expect(opened.map(({ target }) => target)).toEqual([REMOTE])
+    expect(log).toEqual(['arm', 'save', 'open 1'])
 
     await owner.run({ do: 'keepTarget' })
     expect(at()).toEqual({ at: 'chat', live: { target: REMOTE, epoch: 1 } })
@@ -227,6 +233,15 @@ describe('ownConnection, checking a target', () => {
     expect(opened[0]!.commands).toEqual([])
     await pass()
     expect(opened[0]!.commands).toEqual([{ do: 'reconnect', start: false }])
+  })
+
+  it('fails with cant-save and saves nothing when the intro cannot be written', async () => {
+    const { owner, saved, log, pass, at } = harness({ state: 'none' }, async () => {}, async () => { throw new Error('disk') })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    expect(saved).toEqual([])
+    expect(log).toEqual(['arm'])
+    expect(at()).toEqual({ at: 'failed', live: null, target: REMOTE, failure: 'cant-save' })
   })
 
   it('fails with cant-save and keeps the live connection when the save rejects', async () => {
@@ -565,7 +580,7 @@ describe('ownConnection, opening a chat while Settings is up', () => {
     const held = holdSave()
     const { owner, opened, pass, settled, at } = harness({ state: 'saved', target: LOCAL }, held.save)
     const links = chatLinks()
-    links.serve(owner, () => {})
+    links.serve(owner, feed(OFF), () => {})
     await owner.run({ do: 'editTarget' })
     links.holdLatest(['highwing://chat/local-0001'])
     expect(at()).toEqual({ at: 'chat', live: { target: LOCAL, epoch: 1 } })
@@ -590,7 +605,7 @@ describe('ownConnection, opening a chat while Settings is up', () => {
     const held = holdSave()
     const { owner, opened, pass, settled, at } = harness({ state: 'saved', target: LOCAL }, held.save)
     const links = chatLinks()
-    links.serve(owner, () => {})
+    links.serve(owner, feed(OFF), () => {})
     const window: Setup[] = []
     owner.setup.subscribe(setup => window.push(setup))
     await owner.run({ do: 'editTarget' })

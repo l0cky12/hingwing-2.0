@@ -1,5 +1,6 @@
 import type { Shown, ShownGroup, Target } from '@highwing/hermes/domain'
 import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react'
+import { introInFront } from '../intro'
 import { epochOf, type Mode, type Theme } from '../ipc-contract'
 import { BotPicker } from './bots/BotPicker'
 import { BotsSidebar } from './bots/Bots'
@@ -14,6 +15,7 @@ import { Composer } from './composer/Composer'
 import { Palette } from './palette/Palette'
 import { screenOf, type CardSetup } from './setup/screens'
 import { Settings } from './setup/Settings'
+import { Intro } from './setup/Intro'
 import { FirstRun, Saved } from './setup/Setup'
 import { Epoch, run, useTopic } from './store'
 
@@ -113,20 +115,23 @@ export function App() {
   const setup = useTopic('setup')
   const mode = useTopic('mode')
   const theme = useTopic('theme')
-  if (setup === undefined || mode === undefined || theme === undefined) return null
+  const intro = useTopic('intro')
+  if (setup === undefined || mode === undefined || theme === undefined || intro === undefined) return null
   const screen = screenOf(setup)
   const live = setup.at === 'pinned' ? null : setup.live
+  const cover = introInFront(setup, intro)
   return (
     <>
       {(setup.at === 'pinned' || live !== null) && (
         <Epoch value={epochOf(setup)}>
-          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved'} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} />
+          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved' || cover} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} />
           {/* Outside the window a new connection remounts, so a pick main refused for the old one comes back over the new one. */}
-          {screen.show !== 'saved' && <Palette target={live?.target ?? null} settingsOpen={screen.show === 'settings'} />}
+          {screen.show !== 'saved' && !cover && <Palette target={live?.target ?? null} settingsOpen={screen.show === 'settings'} />}
         </Epoch>
       )}
       {screen.show === 'first-run' && <FirstRun setup={screen.setup} />}
-      {screen.show === 'saved' && <Saved target={screen.live.target} />}
+      {cover && live !== null && <Intro target={live.target} />}
+      {screen.show === 'saved' && !cover && <Saved target={screen.live.target} />}
     </>
   )
 }
