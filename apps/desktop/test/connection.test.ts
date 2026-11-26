@@ -1,5 +1,5 @@
 import type { CheckResult, Dialer, Hermes, Route } from '@highwing/hermes'
-import type { CheckFailure, CheckStep, CommandOutcome, SessionId, SshHost, Target } from '@highwing/hermes/domain'
+import type { BotId, CheckFailure, CheckStep, CommandOutcome, SessionId, SshHost, Target } from '@highwing/hermes/domain'
 import type { GatewayUrl } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { Live, Setup } from '../src/ipc-contract'
@@ -424,6 +424,56 @@ describe('ownConnection, opening a chat while Settings is up', () => {
     expect(outcomes).toEqual([{ ok: true, value: undefined }, { ok: true, value: undefined }])
     expect(at()).toEqual({ at: 'chat', live: { target: LOCAL, epoch: 1 } })
     expect(opened[0]!.commands).toEqual([opening('s1'), opening('s2')])
+  })
+
+  const RAE = 'rae' as BotId
+  const MENU_OPENS = [
+    ['Open chat', { do: 'open', ref: { kind: 'bot', bot: RAE } }],
+    ['New chat', { do: 'open', ref: { kind: 'new', bot: RAE, draftId: 'd1' }, upFront: true }]
+  ] as const
+
+  it.each(MENU_OPENS)("closes Settings for the bot menu's %s, aborts its check, and opens", async (_item, command) => {
+    const { owner, checks, opened, at } = harness({ state: 'saved', target: LOCAL })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    expect(await owner.run(command)).toEqual({ ok: true, value: undefined })
+    expect(at()).toEqual({ at: 'chat', live: { target: LOCAL, epoch: 1 } })
+    expect(checks[0]!.signal.aborted).toBe(true)
+    expect(opened[0]!.commands).toEqual([command])
+  })
+
+  it.each(MENU_OPENS)("refuses the bot menu's %s at the save step, and changes nothing", async (_item, command) => {
+    const held = holdSave()
+    const { owner, opened, states, pass, at } = harness({ state: 'saved', target: LOCAL }, held.save)
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    const before = states.length
+    expect(await owner.run(command)).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(states).toHaveLength(before)
+    expect(opened[0]!.commands).toEqual([])
+    expect(at()).toMatchObject({ at: 'checking', step: 'save' })
+  })
+
+  it('pins a bot and reads the bots again on focus with Settings left up, its check running, even at the save step', async () => {
+    const held = holdSave()
+    const { owner, checks, opened, pass, settled, at } = harness({ state: 'saved', target: LOCAL }, held.save)
+    const focus = new Set<() => void>()
+    refreshBotsOnFocus({ on: (_: 'browser-window-focus', listener: () => void) => focus.add(listener), off: () => {} }, owner)
+    const mark = { do: 'markBot', bot: RAE, mark: 'pin' } as const
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    expect(await owner.run(mark)).toEqual({ ok: true, value: undefined })
+    for (const refresh of focus) refresh()
+    await settled()
+    expect(at()).toMatchObject({ at: 'checking', step: 'tailscale' })
+    expect(checks[0]!.signal.aborted).toBe(false)
+
+    await pass()
+    expect(at()).toMatchObject({ at: 'checking', step: 'save' })
+    for (const refresh of focus) refresh()
+    await settled()
+    expect(opened[0]!.commands).toEqual([mark, { do: 'refreshBots' }, { do: 'refreshBots' }])
   })
 
   const createBot = { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' }, picture: null } as const
