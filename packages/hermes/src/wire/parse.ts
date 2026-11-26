@@ -4,6 +4,7 @@
  */
 import { canonicalBotId, GENERATED_MAX_BYTES, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, type BotCreated, type BotDetails, type BotFacts, type BotId, type PetChoice } from '../domain/bots'
 import type { CheckpointDiff, Checkpoints, ContextBreakdown, ModelConfirm, ModelMenu, Outcome as CommandOutcome, Restored } from '../domain/command'
+import { isGroupId, type GroupMember, type GroupRow, type GroupSupport, type MemberId } from '../domain/groups'
 import type { PaneAsk } from '../domain/pane'
 import type { Admission } from '../domain/queue'
 import type { CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, Said as SaidTuning, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
@@ -21,7 +22,7 @@ import type { Said, TreeRow } from '../domain/versions'
 import type {
   AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
   CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
-  CommandDispatchResult, CommandsCatalogResult, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
+  CommandDispatchResult, CommandsCatalogResult, GroupsCapabilitiesResult, GroupsCreateResult, GroupsListResult, Room, RoomMember, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
   ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, ImageGenerateResult, LoopSnapshot,
   MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
   MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PetGalleryResult, PetThumbResult,
@@ -1603,3 +1604,45 @@ export function parseDirective(reply: CommandDispatchResult | SessionControlDisp
       return null
   }
 }
+
+/** `seatable_profiles` absent, as on a Hermes older than it: `seatable` null, so every bot is offered. */
+export function parseGroupSupport(reply: GroupsCapabilitiesResult): Extract<GroupSupport, { readonly is: 'able' }> {
+  const seatable = isObject(reply) && isStrings(reply.seatable_profiles) ? reply.seatable_profiles as BotId[] : null
+  return { is: 'able', driver: isObject(reply) && reply.driver === true, seatable }
+}
+
+function seatOf(raw: unknown): GroupMember {
+  const seat = fields<RoomMember>(raw)
+  const id = words(seat.raw('member_id'))
+  const bot = words(seat.raw('profile'))
+  const handle = words(seat.raw('handle'))
+  if (id === null || bot === null || handle === null) throw new Unusable()
+  return { id: id as MemberId, bot: bot as BotId, handle, name: words(seat.raw('display_name')) ?? handle }
+}
+
+/**
+ * A room as a list or a create reply carries it. null: a room Highwing cannot use, left out of the list. A seat with
+ * no `member_id`, `profile` or `handle`, as a room from before Hermes normalised rosters may hold, makes the whole
+ * room unusable, because nothing could say who is in it.
+ */
+export function parseGroupRow(room: Room): GroupRow | null {
+  return usable(() => {
+    const read = fields<Room>(room)
+    const id = read.str('room_id')
+    const name = words(read.raw('name'))
+    const seats = read.optList('members')
+    if (!isGroupId(id) || name === null || seats === null) throw new Unusable()
+    return { id, name, members: seats.map(seatOf) }
+  })
+}
+
+/**
+ * One `groups.list` page holds every live group: Hermes keeps at most 256 (`MAX_ACTIVE_ROOMS`) and pages 500 by
+ * default (`MAX_ROOM_LIST_LIMIT`, gateway/hosted_rooms.py:46-47), so `next_offset` never names a second page.
+ */
+export function parseGroupList(reply: GroupsListResult): readonly GroupRow[] {
+  const rooms = isObject(reply) && Array.isArray(reply.rooms) ? reply.rooms as readonly Room[] : []
+  return rooms.flatMap(room => parseGroupRow(room) ?? [])
+}
+
+export const parseGroupMade = (reply: GroupsCreateResult): GroupRow | null => (isObject(reply) ? parseGroupRow(reply.room) : null)

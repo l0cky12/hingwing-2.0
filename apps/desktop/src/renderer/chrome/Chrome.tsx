@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { isCommandKey } from '../keys'
 import { CopyLink } from '../chat/Copy'
 import { botNameOf, openChatName } from '../chats/chat-list'
+import { newChatIn, newChatKeys } from '../new-chat'
 import { run, useTopic } from '../store'
 
 /** The bar every screen has. `children` is what the screen puts at its right end. */
@@ -16,9 +17,9 @@ export function Bar({ where, children }: { readonly where: string | null; readon
 }
 
 function NewChat() {
-  const bot = useTopic('open')?.shown?.bot ?? null
+  const open = useTopic('open')
   const button = useRef<HTMLButtonElement>(null)
-  const start = useCallback(() => void run({ do: 'open', ref: { kind: 'new', bot, draftId: crypto.randomUUID() } }), [bot])
+  const start = useCallback(() => void run(newChatIn(open, crypto.randomUUID())), [open])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!isCommandKey(event, 'n') || button.current?.checkVisibility() !== true) return
@@ -28,8 +29,7 @@ function NewChat() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [start])
-  const shortcut = navigator.userAgent.includes('Mac') ? 'Meta+N' : 'Control+N'
-  return <button ref={button} type="button" aria-keyshortcuts={shortcut} onClick={start}>New chat</button>
+  return <button ref={button} type="button" aria-keyshortcuts={newChatKeys(navigator.userAgent.includes('Mac')).aria} onClick={start}>New chat</button>
 }
 
 function useOpenChatName(): string | null {

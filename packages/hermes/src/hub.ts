@@ -3,6 +3,7 @@ import { DONE, refused, SessionActor, type Upload } from './actor'
 import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, petPicture, setBotPicture } from './bot-admin'
 import { botsIn, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
+import type { Groups } from './domain/groups'
 import { mentionedBots } from './domain/mention'
 import type { OpenChat } from './domain/open'
 import type { PaneAsk } from './domain/pane'
@@ -10,6 +11,7 @@ import type { BridgeRequest, ServerRequest } from './domain/reduce'
 import type { RelayDesk } from './domain/relay'
 import type { AttachmentId, BranchId, Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog } from './domain/slash'
+import { groupBook } from './groups'
 import { chatDesk } from './open'
 import { relayBook } from './relay'
 import { botList } from './roster'
@@ -57,6 +59,12 @@ export interface Hermes {
    * bot (`@Rae`) goes to that bot's Bot Chat instead of the chat's own bot, and its one reply lands here.
    */
   readonly relay: Feed<RelayDesk>
+  /**
+   * The group chats of the socket's own profile, whether this Hermes can make one, and the bots it would seat in a
+   * new one. Read on every new socket and again when sessions change. `unsupported` on a Hermes with no
+   * `groups.capabilities`. A listed value stays while the link is down.
+   */
+  readonly groups: Feed<Groups>
   /**
    * Watch one session. The listener gets the current value at once and every later one. A session is
    * kept attached while a window watches it, while the gateway lists it as running, while its own
@@ -182,6 +190,7 @@ export function openHermes(options: HermesOptions): Hermes {
       cancelRefresh = null
       list.refresh()
       roster.refresh()
+      book.refresh()
     }, LIST_DEBOUNCE_MS)
   }
 
@@ -205,6 +214,7 @@ export function openHermes(options: HermesOptions): Hermes {
       for (const actor of [...actors.values()]) actor.linkChanged()
       if (next.state !== 'online') list.stale()
       roster.linked(next.state)
+      book.linked(next.state)
     },
     onOnline: () => {
       desk.online()
@@ -212,6 +222,7 @@ export function openHermes(options: HermesOptions): Hermes {
       catalogRead = readCatalog()
       relayRead = relays.probe()
       roster.ask()
+      book.ask()
     },
     onEvent: params => {
       const parsed = parseEvent(params)
@@ -270,6 +281,9 @@ export function openHermes(options: HermesOptions): Hermes {
     settle()
   })
   const bots = feed<Bots>(roster.bots)
+
+  const book = groupBook(conn, () => groups.set(book.groups))
+  const groups = feed<Groups>(book.groups)
 
   const actorFor = (id: SessionId): SessionActor => {
     const held = actors.get(id)
@@ -413,6 +427,10 @@ export function openHermes(options: HermesOptions): Hermes {
       if (made.ok) await desk.ask({ kind: 'bot', bot: made.value.bot })
       return made
     }
+    if (command.do === 'createGroup') {
+      const listed = bots.get()
+      return book.create(command.draft, listed.state === 'listed' ? botsIn(listed.roster) : [])
+    }
     if (command.do === 'describeBot') return describeBot(conn, command.bot)
     if (command.do === 'botPicture') return botPicture(conn, command.bot)
     if (command.do === 'canGeneratePicture') return canGeneratePicture(conn)
@@ -441,6 +459,7 @@ export function openHermes(options: HermesOptions): Hermes {
     bots,
     open,
     relay,
+    groups,
     watch,
     run: command => run(command) as Promise<Outcome<ResultOf<typeof command>>>,
     close: async () => {

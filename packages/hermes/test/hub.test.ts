@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { BotId } from '../src/domain/bots'
+import type { GroupDraft, GroupId } from '../src/domain/groups'
 import type { AttachmentId, BranchId, Item, PromptId, RequestId, Session, SessionId } from '../src/domain/session'
 import { DialError, openHermes, RETAIN_MS, type Dialer, type HermesOptions, type WireSocket } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
 import { MASKED, play, scriptedDialer, type Fixture, type FixtureStep, type Moment, type ScriptOptions } from '../src/testing/fixture'
 import {
-  BOUND, BRANCH, BRANCH_COMPACTED, BRANCH_OLD, callsIn, DOWNLOADS, EDIT_COMPACTED, ERRAND, INVOICES, NO_HOME_CHAT, NO_TREE, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID,
-  SESSION, SLASH, stepOf, SORTED, SORTED_2, SORTED_3, SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, withSteps
+  BOUND, BRANCH, BRANCH_COMPACTED, BRANCH_OLD, callsIn, DOWNLOADS, EDIT_COMPACTED, ERRAND, INVOICES, LAUNCH, LAUNCH_NO_GROUPS, NO_HOME_CHAT, NO_TREE, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, RAE_SAID,
+  REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, SORTED, SORTED_2, SORTED_3, SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, withGroups, withSteps
 } from './support/errand'
 
 const CLIENT = { name: 'highwing-test', version: '0.0.0' }
@@ -1377,5 +1378,122 @@ describe('the reasoning switch', () => {
     expect(reads(opened)).toHaveLength(1)
     expect(opened.seen.at(-1)?.tuning).toEqual({ reasoning: null, busy: null, effort: null, fast: null, yolo: null })
     expect(await opened.hermes.run({ do: 'tune', sessionId: SESSION, set: 'reasoning', on: true })).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes doesn't support that." } })
+  })
+})
+
+describe('group chats', () => {
+  const groupCalls = (opened: ReturnType<typeof open>) => opened.sent().filter(call => call.method.startsWith('groups.'))
+  const creates = (opened: ReturnType<typeof open>) => opened.sent().filter(call => call.method === 'groups.create')
+  const rows = (opened: ReturnType<typeof open>) => {
+    const groups = opened.hermes.groups.get()
+    return groups.state === 'listed' ? groups.rows.map(row => [row.name, row.members.map(member => member.handle).join(' ')]) : groups.state
+  }
+  const draft = (bots: readonly string[], more: Partial<GroupDraft> = {}): GroupDraft => ({ group: 'launch-plan' as GroupId, name: 'Launch plan', bots: bots as BotId[], ...more })
+  const launched = async (fixture: Fixture) => {
+    const opened = open(fixture)
+    await opened.clock.advance(0)
+    return opened
+  }
+  const STANDUP = { id: 'standup', name: 'Standup', members: [{ profile: 'otto', handle: 'otto' }, { profile: 'mia', handle: 'mia' }] }
+
+  it('are unsupported on a Hermes that has none, which is asked once for the whole errand and never polled', async () => {
+    const opened = open(LAUNCH_NO_GROUPS)
+    opened.watch()
+    expect(opened.hermes.groups.get()).toEqual({ state: 'loading' })
+    await toApproval(opened)
+    expect(opened.hermes.groups.get()).toEqual({ state: 'unsupported' })
+    await approve(opened.hermes)
+    await opened.clock.advance(120_000)
+    expect(opened.script.finished).toBe(true)
+    expect(groupCalls(opened)).toEqual([{ method: 'groups.capabilities', params: {} }])
+    expect(await opened.hermes.run({ do: 'createGroup', draft: draft(['default', 'sam']) })).toEqual({
+      ok: false, refusal: { kind: 'unsupported', message: 'This Hermes has no group chats. Update Hermes on that machine, then reconnect.' }
+    })
+  })
+
+  it('are listed with their seats, most recently changed first, with the bots Hermes would seat', async () => {
+    const opened = await launched(withGroups({ seatable: ['default', 'sam', 'juno'], rooms: [{ id: 'launch-plan', name: 'Launch plan', members: [{ profile: 'default', handle: 'ada' }, { profile: 'sam', handle: 'sam' }] }, STANDUP] }))
+    expect(opened.hermes.groups.get()).toEqual({
+      state: 'listed', driver: true, seatable: ['default', 'juno', 'sam'], rows: [
+        { id: 'launch-plan', name: 'Launch plan', members: [{ id: 'default', bot: 'default', handle: 'ada', name: 'ada' }, { id: 'sam', bot: 'sam', handle: 'sam', name: 'sam' }] },
+        { id: 'standup', name: 'Standup', members: [{ id: 'otto', bot: 'otto', handle: 'otto', name: 'otto' }, { id: 'mia', bot: 'mia', handle: 'mia', name: 'mia' }] }
+      ]
+    })
+    expect(groupCalls(opened), 'both on the socket\'s own profile').toEqual([{ method: 'groups.capabilities', params: {} }, { method: 'groups.list', params: {} }])
+  })
+
+  it('list a new group first as soon as Hermes makes it, each bot asked by the name the sidebar shows', async () => {
+    const opened = await launched(withGroups({ rooms: [STANDUP] }))
+    const seen: string[] = []
+    opened.hermes.groups.subscribe(groups => seen.push(groups.state === 'listed' ? groups.rows.map(row => row.name).join(', ') : groups.state))
+    expect(await opened.hermes.run({ do: 'createGroup', draft: draft(['default', 'sam', 'juno']) })).toEqual({ ok: true, value: undefined })
+    expect(seen[0], 'before Hermes is asked for its list again').toBe('Launch plan, Standup')
+    expect(creates(opened)).toEqual([{
+      method: 'groups.create',
+      params: { room_id: 'launch-plan', name: 'Launch plan', members: [{ member_id: 'default', profile: 'default', handle: 'ada' }, { member_id: 'sam', profile: 'sam', handle: 'sam' }, { member_id: 'juno', profile: 'juno', handle: 'juno' }] }
+    }])
+    await opened.clock.advance(0)
+    expect(rows(opened)).toEqual([['Launch plan', 'ada sam juno'], ['Standup', 'otto mia']])
+  })
+
+  it('make one group for a create sent twice under one id, and refuse another group under it', async () => {
+    const opened = await launched(LAUNCH)
+    expect(await opened.hermes.run({ do: 'createGroup', draft: draft(['default', 'sam']) })).toEqual({ ok: true, value: undefined })
+    expect(await opened.hermes.run({ do: 'createGroup', draft: draft(['default', 'sam']) })).toEqual({ ok: true, value: undefined })
+    await opened.clock.advance(0)
+    expect(rows(opened)).toEqual([['Launch plan', 'ada sam']])
+    expect(creates(opened)).toHaveLength(2)
+
+    expect(await opened.hermes.run({ do: 'createGroup', draft: draft(['default', 'sam'], { name: 'Release' }) })).toEqual({
+      ok: false, refusal: { kind: 'rejected', message: "Hermes didn't accept this group chat. Try again." }
+    })
+    await opened.clock.advance(0)
+    expect(rows(opened)).toEqual([['Launch plan', 'ada sam']])
+  })
+
+  it('refuse a bot Hermes would not seat under the dialog\'s list, in Hermes\'s words, and list nothing', async () => {
+    const opened = await launched(withGroups({ seatable: ['default', 'sam', 'juno'] }))
+    expect(await opened.hermes.run({ do: 'createGroup', draft: draft(['default', 'otto']) })).toEqual({
+      ok: false, refusal: { kind: 'rejected', field: 'members', message: "Hermes can't seat these bots: member 1 profile 'otto': this bot can't join group chats yet" }
+    })
+    await opened.clock.advance(0)
+    expect(rows(opened)).toEqual([])
+  })
+
+  it('refuse a bot the roster no longer lists before Hermes is asked', async () => {
+    const opened = await launched(LAUNCH)
+    expect(await opened.hermes.run({ do: 'createGroup', draft: draft(['default', 'zed']) })).toMatchObject({ ok: false, refusal: { kind: 'rejected', field: 'members' } })
+    expect(creates(opened)).toEqual([])
+  })
+
+  it('are made on a Hermes that is not running them now, which says so', async () => {
+    const opened = await launched(withGroups({ driver: false }))
+    expect(opened.hermes.groups.get()).toMatchObject({ state: 'listed', driver: false, rows: [] })
+    expect(await opened.hermes.run({ do: 'createGroup', draft: draft(['default', 'sam']) })).toEqual({ ok: true, value: undefined })
+    expect(rows(opened)).toEqual([['Launch plan', 'ada sam']])
+  })
+
+  it('stay listed while the socket is gone, are read again on the new one, and refuse a create meanwhile', async () => {
+    const opened = open(withGroups({ rooms: [STANDUP] }), { drop: { afterPush: 5, missed: 0 } })
+    opened.watch()
+    await toApproval(opened)
+    expect(opened.hermes.link.get()).toMatchObject({ state: 'waiting', why: 'dropped' })
+    expect(rows(opened)).toEqual([['Standup', 'otto mia']])
+    expect(await opened.hermes.run({ do: 'createGroup', draft: draft(['default', 'sam']) })).toEqual({ ok: false, refusal: { kind: 'offline', message: "Highwing isn't connected to Hermes right now." } })
+    await opened.clock.advance(1_000)
+    expect(opened.hermes.link.get()).toEqual({ state: 'online' })
+    expect(groupCalls(opened).filter(call => call.method === 'groups.list').length, 'at least once on each of the two sockets').toBeGreaterThanOrEqual(2)
+    expect(rows(opened)).toEqual([['Standup', 'otto mia']])
+  })
+
+  it('are offline when the first dial fails, then listed after a reconnect', async () => {
+    const opened = open(LAUNCH)
+    opened.state.failWith = new DialError('not-running')
+    await opened.clock.advance(100)
+    expect(opened.hermes.groups.get()).toEqual({ state: 'offline' })
+    opened.state.failWith = null
+    await opened.hermes.run({ do: 'reconnect', start: true })
+    await opened.clock.advance(0)
+    expect(rows(opened)).toEqual([])
   })
 })

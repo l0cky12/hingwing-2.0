@@ -9,7 +9,7 @@ import type {
 } from '../src/wire/contract.generated'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 import {
-  FOR_WINDOW, parseBranched, parseContextBreakdown, parseEvent, parseInlineDiff, parseUserChats, parseModelMenu, parseModelReceipt, parsePathMatches,
+  FOR_WINDOW, parseBranched, parseContextBreakdown, parseEvent, parseGroupList, parseGroupMade, parseGroupSupport, parseInlineDiff, parseUserChats, parseModelMenu, parseModelReceipt, parsePathMatches,
   parseReplay, parseRows, parseServerRequest, parseShown, parseSnapshot, parseStats, parseToolResult, parseTranscript, SHOWN, UNSHOWN
 } from '../src/wire/parse'
 
@@ -991,5 +991,47 @@ describe('what Hermes asks, parsed', () => {
       { kind: 'bridge', requestId: 'srq-9', method: 'theme.pick' },
       { kind: 'card', requestId: 'op1', method: 'connection.request', sessionId: SESSION, ask: { kind: 'connect', rev: 2 } }
     ])
+  })
+})
+
+describe('group chats, parsed', () => {
+  const room = (more: object = {}) => ({
+    room_id: 'launch-plan', name: ' Launch plan ', authority_gateway_id: 'gw', authority_epoch: 1, revision: 1, created_at: 1, updated_at: 2, latest_seq: 0,
+    members: [
+      { member_id: 'default', profile: 'default', handle: 'ada', target: { kind: 'local', profile: 'default' } },
+      { member_id: 'sam', profile: 'sam', handle: 'sam', display_name: 'Sam the fixer', target: { kind: 'local', profile: 'sam' } }
+    ],
+    ...more
+  })
+
+  it('reads a room as its id, its name and its seats in the order they answer', () => {
+    expect(parseGroupList({ rooms: [room()], next_offset: null })).toEqual([{
+      id: 'launch-plan', name: 'Launch plan',
+      members: [{ id: 'default', bot: 'default', handle: 'ada', name: 'ada' }, { id: 'sam', bot: 'sam', handle: 'sam', name: 'Sam the fixer' }]
+    }])
+    expect(parseGroupMade({ room: room() })?.id).toBe('launch-plan')
+  })
+
+  it.each([
+    ['an id Hermes would not mint', room({ room_id: 'has space' })],
+    ['a blank name', room({ name: '  ' })],
+    ['no roster', room({ members: undefined })],
+    ['a seat with no handle, from before Hermes normalised rosters', room({ members: [{ member_id: 'default', profile: 'default' }] })],
+    ['a seat that is not an object', room({ members: ['default'] })]
+  ])('leaves out a room with %s and keeps the rest', (_, bad) => {
+    expect(parseGroupList({ rooms: [bad, room({ room_id: 'other' })] }).map(group => group.id)).toEqual(['other'])
+  })
+
+  it('reads a list that is no list as no groups, and a create reply with no room as none', () => {
+    expect(parseGroupList(null as never)).toEqual([])
+    expect(parseGroupList({ rooms: 'none' } as never)).toEqual([])
+    expect(parseGroupMade({} as never)).toBeNull()
+  })
+
+  it('reads what Hermes can do with groups, and offers every bot when it does not name the seatable ones', () => {
+    const answer = { protocol_version: 1, driver: true, persistent_process: true, authority_gateway_id: 'gw', room_link: {} as never, features: [], methods: [], max_log_limit: 500 }
+    expect(parseGroupSupport({ ...answer, seatable_profiles: ['default', 'sam'] })).toEqual({ is: 'able', driver: true, seatable: ['default', 'sam'] })
+    expect(parseGroupSupport({ ...answer, driver: false })).toEqual({ is: 'able', driver: false, seatable: null })
+    expect(parseGroupSupport({ ...answer, seatable_profiles: [1] as never })).toEqual({ is: 'able', driver: true, seatable: null })
   })
 })

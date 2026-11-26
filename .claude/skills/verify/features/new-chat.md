@@ -14,6 +14,7 @@ The New chat button in the top bar, or Ctrl+N (Cmd+N on macOS), opens a new, emp
 
 - Click New chat in the top bar.
 - Or press Ctrl+N (Cmd+N on macOS) anywhere in the chat window.
+- Or pick New chat with <bot> in the menu under the plus in the Bots column's header. [Group chats](./group-chats.md) drives it.
 - Or type `/new` in the message box and send it.
 
 ## Driving it with highwing-verify

@@ -1,5 +1,6 @@
 import type { Bots, Link, OpenChat, Session, Sidebar, Target } from '@highwing/hermes/domain'
 import type { WindowCommand } from '../../ipc-contract'
+import { newChatIn, newChatKeys } from '../new-chat'
 
 export interface Scene {
   readonly sidebar: Sidebar | undefined
@@ -21,10 +22,7 @@ export interface ActionRow {
 const MAC = navigator.userAgent.includes('Mac')
 
 export const ACTIONS: readonly ActionRow[] = [
-  {
-    id: 'new-chat', label: 'New chat', keys: MAC ? '⌘N' : 'Ctrl+N',
-    offer: ({ open, draftId }) => ({ do: 'open', ref: { kind: 'new', bot: open?.shown?.bot ?? null, draftId } })
-  },
+  { id: 'new-chat', label: 'New chat', keys: newChatKeys(MAC).shown, offer: ({ open, draftId }) => newChatIn(open, draftId) },
   {
     id: 'stop', label: 'Stop', keys: null,
     offer: ({ open, openSession: session }) => {
