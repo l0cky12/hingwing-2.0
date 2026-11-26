@@ -22,6 +22,10 @@ const OWN_ANSWERS: Readonly<Record<string, (header: Header, reply: Obj, params: 
   'groups.capabilities': () => NOTHING,
   'groups.list': () => NOTHING,
   'groups.create': () => NOTHING,
+  'groups.state': () => NOTHING,
+  'groups.log': () => NOTHING,
+  'groups.send': () => NOTHING,
+  'groups.stop': () => NOTHING,
   'complete.path': () => NOTHING,
   'runtime.describe': (header, reply) => {
     header.describe ??= reply
