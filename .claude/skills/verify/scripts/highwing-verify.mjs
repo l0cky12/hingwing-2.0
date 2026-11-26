@@ -29,6 +29,7 @@ const USER_FILES = ['HIGHWING_VERIFY_USER_FILE', 'HIGHWING_VERIFY_PASSWORD_FILE'
 const MODE_FILE = 'mode.json'
 const MODES = ['bots', 'chats']
 const THEME_FILE = 'theme.json'
+const SNOOZES_FILE = 'snoozes.json'
 const THEMES = ['system', 'light', 'dark']
 /** What GNOME's portal backend reads for each desktop theme a run can set. */
 const COLOR_SCHEMES = { light: 'default', dark: 'prefer-dark' }
@@ -1187,7 +1188,7 @@ const requestMethods = steps => new Map(steps.flatMap(step => {
 
 const answerTo = step => step.answer ?? step.params?.request_id ?? step.params?.op_id
 
-function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, profiles, paths, createWarnings, configureClash, assetFails, images, pets, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, approvals, answeredElsewhere, answerHere, cancel, actedElsewhere, windowMakes, origin, attachLimit }, out) {
+function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, profiles, paths, createWarnings, configureClash, assetFails, images, titles, pets, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, approvals, answeredElsewhere, answerHere, cancel, actedElsewhere, windowMakes, origin, attachLimit }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const header = JSON.parse(lines[0])
   const recorded = lines.slice(1).map(line => JSON.parse(line))
@@ -1227,6 +1228,7 @@ function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, pr
   if (assetFails) header.assetFails = assetFails
   if (images) header.images = JSON.parse(readFileSync(resolve(process.cwd(), images), 'utf8'))
   if (pets) header.pets = JSON.parse(readFileSync(resolve(process.cwd(), pets), 'utf8'))
+  if (titles) header.oneshot = JSON.parse(readFileSync(resolve(process.cwd(), titles), 'utf8'))
   if (bound) header.reach = 'profile'
   if (noBotChat) header.homeBotChat = false
   if (tree) header.tree = true
@@ -1478,7 +1480,7 @@ async function quitApp(ctx) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'asset-fails': 'value', images: 'value', pets: 'value', video: 'flag', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', approvals: 'value', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'fake-webapp': 'value', 'webapp-url': 'value', 'login-form': 'flag', keyring: 'value', 'sign-in-ms': 'value', mode: 'value', theme: 'value', 'system-theme': 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value', latency: 'value', 'timed-shot': 'value', 'cpu-profile': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'asset-fails': 'value', images: 'value', titles: 'value', pets: 'value', video: 'flag', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', approvals: 'value', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'fake-webapp': 'value', 'webapp-url': 'value', 'login-form': 'flag', keyring: 'value', 'sign-in-ms': 'value', mode: 'value', theme: 'value', 'system-theme': 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value', latency: 'value', 'timed-shot': 'value', 'cpu-profile': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   const webScenario = options['fake-webapp']
@@ -1497,7 +1499,7 @@ async function run(argv) {
   const signsInOnPage = Boolean(options['login-form'] || realUrl)
   if (signsInOnPage) for (const name of USER_FILES) if (!process.env[name]) fail(`set ${name} to a file that holds it, for the sign-in page`)
   const site = options.serve ? await serve(options.serve) : null
-  const edits = { dropAfter: options['drop-after'], models: options.models, catalog: options.catalog, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], assetFails: options['asset-fails'], images: options.images, pets: options.pets, bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], approvals: options.approvals, answeredElsewhere: options['answered-elsewhere'], answerHere: options['answer-here'], cancel: options.cancel, actedElsewhere: options['acted-elsewhere'], windowMakes: options['window-makes'], origin: site?.origin, attachLimit: options['attach-limit'] }
+  const edits = { dropAfter: options['drop-after'], models: options.models, catalog: options.catalog, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], assetFails: options['asset-fails'], images: options.images, titles: options.titles, pets: options.pets, bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], approvals: options.approvals, answeredElsewhere: options['answered-elsewhere'], answerHere: options['answer-here'], cancel: options.cancel, actedElsewhere: options['acted-elsewhere'], windowMakes: options['window-makes'], origin: site?.origin, attachLimit: options['attach-limit'] }
   const edited = Object.values(edits).some(Boolean)
   if (options.yolo && options.yolo !== 'on' && options.yolo !== 'off') fail(`--yolo takes on or off, not "${options.yolo}"`)
   if (options.approvals && !['manual', 'smart', 'off'].includes(options.approvals)) fail(`--approvals takes manual, smart or off, not "${options.approvals}"`)
@@ -1507,7 +1509,7 @@ async function run(argv) {
   if (options.cancel && !/^[^=]+=[^=]+$/.test(options.cancel)) fail(`--cancel takes <method>=<reason>, not "${options.cancel}"`)
   if (!options.yolo && (options['yolo-denied'] || options['yolo-elsewhere-after'])) fail('--yolo-denied and --yolo-elsewhere-after need --yolo, because a Hermes with no YOLO answers neither')
   if (options.tree && !options.profiles) fail('--tree needs --profiles, because the tree lists the chats that file seeds')
-  if ((scenario || byAddress) && edited) fail('--drop-after, --models, --catalog, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --asset-fails, --images, --pets, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --approvals, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host, --fake-webapp or --webapp-url')
+  if ((scenario || byAddress) && edited) fail('--drop-after, --models, --catalog, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --asset-fails, --images, --titles, --pets, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --approvals, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host, --fake-webapp or --webapp-url')
   if (options['configure-clash'] && !options.profiles) fail('--configure-clash needs --profiles: without it Hermes has no bots to rename')
   if (options['asset-fails'] && !options.profiles) fail('--asset-fails needs --profiles: without it Hermes stores no pictures')
   if (options['attach-limit'] && !/^[1-9]\d*$/.test(options['attach-limit'])) fail(`--attach-limit takes a number of bytes, not "${options['attach-limit']}"`)
@@ -1547,6 +1549,8 @@ async function run(argv) {
     // The check of this scenario passes. The save after it fails, because its temp file cannot be opened.
     if (scenario === 'cant-save') mkdirSync(join(userData, `${SETTINGS_FILE}.tmp`))
   }
+  // Snoozes outlive a run by name as the mode does, and a chat snoozed until tomorrow would start the next run hidden.
+  rmSync(join(userData, SNOOZES_FILE), { force: true })
   if (options.mode) {
     mkdirSync(userData, { recursive: true })
     writeFileSync(join(userData, MODE_FILE), JSON.stringify({ version: 1, mode: options.mode }))
