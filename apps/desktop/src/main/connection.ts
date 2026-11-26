@@ -64,6 +64,7 @@ export function nextSetup(setup: Setup, event: SetupEvent): Setup | null {
 }
 
 const KEEP = { do: 'keepTarget' } as const
+const STOP = { do: 'stopCheck' } as const
 
 /** Whether an open runs now: in the chat, or in Settings, which it leaves first. It waits through first run, and through a save, which refuses to leave. */
 export const opensNow = (setup: Setup): boolean =>
@@ -174,14 +175,18 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
 
   /**
    * Every open passes here, from the window, a notification or a link: Settings closes first, as Close does, or the open is refused.
-   * A bot is opened by the hub once it is made, so Settings closes after Hermes makes it, and stays up when Hermes refuses it.
+   * A bot is opened by the hub once it is made, so Settings closes after Hermes makes it, and stays up when Hermes refuses it. A running
+   * check stops first, as Cancel does: one that passed would move the chat to another machine while the bot is made on this one. Settings
+   * closes only on the connection the bot was made on, since a check started meanwhile may have put a new one's confirmation up.
    */
   const runChat = async (command: Command): Promise<CommandOutcome<unknown>> => {
     const fromSettings = showsSettings(setup.get())
     if (fromSettings && opensChat(command) && nextSetup(setup.get(), KEEP) === null) return NOT_NOW
     if (fromSettings && command.do === 'open') runSetup(KEEP)
-    const outcome = await (open?.hermes.run(command) ?? NOT_CONNECTED)
-    if (fromSettings && command.do === 'createBot' && outcome.ok) runSetup(KEEP)
+    if (fromSettings && command.do === 'createBot' && setup.get().at === 'checking') runSetup(STOP)
+    const sentOn = open
+    const outcome = await (sentOn?.hermes.run(command) ?? NOT_CONNECTED)
+    if (fromSettings && command.do === 'createBot' && outcome.ok && open === sentOn) runSetup(KEEP)
     return outcome
   }
 

@@ -442,16 +442,47 @@ describe('ownConnection, opening a chat while Settings is up', () => {
     expect(opened[0]!.commands).toEqual([createBot])
   })
 
-  it('keeps Settings up, and its check running, when Hermes refuses a bot made from the sidebar', async () => {
-    const { owner, checks, opened, answerWith, at } = harness({ state: 'saved', target: LOCAL })
+  it('keeps Settings up when Hermes refuses a bot made from the sidebar', async () => {
+    const { owner, opened, answerWith, at } = harness({ state: 'saved', target: LOCAL })
     const taken = { ok: false, refusal: { kind: 'rejected', message: 'A bot called Rae already exists.', field: 'name' } } as const
     answerWith(() => taken)
     await owner.run({ do: 'editTarget' })
-    await owner.run({ do: 'checkTarget', target: REMOTE })
     expect(await owner.run(createBot)).toEqual(taken)
-    expect(at()).toEqual({ at: 'checking', live: { target: LOCAL, epoch: 1 }, target: REMOTE, step: 'tailscale' })
-    expect(checks[0]!.signal.aborted).toBe(false)
+    expect(at()).toEqual({ at: 'form', live: LIVE, notice: null })
     expect(opened[0]!.commands).toEqual([createBot])
+  })
+
+  it('stops a running check before it makes a bot, so the bot lands on the live machine, and closes Settings there', async () => {
+    const { owner, checks, opened, answerWith, pass, settled, at } = harness({ state: 'saved', target: LOCAL })
+    let made = () => {}
+    answerWith(() => new Promise(resolve => { made = () => resolve({ ok: true, value: undefined }) }))
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    const outcome = owner.run(createBot)
+    await settled()
+    expect(checks[0]!.signal.aborted).toBe(true)
+    expect(at(), 'Settings stays up, on the live connection').toEqual({ at: 'form', live: LIVE, notice: null })
+    await pass()
+    expect(opened, 'the stopped check switches nothing').toHaveLength(1)
+    made()
+    expect(await outcome).toEqual({ ok: true, value: undefined })
+    expect(at()).toEqual({ at: 'chat', live: LIVE })
+    expect(opened[0]!.commands).toEqual([createBot])
+  })
+
+  it("leaves a new connection's confirmation up for a bot Hermes made on the connection it replaced", async () => {
+    const { owner, opened, answerWith, pass, at } = harness({ state: 'saved', target: LOCAL })
+    let made = () => {}
+    answerWith(() => new Promise(resolve => { made = () => resolve({ ok: true, value: undefined }) }))
+    await owner.run({ do: 'editTarget' })
+    const outcome = owner.run(createBot)
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    expect(at()).toEqual({ at: 'saved', live: NEXT, from: 'settings' })
+    made()
+    expect(await outcome).toEqual({ ok: true, value: undefined })
+    expect(at()).toEqual({ at: 'saved', live: NEXT, from: 'settings' })
+    expect(opened.map(({ commands }) => commands)).toEqual([[createBot], []])
   })
 
   it('refuses a bot at the save step without asking Hermes, and changes nothing', async () => {
