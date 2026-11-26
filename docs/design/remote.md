@@ -39,7 +39,7 @@ serveWindows(owner, ipcMain, isAppUrl)
 const setup = useTopic('setup')
 run({ do: 'checkTarget', target: { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' } })
 run({ do: 'editTarget' })   // the top bar's Connection button
-run({ do: 'openChat' })     // the saved screen's Open chat button
+run({ do: 'keepTarget' })   // the saved screen's Open chat button, and Close or Esc in Settings
 
 // a unit test: a full remote dial, no network, no real ssh
 const host = await fakeHost('ok', gateway)
@@ -142,7 +142,7 @@ type Setup =
   | { at: 'form'; live: Live | null; notice: 'unreadable' | 'newer' | null }    // live !== null: editing
   | { at: 'checking'; live: Live | null; target: Target; step: CheckStep }
   | { at: 'failed'; live: Live | null; target: Target; failure: CheckFailure }
-  | { at: 'saved'; live: Live }                                                 // confirmation
+  | { at: 'saved'; live: Live; from: 'first-run' | 'settings' }                // confirmation: first run's Saved screen, or Settings
   | { at: 'pinned' }                                                            // HIGHWING_FIXTURE: no setup
 type Live = { target: Target; epoch: number }
 ```
@@ -157,12 +157,14 @@ type Live = { target: Target; epoch: number }
 | `form`, `failed` | `checkTarget(t)` | `checking` at the first step |
 | `checking` | a step finishes | `checking` at the next step |
 | `checking` | a step fails | `failed` |
-| `checking` | the check passes and the save succeeds | `saved` with the new `live` |
+| `checking` | the check passes and the save succeeds | `saved` with the new `live`, and `from` `first-run` when nothing was live before, else `settings` |
 | `checking` | the check passes and the save fails | `failed` with `cant-save` |
-| `form`, `checking`, `failed` with `live` | `keepTarget` (Cancel) | `chat` with that `live`. A running check is aborted. |
-| `saved` | `openChat` | `chat` |
+| `form`, `checking`, `failed` with `live` | `keepTarget` (Close, Esc) | `chat` with that `live`. A running check is aborted. Refused at step `save`. |
+| `checking`, `failed` | `stopCheck` (Cancel) | `form` with the same `live`. A running check is aborted. Refused at step `save`. |
+| `saved` | `keepTarget` (Open chat, or Close and Esc in Settings) | `chat` |
+| `saved` | `checkTarget(t)` (Connect in Settings) | `checking` at the first step |
 
-The Bridge keeps its two methods, `watch` and `run`. `Topic` gains `'setup'`. `Command` gains `checkTarget`, `editTarget`, `keepTarget` and `openChat`, each with a row in `validators`.
+The Bridge keeps its two methods, `watch` and `run`. `run` also carries `epochOf` the newest setup the window has, and main refuses a chat command sent for any epoch but the live one, since the ids it names belong to that connection. `Topic` gains `'setup'`. `Command` gains `checkTarget`, `editTarget`, `keepTarget` and `stopCheck`, each with a row in `validators`.
 
 Saving a target goes in this order:
 
@@ -284,7 +286,7 @@ Where the code differs from the text above. The text above is unchanged, so each
 
 | The design said | The code does | Why |
 |---|---|---|
-| `Command` gains `checkTarget`, `editTarget`, `keepTarget` and `openChat`. | `Command` is unchanged. `ipc-contract.ts` adds `SetupCommand` and `AppCommand = Command \| SetupCommand`. `validators` has a row per verb of both. | `Command` is what `Hermes.run` accepts. The setup verbs are answered by the connection owner, which has no gateway behind it on a first run. |
+| `Command` gains `checkTarget`, `editTarget`, `keepTarget` and `stopCheck`. | `Command` is unchanged. `ipc-contract.ts` adds `SetupCommand` and `AppCommand = Command \| SetupCommand`. `validators` has a row per verb of both. | `Command` is what `Hermes.run` accepts. The setup verbs are answered by the connection owner, which has no gateway behind it on a first run. |
 | `serveWindows(owner, ...)` and a `Hermes` behind it. | `ConnectionOwner` is `setup`, `hermes` and one `run` for every command. `run` sends a setup verb through `nextSetup` and any other verb to the live `Hermes`, or refuses it as `offline` when none is live. | The window has one `run`. One place decides which side a verb belongs to. |
 | `checking` with `keepTarget` goes to `chat`. | The same, except at step `save`, where `keepTarget` is refused. | A Cancel between the save and the switch would leave the file and the chat on different machines. |
 | A check that passes saves and opens a new `Hermes`. "Re-checking the live target does not switch." | When the checked target equals the live one, the owner goes to `saved` with the same `live`. It does not save, open or bump `epoch`. | The file already holds that target, and a new epoch would drop the user's draft for nothing. |
