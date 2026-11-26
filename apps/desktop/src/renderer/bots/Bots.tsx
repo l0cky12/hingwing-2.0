@@ -8,6 +8,7 @@ import { groupRowsOf, type GroupRowView } from '../groups/group-rows'
 import { newChatIn } from '../new-chat'
 import { Chevron } from '../chrome/ModeSwitch'
 import { pickBotPicture, run, useTopic } from '../store'
+import { useBotDrafts } from '../composer/drafts'
 import { Avatar } from './Avatar'
 import { BotEditor, type BotEditorProps } from './BotEditor'
 import { nameProblem } from './bot-form'
@@ -22,7 +23,7 @@ import { NewMenu } from './NewMenu'
 import { plusMenuOf, seatableIn, type PlusItem } from './plus-menu'
 import { botIn, listOf, selectedIn } from './roster-view'
 import { RowMenu } from './RowMenu'
-import { drawnAbove, drawnAboveGroups, HIDDEN_CLOSED, hiddenTriggers, nextHidden, rowsIn, sidebarOf, type Row, type RowGroup } from './sidebar-view'
+import { drawnAbove, drawnAboveGroups, HIDDEN_CLOSED, hiddenTriggers, lineOf, nextHidden, rowsIn, sidebarOf, type BotLine, type Row, type RowGroup } from './sidebar-view'
 
 const CARET_KEYS: ReadonlySet<string> = new Set(['PageUp', 'PageDown', 'End'])
 const MAC = navigator.userAgent.includes('Mac')
@@ -40,7 +41,7 @@ export function BotsSidebar({ head }: { readonly head: ReactNode }) {
   const open = useTopic('open')
   return (
     <BotsPanel
-      head={head} bots={useTopic('bots')} open={open} link={useTopic('link')} groups={useTopic('groups')} activity={useTopic('activity')}
+      head={head} bots={useTopic('bots')} open={open} link={useTopic('link')} groups={useTopic('groups')} activity={useTopic('activity')} drafts={useBotDrafts()}
       onOpen={bot => run({ do: 'open', ref: { kind: 'bot', bot } })}
       onNewChat={() => void run(newChatIn(open, crypto.randomUUID()))}
       onNew={bot => run({ do: 'open', ref: { kind: 'new', bot, draftId: crypto.randomUUID() }, upFront: true })}
@@ -69,6 +70,7 @@ interface BotsPanelProps extends EditorCalls {
   readonly link: Link | undefined
   readonly groups: Groups | undefined
   readonly activity: BotActivities | undefined
+  readonly drafts: ReadonlyMap<BotId, string>
   readonly onOpen: (bot: BotId) => Promise<CommandOutcome<unknown>>
   readonly onNewChat: () => void
   readonly onNew: (bot: BotId) => Promise<CommandOutcome<unknown>>
@@ -154,6 +156,7 @@ function ActivityMark({ activity }: { readonly activity: BotActivity | null }) {
 
 interface BotRowProps {
   readonly row: Row
+  readonly line: BotLine
   readonly current: boolean
   readonly busy: boolean
   readonly activity: BotActivity | null
@@ -162,7 +165,7 @@ interface BotRowProps {
   readonly onMenu: (opener: Opener) => void
 }
 
-function BotRow({ row: { bot, place }, current, busy, activity, menuBy, onPick, onMenu }: BotRowProps) {
+function BotRow({ row: { bot, place }, line, current, busy, activity, menuBy, onPick, onMenu }: BotRowProps) {
   const preview = useId()
   const status = useId()
   const said = activity === null ? null : <span className="sr" id={status}>{ACTIVITY_WORDS[activity]}</span>
@@ -190,7 +193,7 @@ function BotRow({ row: { bot, place }, current, busy, activity, menuBy, onPick, 
             {said}
             <span className="bot-text">
               <span className="bot-name">{bot.name}</span>
-              <span className="bot-preview" id={preview}>{bot.preview ?? 'No messages yet'}</span>
+              <span className="bot-preview" id={preview}>{line.kind === 'draft' ? <><span className="bot-draft">Draft:</span> {line.text}</> : line.text}</span>
             </span>
           </button>}
       <button
@@ -237,7 +240,7 @@ function useMarks({ bots, onMark, onRefused, onLanded }: MarkCalls) {
 const NO_BOX: Box = { left: 0, top: 0, right: 0, bottom: 0 }
 
 export function BotsPanel({
-  head = <h2>Bots</h2>, bots, open, link, groups, activity, onOpen, onNewChat, onNew, onMark, onCreate, onCreateGroup, onOpenGroup, onRenameGroup, onDeleteGroup, onModels, looks, ...editor
+  head = <h2>Bots</h2>, bots, open, link, groups, activity, drafts, onOpen, onNewChat, onNew, onMark, onCreate, onCreateGroup, onOpenGroup, onRenameGroup, onDeleteGroup, onModels, looks, ...editor
 }: BotsPanelProps) {
   const [refused, setRefused] = useState<string | null>(null)
   const [form, setForm] = useState<{ readonly models: ModelMenu | 'loading' } | null>(null)
@@ -408,7 +411,7 @@ export function BotsPanel({
     const owner: MenuOwner = { kind: 'bot', bot: row.bot.id }
     return (
       <BotRow
-        key={row.bot.id} row={row} current={selected === row.bot.id} busy={opening === row.bot.id || marks.busy.has(row.bot.id)} activity={activityIn(activity, row.bot.id)}
+        key={row.bot.id} row={row} line={lineOf(row.bot, drafts, selected)} current={selected === row.bot.id} busy={opening === row.bot.id || marks.busy.has(row.bot.id)} activity={activityIn(activity, row.bot.id)}
         menuBy={menuBy(owner)} onPick={() => void pick(row.bot.id)} onMenu={opener => openMenu(owner, opener)}
       />
     )

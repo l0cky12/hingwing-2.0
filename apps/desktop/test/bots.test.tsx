@@ -13,10 +13,13 @@ const NO_LOOKS: LookCalls = {
   canGenerate: async () => ({ ok: true, value: false }), generate: async () => ({ ok: true, value: '' }), choose: async () => ({ ok: true, value: 'cancelled' }),
   pets: async () => ({ ok: true, value: [] }), petPicture: async () => ({ ok: true, value: null })
 }
-const showing = (bots: Bots | undefined, open: OpenChat | undefined, link: Link | undefined = ONLINE, groups: Groups | undefined = NO_GROUPS, activity: BotActivities | undefined = {}) =>
+const showing = (
+  bots: Bots | undefined, open: OpenChat | undefined, link: Link | undefined = ONLINE, groups: Groups | undefined = NO_GROUPS, activity: BotActivities | undefined = {},
+  drafts: ReadonlyMap<BotId, string> = new Map()
+) =>
   renderToStaticMarkup(
     <BotsPanel
-      bots={bots} open={open} link={link} groups={groups} activity={activity} onOpen={async () => ({ ok: true, value: null })} onNewChat={() => {}} onNew={async () => ({ ok: true, value: null })}
+      bots={bots} open={open} link={link} groups={groups} activity={activity} drafts={drafts} onOpen={async () => ({ ok: true, value: null })} onNewChat={() => {}} onNew={async () => ({ ok: true, value: null })}
       onMark={async () => ({ ok: true, value: { edition: 2 } })}
       onCreate={async () => ({ ok: true, value: { bot: 'rae' as BotId, warnings: [] } })} onCreateGroup={async () => ({ ok: true, value: undefined })} onOpenGroup={() => {}}
       onRenameGroup={async () => ({ ok: true, value: undefined })} onDeleteGroup={async () => ({ ok: true, value: undefined })}
@@ -87,6 +90,14 @@ describe('the bots sidebar', () => {
     expect(markup).toContain(`id="${timothy}">Should I start building Launch<`)
     const fresh = render(listed(fact('fresh', 'Fresh')))
     expect(fresh).toContain(`id="${attr(named(fresh, 'Fresh')!, 'aria-describedby')}">No messages yet<`)
+  })
+
+  it("describes a bot by the first line of its unsent draft, and by its preview once the draft is gone", () => {
+    const describing = (html: string, label: string) =>
+      new RegExp(`id="${attr(named(html, label)!, 'aria-describedby')}">(.*?)</span></span>`).exec(html)?.[1]?.replace(/<[^>]*>/g, '')
+    const drafted = showing(APPROVED, AT_LAUNCH, ONLINE, NO_GROUPS, {}, new Map([['timothy' as BotId, 'Ship the launch post\nthen the email']]))
+    expect(describing(drafted, 'Timothy · CEO')).toBe('Draft: Ship the launch post')
+    expect(describing(render(APPROVED), 'Timothy · CEO')).toBe('Should I start building Launch')
   })
 
   it('has one plus, a closed menu button named New, whatever the link says, and draws no dialog until a row is picked', () => {

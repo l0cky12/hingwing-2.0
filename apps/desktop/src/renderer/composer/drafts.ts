@@ -22,13 +22,18 @@ let loose: Held = EMPTY
 /** Seeds asked for before main's drafts are read. A saved draft for the same chat wins over them. */
 let seeds: Draft[] | null = []
 let chats: ReadonlySet<SessionId> = new Set()
+let bots: ReadonlyMap<BotId, string> = new Map()
 const listeners = new Set<() => void>()
 
 const sameMembers = (a: ReadonlySet<SessionId>, b: ReadonlySet<SessionId>) => a.size === b.size && [...a].every(id => b.has(id))
+const sameTexts = (a: ReadonlyMap<BotId, string>, b: ReadonlyMap<BotId, string>) => a.size === b.size && [...a].every(([bot, text]) => b.get(bot) === text)
 
 function changed() {
   const next = new Set([...drafts.keys()].flatMap(key => (key.startsWith('chat:') ? [key.slice('chat:'.length) as SessionId] : [])))
   if (!sameMembers(next, chats)) chats = next
+  const texts = new Map<BotId, string>()
+  for (const draft of drafts.values()) if (draft.bot !== null) texts.set(draft.bot, draft.text)
+  if (!sameTexts(texts, bots)) bots = texts
   for (const listener of listeners) listener()
 }
 
@@ -36,8 +41,9 @@ function keep(draft: Draft, when: 'soon' | 'now') {
   const { key } = draft
   typed.add(key)
   restored.delete(key)
-  if (isEmptyDraft(draft)) drafts.delete(key)
-  else drafts.set(key, draft)
+  // Re-inserting keeps the Map in the order drafts were last typed, so a bot's newest draft is the last one read.
+  drafts.delete(key)
+  if (!isEmptyDraft(draft)) drafts.set(key, draft)
   clearTimeout(saving.get(key)?.timer)
   saving.delete(key)
   if (when === 'now') window.highwing.keepDraft(draft)
@@ -170,3 +176,5 @@ export const useStaging = (slot: DraftSlot): number => useSyncExternalStore(subs
 export const useAttachments = (slot: DraftSlot): readonly Attachment[] => useSyncExternalStore(subscribe, () => heldOf(slot).attachments)
 
 export const useChatDrafts = (): ReadonlySet<SessionId> => useSyncExternalStore(subscribe, () => chats)
+
+export const useBotDrafts = (): ReadonlyMap<BotId, string> => useSyncExternalStore(subscribe, () => bots)
