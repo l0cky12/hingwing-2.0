@@ -231,21 +231,28 @@ const groupDraftOf = (raw: unknown): GroupDraft | null => {
 }
 const revisionOf = (raw: unknown): number | null | undefined =>
   raw === null ? null : Number.isInteger(raw) && (raw as number) >= 0 ? (raw as number) : undefined
-const chatRefOf = (raw: unknown): ChatRef | null => {
-  if (!isObject(raw)) return null
-  if (raw.kind === 'bot') {
+const REFS: { readonly [K in ChatRef['kind']]: (raw: Obj) => Extract<ChatRef, { kind: K }> | null } = {
+  bot: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { kind: 'bot', bot }
-  }
-  if (raw.kind === 'chat' || raw.kind === 'link') {
+  },
+  new: raw => {
+    if (!filled(raw.draftId)) return null
+    if (raw.bot === null) return { kind: 'new', bot: null, draftId: raw.draftId }
+    const bot = botIdOf(raw.bot)
+    return bot && { kind: 'new', bot, draftId: raw.draftId }
+  },
+  chat: raw => {
     const sessionId = sessionIdOf(raw)
-    return sessionId && { kind: raw.kind, sessionId }
+    return sessionId && { kind: 'chat', sessionId }
+  },
+  link: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && { kind: 'link', sessionId }
   }
-  if (raw.kind !== 'new' || !filled(raw.draftId)) return null
-  if (raw.bot === null) return { kind: 'new', bot: null, draftId: raw.draftId }
-  const bot = botIdOf(raw.bot)
-  return bot && { kind: 'new', bot, draftId: raw.draftId }
 }
+const chatRefOf = (raw: unknown): ChatRef | null =>
+  isObject(raw) && text(raw.kind) && Object.hasOwn(REFS, raw.kind) ? REFS[raw.kind as ChatRef['kind']](raw) : null
 const unstartedOf = (raw: unknown): Unstarted | null => {
   const ref = isObject(raw) && raw.sessionId === null ? chatRefOf(raw) : null
   return ref === null || ref.kind === 'chat' || ref.kind === 'link' ? null : { ...ref, sessionId: null }
@@ -537,8 +544,14 @@ export function parseFileRequest(raw: unknown): FileRequest | null {
   return sessionId && filled(raw.path) ? { action: raw.action, sessionId, path: raw.path } : null
 }
 
-const draftKeyOf = (raw: unknown): DraftKey | null =>
-  raw === 'new' || (text(raw) && /^(?:chat|bot):/.test(raw) && filled(raw.slice(raw.indexOf(':') + 1))) ? (raw as DraftKey) : null
+/** Every kind of draft key that names what it belongs to after a colon. */
+const DRAFT_KINDS: { readonly [K in Exclude<DraftKey, 'new'> extends `${infer Kind}:${string}` ? Kind : never]: true } = { chat: true, bot: true }
+const draftKeyOf = (raw: unknown): DraftKey | null => {
+  if (raw === 'new') return raw
+  if (!text(raw)) return null
+  const colon = raw.indexOf(':')
+  return colon > 0 && Object.hasOwn(DRAFT_KINDS, raw.slice(0, colon)) && filled(raw.slice(colon + 1)) ? (raw as DraftKey) : null
+}
 
 /** `attachments` may be missing, as in a draft an earlier build wrote. */
 export function parseDraft(raw: unknown): Draft | null {

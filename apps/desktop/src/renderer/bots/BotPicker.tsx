@@ -1,4 +1,4 @@
-import type { Bot, BotId, Bots, OpenChat } from '@highwing/hermes/domain'
+import { shownBot, type Bot, type BotId, type Bots, type OpenChat } from '@highwing/hermes/domain'
 import { useId, useRef, useState } from 'react'
 import { usePickMenu } from '../chat/menu'
 import { Check, Chevron } from '../chrome/ModeSwitch'
@@ -31,7 +31,7 @@ export function BotMenu({ bots, open, refused, onPick }: BotMenuProps) {
   const ids = useId()
   const selected = selectedIn(bots, open)
   const list = pickerOf(listOf(bots, null), selected)
-  const showing = open?.shown?.bot ?? null
+  const showing = shownBot(open)
   const bot = showing === null ? null : botIn(bots, showing)
   const opening = open?.opening?.kind === 'bot' ? open.opening.bot : null
   const block = list.show === 'loading' ? NEW_BOT_BLOCKS.loading : list.show === 'note' ? list.words : null

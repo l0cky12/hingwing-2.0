@@ -1,4 +1,4 @@
-import { botsIn, GROUP_SIZE, shownUnasked, type Bot, type Bots, type Groups, type Link, type OpenChat } from '@highwing/hermes/domain'
+import { botsIn, GROUP_SIZE, shownBot, shownUnasked, type Bot, type Bots, type Groups, type Link, type OpenChat } from '@highwing/hermes/domain'
 import { botNameOf } from '../chats/chat-list'
 import { newChatKeys } from '../new-chat'
 import { NEW_BOT_BLOCKS, newBotBlock, NOTES } from './roster-view'
@@ -48,7 +48,7 @@ export interface PlusScene {
 }
 
 export function plusMenuOf({ link, bots, groups, open, mac }: PlusScene): readonly PlusItem[] {
-  const bot = botNameOf(bots, open?.shown?.bot ?? null)
+  const bot = botNameOf(bots, shownBot(open))
   return [
     { id: 'new-chat', label: bot === null ? 'New chat' : `New chat with ${bot}`, keys: newChatKeys(mac), block: null, dividerAbove: false },
     { id: 'new-group', label: 'New group chat…', keys: null, block: newGroupBlock(link, bots, groups), dividerAbove: false },

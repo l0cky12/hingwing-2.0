@@ -1,4 +1,4 @@
-import type { Attachment, AttachmentId, CommandOutcome, PathMatch, SendPlan, SessionId, SlashCatalog } from '@highwing/hermes/domain'
+import { shownChat, type Attachment, type AttachmentId, type CommandOutcome, type PathMatch, type SendPlan, type SessionId, type SlashCatalog } from '@highwing/hermes/domain'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { MAX_ATTACHMENTS, type StageResult } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
@@ -121,7 +121,7 @@ export function Composer({ slot, inputRef, autoFocus, seed = '', sessionId = nul
   const roster = useTopic('bots')
   const relay = useTopic('relay')
   const open = useTopic('open')
-  const own = open?.shown?.bot ?? null
+  const own = shownChat(open)?.bot ?? null
   const draft = useDraft(slot)
   const [caret, setCaret] = useState(0)
   const [focused, setFocused] = useState(false)

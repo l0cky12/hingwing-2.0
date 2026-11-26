@@ -1,4 +1,4 @@
-import type { Bots, Link, OpenChat, Session, Sidebar, Target } from '@highwing/hermes/domain'
+import { shownChat, type Bots, type Link, type OpenChat, type Session, type Sidebar, type Target } from '@highwing/hermes/domain'
 import type { WindowCommand } from '../../ipc-contract'
 import { newChatIn, newChatKeys } from '../new-chat'
 
@@ -26,7 +26,7 @@ export const ACTIONS: readonly ActionRow[] = [
   {
     id: 'stop', label: 'Stop', keys: null,
     offer: ({ open, openSession: session }) => {
-      const sessionId = open?.shown?.sessionId ?? null
+      const sessionId = shownChat(open)?.sessionId ?? null
       return sessionId !== null && session?.run.state === 'running' && session.sync.state === 'live' ? { do: 'stop', sessionId } : null
     }
   },

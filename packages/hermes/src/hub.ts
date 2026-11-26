@@ -5,7 +5,7 @@ import { botsIn, MARK_SETS, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
 import type { Groups } from './domain/groups'
 import { mentionedBots } from './domain/mention'
-import type { OpenChat } from './domain/open'
+import { shownBot, shownChat, type OpenChat } from './domain/open'
 import type { PaneAsk } from './domain/pane'
 import type { BridgeRequest, ServerRequest } from './domain/reduce'
 import type { RelayDesk } from './domain/relay'
@@ -202,7 +202,7 @@ export function openHermes(options: HermesOptions): Hermes {
       const actor = actors.get(parsed.sessionId)
       if (actor === undefined) return count('unrouted', parsed.type)
       const fresh = actor.feed({ in: 'event', frame: { stamp: parsed.stamp, event: parsed.event, seenAt: clock.now() } })
-      if ('ask' in parsed && fresh && desk.open.shown?.sessionId === parsed.sessionId) options.onPane?.(parsed.ask, actor.session)
+      if ('ask' in parsed && fresh && shownChat(desk.open)?.sessionId === parsed.sessionId) options.onPane?.(parsed.ask, actor.session)
     },
     gap: parsed => actors.get(parsed.sessionId)?.feed({ in: 'gap' }),
     app: refreshSoon,
@@ -264,7 +264,7 @@ export function openHermes(options: HermesOptions): Hermes {
     conn, client: options.client, mintId,
     changed: () => {
       open.set(desk.open)
-      list.follow(desk.open.shown?.bot ?? null)
+      list.follow(shownBot(desk.open))
     }
   })
   const open = feed<OpenChat>(desk.open, sameOpen)

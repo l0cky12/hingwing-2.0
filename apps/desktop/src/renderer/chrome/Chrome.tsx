@@ -1,4 +1,4 @@
-import { machineOf, type Link, type Target } from '@highwing/hermes/domain'
+import { machineOf, shownChat, type Link, type Target } from '@highwing/hermes/domain'
 import { useCallback, useEffect, useRef, type ReactNode } from 'react'
 import type { WindowCommand } from '../../ipc-contract'
 import { isCommandKey } from '../keys'
@@ -34,7 +34,7 @@ function NewChat() {
 }
 
 function useOpenChatName(): string | null {
-  const shown = useTopic('open')?.shown ?? null
+  const shown = shownChat(useTopic('open'))
   const bot = botNameOf(useTopic('bots'), shown?.bot ?? null)
   const title = useTopic(shown?.sessionId == null ? null : `session:${shown.sessionId}`)?.title ?? null
   return openChatName(bot, title)
@@ -43,7 +43,7 @@ function useOpenChatName(): string | null {
 /** `target` is null in a fixture run, which has no connection to name or to change. */
 export function TopBar({ target }: { readonly target: Target | null }) {
   const chat = useOpenChatName()
-  const sessionId = useTopic('open')?.shown?.sessionId ?? null
+  const sessionId = shownChat(useTopic('open'))?.sessionId ?? null
   const where = [chat, target === null ? null : `on ${machineOf(target)}`].filter(part => part !== null).join(' ')
   return (
     <Bar where={where === '' ? null : where}>

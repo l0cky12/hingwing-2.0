@@ -1,4 +1,4 @@
-import { botsIn, shownUnasked, type Bot, type SidebarRow } from '@highwing/hermes/domain'
+import { botsIn, shownChat, shownUnasked, type Bot, type SidebarRow } from '@highwing/hermes/domain'
 import type { WindowCommand } from '../../ipc-contract'
 import { DOING, listedRows, named } from '../chats/chat-list'
 import { ACTIONS, type Scene } from './actions'
@@ -108,7 +108,7 @@ const askingFirst = (a: ChatItem, b: ChatItem) => Number(b.badge === 'asking') -
 export function paletteOf(scene: Scene, query: string): PaletteView {
   const { chats, bots, actions } = itemsOf(scene)
   if (query.trim() === '') {
-    const shown = scene.open?.shown?.sessionId ?? null
+    const shown = shownChat(scene.open)?.sessionId ?? null
     const recent = chats
       .filter(item => shown === null || item.key !== chatKey(shown))
       .sort((a, b) => askingFirst(a, b) || newestFirst(a.lastActiveAt, b.lastActiveAt))

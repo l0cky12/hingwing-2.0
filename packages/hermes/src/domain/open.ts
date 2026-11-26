@@ -68,6 +68,12 @@ export interface Desk {
   readonly finding: readonly BotId[]
 }
 
+/** The chat with one bot that the pane shows. null: nothing is open. */
+export const shownChat = (open: OpenChat | undefined): Shown | null => open?.shown ?? null
+
+/** The bot whose chats the Chats column lists and a new chat starts with. null: the socket's own profile. */
+export const shownBot = (open: OpenChat | undefined): BotId | null => open?.shown?.bot ?? null
+
 export const EMPTY_DESK: Desk = { open: { shown: null, opening: null, missing: null }, chats: {}, owners: {}, finding: [] }
 
 /** Profile names are any word Hermes allows, `constructor` included, so a lookup reads the desk's own keys only. */
@@ -107,7 +113,7 @@ function showing(desk: Desk, bot: BotId, sessionId: SessionId | null): Desk {
 }
 
 function picking(desk: Desk, sessionId: SessionId): Desk {
-  const { shown } = desk.open
+  const shown = shownChat(desk.open)
   const keepsItsPaneAndDraft = shown?.sessionId === sessionId
   return { ...desk, open: { shown: keepsItsPaneAndDraft ? shown : { kind: 'chat', bot: ownerOf(desk, sessionId) ?? null, sessionId }, opening: null, missing: null } }
 }
@@ -139,7 +145,7 @@ function asked(desk: Desk, ref: ChatRef): { readonly desk: Desk; readonly effect
       return done(picking(desk, ref.sessionId))
     case 'link': {
       const { sessionId } = ref
-      if (desk.open.shown?.sessionId === sessionId || ownerOf(desk, sessionId) !== undefined) return done(picking(desk, sessionId))
+      if (shownChat(desk.open)?.sessionId === sessionId || ownerOf(desk, sessionId) !== undefined) return done(picking(desk, sessionId))
       return { desk: { ...desk, open: { ...desk.open, opening: ref, missing: null } }, effects: [{ seek: sessionId }] }
     }
   }
@@ -184,8 +190,7 @@ export function nextDesk(desk: Desk, event: DeskEvent): { readonly desk: Desk; r
     case 'branched': {
       const bot = ownerOf(desk, event.from) ?? null
       const owned: Desk = bot === null ? desk : { ...desk, owners: { ...desk.owners, [event.sessionId]: bot } }
-      const { shown, opening } = desk.open
-      const stillThere = shown?.sessionId === event.from && opening === null
+      const stillThere = shownChat(desk.open)?.sessionId === event.from && desk.open.opening === null
       return done(stillThere ? { ...owned, open: { shown: { kind: 'branch', bot, sessionId: event.sessionId, text: event.text }, opening: null, missing: null } } : owned)
     }
     case 'sought': {

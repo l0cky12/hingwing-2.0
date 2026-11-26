@@ -1,4 +1,4 @@
-import type { BotId, Bots, OpenChat, SessionId, Sidebar, SidebarRow } from '@highwing/hermes/domain'
+import { shownBot, shownChat, type BotId, type Bots, type OpenChat, type SessionId, type Sidebar, type SidebarRow } from '@highwing/hermes/domain'
 
 export interface ChatRow {
   readonly id: SessionId
@@ -46,7 +46,7 @@ export const named = (title: string) => (title.trim() === '' ? UNTITLED : title)
 
 /** The rows are drawn only while they are the open chat's bot's, so a switch never shows one bot's chats under another. */
 export function listedRows(sidebar: Sidebar | undefined, open: OpenChat | undefined): readonly SidebarRow[] | null {
-  if (sidebar === undefined || open === undefined || sidebar.status === 'loading' || sidebar.bot !== (open.shown?.bot ?? null)) return null
+  if (sidebar === undefined || open === undefined || sidebar.status === 'loading' || sidebar.bot !== shownBot(open)) return null
   return sidebar.rows
 }
 
@@ -54,7 +54,7 @@ export function chatsOf(sidebar: Sidebar | undefined, open: OpenChat | undefined
   const rows = listedRows(sidebar, open)
   if (rows === null) return LOADING
   if (rows.length === 0) return { show: 'note', words: NO_CHATS }
-  const shown = open?.shown?.sessionId ?? null
+  const shown = shownChat(open)?.sessionId ?? null
   return {
     show: 'rows',
     rows: rows.map(row => ({
