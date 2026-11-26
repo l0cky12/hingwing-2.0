@@ -13,6 +13,7 @@ const PICK = ['click', 'button', '/^Bot: /']
 /** A user takes a second or more to open the picker after the bots show. Work Highwing does in that second is not part of the switch. */
 const THINK = ['pause', '1000']
 const ATLAS_LAST = 'text:#scroll:Atlas closing note'
+const ATLAS_FIRST = 'text:#scroll:(request 1)'
 const BIRCH_ROW = 'text:nav.chats:Birch errand 01'
 const COLD_TIMEOUT = '90000'
 
@@ -35,6 +36,12 @@ const SCENARIOS = {
     mode: 'chats',
     before: [...PICK, 'click', 'menuitemradio', 'Atlas', 'said', 'Atlas closing note', ...PICK, 'click', 'menuitemradio', 'Birch', 'said', 'Birch noted', ...PICK],
     timed: ['menuitemradio', 'Atlas', ATLAS_LAST]
+  },
+  'bot-first-whole': { mode: 'chats', before: [...THINK, ...PICK], timed: ['menuitemradio', 'Atlas', ATLAS_FIRST] },
+  'bot-return-whole': {
+    mode: 'chats',
+    before: [...PICK, 'click', 'menuitemradio', 'Atlas', 'said', 'Atlas closing note', ...PICK, 'click', 'menuitemradio', 'Birch', 'said', 'Birch noted', ...PICK],
+    timed: ['menuitemradio', 'Atlas', ATLAS_FIRST]
   },
   'bot-return-cold-thread': {
     mode: 'chats',
@@ -119,12 +126,13 @@ function bench(options) {
       const [min, max] = samples.length > 0 ? [Math.min(...samples), Math.max(...samples)] : [null, null]
       rows.push({
         scenario, latencyMs: latency, median: samples.length > 0 ? median(samples) : null, min, max, n: samples.length, wanted: runs,
-        samples: passed.map(result => ({ run: result.run, ms: result.timing.ms, calls: result.timing.calls })), failed: done.filter(result => !result.passed).map(result => result.run),
+        frame: samples.length > 0 ? median(passed.map(result => result.timing.frameMs)) : null,
+        samples: passed.map(result => ({ run: result.run, ms: result.timing.ms, frameMs: result.timing.frameMs, calls: result.timing.calls })), failed: done.filter(result => !result.passed).map(result => result.run),
         ...(note ? { note } : {})
       })
     }
   }
-  const table = [['scenario', 'latency', 'median', 'min', 'max', 'n'], ...rows.map(row => [row.scenario, `${row.latencyMs} ms`, `${row.median} ms`, `${row.min} ms`, `${row.max} ms`, `${row.n}/${row.wanted}${row.note ? ' *' : ''}`])]
+  const table = [['scenario', 'latency', 'median', 'min', 'max', 'frame', 'n'], ...rows.map(row => [row.scenario, `${row.latencyMs} ms`, `${row.median} ms`, `${row.min} ms`, `${row.max} ms`, `${row.frame} ms`, `${row.n}/${row.wanted}${row.note ? ' *' : ''}`])]
   const widths = table[0].map((_, column) => Math.max(...table.map(line => line[column].length)))
   console.log(`\n${table.map(line => line.map((cell, column) => cell.padEnd(widths[column])).join('  ')).join('\n')}`)
   for (const row of rows.filter(each => each.note)) console.log(`* ${row.scenario}: ${row.note}`)

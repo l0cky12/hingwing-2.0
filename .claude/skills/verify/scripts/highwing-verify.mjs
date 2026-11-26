@@ -562,7 +562,8 @@ const STEPS = {
 
 /**
  * Runs in the page. Arms a capture-phase click listener and resolves with the ms from the next click's
- * `timeStamp` to the task after the first frame in which `until` holds, so that frame has been produced.
+ * `timeStamp` to the task after the first frame in which `until` holds, so that frame has been produced,
+ * and with the longest wait from the click or a frame to the next frame meanwhile.
  * The condition is read at the start of each frame, before its layout.
  */
 function armTimer({ until, timeout }) {
@@ -580,12 +581,15 @@ function armTimer({ until, timeout }) {
     addEventListener('click', event => {
       const clicked = event.timeStamp
       globalThis.highwingVerifyClicked = clicked
-      const frame = () => requestAnimationFrame(() => {
+      let [last, longest] = [clicked, 0]
+      const frame = () => requestAnimationFrame(at => {
+        longest = Math.max(longest, at - last)
+        last = at
         if (!holds()) return frame()
         const painted = new MessageChannel()
         painted.port1.onmessage = () => {
           clearTimeout(timer)
-          resolve(performance.now() - clicked)
+          resolve({ took: performance.now() - clicked, longest })
         }
         painted.port2.postMessage(null)
       })
@@ -678,13 +682,14 @@ async function timeClick(ctx, label, role, name, until) {
     await ctx.page.waitForFunction(at => performance.now() - globalThis.highwingVerifyClicked >= at, at, { polling: 'raf', timeout: ctx.timeout })
     await ctx.page.screenshot({ path: join(ctx.evidence, `${label}-at-${at}ms.png`), animations: 'disabled', caret: 'hide' })
   })
-  const { took, clickedAt } = await ctx.page.evaluate(async () => ({ took: await globalThis.highwingVerifyTimer, clickedAt: performance.timeOrigin + globalThis.highwingVerifyClicked }))
+  const { took, longest, clickedAt } = await ctx.page.evaluate(async () => ({ ...(await globalThis.highwingVerifyTimer), clickedAt: performance.timeOrigin + globalThis.highwingVerifyClicked }))
   const ms = Math.round(took * 10) / 10
+  const frameMs = Math.round(longest * 10) / 10
   const calls = stopWatching().map(({ call, at }) => ({ call, atMs: Math.round(at - clickedAt) }))
   await Promise.all(shots)
   await stopProfiles?.(label)
-  appendFileSync(join(ctx.evidence, 'timings.jsonl'), `${JSON.stringify({ label, ms, latencyMs: ctx.latencyMs, calls })}\n`)
-  log(ctx, `timed ${label}: ${ms} ms`)
+  appendFileSync(join(ctx.evidence, 'timings.jsonl'), `${JSON.stringify({ label, ms, frameMs, latencyMs: ctx.latencyMs, calls })}\n`)
+  log(ctx, `timed ${label}: ${ms} ms, longest frame ${frameMs} ms`)
   const inside = calls.filter(({ atMs }) => atMs <= ms)
   log(ctx, `  gateway calls before the result was drawn: ${inside.length === 0 ? 'none' : inside.map(({ call, atMs }) => `${call} at ${atMs} ms`).join(', ')}`)
   for (const at of ctx.timedShots) log(ctx, `  saved ${label}-at-${at}ms.png`)
