@@ -5,7 +5,7 @@ import { cleanTitle, TITLE_INSTRUCTIONS, titleInput } from './domain/title'
 import { offeredBy, sendPlan } from './domain/queue'
 import {
   reissues, type AttachmentId, type BranchId, type Generation, type HermesRequest, type PromptId, type PromptReply, type QueuedMessage, type RecordedReply,
-  type RequestId, type RequestReply, type SessionContent, type SessionId, type SideId, type Told, type Tuning, type TurnId
+  type RequestId, type RequestReply, type SessionContent, type SessionId, type SettledTurn, type SideId, type Told, type Tuning, type TurnId
 } from './domain/session'
 import { ownCommand, slashLineOf, type SlashCatalog, type SlashLine } from './domain/slash'
 import type { Served } from './wire/link'
@@ -79,11 +79,21 @@ const NOT_STORED = refused('rejected', "That answer isn't stored, so it can't ta
 const ROW_GONE = { not_found: GONE } as const
 const ANSWERED: Outcome<undefined> = { ok: true, value: undefined }
 const EARLIER = { pageRows: 200, pages: 3 } as const
+const OPENING_ROWS = 20
 const MENTION_WITH_ATTACHMENTS = "A message to another bot can't carry attachments. Remove them, or send it without the mention."
 const UPLOAD_GONE = 'An attachment is no longer available. Remove it and attach it again.'
 export const NOTHING_TO_SHOW: Outcome<string | null> = { ok: true, value: null }
 
 const showing = (outcome: Outcome, words: string | null = null): Outcome<string | null> => (outcome.ok ? { ok: true, value: words } : outcome)
+
+/** A long chat opens with only its newest turns loaded, so its first turn is read from the start of `session.transcript`. */
+async function withOpening(port: SessionPort): Promise<readonly SettledTurn[]> {
+  const { history, earlier } = port.content
+  if (earlier === 'none') return history
+  const page = await port.call('session.transcript', { session_id: port.id, order: 'oldest', limit: OPENING_ROWS })
+  const opening = page.ok ? parseTranscript([page.value]).turns[0] : undefined
+  return opening === undefined ? history : [opening, ...history]
+}
 
 async function saveTitle(port: SessionPort, hub: Hub, title: string): Promise<Outcome> {
   const renamed = await port.mutate('rename', { title }, null)
@@ -242,7 +252,7 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
   /** A live `session_id` lends the chat's own model to the call (tui_gateway/methods_session.py:1249-1276). */
   retitle: (port, _command, hub) => port.whenLive<string>(async () => {
     if (port.content.run.state === 'running') return MID_TURN
-    const input = titleInput(port.content.history)
+    const input = titleInput(await withOpening(port))
     if (input === '') return NO_WORDS
     const suggested = await port.call('llm.oneshot', { session_id: port.id, instructions: TITLE_INSTRUCTIONS, input, max_tokens: 40, temperature: 0.3 }, CANT_SUGGEST)
     if (!suggested.ok) return suggested

@@ -89,6 +89,15 @@ describe('renaming a chat with AI', () => {
     expect(titles()).toContain('Invoices sorted by due date')
   })
 
+  it('reads the opening turn of a long chat whose resume left it out', async () => {
+    const said = ['one', 'two', 'three', 'four', 'five', 'six'].flatMap(word => [{ role: 'user' as const, text: `ask ${word}` }, { role: 'assistant' as const, text: `did ${word}` }])
+    const long = { id: 'local-0110', title: 'Long', last_active: 1795250500, rows: said, shown: 4 }
+    const { retitle, calls } = await launched({ text: 'Long chat' }, { chats: { research: [...(WITH_CHATS.header.chats?.research ?? []), long] } })
+    expect(await retitle('local-0110' as SessionId)).toEqual({ ok: true, value: 'Long chat' })
+    expect(calls('session.transcript')).toMatchObject([{ session_id: 'local-0110', order: 'oldest' }])
+    expect(String(calls('llm.oneshot')[0]?.input).split('\n').filter(line => line.startsWith('User:'))).toEqual(['User: ask one', 'User: ask five', 'User: ask six'])
+  })
+
   it('refuses while a reply runs, and asks Hermes nothing', async () => {
     const { retitle, calls } = await launched({ text: 'Reminder' })
     expect(await retitle(REMINDER)).toEqual({ ok: false, refusal: { kind: 'stale', message: 'Wait for the reply to finish, then try again.' } })

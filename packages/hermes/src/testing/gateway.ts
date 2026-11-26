@@ -418,6 +418,8 @@ class EchoChat implements Stream {
   yolo = false
   parent: string | null = null
   startedAt = 0
+  /** How many of the newest rows a resume shows. null: all of them. */
+  shown: number | null = null
 
   /** `hidden`: out of `session.list` unless it asks for hidden chats, as a Bot Chat is (hermes-bots/canonical-chat.ts:319). */
   constructor(readonly id: string, readonly profile: string, public title: string, public hidden = false) {
@@ -469,6 +471,7 @@ function seeded(profile: string, seed: ChatSeed): EchoChat {
   const chat = new EchoChat(seed.id, profile, seed.title, seed.hidden === true)
   seed.rows.forEach(({ role, text }, at) => chat.rows.push({ role, text, timestamp: seed.last_active, row_id: at + 1 }))
   chat.parent = seed.branched_from ?? null
+  chat.shown = seed.shown ?? null
   chat.startedAt = seed.last_active
   chat.pinned = seed.pinned === true
   if (seed.asking === undefined) return chat
@@ -498,6 +501,9 @@ function replayOf({ ring, epoch }: Stream, ringFrames: number, params: Obj, open
     cursor: missing ? null : events.at(-1)?.seq ?? sequence
   }
 }
+
+/** A resume that leaves older rows out marks its first row `archived_truncated` (gateway/session_local_recovery.py:370-388). */
+const trimmed = (rows: readonly Obj[]): readonly Obj[] => rows.map((row, at) => (at === 0 ? { ...row, archived_truncated: true } : row))
 
 interface Held extends Stream {
   readonly id: string
@@ -1592,7 +1598,7 @@ export class ScriptedGateway {
   open(socket: Socket, chat: EchoChat, params: Obj): unknown {
     socket.subscriptions.set(chat.id, socket.subscriptionId)
     return snapshotOf({
-      id: chat.id, rows: chat.rows, ring: chat.ring, epoch: chat.epoch, running: chat.running, generation: chat.generation,
+      id: chat.id, rows: chat.shown === null || chat.shown >= chat.rows.length ? chat.rows : trimmed(chat.rows.slice(-chat.shown)), ring: chat.ring, epoch: chat.epoch, running: chat.running, generation: chat.generation,
       revision: chat.revision, title: chat.title, model: chat.model, yolo: this.yoloAt(chat.yolo), info: {}, pending: [], prompts: chat.asking === null ? [] : [chat.asking], openRequests: [], connection: null, todos: null
     }, socket.subscriptionId, params)
   }

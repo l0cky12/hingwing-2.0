@@ -233,6 +233,8 @@ export interface ChatSeed {
   readonly asking?: { readonly command: string; readonly description: string }
   /** The id of the chat of the same profile this one was branched from. */
   readonly branched_from?: string
+  /** How many of its newest rows a resume shows, as Hermes trims a long chat. `session.transcript` still pages every row. */
+  readonly shown?: number
 }
 
 export type FixtureStep =
@@ -326,6 +328,7 @@ const isSeed = (value: unknown): value is ChatSeed =>
   && (value.pinned === undefined || typeof value.pinned === 'boolean')
   && (value.asking === undefined || (isObject(value.asking) && typeof value.asking.command === 'string' && typeof value.asking.description === 'string'))
   && (value.branched_from === undefined || (typeof value.branched_from === 'string' && value.branched_from !== '' && value.branched_from !== value.id))
+  && (value.shown === undefined || (Number.isInteger(value.shown) && (value.shown as number) > 0))
 
 const parentsListed = (seeds: readonly ChatSeed[]) => seeds.every(seed => seed.branched_from === undefined || seeds.some(other => other.id === seed.branched_from))
 
