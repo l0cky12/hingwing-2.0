@@ -174,10 +174,17 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
     return DONE
   }
 
-  /** Every open passes here, from the window, a notification or a link: Settings closes first, as Close does, or the open is refused. */
+  /**
+   * Every open passes here, from the window, a notification or a link: Settings closes first, as Close does, or the open is refused.
+   * A bot is opened by the hub once it is made, so Settings closes after Hermes makes it, and stays up when Hermes refuses it.
+   */
   const runChat = async (command: Command): Promise<CommandOutcome<unknown>> => {
-    if (opensChat(command) && showsSettings(setup.get()) && !runSetup(KEEP).ok) return NOT_NOW
-    return open?.hermes.run(command) ?? NOT_CONNECTED
+    const fromSettings = showsSettings(setup.get())
+    if (fromSettings && opensChat(command) && nextSetup(setup.get(), KEEP) === null) return NOT_NOW
+    if (fromSettings && command.do === 'open') runSetup(KEEP)
+    const outcome = await (open?.hermes.run(command) ?? NOT_CONNECTED)
+    if (fromSettings && command.do === 'createBot' && outcome.ok) runSetup(KEEP)
+    return outcome
   }
 
   return {

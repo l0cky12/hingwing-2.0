@@ -1,5 +1,5 @@
 import type { CheckResult, Dialer, Hermes, Route } from '@highwing/hermes'
-import type { CheckFailure, CheckStep, SessionId, SshHost, Target } from '@highwing/hermes/domain'
+import type { CheckFailure, CheckStep, CommandOutcome, SessionId, SshHost, Target } from '@highwing/hermes/domain'
 import type { GatewayUrl } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { Live, Setup } from '../src/ipc-contract'
@@ -71,7 +71,10 @@ describe('nextSetup', () => {
 interface Opened { readonly target: Target; closed: boolean; disposed: boolean; readonly commands: unknown[] }
 
 /** The owner over a check the test settles by hand, and connections that only record what happened to them. */
+type Answer = (command: unknown) => CommandOutcome<unknown> | Promise<CommandOutcome<unknown>>
+
 function harness(loaded: Settings, save: (target: Target) => Promise<void> = async () => {}) {
+  let answer: Answer = () => ({ ok: true, value: undefined })
   const opened: Opened[] = []
   const saved: Target[] = []
   const checks: { readonly target: Target; readonly signal: AbortSignal; step(step: CheckStep): void; end(result: CheckResult): void }[] = []
@@ -96,7 +99,7 @@ function harness(loaded: Settings, save: (target: Target) => Promise<void> = asy
       return {
         run: async (command: unknown) => {
           held.commands.push(command)
-          return { ok: true, value: undefined }
+          return answer(command)
         },
         close: async () => { held.closed = true; log.push(`close ${opened.indexOf(held) + 1}`) }
       } as unknown as Hermes
@@ -114,7 +117,8 @@ function harness(loaded: Settings, save: (target: Target) => Promise<void> = asy
     checks.at(-1)!.end({ ok: false, failure })
     await settled()
   }
-  return { owner, opened, saved, checks, states, log, pass, fail, settled, at: () => owner.setup.get() }
+  const answerWith = (next: Answer) => { answer = next }
+  return { owner, opened, saved, checks, states, log, pass, fail, settled, answerWith, at: () => owner.setup.get() }
 }
 
 describe('ownConnection at launch', () => {
@@ -422,13 +426,44 @@ describe('ownConnection, opening a chat while Settings is up', () => {
     expect(opened[0]!.commands).toEqual([opening('s1'), opening('s2')])
   })
 
-  it('closes Settings for a bot made from the sidebar, which the hub opens', async () => {
-    const { owner, opened, at } = harness({ state: 'saved', target: LOCAL })
+  const createBot = { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' }, picture: null } as const
+
+  it('closes Settings for a bot made from the sidebar, which the hub opens, once Hermes has made it', async () => {
+    const { owner, opened, answerWith, settled, at } = harness({ state: 'saved', target: LOCAL })
+    let made = () => {}
+    answerWith(() => new Promise(resolve => { made = () => resolve({ ok: true, value: undefined }) }))
     await owner.run({ do: 'editTarget' })
-    const createBot = { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' }, picture: null } as const
-    await owner.run(createBot)
+    const outcome = owner.run(createBot)
+    await settled()
+    expect(at(), 'Hermes is still making the bot').toEqual({ at: 'form', live: { target: LOCAL, epoch: 1 }, notice: null })
+    made()
+    expect(await outcome).toEqual({ ok: true, value: undefined })
     expect(at()).toEqual({ at: 'chat', live: { target: LOCAL, epoch: 1 } })
     expect(opened[0]!.commands).toEqual([createBot])
+  })
+
+  it('keeps Settings up, and its check running, when Hermes refuses a bot made from the sidebar', async () => {
+    const { owner, checks, opened, answerWith, at } = harness({ state: 'saved', target: LOCAL })
+    const taken = { ok: false, refusal: { kind: 'rejected', message: 'A bot called Rae already exists.', field: 'name' } } as const
+    answerWith(() => taken)
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    expect(await owner.run(createBot)).toEqual(taken)
+    expect(at()).toEqual({ at: 'checking', live: { target: LOCAL, epoch: 1 }, target: REMOTE, step: 'tailscale' })
+    expect(checks[0]!.signal.aborted).toBe(false)
+    expect(opened[0]!.commands).toEqual([createBot])
+  })
+
+  it('refuses a bot at the save step without asking Hermes, and changes nothing', async () => {
+    const held = holdSave()
+    const { owner, opened, states, pass } = harness({ state: 'saved', target: LOCAL }, held.save)
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    const before = states.length
+    expect(await owner.run(createBot)).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(states).toHaveLength(before)
+    expect(opened[0]!.commands).toEqual([])
   })
 
   it('closes Settings on a failed check for an open from a notification', async () => {
