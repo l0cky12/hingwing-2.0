@@ -24,6 +24,11 @@
   --brick: #A3402B;
   --edge: #78857E;
   --shade: 31 42 38;
+  --surface-raised: #F7F8F4;
+  --surface-user: #DAE6DE;
+  --radius-card: 16px;
+  --radius-pill: 19px;
+  --shadow-raised: 0 1px 2px rgb(var(--shade) / 8%), 0 2px 8px rgb(var(--shade) / 6%);
   --avatar-slate: #3E5C7A;
   --avatar-plum: #5A4E7C;
   --avatar-olive: #5B6A34;
@@ -62,6 +67,9 @@
     --brick: #EE8F78;
     --edge: #707C76;
     --shade: 5 8 7;
+    --surface-raised: #242B27;
+    --surface-user: #2F3834;
+    --shadow-raised: 0 1px 2px rgb(var(--shade) / 40%), 0 2px 8px rgb(var(--shade) / 30%);
     --avatar-slate: #8FB0D2;
     --avatar-plum: #B3A6D8;
     --avatar-olive: #B5C381;
@@ -110,7 +118,7 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 /* The skipped box clips what it paints at its edge. The margin lets a menu or a halo that hangs over the edge show whole. */
 .turn > .thread { content-visibility: auto; contain-intrinsic-size: auto 400px; overflow-clip-margin: 240px; }
 .turn + .turn { margin-top: 44px; }
-.turn.pending .request { color: var(--graphite); border-left-color: var(--rule); }
+.turn.pending .request { color: var(--graphite); }
 .queued { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-left: var(--col); }
 .queued .notice { margin: 0; }
 .earlier { display: block; margin: 0 0 28px var(--col); padding: 0; border: 0; background: none; color: var(--graphite); }
@@ -123,10 +131,10 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .detailed.open .details .chev { transform: rotate(45deg); }
 .detailed .detail { max-width: 66ch; margin-top: 4px; color: var(--graphite); white-space: pre-wrap; overflow-wrap: anywhere; }
 
-.when { margin: 0 0 6px var(--col); color: var(--graphite); font-size: 13px; }
+.when { margin: 0 0 14px; color: var(--graphite); font-size: 12.5px; text-align: center; }
 .request {
-  margin: 0 0 22px calc(var(--thread-x) - 0.75px); padding: 2px 0 2px calc(var(--col) - var(--thread-x) - 2.25px);
-  border-left: 3px solid var(--ink);
+  width: fit-content; margin: 0 0 22px auto; padding: 7px 14px;
+  background: var(--surface-user); border-radius: var(--radius-pill);
   font-size: 16px; line-height: 1.5; max-width: min(62ch, 100% - 104px); white-space: pre-wrap; position: relative;
 }
 
@@ -151,6 +159,13 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .thread > .approval.live::before { left: calc(var(--thread-x) - var(--col) - 6.25px); top: 16px; width: 14px; height: 14px; background: var(--caution); box-shadow: none; }
 
 .prose { font: 400 16.5px/1.62 var(--serif); margin: 0; padding: 4px 0 6px; }
+.thread > :is(.prose, .said-by), .relay-reply {
+  width: fit-content; max-width: 100%; padding: 12px 16px;
+  background: var(--surface-raised); border-radius: var(--radius-card); box-shadow: var(--shadow-raised);
+}
+:is(.thread > .prose, .said-by, .relay-reply) :is(pre, :not(pre) > code, .drawn) { background: var(--paper); }
+:is(.said-by, .relay-reply) > .prose { padding: 0; }
+:is(.thread > .prose, .said-by > .prose, .relay-reply > .prose) > :nth-last-child(1 of :not(.copy, .sr)) { margin-bottom: 0; }
 .prose p { max-width: 66ch; }
 .prose p { margin: 0 0 10px; }
 .prose p:last-child { margin-bottom: 0; }
@@ -398,8 +413,8 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 }
 :hover > .copy, :has(:focus-visible) > .copy, .copy.shown { opacity: 1; }
 .step > .copy { top: 4px; }
-.request > .actions { position: absolute; left: calc(100% + 8px); top: 2px; display: flex; gap: 6px; }
-.request > .actions::before { content: ""; position: absolute; right: 100%; top: 0; bottom: 0; width: 9px; }
+.request > .actions { position: absolute; right: calc(100% + 8px); top: 5px; display: flex; gap: 6px; }
+.request > .actions::before { content: ""; position: absolute; left: 100%; top: 0; bottom: 0; width: 9px; }
 .actions > .copy { position: static; }
 .request:hover > .actions > .copy, .request:has(:focus-visible) > .actions > .copy { opacity: 1; }
 .copy:is(.edit, .branch) { display: grid; place-items: center; padding: 1px 8px; }
@@ -427,8 +442,6 @@ button.reaction:hover:not(:disabled) { border-color: var(--signal); }
 :is(.regenerate, .new-chat, .queued button):hover:not(:disabled) { background: var(--paper); }
 :is(.regenerate, .new-chat, .queued button):disabled { color: var(--graphite); }
 .relay-reply { margin-left: var(--col); }
-.thread > .said-by { padding-top: 12px; }
-.thread > .said-by:first-child { padding-top: 0; }
 .said-by > .relay-from { margin-bottom: 4px; }
 .group-turn .thread > :only-child::after { display: none; }
 .mention { font: 500 0.9em var(--sans); }
@@ -868,6 +881,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 
 @media (forced-colors: active) {
   .thread > *::after { width: 0; border-left: 2px solid CanvasText; }
+  .request, .thread > :is(.prose, .said-by), .relay-reply { outline: 1px solid CanvasText; outline-offset: -1px; }
   .thread > .approval:not(.answered):not(:first-child)::after { top: -1px; }
   .thread > .approval:not(.answered):not(:last-child)::after { bottom: calc(-1px - var(--gap)); }
   .thread > .step::before, .thread > .group::before, .thread > .approval::before {
