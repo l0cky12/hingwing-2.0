@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { manualClock, settle } from '../src/testing/clock'
-import { MASKED, scriptedDialer, type Fixture, type FixtureStep, type ScriptOptions } from '../src/testing/fixture'
+import { MASKED, scriptedDialer, type Fixture, type FixtureStep, type Images, type Pets, type ScriptOptions } from '../src/testing/fixture'
 import {
   BOUND, BRANCH, BRANCH_OLD, DOWNLOADS, ERRAND, INVOICES, NO_HOME_CHAT, paramsOf, PICK_ASK, PROFILES, RAE_SAID, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, SORTED, SORTED_2, SORTED_3,
   SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, type Added
@@ -816,6 +816,97 @@ describe('the scripted gateway edits a profile as Hermes does', () => {
         expect(await call(method, { name: 'research', asset: 'avatar', clear: true })).toMatchObject({ error: { code: -32601 } })
       }
     }
+  })
+})
+
+describe('the scripted gateway draws pictures and lists pets as Hermes does', () => {
+  const PICTURE = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7]).toString('base64')}`
+  const drawing = (images: Images): Fixture => ({ ...WITH_BOTS, header: { ...WITH_BOTS.header, images } })
+  const TABBY_SHEET = 'https://cdn.petdex.dev/curated/tabby/spritesheet.webp'
+  const PETS: Pets = {
+    pets: [
+      { slug: 'tabby', displayName: 'Tabby', installed: false, spritesheetUrl: TABBY_SHEET, curated: true },
+      { slug: 'mochi', displayName: 'Mochi', installed: true, spritesheetUrl: '' }
+    ],
+    thumbs: { tabby: PICTURE, mochi: PICTURE }
+  }
+  const unknown = { error: { code: -32601, data: { reason: 'unknown_method' } } }
+
+  it('answers a probe with whether it has an image model, and a prompt with the picture as a data URL', async () => {
+    const { call } = await rawSocket({}, drawing({ available: true, picture: PICTURE }))
+    expect((await call('image.generate', { probe: true })).result).toEqual({ available: true })
+    expect((await call('image.generate', { prompt: 'a robot', aspect_ratio: 'square', max_bytes: 8_000_000 })).result)
+      .toEqual({ available: true, success: true, image: '/hermes-home/cache/images/generated.png', image_data: PICTURE })
+  })
+
+  it('leaves out the data URL of a picture over max_bytes, as a download over it is left out', async () => {
+    const { call } = await rawSocket({}, drawing({ available: true, picture: PICTURE }))
+    expect((await call('image.generate', { prompt: 'a robot', max_bytes: 8 })).result).toEqual({ available: true, success: true, image: '/hermes-home/cache/images/generated.png' })
+  })
+
+  it("fails a generation in Hermes's words with no image model or a failing one, and refuses a blank prompt", async () => {
+    expect((await (await rawSocket({}, drawing({ available: false }))).call('image.generate', { prompt: 'a robot' })).result)
+      .toEqual({ available: false, success: false, error: 'No image generation backend configured (run `hermes tools` to enable one).' })
+    const { call } = await rawSocket({}, drawing({ available: true, error: 'out of credit' }))
+    expect((await call('image.generate', { prompt: 'a robot' })).result).toEqual({ available: true, success: false, error: 'out of credit' })
+    expect(await call('image.generate', { prompt: '  ' })).toMatchObject({ error: { code: 4071, message: 'prompt required' } })
+  })
+
+  it('answers a generation once its delay has passed, and not before', async () => {
+    const { post, frames, clock } = await rawSocket({}, drawing({ available: true, picture: PICTURE, delay_ms: 1200 }))
+    const id = post('image.generate', { prompt: 'a robot' })
+    await clock.advance(1199)
+    expect(frames.filter(frame => frame.id === id)).toEqual([])
+    await clock.advance(1)
+    expect(frames.find(frame => frame.id === id)?.result).toMatchObject({ success: true, image_data: PICTURE })
+  })
+
+  it("lists the gallery, and answers a pet's thumb or fails open to ok false for one with none", async () => {
+    const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, pets: PETS } })
+    expect((await call('pet.gallery', {})).result).toEqual({ enabled: false, active: '', pets: PETS.pets })
+    expect((await call('pet.thumb', { slug: 'tabby', url: TABBY_SHEET })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
+    expect((await call('pet.thumb', { slug: 'nobody', url: 'https://cdn.petdex.dev/pets/nobody/spritesheet.webp' })).result).toEqual({ ok: false, slug: 'nobody' })
+    expect(await call('pet.thumb', { slug: ' ' })).toMatchObject({ error: { code: 4004, message: 'missing slug' } })
+  })
+
+  it('crops an installed pet with no url, and fetches any other only from a petdex host', async () => {
+    const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, pets: PETS } })
+    expect((await call('pet.thumb', { slug: 'mochi' })).result).toEqual({ ok: true, slug: 'mochi', dataUri: PICTURE })
+    for (const url of [undefined, '', 'https://petdex.example/curated/tabby.webp', 'https://petdex.dev.example.com/tabby.webp', 'not a url']) {
+      expect((await call('pet.thumb', { slug: 'tabby', ...(url === undefined ? {} : { url }) })).result, String(url)).toEqual({ ok: false, slug: 'tabby' })
+    }
+    expect((await call('pet.thumb', { slug: 'tabby', url: 'https://petdex.dev/curated/tabby/spritesheet.webp' })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
+  })
+
+  it('answers a thumb it fetched again with no url, as Hermes keeps it on disk', async () => {
+    const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, pets: PETS } })
+    expect((await call('pet.thumb', { slug: 'tabby' })).result).toEqual({ ok: false, slug: 'tabby' })
+    expect((await call('pet.thumb', { slug: 'tabby', url: TABBY_SHEET })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
+    expect((await call('pet.thumb', { slug: 'tabby' })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
+    expect((await call('pet.thumb', { slug: 'tabby', profile: 'research' })).result, 'kept per profile').toEqual({ ok: false, slug: 'tabby' })
+  })
+
+  it("fails a refused_once slug's first thumb open to ok false, as a fetch that timed out does, and answers it after", async () => {
+    const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, pets: { ...PETS, refused_once: ['tabby'] } } })
+    expect((await call('pet.thumb', { slug: 'tabby', url: TABBY_SHEET })).result).toEqual({ ok: false, slug: 'tabby' })
+    expect((await call('pet.thumb', { slug: 'tabby', url: TABBY_SHEET })).result).toEqual({ ok: true, slug: 'tabby', dataUri: PICTURE })
+    expect((await call('pet.thumb', { slug: 'mochi' })).result).toEqual({ ok: true, slug: 'mochi', dataUri: PICTURE })
+  })
+
+  it('knows none of the three calls without the header keys, or on a socket with no interactive grant', async () => {
+    const bound = { ...BOUND, header: { ...BOUND.header, images: { available: true }, pets: PETS } }
+    for (const fixture of [WITH_BOTS, bound]) {
+      const { call } = await rawSocket({}, fixture)
+      expect(await call('image.generate', { probe: true })).toMatchObject(unknown)
+      expect(await call('pet.gallery', {})).toMatchObject(unknown)
+      expect(await call('pet.thumb', { slug: 'tabby' })).toMatchObject(unknown)
+    }
+  })
+
+  it("fails a picture's write in the header's words, and keeps no picture", async () => {
+    const { call } = await rawSocket({}, { ...WITH_BOTS, header: { ...WITH_BOTS.header, assetFails: '[Errno 28] No space left on device' } })
+    expect(await call('profiles.set_asset', { name: 'research', asset: 'avatar', data: PICTURE })).toMatchObject({ error: { code: 5065, message: '[Errno 28] No space left on device' } })
+    expect((await call('profiles.get_asset', { name: 'research', asset: 'avatar' })).result).toEqual({ found: false })
   })
 })
 

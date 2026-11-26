@@ -87,6 +87,15 @@ export interface Fixture {
      * one revision on, as Hermes's revision check would.
      */
     readonly configureClash?: string
+    /** Every `profiles.set_asset` that stores a picture fails with 5065 and these words, as Hermes does when it cannot write the file. */
+    readonly assetFails?: string
+    /**
+     * What `image.generate` answers. Absent: the gateway refuses it as an unknown method, as a Hermes without it does.
+     * A socket bound to one profile is refused it too, since it reaches no legacy handler.
+     */
+    readonly images?: Images
+    /** What `pet.gallery` and `pet.thumb` answer. Absent: the gateway refuses both as unknown methods, as a Hermes without pets does. */
+    readonly pets?: Pets
     /** `'profile'`: play a Hermes with no `interactive` ticket, whose every socket is bound to the home profile. Default `'host'`. */
     readonly reach?: Reach
     /** false: the home bot has no Bot Chat, and the story session is only a chat of the home profile. Default true. */
@@ -121,6 +130,26 @@ export interface Fixture {
     readonly todo_state?: { readonly todos: readonly unknown[]; readonly revision: number }
   }
   readonly steps: readonly FixtureStep[]
+}
+
+/**
+ * `available`: Hermes has an image model. `picture`: the data URL a generation answers as `image_data`. Absent, the
+ * download failed, so the reply names only the backend's `image`. `error`: every generation fails with these words.
+ * `delay_ms`: how long a generation takes (default 0).
+ */
+export interface Images { readonly available: boolean; readonly picture?: string; readonly error?: string; readonly delay_ms?: number }
+
+/**
+ * `pets`: the gallery's entries as Hermes sends them. `thumbs`: slug -> the PNG data URL `pet.thumb` answers for a pet the
+ * gallery lists as installed, one asked with a petdex `url`, or one it answered before; any other ask answers `{ ok: false }`. `delay_ms`: how long
+ * each call takes (default 0). `refused_once`: slugs whose first `pet.thumb` answers `{ ok: false }`, as Hermes does for a petdex
+ * fetch that timed out and keeps nothing (agent/pet/store.py:240-246), and is answered as usual after.
+ */
+export interface Pets {
+  readonly pets: readonly unknown[]
+  readonly thumbs: { readonly [slug: string]: string }
+  readonly delay_ms?: number
+  readonly refused_once?: readonly string[]
 }
 
 /** `reply`: the bot's one answer, sent `delay_ms` after the call (default 0). `refuse`: the reason Hermes refuses the delivery with. */
@@ -237,6 +266,16 @@ const isSeed = (value: unknown): value is ChatSeed =>
 
 const parentsListed = (seeds: readonly ChatSeed[]) => seeds.every(seed => seed.branched_from === undefined || seeds.some(other => other.id === seed.branched_from))
 
+const delay = (value: unknown) => value === undefined || (typeof value === 'number' && Number.isFinite(value) && value >= 0)
+
+const isImages = (value: unknown): value is Images =>
+  isObject(value) && typeof value.available === 'boolean' && (value.picture === undefined || typeof value.picture === 'string')
+  && (value.error === undefined || typeof value.error === 'string') && delay(value.delay_ms)
+
+const isPets = (value: unknown): value is Pets =>
+  isObject(value) && Array.isArray(value.pets) && isObject(value.thumbs) && Object.values(value.thumbs).every(thumb => typeof thumb === 'string') && delay(value.delay_ms)
+  && (value.refused_once === undefined || (Array.isArray(value.refused_once) && value.refused_once.every(slug => typeof slug === 'string')))
+
 const isRelayScript = (value: unknown): value is RelayScript =>
   isObject(value) && ('refuse' in value
     ? typeof value.refuse === 'string' && value.refuse !== '' && Object.keys(value).length === 1
@@ -279,6 +318,11 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   const { souls, configureClash } = value
   if (souls !== undefined && !(isObject(souls) && Object.values(souls).every(soul => typeof soul === 'string'))) return '"souls" must map a profile to its persona'
   if (configureClash !== undefined && (typeof configureClash !== 'string' || configureClash.trim() === '')) return '"configureClash" must be the title another client writes'
+  const { assetFails } = value
+  if (assetFails !== undefined && (typeof assetFails !== 'string' || assetFails.trim() === '')) return '"assetFails" must be the words a failed write gives'
+  const { images, pets } = value
+  if (images !== undefined && !isImages(images)) return '"images" must be { available, picture?, error?, delay_ms? }'
+  if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
@@ -323,6 +367,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(profiles === undefined ? {} : { profiles }),
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
     ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash }),
+    ...(assetFails === undefined ? {} : { assetFails }),
+    ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),

@@ -1,5 +1,5 @@
 import {
-  EFFORTS, EXPORT_FORMATS, PLAIN_CONTROLS, targetOf,
+  EFFORTS, EXPORT_FORMATS, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckFailure, type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type HelperId, type Item, type Link, type ModelOption,
   type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
@@ -69,7 +69,6 @@ export type ModeCommand = { readonly do: 'setMode'; readonly mode: Mode }
 export const isMode = (raw: unknown): raw is Mode => raw === 'bots' || raw === 'chats'
 
 export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand
-/** A new picture's bytes come only from main's file picker. */
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
@@ -145,6 +144,7 @@ export const MAX_ATTACHMENTS = 64
 
 /** `set`: the picture was sent and Hermes kept it. `cancelled`: the user closed the file picker, and nothing was sent. */
 export type PictureChoice = 'set' | 'cancelled'
+export type PictureFile = string | 'cancelled'
 
 export interface Bridge {
   watch<T extends Topic>(topic: T, onPush: (push: Push<T>) => void): () => void
@@ -156,6 +156,8 @@ export interface Bridge {
   keepDraft(draft: Draft): void
   /** Main shows a file picker, checks the picked file and sends it as the bot's picture. */
   pickBotPicture(bot: BotId): Promise<CommandOutcome<PictureChoice>>
+  /** Main shows the same picker and checks the file the same way, and answers the picture. Nothing is sent to Hermes. */
+  choosePicture(): Promise<CommandOutcome<PictureFile>>
   /** Opens the file dialog and holds each file picked, in the order picked. Nothing picked: an empty list. */
   attachPick(): Promise<readonly StageResult[]>
   /** Holds the image on the clipboard. No image there: an empty list. */
@@ -166,7 +168,7 @@ export interface Bridge {
 
 export const CHANNEL = {
   watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image',
-  drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft', pickPicture: 'highwing:pick-picture', attachPick: 'highwing:attach-pick',
+  drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft', pickPicture: 'highwing:pick-picture', choosePicture: 'highwing:choose-picture', attachPick: 'highwing:attach-pick',
   attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop'
 } as const
 
@@ -405,8 +407,13 @@ export const validators: Validators = {
   },
   createBot: raw => {
     const draft = draftOf(raw.draft)
-    return draft && { do: 'createBot', draft }
+    const picture = raw.picture === null ? null : pictureDataUrlOf(raw.picture, PICTURE_MAX_BYTES)
+    return draft && (raw.picture === null || picture !== null) ? { do: 'createBot', draft, picture } : null
   },
+  canGeneratePicture: () => ({ do: 'canGeneratePicture' }),
+  generatePicture: raw => (filled(raw.prompt) ? { do: 'generatePicture', prompt: raw.prompt } : null),
+  pets: () => ({ do: 'pets' }),
+  petPicture: raw => (text(raw.slug) && isPetSlug(raw.slug) && (raw.url === null || webPage(raw.url)) ? { do: 'petPicture', slug: raw.slug, url: raw.url } : null),
   botModels: raw => {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     return raw.bot !== null && bot === null ? null : { do: 'botModels', bot }

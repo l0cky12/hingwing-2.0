@@ -1,0 +1,5 @@
+{
+  "available": true,
+  "error": "The image provider is out of credit.",
+  "delay_ms": 300
+}

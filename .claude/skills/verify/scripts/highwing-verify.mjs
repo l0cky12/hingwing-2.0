@@ -14,6 +14,7 @@ const SCRATCH_ROOT = '/tmp/highwing-verify-scratch'
 const REFERENCE = join(REPO, 'docs/design/reference')
 const SIZE = { width: 1180, height: 860 }
 const QUIT_MS = 5_000
+const VIDEO_HOLD_MS = 700
 const requireDesktop = createRequire(join(DESKTOP, 'package.json'))
 
 const FAKE_HOST = 'hermes-host.example-tailnet.ts.net'
@@ -112,6 +113,7 @@ const STEPS = {
   reload: { arity: 0, run: async ctx => void await ctx.page.reload() },
   gone: { arity: 2, run: async (ctx, role, name) => waitGone(ctx, role, name) },
   inview: { arity: 2, run: async (ctx, role, name) => checkInView(ctx, role, name) },
+  reveal: { arity: 2, run: async (ctx, role, name) => byRole(ctx.page, role, name).scrollIntoViewIfNeeded({ timeout: ctx.timeout }) },
   shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
   field: {
     arity: 3,
@@ -925,7 +927,7 @@ const requestMethods = steps => new Map(steps.flatMap(step => {
 
 const answerTo = step => step.answer ?? step.params?.request_id ?? step.params?.op_id
 
-function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, profiles, paths, createWarnings, configureClash, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, answeredElsewhere, answerHere, cancel, actedElsewhere, windowMakes, origin, attachLimit }, out) {
+function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, profiles, paths, createWarnings, configureClash, assetFails, images, pets, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, answeredElsewhere, answerHere, cancel, actedElsewhere, windowMakes, origin, attachLimit }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const header = JSON.parse(lines[0])
   const recorded = lines.slice(1).map(line => JSON.parse(line))
@@ -961,6 +963,9 @@ function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, pr
   if (paths) header.paths = JSON.parse(readFileSync(resolve(process.cwd(), paths), 'utf8'))
   if (createWarnings) header.createWarnings = JSON.parse(readFileSync(resolve(process.cwd(), createWarnings), 'utf8'))
   if (configureClash) header.configureClash = configureClash
+  if (assetFails) header.assetFails = assetFails
+  if (images) header.images = JSON.parse(readFileSync(resolve(process.cwd(), images), 'utf8'))
+  if (pets) header.pets = JSON.parse(readFileSync(resolve(process.cwd(), pets), 'utf8'))
   if (bound) header.reach = 'profile'
   if (noBotChat) header.homeBotChat = false
   if (tree) header.tree = true
@@ -1010,13 +1015,13 @@ function startFakeHost(scenario, fixture, holdAt, scratch) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', mode: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'asset-fails': 'value', images: 'value', pets: 'value', video: 'flag', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', mode: 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   if (!options.fixture && !scenario) fail('pass --fixture <path> to replay a recorded gateway, or --fake-host <scenario> to launch against the fake Hermes machine')
   if (!scenario && (options.saved || options['hold-at'])) fail('--saved and --hold-at need --fake-host: without it the app would run the real ssh, tailscale and hermes')
   const site = options.serve ? await serve(options.serve) : null
-  const edits = { dropAfter: options['drop-after'], models: options.models, catalog: options.catalog, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], answeredElsewhere: options['answered-elsewhere'], answerHere: options['answer-here'], cancel: options.cancel, actedElsewhere: options['acted-elsewhere'], windowMakes: options['window-makes'], origin: site?.origin, attachLimit: options['attach-limit'] }
+  const edits = { dropAfter: options['drop-after'], models: options.models, catalog: options.catalog, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], assetFails: options['asset-fails'], images: options.images, pets: options.pets, bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], answeredElsewhere: options['answered-elsewhere'], answerHere: options['answer-here'], cancel: options.cancel, actedElsewhere: options['acted-elsewhere'], windowMakes: options['window-makes'], origin: site?.origin, attachLimit: options['attach-limit'] }
   const edited = Object.values(edits).some(Boolean)
   if (options.yolo && options.yolo !== 'on' && options.yolo !== 'off') fail(`--yolo takes on or off, not "${options.yolo}"`)
   if (options['window-makes'] && !options['acted-elsewhere']) fail('--window-makes needs --acted-elsewhere, because without it the window makes every call')
@@ -1024,8 +1029,9 @@ async function run(argv) {
   if (options.cancel && !/^[^=]+=[^=]+$/.test(options.cancel)) fail(`--cancel takes <method>=<reason>, not "${options.cancel}"`)
   if (!options.yolo && (options['yolo-denied'] || options['yolo-elsewhere-after'])) fail('--yolo-denied and --yolo-elsewhere-after need --yolo, because a Hermes with no YOLO answers neither')
   if (options.tree && !options.profiles) fail('--tree needs --profiles, because the tree lists the chats that file seeds')
-  if (scenario && edited) fail('--drop-after, --models, --catalog, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host')
+  if (scenario && edited) fail('--drop-after, --models, --catalog, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --asset-fails, --images, --pets, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host')
   if (options['configure-clash'] && !options.profiles) fail('--configure-clash needs --profiles: without it Hermes has no bots to rename')
+  if (options['asset-fails'] && !options.profiles) fail('--asset-fails needs --profiles: without it Hermes stores no pictures')
   if (options['attach-limit'] && !/^[1-9]\d*$/.test(options['attach-limit'])) fail(`--attach-limit takes a number of bytes, not "${options['attach-limit']}"`)
   if (options.saved && !(options.saved in SAVED)) fail(`unknown --saved "${options.saved}". Known: ${Object.keys(SAVED).join(', ')}`)
   if (options.mode && !MODES.includes(options.mode)) fail(`unknown --mode "${options.mode}". Known: ${MODES.join(', ')}`)
@@ -1085,12 +1091,14 @@ async function run(argv) {
   const executable = electronBinary() ?? fail('electron binary missing; run doctor')
   const args = [MAIN_JS, '--ozone-platform=x11', '--force-device-scale-factor=1', '--disable-gpu', `--user-data-dir=${userData}`]
   ctx.launch = { executable, args, cwd: REPO, env, secondPid: join(scratch, 'second-pid') }
+  const [videoWidth, videoHeight] = (options.size ?? `${SIZE.width}x${SIZE.height}`).split('x').map(Number)
   const app = await _electron.launch({
     executablePath: executable,
     args: options.arg === undefined ? args : [...args, options.arg],
     cwd: REPO,
     env,
-    timeout: ctx.timeout
+    timeout: ctx.timeout,
+    ...(options.video && { recordVideo: { dir: join(scratch, 'video'), size: { width: videoWidth, height: videoHeight } } })
   }).catch(error => {
     log(ctx, `FAILED to launch: ${error.message.split('\n')[0]}`)
     log(ctx, `FAIL evidence in ${evidence}`)
@@ -1128,6 +1136,7 @@ async function run(argv) {
       if (!STEPS[verb].logs) log(ctx, `${verb} ${args.map(arg => JSON.stringify(arg)).join(' ')}`)
       if (verb !== 'shot' && verb !== 'wait') ctx.holding = null
       await STEPS[verb].run(ctx, ...args)
+      if (options.video) await ctx.page.waitForTimeout(VIDEO_HOLD_MS)
     }
     if (ctx.dialogs.length > 0) throw new Error(`the page opened ${ctx.dialogs.length} dialog(s): ${ctx.dialogs.join(', ')}`)
     for (const check of ctx.called) {
@@ -1150,6 +1159,12 @@ async function run(argv) {
     // A tool the app left running holds the app's pipes open, and close() would then wait on it for ever.
     await Promise.race([app.close().catch(() => {}), new Promise(done => setTimeout(done, QUIT_MS))])
     if (alive(pid)) process.kill(pid, 'SIGKILL')
+    const video = options.video ? ctx.page?.video() : null
+    if (video) {
+      const saved = await Promise.race([video.saveAs(join(evidence, 'video.webm')).then(() => true, () => false), new Promise(done => setTimeout(() => done(false), QUIT_MS))])
+      log(ctx, saved ? `video saved as ${join(evidence, 'video.webm')}` : 'the video could not be saved')
+      if (!saved && !failed) failed = new Error('--video was asked for and the video could not be saved')
+    }
     rmSync(join(scratch, 'pid'), { force: true })
     site?.server.close()
     if (host) {

@@ -181,7 +181,7 @@ export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'connection.respond' | 'connectors.connect' | 'complete.path' | 'file.attach' |
   'profiles.create' | 'profiles.describe' | 'profiles.configure' | 'profiles.set_asset' | 'profiles.get_asset' | 'projects.tree' |
   'prompt.btw' | 'prompt.background' | 'process.list' | 'process.kill' | 'subagent.interrupt' | 'session.control.read' | 'session.control' | 'rollback.list' |
-  'rollback.diff' | 'rollback.restore' | 'message.react'>
+  'rollback.diff' | 'rollback.restore' | 'message.react' | 'image.generate' | 'pet.gallery' | 'pet.thumb'>
 export type Method = keyof Served
 
 export type Requested = ServerRequestMap

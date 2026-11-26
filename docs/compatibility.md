@@ -747,3 +747,28 @@ the chat they were sent from.
 Highwing can't create a bot. `profiles.create` is not a canonical method, so
 New bot is shown as unavailable. Avatar images are not shown either, because
 `profiles.get_asset` is not canonical.
+
+### A new bot's face
+
+New bot gives the bot a face, which Create stores with
+`profiles.set_asset {name, asset: "avatar", data}` right after
+`profiles.create`. Hermes takes a PNG, JPEG or WebP of 2 MB or less. If it
+refuses the picture, the bot is made all the same and the sidebar shows the
+reason as a warning. The picker reads three more calls:
+
+| Method | Params | What Highwing does with the answer |
+| --- | --- | --- |
+| `image.generate` | `{probe: true}`, then `{prompt, aspect_ratio: "square", max_bytes: 8000000}` | Draws `image_data`, the data URL, onto a 512 px square. A missing `image_data` is refused in words. Highwing never fetches `image` itself, since Hermes has already tried its own guarded download (`tui_gateway/methods_images.py`). |
+| `pet.gallery` | `{}` | Lists the pets, curated ones first. A pet whose slug isn't one plain path segment is left out. |
+| `pet.thumb` | `{slug}`, plus `url` for a pet Hermes fetches | Shows the idle frame. Hermes answers `{ok: false}` alike for a pet with no picture and for a fetch that failed (`agent/pet/store.py:224-253`), so an empty answer is asked again the next time the tile shows. |
+
+Highwing sends `pet.thumb` only a slug with no `/`, `\`, `:`, `.` or `..`.
+Hermes builds the thumb's cache path from the raw slug (`agent/pet/store.py:68-70`).
+
+On an older Hermes:
+
+- Without `image.generate`, the Generate tab says "This Hermes has no image
+  model. Turn one on with `hermes tools`."
+- Without `pet.gallery` or `pet.thumb`, the Pet tab says "This Hermes can't list
+  pets."
+- The Shape and Upload tabs need no new call.

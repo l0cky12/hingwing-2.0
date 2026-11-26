@@ -121,6 +121,38 @@ const hexAt = (bytes: Uint8Array, start: number, length: number) =>
 export const pictureTypeOf = (bytes: Uint8Array): PictureType | null =>
   MAGIC.find(([, marks]) => marks.every(([start, hex]) => hexAt(bytes, start, hex.length / 2) === hex))?.[0] ?? null
 
+export const GENERATED_MAX_BYTES = 8_000_000
+
+const DATA_URL = /^data:image\/[\w.+-]+;base64,([A-Za-z0-9+/]*={0,2})$/
+
+/**
+ * A data URL of a PNG, JPEG or WebP of 1 to `limit` bytes, typed by its first bytes rather than the type it declares, or null
+ * for anything else. Only the first bytes are decoded, so a large picture is cheap to check.
+ */
+export function pictureDataUrlOf(raw: unknown, limit: number): string | null {
+  const base64 = typeof raw === 'string' ? DATA_URL.exec(raw)?.[1] : undefined
+  if (base64 === undefined || base64.length % 4 !== 0) return null
+  const size = (base64.length / 4) * 3 - (base64.length - base64.replace(/=+$/, '').length)
+  if (size === 0 || size > limit) return null
+  const type = pictureTypeOf(Uint8Array.from(atob(base64.slice(0, 16)), char => char.charCodeAt(0)))
+  return type && `data:${type};base64,${base64}`
+}
+
+/**
+ * A slug Hermes's `_safe_slug` keeps as it is (agent/pet/store.py:93-96): one path segment with no separator, `.` or `..`.
+ * `pet.thumb` names its cache file `pets/.thumbs/<slug>.png` from the slug unchecked (agent/pet/store.py:68-70, :233), so any
+ * other slug could read or write a file outside that folder. On a Windows Hermes a colon starts a drive (`D:x`) or names a
+ * file's stream, so it is refused too.
+ */
+export const isPetSlug = (slug: string): boolean => slug !== '' && slug === slug.trim() && slug !== '.' && slug !== '..' && !/[/\\:]/.test(slug)
+
+/** A pet Hermes lists, whose idle frame a new bot can take as its picture. `url`: where Hermes fetches its sprites, or null for one Hermes holds. */
+export interface PetChoice {
+  readonly slug: string
+  readonly name: string
+  readonly url: string | null
+}
+
 /** Only the fields the user changed. */
 export interface BotEdit {
   readonly name?: string
