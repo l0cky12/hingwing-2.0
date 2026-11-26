@@ -1,6 +1,7 @@
 import type { SideId } from '@highwing/hermes/domain'
-import { useId, useLayoutEffect, useRef } from 'react'
-import type { SideAnswer, SideCard } from './sides'
+import { memo, useId, useLayoutEffect, useRef } from 'react'
+import { CopyButton } from './Copy'
+import type { SideAnswer, SideCard, SideRow } from './sides'
 import { Markdown } from './text'
 
 function Answer({ id, answer }: { readonly id: SideId; readonly answer: SideAnswer }) {
@@ -12,10 +13,23 @@ function Answer({ id, answer }: { readonly id: SideId; readonly answer: SideAnsw
   }
 }
 
-function Card({ card, onClose }: { readonly card: SideCard; readonly onClose: (id: SideId) => void }) {
+interface CardProps {
+  readonly card: SideCard
+  readonly onClose: (id: SideId) => void
+  readonly returnFocus: () => void
+}
+
+function Card({ card, onClose, returnFocus }: CardProps) {
   const heading = useId()
+  const box = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    const element = box.current
+    return () => {
+      if (element?.contains(document.activeElement) === true) returnFocus()
+    }
+  }, [returnFocus])
   return (
-    <section className="side" aria-labelledby={heading} aria-busy={card.answer.s === 'waiting'}>
+    <section ref={box} className="side" aria-labelledby={heading} aria-busy={card.answer.s === 'waiting'}>
       <header>
         <h2 id={heading}>{card.label}</h2>
         <button type="button" aria-label={`Close ${card.label.toLowerCase()}`} onClick={() => onClose(card.id)}>
@@ -24,12 +38,12 @@ function Card({ card, onClose }: { readonly card: SideCard; readonly onClose: (i
       </header>
       {card.asked !== null && <p className="side-asked">{card.asked}</p>}
       <Answer id={card.id} answer={card.answer} />
-      <p className="side-note">Not part of the chat.</p>
+      <p className="side-note">{card.note}</p>
     </section>
   )
 }
 
-export function Sides({ cards, onClose }: { readonly cards: readonly SideCard[]; readonly onClose: (id: SideId) => void }) {
+export function Sides({ cards, onClose, returnFocus }: { readonly cards: readonly SideCard[] } & Omit<CardProps, 'card'>) {
   const stack = useRef<HTMLDivElement>(null)
   const newest = cards.at(-1)?.id
   useLayoutEffect(() => {
@@ -38,7 +52,22 @@ export function Sides({ cards, onClose }: { readonly cards: readonly SideCard[];
   }, [newest])
   return (
     <div className="sides" ref={stack}>
-      {cards.map(card => <Card key={card.id} card={card} onClose={onClose} />)}
+      {cards.map(card => <Card key={card.id} card={card} onClose={onClose} returnFocus={returnFocus} />)}
     </div>
   )
 }
+
+export const SideTurn = memo(function SideTurn({ row }: { readonly row: SideRow }) {
+  const heading = useId()
+  const { answer } = row
+  return (
+    <article className="turn side side-row" aria-labelledby={heading}>
+      <h2 id={heading}>Side question</h2>
+      <p className="side-asked">{row.asked ?? 'Asked in another window'}</p>
+      {answer.s === 'answered'
+        ? <div className="prose"><Markdown source={answer.markdown} caret={false} nodeKey={`side:${row.id}`} /><CopyButton text={answer.markdown} name="Copy reply" /></div>
+        : <p className="err">{answer.message}</p>}
+      <p className="side-note">Not saved with the chat. Later replies won't see it.</p>
+    </article>
+  )
+})

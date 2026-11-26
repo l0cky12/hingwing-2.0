@@ -10,7 +10,9 @@ import { Helper, Moa, Notice, Plan, Reasoning, type HelperControls } from './Hel
 import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find'
 import { isOpen, NONE_OPEN, toggled, type OpenState } from './open'
 import { Given, Reactions } from './Reactions'
-import { placeRelays } from './relays'
+import { placeByTurn } from './relays'
+import { SideTurn } from './Sides'
+import type { SideRow } from './sides'
 import { cx, Elapsed, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
 
@@ -425,6 +427,8 @@ interface ThreadProps {
   readonly view: ThreadView
   /** The messages handed to other bots from this chat, oldest first. */
   readonly relays: readonly Relay[]
+  /** The answered side questions, in the order answered. */
+  readonly sides: readonly SideRow[]
   readonly onAnswer: Answer
   readonly onAnswerRequest: RequestAnswer
   readonly onLoadEarlier: () => void
@@ -449,7 +453,7 @@ interface ThreadProps {
 const landingOf = ({ versions, current }: Versions) => versions[current]?.landing
 const NO_GROUPS: readonly Versions[] = []
 
-export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, queue, canReact, onReact, helpers }: ThreadProps) {
+export function Thread({ view, relays, sides, onAnswer, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, queue, canReact, onReact, helpers }: ThreadProps) {
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
   const [changing, setChanging] = useState<Changing>(new Map())
@@ -469,8 +473,15 @@ export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier,
   }, [versions])
   const atEnd = groupsAt('end')
 
-  const relayed = useMemo(() => placeRelays(relays, view.turns.map(turn => turn.key)), [relays, view.turns])
-  const relayTurns = (held: readonly Relay[] = []) => held.map(relay => <RelayTurn key={relay.id} relay={relay} />)
+  const turnKeys = useMemo(() => view.turns.map(turn => turn.key), [view.turns])
+  const relayed = useMemo(() => placeByTurn(relays, turnKeys), [relays, turnKeys])
+  const answered = useMemo(() => placeByTurn(sides, turnKeys), [sides, turnKeys])
+  const beside = (held: readonly Relay[] = [], rows: readonly SideRow[] = []) => (
+    <>
+      {held.map(relay => <RelayTurn key={relay.id} relay={relay} />)}
+      {rows.map(row => <SideTurn key={row.id} row={row} />)}
+    </>
+  )
 
   const query = find?.query ?? ''
   const matches = useMemo(() => findInThread(view, query, changing), [view, query, changing])
@@ -566,7 +577,7 @@ export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier,
       <div id="transcript" ref={transcript}>
         {view.earlier === 'more' && <button className="earlier" onClick={onLoadEarlier}>Show earlier turns</button>}
         {view.earlier === 'loading' && <p className="earlier">Loading earlier turns</p>}
-        {relayTurns(relayed.first)}
+        {beside(relayed.first, answered.first)}
         {view.turns.map(turn => (
           <Fragment key={turn.key}>
             <Turn
@@ -575,10 +586,10 @@ export function Thread({ view, relays, onAnswer, onAnswerRequest, onLoadEarlier,
               onEdit={onEdit} onRegenerate={onRegenerate} onBranch={onBranch} onNewChat={onNewChat} versions={groupsAt(turn.rowId)} onVersion={onVersion}
               canReact={canReact} onReact={onReact} helpers={helpers}
             />
-            {relayTurns(relayed.after.get(turn.key))}
+            {beside(relayed.after.get(turn.key), answered.after.get(turn.key))}
           </Fragment>
         ))}
-        {relayTurns(relayed.last)}
+        {beside(relayed.last, answered.last)}
         {atEnd.length > 0 && <p className="versions-end">{atEnd.map(group => <VersionSwitch key={group.versions[0]?.sessionId} versions={group} onVersion={onVersion} />)}</p>}
         {view.asks.map(card => (
           <AskCard key={card.key} card={card} changing={changing.get(card.key) ?? null} onChange={question => change(card.key, question)} onAnswer={onAnswerRequest} />
