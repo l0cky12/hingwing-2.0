@@ -1,5 +1,6 @@
 import type { CommandOutcome, ContextBreakdown, ContextFill } from '@highwing/hermes/domain'
 import { useEffect, useId, useRef, useState } from 'react'
+import { isEscapeFor } from './popover'
 
 interface ContextMeterProps {
   readonly fill: ContextFill
@@ -37,7 +38,7 @@ export function ContextMeter({ fill, stale, onBreakdown }: ContextMeterProps) {
   useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
+      if (!isEscapeFor(event, anchor)) return
       close()
       button.current?.focus()
     }
