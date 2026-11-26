@@ -1,9 +1,10 @@
-import type { BotId, GroupId, Link, OpenChat, Session, SessionId, SidebarRow, Target } from '@highwing/hermes/domain'
+import type { BotId, CommandOutcome, GroupId, Link, OpenChat, Session, SessionId, SidebarRow, Target } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { NOT_NOW, OTHER_CONNECTION } from '../src/ipc-contract'
 import { ACTIONS, type ActionRow, type Scene } from '../src/renderer/palette/actions'
 import { Results } from '../src/renderer/palette/Palette'
-import { activeIn, GRADE, paletteOf, rank, step, type PaletteItem, type PaletteView } from '../src/renderer/palette/palette-view'
+import { activeIn, comebackOf, GRADE, paletteOf, rank, step, type PaletteItem, type PaletteView } from '../src/renderer/palette/palette-view'
 import { APPROVED, fact, listed as listedBots } from './support/bots'
 
 const NOW = Date.UTC(2026, 10, 24, 12)
@@ -156,5 +157,23 @@ describe('the sheet', () => {
     expect(html).toContain('Waiting for your OK')
     const none = paletteOf(sceneOf([SORT]), 'zzzz')
     expect(renderToStaticMarkup(<Results view={none} active={null} listId="palette" now={NOW} onPick={() => {}} />)).toBe('<p class="palette-note" role="status">No matches</p>')
+  })
+})
+
+describe('a refused pick', () => {
+  it("brings the sheet back with main's words for a pick main refused before it sent anything", () => {
+    expect(comebackOf(NOT_NOW)).toBe("Highwing can't do that from this screen.")
+    expect(comebackOf(OTHER_CONNECTION)).toBe("Highwing switched to another Hermes, so it didn't send that.")
+  })
+
+  it('leaves the sheet closed for a pick Hermes refused, whatever its kind, and for one that went through', () => {
+    const answers: readonly CommandOutcome<unknown>[] = [
+      { ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't switch bots from Highwing yet. Update Hermes on that machine, then reconnect." } },
+      { ok: false, refusal: { kind: 'stale', message: 'That turn has already ended.' } },
+      { ok: false, refusal: { kind: 'rejected', message: 'Profile name \'root\' is reserved.' } },
+      { ok: false, refusal: { kind: 'offline', message: "Highwing isn't connected to Hermes right now." } },
+      { ok: true, value: undefined }
+    ]
+    for (const answer of answers) expect(comebackOf(answer)).toBeNull()
   })
 })

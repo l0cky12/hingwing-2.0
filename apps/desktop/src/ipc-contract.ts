@@ -25,6 +25,8 @@ export type Setup =
 
 /** The epoch of the connection `setup` keeps the chat on. 0 when it keeps none, as on a first run or in a fixture run. */
 export const epochOf = (setup: Setup): number => (setup.at === 'pinned' || setup.live === null ? 0 : setup.live.epoch)
+/** Main's answer to a command the screen it is on has no use for, such as an open while a new connection is saved. Nothing went to Hermes. */
+export const NOT_NOW: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: "Highwing can't do that from this screen." } }
 /** Main's answer to a chat command a window sent for a connection that is no longer live. Nothing went to Hermes. */
 export const OTHER_CONNECTION: CommandOutcome<never> = { ok: false, refusal: { kind: 'stale', message: "Highwing switched to another Hermes, so it didn't send that." } }
 

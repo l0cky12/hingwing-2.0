@@ -1,10 +1,11 @@
 import { shownChat, type Target } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import type { WindowCommand } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
 import { agoOf } from '../chats/chat-list'
 import { isCommandKey } from '../keys'
 import { run, useTopic } from '../store'
-import { activeIn, paletteOf, step, type PaletteItem, type PaletteView, type Row } from './palette-view'
+import { activeIn, comebackOf, paletteOf, step, type PaletteItem, type PaletteView, type Row } from './palette-view'
 
 const canHoldFocus = (element: Element | null): element is HTMLElement =>
   element instanceof HTMLElement && element !== document.body && element.isConnected && element.closest('[hidden]') === null
@@ -61,14 +62,23 @@ export function Results({ view, active, listId, now, onPick }: ResultsProps) {
   )
 }
 
-interface SheetProps {
-  readonly target: Target | null
-  readonly settingsOpen: boolean
-  readonly returnFocusTo: Element | null
-  readonly onClose: () => void
+/** A sheet to show: where focus was when Ctrl+K opened it, and the query it opens with. */
+interface Opened {
+  readonly back: Element | null
+  readonly query: string
+  /** Why main refused the pick the sheet came back for. */
+  readonly note: string | null
 }
 
-function Sheet({ target, settingsOpen, returnFocusTo, onClose }: SheetProps) {
+interface SheetProps {
+  readonly opened: Opened
+  readonly target: Target | null
+  readonly settingsOpen: boolean
+  readonly onClose: () => void
+  readonly onPick: (command: WindowCommand, query: string) => void
+}
+
+function Sheet({ opened, target, settingsOpen, onClose, onPick }: SheetProps) {
   const sidebar = useTopic('sidebar')
   const bots = useTopic('bots')
   const open = useTopic('open')
@@ -76,14 +86,15 @@ function Sheet({ target, settingsOpen, returnFocusTo, onClose }: SheetProps) {
   const sessionId = shownChat(open)?.sessionId ?? null
   const openSession = useTopic(sessionId === null ? null : `session:${sessionId}`)
   const [draftId] = useState(() => crypto.randomUUID())
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(opened.query)
+  const [note, setNote] = useState(opened.note)
   const [picked, setPicked] = useState<string | null>(null)
   const dialog = useRef<HTMLDialogElement>(null)
   const field = useRef<HTMLInputElement>(null)
   const leaving = useRef(false)
   const listId = useId()
 
-  const view = paletteOf({ sidebar, bots, open, link, openSession, target, settingsOpen, draftId }, query)
+  const view: PaletteView = note === null ? paletteOf({ sidebar, bots, open, link, openSession, target, settingsOpen, draftId }, query) : { show: 'note', words: note }
   const active = activeIn(view, picked)
   const activeId = active === null ? undefined : optionId(listId, active.item)
 
@@ -98,25 +109,14 @@ function Sheet({ target, settingsOpen, returnFocusTo, onClose }: SheetProps) {
   const dismiss = () => {
     leaving.current = true
     dialog.current?.close()
-    const held = canHoldFocus(returnFocusTo) ? returnFocusTo : fallbackFocus()
+    const held = canHoldFocus(opened.back) ? opened.back : fallbackFocus()
     held?.focus()
     onClose()
   }
-  // The sheet hides before main answers, since while it is modal the chat a pick opens cannot take focus. A pick main refuses, such as an open while it saves a new connection, brings it back as it was.
-  const pick = async (item: PaletteItem) => {
+  const pick = (item: PaletteItem) => {
     leaving.current = true
     dialog.current?.close()
-    const outcome = await run(item.command)
-    if (!outcome.ok) {
-      leaving.current = false
-      dialog.current?.showModal()
-      field.current?.focus()
-      return
-    }
-    onClose()
-    requestAnimationFrame(() => {
-      if (!canHoldFocus(document.activeElement)) fallbackFocus()?.focus()
-    })
+    onPick(item.command, query)
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDialogElement>) => {
@@ -126,7 +126,7 @@ function Sheet({ target, settingsOpen, returnFocusTo, onClose }: SheetProps) {
     if (isCommandKey(event.nativeEvent, 'k')) {
       if (!event.repeat) dismiss()
     } else if (by !== null) setPicked(step(view, picked, by))
-    else if (event.key === 'Enter' && active !== null) void pick(active.item)
+    else if (event.key === 'Enter' && active !== null) pick(active.item)
     else if (event.key !== 'Tab') return
     event.preventDefault()
   }
@@ -141,8 +141,8 @@ function Sheet({ target, settingsOpen, returnFocusTo, onClose }: SheetProps) {
     <dialog
       ref={dialog} className="palette" aria-label="Command palette"
       onCancel={event => { event.preventDefault(); dismiss() }}
-      // The browser closes it outright, with no cancel, when no click or key came since its last cancel. A close event that arrives once a refused pick has reopened it is stale.
-      onClose={() => { if (!leaving.current && dialog.current?.open !== true) dismiss() }}
+      // The browser closes it outright, with no cancel, when no click or key came since its last cancel.
+      onClose={() => { if (!leaving.current) dismiss() }}
       onKeyDown={onKeyDown} onMouseDown={keepFocusInField} onClick={closeOnBackdrop}
     >
       <div className="palette-sheet">
@@ -150,9 +150,9 @@ function Sheet({ target, settingsOpen, returnFocusTo, onClose }: SheetProps) {
           ref={field} type="text" className="palette-field" role="combobox" aria-label="Search chats, bots and actions" autoFocus
           spellCheck={false} autoComplete="off" placeholder="Search chats, bots and actions" value={query}
           aria-expanded={view.show === 'rows'} aria-controls={view.show === 'rows' ? listId : undefined} aria-activedescendant={activeId} aria-autocomplete="list"
-          onChange={event => { setQuery(event.target.value); setPicked(null) }}
+          onChange={event => { setQuery(event.target.value); setPicked(null); setNote(null) }}
         />
-        <Results view={view} active={active} listId={listId} now={Date.now()} onPick={item => void pick(item)} />
+        <Results view={view} active={active} listId={listId} now={Date.now()} onPick={pick} />
         <p className="palette-hint"><span>↑↓ to move</span><span>Enter to open</span><span>Esc to close</span></p>
       </div>
     </dialog>
@@ -160,17 +160,28 @@ function Sheet({ target, settingsOpen, returnFocusTo, onClose }: SheetProps) {
 }
 
 export function Palette({ target, settingsOpen }: { readonly target: Target | null; readonly settingsOpen: boolean }) {
-  const [back, setBack] = useState<Element | null | undefined>(undefined)
-  const opened = back !== undefined
+  const [opened, setOpened] = useState<Opened | null>(null)
+  const shown = opened !== null
   useEffect(() => {
-    if (opened) return
+    if (shown) return
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (!isCommandKey(event, 'k') || document.querySelector('dialog:modal') !== null) return
       event.preventDefault()
-      if (!event.repeat) setBack(document.activeElement)
+      if (!event.repeat) setOpened({ back: document.activeElement, query: '', note: null })
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [opened])
-  return back === undefined ? null : <Sheet target={target} settingsOpen={settingsOpen} returnFocusTo={back} onClose={() => setBack(undefined)} />
+  }, [shown])
+  // The sheet goes before main answers: Hermes can take a while to open a bot, and while the sheet is modal the chat a pick opens cannot take focus.
+  const pick = (back: Element | null, command: WindowCommand, query: string) => {
+    setOpened(null)
+    void run(command).then(outcome => {
+      const note = comebackOf(outcome)
+      if (note !== null) setOpened(held => held ?? { back, query, note })
+      else requestAnimationFrame(() => { if (!canHoldFocus(document.activeElement)) fallbackFocus()?.focus() })
+    })
+  }
+  return opened === null ? null : (
+    <Sheet opened={opened} target={target} settingsOpen={settingsOpen} onClose={() => setOpened(null)} onPick={(command, query) => pick(opened.back, command, query)} />
+  )
 }

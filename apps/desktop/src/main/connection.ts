@@ -1,6 +1,6 @@
 import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, Route } from '@highwing/hermes'
 import { firstStep, sameTarget, type CheckStep, type Command, type CommandOutcome, type SetupFailure, type Target } from '@highwing/hermes/domain'
-import { isSetupCommand, showsSettings, type HubResult, type Live, type Setup, type SetupCommand } from '../ipc-contract'
+import { isSetupCommand, NOT_NOW, showsSettings, type HubResult, type Live, type Setup, type SetupCommand } from '../ipc-contract'
 import type { Settings } from './settings'
 
 /** The commands a connection carries out. The pane beside the chat has its own owner. */
@@ -77,9 +77,7 @@ const firstSetup = (loaded: Settings, live: Live | null): Setup =>
   live === null ? { at: 'form', live, notice: loaded.state === 'unreadable' || loaded.state === 'newer' ? loaded.state : null } : { at: 'chat', live }
 
 const DONE = { ok: true, value: undefined } as const
-const refused = (kind: 'rejected' | 'offline', message: string) => ({ ok: false, refusal: { kind, message } }) as const
-const NOT_NOW = refused('rejected', "Highwing can't do that from this screen.")
-const NOT_CONNECTED = refused('offline', "Highwing isn't connected to Hermes yet.")
+const NOT_CONNECTED = { ok: false, refusal: { kind: 'offline', message: "Highwing isn't connected to Hermes yet." } } as const
 
 
 export function feed<T>(initial: T): Feed<T> & { set(next: T): void } {

@@ -1,5 +1,5 @@
-import { botsIn, shownChat, shownUnasked, type Bot, type SidebarRow } from '@highwing/hermes/domain'
-import type { WindowCommand } from '../../ipc-contract'
+import { botsIn, shownChat, shownUnasked, type Bot, type CommandOutcome, type SidebarRow } from '@highwing/hermes/domain'
+import { NOT_NOW, OTHER_CONNECTION, type WindowCommand } from '../../ipc-contract'
 import { DOING, listedRows, named } from '../chats/chat-list'
 import { ACTIONS, type Scene } from './actions'
 
@@ -33,7 +33,7 @@ export interface Section {
 export const NO_MATCHES = 'No matches'
 
 export type PaletteView =
-  | { readonly show: 'note'; readonly words: typeof NO_MATCHES }
+  | { readonly show: 'note'; readonly words: string }
   | { readonly show: 'rows'; readonly sections: readonly Section[] }
 
 const HEADINGS: { readonly [K in PaletteItem['kind']]: Heading } = { chat: 'Chats', bot: 'Bots', action: 'Actions' }
@@ -131,4 +131,16 @@ export function step(view: PaletteView, picked: string | null, by: 1 | -1): stri
   if (rows.length === 0) return null
   const at = Math.max(0, rows.findIndex(row => row.item.key === picked))
   return (rows[(at + by + rows.length) % rows.length] as Row).item.key
+}
+
+const REFUSED_BY_MAIN: readonly CommandOutcome<never>[] = [NOT_NOW, OTHER_CONNECTION]
+
+/**
+ * The words a refused pick brings the sheet back with. Only main's own refusals do: nothing of the pick happened. One that Hermes
+ * refused answers after the sheet has gone, and coming back then would land over whatever the user did next.
+ */
+export function comebackOf(outcome: CommandOutcome<unknown>): string | null {
+  if (outcome.ok) return null
+  const { kind, message } = outcome.refusal
+  return REFUSED_BY_MAIN.some(main => !main.ok && main.refusal.kind === kind && main.refusal.message === message) ? message : null
 }

@@ -104,7 +104,6 @@ function ChatWindow({ hidden, settings, target, mode }: ChatWindowProps) {
       {settings !== null && <Settings setup={settings} mode={mode} onRequestClose={close} />}
       <DraftSweep />
       {paned && <Preview preview={preview} />}
-      {!hidden && <Palette target={target} settingsOpen={settings !== null} />}
     </div>
   )
 }
@@ -118,8 +117,10 @@ export function App() {
   return (
     <>
       {(setup.at === 'pinned' || live !== null) && (
-        <Epoch key={epochOf(setup)} value={epochOf(setup)}>
-          <ChatWindow hidden={screen.show === 'saved'} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} />
+        <Epoch value={epochOf(setup)}>
+          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved'} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} />
+          {/* Outside the window a new connection remounts, so a pick main refused for the old one comes back over the new one. */}
+          {screen.show !== 'saved' && <Palette target={live?.target ?? null} settingsOpen={screen.show === 'settings'} />}
         </Epoch>
       )}
       {screen.show === 'first-run' && <FirstRun setup={screen.setup} />}
