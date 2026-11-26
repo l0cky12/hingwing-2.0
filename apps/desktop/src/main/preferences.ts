@@ -25,6 +25,7 @@ const VERSION = 1
 
 export interface PreferenceStore<T> extends Feed<T> {
   set(value: T): void
+  commit(value: T): Promise<void>
   settled(): Promise<void>
 }
 
@@ -61,6 +62,13 @@ export async function preferenceStore<T>(dir: string, preference: Preference<T>)
     set(next) {
       shown.set(next)
       chain = chain.then(() => write(file, preference.key, next)).catch((error: unknown) => console.error(`Highwing could not keep the ${preference.key}:`, error))
+    },
+    commit(next) {
+      const placed = chain.then(() => write(file, preference.key, next)).then(() => {
+        shown.set(next)
+      })
+      chain = placed.then(() => {}, () => {})
+      return placed
     },
     settled: () => chain
   }
