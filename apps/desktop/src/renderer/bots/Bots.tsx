@@ -7,14 +7,23 @@ import { newChatIn } from '../new-chat'
 import { run, useTopic } from '../store'
 import { Avatar } from './Avatar'
 import { BotEditor, type BotEditorProps } from './BotEditor'
-import { BotForm } from './BotForm'
-import { EMPTY_DRAFT, nameProblem } from './bot-form'
+import { nameProblem } from './bot-form'
+import type { LookCalls } from './LookPicker'
+import { NewBotForm } from './NewBotForm'
 import { NewMenu } from './NewMenu'
 import { plusMenuOf, seatableIn, type PlusItem } from './plus-menu'
 import { botIn, listOf, selectedIn, UNASSIGNED } from './roster-view'
 
 const CARET_KEYS: ReadonlySet<string> = new Set(['PageUp', 'PageDown', 'End'])
 const MAC = navigator.userAgent.includes('Mac')
+
+const LOOKS: LookCalls = {
+  canGenerate: () => run({ do: 'canGeneratePicture' }),
+  generate: prompt => run({ do: 'generatePicture', prompt }),
+  choose: () => window.highwing.choosePicture(),
+  pets: () => run({ do: 'pets' }),
+  petPicture: ({ slug, url }) => run({ do: 'petPicture', slug, url })
+}
 
 export function BotsSidebar({ head }: { readonly head: ReactNode }) {
   const open = useTopic('open')
@@ -23,13 +32,14 @@ export function BotsSidebar({ head }: { readonly head: ReactNode }) {
       head={head} bots={useTopic('bots')} open={open} link={useTopic('link')} groups={useTopic('groups')}
       onOpen={bot => run({ do: 'open', ref: { kind: 'bot', bot } })}
       onNewChat={() => void run(newChatIn(open, crypto.randomUUID()))}
-      onCreate={draft => run({ do: 'createBot', draft })}
+      onCreate={(draft, picture) => run({ do: 'createBot', draft, picture })}
       onCreateGroup={draft => run({ do: 'createGroup', draft })}
       onModels={() => run({ do: 'botModels', bot: null })}
       onDescribe={bot => run({ do: 'describeBot', bot })}
       onEdit={(bot, edit, revision) => run({ do: 'editBot', bot, edit, revision })}
       onPickPicture={bot => window.highwing.pickBotPicture(bot)}
       onRemovePicture={bot => run({ do: 'removeBotPicture', bot })}
+      looks={LOOKS}
     />
   )
 }
@@ -44,9 +54,10 @@ interface BotsPanelProps extends EditorCalls {
   readonly groups: Groups | undefined
   readonly onOpen: (bot: BotId) => Promise<CommandOutcome<unknown>>
   readonly onNewChat: () => void
-  readonly onCreate: (draft: BotDraft) => Promise<CommandOutcome<BotCreated>>
+  readonly onCreate: (draft: BotDraft, picture: string) => Promise<CommandOutcome<BotCreated>>
   readonly onCreateGroup: (draft: GroupDraft) => Promise<CommandOutcome>
   readonly onModels: () => Promise<CommandOutcome<ModelMenu>>
+  readonly looks: LookCalls
 }
 
 const icon = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 } as const
@@ -82,7 +93,7 @@ function GroupChats({ rows }: { readonly rows: readonly GroupRowView[] }) {
   )
 }
 
-export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOpen, onNewChat, onCreate, onCreateGroup, onModels, ...editor }: BotsPanelProps) {
+export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOpen, onNewChat, onCreate, onCreateGroup, onModels, looks, ...editor }: BotsPanelProps) {
   const [refused, setRefused] = useState<string | null>(null)
   const [form, setForm] = useState<{ readonly models: ModelMenu | 'loading' } | null>(null)
   const [grouping, setGrouping] = useState(false)
@@ -103,9 +114,9 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
     setForm({ models: 'loading' })
     void onModels().then(outcome => { if (outcome.ok) setForm(held => held && { models: outcome.value }) })
   }
-  const create = async (draft: BotDraft) => {
+  const create = async (draft: BotDraft, picture: string) => {
     setMade(null)
-    const outcome = await onCreate(draft)
+    const outcome = await onCreate(draft, picture)
     if (outcome.ok) setMade(outcome.value)
     return outcome
   }
@@ -188,10 +199,7 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
         )}
       </aside>
       {form !== null && (
-        <BotForm
-          title="New bot" submitLabel="Create" initial={EMPTY_DRAFT} problemOf={name => nameProblem(name, bots)}
-          models={form.models} onSubmit={create} onClose={() => setForm(null)}
-        />
+        <NewBotForm problemOf={name => nameProblem(name, bots)} models={form.models} looks={looks} onCreate={create} onClose={() => setForm(null)} />
       )}
       {grouping && <GroupForm offered={seatableIn(bots, groups)} listed={groups?.state === 'listed' ? groups.rows.map(row => row.id) : []} onCreate={onCreateGroup} onClose={closeGroupForm} />}
       {editing !== null && (

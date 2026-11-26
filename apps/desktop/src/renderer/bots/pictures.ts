@@ -21,13 +21,33 @@ const snapshot = () => version
 
 const DATA_URL = /^data:(image\/(?:png|jpeg|webp));base64,([\s\S]*)$/
 
-export function blobUrlOf(data: string): string | null {
+function blobOf(data: string): Blob | null {
   const [, type, base64] = DATA_URL.exec(data) ?? []
   if (type === undefined || base64 === undefined) return null
   try {
-    return URL.createObjectURL(new Blob([Uint8Array.from(atob(base64), char => char.charCodeAt(0))], { type }))
+    return new Blob([Uint8Array.from(atob(base64), char => char.charCodeAt(0))], { type })
   } catch {
     return null
+  }
+}
+
+export function blobUrlOf(data: string): string | null {
+  const blob = blobOf(data)
+  return blob === null ? null : URL.createObjectURL(blob)
+}
+
+/**
+ * Whether the window can decode the whole picture. Main types a picture by its first bytes alone, so a file cut off after
+ * them passes there. An `<img>` draws a cut-off PNG as far as it goes and calls it decoded, while `createImageBitmap` refuses it.
+ */
+export async function decodes(data: string): Promise<boolean> {
+  const blob = blobOf(data)
+  if (blob === null) return false
+  try {
+    ;(await createImageBitmap(blob)).close()
+    return true
+  } catch {
+    return false
   }
 }
 

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { DONE, refused, SessionActor, type Upload } from './actor'
-import { botModels, botPicture, createBot, describeBot, editBot, setBotPicture } from './bot-admin'
+import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, petPicture, setBotPicture } from './bot-admin'
 import { botsIn, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
 import type { Groups } from './domain/groups'
@@ -421,7 +421,7 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'botModels') return botModels(conn, command.bot)
     if (command.do === 'versions') return versions(command.sessionId)
     if (command.do === 'createBot') {
-      const made = await createBot(conn, command.draft)
+      const made = await createBot(conn, command.draft, command.picture)
       // A 5062 may have made the profile, so the roster is read after any attempt.
       roster.ask()
       if (made.ok) await desk.ask({ kind: 'bot', bot: made.value.bot })
@@ -433,6 +433,10 @@ export function openHermes(options: HermesOptions): Hermes {
     }
     if (command.do === 'describeBot') return describeBot(conn, command.bot)
     if (command.do === 'botPicture') return botPicture(conn, command.bot)
+    if (command.do === 'canGeneratePicture') return canGeneratePicture(conn)
+    if (command.do === 'generatePicture') return generatePicture(conn, command.prompt)
+    if (command.do === 'pets') return listPets(conn)
+    if (command.do === 'petPicture') return petPicture(conn, command.slug, command.url)
     if (command.do === 'editBot' || command.do === 'setBotPicture' || command.do === 'removeBotPicture') {
       const done = command.do === 'editBot' ? await editBot(conn, command.bot, command.edit, command.revision)
         : await setBotPicture(conn, command.bot, command.do === 'setBotPicture' ? command.data : null)

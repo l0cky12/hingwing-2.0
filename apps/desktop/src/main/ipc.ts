@@ -2,7 +2,7 @@ import type { Hermes } from '@highwing/hermes'
 import type { BotId, CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
 import {
   CHANNEL, isAppTopic, isPreviewCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
-  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type PictureChoice, type Push, type SessionPatch, type Setup, type StageResult,
+  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type PictureChoice, type PictureFile, type Push, type SessionPatch, type Setup, type StageResult,
   type Tail, type Topic
 } from '../ipc-contract'
 import { basename } from 'node:path'
@@ -146,9 +146,14 @@ function fileActions(opener: Opener, pane: PreviewOwner): FileActions {
 
 export interface Attaching { readonly store: Pick<AttachmentStore, 'stage' | 'read'>; readonly sources: AttachSources }
 
+export interface Pictures {
+  pick(bot: BotId): Promise<CommandOutcome<PictureChoice>>
+  choose(): Promise<CommandOutcome<PictureFile>>
+}
+
 export function serveWindows(
   owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>,
-  pane: PreviewOwner, pickPicture: (bot: BotId) => Promise<CommandOutcome<PictureChoice>>, attaching: Attaching,
+  pane: PreviewOwner, pictures: Pictures, attaching: Attaching,
   saver: Saver, mode: ModeOwner
 ): { dispose(): void } {
   const windows = new Map<number, Map<number, Served>>()
@@ -225,8 +230,9 @@ export function serveWindows(
 
   ipc.handle(CHANNEL.pickPicture, async (event, raw) => {
     const bot = parseBotId(raw)
-    return trusted(event) && bot !== null ? pickPicture(bot) : REFUSED
+    return trusted(event) && bot !== null ? pictures.pick(bot) : REFUSED
   })
+  ipc.handle(CHANNEL.choosePicture, async event => (trusted(event) ? pictures.choose() : REFUSED))
 
   const { store, sources } = attaching
   const notHere = (name: string): StageResult => ({ ok: false, name, reason: `${name} isn't a file on this computer, so Highwing can't attach it.` })
@@ -261,6 +267,7 @@ export function serveWindows(
       ipc.removeHandler(CHANNEL.drafts)
       ipc.removeAllListeners(CHANNEL.keepDraft)
       ipc.removeHandler(CHANNEL.pickPicture)
+      ipc.removeHandler(CHANNEL.choosePicture)
       ipc.removeHandler(CHANNEL.attachPick)
       ipc.removeHandler(CHANNEL.attachPaste)
       ipc.removeHandler(CHANNEL.attachDrop)

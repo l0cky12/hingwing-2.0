@@ -1,4 +1,4 @@
-import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId } from './bots'
+import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId, PetChoice } from './bots'
 import type { GroupDraft } from './groups'
 import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
@@ -75,8 +75,19 @@ export type Command =
   | { readonly do: 'contextBreakdown'; readonly sessionId: SessionId }
   /** The files and folders in this chat's working folder that `word` (an `@` and what follows it) starts. */
   | { readonly do: 'completePath'; readonly sessionId: SessionId; readonly word: string }
-  /** Makes the profile, asks for the roster again, then opens the new bot. */
-  | { readonly do: 'createBot'; readonly draft: BotDraft }
+  /**
+   * Makes the profile, stores `picture` as its picture, asks for the roster again, then opens the new bot. `picture`: a PNG,
+   * JPEG or WebP data URL, or null for none. A picture Hermes refuses leaves the bot made, with one more warning that says so.
+   */
+  | { readonly do: 'createBot'; readonly draft: BotDraft; readonly picture: string | null }
+  /** Whether Hermes has an image model to draw a picture with. false for a Hermes without the call. */
+  | { readonly do: 'canGeneratePicture' }
+  /** A picture Hermes's image model draws from `prompt`: a PNG, JPEG or WebP data URL of at most `GENERATED_MAX_BYTES`. */
+  | { readonly do: 'generatePicture'; readonly prompt: string }
+  /** The pets Hermes lists, curated ones first, read on each ask. */
+  | { readonly do: 'pets' }
+  /** A pet's idle frame as a PNG data URL, or null when Hermes has none. `url` is the pet's `PetChoice.url`. */
+  | { readonly do: 'petPicture'; readonly slug: string; readonly url: string | null }
   /** The models a bot's chat could use, with no chat open. null: the socket's own profile, which a new bot copies its credentials from. */
   | { readonly do: 'botModels'; readonly bot: BotId | null }
   | { readonly do: 'describeBot'; readonly bot: BotId }
@@ -145,7 +156,10 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'models' | 'botModels' } ? ModelMenu
   : C extends { do: 'createBot' } ? BotCreated
   : C extends { do: 'describeBot' } ? BotDetails
-  : C extends { do: 'botPicture' } ? string | null
+  : C extends { do: 'botPicture' | 'petPicture' } ? string | null
+  : C extends { do: 'canGeneratePicture' } ? boolean
+  : C extends { do: 'generatePicture' } ? string
+  : C extends { do: 'pets' } ? readonly PetChoice[]
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
   : C extends { do: 'completePath' } ? readonly PathMatch[]

@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { pickPicture, pictureDataUrl, readHead, type PictureDeps } from '../src/main/picture'
+import { choosePicture, pickPicture, pictureDataUrl, readHead, type PictureDeps } from '../src/main/picture'
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10])
@@ -45,6 +45,28 @@ describe('pictureDataUrl', () => {
     expect(pictureDataUrl(Buffer.from('GIF89a......'))).toBeNull()
     expect(pictureDataUrl(Buffer.from('just some words'))).toBeNull()
     expect(pictureDataUrl(new Uint8Array())).toBeNull()
+  })
+})
+
+describe('choosePicture', () => {
+  it('answers a picked picture as a data URL, and sends it nowhere', async () => {
+    const { deps, sent } = picker(JPEG)
+    expect(await choosePicture(deps)).toEqual({ ok: true, value: pictureDataUrl(JPEG) })
+    expect(sent).toEqual([])
+  })
+
+  it('answers cancelled when the picker is closed', async () => {
+    expect(await choosePicture(picker(null).deps)).toEqual({ ok: true, value: 'cancelled' })
+  })
+
+  it('refuses a file that is not a picture, is too big or cannot be read, in the same words as a bot\'s picture', async () => {
+    const big = new Uint8Array(2_000_001)
+    big.set(PNG)
+    for (const file of [Buffer.from('not a picture'), big]) {
+      expect(await choosePicture(picker(file).deps)).toEqual(RULE)
+      expect(await pickPicture(picker(file).deps, RAE)).toEqual(RULE)
+    }
+    expect(await choosePicture(picker(new Error('EACCES')).deps)).toEqual({ ok: false, refusal: { kind: 'rejected', message: "Highwing couldn't read that file." } })
   })
 })
 
