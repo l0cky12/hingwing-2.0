@@ -73,6 +73,12 @@ export function drawnAbove(view: SidebarView, bot: BotId): string | null {
   return at === -1 ? null : JSON.stringify(drawn.slice(0, at))
 }
 
+/** What is drawn above the Group chats section: the default bot's card and Pinned. */
+export function drawnAboveGroups(view: SidebarView): string | null {
+  if (view.show !== 'groups') return null
+  return JSON.stringify([view.card?.id ?? null, ...view.groups.filter(group => group.place === 'pinned').flatMap(group => group.bots.map(bot => bot.id))])
+}
+
 export type HiddenTrigger = 'search' | 'all-hidden' | `open:${string}`
 
 export function hiddenTriggers(list: ListView, searching: boolean, open: Bot | null): readonly HiddenTrigger[] {

@@ -198,6 +198,7 @@ export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'profiles.create' | 'profiles.describe' | 'profiles.configure' | 'profiles.set_asset' | 'profiles.get_asset' | 'projects.tree' |
   'prompt.btw' | 'prompt.background' | 'process.list' | 'process.kill' | 'subagent.interrupt' | 'session.control.read' | 'session.control' | 'rollback.list' |
   'rollback.diff' | 'rollback.restore' | 'message.react' | 'groups.capabilities' | 'groups.list' | 'groups.state' | 'groups.log' | 'groups.send' | 'groups.stop' |
+  'groups.rename' | 'groups.disband' |
   'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot'>
 export type Method = keyof Served
 

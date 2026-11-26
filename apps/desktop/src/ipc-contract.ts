@@ -509,6 +509,8 @@ export const validators: Validators = {
   },
   sendToGroup: raw => (isGroupId(raw.group) && filled(raw.text) ? { do: 'sendToGroup', group: raw.group, text: raw.text } : null),
   stopGroup: raw => (isGroupId(raw.group) ? { do: 'stopGroup', group: raw.group } : null),
+  renameGroup: raw => (isGroupId(raw.group) && filled(raw.name) && raw.name.trim().length <= GROUP_NAME_MAX ? { do: 'renameGroup', group: raw.group, name: raw.name.trim() } : null),
+  deleteGroup: raw => (isGroupId(raw.group) ? { do: 'deleteGroup', group: raw.group } : null),
   tune: raw => {
     const sessionId = sessionIdOf(raw)
     if (!sessionId) return null

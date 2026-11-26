@@ -1,10 +1,9 @@
-import type { BotId } from '@highwing/hermes/domain'
 import type { ReactNode } from 'react'
 import { MENU_ICONS } from '../chrome/menu-icons'
-import type { Box, Opener } from '../chrome/popup-menu'
+import type { Anchor } from '../chrome/popup-menu'
 import { ICON, PopupMenu } from '../chrome/PopupMenu'
-import { anchorOf, LABELS, MENUS, type MenuAction } from './bot-menu'
-import type { BotPlace } from './sidebar-view'
+import type { MenuAction, MenuItem } from './bot-menu'
+import { isIn, type FocusTarget } from './focus'
 
 const BUBBLE = 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'
 
@@ -19,22 +18,22 @@ const ICONS: { readonly [A in MenuAction]: ReactNode } = {
   delete: MENU_ICONS.delete
 }
 
-export interface RowMenuProps {
-  readonly bot: BotId
+export interface RowMenuProps<A extends MenuAction> {
   readonly name: string
-  readonly place: BotPlace
-  readonly opener: Opener
-  readonly measure: () => { readonly row: Box; readonly more: Box }
-  readonly onChoose: (action: MenuAction) => void
+  readonly items: readonly (readonly MenuItem<A>[])[]
+  /** The row's ⋯ button. A press on it closes the menu by toggling, not as a press away. */
+  readonly more: FocusTarget
+  readonly anchor: () => Anchor
+  readonly onChoose: (action: A) => void
   readonly onClose: (how: 'escape' | 'tab' | 'away') => void
 }
 
-export function RowMenu({ bot, name, place, opener, measure, onChoose, onClose }: RowMenuProps) {
+export function RowMenu<A extends MenuAction>({ name, items, more, anchor, onChoose, onClose }: RowMenuProps<A>) {
   return (
     <PopupMenu
-      label={`More for ${name}`} className="bot-menu" groups={MENUS[place].map(group => group.map(action => ({ id: action, label: LABELS[action], icon: ICONS[action] })))}
-      anchor={() => anchorOf(opener, place, measure())} owns={target => target.closest('[data-more]')?.getAttribute('data-more') === bot}
-      onChoose={onChoose} onClose={onClose}
+      label={`More for ${name}`} className="bot-menu"
+      groups={items.map(group => group.map(({ action, label, block }) => ({ id: action, label, icon: ICONS[action], ...(block === null ? {} : { block }) })))}
+      anchor={anchor} owns={target => isIn(target, more)} onChoose={onChoose} onClose={onClose}
     />
   )
 }

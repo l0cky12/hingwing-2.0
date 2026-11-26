@@ -139,6 +139,13 @@ export type Command =
   | { readonly do: 'sendToGroup'; readonly group: GroupId; readonly text: string }
   /** Stops every member's running turn in the group. */
   | { readonly do: 'stopGroup'; readonly group: GroupId }
+  /** `name`: trimmed, 1 to `GROUP_NAME_MAX` characters. The row and the open group's top bar show it before this answers. */
+  | { readonly do: 'renameGroup'; readonly group: GroupId; readonly name: string }
+  /**
+   * Hermes stops the group's running turns and deletes it with its messages, for good. It leaves `groups` before this
+   * answers, and a window showing it moves to the bot it was opened over.
+   */
+  | { readonly do: 'deleteGroup'; readonly group: GroupId }
   /** Sets one of Hermes's switches for the chat, for every client that has it open. */
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'reasoning'; readonly on: boolean }
   /** YOLO: Hermes runs this chat's commands without asking. */

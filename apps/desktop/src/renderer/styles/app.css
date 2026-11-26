@@ -488,6 +488,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .bot-picture .form-refused { flex-basis: 100%; }
 .group-form { width: min(480px, calc(100% - 32px)); }
 .group-form h2 { margin-bottom: 4px; }
+.group-editor h2 { margin-bottom: 16px; }
 .group-form .lede { margin: 0 0 16px; font-size: 13px; line-height: 1.5; color: var(--graphite); }
 .group-form .stacked { margin-bottom: 14px; }
 .group-form .stacked > label, .group-form .stacked > .flabel { display: block; padding: 0; margin-bottom: 6px; font-size: 13px; color: var(--graphite); }
@@ -509,6 +510,9 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .pick-none { padding: 6px 8px; font-size: 13px; color: var(--graphite); }
 .group-form .tally { margin: 8px 0 0; font-size: 12.5px; color: var(--graphite); }
 .group-form .field-words { margin: 6px 0 0; }
+.member-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.member-list li { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink); }
+.group-form .member-note { margin: 8px 0 0; font-size: 12.5px; color: var(--graphite); }
 .bot-form-body { position: relative; }
 .look-row { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .look-button { position: relative; flex: none; width: 64px; height: 64px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink); }
@@ -973,6 +977,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .popup-menu svg { flex: none; color: var(--graphite); }
 .popup-menu [role="separator"] { height: 1px; margin: 3px 6px; background: var(--rule); }
 .popup-menu button[aria-expanded="true"] { background: var(--signal-soft); }
+.popup-menu button[aria-disabled="true"] { opacity: .45; cursor: default; }
+.popup-menu button[aria-disabled="true"]:hover { background: none; }
 .popup-menu .popup-more { margin-left: auto; }
 .popup-hint { margin-left: auto; padding-left: 16px; font-size: 12.5px; color: var(--graphite); font-variant-numeric: tabular-nums; }
 .bots-said { flex: none; margin: 0 12px 12px 20px; }

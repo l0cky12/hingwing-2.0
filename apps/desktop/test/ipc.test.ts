@@ -397,10 +397,22 @@ describe('validators', () => {
   it('keep a message and a Stop for a group Hermes could name, and open it by its id', () => {
     expect(parseCommand({ do: 'sendToGroup', group: 'launch-plan', text: '@sam go', extra: 1 })).toEqual({ do: 'sendToGroup', group: 'launch-plan', text: '@sam go' })
     expect(parseCommand({ do: 'stopGroup', group: 'launch-plan', cancel: 'all' })).toEqual({ do: 'stopGroup', group: 'launch-plan' })
+    expect(parseCommand({ do: 'deleteGroup', group: 'launch-plan', cancel_id: 'x' })).toEqual({ do: 'deleteGroup', group: 'launch-plan' })
     expect(parseCommand({ do: 'open', ref: { kind: 'group', group: 'launch-plan', over: 'sam' } })).toEqual({ do: 'open', ref: { kind: 'group', group: 'launch-plan' } })
   })
 
+  it('keep a group chat rename trimmed, up to the 200 characters Hermes takes', () => {
+    expect(parseCommand({ do: 'renameGroup', group: 'launch-plan', name: '  Ship plan ', event_id: 'e1' })).toEqual({ do: 'renameGroup', group: 'launch-plan', name: 'Ship plan' })
+    expect(parseCommand({ do: 'renameGroup', group: 'launch-plan', name: ` ${'x'.repeat(200)} ` })).toMatchObject({ name: 'x'.repeat(200) })
+  })
+
   it.each([
+    ['a rename to a blank name', { do: 'renameGroup', group: 'launch-plan', name: '   ' }],
+    ['a rename to a name too long for Hermes', { do: 'renameGroup', group: 'launch-plan', name: 'x'.repeat(201) }],
+    ['a rename with no name', { do: 'renameGroup', group: 'launch-plan' }],
+    ['a rename of an id Hermes would not take', { do: 'renameGroup', group: 'launch plan', name: 'Ship plan' }],
+    ['a delete of no group', { do: 'deleteGroup' }],
+    ['a delete of an id Hermes would not take', { do: 'deleteGroup', group: '-plan' }],
     ['a message with no words', { do: 'sendToGroup', group: 'launch-plan', text: '  ' }],
     ['a message to an id Hermes would not take', { do: 'sendToGroup', group: 'launch plan', text: 'hi' }],
     ['a Stop of no group', { do: 'stopGroup' }],
@@ -443,9 +455,9 @@ describe('validators', () => {
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
-      'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'describeBot', 'discard', 'editBot',
+      'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard', 'editBot',
       'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
-      'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename',
+      'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename', 'renameGroup',
       'restore', 'retitle', 'rewind', 'send', 'sendToGroup', 'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
     ])
   })
