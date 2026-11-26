@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef } from 'react'
 import type { Mode, Theme } from '../../ipc-contract'
 import { Bar } from '../chrome/Chrome'
-import { COMMAND_KEY } from '../keys'
+import { MAC } from '../keys'
 import { run, useTopic } from '../store'
 import { Bubble, ConnectionCard, Monitor, Moon, People, Segmented, Sun, type Segment } from './ConnectionCard'
 import type { CardSetup } from './screens'
@@ -17,13 +17,7 @@ const THEMES: readonly Segment<Theme>[] = [
   { value: 'dark', label: 'Dark', icon: <Moon /> }
 ]
 
-const SHORTCUTS: readonly { readonly label: string; readonly key: string; readonly onlyIn: string | null }[] = [
-  { label: 'Command palette', key: 'K', onlyIn: null },
-  { label: 'New chat', key: 'N', onlyIn: 'In a chat' },
-  { label: 'Find in chat', key: 'F', onlyIn: 'In a chat' }
-]
-
-export function Settings({ setup, mode, theme, onRequestClose }: { readonly setup: CardSetup; readonly mode: Mode; readonly theme: Theme; readonly onRequestClose: () => void }) {
+export function Settings({ setup, mode, theme, onRequestClose, onShowShortcuts }: { readonly setup: CardSetup; readonly mode: Mode; readonly theme: Theme; readonly onRequestClose: () => void; readonly onShowShortcuts: () => void }) {
   const saving = setup.at === 'checking' && setup.step === 'save'
   const link = useTopic('link')
   const heading = useRef<HTMLHeadingElement>(null)
@@ -82,15 +76,18 @@ export function Settings({ setup, mode, theme, onRequestClose }: { readonly setu
               </div>
             </div>
           </section>
-          <section className="group short" aria-labelledby={`${ids}-keys`}>
+          <section className="group" aria-labelledby={`${ids}-keys`}>
             <h3 id={`${ids}-keys`}>Keyboard shortcuts</h3>
             <div className="card">
-              {SHORTCUTS.map(({ label, key, onlyIn }) => (
-                <div key={key} className="row">
-                  <div className="text"><p className="label">{label}{onlyIn !== null && <span className="where">{onlyIn}</span>}</p></div>
-                  <div className="control keys"><kbd>{COMMAND_KEY}</kbd><kbd>{key}</kbd></div>
+              <div className="row">
+                <div className="text">
+                  <p className="label">Keyboard shortcuts</p>
+                  <p className="desc">Every shortcut Highwing has, grouped by what it does.</p>
                 </div>
-              ))}
+                <div className="control">
+                  <button type="button" className="btn" aria-keyshortcuts={MAC ? 'Meta+/' : 'Control+/'} onClick={onShowShortcuts}>Show all</button>
+                </div>
+              </div>
             </div>
           </section>
         </div>

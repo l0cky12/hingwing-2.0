@@ -1,5 +1,5 @@
 import type { Shown, ShownGroup, Target } from '@highwing/hermes/domain'
-import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { epochOf, type Mode, type Theme } from '../ipc-contract'
 import { BotPicker } from './bots/BotPicker'
 import { BotsSidebar } from './bots/Bots'
@@ -9,6 +9,8 @@ import { Chat } from './chat/Chat'
 import { GroupPane } from './groups/GroupPane'
 import { Banner, TopBar } from './chrome/Chrome'
 import { ModeSwitch } from './chrome/ModeSwitch'
+import { Shortcuts } from './chrome/Shortcuts'
+import { ShortcutSheet } from './chrome/ShortcutSheet'
 import { Preview } from './preview/Preview'
 import { Composer } from './composer/Composer'
 import { Palette } from './palette/Palette'
@@ -93,6 +95,8 @@ function ChatWindow({ hidden, settings, target, mode, theme }: ChatWindowProps) 
   const preview = useTopic('preview')
   const { root, pick } = useSwitchModeKeepingFocus(mode)
   const { settingsButton, close } = useCloseSettings(settings !== null)
+  const [sheet, setSheet] = useState<{ readonly back: Element | null } | null>(null)
+  const openSheet = useCallback(() => setSheet(held => held ?? { back: document.activeElement }), [])
   const switcher = <ModeSwitch mode={mode} onPick={pick} />
   const paned = preview?.state === 'open' && settings === null
   return (
@@ -102,8 +106,10 @@ function ChatWindow({ hidden, settings, target, mode, theme }: ChatWindowProps) 
       <div key="screen" className="screen" hidden={settings !== null}>
         <ChatScreen target={target} settingsButton={settingsButton} />
       </div>
-      {settings !== null && <Settings setup={settings} mode={mode} theme={theme} onRequestClose={close} />}
+      {settings !== null && <Settings setup={settings} mode={mode} theme={theme} onRequestClose={close} onShowShortcuts={openSheet} />}
       <DraftSweep />
+      <Shortcuts target={target} settingsShown={settings !== null} onSheet={openSheet} />
+      {sheet !== null && <ShortcutSheet back={sheet.back} onClose={() => setSheet(null)} />}
       {paned && <Preview preview={preview} />}
     </div>
   )

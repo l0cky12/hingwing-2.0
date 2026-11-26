@@ -784,9 +784,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 :is(.settings, .setup) .edit-foot .progress + .hint { margin-top: 2px; padding-left: 22px; }
 :is(.settings, .setup) .edit-foot .progress .glyph { flex: none; width: 10px; height: 10px; margin: 0 1px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 3px color-mix(in srgb, var(--signal) 20%, transparent); animation: halo 1.6s ease-out infinite; }
 
-:is(.settings, .setup) .short .row { min-height: 44px; padding-top: 8px; padding-bottom: 8px; }
-:is(.settings, .setup) .card .where { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--rule); font-size: 12px; font-weight: 400; color: var(--graphite); vertical-align: 1px; }
-:is(.settings, .setup) .card kbd { display: inline-block; min-width: 22px; padding: 0 6px; font: 500 11.5px/18px var(--sans); text-align: center; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 5px; }
+:is(.settings, .setup) .card .where, .shortcut-sheet .where { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--rule); font-size: 12px; font-weight: 400; color: var(--graphite); vertical-align: 1px; }
+:is(.settings, .setup) .card kbd, .shortcut-sheet kbd { display: inline-block; min-width: 22px; padding: 0 6px; font: 500 11.5px/18px var(--sans); text-align: center; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 5px; }
 
 @container (max-width: 660px) {
   .settings { padding: 24px 16px; }
@@ -806,7 +805,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   :is(.settings, .setup) .seg label:has(:checked) { padding: 3px 11px 3px 9px; border: 2px solid Highlight; }
   :is(.settings, .setup) .card .btn { padding: 4px 13px; border: 1px solid ButtonText; }
   :is(.settings, .setup) .edit-foot .btn { padding: 5px 17px; }
-  :is(.settings, .setup) .machine .state, :is(.settings, .setup) .card .where, :is(.settings, .setup) .edit-form .problem { border: 1px solid CanvasText; }
+  :is(.settings, .setup) .machine .state, :is(.settings, .setup) .card .where, .shortcut-sheet .where, :is(.settings, .setup) .edit-form .problem { border: 1px solid CanvasText; }
   :is(.settings, .setup) .machine .state::before { box-sizing: border-box; background: none; border: 3.5px solid CanvasText; }
   :is(.settings, .setup) .edit-foot .progress .glyph { background: none; border: 5px solid CanvasText; }
 }
@@ -1128,6 +1127,14 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .preview-rows { border-top: 1px solid CanvasText; }
   .link-menu { border: 1px solid CanvasText; }
 }
+.shortcut-sheet { width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--rule); border-radius: 10px; background: var(--sheet); color: var(--ink); font: 14px/1.45 var(--sans); }
+.shortcut-sheet::backdrop { background: rgb(var(--shade) / .35); }
+.shortcut-body { padding: 20px 22px; }
+.shortcut-sheet h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.shortcut-sheet h3 { margin: 16px 0 4px; font-size: 13px; font-weight: 500; color: var(--graphite); }
+.shortcut-sheet ul { margin: 0; padding: 0; list-style: none; }
+.shortcut-sheet li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 5px 0; }
+.shortcut-sheet .keys { flex: none; display: flex; gap: 4px; }
 .palette {
   width: min(560px, calc(100% - 32px)); max-width: none; margin: 12vh auto auto; padding: 0;
   border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); color: var(--ink);

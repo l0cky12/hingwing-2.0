@@ -28,7 +28,7 @@ const { Settings } = await import('../src/renderer/setup/Settings')
 
 const HOST: Target = { kind: 'local' }
 const AT_REST: CardSetup = { at: 'form', live: { target: HOST, epoch: 1 }, notice: null }
-const render = (theme: Theme) => renderToStaticMarkup(<Settings setup={AT_REST} mode="bots" theme={theme} onRequestClose={() => {}} />)
+const render = (theme: Theme) => renderToStaticMarkup(<Settings setup={AT_REST} mode="bots" theme={theme} onRequestClose={() => {}} onShowShortcuts={() => {}} />)
 const labelOf = (html: string, id: string) => new RegExp(`id="${id}"[^>]*>([^<]*)<`).exec(html)?.[1]
 
 beforeEach(() => {
