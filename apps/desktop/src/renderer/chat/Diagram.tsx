@@ -1,18 +1,21 @@
 import type { Block } from '@highwing/thread'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { CopyButton } from './Copy'
-import { drawDiagram, drawnBefore, type Drawing } from './diagrams'
+import { drawDiagram, drawnBefore, paletteNow, watchPalette, type Drawing, type Palette } from './diagrams'
 
 type View = 'diagram' | 'source'
 
+const LIGHT = (): Palette => 'light'
+
 function useDrawing(source: string): Drawing {
-  const [result, setResult] = useState(() => ({ source, drawing: drawnBefore(source) }))
+  const palette = useSyncExternalStore(watchPalette, paletteNow, LIGHT)
+  const [lastDrawn, setLastDrawn] = useState(() => ({ source, drawing: drawnBefore(source, palette) }))
   useEffect(() => {
     let mounted = true
-    void drawDiagram(source).then(drawing => { if (mounted) setResult({ source, drawing }) })
+    void drawDiagram(source).then(drawing => { if (mounted) setLastDrawn({ source, drawing }) })
     return () => { mounted = false }
-  }, [source])
-  return result.source === source ? result.drawing : drawnBefore(source)
+  }, [source, palette])
+  return lastDrawn.source === source ? lastDrawn.drawing : drawnBefore(source, palette)
 }
 
 const firstLine = (source: string) => source.split('\n').find(line => line.trim() !== '')?.trim() ?? ''
