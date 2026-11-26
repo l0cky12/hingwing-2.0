@@ -15,8 +15,9 @@ import { draftStore, DRAFTS_DIR } from './drafts'
 import { serveWindows } from './ipc'
 import { dbusSend, hasSecretService } from './keyring'
 import { chatLinks } from './links'
-import { MODE, preferenceStore, SNOOZES, THEME } from './preferences'
+import { MODE, ON_CLOSE, preferenceStore, SNOOZES, THEME } from './preferences'
 import { desktopNotifier, notifyTurnEnds, recordingNotifier } from './notify'
+import { installTray } from './tray'
 import { choosePicture, pickPicture, readHead } from './picture'
 import { previewPane, registerPageScheme } from './preview'
 import { reachOf } from './preview-page'
@@ -27,7 +28,7 @@ import { unreadStore, UNREAD_DIR } from './unread'
 import { isAppUrl, openWindow } from './windows'
 import dictionary from '../../dictionaries/en-US-10-2.bdic?asset'
 
-const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_FIXTURE_LATENCY_MS, HIGHWING_RECORD, HIGHWING_OPEN_LOG, HIGHWING_PICK_FILE, HIGHWING_PICK_FILES, HIGHWING_SAVE_DIR, HIGHWING_NOTIFY_LOG, HIGHWING_MENU_LOG, HIGHWING_MENU_PICK, HIGHWING_SIGN_IN_MS, HIGHWING_TEST_KEYRING } = process.env
+const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_FIXTURE_LATENCY_MS, HIGHWING_RECORD, HIGHWING_OPEN_LOG, HIGHWING_PICK_FILE, HIGHWING_PICK_FILES, HIGHWING_SAVE_DIR, HIGHWING_NOTIFY_LOG, HIGHWING_MENU_LOG, HIGHWING_MENU_PICK, HIGHWING_SIGN_IN_MS, HIGHWING_TEST_KEYRING, HIGHWING_TRAY_LOG } = process.env
 const fixture = HIGHWING_FIXTURE ? loadFixture(HIGHWING_FIXTURE) : null
 
 const PICTURE_DIALOG: OpenDialogOptions = {
@@ -116,6 +117,7 @@ app.whenReady().then(async () => {
   const mode = await preferenceStore(settingsDir, MODE)
   const theme = await preferenceStore(settingsDir, THEME)
   const snoozes = await preferenceStore(settingsDir, SNOOZES)
+  const onClose = await preferenceStore(settingsDir, ON_CLOSE)
   nativeTheme.themeSource = theme.get()
   theme.subscribe(source => (nativeTheme.themeSource = source))
   await attachments.sweep(new Set((await drafts.load()).flatMap(draft => draft.attachments.map(held => held.id))))
@@ -138,18 +140,19 @@ app.whenReady().then(async () => {
   const saver = HIGHWING_SAVE_DIR ? folderSaver(HIGHWING_SAVE_DIR) : dialogSaver(dialog, () => app.getPath('downloads'))
   const served = serveWindows(
     owner, ipcMain, isAppUrl, opener, images, drafts, pane, { pick: (bot, live) => pickPicture(pictureDeps, bot, live), choose: () => choosePicture(pictureDeps) },
-    { store: attachments, sources }, saver, { mode, theme, snoozes }
+    { store: attachments, sources }, saver, { mode, theme, snoozes, onClose }
   )
   const stopNotices = notifyTurnEnds(owner, {
     notifier: HIGHWING_NOTIFY_LOG ? recordingNotifier(HIGHWING_NOTIFY_LOG) : desktopNotifier(Notification),
     focused: () => BrowserWindow.getFocusedWindow() !== null,
     raise
   })
-  openWindow(opener, pane, HIGHWING_MENU_LOG ? recordingMenus(HIGHWING_MENU_LOG, HIGHWING_MENU_PICK) : desktopMenus(Menu))
+  const window = openWindow(opener, pane, HIGHWING_MENU_LOG ? recordingMenus(HIGHWING_MENU_LOG, HIGHWING_MENU_PICK) : desktopMenus(Menu))
+  const stopTray = installTray(window, owner, onClose, raise, HIGHWING_TRAY_LOG)
   const stopLinks = links.serve(owner, raise)
   const stopRefresh = refreshBotsOnFocus(app, owner)
   let closed: Promise<void> | null = null
-  const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), stopRefresh(), Promise.all([owner.close(), drafts.settled(), unread.settled(), mode.settled(), theme.settled(), snoozes.settled()]).then(() => {})))
+  const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), stopRefresh(), stopTray(), Promise.all([owner.close(), drafts.settled(), unread.settled(), mode.settled(), theme.settled(), snoozes.settled(), onClose.settled()]).then(() => {})))
   app.on('window-all-closed', () => void close().finally(() => app.quit()))
   // A quit from the menu or the session never emits window-all-closed, and a check or an attach still running would outlive the app.
   // Electron does not wait for a will-quit listener, so the quit is held until a draft or a preference still being written is on disk.

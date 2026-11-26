@@ -41,7 +41,7 @@ describe('the Appearance section of Settings', () => {
     const html = render('system')
     expect(Array.from(html.matchAll(/<button type="button"[^>]*>([^<]+)<\/button>/g), ([, label]) => label)).toEqual(['Close', 'General', 'Permissions', 'Hermes machine', 'Usage', 'About'])
     expect(html).toContain('aria-current="page">General')
-    expect(Array.from(html.matchAll(/<h3 [^>]*>([^<]*)<\/h3>/g), ([, heading]) => heading)).toEqual(['Appearance', 'Password managers', 'Sidebar', 'Keyboard shortcuts'])
+    expect(Array.from(html.matchAll(/<h3 [^>]*>([^<]*)<\/h3>/g), ([, heading]) => heading)).toEqual(['Appearance', 'Password managers', 'Sidebar', 'Window', 'Keyboard shortcuts'])
     expect(html).toContain('<kbd>,</kbd>')
     const theme = seen.segmented.find(control => labelOf(html, control.labelledBy) === 'Theme')!
     expect(theme.value).toBe('system')
@@ -49,6 +49,18 @@ describe('the Appearance section of Settings', () => {
     const group = new RegExp(`<div class="seg" role="radiogroup" aria-labelledby="${theme.labelledBy}">(.*?)</div>`).exec(html)![1]!
     expect(Array.from(group.matchAll(/<label><input type="radio"[^>]*?( checked="")?\/><svg[^>]*>.*?<\/svg>(\w+)<\/label>/g), ([, checked, label]) => `${label}${checked ? ' (checked)' : ''}`))
       .toEqual(['System (checked)', 'Light', 'Dark'])
+  })
+
+  it('shows Quit checked for a window close, and asks main to keep Highwing in the tray', () => {
+    const html = render('system')
+    const close = seen.segmented.find(control => labelOf(html, control.labelledBy) === 'When the window closes')!
+    expect(close.value).toBe('quit')
+    expect(html).toContain('Quit leaves Highwing. Keep in the tray leaves it running.')
+    const group = new RegExp(`<div class="seg" role="radiogroup" aria-labelledby="${close.labelledBy}">(.*?)</div>`).exec(html)![1]!
+    expect(Array.from(group.matchAll(/<label><input type="radio"[^>]*?( checked="")?\/><svg[^>]*>.*?<\/svg>(.*?)<\/label>/g), ([, checked, label]) => `${label}${checked ? ' (checked)' : ''}`))
+      .toEqual(['Quit (checked)', 'Keep in the tray'])
+    close.onPick('stay')
+    expect(seen.commands).toEqual([{ do: 'setOnClose', onClose: 'stay' }])
   })
 
   it.each(['light', 'dark', 'system'] satisfies Theme[])('asks main to draw %s when that segment is picked', picked => {
