@@ -1,13 +1,16 @@
 import type { Shown, ShownGroup, Target } from '@highwing/hermes/domain'
-import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { epochOf, type Mode, type Theme } from '../ipc-contract'
 import { BotPicker } from './bots/BotPicker'
+import { BotDetailsPanel } from './bots/BotDetailsPanel'
 import { BotsSidebar } from './bots/Bots'
+import { EDIT_CALLS } from './bots/edit-calls'
 import { useRetryPicturesOnceOnline } from './bots/pictures'
 import { ChatsSidebar, DraftSweep } from './chats/Chats'
 import { Chat } from './chat/Chat'
 import { GroupPane } from './groups/GroupPane'
-import { Banner, TopBar } from './chrome/Chrome'
+import { Banner, TopBar, useOpenChat, type DetailsToggle } from './chrome/Chrome'
+import { isDetailsKey } from './keys'
 import { ModeSwitch } from './chrome/ModeSwitch'
 import { Preview } from './preview/Preview'
 import { Composer } from './composer/Composer'
@@ -35,16 +38,40 @@ function OpenPane() {
   return shown.kind === 'group' ? <GroupPane key={samePaneOnFirstMessage(shown)} shown={shown} /> : <Chat key={samePaneOnFirstMessage(shown)} chat={shown} />
 }
 
+function useDetails(): DetailsToggle & { readonly close: () => void } {
+  const [open, setOpen] = useState(false)
+  const pill = useRef<HTMLButtonElement>(null)
+  const panel = useId()
+  const close = useCallback(() => {
+    setOpen(false)
+    pill.current?.focus()
+  }, [])
+  const toggle = useCallback(() => (open ? close() : setOpen(true)), [open, close])
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isDetailsKey(event) || pill.current?.checkVisibility() !== true) return
+      event.preventDefault()
+      if (!event.repeat) toggle()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [toggle])
+  return { open, panel, pill, toggle, close }
+}
+
 function ChatScreen({ target, settingsButton }: { readonly target: Target | null; readonly settingsButton: RefObject<HTMLButtonElement | null> }) {
   const link = useTopic('link')
   useRetryPicturesOnceOnline(link?.state === 'online')
+  const details = useDetails()
+  const { bot } = useOpenChat()
   return (
     <>
       <div className="top">
-        <TopBar target={target} settingsButton={settingsButton} />
+        <TopBar target={target} settingsButton={settingsButton} details={details} />
         {link !== undefined && <Banner link={link} target={target} />}
       </div>
       <OpenPane />
+      {details.open && bot !== null && <BotDetailsPanel key={bot.id} id={details.panel} bot={bot} calls={EDIT_CALLS} onClose={details.close} />}
     </>
   )
 }

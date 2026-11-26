@@ -28,7 +28,10 @@ export function useBotForm({ initial, problemOf, onSubmit, onSaved, waitingFor =
     if (!ready) return
     dispatch({ on: 'sent' })
     const outcome = await onSubmit(draft)
-    if (outcome.ok) onSaved()
+    if (outcome.ok) {
+      dispatch({ on: 'saved', sent: draft, ...(outcome.draft === undefined ? {} : { draft: outcome.draft }) })
+      onSaved()
+    }
     else dispatch({ on: 'refused', refusal: outcome.refusal, ...(outcome.draft === undefined ? {} : { draft: outcome.draft }) })
   }
   return { ids, nameField, draft, sending, nameWords, otherWords, ready, waitingFor, type, submit }

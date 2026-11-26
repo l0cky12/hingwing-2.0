@@ -78,7 +78,7 @@ describe('an open group chat', () => {
   })
 
   it('names the group and its members in the top bar, with no New chat and no Copy link', () => {
-    const html = renderToStaticMarkup(<TopBar target={null} settingsButton={{ current: null }} />)
+    const html = renderToStaticMarkup(<TopBar target={null} settingsButton={{ current: null }} details={{ open: false, panel: 'details', pill: { current: null }, toggle: () => {} }} />)
     expect(html).toMatch(/<h1><span class="brand">Hermes<\/span> Launch plan<\/h1><span class="members"><span class="stack" aria-hidden="true">(<span class="avatar[^>]*>[ASJ]<\/span>){3}<\/span>Ada, Sam and Juno<\/span>/)
     expect(html).not.toMatch(/New chat|Copy link/)
   })

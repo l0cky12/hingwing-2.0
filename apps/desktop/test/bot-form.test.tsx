@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { BotEditor } from '../src/renderer/bots/BotEditor'
 import { BotForm } from '../src/renderer/bots/BotForm'
-import { canSubmit, draftOf, editOf, EMPTY_DRAFT, groupModels, nameProblem, nextForm, saveEdit, startForm, type EditCalls } from '../src/renderer/bots/bot-form'
+import { canSubmit, draftOf, editOf, EMPTY_DRAFT, groupModels, nameProblem, nextForm, saveAndReread, saveEdit, startForm, type EditCalls } from '../src/renderer/bots/bot-form'
 import { APPROVED, fact, listed } from './support/bots'
 
 const model = (id: string, provider: string, providerName: string) => ({ id, provider, providerName }) as ModelOption
@@ -79,6 +79,19 @@ describe('the form as it is typed in and answered', () => {
   it('stays sending while a field is typed in', () => {
     const sent = nextForm(startForm(typed), { on: 'sent' })
     expect(nextForm(sent, { on: 'typed', draft: { ...typed, description: 'More.' } }).send).toEqual({ at: 'sending' })
+  })
+
+  it('is ready for the next edit once a save lands, keeping what was saved', () => {
+    const sent = nextForm(startForm(typed), { on: 'sent' })
+    expect(nextForm(sent, { on: 'saved', sent: typed })).toEqual({ draft: typed, send: { at: 'editing' } })
+  })
+
+  it('takes each field Hermes holds after a save, except one typed in while it was sent', () => {
+    const held = { ...typed, name: 'Robin' }
+    const sent = nextForm(startForm(typed), { on: 'sent' })
+    expect(nextForm(sent, { on: 'saved', sent: typed, draft: held }).draft).toEqual(held)
+    const typing = nextForm(sent, { on: 'typed', draft: { ...typed, description: 'More.' } })
+    expect(nextForm(typing, { on: 'saved', sent: typed, draft: held }).draft).toEqual({ ...held, description: 'More.' })
   })
 })
 
@@ -228,5 +241,22 @@ describe('the details dialog', () => {
 
   it("draws the bot's letter where it has no picture loaded", () => {
     expect(markup).toMatch(/<span class="avatar tone-plum"[^>]*>R<\/span>/)
+  })
+})
+
+describe('a Save in the details panel', () => {
+  const draft = draftOf(RAE)
+  const RAY: BotDetails = { ...RAE, name: 'Ray', revision: 3 }
+  const REFUSED: Refusal = { kind: 'unsupported', message: "This Hermes can't edit bots from Highwing." }
+  const calls = (read: Awaited<ReturnType<EditCalls['onDescribe']>>): EditCalls => ({ onEdit: async () => ({ ok: true, value: undefined }), onDescribe: async () => read })
+
+  it("reads the bot again, so the next Save goes at Hermes's revision with its fields", async () => {
+    expect(await saveAndReread(RAE, { ...draft, name: 'Ray' }, calls({ ok: true, value: RAY }))).toEqual({ submitted: { ok: true, draft: draftOf(RAY) }, details: RAY, lost: null })
+  })
+
+  it("says in Hermes's words when that read is refused", async () => {
+    const saved = await saveAndReread(RAE, { ...draft, name: 'Ray' }, calls({ ok: false, refusal: REFUSED }))
+    expect(saved.lost).toBe("This Hermes can't edit bots from Highwing.")
+    expect(saved.submitted.ok).toBe(true)
   })
 })

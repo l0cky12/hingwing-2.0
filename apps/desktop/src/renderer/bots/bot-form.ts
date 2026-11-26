@@ -15,7 +15,8 @@ export function nameProblem(name: string, bots: Bots | undefined): string | null
 
 export const canSubmit = (draft: BotDraft, problem: string | null): boolean => draft.name.trim() !== '' && problem === null
 
-export type Submitted = { readonly ok: true } | { readonly ok: false; readonly refusal: Refusal; readonly draft?: BotDraft }
+/** `draft` on a save: the fields as Hermes holds them now, which the form takes unless it was typed in meanwhile. */
+export type Submitted = { readonly ok: true; readonly draft?: BotDraft } | { readonly ok: false; readonly refusal: Refusal; readonly draft?: BotDraft }
 
 export const draftOf = ({ name, description, persona }: BotDetails): BotDraft => ({ name, description, model: null, persona })
 
@@ -43,6 +44,16 @@ export async function saveEdit(details: BotDetails, draft: BotDraft, { onDescrib
   return fresh.ok ? { submitted: { ...outcome, draft: draftOf(fresh.value) }, details: fresh.value } : { submitted: outcome, details }
 }
 
+/** A save in the details panel, then a fresh read so the next Save goes at Hermes's revision. `lost`: Hermes's words when that read is refused. */
+export async function saveAndReread(details: BotDetails, draft: BotDraft, calls: EditCalls): Promise<{ readonly submitted: Submitted; readonly details: BotDetails; readonly lost: string | null }> {
+  const saved = await saveEdit(details, draft, calls)
+  if (!saved.submitted.ok) return { ...saved, lost: null }
+  const fresh = await calls.onDescribe(details.bot)
+  return fresh.ok
+    ? { submitted: { ok: true, draft: draftOf(fresh.value) }, details: fresh.value, lost: null }
+    : { ...saved, lost: fresh.refusal.message }
+}
+
 export type Send =
   | { readonly at: 'editing' }
   | { readonly at: 'sending' }
@@ -56,9 +67,17 @@ export interface FormState {
 export type FormEvent =
   | { readonly on: 'typed'; readonly draft: BotDraft }
   | { readonly on: 'sent' }
+  | { readonly on: 'saved'; readonly sent: BotDraft; readonly draft?: BotDraft }
   | { readonly on: 'refused'; readonly refusal: Refusal; readonly draft?: BotDraft }
 
 const EDITING: Send = { at: 'editing' }
+
+const heldUnlessTyped = (now: BotDraft, sent: BotDraft, held: BotDraft): BotDraft => ({
+  name: now.name === sent.name ? held.name : now.name,
+  description: now.description === sent.description ? held.description : now.description,
+  model: now.model === sent.model ? held.model : now.model,
+  persona: now.persona === sent.persona ? held.persona : now.persona
+})
 
 export const startForm = (draft: BotDraft): FormState => ({ draft, send: EDITING })
 
@@ -71,6 +90,8 @@ export function nextForm(state: FormState, event: FormEvent): FormState {
     }
     case 'sent':
       return { ...state, send: { at: 'sending' } }
+    case 'saved':
+      return { draft: event.draft === undefined ? state.draft : heldUnlessTyped(state.draft, event.sent, event.draft), send: EDITING }
     case 'refused':
       return { draft: event.draft ?? state.draft, send: { at: 'refused', refusal: event.refusal } }
   }
