@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { botActivitiesOf, unreadAfter, type Busy, type ChatBusy, type UnreadChat } from '../src/domain/activity'
+import { activityDesk } from '../src/activity'
+import { activityIn, botActivitiesOf, unreadAfter, type Busy, type ChatBusy, type UnreadChat } from '../src/domain/activity'
 import type { BotId } from '../src/domain/bots'
 import type { SessionId } from '../src/domain/session'
 
@@ -46,5 +47,53 @@ describe('botActivitiesOf', () => {
 
   it('leaves out a bot with nothing to show', () => {
     expect(botActivitiesOf(NONE, [])).toEqual({})
+  })
+})
+
+describe('a bot named like an object property', () => {
+  it('still shows its activity', () => {
+    const [CONSTRUCTOR, TO_STRING] = ['constructor', 'toString'] as BotId[] as [BotId, BotId]
+    const shown = botActivitiesOf(busy([ONE, CONSTRUCTOR, 'working']), [{ chat: TWO, bot: TO_STRING }])
+    expect(activityIn(shown, CONSTRUCTOR)).toBe('working')
+    expect(activityIn(shown, TO_STRING)).toBe('unread')
+    expect(activityIn({}, CONSTRUCTOR)).toBeNull()
+  })
+})
+
+describe('activityDesk', () => {
+  const row = (id: SessionId, status: string, count: number) => ({
+    current: false, id, session_key: id, last_active: 0, started_at: 0, message_count: count, model: '', preview: '', title: '', status
+  })
+  const desk = (replies: (readonly ReturnType<typeof row>[])[], shown: ReadonlySet<SessionId> = NOTHING_SHOWN) => {
+    const kept: (readonly UnreadChat[])[] = []
+    const conn = { reach: 'host', as: () => ({ call: async () => ({ sessions: replies.shift() ?? [] }) }) } as unknown as Parameters<typeof activityDesk>[0]
+    const made = activityDesk(conn, { unread: [], keep: chats => kept.push(chats), local: () => ({ attached: new Map(), shown }), changed: () => {} })
+    return { made, kept }
+  }
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0))
+
+  it('marks a chat unread when a turn started and ended between two sweeps', async () => {
+    const { made, kept } = desk([[row(ONE, 'idle', 2)], [row(ONE, 'idle', 4)]])
+    made.roster([ADA])
+    await settle()
+    expect(made.activity).toEqual({})
+    made.poll()
+    await settle()
+    expect(made.activity).toEqual({ ada: 'unread' })
+    expect(kept.at(-1)).toEqual([{ chat: ONE, bot: ADA }])
+  })
+
+  it('marks nothing for such a turn in a chat a window shows, or for a chat first seen idle', async () => {
+    const shown = desk([[row(ONE, 'idle', 2)], [row(ONE, 'idle', 4)]], new Set([ONE]))
+    shown.made.roster([ADA])
+    await settle()
+    shown.made.poll()
+    await settle()
+    expect(shown.made.activity).toEqual({})
+    const fresh = desk([[row(ONE, 'idle', 4)]])
+    fresh.made.roster([ADA])
+    await settle()
+    expect(fresh.made.activity).toEqual({})
+    expect(fresh.kept).toEqual([])
   })
 })

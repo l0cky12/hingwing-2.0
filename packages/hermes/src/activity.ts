@@ -49,6 +49,10 @@ export function activityDesk(conn: Pick<Connection, 'reach' | 'as'>, deps: Activ
   let activity = botActivitiesOf(busy, unread)
   let bots: readonly BotId[] = []
   const polled = new Map<BotId, ReadonlyMap<SessionId, ChatBusy>>()
+  /** Each live chat's message count at the last sweep. A turn can start and end between two sweeps, and only its count says so. */
+  const counts = new Map<SessionId, number>()
+  /** Chats a sweep found idle with more messages than the sweep before: a turn ended unseen by any sweep. */
+  let ended = new Map<SessionId, Busy>()
   let unsupported = false
   let sweeping = false
   let again = false
@@ -62,8 +66,9 @@ export function activityDesk(conn: Pick<Connection, 'reach' | 'as'>, deps: Activ
       if (known.busy === null || bot === undefined) after.delete(chat)
       else after.set(chat, { bot, busy: known.busy })
     }
-    const next = unreadAfter(unread, busy, after, shown)
+    const next = unreadAfter(unread, new Map([...ended, ...busy]), after, shown)
     busy = after
+    ended = new Map()
     if (next !== unread) {
       unread = next
       deps.keep(unread)
@@ -84,6 +89,12 @@ export function activityDesk(conn: Pick<Connection, 'reach' | 'as'>, deps: Activ
         const state = STATUS_BUSY[row.status] ?? null
         return state === null ? [] : [[row.id as SessionId, state] as const]
       })))
+      for (const row of sessions) {
+        const chat = row.id as SessionId
+        const before = counts.get(chat)
+        if (before !== undefined && row.message_count > before && STATUS_BUSY[row.status] === null) ended.set(chat, { bot, busy: 'working' })
+        counts.set(chat, row.message_count)
+      }
       update()
       return true
     } catch (error) {

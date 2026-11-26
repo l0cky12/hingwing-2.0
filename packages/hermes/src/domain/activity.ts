@@ -29,17 +29,21 @@ export function unreadAfter(unread: readonly UnreadChat[], before: BusyChats, af
 const PRECEDENCE: { readonly [A in BotActivity]: number } = { waiting: 0, working: 1, unread: 2 }
 
 export function botActivitiesOf(busy: BusyChats, unread: readonly UnreadChat[]): BotActivities {
-  const shown: Partial<Record<BotId, BotActivity>> = {}
+  const shown = new Map<BotId, BotActivity>()
   const offer = (bot: BotId, activity: BotActivity) => {
-    const held = shown[bot]
-    if (held === undefined || PRECEDENCE[activity] < PRECEDENCE[held]) shown[bot] = activity
+    const held = shown.get(bot)
+    if (held === undefined || PRECEDENCE[activity] < PRECEDENCE[held]) shown.set(bot, activity)
   }
   for (const { bot, busy: activity } of busy.values()) offer(bot, activity)
   for (const { bot } of unread) offer(bot, 'unread')
-  return shown
+  return Object.fromEntries(shown)
 }
+
+/** An own key only: a bot may be named `constructor`. */
+export const activityIn = (activities: BotActivities | undefined, bot: BotId): BotActivity | null =>
+  activities !== undefined && Object.hasOwn(activities, bot) ? activities[bot] ?? null : null
 
 export function sameActivities(a: BotActivities, b: BotActivities): boolean {
   const keys = Object.keys(a) as BotId[]
-  return keys.length === Object.keys(b).length && keys.every(bot => a[bot] === b[bot])
+  return keys.length === Object.keys(b).length && keys.every(bot => activityIn(a, bot) === activityIn(b, bot))
 }

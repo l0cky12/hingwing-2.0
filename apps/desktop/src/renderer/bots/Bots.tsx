@@ -1,6 +1,7 @@
 import type { Bot, BotActivities, BotActivity, BotCreated, BotDetails, BotDraft, BotId, BotMark, Bots, CommandOutcome, GroupDraft, GroupId, Groups, Link, Marked, ModelMenu, OpenChat } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
+import { activityIn } from '@highwing/hermes/domain'
 import { GroupEditor } from '../groups/GroupEditor'
 import { GroupForm } from '../groups/GroupForm'
 import { groupRowsOf, type GroupRowView } from '../groups/group-rows'
@@ -407,7 +408,7 @@ export function BotsPanel({
     const owner: MenuOwner = { kind: 'bot', bot: row.bot.id }
     return (
       <BotRow
-        key={row.bot.id} row={row} current={selected === row.bot.id} busy={opening === row.bot.id || marks.busy.has(row.bot.id)} activity={activity?.[row.bot.id] ?? null}
+        key={row.bot.id} row={row} current={selected === row.bot.id} busy={opening === row.bot.id || marks.busy.has(row.bot.id)} activity={activityIn(activity, row.bot.id)}
         menuBy={menuBy(owner)} onPick={() => void pick(row.bot.id)} onMenu={opener => openMenu(owner, opener)}
       />
     )
