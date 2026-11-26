@@ -1,3 +1,4 @@
+import type { AppSignIn, AppsBoard } from './apps'
 import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId, BotMark, Marked, PetChoice } from './bots'
 import type { GroupDraft, GroupId } from './groups'
 import type { ChatRef, Unstarted } from './open'
@@ -102,6 +103,14 @@ export type Command =
   | { readonly do: 'generatePicture'; readonly prompt: string }
   /** The pets Hermes lists, curated ones first, read on each ask. */
   | { readonly do: 'pets' }
+  /** Every app Hermes can connect, with the account the window shows for each. `bot` null asks the socket's own profile. */
+  | { readonly do: 'apps'; readonly bot: BotId | null }
+  /** Starts browser sign-in for `slug`. `connectionId` set reconnects that account. */
+  | { readonly do: 'connectApp'; readonly slug: string; readonly bot: BotId | null; readonly connectionId: string | null }
+  /** The sign-in `connectApp` started. The window reads it until it settles. */
+  | { readonly do: 'appSignIn'; readonly opId: string; readonly bot: BotId | null }
+  /** Drops the account. The window reads the board again after. */
+  | { readonly do: 'removeApp'; readonly connectionId: string; readonly bot: BotId | null }
   /** A pet's idle frame as a PNG data URL, or null when Hermes has none. `url` is the pet's `PetChoice.url`. */
   | { readonly do: 'petPicture'; readonly slug: string; readonly url: string | null }
   /** The models a bot's chat could use, with no chat open. null: the socket's own profile, which a new bot copies its credentials from. */
@@ -201,6 +210,8 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'canGeneratePicture' } ? boolean
   : C extends { do: 'generatePicture' | 'retitle' } ? string
   : C extends { do: 'pets' } ? readonly PetChoice[]
+  : C extends { do: 'apps' } ? AppsBoard
+  : C extends { do: 'connectApp' | 'appSignIn' } ? AppSignIn
   : C extends { do: 'markBot' } ? Marked
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown

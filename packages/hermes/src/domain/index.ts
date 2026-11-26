@@ -1,5 +1,6 @@
 /** `@highwing/hermes/domain`: what the renderer and `@highwing/thread` may import. Types, pure selectors, and the tables that name a target and its failures. */
 export type * from './session'
+export { RECOMMENDED, STANDING_WORDS, appsView, betterAccount, standingOf, standingOfTarget, type AppAccount, type AppEntry, type AppSignIn, type AppStanding, type AppsBoard, type AppsQuery, type AppsSection, type AppsView } from './apps'
 export { APPROVAL_MODES, EFFORTS, PLAIN_CONTROLS, reissues } from './session'
 export {
   EXPORT_FORMATS, type Checkpoint, type CheckpointDiff, type Checkpoints, type Command, type ContextBreakdown, type ExportFormat, type Exported, type ModelConfirm, type ModelMenu, type Outcome as CommandOutcome, type Refusal, type Restored, type RestoreScope,

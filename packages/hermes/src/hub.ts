@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { DONE, refused, SessionActor, type Upload } from './actor'
+import { appSignIn, connectApp, listApps, removeApp } from './apps'
 import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, petPicture, setBotPicture } from './bot-admin'
 import { botsIn, MARK_SETS, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
@@ -481,6 +482,10 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'generatePicture') return generatePicture(conn, command.prompt)
     if (command.do === 'pets') return listPets(conn)
     if (command.do === 'petPicture') return petPicture(conn, command.slug, command.url)
+    if (command.do === 'apps') return listApps(conn, command.bot)
+    if (command.do === 'connectApp') return connectApp(conn, command.slug, command.bot, command.connectionId)
+    if (command.do === 'appSignIn') return appSignIn(conn, command.opId, command.bot)
+    if (command.do === 'removeApp') return removeApp(conn, command.connectionId, command.bot)
     if (command.do === 'editBot' || command.do === 'setBotPicture' || command.do === 'removeBotPicture') {
       const done = command.do === 'editBot' ? await editBot(conn, command.bot, command.edit, command.revision)
         : await setBotPicture(conn, command.bot, command.do === 'setBotPicture' ? command.data : null)

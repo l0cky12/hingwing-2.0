@@ -2,6 +2,7 @@
  * The only place gateway shapes become domain shapes. Everything past these functions trusts its types.
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
+import { betterAccount, standingOf, standingOfTarget, type AppAccount, type AppSignIn, type AppsBoard } from '../domain/apps'
 import { canonicalBotId, GENERATED_MAX_BYTES, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, type BotCreated, type BotDetails, type BotFacts, type BotId, type PetChoice } from '../domain/bots'
 import type { CheckpointDiff, Checkpoints, ContextBreakdown, ModelConfirm, ModelMenu, Outcome as CommandOutcome, Restored } from '../domain/command'
 import { isGroupId, type Answering, type GroupEvent, type GroupFacts, type GroupId, type GroupMember, type GroupSupport, type MemberId } from '../domain/groups'
@@ -1282,6 +1283,51 @@ export function parsePets(reply: PetGalleryResult): readonly PetChoice[] {
     return [{ pet: { slug, name: words(row.displayName) ?? slug, url: url !== null && /^https?:\/\//.test(url) ? url : null }, curated: row.curated === true }]
   })
   return [...listed.filter(held => held.curated), ...listed.filter(held => !held.curated)].map(held => held.pet)
+}
+
+const WEB_PAGE = /^https?:\/\//
+
+const OTHER = 'Other'
+
+const trimmed = (raw: unknown): string | null => (isString(raw) ? raw.trim() : null)
+
+/** `connectors.catalog` joined to `connectors.accounts`. An account whose connector is not in the catalog is dropped. */
+export function parseApps(catalog: unknown, accounts: unknown): AppsBoard {
+  const rows = isObject(catalog) && Array.isArray(catalog.connectors) ? catalog.connectors.filter(isObject) : []
+  const held = isObject(accounts) && Array.isArray(accounts.accounts) ? accounts.accounts.filter(isObject) : []
+  const seen = new Set<string>()
+  const apps = rows.flatMap(row => {
+    const slug = words(row.slug)
+    const name = words(row.name)
+    const description = trimmed(row.description)
+    const category = trimmed(row.category)
+    if (slug === null || name === null || description === null || category === null || seen.has(slug)) return []
+    seen.add(slug)
+    const account = held.reduce<AppAccount | null>((best, entry) => {
+      if (words(entry.connector) !== slug) return best
+      const connectionId = words(entry.connection_id)
+      const status = words(entry.status)
+      if (connectionId === null || status === null) return best
+      return betterAccount(best, { connectionId, standing: standingOf(status), label: words(entry.label) ?? name })
+    }, null)
+    return [{ slug, name, description, category: category === '' ? OTHER : category, account }]
+  })
+  return { apps }
+}
+
+/** `connectors.connect` and `connectors.operation.status`. A link that is not http(s) is dropped, as the in-turn card drops it. */
+export function parseSignIn(reply: unknown): AppSignIn {
+  const body = isObject(reply) ? reply : {}
+  const target = Array.isArray(body.targets) ? body.targets.find(isObject) : undefined
+  const rawUrl = target === undefined ? null : words(target.connect_url)
+  const state = target === undefined ? null : words(target.state)
+  const settled = body.settled === true
+  return {
+    opId: words(body.op_id) ?? '',
+    settled,
+    url: rawUrl !== null && WEB_PAGE.test(rawUrl) ? rawUrl : null,
+    standing: settled && state !== null ? standingOfTarget(state) : null
+  }
 }
 
 /** `pet.thumb`'s idle frame, a PNG data URL (tui_gateway/methods_session.py:1557-1563), or null when Hermes has none. */

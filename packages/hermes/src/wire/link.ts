@@ -192,6 +192,8 @@ export class Offline extends Error {}
  * which a -32601 from means this Hermes cannot suggest a title.
  * The canonical route serves every `groups.*` method (`GROUP_METHODS`, gateway/session_group_controls.py:15-35), though of
  * the calls Highwing makes the contract lists only `groups.create` as canonical (tui_gateway/contracts/canonical_projections.py:126). A -32601 from `groups.capabilities` means this Hermes has no group chats.
+ * The Connect apps window calls `connectors.catalog`, `connectors.accounts`, `connectors.accounts.remove` and `connectors.operation.status`.
+ * A -32601 from them means this Hermes cannot list its apps. `connectors.connect` is already served for the in-turn card.
  */
 export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'connection.respond' | 'connectors.connect' | 'complete.path' | 'file.attach' |
@@ -199,7 +201,8 @@ export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'prompt.btw' | 'prompt.background' | 'process.list' | 'process.kill' | 'subagent.interrupt' | 'session.control.read' | 'session.control' | 'rollback.list' |
   'rollback.diff' | 'rollback.restore' | 'message.react' | 'groups.capabilities' | 'groups.list' | 'groups.state' | 'groups.log' | 'groups.send' | 'groups.stop' |
   'groups.rename' | 'groups.disband' |
-  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot'>
+  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot' |
+  'connectors.catalog' | 'connectors.accounts' | 'connectors.accounts.remove' | 'connectors.operation.status'>
 export type Method = keyof Served
 
 export type Requested = ServerRequestMap
