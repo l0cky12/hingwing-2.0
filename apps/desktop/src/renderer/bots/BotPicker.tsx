@@ -30,9 +30,9 @@ export function BotMenu({ bots, open, refused, onPick }: BotMenuProps) {
   const { open: shown, setOpen, close, holder, toggle, onKeyDown, menuProps } = usePickMenu()
   const ids = useId()
   const selected = selectedIn(bots, open)
-  const list = pickerOf(listOf(bots, null), selected)
   const showing = shownBot(open)
   const bot = showing === null ? null : botIn(bots, showing)
+  const list = pickerOf(listOf(bots, null), bot?.id ?? null)
   const opening = open?.opening?.kind === 'bot' ? open.opening.bot : null
   const block = list.show === 'loading' ? NEW_BOT_BLOCKS.loading : list.show === 'note' ? list.words : null
   const pick = (picked: BotId) => {

@@ -1,4 +1,4 @@
-import type { BotId, Bots, OpenChat, SessionId } from '@highwing/hermes/domain'
+import type { BotId, Bots, GroupId, OpenChat, SessionId } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { BotItems, BotMenu } from '../src/renderer/bots/BotPicker'
@@ -39,6 +39,13 @@ describe('the bot picker', () => {
 
   it('is named for a hidden bot the user opened', () => {
     expect(nameOf(render(listed(fact('old', 'Old Helper', { hidden: true }), fact('scout', 'Scout')), showing('old')))).toBe('Bot: Old Helper')
+  })
+
+  it('still offers the hidden bot a group chat was opened over', () => {
+    const overHidden: OpenChat = { shown: { kind: 'group', group: 'launch-plan' as GroupId, over: 'old' as BotId }, opening: null, missing: null }
+    const markup = render(listed(fact('old', 'Old Helper', { hidden: true })), overHidden)
+    expect(nameOf(markup)).toBe('Bot: Old Helper')
+    expect(attr(toggleOf(markup), 'aria-disabled')).toBeUndefined()
   })
 
   it('reads "Choose a bot" when there is no bot of the roster to name', () => {
