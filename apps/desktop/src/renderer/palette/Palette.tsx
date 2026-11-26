@@ -6,11 +6,12 @@ import { isCommandKey } from '../keys'
 import { run, useTopic } from '../store'
 import { activeIn, paletteOf, step, type PaletteItem, type PaletteView, type Row } from './palette-view'
 
-const composerBox = () => document.querySelector<HTMLTextAreaElement>('.composer textarea')
-/** Settings hides the chat's composer. Its connection card's Change takes focus, or the Settings heading while the editor is open. */
-const settingsFocus = () => document.querySelector<HTMLElement>('.settings .change') ?? document.querySelector<HTMLElement>('.settings > h2')
 const canHoldFocus = (element: Element | null): element is HTMLElement =>
   element instanceof HTMLElement && element !== document.body && element.isConnected && element.closest('[hidden]') === null
+  && element.checkVisibility() && !element.matches(':disabled')
+/** Settings hides the chat's composer. Its connection card's Change takes focus there, or the Settings heading while the editor is open. */
+const FALLBACKS = ['.settings .change', '.settings > h2', '.composer textarea']
+const fallbackFocus = () => FALLBACKS.map(selector => document.querySelector(selector)).find(canHoldFocus) ?? null
 
 function detailOf(item: PaletteItem, now: number): string | null {
   switch (item.kind) {
@@ -97,17 +98,25 @@ function Sheet({ target, settingsOpen, returnFocusTo, onClose }: SheetProps) {
   const dismiss = () => {
     leaving.current = true
     dialog.current?.close()
-    const held = canHoldFocus(returnFocusTo) ? returnFocusTo : settingsOpen ? settingsFocus() : composerBox()
+    const held = canHoldFocus(returnFocusTo) ? returnFocusTo : fallbackFocus()
     held?.focus()
     onClose()
   }
-  const pick = (item: PaletteItem) => {
+  // The sheet hides before main answers, since while it is modal the chat a pick opens cannot take focus. A pick main refuses, such as an open while it saves a new connection, brings it back as it was.
+  const pick = async (item: PaletteItem) => {
     leaving.current = true
     dialog.current?.close()
+    const outcome = await run(item.command)
+    if (!outcome.ok) {
+      leaving.current = false
+      dialog.current?.showModal()
+      field.current?.focus()
+      return
+    }
     onClose()
-    void run(item.command).then(() => requestAnimationFrame(() => {
-      if (document.activeElement === null || document.activeElement === document.body) composerBox()?.focus()
-    }))
+    requestAnimationFrame(() => {
+      if (!canHoldFocus(document.activeElement)) fallbackFocus()?.focus()
+    })
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDialogElement>) => {
@@ -117,7 +126,7 @@ function Sheet({ target, settingsOpen, returnFocusTo, onClose }: SheetProps) {
     if (isCommandKey(event.nativeEvent, 'k')) {
       if (!event.repeat) dismiss()
     } else if (by !== null) setPicked(step(view, picked, by))
-    else if (event.key === 'Enter' && active !== null) pick(active.item)
+    else if (event.key === 'Enter' && active !== null) void pick(active.item)
     else if (event.key !== 'Tab') return
     event.preventDefault()
   }
@@ -132,8 +141,8 @@ function Sheet({ target, settingsOpen, returnFocusTo, onClose }: SheetProps) {
     <dialog
       ref={dialog} className="palette" aria-label="Command palette"
       onCancel={event => { event.preventDefault(); dismiss() }}
-      // The browser closes it outright, with no cancel, when no click or key came since its last cancel.
-      onClose={() => { if (!leaving.current) dismiss() }}
+      // The browser closes it outright, with no cancel, when no click or key came since its last cancel. A close event that arrives once a refused pick has reopened it is stale.
+      onClose={() => { if (!leaving.current && dialog.current?.open !== true) dismiss() }}
       onKeyDown={onKeyDown} onMouseDown={keepFocusInField} onClick={closeOnBackdrop}
     >
       <div className="palette-sheet">
@@ -143,7 +152,7 @@ function Sheet({ target, settingsOpen, returnFocusTo, onClose }: SheetProps) {
           aria-expanded={view.show === 'rows'} aria-controls={view.show === 'rows' ? listId : undefined} aria-activedescendant={activeId} aria-autocomplete="list"
           onChange={event => { setQuery(event.target.value); setPicked(null) }}
         />
-        <Results view={view} active={active} listId={listId} now={Date.now()} onPick={pick} />
+        <Results view={view} active={active} listId={listId} now={Date.now()} onPick={item => void pick(item)} />
         <p className="palette-hint"><span>↑↓ to move</span><span>Enter to open</span><span>Esc to close</span></p>
       </div>
     </dialog>
