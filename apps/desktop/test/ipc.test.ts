@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
 import type { Hermes, Route } from '@highwing/hermes'
-import type { AttachmentId, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, SessionId, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
+import type { AttachmentId, BotActivities, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, SessionId, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type Preview, type PreviewCommand, type Push, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
@@ -470,6 +470,7 @@ const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] 
 const NOTHING_OPEN: OpenChat = { shown: null, opening: null, missing: null }
 const NO_RELAYS: RelayDesk = { supported: false, bySession: {} }
 const NO_GROUPS: Groups = { state: 'unsupported' }
+const RESEARCH_WAITING = { research: 'waiting' } as BotActivities
 
 /** An owner live on a remote machine, whose every check passes, so a check of this computer switches to it at epoch 2. */
 const switchable = (hermes: Hermes) => ownConnection({
@@ -525,6 +526,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
     relay: still(NO_RELAYS),
     groups: still(NO_GROUPS),
     groupChat: still(null),
+    activity: still(RESEARCH_WAITING),
     slash: {
       get: () => catalog,
       subscribe: (listener: (value: SlashCatalog) => void) => {
@@ -643,7 +645,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {} }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, activity: RESEARCH_WAITING, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {} }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))

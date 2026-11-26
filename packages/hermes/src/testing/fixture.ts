@@ -120,6 +120,13 @@ export interface Fixture {
      */
     readonly relay?: { readonly [profile: string]: RelayScript }
     /**
+     * profile -> how long each turn of its chats takes, in ms. A message starts its turn at once and its reply ends it
+     * this long after, so the bot is seen working. A profile not here answers before the next frame is read.
+     */
+    readonly turnMs?: { readonly [profile: string]: number }
+    /** false: the gateway refuses `session.active_list` as an unknown method, as a Hermes older than it does. Default true. */
+    readonly activeList?: boolean
+    /**
      * The group chats of the home profile and what Hermes says of them. Absent: the gateway refuses every `groups.*`
      * call as an unknown method, as a Hermes without group chats does.
      */
@@ -456,6 +463,11 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (relay !== undefined && !(isObject(relay) && Object.values(relay).every(isRelayScript))) {
     return '"relay" must map a profile to { reply, delay_ms? } or { refuse }'
   }
+  const { turnMs, activeList } = value
+  if (turnMs !== undefined && !(isObject(turnMs) && Object.values(turnMs).every(ms => Number.isSafeInteger(ms) && (ms as number) >= 0))) {
+    return '"turnMs" must map a profile to a whole number of ms'
+  }
+  if (activeList !== undefined && typeof activeList !== 'boolean') return '"activeList" must be true or false'
   const { groups } = value
   if (groups !== undefined && !isGroupsScript(groups)) {
     return '"groups" may hold only "driver", "seatable", "rooms", "change_events" and "turns": each room { id, name, members, epoch?, log? } seating 2 to 6 { profile, handle }, and each turn { reply, delay_ms? }, { fail, delay_ms? } or { hold: true }'
@@ -490,6 +502,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),
     ...(relay === undefined ? {} : { relay: relay as { readonly [profile: string]: RelayScript } }),
+    ...(turnMs === undefined ? {} : { turnMs: turnMs as { readonly [profile: string]: number } }), ...(activeList === undefined ? {} : { activeList }),
     ...(groups === undefined ? {} : { groups }),
     ...(paths === undefined ? {} : { paths: paths as NonNullable<Fixture['header']['paths']> }),
     ...(reads === undefined ? {} : { reads }),

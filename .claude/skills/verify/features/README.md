@@ -54,7 +54,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Find in chat](./find-in-chat.md) covers Ctrl+F, the match count, stepping, opening closed steps, the highlight marks, and Escape returning focus to the composer.
 - [Forced colors](./forced-colors.md) covers the forced-colors and more-contrast renderings of the thread, the waiting card, diffs and focus, and the pixel checker.
 - [Jump to latest](./jump-to-latest.md) covers the round control that appears when you scroll up, its "New steps below" and "Waiting for your OK" words, and the End key.
-- [Bots sidebar](./bots-sidebar.md) covers the list of Hermes's bots, Pinned and Hidden (N), search, a Hermes that cannot list its bots, the unavailable New bot… row, and pixel parity of the chat column.
+- [Bots sidebar](./bots-sidebar.md) covers the list of Hermes's bots, Pinned and Hidden (N), search, a bot's working, waiting and unread marks across a restart, under reduced motion and in forced colors, a Hermes that cannot list its bots, the unavailable New bot… row, and pixel parity of the chat column.
 - [Open a bot](./open-a-bot.md) covers opening a bot's chat from the sidebar, a message running as that bot, returning to the same chat, a bot with no chat yet, and a Hermes that cannot switch bots.
 - [New chat](./new-chat.md) covers the top bar's New chat button, Ctrl+N, the first message making the chat in the shown bot, the chat staying open after Hermes's lists refresh, and `/new`.
 - [Scheduled-job chats](./scheduled-job-chats.md) covers a job's chat left out of the Chats column and the launch pick, the words for a message Hermes refused in a job's chat, and its "Start a new chat" button carrying the message to a new chat.

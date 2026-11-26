@@ -257,6 +257,18 @@ describe('loadFixture', () => {
     }
   })
 
+  it("reads how long each profile's turns take and whether Hermes lists live chats, and refuses a time or a flag of another kind", () => {
+    const turnMs = { 'dr-eggbot': 6000, research: 0 }
+    expect(loadFixture(write([{ ...header, turnMs, activeList: false }])).header).toMatchObject({ turnMs, activeList: false })
+    expect(loadFixture(write([header])).header).not.toHaveProperty('turnMs')
+    for (const ms of [-1, 1.5, '6000']) {
+      const bad = write([{ ...header, turnMs: { 'dr-eggbot': ms } }])
+      expect(() => loadFixture(bad), JSON.stringify(ms)).toThrow(`${bad}:1: "turnMs" must map a profile to a whole number of ms`)
+    }
+    const flag = write([{ ...header, activeList: 'no' }])
+    expect(() => loadFixture(flag)).toThrow(`${flag}:1: "activeList" must be true or false`)
+  })
+
   it('reads the group chats of the home profile, and refuses a room that seats too few, too many or an unlisted profile, or a turn of no known shape', () => {
     const profiles = { profiles: [{ name: 'default', is_default: true }, { name: 'sam' }, { name: 'juno' }] }
     const seats = (...names: string[]) => names.map(profile => ({ profile, handle: profile }))

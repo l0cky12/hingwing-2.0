@@ -109,6 +109,8 @@ function sampleCode({ lang, ms }) {
   })
 }
 
+const ACTIVITIES = ['working', 'waiting', 'unread', 'none']
+
 const STEPS = {
   wait: { arity: 1, run: async (ctx, state) => waitFor(ctx, state) },
   see: { arity: 1, run: async (ctx, text) => ctx.page.getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout: ctx.timeout }) },
@@ -497,6 +499,24 @@ const STEPS = {
       const check = { method, expected: JSON.parse(json), n: Number(n) }
       const seen = await poll(ctx, async () => callsLike(ctx, check), held => held >= check.n)
       if (seen < check.n) throw new Error(`the gateway saw ${seen} ${method} call(s) containing ${json}, fewer than ${n}`)
+    }
+  },
+  activity: {
+    arity: 2,
+    run: async (ctx, name, state) => {
+      if (!ACTIVITIES.includes(state)) throw new Error(`activity takes ${ACTIVITIES.join(', ')}, not "${state}"`)
+      const row = ctx.page.locator('.bots .bot-row').filter({ has: matching(ctx.page, 'button', name) }).first()
+      const read = () => row.evaluate(element => {
+        const mark = element.querySelector('.bot-activity')
+        const dot = mark?.querySelector('span')
+        return {
+          row: element.getAttribute('data-activity') ?? 'none', mark: mark?.getAttribute('data-activity') ?? 'none',
+          animation: dot ? getComputedStyle(dot).animationName : 'none', color: mark ? getComputedStyle(mark).backgroundColor : 'none'
+        }
+      }, undefined, { timeout: ctx.timeout })
+      const seen = await poll(ctx, read, found => found.row === state && found.mark === state)
+      log(ctx, `  "${name}" shows ${seen.row}, its mark ${seen.mark} in ${seen.color}, its first dot animated by ${seen.animation}`)
+      if (seen.row !== state || seen.mark !== state) throw new Error(`"${name}" shows ${seen.row} with a ${seen.mark} mark, not ${state}`)
     }
   },
   pressed: {
@@ -1215,10 +1235,11 @@ function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, pr
   if (guarded) header.guarded = guarded.split(',')
   if (usage) header.usage = JSON.parse(readFileSync(resolve(process.cwd(), usage), 'utf8'))
   if (profiles) {
-    const { chats, relay, souls, groups, ...reply } = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
+    const { chats, relay, souls, groups, turn_ms: turnMs, ...reply } = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
     header.profiles = reply
     if (chats !== undefined) header.chats = chats
     if (relay !== undefined) header.relay = relay
+    if (turnMs !== undefined) header.turnMs = turnMs
     if (souls !== undefined) header.souls = souls
     if (groups !== undefined) header.groups = groups
   }
@@ -1480,7 +1501,7 @@ async function quitApp(ctx) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'asset-fails': 'value', images: 'value', titles: 'value', pets: 'value', video: 'flag', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', approvals: 'value', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'fake-webapp': 'value', 'webapp-url': 'value', 'login-form': 'flag', keyring: 'value', 'sign-in-ms': 'value', mode: 'value', theme: 'value', 'system-theme': 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value', latency: 'value', 'timed-shot': 'value', 'cpu-profile': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'asset-fails': 'value', images: 'value', titles: 'value', pets: 'value', video: 'flag', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', approvals: 'value', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'fake-webapp': 'value', 'webapp-url': 'value', 'login-form': 'flag', keyring: 'value', 'sign-in-ms': 'value', mode: 'value', theme: 'value', 'system-theme': 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', 'reduced-motion': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value', latency: 'value', 'timed-shot': 'value', 'cpu-profile': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   const webScenario = options['fake-webapp']
@@ -1537,7 +1558,7 @@ async function run(argv) {
   rmSync(join(evidence, 'timings.jsonl'), { force: true })
   const userData = join(scratch, 'user-data')
   const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), menus: join(evidence, 'menus.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set(), exposed: [], latencyMs: Number(options.latency ?? 0), timedShots: options['timed-shot']?.split(',').map(Number) ?? [], cpuProfile: options['cpu-profile'] === true, web: null, realHost: realUrl ? new URL(realUrl).hostname : null, signInFailures: [], pid: null }
-  const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }) }
+  const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }), ...(options['reduced-motion'] && { reducedMotion: 'reduce' }) }
 
   const userFiles = options['login-form'] ? { usernameFile: process.env.HIGHWING_VERIFY_USER_FILE, passwordFile: process.env.HIGHWING_VERIFY_PASSWORD_FILE } : null
   ctx.web = webScenario ? await startFakeWebapp(webScenario, fixture, userFiles, scratch) : realUrl ? { url: realUrl } : null
