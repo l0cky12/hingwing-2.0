@@ -37,9 +37,12 @@ beforeEach(() => {
 })
 
 describe('the Appearance section of Settings', () => {
-  it('sits after Connection, with a Theme row offering System, Light and Dark', () => {
+  it('opens on General, above Sidebar, with a Theme row offering System, Light and Dark', () => {
     const html = render('system')
-    expect(Array.from(html.matchAll(/<h3 [^>]*>([^<]*)<\/h3>/g), ([, heading]) => heading)).toEqual(['Connection', 'Appearance', 'Password managers', 'Sidebar', 'Keyboard shortcuts'])
+    expect(Array.from(html.matchAll(/<button type="button"[^>]*>([^<]+)<\/button>/g), ([, label]) => label)).toEqual(['Close', 'General', 'Permissions', 'Hermes machine', 'Usage', 'About'])
+    expect(html).toContain('aria-current="page">General')
+    expect(Array.from(html.matchAll(/<h3 [^>]*>([^<]*)<\/h3>/g), ([, heading]) => heading)).toEqual(['Appearance', 'Password managers', 'Sidebar', 'Keyboard shortcuts'])
+    expect(html).toContain('<kbd>,</kbd>')
     const theme = seen.segmented.find(control => labelOf(html, control.labelledBy) === 'Theme')!
     expect(theme.value).toBe('system')
     expect(html).toContain('System follows your computer’s light or dark setting.')

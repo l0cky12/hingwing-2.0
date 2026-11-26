@@ -1,5 +1,6 @@
 import type { Shown, ShownGroup, Target } from '@highwing/hermes/domain'
-import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
+import { isSettingsChord } from './keys'
 import { epochOf, type Mode, type Theme } from '../ipc-contract'
 import { BotPicker } from './bots/BotPicker'
 import { BotsSidebar } from './bots/Bots'
@@ -89,8 +90,21 @@ interface ChatWindowProps {
   readonly theme: Theme
 }
 
+function useSettingsChord(target: Target | null, settingsOpen: boolean) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isSettingsChord(event) || target === null || settingsOpen || document.querySelector('dialog:modal') !== null) return
+      event.preventDefault()
+      void run({ do: 'editTarget' })
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [target, settingsOpen])
+}
+
 function ChatWindow({ hidden, settings, target, mode, theme }: ChatWindowProps) {
   const preview = useTopic('preview')
+  useSettingsChord(target, settings !== null)
   const { root, pick } = useSwitchModeKeepingFocus(mode)
   const { settingsButton, close } = useCloseSettings(settings !== null)
   const switcher = <ModeSwitch mode={mode} onPick={pick} />
