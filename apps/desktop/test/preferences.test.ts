@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@highwing/hermes/domain'
-import { MODE, preferenceStore, readPreference, SNOOZES, snoozed, THEME, type Preference } from '../src/main/preferences'
+import { ACCENT, MODE, preferenceStore, readPreference, SNOOZES, snoozed, THEME, type Preference } from '../src/main/preferences'
 
 const text = (value: unknown) => JSON.stringify(value)
 const emptyDir = () => mkdtempSync(join(tmpdir(), 'highwing-preference-'))
@@ -15,7 +15,8 @@ interface Case<T> {
 }
 const CASES: readonly Case<string>[] = [
   { preference: MODE, values: ['bots', 'chats'], unknown: 'inbox' },
-  { preference: THEME, values: ['system', 'dark', 'light'], unknown: 'sepia' }
+  { preference: THEME, values: ['system', 'dark', 'light'], unknown: 'sepia' },
+  { preference: ACCENT, values: ['bot', 'ink', 'slate', 'plum', 'olive', 'mauve', 'umber'], unknown: 'teal' }
 ]
 
 describe.each(CASES)('the $preference.file preference', ({ preference, values, unknown }) => {

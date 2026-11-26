@@ -4,7 +4,7 @@ import type { Hermes, Route } from '@highwing/hermes'
 import type { AttachmentId, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, SessionId, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type Preview, type PreviewCommand, type Push, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Accent, type Mode, type Preview, type PreviewCommand, type Push, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
 import { feed, ownConnection, pinnedConnection, type ConnectionOwner } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
@@ -357,6 +357,8 @@ describe('validators', () => {
     ['a mode switch that names no mode', { do: 'setMode' }],
     ['a theme Highwing does not have', { do: 'setTheme', theme: 'sepia' }],
     ['a theme pick that names no theme', { do: 'setTheme' }],
+    ['an accent Highwing does not have', { do: 'setAccent', accent: 'teal' }],
+    ['an accent pick that names no accent', { do: 'setAccent' }],
     ['a rename with AI of no chat', { do: 'retitle' }],
     ['a snooze of no chat', { do: 'snooze', until: 1_800_000_000_000 }],
     ['a snooze to no time', { do: 'snooze', sessionId: 's1' }],
@@ -419,6 +421,10 @@ describe('validators', () => {
     expect(parseCommand({ do: 'setTheme', theme, extra: 1 })).toEqual({ do: 'setTheme', theme })
   })
 
+  it.each(['bot', 'ink', 'slate', 'plum', 'olive', 'mauve', 'umber'] satisfies Accent[])('keep a pick of the %s accent', accent => {
+    expect(parseCommand({ do: 'setAccent', accent, extra: 1 })).toEqual({ do: 'setAccent', accent })
+  })
+
   it('keep a snooze and a wake', () => {
     expect(parseCommand({ do: 'snooze', sessionId: 's1', until: 1_800_000_000_000, extra: 1 })).toEqual({ do: 'snooze', sessionId: 's1', until: 1_800_000_000_000 })
     expect(parseCommand({ do: 'snooze', sessionId: 's1', until: null })).toEqual({ do: 'snooze', sessionId: 's1', until: null })
@@ -446,7 +452,7 @@ describe('validators', () => {
       'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'describeBot', 'discard', 'editBot',
       'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
       'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename',
-      'restore', 'retitle', 'rewind', 'send', 'sendToGroup', 'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
+      'restore', 'retitle', 'rewind', 'send', 'sendToGroup', 'setAccent', 'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
     ])
   })
 })
@@ -561,13 +567,14 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   }
   const mode = feed<Mode>('chats')
   const theme = feed<Theme>('system')
+  const accent = feed<Accent>('bot')
   const snoozes = feed<Snoozes>({})
   const sources: AttachSources = { pick: async () => ['/home/me/error.png', '/home/me/big.zip'], pasted: async () => ({ name: 'Pasted image 1.png', bytes: PNG }) }
   const served = serveWindows(
     ownerOf(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
-    { store, sources }, saver, { mode, theme, snoozes }
+    { store, sources }, saver, { mode, theme, accent, snoozes }
   )
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
@@ -587,7 +594,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   }
   return {
     listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, lives, stored, previewed, toPane, staged, served,
-    saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, snoozes
+    saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, accent, snoozes
   }
 }
 
@@ -631,7 +638,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {} }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, preview: { state: 'closed' }, mode: 'chats', theme: 'system', accent: 'bot', snoozes: {} }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))
@@ -690,7 +697,8 @@ describe('serveWindows', () => {
 
   it.each([
     { topic: 'mode', verb: 'setMode', was: 'chats', picked: 'bots', unknown: 'inbox' },
-    { topic: 'theme', verb: 'setTheme', was: 'system', picked: 'dark', unknown: 'sepia' }
+    { topic: 'theme', verb: 'setTheme', was: 'system', picked: 'dark', unknown: 'sepia' },
+    { topic: 'accent', verb: 'setAccent', was: 'bot', picked: 'plum', unknown: 'teal' }
   ] as const)('sets the $topic a trusted window picks and pushes it, and never passes it to Hermes', async ({ topic, verb, was, picked, unknown }) => {
     vi.useFakeTimers()
     const { listeners, handlers, pushes, event, commands, ...shown } = harness()
@@ -765,9 +773,9 @@ describe('serveWindows', () => {
     expect(commands).toEqual([{ do: 'stop', sessionId: 's1' }])
   })
 
-  it('refuses a chat command a window sent for a connection that is no longer live, and passes setup, pane, mode and theme commands whatever it sent', async () => {
+  it('refuses a chat command a window sent for a connection that is no longer live, and passes setup, pane, mode, theme and accent commands whatever it sent', async () => {
     let owner: ConnectionOwner | undefined
-    const { handlers, event, commands, toPane, mode, theme } = harness(hermes => (owner = switchable(hermes)))
+    const { handlers, event, commands, toPane, mode, theme, accent } = harness(hermes => (owner = switchable(hermes)))
     const run = handlers.get(CHANNEL.run)!
     const pick = { do: 'open', ref: { kind: 'chat', sessionId: 'box-0001' } }
     await expect(run(event(), { do: 'editTarget' }, 1)).resolves.toEqual({ ok: true, value: undefined })
@@ -785,8 +793,10 @@ describe('serveWindows', () => {
     await expect(run(event(), { do: 'setMode', mode: 'bots' }, 1)).resolves.toEqual({ ok: true, value: undefined })
     await expect(run(event(), { do: 'setTheme', theme: 'light' }, 1)).resolves.toEqual({ ok: true, value: undefined })
     expect(toPane).toEqual([{ do: 'closePreview' }])
+    await expect(run(event(), { do: 'setAccent', accent: 'olive' }, 1)).resolves.toEqual({ ok: true, value: undefined })
     expect(mode.get()).toBe('bots')
     expect(theme.get()).toBe('light')
+    expect(accent.get()).toBe('olive')
 
     await expect(run(event(), pick, 2)).resolves.toEqual({ ok: true, value: undefined })
     expect(commands).toEqual([pick])
