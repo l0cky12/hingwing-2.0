@@ -17,10 +17,11 @@ const THEMES: readonly Segment<Theme>[] = [
   { value: 'dark', label: 'Dark', icon: <Moon /> }
 ]
 
-const SHORTCUTS: readonly { readonly label: string; readonly key: string; readonly onlyIn: string | null }[] = [
+const SHORTCUTS: readonly { readonly label: string; readonly key: string; readonly shift?: boolean; readonly onlyIn: string | null }[] = [
   { label: 'Command palette', key: 'K', onlyIn: null },
   { label: 'New chat', key: 'N', onlyIn: 'In a chat' },
-  { label: 'Find in chat', key: 'F', onlyIn: 'In a chat' }
+  { label: 'Find in chat', key: 'F', onlyIn: 'In a chat' },
+  { label: 'Connect apps', key: 'M', shift: true, onlyIn: null }
 ]
 
 export function Settings({ setup, mode, theme, onRequestClose }: { readonly setup: CardSetup; readonly mode: Mode; readonly theme: Theme; readonly onRequestClose: () => void }) {
@@ -85,10 +86,10 @@ export function Settings({ setup, mode, theme, onRequestClose }: { readonly setu
           <section className="group short" aria-labelledby={`${ids}-keys`}>
             <h3 id={`${ids}-keys`}>Keyboard shortcuts</h3>
             <div className="card">
-              {SHORTCUTS.map(({ label, key, onlyIn }) => (
-                <div key={key} className="row">
+              {SHORTCUTS.map(({ label, key, shift, onlyIn }) => (
+                <div key={label} className="row">
                   <div className="text"><p className="label">{label}{onlyIn !== null && <span className="where">{onlyIn}</span>}</p></div>
-                  <div className="control keys"><kbd>{COMMAND_KEY}</kbd><kbd>{key}</kbd></div>
+                  <div className="control keys"><kbd>{COMMAND_KEY}</kbd>{shift === true && <kbd>Shift</kbd>}<kbd>{key}</kbd></div>
                 </div>
               ))}
             </div>

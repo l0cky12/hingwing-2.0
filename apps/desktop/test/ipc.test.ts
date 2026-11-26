@@ -155,6 +155,17 @@ describe('validators', () => {
     expect(parseCommand({ do: 'canGeneratePicture', extra: 1 })).toEqual({ do: 'canGeneratePicture' })
     expect(parseCommand({ do: 'generatePicture', prompt: 'a cheerful robot', extra: 1 })).toEqual({ do: 'generatePicture', prompt: 'a cheerful robot' })
     expect(parseCommand({ do: 'pets', extra: 1 })).toEqual({ do: 'pets' })
+    expect(parseCommand({ do: 'apps', bot: null, extra: 1 })).toEqual({ do: 'apps', bot: null })
+    expect(parseCommand({ do: 'apps', bot: 'research' })).toEqual({ do: 'apps', bot: 'research' })
+    expect(parseCommand({ do: 'connectApp', slug: 'github', bot: null, connectionId: null, extra: 1 })).toEqual({ do: 'connectApp', slug: 'github', bot: null, connectionId: null })
+    expect(parseCommand({ do: 'connectApp', slug: 'github', bot: 'research', connectionId: 'slack-1' })).toEqual({ do: 'connectApp', slug: 'github', bot: 'research', connectionId: 'slack-1' })
+    expect(parseCommand({ do: 'appSignIn', opId: 'op-1', bot: null })).toEqual({ do: 'appSignIn', opId: 'op-1', bot: null })
+    expect(parseCommand({ do: 'removeApp', connectionId: 'slack-1', bot: null, extra: 1 })).toEqual({ do: 'removeApp', connectionId: 'slack-1', bot: null })
+    expect(parseCommand({ do: 'apps', bot: ' ' })).toBeNull()
+    expect(parseCommand({ do: 'connectApp', slug: ' ', bot: null, connectionId: null })).toBeNull()
+    expect(parseCommand({ do: 'connectApp', slug: 'github', bot: null })).toBeNull()
+    expect(parseCommand({ do: 'appSignIn', opId: '', bot: null })).toBeNull()
+    expect(parseCommand({ do: 'removeApp', connectionId: ' ', bot: null })).toBeNull()
     expect(parseCommand({ do: 'petPicture', slug: 'tabby', url: 'https://petdex.example/tabby.webp', name: 'Tabby' })).toEqual({ do: 'petPicture', slug: 'tabby', url: 'https://petdex.example/tabby.webp' })
     expect(parseCommand({ do: 'petPicture', slug: 'mochi', url: null })).toEqual({ do: 'petPicture', slug: 'mochi', url: null })
     expect(parseCommand({ do: 'petPicture', slug: 'mr.whiskers', url: null })).toEqual({ do: 'petPicture', slug: 'mr.whiskers', url: null })
@@ -454,10 +465,10 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
-      'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard', 'editBot',
+      'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
+      'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard', 'editBot',
       'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
-      'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename', 'renameGroup',
+      'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'rename', 'renameGroup',
       'restore', 'retitle', 'rewind', 'send', 'sendToGroup', 'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
     ])
   })

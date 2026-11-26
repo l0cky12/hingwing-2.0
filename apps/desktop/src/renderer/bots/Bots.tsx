@@ -35,7 +35,7 @@ const LOOKS: LookCalls = {
   petPicture: ({ slug, url }) => run({ do: 'petPicture', slug, url })
 }
 
-export function BotsSidebar({ head }: { readonly head: ReactNode }) {
+export function BotsSidebar({ head, foot = null }: { readonly head: ReactNode; readonly foot?: ReactNode }) {
   const open = useTopic('open')
   return (
     <BotsPanel
@@ -55,6 +55,7 @@ export function BotsSidebar({ head }: { readonly head: ReactNode }) {
       onPickPicture={pickBotPicture}
       onRemovePicture={bot => run({ do: 'removeBotPicture', bot })}
       looks={LOOKS}
+      foot={foot}
     />
   )
 }
@@ -78,6 +79,7 @@ interface BotsPanelProps extends EditorCalls {
   readonly onDeleteGroup: (group: GroupId) => Promise<CommandOutcome>
   readonly onModels: () => Promise<CommandOutcome<ModelMenu>>
   readonly looks: LookCalls
+  readonly foot?: ReactNode
 }
 
 const icon = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 } as const
@@ -216,7 +218,7 @@ function useMarks({ bots, onMark, onRefused, onLanded }: MarkCalls) {
 const NO_BOX: Box = { left: 0, top: 0, right: 0, bottom: 0 }
 
 export function BotsPanel({
-  head = <h2>Bots</h2>, bots, open, link, groups, onOpen, onNewChat, onNew, onMark, onCreate, onCreateGroup, onOpenGroup, onRenameGroup, onDeleteGroup, onModels, looks, ...editor
+  head = <h2>Bots</h2>, bots, open, link, groups, onOpen, onNewChat, onNew, onMark, onCreate, onCreateGroup, onOpenGroup, onRenameGroup, onDeleteGroup, onModels, looks, foot = null, ...editor
 }: BotsPanelProps) {
   const [refused, setRefused] = useState<string | null>(null)
   const [form, setForm] = useState<{ readonly models: ModelMenu | 'loading' } | null>(null)
@@ -473,6 +475,7 @@ export function BotsPanel({
             {made.warnings.map((warning, at) => <span key={at}>Hermes made {made.bot}, with a warning: {warning}</span>)}
           </p>
         )}
+        {foot}
       </aside>
       {form !== null && (
         <NewBotForm problemOf={name => nameProblem(name, bots)} models={form.models} looks={looks} onCreate={create} onClose={() => setForm(null)} />

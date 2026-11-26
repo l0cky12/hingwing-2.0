@@ -6,3 +6,9 @@ export const COMMAND_KEY = MAC ? '⌘' : 'Ctrl'
 export const isCommandKey = (event: KeyboardEvent, letter: string) =>
   (/^[a-z]$/i.test(event.key) ? event.key.toLowerCase() === letter : event.code === `Key${letter.toUpperCase()}`)
   && !event.altKey && !event.shiftKey && (MAC ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)
+
+export const isCommandShiftKey = (event: KeyboardEvent, letter: string) =>
+  (/^[a-z]$/i.test(event.key) ? event.key.toLowerCase() === letter : event.code === `Key${letter.toUpperCase()}`)
+  && !event.altKey && event.shiftKey && (MAC ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)
+
+export const appsKeys = () => (MAC ? 'Meta+Shift+M' : 'Control+Shift+M')

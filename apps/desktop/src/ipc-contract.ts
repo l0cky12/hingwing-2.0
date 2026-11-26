@@ -479,6 +479,25 @@ export const validators: Validators = {
   generatePicture: raw => (filled(raw.prompt) ? { do: 'generatePicture', prompt: raw.prompt } : null),
   pets: () => ({ do: 'pets' }),
   petPicture: raw => (text(raw.slug) && isPetSlug(raw.slug) && (raw.url === null || webPage(raw.url)) ? { do: 'petPicture', slug: raw.slug, url: raw.url } : null),
+  apps: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return raw.bot !== null && bot === null ? null : { do: 'apps', bot }
+  },
+  connectApp: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    if (!filled(raw.slug) || (raw.bot !== null && bot === null) || !(raw.connectionId === null || filled(raw.connectionId))) return null
+    return { do: 'connectApp', slug: raw.slug, bot, connectionId: raw.connectionId }
+  },
+  appSignIn: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    if (!filled(raw.opId) || (raw.bot !== null && bot === null)) return null
+    return { do: 'appSignIn', opId: raw.opId, bot }
+  },
+  removeApp: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    if (!filled(raw.connectionId) || (raw.bot !== null && bot === null)) return null
+    return { do: 'removeApp', connectionId: raw.connectionId, bot }
+  },
   botModels: raw => {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     return raw.bot !== null && bot === null ? null : { do: 'botModels', bot }
