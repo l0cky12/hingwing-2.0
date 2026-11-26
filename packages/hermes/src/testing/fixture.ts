@@ -217,6 +217,8 @@ export interface ChatSeed {
   readonly rows: readonly { readonly role: 'user' | 'assistant'; readonly text: string }[]
   /** Out of `session.list` unless it asks for hidden chats, as a Bot Chat is. */
   readonly hidden?: boolean
+  /** Pinned by the user. A Bot Chat the roster names is pinned unless it is seeded. */
+  readonly pinned?: boolean
   /** The approval the chat's running turn waits on. */
   readonly asking?: { readonly command: string; readonly description: string }
   /** The id of the chat of the same profile this one was branched from. */
@@ -311,6 +313,7 @@ const isSeed = (value: unknown): value is ChatSeed =>
   isObject(value) && typeof value.id === 'string' && value.id !== '' && typeof value.title === 'string' && typeof value.last_active === 'number'
   && Array.isArray(value.rows) && value.rows.every(row => isObject(row) && (row.role === 'user' || row.role === 'assistant') && typeof row.text === 'string')
   && (value.hidden === undefined || typeof value.hidden === 'boolean')
+  && (value.pinned === undefined || typeof value.pinned === 'boolean')
   && (value.asking === undefined || (isObject(value.asking) && typeof value.asking.command === 'string' && typeof value.asking.description === 'string'))
   && (value.branched_from === undefined || (typeof value.branched_from === 'string' && value.branched_from !== '' && value.branched_from !== value.id))
 

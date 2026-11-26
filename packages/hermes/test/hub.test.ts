@@ -300,7 +300,7 @@ describe('the sidebar', () => {
     await approve(opened.hermes)
     await opened.clock.advance(1_000)
     expect(badges).toEqual(['ready:none', 'ready:running', 'ready:asking', 'ready:running', 'ready:none'])
-    expect(opened.hermes.sidebar.get().rows).toEqual([{ id: SESSION, title: '', preview: null, lastActiveAt: 1795251600000, badge: 'none' }])
+    expect(opened.hermes.sidebar.get().rows).toEqual([{ id: SESSION, title: '', preview: null, lastActiveAt: 1795251600000, pinned: false, botChat: false, badge: 'none' }])
   })
 
   it('goes stale while the socket is gone and reads the lists again when it is back', async () => {
@@ -768,6 +768,71 @@ describe("a bot's chats", () => {
     expect(lists.map(call => call.params?.profile), "the socket's own profile until the open chat names a bot, then every other bot behind it, then Research again on its click").toEqual(
       each(undefined, EMU, ...['dr-eggbot', 'research', 'timothy', 'hermes-dev', 'highwing'] as BotId[], RESEARCH)
     )
+  })
+
+  it("move the open chat to its bot's own chat when it is archived, and leave the list", async () => {
+    const opened = open(WITH_CHATS)
+    await opened.clock.advance(0)
+    await opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
+    await opened.clock.advance(0)
+    await opened.hermes.run(picked(INVOICES))
+    opened.hermes.watch(INVOICES, () => {})
+    await opened.clock.advance(0)
+
+    expect(await opened.hermes.run({ do: 'archive', sessionId: INVOICES, archived: true })).toEqual({ ok: true, value: undefined })
+    expect(opened.hermes.open.get().shown, 'Research has no Bot Chat yet, so its unstarted one').toEqual({ kind: 'bot', bot: RESEARCH, sessionId: null })
+    expect(rowsOf(opened).map(([id]) => id)).toEqual([REMINDER, DOWNLOADS])
+    await opened.clock.advance(1_000)
+    expect(rowsOf(opened).map(([id]) => id), 'Hermes lists it no more').toEqual([REMINDER, DOWNLOADS])
+  })
+
+  it('remove a chat at its generation, which moves the open chat off it, and refuse one whose reply still runs', async () => {
+    const opened = open(WITH_CHATS)
+    await opened.clock.advance(0)
+    await opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
+    await opened.clock.advance(0)
+    await opened.hermes.run(picked(DOWNLOADS))
+    opened.hermes.watch(DOWNLOADS, () => {})
+    await opened.clock.advance(0)
+
+    expect(await opened.hermes.run({ do: 'remove', sessionId: REMINDER })).toEqual({ ok: false, refusal: { kind: 'stale', message: 'Wait for the reply to finish, then remove this chat.' } })
+    expect(await opened.hermes.run({ do: 'remove', sessionId: DOWNLOADS })).toEqual({ ok: true, value: undefined })
+    expect(opened.sent().filter(call => call.method === 'session.mutate').map(call => call.params))
+      .toEqual([{ profile: 'research', session_id: DOWNLOADS, request_id: expect.any(String), operation: 'delete', payload: {}, expected_revision: 0, expected_generation: 0 }])
+    expect(opened.hermes.open.get().shown).toEqual({ kind: 'bot', bot: RESEARCH, sessionId: null })
+    await opened.clock.advance(1_000)
+    expect(rowsOf(opened).map(([id]) => id)).toEqual([REMINDER, INVOICES])
+  })
+
+  it("mark the bot's own chat as the roster names it, and not a chat that only has its title", async () => {
+    const lookalike = { id: 'local-0199', title: 'Bot Chat', last_active: 1795251000, rows: [{ role: 'user' as const, text: 'hi' }] }
+    const opened = open({ ...WITH_BOTS, header: { ...WITH_BOTS.header, chats: { research: [lookalike] } } })
+    await opened.clock.advance(0)
+    await opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
+    await opened.clock.advance(0)
+    expect(opened.hermes.sidebar.get().rows.map(row => [row.id, row.title, row.botChat])).toEqual([['local-0199', 'Bot Chat', false], [RESEARCH_CHAT, 'Bot Chat', true]])
+  })
+
+  it("mark the bot's own chat on a Hermes whose socket reaches one profile, where the list follows no bot", async () => {
+    const opened = open(BOUND)
+    await opened.clock.advance(1_000)
+    expect(opened.hermes.sidebar.get()).toMatchObject({ bot: null, rows: [{ id: SESSION, botChat: true }] })
+  })
+
+  it('show a pin at once, keep it after the list is read again, and take it off again', async () => {
+    const opened = open(WITH_CHATS)
+    await opened.clock.advance(0)
+    await opened.hermes.run({ do: 'open', ref: { kind: 'bot', bot: RESEARCH } })
+    await opened.clock.advance(0)
+    const pins = () => opened.hermes.sidebar.get().rows.filter(row => row.pinned).map(row => row.id)
+
+    expect(await opened.hermes.run({ do: 'pin', sessionId: DOWNLOADS, pinned: true })).toEqual({ ok: true, value: undefined })
+    expect(pins()).toEqual([DOWNLOADS])
+    await opened.clock.advance(1_000)
+    expect(pins(), 'as Hermes lists it').toEqual([DOWNLOADS])
+    expect(await opened.hermes.run({ do: 'pin', sessionId: DOWNLOADS, pinned: false })).toEqual({ ok: true, value: undefined })
+    await opened.clock.advance(1_000)
+    expect(pins()).toEqual([])
   })
 
   it('mark a hidden chat that waits on an approval, with no window on it', async () => {

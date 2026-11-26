@@ -12,14 +12,37 @@ export interface ChatRow {
   readonly badge: SidebarRow['badge']
   readonly current: boolean
   readonly showsDraft: boolean
+  /** What its More menu offers, in order. */
+  readonly offers: readonly RowAction[]
 }
+
+export type RowAction = 'rename' | 'pin' | 'unpin' | 'export-md' | 'export-json' | 'export-html' | 'link' | 'archive' | 'remove'
+
+export const ACTION_LABELS: { readonly [A in RowAction]: string } = {
+  rename: 'Rename…', pin: 'Pin', unpin: 'Unpin', 'export-md': 'Export as Markdown', 'export-json': 'Export as JSON', 'export-html': 'Export as HTML', link: 'Copy link',
+  archive: 'Archive', remove: 'Remove…'
+}
+
+const SAVES: readonly RowAction[] = ['export-md', 'export-json', 'export-html', 'link']
+const BOT_CHAT: readonly RowAction[] = ['rename', ...SAVES]
+const UNPINNED: readonly RowAction[] = ['rename', 'pin', ...SAVES, 'archive', 'remove']
+const PINNED: readonly RowAction[] = ['rename', 'unpin', ...SAVES, 'archive', 'remove']
+
+/** A bot's own chat is the one its row opens, and Hermes pins it itself, so the list offers no way to pin, archive or remove it. */
+export const offersOf = (row: Pick<SidebarRow, 'botChat' | 'pinned'>): readonly RowAction[] => (row.botChat ? BOT_CHAT : row.pinned ? PINNED : UNPINNED)
+
+/** Pinned by the user. Hermes pins a bot's own chat too, which stays with the other sessions. */
+export const pinnedByUser = (row: Pick<SidebarRow, 'botChat' | 'pinned'>): boolean => row.pinned && !row.botChat
 
 /** What the list under the header shows. */
 export type ChatsView =
   | { readonly show: 'loading' }
   | { readonly show: 'note'; readonly words: string }
-  /** Never empty. */
-  | { readonly show: 'rows'; readonly rows: readonly ChatRow[] }
+  /**
+   * The chats the user pinned, then every other. Each newest first. Never both empty. The window
+   * heads the groups only while `pinned` holds a row.
+   */
+  | { readonly show: 'rows'; readonly pinned: readonly ChatRow[]; readonly sessions: readonly ChatRow[] }
 
 export const NO_CHATS = 'No chats yet.'
 export const UNTITLED = 'Untitled chat'
@@ -55,12 +78,14 @@ export function chatsOf(sidebar: Sidebar | undefined, open: OpenChat | undefined
   if (rows === null) return LOADING
   if (rows.length === 0) return { show: 'note', words: NO_CHATS }
   const shown = shownChat(open)?.sessionId ?? null
+  const chatRow = (row: SidebarRow): ChatRow => ({
+    id: row.id, name: named(row.title), preview: row.preview, when: row.lastActiveAt === null ? '' : agoOf(row.lastActiveAt, now),
+    doing: DOING[row.badge], badge: row.badge, current: row.id === shown, showsDraft: row.id !== shown && drafts.has(row.id), offers: offersOf(row)
+  })
   return {
     show: 'rows',
-    rows: rows.map(row => ({
-      id: row.id, name: named(row.title), preview: row.preview, when: row.lastActiveAt === null ? '' : agoOf(row.lastActiveAt, now),
-      doing: DOING[row.badge], badge: row.badge, current: row.id === shown, showsDraft: row.id !== shown && drafts.has(row.id)
-    }))
+    pinned: rows.filter(pinnedByUser).map(chatRow),
+    sessions: rows.filter(row => !pinnedByUser(row)).map(chatRow)
   }
 }
 

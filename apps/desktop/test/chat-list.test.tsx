@@ -1,7 +1,7 @@
 import type { BotId, OpenChat, SessionId, Sidebar, SidebarRow } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { agoOf, botNameOf, chatsOf, openChatName } from '../src/renderer/chats/chat-list'
+import { agoOf, botNameOf, chatsOf, offersOf, openChatName } from '../src/renderer/chats/chat-list'
 import { menuStep } from '../src/renderer/chat/menu'
 import { ChatsPanel } from '../src/renderer/chats/Chats'
 import { APPROVED } from './support/bots'
@@ -9,7 +9,7 @@ import { APPROVED } from './support/bots'
 const NOW = Date.UTC(2026, 10, 24, 12)
 const RESEARCH = 'research' as BotId
 const row = (id: string, title: string, more: Partial<SidebarRow> = {}): SidebarRow =>
-  ({ id: id as SessionId, title, preview: null, lastActiveAt: NOW, badge: 'none', ...more })
+  ({ id: id as SessionId, title, preview: null, lastActiveAt: NOW, pinned: false, botChat: false, badge: 'none', ...more })
 const ROWS = [
   row('s1', 'Send invoice reminder', { badge: 'asking', preview: 'I drafted the reminder.' }),
   row('s2', 'Sort the invoices', { lastActiveAt: NOW - 5 * 60_000 }),
@@ -21,25 +21,59 @@ const NO_DRAFTS: ReadonlySet<SessionId> = new Set()
 const showing = (bot: BotId | null, sessionId: string | null = 's2'): OpenChat =>
   ({ shown: { kind: 'chat', bot, sessionId: sessionId as SessionId }, opening: null, missing: null })
 
+const LEAVES = ['rename', 'pin', 'export-md', 'export-json', 'export-html', 'link', 'archive', 'remove']
+
+describe('what a row offers', () => {
+  it('is every action for a chat, Pin after Rename, and Archive and Remove last', () => {
+    expect(offersOf({ botChat: false, pinned: false })).toEqual(LEAVES)
+  })
+
+  it('offers Unpin in place of Pin on a pinned chat', () => {
+    expect(offersOf({ botChat: false, pinned: true })).toEqual(['rename', 'unpin', 'export-md', 'export-json', 'export-html', 'link', 'archive', 'remove'])
+  })
+
+  it("leaves Pin, Archive and Remove off the bot's own chat, pinned or not, whatever it is titled", () => {
+    const kept = ['rename', 'export-md', 'export-json', 'export-html', 'link']
+    expect([offersOf({ botChat: true, pinned: true }), offersOf({ botChat: true, pinned: false })]).toEqual([kept, kept])
+    expect(chatsOf(listing(RESEARCH, [row('s1', 'Bot Chat', { botChat: true }), row('s2', 'Bot Chat')]), showing(RESEARCH), NOW, NO_DRAFTS))
+      .toMatchObject({ sessions: [{ offers: kept }, { offers: LEAVES }] })
+  })
+})
+
+describe('the groups of the chat list', () => {
+  const ids = (view: ReturnType<typeof chatsOf>) => (view.show === 'rows' ? [view.pinned.map(held => held.id), view.sessions.map(held => held.id)] : null)
+
+  it('puts the chats the user pinned first, each group newest first as Hermes listed them', () => {
+    const rows = [row('s1', 'a'), row('s2', 'b', { pinned: true }), row('s3', 'c'), row('s4', 'd', { pinned: true })]
+    expect(ids(chatsOf(listing(RESEARCH, rows), showing(RESEARCH), NOW, NO_DRAFTS))).toEqual([['s2', 's4'], ['s1', 's3']])
+  })
+
+  it("keeps the bot's own chat with the sessions though Hermes pinned it", () => {
+    const rows = [row('s1', 'Bot Chat', { pinned: true, botChat: true }), row('s2', 'b')]
+    expect(ids(chatsOf(listing(RESEARCH, rows), showing(RESEARCH), NOW, NO_DRAFTS))).toEqual([[], ['s1', 's2']])
+  })
+})
+
 describe('what the chat list shows', () => {
   it('names each chat by its title, says when it was last used and what it is doing, and marks the open one', () => {
     expect(chatsOf(listing(RESEARCH), showing(RESEARCH), NOW, NO_DRAFTS)).toEqual({
       show: 'rows',
-      rows: [
-        { id: 's1', name: 'Send invoice reminder', preview: 'I drafted the reminder.', when: 'now', doing: 'Waiting for your OK', badge: 'asking', current: false, showsDraft: false },
-        { id: 's2', name: 'Sort the invoices', preview: null, when: '5m', doing: null, badge: 'none', current: true, showsDraft: false },
-        { id: 's3', name: 'Untitled chat', preview: null, when: 'now', doing: 'Working', badge: 'running', current: false, showsDraft: false },
-        { id: 's4', name: 'Clean up Downloads', preview: null, when: '2d', doing: null, badge: 'none', current: false, showsDraft: false }
+      pinned: [],
+      sessions: [
+        { id: 's1', name: 'Send invoice reminder', preview: 'I drafted the reminder.', when: 'now', doing: 'Waiting for your OK', badge: 'asking', current: false, showsDraft: false, offers: LEAVES },
+        { id: 's2', name: 'Sort the invoices', preview: null, when: '5m', doing: null, badge: 'none', current: true, showsDraft: false, offers: LEAVES },
+        { id: 's3', name: 'Untitled chat', preview: null, when: 'now', doing: 'Working', badge: 'running', current: false, showsDraft: false, offers: LEAVES },
+        { id: 's4', name: 'Clean up Downloads', preview: null, when: '2d', doing: null, badge: 'none', current: false, showsDraft: false, offers: LEAVES }
       ]
     })
     expect(chatsOf(listing(RESEARCH, [row('s5', 'Fresh', { lastActiveAt: null })]), showing(RESEARCH), NOW, NO_DRAFTS), 'a chat Hermes gave no time')
-      .toMatchObject({ rows: [{ when: '' }] })
+      .toMatchObject({ sessions: [{ when: '' }] })
   })
 
   it('marks each chat that holds a draft, except the open one, whose draft is in the box', () => {
     const drafts = new Set(['s1', 's2', 's4'] as SessionId[])
     expect(chatsOf(listing(RESEARCH), showing(RESEARCH), NOW, drafts)).toMatchObject({
-      rows: [{ id: 's1', showsDraft: true }, { id: 's2', showsDraft: false }, { id: 's3', showsDraft: false }, { id: 's4', showsDraft: true }]
+      sessions: [{ id: 's1', showsDraft: true }, { id: 's2', showsDraft: false }, { id: 's3', showsDraft: false }, { id: 's4', showsDraft: true }]
     })
   })
 
@@ -95,6 +129,7 @@ describe('the chat list', () => {
       <ChatsPanel
         head={<h2>Chats</h2>} sidebar={sidebar} open={open} now={NOW} drafts={drafts} live={live} onOpen={() => {}}
         onRename={async () => ({ ok: true, value: undefined })} onExport={async () => ({ ok: true, value: null })}
+        onPin={async () => ({ ok: true, value: undefined })} onArchive={async () => ({ ok: true, value: undefined })} onRemove={async () => ({ ok: true, value: undefined })}
       />
     )
   const attr = (tag: string, name: string) => new RegExp(` ${name}="([^"]*)"`).exec(tag)?.[1]
@@ -139,6 +174,16 @@ describe('the chat list', () => {
     const markup = render(listing(RESEARCH), showing(RESEARCH), NO_DRAFTS, false)
     expect(mores(markup).every(tag => tag.includes(' disabled'))).toBe(true)
     expect(buttons(markup).some(tag => tag.includes('disabled'))).toBe(false)
+  })
+
+  it('heads the pinned chats and the rest only while a chat is pinned, and keeps one button per chat in that order', () => {
+    const headings = (markup: string) => Array.from(markup.matchAll(/<h3 class="chats-group">([^<]*)<\/h3>/g), ([, words]) => words)
+    expect(headings(render(listing(RESEARCH), showing(RESEARCH)))).toEqual([])
+    const pinned = render(listing(RESEARCH, [...ROWS.slice(0, 3), row('s4', 'Clean up Downloads', { pinned: true })]), showing(RESEARCH))
+    expect(headings(pinned)).toEqual(['Pinned', 'Sessions'])
+    expect(buttons(pinned).map(tag => attr(tag, 'aria-label'))).toEqual(['Clean up Downloads', 'Send invoice reminder', 'Sort the invoices', 'Untitled chat'])
+    expect(pinned.indexOf('>Pinned<')).toBeLessThan(pinned.indexOf('aria-label="Clean up Downloads"'))
+    expect(pinned.indexOf('>Sessions<')).toBeLessThan(pinned.indexOf('aria-label="Send invoice reminder"'))
   })
 
   it('keeps an empty status line under the list for the name of a saved chat', () => {
