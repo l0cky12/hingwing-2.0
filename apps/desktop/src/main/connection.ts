@@ -1,6 +1,6 @@
 import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, Route } from '@highwing/hermes'
 import { firstStep, sameTarget, type CheckStep, type Command, type CommandOutcome, type SetupFailure, type Target } from '@highwing/hermes/domain'
-import type { HubResult, Live, Setup, SetupCommand } from '../ipc-contract'
+import { isSetupCommand, NOT_NOW, showsSettings, type HubResult, type Live, type Setup, type SetupCommand } from '../ipc-contract'
 import type { Settings } from './settings'
 
 /** The commands a connection carries out. The pane beside the chat has its own owner. */
@@ -33,11 +33,12 @@ type At<A extends Setup['at']> = Extract<Setup, { at: A }>
 type On<E extends SetupEvent['do']> = Extract<SetupEvent, { do: E }>
 type Editing = At<'form' | 'checking' | 'failed'>
 
-const check = ({ live }: Editing, { target }: On<'checkTarget'>): Setup =>
+const check = ({ live }: At<'form' | 'failed' | 'saved'>, { target }: On<'checkTarget'>): Setup =>
   ({ at: 'checking', live, target, step: firstStep(target) })
-const keep = ({ live }: Editing): Setup | null => (live === null ? null : { at: 'chat', live })
+const keep = ({ live }: Editing | At<'saved'>): Setup | null => (live === null ? null : { at: 'chat', live })
 const stopWaiting = ({ target, step }: At<'checking'>): Setup | null =>
   (step === 'sign-in' ? { at: 'failed', live: null, target, failure: 'sign-in-cancelled' } : null)
+const stop = ({ live }: Editing): Setup => ({ at: 'form', live, notice: null })
 
 /** Every move the setup screen can make. A state with no row for an event refuses it. */
 const MOVES: { readonly [A in Setup['at']]: { readonly [E in SetupEvent['do']]?: (setup: At<A>, event: On<E>) => Setup | null } } = {
@@ -46,12 +47,13 @@ const MOVES: { readonly [A in Setup['at']]: { readonly [E in SetupEvent['do']]?:
   checking: {
     step: (setup, { step }) => (setup.step === step ? setup : { ...setup, step }),
     fail: ({ live, target }, { failure }) => ({ at: 'failed', live, target, failure }),
-    connect: (_setup, { live }) => ({ at: 'saved', live }),
+    connect: (setup, { live }) => ({ at: 'saved', live, from: setup.live === null ? 'first-run' : 'settings' }),
     // The target is going to disk. Cancelling now would leave the file and the chat on different machines.
-    keepTarget: setup => (setup.step === 'save' ? null : keep(setup) ?? stopWaiting(setup))
+    keepTarget: setup => (setup.step === 'save' ? null : keep(setup) ?? stopWaiting(setup)),
+    stopCheck: setup => (setup.step === 'save' ? null : stop(setup))
   },
-  failed: { checkTarget: check, keepTarget: keep },
-  saved: { openChat: ({ live }) => ({ at: 'chat', live }) },
+  failed: { checkTarget: check, keepTarget: keep, stopCheck: stop },
+  saved: { keepTarget: keep, checkTarget: check },
   pinned: {}
 }
 
@@ -61,19 +63,27 @@ export function nextSetup(setup: Setup, event: SetupEvent): Setup | null {
   return move?.(setup, event) ?? null
 }
 
+const KEEP = { do: 'keepTarget' } as const
+const STOP = { do: 'stopCheck' } as const
+
+/** Whether an open runs now: in the chat, or in Settings, which it leaves first. It waits through first run, and through a save, which refuses to leave. */
+export const opensNow = (setup: Setup): boolean =>
+  setup.at === 'chat' || setup.at === 'pinned' || (showsSettings(setup) && nextSetup(setup, KEEP) !== null)
+
+/** The hub opens a bot or group chat it made, so making one is an open too. */
+const makesChat = (command: Command): boolean => command.do === 'createBot' || command.do === 'createGroup'
+const opensChat = (command: Command): boolean => command.do === 'open' || makesChat(command)
+
 const firstSetup = (loaded: Settings, live: Live | null): Setup =>
   live === null ? { at: 'form', live, notice: loaded.state === 'unreadable' || loaded.state === 'newer' ? loaded.state : null } : { at: 'chat', live }
 
 const DONE = { ok: true, value: undefined } as const
-const refused = (kind: 'rejected' | 'offline', message: string) => ({ ok: false, refusal: { kind, message } }) as const
-const NOT_NOW = refused('rejected', "Highwing can't do that from this screen.")
-const NOT_CONNECTED = refused('offline', "Highwing isn't connected to Hermes yet.")
+const NOT_CONNECTED = { ok: false, refusal: { kind: 'offline', message: "Highwing isn't connected to Hermes yet." } } as const
 
-const SETUP_VERBS: Readonly<Record<SetupCommand['do'], true>> = { checkTarget: true, editTarget: true, keepTarget: true, openChat: true }
-const isSetupCommand = (command: ConnectionCommand): command is SetupCommand => command.do in SETUP_VERBS
 
 export function feed<T>(initial: T): Feed<T> & { set(next: T): void } {
   let value = initial
+  let sets = 0
   const listeners = new Set<(value: T) => void>()
   return {
     get: () => value,
@@ -84,7 +94,12 @@ export function feed<T>(initial: T): Feed<T> & { set(next: T): void } {
     set: next => {
       if (next === value) return
       value = next
-      for (const listener of [...listeners]) listener(next)
+      const set = ++sets
+      for (const listener of [...listeners]) {
+        // A listener set a newer value and already told every listener. Going on would end the rest on this stale one.
+        if (sets !== set) return
+        listener(next)
+      }
     }
   }
 }
@@ -149,7 +164,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
 
   const runSetup = (command: SetupCommand): CommandOutcome => {
     if (closed || !apply(command)) return NOT_NOW
-    if (command.do === 'keepTarget') {
+    if (command.do === 'keepTarget' || command.do === 'stopCheck') {
       checking?.abort()
       checking = null
     }
@@ -157,11 +172,28 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
     return DONE
   }
 
+  /**
+   * Every open passes here, from the window, a notification or a link: Settings closes first, as Close does, or the open is refused.
+   * A bot or group chat is opened by the hub once it is made, so Settings closes after Hermes makes it, and stays up when Hermes refuses
+   * it. A running check stops first, as Cancel does: one that passed would move the chat to another machine while it is made on this one.
+   * Settings closes only on the connection it was made on, since a check started meanwhile may have put a new one's confirmation up.
+   */
+  const runChat = async (command: Command): Promise<CommandOutcome<unknown>> => {
+    const fromSettings = showsSettings(setup.get())
+    if (fromSettings && opensChat(command) && nextSetup(setup.get(), KEEP) === null) return NOT_NOW
+    if (fromSettings && command.do === 'open') runSetup(KEEP)
+    if (fromSettings && makesChat(command) && setup.get().at === 'checking') runSetup(STOP)
+    const sentOn = open
+    const outcome = await (sentOn?.hermes.run(command) ?? NOT_CONNECTED)
+    if (fromSettings && makesChat(command) && outcome.ok && open === sentOn) runSetup(KEEP)
+    return outcome
+  }
+
   return {
     setup,
     get hermes() { return open?.hermes ?? null },
     run: async <C extends ConnectionCommand>(command: C) => {
-      const outcome = isSetupCommand(command) ? runSetup(command) : await (open?.hermes.run(command) ?? NOT_CONNECTED)
+      const outcome = isSetupCommand(command) ? runSetup(command) : await runChat(command)
       return outcome as CommandOutcome<HubResult<C>>
     },
     close: async () => {

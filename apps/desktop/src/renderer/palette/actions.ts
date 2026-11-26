@@ -1,6 +1,7 @@
 import { shownChat, type Bots, type Link, type OpenChat, type Session, type Sidebar, type Target } from '@highwing/hermes/domain'
 import type { WindowCommand } from '../../ipc-contract'
 import { newChatIn, newChatKeys } from '../new-chat'
+import { MAC } from '../keys'
 
 export interface Scene {
   readonly sidebar: Sidebar | undefined
@@ -9,6 +10,7 @@ export interface Scene {
   readonly link: Link | undefined
   readonly openSession: Session | undefined
   readonly target: Target | null
+  readonly settingsOpen: boolean
   readonly draftId: string
 }
 
@@ -19,8 +21,6 @@ export interface ActionRow {
   readonly offer: (scene: Scene) => WindowCommand | null
 }
 
-const MAC = navigator.userAgent.includes('Mac')
-
 export const ACTIONS: readonly ActionRow[] = [
   { id: 'new-chat', label: 'New chat', keys: newChatKeys(MAC).shown, offer: ({ open, draftId }) => newChatIn(open, draftId) },
   {
@@ -30,7 +30,7 @@ export const ACTIONS: readonly ActionRow[] = [
       return sessionId !== null && session?.run.state === 'running' && session.sync.state === 'live' ? { do: 'stop', sessionId } : null
     }
   },
-  { id: 'connection', label: 'Open Connection', keys: null, offer: ({ target }) => (target === null ? null : { do: 'editTarget' }) },
+  { id: 'settings', label: 'Open Settings', keys: null, offer: ({ target, settingsOpen }) => (target === null || settingsOpen ? null : { do: 'editTarget' }) },
   { id: 'reconnect', label: 'Reconnect', keys: null, offer: ({ link }) => (link?.state === 'blocked' ? { do: 'reconnect', start: false } : null) },
   {
     id: 'start-hermes', label: 'Start Hermes', keys: null,

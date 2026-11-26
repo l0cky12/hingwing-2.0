@@ -3,6 +3,7 @@ import type { Command, GroupId, OpenChat, Outcome, Session, SessionId, SettledTu
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Setup } from '../src/ipc-contract'
+import type { ConnectionOwner } from '../src/main/connection'
 import { noticeOf, notifyTurnEnds, type TurnNotice } from '../src/main/notify'
 
 const fixture = loadFixture('fixtures/errand.jsonl')
@@ -88,26 +89,25 @@ function stubHermes(first: Session) {
   const sessions = new Map<SessionId, ReturnType<typeof changing<Session>>>()
   const sessionFeed = (id: SessionId) => sessions.get(id) ?? sessions.set(id, changing({ ...first, id })).get(id)!
   sessionFeed(first.id)
-  const commands: Command[] = []
   const hermes = {
     open,
     watch: (id: SessionId, listener: (session: Session) => void) => {
       const feed = sessionFeed(id)
       listener(feed.get())
       return feed.subscribe(listener)
-    },
-    run: async (command: Command) => (commands.push(command), { ok: true, value: undefined })
+    }
   } as unknown as Hermes
-  return { hermes, open, commands, publish: (session: Session) => sessionFeed(session.id).set(session) }
+  return { hermes, open, publish: (session: Session) => sessionFeed(session.id).set(session) }
 }
 
 function observe(hermes: Hermes, focused = false) {
   const shown: { notice: TurnNotice; click: () => void }[] = []
   const raise = vi.fn()
   const setup = changing<Setup>({ at: 'pinned' })
-  const owner = { setup, hermes: hermes as Hermes | null }
+  const ran: Command[] = []
+  const owner = { setup, hermes: hermes as Hermes | null, run: (async (command: Command) => (ran.push(command), { ok: true, value: undefined })) as ConnectionOwner['run'] }
   const stop = notifyTurnEnds(owner, { notifier: { show: (notice, click) => shown.push({ notice, click }) }, focused: () => focused, raise })
-  return { shown, raise, stop, owner, setup }
+  return { shown, raise, stop, owner, setup, ran }
 }
 
 describe('notifyTurnEnds', () => {
@@ -172,16 +172,16 @@ describe('notifyTurnEnds', () => {
 
   it('raises the window on a click and opens the chat even while it is shown, so a pending switch to another bot gives way', () => {
     const stub = stubHermes(running)
-    const { shown, raise } = observe(stub.hermes)
+    const { shown, raise, ran } = observe(stub.hermes)
     stub.publish(ended)
     shown[0]!.click()
     expect(raise).toHaveBeenCalledOnce()
-    expect(stub.commands).toEqual([{ do: 'open', ref: { kind: 'chat', sessionId: STORY } }])
+    expect(ran).toEqual([{ do: 'open', ref: { kind: 'chat', sessionId: STORY } }])
   })
 
   it('raises the window and opens nothing on a click from a connection that was replaced', () => {
     const old = stubHermes(running)
-    const { shown, raise, owner, setup } = observe(old.hermes)
+    const { shown, raise, owner, setup, ran } = observe(old.hermes)
     old.publish(ended)
     const next = stubHermes({ ...running, id: OTHER })
     owner.hermes = next.hermes
@@ -189,18 +189,17 @@ describe('notifyTurnEnds', () => {
     old.open.set(showing(OTHER))
     shown[0]!.click()
     expect(raise).toHaveBeenCalledOnce()
-    expect(old.commands).toEqual([])
-    expect(next.commands).toEqual([])
+    expect(ran).toEqual([])
   })
 
   it('opens the chat again on a click when another chat is shown', () => {
     const stub = stubHermes(running)
-    const { shown, raise } = observe(stub.hermes)
+    const { shown, raise, ran } = observe(stub.hermes)
     stub.publish(ended)
     stub.open.set(showing(OTHER))
     shown[0]!.click()
     expect(raise).toHaveBeenCalledOnce()
-    expect(stub.commands).toEqual([{ do: 'open', ref: { kind: 'chat', sessionId: STORY } }])
+    expect(ran).toEqual([{ do: 'open', ref: { kind: 'chat', sessionId: STORY } }])
   })
 
   it('stops when told to', () => {

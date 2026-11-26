@@ -1,27 +1,25 @@
-import type { Feed, Hermes } from '@highwing/hermes'
-import type { Command } from '@highwing/hermes/domain'
+import type { Feed } from '@highwing/hermes'
 import { describe, expect, it } from 'vitest'
 import type { Setup } from '../src/ipc-contract'
+import type { ConnectionOwner } from '../src/main/connection'
 import { chatLinks } from '../src/main/links'
 
 const LIVE = { target: { kind: 'local' }, reach: 'host' } as unknown as Extract<Setup, { at: 'chat' }>['live']
 
-function owner(setup: Setup, connected = true) {
+function owner(setup: Setup) {
   let value = setup
   const listeners = new Set<(value: Setup) => void>()
-  const commands: Command[] = []
-  const hermes = { run: async (command: Command) => (commands.push(command), { ok: true, value: null }) } as unknown as Hermes
+  const commands: unknown[] = []
   const feed: Feed<Setup> = { get: () => value, subscribe: listener => (listeners.add(listener), () => void listeners.delete(listener)) }
   const raised: number[] = []
-  const held = { setup: feed, hermes: connected ? hermes : null }
+  const run = (async (command: unknown) => (commands.push(command), { ok: true, value: null })) as ConnectionOwner['run']
   return {
-    held, commands, raised,
+    held: { setup: feed, run }, commands, raised,
     raise: () => void raised.push(commands.length),
     move: (next: Setup) => {
       value = next
       for (const listener of [...listeners]) listener(next)
-    },
-    connect: () => { held.hermes = hermes }
+    }
   }
 }
 
@@ -48,12 +46,11 @@ describe('chat links', () => {
 
   it('holds a link while the setup screen is up, and opens only the latest one once the chat shows', () => {
     const links = chatLinks()
-    const app = owner({ at: 'form', live: null, notice: null }, false)
+    const app = owner({ at: 'form', live: null, notice: null })
     links.serve(app.held, app.raise)
     links.holdLatest(['highwing://chat/local-0001'])
     links.holdLatest(['highwing://chat/local-0002'])
-    app.connect()
-    app.move({ at: 'saved', live: LIVE })
+    app.move({ at: 'saved', live: LIVE, from: 'first-run' })
     expect(app.commands, 'the saved screen is still up').toEqual([])
     app.move({ at: 'chat', live: LIVE })
     expect(app.commands).toEqual([opens('local-0002')])

@@ -16,7 +16,7 @@ Preconditions:
 
 - `$H doctor` prints only `ok` lines.
 
-- **Open.** Run `$H run --fake-host ok --run open wait window shot open`. `steps.log` ends in `PASS`, and `open.png` is 1180x860 and shows "Where does Hermes run?".
+- **Open.** Run `$H run --fake-host ok --run open wait window shot open`. `steps.log` ends in `PASS`, and `open.png` is 1180x860 and shows "Connect to Hermes".
 
 ## Gotchas
 

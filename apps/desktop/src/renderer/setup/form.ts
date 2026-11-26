@@ -33,7 +33,7 @@ interface Choice {
 
 export const CHOICES: { readonly [K in Kind]: Choice } = {
   remote: {
-    label: 'Another machine on my tailnet',
+    label: 'Tailnet machine',
     field: { label: 'Hermes machine', placeholder: 'hermes-host', hint: 'Its Tailscale name. Add user@ in front to log in as someone else.', warning: () => null },
     read: text => {
       const host = parseSshHost(text)
@@ -41,7 +41,7 @@ export const CHOICES: { readonly [K in Kind]: Choice } = {
     }
   },
   url: {
-    label: 'A Hermes gateway at a web address',
+    label: 'Web address',
     field: {
       label: 'Gateway address', placeholder: 'https://hermes.example.com',
       hint: "The address of the gateway's Webapp. Highwing uses https unless the address starts with http://.",

@@ -18,17 +18,34 @@ export type Setup =
   | { readonly at: 'form'; readonly live: Live | null; readonly notice: 'unreadable' | 'newer' | null }
   | { readonly at: 'checking'; readonly live: Live | null; readonly target: Target; readonly step: CheckStep }
   | { readonly at: 'failed'; readonly live: Live | null; readonly target: Target; readonly failure: SetupFailure }
-  | { readonly at: 'saved'; readonly live: Live }
+  /** A check passed and `live` is its target. `from`: `first-run` when nothing was live before, which shows the first run's Saved screen, or `settings`, which keeps Settings open. */
+  | { readonly at: 'saved'; readonly live: Live; readonly from: 'first-run' | 'settings' }
   /** `HIGHWING_FIXTURE` plays a recorded gateway. There is nothing to set up. */
   | { readonly at: 'pinned' }
+
+/** The epoch of the connection `setup` keeps the chat on. 0 when it keeps none, as on a first run or in a fixture run. */
+export const epochOf = (setup: Setup): number => (setup.at === 'pinned' || setup.live === null ? 0 : setup.live.epoch)
+/** Main's answer to a command the screen it is on has no use for, such as an open while a new connection is saved. Nothing went to Hermes. */
+export const NOT_NOW: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: "Highwing can't do that from this screen." } }
+/** Main's answer to a chat command a window sent for a connection that is no longer live. Nothing went to Hermes. */
+export const OTHER_CONNECTION: CommandOutcome<never> = { ok: false, refusal: { kind: 'stale', message: "Highwing switched to another Hermes, so it didn't send that." } }
+
+/** Whether `setup` is Settings: opened from a chat, shown in the chat's place beside the sidebar. First run and its Saved screen show no chat. */
+export const showsSettings = (setup: Setup): boolean =>
+  setup.at !== 'chat' && setup.at !== 'pinned' && setup.live !== null && !(setup.at === 'saved' && setup.from === 'first-run')
 
 export type SetupCommand =
   /** Check a target and, when it passes, save it and connect to it. */
   | { readonly do: 'checkTarget'; readonly target: Target }
-  /** Open the setup screen over the chat. */
+  /** Open Settings over the chat. */
   | { readonly do: 'editTarget' }
+  /** Leave setup for the chat on the live connection, aborting any running check. Close, Esc and Open chat send it, and main applies it before an open from Settings. With no live connection it is a first run's Stop waiting, which ends the wait for a sign-in as a failure. Refused while the check writes its target to disk. */
   | { readonly do: 'keepTarget' }
-  | { readonly do: 'openChat' }
+  /** Abort the running check, or drop the failed one, and stay in Settings on the form. Cancel sends it. Refused while the check writes its target to disk. */
+  | { readonly do: 'stopCheck' }
+
+const SETUP_VERBS: { readonly [K in SetupCommand['do']]: true } = { checkTarget: true, editTarget: true, keepTarget: true, stopCheck: true }
+export const isSetupCommand = (command: AppCommand): command is SetupCommand => Object.hasOwn(SETUP_VERBS, command.do)
 
 /** How a page main draws in its own view is doing. `failed` hides the view, so the window shows the reason in its place. */
 export type PageLoad = { readonly at: 'loading' } | { readonly at: 'shown' } | { readonly at: 'failed'; readonly reason: string }
@@ -151,14 +168,15 @@ export type PictureFile = string | 'cancelled'
 
 export interface Bridge {
   watch<T extends Topic>(topic: T, onPush: (push: Push<T>) => void): () => void
-  run<C extends WindowCommand>(command: C): Promise<CommandOutcome<AppResult<C>>>
+  /** `epoch`: the connection the window sent it for, which is `epochOf` the newest setup it has. Main refuses a chat command sent for any other. */
+  run<C extends WindowCommand>(command: C, epoch: number): Promise<CommandOutcome<AppResult<C>>>
   file(request: FileRequest): Promise<FileOutcome>
   image(request: ImageRequest): Promise<ImageOutcome>
   drafts(): Promise<readonly Draft[]>
   /** Keeps the draft on disk, or deletes it when it is empty. Applied in the order a window sends them. */
   keepDraft(draft: Draft): void
-  /** Main shows a file picker, checks the picked file and sends it as the bot's picture. */
-  pickBotPicture(bot: BotId): Promise<CommandOutcome<PictureChoice>>
+  /** Main shows a file picker, checks the picked file and sends it as the bot's picture. `epoch` is as for `run`: main refuses a bot of an older connection. */
+  pickBotPicture(bot: BotId, epoch: number): Promise<CommandOutcome<PictureChoice>>
   /** Main shows the same picker and checks the file the same way, and answers the picture. Nothing is sent to Hermes. */
   choosePicture(): Promise<CommandOutcome<PictureFile>>
   /** Opens the file dialog and holds each file picked, in the order picked. Nothing picked: an empty list. */
@@ -522,7 +540,7 @@ export const validators: Validators = {
   },
   editTarget: () => ({ do: 'editTarget' }),
   keepTarget: () => ({ do: 'keepTarget' }),
-  openChat: () => ({ do: 'openChat' }),
+  stopCheck: () => ({ do: 'stopCheck' }),
   preview: raw => (webPage(raw.url) ? { do: 'preview', url: raw.url } : null),
   browse: raw => (webPage(raw.url) ? { do: 'browse', url: raw.url } : null),
   reloadPreview: () => ({ do: 'reloadPreview' }),

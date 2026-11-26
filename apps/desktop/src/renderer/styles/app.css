@@ -660,25 +660,6 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .setup h2 { margin: 0 0 12px; font-size: 20px; line-height: 1.3; font-weight: 700; }
 .setup .lead { margin: 0; max-width: 58ch; font: 400 16.5px/1.62 var(--serif); }
 .setup .kept { margin: 20px 0 0; max-width: 62ch; padding: 2px 0 2px 14px; border-left: 3px solid var(--caution); color: var(--caution); }
-.setup fieldset { display: flex; flex-direction: column; gap: 2px; margin: 32px 0 0; padding: 0; border: 0; min-width: 0; }
-.setup fieldset:disabled { opacity: .6; }
-.setup .choice { display: flex; align-items: center; gap: 12px; width: fit-content; margin-left: -10px; padding: 7px 14px 7px 10px; border-radius: 6px; font-size: 15px; font-weight: 500; cursor: pointer; }
-.setup fieldset:enabled .choice:hover { background: var(--sheet); }
-.setup .choice input { width: 16px; height: 16px; margin: 0; accent-color: var(--signal); }
-.setup .field { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 12px 28px; max-width: 440px; }
-.setup .field[hidden] { display: none; }
-.setup .field label { font-size: 13px; color: var(--graphite); }
-.setup .field input { padding: 9px 12px; font: 13.5px/1.45 var(--mono); color: var(--ink); background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; }
-.setup .field input::placeholder { color: #8A9590; }
-.setup .field input:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
-.setup .hint { margin: 0; font-size: 13px; color: var(--graphite); }
-.setup .field .caution { margin: 2px 0 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--caution); font-size: 13px; color: var(--caution); }
-.setup .progress { display: flex; align-items: center; gap: 12px; margin: 26px 0 0; font-weight: 500; color: var(--signal); }
-.setup .progress + .hint { margin: 6px 0 0 26px; }
-.setup .progress .glyph { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--signal); animation: halo 1.6s ease-out infinite; }
-.setup .problem { margin: 24px 0 0; max-width: 62ch; padding: 14px 16px 15px; background: var(--caution-soft); border-radius: 6px; }
-.setup .problem h3 { margin: 0; font-size: 15px; font-weight: 700; color: var(--caution); }
-.setup .problem p { margin: 6px 0 0; }
 .setup .actions { display: flex; gap: 10px; margin: 28px 0 0; }
 .setup .actions button { padding: 8px 20px; border-radius: 8px; border: 0; background: transparent; font-weight: 500; box-shadow: inset 0 0 0 1px var(--ink); }
 .setup .actions button:hover { background: var(--sheet); }
@@ -686,6 +667,93 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .setup.saved h2 { display: flex; align-items: center; gap: 12px; }
 .setup.saved h2 .glyph { position: relative; flex: none; width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--signal); }
 .setup.saved h2 .glyph::after { content: ""; position: absolute; left: 6px; top: 2.5px; width: 5.5px; height: 10px; border-right: 2px solid var(--signal); border-bottom: 2px solid var(--signal); transform: rotate(45deg); box-sizing: border-box; }
+.setup .card { margin-top: 32px; }
+.setup .edit-foot { justify-content: flex-end; }
+
+:root { --hair: color-mix(in srgb, var(--rule) 62%, var(--sheet)); }
+.screen[hidden] { display: none; }
+.settings { max-width: 720px; margin: 0 auto; padding: 32px 28px 28px; }
+.settings > h2 { margin: 0; font-size: 22px; line-height: 1.3; font-weight: 700; }
+.settings > h2:focus { outline: none; }
+.settings .group { margin-top: 24px; }
+.settings > h2 + .group { margin-top: 20px; }
+.settings .group > h3 { margin: 0 0 8px 2px; font-size: 13px; font-weight: 500; color: var(--graphite); }
+:is(.settings, .setup) .card { background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px; }
+:is(.settings, .setup) .card .row { display: flex; align-items: center; gap: 24px; min-height: 60px; padding: 12px 18px; }
+:is(.settings, .setup) .card > * + .row, :is(.settings, .setup) .card .row + .row { border-top: 1px solid var(--hair); }
+:is(.settings, .setup) .card .row .text { flex: 1; min-width: 0; }
+:is(.settings, .setup) .card .label { margin: 0; font-weight: 500; }
+:is(.settings, .setup) .card .desc { margin: 1px 0 0; font-size: 13px; line-height: 1.45; color: var(--graphite); }
+:is(.settings, .setup) .card .control { flex: none; display: flex; align-items: center; gap: 8px; }
+:is(.settings, .setup) .card .btn { padding: 5px 14px; border-radius: 6px; border: 0; background: transparent; font-weight: 500; box-shadow: inset 0 0 0 1px var(--ink); }
+:is(.settings, .setup) .card .btn:enabled:hover { background: var(--paper); }
+:is(.settings, .setup) .card .btn.primary { background: var(--ink); color: var(--sheet); box-shadow: none; }
+
+:is(.settings, .setup) .card .machine { gap: 14px; min-height: 72px; padding: 14px 18px; }
+:is(.settings, .setup) .machine .tile { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--hair); }
+:is(.settings, .setup) .machine .label { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; font-size: 15px; overflow-wrap: anywhere; }
+:is(.settings, .setup) .machine .host { margin: 1px 0 0; font: 12.5px/1.5 var(--mono); color: var(--graphite); overflow-wrap: anywhere; }
+:is(.settings, .setup) .machine .said { margin: 1px 0 0; font-size: 13px; font-weight: 500; color: var(--caution); white-space: normal; }
+:is(.settings, .setup) .machine .state { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 7px; border-radius: 999px; font: 500 12px/20px var(--sans); }
+:is(.settings, .setup) .machine .state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+:is(.settings, .setup) .machine .state.online { color: var(--signal); background: var(--signal-soft); }
+
+:is(.settings, .setup) .seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--hair); }
+:is(.settings, .setup) .seg label { position: relative; display: inline-flex; align-items: center; gap: 7px; padding: 5px 13px 5px 11px; border-radius: 6px; font-weight: 500; color: var(--graphite); cursor: pointer; }
+:is(.settings, .setup) .seg label:hover { color: var(--ink); }
+:is(.settings, .setup) .seg input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
+:is(.settings, .setup) .seg label:has(:checked) { color: var(--signal); background: var(--signal-soft); box-shadow: inset 0 0 0 1px var(--signal); }
+:is(.settings, .setup) .seg label:has(:focus-visible) { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+:is(.settings, .setup) .machine + .edit-form { border-top: 1px solid var(--hair); }
+:is(.settings, .setup) .edit { margin: 0; padding: 0; border: 0; min-width: 0; }
+:is(.settings, .setup) .edit:disabled :is(.text, .seg, .field input, .hint) { opacity: .6; }
+:is(.settings, .setup) .edit:disabled .seg label { cursor: default; color: var(--graphite); }
+:is(.settings, .setup) .card .field { align-items: flex-start; }
+:is(.settings, .setup) .card .field .text { padding-top: 7px; }
+:is(.settings, .setup) .card .field .control { flex-direction: column; align-items: stretch; gap: 6px; width: 404px; }
+:is(.settings, .setup) .card .field input { width: 100%; padding: 8px 11px; font: 13px/1.45 var(--mono); color: var(--ink); background: var(--paper); border: 1px solid #78857E; border-radius: 7px; }
+:is(.settings, .setup) .card .field input::placeholder { color: var(--graphite); }
+:is(.settings, .setup) .card .field input:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
+:is(.settings, .setup) .card .hint { margin: 0; font-size: 13px; line-height: 1.45; color: var(--graphite); }
+:is(.settings, .setup) .card .field .caution { margin: 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--caution); font-size: 13px; line-height: 1.45; color: var(--caution); overflow-wrap: anywhere; }
+:is(.settings, .setup) .edit-form .problem { margin: 0 18px 2px; padding: 11px 14px 12px; border-radius: 8px; background: var(--caution-soft); overflow-wrap: anywhere; }
+:is(.settings, .setup) .edit-form .problem h4 { margin: 0; font-size: 14px; font-weight: 700; color: var(--caution); }
+:is(.settings, .setup) .edit-form .problem p { margin: 2px 0 0; color: var(--ink); }
+:is(.settings, .setup) .edit-foot { display: flex; align-items: center; gap: 10px; padding: 14px 18px; }
+:is(.settings, .setup) .problem + .edit-foot { padding-top: 12px; }
+:is(.settings, .setup) .edit-foot .note { flex: 1; min-width: 0; margin: 0; font-size: 13px; color: var(--graphite); overflow-wrap: anywhere; }
+:is(.settings, .setup) .edit-foot .btn { padding: 6px 18px; }
+:is(.settings, .setup) .edit-foot .progress { display: flex; align-items: center; gap: 10px; margin: 0; line-height: 1.45; font-weight: 500; color: var(--signal); }
+:is(.settings, .setup) .edit-foot .progress + .hint { margin-top: 2px; padding-left: 22px; }
+:is(.settings, .setup) .edit-foot .progress .glyph { flex: none; width: 10px; height: 10px; margin: 0 1px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 3px rgb(15 106 91 / .2); animation: halo 1.6s ease-out infinite; }
+
+:is(.settings, .setup) .short .row { min-height: 44px; padding-top: 8px; padding-bottom: 8px; }
+:is(.settings, .setup) .card .where { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--rule); font-size: 12px; font-weight: 400; color: var(--graphite); vertical-align: 1px; }
+:is(.settings, .setup) .card kbd { display: inline-block; min-width: 22px; padding: 0 6px; font: 500 11.5px/18px var(--sans); text-align: center; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 5px; }
+
+@container (max-width: 660px) {
+  .settings { padding: 24px 16px; }
+  :is(.settings, .setup) .card .row { flex-wrap: wrap; gap: 8px 16px; }
+  :is(.settings, .setup) .edit .row .text { flex-basis: 100%; }
+  :is(.settings, .setup) .edit .field .text { padding-top: 0; }
+  :is(.settings, .setup) .card .field .control { width: 100%; }
+  :is(.settings, .setup) .card .row .control { flex-wrap: wrap; max-width: 100%; }
+  :is(.settings, .setup) .seg { flex-wrap: wrap; }
+  :is(.settings, .setup) .seg label { flex: 1 0 auto; }
+  :is(.settings, .setup) .machine .text { flex-basis: 160px; }
+  :is(.settings, .setup) .edit-foot { flex-wrap: wrap; }
+  :is(.settings, .setup) .edit-foot .note { flex-basis: 100%; }
+}
+
+@media (forced-colors: active) {
+  :is(.settings, .setup) .seg label:has(:checked) { padding: 3px 11px 3px 9px; border: 2px solid Highlight; }
+  :is(.settings, .setup) .card .btn { padding: 4px 13px; border: 1px solid ButtonText; }
+  :is(.settings, .setup) .edit-foot .btn { padding: 5px 17px; }
+  :is(.settings, .setup) .machine .state, :is(.settings, .setup) .card .where, :is(.settings, .setup) .edit-form .problem { border: 1px solid CanvasText; }
+  :is(.settings, .setup) .machine .state::before { box-sizing: border-box; background: none; border: 3.5px solid CanvasText; }
+  :is(.settings, .setup) .edit-foot .progress .glyph { background: none; border: 5px solid CanvasText; }
+}
 
 .jump {
   grid-row: 2; grid-column: 1; align-self: end; justify-self: center; margin-bottom: 16px;

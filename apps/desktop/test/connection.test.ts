@@ -1,9 +1,10 @@
 import type { CheckResult, Dialer, Hermes, Route } from '@highwing/hermes'
-import type { CheckFailure, CheckStep, SshHost, Target } from '@highwing/hermes/domain'
+import type { BotId, CheckFailure, CheckStep, CommandOutcome, GroupId, SessionId, SshHost, Target } from '@highwing/hermes/domain'
 import type { GatewayUrl } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { Live, Setup } from '../src/ipc-contract'
-import { nextSetup, ownConnection, pinnedConnection, refreshBotsOnFocus, type ConnectionDeps, type SetupEvent } from '../src/main/connection'
+import { feed, nextSetup, ownConnection, pinnedConnection, refreshBotsOnFocus, type ConnectionDeps, type SetupEvent } from '../src/main/connection'
+import { chatLinks } from '../src/main/links'
 import type { Settings } from '../src/main/settings'
 
 const REMOTE: Target = { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' as SshHost }
@@ -19,23 +20,29 @@ describe('nextSetup', () => {
   const SAVING: Setup = { ...CHECKING, step: 'save' }
   const FAILED: Setup = { at: 'failed', live: null, target: REMOTE, failure: 'host-not-found' }
   const FIRST_CHECK: Setup = { at: 'checking', live: null, target: REMOTE, step: 'hermes' }
-  const SAVED: Setup = { at: 'saved', live: NEXT }
+  const SAVED: Setup = { at: 'saved', live: NEXT, from: 'settings' }
 
   it.each<[string, Setup, SetupEvent, Setup]>([
-    ['the Connection button opens the form over the chat', { at: 'chat', live: LIVE }, { do: 'editTarget' }, EDITING],
+    ['the Settings button opens the form over the chat', { at: 'chat', live: LIVE }, { do: 'editTarget' }, EDITING],
     ['a remote check starts at Tailscale', EDITING, { do: 'checkTarget', target: REMOTE }, CHECKING],
     ['a check of this computer starts at Hermes', FIRST_RUN, { do: 'checkTarget', target: LOCAL }, { at: 'checking', live: null, target: LOCAL, step: 'hermes' }],
     ['a check moves to its next step', CHECKING, { do: 'step', step: 'ssh' }, { ...CHECKING, step: 'ssh' }],
     ['a step fails', CHECKING, { do: 'fail', failure: 'ssh-denied' }, { at: 'failed', live: LIVE, target: REMOTE, failure: 'ssh-denied' }],
     ['a save fails', SAVING, { do: 'fail', failure: 'cant-save' }, { at: 'failed', live: LIVE, target: REMOTE, failure: 'cant-save' }],
-    ['a check passes and is saved', SAVING, { do: 'connect', live: NEXT }, SAVED],
+    ['a check from Settings passes and is saved', SAVING, { do: 'connect', live: NEXT }, SAVED],
+    ['a check on a first run passes and is saved', { ...SAVING, live: null }, { do: 'connect', live: NEXT }, { ...SAVED, from: 'first-run' }],
     ['a failed target is checked again', FAILED, { do: 'checkTarget', target: OTHER }, { at: 'checking', live: null, target: OTHER, step: 'tailscale' }],
-    ['Cancel leaves the form for the chat', EDITING, { do: 'keepTarget' }, { at: 'chat', live: LIVE }],
-    ['Cancel leaves a running check for the chat', CHECKING, { do: 'keepTarget' }, { at: 'chat', live: LIVE }],
-    ['Cancel leaves a failure for the chat', { ...FAILED, live: LIVE }, { do: 'keepTarget' }, { at: 'chat', live: LIVE }],
-    ['Cancel leaves a wait for a sign-in for the chat', { ...CHECKING, step: 'sign-in' }, { do: 'keepTarget' }, { at: 'chat', live: LIVE }],
+    ['Close leaves the form for the chat', EDITING, { do: 'keepTarget' }, { at: 'chat', live: LIVE }],
+    ['Close leaves a running check for the chat', CHECKING, { do: 'keepTarget' }, { at: 'chat', live: LIVE }],
+    ['Close leaves a failure for the chat', { ...FAILED, live: LIVE }, { do: 'keepTarget' }, { at: 'chat', live: LIVE }],
+    ['Close leaves a wait for a sign-in for the chat', { ...CHECKING, step: 'sign-in' }, { do: 'keepTarget' }, { at: 'chat', live: LIVE }],
     ['Stop waiting ends the sign-in of a first run as a failure', { ...FIRST_CHECK, step: 'sign-in' }, { do: 'keepTarget' }, { at: 'failed', live: null, target: REMOTE, failure: 'sign-in-cancelled' }],
-    ['Open chat leaves the saved screen', SAVED, { do: 'openChat' }, { at: 'chat', live: NEXT }]
+    ['Cancel stops a running check and stays on the form', CHECKING, { do: 'stopCheck' }, EDITING],
+    ['Cancel stops a wait for a sign-in and stays on the form', { ...CHECKING, step: 'sign-in' }, { do: 'stopCheck' }, EDITING],
+    ['Cancel stops a failed check and stays on the form', { ...FAILED, live: LIVE }, { do: 'stopCheck' }, EDITING],
+    ['Open chat leaves the first run\'s saved screen', { ...SAVED, from: 'first-run' }, { do: 'keepTarget' }, { at: 'chat', live: NEXT }],
+    ['Close leaves Settings after a save', SAVED, { do: 'keepTarget' }, { at: 'chat', live: NEXT }],
+    ['Connect in Settings after a save checks again', SAVED, { do: 'checkTarget', target: OTHER }, { at: 'checking', live: NEXT, target: OTHER, step: 'tailscale' }]
   ])('%s', (_what, from, event, to) => {
     expect(nextSetup(from, event)).toEqual(to)
   })
@@ -43,15 +50,18 @@ describe('nextSetup', () => {
   it.each<[string, Setup, SetupEvent]>([
     ['Cancel with no connection to go back to', FIRST_RUN, { do: 'keepTarget' }],
     ['Cancel of a failure with no connection to go back to', FAILED, { do: 'keepTarget' }],
-    ['Cancel while the target is being saved', SAVING, { do: 'keepTarget' }],
-    ['Cancel of a first run\'s check that waits for no one', FIRST_CHECK, { do: 'keepTarget' }],
+    ['Close while the target is being saved', SAVING, { do: 'keepTarget' }],
+    ['Stop waiting of a first run\'s check that waits for no one', FIRST_CHECK, { do: 'keepTarget' }],
+    ['Cancel while the target is being saved', SAVING, { do: 'stopCheck' }],
+    ['Cancel when no check runs', EDITING, { do: 'stopCheck' }],
+    ['Cancel of a check from the chat', { at: 'chat', live: LIVE }, { do: 'stopCheck' }],
+    ['Cancel after a check passed', SAVED, { do: 'stopCheck' }],
     ['a second check while one runs', CHECKING, { do: 'checkTarget', target: OTHER }],
     ['a check from the chat', { at: 'chat', live: LIVE }, { do: 'checkTarget', target: REMOTE }],
-    ['Open chat before anything is saved', EDITING, { do: 'openChat' }],
     ['a step when no check runs', EDITING, { do: 'step', step: 'ssh' }],
     ['a result when no check runs', FAILED, { do: 'connect', live: NEXT }],
-    ['the Connection button on the saved screen', SAVED, { do: 'editTarget' }],
-    ['the Connection button in a fixture run', { at: 'pinned' }, { do: 'editTarget' }],
+    ['the Settings button on the saved screen', SAVED, { do: 'editTarget' }],
+    ['the Settings button in a fixture run', { at: 'pinned' }, { do: 'editTarget' }],
     ['a check in a fixture run', { at: 'pinned' }, { do: 'checkTarget', target: LOCAL }]
   ])('refuses %s', (_what, from, event) => {
     expect(nextSetup(from, event)).toBeNull()
@@ -61,7 +71,10 @@ describe('nextSetup', () => {
 interface Opened { readonly target: Target; closed: boolean; disposed: boolean; readonly commands: unknown[] }
 
 /** The owner over a check the test settles by hand, and connections that only record what happened to them. */
+type Answer = (command: unknown) => CommandOutcome<unknown> | Promise<CommandOutcome<unknown>>
+
 function harness(loaded: Settings, save: (target: Target) => Promise<void> = async () => {}) {
+  let answer: Answer = () => ({ ok: true, value: undefined })
   const opened: Opened[] = []
   const saved: Target[] = []
   const checks: { readonly target: Target; readonly signal: AbortSignal; step(step: CheckStep): void; end(result: CheckResult): void }[] = []
@@ -86,7 +99,7 @@ function harness(loaded: Settings, save: (target: Target) => Promise<void> = asy
       return {
         run: async (command: unknown) => {
           held.commands.push(command)
-          return { ok: true, value: undefined }
+          return answer(command)
         },
         close: async () => { held.closed = true; log.push(`close ${opened.indexOf(held) + 1}`) }
       } as unknown as Hermes
@@ -104,7 +117,8 @@ function harness(loaded: Settings, save: (target: Target) => Promise<void> = asy
     checks.at(-1)!.end({ ok: false, failure })
     await settled()
   }
-  return { owner, opened, saved, checks, states, log, pass, fail, settled, at: () => owner.setup.get() }
+  const answerWith = (next: Answer) => { answer = next }
+  return { owner, opened, saved, checks, states, log, pass, fail, settled, answerWith, at: () => owner.setup.get() }
 }
 
 describe('ownConnection at launch', () => {
@@ -136,11 +150,11 @@ describe('ownConnection, checking a target', () => {
     await pass()
     expect(states.map(setup => (setup.at === 'checking' ? `checking ${setup.step}` : setup.at)))
       .toEqual(['form', 'checking tailscale', 'checking peer', 'checking ssh', 'checking save', 'saved'])
-    expect(at()).toEqual({ at: 'saved', live: { target: REMOTE, epoch: 1 } })
+    expect(at()).toEqual({ at: 'saved', live: { target: REMOTE, epoch: 1 }, from: 'first-run' })
     expect(saved).toEqual([REMOTE])
     expect(opened.map(({ target }) => target)).toEqual([REMOTE])
 
-    await owner.run({ do: 'openChat' })
+    await owner.run({ do: 'keepTarget' })
     expect(at()).toEqual({ at: 'chat', live: { target: REMOTE, epoch: 1 } })
   })
 
@@ -166,7 +180,7 @@ describe('ownConnection, checking a target', () => {
     await owner.run({ do: 'checkTarget', target: REMOTE })
     await pass()
     expect(log).toEqual(['open 1', 'save', 'open 2', 'close 1', 'dispose 1'])
-    expect(at()).toEqual({ at: 'saved', live: { target: REMOTE, epoch: 2 } })
+    expect(at()).toEqual({ at: 'saved', live: { target: REMOTE, epoch: 2 }, from: 'settings' })
     expect(opened).toMatchObject([{ target: LOCAL, closed: true, disposed: true }, { target: REMOTE, closed: false, disposed: false }])
 
     await owner.run({ do: 'reconnect', start: true })
@@ -179,7 +193,7 @@ describe('ownConnection, checking a target', () => {
     await owner.run({ do: 'editTarget' })
     await owner.run({ do: 'checkTarget', target: REMOTE })
     await pass()
-    expect(at()).toEqual({ at: 'saved', live: { target: REMOTE, epoch: 1 } })
+    expect(at()).toEqual({ at: 'saved', live: { target: REMOTE, epoch: 1 }, from: 'settings' })
     expect(saved).toEqual([])
     expect(opened).toMatchObject([{ closed: false, disposed: false }])
   })
@@ -192,15 +206,15 @@ describe('ownConnection, checking a target', () => {
     await owner.run({ do: 'checkTarget', target: { ...here } })
     expect(at()).toEqual({ at: 'checking', live: { target: here, epoch: 1 }, target: here, step: 'hermes' })
     await pass()
-    expect([at(), saved, opened.length]).toEqual([{ at: 'saved', live: { target: here, epoch: 1 } }, [], 1])
+    expect([at(), saved, opened.length]).toEqual([{ at: 'saved', live: { target: here, epoch: 1 }, from: 'settings' }, [], 1])
 
-    await owner.run({ do: 'openChat' })
+    await owner.run({ do: 'keepTarget' })
     await owner.run({ do: 'editTarget' })
     await owner.run({ do: 'checkTarget', target: there })
     checks.at(-1)!.step('sign-in')
     checks.at(-1)!.step('gateway')
     await pass()
-    expect(at()).toEqual({ at: 'saved', live: { target: there, epoch: 2 } })
+    expect(at()).toEqual({ at: 'saved', live: { target: there, epoch: 2 }, from: 'settings' })
     expect(saved).toEqual([there])
     expect(opened).toMatchObject([{ target: here, closed: true, disposed: true }, { target: there, closed: false, disposed: false }])
     expect(states.flatMap(setup => (setup.at === 'checking' && setup.target === there ? [setup.step] : []))).toEqual(['hermes', 'sign-in', 'gateway', 'save'])
@@ -224,7 +238,7 @@ describe('ownConnection, checking a target', () => {
     expect(opened).toMatchObject([{ target: LOCAL, closed: false, disposed: false }])
   })
 
-  it('aborts the check on Cancel and drops what it finds later', async () => {
+  it('aborts the check on Close and drops what it finds later', async () => {
     const { owner, checks, saved, opened, pass, at } = harness({ state: 'saved', target: LOCAL })
     await owner.run({ do: 'editTarget' })
     await owner.run({ do: 'checkTarget', target: REMOTE })
@@ -256,6 +270,58 @@ describe('ownConnection, checking a target', () => {
     expect(opened).toEqual([])
   })
 
+  it('aborts the check on Cancel, stays on the form and drops what it finds later', async () => {
+    const { owner, checks, saved, opened, pass, at } = harness({ state: 'saved', target: LOCAL })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    expect(await owner.run({ do: 'stopCheck' })).toEqual({ ok: true, value: undefined })
+    expect(checks[0]!.signal.aborted).toBe(true)
+    expect(at()).toEqual({ at: 'form', live: { target: LOCAL, epoch: 1 }, notice: null })
+
+    checks[0]!.step('ssh')
+    await pass()
+    expect(at()).toEqual({ at: 'form', live: { target: LOCAL, epoch: 1 }, notice: null })
+    expect(saved).toEqual([])
+    expect(opened).toHaveLength(1)
+  })
+
+  it('goes back to the form on Cancel after a check failed', async () => {
+    const { owner, fail, at } = harness({ state: 'saved', target: LOCAL })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await fail('host-offline')
+    await owner.run({ do: 'stopCheck' })
+    expect(at()).toEqual({ at: 'form', live: { target: LOCAL, epoch: 1 }, notice: null })
+  })
+
+  it('refuses Cancel while the target is being saved, and finishes the switch', async () => {
+    let finishSave = () => {}
+    const { owner, checks, pass, settled, at } = harness({ state: 'saved', target: LOCAL }, () => new Promise<void>(resolve => { finishSave = resolve }))
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    expect(at()).toMatchObject({ at: 'checking', step: 'save' })
+    expect(await owner.run({ do: 'stopCheck' })).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(checks[0]!.signal.aborted).toBe(false)
+    finishSave()
+    await settled()
+    expect(at()).toEqual({ at: 'saved', live: { target: REMOTE, epoch: 2 }, from: 'settings' })
+  })
+
+  it('stays in Settings after a save, where Close goes to the chat and Connect checks again', async () => {
+    const { owner, checks, pass, at } = harness({ state: 'saved', target: LOCAL })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    expect(await owner.run({ do: 'checkTarget', target: OTHER })).toEqual({ ok: true, value: undefined })
+    expect(at()).toEqual({ at: 'checking', live: { target: REMOTE, epoch: 2 }, target: OTHER, step: 'tailscale' })
+    expect(checks).toHaveLength(2)
+
+    await owner.run({ do: 'keepTarget' })
+    expect(at()).toEqual({ at: 'chat', live: { target: REMOTE, epoch: 2 } })
+    expect(checks[1]!.signal.aborted).toBe(true)
+  })
+
   it('drops the steps of a check that a later check replaced', async () => {
     const { owner, checks, fail, at } = harness({ state: 'none' })
     await owner.run({ do: 'checkTarget', target: OTHER })
@@ -268,7 +334,6 @@ describe('ownConnection, checking a target', () => {
   it('refuses a command the screen it is on has no use for, and changes nothing', async () => {
     const { owner, checks, at } = harness({ state: 'none' })
     expect(await owner.run({ do: 'keepTarget' })).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
-    expect(await owner.run({ do: 'openChat' })).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
     expect(at()).toEqual({ at: 'form', live: null, notice: null })
     expect(checks).toEqual([])
   })
@@ -294,6 +359,265 @@ describe('ownConnection, checking a target', () => {
     await settled()
     expect(opened).toMatchObject([{ target: LOCAL, closed: true, disposed: true }])
     expect(await owner.run({ do: 'checkTarget', target: REMOTE })).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+  })
+})
+
+describe('ownConnection, opening a chat while Settings is up', () => {
+  const opening = (sessionId: string) => ({ do: 'open', ref: { kind: 'chat', sessionId: sessionId as SessionId } }) as const
+  const LINKED = { do: 'open', ref: { kind: 'link', sessionId: 'local-0001' } }
+  const holdSave = () => {
+    let settle: { resolve(): void; reject(error: Error): void } = { resolve: () => {}, reject: () => {} }
+    return {
+      save: () => new Promise<void>((resolve, reject) => { settle = { resolve, reject } }),
+      finish: () => settle.resolve(),
+      fail: () => settle.reject(new Error('EACCES'))
+    }
+  }
+
+  it('closes Settings, aborts its check, and opens', async () => {
+    const { owner, checks, opened, at } = harness({ state: 'saved', target: LOCAL })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    expect(await owner.run(opening('s1'))).toEqual({ ok: true, value: undefined })
+    expect(at()).toEqual({ at: 'chat', live: { target: LOCAL, epoch: 1 } })
+    expect(checks[0]!.signal.aborted).toBe(true)
+    expect(opened[0]!.commands).toEqual([opening('s1')])
+  })
+
+  it('closes Settings after a save, and opens on the new connection', async () => {
+    const { owner, opened, pass, at } = harness({ state: 'saved', target: LOCAL })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    await owner.run(opening('s1'))
+    expect(at()).toEqual({ at: 'chat', live: { target: REMOTE, epoch: 2 } })
+    expect(opened[1]!.commands).toEqual([opening('s1')])
+  })
+
+  it('refuses an open at the save step, and changes nothing', async () => {
+    const held = holdSave()
+    const { owner, checks, opened, states, pass, settled, at } = harness({ state: 'saved', target: LOCAL }, held.save)
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    const before = states.length
+    expect(await owner.run(opening('s1'))).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(states).toHaveLength(before)
+    expect(checks[0]!.signal.aborted).toBe(false)
+    expect(opened[0]!.commands).toEqual([])
+    held.finish()
+    await settled()
+    expect(at()).toEqual({ at: 'saved', live: { target: REMOTE, epoch: 2 }, from: 'settings' })
+  })
+
+  it('just opens from the chat', async () => {
+    const { owner, opened, states } = harness({ state: 'saved', target: LOCAL })
+    expect(await owner.run(opening('s1'))).toEqual({ ok: true, value: undefined })
+    expect(states).toEqual([{ at: 'chat', live: { target: LOCAL, epoch: 1 } }])
+    expect(opened[0]!.commands).toEqual([opening('s1')])
+  })
+
+  it('runs two opens sent together from Settings, so the second one shows', async () => {
+    const { owner, opened, at } = harness({ state: 'saved', target: LOCAL })
+    await owner.run({ do: 'editTarget' })
+    const outcomes = await Promise.all([owner.run(opening('s1')), owner.run(opening('s2'))])
+    expect(outcomes).toEqual([{ ok: true, value: undefined }, { ok: true, value: undefined }])
+    expect(at()).toEqual({ at: 'chat', live: { target: LOCAL, epoch: 1 } })
+    expect(opened[0]!.commands).toEqual([opening('s1'), opening('s2')])
+  })
+
+  const RAE = 'rae' as BotId
+  const SIDEBAR_OPENS = [
+    ["the bot menu's Open chat", { do: 'open', ref: { kind: 'bot', bot: RAE } }],
+    ["the bot menu's New chat", { do: 'open', ref: { kind: 'new', bot: RAE, draftId: 'd1' }, upFront: true }],
+    ["a group chat's row", { do: 'open', ref: { kind: 'group', group: 'launch-plan' as GroupId } }]
+  ] as const
+
+  it.each(SIDEBAR_OPENS)('closes Settings for %s, aborts its check, and opens', async (_item, command) => {
+    const { owner, checks, opened, at } = harness({ state: 'saved', target: LOCAL })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    expect(await owner.run(command)).toEqual({ ok: true, value: undefined })
+    expect(at()).toEqual({ at: 'chat', live: { target: LOCAL, epoch: 1 } })
+    expect(checks[0]!.signal.aborted).toBe(true)
+    expect(opened[0]!.commands).toEqual([command])
+  })
+
+  it.each(SIDEBAR_OPENS)('refuses %s at the save step, and changes nothing', async (_item, command) => {
+    const held = holdSave()
+    const { owner, opened, states, pass, at } = harness({ state: 'saved', target: LOCAL }, held.save)
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    const before = states.length
+    expect(await owner.run(command)).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(states).toHaveLength(before)
+    expect(opened[0]!.commands).toEqual([])
+    expect(at()).toMatchObject({ at: 'checking', step: 'save' })
+  })
+
+  it('pins a bot and reads the bots again on focus with Settings left up, its check running, even at the save step', async () => {
+    const held = holdSave()
+    const { owner, checks, opened, pass, settled, at } = harness({ state: 'saved', target: LOCAL }, held.save)
+    const focus = new Set<() => void>()
+    refreshBotsOnFocus({ on: (_: 'browser-window-focus', listener: () => void) => focus.add(listener), off: () => {} }, owner)
+    const mark = { do: 'markBot', bot: RAE, mark: 'pin' } as const
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    expect(await owner.run(mark)).toEqual({ ok: true, value: undefined })
+    for (const refresh of focus) refresh()
+    await settled()
+    expect(at()).toMatchObject({ at: 'checking', step: 'tailscale' })
+    expect(checks[0]!.signal.aborted).toBe(false)
+
+    await pass()
+    expect(at()).toMatchObject({ at: 'checking', step: 'save' })
+    for (const refresh of focus) refresh()
+    await settled()
+    expect(opened[0]!.commands).toEqual([mark, { do: 'refreshBots' }, { do: 'refreshBots' }])
+  })
+
+  const MAKES = [
+    ['a bot', { do: 'createBot', draft: { name: 'Rae', description: '', model: null, persona: '' }, picture: null }],
+    ['a group chat', { do: 'createGroup', draft: { group: 'launch-plan' as GroupId, name: 'Launch plan', bots: [RAE] } }]
+  ] as const
+
+  it.each(MAKES)('closes Settings for %s made from the sidebar, which the hub opens, once Hermes has made it', async (_made, create) => {
+    const { owner, opened, answerWith, settled, at } = harness({ state: 'saved', target: LOCAL })
+    let made = () => {}
+    answerWith(() => new Promise(resolve => { made = () => resolve({ ok: true, value: undefined }) }))
+    await owner.run({ do: 'editTarget' })
+    const outcome = owner.run(create)
+    await settled()
+    expect(at(), 'Hermes is still making it').toEqual({ at: 'form', live: { target: LOCAL, epoch: 1 }, notice: null })
+    made()
+    expect(await outcome).toEqual({ ok: true, value: undefined })
+    expect(at()).toEqual({ at: 'chat', live: { target: LOCAL, epoch: 1 } })
+    expect(opened[0]!.commands).toEqual([create])
+  })
+
+  it.each(MAKES)('keeps Settings up when Hermes refuses %s made from the sidebar', async (_made, create) => {
+    const { owner, opened, answerWith, at } = harness({ state: 'saved', target: LOCAL })
+    const taken = { ok: false, refusal: { kind: 'rejected', message: 'A bot called Rae already exists.', field: 'name' } } as const
+    answerWith(() => taken)
+    await owner.run({ do: 'editTarget' })
+    expect(await owner.run(create)).toEqual(taken)
+    expect(at()).toEqual({ at: 'form', live: LIVE, notice: null })
+    expect(opened[0]!.commands).toEqual([create])
+  })
+
+  it.each(MAKES)('stops a running check before it makes %s, so it lands on the live machine, and closes Settings there', async (_made, create) => {
+    const { owner, checks, opened, answerWith, pass, settled, at } = harness({ state: 'saved', target: LOCAL })
+    let made = () => {}
+    answerWith(() => new Promise(resolve => { made = () => resolve({ ok: true, value: undefined }) }))
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    const outcome = owner.run(create)
+    await settled()
+    expect(checks[0]!.signal.aborted).toBe(true)
+    expect(at(), 'Settings stays up, on the live connection').toEqual({ at: 'form', live: LIVE, notice: null })
+    await pass()
+    expect(opened, 'the stopped check switches nothing').toHaveLength(1)
+    made()
+    expect(await outcome).toEqual({ ok: true, value: undefined })
+    expect(at()).toEqual({ at: 'chat', live: LIVE })
+    expect(opened[0]!.commands).toEqual([create])
+  })
+
+  it.each(MAKES)("leaves a new connection's confirmation up for %s Hermes made on the connection it replaced", async (_made, create) => {
+    const { owner, opened, answerWith, pass, at } = harness({ state: 'saved', target: LOCAL })
+    let made = () => {}
+    answerWith(() => new Promise(resolve => { made = () => resolve({ ok: true, value: undefined }) }))
+    await owner.run({ do: 'editTarget' })
+    const outcome = owner.run(create)
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    expect(at()).toEqual({ at: 'saved', live: NEXT, from: 'settings' })
+    made()
+    expect(await outcome).toEqual({ ok: true, value: undefined })
+    expect(at()).toEqual({ at: 'saved', live: NEXT, from: 'settings' })
+    expect(opened.map(({ commands }) => commands)).toEqual([[create], []])
+  })
+
+  it.each(MAKES)('refuses %s at the save step without asking Hermes, and changes nothing', async (_made, create) => {
+    const held = holdSave()
+    const { owner, opened, states, pass } = harness({ state: 'saved', target: LOCAL }, held.save)
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    const before = states.length
+    expect(await owner.run(create)).toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(states).toHaveLength(before)
+    expect(opened[0]!.commands).toEqual([])
+  })
+
+  it('closes Settings on a failed check for an open from a notification', async () => {
+    const { owner, opened, fail, at } = harness({ state: 'saved', target: LOCAL })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await fail('host-offline')
+    await owner.run(opening('s1'))
+    expect(at()).toEqual({ at: 'chat', live: { target: LOCAL, epoch: 1 } })
+    expect(opened[0]!.commands).toEqual([opening('s1')])
+  })
+
+  it('closes Settings for a chat link, and holds one that comes during a save until the save ends', async () => {
+    const held = holdSave()
+    const { owner, opened, pass, settled, at } = harness({ state: 'saved', target: LOCAL }, held.save)
+    const links = chatLinks()
+    links.serve(owner, () => {})
+    await owner.run({ do: 'editTarget' })
+    links.holdLatest(['highwing://chat/local-0001'])
+    expect(at()).toEqual({ at: 'chat', live: { target: LOCAL, epoch: 1 } })
+    expect(opened[0]!.commands).toEqual([LINKED])
+
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    links.holdLatest(['highwing://chat/local-0001'])
+    expect(at()).toMatchObject({ at: 'checking', step: 'save' })
+    expect(opened[0]!.commands).toEqual([LINKED])
+    held.finish()
+    await settled()
+    expect(at()).toEqual({ at: 'chat', live: { target: REMOTE, epoch: 2 } })
+    expect(opened[1]!.commands).toEqual([LINKED])
+  })
+
+  it.each([
+    ['passes', 'finish', { target: REMOTE, epoch: 2 }, 1],
+    ['fails', 'fail', { target: LOCAL, epoch: 1 }, 0]
+  ] as const)('ends a window that watches after the links on the chat, for a link held through a save that %s', async (_what, end, live, connection) => {
+    const held = holdSave()
+    const { owner, opened, pass, settled, at } = harness({ state: 'saved', target: LOCAL }, held.save)
+    const links = chatLinks()
+    links.serve(owner, () => {})
+    const window: Setup[] = []
+    owner.setup.subscribe(setup => window.push(setup))
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    links.holdLatest(['highwing://chat/local-0001'])
+    held[end]()
+    await settled()
+    expect(at()).toEqual({ at: 'chat', live })
+    expect(window.at(-1)).toEqual({ at: 'chat', live })
+    expect(opened[connection]!.commands).toEqual([LINKED])
+  })
+})
+
+describe('feed', () => {
+  it('ends every listener on the newest value when a listener sets it again', () => {
+    const screen = feed('form')
+    const seen: string[][] = [[], [], []]
+    screen.subscribe(next => void seen[0]!.push(next))
+    screen.subscribe(next => {
+      seen[1]!.push(next)
+      if (next === 'saved') screen.set('chat')
+    })
+    screen.subscribe(next => void seen[2]!.push(next))
+    screen.set('saved')
+    expect(screen.get()).toBe('chat')
+    expect(seen).toEqual([['saved', 'chat'], ['saved', 'chat'], ['chat']])
   })
 })
 

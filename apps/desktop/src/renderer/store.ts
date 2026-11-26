@@ -1,5 +1,6 @@
 import { createContext, useContext, useSyncExternalStore } from 'react'
-import { applyPush, type Bridge, type Topic, type TopicValue } from '../ipc-contract'
+import type { BotId } from '@highwing/hermes/domain'
+import { applyPush, epochOf, type Bridge, type Setup, type Topic, type TopicValue, type WindowCommand } from '../ipc-contract'
 
 declare global {
   interface Window { readonly highwing: Bridge }
@@ -19,6 +20,8 @@ interface Copy {
 export const Epoch = createContext(0)
 
 const copies = new Map<string, Copy>()
+/** The epoch of the newest setup this window has. A chat command names ids of that connection, so main refuses it once another one is live. */
+let epoch = 0
 
 function start(topic: Topic, copy: Copy) {
   copy.stop = window.highwing.watch(topic, push => {
@@ -30,6 +33,7 @@ function start(topic: Topic, copy: Copy) {
     }
     copy.value = next.value
     copy.rev = next.rev
+    if (topic === 'setup') epoch = epochOf(next.value as Setup)
     for (const listener of copy.listeners) listener()
   })
 }
@@ -69,4 +73,5 @@ export function useTopic<T extends Topic>(topic: T | null): TopicValue<T> | unde
   return useSyncExternalStore(topic === null ? NEVER : subscribe(key, topic), () => copies.get(key)?.value as TopicValue<T> | undefined)
 }
 
-export const run: Bridge['run'] = command => window.highwing.run(command)
+export const run = <C extends WindowCommand>(command: C) => window.highwing.run(command, epoch)
+export const pickBotPicture = (bot: BotId) => window.highwing.pickBotPicture(bot, epoch)

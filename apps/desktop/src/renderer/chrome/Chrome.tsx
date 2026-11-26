@@ -1,7 +1,7 @@
 import { machineOf, shownChat, shownGroup, type Link, type Target } from '@highwing/hermes/domain'
 import { useCallback, useEffect, useRef, type ReactNode, type Ref, type RefObject } from 'react'
 import type { WindowCommand } from '../../ipc-contract'
-import { isCommandKey } from '../keys'
+import { isCommandKey, MAC } from '../keys'
 import { CopyLink } from '../chat/Copy'
 import { botNameOf, openChatName } from '../chats/chat-list'
 import { GroupMembers } from '../groups/GroupThread'
@@ -50,7 +50,7 @@ function useOpenGroup() {
 }
 
 /** `target` is null in a fixture run, which has no connection to name or to change. */
-export function TopBar({ target }: { readonly target: Target | null }) {
+export function TopBar({ target, settingsButton }: { readonly target: Target | null; readonly settingsButton: RefObject<HTMLButtonElement | null> }) {
   const bar = useRef<HTMLElement>(null)
   const startChat = useNewChat(bar)
   const chat = useOpenChatName()
@@ -60,9 +60,9 @@ export function TopBar({ target }: { readonly target: Target | null }) {
   return (
     <Bar ref={bar} where={where === '' ? null : where}>
       {group === null
-        ? <button type="button" aria-keyshortcuts={newChatKeys(navigator.userAgent.includes('Mac')).aria} onClick={startChat}>New chat</button>
+        ? <button type="button" aria-keyshortcuts={newChatKeys(MAC).aria} onClick={startChat}>New chat</button>
         : <GroupMembers faces={group.faces} />}
-      {target !== null && <button onClick={() => void run({ do: 'editTarget' })}>Connection</button>}
+      {target !== null && <button ref={settingsButton} onClick={() => void run({ do: 'editTarget' })}>Settings</button>}
       {sessionId !== null && <CopyLink sessionId={sessionId} />}
     </Bar>
   )
@@ -70,12 +70,14 @@ export function TopBar({ target }: { readonly target: Target | null }) {
 
 type Press = Extract<WindowCommand, { readonly do: 'reconnect' | 'editTarget' | 'checkTarget' }>
 
+export interface BannerAction { readonly label: string; readonly run: readonly Press[] }
+
 interface BannerCopy {
   readonly words: string
-  readonly action: { readonly label: string; readonly run: readonly Press[] } | null
+  readonly action: BannerAction | null
 }
 
-const reconnect = (label: string, start: boolean): BannerCopy['action'] => ({ label, run: [{ do: 'reconnect', start }] })
+const reconnect = (label: string, start: boolean): BannerAction => ({ label, run: [{ do: 'reconnect', start }] })
 
 export function bannerOf(link: Link, target: Target | null): BannerCopy | null {
   switch (link.state) {
@@ -90,7 +92,7 @@ export function bannerOf(link: Link, target: Target | null): BannerCopy | null {
   }
 }
 
-async function press(commands: readonly Press[]): Promise<void> {
+export async function press(commands: readonly Press[]): Promise<void> {
   for (const command of commands) if (!(await run(command)).ok) return
 }
 

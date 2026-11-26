@@ -1,4 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
+
+/** Settings hides the chat and keeps it mounted, so a popover left open there leaves Escape to Settings. */
+export const isEscapeFor = (event: KeyboardEvent, anchor: RefObject<HTMLElement | null>): boolean =>
+  event.key === 'Escape' && anchor.current?.checkVisibility() === true
 
 export function usePopover(enabled: boolean) {
   const [open, setOpen] = useState(false)
@@ -9,7 +13,7 @@ export function usePopover(enabled: boolean) {
   useEffect(() => {
     if (!shown) return
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
+      if (!isEscapeFor(event, anchor)) return
       event.preventDefault()
       setOpen(false)
       button.current?.focus()

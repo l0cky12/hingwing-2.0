@@ -38,8 +38,8 @@ serveWindows(owner, ipcMain, isAppUrl)
 // renderer
 const setup = useTopic('setup')
 run({ do: 'checkTarget', target: { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' } })
-run({ do: 'editTarget' })   // the top bar's Connection button
-run({ do: 'openChat' })     // the saved screen's Open chat button
+run({ do: 'editTarget' })   // the top bar's Settings button, or Open Settings in the Ctrl+K palette
+run({ do: 'keepTarget' })   // the saved screen's Open chat button, and Close or Esc in Settings
 
 // a unit test: a full remote dial, no network, no real ssh
 const host = await fakeHost('ok', gateway)
@@ -142,7 +142,7 @@ type Setup =
   | { at: 'form'; live: Live | null; notice: 'unreadable' | 'newer' | null }    // live !== null: editing
   | { at: 'checking'; live: Live | null; target: Target; step: CheckStep }
   | { at: 'failed'; live: Live | null; target: Target; failure: CheckFailure }
-  | { at: 'saved'; live: Live }                                                 // confirmation
+  | { at: 'saved'; live: Live; from: 'first-run' | 'settings' }                // confirmation: first run's Saved screen, or Settings
   | { at: 'pinned' }                                                            // HIGHWING_FIXTURE: no setup
 type Live = { target: Target; epoch: number }
 ```
@@ -157,12 +157,15 @@ type Live = { target: Target; epoch: number }
 | `form`, `failed` | `checkTarget(t)` | `checking` at the first step |
 | `checking` | a step finishes | `checking` at the next step |
 | `checking` | a step fails | `failed` |
-| `checking` | the check passes and the save succeeds | `saved` with the new `live` |
+| `checking` | the check passes and the save succeeds | `saved` with the new `live`, and `from` `first-run` when nothing was live before, else `settings` |
 | `checking` | the check passes and the save fails | `failed` with `cant-save` |
-| `form`, `checking`, `failed` with `live` | `keepTarget` (Cancel) | `chat` with that `live`. A running check is aborted. |
-| `saved` | `openChat` | `chat` |
+| `form`, `checking`, `failed` with `live` | `keepTarget` (Close, Esc) | `chat` with that `live`. A running check is aborted. Refused at step `save`. |
+| `checking` at `sign-in` with no `live` | `keepTarget` (Stop waiting) | `failed` with `sign-in-cancelled`. The check is aborted. |
+| `checking`, `failed` | `stopCheck` (Cancel) | `form` with the same `live`. A running check is aborted. Refused at step `save`. |
+| `saved` | `keepTarget` (Open chat, or Close and Esc in Settings) | `chat` |
+| `saved` | `checkTarget(t)` (Connect in Settings) | `checking` at the first step |
 
-The Bridge keeps its two methods, `watch` and `run`. `Topic` gains `'setup'`. `Command` gains `checkTarget`, `editTarget`, `keepTarget` and `openChat`, each with a row in `validators`.
+The Bridge keeps its two methods, `watch` and `run`. `run` also carries `epochOf` the newest setup the window has, and main refuses a chat command sent for any epoch but the live one, since the ids it names belong to that connection. `pickBotPicture` carries it too, and main checks it again once the file picker closes, since a check can pass while the picker is open. `Topic` gains `'setup'`. `Command` gains `checkTarget`, `editTarget`, `keepTarget` and `stopCheck`, each with a row in `validators`.
 
 Saving a target goes in this order:
 
@@ -175,14 +178,14 @@ A failed check never touches the live connection. Re-checking the live target do
 
 ### Renderer
 
-`App.tsx` reads the `setup` topic:
+`App.tsx` reads the `setup` topic, and `screenOf` in `renderer/setup/screens.ts` names the screen for each state:
 
-- `chat` draws the chat, keyed by `live.epoch`.
-- `form`, `checking` and `failed` draw `Setup.tsx`.
-- `saved` draws the saved screen with an Open chat button.
-- `pinned` draws the chat, as fixture runs do today.
+- `chat` and `pinned` draw the chat window, the sidebar beside the chat, keyed by `live.epoch`. A fixture run is `pinned`.
+- `form`, `checking` and `failed` with a `live` connection, and `saved` with `from: 'settings'`, draw Settings (`showsSettings`). `Settings.tsx` takes the chat's place beside the sidebar, under a bar with Close. It holds the Connection card (`ConnectionCard.tsx`), the Sidebar card and the Keyboard shortcuts card.
+- `form`, `checking` and `failed` with no `live` connection draw the first run, `FirstRun` in `Setup.tsx`, which holds the Connection card alone.
+- `saved` with `from: 'first-run'` draws `Saved` in `Setup.tsx`, with an Open chat button.
 
-The renderer decides nothing from `live`. Each state names its own screen. While `live` is not null, the chat subtree stays mounted under the setup screen with the `hidden` attribute, so an unsent draft survives Connection and Cancel. Only a new `epoch` remounts it, and a switch to another host is the one action that drops a draft. The top bar gets a Connection button that sends `editTarget`. Cancel shows only when `live` is not null.
+The renderer decides nothing from `live` beyond that mapping. While `live` is not null, the chat window stays mounted under Settings, its chat column hidden with the `hidden` attribute, so an unsent draft survives Settings. Only a new `epoch` remounts it, and a switch to another host is the one action that drops a draft. The top bar's Settings button and the palette's Open Settings send `editTarget`, and Close and Esc send `keepTarget`. The Connection card shows the machine folded, with Change. Change opens the editor in the card, Connect sends `checkTarget`, and Cancel folds the editor, or sends `stopCheck` while a check runs or after one failed. The first run's card has no Cancel, only Stop waiting while a check waits for a sign-in in the browser, which sends `keepTarget`. The Ctrl+K palette sits outside the window a new `epoch` remounts, so a pick main refused for the old connection comes back over the new one.
 
 A switch remounts the chat subtree with the new epoch. Its `watch` calls then unsubscribe and subscribe again through the normal path, so `main/ipc.ts` needs no rebind logic. A window reload was rejected because `serveWindows` drops a window's subscriptions only on `destroyed`, which a reload does not fire. The old subscriptions would leak.
 
@@ -284,7 +287,7 @@ Where the code differs from the text above. The text above is unchanged, so each
 
 | The design said | The code does | Why |
 |---|---|---|
-| `Command` gains `checkTarget`, `editTarget`, `keepTarget` and `openChat`. | `Command` is unchanged. `ipc-contract.ts` adds `SetupCommand` and `AppCommand = Command \| SetupCommand`. `validators` has a row per verb of both. | `Command` is what `Hermes.run` accepts. The setup verbs are answered by the connection owner, which has no gateway behind it on a first run. |
+| `Command` gains `checkTarget`, `editTarget`, `keepTarget` and `stopCheck`. | `Command` is unchanged. `ipc-contract.ts` adds `SetupCommand` and `AppCommand = Command \| SetupCommand`. `validators` has a row per verb of both. | `Command` is what `Hermes.run` accepts. The setup verbs are answered by the connection owner, which has no gateway behind it on a first run. |
 | `serveWindows(owner, ...)` and a `Hermes` behind it. | `ConnectionOwner` is `setup`, `hermes` and one `run` for every command. `run` sends a setup verb through `nextSetup` and any other verb to the live `Hermes`, or refuses it as `offline` when none is live. | The window has one `run`. One place decides which side a verb belongs to. |
 | `checking` with `keepTarget` goes to `chat`. | The same, except at step `save`, where `keepTarget` is refused. | A Cancel between the save and the switch would leave the file and the chat on different machines. |
 | A check that passes saves and opens a new `Hermes`. "Re-checking the live target does not switch." | When the checked target equals the live one, the owner goes to `saved` with the same `live`. It does not save, open or bump `epoch`. | The file already holds that target, and a new epoch would drop the user's draft for nothing. |

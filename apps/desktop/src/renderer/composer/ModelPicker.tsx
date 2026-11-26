@@ -1,5 +1,6 @@
 import { sameModel, type CommandOutcome, type ModelConfirm, type ModelOption, type ModelRef, type ModelView } from '@highwing/hermes/domain'
 import { useEffect, useId, useRef, useState } from 'react'
+import { isEscapeFor } from './popover'
 
 interface ModelPickerProps {
   readonly view: Exclude<ModelView, { show: 'hidden' }>
@@ -26,7 +27,7 @@ export function ModelPicker({ view, onOpen, onPick }: ModelPickerProps) {
 
   useEffect(() => {
     if (!open) return
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
+    const onKey = (event: KeyboardEvent) => { if (isEscapeFor(event, anchor)) setOpen(false) }
     const onPress = (event: PointerEvent) => { if (!anchor.current?.contains(event.target as Node)) setOpen(false) }
     document.addEventListener('keydown', onKey)
     document.addEventListener('pointerdown', onPress)

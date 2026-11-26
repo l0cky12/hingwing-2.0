@@ -1,6 +1,6 @@
 import type { Shown, ShownGroup, Target } from '@highwing/hermes/domain'
-import { useLayoutEffect, useRef, type ReactNode } from 'react'
-import type { Mode, Setup } from '../ipc-contract'
+import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react'
+import { epochOf, type Mode } from '../ipc-contract'
 import { BotPicker } from './bots/BotPicker'
 import { BotsSidebar } from './bots/Bots'
 import { useRetryPicturesOnceOnline } from './bots/pictures'
@@ -12,7 +12,9 @@ import { ModeSwitch } from './chrome/ModeSwitch'
 import { Preview } from './preview/Preview'
 import { Composer } from './composer/Composer'
 import { Palette } from './palette/Palette'
-import { Saved, SetupForm } from './setup/Setup'
+import { screenOf, type CardSetup } from './setup/screens'
+import { Settings } from './setup/Settings'
+import { FirstRun, Saved } from './setup/Setup'
 import { Epoch, run, useTopic } from './store'
 
 const NO_CHAT = async () => ({ ok: false, refusal: { kind: 'rejected', message: 'There is no chat to send to.' } }) as const
@@ -33,13 +35,13 @@ function OpenPane() {
   return shown.kind === 'group' ? <GroupPane key={samePaneOnFirstMessage(shown)} shown={shown} /> : <Chat key={samePaneOnFirstMessage(shown)} chat={shown} />
 }
 
-function ChatScreen({ target }: { readonly target: Target | null }) {
+function ChatScreen({ target, settingsButton }: { readonly target: Target | null; readonly settingsButton: RefObject<HTMLButtonElement | null> }) {
   const link = useTopic('link')
   useRetryPicturesOnceOnline(link?.state === 'online')
   return (
     <>
       <div className="top">
-        <TopBar target={target} />
+        <TopBar target={target} settingsButton={settingsButton} />
         {link !== undefined && <Banner link={link} target={target} />}
       </div>
       <OpenPane />
@@ -62,52 +64,67 @@ function useSwitchModeKeepingFocus(mode: Mode) {
   return { root, pick }
 }
 
-function ChatWindow({ hidden, target, mode }: { readonly hidden: boolean; readonly target: Target | null; readonly mode: Mode }) {
+function useCloseSettings(shown: boolean) {
+  const settingsButton = useRef<HTMLButtonElement>(null)
+  const closing = useRef(false)
+  useLayoutEffect(() => {
+    if (shown || !closing.current) return
+    closing.current = false
+    settingsButton.current?.focus()
+  }, [shown])
+  const close = useCallback(() => {
+    closing.current = true
+    void run({ do: 'keepTarget' }).then(outcome => {
+      if (!outcome.ok) closing.current = false
+    })
+  }, [])
+  return { settingsButton, close }
+}
+
+interface ChatWindowProps {
+  readonly hidden: boolean
+  readonly settings: CardSetup | null
+  readonly target: Target | null
+  readonly mode: Mode
+}
+
+function ChatWindow({ hidden, settings, target, mode }: ChatWindowProps) {
   const preview = useTopic('preview')
   const { root, pick } = useSwitchModeKeepingFocus(mode)
+  const { settingsButton, close } = useCloseSettings(settings !== null)
   const switcher = <ModeSwitch mode={mode} onPick={pick} />
+  const paned = preview?.state === 'open' && settings === null
   return (
-    <div ref={root} className="window" hidden={hidden} data-preview={preview?.state === 'open' || undefined}>
+    <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined}>
       {mode === 'bots' && <BotsSidebar head={switcher} />}
       {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} />}
-      <div key="screen" className="screen">
-        <ChatScreen target={target} />
+      <div key="screen" className="screen" hidden={settings !== null}>
+        <ChatScreen target={target} settingsButton={settingsButton} />
       </div>
+      {settings !== null && <Settings setup={settings} mode={mode} onRequestClose={close} />}
       <DraftSweep />
-      {preview?.state === 'open' && <Preview preview={preview} />}
-      {!hidden && <Palette target={target} />}
+      {paned && <Preview preview={preview} />}
     </div>
   )
 }
 
-const SCREENS: { readonly [A in Setup['at']]: (setup: Extract<Setup, { at: A }>) => ReactNode } = {
-  chat: () => null,
-  pinned: () => null,
-  form: setup => <SetupForm setup={setup} />,
-  checking: setup => <SetupForm setup={setup} />,
-  failed: setup => <SetupForm setup={setup} />,
-  saved: setup => <Saved target={setup.live.target} />
-}
-
-/**
- * Each setup state names its own screen. While a connection is live its chat stays mounted under
- * the setup screen, hidden, so an unsent draft survives Connection and Cancel. Only a new epoch
- * remounts it, which also makes it ask Electron main again for every topic it reads.
- */
 export function App() {
   const setup = useTopic('setup')
   const mode = useTopic('mode')
   if (setup === undefined || mode === undefined) return null
-  const over = (SCREENS[setup.at] as (setup: Setup) => ReactNode)(setup)
+  const screen = screenOf(setup)
   const live = setup.at === 'pinned' ? null : setup.live
   return (
     <>
       {(setup.at === 'pinned' || live !== null) && (
-        <Epoch key={live?.epoch ?? 0} value={live?.epoch ?? 0}>
-          <ChatWindow hidden={over !== null} target={live?.target ?? null} mode={mode} />
+        <Epoch value={epochOf(setup)}>
+          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved'} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} />
+          {/* Outside the window a new connection remounts, so a pick main refused for the old one comes back over the new one. */}
+          {screen.show !== 'saved' && <Palette target={live?.target ?? null} settingsOpen={screen.show === 'settings'} />}
         </Epoch>
       )}
-      {over}
+      {screen.show === 'first-run' && <FirstRun setup={screen.setup} />}
+      {screen.show === 'saved' && <Saved target={screen.live.target} />}
     </>
   )
 }

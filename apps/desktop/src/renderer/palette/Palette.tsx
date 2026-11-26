@@ -1,12 +1,18 @@
 import { shownChat, type Target } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import type { WindowCommand } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
 import { agoOf } from '../chats/chat-list'
 import { isCommandKey } from '../keys'
 import { run, useTopic } from '../store'
-import { activeIn, paletteOf, step, type PaletteItem, type PaletteView, type Row } from './palette-view'
+import { activeIn, comebackOf, paletteOf, step, type PaletteItem, type PaletteView, type Row } from './palette-view'
 
-const composerBox = () => document.querySelector<HTMLTextAreaElement>('.composer textarea')
+const canHoldFocus = (element: Element | null): element is HTMLElement =>
+  element instanceof HTMLElement && element !== document.body && element.isConnected && element.closest('[hidden]') === null
+  && element.checkVisibility() && !element.matches(':disabled')
+/** Settings hides the chat's composer. Its connection card's Change takes focus there, or the Settings heading while the editor is open. */
+const FALLBACKS = ['.settings .change', '.settings > h2', '.composer textarea']
+const fallbackFocus = () => FALLBACKS.map(selector => document.querySelector(selector)).find(canHoldFocus) ?? null
 
 function detailOf(item: PaletteItem, now: number): string | null {
   switch (item.kind) {
@@ -56,13 +62,23 @@ export function Results({ view, active, listId, now, onPick }: ResultsProps) {
   )
 }
 
-interface SheetProps {
-  readonly target: Target | null
-  readonly returnFocusTo: Element | null
-  readonly onClose: () => void
+/** A sheet to show: where focus was when Ctrl+K opened it, and the query it opens with. */
+interface Opened {
+  readonly back: Element | null
+  readonly query: string
+  /** Why main refused the pick the sheet came back for. */
+  readonly note: string | null
 }
 
-function Sheet({ target, returnFocusTo, onClose }: SheetProps) {
+interface SheetProps {
+  readonly opened: Opened
+  readonly target: Target | null
+  readonly settingsOpen: boolean
+  readonly onClose: () => void
+  readonly onPick: (command: WindowCommand, query: string) => void
+}
+
+function Sheet({ opened, target, settingsOpen, onClose, onPick }: SheetProps) {
   const sidebar = useTopic('sidebar')
   const bots = useTopic('bots')
   const open = useTopic('open')
@@ -70,14 +86,15 @@ function Sheet({ target, returnFocusTo, onClose }: SheetProps) {
   const sessionId = shownChat(open)?.sessionId ?? null
   const openSession = useTopic(sessionId === null ? null : `session:${sessionId}`)
   const [draftId] = useState(() => crypto.randomUUID())
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(opened.query)
+  const [note, setNote] = useState(opened.note)
   const [picked, setPicked] = useState<string | null>(null)
   const dialog = useRef<HTMLDialogElement>(null)
   const field = useRef<HTMLInputElement>(null)
   const leaving = useRef(false)
   const listId = useId()
 
-  const view = paletteOf({ sidebar, bots, open, link, openSession, target, draftId }, query)
+  const view: PaletteView = note === null ? paletteOf({ sidebar, bots, open, link, openSession, target, settingsOpen, draftId }, query) : { show: 'note', words: note }
   const active = activeIn(view, picked)
   const activeId = active === null ? undefined : optionId(listId, active.item)
 
@@ -92,17 +109,14 @@ function Sheet({ target, returnFocusTo, onClose }: SheetProps) {
   const dismiss = () => {
     leaving.current = true
     dialog.current?.close()
-    const held = returnFocusTo instanceof HTMLElement && returnFocusTo !== document.body && returnFocusTo.isConnected ? returnFocusTo : composerBox()
+    const held = canHoldFocus(opened.back) ? opened.back : fallbackFocus()
     held?.focus()
     onClose()
   }
   const pick = (item: PaletteItem) => {
     leaving.current = true
     dialog.current?.close()
-    onClose()
-    void run(item.command).then(() => requestAnimationFrame(() => {
-      if (document.activeElement === null || document.activeElement === document.body) composerBox()?.focus()
-    }))
+    onPick(item.command, query)
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDialogElement>) => {
@@ -136,7 +150,7 @@ function Sheet({ target, returnFocusTo, onClose }: SheetProps) {
           ref={field} type="text" className="palette-field" role="combobox" aria-label="Search chats, bots and actions" autoFocus
           spellCheck={false} autoComplete="off" placeholder="Search chats, bots and actions" value={query}
           aria-expanded={view.show === 'rows'} aria-controls={view.show === 'rows' ? listId : undefined} aria-activedescendant={activeId} aria-autocomplete="list"
-          onChange={event => { setQuery(event.target.value); setPicked(null) }}
+          onChange={event => { setQuery(event.target.value); setPicked(null); setNote(null) }}
         />
         <Results view={view} active={active} listId={listId} now={Date.now()} onPick={pick} />
         <p className="palette-hint"><span>↑↓ to move</span><span>Enter to open</span><span>Esc to close</span></p>
@@ -145,19 +159,29 @@ function Sheet({ target, returnFocusTo, onClose }: SheetProps) {
   )
 }
 
-/** Ctrl+K (Cmd+K on macOS) opens the palette over the chat window. */
-export function Palette({ target }: { readonly target: Target | null }) {
-  const [back, setBack] = useState<Element | null | undefined>(undefined)
-  const opened = back !== undefined
+export function Palette({ target, settingsOpen }: { readonly target: Target | null; readonly settingsOpen: boolean }) {
+  const [opened, setOpened] = useState<Opened | null>(null)
+  const shown = opened !== null
   useEffect(() => {
-    if (opened) return
+    if (shown) return
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (!isCommandKey(event, 'k') || document.querySelector('dialog:modal') !== null) return
       event.preventDefault()
-      if (!event.repeat) setBack(document.activeElement)
+      if (!event.repeat) setOpened({ back: document.activeElement, query: '', note: null })
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [opened])
-  return back === undefined ? null : <Sheet target={target} returnFocusTo={back} onClose={() => setBack(undefined)} />
+  }, [shown])
+  // The sheet goes before main answers: Hermes can take a while to open a bot, and while the sheet is modal the chat a pick opens cannot take focus.
+  const pick = (back: Element | null, command: WindowCommand, query: string) => {
+    setOpened(null)
+    void run(command).then(outcome => {
+      const note = comebackOf(outcome)
+      if (note !== null) setOpened(held => held ?? { back, query, note })
+      else requestAnimationFrame(() => { if (!canHoldFocus(document.activeElement)) fallbackFocus()?.focus() })
+    })
+  }
+  return opened === null ? null : (
+    <Sheet opened={opened} target={target} settingsOpen={settingsOpen} onClose={() => setOpened(null)} onPick={(command, query) => pick(opened.back, command, query)} />
+  )
 }

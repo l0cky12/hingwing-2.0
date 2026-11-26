@@ -408,11 +408,11 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints', 'closePreview',
-      'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'describeBot', 'discard', 'editBot', 'editTarget', 'export',
-      'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openChat', 'openPreview', 'petPicture', 'pets',
-      'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename', 'restore', 'rewind', 'send', 'sendToGroup', 'setMode', 'side',
-      'start', 'stop', 'stopGroup', 'stopHelper', 'tune', 'versions'
+      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
+      'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'describeBot', 'discard', 'editBot',
+      'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
+      'petPicture', 'pets', 'pickModel', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'removeBotPicture', 'rename',
+      'restore', 'rewind', 'send', 'sendToGroup', 'setMode', 'side', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
     ])
   })
 })
@@ -424,6 +424,15 @@ const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] 
 const NOTHING_OPEN: OpenChat = { shown: null, opening: null, missing: null }
 const NO_RELAYS: RelayDesk = { supported: false, bySession: {} }
 const NO_GROUPS: Groups = { state: 'unsupported' }
+
+/** An owner live on a remote machine, whose every check passes, so a check of this computer switches to it at epoch 2. */
+const switchable = (hermes: Hermes) => ownConnection({
+  loaded: { state: 'saved', target: { kind: 'remote', host: 'box' as SshHost } },
+  save: async () => {},
+  check: async () => ({ ok: true }),
+  routeFor: () => ({ dial: async () => { throw new Error('the test never dials') }, dispose: () => {} }) as unknown as Route,
+  open: () => ({ ...hermes, close: async () => {} })
+})
 
 function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection) {
   const listeners = new Map<string, (event: IpcEvent, ...args: unknown[]) => void>()
@@ -498,6 +507,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   const saver = { save: async (rendered: Exported): Promise<string | null> => (saves.push(rendered), savedAt) }
   const kept: Draft[] = []
   const picked: string[] = []
+  const lives: (() => boolean)[] = []
   const stored: readonly Draft[] = [{ key: 'new', bot: null, text: 'kept on disk', attachments: [] }]
   const previewed: { request: string; label: string | null; session: Session | undefined }[] = []
   const toPane: PreviewCommand[] = []
@@ -520,7 +530,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   const served = serveWindows(
     ownerOf(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
-    { pick: async bot => (picked.push(bot), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
+    { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
     { store, sources }, saver, { mode, set: next => mode.set(next) }
   )
   const setCatalog = (next: SlashCatalog) => {
@@ -540,7 +550,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
     savedAt = path instanceof Error ? Promise.reject(path) : Promise.resolve(path)
   }
   return {
-    listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, stored, previewed, toPane, staged, served,
+    listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, lives, stored, previewed, toPane, staged, served,
     saves, exportsAs, setCatalog, setBots, setOpen, mode
   }
 }
@@ -613,8 +623,8 @@ describe('serveWindows', () => {
     const research = { shown: { kind: 'bot', bot: 'research', sessionId: 'local-0001' }, opening: null, missing: null } as OpenChat
     setOpen(research)
     expect(pushes).toEqual([{ topic: 'open', rev: 1, full: NOTHING_OPEN }, { topic: 'open', rev: 2, full: research }])
-    await handlers.get(CHANNEL.run)!(event(), { do: 'open', ref: { kind: 'bot', bot: 'research' } })
-    await handlers.get(CHANNEL.run)!(event(), { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello' })
+    await handlers.get(CHANNEL.run)!(event(), { do: 'open', ref: { kind: 'bot', bot: 'research' } }, 0)
+    await handlers.get(CHANNEL.run)!(event(), { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello' }, 0)
     expect(commands).toEqual([{ do: 'open', ref: { kind: 'bot', bot: 'research' } }, { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello', attachments: [] }])
   })
 
@@ -673,7 +683,7 @@ describe('serveWindows', () => {
 
   it('saves an export through the saver and answers the window the path, never the text', async () => {
     const { handlers, event, saves } = harness()
-    const answered = await handlers.get(CHANNEL.run)!(event(), { do: 'export', sessionId: 's1', format: 'md' })
+    const answered = await handlers.get(CHANNEL.run)!(event(), { do: 'export', sessionId: 's1', format: 'md' }, 0)
     expect(saves).toEqual([{ filename: 'chat.md', content: '# Notes' }])
     expect(answered).toEqual({ ok: true, value: '/home/u/Downloads/chat.md' })
   })
@@ -685,17 +695,90 @@ describe('serveWindows', () => {
   ] as const)('answers an export with %s', async (_, rendered, path, want, saved) => {
     const { handlers, event, saves, exportsAs } = harness()
     exportsAs(rendered, path)
-    await expect(handlers.get(CHANNEL.run)!(event(), { do: 'export', sessionId: 's1', format: 'html' })).resolves.toEqual(want)
+    await expect(handlers.get(CHANNEL.run)!(event(), { do: 'export', sessionId: 's1', format: 'html' }, 0)).resolves.toEqual(want)
     expect(saves).toHaveLength(saved)
   })
 
   it('runs a valid command from the app page and refuses a malformed one or a foreign frame', async () => {
     const { handlers, event, commands } = harness()
     const run = handlers.get(CHANNEL.run)!
-    await expect(run(event(), { do: 'stop', sessionId: 's1' })).resolves.toEqual({ ok: true, value: undefined })
-    await expect(run(event(), { do: 'stop' })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
-    await expect(run(event('https://example.com/'), { do: 'stop', sessionId: 's1' })).resolves.toMatchObject({ ok: false })
+    await expect(run(event(), { do: 'stop', sessionId: 's1' }, 0)).resolves.toEqual({ ok: true, value: undefined })
+    await expect(run(event(), { do: 'stop' }, 0)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    await expect(run(event('https://example.com/'), { do: 'stop', sessionId: 's1' }, 0)).resolves.toMatchObject({ ok: false })
     expect(commands).toEqual([{ do: 'stop', sessionId: 's1' }])
+  })
+
+  it('refuses a chat command a window sent for a connection that is no longer live, and passes setup, pane and mode commands whatever it sent', async () => {
+    let owner: ConnectionOwner | undefined
+    const { handlers, event, commands, toPane, mode } = harness(hermes => (owner = switchable(hermes)))
+    const run = handlers.get(CHANNEL.run)!
+    const pick = { do: 'open', ref: { kind: 'chat', sessionId: 'box-0001' } }
+    await expect(run(event(), { do: 'editTarget' }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    await expect(run(event(), { do: 'checkTarget', target: { kind: 'local' } }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    await new Promise(resolve => setImmediate(resolve))
+    expect(owner!.setup.get()).toMatchObject({ at: 'saved', live: { target: { kind: 'local' }, epoch: 2 } })
+
+    for (const sent of [1, undefined, '2']) {
+      await expect(run(event(), pick, sent)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    }
+    expect(commands, 'the old sidebar\'s chat never reaches the new Hermes').toEqual([])
+    expect(owner!.setup.get(), 'a refused pick leaves Settings up').toMatchObject({ at: 'saved' })
+
+    await expect(run(event(), { do: 'closePreview' }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    await expect(run(event(), { do: 'setMode', mode: 'bots' }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    expect(toPane).toEqual([{ do: 'closePreview' }])
+    expect(mode.get()).toBe('bots')
+
+    await expect(run(event(), pick, 2)).resolves.toEqual({ ok: true, value: undefined })
+    expect(commands).toEqual([pick])
+    expect(owner!.setup.get()).toEqual({ at: 'chat', live: { target: { kind: 'local' }, epoch: 2 } })
+    await expect(run(event(), { do: 'editTarget' }, 1)).resolves.toEqual({ ok: true, value: undefined })
+  })
+
+  it("refuses the bot menu's mark and New chat sent for an older connection, and passes them for the live one", async () => {
+    let owner: ConnectionOwner | undefined
+    const { handlers, event, commands } = harness(hermes => (owner = switchable(hermes)))
+    const run = handlers.get(CHANNEL.run)!
+    await run(event(), { do: 'editTarget' }, 1)
+    await run(event(), { do: 'checkTarget', target: { kind: 'local' } }, 1)
+    await new Promise(resolve => setImmediate(resolve))
+    const mark = { do: 'markBot', bot: 'box-bot', mark: 'pin' }
+    const fresh = { do: 'open', ref: { kind: 'new', bot: 'box-bot', draftId: 'd1' }, upFront: true }
+
+    for (const command of [mark, fresh]) {
+      await expect(run(event(), command, 1)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    }
+    expect(commands, "the old sidebar's bot never reaches the new Hermes").toEqual([])
+
+    await expect(run(event(), mark, 2)).resolves.toMatchObject({ ok: true })
+    expect(owner!.setup.get(), 'a mark leaves Settings up').toMatchObject({ at: 'saved' })
+    await expect(run(event(), fresh, 2)).resolves.toMatchObject({ ok: true })
+    expect(commands).toEqual([mark, fresh])
+    expect(owner!.setup.get()).toEqual({ at: 'chat', live: { target: { kind: 'local' }, epoch: 2 } })
+  })
+
+  it("refuses a group chat's send, stop and open sent for an older connection, and passes them for the live one", async () => {
+    let owner: ConnectionOwner | undefined
+    const { handlers, event, commands } = harness(hermes => (owner = switchable(hermes)))
+    const run = handlers.get(CHANNEL.run)!
+    await run(event(), { do: 'editTarget' }, 1)
+    await run(event(), { do: 'checkTarget', target: { kind: 'local' } }, 1)
+    await new Promise(resolve => setImmediate(resolve))
+    const send = { do: 'sendToGroup', group: 'launch-plan', text: '@sam ship it' }
+    const stop = { do: 'stopGroup', group: 'launch-plan' }
+    const open = { do: 'open', ref: { kind: 'group', group: 'launch-plan' } }
+
+    for (const command of [send, stop, open]) {
+      await expect(run(event(), command, 1)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    }
+    expect(commands, "the old connection's group never reaches the new Hermes").toEqual([])
+
+    await expect(run(event(), send, 2)).resolves.toMatchObject({ ok: true })
+    await expect(run(event(), stop, 2)).resolves.toMatchObject({ ok: true })
+    expect(owner!.setup.get(), 'a send or a stop leaves Settings up').toMatchObject({ at: 'saved' })
+    await expect(run(event(), open, 2)).resolves.toMatchObject({ ok: true })
+    expect(commands).toEqual([send, stop, open])
+    expect(owner!.setup.get()).toEqual({ at: 'chat', live: { target: { kind: 'local' }, epoch: 2 } })
   })
 })
 
@@ -798,13 +881,7 @@ describe('the image call', () => {
 
   it('says not local for a session a remote Hermes served after the connection moves to this computer, until the window watches it again', async () => {
     let owner: ConnectionOwner | undefined
-    const rig = harness(hermes => (owner = ownConnection({
-      loaded: { state: 'saved', target: { kind: 'remote', host: 'box' as SshHost } },
-      save: async () => {},
-      check: async () => ({ ok: true }),
-      routeFor: () => ({ dial: async () => { throw new Error('the test never dials') }, dispose: () => {} }) as unknown as Route,
-      open: () => ({ ...hermes, close: async () => {} })
-    })))
+    const rig = harness(hermes => (owner = switchable(hermes)))
     rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
     rig.emit(moments[3]!)
     await owner!.run({ do: 'editTarget' })
@@ -929,11 +1006,33 @@ describe('the picture call', () => {
   it("asks main's picker for the named bot, and refuses a foreign frame or a bot with no name without asking", async () => {
     const rig = harness()
     const call = rig.handlers.get(CHANNEL.pickPicture)!
-    await expect(call(rig.event(), 'rae')).resolves.toEqual({ ok: true, value: 'cancelled' })
+    await expect(call(rig.event(), 'rae', 0)).resolves.toEqual({ ok: true, value: 'cancelled' })
     for (const [event, raw] of [[rig.event('https://example.com/'), 'rae'], [rig.event(), ' '], [rig.event(), { bot: 'rae' }]] as const) {
-      await expect(call(event, raw)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+      await expect(call(event, raw, 0)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
     }
     expect(rig.picked).toEqual(['rae'])
+  })
+
+  it('refuses a bot of a connection that is no longer live, and tells a picker left open across the switch', async () => {
+    let owner: ConnectionOwner | undefined
+    const rig = harness(hermes => (owner = switchable(hermes)))
+    const run = rig.handlers.get(CHANNEL.run)!
+    const call = rig.handlers.get(CHANNEL.pickPicture)!
+    await expect(call(rig.event(), 'rae', 1)).resolves.toEqual({ ok: true, value: 'cancelled' })
+    const [openAcrossTheSwitch] = rig.lives
+    expect(openAcrossTheSwitch!()).toBe(true)
+    await run(rig.event(), { do: 'editTarget' }, 1)
+    await run(rig.event(), { do: 'checkTarget', target: { kind: 'local' } }, 1)
+    await new Promise(resolve => setImmediate(resolve))
+    expect(owner!.setup.get()).toMatchObject({ live: { target: { kind: 'local' }, epoch: 2 } })
+    expect(openAcrossTheSwitch!()).toBe(false)
+
+    for (const sent of [1, undefined, '2']) {
+      await expect(call(rig.event(), 'rae', sent)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    }
+    expect(rig.picked, 'no picker opens for a bot of the old connection').toEqual(['rae'])
+    await expect(call(rig.event(), 'rae', 2)).resolves.toEqual({ ok: true, value: 'cancelled' })
+    expect(rig.lives[1]!()).toBe(true)
   })
 
   it("answers main's chosen picture to the window, and refuses a foreign frame without asking", async () => {
