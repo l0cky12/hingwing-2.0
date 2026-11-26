@@ -155,6 +155,11 @@ describe('validators', () => {
     expect(parseCommand({ do: 'canGeneratePicture', extra: 1 })).toEqual({ do: 'canGeneratePicture' })
     expect(parseCommand({ do: 'generatePicture', prompt: 'a cheerful robot', extra: 1 })).toEqual({ do: 'generatePicture', prompt: 'a cheerful robot' })
     expect(parseCommand({ do: 'pets', extra: 1 })).toEqual({ do: 'pets' })
+    expect(parseCommand({ do: 'memory', extra: 1 })).toEqual({ do: 'memory' })
+    expect(parseCommand({ do: 'saveMemory', id: 'memory:memory:0:abc', text: 'Hello', extra: 1 })).toEqual({ do: 'saveMemory', id: 'memory:memory:0:abc', text: 'Hello' })
+    expect(parseCommand({ do: 'saveMemory', id: 'memory:memory:0:abc', text: '' })).toEqual({ do: 'saveMemory', id: 'memory:memory:0:abc', text: '' })
+    expect(parseCommand({ do: 'saveMemory', id: ' ', text: 'Hello' })).toBeNull()
+    expect(parseCommand({ do: 'removeMemory', id: 'memory:profile:1:def', extra: 1 })).toEqual({ do: 'removeMemory', id: 'memory:profile:1:def' })
     expect(parseCommand({ do: 'petPicture', slug: 'tabby', url: 'https://petdex.example/tabby.webp', name: 'Tabby' })).toEqual({ do: 'petPicture', slug: 'tabby', url: 'https://petdex.example/tabby.webp' })
     expect(parseCommand({ do: 'petPicture', slug: 'mochi', url: null })).toEqual({ do: 'petPicture', slug: 'mochi', url: null })
     expect(parseCommand({ do: 'petPicture', slug: 'mr.whiskers', url: null })).toEqual({ do: 'petPicture', slug: 'mr.whiskers', url: null })
@@ -456,9 +461,9 @@ describe('validators', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
       'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard', 'editBot',
-      'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
-      'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename', 'renameGroup',
-      'restore', 'retitle', 'rewind', 'send', 'sendToGroup', 'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
+      'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'memory', 'models', 'move', 'open', 'openPreview',
+      'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'removeMemory', 'rename', 'renameGroup',
+      'restore', 'retitle', 'rewind', 'saveMemory', 'send', 'sendToGroup', 'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
     ])
   })
 })

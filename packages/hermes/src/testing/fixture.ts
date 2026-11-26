@@ -103,6 +103,13 @@ export interface Fixture {
     readonly oneshot?: Oneshot
     /** What `pet.gallery` and `pet.thumb` answer. Absent: the gateway refuses both as unknown methods, as a Hermes without pets does. */
     readonly pets?: Pets
+    /**
+     * What `learning.frames`, `learning.detail`, `learning.edit` and `learning.delete` answer for memory entries.
+     * Absent: the gateway refuses each as an unknown method, as a Hermes without the calls does, and so does a socket
+     * bound to one profile. `limits` are the char caps. Absent keys use Hermes's defaults, 2200 for MEMORY.md and 1375
+     * for USER.md. A replacement over a cap is refused in Hermes's words. A removal is not capped.
+     */
+    readonly memory?: MemoryScript
     /** `'profile'`: play a Hermes with no `interactive` ticket, whose every socket is bound to the home profile. Default `'host'`. */
     readonly reach?: Reach
     /** false: the home bot has no Bot Chat, and the story session is only a chat of the home profile. Default true. */
@@ -160,6 +167,15 @@ export interface Oneshot { readonly text?: string; readonly error?: string; read
  * each call takes (default 0). `refused_once`: slugs whose first `pet.thumb` answers `{ ok: false }`, as Hermes does for a petdex
  * fetch that timed out and keeps nothing (agent/pet/store.py:240-246), and is answered as usual after.
  */
+/**
+ * `entries` are the chunks of MEMORY.md and USER.md, in file order. `limits.memory` caps MEMORY.md and `limits.user`
+ * caps USER.md, in characters, the way MemoryStore does.
+ */
+export interface MemoryScript {
+  readonly entries: readonly { readonly file: 'MEMORY.md' | 'USER.md'; readonly text: string }[]
+  readonly limits?: { readonly memory?: number; readonly user?: number }
+}
+
 export interface Pets {
   readonly pets: readonly unknown[]
   readonly thumbs: { readonly [slug: string]: string }
@@ -346,6 +362,12 @@ const isPets = (value: unknown): value is Pets =>
   isObject(value) && Array.isArray(value.pets) && isObject(value.thumbs) && Object.values(value.thumbs).every(thumb => typeof thumb === 'string') && delay(value.delay_ms)
   && (value.refused_once === undefined || (Array.isArray(value.refused_once) && value.refused_once.every(slug => typeof slug === 'string')))
 
+const MEMORY_FILES = new Set(['MEMORY.md', 'USER.md'])
+const isCharLimit = (value: unknown) => value === undefined || (Number.isSafeInteger(value) && (value as number) > 0)
+const isMemory = (value: unknown): value is MemoryScript =>
+  isObject(value) && Array.isArray(value.entries) && value.entries.every(entry => isObject(entry) && typeof entry.file === 'string' && MEMORY_FILES.has(entry.file) && typeof entry.text === 'string' && entry.text.trim() !== '')
+  && (value.limits === undefined || (isObject(value.limits) && Object.keys(value.limits).every(key => key === 'memory' || key === 'user') && isCharLimit(value.limits.memory) && isCharLimit(value.limits.user)))
+
 const isRelayScript = (value: unknown): value is RelayScript =>
   isObject(value) && ('refuse' in value
     ? typeof value.refuse === 'string' && value.refuse !== '' && Object.keys(value).length === 1
@@ -425,10 +447,11 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   const { assetFails } = value
   if (assetFails !== undefined && (typeof assetFails !== 'string' || assetFails.trim() === '')) return '"assetFails" must be the words a failed write gives'
-  const { images, pets, oneshot } = value
+  const { images, pets, oneshot, memory } = value
   if (images !== undefined && !isImages(images)) return '"images" must be { available, picture?, error?, delay_ms? }'
   if (oneshot !== undefined && !isOneshot(oneshot)) return '"oneshot" must be { text?, error?, delay_ms? }'
   if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'
+  if (memory !== undefined && !isMemory(memory)) return '"memory" must be { entries, limits? } with each entry { file: "MEMORY.md" or "USER.md", text } and limits { memory?, user? }'
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
@@ -485,6 +508,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
     ...(assetFails === undefined ? {} : { assetFails }),
     ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }),
+    ...(memory === undefined ? {} : { memory }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),

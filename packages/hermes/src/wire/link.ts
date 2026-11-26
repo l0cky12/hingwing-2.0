@@ -190,6 +190,9 @@ export class Offline extends Error {}
  * `projects.tree` reaches its legacy handler the same way (tui_gateway/methods_config.py:137), and a -32601 from it
  * means this Hermes cannot say which chats were branched from which. So does `llm.oneshot` (tui_gateway/methods_session.py:1249),
  * which a -32601 from means this Hermes cannot suggest a title.
+ * `learning.frames`, `learning.detail`, `learning.edit` and `learning.delete` reach the same legacy handlers
+ * (tui_gateway/methods_tools.py). None of them takes `profile`: Hermes rejects the key, and a write changes
+ * the home the socket was launched with. A -32601 from one means this Hermes cannot edit memory.
  * The canonical route serves every `groups.*` method (`GROUP_METHODS`, gateway/session_group_controls.py:15-35), though of
  * the calls Highwing makes the contract lists only `groups.create` as canonical (tui_gateway/contracts/canonical_projections.py:126). A -32601 from `groups.capabilities` means this Hermes has no group chats.
  */
@@ -199,7 +202,8 @@ export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'prompt.btw' | 'prompt.background' | 'process.list' | 'process.kill' | 'subagent.interrupt' | 'session.control.read' | 'session.control' | 'rollback.list' |
   'rollback.diff' | 'rollback.restore' | 'message.react' | 'groups.capabilities' | 'groups.list' | 'groups.state' | 'groups.log' | 'groups.send' | 'groups.stop' |
   'groups.rename' | 'groups.disband' |
-  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot'>
+  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot' |
+  'learning.frames' | 'learning.detail' | 'learning.edit' | 'learning.delete'>
 export type Method = keyof Served
 
 export type Requested = ServerRequestMap

@@ -104,6 +104,15 @@ export type Command =
   | { readonly do: 'pets' }
   /** A pet's idle frame as a PNG data URL, or null when Hermes has none. `url` is the pet's `PetChoice.url`. */
   | { readonly do: 'petPicture'; readonly slug: string; readonly url: string | null }
+  /**
+   * The entries Hermes keeps in the home this socket was launched with, MEMORY.md then USER.md.
+   * The calls take no profile, so this is that home's memory, which the default bot's menu edits.
+   */
+  | { readonly do: 'memory' }
+  /** Replaces one entry. A save past the file's size cap is refused in the words Hermes sends. */
+  | { readonly do: 'saveMemory'; readonly id: string; readonly text: string }
+  /** Removes one entry. Hermes does not apply the size cap to a removal. */
+  | { readonly do: 'removeMemory'; readonly id: string }
   /** The models a bot's chat could use, with no chat open. null: the socket's own profile, which a new bot copies its credentials from. */
   | { readonly do: 'botModels'; readonly bot: BotId | null }
   | { readonly do: 'describeBot'; readonly bot: BotId }
@@ -201,6 +210,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'canGeneratePicture' } ? boolean
   : C extends { do: 'generatePicture' | 'retitle' } ? string
   : C extends { do: 'pets' } ? readonly PetChoice[]
+  : C extends { do: 'memory' } ? readonly MemoryEntry[]
   : C extends { do: 'markBot' } ? Marked
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
@@ -209,6 +219,13 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'checkpointDiff' } ? CheckpointDiff
   : C extends { do: 'restore' } ? Restored
   : void
+
+/** One remembered entry. `id` is Hermes's node id. `file` is which of the two memory files holds the text. */
+export interface MemoryEntry {
+  readonly id: string
+  readonly file: 'MEMORY.md' | 'USER.md'
+  readonly text: string
+}
 
 export type ExportFormat = 'md' | 'json' | 'html'
 export const EXPORT_FORMATS: readonly ExportFormat[] = ['md', 'json', 'html']

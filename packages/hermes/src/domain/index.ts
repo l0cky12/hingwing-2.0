@@ -2,7 +2,7 @@
 export type * from './session'
 export { APPROVAL_MODES, EFFORTS, PLAIN_CONTROLS, reissues } from './session'
 export {
-  EXPORT_FORMATS, type Checkpoint, type CheckpointDiff, type Checkpoints, type Command, type ContextBreakdown, type ExportFormat, type Exported, type ModelConfirm, type ModelMenu, type Outcome as CommandOutcome, type Refusal, type Restored, type RestoreScope,
+  EXPORT_FORMATS, type Checkpoint, type CheckpointDiff, type Checkpoints, type Command, type ContextBreakdown, type ExportFormat, type Exported, type MemoryEntry, type ModelConfirm, type ModelMenu, type Outcome as CommandOutcome, type Refusal, type Restored, type RestoreScope,
   type ResultOf
 } from './command'
 export { activityOf, turnActivityOf, type Activity, type TurnActivity } from './reduce'
