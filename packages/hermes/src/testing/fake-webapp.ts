@@ -119,13 +119,14 @@ const der = (tag: number, ...parts: readonly Buffer[]): Buffer => {
   return Buffer.concat([Buffer.from([tag, ...length]), body])
 }
 
+/** Signed with ECDSA on P-256. Electron's TLS offers no Ed25519, so there such a certificate fails the handshake before trust is ever judged. */
 function selfSigned(): { readonly key: string; readonly cert: string } {
-  const { publicKey, privateKey } = generateKeyPairSync('ed25519')
-  const ed25519 = der(0x30, der(0x06, Buffer.from([0x2b, 0x65, 0x70])))
+  const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+  const ecdsaWithSha256 = der(0x30, der(0x06, Buffer.from([0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02])))
   const name = der(0x30, der(0x31, der(0x30, der(0x06, Buffer.from([0x55, 0x04, 0x03])), der(0x0c, Buffer.from('fake-webapp')))))
   const validity = der(0x30, der(0x17, Buffer.from('250101000000Z')), der(0x17, Buffer.from('450101000000Z')))
-  const body = der(0x30, der(0x02, Buffer.from([1])), ed25519, name, validity, name, publicKey.export({ type: 'spki', format: 'der' }))
-  const cert = der(0x30, body, ed25519, der(0x03, Buffer.from([0]), sign(null, body, privateKey)))
+  const body = der(0x30, der(0x02, Buffer.from([1])), ecdsaWithSha256, name, validity, name, publicKey.export({ type: 'spki', format: 'der' }))
+  const cert = der(0x30, body, ecdsaWithSha256, der(0x03, Buffer.from([0]), sign('sha256', body, privateKey)))
   return {
     key: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
     cert: `-----BEGIN CERTIFICATE-----\n${cert.toString('base64')}\n-----END CERTIFICATE-----\n`
