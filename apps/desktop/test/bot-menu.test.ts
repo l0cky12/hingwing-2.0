@@ -1,6 +1,6 @@
 import { rosterOf, type BotFacts, type BotId, type BotMark, type Bots } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
-import { anchorOf, EDGE, GAP, isMenuKey, keyMove, LABELS, MENUS, menuOf, placeMenu, type Box, type OpenMenu } from '../src/renderer/bots/bot-menu'
+import { anchorOf, deleteRefusal, EDGE, GAP, isMenuKey, keyMove, LABELS, MENUS, placeMenu, type Box, type OpenMenu } from '../src/renderer/bots/bot-menu'
 import { fallbackOf, openerTarget } from '../src/renderer/bots/focus'
 import { busyIn, focusAfter, runsAt, SAID, type MarkRun } from '../src/renderer/bots/marks'
 import { listOf } from '../src/renderer/bots/roster-view'
@@ -21,15 +21,17 @@ describe("a bot's menu", () => {
     expect(words('hidden')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Show in list'], ['Delete…']])
   })
 
-  it('offers Delete… last in every menu except the default bot\'s', () => {
+  it('offers Delete… last in every menu except the default bot\'s card', () => {
     expect(MENUS.card.flat()).not.toContain('delete')
     for (const place of ['pinned', 'section', 'hidden'] as const) expect(MENUS[place].flat().at(-1), place).toBe('delete')
   })
 
-  it('drops Delete… for the default bot even when it is drawn as a hidden row', () => {
-    expect(menuOf('hidden', true)).toEqual([['open', 'new'], ['edit'], ['show']])
-    expect(menuOf('hidden', false)).toEqual(MENUS.hidden)
-    expect(menuOf('card', true)).toEqual(MENUS.card)
+  it('says how to delete a bot on the Hermes machine, and that Hermes keeps its default bot', () => {
+    const bots = listed(fact('default', 'Hermes', { isDefault: true, hidden: true }), fact('editor', 'Editor'))
+    if (bots.state !== 'listed' || bots.roster.featured === null) throw new Error('expected a listed roster with a default bot')
+    const editor = bots.roster.sections.flatMap(section => section.bots).find(bot => bot.id === 'editor')!
+    expect(deleteRefusal(editor, false)).toBe("This Hermes can't delete bots from Highwing. To delete Editor, run hermes profile delete editor on the Hermes machine.")
+    expect(deleteRefusal(bots.roster.featured, true)).toBe("The default bot can't be deleted.")
   })
 
   it('keeps Edit… third in every menu', () => {

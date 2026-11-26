@@ -12,7 +12,7 @@ import { nameProblem } from './bot-form'
 import type { LookCalls } from './LookPicker'
 import { NewBotForm } from './NewBotForm'
 import { DeleteDialog } from './DeleteDialog'
-import { DELETE_REFUSED, isMenuKey, type Box, type MenuAction, type OpenMenu, type Opener } from './bot-menu'
+import { deleteRefusal, isMenuKey, type Box, type MenuAction, type OpenMenu, type Opener } from './bot-menu'
 import { elementIn, fallbackOf, focusIn, openerTarget, stayedIn, type FocusTarget } from './focus'
 import { busyIn, focusAfter, runsAt, SAID, type MarkRun } from './marks'
 import { NewMenu } from './NewMenu'
@@ -283,7 +283,8 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
     unpin: bot => mark(bot, 'unpin'),
     hide: bot => mark(bot, 'hide'),
     show: bot => mark(bot, 'show'),
-    delete: bot => setDeleting(bot)
+    // Hermes never deletes its default bot, so its Delete… refuses at once, with no dialog to confirm.
+    delete: bot => (bots?.state === 'listed' && bots.roster.featured?.id === bot.id ? setRefused(deleteRefusal(bot, true)) : setDeleting(bot))
   }
   const choose = (bot: Bot, action: MenuAction) => {
     setMenu(null)
@@ -366,7 +367,6 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
         {menu !== null && menuRow !== undefined && (
           <RowMenu
             key={JSON.stringify([menu.bot, menu.opener])} bot={menu.bot} name={menuRow.bot.name} place={menuRow.place} opener={menu.opener}
-            isDefault={list.show === 'roster' && list.featured?.id === menu.bot}
             measure={() => ({ row: boxOf({ to: 'row', bot: menu.bot }), more: boxOf({ to: 'more', bot: menu.bot }) })}
             onChoose={action => choose(menuRow.bot, action)} onClose={closeMenu}
           />
@@ -400,7 +400,7 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
           onCancel={() => closeDelete(deleting)}
           onConfirm={() => {
             closeDelete(deleting)
-            setRefused(DELETE_REFUSED)
+            setRefused(deleteRefusal(deleting, false))
           }}
         />
       )}

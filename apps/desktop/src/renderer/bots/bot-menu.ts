@@ -1,4 +1,4 @@
-import type { BotId, BotMark } from '@highwing/hermes/domain'
+import type { Bot, BotId, BotMark } from '@highwing/hermes/domain'
 import { menuStep } from '../chat/menu'
 import type { BotPlace } from './sidebar-view'
 
@@ -22,12 +22,14 @@ export const LABELS: { readonly [A in MenuAction]: string } = {
   delete: 'Delete…'
 }
 
-/** The default bot is Hermes's launch profile, so its menu has no Delete… wherever it is drawn, hidden included. */
-export const menuOf = (place: BotPlace, isDefault: boolean): readonly (readonly MenuAction[])[] =>
-  isDefault ? MENUS[place].filter(group => !group.includes('delete')) : MENUS[place]
-
-// Hermes has no gateway method to delete a profile. `hermes profile delete` runs only on the Hermes machine.
-export const DELETE_REFUSED = "This Hermes can't delete bots from Highwing."
+/**
+ * Hermes deletes a profile only from its own machine (`hermes profile delete`, hermes_cli/profiles.py), and never its
+ * default one. The gateway has no call for it, so Delete… says how instead of deleting.
+ */
+export const deleteRefusal = (bot: Bot, featured: boolean): string =>
+  featured
+    ? "The default bot can't be deleted."
+    : `This Hermes can't delete bots from Highwing. To delete ${bot.name}, run hermes profile delete ${bot.id} on the Hermes machine.`
 
 export type Opener =
   | { readonly by: 'pointer'; readonly x: number; readonly y: number }
