@@ -23,7 +23,7 @@ highwing-2.0/
         session-commands.ts      private                  one row per command about one chat, over that chat's SessionPort. `versions` stays in hub.ts: it must not attach the chat
         sidebar.ts               private                  stored rows, the running set, deriveSidebar
         roster.ts                private                  botList: what Highwing knows about the bots and their Bot Chats, and when it asks Hermes
-        groups.ts                private                  groupBook: what Highwing knows about group chats, every `groups.*` call, and what a refusal means
+        groups.ts                private                  groupBook: what Highwing knows about group chats, every `groups.*` call, when a group is read again, and what a refusal means
         open.ts                  private                  chatDesk: which chat is open, the lookups and the create a change asks for
         domain/                  public entry "./domain"  browser-safe, imports nothing
           session.ts                                      Session, Run, Turn, Item, Link, Sidebar, BackgroundProcess, SessionControl, ControlAction, Reaction
@@ -33,8 +33,8 @@ highwing-2.0/
           command.ts                                      Command, ResultOf, Outcome, Refusal: data the renderer sends and gets back
           slash.ts                                        SlashEntry, SlashCatalog, slashLineOf: the slash menu's rows. OWN_COMMANDS, ownCommand: the lines Highwing runs itself
           bots.ts                                         Bots, Roster, Bot, BotFacts, rosterOf: the sidebar's bots, grouped and painted
-          groups.ts                                       Groups, GroupRow, GroupDraft, seatsFor, groupIdFor; GroupDesk and nextGroups, which only the hub uses
-          open.ts                                         OpenChat, Shown, ChatRef, nextDesk, launchChat: the open chat and every move it can make
+          groups.ts                                       Groups, GroupRow, GroupChat, GroupEvent, Answering, GroupDraft, seatsFor, groupIdFor; GroupDesk, nextGroups, logStart and nextPoll, which only the hub uses
+          open.ts                                         OpenChat, Shown, ShownGroup, ChatRef, shownChat, shownBot, shownGroup, nextDesk, launchChat: the open chat or group chat and every move it can make
           reach.ts                                        Target, SshHost, CheckStep, CheckFailure, CHECK_FAILURES: where Hermes runs and what can stop Highwing reaching it
           index.ts                                        exports the session, command, slash, bots, open and reach types, activityOf, rosterOf and the reach tables
         wire/                    private                  the only code that knows gateway shapes
@@ -49,11 +49,12 @@ highwing-2.0/
         testing/                 public entry "./testing" Node
           fixture.ts                                      fixture format, scriptedDialer, recordingDialer, play
           fake-host.ts                                    fake ssh, tailscale and hermes executables, and SCENARIOS (imported by path, not exported)
-          rooms.ts                                        ScriptedRooms: Hermes's group chats played from a fixture's `groups` header, with Hermes's rules
+          rooms.ts                                        ScriptedRooms: Hermes's group chats played from a fixture's `groups` header, with Hermes's rules and its members' turns on the clock
     thread/                      @highwing/thread         pure, browser-safe
       src/thread-view.ts                                  design C: threadView, outline, checkThread
       src/prose.ts                                        parseMarkdown and proseLeaves: the reply's block tree, drawn and searched
       src/find.ts                                         findInThread: matches across a view's text
+      src/group-thread.ts                                 groupThread, answeringWords: what an open group chat draws, as turns and words
       src/when.ts                                         the words and thresholds for turn times (internal)
   apps/desktop/
     src/ipc-contract.ts          shared by all three      AppTopics, Topic, Push, Bridge, applyPush, Setup, SetupCommand
@@ -65,7 +66,7 @@ highwing-2.0/
       connection.ts              no Electron              ownConnection, nextSetup, pinnedConnection: the setup state, the saved target, the live Hermes
       notify.ts                  no Electron              noticeOf, notifyTurnEnds: a desktop notification when the shown chat's turn ends while no window has focus
     src/preload/index.ts         preload                  exposes Bridge: watch, run, file, image, drafts, keepDraft, attachPick, attachPaste and attachDropped
-    src/renderer/                renderer                 store.ts (useTopic), new-chat.ts (newChatIn), setup/, bots/ (NewMenu.tsx: the plus menu), groups/ (GroupForm.tsx: New group chat), chats/, chat/ (Attachments.tsx: chips and sent files), composer/ (drafts.ts: useDraft, useAttachments), chrome/, styles/
+    src/renderer/                renderer                 store.ts (useTopic), new-chat.ts (newChatIn), setup/, bots/ (NewMenu.tsx: the plus menu), groups/ (GroupForm.tsx: New group chat; GroupPane.tsx: the open group chat), chats/, chat/ (Attachments.tsx: chips and sent files), composer/ (drafts.ts: useDraft, useAttachments), chrome/, styles/
   fixtures/                                               *.jsonl, make_fixture.py (run with Hermes's interpreter), profiles/*.json (canned `profiles.list` replies), attach/ (files the attachment recipes stage, from make_attach_files.py)
   scripts/                                                sync-contract.ts, contract-drift.ts
 ```
@@ -97,7 +98,8 @@ highwing-2.0/
 | Which windows watch a chat | the hub, as a count per chat. A command waiting for an attach watches too and is not counted | the actor asks `watched()` before it reads facts |
 | Stored list rows and the set of running sessions | `sidebar.ts` | `Sidebar` is derived from them plus each actor's session when published |
 | What Highwing knows about the bots: loading, offline, unsupported, refused, or a roster | `roster.ts`, changed only through its `after` function | read through `Hermes.bots` and the `bots` topic. The hub says when to ask |
-| What Highwing knows about group chats: loading, offline, unsupported, refused, or Hermes's list, and the bots it would seat | `groupBook` in `groups.ts`, one `GroupDesk` changed only through `nextGroups` in `domain/groups.ts` | read through `Hermes.groups` and the `groups` topic. Windows send `createGroup`. The hub says when to ask |
+| What Highwing knows about group chats: loading, offline, unsupported, refused, or Hermes's list, the bots it would seat, who is answering in each group, and each read log with the messages on their way | `groupBook` in `groups.ts`, one `GroupDesk` changed only through `nextGroups` in `domain/groups.ts`. It follows the group `open` shows, and `nextPoll` says when it reads again | read through `Hermes.groups`, `Hermes.groupChat` and their topics. Windows send `createGroup`, `sendToGroup` and `stopGroup`. The hub tells the book which group is open, when Hermes says groups moved, and when a socket is new |
+| The event id of a message to a group whose send never answered | `groupBook`, one per group, kept until a send to that group answers or carries other words | nobody. The same words sent again reuse it, so Hermes keeps one message |
 | The id of a group the New group chat dialog is making, and how many creates Hermes refused | the dialog's reducer, `nextGroupForm` in `renderer/groups/group-form.ts`. `groupIdFor` names the id | the hub sends the draft's id as `room_id`. Hermes answers a repeated id with the group it made |
 | Where each bot is drawn and its avatar tone | nobody; `rosterOf(facts)` in `domain/bots.ts` computes them from each answer | the renderer draws the roster as given and picks no colour |
 | Which chat is open, the Bot Chat of each bot, and which bot owns a session | `open.ts`, changed only through `nextDesk` in `domain/open.ts` | windows read the `open` topic and send `open` and `start`. The hub reads `botOf` to build a session's actor |
@@ -107,11 +109,12 @@ highwing-2.0/
 | The saved connection on disk | `main/settings.ts` | nobody. `ownConnection` gets `loaded` and `save` as arguments |
 | Bot mode or chat mode (`Mode`), and its `mode.json` | `modeStore` in `main/mode.ts`, one per app, loaded before any window is served | windows read the `mode` topic once, in `App`, and send `setMode`. `main/index.ts` waits for its save on quit |
 | A window's copy of a topic | `renderer/store.ts` in that window, written only by `applyPush` | components read with `useTopic` |
-| A chat's unsent draft | `renderer/composer/drafts.ts` in that window, kept on disk by `main/drafts.ts` | the composer reads it with `useDraft`, the chat list with `useChatDrafts`, and `DraftSweep` in `chats/Chats.tsx` drops one whose chat its bot's list no longer holds, in either mode; not Hermes's state |
+| A chat's or a group chat's unsent draft | `renderer/composer/drafts.ts` in that window, kept on disk by `main/drafts.ts` | the composer reads it with `useDraft`, the chat list with `useChatDrafts`, and `DraftSweep` in `chats/Chats.tsx` drops one whose chat its bot's list no longer holds, in either mode. A group chat's draft (`group:<id>`) is never swept; not Hermes's state |
 | The files staged for a message | the bytes: `main/attachments.ts`, under userData `attachments/`; which ones and in what order: the chat's draft | the window holds ids and names only. The hub reads the bytes through its `uploads` option when the message is sent. A launch deletes files no draft names |
 | Open rows | React state in that window | not shared; not Hermes's state |
 | The bot search text and the last refusal of a click | React state in that window's sidebar. The selected bot is derived from the `open` topic and the roster on each render | not shared; not Hermes's state |
 | The design C view | nobody; `threadView(session, clock)` recomputes it and memoises settled turns by reference | |
+| An open group chat's view | nobody; `groupThread(chat, clock, nameOf)` recomputes it from the `groupChat` topic, with the roster's names | the pane, the composer's busy line and the sidebar row's live words read it |
 | When a turn began | `reduce`: the stored request row's time, or the clock reading the hub attaches to a live frame | nobody. The view derives every shown time from it |
 
 Two windows on one session read the same actor through two IPC subscriptions. There is one socket and one reducer state no matter how many windows exist.
