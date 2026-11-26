@@ -1,10 +1,10 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
 import type { Hermes, Route } from '@highwing/hermes'
-import type { AttachmentId, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
+import type { AttachmentId, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, SessionId, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type Preview, type PreviewCommand, type Push, type Theme, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type Preview, type PreviewCommand, type Push, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
 import { feed, ownConnection, pinnedConnection, type ConnectionOwner } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
@@ -356,7 +356,12 @@ describe('validators', () => {
     ['a mode Highwing does not have', { do: 'setMode', mode: 'inbox' }],
     ['a mode switch that names no mode', { do: 'setMode' }],
     ['a theme Highwing does not have', { do: 'setTheme', theme: 'sepia' }],
-    ['a theme pick that names no theme', { do: 'setTheme' }]
+    ['a theme pick that names no theme', { do: 'setTheme' }],
+    ['a snooze of no chat', { do: 'snooze', until: 1_800_000_000_000 }],
+    ['a snooze to no time', { do: 'snooze', sessionId: 's1' }],
+    ['a snooze to a time that is no whole number', { do: 'snooze', sessionId: 's1', until: 1.5 }],
+    ['a snooze to a time before 1970', { do: 'snooze', sessionId: 's1', until: -1 }],
+    ['a snooze to a time as text', { do: 'snooze', sessionId: 's1', until: '1800000000000' }]
   ])('refuse %s', (_, raw) => {
     expect(parseCommand(raw)).toBeNull()
   })
@@ -413,6 +418,11 @@ describe('validators', () => {
     expect(parseCommand({ do: 'setTheme', theme, extra: 1 })).toEqual({ do: 'setTheme', theme })
   })
 
+  it('keep a snooze and a wake', () => {
+    expect(parseCommand({ do: 'snooze', sessionId: 's1', until: 1_800_000_000_000, extra: 1 })).toEqual({ do: 'snooze', sessionId: 's1', until: 1_800_000_000_000 })
+    expect(parseCommand({ do: 'snooze', sessionId: 's1', until: null })).toEqual({ do: 'snooze', sessionId: 's1', until: null })
+  })
+
   it.each([
     'mailto:someone@example.com', 'file:///etc/passwd', 'javascript:alert(1)', '/tmp/site/index.html', 'highwing://chat', ''
   ])('refuse to preview or browse %s', url => {
@@ -435,7 +445,7 @@ describe('validators', () => {
       'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'describeBot', 'discard', 'editBot',
       'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
       'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename',
-      'restore', 'rewind', 'send', 'sendToGroup', 'setMode', 'setTheme', 'side', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
+      'restore', 'rewind', 'send', 'sendToGroup', 'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
     ])
   })
 })
@@ -550,12 +560,13 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   }
   const mode = feed<Mode>('chats')
   const theme = feed<Theme>('system')
+  const snoozes = feed<Snoozes>({})
   const sources: AttachSources = { pick: async () => ['/home/me/error.png', '/home/me/big.zip'], pasted: async () => ({ name: 'Pasted image 1.png', bytes: PNG }) }
   const served = serveWindows(
     ownerOf(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
-    { store, sources }, saver, { mode, theme }
+    { store, sources }, saver, { mode, theme, snoozes }
   )
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
@@ -575,7 +586,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   }
   return {
     listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, lives, stored, previewed, toPane, staged, served,
-    saves, exportsAs, setCatalog, setBots, setOpen, mode, theme
+    saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, snoozes
   }
 }
 
@@ -619,7 +630,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, preview: { state: 'closed' }, mode: 'chats', theme: 'system' }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {} }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))
@@ -691,6 +702,24 @@ describe('serveWindows', () => {
     await expect(run(event(), { do: verb, [topic]: picked })).resolves.toEqual({ ok: true, value: undefined })
     expect(shown[topic].get()).toBe(picked)
     expect(pushes).toEqual([{ topic, rev: 1, full: was }, { topic, rev: 2, full: picked }])
+    expect(commands).toEqual([])
+  })
+
+  it('snoozes and wakes a chat a trusted window names, drops snoozes whose time has passed, and never passes it to Hermes', async () => {
+    vi.useFakeTimers({ now: 1_000_000 })
+    const { listeners, handlers, pushes, event, commands, snoozes } = harness()
+    snoozes.set({ ['old' as SessionId]: 999_999, ['s2' as SessionId]: 5_000_000 })
+    listeners.get(CHANNEL.watch)!(event(), 7, 'snoozes')
+    vi.advanceTimersByTime(COALESCE_MS)
+    const run = handlers.get(CHANNEL.run)!
+    await expect(run(event('https://example.com/'), { do: 'snooze', sessionId: 's1', until: 4_000_000 })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    await expect(run(event(), { do: 'snooze', sessionId: 's1', until: 4_000_000 }, 99)).resolves.toEqual({ ok: true, value: undefined })
+    expect(snoozes.get()).toEqual({ s2: 5_000_000, s1: 4_000_000 })
+    vi.advanceTimersByTime(COALESCE_MS)
+    await expect(run(event(), { do: 'snooze', sessionId: 's2', until: null })).resolves.toEqual({ ok: true, value: undefined })
+    expect(snoozes.get()).toEqual({ s1: 4_000_000 })
+    vi.advanceTimersByTime(COALESCE_MS)
+    expect(pushes.map(push => 'full' in push && push.full)).toEqual([{ old: 999_999, s2: 5_000_000 }, { s2: 5_000_000, s1: 4_000_000 }, { s1: 4_000_000 }])
     expect(commands).toEqual([])
   })
 
