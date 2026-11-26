@@ -1,5 +1,5 @@
 import type { Link } from '@highwing/hermes/domain'
-import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { press } from '../chrome/Chrome'
 import { run } from '../store'
 import { cardOf, type Editor as EditorView, type Summary } from './card-view'
@@ -102,9 +102,16 @@ function Editor({ setup, view, onFold }: { readonly setup: CardSetup; readonly v
   const { foot, cancel } = view
   const asks = CHOICES[kind].field
   const warning = asks?.warning(texts[kind]) ?? null
+  const onCancel = cancel === 'fold' ? onFold : () => void run({ do: cancel === 'stop' ? 'stopCheck' : 'keepTarget' })
+  // Settings closes on an Escape nobody took, so the editor takes it first, as its Cancel.
+  const onKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
+    if (event.key !== 'Escape' || event.nativeEvent.isComposing || view.disabled || cancel === null) return
+    event.preventDefault()
+    onCancel()
+  }
 
   return (
-    <form className="edit-form" aria-label="Change the connection" onSubmit={submit}>
+    <form className="edit-form" aria-label="Change the connection" onSubmit={submit} onKeyDown={onKeyDown}>
       <fieldset className="edit" disabled={view.disabled}>
         <div className="row">
           <div className="text"><p className="label" id={`${ids}-kind`}>Where Hermes runs</p></div>
@@ -142,7 +149,7 @@ function Editor({ setup, view, onFold }: { readonly setup: CardSetup; readonly v
           </div>
         )}
         {cancel !== null && (
-          <button type="button" className="btn" disabled={cancel === 'saving'} onClick={cancel === 'fold' ? onFold : () => void run({ do: cancel === 'stop' ? 'stopCheck' : 'keepTarget' })}>
+          <button type="button" className="btn" disabled={cancel === 'saving'} onClick={onCancel}>
             {cancel === 'stop-waiting' ? 'Stop waiting' : 'Cancel'}
           </button>
         )}
