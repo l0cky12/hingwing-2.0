@@ -1,5 +1,6 @@
 import type { Activity } from '@highwing/hermes/domain'
 import type { ThreadView } from '@highwing/thread'
+import type { SideRow } from './sides'
 
 export type Place =
   | { readonly kind: 'following' }
@@ -19,11 +20,11 @@ export function placeAfter(held: Place, distance: number, progress: string): Pla
   return { kind: 'reading', since: held.kind === 'reading' ? held.since : progress, far }
 }
 
-export function progressOf(view: ThreadView): string {
+/** Changes when something new shows at the end: a step of the last turn, its end, a pending message, or an answered side question. */
+export function progressOf(view: ThreadView, sides: readonly SideRow[]): string {
   const last = view.turns.at(-1)
-  return last === undefined
-    ? `none:${view.pending.length}`
-    : `${last.key}:${last.nodes.reduce((size, node) => size + (node.kind === 'group' ? node.count : 1), 0)}:${last.end.kind}:${view.pending.length}`
+  const turn = last === undefined ? 'none' : `${last.key}:${last.nodes.reduce((size, node) => size + (node.kind === 'group' ? node.count : 1), 0)}:${last.end.kind}`
+  return `${turn}:${view.pending.length}:${sides.length}`
 }
 
 export function jumpWords(place: Place, activity: Activity['kind'] | null, progress: string): string {

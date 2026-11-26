@@ -110,7 +110,10 @@ export interface SessionContent {
   readonly model: SessionModel
   readonly usage: SessionUsage
   readonly tuning: Tuning
-  /** Side questions and background prompts, oldest first, by whichever client asked. Live only: Hermes stores neither. */
+  /**
+   * Side questions and background prompts, by whichever client asked, oldest first, except that an answered side question
+   * moves to the end, so those read in the order answered. Live only: Hermes stores neither.
+   */
   readonly sides: readonly SideTask[]
   /**
    * The processes the agent left running in the background, and the ones that ended that Hermes
@@ -221,8 +224,11 @@ export interface SideTask {
   readonly asked: string | null
   readonly state:
     | { readonly s: 'running' }
-    /** Hermes's answer. A failure is words too, starting `error:` (gateway/session_tui_side.py:143-154). */
-    | { readonly s: 'done'; readonly text: string }
+    /**
+     * Hermes's answer. A failure is words too, starting `error:` (gateway/session_tui_side.py:143-154). `after`: the turn a
+     * side question's answer is drawn after, never an interlude. null: it is drawn before every turn.
+     */
+    | { readonly s: 'done'; readonly text: string; readonly after: TurnId | null }
     /** The chat was read again while it ran, so its answer may have gone by unseen. */
     | { readonly s: 'lost' }
 }

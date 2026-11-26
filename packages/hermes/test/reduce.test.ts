@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   activityOf, emptyTracked, reduce, sessionOf, shareOf, syncOf,
-  type Gate, type HelperUpdate, type MoaStep, type SessionEvent, type SessionInput, type Snapshot, type StampedEvent, type Tracked
+  type Gate, type HelperUpdate, type HistoryPage, type MoaStep, type SessionEvent, type SessionInput, type Snapshot, type StampedEvent, type Tracked
 } from '../src/domain/reduce'
 import type { ModelMenu } from '../src/domain/command'
 import { modelViewOf, sameModel } from '../src/domain/model'
@@ -331,7 +331,7 @@ describe('attached', () => {
           generation: generation(3),
           watermark: { epoch: EPOCH, seq: 5 },
           prompts: [{ id: promptId('p1'), generation: generation(3), ask: APPROVAL }],
-          history: { turns: [storedTurn('h1', [1, 2])], unfinished: { request: 'Fix the build', began: null, items: [tool] }, older: null }
+          history: { turns: [storedTurn('h1', [1, 2])], unfinished: { request: 'Fix the build', began: null, items: [tool], rows: [] }, older: null }
         })
       }
     )
@@ -351,7 +351,7 @@ describe('attached', () => {
       in: 'attached', attempt: 1, replay: null,
       snapshot: snapshot({
         prompts: [{ id: promptId('p1'), generation: generation(1), ask: APPROVAL }],
-        history: { turns: [storedTurn('h1', [1])], unfinished: { request: 'Fix the build', began: null, items: [] }, older: null }
+        history: { turns: [storedTurn('h1', [1])], unfinished: { request: 'Fix the build', began: null, items: [], rows: [] }, older: null }
       })
     })
     expect(state.content.run).toEqual({ state: 'idle' })
@@ -569,7 +569,7 @@ describe('when a turn began', () => {
       in: 'attached', attempt: 1, replay: null,
       snapshot: snapshot({
         running: true,
-        history: { turns: [{ ...storedTurn('h1', [1, 2]), began: hermesAt(1_000) }], unfinished: { request: 'Fix the build', began: hermesAt(5_000), items: [] }, older: null }
+        history: { turns: [{ ...storedTurn('h1', [1, 2]), began: hermesAt(1_000) }], unfinished: { request: 'Fix the build', began: hermesAt(5_000), items: [], rows: [] }, older: null }
       })
     })
     expect(beganOf(state)).toEqual(hermesAt(5_000))
@@ -594,7 +594,7 @@ describe('when a turn began', () => {
       in: 'attached', attempt: 2, replay: null,
       snapshot: snapshot({
         running: true, watermark: { epoch: EPOCH, seq: 1 },
-        history: { turns: [], unfinished: { request: 'Tidy the notes', began: hermesAt(8_000), items: [] }, older: null }
+        history: { turns: [], unfinished: { request: 'Tidy the notes', began: hermesAt(8_000), items: [], rows: [] }, older: null }
       })
     })
     expect(beganOf(rebuilt)).toEqual(hermesAt(8_000))
@@ -611,7 +611,7 @@ describe('when a turn began', () => {
   it('gives a turn left unfinished in a snapshot that is not running the start its stored request has', () => {
     const state = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, {
       in: 'attached', attempt: 1, replay: null,
-      snapshot: snapshot({ history: { turns: [], unfinished: { request: 'Fix the build', began: hermesAt(5_000), items: [] }, older: null } })
+      snapshot: snapshot({ history: { turns: [], unfinished: { request: 'Fix the build', began: hermesAt(5_000), items: [], rows: [] }, older: null } })
     })
     expect(state.content.history.map(turn => turn.began)).toEqual([hermesAt(5_000)])
   })
@@ -999,7 +999,7 @@ describe('reasoning, the plan and helpers', () => {
       const shapes = (items: readonly Item<'open' | 'settled'>[]) => items.map(item => (item.kind === 'tool' ? item.id : item.kind === 'text' ? item.markdown : item.kind))
       const opened = (over: Partial<Snapshot>) => feed(emptyTracked('s1' as SessionId), { in: 'attach' }, { in: 'attached', attempt: 1, snapshot: snapshot({ plan: PLAN, ...over }), replay: null })
       const page = (turns: readonly SettledTurn[], unfinished: readonly Item<'settled'>[] | null = null): Snapshot['history'] =>
-        ({ turns, unfinished: unfinished === null ? null : { request: 'Go on', began: null, items: unfinished }, older: null })
+        ({ turns, unfinished: unfinished === null ? null : { request: 'Go on', began: null, items: unfinished, rows: [] }, older: null })
       const bridged = (id: string, name: string) => tool(id, 'tool_call', { calls: [{ name, arguments: {} }] })
 
       it('puts the plan right after the newest todo call of the newest turn that made one', () => {
@@ -1359,7 +1359,7 @@ describe('side questions and background prompts', () => {
     const running = feed(live(), started('btw_1'))
     expect(running.content.sides).toEqual([{ id: 'btw_1', kind: 'btw', asked: 'Which file was it?', state: { s: 'running' } }])
     const done = reduce(running, answered(1, 'btw_1', 'notes.md'))
-    expect(done.content.sides).toEqual([{ id: 'btw_1', kind: 'btw', asked: 'Which file was it?', state: { s: 'done', text: 'notes.md' } }])
+    expect(done.content.sides).toEqual([{ id: 'btw_1', kind: 'btw', asked: 'Which file was it?', state: { s: 'done', text: 'notes.md', after: null } }])
     expect(reduce(done, started('btw_1')), 'a late reply changes nothing').toBe(done)
   })
 
@@ -1367,9 +1367,9 @@ describe('side questions and background prompts', () => {
     const early = feed(live(), answered(1, 'btw_1', 'notes.md'), started('btw_1'))
     expect(early.content.sides).toMatchObject([{ id: 'btw_1', state: { s: 'done', text: 'notes.md' } }])
     const earlyBackground = feed(live(), answered(1, 'bg_2', 'Tidied.', 'background', null), started('bg_2', 'background', 'Tidy the notes'))
-    expect(earlyBackground.content.sides, 'its reply fills in what was asked').toEqual([{ id: 'bg_2', kind: 'background', asked: 'Tidy the notes', state: { s: 'done', text: 'Tidied.' } }])
+    expect(earlyBackground.content.sides, 'its reply fills in what was asked').toEqual([{ id: 'bg_2', kind: 'background', asked: 'Tidy the notes', state: { s: 'done', text: 'Tidied.', after: null } }])
     const theirs = reduce(live(), answered(1, 'bg_9', 'Tidied.', 'background', null))
-    expect(theirs.content.sides).toEqual([{ id: 'bg_9', kind: 'background', asked: null, state: { s: 'done', text: 'Tidied.' } }])
+    expect(theirs.content.sides).toEqual([{ id: 'bg_9', kind: 'background', asked: null, state: { s: 'done', text: 'Tidied.', after: null } }])
   })
 
   it('marks a running one lost when the chat is read again, keeps the answered ones, and takes an answer that still comes', () => {
@@ -1386,5 +1386,138 @@ describe('side questions and background prompts', () => {
       replay: { snapshotRequired: false, epoch: EPOCH, events: [{ stamp: { epoch: EPOCH, seq: 1, generation: null }, event: { type: 'side.answered', id: 'btw_1' as SideId, kind: 'btw', asked: 'Which file was it?', text: 'notes.md' }, seenAt: null }] }
     })
     expect(caughtUp.content.sides).toMatchObject([{ id: 'btw_1', state: { s: 'done', text: 'notes.md' } }])
+  })
+})
+
+describe('the turn a side answer is drawn after', () => {
+  const asked = (id: string, kind: SideTask['kind'] = 'btw'): SessionInput => ({ in: 'local', action: { did: 'side.started', id: id as SideId, kind, asked: 'Which file was it?' } })
+  const answer = (seq: number, id: string, kind: SideTask['kind'] = 'btw'): SessionInput =>
+    event(seq, { type: 'side.answered', id: id as SideId, kind, asked: 'Which file was it?', text: 'notes.md' }, null)
+  const after = (state: Tracked, id = 'btw_1') => {
+    const side = state.content.sides.find(held => held.id === id)
+    return side?.state.s === 'done' ? side.state.after : undefined
+  }
+  const stored = (...rows: number[]) => storedTurn(`stored:${rows[0]}`, rows)
+  const page = (turns: readonly SettledTurn[], unfinished: readonly number[] | null = null, older = false): HistoryPage =>
+    ({ turns, unfinished: unfinished === null ? null : { request: 'Fix the build', began: null, items: [], rows: unfinished }, older: older ? { cursor: 'c1' } : null })
+  const opened = (history: HistoryPage, more: Partial<Snapshot> = {}) => feed(emptyTracked('s1' as SessionId), { in: 'attach' }, {
+    in: 'attached', attempt: 1, snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 10 }, history, ...more }), replay: null
+  })
+  const rebuilt = (state: Tracked, seq: number, history: HistoryPage, more: Partial<Snapshot> = {}) => feed(state, { in: 'gap' }, {
+    in: 'attached', attempt: state.fence.attaches + 1, snapshot: snapshot({ watermark: { epoch: EPOCH, seq }, history, ...more }), replay: null
+  })
+  const settledOne = () => feed(live(), event(1, started('t1')), event(2, ended(COMPLETE, 'Done', [1, 2], 1)), asked('btw_1'), answer(3, 'btw_1'))
+
+  it('is the running turn when the answer comes, else the newest settled one, whoever asked', () => {
+    const running = feed(live(), event(1, started('t1')), asked('btw_1'), answer(2, 'btw_1'))
+    expect(after(running)).toBe('t1')
+    const settled = feed(running, event(3, ended(COMPLETE)), answer(4, 'btw_9'))
+    expect(after(settled, 'btw_9'), 'asked in another client').toBe('t1')
+    expect(after(feed(settled, event(5, started('t2'), 2), answer(6, 'btw_8')), 'btw_8')).toBe('t2')
+  })
+
+  it('is the turn when the answer came, though the reply that names the question comes later', () => {
+    const early = feed(live(), event(1, started('t1')), answer(2, 'btw_1'), event(3, ended(COMPLETE)), event(4, started('t2'), 2), asked('btw_1'))
+    expect(early.content.sides).toEqual([{ id: 'btw_1', kind: 'btw', asked: 'Which file was it?', state: { s: 'done', text: 'notes.md', after: 't1' } }])
+  })
+
+  it('moves an answered side question after the others, and leaves a background prompt where it opened', () => {
+    const three = feed(live(), asked('btw_1'), asked('bg_2', 'background'), asked('btw_3'))
+    const order = (state: Tracked) => state.content.sides.map(side => side.id)
+    expect(order(reduce(three, answer(1, 'bg_2', 'background')))).toEqual(['btw_1', 'bg_2', 'btw_3'])
+    const answered = reduce(three, answer(1, 'btw_1'))
+    expect(order(answered)).toEqual(['bg_2', 'btw_3', 'btw_1'])
+    expect(reduce(answered, answer(2, 'btw_1')).content, 'a second answer changes nothing').toBe(answered.content)
+  })
+
+  describe('after a rewind', () => {
+    const notice: SessionEvent = { type: 'notice.shown', notice: { key: 'k', level: 'warn', text: 'Reconnected.', detail: null, ttlMs: 5_000 } }
+    const cutAfterNotice = () => feed(
+      live(), event(1, started('t1')), event(2, ended(COMPLETE, 'Done', [1, 2], 1)), event(3, notice, null, EPOCH, 1_000),
+      event(4, started('t2'), 2), asked('btw_1'), answer(5, 'btw_1'), event(6, ended(COMPLETE, 'Done', [3, 4], 3), 2),
+      { in: 'local', action: { did: 'rewound', rowId: 3 } }
+    )
+
+    it('moves to the newest turn the cut keeps, passing over a notice that can expire', () => {
+      const cut = cutAfterNotice()
+      expect(cut.content.history.map(turn => turn.id)).toEqual(['t1', 'interlude:2'])
+      expect(after(cut)).toBe('t1')
+    })
+
+    it('never anchors a new answer to that notice', () => {
+      expect(after(feed(cutAfterNotice(), answer(7, 'btw_2')), 'btw_2')).toBe('t1')
+    })
+
+    it('stays above the turn the edited message starts', () => {
+      const edited = feed(
+        live(), event(1, started('t1')), event(2, ended(COMPLETE, 'Done', [1, 2], 1)), event(3, started('t2'), 2), event(4, ended(COMPLETE, 'Done', [3, 4], 3), 2),
+        asked('btw_1'), answer(5, 'btw_1'), { in: 'local', action: { did: 'rewound', rowId: 3 } }, event(6, started('t3'), 3), event(7, ended(COMPLETE, 'Done', [5, 6], 5), 3)
+      )
+      expect(edited.content.history.map(turn => turn.id)).toEqual(['t1', 't3'])
+      expect(after(edited)).toBe('t1')
+    })
+  })
+
+  describe('after a rebuild', () => {
+    it('moves to the stored turn that shares a row with its turn, with no side running', () => {
+      expect(after(rebuilt(settledOne(), 10, page([stored(1, 2), stored(3, 4)])))).toBe('stored:1')
+    })
+
+    it('moves to the new running turn when the turn it was drawn after had no stored rows yet', () => {
+      const asking = feed(live(), event(1, started('t1')), asked('btw_1'), answer(2, 'btw_1'))
+      expect(after(rebuilt(asking, 10, page([stored(1, 2)]), { running: true }))).toBe('run:1')
+    })
+
+    it('moves to the newest turn when Hermes holds the whole chat and none of it shares a row with its turn', () => {
+      expect(after(rebuilt(settledOne(), 10, page([stored(6, 7), stored(8, 9)])))).toBe('stored:8')
+    })
+
+    it('goes first when its turn is older than the page Hermes reloads, and stays first once earlier turns load', () => {
+      const first = rebuilt(settledOne(), 10, page([stored(6, 7), stored(8, 9)], null, true))
+      expect(after(first)).toBeNull()
+      const earlier = reduce(first, { in: 'earlier', page: page([stored(1, 2)]) })
+      expect(earlier.content.history.map(turn => turn.id)).toEqual(['stored:1', 'stored:6', 'stored:8'])
+      expect(after(earlier)).toBeNull()
+    })
+
+    it('goes first when the page holds only an unfinished turn newer than its turn', () => {
+      expect(after(rebuilt(settledOne(), 10, page([], [5], true)))).toBeNull()
+    })
+
+    it('stays on its turn when the page holds it only as the unfinished turn, settled or still running', () => {
+      const stopped = feed(live(), event(1, started('t1')), asked('btw_1'), answer(2, 'btw_1'), event(3, ended({ kind: 'stopped' }, null, [1, 2], 1)))
+      expect(after(rebuilt(stopped, 10, page([], [1, 2], true)))).toBe('unfinished:e1:10')
+      expect(after(rebuilt(stopped, 10, page([], [1, 2, 3], true), { running: true, generation: generation(2) }))).toBe('run:2')
+    })
+
+    it('stays with an unfinished turn it was answered on once Hermes stores that turn and a newer one', () => {
+      const newer = page([stored(1, 2), stored(3, 4, 5), stored(6, 7)])
+      const left = feed(opened(page([stored(1, 2)], [3, 4])), asked('btw_1'), answer(11, 'btw_1'))
+      expect(after(left)).toBe('unfinished:e1:10')
+      expect(after(rebuilt(left, 20, newer))).toBe('stored:3')
+      const running = feed(opened(page([stored(1, 2)], [3, 4]), { running: true }), asked('btw_1'), answer(11, 'btw_1'))
+      expect(after(running)).toBe('run:1')
+      expect(after(rebuilt(running, 20, newer))).toBe('stored:3')
+    })
+
+    it('stays with the unfinished turn it moved to once Hermes stores that turn and a newer one', () => {
+      const asking = feed(live(), event(1, started('t1')), asked('btw_1'), answer(2, 'btw_1'))
+      const moved = rebuilt(asking, 10, page([], [1, 2]))
+      expect(after(moved)).toBe('unfinished:e1:10')
+      expect(after(rebuilt(moved, 20, page([stored(1, 2, 3), stored(4, 5)])))).toBe('stored:1')
+    })
+
+    it('keeps the rows of the running turn through a rebuild of the same run whose page holds none, and stays with that turn once stored', () => {
+      const running = feed(opened(page([], [1]), { running: true }), asked('btw_1'), answer(11, 'btw_1'))
+      const again = rebuilt(running, 20, page([]), { running: true })
+      expect(after(again)).toBe('run:1')
+      expect(after(rebuilt(again, 30, page([stored(1, 2), stored(3, 4)])))).toBe('stored:1')
+    })
+
+    it('leaves an answer drawn first where it is', () => {
+      const first = feed(live(), asked('btw_1'), answer(1, 'btw_1'))
+      expect(after(first)).toBeNull()
+      expect(after(rebuilt(first, 10, page([stored(1, 2)])))).toBeNull()
+    })
   })
 })

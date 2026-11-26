@@ -20,7 +20,7 @@ import { marked, pressedOf, unmarked } from './marks'
 import { distanceFrom, FOLLOW_WITHIN, FOLLOWING, jumpWords, placeAfter, progressOf, type Place } from './place'
 import type { RequestAnswer } from './Asks'
 import { Sides } from './Sides'
-import { closeSide, sideCards, useClosedSides } from './sides'
+import { closeSide, sortSides, useClosedSides } from './sides'
 import { useTail } from './tail'
 import { Thread, type QueueControls, type QueuedRow } from './Thread'
 import { TIME_ZONE, useWakeAt } from './wake'
@@ -42,8 +42,10 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const relays = useTopic('relay')?.bySession[id ?? ''] ?? NO_RELAYS
   const [tick, wake] = useReducer((count: number) => count + 1, 0)
   const view = useMemo(() => (session === undefined ? null : threadView(session, { now: Date.now(), timeZone: TIME_ZONE })), [session, tick])
-  const progress = useMemo(() => (view === null ? '' : progressOf(view)), [view])
-  const drawn = useTail(view, relays)
+  const closed = useClosedSides(id)
+  const { cards, rows } = useMemo(() => sortSides(session?.sides ?? [], closed), [session?.sides, closed])
+  const drawn = useTail(view, relays, rows)
+  const progress = useMemo(() => (drawn === null ? '' : progressOf(drawn.view, drawn.sides)), [drawn])
   const whole = drawn?.whole === true
   const scroller = useRef<HTMLElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
@@ -307,13 +309,12 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const setup = useTopic('setup')
   const target = setup === undefined || setup.at === 'pinned' ? null : (setup.live?.target ?? null)
 
-  const closed = useClosedSides(id)
-  const cards = useMemo(() => sideCards(session?.sides ?? [], closed), [session?.sides, closed])
   const onCloseSide = useCallback((side: SideId) => {
     if (id === null) return
     closeSide(id, side)
     composer.current?.focus()
   }, [id])
+  const returnFocus = useCallback(() => composer.current?.focus(), [])
   const onEscape = () => {
     const newest = cards.at(-1)
     if (id === null || newest === undefined) return false
@@ -330,7 +331,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
           <FileCallContext value={fileCall}>
             <ImageSessionContext value={id}>
               <Thread
-                view={drawn.view} relays={drawn.relays} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
+                view={drawn.view} relays={drawn.relays} sides={drawn.sides} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
                 canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
                 canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers}
               />
@@ -358,7 +359,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         planFor={planFor}
         editing={editing}
         onCancelEdit={() => setEditing(null)}
-        above={id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} />}
+        above={id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} returnFocus={returnFocus} />}
         onEscape={onEscape}
         onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}
