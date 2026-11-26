@@ -240,6 +240,19 @@ describe('a delete whose answer was lost', () => {
     expect(lost.chat?.at).not.toBe('missing')
   })
 
+  it('ends as the user\'s delete when Hermes says the group is gone before the delete answers', async () => {
+    let answer: (error: Error) => void = () => {}
+    const { deleted, book: slow } = book(() => new Promise((_, reject) => { answer = reject }))
+    const outcome = slow.disband(PLAN)
+    slow.follow(PLAN)
+    await settled()
+    expect(deleted).toEqual([PLAN])
+    expect(slow.chat?.at).not.toBe('missing')
+    answer(new Offline('groups.disband got no reply in 10000 ms'))
+    expect(await outcome).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(deleted, 'reported once').toEqual([PLAN])
+  })
+
   it('leaves a group Hermes lost without a delete shown as missing', async () => {
     const { deleted, book: unasked } = book(() => Promise.resolve({ tombstone: { room_id: PLAN } }))
     unasked.follow(PLAN)

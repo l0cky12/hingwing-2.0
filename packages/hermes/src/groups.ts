@@ -125,14 +125,15 @@ export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
   const reads = new Map<GroupId, 'once' | 'again'>()
   const unanswered = new Map<GroupId, { readonly text: string; readonly key: string }>()
   /**
-   * Deletes whose answer was lost. Hermes stops a group's turns before it deletes it, which can outlast the call's
-   * timeout, so a group from here that Hermes no longer has was deleted by the user, not lost.
+   * Deletes sent and not yet known to be done, including one whose answer was lost. Hermes stops a group's turns before
+   * it deletes it, which can outlast the call's timeout, and a `groups.changed` can come first. So a group from here that
+   * Hermes no longer has was deleted by the user, not lost.
    */
-  const lostDeletes = new Set<GroupId>()
+  const deleting = new Set<GroupId>()
   let cancelPoll: (() => void) | null = null
 
   const deleted = (group: GroupId) => {
-    lostDeletes.delete(group)
+    if (!deleting.delete(group)) return
     unanswered.delete(group)
     take({ on: 'disbanded', group })
     deps.disbanded(group)
@@ -201,7 +202,7 @@ export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
       if (!(error instanceof RpcRefusal)) throw error
       // Highwing's params are a fixed, closed set, so a bare `invalid_params` is Hermes's word for a room it does not have (session_group_controls.py:97-102).
       if (error.reason === 'invalid_params') {
-        if (lostDeletes.has(group)) deleted(group)
+        if (deleting.has(group)) deleted(group)
         else take({ on: 'missing', group })
         void ask()
       }
@@ -331,10 +332,11 @@ export function groupBook(conn: GroupWire, deps: GroupBookDeps): GroupBook {
       return DONE
     },
     disband: async group => {
+      deleting.add(group)
       try {
         await conn.call('groups.disband', { room_id: group }, CALL_TIMEOUT_MS)
       } catch (error) {
-        if (error instanceof Offline) lostDeletes.add(group)
+        if (!(error instanceof Offline)) deleting.delete(group)
         return refuseAndReread(error, group, 'disband')
       }
       deleted(group)
