@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CHECK_FAILURES, machineOf, parseSshHost, STEP_WORDS, targetOf, type CheckStep, type SshHost } from '../src/domain/reach'
 import { isPlainHttp, parseGatewayUrl, sameTarget, URL_PROBLEMS, type GatewayUrl } from '../src/domain/reach'
+import { failureOf, gatewayHost, URL_FAILURES } from '../src/domain/reach'
 
 const remote = (host: string) => ({ kind: 'remote', host: host as SshHost }) as const
 
@@ -71,7 +72,7 @@ describe('sameTarget', () => {
 })
 
 describe('the words of a check', () => {
-  const ORDER: readonly CheckStep[] = ['tailscale', 'peer', 'ssh', 'hermes', 'save']
+  const ORDER: readonly CheckStep[] = ['tailscale', 'peer', 'ssh', 'hermes', 'sign-in', 'gateway', 'save']
 
   it('give every failure a sentence and a different sentence to try', () => {
     for (const [failure, { words, fix }] of Object.entries(CHECK_FAILURES)) {
@@ -184,4 +185,39 @@ describe('isPlainHttp', () => {
       expect(isPlainHttp(gatewayUrl(text))).toBe(false)
     }
   )
+})
+
+describe('the words of a check by address', () => {
+  const ORDER = Object.keys(STEP_WORDS)
+
+  it('give every failure a sentence and a different sentence to try', () => {
+    for (const [failure, { words, fix }] of Object.entries(URL_FAILURES)) {
+      expect(words('hermes.example.com'), failure).toMatch(/^[A-Z].+\.$/)
+      expect(fix('hermes.example.com'), failure).toMatch(/^[A-Z].+\.$/)
+      expect(fix('hermes.example.com'), failure).not.toBe(words('hermes.example.com'))
+    }
+  })
+
+  it('name the gateway by the host of its address, in the words the design gives', () => {
+    const gateway = gatewayHost(gatewayUrl('https://Hermes.Example.com:8443/hermes'))
+    expect(gateway).toBe('hermes.example.com')
+    expect(STEP_WORDS['sign-in'](gateway)).toBe('Waiting for you to sign in to hermes.example.com in your browser')
+    expect(STEP_WORDS.gateway(gateway)).toBe('Opening the Hermes gateway on hermes.example.com')
+    expect(URL_FAILURES.dashboard.words(gateway)).toBe("What answers at hermes.example.com is the Hermes dashboard, which Highwing can't chat through.")
+    expect(URL_FAILURES['sign-in-timed-out'].words(gateway)).toBe("You didn't finish signing in to hermes.example.com within 10 minutes.")
+    expect(URL_FAILURES['url-no-socket'].fix(gateway)).toBe('If a proxy or tunnel serves this address, let it pass WebSocket connections through to Hermes.')
+  })
+
+  it('list the failures in the order their steps run, and only at the steps of an address', () => {
+    const steps = Object.values(URL_FAILURES).map(({ step }) => step)
+    expect(steps.map(step => ORDER.indexOf(step))).toEqual(steps.map(step => ORDER.indexOf(step)).sort((a, b) => a - b))
+    expect([...new Set(steps)]).toEqual(['hermes', 'sign-in', 'gateway'])
+  })
+
+  it('share no name with a failure of the other checks, so one lookup serves the setup screen', () => {
+    expect(Object.keys(URL_FAILURES).filter(failure => failure in CHECK_FAILURES)).toEqual([])
+    expect(failureOf('url-legacy')).toBe(URL_FAILURES['url-legacy'])
+    expect(failureOf('hermes-too-old')).toBe(CHECK_FAILURES['hermes-too-old'])
+    expect(failureOf('cant-save').step).toBe('save')
+  })
 })

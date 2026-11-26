@@ -111,6 +111,14 @@ describe('backoff', () => {
     await gateway.clock.advance(0)
     expect(gateway.conn.link.state).toBe('online')
   })
+
+  it('does not retry a dial that failed because the sign-in ended, and shows the words the dial gave', async () => {
+    const gateway = fakeGateway()
+    gateway.state.failWith = new DialError('signed-out', 'Your sign-in to the Hermes on hermes.example.com has ended.')
+    await gateway.clock.advance(600_000)
+    expect(gateway.conn.link).toEqual({ state: 'blocked', why: 'signed-out', message: 'Your sign-in to the Hermes on hermes.example.com has ended.' })
+    expect(gateway.dials).toHaveLength(1)
+  })
 })
 
 describe('start', () => {

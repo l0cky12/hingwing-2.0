@@ -708,6 +708,7 @@ export type WaitingWhy =
 export type BlockedWhy =
   | 'hermes-missing' | 'incompatible' | 'auth' | 'inaccessible' | 'refused'
   | 'ssh-missing' | 'ssh-denied' | 'ssh-check' | 'host-changed'
+  | 'signed-out'
 
 /** The app-wide connection to the gateway. */
 export type Link =

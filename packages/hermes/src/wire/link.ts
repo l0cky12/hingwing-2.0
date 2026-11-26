@@ -45,13 +45,15 @@ const WORDS: Readonly<Record<Why, string>> = {
   'ssh-missing': sshWords('ssh-missing'),
   'ssh-denied': sshWords('ssh-denied'),
   'ssh-check': sshWords('ssh-check'),
-  'host-changed': sshWords('host-changed')
+  'host-changed': sshWords('host-changed'),
+  'signed-out': 'Sign in to Hermes again.'
 }
 
 const RETRIES: Readonly<Record<Why, boolean>> = {
   'not-running': true, draining: true, dropped: true, unreachable: true,
   'hermes-missing': false, incompatible: false, auth: false, inaccessible: false, refused: false,
-  'ssh-missing': false, 'ssh-denied': false, 'ssh-check': false, 'host-changed': false
+  'ssh-missing': false, 'ssh-denied': false, 'ssh-check': false, 'host-changed': false,
+  'signed-out': false
 }
 
 export class DialError extends Error {
@@ -77,6 +79,17 @@ export const EXIT_KINDS: Readonly<Record<number, Why>> = { 2: 'incompatible', 3:
 
 const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
+
+/**
+ * Whether a frame is `gateway.ready`, and whether the gateway that sent it owns its sessions.
+ * null: another frame. The standalone dashboard's socket says `gateway.ready` with no
+ * `session_authority` (Hermes's tui_gateway/ws.py:660-662), and Highwing cannot chat through it.
+ */
+export function sessionAuthorityOf(frame: unknown): boolean | null {
+  if (!isObject(frame) || frame.method !== 'event' || !isObject(frame.params) || frame.params.type !== 'gateway.ready') return null
+  const { payload } = frame.params
+  return isObject(payload) && payload.session_authority === true
+}
 
 export function wireSocket(transport: { send(text: string): void; close(): void }, reach: Reach): {
   readonly socket: WireSocket
@@ -387,9 +400,9 @@ export function connect(
     socket.onText = text => receive(socket, text)
   }
 
-  const ready = async (socket: WireSocket, payload: unknown) => {
+  const ready = async (socket: WireSocket, authority: boolean) => {
     const tooOld = new DialError('incompatible', 'This Hermes gateway is too old for Highwing.')
-    if (!isObject(payload) || payload.session_authority !== true) return lost(socket, tooOld)
+    if (!authority) return lost(socket, tooOld)
     try {
       const able = await request(socket, 'client.capabilities', { server_requests: true }) as Partial<ClientCapabilitiesResult> | null
       const described = await request(socket, 'runtime.describe', {}) as CanonicalRpcMethods['runtime.describe']['result']
@@ -437,8 +450,9 @@ export function connect(
     }
     if (id !== undefined && id !== null) return events.onServerRequest({ id: String(id), method, params })
     if (method !== 'event') return
-    if (isObject(params) && params.type === 'gateway.ready') {
-      if (phase.at === 'handshake' && phase.socket === socket) void ready(socket, params.payload)
+    const authority = sessionAuthorityOf(frame)
+    if (authority !== null) {
+      if (phase.at === 'handshake' && phase.socket === socket) void ready(socket, authority)
       return
     }
     events.onEvent(params)

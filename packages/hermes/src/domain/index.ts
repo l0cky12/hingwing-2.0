@@ -20,4 +20,4 @@ export { GROUP_NAME_MAX, GROUP_SIZE, groupIdFor, isGroupId, seatsFor, type Group
 export type { PaneAsk } from './pane'
 export { label as versionLabel, type ChatVersions, type Landing, type Version, type Versions } from './versions'
 export { modelViewOf, sameModel, type ModelView } from './model'
-export { CHECK_FAILURES, STEP_WORDS, URL_PROBLEMS, byKind, firstStep, isPlainHttp, machineOf, onThisComputer, parseGatewayUrl, parseSshHost, sameTarget, targetOf, type CheckFailure, type CheckStep, type GatewayUrl, type ParsedUrl, type SshHost, type Target, type UrlProblem } from './reach'
+export { CHECK_FAILURES, STEP_WORDS, URL_FAILURES, URL_PROBLEMS, byKind, failureOf, firstStep, gatewayHost, isPlainHttp, machineOf, onThisComputer, parseGatewayUrl, parseSshHost, sameTarget, targetOf, type CheckFailure, type CheckStep, type Failure, type GatewayUrl, type ParsedUrl, type SetupFailure, type SshHost, type Target, type UrlFailure, type UrlProblem } from './reach'
