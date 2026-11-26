@@ -756,6 +756,30 @@ describe('serveWindows', () => {
     expect(commands).toEqual([mark, fresh])
     expect(owner!.setup.get()).toEqual({ at: 'chat', live: { target: { kind: 'local' }, epoch: 2 } })
   })
+
+  it("refuses a group chat's send, stop and open sent for an older connection, and passes them for the live one", async () => {
+    let owner: ConnectionOwner | undefined
+    const { handlers, event, commands } = harness(hermes => (owner = switchable(hermes)))
+    const run = handlers.get(CHANNEL.run)!
+    await run(event(), { do: 'editTarget' }, 1)
+    await run(event(), { do: 'checkTarget', target: { kind: 'local' } }, 1)
+    await new Promise(resolve => setImmediate(resolve))
+    const send = { do: 'sendToGroup', group: 'launch-plan', text: '@sam ship it' }
+    const stop = { do: 'stopGroup', group: 'launch-plan' }
+    const open = { do: 'open', ref: { kind: 'group', group: 'launch-plan' } }
+
+    for (const command of [send, stop, open]) {
+      await expect(run(event(), command, 1)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    }
+    expect(commands, "the old connection's group never reaches the new Hermes").toEqual([])
+
+    await expect(run(event(), send, 2)).resolves.toMatchObject({ ok: true })
+    await expect(run(event(), stop, 2)).resolves.toMatchObject({ ok: true })
+    expect(owner!.setup.get(), 'a send or a stop leaves Settings up').toMatchObject({ at: 'saved' })
+    await expect(run(event(), open, 2)).resolves.toMatchObject({ ok: true })
+    expect(commands).toEqual([send, stop, open])
+    expect(owner!.setup.get()).toEqual({ at: 'chat', live: { target: { kind: 'local' }, epoch: 2 } })
+  })
 })
 
 describe('isWebLink', () => {
