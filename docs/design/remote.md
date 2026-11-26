@@ -38,7 +38,7 @@ serveWindows(owner, ipcMain, isAppUrl)
 // renderer
 const setup = useTopic('setup')
 run({ do: 'checkTarget', target: { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' } })
-run({ do: 'editTarget' })   // the top bar's Connection button
+run({ do: 'editTarget' })   // the top bar's Settings button, or Open Settings in the Ctrl+K palette
 run({ do: 'keepTarget' })   // the saved screen's Open chat button, and Close or Esc in Settings
 
 // a unit test: a full remote dial, no network, no real ssh
@@ -177,14 +177,14 @@ A failed check never touches the live connection. Re-checking the live target do
 
 ### Renderer
 
-`App.tsx` reads the `setup` topic:
+`App.tsx` reads the `setup` topic, and `screenOf` in `renderer/setup/screens.ts` names the screen for each state:
 
-- `chat` draws the chat, keyed by `live.epoch`.
-- `form`, `checking` and `failed` draw `Setup.tsx`.
-- `saved` draws the saved screen with an Open chat button.
-- `pinned` draws the chat, as fixture runs do today.
+- `chat` and `pinned` draw the chat window, the sidebar beside the chat, keyed by `live.epoch`. A fixture run is `pinned`.
+- `form`, `checking` and `failed` with a `live` connection, and `saved` with `from: 'settings'`, draw Settings (`showsSettings`). `Settings.tsx` takes the chat's place beside the sidebar, under a bar with Close. It holds the Connection card (`ConnectionCard.tsx`), the Sidebar card and the Keyboard shortcuts card.
+- `form`, `checking` and `failed` with no `live` connection draw the first run, `FirstRun` in `Setup.tsx`, which holds the Connection card alone.
+- `saved` with `from: 'first-run'` draws `Saved` in `Setup.tsx`, with an Open chat button.
 
-The renderer decides nothing from `live`. Each state names its own screen. While `live` is not null, the chat subtree stays mounted under the setup screen with the `hidden` attribute, so an unsent draft survives Connection and Cancel. Only a new `epoch` remounts it, and a switch to another host is the one action that drops a draft. The top bar gets a Connection button that sends `editTarget`. Cancel shows only when `live` is not null.
+The renderer decides nothing from `live` beyond that mapping. While `live` is not null, the chat window stays mounted under Settings, its chat column hidden with the `hidden` attribute, so an unsent draft survives Settings. Only a new `epoch` remounts it, and a switch to another host is the one action that drops a draft. The top bar's Settings button and the palette's Open Settings send `editTarget`, and Close and Esc send `keepTarget`. The Connection card shows the machine folded, with Change. Change opens the editor in the card, Connect sends `checkTarget`, and Cancel folds the editor, or sends `stopCheck` while a check runs or after one failed. The first run's card has no Cancel. The Ctrl+K palette sits outside the window a new `epoch` remounts, so a pick main refused for the old connection comes back over the new one.
 
 A switch remounts the chat subtree with the new epoch. Its `watch` calls then unsubscribe and subscribe again through the normal path, so `main/ipc.ts` needs no rebind logic. A window reload was rejected because `serveWindows` drops a window's subscriptions only on `destroyed`, which a reload does not fire. The old subscriptions would leak.
 
