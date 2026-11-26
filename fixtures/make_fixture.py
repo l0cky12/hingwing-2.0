@@ -18,6 +18,9 @@ The stories are in ``STORIES``:
   the reply links to that page and to an address that never resolves. It asks for no approval.
 - ``preview-close`` writes fixtures/preview-close.jsonl: the same page opens, and after a 2 s pause
   ``desktop_preview`` closes the pane.
+- ``page`` writes fixtures/page.jsonl: a step writes fixtures/page/report.html into the work dir's
+  ``pages`` folder, and ``desktop_preview`` opens that file labelled ``Weekly sign-ups``. It asks for
+  no approval.
 - ``preview-files`` writes fixtures/preview-files.jsonl: steps write a CSV, a two-page PDF, a CSV whose
   quoted fields hold a comma and a newline, and a ``.pdf`` that is plain text, all into the work dir's
   ``reports`` folder. Two more steps edit the header of a 20,000-row CSV and of a CSV over the preview's
@@ -409,6 +412,16 @@ PREVIEW_CLOSE = Story(
            {"say": "Closing the preview now.", "call": ("desktop_preview", {"action": "close"}), "ms": 6, "pause": 2000},
            {"say": "Closed.", "call": None}],
     out="preview-close.jsonl", seed=20261126, files={}, doomed=None, answer=None, prompt=None)
+
+REPORT = f"{WORK}/pages/report.html"
+PAGE_STORY = Story(
+    request="Make me a page with last week's sign-ups.",
+    steps=[
+        {"say": "I'll build the report as a page.",
+         "call": ("write_file", {"path": REPORT, "content": (Path(__file__).resolve().parent / "page/report.html").read_text()}), "ms": 12},
+        {"say": "", "call": ("desktop_preview", {"action": "open", "url": REPORT, "label": "Weekly sign-ups"}), "ms": 5},
+        {"say": "The report is ready. Tuesday was the busiest day.", "call": None}],
+    out="page.jsonl", seed=20261129, files={}, doomed=None, answer=None, prompt=None)
 
 ALWAYS = replace(ERRAND, out="always.jsonl", seed=20261127, answer="always")
 
@@ -811,7 +824,7 @@ PANELS = Story(
     request=PANELS_REQUEST, steps=[], out="panels.jsonl", seed=20261124, files={"notes.md": NOTES}, doomed=None, answer=None, prompt=None)
 
 STORIES = {"errand": ERRAND, "long-turn": LONG_TURN, "markdown": MARKDOWN, "images": IMAGES, "preview": PREVIEW,
-           "preview-close": PREVIEW_CLOSE, "preview-files": PREVIEW_FILES, "always": ALWAYS, "choose": CHOOSE, "says": SAYS,
+           "preview-close": PREVIEW_CLOSE, "page": PAGE_STORY, "preview-files": PREVIEW_FILES, "always": ALWAYS, "choose": CHOOSE, "says": SAYS,
            "asks": ASKS, "queue": QUEUE, "commands": COMMANDS, "panels": PANELS}
 PROMPTS = {"approval": ("approval.request", "approval.respond", "choice"),
            "clarify": ("clarify.request", "clarify.respond", "answer")}
