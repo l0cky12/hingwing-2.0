@@ -1,6 +1,7 @@
 import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, type BackgroundProcess, type BranchId, type ChatVersions, type CommandOutcome, type HelperId, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type TurnId, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { isLocal } from '../../ipc-contract'
 import { Composer } from '../composer/Composer'
 import { carryToNewChat, slotOf } from '../composer/drafts'
 import { ContextMeter } from '../composer/ContextMeter'
@@ -12,7 +13,7 @@ import { ThinkingPill } from '../composer/ThinkingPill'
 import { folderFieldLabel, thinkingShown } from '../composer/tuning'
 import { YoloPill } from '../composer/YoloPill'
 import { run, useTopic } from '../store'
-import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
+import { FileCallContext, fileCallFor, FilesHereContext, NO_FILE_CALL } from './FilePath'
 import type { HelperControls } from './Helpers'
 import { ImageSessionContext } from './Image'
 import { forget, landAt, landed, pressFor } from './landing'
@@ -308,6 +309,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const cwd = session?.cwd ?? null
   const setup = useTopic('setup')
   const target = setup === undefined || setup.at === 'pinned' ? null : (setup.live?.target ?? null)
+  const filesHere = setup !== undefined && isLocal(setup)
 
   const onCloseSide = useCallback((side: SideId) => {
     if (id === null) return
@@ -328,15 +330,17 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     <>
       <main id="scroll" ref={scroller} onScroll={onScroll}>
         {drawn !== null && (
-          <FileCallContext value={fileCall}>
-            <ImageSessionContext value={id}>
-              <Thread
-                view={drawn.view} relays={drawn.relays} sides={drawn.sides} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
-                canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
-                canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers}
-              />
-            </ImageSessionContext>
-          </FileCallContext>
+          <FilesHereContext value={filesHere}>
+            <FileCallContext value={fileCall}>
+              <ImageSessionContext value={id}>
+                <Thread
+                  view={drawn.view} relays={drawn.relays} sides={drawn.sides} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
+                  canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
+                  canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers}
+                />
+              </ImageSessionContext>
+            </FileCallContext>
+          </FilesHereContext>
         )}
       </main>
       <div className={`jump${shown ? ' shown' : ''}${waitsOnYou ? ' asking' : ''}`}>

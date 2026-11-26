@@ -10,6 +10,8 @@ export const NO_FILE_CALL: FileCall = async () => ({ ok: false, reason: 'refused
 
 export const FileCallContext = createContext(NO_FILE_CALL)
 
+export const FilesHereContext = createContext(true)
+
 export const fileCallFor = (sessionId: SessionId): FileCall => (action, path) => window.highwing.file({ action, sessionId, path })
 
 export const baseName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
@@ -25,6 +27,7 @@ const WORDS = {
 
 export function FilePath({ path, findId }: { readonly path: string; readonly findId: string }) {
   const fileCall = useContext(FileCallContext)
+  const here = useContext(FilesHereContext)
   const { open: menu, setOpen: setMenu, holder: row, toggle, onKeyDown } = useMenu<HTMLDivElement, HTMLButtonElement>()
   const [note, setNote] = useState<string | null>(null)
   const name = baseName(path)
@@ -47,15 +50,17 @@ export function FilePath({ path, findId }: { readonly path: string; readonly fin
   return (
     <div className="file" ref={row} onKeyDown={onKeyDown}>
       <div className="file-row">
-        <button className="file-open" aria-label={`Open ${name}`} title={path} data-find={findId} onClick={() => void act('open')}>{path}</button>
-        {PREVIEWS.test(path) && <button className="file-preview" aria-label={`Preview ${name}`} onClick={() => void act('preview')}>Preview</button>}
+        {here
+          ? <button className="file-open" aria-label={`Open ${name}`} title={path} data-find={findId} onClick={() => void act('open')}>{path}</button>
+          : <span className="file-open" title={path} data-find={findId}>{path}</span>}
+        {here && PREVIEWS.test(path) && <button className="file-preview" aria-label={`Preview ${name}`} onClick={() => void act('preview')}>Preview</button>}
         <span className="file-side">
           <button className="file-more" ref={toggle} aria-label={`More for ${name}`} aria-expanded={menu} onClick={() => setMenu(open => !open)}>
             <span aria-hidden="true">⋯</span>
           </button>
           {menu && (
             <div className="file-menu">
-              <button onClick={() => void act('show')}>Show in folder</button>
+              {here && <button onClick={() => void act('show')}>Show in folder</button>}
               <button onClick={() => void copy()}>Copy path</button>
             </div>
           )}
