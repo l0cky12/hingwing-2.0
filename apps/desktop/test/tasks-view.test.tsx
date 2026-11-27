@@ -17,9 +17,9 @@ const BOARD: TaskBoard = {
 const draw = (board: TaskBoard, note: { id: string; words: string } | null = null) => renderToStaticMarkup(<Board board={board} note={note} onPick={() => {}} />)
 
 describe('the task board', () => {
-  it('draws each column in order with its count, and each card as a button naming its title, assignee and summary', () => {
+  it('draws each column that holds a card in order with its count, leaving out empty ones, and each card as a button naming its title, assignee and summary', () => {
     const html = draw(BOARD)
-    expect(Array.from(html.matchAll(/<section class="lane" aria-label="(\w+)"><h3>\w+ <span>(\d)<\/span>/g), ([, name, count]) => `${name} ${count}`)).toEqual(['todo 1', 'running 1', 'done 0'])
+    expect(Array.from(html.matchAll(/<section class="lane" aria-label="(\w+)"><h3>\w+ <span>(\d)<\/span>/g), ([, name, count]) => `${name} ${count}`)).toEqual(['todo 1', 'running 1'])
     expect(html).toContain('<button type="button"><span class="title">Sweep the logs</span></button>')
     expect(html).toContain('<button type="button"><span class="title">Fix &lt;the&gt; build</span><span class="by">ada</span><span class="summary">Reading the failing job</span></button>')
   })

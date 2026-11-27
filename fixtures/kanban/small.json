@@ -1,18 +1,23 @@
 {
   "board": {
     "columns": [
+      { "name": "triage", "tasks": [] },
       {
         "name": "todo",
         "tasks": [
           { "id": "t_a1b2", "title": "Draft the quarterly summary", "body": null, "assignee": null, "status": "todo", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 }
         ]
       },
+      { "name": "scheduled", "tasks": [] },
+      { "name": "ready", "tasks": [] },
       {
         "name": "running",
         "tasks": [
           { "id": "t_c3d4", "title": "Sort the invoices", "body": "Sort the invoices in the inbox folder by due date.", "assignee": "research", "status": "running", "priority": 1, "current_run_id": 7, "session_id": null, "latest_summary": "Sorted fourteen invoices by due date.", "comment_count": 1 }
         ]
       },
+      { "name": "blocked", "tasks": [] },
+      { "name": "review", "tasks": [] },
       {
         "name": "done",
         "tasks": [

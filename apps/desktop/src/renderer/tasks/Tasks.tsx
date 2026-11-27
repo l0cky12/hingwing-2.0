@@ -9,12 +9,14 @@ const READING: Read = { state: 'reading' }
 /** What a card says after it was pressed and had nothing to open. */
 export interface Note { readonly id: string; readonly words: string }
 
-/** The columns side by side in Hermes's order, each with its count, and each card a button that names its assignee and what its run last said. */
+/** The columns that hold a card, side by side in Hermes's order, each with its count, and each card a button that names its assignee and what its run last said. */
 export function Board({ board, note, onPick }: { readonly board: TaskBoard; readonly note: Note | null; readonly onPick: (card: TaskCard) => void }) {
-  if (board.columns.every(column => column.cards.length === 0)) return <p className="notice">No tasks yet.</p>
+  // Hermes sends all eight columns, so the empty ones would push the cards past the pane's edge.
+  const lanes = board.columns.filter(column => column.cards.length > 0)
+  if (lanes.length === 0) return <p className="notice">No tasks yet.</p>
   return (
     <div className="board">
-      {board.columns.map(column => (
+      {lanes.map(column => (
         <section key={column.name} className="lane" aria-label={column.name}>
           <h3>{column.name} <span>{column.cards.length}</span></h3>
           {column.cards.map(card => (

@@ -7,8 +7,8 @@ const UNREACHABLE = refused('offline', "Highwing couldn't reach Hermes's task bo
 const UNREADABLE = refused('unsupported', "Hermes answered with a task board Highwing can't read.")
 const NO_TASK = refused('stale', "That task isn't on the board any more.")
 
-/** A read that got no answer, and one that got a status the caller has no words for, both say the board could not be reached. */
-const answered = (read: ReadHermes, path: string) => read(path).then(answer => answer, () => null)
+/** null: no answer came. The callers word it as an unreachable board, as they do a status they have no words for. */
+const answered = (read: ReadHermes, path: string) => read(path).catch(() => null)
 
 export async function readTaskBoard(read: ReadHermes): Promise<CommandOutcome<TaskBoard>> {
   const answer = await answered(read, BOARD_PATH)
