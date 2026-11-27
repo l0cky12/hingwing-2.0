@@ -823,6 +823,7 @@ describe('serveWindows', () => {
     const owner = {
       setup,
       hermes: null,
+      read: async () => { throw new Error('the test never reads') },
       close: async () => {},
       run: async (command: { readonly do: string }) => {
         ran.push(command.do)
