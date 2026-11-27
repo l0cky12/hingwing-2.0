@@ -1204,6 +1204,13 @@ export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
  * (tui_gateway/methods_profiles.py:524-528). `revision` is null for a Hermes whose rows carry no `ui_meta_revisions`,
  * which predates the per-key check.
  */
+/** The bot whose profile lives at `home`, as `profile_name_for_home` matches a home to a profile (hermes_constants.py:374-394). null: none does. */
+export function parseBotAt(reply: CanonicalProfilesResult, home: string): BotId | null {
+  const trimmed = (path: string) => path.replace(/\/+$/, '')
+  const row = profileRows(reply).find(held => isString(held.path) && trimmed(held.path) === trimmed(home))
+  return row === undefined ? null : row.name as BotId
+}
+
 export function parseBotRecord(reply: CanonicalProfilesResult, bot: BotId): { readonly name: string; readonly meta: Obj; readonly revision: number | null } | null {
   const row = profileRows(reply).find(held => held.name === bot)
   if (row === undefined) return null

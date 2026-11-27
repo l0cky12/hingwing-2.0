@@ -875,8 +875,8 @@ keeps skills per profile, and Highwing reads them only while the card is shown.
 
 - `profiles.describe {name}` lists every installed skill with `enabled`. Its
   description is the one `commands.catalog` gives for that profile, which lists
-  enabled skills only. A turned-off skill of the default bot takes the
-  `description:` of its SKILL.md.
+  enabled skills only. A turned-off skill of the bot the gateway runs as takes
+  the `description:` of its SKILL.md.
 - A switch sends `profiles.configure {name, disabled_skills}` with the whole off
   list, since Hermes replaces it, and Highwing sends one at a time. Highwing
   reads the skill back after, because Hermes keeps an essential skill such as
@@ -885,11 +885,11 @@ keeps skills per profile, and Highwing reads them only while the card is shown.
   hermes-agent on."
 - Open reads the SKILL.md with `learning.detail {id}`, which reaches its legacy
   handler with the interactive grant and names no profile, so it reads the
-  gateway's own. Hermes refuses a `profile` key on it with 4000. On another
-  bot, Open says "This Hermes can show only the default bot's SKILL.md files."
-  Highwing takes the gateway's own profile to be `default`, so a gateway
-  started under a named profile would show that profile's file for the
-  default bot's skill of the same name.
+  gateway's own. Hermes refuses a `profile` key on it with 4000. Highwing finds
+  the bot the gateway runs as by matching `runtime.describe`'s `profile_id`
+  (`gateway/session_controls.py:582`) to a `profiles.list` row's `path`, which
+  need not be the default bot. On any other bot, Open says "This Hermes can
+  show only the SKILL.md files of the bot it runs as."
 - `skills.changed` makes Highwing read the list and the slash catalog again.
 - On a socket with no interactive grant, the card says "This Hermes can't list
   skills from Highwing."

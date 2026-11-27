@@ -93,8 +93,20 @@ describe('the skills library', () => {
     await clock.advance(0)
     expect(seen.at(-1)).toEqual({ state: 'listed', bot: 'research', skills: [{ name: 'sources', description: '', enabled: false }] })
     expect(await hermes.run({ do: 'skillText', bot: 'research' as BotId, name: 'release-notes' }))
-      .toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can show only the default bot's SKILL.md files." } })
+      .toEqual({ ok: false, refusal: { kind: 'unsupported', message: 'This Hermes can show only the SKILL.md files of the bot it runs as.' } })
     expect(calls('learning.detail').map(call => call.params), 'learning.detail takes only an id, and Hermes refuses any other key').toEqual([{ id: 'weekly-report' }])
+  })
+
+  it('reads SKILL.md files only for the bot the gateway runs as, which need not be the default bot', async () => {
+    const asResearch: Fixture = { ...WITH_SKILLS, header: { ...WITH_SKILLS.header, describe: { ...(WITH_SKILLS.header.describe as object), profile_id: '/tmp/hermes-proto-home/profiles/research/' } } }
+    const { clock, hermes, seen, watch } = await launched(asResearch)
+    expect(await hermes.run({ do: 'skillText', bot: 'research' as BotId, name: 'sources' })).toEqual({ ok: true, value: RESEARCH[0]?.body })
+    expect(await hermes.run({ do: 'skillText', bot: 'default' as BotId, name: 'release-notes' }), "the default bot is not the one Hermes reads")
+      .toEqual({ ok: false, refusal: { kind: 'unsupported', message: 'This Hermes can show only the SKILL.md files of the bot it runs as.' } })
+    watch()
+    await clock.advance(0)
+    const listed = seen.at(-1)
+    expect(listed?.state === 'listed' && listed.skills.find(skill => skill.name === 'weekly-report')?.description, "a turned-off skill of a bot Hermes can't read has none").toBe('')
   })
 
   it('keeps both of two switches moved at once, since each write replaces the whole off list', async () => {
