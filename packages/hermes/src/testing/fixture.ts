@@ -177,8 +177,8 @@ export interface Fixture {
      */
     readonly groups?: GroupsScript
     /**
-     * The home profile's scheduled jobs and their runs. Absent: the gateway refuses `cron.manage` as an unknown
-     * method, as a Hermes that serves no scheduled jobs to Highwing does.
+     * The cron stores `cron.manage` lists, and the home store's runs. Absent: the gateway refuses `cron.manage` as an
+     * unknown method, as a Hermes that serves no scheduled jobs to Highwing does, and so does a socket bound to one profile.
      */
     readonly cron?: CronScript
     /**
@@ -306,14 +306,19 @@ export interface McpScript {
 /** `reply`: the bot's one answer, sent `delay_ms` after the call (default 0). `refuse`: the reason Hermes refuses the delivery with. */
 export type RelayScript = { readonly reply: string; readonly delay_ms?: number } | { readonly refuse: string }
 /**
- * `jobs`: the rows `cron.manage` lists, each with at least `job_id`. `runs`: each one rewrites its job's `last_run_at`,
- * `last_status` and `last_error` `after_ms` after the gateway's first list, and pushes `cron.changed` to every socket,
- * as Hermes's watcher does when the scheduler writes cron/jobs.json (tui_gateway/change_watcher.py:468).
+ * `jobs`: the home profile's store, rows as `cron.manage` lists them (cron/job_args.py `_format_job`), each with at least `job_id`.
+ * `profiles`: each other profile's store. A list names the store of the profile its frame names and says so in `scoped`.
+ * `unscoped`: play a Hermes older than the `profile` param, which lists the home store for every profile and says nothing of scope.
+ * `runs`: each one rewrites a home job's `last_run_at`, `last_status` and `last_error` `after_ms` after the gateway's first list,
+ * and pushes `cron.changed` to every socket, as Hermes's watcher does when the scheduler writes cron/jobs.json (tui_gateway/change_watcher.py:468).
  */
 export interface CronScript {
-  readonly jobs: readonly { readonly job_id: string; readonly [key: string]: unknown }[]
+  readonly jobs: readonly CronRow[]
+  readonly profiles?: { readonly [profile: string]: readonly CronRow[] }
+  readonly unscoped?: boolean
   readonly runs?: readonly CronRun[]
 }
+export interface CronRow { readonly job_id: string; readonly [key: string]: unknown }
 export interface CronRun { readonly after_ms: number; readonly job_id: string; readonly last_run_at: string; readonly last_status: string; readonly last_error?: string }
 
 export interface GroupsScript {
@@ -501,8 +506,12 @@ const isCronRun = (value: unknown): value is CronRun =>
   isObject(value) && typeof value.after_ms === 'number' && value.after_ms >= 0 && isText(value.job_id) && isText(value.last_run_at) && isText(value.last_status)
   && (value.last_error === undefined || typeof value.last_error === 'string')
 
+const isCronRows = (value: unknown) => Array.isArray(value) && value.every(job => isObject(job) && isText(job.job_id))
+
 const isCronScript = (value: unknown): value is CronScript =>
-  isObject(value) && Array.isArray(value.jobs) && value.jobs.every(job => isObject(job) && isText(job.job_id))
+  isObject(value) && isCronRows(value.jobs)
+  && (value.profiles === undefined || (isObject(value.profiles) && Object.values(value.profiles).every(isCronRows)))
+  && (value.unscoped === undefined || typeof value.unscoped === 'boolean')
   && (value.runs === undefined || (Array.isArray(value.runs) && value.runs.every(run => isCronRun(run) && (value.jobs as { job_id: string }[]).some(job => job.job_id === run.job_id))))
 
 const MEMORY_FILES = new Set(['MEMORY.md', 'USER.md'])
@@ -701,7 +710,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   const { cron } = value
   if (cron !== undefined && !isCronScript(cron)) {
-    return '"cron" must be { jobs, runs? }: each job with a "job_id", each run { after_ms, job_id, last_run_at, last_status, last_error? } of a listed job'
+    return '"cron" must be { jobs, profiles?, unscoped?, runs? }: each job with a "job_id", "profiles" mapping a profile to such jobs, each run { after_ms, job_id, last_run_at, last_status, last_error? } of a listed home job'
   }
   const { turnMs, activeList } = value
   if (turnMs !== undefined && !(isObject(turnMs) && Object.values(turnMs).every(ms => Number.isSafeInteger(ms) && (ms as number) >= 0))) {

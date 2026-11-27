@@ -11,8 +11,8 @@ import {
   parsePicture, parseSkillStates, parseSkillText, parseTested, parseToolServers, type Configured
 } from './wire/parse'
 
-type Wire = Pick<Connection, 'call' | 'as'>
-type Reasons = { readonly [code: number]: (message: string) => Refusal }
+export type Wire = Pick<Connection, 'call' | 'as'>
+export type Reasons = { readonly [code: number]: (message: string) => Refusal }
 
 const CREATE_REASONS: Reasons = {
   [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't create bots from Highwing." }),
@@ -42,7 +42,7 @@ const GONE: Outcome<never> = { ok: false, refusal: { kind: 'rejected', message: 
 const CLASH: Outcome<never> = { ok: false, refusal: { kind: 'conflict', message: 'This bot changed elsewhere.' } }
 const DONE: Outcome = { ok: true, value: undefined }
 
-async function guarded<T>(reasons: Reasons, work: () => Promise<Outcome<T>>): Promise<Outcome<T>> {
+export async function guarded<T>(reasons: Reasons, work: () => Promise<Outcome<T>>): Promise<Outcome<T>> {
   try {
     return await work()
   } catch (error) {

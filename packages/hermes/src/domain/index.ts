@@ -16,6 +16,7 @@ export type { Added, Header, ServerSetup, ServerState, Tested, ToolServer } from
 export type { PathMatch } from './path'
 export { isManagerName, MANAGER_NAMES, MANAGERS, type BotManagers, type FirstTime, type Manager, type ManagerFacts, type ManagerName, type ManagerState } from './passwords'
 export type { Skill, SkillLibrary } from './skills'
+export type { Routine, RoutineId } from './routines'
 export { mentionedBots, mentionOf, typedMention } from './mention'
 export type { Job, JobId } from './jobs'
 export type { Relay, RelayDesk, RelayId, RelayState } from './relay'

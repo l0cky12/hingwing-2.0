@@ -29,6 +29,7 @@ import { chatDesk } from './open'
 import { relayBook } from './relay'
 import { botList } from './roster'
 import { screenDesk } from './screens'
+import { listRoutines } from './routines'
 import { deriveSidebar, sessionList } from './sidebar'
 import { readVersions } from './versions'
 import { connect, systemClock, type Clock, type Dialer } from './wire/link'
@@ -107,6 +108,11 @@ export interface Hermes {
    * screen as RFB and holds a single-use ticket. It never leaves Electron main. null when Hermes or the route gives none.
    */
   screenSocket(): Promise<string | null>
+  /**
+   * Counts the times a bot's routines may have moved: on every `cron.changed` and every new socket. A window showing
+   * routines asks for them again when it changes. The routines themselves are read with `run({ do: 'listRoutines' })`.
+   */
+  readonly routines: Feed<number>
   /**
    * Watch one session. The listener gets the current value at once and every later one. A session is
    * kept attached while a window watches it, while the gateway lists it as running, while its own
@@ -271,7 +277,11 @@ export function openHermes(options: HermesOptions): Hermes {
       if ('ask' in parsed && fresh && shownChat(desk.open)?.sessionId === parsed.sessionId) options.onPane?.(parsed.ask, actor.session)
     },
     gap: parsed => actors.get(parsed.sessionId)?.feed({ in: 'gap' }),
-    app: parsed => (parsed.event === 'cron.changed' ? scheduled.read() : refreshSoon()),
+    app: parsed => {
+      if (parsed.event !== 'cron.changed') return refreshSoon()
+      scheduled.read()
+      routines.set(routines.get() + 1)
+    },
     skills: () => {
       catalogRead = readCatalog()
       void readLibrary()
@@ -318,6 +328,7 @@ export function openHermes(options: HermesOptions): Hermes {
       activities.poll()
       screens.online()
       void readLibrary()
+      routines.set(routines.get() + 1)
     },
     onEvent: params => {
       noteVersion(hermesVersionOf(versionOn(params)))
@@ -336,6 +347,7 @@ export function openHermes(options: HermesOptions): Hermes {
   publishAbout = () => about.set(aboutOf())
   const screens = screenDesk(conn, clock, () => screen.set(screens.view))
   const screen = feed<ScreenView | null>(null, sameScreen)
+  const routines = feed(0)
   const slash = feed<SlashCatalog>([], sameCatalog)
   let catalogReads = 0
   let catalogRead: Promise<void> = Promise.resolve()
@@ -649,6 +661,7 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'toolServers') return toolServers(conn, command.bot)
     if (command.do === 'addToolServer') return addToolServer(conn, command.bot, command.setup)
     if (command.do === 'removeToolServer') return removeToolServer(conn, command.bot, command.name)
+    if (command.do === 'listRoutines') return listRoutines(conn, command.bot)
     if (command.do === 'botPicture') return botPicture(conn, command.bot)
     if (command.do === 'canGeneratePicture') return canGeneratePicture(conn)
     if (command.do === 'generatePicture') return generatePicture(conn, command.prompt)
@@ -701,6 +714,7 @@ export function openHermes(options: HermesOptions): Hermes {
     activity,
     screen,
     screenSocket: screens.socket,
+    routines,
     watch,
     watchSkills,
     changes: listener => {

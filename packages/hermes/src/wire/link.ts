@@ -216,6 +216,8 @@ export class Offline extends Error {}
  * the home the socket was launched with. A -32601 from one means this Hermes cannot edit memory.
  * `learning.detail` also reads a skill's SKILL.md from the gateway's own profile (tui_gateway/methods_tools.py:1361-1366).
  * `usage.bars` and `insights.get` are the legacy usage reads. A -32601 from one means this Hermes does not serve that read.
+ * `cron.manage` reaches its legacy handler the same way (tui_gateway/methods_tools.py:1311), and a -32601 from it means this Hermes
+ * cannot show a bot's routines.
  * The canonical route serves every `groups.*` method (`GROUP_METHODS`, gateway/session_group_controls.py:15-35), though of
  * the calls Highwing makes the contract lists only `groups.create` as canonical (tui_gateway/contracts/canonical_projections.py:126). A -32601 from `groups.capabilities` means this Hermes has no group chats.
  * The Connect apps window calls `connectors.catalog`, `connectors.accounts`, `connectors.accounts.remove` and `connectors.operation.status`.
