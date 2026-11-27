@@ -10,6 +10,7 @@ import { APPROVAL_MODES, type ApprovalMode } from '../domain/session'
 import { GATEWAY_PROTOCOL, type Clock, type Reach } from '../wire/link'
 import { parseEvent } from '../wire/parse'
 import { MASKED, type ChatSeed, type Fixture, type FixtureStep, type Reads } from './fixture'
+import { memoryBook, type MemoryBook } from './memory-book'
 import { checkParams } from './params'
 import { ScriptedRooms } from './rooms'
 import { ScriptedVault } from './vault'
@@ -841,6 +842,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'pet.gallery': (gateway, socket) => gateway.petGallery(socket),
   /** tui_gateway/methods_session.py:1557-1563 */
   'pet.thumb': (gateway, socket, params) => gateway.petThumb(socket, params),
+  /** tui_gateway/methods_tools.py binds these to agent/learning_mutations.py. A profile key is not one of their params. */
+  'learning.frames': (gateway, socket) => gateway.learning('learning.frames', socket).frames(),
+  'learning.detail': (gateway, socket, params) => gateway.learning('learning.detail', socket).detail(typeof params.id === 'string' ? params.id : ''),
+  'learning.edit': (gateway, socket, params) => gateway.learning('learning.edit', socket).edit(typeof params.id === 'string' ? params.id : '', typeof params.content === 'string' ? params.content : ''),
+  'learning.delete': (gateway, socket, params) => gateway.learning('learning.delete', socket).remove(typeof params.id === 'string' ? params.id : ''),
   'session.mutate': (gateway, socket, params, routed) => {
     const mutation = typeof params.operation === 'string' && Object.hasOwn(MUTATIONS, params.operation) ? MUTATIONS[params.operation] : undefined
     return mutation === undefined ? gateway.story(socket, 'session.mutate', params, routed) : mutation(gateway, params, routed)
@@ -979,6 +985,7 @@ export class ScriptedGateway {
   private readonly profiles: Obj[]
   private readonly souls: Map<string, string>
   private readonly pictures = new Map<string, { readonly mime: string; readonly size: number; readonly data: string }>()
+  private memory: MemoryBook | null = null
   private readonly thumbsRefused = new Set<string>()
   /**
    * `<profile> <slug>` for each thumb `pet.thumb` answered with a picture. Hermes keeps it on disk under the profile it ran as
@@ -1025,6 +1032,7 @@ export class ScriptedGateway {
     const { profiles } = fixture.header
     this.profiles = isObject(profiles) && Array.isArray(profiles.profiles) ? profiles.profiles.filter(isObject) : []
     this.home = this.profiles.map(row => (row.is_default === true ? row.name : undefined)).find(isText) ?? 'default'
+    this.memory = fixture.header.memory === undefined ? null : memoryBook(fixture.header.memory)
     this.storyIsBotChatOf = fixture.header.homeBotChat === false ? null : this.home
     const seededChats = Object.entries(fixture.header.chats ?? {}).flatMap(([profile, seeds]) => seeds.map(seed => seeded(profile, seed)))
     for (const { name, canonical_session: named } of this.profiles) {
@@ -1931,6 +1939,16 @@ export class ScriptedGateway {
     if (oneshot === undefined || socket.reach === 'profile') throw unknownMethod('llm.oneshot')
     if (oneshot.error !== undefined) throw refusedProfile(5030, `one-shot generation failed: ${oneshot.error}`)
     return after(oneshot.delay_ms, { text: oneshot.text ?? '' })
+  }
+
+  /**
+   * `learning.*` (tui_gateway/methods_tools.py) is no canonical method, so like `image.generate` only a socket with the
+   * interactive grant reaches it. The handler ignores `profile` and writes the launch home. Hermes rejects the key
+   * before the handler, which the param check of a sidecar-only method does not reproduce, so the client must omit it.
+   */
+  learning(method: string, socket: Socket): MemoryBook {
+    if (this.memory === null || socket.reach === 'profile') throw unknownMethod(method)
+    return this.memory
   }
 
   /** `vault.*` reaches only the legacy handlers, as `profiles.create` does, each in the profile the call names. */

@@ -3,6 +3,7 @@ import { DONE, refused, SessionActor, type Upload } from './actor'
 import { activityDesk, busyOf, type Attached } from './activity'
 import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, setBotPicture } from './bot-admin'
 import type { BotActivities, UnreadChat } from './domain/activity'
+import { listMemory, removeMemory, saveMemory } from './memory'
 import { botsIn, MARK_SETS, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
 import type { GroupChat, Groups } from './domain/groups'
@@ -517,6 +518,9 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'generatePicture') return generatePicture(conn, command.prompt)
     if (command.do === 'pets') return listPets(conn)
     if (command.do === 'petPicture') return petPicture(conn, command.slug, command.url)
+    if (command.do === 'memory') return listMemory(conn)
+    if (command.do === 'saveMemory') return saveMemory(conn, command.id, command.text)
+    if (command.do === 'removeMemory') return removeMemory(conn, command.id)
     if (command.do === 'editBot' || command.do === 'setBotPicture' || command.do === 'removeBotPicture') {
       const done = command.do === 'editBot' ? await editBot(conn, command.bot, command.edit, command.revision)
         : await setBotPicture(conn, command.bot, command.do === 'setBotPicture' ? command.data : null)

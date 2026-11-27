@@ -481,6 +481,9 @@ export const validators: Validators = {
   generatePicture: raw => (filled(raw.prompt) ? { do: 'generatePicture', prompt: raw.prompt } : null),
   pets: () => ({ do: 'pets' }),
   petPicture: raw => (text(raw.slug) && isPetSlug(raw.slug) && (raw.url === null || webPage(raw.url)) ? { do: 'petPicture', slug: raw.slug, url: raw.url } : null),
+  memory: () => ({ do: 'memory' }),
+  saveMemory: raw => (filled(raw.id) && text(raw.text) ? { do: 'saveMemory', id: raw.id, text: raw.text } : null),
+  removeMemory: raw => (filled(raw.id) ? { do: 'removeMemory', id: raw.id } : null),
   botModels: raw => {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     return raw.bot !== null && bot === null ? null : { do: 'botModels', bot }
