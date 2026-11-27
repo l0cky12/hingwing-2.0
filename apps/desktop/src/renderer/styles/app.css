@@ -425,12 +425,12 @@ button.file-open:hover { color: var(--signal); text-decoration: underline; text-
 .step > .copy { top: 4px; }
 .request > .actions { position: absolute; right: calc(100% + 8px); top: 5px; display: flex; gap: 6px; }
 .request > .actions::before { content: ""; position: absolute; left: 100%; top: 0; bottom: 0; width: 9px; }
-.actions > .copy { position: static; }
-.request:hover > .actions > .copy, .request:has(:focus-visible) > .actions > .copy { opacity: 1; }
-.copy:is(.edit, .branch) { display: grid; place-items: center; padding: 1px 8px; }
-.copy:is(.edit, .branch) svg { height: 18px; }
-.copy:is(.edit, .branch):disabled { opacity: 0; color: var(--graphite); }
-.request:hover > .actions > .copy:is(.edit, .branch):disabled { opacity: .45; }
+.actions .copy { position: static; }
+.acts { display: inline-flex; align-items: center; gap: 6px; }
+.copy.icon { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; }
+.copy.icon:disabled { opacity: 0; color: var(--graphite); }
+:is(.request:is(:hover, :has(:focus-visible)), :is(.thread, .prose):hover ~ .turn-actions, .turn-actions:is(:hover, :has(:focus-visible)), .acts:has([aria-expanded="true"])) .copy.icon { opacity: 1; }
+:is(.request:hover, :is(.thread, .prose):hover ~ .turn-actions, .turn-actions:hover) .copy.icon:disabled { opacity: .45; }
 .versions { display: inline-flex; align-items: center; gap: 2px; color: var(--graphite); font: 500 12px/1.5 var(--sans); font-variant-numeric: tabular-nums; white-space: nowrap; user-select: none; }
 .versions > button { padding: 1px 7px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); color: var(--ink); }
 .versions > button:hover:not(:disabled) { background: var(--paper); }
@@ -441,16 +441,16 @@ button.file-open:hover { color: var(--signal); text-decoration: underline; text-
 .versions-end { margin: 22px 0 0 var(--col); }
 .turn-actions { display: flex; align-items: center; gap: 6px; margin: 10px 0 0 var(--col); }
 .turn-actions .copy { position: static; }
-.turn:hover > .turn-actions .copy, .copy[aria-expanded="true"] { opacity: 1; }
+.relay-reply > .turn-actions, .side-row > .turn-actions { margin-left: 0; }
 .react { position: relative; }
 .react-pick { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 2; display: flex; gap: 2px; padding: 4px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 6px 18px rgb(var(--shade) / 12%); }
 .react-pick button, .reaction { padding: 1px 7px; border: 1px solid transparent; border-radius: 6px; background: none; font: 15px/1.5 var(--sans); }
 .react-pick button:hover { background: var(--paper); }
 .react-pick button[aria-pressed="true"], .reaction { border-color: var(--rule); background: var(--signal-soft); }
 button.reaction:hover:not(:disabled) { border-color: var(--signal); }
-.regenerate, .new-chat, .queued button { padding: 2px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); color: var(--ink); font: 500 13px/1.5 var(--sans); }
-:is(.regenerate, .new-chat, .queued button):hover:not(:disabled) { background: var(--paper); }
-:is(.regenerate, .new-chat, .queued button):disabled { color: var(--graphite); }
+.new-chat, .queued button { padding: 2px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); color: var(--ink); font: 500 13px/1.5 var(--sans); }
+:is(.new-chat, .queued button):hover:not(:disabled) { background: var(--paper); }
+:is(.new-chat, .queued button):disabled { color: var(--graphite); }
 .relay-reply { position: relative; max-width: calc(100% - var(--col)); margin-left: var(--col); }
 .said-by > .relay-from { margin-bottom: 4px; }
 .group-turn .thread > :only-child::after { display: none; }
@@ -656,7 +656,6 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .side-row { margin-left: var(--col); }
 .side-row + .side-row { margin-top: 12px; }
 .side-row > .side-asked { font-weight: 400; color: var(--graphite); }
-.side-row > .prose { position: relative; }
 
 .status-stack { max-width: 760px; max-height: 40vh; overflow-y: auto; box-sizing: border-box; margin: 0 auto 10px; padding: 0 28px 0 calc(28px + var(--col)); font: 14px/1.5 var(--sans); }
 .panel .record p, .panel .record ol { margin: 0; }

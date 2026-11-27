@@ -4,13 +4,14 @@ import { createContext, Fragment, memo, useCallback, useContext, useEffect, useI
 import { Avatar, BotFace } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
 import { AskCard, type RequestAnswer } from './Asks'
-import { Command, CopyButton } from './Copy'
+import { Command } from './Copy'
 import { isShortcut } from '../keys'
 import { modalOpen } from '../shortcuts'
 import { Helper, Moa, Notice, Plan, Reasoning, type HelperControls } from './Helpers'
 import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find'
 import { isOpen, NONE_OPEN, toggled, type OpenState } from './open'
-import { Given, Reactions } from './Reactions'
+import { hasActs, MessageActions, type MessageActs } from './MessageActions'
+import { Given } from './Reactions'
 import { placeByTurn } from './relays'
 import { SideTurn } from './Sides'
 import type { SideRow } from './sides'
@@ -213,7 +214,6 @@ export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer, 
       return (
         <div className="prose">
           <Markdown source={node.markdown} caret={node.streaming} nodeKey={node.key} />
-          {!node.streaming && <CopyButton text={node.markdown} name="Copy reply" />}
         </div>
       )
     case 'step':
@@ -275,25 +275,6 @@ export type Rewrite = (rowId: number, text: string) => void
 
 export type ReactOn = (turn: TurnId, emoji: string | null) => void
 
-function Fork() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="3" cy="2.5" r="1.3" />
-      <circle cx="9" cy="2.5" r="1.3" />
-      <circle cx="6" cy="9.5" r="1.3" />
-      <path d="M3 3.8v.7a1.5 1.5 0 0 0 1.5 1.5h3A1.5 1.5 0 0 0 9 4.5v-.7M6 6v2.2" />
-    </svg>
-  )
-}
-
-function Pencil() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 12 12" width="12" height="12">
-      <path d="M2 10 2.6 7.6 8.2 2a1 1 0 0 1 1.4 0l.4.4a1 1 0 0 1 0 1.4L4.4 9.4Z M7.4 2.8l1.8 1.8" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
 export function VersionSwitch({ versions, onVersion }: { readonly versions: Versions; readonly onVersion: (version: Version) => void }) {
   const { versions: all, current } = versions
   const step = (by: 1 | -1) => {
@@ -323,6 +304,8 @@ interface TurnProps {
   readonly helpers: HelperControls | null
 }
 
+const RUNNING_ENDS: ReadonlySet<ThreadEnd['kind']> = new Set(['at', 'tip', 'paused'])
+
 const HANDED = 'Handed over'
 
 export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, canReact, onReact, helpers }: TurnProps) {
@@ -330,6 +313,19 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit
   const regenerates = showsRegenerate && rowId !== null && request !== null
   const movesToNewChat = end.kind === 'failed' && end.remedy === 'newChat' && request !== null
   const live = end.kind === 'tip' || (end.kind === 'at' && end.tone === 'live')
+  const requestActs: MessageActs = request === null ? {} : {
+    copy: { text: request, name: 'Copy request' },
+    ...(rowId !== null && {
+      edit: { disabled: !canEdit, run: () => onEdit(rowId, request) },
+      branch: { disabled: !canBranch, run: () => onBranch(rowId) }
+    })
+  }
+  const prose = turn.nodes.flatMap(node => (node.kind === 'prose' ? [node.markdown] : []))
+  const replyActs: MessageActs = {
+    ...(prose.length > 0 && !RUNNING_ENDS.has(end.kind) && { copy: { text: prose.join('\n\n'), name: 'Copy reply' } }),
+    ...(regenerates && { regenerate: { disabled: !canRegenerate, run: () => onRegenerate(rowId, request) } }),
+    ...(reactions !== null && { react: { given: reactions.given, disabled: !canReact, onReact: emoji => onReact(reactions.turn, emoji) } })
+  }
   return (
     <article className={cx('turn', live && 'live-turn', end.kind === 'none' && 'interlude')} data-row={rowId ?? undefined} aria-label={turn.handed ? HANDED : undefined}>
       {turn.time !== null && <p className="when">{turn.time}</p>}
@@ -340,9 +336,7 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit
           {request}
           <span className="actions">
             {versions.map(group => <VersionSwitch key={group.versions[0]?.sessionId} versions={group} onVersion={onVersion} />)}
-            <CopyButton text={request} name="Copy request" />
-            {rowId !== null && <button type="button" className="copy edit" aria-label="Edit message" disabled={!canEdit} onClick={() => onEdit(rowId, request)}><Pencil /></button>}
-            {rowId !== null && <button type="button" className="copy branch" aria-label="Branch from here" disabled={!canBranch} onClick={() => onBranch(rowId)}><Fork /></button>}
+            <MessageActions acts={requestActs} />
           </span>
         </p>
       )}
@@ -353,12 +347,11 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit
         <End turnKey={turn.key} end={end} started={turn.nodes.length > 0} />
       </div>
       {turn.tokens !== null && <p className="used">{turn.tokens}</p>}
-      {(regenerates || movesToNewChat || reactions !== null) && (
+      {(movesToNewChat || reactions !== null || hasActs(replyActs)) && (
         <div className="turn-actions">
           {reactions !== null && <Given given={reactions.given} disabled={!canReact} onReact={emoji => onReact(reactions.turn, emoji)} />}
-          {regenerates && <button type="button" className="regenerate" disabled={!canRegenerate} onClick={() => onRegenerate(rowId, request)}>Regenerate</button>}
           {movesToNewChat && <button type="button" className="new-chat" onClick={() => onNewChat(request)}>Start a new chat</button>}
-          {reactions !== null && <Reactions given={reactions.given} disabled={!canReact} onReact={emoji => onReact(reactions.turn, emoji)} />}
+          <MessageActions acts={replyActs} />
         </div>
       )}
     </article>
@@ -371,12 +364,12 @@ export const RelayTurn = memo(function RelayTurn({ relay }: { readonly relay: Re
     <article className="turn relay">
       <p className="request">
         {relay.text}
-        <span className="actions"><CopyButton text={relay.text} name="Copy request" /></span>
+        <span className="actions"><MessageActions acts={{ copy: { text: relay.text, name: 'Copy request' } }} /></span>
       </p>
       <div className="relay-reply" role="group" aria-label={name}>
         <p className="relay-from"><Avatar bot={relay} size={22} /><span>{name}</span></p>
         {state.s === 'waiting' && <p className="notice" role="status">Waiting for {name}</p>}
-        {state.s === 'answered' && <div className="prose"><Markdown source={state.reply} caret={false} nodeKey={relay.id} /><CopyButton text={state.reply} name="Copy reply" /></div>}
+        {state.s === 'answered' && <><div className="prose"><Markdown source={state.reply} caret={false} nodeKey={relay.id} /></div><div className="turn-actions"><MessageActions acts={{ copy: { text: state.reply, name: 'Copy reply' } }} /></div></>}
         {state.s === 'failed' && <p className="err">{state.words}</p>}
       </div>
     </article>

@@ -29,19 +29,19 @@ function press(node: ReactNode, name: string): void {
 
 describe('reactions on a reply', () => {
   it('offers a React button that opens a picker on a turn whose answer is stored, and none on one whose answer is not', () => {
-    expect(draw({})).toMatch(/<div class="turn-actions"><div class="react"><button type="button" class="copy" aria-haspopup="dialog" aria-expanded="false">React<\/button><\/div><\/div>/)
+    expect(draw({})).toMatch(/<div class="turn-actions"><span class="acts"><div class="react"><button[^>]*aria-label="React"[^>]*aria-haspopup="dialog" aria-expanded="false">/)
     expect(draw({ turn: turn(null) })).not.toContain('React')
   })
 
   it('cannot be pressed while the chat is not live', () => {
-    expect(draw({ canReact: false })).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*disabled=""[^>]*>React</)
+    expect(draw({ canReact: false })).toMatch(/<button[^>]*aria-label="React"[^>]*aria-haspopup="dialog"[^>]*disabled=""/)
   })
 
   it('shows each reaction given as a chip under the reply, yours a button and Hermes\'s not', () => {
     const markup = draw({ turn: turn({ turn: TURN, given: BOTH }) })
     expect(markup).toMatch(/<button type="button" class="reaction" aria-label="Remove your 👍">👍<\/button>/)
     expect(markup).toMatch(/<span class="reaction" role="img" aria-label="Hermes reacted ❓">❓<\/span>/)
-    expect(markup.indexOf('Remove your 👍')).toBeLessThan(markup.indexOf('>React<'))
+    expect(markup.indexOf('Remove your 👍')).toBeLessThan(markup.indexOf('aria-label="React"'))
   })
 
   it('takes your reaction off when you press your chip, and Hermes\'s chip does nothing', () => {
