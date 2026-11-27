@@ -815,6 +815,22 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     gateway.authorize(params, routed)
     return usage.breakdown
   },
+  'session.account_usage': (gateway, _socket, params, routed) => {
+    const canned = gateway.fixture.header.accountUsage
+    if (canned === undefined) throw unknownMethod('session.account_usage')
+    gateway.authorize(params, routed)
+    return canned
+  },
+  'usage.bars': gateway => {
+    const canned = gateway.fixture.header.usageBars
+    if (canned === undefined) throw unknownMethod('usage.bars')
+    return canned
+  },
+  'insights.get': gateway => {
+    const canned = gateway.fixture.header.insights
+    if (canned === undefined) throw unknownMethod('insights.get')
+    return canned
+  },
   'complete.path': (gateway, _socket, params, routed) => pathItems(gateway, params, () => gateway.authorize(params, routed)),
   /** tui_gateway/methods_profiles.py:271-290 */
   'profiles.list': (gateway, socket) => gateway.roster(socket),
@@ -919,6 +935,11 @@ type ChatHandler = (gateway: ScriptedGateway, socket: Socket, params: Obj, route
 
 const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
   'session.stats': () => { throw unknownMethod('session.stats') },
+  'session.account_usage': gateway => {
+    const canned = gateway.fixture.header.accountUsage
+    if (canned === undefined) throw unknownMethod('session.account_usage')
+    return canned
+  },
   'session.resume': (gateway, socket, params, _routed, chat) => gateway.open(socket, chat, params),
   'session.events.since': (gateway, _socket, params, _routed, chat) => replayOf(chat, gateway.options.ringFrames, params, []).reply,
   /** gateway/session_controls.py:884-895 */
@@ -1024,7 +1045,7 @@ export class ScriptedGateway {
     this.view = {
       running: false, generation: 0, revision: 0, title: '', pending: fixture.header.pending ?? [], prompts: new Map(), requests: new Map(), connection: null,
       model: modelOf(isObject(models) ? models : undefined), deferred: null, switchesCommitted: 0, branchesCommitted: 0, turnsEnded: 0, yolo: fixture.header.yolo ?? null,
-      info: fixture.header.info ?? {}, todos: fixture.header.todo_state ?? null
+      info: { ...(fixture.header.hermes === '' ? {} : { version: fixture.header.hermes }), ...(fixture.header.info ?? {}) }, todos: fixture.header.todo_state ?? null
     }
     this.epoch = fixture.steps.map(epochOf).find(isText) ?? 'fixture-epoch'
     this.done = new Promise((resolve, reject) => { this.settle = { resolve, reject } })

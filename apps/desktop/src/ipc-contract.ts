@@ -1,6 +1,6 @@
 import {
   APPROVAL_MODES, BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
-  type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
+  type About, type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
   type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
@@ -107,6 +107,7 @@ export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? strin
 export interface AppTopics {
   readonly setup: Setup
   readonly link: Link
+  readonly about: About
   readonly sidebar: Sidebar
   readonly slash: SlashCatalog
   readonly bots: Bots
@@ -127,7 +128,7 @@ export interface AppTopics {
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, preview: true, mode: true, theme: true, snoozes: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, preview: true, mode: true, theme: true, snoozes: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -471,6 +472,10 @@ export const validators: Validators = {
   contextBreakdown: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && { do: 'contextBreakdown', sessionId }
+  },
+  accountUsage: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && { do: 'accountUsage', sessionId }
   },
   createBot: raw => {
     const draft = draftOf(raw.draft)

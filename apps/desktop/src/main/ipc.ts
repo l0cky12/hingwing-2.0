@@ -60,6 +60,7 @@ const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source 
   theme: ({ preferences }) => current(preferences.theme),
   snoozes: ({ preferences }) => current(preferences.snoozes),
   link: onHermes(hermes => current(hermes.link)),
+  about: onHermes(hermes => current(hermes.about)),
   sidebar: onHermes(hermes => current(hermes.sidebar)),
   slash: onHermes(hermes => current(hermes.slash)),
   bots: onHermes(hermes => current(hermes.bots)),

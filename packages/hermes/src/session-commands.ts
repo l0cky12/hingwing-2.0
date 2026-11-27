@@ -13,6 +13,7 @@ import {
   beginsAtTurn, parseApprovalMode, parseBranched, parseBusy, parseCheckpointDiff, parseCheckpoints, parseCompressed, parseContextBreakdown, parseCorrection, parseDirective, parseFast,
   parseModelMenu, parseModelReceipt, parsePathMatches, parseReactions, parseRestored, parseShown, parseTranscript, placeOfRow, type Correction, type Directive
 } from './wire/parse'
+import { linesFromBars, linesFromInsights, parseAccountReport, type AccountReport } from './domain/usage'
 
 /** `versions` stays with the hub: reading a chat's versions must not attach it. */
 export type SessionCommand = Exclude<Extract<Command, { readonly sessionId: SessionId }>, { readonly do: 'versions' }>
@@ -325,6 +326,22 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
   contextBreakdown: port => port.whenLive(async () => {
     const breakdown = await port.call('session.context_breakdown', { session_id: port.id })
     return breakdown.ok ? { ok: true, value: parseContextBreakdown(breakdown.value) } : breakdown
+  }),
+
+  /** A missing method tries the next read. Any other refusal stops, so a missing chat is not "does not report usage". */
+  accountUsage: port => port.whenLive(async () => {
+    const account = await port.call('session.account_usage', { session_id: port.id })
+    if (account.ok) return { ok: true, value: parseAccountReport(account.value) }
+    if (account.refusal.kind !== 'unsupported') return account
+    const bars = await port.call('usage.bars', {})
+    if (bars.ok) {
+      const lines = linesFromBars(bars.value)
+      if (lines !== null) return { ok: true, value: { state: 'reported', lines } satisfies AccountReport }
+    } else if (bars.refusal.kind !== 'unsupported') return bars
+    const insights = await port.call('insights.get', {})
+    if (insights.ok) return { ok: true, value: { state: 'reported', lines: linesFromInsights(insights.value) } satisfies AccountReport }
+    if (insights.refusal.kind === 'unsupported') return { ok: true, value: { state: 'unreported' } satisfies AccountReport }
+    return insights
   }),
 
   completePath: (port, { word }) => port.whenLive(async () => {

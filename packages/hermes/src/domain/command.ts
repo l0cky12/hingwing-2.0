@@ -4,6 +4,8 @@ import type { ChatRef, Unstarted } from './open'
 import type { BotManagers, ManagerName } from './passwords'
 import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
+import type { AccountReport } from './usage'
+export type { AccountReport }
 import type {
   AdmissionId, ApprovalMode, AttachmentId, BranchId, BusyMode, CheckpointId, ContextFill, ControlAction, Effort, HelperId, InputId, ModelOption, ModelRef, ProcessId, PromptId,
   PromptReply, QueuedAction, RequestId, RequestReply, SessionId, SideTask, Told, TurnId
@@ -90,6 +92,11 @@ export type Command =
   /** `confirm` is the token of a `ModelConfirm`, sent to say yes to it. */
   | { readonly do: 'pickModel'; readonly sessionId: SessionId; readonly model: ModelOption; readonly confirm?: string }
   | { readonly do: 'contextBreakdown'; readonly sessionId: SessionId }
+  /**
+   * What this Hermes reports for the account behind the chat: `session.account_usage`, then `usage.bars`, then
+   * `insights.get`. `unreported` means each of those calls is missing. Any other refusal is the refusal itself.
+   */
+  | { readonly do: 'accountUsage'; readonly sessionId: SessionId }
   /** The files and folders in this chat's working folder that `word` (an `@` and what follows it) starts. */
   | { readonly do: 'completePath'; readonly sessionId: SessionId; readonly word: string }
   /**
@@ -223,6 +230,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'passwordManagers' | 'usePasswordManager' | 'unlockPasswordManager' | 'lockPasswordManager' } ? BotManagers
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
+  : C extends { do: 'accountUsage' } ? AccountReport
   : C extends { do: 'completePath' } ? readonly PathMatch[]
   : C extends { do: 'checkpoints' } ? Checkpoints
   : C extends { do: 'checkpointDiff' } ? CheckpointDiff
