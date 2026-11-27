@@ -7,7 +7,7 @@ const KEYED = SHORTCUTS.filter(({ mod }) => mod !== 'alt').map(({ id }) => `key:
 describe('settingsViewOf with no search', () => {
   it.each([
     ['connection', 'Connection', 'The Hermes this app talks to, and how it reaches it.', ['connection']],
-    ['appearance', 'Appearance', 'How Highwing looks and what its sidebar shows.', ['theme', 'sidebar']],
+    ['appearance', 'Appearance', 'How Highwing looks and what its sidebar shows.', ['theme', 'accent', 'sidebar']],
     ['composer', 'Composer', 'How the message box sends and checks what you write.', ['send-key', 'spell-check']],
     ['window', 'Window', 'What closing Highwing’s window does.', ['on-close']],
     ['notifications', 'Notifications', 'Which desktop notifications Highwing shows.', ['notice-asks', 'notice-replies', 'notice-jobs']],
@@ -60,6 +60,7 @@ describe('settingsViewOf with a search', () => {
 
   it.each([
     ['dark mode', ['theme']],
+    ['plum tint', ['accent']],
     ['find chat', ['key:find']],
     ['change address', ['connection']],
     ['gateway address', ['connection']],
