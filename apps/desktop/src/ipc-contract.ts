@@ -5,6 +5,7 @@ import {
   type BotActivities, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
   type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
+import type { Intro } from './intro'
 
 /** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
 export interface Live { readonly target: Target; readonly epoch: number }
@@ -103,12 +104,14 @@ export type SnoozeCommand = { readonly do: 'snooze'; readonly sessionId: Session
 const isTime = (raw: unknown): raw is number => Number.isSafeInteger(raw) && (raw as number) > 0
 export const isSnoozes = (raw: unknown): raw is Snoozes => isObject(raw) && Object.entries(raw).every(([id, until]) => id.trim() !== '' && isTime(until))
 
-export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SnoozeCommand | OnCloseCommand
+export type IntroCommand = { readonly do: 'examples' } | { readonly do: 'done' }
+
+export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SnoozeCommand | OnCloseCommand | IntroCommand
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' | 'refreshBots' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
 
-/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `snoozes` and `onClose`, which belong to the window. */
+/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `snoozes`, `onClose` and `intro`, which belong to the window. */
 export interface AppTopics {
   readonly setup: Setup
   readonly link: Link
@@ -131,10 +134,11 @@ export interface AppTopics {
   readonly theme: Theme
   readonly snoozes: Snoozes
   readonly onClose: OnClose
+  readonly intro: Intro
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, preview: true, mode: true, theme: true, snoozes: true, onClose: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, preview: true, mode: true, theme: true, snoozes: true, onClose: true, intro: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -636,6 +640,8 @@ export const validators: Validators = {
     const rect = rectOf(raw.rect)
     return rect && { do: 'placePreview', rect }
   },
+  examples: () => ({ do: 'examples' }),
+  done: () => ({ do: 'done' }),
   setMode: raw => (isMode(raw.mode) ? { do: 'setMode', mode: raw.mode } : null),
   setTheme: raw => (isTheme(raw.theme) ? { do: 'setTheme', theme: raw.theme } : null),
   setOnClose: raw => (isOnClose(raw.onClose) ? { do: 'setOnClose', onClose: raw.onClose } : null),

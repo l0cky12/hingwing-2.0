@@ -13,12 +13,15 @@ import { StatusStack } from '../composer/StatusStack'
 import { ThinkingPill } from '../composer/ThinkingPill'
 import { folderFieldLabel, thinkingShown } from '../composer/tuning'
 import { YoloPill } from '../composer/YoloPill'
+import { exampleCommand, examplesFor, OFF } from '../../intro'
 import { run, useTopic } from '../store'
+import { ExampleRequests } from '../setup/Intro'
 import { FileCallContext, fileCallFor, FilesHereContext, NO_FILE_CALL } from './FilePath'
 import type { HelperControls } from './Helpers'
 import { ImageSessionContext } from './Image'
 import { forget, landAt, landed, pressFor } from './landing'
 import { marked, pressedOf, unmarked } from './marks'
+import { refusalOnPane, type PaneRefusal } from './refusal'
 import { distanceFrom, FOLLOW_WITHIN, FOLLOWING, jumpWords, placeAfter, progressOf, type Place } from './place'
 import type { RequestAnswer } from './Asks'
 import { Sides } from './Sides'
@@ -198,7 +201,11 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   if (marks.listed !== listed) dispatchMark({ kind: 'listed', listed })
   const pressed = useMemo(() => pressedOf(marks), [marks])
   const mark = useCallback((row: QueuedRow, action: QueuedAction | null) => dispatchMark(action === null ? { kind: 'refused', row } : { kind: 'pressed', row, action }), [])
-  const [refused, setRefused] = useState<{ readonly id: SessionId | null; readonly message: string } | null>(null)
+  const [refused, setRefused] = useState<PaneRefusal | null>(null)
+  const visibleRefusal = refusalOnPane(refused, id)
+  useEffect(() => {
+    if (visibleRefusal !== null && visibleRefusal !== refused) setRefused(visibleRefusal)
+  }, [visibleRefusal, refused])
   const [rewriting, setRewriting] = useState(false)
   const [branching, setBranching] = useState(false)
   const branchKeys = useRef(new Map<number, BranchId>())
@@ -258,7 +265,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     const outcome = await run({ do: 'react', sessionId: id, turn, emoji })
     if (!outcome.ok) setRefused({ id, message: outcome.refusal.message })
   }, [id])
-  const onSend = useCallback(async (text: string, attachments: readonly AttachmentId[]): Promise<CommandOutcome<string | null>> => {
+  const deliver = useCallback(async (text: string, attachments: readonly AttachmentId[]): Promise<CommandOutcome<string | null>> => {
     setRefused(null)
     if (chat.sessionId === null) return run({ do: 'start', chat, text, attachments })
     if (editing === null) return run({ do: 'send', sessionId: chat.sessionId, text, attachments })
@@ -279,6 +286,21 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     setEditing(current => (current?.press === press ? null : current))
     return { ok: true, value: null }
   }, [chat, editing, rewrite, listed, mark])
+  const featured = bots?.state === 'listed' ? { at: 'listed' as const, id: bots.roster.featured?.id ?? null } : { at: 'pending' as const }
+  const requests = examplesFor(useTopic('intro') ?? OFF, chat, featured)
+  const onSend = useCallback(async (text: string, attachments: readonly AttachmentId[]): Promise<CommandOutcome<string | null>> => {
+    const offered = requests.length > 0
+    const outcome = await deliver(text, attachments)
+    if (outcome.ok && offered) void run({ do: 'done' })
+    return outcome
+  }, [deliver, requests])
+  const onExample = useCallback(async (text: string): Promise<CommandOutcome<string | null>> => {
+    setRefused(null)
+    const outcome = await run(exampleCommand(chat, text))
+    if (!outcome.ok) setRefused({ id: chat.sessionId, message: outcome.refusal.message })
+    if (outcome.ok && requests.length > 0) void run({ do: 'done' })
+    return outcome
+  }, [chat, requests])
   const queue = useMemo((): QueueControls => ({ canAct: live, pressed, onAct: onQueued }), [live, pressed, onQueued])
   const [stopping, setStopping] = useState<ReadonlySet<HelperId>>(new Set())
   const onStopHelper = useCallback(async (helperId: HelperId) => {
@@ -368,7 +390,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         planFor={planFor}
         editing={editing}
         onCancelEdit={() => setEditing(null)}
-        above={id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} returnFocus={returnFocus} />}
+        above={<>{id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} returnFocus={returnFocus} />}<ExampleRequests requests={requests} onSend={onExample} /></>}
         onEscape={onEscape}
         onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}
@@ -408,7 +430,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
             {fill !== null && <ContextMeter key={id} fill={fill} stale={!live} onBreakdown={() => run({ do: 'contextBreakdown', sessionId: id })} />}
           </div>
         )}
-        {refused !== null && refused.id === id && <p className="err refusal">{refused.message}</p>}
+        {visibleRefusal !== null && <p className="err refusal">{visibleRefusal.message}</p>}
       </Composer>
     </>
   )

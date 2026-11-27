@@ -189,6 +189,7 @@ Named states live in the `STATES` table in the helper. Add a state there, not a 
 | `setup-checking` | the connection card shows the step a check is at (`role=status`, name "Checking") |
 | `setup-failed` | the connection card shows a failure (`role=alert`) |
 | `setup-saved` | the first run's saved screen's "Open chat" button is shown |
+| `intro` | the first-run intro is shown (`role=region`, name "Intro") |
 | `settings` | the Settings page's heading is shown |
 | `live` | the composer's Send button is enabled, so the chat is attached and the link is online |
 | `tool-running` | a single step whose title starts with "Running" carries the live end (`[data-end="live"]`) |

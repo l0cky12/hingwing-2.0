@@ -101,6 +101,37 @@ describe.each(CASES)('the $preference.file preference', ({ preference, values, u
   })
 })
 
+it('keeps a commit on disk and in what it shows, and leaves both alone when the write fails', async () => {
+  const dir = emptyDir()
+  const store = await preferenceStore(dir, MODE)
+  const heard: string[] = []
+  store.subscribe(value => heard.push(value))
+  const writing = store.commit('chats')
+  expect(store.get()).toBe('bots')
+  expect(heard).toEqual([])
+  await writing
+  expect(store.get()).toBe('chats')
+  expect(heard).toEqual(['chats'])
+  expect(JSON.parse(readFileSync(join(dir, 'mode.json'), 'utf8'))).toEqual({ version: 1, mode: 'chats' })
+  store.set('bots')
+  expect(store.get()).toBe('bots')
+  expect(heard).toEqual(['chats', 'bots'])
+  await store.settled()
+  expect(JSON.parse(readFileSync(join(dir, 'mode.json'), 'utf8'))).toEqual({ version: 1, mode: 'bots' })
+
+  const missing = join(emptyDir(), 'gone')
+  const broken = await preferenceStore(missing, MODE)
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+  await expect(broken.commit('chats')).rejects.toThrow()
+  expect(logged).not.toHaveBeenCalled()
+  logged.mockRestore()
+  expect(broken.get()).toBe('bots')
+  mkdirSync(missing)
+  broken.set('chats')
+  await broken.settled()
+  expect(JSON.parse(readFileSync(join(missing, 'mode.json'), 'utf8'))).toEqual({ version: 1, mode: 'chats' })
+})
+
 it('keeps mode.json as earlier builds wrote it', async () => {
   const dir = emptyDir()
   writeFileSync(join(dir, 'mode.json'), '{"version":1,"mode":"chats"}\n')
