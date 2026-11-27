@@ -452,13 +452,29 @@ button.reaction:hover:not(:disabled) { border-color: var(--signal); }
 @keyframes blink { 50% { opacity: 0; } }
 @keyframes working-dot { 0%, 70%, 100% { opacity: .35; } 35% { opacity: 1; } }
 
-.composer { position: relative; min-width: 0; padding: 14px 0 18px; border-top: 1px solid var(--rule); background: var(--paper); }
-.composer > form { --line: 21.75px; --box-chrome: 22px; --box-one: calc(var(--line) + var(--box-chrome)); display: flex; align-items: flex-end; gap: 10px; max-width: 760px; margin: 0 auto; padding: 0 28px 0 calc(28px + var(--col)); }
-.composer textarea { flex: 1; resize: none; field-sizing: content; min-height: var(--box-one); max-height: min(calc(8 * var(--line) + var(--box-chrome)), 40vh); overflow-y: auto; padding: 10px 12px; font: 15px/var(--line) var(--sans); color: var(--ink); background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; }
+.composer { position: relative; min-width: 0; padding: 8px 0 16px; background: var(--paper); }
+.composer > .box { --line: 21.75px; --box-chrome: 8px; position: relative; display: flex; flex-direction: column; gap: 4px; margin: 0 calc(max(0px, (100% - 760px) / 2) + 28px) 0 calc(max(0px, (100% - 760px) / 2) + 28px + var(--col)); padding: 10px 10px 8px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 18px; }
+/* The card's top sits at most 40vh of text box plus about 120px of chrome, a wrapped toolbar row included, above the window's bottom, so a popover opening above it gets the rest. */
+.composer > .box { --pop-room: calc(60vh - 160px); }
+.composer > .box:has(textarea:focus) { border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
+.composer > .box > form { display: flex; }
+.composer textarea { flex: 1; min-width: 0; resize: none; field-sizing: content; min-height: calc(var(--line) + var(--box-chrome)); max-height: min(calc(8 * var(--line) + var(--box-chrome)), 40vh); overflow-y: auto; padding: 4px 8px; font: 15px/var(--line) var(--sans); color: var(--ink); background: transparent; border: 0; }
 textarea::placeholder { color: var(--graphite); }
 textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
-.composer > form button { height: var(--box-one); padding: 0 20px; border: 0; border-radius: 8px; background: var(--ink); color: var(--sheet); font-weight: 500; }
-.composer > form button.stop { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.composer textarea:focus { box-shadow: none; }
+.composer .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; font: 14px/1.4 var(--sans); color: var(--graphite); }
+.tools .end { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; }
+.tools .go { display: flex; flex: none; gap: 4px; padding-left: 4px; }
+.tools :where(.clip, .readout, .pill, .meter) { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; border: 0; border-radius: 8px; background: transparent; font: inherit; color: var(--graphite); white-space: nowrap; }
+.tools :where(.clip, .readout, .pill, .meter):is(:hover:not(:disabled), [aria-expanded="true"]) { color: var(--ink); background: var(--paper); }
+.tools :is(.readout, .knob, .model .anchor) { min-width: 0; max-width: 100%; }
+.tools .value { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tools .clip { flex: none; justify-content: center; width: 28px; padding: 0; }
+.tools button:disabled { cursor: default; opacity: .45; }
+.tools :is(.send, .stop) { flex: none; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 50%; background: transparent; }
+.tools .send { border: 1.5px solid var(--rule); color: var(--graphite); }
+.tools .send.ready { border-color: var(--ink); background: var(--ink); color: var(--sheet); }
+.tools .stop { border: 1.5px solid var(--ink); color: var(--ink); }
 .editing { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; max-width: 760px; margin: 0 auto 8px; padding: 0 28px 0 calc(28px + var(--col)); font: 500 13px/1.4 var(--sans); color: var(--graphite); }
 .editing button, .approval .tell { padding: 0; border: 0; background: none; color: var(--signal); font: inherit; text-decoration: underline; }
 .approval .tell { display: block; margin-top: 12px; font-size: 13.5px; }
@@ -560,11 +576,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .look-reset { display: block; margin-inline: auto; padding: 2px 4px; border: 0; background: none; color: var(--signal); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
 .composer :is(.refusal, .busy) { max-width: 760px; margin: 8px auto 0; padding: 0 28px 0 calc(28px + var(--col)); }
 .composer .busy { font-size: 13px; color: var(--graphite); }
-.composer form button.clip { flex: none; display: grid; place-items: center; width: var(--box-one); padding: 0; background: transparent; color: var(--graphite); box-shadow: inset 0 0 0 1px var(--rule); }
-.composer form button.clip:hover:not(:disabled) { color: var(--ink); box-shadow: inset 0 0 0 1px var(--graphite); }
-.composer form button.clip:disabled { opacity: .45; }
-.composer.dragging { border-top-color: var(--signal); }
-.composer.dragging textarea { border-style: dashed; border-color: var(--signal); }
+.composer.dragging > .box { border-style: dashed; border-color: var(--signal); }
 .chips, .attach-refused, .drop-line { max-width: 760px; margin: 0 auto 10px; padding: 0 28px 0 calc(28px + var(--col)); box-sizing: border-box; }
 .chips { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; list-style: none; }
 .attach-refused { list-style: none; font-size: 13px; line-height: 1.45; }
@@ -644,14 +656,11 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .stack-said:empty { margin: 0; }
 .stack-said.err { color: var(--brick); }
 
-.under { display: flex; align-items: baseline; gap: 6px 14px; max-width: 760px; margin: 8px auto 0; padding: 0 28px 0 calc(28px + var(--col)); font: 13px/1.4 var(--sans); color: var(--graphite); }
-.foot { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; min-width: 0; }
 .model, .yolo { display: contents; }
-.foot .later, .foot .err, .foot .confirm { order: 2; }
-.foot .pill { order: 1; padding: 2px 0; border: 0; background: transparent; font: inherit; color: var(--graphite); }
-.foot .pill:hover { color: var(--ink); }
-.foot .pill[aria-pressed="true"] { color: var(--signal); font-weight: 500; }
-.foot .approvals { order: 1; padding: 2px 0; color: var(--graphite); }
+:is(.model, .yolo) > :is(.later, .err, .confirm) { order: 2; flex-basis: 100%; }
+:is(.model, .yolo) > :is(.later, .err) { padding: 0 8px; }
+.tools .pill[aria-pressed="true"] { color: var(--signal); font-weight: 500; }
+.tools .approvals { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; }
 .confirm-dialog { width: min(360px, calc(100vw - 32px)); padding: 20px 22px; border: 1px solid var(--rule); border-radius: 10px; background: var(--sheet); color: var(--ink); font: 14px/1.45 var(--sans); }
 .confirm-dialog::backdrop { background: rgb(var(--shade) / .35); }
 .confirm-dialog h2 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
@@ -660,12 +669,10 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .confirm-dialog .actions { display: flex; justify-content: flex-end; gap: 8px; }
 .confirm-dialog .actions button { padding: 5px 14px; border: 0; border-radius: 6px; background: transparent; box-shadow: inset 0 0 0 1px var(--ink); }
 .confirm-dialog .actions button.primary { background: var(--ink); color: var(--sheet); box-shadow: none; }
-:is(.model, .knob) .readout { display: inline-flex; align-items: center; gap: 9px; padding: 2px 0; border: 0; background: transparent; font: inherit; color: var(--graphite); cursor: pointer; }
-:is(.model, .knob) .readout:is(:hover, [aria-expanded="true"]) { color: var(--ink); }
 .model .readout.none { color: var(--caution); }
-:is(.model, .knob) .readout .chev { width: 6px; height: 6px; margin-bottom: 3px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); }
-:is(.model, .knob) .readout[aria-expanded="true"] .chev { transform: rotate(-135deg); margin: 3px 0 0; }
-.model .list { position: absolute; left: calc(max(0px, (100% - 760px) / 2) + 16px + var(--col)); bottom: calc(100% + 8px); z-index: 5; min-width: 260px; max-height: 360px; overflow-y: auto; padding: 8px 0; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 8px 24px rgb(var(--shade) / .14); color: var(--ink); }
+.tools .readout .chev { width: 5px; height: 5px; margin: 0 0 2px 1px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); }
+.tools .readout[aria-expanded="true"] .chev { transform: rotate(-135deg); margin: 2px 0 0 1px; }
+.model .list { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 5; min-width: 260px; max-height: min(360px, var(--pop-room)); overflow-y: auto; padding: 8px 0; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 8px 24px rgb(var(--shade) / .14); color: var(--ink); }
 .model .search { position: sticky; top: -8px; z-index: 1; margin: -8px 0 4px; padding: 8px 10px 6px; background: var(--sheet); border-bottom: 1px solid var(--rule); }
 .model .search input { box-sizing: border-box; width: 100%; padding: 5px 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper); font: inherit; font-size: 14px; color: var(--ink); }
 .model .search input:focus-visible { outline: 2px solid var(--ink); outline-offset: -1px; }
@@ -682,15 +689,12 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 :is(.model, .status-stack) .confirm p { margin: 0; flex: 1 1 30ch; color: var(--caution); }
 :is(.model, .status-stack) .confirm button { padding: 4px 12px; border: 0; border-radius: 6px; background: transparent; font: inherit; color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); cursor: pointer; }
 :is(.model, .status-stack) .confirm button.primary { background: var(--ink); color: var(--sheet); box-shadow: none; }
-.model .err, .yolo .err { flex-basis: 100%; margin: 0; }
-.knob { position: relative; }
-.knob .readout:disabled { cursor: default; opacity: .6; }
-.knob .path { font: 12.5px var(--mono); overflow-wrap: anywhere; }
-.knob .pop { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 5; min-width: 200px; padding: 8px 0; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 8px 24px rgb(var(--shade) / .14); color: var(--ink); }
+.model .err, .yolo .err { margin: 0; }
+.knob .pop { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 5; min-width: 200px; max-height: var(--pop-room); overflow-y: auto; padding: 8px 0; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 8px 24px rgb(var(--shade) / .14); color: var(--ink); }
 .knob [role="radiogroup"] + .switches { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--rule); }
 .knob .pop p { margin: 8px 14px 2px; color: var(--graphite); }
 .knob .pop p.err { color: var(--brick); }
-.knob .folder { width: min(360px, calc(100vw - 32px)); padding: 12px 14px; }
+.knob .folder { right: auto; left: 0; box-sizing: border-box; width: min(360px, 100%); padding: 12px 14px; }
 .knob .folder form { display: flex; flex-wrap: wrap; gap: 6px 8px; }
 .knob .folder label { flex-basis: 100%; font-size: 13px; color: var(--graphite); }
 .knob .folder input { flex: 1; min-width: 0; padding: 5px 8px; font: 13px var(--mono); color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; }
@@ -699,14 +703,14 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .knob .folder p { margin: 8px 0 0; }
 
 .used { margin: 2px 0 0 var(--col); color: var(--graphite); font-size: 13px; }
-.context { flex: none; margin-left: auto; }
-.context .meter { display: inline-flex; align-items: center; gap: 8px; padding: 2px 0; border: 0; background: transparent; font: inherit; color: var(--graphite); white-space: nowrap; cursor: pointer; }
-.context .meter:hover, .context .meter[aria-expanded="true"] { color: var(--ink); }
-.context .gauge { display: inline-block; width: 56px; height: 6px; border-radius: 3px; background: var(--rule); overflow: hidden; }
-.context .gauge span { display: block; height: 100%; background: currentColor; }
+.context { flex: none; }
+.context .ring { flex: none; }
+.context .ring circle { fill: none; stroke-width: 2; }
+.context .ring .track { stroke: var(--rule); }
+.context .ring .arc { stroke: currentColor; }
 .context .meter.near, .context .meter.near:hover { color: var(--caution); }
 .context .meter.stale { opacity: .6; }
-.context .split { position: absolute; right: calc(max(0px, (100% - 760px) / 2) + 28px); bottom: calc(100% + 8px); z-index: 5; box-sizing: border-box; width: min(320px, calc(100% - 32px)); padding: 12px 14px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 8px 24px rgb(var(--shade) / .14); color: var(--ink); }
+.context .split { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 5; max-height: var(--pop-room); overflow-y: auto; box-sizing: border-box; width: min(320px, calc(100vw - 32px)); padding: 12px 14px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 8px 24px rgb(var(--shade) / .14); color: var(--ink); }
 .context .split h3 { margin: 0; font-size: 14px; font-weight: 700; }
 .context .split p { margin: 2px 0 0; color: var(--graphite); }
 .context .split p.err { color: var(--brick); }
@@ -840,9 +844,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .bar { flex-wrap: wrap; gap: 8px; padding: 10px 16px; }
   .banner { padding: 9px 16px; }
   #transcript { padding-left: 16px; padding-right: 16px; }
-  .composer > form, .composer :is(.refusal, .busy), .under, .slash-anchor, .slash-output, .editing, .chips, .attach-refused, .drop-line, .sides, .status-stack, .stack-said { padding: 0 16px 0 calc(16px + var(--col)); }
-  .context .split { right: 16px; }
-  .model .list { left: calc(4px + var(--col)); }
+  .composer :is(.refusal, .busy), .slash-anchor, .slash-output, .editing, .chips, .attach-refused, .drop-line, .sides, .status-stack, .stack-said { padding: 0 16px 0 calc(16px + var(--col)); }
+  .composer > .box { margin: 0 16px 0 calc(16px + var(--col)); }
   .setup { padding: 36px 16px 40px; }
   textarea { min-width: 0; }
 }
@@ -913,16 +916,23 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .diff .del { padding-left: 0; border-left: var(--line-edge) dotted CanvasText; }
 
   .step.open > .record:not(.bare), .prose pre, .approval pre { border: 1px solid CanvasText; }
+  .composer { border-top: 1px solid CanvasText; }
+  .composer > .box { border-color: CanvasText; }
   .composer button { border: 1px solid ButtonText; }
+  .tools .send.ready { background: ButtonText; color: ButtonFace; }
   .chip, .sent .file, .chip .mark, .sent .mark { border: 1px solid CanvasText; }
-  .composer.dragging, .composer.dragging textarea { border-color: Highlight; }
+  .composer.dragging > .box { border-color: Highlight; }
   .drop-line { color: Highlight; }
   .editing button, .approval .tell, .remove-choices button, .form-choices button { border: 1px solid ButtonText; }
   .remove, .bot-form { border: 2px solid CanvasText; }
   .bot-form :is(input, select, textarea):focus { outline: 2px solid Highlight; outline-offset: 2px; }
   textarea:focus { outline: 2px solid Highlight; outline-offset: 2px; }
-  .context .gauge, .context .stack .free { box-sizing: border-box; background: Canvas; border: 1px solid CanvasText; }
-  .context .gauge span, .context .stack .part { background: CanvasText; }
+  .composer textarea:focus { outline: none; }
+  .composer > .box:has(textarea:focus) { outline: 2px solid Highlight; outline-offset: 2px; }
+  .context .stack .free { box-sizing: border-box; background: Canvas; border: 1px solid CanvasText; }
+  .context .stack .part { background: CanvasText; }
+  .context .ring .track { stroke: GrayText; }
+  .context .ring .arc { stroke: CanvasText; }
 }
 
 .window { display: grid; grid-template-columns: 288px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; }

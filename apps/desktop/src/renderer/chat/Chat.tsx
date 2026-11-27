@@ -373,36 +373,38 @@ export function Chat({ chat }: { readonly chat: Shown }) {
             onKill={processId => run({ do: 'killProcess', sessionId: id, processId })} onControl={action => run({ do: 'control', sessionId: id, action })}
           />
         )}
-      >
-        {id !== null && (model.show !== 'hidden' || tuning !== null || cwd !== null || yolo !== null || fill !== null) && (
-          <div className="under">
-            <div className="foot">
-              {model.show !== 'hidden' && (
-                <ModelPicker
-                  key={id} view={model} onOpen={() => void refreshModels()}
-                  onPick={(pick, confirm) => run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) })}
-                />
-              )}
-              {tuning !== null && (
-                <ThinkingPill key={`thinking-${id}`} tuning={tuning} disabled={!live} running={!idle} onTune={change => run({ do: 'tune', sessionId: id, ...change })} />
-              )}
-              {cwd !== null && (
-                <FolderChip
-                  key={`folder-${id}`} cwd={cwd} field={folderFieldLabel(target)} disabled={!live} running={!idle}
-                  onMove={to => run({ do: 'move', sessionId: id, cwd: to })}
-                />
-              )}
-              {yolo !== null && (
-                <YoloPill
-                  key={`yolo-${id}`} on={yolo} approvals={session?.tuning.approvals ?? null}
-                  onSet={on => run({ do: 'tune', sessionId: id, set: 'yolo', on })}
-                  onApprovals={to => run({ do: 'tune', sessionId: id, set: 'approvals', to })}
-                />
-              )}
-            </div>
-            {fill !== null && <ContextMeter key={id} fill={fill} stale={!live} onBreakdown={() => run({ do: 'contextBreakdown', sessionId: id })} />}
-          </div>
+        start={id !== null && (
+          <>
+            {yolo !== null && (
+              <YoloPill
+                key={`yolo-${id}`} on={yolo} approvals={session?.tuning.approvals ?? null}
+                onSet={on => run({ do: 'tune', sessionId: id, set: 'yolo', on })}
+                onApprovals={to => run({ do: 'tune', sessionId: id, set: 'approvals', to })}
+              />
+            )}
+            {cwd !== null && (
+              <FolderChip
+                key={`folder-${id}`} cwd={cwd} field={folderFieldLabel(target)} disabled={!live} running={!idle}
+                onMove={to => run({ do: 'move', sessionId: id, cwd: to })}
+              />
+            )}
+          </>
         )}
+        end={id !== null && (
+          <>
+            {model.show !== 'hidden' && (
+              <ModelPicker
+                key={`model-${id}`} view={model} onOpen={() => void refreshModels()}
+                onPick={(pick, confirm) => run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) })}
+              />
+            )}
+            {tuning !== null && (
+              <ThinkingPill key={`thinking-${id}`} tuning={tuning} disabled={!live} running={!idle} onTune={change => run({ do: 'tune', sessionId: id, ...change })} />
+            )}
+            {fill !== null && <ContextMeter key={`context-${id}`} fill={fill} stale={!live} onBreakdown={() => run({ do: 'contextBreakdown', sessionId: id })} />}
+          </>
+        )}
+      >
         {refused !== null && refused.id === id && <p className="err refusal">{refused.message}</p>}
       </Composer>
     </>

@@ -27,8 +27,8 @@ const CONFIRM = {
 } as const
 
 const MODE_WORDS: { readonly [M in Exclude<ApprovalMode, 'off'>]: { readonly label: string; readonly title: string } } = {
-  smart: { label: 'Smart approvals', title: 'Hermes runs the commands it judges safe and asks you before risky ones.' },
-  manual: { label: 'Manual approvals', title: 'Hermes asks you before every command it flags as risky.' }
+  smart: { label: 'Smart', title: 'Hermes runs the commands it judges safe and asks you before risky ones.' },
+  manual: { label: 'Manual', title: 'Hermes asks you before every command it flags as risky.' }
 }
 
 export function YoloPill({ on, approvals, onSet, onApprovals }: YoloPillProps) {
@@ -71,7 +71,12 @@ export function YoloPill({ on, approvals, onSet, onApprovals }: YoloPillProps) {
 
   return (
     <div className="yolo">
-      {mode !== null && <span className="approvals" title={mode.title}>{mode.label}</span>}
+      {mode !== null && (
+        <span className="approvals" title={mode.title}>
+          <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14"><path d="M8 2 3 4v3.6c0 3 2.1 5.4 5 6.4 2.9-1 5-3.4 5-6.4V4z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>
+          {mode.label}<span className="sr"> approvals</span>
+        </span>
+      )}
       {!(asking.at === 'refused' && asking.unsupported) && (
         <button type="button" className="pill" aria-pressed={yolo} disabled={asking.at === 'sending'} onClick={press}>
           {yolo ? 'YOLO on' : 'YOLO'}
