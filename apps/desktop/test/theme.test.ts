@@ -84,10 +84,10 @@ const contrast = (a: string, b: string) => {
 }
 
 const TEXT = ['ink', 'graphite', 'signal', 'caution', 'brick', 'moss']
-const SURFACES = ['paper', 'sheet', 'code-bg', 'signal-soft', 'caution-soft', 'add', 'del']
+const SURFACES = ['rail', 'paper', 'sheet', 'surface-user', 'code-bg', 'signal-soft', 'caution-soft', 'add', 'del']
 const AVATARS = ['avatar-slate', 'avatar-plum', 'avatar-olive', 'avatar-mauve', 'avatar-umber']
 const PAIRS = [...TEXT.flatMap(text => SURFACES.map(surface => [text, surface, 4.5] as const)), ...AVATARS.map(avatar => ['sheet', avatar, 4.5] as const)]
-const EDGES = ['paper', 'sheet'].map(surface => ['edge', surface, 3] as const)
+const EDGES = ['rail', 'paper', 'sheet'].map(surface => ['edge', surface, 3] as const)
 
 const SCHEMES: readonly [string, Scheme][] = [
   ['light', { dark: false, more: false }],
@@ -110,11 +110,30 @@ describe('the palettes in app.css', () => {
   it.each(SCHEMES)('keeps text at 4.5:1 and edges at 3:1 in %s', (_name, scheme) => {
     const palette = paletteOf(scheme)
     const colorOf = (name: string) => palette.get(`--${name}`) ?? ''
-    const short = [...PAIRS, ...EDGES].flatMap(([fore, back, least]) => {
+    const rules = scheme.more ? ['rail', 'paper', 'sheet'].map(surface => ['rule', surface, 3] as const) : []
+    const short = [...PAIRS, ...EDGES, ...rules].flatMap(([fore, back, least]) => {
       const ratio = contrast(colorOf(fore), colorOf(back))
       return ratio >= least ? [] : [`${fore} on ${back}: ${ratio.toFixed(2)}, under ${least}`]
     })
     expect(short).toEqual([])
+  })
+})
+
+const LITERALS: readonly (readonly [string, (property: string, value: string) => boolean])[] = [
+  ['colour', (_property, value) => /#[0-9a-f]{3,8}\b|\b(rgb|hsl)a?\(|\b(white|black)\b/i.test(value)],
+  ['shade', (_property, value) => value.includes('var(--shade)')],
+  ['radius', (property, value) => property.endsWith('radius') && /\d(px|%)/.test(value)],
+  ['type size', (property, value) => (property === 'font' || property === 'font-size') && /(^|\s)[\d.]+px/.test(value)],
+  ['duration', (property, value) => /^(transition|animation)/.test(property) && /(^|[\s,])(?!0s\b)[\d.]+m?s\b/.test(value)]
+]
+
+describe('the component rules in app.css', () => {
+  it('take every colour, radius, type size, shadow and duration from a token on :root', () => {
+    const components = rulesNestedOnlyInAtRules(CSS).filter(rule => rule.selector !== ':root' && rule.selector !== '@font-face')
+    expect(components.length).toBeGreaterThan(500)
+    const literal = components.flatMap(({ selector, declarations }) => [...declarations].flatMap(([property, value]) =>
+      LITERALS.filter(([, matches]) => matches(property, value)).map(([kind]) => `${kind} in ${selector} { ${property}: ${value} }`)))
+    expect(literal).toEqual([])
   })
 })
 

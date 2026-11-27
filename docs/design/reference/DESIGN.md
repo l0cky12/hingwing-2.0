@@ -7,27 +7,22 @@
 - The decision these screens serve: how tool calls appear (A status mark, B tool rows, C grouped).
 
 ## Concept: the errand thread
-A turn reads like a dispatch: the person's request on top, the agent's reply set in a reading serif below.
+A turn reads like a dispatch: the person's request on top, the agent's reply below.
 One thin vertical thread runs down the left of each turn. It encodes a real sequence (the steps the agent took).
 The live end of the thread is the status mark. That tip is the one bold element on screen.
 - A: the thread carries only its tip. No step nodes.
 - B: every step is a node on the thread with an expandable record.
 - C: runs of steps collapse into one node that names the work ("Edited notes.md").
 
-## Color (light, cool paper; one signal)
-- paper   #E8EBE4  page ground, pale lichen grey
-- sheet   #F6F7F3  raised surfaces (composer, open records)
-- ink     #1F2A26  text, deep green-black
-- graphite #5F6B66 secondary text, thread line
-- signal  #0F6A5B  live state and the thread tip, deep viridian
-- caution #9A5B00  approval needed
-- diff add #D6E7D2, diff del #F1D9D3
+## Color and type
 
-## Type
-- Literata (serif) for the agent's prose. 16.5px, line-height 1.62, measure about 66ch.
-- Schibsted Grotesk (sans) for the person's words, UI chrome, step titles, buttons.
-- JetBrains Mono only for literal code, commands, paths and diffs. Never for labels or numbers.
-- Scale: 12.5 / 14 / 16.5 / 20.
+Superseded by #205. The colors, type sizes, spacing, radii, shadows and durations are now the named tokens on `:root` in `apps/desktop/src/renderer/styles/app.css`. That file is the source of truth, and this section no longer lists values.
+
+- Dark first: a near-black sidebar (`--rail`), a slightly lighter chat ground (`--paper`), raised surfaces one step lighter (`--sheet`) and quiet one-pixel dividers (`--rule`). The light theme has the same roles.
+- One accent (`--signal`) for live state and the thread tip, and one warning color (`--caution`) for approvals.
+- Schibsted Grotesk is the one text family, for prose and for UI. JetBrains Mono is only for literal code, commands, paths and diffs.
+- Type scale: `--text-2xs` to `--text-3xl`, 11 / 12 / 13 / 14 / 15 / 16 / 20 / 22 px. Body UI is 14, prose 15.
+- Radii: small marks 2 and 4, controls 8, menus 12, cards and dialogs 16, pills fully round.
 
 ## Layout
 ```
@@ -36,7 +31,7 @@ The live end of the thread is the status mark. That tip is the one bold element 
 +--------------------------------------------------------------+
 |   Your request, in sans, with a short ink rule on its left      |
 |                                                              |
-|   |  Agent prose in Literata, left aligned, ~66ch              |
+|   |  Agent prose, left aligned, ~66ch                          |
 |   o  Edited notes.md                              +1 -1        |
 |   |  More prose                                              |
 |   *  Running ls -la   <- the tip, viridian, pulses            |
@@ -47,7 +42,7 @@ The live end of the thread is the status mark. That tip is the one bold element 
 Left aligned throughout. No chat bubbles, no cards around steps when closed.
 
 ## Review against the generic defaults
-- Was: near-black ground with one bright blue accent (default 2). Now: cool light paper, viridian signal.
+- Was: near-black ground with one bright blue accent (default 2). Now: a dark-first rail, paper and sheet with one teal signal, and the same roles in light.
 - Was: rounded identical cards for every tool row (default 4). Now: closed steps are thread nodes with no box; only an open record gets a sheet.
 - Was: ALL-CAPS section labels and middle-dot meta strings (default 5). Now: sentence-case labels, meta set as separate quiet text.
 - Was: mono for durations and badges (default 5). Now: tabular sans numerals.
