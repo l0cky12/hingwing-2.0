@@ -48,7 +48,7 @@ beforeEach(() => {
 })
 
 describe('an open group chat', () => {
-  it("draws the request, then each member's reply with its avatar and name over Literata prose, as one thread with Sam thinking at its end", () => {
+  it("draws the request, then each member's reply with its avatar and name over its prose, as one thread with Sam thinking at its end", () => {
     const html = pane()
     expect(html).toMatch(/<article class="turn group-turn">(<p class="when">[^<]*<\/p>)?<p class="request">Can we ship the login fix on Thursday\?<\/p><div class="thread">/)
     const replies = Array.from(html.matchAll(/<div class="said-by" role="group" aria-label="(\w+)"><p class="relay-from"><span class="avatar[^"]*"[^>]*>(\w)<\/span><span>(\w+)<\/span><\/p><div class="prose">/g), ([, label, letter, name]) => `${label} ${letter} ${name}`)
@@ -67,7 +67,7 @@ describe('an open group chat', () => {
     expect(attr(box, 'placeholder')).toBe('Message the group, or type @ to ask specific bots')
     expect(attr(box, 'aria-label')).toBe('Message Launch plan')
     expect(html).toContain(`<p class="busy" id="${attr(box, 'aria-describedby')}">Sam is still answering. If you send now, Sam’s reply won’t be posted.</p>`)
-    expect(html).toMatch(/<button type="button" class="stop">Stop<\/button><button type="submit" title="Send \(Enter\)">Send<\/button>/)
+    expect(html).toMatch(/<button type="button" class="stop" aria-label="Stop">.*?<\/button><button type="submit"[^>]*aria-label="Send"/)
     expect(html, 'a group takes no attachments, so it offers no paperclip').not.toContain('class="clip"')
   })
 

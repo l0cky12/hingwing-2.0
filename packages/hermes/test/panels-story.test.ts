@@ -10,7 +10,8 @@ const pushes = fixture.steps.filter(step => 'push' in step).length
 const calls = fixture.steps.flatMap(step => ('await' in step ? [step] : []))
 const paramsOf = (method: string) => calls.filter(step => step.await === method).map(step => step.params as Record<string, unknown>)
 const replyOf = (method: string) => calls.find(step => step.await === method)?.reply as Record<string, unknown>
-const comparable = (session: Session | typeof want) => ignoringClocks({ ...session, tuning: { ...session.tuning, reasoning: null, busy: null }, sync: null })
+// The fold applies the restore's re-read before its rewind receipt, so it never sees the cut the client records.
+const comparable = (session: Session | typeof want) => ignoringClocks({ ...session, tuning: { ...session.tuning, reasoning: null, busy: null }, sync: null, rewound: {} })
 const SESSION = { session_id: fixture.header.sessionId }
 
 interface Played { readonly seen: readonly Moment[]; readonly outcomes: readonly (readonly [string, CommandOutcome<unknown>])[] }
@@ -65,6 +66,7 @@ describe('the panels story, played through the real client', () => {
   it('ends in the session the direct fold gives', async () => {
     const { seen } = await played()
     expect(comparable(seen.at(-1)!.session)).toEqual(comparable(want))
+    expect(seen.at(-1)!.session.rewound, 'the turn the restore took back sends what sat after it to the turn before').toEqual({ 'run:2': 'run:1' })
   })
 
   it('makes each call as Hermes recorded it, from the commands', async () => {

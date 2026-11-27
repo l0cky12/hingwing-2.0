@@ -1,8 +1,8 @@
 # Switch YOLO
 
-Beside the model readout under the message box, a quiet pill says whether Hermes runs this chat's commands without asking. It reads "YOLO" when off and "YOLO on" in the signal color when on, and it is a toggle button (`aria-pressed`). Turning it on opens a small confirmation every time, and nothing reaches Hermes until "Turn on". Turning it off needs none. The switch changes only the open chat. A chat with an approval card already open keeps the card. The pill is not shown while the link is down, or when Hermes never says the chat's state.
+In the composer's toolbar, left of the folder readout, a quiet pill says whether Hermes runs this chat's commands without asking. It reads "YOLO" when off and "YOLO on" in the signal color when on, and it is a toggle button (`aria-pressed`). Turning it on opens a small confirmation every time, and nothing reaches Hermes until "Turn on". Turning it off needs none. The switch changes only the open chat. A chat with an approval card already open keeps the card. The pill is not shown while the link is down, or when Hermes never says the chat's state.
 
-Before the pill, while YOLO is off, a quiet readout names the bot's approval mode: "Smart approvals" or "Manual approvals". Hermes starts a bot on Smart: it runs the commands its judge finds safe and asks about risky ones. A bot whose mode is `off` runs every chat without asking, so the pill reads "YOLO on" there even though Hermes says the chat's own flag is off. Pressing it asks "Turn off YOLO for this bot?", and "Use Smart" moves the whole bot to Smart. It turns the chat's own YOLO off as well only when that was on too.
+Before the pill, a quiet menu button with a shield names the bot's approval mode: "Manual", "Smart" or "Off". Its text content, which `see` matches, and its accessible name read "Manual approvals", "Smart approvals" or "Approvals Off". It shows whenever Hermes says the mode, YOLO on or off. It opens a menu named "Approvals" above it, of three `menuitemradio` items, "Manual", "Smart" and "Off", the current one checked, each described by one line on what it does. Manual or Smart is sent at once. Off first asks "Turn off approvals for this bot?", and nothing reaches Hermes until "Turn off". The button reads the new mode only once Hermes answers with it, and a reply that names no mode leaves it as it was. Hermes starts a bot on Smart: it runs the commands its judge finds safe and asks about risky ones. A bot whose mode is `off` runs every chat without asking, so the pill reads "YOLO on" there even though Hermes says the chat's own flag is off. Pressing it asks "Turn off YOLO for this bot?", and "Use Smart" moves the whole bot to Smart. It turns the chat's own YOLO off as well only when that was on too.
 
 ## Sub-features
 
@@ -17,11 +17,12 @@ Before the pill, while YOLO is off, a quiet readout names the bot's approval mod
 - `approvals-smart` reads "Smart approvals" with YOLO off, and still shows the card for the risky command after the safe one ran.
 - `approvals-bot-off` starts in YOLO for a bot on `off`, asks, then moves the bot to Smart and turns YOLO off.
 - `approvals-bot-cancel` closes that question with Cancel or Escape and sends nothing.
-- `approvals-manual` reads "Manual approvals", and hides the readout while YOLO is on.
+- `approvals-manual` reads "Manual approvals", and keeps it shown while YOLO is on.
+- `approvals-pick` moves the bot to Manual from the menu, keeps it there when the Off question is cancelled or closed with Escape, then turns approvals off.
 
 ## How to get to it (user POV)
 
-- Open a chat. The pill sits to the right of the model readout. When Hermes lists no models the pill stands alone at the left edge. Press it.
+- Open a chat. The pill sits in the composer's toolbar, after the paperclip and the approval readout. Press it.
 
 ## Driving it with highwing-verify
 
@@ -41,12 +42,13 @@ Preconditions:
 - **Smart by default.** Run `$H run --fixture fixtures/errand.jsonl --yolo off --approvals smart --run approvals-smart wait live see "Smart approvals" pressed button YOLO false type "Message Hermes" @request click button Send wait approval see "Ran" shot smart-asks-risky click button "Run once" wait settled called config.set '{}' 0 quiet`. The `ls` ran with no card, and the `rm -rf` waits on one.
 - **A bot on off.** Run `$H run --fixture fixtures/errand.jsonl --yolo off --approvals off --run approvals-bot-off wait live pressed button "YOLO on" true absent "Smart approvals" click button "YOLO on" count dialog "Turn off YOLO for this bot?" 1 focused button Cancel click button "Use Smart" pressed button YOLO false see "Smart approvals" count dialog "Turn off YOLO for this bot?" 0 called config.set '{"key":"approval_mode","value":"smart"}' 1 called config.set '{}' 1 shot bot-smart quiet`. The chat's own flag was already off, so no `yolo` set is sent.
 - **Keep the bot on off.** Run `$H run --fixture fixtures/errand.jsonl --yolo off --approvals off --run approvals-bot-cancel wait live click button "YOLO on" click button Cancel click button "YOLO on" press Escape count dialog "Turn off YOLO for this bot?" 0 pressed button "YOLO on" true called config.set '{}' 0 quiet`.
-- **Manual.** Run `$H run --fixture fixtures/errand.jsonl --yolo off --approvals manual --run approvals-manual wait live see "Manual approvals" pressed button YOLO false click button YOLO click button "Turn on" pressed button "YOLO on" true absent "Manual approvals" called config.set '{"key":"yolo","value":"on"}' 1 quiet`.
+- **Manual.** Run `$H run --fixture fixtures/errand.jsonl --yolo off --approvals manual --run approvals-manual wait live see "Manual approvals" pressed button YOLO false click button YOLO click button "Turn on" pressed button "YOLO on" true see "Manual approvals" called config.set '{"key":"yolo","value":"on"}' 1 quiet`.
+- **Pick a mode.** Run `$H run --fixture fixtures/errand.jsonl --yolo off --approvals smart --run approvals-pick wait live pressed button YOLO false shot smart click button "Smart approvals" shot menu click menuitemradio Manual see "Manual approvals" click button "Manual approvals" click menuitemradio Off count dialog "Turn off approvals for this bot?" 1 focused button Cancel shot confirm-off click button Cancel count dialog "Turn off approvals for this bot?" 0 see "Manual approvals" click button "Manual approvals" click menuitemradio Off press Escape count dialog "Turn off approvals for this bot?" 0 see "Manual approvals" click button "Manual approvals" click menuitemradio Off click button "Turn off" see "Approvals off" pressed button "YOLO on" true called config.set '{"key":"approval_mode","value":"manual"}' 1 called config.set '{"key":"approval_mode","value":"off"}' 1 called config.set '{}' 2 shot off quiet`. Two `config.set` calls in all prove that Cancel and Escape sent nothing.
 - **Not supported.** Run `$H run --fixture fixtures/errand.jsonl --run yolo-unsupported wait live count button YOLO 0 absent "YOLO" quiet`. The rest of the errand and its C shots are unchanged.
 
 ## Gotchas
 
 - The pill follows Hermes. It turns on only after Hermes answers the call, or after a `session.info` that says so. Pressing "Turn on" shows the button disabled until then.
-- "Use Smart" writes the bot's `approvals.mode`, so every chat of that bot changes. Another chat shows it the next time it goes live, since the mode is read then and Hermes sends no session.info for the write.
+- "Use Smart" and the approvals menu write the bot's `approvals.mode`, so every chat of that bot changes. Another chat shows it the next time it goes live, since the mode is read then and Hermes sends no session.info for the write.
 - Highwing never sends a `scope`. Hermes treats a missing one as this chat only, and "global" would flip the whole profile.
 - `called` counts what reached the scripted gateway, from `gateway-calls.jsonl`. It works only in `--fixture` runs.

@@ -4,14 +4,18 @@
  * header seeds, and the chats an untitled create makes. Each rule cites the Hermes 0.23.3 source it
  * copies.
  */
+import { createHash } from 'node:crypto'
 import { PICTURE_MAX_BYTES, pictureTypeOf } from '../domain/bots'
 import type { SessionEvent } from '../domain/reduce'
 import { APPROVAL_MODES, type ApprovalMode } from '../domain/session'
 import { GATEWAY_PROTOCOL, type Clock, type Reach } from '../wire/link'
 import { parseEvent } from '../wire/parse'
 import { MASKED, type ChatSeed, type Fixture, type FixtureStep, type Reads } from './fixture'
+import { memoryBook, type MemoryBook } from './memory-book'
 import { checkParams } from './params'
 import { ScriptedRooms } from './rooms'
+import { ScriptedVault } from './vault'
+import { ScriptedToolServers } from './tool-servers'
 
 export interface Peer {
   write(frame: unknown): void
@@ -58,6 +62,8 @@ export const RING_FRAMES = 512
 export const ABNORMAL_CLOSE = 1006
 
 type Obj = Readonly<Record<string, unknown>>
+/** Skills Hermes never turns off, dropped from any off list it saves (agent/skill_utils.py:278). */
+const ESSENTIAL_SKILLS: ReadonlySet<string> = new Set(['hermes-agent'])
 type Params = Obj & { readonly seq: number }
 type PushStep = Extract<FixtureStep, { push: unknown }>
 
@@ -378,6 +384,26 @@ const STORY_CHECKS: Readonly<Record<string, readonly Check[]>> = {
   'message.react': [reaction, known]
 }
 const ANY_STORY_CALL: readonly Check[] = [known]
+
+/** Reads the Connect apps window makes. `connectors.connect` joins them only when the fixture has a board. */
+const CONNECTOR_READS: ReadonlySet<string> = new Set(['connectors.catalog', 'connectors.accounts', 'connectors.accounts.remove', 'connectors.operation.status'])
+
+interface HeldAccount {
+  connection_id: string
+  connector: string
+  status: string
+  label: string
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+interface ConnectorOp {
+  readonly slug: string
+  readonly url: string
+  readonly connectionId: string | null
+  polls: number
+}
 
 /** The strict session verbs that drop `profile` before their key check (gateway/session_controls.py:114-120). */
 const PROFILE_IMPLICIT: ReadonlySet<string> = new Set([
@@ -768,10 +794,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   /** gateway/session_discovery.py:8-35 */
   'commands.catalog': (gateway, _socket, params, routed) => {
     const { catalog } = gateway.fixture.header
-    if (catalog === undefined) throw new Refused('unknown_method', { code: -32601, message: 'unknown method: commands.catalog', data: { reason: 'unknown_method' } })
+    if (catalog === undefined && gateway.fixture.header.skills === undefined) throw new Refused('unknown_method', { code: -32601, message: 'unknown method: commands.catalog', data: { reason: 'unknown_method' } })
     if (!strings(['session_id', 'profile'])(params)) throw new Refused('invalid_params')
     if (params.session_id !== undefined && params.session_id !== '') gateway.authorize(params, routed)
-    return catalog
+    return gateway.withSkills(isObject(catalog) ? catalog : {}, isText(params.profile) ? params.profile : null)
   },
   /**
    * gateway/session_controls.py:505-569: a create ends in a resume of the session, and a titled one
@@ -813,6 +839,22 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     gateway.authorize(params, routed)
     return usage.breakdown
   },
+  'session.account_usage': (gateway, _socket, params, routed) => {
+    const canned = gateway.fixture.header.accountUsage
+    if (canned === undefined) throw unknownMethod('session.account_usage')
+    gateway.authorize(params, routed)
+    return canned
+  },
+  'usage.bars': gateway => {
+    const canned = gateway.fixture.header.usageBars
+    if (canned === undefined) throw unknownMethod('usage.bars')
+    return canned
+  },
+  'insights.get': gateway => {
+    const canned = gateway.fixture.header.insights
+    if (canned === undefined) throw unknownMethod('insights.get')
+    return canned
+  },
   'complete.path': (gateway, _socket, params, routed) => pathItems(gateway, params, () => gateway.authorize(params, routed)),
   /** tui_gateway/methods_profiles.py:271-290 */
   'profiles.list': (gateway, socket) => gateway.roster(socket),
@@ -829,17 +871,40 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'profiles.get_asset': (gateway, socket, params) => gateway.getAsset(socket, params),
   /** tui_gateway/methods_images.py:57-96 */
   'image.generate': (gateway, socket, params) => gateway.generate(socket, params),
+  'display.status': (gateway, _socket, _params, routed) => gateway.screenStatus(routed),
+  'display.thumbnail': (gateway, _socket, _params, routed) => gateway.screenFrame(routed),
+  'display.observe': (gateway, socket, params, routed) => gateway.observe(socket, params, routed),
+  'display.lease.acquire': (gateway, socket, params, routed) => gateway.lease(socket, params, routed, 'human'),
+  'display.lease.release': (gateway, socket, params, routed) => gateway.lease(socket, params, routed, 'agent'),
   'llm.oneshot': (gateway, socket) => gateway.oneshot(socket),
+  /** tui_gateway/methods_vault.py */
+  'vault.sources': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.sources', params, routed),
+  'vault.list': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.list', params, routed),
+  'vault.source.set': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.source.set', params, routed),
+  'vault.unlock': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.unlock', params, routed),
+  'vault.lock': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.lock', params, routed),
   /** tui_gateway/methods_session.py:1467-1495 */
   'pet.gallery': (gateway, socket) => gateway.petGallery(socket),
   /** tui_gateway/methods_session.py:1557-1563 */
   'pet.thumb': (gateway, socket, params) => gateway.petThumb(socket, params),
+  /** tui_gateway/methods_tools.py binds these to agent/learning_mutations.py. A profile key is not one of their params. */
+  'learning.frames': (gateway, socket) => gateway.learning('learning.frames', socket).frames(),
+  // A `memory:` id names a memory entry. Any other names a skill of the profile the gateway runs as (agent/learning_mutations.py:139-159).
+  'learning.detail': (gateway, socket, params) => (gateway.readsSkill(params)
+    ? gateway.skillDetail(params)
+    : gateway.learning('learning.detail', socket).detail(typeof params.id === 'string' ? params.id : '')),
+  'learning.edit': (gateway, socket, params) => gateway.learning('learning.edit', socket).edit(typeof params.id === 'string' ? params.id : '', typeof params.content === 'string' ? params.content : ''),
+  'learning.delete': (gateway, socket, params) => gateway.learning('learning.delete', socket).remove(typeof params.id === 'string' ? params.id : ''),
+  /** tui_gateway/methods_tools.py:1470-1612 */
+  ...Object.fromEntries(['list', 'status', 'add', 'test', 'remove'].map(verb => [`mcp.servers.${verb}`, ((gateway, socket, params, routed) => gateway.toolServers(socket, `mcp.servers.${verb}`, params, routed)) satisfies Handler])),
   'session.mutate': (gateway, socket, params, routed) => {
     const mutation = typeof params.operation === 'string' && Object.hasOwn(MUTATIONS, params.operation) ? MUTATIONS[params.operation] : undefined
     return mutation === undefined ? gateway.story(socket, 'session.mutate', params, routed) : mutation(gateway, params, routed)
   },
   /** gateway/session_config.py:65-73 hands the session controls to gateway/session_busy_controls.py:30-56. */
-  'config.get': (gateway, _socket, params, routed) => (params.key === 'approval_mode' ? gateway.readApprovals(params, routed, null) : gateway.control(params, routed, false)),
+  'config.get': (gateway, _socket, params, routed) => (params.key === 'approval_mode' ? gateway.readApprovals(params, routed, null)
+    : params.key === 'full' && gateway.fixture.header.deny !== undefined ? gateway.fullConfig(params, routed, gateway.fixture.header.deny)
+    : gateway.control(params, routed, false)),
   /** gateway/session_tui_config.py:187-193 */
   'config.set': (gateway, socket, params, routed) => {
     if (gateway.awaits('config.set')) return gateway.story(socket, 'config.set', params, routed)
@@ -858,17 +923,18 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   /**
    * `_delivery_params` (gateway/session_bot.py:804-827), with the id rule of tools/bot_live_delivery.py:131-134,
    * then the target: a profile that is not running refuses `runtime_unavailable` (tui_gateway/methods_bot_relay.py:122).
-   * The call answers once the target's turn ends, with the receipt `_result` builds (gateway/session_bot.py:480-512).
+   * The message runs as a turn of the target's Bot Chat (gateway/session_bot.py:954-1000, `handIn`). The call answers once
+   * that turn ends, with the receipt `_result` builds (gateway/session_bot.py:480-512).
    */
   'bot_relay.deliver': (gateway, _socket, params, routed) => {
     const { id, message } = params
     if (typeof id !== 'string' || !/^[0-9a-f]{32,64}$/.test(id) || typeof message !== 'string' || message.trim() === '') throw new Refused('invalid_params')
     const script = gateway.fixture.header.relay?.[routed] ?? { refuse: 'runtime_unavailable' }
     if ('refuse' in script) throw new Refused(script.refuse)
-    const sessionId = `bot-chat-${routed}`
+    const chat = gateway.handIn(routed, id, message, script.reply, script.delay_ms ?? 0)
     return new Later(script.delay_ms ?? 0, {
-      status: 'settled', delivery_id: id, profile_home: `/fixture/profiles/${routed}`, session_id: sessionId, message,
-      admission_id: `${sessionId}-admission-${id.slice(0, 8)}`, reply: script.reply
+      status: 'settled', delivery_id: id, profile_home: `/fixture/profiles/${routed}`, session_id: chat.id, message,
+      admission_id: `${chat.id}-admission-${id.slice(0, 8)}`, reply: script.reply
     })
   },
   'image.attach_bytes': (gateway, socket, params, routed) => {
@@ -906,6 +972,11 @@ type ChatHandler = (gateway: ScriptedGateway, socket: Socket, params: Obj, route
 
 const CHAT_HANDLERS: Readonly<Record<string, ChatHandler>> = {
   'session.stats': () => { throw unknownMethod('session.stats') },
+  'session.account_usage': gateway => {
+    const canned = gateway.fixture.header.accountUsage
+    if (canned === undefined) throw unknownMethod('session.account_usage')
+    return canned
+  },
   'session.resume': (gateway, socket, params, _routed, chat) => gateway.open(socket, chat, params),
   'session.events.since': (gateway, _socket, params, _routed, chat) => replayOf(chat, gateway.options.ringFrames, params, []).reply,
   /** gateway/session_controls.py:884-895 */
@@ -971,7 +1042,11 @@ export class ScriptedGateway {
   private approvals: ApprovalMode | null
   private readonly profiles: Obj[]
   private readonly souls: Map<string, string>
+  /** profile -> its installed skills, each turned on or off as `profiles.configure` last left it. */
+  private readonly skills: Map<string, { readonly name: string; readonly description: string; readonly body: string; enabled: boolean }[]>
+  private skillsElsewhere: Fixture['header']['skillsElsewhere']
   private readonly pictures = new Map<string, { readonly mime: string; readonly size: number; readonly data: string }>()
+  private memory: MemoryBook | null = null
   private readonly thumbsRefused = new Set<string>()
   /**
    * `<profile> <slug>` for each thumb `pet.thumb` answered with a picture. Hermes keeps it on disk under the profile it ran as
@@ -990,7 +1065,22 @@ export class ScriptedGateway {
   private readonly afterReply: (() => void)[] = []
   private readonly sockets = new Set<Socket>()
   private readonly stagedImages = new Set<string>()
+  /** Each profile's takeover lease. `viewer` is the id of the person who holds it. */
+  private readonly leases = new Map<string, { readonly holder: 'agent' | 'human'; readonly viewer: string | null; readonly epoch: number }>()
+  /** The viewer ids `display.observe` minted on each socket. Hermes keeps them per connection. */
+  private readonly viewerIds = new Map<Socket, Set<string>>()
+  private minted = 0
   private readonly rooms: ScriptedRooms | null
+  /** The scheduled jobs `cron.manage` lists, rewritten by each run. null: no `cron` in the header. */
+  private readonly jobs: Obj[] | null
+  private jobsListed = false
+  private readonly connectorCatalog: readonly { readonly slug: string; readonly name: string; readonly description: string; readonly category: string }[] | null
+  private readonly connectorAccounts: HeldAccount[] | null
+  private readonly signInUrl: string | null
+  private readonly connectorOps = new Map<string, ConnectorOp>()
+  private connectorOpSeq = 0
+  private readonly vault: ScriptedVault | null
+  private readonly mcp: ScriptedToolServers | null
   private drop: Drop
   private delivered = 0
   private seqShift = 0
@@ -1009,7 +1099,7 @@ export class ScriptedGateway {
     this.view = {
       running: false, generation: 0, revision: 0, title: '', pending: fixture.header.pending ?? [], prompts: new Map(), requests: new Map(), connection: null,
       model: modelOf(isObject(models) ? models : undefined), deferred: null, switchesCommitted: 0, branchesCommitted: 0, turnsEnded: 0, yolo: fixture.header.yolo ?? null,
-      info: fixture.header.info ?? {}, todos: fixture.header.todo_state ?? null
+      info: { ...(fixture.header.hermes === '' ? {} : { version: fixture.header.hermes }), ...(fixture.header.info ?? {}) }, todos: fixture.header.todo_state ?? null
     }
     this.epoch = fixture.steps.map(epochOf).find(isText) ?? 'fixture-epoch'
     this.done = new Promise((resolve, reject) => { this.settle = { resolve, reject } })
@@ -1017,6 +1107,7 @@ export class ScriptedGateway {
     const { profiles } = fixture.header
     this.profiles = isObject(profiles) && Array.isArray(profiles.profiles) ? profiles.profiles.filter(isObject) : []
     this.home = this.profiles.map(row => (row.is_default === true ? row.name : undefined)).find(isText) ?? 'default'
+    this.memory = fixture.header.memory === undefined ? null : memoryBook(fixture.header.memory)
     this.storyIsBotChatOf = fixture.header.homeBotChat === false ? null : this.home
     const seededChats = Object.entries(fixture.header.chats ?? {}).flatMap(([profile, seeds]) => seeds.map(seed => seeded(profile, seed)))
     for (const { name, canonical_session: named } of this.profiles) {
@@ -1030,9 +1121,16 @@ export class ScriptedGateway {
     const botChats = new Set(this.botChats.values())
     this.seeded = seededChats.filter(chat => !botChats.has(chat))
     this.souls = new Map(Object.entries(fixture.header.souls ?? {}))
+    this.skills = new Map(Object.entries(fixture.header.skills ?? {}).map(([profile, listed]) => [profile, listed.map(skill => ({ ...skill, enabled: skill.enabled !== false }))]))
+    this.skillsElsewhere = fixture.header.skillsElsewhere
     const clash = fixture.header.configureClash
     this.clash = clash === undefined ? undefined : typeof clash === 'string' ? { title: clash, left: 1 } : { title: clash.title, left: clash.times }
     const served = this.profiles.flatMap(row => (isText(row.name) ? [row.name] : []))
+    this.jobs = fixture.header.cron === undefined ? null : fixture.header.cron.jobs.map(job => ({ ...job }))
+    const board = fixture.header.connectors
+    this.connectorCatalog = board === undefined ? null : board.catalog.map(row => ({ slug: row.slug, name: row.name, description: row.description, category: row.category }))
+    this.connectorAccounts = board === undefined ? null : board.accounts.map(row => ({ ...row }))
+    this.signInUrl = board?.signInUrl ?? null
     this.rooms = fixture.header.groups === undefined ? null : new ScriptedRooms(fixture.header.groups, {
       clock: options.clock,
       profiles: served.length > 0 ? served : [this.home],
@@ -1046,6 +1144,10 @@ export class ScriptedGateway {
         throw new Refused(unexpected, { code: -32603, message: unexpected })
       }
     })
+    // tui_gateway/methods_vault.py answers every failure with 5095 and its own words.
+    this.vault = fixture.header.vault === undefined ? null : new ScriptedVault(fixture.header.vault, message => { throw new Refused(message, { code: 5095, message }) })
+    const { mcp } = fixture.header
+    this.mcp = mcp === undefined ? null : new ScriptedToolServers(mcp, (code, message) => { throw new Refused(message, { code, message }) })
   }
 
   get latest(): number {
@@ -1092,6 +1194,100 @@ export class ScriptedGateway {
   }
 
   /**
+   * The Connect apps board. The first status read stays initiated. The second settles and writes the account,
+   * so a window can show the wait and then the new standing.
+   */
+  private connectors(method: string, params: Obj): unknown {
+    const catalog = this.connectorCatalog
+    const accounts = this.connectorAccounts
+    const url = this.signInUrl
+    if (catalog === null || accounts === null || url === null) throw unknownMethod(method)
+    if (method === 'connectors.catalog') return { connectors: catalog }
+    if (method === 'connectors.accounts') {
+      const { connector } = params
+      if (connector !== undefined && connector !== null && !isText(connector)) throw new Refused('invalid_params')
+      return { accounts: connector === undefined || connector === null ? accounts : accounts.filter(row => row.connector === connector) }
+    }
+    if (method === 'connectors.accounts.remove') {
+      if (!isText(params.connection_id)) throw new Refused('invalid_params')
+      const at = accounts.findIndex(row => row.connection_id === params.connection_id)
+      if (at < 0) throw new Refused('not_found')
+      const [held] = accounts.splice(at, 1)
+      return { connection_id: held?.connection_id, connector: held?.connector, status: 'removed' }
+    }
+    if (method === 'connectors.connect') return this.startSignIn(params, accounts, catalog, url)
+    if (method === 'connectors.operation.status') return this.signInStatus(params, accounts, catalog)
+    throw unknownMethod(method)
+  }
+
+  private ownsAccount(params: Obj): void {
+    const owner = params.owner
+    if (!isObject(owner)) throw new Refused('invalid_params')
+    if (owner.type === 'account') return
+    if (owner.type === 'session' && owner.session_id === this.sessionId) return
+    throw new Refused('invalid_params')
+  }
+
+  private startSignIn(params: Obj, accounts: HeldAccount[], catalog: readonly { readonly slug: string }[], url: string): unknown {
+    this.ownsAccount(params)
+    const listed = params.connectors
+    if (!Array.isArray(listed) || listed.length !== 1 || !isText(listed[0]) || !catalog.some(row => row.slug === listed[0])) throw new Refused('invalid_params')
+    if (params.reconnect !== undefined && typeof params.reconnect !== 'boolean') throw new Refused('invalid_params')
+    const slug = listed[0]
+    const reconnect = params.reconnect === true
+    const named = params.connection_id
+    if (!reconnect && named !== undefined) throw new Refused('invalid_params')
+    let connectionId: string | null = null
+    if (reconnect) {
+      if (named !== undefined && !isText(named)) throw new Refused('invalid_params')
+      const held = accounts.find(row => row.connector === slug && (named === undefined || row.connection_id === named))
+      if (held === undefined) throw new Refused('invalid_params')
+      connectionId = held.connection_id
+    }
+    const seq = ++this.connectorOpSeq
+    const opId = `op-${seq}`
+    this.connectorOps.set(opId, { slug, url, connectionId, polls: 0 })
+    return this.signInReply(opId, seq, false, slug, url, connectionId)
+  }
+
+  private signInStatus(params: Obj, accounts: HeldAccount[], catalog: readonly { readonly slug: string; readonly name: string }[]): unknown {
+    this.ownsAccount(params)
+    if (!isText(params.op_id)) throw new Refused('invalid_params')
+    const op = this.connectorOps.get(params.op_id)
+    if (op === undefined) throw new Refused('not_found')
+    op.polls += 1
+    const settled = op.polls >= 2
+    if (settled) this.upsertAccount(accounts, catalog, op)
+    return this.signInReply(params.op_id, this.connectorOpSeq, settled, op.slug, op.url, op.connectionId)
+  }
+
+  private signInReply(opId: string, seq: number, settled: boolean, slug: string, url: string, connectionId: string | null): unknown {
+    return {
+      op_id: opId,
+      seq,
+      deadline_at: this.options.clock.now() + 600_000,
+      settled,
+      targets: [{ name: slug, kind: 'connector', action: connectionId === null ? 'connect' : 'reconnect', state: settled ? 'connected' : 'initiated', connect_url: url }]
+    }
+  }
+
+  private upsertAccount(accounts: HeldAccount[], catalog: readonly { readonly slug: string; readonly name: string }[], op: ConnectorOp): void {
+    const id = op.connectionId ?? `conn-${op.slug}`
+    const stamp = String(this.options.clock.now())
+    const held = accounts.find(row => row.connection_id === id)
+    if (held !== undefined) {
+      held.status = 'active'
+      held.active = true
+      held.updated_at = stamp
+      return
+    }
+    accounts.push({
+      connection_id: id, connector: op.slug, status: 'active', label: catalog.find(row => row.slug === op.slug)?.name ?? op.slug,
+      active: true, created_at: stamp, updated_at: stamp
+    })
+  }
+
+  /**
    * `AuthorityConnection.dispatch` (gateway/session_controls.py:313-410): the profile the frame
    * names, then the closed key set, then the handler, then its refusal. A method nobody declares
    * is JSON-RPC's -32601.
@@ -1100,7 +1296,10 @@ export class ScriptedGateway {
     // A Hermes without the bot relay declares none of its methods, so no param check is reached.
     if (method.startsWith('bot_relay.') && this.fixture.header.relay === undefined) return { error: unknownMethod(method).wire }
     if (method === 'complete.path' && this.fixture.header.paths === undefined) return { error: unknownMethod(method).wire }
+    if (method === 'cron.manage') return this.jobs === null ? { error: unknownMethod(method).wire } : { result: this.cronList(this.jobs) }
     if (method === 'session.active_list' && this.fixture.header.activeList === false) return { error: unknownMethod(method).wire }
+    // The screen's calls reach only the legacy handlers, which a socket with no interactive grant does not.
+    if (method.startsWith('display.') && (this.fixture.header.display === undefined || socket.reach === 'profile')) return { error: unknownMethod(method).wire }
     if (method.startsWith('groups.')) return this.rooms === null ? { error: unknownMethod(method).wire } : this.group(this.rooms, method, raw)
     if (!isObject(raw)) return refusal('invalid_params')
     const { profile, ...unscoped } = raw
@@ -1112,6 +1311,16 @@ export class ScriptedGateway {
     const params = named && PROFILE_IMPLICIT.has(method) ? unscoped : raw
     const fields = checkParams(method, params)
     if (fields !== undefined && fields.length > 0) return refusal('invalid_params', { fields })
+    // No board: the four window reads are unknown, and connect stays on the story for the in-turn card's Try again.
+    if (method === 'connectors.connect' ? this.connectorAccounts !== null : CONNECTOR_READS.has(method)) {
+      if (this.connectorAccounts === null) return { error: unknownMethod(method).wire }
+      try {
+        return { result: this.connectors(method, params) }
+      } catch (error) {
+        if (error instanceof Refused) return { error: error.wire }
+        throw error
+      }
+    }
     // `llm.oneshot` only borrows a chat's model through its `session_id`, so it is never a call of that chat.
     const chat = method === 'llm.oneshot' ? undefined : this.echoChats().find(held => held.id === params.session_id && held.profile === routed)
     const handler = HANDLERS[method]
@@ -1497,6 +1706,13 @@ export class ScriptedGateway {
     return { value: this.approvals }
   }
 
+  /** `config.get` for key `full` (gateway/session_config.py:65-115), holding only the `approvals.deny` the header names for every bot. */
+  fullConfig(params: Obj, routed: string, deny: readonly string[]): unknown {
+    if (Object.keys(params).some(key => !['session_id', 'profile', 'key'].includes(key))) throw new Refused('invalid_params')
+    if (params.session_id !== undefined && params.session_id !== null) this.authorize(params, routed)
+    return { config: { approvals: { deny } } }
+  }
+
   /** `config.set` for key `approval_mode`, as `/approvals <mode>` writes it (gateway/session_tui_config.py:202-203,337-350). It sends no session.info. */
   setApprovals(params: Obj, routed: string, chat: EchoChat | null): unknown {
     if (this.approvals === null) throw this.noApprovals('config.set', chat)
@@ -1700,6 +1916,42 @@ export class ScriptedGateway {
     return admission
   }
 
+  /**
+   * A message handed to `routed` runs as a turn of its Bot Chat, made if it has none. Hermes stores the message as a
+   * user row of kind `internal_notification` (gateway/response_filters.py:203, gateway/run_turn_prepare.py:791). Its
+   * admission is listed queued, then claimed, with input id `bot:<delivery id>` (gateway/session_authority.py:680,
+   * :1229-1241, gateway/session_bot.py:980), and its `message.start` carries no text (gateway/session_automation.py:394-408).
+   * `sessions.changed` follows the row count at the turn's start and end (tui_gateway/change_watcher.py:461-478).
+   */
+  handIn(routed: string, id: string, message: string, reply: string, ms: number): EchoChat {
+    const chat = this.botChats.get(routed) ?? this.newBotChat(routed)
+    const generation = ++chat.generation
+    const turn = { authority_epoch: 1, execution_generation: generation, admission_id: `${chat.id}-admission-${generation}` }
+    const claimed = {
+      ...turn, ref: { profile_id: routed, session_id: chat.id }, sequence: generation, status: 'started', outcome: null, input_id: `bot:${id}`, text: message
+    }
+    const first = chat.nextRowId
+    const changed = () => {
+      for (const socket of this.sockets) socket.peer.write({ jsonrpc: '2.0', method: 'event', params: { type: 'sessions.changed' } })
+    }
+    chat.rows.push({ role: 'user', text: message, display_kind: 'internal_notification', timestamp: this.options.clock.now() / 1000, row_id: first })
+    chat.turning = true
+    this.say(chat, 'session.info', { pending: [{ ...claimed, status: 'queued' }], running: false, execution_generation: generation - 1, revision: chat.revision })
+    this.say(chat, 'message.start', {}, turn)
+    this.say(chat, 'session.info', { pending: [claimed], running: true, execution_generation: generation, revision: chat.revision })
+    changed()
+    this.options.clock.setTimeout(() => {
+      this.say(chat, 'message.delta', { text: reply, segment: 0, offset: 0 }, turn)
+      chat.rows.push({ role: 'assistant', text: reply, timestamp: this.options.clock.now() / 1000, row_id: first + 1 })
+      if (chat.generation === generation) chat.turning = false
+      this.say(chat, 'message.complete', {
+        text: null, outcome: 'completed', status: 'complete', persisted_turn: { row_ids: [first, first + 1], user_row_id: first, complete: true }
+      }, turn)
+      changed()
+    }, ms)
+    return chat
+  }
+
   private say(chat: EchoChat, type: string, payload: Obj, stamp: Obj = {}): void {
     const params = { ...stamp, type, session_id: chat.id, payload, replay_epoch: chat.epoch, seq: (chat.ring.at(-1)?.seq ?? 0) + 1 }
     chat.ring.push(params)
@@ -1813,11 +2065,59 @@ export class ScriptedGateway {
   describeProfile(socket: Socket, params: Obj): unknown {
     const row = this.profiles[this.profileAt(socket, 'profiles.describe', params)] as Obj
     const name = row.name as string
-    return {
+    const described = {
       name, description: typeof row.description === 'string' ? row.description : '', soul: this.souls.get(name) ?? '',
       model: { provider: isText(row.provider) ? row.provider : '', default: isText(row.model) ? row.model : '' },
-      skills: [], toolsets: [], toolsets_pinned: false, mcp_servers: []
+      skills: (this.skills.get(name) ?? []).map(({ name: skill, enabled }) => ({ name: skill, enabled })), toolsets: [], toolsets_pinned: false, mcp_servers: []
     }
+    this.playSkillsElsewhere(name)
+    return described
+  }
+
+  /** The catalog lists a profile's enabled skills only (agent/skill_commands.py:381-392), each a pair and a `skills` key. */
+  withSkills(catalog: Obj, profile: string | null): Obj {
+    const enabled = (this.skills.get(profile ?? this.home) ?? []).filter(skill => skill.enabled)
+    if (enabled.length === 0) return catalog
+    const pairs = Array.isArray(catalog.pairs) ? catalog.pairs : []
+    const skills = isObject(catalog.skills) ? catalog.skills : {}
+    return {
+      ...catalog,
+      pairs: [...pairs, ...enabled.map(skill => [`/${skill.name}`, skill.description])],
+      skills: { ...skills, ...Object.fromEntries(enabled.map(skill => [`/${skill.name}`, {}])) }
+    }
+  }
+
+  readsSkill(params: Obj): boolean {
+    return this.fixture.header.skills !== undefined && !(typeof params.id === 'string' && params.id.startsWith('memory:'))
+  }
+
+  /** Hermes refuses a key the contract lacks before the handler runs (tui_gateway/rpc_dispatch.py:24-28), and `learning.detail` takes only `id`. */
+  skillDetail(params: Obj): unknown {
+    if (this.fixture.header.skills === undefined) throw unknownMethod('learning.detail')
+    if (Object.keys(params).some(key => key !== 'id')) throw new Refused('invalid_params', { code: 4000, message: 'invalid params for learning.detail: extra inputs are not permitted' })
+    const id = typeof params.id === 'string' ? params.id : ''
+    const { describe } = this.fixture.header
+    const trimmed = (path: unknown) => (typeof path === 'string' ? path.replace(/\/+$/, '') : path)
+    const launch = this.profiles.find(row => isObject(describe) && trimmed(row.path) === trimmed(describe.profile_id))?.name
+    const skill = (this.skills.get(isText(launch) ? launch : this.home) ?? []).find(listed => listed.name === id)
+    return skill === undefined ? { ok: false, message: `skill '${id}' not found` } : { ok: true, kind: 'skill', id, label: id, content: skill.body }
+  }
+
+  /** Hermes broadcasts `skills.changed` when a skill root or the disabled set moves (tui_gateway/change_watcher.py:444-468). */
+  private skillsChanged(): void {
+    for (const socket of this.sockets) socket.peer.write({ jsonrpc: '2.0', method: 'event', params: { type: 'skills.changed', payload: {} } })
+  }
+
+  private playSkillsElsewhere(profile: string): void {
+    const elsewhere = this.skillsElsewhere
+    if (elsewhere === undefined || elsewhere.profile !== profile) return
+    this.skillsElsewhere = undefined
+    this.options.clock.setTimeout(() => {
+      const skill = this.skills.get(profile)?.find(listed => listed.name === elsewhere.name)
+      if (skill === undefined) return
+      skill.enabled = elsewhere.enabled
+      this.skillsChanged()
+    }, elsewhere.afterMs)
   }
 
   /** Each section is applied on its own, and `applied` reports each one sent (tui_gateway/methods_profiles.py:387-410). */
@@ -1832,6 +2132,14 @@ export class ScriptedGateway {
     if (typeof params.description === 'string') {
       this.patchRow(at, { description: params.description.trim() })
       applied.description = true
+    }
+    if (Array.isArray(params.disabled_skills)) {
+      const disabled = new Set(params.disabled_skills.filter(isText).map(name => name.toLowerCase()).filter(name => !ESSENTIAL_SKILLS.has(name)))
+      const skills = this.skills.get(this.profiles[at]?.name as string) ?? []
+      const moved = skills.filter(skill => skill.enabled === disabled.has(skill.name.toLowerCase()))
+      for (const skill of moved) skill.enabled = !skill.enabled
+      applied.skills = true
+      if (moved.length > 0) this.skillsChanged()
     }
     return { ok: Object.values(applied).every(Boolean), applied }
   }
@@ -1915,12 +2223,89 @@ export class ScriptedGateway {
     return after(images.delay_ms, { available: true, success: true, image: '/hermes-home/cache/images/generated.png', ...(fits ? { image_data: images.picture } : {}) })
   }
 
+  private leaseOf(profile: string) {
+    const held = this.leases.get(profile) ?? { holder: 'agent', viewer: null, epoch: 0 }
+    const viewer_hash = held.viewer === null ? null : createHash('sha256').update(held.viewer).digest('hex').slice(0, 12)
+    return { held, wire: { holder: held.holder, viewer_id: null, viewer_hash, since: 0, epoch: held.epoch } }
+  }
+
+  /** `display.status` (tui_gateway/methods_display.py:31-56). `profile_key` stands in for the profile's home. */
+  screenStatus(profile: string): Obj {
+    const running = this.fixture.header.display?.[profile]?.running ?? false
+    return { profile, supported: true, installed: true, missing: [], running, geometry: '1440x900', lease: this.leaseOf(profile).wire, profile_key: `/hermes-home/profiles/${profile}` }
+  }
+
+  /** `display.thumbnail` (tui_gateway/methods_display.py:60-78): no frame while the screen is off or a person has control. */
+  screenFrame(profile: string): Obj {
+    if (this.leaseOf(profile).held.holder === 'human') return { data_url: null, suppressed: 'human_has_control' }
+    const screen = this.fixture.header.display?.[profile]
+    return { data_url: screen?.running === true ? screen.thumbnail ?? null : null }
+  }
+
+  /**
+   * `display.observe` (tui_gateway/methods_display.py:122-171). An id this socket was minted is kept, and any other ask mints a new
+   * one. The ticket opens nothing here: a fixture has no screen to stream.
+   */
+  observe(socket: Socket, params: Obj, profile: string): Obj {
+    if (this.fixture.header.display?.[profile]?.running !== true) throw new Refused('not running', { code: 5300, message: "this profile's Bot Desktop is not running; call display.start first" })
+    const mine = this.viewerIds.get(socket) ?? new Set<string>()
+    this.viewerIds.set(socket, mine)
+    const asked = typeof params.viewer_id === 'string' ? params.viewer_id : ''
+    const viewer_id = mine.has(asked) ? asked : `viewer-${++this.minted}`
+    mine.add(viewer_id)
+    return { ...this.screenStatus(profile), ticket: 'fixture-display-ticket', path: '/api/display/ws', viewer_id }
+  }
+
+  /**
+   * `display.lease.acquire` and `release` (tui_gateway/methods_display.py:239-268). Only a viewer id this socket was minted may take or
+   * hand back control, or one from another socket handing back with `force`, and each change reaches every client as `display.lease`.
+   */
+  lease(socket: Socket, params: Obj, profile: string, holder: 'agent' | 'human'): Obj {
+    const viewer = typeof params.viewer_id === 'string' ? params.viewer_id : null
+    const forced = holder === 'agent' && params.force === true
+    if (viewer === null || (!forced && this.viewerIds.get(socket)?.has(viewer) !== true)) {
+      throw new Refused('viewer_mismatch', { code: 5300, message: 'viewer_id was not minted for this connection; call display.observe first', data: { code: 'viewer_mismatch' } })
+    }
+    const { held } = this.leaseOf(profile)
+    const moves = holder === 'human' ? held.holder !== 'human' || held.viewer !== viewer : held.holder === 'human' && held.viewer === viewer
+    if (moves) {
+      this.leases.set(profile, { holder, viewer: holder === 'human' ? viewer : null, epoch: held.epoch + 1 })
+      const payload = { profile_key: `/hermes-home/profiles/${profile}`, lease: this.leaseOf(profile).wire }
+      this.afterReply.push(() => {
+        for (const each of this.sockets) each.peer.write({ jsonrpc: '2.0', method: 'event', params: { type: 'display.lease', payload } })
+      })
+    }
+    return { lease: this.leaseOf(profile).wire }
+  }
+
   /** `llm.oneshot` (tui_gateway/methods_session.py:1249-1276), which a socket with no interactive grant does not reach. */
   oneshot(socket: Socket): unknown {
     const { oneshot } = this.fixture.header
     if (oneshot === undefined || socket.reach === 'profile') throw unknownMethod('llm.oneshot')
     if (oneshot.error !== undefined) throw refusedProfile(5030, `one-shot generation failed: ${oneshot.error}`)
     return after(oneshot.delay_ms, { text: oneshot.text ?? '' })
+  }
+
+  /**
+   * `learning.*` (tui_gateway/methods_tools.py) is no canonical method, so like `image.generate` only a socket with the
+   * interactive grant reaches it. The handler ignores `profile` and writes the launch home. Hermes rejects the key
+   * before the handler, which the param check of a sidecar-only method does not reproduce, so the client must omit it.
+   */
+  learning(method: string, socket: Socket): MemoryBook {
+    if (this.memory === null || socket.reach === 'profile') throw unknownMethod(method)
+    return this.memory
+  }
+
+  /** `vault.*` reaches only the legacy handlers, as `profiles.create` does, each in the profile the call names. */
+  vaultCall(socket: Socket, method: string, params: Obj, routed: string): unknown {
+    if (this.vault === null || socket.reach === 'profile') throw unknownMethod(method)
+    return this.vault.call(method, params, routed)
+  }
+
+  /** `mcp.servers.*` reach only the legacy handlers, as `profiles.create` does, each in the profile the call names. */
+  toolServers(socket: Socket, method: string, params: Obj, routed: string): unknown {
+    if (this.mcp === null || socket.reach === 'profile') throw unknownMethod(method)
+    return this.mcp.call(method, params, routed)
   }
 
   /** `pet.gallery` (tui_gateway/methods_session.py:1467-1495), which a socket with no interactive grant does not reach. */
@@ -1974,6 +2359,21 @@ export class ScriptedGateway {
     const { step } = this.drop
     this.drop = { at: 'spent' }
     this.publish(step)
+  }
+
+  /** `cron.manage` list (tui_gateway/methods_tools.py:1309). The first list starts the header's runs. */
+  private cronList(jobs: Obj[]): unknown {
+    if (!this.jobsListed) {
+      this.jobsListed = true
+      for (const { after_ms: afterMs, job_id: jobId, ...ran } of this.fixture.header.cron?.runs ?? []) {
+        this.options.clock.setTimeout(() => {
+          const job = jobs.find(row => row.job_id === jobId)
+          if (job !== undefined) Object.assign(job, { last_error: null, ...ran })
+          for (const socket of this.sockets) socket.peer.write({ jsonrpc: '2.0', method: 'event', params: { type: 'cron.changed', payload: {} } })
+        }, afterMs)
+      }
+    }
+    return { success: true, count: jobs.length, jobs: jobs.map(job => ({ ...job })) }
   }
 
   private viewers(sessionId: string = this.sessionId): Socket[] {

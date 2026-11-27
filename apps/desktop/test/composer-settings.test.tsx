@@ -1,16 +1,12 @@
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WindowCommand } from '../src/ipc-contract'
-import type { CardSetup } from '../src/renderer/setup/screens'
 
 const seen = vi.hoisted(() => ({ commands: [] as unknown[], topics: {} as Record<string, unknown> }))
 
 vi.mock('react', async original => ({
   ...(await original<typeof import('react')>()),
-  useId: () => 'id',
-  useRef: () => ({ current: null }),
-  useLayoutEffect: () => {},
-  useEffect: () => {}
+  useId: () => 'id'
 }))
 vi.mock('../src/renderer/store', () => ({
   Epoch: {},
@@ -19,10 +15,9 @@ vi.mock('../src/renderer/store', () => ({
 }))
 
 const { COMMAND_KEY } = await import('../src/renderer/keys')
-const { Settings } = await import('../src/renderer/setup/Settings')
+const { ComposerRows } = await import('../src/renderer/setup/Settings')
 
 type Props = { readonly children?: ReactNode; readonly role?: string; readonly checked?: boolean; readonly 'aria-labelledby'?: string; readonly onChange?: (event: { target: { checked: boolean } }) => void }
-const AT_REST: CardSetup = { at: 'form', live: { target: { kind: 'local' }, epoch: 1 }, notice: null }
 
 function switches(node: ReactNode, found: Props[] = []): Props[] {
   if (Array.isArray(node)) node.forEach(child => switches(child, found))
@@ -33,7 +28,7 @@ function switches(node: ReactNode, found: Props[] = []): Props[] {
   }
   return found
 }
-const settings = () => switches(Settings({ setup: AT_REST, mode: 'bots', theme: 'system', onRequestClose: () => {} }))
+const settings = () => switches(ComposerRows({ off: () => false }))
 const named = (labelledBy: string) => settings().find(control => control['aria-labelledby'] === labelledBy)!
 
 beforeEach(() => {
@@ -41,7 +36,7 @@ beforeEach(() => {
   seen.topics = {}
 })
 
-describe('the Composer section of Settings', () => {
+describe('the Composer page of Settings', () => {
   it('offers a send-key switch, off while Enter sends, and a spell-check switch, on while nothing says otherwise', () => {
     seen.topics = { sendKey: 'enter', spellCheck: undefined }
     expect(named('id-send-key').checked).toBe(false)

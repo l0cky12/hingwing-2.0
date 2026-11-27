@@ -2,6 +2,7 @@
  * The only place gateway shapes become domain shapes. Everything past these functions trusts its types.
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
+import { betterAccount, standingOf, standingOfTarget, type AppAccount, type AppSignIn, type AppsBoard } from '../domain/apps'
 import { canonicalBotId, GENERATED_MAX_BYTES, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, type BotCreated, type BotDetails, type BotFacts, type BotId, type PetChoice } from '../domain/bots'
 import type { CheckpointDiff, Checkpoints, ContextBreakdown, ModelConfirm, ModelMenu, Outcome as CommandOutcome, Restored } from '../domain/command'
 import { isGroupId, type Answering, type GroupEvent, type GroupFacts, type GroupId, type GroupMember, type GroupSupport, type MemberId } from '../domain/groups'
@@ -15,16 +16,20 @@ import type {
   HelperId, InputId, Item, Json, Loop, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, ProcessId, PromptId, Question, Reaction, RequestId, SessionControl, SessionId,
   SessionUsage, SettledTurn, SideId, SidebarRow, SideTask, StatusAbout, ToolId, ToolResult, TurnId
 } from '../domain/session'
+import type { Job, JobId } from '../domain/jobs'
 import type { PathMatch } from '../domain/path'
+import { MANAGER_NAMES, MANAGERS, type BotManagers, type ManagerName, type ManagerState } from '../domain/passwords'
 import type { RelayState } from '../domain/relay'
+import type { Lease, ScreenFacts } from '../domain/screen'
+import type { ServerState, Tested, ToolServer } from '../domain/tool-servers'
 import { OWN_COMMANDS, type SlashCatalog, type SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
 import type {
-  AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
+  AgentPrintPayload, CanonicalBotDeliverResult, CanonicalConfigGetResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
   CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
-  CommandDispatchResult, CommandsCatalogResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
-  ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, ImageGenerateResult, LoopSnapshot,
-  MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
+  CommandDispatchResult, CommandsCatalogResult, CronJobRow, CronManageResult, LearningDetailResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
+  ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, DisplayLease, DisplayLeasePayload, DisplayLeaseResult, DisplayObserveResult, DisplayStatus, DisplayThumbnailResult, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, ImageGenerateResult, LoopSnapshot,
+  McpRuntimeStatus, McpServersListResult, McpServersStatusResult, McpServersTestResult, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
   MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PetGalleryResult, PetThumbResult,
   PreviewClosePayload, PreviewOpenPayload, ProcessEntry, ProcessListResult, ProfilesConfigureResult, ProfilesCreateResult, ProfilesDescribeResult,
   ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, RequestCancelPayload, RollbackCheckpoint,
@@ -32,7 +37,7 @@ import type {
   SessionControlSnapshot, SessionLiveInfo, SessionMutateResult, SessionStats, SessionTitlePayload, SessionUsagePayload, SideAgentCompletePayload,
   StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload,
   SubagentEventPayload, SudoRequestParams, TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage,
-  VaultCodeRequestParams, VaultSaveLoginRequestParams, VaultUnlockRequestParams
+  VaultCodeRequestParams, VaultListResult, VaultSaveLoginRequestParams, VaultSourcesResult, VaultUnlockRequestParams
 } from './contract.generated'
 
 export type ParsedEvent =
@@ -51,13 +56,21 @@ export type ParsedEvent =
    * payload, not on the envelope (gateway/session_events.py:93-100), so it cannot pass a seq gate.
    */
   | { readonly scope: 'gap'; readonly sessionId: SessionId }
-  /** `sessions.changed`: the sidebar should refetch. */
-  | { readonly scope: 'app'; readonly event: 'sessions.changed' }
+  /** `sessions.changed`: the sidebar should refetch. `cron.changed`: the scheduled jobs should. */
+  | { readonly scope: 'app'; readonly event: 'sessions.changed' | 'cron.changed' }
   /**
    * `groups.changed`: these groups' logs or who is answering in them moved. `all`: the payload names no rooms, which is
    * Hermes saying anything may have moved (tui_gateway/change_watcher.py:434-441).
    */
   | { readonly scope: 'groups'; readonly rooms: readonly GroupId[] | 'all' }
+  /** `skills.changed`: a skill root or the disabled set changed, so the library and the `/` list are stale. */
+  | { readonly scope: 'skills' }
+  /**
+   * `display.status` (a profile's screen started or stopped) and `display.lease` (control changed hands), sent to every
+   * client with the profile's home as `key` (tui_gateway/methods_display.py:41-46, methods_display_watch.py:96-102).
+   * `running` null: the frame does not say.
+   */
+  | { readonly scope: 'display'; readonly key: string; readonly running: boolean | null; readonly lease: Lease }
   /**
    * A session event with no session id, or a frame with no stream position.
    * Never guessed into a session, because one socket serves many of them. Counted as `unrouted`.
@@ -505,13 +518,13 @@ export const UNSHOWN: ReadonlySet<string> = new Set([
   /** Every canonical turn publishes it (`gateway/run_turn_progress.py:1092`); not in the generated contract. */
   'agent.step',
   'agent.terminal.output', 'billing.step_up.verification', 'bot_relay.outbox.pending',
-  'browser.progress', 'cron.changed', 'display.install.done',
-  'display.install.log', 'display.lease', 'display.status', 'free_tier.challenge', 'gateway.ready',
+  'browser.progress', 'display.install.done',
+  'display.install.log', 'free_tier.challenge', 'gateway.ready',
   'message.reaction', 'notice', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
   'pet.hatch.progress', 'platforms.changed', 'preview.restart.complete',
   'preview.restart.progress', 'projects.changed', 'reaction',
   'review.summary', 'session.reclaimed', 'session.resume_progress',
-  'setup.ready', 'skills.changed', 'skin.changed', 'terminal.close', 'tip.show', 'tool.output_risk', 'voice.interrupted', 'voice.partial', 'voice.status', 'voice.transcript', 'wake.detected'
+  'setup.ready', 'skin.changed', 'terminal.close', 'tip.show', 'tool.output_risk', 'voice.interrupted', 'voice.partial', 'voice.status', 'voice.transcript', 'wake.detected'
 ])
 
 /**
@@ -576,8 +589,20 @@ function stampOf(envelope: Obj): Stamp | null {
 export function parseEvent(params: unknown): ParsedEvent {
   if (!isObject(params) || typeof params.type !== 'string' || params.type === '') return { scope: 'unrouted', type: '', why: 'not an event' }
   const { type, session_id: id, payload } = params
-  if (type === 'sessions.changed') return { scope: 'app', event: 'sessions.changed' }
+  if (type === 'sessions.changed' || type === 'cron.changed') return { scope: 'app', event: type }
+  if (type === 'skills.changed') return { scope: 'skills' }
   if (type === 'groups.changed') return { scope: 'groups', rooms: roomsMoved(payload) }
+  if (type === 'display.status') {
+    const facts = parseScreenFacts(payload)
+    return facts === null ? { scope: 'unrouted', type, why: 'unusable payload' } : { scope: 'display', ...facts }
+  }
+  if (type === 'display.lease') {
+    const moved = usable(() => {
+      const p = fields<DisplayLeasePayload>(payload)
+      return { key: p.str('profile_key'), lease: leaseOf(p.raw('lease')) }
+    })
+    return moved === null ? { scope: 'unrouted', type, why: 'unusable payload' } : { scope: 'display', running: null, ...moved }
+  }
   if (typeof id !== 'string' || id === '') return { scope: 'unrouted', type, why: 'no session id' }
   const sessionId = id as SessionId
   if (type === 'session.replay_gap') return { scope: 'gap', sessionId }
@@ -616,6 +641,46 @@ function saidIn(info: unknown): Partial<SaidTuning> {
  * own display rows, through `parseRows`. `older` is set when the first stored row carries
  * `archived_truncated` (`gateway/session_local_recovery.py:388`), which only `messages` keeps.
  */
+/** The events `parseEvent` files under `display`. */
+export const DISPLAY_EVENTS: ReadonlySet<string> = new Set(['display.status', 'display.lease'])
+
+function leaseOf(raw: unknown): Lease {
+  const p = fields<DisplayLease>(raw)
+  const holder = p.str('holder')
+  if (holder !== 'agent' && holder !== 'human') throw new Unusable()
+  return { holder, viewerHash: p.optStr('viewer_hash'), epoch: p.int('epoch') }
+}
+
+/** `display.status`'s reply and event: `DisplayStatus` (tui_gateway/methods_display.py:31-35). null when unusable. */
+export function parseScreenFacts(status: DisplayStatus | unknown): ScreenFacts | null {
+  return usable(() => {
+    const p = fields<DisplayStatus>(status)
+    const running = p.optBool('running')
+    if (running === null) throw new Unusable()
+    return { key: p.str('profile_key'), running, lease: leaseOf(p.raw('lease')) }
+  })
+}
+
+export const parseLease = (reply: DisplayLeaseResult): Lease | null => usable(() => leaseOf(fields<DisplayLeaseResult>(reply).raw('lease')))
+
+const SCREEN_FRAME = /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/
+
+/** A frame of the screen as a data URL. null while Hermes sends none: the screen is stopped, or a person has control. */
+export function parseThumbnail(reply: DisplayThumbnailResult): string | null {
+  const frame = usable(() => fields<DisplayThumbnailResult>(reply).optStr('data_url'))
+  return frame !== null && SCREEN_FRAME.test(frame) ? frame : null
+}
+
+/** `display.observe`: a ticket for one socket at `path`, and the viewer id Hermes minted for this connection. */
+export const parseObserved = (reply: DisplayObserveResult): { readonly ticket: string; readonly path: string; readonly viewerId: string } | null =>
+  usable(() => {
+    const p = fields<DisplayObserveResult>(reply)
+    const path = p.str('path')
+    // Resolved against the gateway's origin, so only a plain path may name it: `//host/` would leave that origin with the ticket.
+    if (!/^\/[\w.\-/]*$/.test(path) || path.startsWith('//')) throw new Unusable()
+    return { ticket: p.str('ticket'), path, viewerId: p.str('viewer_id') }
+  })
+
 export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
   const first = reply.messages[0]
   return {
@@ -997,6 +1062,7 @@ export function placeOfRow(page: StoredTranscriptResult, rowId: number): RowPlac
 
 interface TurnInProgress {
   readonly request: string | null
+  readonly handed: boolean
   readonly requestRow: number | null
   readonly began: Began | null
   readonly items: Item<'settled'>[]
@@ -1022,8 +1088,8 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   rows.forEach((value, index) => {
     const row = usable(() => storedRow(value, index))
     if (row === null) return
-    if (row.opensTurn) turns.push({ request: row.text, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [], reply: null })
-    if (row.items.length > 0 && turns.length === 0) turns.push({ request: null, requestRow: null, began: null, items: [], rows: [], reply: null })
+    if (row.opensTurn) turns.push({ request: row.text, handed: row.handed, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [], reply: null })
+    if (row.items.length > 0 && turns.length === 0) turns.push({ request: null, handed: false, requestRow: null, began: null, items: [], rows: [], reply: null })
     const turn = turns.at(-1)
     turn?.items.push(...row.items)
     if (row.rowId !== null) turn?.rows.push(row.rowId)
@@ -1036,7 +1102,7 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   return {
     turns: turns.flatMap((turn, index): SettledTurn[] => turn === open ? [] : [{
       id: `stored:${turn.rows[0] ?? `@${index}`}` as TurnId,
-      request: turn.request === null ? null : { text: turn.request, inputId: null, rowId: turn.requestRow, attachments: [] },
+      request: turn.request === null ? null : { text: turn.request, inputId: null, rowId: turn.requestRow, attachments: [], ...(turn.handed ? HANDED : {}) },
       began: turn.began,
       items: turn.items,
       outcome: answered(turn) ? COMPLETE : LOST,
@@ -1044,9 +1110,11 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
       tokens: null,
       reply: answered(turn) ? turn.reply : null
     }]),
-    unfinished: open === null ? null : { request: open.request, began: open.began, items: open.items, rows: open.rows }
+    unfinished: open === null ? null : { request: open.request, ...(open.handed ? HANDED : {}), began: open.began, items: open.items, rows: open.rows }
   }
 }
+
+const HANDED = { handed: true } as const
 
 function storedRow(value: unknown, index: number) {
   const row = fields<StoredTranscriptRow>(value)
@@ -1060,6 +1128,8 @@ function storedRow(value: unknown, index: number) {
   const at = seconds !== null && seconds > 0 ? Math.round(seconds * 1000) : null
   // Words steered into a turn are stored as a user row of their own, among the turn's rows (agent/prompt_builder.py:585-592).
   const steers = role === 'user' && row.optStr('display_kind') === 'steer'
+  // What Hermes put into the chat itself, such as a message handed over by `bot_relay.deliver` (gateway/response_filters.py:203).
+  const handed = role === 'user' && row.optStr('display_kind') === 'internal_notification'
   const items = ((): Item<'settled'>[] => {
     if (handoff) return [{ kind: 'notice', what: 'said', tone: 'info', text }]
     if (steers) return [{ kind: 'steer', text }]
@@ -1084,7 +1154,7 @@ function storedRow(value: unknown, index: number) {
   })()
   const metadata = row.raw('display_metadata')
   return {
-    opensTurn: role === 'user' && !steers, text, rowId, at, items,
+    opensTurn: role === 'user' && !steers, handed, text, rowId, at, items,
     answers: role === 'assistant' && text.trim() !== '',
     reactions: parseReactions(isObject(metadata) ? metadata.reactions : undefined)
   }
@@ -1148,6 +1218,26 @@ export function parseTreeRows(reply: ProjectsTreeResult): TreeRow[] | null {
   })
 }
 
+export interface StoredWords {
+  readonly rowId: number | null
+  readonly opensTurn: boolean
+  readonly said: string | null
+  readonly at: number | null
+}
+
+export function parseWords(reply: StoredTranscriptResult): { readonly rows: readonly StoredWords[]; readonly next: string | null; readonly reset: boolean } | null {
+  return usable(() => {
+    const page = fields<StoredTranscriptResult>(reply)
+    const rows = (page.optList('rows') ?? []).flatMap((value, index): StoredWords[] => {
+      const row = usable(() => storedRow(value, index))
+      if (row === null) return []
+      const said = (row.opensTurn || row.answers || row.items.some(item => item.kind === 'steer')) && row.text.trim() !== ''
+      return [{ rowId: row.rowId, opensTurn: row.opensTurn, said: said ? row.text : null, at: row.at }]
+    })
+    return { rows, next: page.optStr('next_cursor'), reset: page.optBool('reset') === true }
+  })
+}
+
 export function parseSaid(reply: StoredTranscriptResult): { readonly said: readonly Said[]; readonly next: string | null; readonly reset: boolean } | null {
   return usable(() => {
     const page = fields<StoredTranscriptResult>(reply)
@@ -1201,6 +1291,13 @@ export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
  * (tui_gateway/methods_profiles.py:524-528). `revision` is null for a Hermes whose rows carry no `ui_meta_revisions`,
  * which predates the per-key check.
  */
+/** The bot whose profile lives at `home`, as `profile_name_for_home` matches a home to a profile (hermes_constants.py:374-394). null: none does. */
+export function parseBotAt(reply: CanonicalProfilesResult, home: string): BotId | null {
+  const trimmed = (path: string) => path.replace(/\/+$/, '')
+  const row = profileRows(reply).find(held => isString(held.path) && trimmed(held.path) === trimmed(home))
+  return row === undefined ? null : row.name as BotId
+}
+
 export function parseBotRecord(reply: CanonicalProfilesResult, bot: BotId): { readonly name: string; readonly meta: Obj; readonly revision: number | null } | null {
   const row = profileRows(reply).find(held => held.name === bot)
   if (row === undefined) return null
@@ -1233,6 +1330,26 @@ export function parseConfigured(reply: ProfilesConfigureResult, sent: readonly s
   if (isObject(applied.ui_meta_conflicts) && Object.keys(applied.ui_meta_conflicts).length > 0) return { is: 'clash' }
   const sections = sent.filter(section => applied[section] !== true)
   return sections.length === 0 ? { is: 'saved' } : { is: 'unsaved', sections }
+}
+
+/** `profiles.describe` lists every installed skill of the profile, `enabled` unless it is in the profile's disabled list. */
+export const parseSkillStates = (described: ProfilesDescribeResult): readonly { readonly name: string; readonly enabled: boolean }[] =>
+  (Array.isArray(described.skills) ? described.skills : []).flatMap(row => (isObject(row) && isString(row.name) && row.name !== '' ? [{ name: row.name, enabled: row.enabled !== false }] : []))
+
+/** The SKILL.md `learning.detail` answers, or null when Hermes says it has none. */
+export const parseSkillText = (reply: LearningDetailResult): string | null => (isObject(reply) && reply.ok === true && isString(reply.content) ? reply.content : null)
+
+/** The `description:` of a SKILL.md's frontmatter as one line. A block scalar (`>` or `|`) is its indented lines joined. */
+export function descriptionOf(markdown: string): string {
+  const head = /^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown)?.[1] ?? ''
+  const lines = head.split(/\r?\n/)
+  const at = lines.findIndex(line => line.startsWith('description:'))
+  if (at < 0) return ''
+  const value = (lines[at] as string).slice('description:'.length).trim()
+  if (!/^[>|][+-]?$/.test(value)) return value.replace(/^(["'])(.*)\1$/, '$2')
+  const block = lines.slice(at + 1)
+  const end = block.findIndex(line => !/^\s/.test(line))
+  return block.slice(0, end < 0 ? block.length : end).map(line => line.trim()).join(' ').trim()
 }
 
 /** `profiles.get_asset`'s picture as the data URL Hermes builds (tui_gateway/methods_profiles.py:451-465), or null for none. */
@@ -1284,8 +1401,126 @@ export function parsePets(reply: PetGalleryResult): readonly PetChoice[] {
   return [...listed.filter(held => held.curated), ...listed.filter(held => !held.curated)].map(held => held.pet)
 }
 
+/** `approvals.deny` from `config.get full` (gateway/session_config.py `_client_config`), each glob trimmed and blanks dropped as tools/approval_floors.py reads them. */
+export function parseDenyRules(reply: CanonicalConfigGetResult): readonly string[] {
+  const approvals = isObject(reply) && isObject(reply.config) ? reply.config.approvals : null
+  const deny = isObject(approvals) && Array.isArray(approvals.deny) ? approvals.deny : []
+  return deny.flatMap(rule => (typeof rule === 'string' && rule.trim() !== '' ? [rule.trim()] : []))
+}
+
+const WEB_PAGE = /^https?:\/\//
+
+const OTHER = 'Other'
+
+const trimmed = (raw: unknown): string | null => (isString(raw) ? raw.trim() : null)
+
+/** `connectors.catalog` joined to `connectors.accounts`. An account whose connector is not in the catalog is dropped. */
+export function parseApps(catalog: unknown, accounts: unknown): AppsBoard {
+  const rows = isObject(catalog) && Array.isArray(catalog.connectors) ? catalog.connectors.filter(isObject) : []
+  const held = isObject(accounts) && Array.isArray(accounts.accounts) ? accounts.accounts.filter(isObject) : []
+  const seen = new Set<string>()
+  const apps = rows.flatMap(row => {
+    const slug = words(row.slug)
+    const name = words(row.name)
+    const description = trimmed(row.description)
+    const category = trimmed(row.category)
+    if (slug === null || name === null || description === null || category === null || seen.has(slug)) return []
+    seen.add(slug)
+    const account = held.reduce<AppAccount | null>((best, entry) => {
+      if (words(entry.connector) !== slug) return best
+      const connectionId = words(entry.connection_id)
+      const status = words(entry.status)
+      if (connectionId === null || status === null) return best
+      return betterAccount(best, { connectionId, standing: standingOf(status), label: words(entry.label) ?? name })
+    }, null)
+    return [{ slug, name, description, category: category === '' ? OTHER : category, account }]
+  })
+  return { apps }
+}
+
+/** `connectors.connect` and `connectors.operation.status`. A link that is not http(s) is dropped, as the in-turn card drops it. */
+export function parseSignIn(reply: unknown): AppSignIn {
+  const body = isObject(reply) ? reply : {}
+  const target = Array.isArray(body.targets) ? body.targets.find(isObject) : undefined
+  const rawUrl = target === undefined ? null : words(target.connect_url)
+  const state = target === undefined ? null : words(target.state)
+  const settled = body.settled === true
+  return {
+    opId: words(body.op_id) ?? '',
+    settled,
+    url: rawUrl !== null && WEB_PAGE.test(rawUrl) ? rawUrl : null,
+    standing: settled && state !== null ? standingOfTarget(state) : null
+  }
+}
+
 /** `pet.thumb`'s idle frame, a PNG data URL (tui_gateway/methods_session.py:1557-1563), or null when Hermes has none. */
 export const parsePetPicture = (reply: PetThumbResult): string | null => (isObject(reply) && reply.ok === true ? pictureDataUrlOf(reply.dataUri, PICTURE_MAX_BYTES) : null)
+
+function managerStateOf(row: Obj, logins: number | null): ManagerState {
+  if (row.installed === false) return { at: 'missing' }
+  if (row.enabled !== true) return { at: 'off' }
+  return row.unlocked === true ? { at: 'ready', logins } : { at: 'locked' }
+}
+
+export function parseBotManagers(bot: BotId, sources: VaultSourcesResult, listed: VaultListResult | null): BotManagers {
+  const rows = isObject(sources) && Array.isArray(sources.sources) ? sources.sources.filter(isObject) : []
+  const items = listed === null ? null : isObject(listed) && Array.isArray(listed.items) ? listed.items.filter(isObject) : []
+  const loginsOf = (name: ManagerName) => (items === null ? null : items.filter(item => item.backend === name).length)
+  const managers = MANAGER_NAMES.flatMap(name => {
+    const row = rows.find(held => held.name === name)
+    return row === undefined ? [] : [{ name, label: MANAGERS[name].label, state: managerStateOf(row, loginsOf(name)) }]
+  })
+  return { bot, managers }
+}
+
+/** What `mcp.servers.status` says of a server, in the words of a row. A status this table lacks reads as `idle`. */
+const SERVER_STATES: { readonly [S in McpRuntimeStatus]: ServerState } = {
+  connected: 'connected', connecting: 'connecting', failed: 'failed', disabled: 'off', lazy: 'idle', configured: 'idle'
+}
+
+/** A query or a fragment is where an address keeps a key, so only the host and path are kept. */
+function shownAddress(url: string): string {
+  const parsed = URL.parse(url)
+  return parsed === null ? url.split(/[?#]/, 1)[0] as string : `${parsed.origin}${parsed.pathname}`
+}
+
+function stateOf(live: Obj | undefined, enabled: unknown): ServerState {
+  if (live === undefined) return enabled === false ? 'off' : 'idle'
+  if (live.needs_auth === true) return 'needs-sign-in'
+  return isString(live.status) && Object.hasOwn(SERVER_STATES, live.status) ? SERVER_STATES[live.status as McpRuntimeStatus] : 'idle'
+}
+
+const serverRows = (reply: unknown): readonly Obj[] => {
+  const rows: unknown = isObject(reply) ? reply.servers : undefined
+  return Array.isArray(rows) ? rows.filter(isObject) : []
+}
+
+/**
+ * A bot's tool servers: `mcp.servers.list` names and describes them, and `mcp.servers.status` says how each runs
+ * (tui_gateway/methods_tools.py:1470-1495). Neither holds a header value (tui_gateway/mcp_rpc_helpers.py:32-54).
+ */
+export function parseToolServers(listed: McpServersListResult, status: McpServersStatusResult): readonly ToolServer[] {
+  const live = new Map(serverRows(status).flatMap(row => (isString(row.name) ? [[row.name, row] as const] : [])))
+  return serverRows(listed).flatMap(row => {
+    const name = words(row.name)
+    if (name === null) return []
+    const running = live.get(name)
+    const url = words(row.url)
+    const where = url !== null ? shownAddress(url) : [words(row.command), ...(isStrings(row.args) ? row.args : [])].filter(part => part !== null).join(' ')
+    return [{ name, where, state: stateOf(running, row.enabled), tools: running !== undefined && isCount(running.tools) ? running.tools : 0, removable: row.source !== 'plugin' }]
+  })
+}
+
+const REASON_MAX = 200
+
+/** `mcp.servers.test`'s answer (tui_gateway/methods_tools.py:1566-1590). Only a server with `auth: oauth` says `oauth_needed`, which Highwing never sets, so a server that wants a sign-in usually fails with its own words. */
+export function parseTested(reply: McpServersTestResult): Tested {
+  const said: Obj = isObject(reply) ? reply : {}
+  if (said.ok === true) return { ok: true, tools: (Array.isArray(said.tools) ? said.tools.filter(isObject) : []).flatMap(tool => words(tool.name) ?? []) }
+  if (said.oauth_needed === true) return { ok: false, why: 'sign-in' }
+  const reason = words(said.error)?.split('\n', 1)[0]?.trim()
+  return { ok: false, why: 'failed', reason: reason === undefined || reason === '' ? 'Hermes got no answer from it.' : reason.slice(0, REASON_MAX) }
+}
 
 /** A target that is not running answers with one of these, as a refusal or in a failed receipt (tui_gateway/methods_bot_relay.py:122). */
 const NOT_RUNNING: ReadonlySet<string> = new Set(['runtime_unavailable', 'runtime_offline'])
@@ -1318,6 +1553,10 @@ const titledId = (row: Obj): SessionId | null => (words(row.resolved_id) ?? word
 /** The chat a `branch` made, as the receipt names it (persistence/sqlite/authority/_mutation_publish.py:152). null: the reply names none. */
 export function parseBranched(reply: SessionMutateResult): SessionId | null {
   return (isObject(reply) ? words(reply.branched_session_id) : null) as SessionId | null
+}
+
+export function parseChatPage(reply: CanonicalListResult): { readonly chats: readonly Omit<SidebarRow, 'badge' | 'botChat'>[]; readonly next: string | null } {
+  return { chats: parseUserChats(reply.sessions), next: reply.sessions.length === 0 ? null : reply.next_cursor ?? null }
 }
 
 export function parseListPage(reply: CanonicalListResult): { readonly sessions: readonly SessionId[]; readonly next: string | null } {
@@ -1718,5 +1957,27 @@ export function parseGroupPage(reply: GroupsLogResult): { readonly events: reado
       events: events.flatMap(event => groupEventOf(event) ?? []), cursor: page.int('cursor'), more: page.optBool('has_more') === true,
       epoch: authority === null ? null : fields<{ epoch: number }>(authority).optInt('epoch')
     }
+  })
+}
+
+/**
+ * A `cron.manage` list (tools/cronjob_tools.py). A run is failed unless Hermes wrote `ok` for it: it also
+ * writes `error`, `delivery_failed` and `blocked_config` (cron/jobs.py:2456-2475). A row with no id is left out.
+ * null: the reply lists nothing, as when the tool failed and says so in `error`.
+ */
+export function parseJobs(reply: CronManageResult): readonly Job[] | null {
+  if (!isObject(reply) || !Array.isArray(reply.jobs)) return null
+  return reply.jobs.flatMap((row): Job[] => {
+    const job = usable(() => fields<CronJobRow>(row))
+    const id = words(job?.raw('job_id'))
+    if (job === null || id === null) return []
+    const status = words(job.raw('last_status'))
+    return [{
+      id: id as JobId,
+      name: words(job.raw('name')) ?? id,
+      ranAt: words(job.raw('last_run_at')),
+      failed: status !== null && status !== 'ok',
+      error: words(job.raw('last_error'))
+    }]
   })
 }

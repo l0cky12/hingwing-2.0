@@ -1,8 +1,38 @@
 import { describe, expect, it } from 'vitest'
-import { COMMAND_KEY, MAC, SEND_KEY_LABEL, sendsMessage } from '../src/renderer/keys'
+import { COMMAND_KEY, isSettingsChord, MAC, SEND_KEY_LABEL, sendsMessage } from '../src/renderer/keys'
 
-const press = (more: Partial<Record<'key' | 'shiftKey' | 'altKey' | 'ctrlKey' | 'metaKey', boolean | string>> = {}) =>
-  ({ key: 'Enter', shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, ...more }) as Parameters<typeof sendsMessage>[0]
+const chord = (over: Partial<KeyboardEvent> = {}): KeyboardEvent => ({
+  key: ',',
+  code: 'Comma',
+  repeat: false,
+  isComposing: false,
+  altKey: false,
+  shiftKey: false,
+  metaKey: false,
+  ctrlKey: true,
+  ...over
+} as KeyboardEvent)
+
+describe('Ctrl+Comma', () => {
+  it('is the Settings chord', () => {
+    expect(isSettingsChord(chord())).toBe(true)
+    expect(isSettingsChord(chord({ key: 'a', code: 'Comma' }))).toBe(true)
+  })
+
+  it.each([
+    ['Shift', { shiftKey: true }],
+    ['Alt', { altKey: true }],
+    ['a letter', { key: 'k', code: 'KeyK' }],
+    ['a key repeat', { repeat: true }],
+    ['a composition', { isComposing: true }],
+    ['no Ctrl', { ctrlKey: false }]
+  ] as const)('ignores %s', (_what, over) => {
+    expect(isSettingsChord(chord(over))).toBe(false)
+  })
+})
+
+const press = (more: Partial<Record<'key' | 'code' | 'shiftKey' | 'altKey' | 'ctrlKey' | 'metaKey', boolean | string>> = {}) =>
+  ({ key: 'Enter', code: 'Enter', shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, ...more }) as Parameters<typeof sendsMessage>[0]
 const MOD = MAC ? { metaKey: true } : { ctrlKey: true }
 const OTHER_MOD = MAC ? { ctrlKey: true } : { metaKey: true }
 

@@ -43,12 +43,18 @@ interface ComposerProps {
   readonly above?: ReactNode
   readonly onEscape?: () => boolean
   readonly stack?: ReactNode
+  /** Toolbar controls on the left, after the attach button. */
+  readonly start?: ReactNode
+  /** Toolbar controls on the right, before Stop and Send. They wrap together. */
+  readonly end?: ReactNode
+  /** What renders under the card. */
   readonly children?: ReactNode
 }
 
 const NO_CATALOG: SlashCatalog = []
 const NO_FILES = { word: null, matches: [] } as const
 const SUBMIT_ALWAYS = (): SendPlan['by'] => 'submit'
+const FORM_ID = 'composer-form'
 const HINT_ID = 'composer-busy'
 const MENU_ID = 'composer-menu'
 const optionId = (index: number) => `composer-option-${index}`
@@ -125,7 +131,7 @@ export function admitted(results: readonly StageResult[], held: readonly Attachm
 
 const draggingFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') === true
 
-export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, planFor = SUBMIT_ALWAYS, editing = null, onCancelEdit, above, onEscape, stack, children }: ComposerProps) {
+export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, planFor = SUBMIT_ALWAYS, editing = null, onCancelEdit, above, onEscape, stack, start, end, children }: ComposerProps) {
   const catalog = useTopic('slash') ?? NO_CATALOG
   const roster = useTopic('bots')
   const sendKey = useTopic('sendKey') ?? 'enter'
@@ -158,6 +164,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
   const typed = menuOf(draft, caret, sources, { active, dismissed })
   const menu = focused ? typed : { open: false as const }
   const hint = group === undefined ? busyHint(planFor(attachments), draft, catalog, editing) : group.warning
+  const blocked = !canSend || pending || staging > 0
 
   const shownActive = menu.open ? menu.active : null
   useLayoutEffect(() => {
@@ -334,10 +341,10 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
     event.preventDefault()
     void submit()
   }
-  // The model and context popovers and the remove dialog sit in this footer too, and close on their own Escape.
+  // The toolbar's popovers and the remove dialog sit in this footer too, and close on their own Escape.
   const onFooterKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
-    if (!(event.target instanceof Element) || event.target.closest('form, .sides') === null) return
+    if (!(event.target instanceof Element) || event.target.closest(`#${FORM_ID}, .sides, .clip, .stop, .send`) === null) return
     if (onEscape?.() !== true) return
     event.preventDefault()
     box.current?.focus()
@@ -376,27 +383,43 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
         </ul>
       )}
       {dragging && canAttach && <p className="drop-line" role="status">Drop to attach</p>}
-      <form onSubmit={submit}>
-        {group === undefined && (
-          <button type="button" className="clip" aria-label="Attach files" disabled={!canAttach} onClick={() => void take(window.highwing.attachPick())}>
-            <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16">
-              <path d="M10.5 4.5 5.4 9.6a1.6 1.6 0 0 0 2.3 2.3l5.4-5.4a3 3 0 0 0-4.3-4.3L3.4 7.6a4.4 4.4 0 0 0 6.2 6.2l4-4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        )}
-        <textarea
-          ref={box} autoFocus={autoFocus} rows={1} value={draft}
-          placeholder={group === undefined ? 'Ask Hermes to do something' : 'Message the group, or type @ to ask specific bots'}
-          aria-label={group === undefined ? 'Message Hermes' : `Message ${group.name}`}
-          aria-autocomplete="list" aria-controls={menu.open ? MENU_ID : undefined}
-          aria-activedescendant={menu.open ? optionId(menu.active) : undefined} aria-describedby={hint === null ? undefined : HINT_ID}
-          onChange={event => edit(event.target.value, event.target.selectionStart)} onKeyDown={onKeyDown} onPaste={onPaste}
-          onSelect={event => setCaret(event.currentTarget.selectionStart)}
-          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-        />
-        {showStop && <button type="button" className="stop" disabled={!canSend} onClick={onStop}>Stop</button>}
-        <button type="submit" title={`Send (${SEND_KEY_LABEL[sendKey]})`} disabled={!canSend || pending || staging > 0}>Send</button>
-      </form>
+      <div className="box">
+        <form id={FORM_ID} onSubmit={submit}>
+          <textarea
+            ref={box} autoFocus={autoFocus} rows={1} value={draft}
+            placeholder={group === undefined ? 'What’s next?' : 'Message the group, or type @ to ask specific bots'}
+            aria-label={group === undefined ? 'Message Hermes' : `Message ${group.name}`}
+            aria-autocomplete="list" aria-controls={menu.open ? MENU_ID : undefined}
+            aria-activedescendant={menu.open ? optionId(menu.active) : undefined} aria-describedby={hint === null ? undefined : HINT_ID}
+            onChange={event => edit(event.target.value, event.target.selectionStart)} onKeyDown={onKeyDown} onPaste={onPaste}
+            onSelect={event => setCaret(event.currentTarget.selectionStart)}
+            onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+          />
+        </form>
+        <div className="tools">
+          {group === undefined && (
+            <button type="button" className="clip" aria-label="Attach files" disabled={!canAttach} onClick={() => void take(window.highwing.attachPick())}>
+              <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16">
+                <path d="M10.5 4.5 5.4 9.6a1.6 1.6 0 0 0 2.3 2.3l5.4-5.4a3 3 0 0 0-4.3-4.3L3.4 7.6a4.4 4.4 0 0 0 6.2 6.2l4-4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
+          {start}
+          <div className="end">
+            {end}
+            <span className="go">
+              {showStop && (
+                <button type="button" className="stop" aria-label="Stop" disabled={!canSend} onClick={onStop}>
+                  <svg aria-hidden="true" viewBox="0 0 10 10" width="10" height="10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" /></svg>
+                </button>
+              )}
+              <button type="submit" form={FORM_ID} className={blocked || draft.trim() === '' ? 'send' : 'send ready'} aria-label="Send" title={`Send (${SEND_KEY_LABEL[sendKey]})`} disabled={blocked}>
+                <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              </button>
+            </span>
+          </div>
+        </div>
+      </div>
       {hint !== null && <p className="busy" id={HINT_ID}>{hint}</p>}
       {children}
       {refusal !== null && <p className="err refusal">{refusal}</p>}

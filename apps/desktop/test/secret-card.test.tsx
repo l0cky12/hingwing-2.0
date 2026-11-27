@@ -8,7 +8,7 @@ const CLOCK = { now: 1_800_000_000_000, timeZone: 'UTC' }
 
 const session = (requests: readonly HermesRequest[], sync: Session['sync'] = { state: 'live' }): Session => ({
   id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, interlude: [], requests, queue: [], outbox: [],
-  model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null, sync
+  model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null, rewound: {}, sync
 })
 
 const sudo: HermesRequest = {
@@ -22,7 +22,7 @@ function drawn(requests: readonly HermesRequest[], sync?: Session['sync']) {
   const none = () => {}
   return renderToStaticMarkup(
     <Thread
-      view={threadView(session(requests, sync), CLOCK)} relays={[]} sides={[]} onAnswer={async () => undefined} onAnswerRequest={async () => true} onLoadEarlier={none} onFindClosed={none} onFindScrolled={none}
+      view={threadView(session(requests, sync), CLOCK)} relays={[]} sides={[]} onAnswer={async () => undefined} onAskAgain={async () => false} onAnswerRequest={async () => true} onLoadEarlier={none} onFindClosed={none} onFindScrolled={none}
       canEdit={false} regenerateTurnKey={null} canRegenerate={false} canBranch={false} onEdit={none} onRegenerate={none} onBranch={none} onNewChat={none} versions={[]} onVersion={none} queue={{ canAct: false, pressed: new Map(), onAct: none }} canReact={false} onReact={none} helpers={null}
     />
   )

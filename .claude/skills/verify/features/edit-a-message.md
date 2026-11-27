@@ -16,7 +16,7 @@ The user fixes a sent message and sends it again, or asks for a different answer
 ## How to get to it (user POV)
 
 - Hover a sent message and press the pencil, "Edit message".
-- Press "Regenerate" under the last reply.
+- Hover the last reply and press "Regenerate", the circular arrow in its action row.
 
 ## Driving it with highwing-verify
 
