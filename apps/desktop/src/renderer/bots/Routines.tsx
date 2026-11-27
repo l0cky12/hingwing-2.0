@@ -42,7 +42,7 @@ export function Routines({ bot, name, revision, onList, onControl }: RoutinesPro
   const shown = listed?.bot === bot ? listed : null
   return (
     <>
-      {shown?.said == null ? null : <p className="routines-note bots-refused" role="alert">{shown.said}</p>}
+      {shown?.said == null ? null : <p className="routines-note routines-refused" role="alert">{shown.said}</p>}
       <RoutinesList
         view={routinesViewOf(shown?.outcome ?? null, name)} busy={busy}
         onToggle={row => void control(row.id, row.paused ? 'resume' : 'pause')} onDelete={setDeleting}

@@ -2292,6 +2292,28 @@ export class ScriptedGateway {
   }
 
   /**
+   * `learning.*` (tui_gateway/methods_tools.py) is no canonical method, so like `image.generate` only a socket with the
+   * interactive grant reaches it. The handler ignores `profile` and writes the launch home. Hermes rejects the key
+   * before the handler, which the param check of a sidecar-only method does not reproduce, so the client must omit it.
+   */
+  learning(method: string, socket: Socket): MemoryBook {
+    if (this.memory === null || socket.reach === 'profile') throw unknownMethod(method)
+    return this.memory
+  }
+
+  /** `vault.*` reaches only the legacy handlers, as `profiles.create` does, each in the profile the call names. */
+  vaultCall(socket: Socket, method: string, params: Obj, routed: string): unknown {
+    if (this.vault === null || socket.reach === 'profile') throw unknownMethod(method)
+    return this.vault.call(method, params, routed)
+  }
+
+  /** `mcp.servers.*` reach only the legacy handlers, as `profiles.create` does, each in the profile the call names. */
+  toolServers(socket: Socket, method: string, params: Obj, routed: string): unknown {
+    if (this.mcp === null || socket.reach === 'profile') throw unknownMethod(method)
+    return this.mcp.call(method, params, routed)
+  }
+
+  /**
    * `cron.manage` (tui_gateway/methods_tools.py:1311-1325), which a socket with no interactive grant does not reach. A list names
    * the store of the profile the frame names, and leaves paused jobs out unless asked for them. The first list starts the header's
    * runs. `pause`, `resume` and `remove` find the job by id in the store, change it as the cron tool does
