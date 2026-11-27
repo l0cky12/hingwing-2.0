@@ -529,6 +529,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .tools :is(.readout, .knob, .model .anchor) { min-width: 0; max-width: 100%; }
 .tools .value { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tools .clip { flex: none; justify-content: center; width: 28px; padding: 0; }
+.tools .clip.mic[aria-pressed="true"] { color: var(--sheet); background: var(--brick); }
 .tools button:disabled { cursor: default; opacity: .45; }
 .tools :is(.send, .stop) { flex: none; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: var(--radius-round); background: transparent; }
 .tools .send { border: 1.5px solid var(--rule); color: var(--graphite); }

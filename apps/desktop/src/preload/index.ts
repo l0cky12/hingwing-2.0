@@ -32,6 +32,7 @@ const bridge: Bridge = {
   attachPick: () => ipcRenderer.invoke(CHANNEL.attachPick),
   attachPaste: () => ipcRenderer.invoke(CHANNEL.attachPaste),
   openScreen: (epoch, request) => ipcRenderer.send(CHANNEL.screen, epoch, request),
+  transcribe: (recording, epoch) => ipcRenderer.invoke(CHANNEL.transcribe, recording, epoch),
   // getPathForFile answers '' for a File the page built itself, so a window can only name a file the user gave it.
   attachDropped: files => ipcRenderer.invoke(CHANNEL.attachDrop, files.map(file => ({ name: file.name, path: webUtils.getPathForFile(file) || null }))),
   zoom: how => webFrame.setZoomLevel(how === 'reset' ? 0 : Math.min(ZOOM_RANGE.max, Math.max(ZOOM_RANGE.min, webFrame.getZoomLevel() + (how === 'in' ? ZOOM_STEP : -ZOOM_STEP))))

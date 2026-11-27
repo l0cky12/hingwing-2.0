@@ -3,7 +3,7 @@ export type * from './session'
 export { RECOMMENDED, STANDING_WORDS, appsView, betterAccount, standingOf, standingOfTarget, type AppAccount, type AppEntry, type AppSignIn, type AppStanding, type AppsBoard, type AppsQuery, type AppsSection, type AppsView } from './apps'
 export { APPROVAL_MODES, EFFORTS, PLAIN_CONTROLS, reissues } from './session'
 export {
-  EXPORT_FORMATS, type Checkpoint, type CheckpointDiff, type Checkpoints, type Command, type ContextBreakdown, type ExportFormat, type Exported, type MemoryEntry, type ModelConfirm, type ModelMenu, type Outcome as CommandOutcome, type Refusal, type Restored, type RestoreScope,
+  EXPORT_FORMATS, type Checkpoint, type CheckpointDiff, type Checkpoints, type Command, type ContextBreakdown, type ExportFormat, type Exported, type MemoryEntry, type ModelConfirm, type ModelMenu, type Outcome as CommandOutcome, type Recording, type Refusal, type Restored, type RestoreScope,
   type ResultOf, type AccountReport
 } from './command'
 export { activityOf, turnActivityOf, type Activity, type TurnActivity } from './reduce'

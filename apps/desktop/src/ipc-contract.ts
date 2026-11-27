@@ -2,7 +2,7 @@ import {
   APPROVAL_MODES, BOT_MARKS, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
   type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
-  type BotActivities, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
+  type BotActivities, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type Recording, type RelayDesk, type RequestId, type RequestReply,
   type RestoreScope, type ResultOf, type ScreenView, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type Target, type TaskBoard, type TaskChat, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 import type { Intro } from './intro'
@@ -255,6 +255,8 @@ export interface Bridge {
   attachPaste(): Promise<readonly StageResult[]>
   /** Holds the files of a drop. The window never names a path: the bridge reads it from each `File`. */
   attachDropped(files: readonly File[]): Promise<readonly StageResult[]>
+  /** Hermes turns the recording into text, which comes back to the composer. Nothing goes to the chat. `epoch` is as for `run`. */
+  transcribe(recording: Recording, epoch: number): Promise<CommandOutcome<string>>
   /**
    * Asks main for a live view of the `screen` topic's bot. Main answers with a `MessagePort`, posted to the window as the message
    * `{ [SCREEN_PORT]: request }`, that carries `ScreenFrame`s one way and the view's input bytes, or `'close'`, the other. `epoch`
@@ -273,7 +275,7 @@ export type ScreenFrame = 'open' | ArrayBuffer | { readonly closed: number }
 export const CHANNEL = {
   watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image',
   drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft', pickPicture: 'highwing:pick-picture', choosePicture: 'highwing:choose-picture', attachPick: 'highwing:attach-pick',
-  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop', screen: 'highwing:screen', taskBoard: 'highwing:task-board', taskChat: 'highwing:task-chat'
+  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop', screen: 'highwing:screen', taskBoard: 'highwing:task-board', taskChat: 'highwing:task-chat', transcribe: 'highwing:transcribe'
 } as const
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
@@ -783,6 +785,16 @@ export function parseDraft(raw: unknown): Draft | null {
   const held = raw.attachments === undefined ? [] : Array.isArray(raw.attachments) && raw.attachments.length <= MAX_ATTACHMENTS ? raw.attachments.map(attachmentOf) : null
   if (held === null || held.includes(null)) return null
   return key && { key, bot: botIdOf(raw.bot), text: raw.text, attachments: held as Attachment[] }
+}
+
+/** Hermes's upload cap (hermes_cli/web_routers/audio.py:52), so a longer recording is refused here, not after the trip. */
+export const RECORDING_MAX_BYTES = 25 * 1024 * 1024
+const MIME = /^audio\/[\w.+-]+(?:;[\w=.+,\s-]*)?$/
+
+export function parseRecording(raw: unknown): Recording | null {
+  if (!isObject(raw) || typeof raw.mime !== 'string' || raw.mime.length > 100 || !MIME.test(raw.mime)) return null
+  const { audio } = raw
+  return audio instanceof Uint8Array && audio.byteLength > 0 && audio.byteLength <= RECORDING_MAX_BYTES ? { mime: raw.mime, audio } : null
 }
 
 export const isEmptyDraft = (draft: Pick<Draft, 'text' | 'attachments'>) => draft.text === '' && draft.attachments.length === 0

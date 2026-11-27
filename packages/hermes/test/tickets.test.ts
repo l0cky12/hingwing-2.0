@@ -1,9 +1,11 @@
+import { createServer, type IncomingHttpHeaders } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { describe, expect, it } from 'vitest'
 import { DialError, liveRoute } from '../src/hub'
 import type { ScenarioName } from '../src/testing/fake-host'
 import { ASK_NATIVE_HTTP, ATTACH, PROBE, SERVE, type HermesArgs, type SshRun } from '../src/wire/ssh'
-import { mintWith, readWith, type MintOptions, type RunHermes } from '../src/wire/tickets'
-import { errandGateway, host, listen } from './support/host'
+import { mintWith, readWith, transcribeWith, type MintOptions, type RunHermes } from '../src/wire/tickets'
+import { closing, errandGateway, host, listen } from './support/host'
 
 const failureOf = (dial: Promise<unknown>) => dial.then(
   () => { throw new Error('the dial went through') },
@@ -195,5 +197,66 @@ describe('readWith', () => {
   it('rejects when the request does, and keeps the ticket out of the error', async () => {
     const far = reading(HTTP_TICKET, () => { throw new Error('connect ECONNREFUSED') })
     await expect(far.read('/a')).rejects.not.toThrow(/once/)
+  })
+})
+
+describe('transcribeWith', () => {
+  const RECORDING = { mime: 'audio/webm;codecs=opus', audio: new Uint8Array([1, 2, 3]) }
+  const NATIVE = out(`${JSON.stringify({ type: 'hello', protocol: 1, endpoint: { api_origin: 'http://127.0.0.1:4100', instance_id: 'i-1' } })}\n${JSON.stringify({ id: 1, ok: true, ticket: 'speech' })}\n`)
+
+  /** A gateway's HTTP listener that answers every upload with `status` and `body`, and keeps what each request carried. */
+  const listener = async (status: number, body: unknown) => {
+    const asked: { readonly headers: IncomingHttpHeaders; readonly body: unknown }[] = []
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = []
+      request.on('data', (chunk: Buffer) => chunks.push(chunk))
+      request.on('end', () => {
+        asked.push({ headers: request.headers, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) })
+        response.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
+      })
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    closing(server, held => held.close())
+    return { asked, origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}` }
+  }
+
+  const transcriber = (serve: SshRun, origin: string) => {
+    const ran: (string | undefined)[] = []
+    const reached: string[] = []
+    const transcribe = transcribeWith(async (args, { input }) => (ran.push(`${args.join(' ')} <- ${input?.trim()}`), serve), async from => (reached.push(from), origin))
+    return { transcribe, ran, reached }
+  }
+
+  it("posts the recording with a fresh native-http ticket to the origin the hello named, and answers Hermes's text", async () => {
+    const gateway = await listener(200, { ok: true, transcript: ' book a table for two ', provider: 'local' })
+    const { transcribe, ran, reached } = transcriber(NATIVE, gateway.origin)
+    expect(await transcribe(RECORDING)).toEqual({ ok: true, value: 'book a table for two' })
+    expect(ran).toEqual([`${SERVE_RAN} <- {"id":1,"purpose":"native-http"}`])
+    expect(reached).toEqual(['http://127.0.0.1:4100'])
+    const [{ headers, body }] = gateway.asked as [(typeof gateway.asked)[number]]
+    expect(headers['x-hermes-gateway-ticket']).toBe('speech')
+    expect(headers.origin, 'the gate refuses a ticket that comes with an Origin').toBeUndefined()
+    expect(body).toEqual({ data_url: 'data:audio/webm;codecs=opus;base64,AQID', mime_type: 'audio/webm;codecs=opus' })
+  })
+
+  it("passes on Hermes's own words when it cannot transcribe", async () => {
+    const gateway = await listener(400, { detail: 'No STT provider available' })
+    expect(await transcriber(NATIVE, gateway.origin).transcribe(RECORDING)).toEqual({
+      ok: false, refusal: { kind: 'rejected', message: "Hermes couldn't turn that into text. No STT provider available." }
+    })
+  })
+
+  it.each([
+    ['a Hermes that mints no native-http ticket', served({ id: 1, ok: false, error: { code: 'unsupported_purpose' } }), 'unsupported'],
+    ['no gateway running', out('{"type": "error", "error": {"code": "absent"}}\n', 5), 'offline'],
+    ['a machine that cannot be reached', { ok: false, why: 'unreachable' } as SshRun, 'offline']
+  ] as const)('refuses in plain words for %s, and posts nothing', async (_, serve, kind) => {
+    const { transcribe, reached } = transcriber(serve, 'http://127.0.0.1:1')
+    expect(await transcribe(RECORDING)).toMatchObject({ ok: false, refusal: { kind } })
+    expect(reached).toEqual([])
+  })
+
+  it('answers that Hermes could not be reached when the post fails', async () => {
+    expect(await transcriber(NATIVE, 'http://127.0.0.1:1').transcribe(RECORDING)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
   })
 })

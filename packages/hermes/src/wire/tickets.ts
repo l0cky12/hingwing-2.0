@@ -6,7 +6,8 @@
 import { CHECK_FAILURES } from '../domain/reach'
 import { DialError, dialWith, EXIT_KINDS, GATEWAY_PROTOCOL, TICKET_PREFIX, type Clock, type Mint, type ReadHermes } from './link'
 import type { Route } from './remote'
-import { ASK_INTERACTIVE, ASK_NATIVE_HTTP, ATTACH, attachedOf, httpTicketOf, NOT_FOUND, PROBE, probeOf, runTool, SERVE, servedOf, type HermesArgs, type ProbeFailure, type SshRun } from './ssh'
+import { ASK_INTERACTIVE, ASK_NATIVE_HTTP, ATTACH, attachedOf, httpTicketOf, NOT_FOUND, originOf, PROBE, probeOf, runTool, SERVE, servedOf, type HermesArgs, type ProbeFailure, type SshRun } from './ssh'
+import { CANT_REACH, CANT_TRANSCRIBE, postWithTicket, transcriptOf, type Transcribe } from './transcribe'
 
 /** How a hermes command runs on the gateway's machine: `runTool` here, `sshExec` on another. */
 export type RunHermes = (args: HermesArgs, options: { readonly deadlineMs: number; readonly input?: string }) => Promise<SshRun>
@@ -90,6 +91,29 @@ export function mintWith(run: RunHermes, options: MintOptions): Mint {
 
 const EXIT_AS_LOCATOR: Readonly<Record<'missing' | 'cut', number>> = { missing: NOT_FOUND, cut: 7 }
 
+/**
+ * A transcription through the gateway's HTTP routes: `--serve` mints a one-use `native-http`
+ * ticket and names the gateway's loopback origin, which `reach` turns into one this computer can
+ * dial, and the recording is posted there. A Hermes that mints no such ticket cannot transcribe
+ * for Highwing. Nothing is started: with no gateway running, there is nothing to reach.
+ */
+export function transcribeWith(run: RunHermes, reach: (origin: string) => Promise<string>): Transcribe {
+  return async (recording, signal) => {
+    const result = await run(SERVE, { deadlineMs: SERVE_MS, input: ASK_NATIVE_HTTP }).catch(() => null)
+    if (result === null || !result.ok) return CANT_REACH
+    const served = servedOf(result.code, result.stdout)
+    if (served.is === 'unsupported') return CANT_TRANSCRIBE
+    const origin = originOf(result.stdout)
+    if (served.is === 'failed' || origin === null) return CANT_REACH
+    try {
+      const { status, body } = await postWithTicket(await reach(origin), served.ticket, recording, signal)
+      return transcriptOf(status, body)
+    } catch {
+      return CANT_REACH
+    }
+  }
+}
+
 /** A fresh ticket per GET: Hermes's ticket is single use and lives 30 seconds (gateway-ssh-clients.md, client rule 3). */
 export function readWith(run: RunHermes, forward: (origin: string) => Promise<string>, fetcher: typeof fetch = fetch): ReadHermes {
   return async path => {
@@ -115,5 +139,5 @@ export function liveRoute(options: { readonly hermesBin?: string; readonly clock
     return { ok: true, code: EXIT_AS_LOCATOR[tool.end], stdout: '' }
   }
   const here = async (url: string) => url
-  return { dial: dialWith(mintWith(run, { machine: null, forward: here, unprobed: 'attach' })), read: readWith(run, here), dispose: () => {} }
+  return { dial: dialWith(mintWith(run, { machine: null, forward: here, unprobed: 'attach' })), read: readWith(run, here), transcribe: transcribeWith(run, here), dispose: () => {} }
 }

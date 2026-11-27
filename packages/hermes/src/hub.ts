@@ -43,6 +43,7 @@ export { gatewaysByUrl, memoryKeep, type GatewayDeps, type Gateways, type Keep, 
 export { DialError } from './wire/link'
 export { remoteRoute, type Route } from './wire/remote'
 export { liveRoute } from './wire/tickets'
+export type { Transcribe } from './wire/transcribe'
 
 /** A value that changes. `subscribe` calls back on every change, not for the current value. */
 export interface Feed<T> {

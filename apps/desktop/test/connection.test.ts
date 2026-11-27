@@ -11,6 +11,7 @@ import type { Settings } from '../src/main/settings'
 const REMOTE: Target = { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' as SshHost }
 const OTHER: Target = { kind: 'remote', host: 'other-host' as SshHost }
 const LOCAL: Target = { kind: 'local' }
+const RECORDING = { mime: 'audio/webm', audio: new Uint8Array([1]) }
 const LIVE: Live = { target: LOCAL, epoch: 1 }
 const NEXT: Live = { target: REMOTE, epoch: 2 }
 
@@ -93,7 +94,8 @@ function harness(loaded: Settings, save: (target: Target) => Promise<void> = asy
       opened.push(held)
       log.push(`open ${opened.length}`)
       const dial = Object.assign(async () => { throw new Error('the test never dials') }, { held })
-      return { dial, read: async path => ({ status: 200, body: { target, path } }), dispose: () => { held.disposed = true; log.push(`dispose ${opened.indexOf(held) + 1}`) } } satisfies Route
+      const transcribe = async () => ({ ok: true as const, value: `heard by ${held.target.kind}` })
+      return { dial, read: async path => ({ status: 200, body: { target, path } }), transcribe, dispose: () => { held.disposed = true; log.push(`dispose ${opened.indexOf(held) + 1}`) } } satisfies Route
     },
     armIntro: async () => {
       log.push('arm')
@@ -143,6 +145,7 @@ describe('ownConnection at launch', () => {
     expect(opened).toEqual([])
     expect(owner.hermes).toBeNull()
     expect(await owner.run({ do: 'reconnect', start: true })).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(await owner.transcribe(RECORDING)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
     await expect(owner.read('/api/plugins/kanban/board')).rejects.toThrow('No Hermes is connected.')
   })
 })
@@ -215,6 +218,7 @@ describe('ownConnection, checking a target', () => {
     await owner.run({ do: 'reconnect', start: true })
     expect(opened[1]!.commands).toEqual([{ do: 'reconnect', start: true }])
     expect(opened[0]!.commands).toEqual([])
+    expect(await owner.transcribe(RECORDING), 'speech goes to the new connection too').toEqual({ ok: true, value: 'heard by remote' })
   })
 
   it('does not switch when the target checked is the one already live', async () => {
@@ -664,9 +668,10 @@ describe('pinnedConnection', () => {
     const commands: unknown[] = []
     const hermes = { run: async (command: unknown) => { commands.push(command); return { ok: true, value: undefined } }, close: async () => {} } as unknown as Hermes
     const read = async () => ({ status: 200, body: 'board' })
-    const owner = pinnedConnection(hermes, read)
+    const owner = pinnedConnection(hermes, read, async () => ({ ok: true, value: 'heard by the fixture' }))
     expect(owner.read).toBe(read)
     expect(owner.setup.get()).toEqual({ at: 'pinned' })
+    expect(await owner.transcribe(RECORDING)).toEqual({ ok: true, value: 'heard by the fixture' })
     expect(await owner.run({ do: 'checkTarget', target: LOCAL })).toMatchObject({ ok: false })
     await owner.run({ do: 'reconnect', start: false })
     expect(commands).toEqual([{ do: 'reconnect', start: false }])

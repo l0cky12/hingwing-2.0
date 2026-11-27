@@ -1,11 +1,14 @@
 import { machineOf, type SshHost } from '../domain/reach'
 import { DialError, dialWith, type Clock, type Dialer, type Mint, type ReadHermes } from './link'
 import { relay, sshExec } from './ssh'
-import { mintWith, readWith, type RunHermes } from './tickets'
+import { mintWith, readWith, transcribeWith, type RunHermes } from './tickets'
+import { TRANSCRIBE_MS, type Transcribe } from './transcribe'
 
 /** A way to reach one gateway, and the processes that way holds. */
 export interface Route {
   readonly dial: Dialer
+  /** Speech to text by this gateway's Hermes. */
+  readonly transcribe: Transcribe
   /** Reads the gateway's HTTP API as this route's user. */
   readonly read: ReadHermes
   /** Ends every process and relay of this route, and refuses later dials. Call it after closing the `Hermes` that dials through it. */
@@ -63,5 +66,11 @@ export function remoteRoute(host: SshHost, options: { readonly sshBin?: string; 
     }
   }
 
-  return { dial: dialWith(mint), read, dispose: () => life.abort() }
+  const transcribe = transcribeWith(run, async origin => {
+    const port = Number(URL.parse(origin)?.port)
+    if (!(port > 0)) throw new DialError('incompatible')
+    return `http://127.0.0.1:${await relay(host, port, { ...options, signal, firstByteMs: TRANSCRIBE_MS })}`
+  })
+
+  return { dial: dialWith(mint), read, transcribe, dispose: () => life.abort() }
 }

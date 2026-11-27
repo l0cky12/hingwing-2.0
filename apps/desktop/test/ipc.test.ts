@@ -1,11 +1,11 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
 import type { Hermes, HttpAnswer, Route } from '@highwing/hermes'
-import type { AttachmentId, BotActivities, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, SessionId, Sidebar, SkillLibrary, SlashCatalog, SshHost } from '@highwing/hermes/domain'
+import type { AttachmentId, BotActivities, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, Recording, RelayDesk, Session, SessionId, Sidebar, SkillLibrary, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { DUE, EXAMPLES, nextIntro, OFF, type Intro, type IntroEvent } from '../src/intro'
-import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Accent, type Mode, type Notices, type OnClose, type Preview, type PreviewCommand, type Push, type SendKey, type Setup, type SidebarWidth, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, RECORDING_MAX_BYTES, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Accent, type Mode, type Notices, type OnClose, type Preview, type PreviewCommand, type Push, type SendKey, type Setup, type SidebarWidth, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
 import { feed, ownConnection, pinnedConnection, type ConnectionOwner } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
@@ -567,12 +567,14 @@ const NO_RELAYS: RelayDesk = { supported: false, bySession: {} }
 const NO_GROUPS: Groups = { state: 'unsupported' }
 const RESEARCH_WAITING = { research: 'waiting' } as BotActivities
 
+const HEARD = async ({ mime, audio }: Recording): Promise<CommandOutcome<string>> => ({ ok: true, value: `${audio.byteLength} bytes of ${mime}` })
+
 /** An owner live on a remote machine, whose every check passes, so a check of this computer switches to it at epoch 2. */
 const switchable = (hermes: Hermes) => ownConnection({
   loaded: { state: 'saved', target: { kind: 'remote', host: 'box' as SshHost } },
   save: async () => {},
   check: async () => ({ ok: true }),
-  routeFor: () => ({ dial: async () => { throw new Error('the test never dials') }, dispose: () => {} }) as unknown as Route,
+  routeFor: () => ({ dial: async () => { throw new Error('the test never dials') }, transcribe: HEARD, dispose: () => {} }) as unknown as Route,
   open: () => ({ ...hermes, close: async () => {} }),
   armIntro: async () => {}
 })
@@ -690,7 +692,7 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   const onClose = feed<OnClose>('quit')
   const sources: AttachSources = { pick: async () => ['/home/me/error.png', '/home/me/big.zip'], pasted: async () => ({ name: 'Pasted image 1.png', bytes: PNG }) }
   const served = serveWindows(
-    (ownerOf ?? (held => pinnedConnection(held, read)))(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
+    (ownerOf ?? (held => pinnedConnection(held, read, HEARD)))(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
     { store, sources }, saver, { mode, theme, accent, sidebarWidth, sendKey, spellCheck, snoozes, notices, onClose },
@@ -824,6 +826,7 @@ describe('serveWindows', () => {
       setup,
       hermes: null,
       read: async () => { throw new Error('the test never reads') },
+      transcribe: HEARD,
       close: async () => {},
       run: async (command: { readonly do: string }) => {
         ran.push(command.do)
@@ -1350,6 +1353,36 @@ describe('the picture call', () => {
     served.dispose()
     expect(handlers.has(CHANNEL.pickPicture)).toBe(false)
     expect(handlers.has(CHANNEL.choosePicture)).toBe(false)
+  })
+})
+
+describe('the transcribe call', () => {
+  const RECORDING = { mime: 'audio/webm;codecs=opus', audio: new Uint8Array([1, 2, 3]) }
+
+  it("hands a recording from the app's own frame to the live connection, and refuses anything else without sending it", async () => {
+    const rig = harness()
+    const call = rig.handlers.get(CHANNEL.transcribe)!
+    await expect(call(rig.event(), RECORDING, 0)).resolves.toEqual({ ok: true, value: '3 bytes of audio/webm;codecs=opus' })
+    for (const [event, raw] of [
+      [rig.event('https://example.com/'), RECORDING],
+      [rig.event(), { ...RECORDING, mime: 'text/html' }],
+      [rig.event(), { ...RECORDING, audio: new Uint8Array() }],
+      [rig.event(), { ...RECORDING, audio: [1, 2, 3] }],
+      [rig.event(), { ...RECORDING, audio: new Uint8Array(RECORDING_MAX_BYTES + 1) }]
+    ] as const) {
+      await expect(call(event, raw, 0)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    }
+  })
+
+  it('refuses a recording made for a connection that is no longer live', async () => {
+    const rig = harness(switchable)
+    const run = rig.handlers.get(CHANNEL.run)!
+    const call = rig.handlers.get(CHANNEL.transcribe)!
+    await run(rig.event(), { do: 'editTarget' }, 1)
+    await run(rig.event(), { do: 'checkTarget', target: { kind: 'local' } }, 1)
+    await new Promise(resolve => setImmediate(resolve))
+    await expect(call(rig.event(), RECORDING, 1)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    await expect(call(rig.event(), RECORDING, 2)).resolves.toEqual({ ok: true, value: '3 bytes of audio/webm;codecs=opus' })
   })
 })
 
