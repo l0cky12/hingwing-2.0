@@ -12,14 +12,14 @@ const id = (name: string) => name as BotId
 const words = (place: BotPlace) => MENUS[place].map(group => group.map(action => LABELS[action]))
 
 describe("a bot's menu", () => {
-  it('offers a normal row Open chat and New chat, Edit…, then Pin to top and Hide from list', () => {
-    expect(words('section')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Pin to top', 'Hide from list'], ['Delete…']])
+  it('offers a normal row Open chat and New chat, Edit… and Routines…, then Pin to top and Hide from list', () => {
+    expect(words('section')).toEqual([['Open chat', 'New chat'], ['Edit…', 'Routines…'], ['Pin to top', 'Hide from list'], ['Delete…']])
   })
 
   it('offers Unpin on a pinned row, no Pin on the default bot, and Show in list on a hidden row', () => {
-    expect(words('pinned')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Unpin', 'Hide from list'], ['Delete…']])
-    expect(words('card')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Hide from list']])
-    expect(words('hidden')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Show in list'], ['Delete…']])
+    expect(words('pinned')).toEqual([['Open chat', 'New chat'], ['Edit…', 'Routines…'], ['Unpin', 'Hide from list'], ['Delete…']])
+    expect(words('card')).toEqual([['Open chat', 'New chat'], ['Edit…', 'Routines…'], ['Hide from list']])
+    expect(words('hidden')).toEqual([['Open chat', 'New chat'], ['Edit…', 'Routines…'], ['Show in list'], ['Delete…']])
   })
 
   it('offers Delete… last in every menu except the default bot\'s card', () => {

@@ -1,7 +1,7 @@
 import {
   APPROVAL_MODES, BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
-  type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type HelperId, type Item, type Link, type ModelOption,
+  type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type HelperId, type Item, type Link, type ModelOption, type Routines,
   type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
   type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
@@ -116,6 +116,8 @@ export interface AppTopics {
   readonly groups: Groups
   /** The group chat `open` shows, or null while it shows anything else. */
   readonly groupChat: GroupChat | null
+  /** The routines of the bot a window shows them for, or null while it shows none. */
+  readonly routines: Routines
   readonly preview: Preview
   readonly mode: Mode
   readonly theme: Theme
@@ -123,7 +125,7 @@ export interface AppTopics {
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, preview: true, mode: true, theme: true, snoozes: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, routines: true, preview: true, mode: true, theme: true, snoozes: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -484,6 +486,10 @@ export const validators: Validators = {
   describeBot: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'describeBot', bot }
+  },
+  showRoutines: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return raw.bot !== null && bot === null ? null : { do: 'showRoutines', bot }
   },
   editBot: raw => {
     const bot = botIdOf(raw.bot)

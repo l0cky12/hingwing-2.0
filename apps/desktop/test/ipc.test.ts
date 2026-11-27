@@ -166,6 +166,8 @@ describe('validators', () => {
 
   it("keep a bot's edited fields as sent, with the revision it was read at, and a window's removal of a picture", () => {
     expect(parseCommand({ do: 'describeBot', bot: 'rae', extra: 1 })).toEqual({ do: 'describeBot', bot: 'rae' })
+    expect(parseCommand({ do: 'showRoutines', bot: 'rae', extra: 1 })).toEqual({ do: 'showRoutines', bot: 'rae' })
+    expect(parseCommand({ do: 'showRoutines', bot: null })).toEqual({ do: 'showRoutines', bot: null })
     expect(parseCommand({ do: 'markBot', bot: 'rae', mark: 'hide', extra: 1 })).toEqual({ do: 'markBot', bot: 'rae', mark: 'hide' })
     expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: 'rae', draftId: 'd1', upFront: true }, upFront: true }))
       .toEqual({ do: 'open', ref: { kind: 'new', bot: 'rae', draftId: 'd1' }, upFront: true })
@@ -300,6 +302,8 @@ describe('validators', () => {
     ['a model list for a bot with no name', { do: 'botModels', bot: ' ' }],
     ['a model list that names no bot', { do: 'botModels' }],
     ['details of a bot with no name', { do: 'describeBot', bot: '' }],
+    ['routines of a bot with no name', { do: 'showRoutines', bot: '' }],
+    ['routines that name no bot', { do: 'showRoutines' }],
     ['an edit that changes nothing', { do: 'editBot', bot: 'rae', edit: {}, revision: 2 }],
     ['a mark that is not one of the four', { do: 'markBot', bot: 'rae', mark: 'flip' }],
     ['an up-front open of a bot\'s chat', { do: 'open', ref: { kind: 'bot', bot: 'rae' }, upFront: true }],
@@ -446,7 +450,7 @@ describe('validators', () => {
       'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'describeBot', 'discard', 'editBot',
       'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
       'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename',
-      'restore', 'retitle', 'rewind', 'send', 'sendToGroup', 'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
+      'restore', 'retitle', 'rewind', 'send', 'sendToGroup', 'setMode', 'setTheme', 'showRoutines', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
     ])
   })
 })
@@ -513,6 +517,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
     relay: still(NO_RELAYS),
     groups: still(NO_GROUPS),
     groupChat: still(null),
+    routines: still(null),
     slash: {
       get: () => catalog,
       subscribe: (listener: (value: SlashCatalog) => void) => {
@@ -631,7 +636,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {} }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, routines: null, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {} }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))

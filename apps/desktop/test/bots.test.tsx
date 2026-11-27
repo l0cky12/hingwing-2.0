@@ -16,7 +16,7 @@ const NO_LOOKS: LookCalls = {
 const showing = (bots: Bots | undefined, open: OpenChat | undefined, link: Link | undefined = ONLINE, groups: Groups | undefined = NO_GROUPS) =>
   renderToStaticMarkup(
     <BotsPanel
-      bots={bots} open={open} link={link} groups={groups} onOpen={async () => ({ ok: true, value: null })} onNewChat={() => {}} onNew={async () => ({ ok: true, value: null })}
+      bots={bots} open={open} link={link} groups={groups} routines={null} onShowRoutines={() => {}} onOpen={async () => ({ ok: true, value: null })} onNewChat={() => {}} onNew={async () => ({ ok: true, value: null })}
       onMark={async () => ({ ok: true, value: { edition: 2 } })}
       onCreate={async () => ({ ok: true, value: { bot: 'rae' as BotId, warnings: [] } })} onCreateGroup={async () => ({ ok: true, value: undefined })} onOpenGroup={() => {}}
       onModels={async () => ({ ok: true, value: { options: [], fallback: null } })}

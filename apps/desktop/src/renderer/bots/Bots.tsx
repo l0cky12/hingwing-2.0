@@ -1,4 +1,4 @@
-import type { Bot, BotCreated, BotDetails, BotDraft, BotId, BotMark, Bots, CommandOutcome, GroupDraft, GroupId, Groups, Link, Marked, ModelMenu, OpenChat } from '@highwing/hermes/domain'
+import type { Bot, BotCreated, BotDetails, BotDraft, BotId, BotMark, Bots, CommandOutcome, GroupDraft, GroupId, Groups, Link, Marked, ModelMenu, OpenChat, Routines } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { GroupForm } from '../groups/GroupForm'
@@ -12,6 +12,7 @@ import { nameProblem } from './bot-form'
 import type { LookCalls } from './LookPicker'
 import { NewBotForm } from './NewBotForm'
 import { DeleteDialog } from './DeleteDialog'
+import { RoutinesDialog } from './RoutinesDialog'
 import { isMenuKey, type Box, type Opener } from '../chrome/popup-menu'
 import { deleteRefusal, type MenuAction, type OpenMenu } from './bot-menu'
 import { elementIn, fallbackOf, focusIn, openerTarget, stayedIn, type FocusTarget } from './focus'
@@ -38,7 +39,7 @@ export function BotsSidebar({ head }: { readonly head: ReactNode }) {
   const open = useTopic('open')
   return (
     <BotsPanel
-      head={head} bots={useTopic('bots')} open={open} link={useTopic('link')} groups={useTopic('groups')}
+      head={head} bots={useTopic('bots')} open={open} link={useTopic('link')} groups={useTopic('groups')} routines={useTopic('routines')}
       onOpen={bot => run({ do: 'open', ref: { kind: 'bot', bot } })}
       onNewChat={() => void run(newChatIn(open, crypto.randomUUID()))}
       onNew={bot => run({ do: 'open', ref: { kind: 'new', bot, draftId: crypto.randomUUID() }, upFront: true })}
@@ -48,6 +49,7 @@ export function BotsSidebar({ head }: { readonly head: ReactNode }) {
       onOpenGroup={group => void run({ do: 'open', ref: { kind: 'group', group } })}
       onModels={() => run({ do: 'botModels', bot: null })}
       onDescribe={bot => run({ do: 'describeBot', bot })}
+      onShowRoutines={bot => void run({ do: 'showRoutines', bot })}
       onEdit={(bot, edit, revision) => run({ do: 'editBot', bot, edit, revision })}
       onPickPicture={pickBotPicture}
       onRemovePicture={bot => run({ do: 'removeBotPicture', bot })}
@@ -64,6 +66,7 @@ interface BotsPanelProps extends EditorCalls {
   readonly open: OpenChat | undefined
   readonly link: Link | undefined
   readonly groups: Groups | undefined
+  readonly routines: Routines | undefined
   readonly onOpen: (bot: BotId) => Promise<CommandOutcome<unknown>>
   readonly onNewChat: () => void
   readonly onNew: (bot: BotId) => Promise<CommandOutcome<unknown>>
@@ -72,6 +75,8 @@ interface BotsPanelProps extends EditorCalls {
   readonly onCreateGroup: (draft: GroupDraft) => Promise<CommandOutcome>
   readonly onOpenGroup: (group: GroupId) => void
   readonly onModels: () => Promise<CommandOutcome<ModelMenu>>
+  /** Keep this bot's routines current in `routines`, or stop with null. */
+  readonly onShowRoutines: (bot: BotId | null) => void
   readonly looks: LookCalls
 }
 
@@ -188,7 +193,7 @@ function useMarks({ bots, onMark, onRefused, onLanded }: MarkCalls) {
 
 const NO_BOX: Box = { left: 0, top: 0, right: 0, bottom: 0 }
 
-export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOpen, onNewChat, onNew, onMark, onCreate, onCreateGroup, onOpenGroup, onModels, looks, ...editor }: BotsPanelProps) {
+export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, routines, onShowRoutines, onOpen, onNewChat, onNew, onMark, onCreate, onCreateGroup, onOpenGroup, onModels, looks, ...editor }: BotsPanelProps) {
   const [refused, setRefused] = useState<string | null>(null)
   const [form, setForm] = useState<{ readonly models: ModelMenu | 'loading' } | null>(null)
   const [grouping, setGrouping] = useState(false)
@@ -196,6 +201,7 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
   const [made, setMade] = useState<BotCreated | null>(null)
   const [editing, setEditing] = useState<BotDetails | null>(null)
   const [deleting, setDeleting] = useState<Bot | null>(null)
+  const [scheduled, setScheduled] = useState<Bot | null>(null)
   const [query, setQuery] = useState<string | null>(null)
   const [hidden, setHidden] = useState(HIDDEN_CLOSED)
   const [menu, setMenu] = useState<OpenMenu | null>(null)
@@ -280,6 +286,10 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
     open: bot => void pick(bot.id),
     new: bot => void onNew(bot.id).then(outcome => setRefused(outcome.ok ? null : outcome.refusal.message)),
     edit: bot => void describe(bot.id),
+    routines: bot => {
+      setScheduled(bot)
+      onShowRoutines(bot.id)
+    },
     pin: bot => mark(bot, 'pin'),
     unpin: bot => mark(bot, 'unpin'),
     hide: bot => mark(bot, 'hide'),
@@ -295,6 +305,11 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
   const closeDelete = (bot: Bot) => {
     // The dialog closes here, and the browser gives focus back to the bot's row, if it is still there.
     flushSync(() => setDeleting(null))
+    if (document.activeElement === document.body) focus(fallbackOf({ to: 'row', bot: bot.id }, view), 'in-view')
+  }
+  const closeRoutines = (bot: Bot) => {
+    onShowRoutines(null)
+    flushSync(() => setScheduled(null))
     if (document.activeElement === document.body) focus(fallbackOf({ to: 'row', bot: bot.id }, view), 'in-view')
   }
   const menuRow = menu === null ? undefined : rows.find(row => row.bot.id === menu.bot)
@@ -395,6 +410,7 @@ export function BotsPanel({ head = <h2>Bots</h2>, bots, open, link, groups, onOp
           }}
         />
       )}
+      {scheduled !== null && <RoutinesDialog bot={botIn(bots, scheduled.id) ?? scheduled} routines={routines} onClose={() => closeRoutines(scheduled)} />}
       {deleting !== null && (
         <DeleteDialog
           name={deleting.name}
