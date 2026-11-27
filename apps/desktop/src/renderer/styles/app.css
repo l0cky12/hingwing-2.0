@@ -994,7 +994,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .context .gauge span, .context .stack .part { background: CanvasText; }
 }
 
-.window { display: grid; grid-template-columns: 288px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; }
+.window { --side: 288px; display: grid; grid-template-columns: var(--side) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; }
 .window[hidden] { display: none; }
 .bots { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--rule); background: var(--paper); }
 .bots button { border: 0; background: none; text-align: left; color: inherit; }
@@ -1098,6 +1098,23 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .bot-preview.live { color: var(--signal); font-weight: 500; }
 .stack-more { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--sheet); color: var(--graphite); font-size: 11px; font-weight: 700; }
 .bot[aria-current]:focus-visible { box-shadow: inset 5px 0 0 var(--ink); }
+.window[data-compact] { --side: 72px; }
+.window[data-compact] .bots { position: relative; }
+.window[data-compact] .bots-head { flex-direction: column; justify-content: center; padding: 12px 0; }
+.window[data-compact] .bots-head > :is(.mode, [data-bots-search]) { display: none; }
+.window[data-compact] [data-compact-toggle] { order: -1; }
+.window[data-compact] .new-menu { top: 44px; right: auto; left: calc(100% - 8px); width: max-content; }
+.window[data-compact] .bots-list { padding-left: 4px; }
+.window[data-compact] .bots-list h3 { height: 1px; margin: 10px 12px; font-size: 0; background: var(--rule); }
+.window[data-compact] .bots-list .bots-hidden h3 { height: auto; margin-inline: 0; background: none; }
+.window[data-compact] .bots-hidden h3 button { justify-content: center; padding: 6px 0; }
+.window[data-compact] .bot-row :is(.bot, .bot-feature) { justify-content: center; padding-inline: 0; }
+.window[data-compact] .bot-feature { padding-block: 8px; }
+.window[data-compact] :is(.bot-text, .bot-feature .bot-name, .bots .bot-more) { display: none; }
+.window[data-compact] .stack { min-width: 0; margin-left: 0; }
+.window[data-compact] .stack > * + * { margin-left: -10px; }
+.window[data-compact] :is(.bots-said, .bots-refused):not(:empty) { position: absolute; pointer-events: none; left: calc(100% + 8px); bottom: 12px; z-index: 2; width: 240px; margin: 0; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); box-shadow: 0 6px 18px rgb(var(--shade) / 16%); }
+.window[data-compact] .bots .apps-open { margin: 12px 8px; padding: 6px 2px; font-size: 11px; line-height: 1.3; }
 @media (forced-colors: active) {
   .bot[aria-current] { border-left: 3px solid Highlight; padding-left: 9px; }
   .bots-hidden h3 button[data-current] { border-left: 3px solid Highlight; padding-left: 9px; }
@@ -1183,7 +1200,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .chip.image .unchip, .chip.image .unchip:hover { border: 1px solid ButtonText; background: ButtonFace; color: ButtonText; }
 }
 /* The pane beside the chat. Main draws the page itself over .preview-page, so this box only holds what shows when there is no page. */
-.window[data-preview] { grid-template-columns: 288px minmax(0, 1fr) minmax(0, 1fr); }
+.window[data-preview] { grid-template-columns: var(--side) minmax(0, 1fr) minmax(0, 1fr); }
 .preview { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--rule); background: var(--paper); }
 .preview-head { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 12px 12px 12px 20px; border-bottom: 1px solid var(--rule); }
 .preview-head h2 { flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1204,7 +1221,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .preview-rows { margin: 0; padding: 8px 20px; border-top: 1px solid var(--rule); color: var(--graphite); font-size: 13px; }
 /* Two columns of chat and page no longer fit: the pane covers the chat, and Back to chat gives it back. */
 @media (max-width: 899px) {
-  .window[data-preview] { grid-template-columns: 288px minmax(0, 1fr); }
+  .window[data-preview] { grid-template-columns: var(--side) minmax(0, 1fr); }
   .window[data-preview] .screen { display: none; }
   .preview { border-left: 0; }
   .preview-head .preview-back { display: block; }

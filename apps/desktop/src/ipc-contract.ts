@@ -92,6 +92,11 @@ export type Theme = 'system' | 'light' | 'dark'
 export type ThemeCommand = { readonly do: 'setTheme'; readonly theme: Theme }
 export const isTheme = (raw: unknown): raw is Theme => raw === 'system' || raw === 'light' || raw === 'dark'
 
+/** How the bots column draws each bot: with its name and last message, or as its face alone. Owned by Electron main and kept on disk. */
+export type SidebarWidth = 'full' | 'compact'
+export type SidebarWidthCommand = { readonly do: 'setSidebarWidth'; readonly width: SidebarWidth }
+export const isSidebarWidth = (raw: unknown): raw is SidebarWidth => raw === 'full' || raw === 'compact'
+
 /** What closing the window does. `quit` ends Highwing. `stay` leaves it in the tray. Owned by Electron main and kept on disk. */
 export type OnClose = 'quit' | 'stay'
 export type OnCloseCommand = { readonly do: 'setOnClose'; readonly onClose: OnClose }
@@ -106,12 +111,12 @@ export const isSnoozes = (raw: unknown): raw is Snoozes => isObject(raw) && Obje
 
 export type IntroCommand = { readonly do: 'examples' } | { readonly do: 'done' }
 
-export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SnoozeCommand | OnCloseCommand | IntroCommand
+export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SidebarWidthCommand | SnoozeCommand | OnCloseCommand | IntroCommand
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' | 'refreshBots' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
 
-/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `snoozes`, `onClose` and `intro`, which belong to the window. */
+/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `sidebarWidth`, `snoozes`, `onClose` and `intro`, which belong to the window. */
 export interface AppTopics {
   readonly setup: Setup
   readonly link: Link
@@ -132,13 +137,14 @@ export interface AppTopics {
   readonly preview: Preview
   readonly mode: Mode
   readonly theme: Theme
+  readonly sidebarWidth: SidebarWidth
   readonly snoozes: Snoozes
   readonly onClose: OnClose
   readonly intro: Intro
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, preview: true, mode: true, theme: true, snoozes: true, onClose: true, intro: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, preview: true, mode: true, theme: true, sidebarWidth: true, snoozes: true, onClose: true, intro: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -668,6 +674,7 @@ export const validators: Validators = {
   done: () => ({ do: 'done' }),
   setMode: raw => (isMode(raw.mode) ? { do: 'setMode', mode: raw.mode } : null),
   setTheme: raw => (isTheme(raw.theme) ? { do: 'setTheme', theme: raw.theme } : null),
+  setSidebarWidth: raw => (isSidebarWidth(raw.width) ? { do: 'setSidebarWidth', width: raw.width } : null),
   setOnClose: raw => (isOnClose(raw.onClose) ? { do: 'setOnClose', onClose: raw.onClose } : null),
   snooze: raw => {
     const sessionId = sessionIdOf(raw)

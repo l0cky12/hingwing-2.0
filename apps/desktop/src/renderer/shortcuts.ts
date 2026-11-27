@@ -1,6 +1,6 @@
 export type ShortcutId =
   | 'palette' | 'newChat' | 'find' | 'sheet' | 'bot' | 'previousBot' | 'nextBot' | 'cycleBot' | 'cycleBotBack'
-  | 'back' | 'forward' | 'focusComposer' | 'addSelection' | 'newGroup' | 'settings' | 'apps' | 'zoomIn' | 'zoomOut' | 'zoomReset'
+  | 'back' | 'forward' | 'focusComposer' | 'addSelection' | 'newGroup' | 'settings' | 'apps' | 'compactSidebar' | 'zoomIn' | 'zoomOut' | 'zoomReset'
 
 export interface Shortcut {
   readonly id: ShortcutId
@@ -36,6 +36,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   row('addSelection', 'Chat', 'Quote the selected text in the message box', 'command', 'l', 'L'),
   row('settings', 'Window', 'Settings', 'command', ',', ','),
   row('apps', 'Window', 'Connect apps', 'command', 'm', 'M', { shift: true }),
+  row('compactSidebar', 'Window', 'Compact sidebar', 'command', 'b', 'B', { onlyIn: 'In bot mode' }),
   row('zoomIn', 'Window', 'Zoom in', 'command', '= +', '=', { shift: 'any' }),
   row('zoomOut', 'Window', 'Zoom out', 'command', '-', '-'),
   row('zoomReset', 'Window', 'Actual size', 'command', '0', '0'),

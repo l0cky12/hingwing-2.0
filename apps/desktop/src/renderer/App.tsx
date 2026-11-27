@@ -2,7 +2,7 @@ import type { Shown, ShownGroup, Target } from '@highwing/hermes/domain'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { introInFront } from '../intro'
 import { isSettingsChord } from './keys'
-import { epochOf, type Mode, type Theme } from '../ipc-contract'
+import { epochOf, type Mode, type SidebarWidth, type Theme } from '../ipc-contract'
 import { BotPicker } from './bots/BotPicker'
 import { BotsSidebar } from './bots/Bots'
 import { useRetryPicturesOnceOnline } from './bots/pictures'
@@ -93,6 +93,7 @@ interface ChatWindowProps {
   readonly target: Target | null
   readonly mode: Mode
   readonly theme: Theme
+  readonly width: SidebarWidth
   readonly onOpenApps: () => void
 }
 
@@ -108,7 +109,7 @@ function useSettingsChord(target: Target | null, settingsOpen: boolean) {
   }, [target, settingsOpen])
 }
 
-function ChatWindow({ hidden, settings, target, mode, theme, onOpenApps }: ChatWindowProps) {
+function ChatWindow({ hidden, settings, target, mode, theme, width, onOpenApps }: ChatWindowProps) {
   const preview = useTopic('preview')
   useSettingsChord(target, settings !== null)
   const { root, pick } = useSwitchModeKeepingFocus(mode)
@@ -118,9 +119,10 @@ function ChatWindow({ hidden, settings, target, mode, theme, onOpenApps }: ChatW
   const switcher = <ModeSwitch mode={mode} onPick={pick} />
   const foot = <AppsButton onOpen={onOpenApps} />
   const paned = preview?.state === 'open' && settings === null
+  const compact = mode === 'bots' && width === 'compact'
   return (
-    <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined}>
-      {mode === 'bots' && <BotsSidebar head={switcher} foot={foot} />}
+    <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined} data-compact={compact || undefined}>
+      {mode === 'bots' && <BotsSidebar head={switcher} compact={compact} foot={foot} />}
       {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} foot={foot} />}
       <div key="screen" className="screen" hidden={settings !== null}>
         <ChatScreen target={target} settingsButton={settingsButton} />
@@ -138,6 +140,7 @@ export function App() {
   const setup = useTopic('setup')
   const mode = useTopic('mode')
   const theme = useTopic('theme')
+  const width = useTopic('sidebarWidth')
   const intro = useTopic('intro')
   const [appsOpen, setAppsOpen] = useState(false)
   const appsBack = useRef<Element | null>(null)
@@ -145,7 +148,7 @@ export function App() {
     appsBack.current = document.activeElement
     setAppsOpen(true)
   }, [])
-  if (setup === undefined || mode === undefined || theme === undefined || intro === undefined) return null
+  if (setup === undefined || mode === undefined || theme === undefined || width === undefined || intro === undefined) return null
   const screen = screenOf(setup)
   const live = setup.at === 'pinned' ? null : setup.live
   const cover = introInFront(setup, intro)
@@ -153,7 +156,7 @@ export function App() {
     <>
       {(setup.at === 'pinned' || live !== null) && (
         <Epoch value={epochOf(setup)}>
-          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved' || cover} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} onOpenApps={openApps} />
+          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved' || cover} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} width={width} onOpenApps={openApps} />
           {/* Outside the window a new connection remounts, so a pick main refused for the old one comes back over the new one. */}
           {screen.show !== 'saved' && !cover && <Palette target={live?.target ?? null} settingsOpen={screen.show === 'settings'} />}
           {screen.show !== 'saved' && !cover && <Apps open={appsOpen} back={appsBack} onOpen={openApps} onClose={() => setAppsOpen(false)} />}

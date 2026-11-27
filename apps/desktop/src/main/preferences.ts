@@ -1,7 +1,7 @@
 import type { Feed } from '@highwing/hermes'
 import { open, readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
-import { isMode, isOnClose, isSnoozes, isTheme, type Mode, type OnClose, type SnoozeCommand, type Snoozes, type Theme } from '../ipc-contract'
+import { isMode, isOnClose, isSidebarWidth, isSnoozes, isTheme, type Mode, type OnClose, type SidebarWidth, type SnoozeCommand, type Snoozes, type Theme } from '../ipc-contract'
 import { feed } from './connection'
 
 export interface Preference<T, Missing = T> {
@@ -13,6 +13,7 @@ export interface Preference<T, Missing = T> {
 
 export const MODE: Preference<Mode> = { file: 'mode.json', key: 'mode', is: isMode, fallback: 'bots' }
 export const THEME: Preference<Theme> = { file: 'theme.json', key: 'theme', is: isTheme, fallback: 'system' }
+export const SIDEBAR_WIDTH: Preference<SidebarWidth> = { file: 'sidebar-width.json', key: 'width', is: isSidebarWidth, fallback: 'full' }
 export const ON_CLOSE: Preference<OnClose> = { file: 'on-close.json', key: 'onClose', is: isOnClose, fallback: 'quit' }
 export const SNOOZES: Preference<Snoozes> = { file: 'snoozes.json', key: 'snoozes', is: isSnoozes, fallback: {} }
 
