@@ -1046,3 +1046,24 @@ On an older Hermes:
 - Without `pet.gallery` or `pet.thumb`, the Pet tab says "This Hermes can't list
   pets."
 - The Shape and Upload tabs need no new call.
+
+### A bot's tool servers
+
+The Tool servers section of the Connect apps window lists, adds and removes a
+bot's MCP servers, for the same bot the window lists apps for. Each call names
+that bot's profile when the window has one. None is canonical, so each reaches its legacy handler
+only on a socket with the interactive grant (`tui_gateway/methods_tools.py:1470-1612`).
+
+| Method | Params | What Highwing does with the answer |
+| --- | --- | --- |
+| `mcp.servers.list` | `{}` | Lists each server with its address, or its command and arguments. An address is shown without its query or fragment. |
+| `mcp.servers.status` | `{}` | Gives each listed server its state and tool count. Hermes reports a state only for the launch profile, so another bot's servers read "Starts when a chat needs it". |
+| `mcp.servers.add` | `{name, config: {url, headers?}}` or `{name, config: {command, args?}}` | Adds the server. Hermes keeps header values in the profile's config and never sends them back, so Highwing never shows one again. |
+| `mcp.servers.test` | `{name}` | Says whether the server answered, and names its tools. Hermes tests only a saved server, so a server that fails is removed again and nothing stays saved. |
+| `mcp.servers.remove` | `{name}` | Removes the server. Hermes refuses a server a plugin provides, and the row shows "From a plugin" in place of Remove. |
+
+Highwing does not sign in to a server that asks for OAuth. Its test fails with
+"needs a sign-in, which Highwing can't do yet", and nothing is saved.
+
+On an older Hermes, or a socket bound to one profile, the section says "This
+Hermes can't manage tool servers from Highwing."

@@ -19,6 +19,7 @@ export function FolderChip({ cwd, field, disabled, running, onMove }: FolderChip
   const boxId = useId()
   const fieldId = useId()
   const to = draft.trim()
+  const leaf = cwd.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || cwd
 
   const toggle = () => {
     if (!shown && asking.at !== 'sending') {
@@ -42,10 +43,11 @@ export function FolderChip({ cwd, field, disabled, running, onMove }: FolderChip
   return (
     <div className="knob" ref={anchor}>
       <button
-        ref={button} type="button" className="readout" disabled={disabled}
+        ref={button} type="button" className="readout" disabled={disabled} title={cwd} aria-label={`Folder: ${cwd}`}
         aria-expanded={shown} aria-haspopup="dialog" aria-controls={shown ? boxId : undefined} onClick={toggle}
       >
-        Folder: <span className="path">{cwd}</span>
+        <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14"><path d="M2 4.5c0-.6.4-1 1-1h3.2l1.5 1.6H13c.6 0 1 .4 1 1V12c0 .6-.4 1-1 1H3c-.6 0-1-.4-1-1z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>
+        <span className="value">{leaf}</span>
         <span className="chev" aria-hidden="true" />
       </button>
       {shown && (

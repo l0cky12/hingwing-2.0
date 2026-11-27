@@ -29,16 +29,16 @@ describe('the errand, played through the real client', () => {
     expect(played.history[0]?.began).toEqual({ at: expect.any(Number), clock: 'client' })
   })
 
-  it('opens with the handshake, one resume with history, the three lists, the slash catalog, the relay probe, the bots, the group chats and the watched chat\'s facts, then makes the story\'s two calls', async () => {
+  it('opens with the handshake, one resume with history, the three lists, the slash catalog, the relay probe, the bots, the group chats, the scheduled jobs and the watched chat\'s facts, then makes the story\'s two calls', async () => {
     const { script, session } = (await moments(fixture)).at(-1) as Moment
     expect(script.dials).toBe(1)
     const sent = methodsOf(script.received)
     expect(sent.map(call => call.method)).toEqual([
-      'client.capabilities', 'runtime.describe', 'session.resume', 'session.list', 'session.list', 'session.list', 'commands.catalog', 'bot_relay.deliver', 'profiles.list', 'groups.capabilities',
+      'client.capabilities', 'runtime.describe', 'session.resume', 'session.list', 'session.list', 'session.list', 'commands.catalog', 'bot_relay.deliver', 'profiles.list', 'groups.capabilities', 'cron.manage',
       'session.stats', 'config.get', 'config.get', 'config.get', 'session.control.read', 'process.list', 'session.stats', 'prompt.submit', 'approval.respond', 'session.stats', 'process.list'
     ])
-    expect(sent.splice(14, 2).map(call => call.params), 'the panel is read with the switches').toEqual([{ session_id: fixture.header.sessionId }, { session_id: fixture.header.sessionId }])
-    expect(sent.splice(11, 3).map(call => call.params)).toEqual(['show_reasoning', 'busy', 'approval_mode'].map(key => ({ session_id: fixture.header.sessionId, key })))
+    expect(sent.splice(15, 2).map(call => call.params), 'the panel is read with the switches').toEqual([{ session_id: fixture.header.sessionId }, { session_id: fixture.header.sessionId }])
+    expect(sent.splice(12, 3).map(call => call.params)).toEqual(['show_reasoning', 'busy', 'approval_mode'].map(key => ({ session_id: fixture.header.sessionId, key })))
     expect(sent.splice(9, 1).map(call => call.params), 'the errand\'s Hermes has no group chats, so it is asked nothing more').toEqual([{}])
     expect(session.tuning, 'the errand\'s Hermes refuses every read, so the switches stay unknown').toEqual({ reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null })
     expect([session.processes, session.control], 'and every panel read, so the panel stays unknown').toEqual([null, null])
@@ -49,8 +49,9 @@ describe('the errand, played through the real client', () => {
     expect(sent[6]?.params).toEqual({})
     expect(sent[7]?.params, 'the relay probe').toEqual({})
     expect(sent[8]?.params).toEqual({ include_sessions: true })
-    expect(sent[11]?.params, 'the gateway sends batches, so the submit asks for them').toEqual({ ...(fixture.steps[stepOf('prompt.submit')] as { params: object }).params, clarify_batch: true })
-    expect(sent[12]?.params).toEqual((fixture.steps[stepOf('approval.respond')] as { params: unknown }).params)
+    expect(sent[9]?.params, 'the scheduled jobs, disabled ones too').toEqual({ action: 'list', include_disabled: true })
+    expect(sent[12]?.params, 'the gateway sends batches, so the submit asks for them').toEqual({ ...(fixture.steps[stepOf('prompt.submit')] as { params: object }).params, clarify_batch: true })
+    expect(sent[13]?.params).toEqual((fixture.steps[stepOf('approval.respond')] as { params: unknown }).params)
   })
 
   it('yields the session at every step that changed it', async () => {

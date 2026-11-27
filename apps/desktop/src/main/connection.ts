@@ -1,5 +1,6 @@
 import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, Route } from '@highwing/hermes'
 import { firstStep, sameTarget, type CheckStep, type Command, type CommandOutcome, type SetupFailure, type Target } from '@highwing/hermes/domain'
+import { introInFront, type Intro } from '../intro'
 import { isSetupCommand, NOT_NOW, showsSettings, type HubResult, type Live, type Setup, type SetupCommand } from '../ipc-contract'
 import type { Settings } from './settings'
 
@@ -22,6 +23,7 @@ export interface ConnectionDeps {
   routeFor(target: Target): Route
   /** `place`: which connection this is, the same for the same target in every run. */
   open(dial: Dialer, place: string): Hermes
+  armIntro(): Promise<void>
 }
 
 export type SetupEvent =
@@ -68,8 +70,8 @@ const KEEP = { do: 'keepTarget' } as const
 const STOP = { do: 'stopCheck' } as const
 
 /** Whether an open runs now: in the chat, or in Settings, which it leaves first. It waits through first run, and through a save, which refuses to leave. */
-export const opensNow = (setup: Setup): boolean =>
-  setup.at === 'chat' || setup.at === 'pinned' || (showsSettings(setup) && nextSetup(setup, KEEP) !== null)
+export const opensNow = (setup: Setup, intro: Intro): boolean =>
+  !introInFront(setup, intro) && (setup.at === 'chat' || setup.at === 'pinned' || (showsSettings(setup) && nextSetup(setup, KEEP) !== null))
 
 /** The hub opens a bot or group chat it made, so making one is an open too. */
 const makesChat = (command: Command): boolean => command.do === 'createBot' || command.do === 'createGroup'
@@ -150,6 +152,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
     }
     apply({ do: 'step', step: 'save' })
     try {
+      if (open === null) await deps.armIntro()
       await deps.save(target)
     } catch {
       if (!stale()) apply({ do: 'fail', failure: 'cant-save' })

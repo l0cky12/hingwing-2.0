@@ -22,14 +22,24 @@ let loose: Held = EMPTY
 /** Seeds asked for before main's drafts are read. A saved draft for the same chat wins over them. */
 let seeds: Draft[] | null = []
 let chats: ReadonlySet<SessionId> = new Set()
+let newestByBot: ReadonlyMap<BotId, string> = new Map()
 const listeners = new Set<() => void>()
 
 const sameMembers = (a: ReadonlySet<SessionId>, b: ReadonlySet<SessionId>) => a.size === b.size && [...a].every(id => b.has(id))
+const sameTexts = (a: ReadonlyMap<BotId, string>, b: ReadonlyMap<BotId, string>) => a.size === b.size && [...a].every(([bot, text]) => b.get(bot) === text)
 
 function changed() {
   const next = new Set([...drafts.keys()].flatMap(key => (key.startsWith('chat:') ? [key.slice('chat:'.length) as SessionId] : [])))
   if (!sameMembers(next, chats)) chats = next
+  const texts = new Map<BotId, string>()
+  for (const draft of drafts.values()) if (draft.bot !== null) texts.set(draft.bot, draft.text)
+  if (!sameTexts(texts, newestByBot)) newestByBot = texts
   for (const listener of listeners) listener()
+}
+
+function setNewest(draft: Draft) {
+  drafts.delete(draft.key)
+  drafts.set(draft.key, draft)
 }
 
 function keep(draft: Draft, when: 'soon' | 'now') {
@@ -37,11 +47,13 @@ function keep(draft: Draft, when: 'soon' | 'now') {
   typed.add(key)
   restored.delete(key)
   if (isEmptyDraft(draft)) drafts.delete(key)
-  else drafts.set(key, draft)
+  else setNewest(draft)
   clearTimeout(saving.get(key)?.timer)
   saving.delete(key)
-  if (when === 'now') window.highwing.keepDraft(draft)
-  else saving.set(key, { draft, timer: setTimeout(() => (saving.delete(key), window.highwing.keepDraft(draft)), SAVE_MS) })
+  if (when === 'now') {
+    flush()
+    window.highwing.keepDraft(draft)
+  } else saving.set(key, { draft, timer: setTimeout(() => (saving.delete(key), window.highwing.keepDraft(draft)), SAVE_MS) })
 }
 
 function flush() {
@@ -67,11 +79,14 @@ function put(slot: DraftSlot, change: Partial<Held>, when: 'soon' | 'now') {
 export async function startDrafts(): Promise<void> {
   window.addEventListener('pagehide', flush)
   try {
-    for (const draft of await window.highwing.drafts()) {
-      if (typed.has(draft.key)) continue
+    const saved = (await window.highwing.drafts()).filter(draft => !typed.has(draft.key))
+    const typedHere = [...drafts.values()]
+    drafts.clear()
+    for (const draft of saved) {
       drafts.set(draft.key, draft)
       restored.add(draft.key)
     }
+    typedHere.forEach(setNewest)
   } finally {
     const asked = seeds ?? []
     seeds = null
@@ -170,3 +185,5 @@ export const useStaging = (slot: DraftSlot): number => useSyncExternalStore(subs
 export const useAttachments = (slot: DraftSlot): readonly Attachment[] => useSyncExternalStore(subscribe, () => heldOf(slot).attachments)
 
 export const useChatDrafts = (): ReadonlySet<SessionId> => useSyncExternalStore(subscribe, () => chats)
+
+export const useBotDrafts = (): ReadonlyMap<BotId, string> => useSyncExternalStore(subscribe, () => newestByBot)
