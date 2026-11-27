@@ -405,6 +405,7 @@ export const validators: Validators = {
     const sessionId = sessionIdOf(raw)
     return sessionId && { do: 'versions', sessionId }
   },
+  readMessages: raw => (Number.isSafeInteger(raw.step) && (raw.step as number) >= 0 ? { do: 'readMessages', step: raw.step as number } : null),
   stop: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && { do: 'stop', sessionId }

@@ -1,5 +1,6 @@
 import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId, BotMark, Marked, PetChoice } from './bots'
 import type { GroupDraft, GroupId } from './groups'
+import type { MessagesRead } from './messages'
 import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
@@ -50,6 +51,11 @@ export type Command =
    * Hermes on each ask, never stored. Empty when the chat has none. Refused when Hermes cannot say.
    */
   | { readonly do: 'versions'; readonly sessionId: SessionId }
+  /**
+   * Step `step` of reading every bot's chats for message search: the next few chats of each bot, newest first, read whole.
+   * Read from Hermes on each ask, never stored.
+   */
+  | { readonly do: 'readMessages'; readonly step: number }
   | { readonly do: 'stop'; readonly sessionId: SessionId }
   /** Moves the chat to another folder on the machine Hermes runs on. Refused while a turn runs. */
   | { readonly do: 'move'; readonly sessionId: SessionId; readonly cwd: string }
@@ -193,6 +199,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'export' } ? Exported
   : C extends { do: 'branch' } ? SessionId
   : C extends { do: 'versions' } ? ChatVersions
+  : C extends { do: 'readMessages' } ? MessagesRead
   : C extends { do: 'answer' } ? Told | undefined
   : C extends { do: 'models' | 'botModels' } ? ModelMenu
   : C extends { do: 'createBot' } ? BotCreated

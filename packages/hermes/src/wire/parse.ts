@@ -1148,6 +1148,26 @@ export function parseTreeRows(reply: ProjectsTreeResult): TreeRow[] | null {
   })
 }
 
+export interface StoredWords {
+  readonly rowId: number | null
+  readonly opensTurn: boolean
+  readonly said: string | null
+  readonly at: number | null
+}
+
+export function parseWords(reply: StoredTranscriptResult): { readonly rows: readonly StoredWords[]; readonly next: string | null; readonly reset: boolean } | null {
+  return usable(() => {
+    const page = fields<StoredTranscriptResult>(reply)
+    const rows = (page.optList('rows') ?? []).flatMap((value, index): StoredWords[] => {
+      const row = usable(() => storedRow(value, index))
+      if (row === null) return []
+      const said = (row.opensTurn || row.answers || row.items.some(item => item.kind === 'steer')) && row.text.trim() !== ''
+      return [{ rowId: row.rowId, opensTurn: row.opensTurn, said: said ? row.text : null, at: row.at }]
+    })
+    return { rows, next: page.optStr('next_cursor'), reset: page.optBool('reset') === true }
+  })
+}
+
 export function parseSaid(reply: StoredTranscriptResult): { readonly said: readonly Said[]; readonly next: string | null; readonly reset: boolean } | null {
   return usable(() => {
     const page = fields<StoredTranscriptResult>(reply)
@@ -1318,6 +1338,10 @@ const titledId = (row: Obj): SessionId | null => (words(row.resolved_id) ?? word
 /** The chat a `branch` made, as the receipt names it (persistence/sqlite/authority/_mutation_publish.py:152). null: the reply names none. */
 export function parseBranched(reply: SessionMutateResult): SessionId | null {
   return (isObject(reply) ? words(reply.branched_session_id) : null) as SessionId | null
+}
+
+export function parseChatPage(reply: CanonicalListResult): { readonly chats: readonly Omit<SidebarRow, 'badge' | 'botChat'>[]; readonly next: string | null } {
+  return { chats: parseUserChats(reply.sessions), next: reply.sessions.length === 0 ? null : reply.next_cursor ?? null }
 }
 
 export function parseListPage(reply: CanonicalListResult): { readonly sessions: readonly SessionId[]; readonly next: string | null } {
