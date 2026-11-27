@@ -4,8 +4,10 @@
 import { readFileSync } from 'node:fs'
 import { APPROVAL_MODES, type ApprovalMode, type SessionId } from '../domain/session'
 import type { Reach } from '../wire/link'
+import { isKanban, type Kanban } from './kanban'
 
 export { play, playToEnd, type Moment } from './play'
+export { fixtureRead } from './kanban'
 export { maskedFrame, recordingDialer } from './record'
 export { fixtureLatency, scriptedDialer, type ScriptedDialer, type ScriptOptions } from './script'
 
@@ -131,6 +133,8 @@ export interface Fixture {
     readonly reach?: Reach
     /** false: the home bot has no Bot Chat, and the story session is only a chat of the home profile. Default true. */
     readonly homeBotChat?: boolean
+    /** The kanban plugin's replies, which the app reads over HTTP rather than the socket. Absent: the Hermes has no kanban plugin and every read of it is a 404. */
+    readonly kanban?: Kanban
     /** Bytes the app's image loader answers with in place of the network and the disk, as base64 under the web URL or absolute path asked for. A key not here is missing. */
     readonly media?: Readonly<Record<string, string>>
     /** The app's limits on an attachment, in bytes, lower than Hermes's own so a run can stage a file over one. Either may be absent. */
@@ -556,6 +560,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
+  const { kanban } = value
+  if (kanban !== undefined && !isKanban(kanban)) return '"kanban" must be { board, tasks }: a kanban board reply, and each card\'s detail reply by task id'
   const { media } = value
   if (media !== undefined && !(isObject(media) && Object.values(media).every(bytes => typeof bytes === 'string'))) return '"media" must map a url or path to base64 bytes'
   const { attachLimits } = value
@@ -617,6 +623,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(connectors === undefined ? {} : { connectors }),
     ...(memory === undefined ? {} : { memory }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
+    ...(kanban === undefined ? {} : { kanban }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),
