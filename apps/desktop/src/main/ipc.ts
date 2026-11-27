@@ -68,6 +68,7 @@ const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source 
   groups: onHermes(hermes => current(hermes.groups)),
   groupChat: onHermes(hermes => current(hermes.groupChat)),
   activity: onHermes(hermes => current(hermes.activity)),
+  screen: onHermes(hermes => current(hermes.screen)),
   session: onHermes((hermes, topic) => listener => hermes.watch(topic.slice('session:'.length) as SessionId, listener))
 }
 const kindOf = (topic: Topic): Kind => (isAppTopic(topic) ? topic : 'session')

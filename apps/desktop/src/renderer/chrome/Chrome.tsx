@@ -5,6 +5,7 @@ import { isCommandKey, MAC } from '../keys'
 import { CopyLink } from '../chat/Copy'
 import { botNameOf, openChatName } from '../chats/chat-list'
 import { GroupMembers } from '../groups/GroupThread'
+import { ComputerButton } from '../computer/Computer'
 import { faceOf } from '../groups/group-rows'
 import { newChatIn, newChatKeys } from '../new-chat'
 import { run, useTopic } from '../store'
@@ -56,12 +57,14 @@ export function TopBar({ target, settingsButton }: { readonly target: Target | n
   const chat = useOpenChatName()
   const group = useOpenGroup()
   const sessionId = shownChat(useTopic('open'))?.sessionId ?? null
+  const screen = useTopic('screen')
   const where = [group?.name ?? chat, target === null ? null : `on ${machineOf(target)}`].filter(part => part !== null).join(' ')
   return (
     <Bar ref={bar} where={where === '' ? null : where}>
       {group === null
         ? <button type="button" aria-keyshortcuts={newChatKeys(MAC).aria} onClick={startChat}>New chat</button>
         : <GroupMembers faces={group.faces} />}
+      {screen != null && <ComputerButton view={screen} />}
       {target !== null && <button ref={settingsButton} onClick={() => void run({ do: 'editTarget' })}>Settings</button>}
       {sessionId !== null && <CopyLink sessionId={sessionId} />}
     </Bar>

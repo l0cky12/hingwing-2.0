@@ -3,7 +3,7 @@ import {
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
-  type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
+  type RestoreScope, type ResultOf, type ScreenView, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 
 /** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
@@ -120,6 +120,8 @@ export interface AppTopics {
   readonly groupChat: GroupChat | null
   /** Which bots are working, waiting on the user, or hold a reply not yet seen. */
   readonly activity: BotActivities
+  /** The screen of the open chat's bot, or null while a group chat is open. */
+  readonly screen: ScreenView | null
   readonly preview: Preview
   readonly mode: Mode
   readonly theme: Theme
@@ -127,7 +129,7 @@ export interface AppTopics {
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, preview: true, mode: true, theme: true, snoozes: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, screen: true, preview: true, mode: true, theme: true, snoozes: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -203,12 +205,22 @@ export interface Bridge {
   attachPaste(): Promise<readonly StageResult[]>
   /** Holds the files of a drop. The window never names a path: the bridge reads it from each `File`. */
   attachDropped(files: readonly File[]): Promise<readonly StageResult[]>
+  /**
+   * Asks main for a live view of the `screen` topic's bot. Main answers with a `MessagePort`, posted to the window as the message
+   * `SCREEN_PORT`, that carries `ScreenFrame`s one way and the view's input bytes, or `'close'`, the other. `epoch` is as for `run`.
+   */
+  openScreen(epoch: number): void
 }
+
+/** The window message that carries a live view's port. */
+export const SCREEN_PORT = 'highwing:screen-port'
+/** What main sends on a live view's port: `'open'` once the socket is up, then the screen's RFB bytes, then why it closed, once. */
+export type ScreenFrame = 'open' | ArrayBuffer | { readonly closed: number }
 
 export const CHANNEL = {
   watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image',
   drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft', pickPicture: 'highwing:pick-picture', choosePicture: 'highwing:choose-picture', attachPick: 'highwing:attach-pick',
-  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop'
+  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop', screen: 'highwing:screen'
 } as const
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
@@ -484,6 +496,14 @@ export const validators: Validators = {
   botModels: raw => {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     return raw.bot !== null && bot === null ? null : { do: 'botModels', bot }
+  },
+  takeControl: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return raw.bot !== null && bot === null ? null : { do: 'takeControl', bot }
+  },
+  handBack: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return raw.bot !== null && bot === null ? null : { do: 'handBack', bot }
   },
   describeBot: raw => {
     const bot = botIdOf(raw.bot)

@@ -12,6 +12,7 @@ import { desktopOpener, recordingOpener, type Opener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
 import { draftStore, DRAFTS_DIR } from './drafts'
 import { serveWindows } from './ipc'
+import { serveScreen } from './screen'
 import { dbusSend, hasSecretService } from './keyring'
 import { chatLinks } from './links'
 import { MODE, preferenceStore, SNOOZES, THEME } from './preferences'
@@ -138,6 +139,7 @@ app.whenReady().then(async () => {
     owner, ipcMain, isAppUrl, opener, images, drafts, pane, { pick: (bot, live) => pickPicture(pictureDeps, bot, live), choose: () => choosePicture(pictureDeps) },
     { store: attachments, sources }, saver, { mode, theme, snoozes }
   )
+  const stopScreen = serveScreen(owner, ipcMain, isAppUrl)
   const stopNotices = notifyTurnEnds(owner, {
     notifier: HIGHWING_NOTIFY_LOG ? recordingNotifier(HIGHWING_NOTIFY_LOG) : desktopNotifier(Notification),
     focused: () => BrowserWindow.getFocusedWindow() !== null,
@@ -147,7 +149,7 @@ app.whenReady().then(async () => {
   const stopLinks = links.serve(owner, raise)
   const stopRefresh = refreshBotsOnFocus(app, owner)
   let closed: Promise<void> | null = null
-  const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), stopRefresh(), Promise.all([owner.close(), drafts.settled(), unread.settled(), mode.settled(), theme.settled(), snoozes.settled()]).then(() => {})))
+  const close = () => (closed ??= (served.dispose(), stopScreen(), stopNotices(), stopLinks(), stopRefresh(), Promise.all([owner.close(), drafts.settled(), unread.settled(), mode.settled(), theme.settled(), snoozes.settled()]).then(() => {})))
   app.on('window-all-closed', () => void close().finally(() => app.quit()))
   // A quit from the menu or the session never emits window-all-closed, and a check or an attach still running would outlive the app.
   // Electron does not wait for a will-quit listener, so the quit is held until a draft or a preference still being written is on disk.

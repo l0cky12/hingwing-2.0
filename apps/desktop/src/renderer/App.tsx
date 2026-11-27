@@ -11,6 +11,8 @@ import { Banner, TopBar } from './chrome/Chrome'
 import { ModeSwitch } from './chrome/ModeSwitch'
 import { Preview } from './preview/Preview'
 import { Composer } from './composer/Composer'
+import { useComputerShown } from './computer/computer'
+import { ComputerView } from './computer/Computer'
 import { Palette } from './palette/Palette'
 import { screenOf, type CardSetup } from './setup/screens'
 import { Settings } from './setup/Settings'
@@ -91,10 +93,12 @@ interface ChatWindowProps {
 
 function ChatWindow({ hidden, settings, target, mode, theme }: ChatWindowProps) {
   const preview = useTopic('preview')
+  const screen = useTopic('screen')
   const { root, pick } = useSwitchModeKeepingFocus(mode)
   const { settingsButton, close } = useCloseSettings(settings !== null)
   const switcher = <ModeSwitch mode={mode} onPick={pick} />
-  const paned = preview?.state === 'open' && settings === null
+  const computer = useComputerShown() && settings === null ? screen ?? null : null
+  const paned = (preview?.state === 'open' || computer !== null) && settings === null
   return (
     <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined}>
       {mode === 'bots' && <BotsSidebar head={switcher} />}
@@ -104,7 +108,7 @@ function ChatWindow({ hidden, settings, target, mode, theme }: ChatWindowProps) 
       </div>
       {settings !== null && <Settings setup={settings} mode={mode} theme={theme} onRequestClose={close} />}
       <DraftSweep />
-      {paned && <Preview preview={preview} />}
+      {computer !== null ? <ComputerView view={computer} /> : paned && preview?.state === 'open' && <Preview preview={preview} />}
     </div>
   )
 }
