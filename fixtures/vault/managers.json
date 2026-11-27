@@ -1,0 +1,9 @@
+{
+  "default": {
+    "onepassword": { "installed": true, "enabled": false },
+    "bitwarden": { "installed": true, "password": "correct horse battery staple", "logins": ["github.com", "news.ycombinator.com", "mail.proton.me"] }
+  },
+  "research": {
+    "onepassword": { "installed": true, "token": true, "logins": ["aws.amazon.com", "cloud.google.com"] }
+  }
+}

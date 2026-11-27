@@ -1,0 +1,7 @@
+{
+  "entries": [
+    { "file": "MEMORY.md", "text": "Prefers short answers." },
+    { "file": "USER.md", "text": "Lives in Lisbon." }
+  ],
+  "limits": { "memory": 40, "user": 1375 }
+}

@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "default": [
+      { "name": "github", "url": "https://api.githubcopilot.com/mcp/", "headers": { "Authorization": "Bearer ghp-fixture" }, "status": "connected", "tools": 41 },
+      { "name": "browser", "command": "npx", "args": ["-y", "@playwright/mcp"], "status": "configured", "plugin": "browser-tools" }
+    ]
+  },
+  "probes": {
+    "linear": { "tools": ["list_issues", "get_issue", "create_issue", "update_issue", "list_projects", "list_teams", "add_comment"] },
+    "files": { "tools": ["read_file", "list_directory"] },
+    "broken": { "error": "Connection refused" },
+    "notion": { "oauth_needed": true }
+  }
+}

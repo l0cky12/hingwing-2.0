@@ -29,6 +29,9 @@ const { relay: RELAY, ...TEAM_PROFILES } = JSON.parse(readFileSync(fileURLToPath
 export const TEAM_NO_RELAY: Fixture = { ...ERRAND, header: { ...ERRAND.header, profiles: TEAM_PROFILES } }
 /** The same three on a Hermes that can: Rae answers after 1500 ms and Sam is not running. */
 export const TEAM: Fixture = { ...TEAM_NO_RELAY, header: { ...TEAM_NO_RELAY.header, relay: RELAY } }
+const REGENERATE = loadFixture(fileURLToPath(new URL('../../../../fixtures/regenerate.jsonl', import.meta.url)))
+/** Three stored turns whose story regenerates the last, in Ada's chat on the Hermes of `TEAM`. */
+export const REGENERATE_TEAM: Fixture = { ...REGENERATE, header: { ...REGENERATE.header, profiles: TEAM_PROFILES, relay: RELAY } }
 export const RAE_SAID = (RELAY.rae as { reply: string }).reply
 
 const { groups: GROUPS, ...LAUNCH_PROFILES } = JSON.parse(readFileSync(fileURLToPath(new URL('../../../../fixtures/profiles/launch.json', import.meta.url)), 'utf8')) as { groups: GroupsScript }

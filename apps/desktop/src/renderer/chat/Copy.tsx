@@ -7,7 +7,7 @@ const SHOWN_MS = 2000
 
 const WORDS = { copied: 'Copied', failed: 'Couldn’t copy' } as const
 
-function useCopy(): { readonly said: string | null; readonly copy: (text: string) => void } {
+export function useCopy(): { readonly said: string | null; readonly copy: (text: string) => void } {
   const [outcome, setOutcome] = useState<keyof typeof WORDS | null>(null)
   const timer = useRef<number | undefined>(undefined)
   useEffect(() => () => window.clearTimeout(timer.current), [])

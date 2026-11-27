@@ -1,5 +1,6 @@
 import type { Reaction } from '@highwing/hermes/domain'
 import { useLayoutEffect, useRef, type KeyboardEvent } from 'react'
+import { ICON } from '../chrome/PopupMenu'
 import { usePopover } from '../composer/popover'
 
 export const QUICK_REACTIONS = [
@@ -56,7 +57,9 @@ export function Reactions({ given, disabled, onReact }: ReactionsProps) {
 
   return (
     <div className="react" ref={anchor}>
-      <button ref={button} type="button" className="copy" aria-haspopup="dialog" aria-expanded={shown} disabled={disabled} onClick={() => setOpen(!shown)}>React</button>
+      <button ref={button} type="button" className="copy icon" aria-label="React" title="React" aria-haspopup="dialog" aria-expanded={shown} disabled={disabled} onClick={() => setOpen(!shown)}>
+        <svg {...ICON}><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><path d="M9 9h.01M15 9h.01" /></svg>
+      </button>
       {shown && (
         <div ref={picker} className="react-pick" role="dialog" aria-label="Reactions" onKeyDown={onKeyDown}>
           {QUICK_REACTIONS.map(({ emoji, name }) => (
