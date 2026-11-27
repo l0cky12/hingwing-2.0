@@ -8,7 +8,7 @@ import { manualClock } from '../src/testing/clock'
 import { MASKED, play, scriptedDialer, type Fixture, type FixtureStep, type GroupsScript, type Moment, type ScriptOptions } from '../src/testing/fixture'
 import {
   BOUND, BRANCH, BRANCH_COMPACTED, BRANCH_OLD, callsIn, DOWNLOADS, EDIT_COMPACTED, ERRAND, INVOICES, LAUNCH, LAUNCH_GROUP, LAUNCH_NO_GROUPS, NO_HOME_CHAT, NO_TREE, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, RAE_SAID,
-  REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, SORTED, SORTED_2, SORTED_3, SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, withGroups, withSteps
+  REGENERATE_TEAM, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, SORTED, SORTED_2, SORTED_3, SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, withGroups, withSteps
 } from './support/errand'
 
 const CLIENT = { name: 'highwing-test', version: '0.0.0' }
@@ -1410,6 +1410,18 @@ describe('mentioning another bot', () => {
     expect(relays(opened)).toMatchObject([{ after: last }])
   })
 
+  it('moves a handed message to the newest turn kept when a regenerate cuts the turn it was sent after', async () => {
+    const opened = open(REGENERATE_TEAM)
+    opened.watch()
+    await send(opened, ASK)
+    const [, kept, cut] = opened.seen.at(-1)?.history.map(turn => turn.id) ?? []
+    expect(kept).toBeDefined()
+    expect(relays(opened)).toMatchObject([{ after: cut }])
+    await opened.hermes.run({ do: 'rewind', sessionId: SESSION, rowId: 5, text: 'List the folder' })
+    await opened.clock.advance(0)
+    expect(relays(opened)).toMatchObject([{ after: kept }])
+  })
+
   it('gives up in words when no reply comes in 25 minutes', async () => {
     const opened = open({ ...TEAM, header: { ...TEAM.header, relay: { rae: { reply: 'Too late.', delay_ms: 1_500_001 } } } })
     await send(opened, ASK)
@@ -1960,5 +1972,60 @@ describe('a group chat', () => {
     await opened.clock.advance(0)
     expect(opened.hermes.groupChat.get()).toEqual({ group: 'disbanded', at: 'missing' })
     expect(await opened.hermes.run({ do: 'sendToGroup', group: 'disbanded' as GroupId, text: 'Anyone?' })).toEqual({ ok: false, refusal: { kind: 'stale', message: 'Hermes no longer has this group chat.' } })
+  })
+})
+
+describe('reading messages to search', () => {
+  const RESEARCH = 'research' as BotId
+  const SEEDED = WITH_CHATS.header.chats ?? {}
+  const more = Array.from({ length: 4 }, (_, at) => ({
+    id: `local-03${at}`, title: `Older chat ${at}`, last_active: 1795000000 - at, rows: [{ role: 'user' as const, text: `Note ${at} about the quarterly audit.` }, { role: 'assistant' as const, text: 'Noted.' }]
+  }))
+  const MANY: Fixture = { ...WITH_CHATS, header: { ...WITH_CHATS.header, chats: { ...SEEDED, research: [...(SEEDED.research ?? []), ...more] } } }
+  const read = async (fixture: Fixture, step: number) => {
+    const opened = open(fixture)
+    await opened.clock.advance(0)
+    const outcome = await opened.hermes.run({ do: 'readMessages', step })
+    return { opened, read: outcome.ok ? outcome.value : null }
+  }
+
+  it('reads the newest chats of every bot, each message landing on the message that opens its turn', async () => {
+    const { opened, read: found } = await read(WITH_CHATS, 0)
+    expect(found?.messages).toContainEqual({ sessionId: INVOICES, bot: RESEARCH, chat: 'Sort the invoices', rowId: 1, landing: 1, text: 'Sort the invoices in the inbox folder by due date.', at: 1795249000000 })
+    expect(found?.messages).toContainEqual(expect.objectContaining({ sessionId: INVOICES, rowId: 2, landing: 1, text: 'Sorted fourteen invoices by due date; the oldest is due Friday.' }))
+    expect(found?.messages, 'a Bot Chat is read too, and a reply before any message lands nowhere').toContainEqual(expect.objectContaining({ sessionId: 'local-0000', bot: 'dr-eggbot', landing: null }))
+    expect(found?.reach).toBe('all')
+    expect(found?.unread).toBe(0)
+    const transcripts = opened.sent().filter(call => call.method === 'session.transcript' && call.params?.profile === 'research')
+    expect(transcripts.map(call => call.params?.session_id).sort()).toEqual([REMINDER, INVOICES, DOWNLOADS].sort())
+    expect(opened.sent().filter(call => call.method === 'session.resume'), 'reading attaches no chat').toEqual([])
+  })
+
+  it('reads five chats of each bot a step, and says when no bot has more', async () => {
+    const first = await read(MANY, 0)
+    expect(first.read?.reach).toBe('more')
+    expect(first.read?.messages.some(message => message.text.includes('quarterly audit') && message.chat === 'Older chat 1')).toBe(true)
+    expect(first.read?.messages.some(message => message.chat === 'Older chat 2')).toBe(false)
+    const second = await read(MANY, 1)
+    expect(second.read?.reach).toBe('all')
+    expect([...new Set(second.read?.messages.map(message => message.chat))]).toEqual(['Older chat 2', 'Older chat 3'])
+  })
+
+  it('reads only its own profile on a socket that reaches no other bot', async () => {
+    const { opened, read: found } = await read(BOUND, 0)
+    expect(found).toEqual({ messages: [], reach: 'all', unread: 0 })
+    const lists = opened.sent().filter(call => call.method === 'session.list' && call.params?.scope === 'stored')
+    expect(lists.length).toBeGreaterThan(0)
+    expect(lists.every(call => call.params?.profile === undefined)).toBe(true)
+  })
+})
+
+describe('reading messages before the bots are listed', () => {
+  it('waits for the list of bots on a socket that reaches them all, so no bot is left out', async () => {
+    const opened = open(WITH_CHATS, { latencyMs: 100 })
+    for (let waited = 0; waited < 1000 && !opened.sent().some(call => call.method === 'profiles.list'); waited += 10) await opened.clock.advance(10)
+    const read = opened.hermes.run({ do: 'readMessages', step: 0 })
+    await opened.clock.advance(1000)
+    expect(await read).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'Highwing is still listing your bots.' } })
   })
 })

@@ -58,7 +58,7 @@ export function DraftSweep() {
   return null
 }
 
-export function ChatsSidebar({ head }: { readonly head: ReactNode }) {
+export function ChatsSidebar({ head, foot = null }: { readonly head: ReactNode; readonly foot?: ReactNode }) {
   const snoozes = useTopic('snoozes') ?? NO_SNOOZES
   return (
     <ChatsPanel
@@ -71,6 +71,7 @@ export function ChatsSidebar({ head }: { readonly head: ReactNode }) {
       onSnooze={(sessionId, until) => run({ do: 'snooze', sessionId, until })}
       onArchive={sessionId => run({ do: 'archive', sessionId, archived: true })}
       onDelete={sessionId => run({ do: 'remove', sessionId })}
+      foot={foot}
     />
   )
 }
@@ -95,6 +96,7 @@ interface ChatsPanelProps extends RowActions {
   readonly drafts: ReadonlySet<SessionId>
   readonly snoozes: Snoozes
   readonly live: boolean
+  readonly foot?: ReactNode
 }
 
 /** Where a row's word sent it: out of the list, or into a group. */
@@ -103,7 +105,7 @@ type Moved = 'gone' | ChatGroup
 /** The row whose menu is open, where it was in the list, and how far the list was scrolled. */
 interface OpenMenu { readonly id: SessionId; readonly opener: Opener; readonly at: number; readonly scrolled: number }
 
-export function ChatsPanel({ head, sidebar, open, now, drafts, snoozes, live, ...actions }: ChatsPanelProps) {
+export function ChatsPanel({ head, sidebar, open, now, drafts, snoozes, live, foot = null, ...actions }: ChatsPanelProps) {
   const ids = useId()
   const view = chatsOf(sidebar, open, now, drafts, snoozes)
   const [said, setSaid] = useState<{ readonly words: string } | null>(null)
@@ -173,6 +175,7 @@ export function ChatsPanel({ head, sidebar, open, now, drafts, snoozes, live, ..
         {drawn}
       </div>
       <p className="chats-note chats-saved" role="status">{said?.words ?? ''}</p>
+      {foot}
     </nav>
   )
 }
