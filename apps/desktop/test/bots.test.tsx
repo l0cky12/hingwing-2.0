@@ -23,6 +23,7 @@ const showing = (bots: Bots | undefined, open: OpenChat | undefined, link: Link 
       onModels={async () => ({ ok: true, value: { options: [], fallback: null } })}
       onDescribe={async bot => ({ ok: true, value: { bot, name: 'Rae', description: '', persona: '', revision: 2 } })} onEdit={async () => ({ ok: true, value: undefined })}
       onPickPicture={async () => ({ ok: true, value: 'cancelled' })} onRemovePicture={async () => ({ ok: true, value: undefined })} looks={NO_LOOKS}
+      cron={0} onRoutines={async () => ({ ok: true, value: [] })}
     />
   )
 const render = (bots: Bots | undefined) => showing(bots, AT_LAUNCH)

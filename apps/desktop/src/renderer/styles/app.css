@@ -1178,3 +1178,11 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .palette { border: 2px solid CanvasText; }
   .palette-row.active { outline: 2px solid Highlight; outline-offset: -2px; }
 }
+.routines-dialog { width: min(440px, calc(100vw - 32px)); }
+.routines-dialog .routines-note { color: var(--graphite); }
+.routines { margin: 4px 0 16px; padding: 0; list-style: none; max-height: 50vh; overflow-y: auto; }
+.routines li { display: grid; grid-template-columns: 1fr auto; column-gap: 12px; padding: 8px 0; border-top: 1px solid var(--rule); }
+.routines li:last-child { border-bottom: 1px solid var(--rule); }
+.routines .routine-name { font-weight: 600; overflow-wrap: anywhere; }
+.routines .routine-when { grid-column: 1; color: var(--graphite); font-size: 13px; }
+.routines .routine-paused { grid-column: 2; grid-row: 1 / span 2; align-self: center; padding: 1px 8px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--graphite); color: var(--graphite); font-size: 12px; }

@@ -1,4 +1,4 @@
-import type { Bot, BotActivities, BotActivity, BotCreated, BotDetails, BotDraft, BotId, BotMark, Bots, CommandOutcome, GroupDraft, GroupId, Groups, Link, Marked, ModelMenu, OpenChat } from '@highwing/hermes/domain'
+import type { Bot, BotActivities, BotActivity, BotCreated, BotDetails, BotDraft, BotId, BotMark, Bots, CommandOutcome, GroupDraft, GroupId, Groups, Link, Marked, ModelMenu, OpenChat, Routine } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { activityIn } from '@highwing/hermes/domain'
@@ -14,6 +14,7 @@ import { nameProblem } from './bot-form'
 import type { LookCalls } from './LookPicker'
 import { NewBotForm } from './NewBotForm'
 import { DeleteDialog } from './DeleteDialog'
+import { RoutinesDialog } from './Routines'
 import { isMenuKey, type Box, type Opener } from '../chrome/popup-menu'
 import { anchorOf, botMenuOf, DELETE_WORDS, deleteRefusal, groupMenuOf, sameOwner, type GroupAction, type MenuAction, type MenuOwner, type OpenMenu } from './bot-menu'
 import { afterGroupOf, elementIn, fallbackOf, focusIn, moreOf, openerTarget, rowOf, stayedIn, type FocusTarget } from './focus'
@@ -55,6 +56,8 @@ export function BotsSidebar({ head }: { readonly head: ReactNode }) {
       onEdit={(bot, edit, revision) => run({ do: 'editBot', bot, edit, revision })}
       onPickPicture={pickBotPicture}
       onRemovePicture={bot => run({ do: 'removeBotPicture', bot })}
+      cron={useTopic('cron')}
+      onRoutines={bot => run({ do: 'routines', bot })}
       looks={LOOKS}
     />
   )
@@ -79,6 +82,9 @@ interface BotsPanelProps extends EditorCalls {
   readonly onRenameGroup: (group: GroupId, name: string) => Promise<CommandOutcome>
   readonly onDeleteGroup: (group: GroupId) => Promise<CommandOutcome>
   readonly onModels: () => Promise<CommandOutcome<ModelMenu>>
+  /** Moves each time Hermes's cron store may have changed. */
+  readonly cron: number | undefined
+  readonly onRoutines: (bot: BotId) => Promise<CommandOutcome<readonly Routine[]>>
   readonly looks: LookCalls
 }
 
@@ -237,7 +243,7 @@ function useMarks({ bots, onMark, onRefused, onLanded }: MarkCalls) {
 const NO_BOX: Box = { left: 0, top: 0, right: 0, bottom: 0 }
 
 export function BotsPanel({
-  head = <h2>Bots</h2>, bots, open, link, groups, activity, onOpen, onNewChat, onNew, onMark, onCreate, onCreateGroup, onOpenGroup, onRenameGroup, onDeleteGroup, onModels, looks, ...editor
+  head = <h2>Bots</h2>, bots, open, link, groups, activity, onOpen, onNewChat, onNew, onMark, onCreate, onCreateGroup, onOpenGroup, onRenameGroup, onDeleteGroup, onModels, cron, onRoutines, looks, ...editor
 }: BotsPanelProps) {
   const [refused, setRefused] = useState<string | null>(null)
   const [form, setForm] = useState<{ readonly models: ModelMenu | 'loading' } | null>(null)
@@ -246,6 +252,7 @@ export function BotsPanel({
   const [made, setMade] = useState<BotCreated | null>(null)
   const [editing, setEditing] = useState<BotDetails | null>(null)
   const [deleting, setDeleting] = useState<Bot | null>(null)
+  const [routines, setRoutines] = useState<Bot | null>(null)
   const [editingGroup, setEditingGroup] = useState<GroupRowView | null>(null)
   const [deletingGroup, setDeletingGroup] = useState<GroupRowView | null>(null)
   /** A group whose delete Hermes has not answered yet, and where focus goes once its row leaves. */
@@ -341,6 +348,7 @@ export function BotsPanel({
     open: bot => void pick(bot.id),
     new: bot => void onNew(bot.id).then(outcome => setRefused(outcome.ok ? null : outcome.refusal.message)),
     edit: bot => void describe(bot.id),
+    routines: setRoutines,
     pin: bot => mark(bot, 'pin'),
     unpin: bot => mark(bot, 'unpin'),
     hide: bot => mark(bot, 'hide'),
@@ -504,6 +512,12 @@ export function BotsPanel({
           key={editing.bot} bot={edited ?? { id: editing.bot, name: editing.name, preview: null, description: null, tone: 'slate', picture: false, pinned: false, hidden: false }} details={editing}
           {...editor}
           onClose={() => closeDialog(() => setEditing(null), { to: 'row', bot: editing.bot })}
+        />
+      )}
+      {routines !== null && (
+        <RoutinesDialog
+          key={routines.id} name={routines.name} edition={cron} onList={() => onRoutines(routines.id)}
+          onClose={() => closeDialog(() => setRoutines(null), { to: 'row', bot: routines.id })}
         />
       )}
       {deleting !== null && (

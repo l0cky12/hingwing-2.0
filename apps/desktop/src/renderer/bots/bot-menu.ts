@@ -3,20 +3,21 @@ import { anchorAt, type Anchor, type Box, type Opener } from '../chrome/popup-me
 import { NEW_GROUP_BLOCKS } from './plus-menu'
 import type { BotPlace } from './sidebar-view'
 
-export type MenuAction = 'open' | 'new' | 'edit' | BotMark | 'delete'
+export type MenuAction = 'open' | 'new' | 'edit' | 'routines' | BotMark | 'delete'
 export type GroupAction = Extract<MenuAction, 'open' | 'edit' | 'delete'>
 
 export const MENUS: { readonly [P in BotPlace]: readonly (readonly MenuAction[])[] } = {
-  section: [['open', 'new'], ['edit'], ['pin', 'hide'], ['delete']],
-  pinned: [['open', 'new'], ['edit'], ['unpin', 'hide'], ['delete']],
-  card: [['open', 'new'], ['edit'], ['hide']],
-  hidden: [['open', 'new'], ['edit'], ['show'], ['delete']]
+  section: [['open', 'new'], ['edit', 'routines'], ['pin', 'hide'], ['delete']],
+  pinned: [['open', 'new'], ['edit', 'routines'], ['unpin', 'hide'], ['delete']],
+  card: [['open', 'new'], ['edit', 'routines'], ['hide']],
+  hidden: [['open', 'new'], ['edit', 'routines'], ['show'], ['delete']]
 }
 
 const LABELS: { readonly [A in MenuAction]: string } = {
   open: 'Open chat',
   new: 'New chat',
   edit: 'Edit…',
+  routines: 'Routines…',
   pin: 'Pin to top',
   unpin: 'Unpin',
   hide: 'Hide from list',

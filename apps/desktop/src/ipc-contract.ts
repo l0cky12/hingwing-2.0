@@ -120,6 +120,8 @@ export interface AppTopics {
   readonly groupChat: GroupChat | null
   /** Which bots are working, waiting on the user, or hold a reply not yet seen. */
   readonly activity: BotActivities
+  /** Moves each time Hermes's cron store may have changed. A shown list of routines asks again. */
+  readonly cron: number
   readonly preview: Preview
   readonly mode: Mode
   readonly theme: Theme
@@ -127,7 +129,7 @@ export interface AppTopics {
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, preview: true, mode: true, theme: true, snoozes: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, cron: true, preview: true, mode: true, theme: true, snoozes: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -488,6 +490,10 @@ export const validators: Validators = {
   describeBot: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'describeBot', bot }
+  },
+  routines: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && { do: 'routines', bot }
   },
   editBot: raw => {
     const bot = botIdOf(raw.bot)
