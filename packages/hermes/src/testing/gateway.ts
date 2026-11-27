@@ -10,7 +10,7 @@ import type { SessionEvent } from '../domain/reduce'
 import { APPROVAL_MODES, type ApprovalMode } from '../domain/session'
 import { GATEWAY_PROTOCOL, type Clock, type Reach } from '../wire/link'
 import { parseEvent } from '../wire/parse'
-import { MASKED, type ChatSeed, type Fixture, type FixtureStep, type Reads } from './fixture'
+import { MASKED, type ChatSeed, type Fixture, type FixtureStep, type PluginSeed, type Reads } from './fixture'
 import { memoryBook, type MemoryBook } from './memory-book'
 import { checkParams } from './params'
 import { ScriptedRooms } from './rooms'
@@ -602,6 +602,11 @@ const BUSY_MODES: readonly unknown[] = ['interrupt', 'steer', 'queue']
 
 const refusal = (reason: string, data: Obj = {}): { error: WireError } => ({ error: { code: 4001, message: reason, data: { reason, ...data } } })
 
+type PluginState = Omit<PluginSeed, 'key' | 'status'> & { readonly key: string; status: PluginSeed['status'] }
+
+const pluginRow = ({ name, key, version, description, source, status }: PluginState) =>
+  ({ name, key, version, description, source, status, portable: false, install_dir: '', has_desktop_half: false, servers: [], tools: [] })
+
 /** gateway/session_controls.py:386-392 */
 const unknownMethod = (method: string) => new Refused('unknown_method', { code: -32601, message: `unknown method: ${method}`, data: { reason: 'unknown_method' } })
 
@@ -1089,6 +1094,7 @@ export class ScriptedGateway {
   private connectorOpSeq = 0
   private readonly vault: ScriptedVault | null
   private readonly mcp: ScriptedToolServers | null
+  private readonly pluginRows: PluginState[] | null
   private drop: Drop
   private delivered = 0
   private seqShift = 0
@@ -1158,6 +1164,7 @@ export class ScriptedGateway {
     this.vault = fixture.header.vault === undefined ? null : new ScriptedVault(fixture.header.vault, message => { throw new Refused(message, { code: 5095, message }) })
     const { mcp } = fixture.header
     this.mcp = mcp === undefined ? null : new ScriptedToolServers(mcp, (code, message) => { throw new Refused(message, { code, message }) })
+    this.pluginRows = fixture.header.plugins?.map(seed => ({ ...seed, key: seed.key ?? seed.name })) ?? null
   }
 
   get latest(): number {
@@ -2320,15 +2327,29 @@ export class ScriptedGateway {
     return this.mcp.call(method, params, routed)
   }
 
-  /** `plugins.manage` reaches only the legacy handler. Only `list` is played, with the same rows for every profile (tui_gateway/methods_tools.py:1737-1740). */
+  /** tui_gateway/methods_tools.py:1737-1762 */
   plugins(socket: Socket, params: Obj): unknown {
-    const listed = this.fixture.header.plugins
-    if (listed === undefined || socket.reach === 'profile') throw unknownMethod('plugins.manage')
+    const rows = this.pluginRows
+    if (rows === null || socket.reach === 'profile') throw unknownMethod('plugins.manage')
     const action = params.action ?? 'list'
+    if (action === 'toggle') return this.togglePlugin(rows, params)
     if (action !== 'list') throw new Refused('unplayed_action', { code: 4019, message: `the scripted gateway plays no plugins.manage ${String(action)}` })
-    const rows = listed.map(plugin => ({ ...plugin, key: plugin.name, portable: false, install_dir: '', has_desktop_half: false, servers: [], tools: [] }))
-    const userCount = rows.filter(row => row.source !== 'bundled').length
-    return { plugins: rows, user_count: userCount, bundled_count: rows.length - userCount }
+    const listed = rows.map(pluginRow)
+    const userCount = listed.filter(row => row.source !== 'bundled').length
+    return { plugins: listed, user_count: userCount, bundled_count: listed.length - userCount }
+  }
+
+  /** `_plugins_toggle` (tui_gateway/methods_tools.py:1743-1762) and `dashboard_set_agent_plugin_enabled` (hermes_cli/plugins_cmd.py:1032-1066). */
+  private togglePlugin(rows: PluginState[], params: Obj): unknown {
+    if (this.fixture.header.listOnly === true) throw new Refused('unknown_action', { code: 4017, message: 'unknown plugins action: toggle' })
+    const ident = (isString(params.key) ? params.key.trim() : '') || (isString(params.name) ? params.name.trim() : '')
+    if (ident === '') throw new Refused('invalid_params', { code: 4019, message: "plugins.toggle requires a 'key' or 'name'" })
+    const row = rows.find(plugin => plugin.key === ident) ?? rows.find(plugin => plugin.name === ident)
+    if (row === undefined) throw new Refused('not_installed', { code: 5026, message: `Plugin '${ident}' is not installed or bundled.` })
+    const status = params.enable === true ? 'enabled' : 'disabled'
+    const changed = row.status !== status
+    row.status = status
+    return { ok: true, unchanged: !changed, restart_required: changed && (status === 'disabled' || row.restart_required === true), gateway_reloaded: false, activation: null, name: row.key, plugin: pluginRow(row) }
   }
 
   /** `tools.list` reaches only the legacy handler. Every chat, and none, has the header's toolsets, as a profile with no toolsets of its own does. */

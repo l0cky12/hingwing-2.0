@@ -209,7 +209,7 @@ export class Offline extends Error {}
  * `mcp.servers.list`, `.status`, `.add`, `.test` and `.remove` reach their legacy handlers too, each in the profile the call names
  * (tui_gateway/methods_tools.py:1470-1612). A -32601 from them means this Hermes cannot manage tool servers from Highwing.
  * `plugins.manage` reaches its legacy handler the same way, in the profile the call names (tui_gateway/methods_tools.py:1939). Highwing
- * sends only its `list` action, and a -32601 from it means this Hermes cannot list its plugins. `tools.list` reaches its legacy handler too
+ * sends its `list` and `toggle` actions, and a -32601 from it means this Hermes cannot list its plugins. `tools.list` reaches its legacy handler too
  * (tui_gateway/methods_tools.py:273). It takes a session id and no profile, and a -32601 from it means this Hermes cannot list its tools.
  * `projects.tree` reaches its legacy handler the same way (tui_gateway/methods_config.py:137), and a -32601 from it
  * means this Hermes cannot say which chats were branched from which. So does `llm.oneshot` (tui_gateway/methods_session.py:1249),

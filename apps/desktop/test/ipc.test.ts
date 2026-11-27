@@ -171,6 +171,8 @@ describe('validators', () => {
     expect(parseCommand({ do: 'plugins', bot: null, extra: 1 })).toEqual({ do: 'plugins', bot: null })
     expect(parseCommand({ do: 'plugins', bot: 'research' })).toEqual({ do: 'plugins', bot: 'research' })
     expect(parseCommand({ do: 'plugins', bot: ' ' })).toBeNull()
+    expect(parseCommand({ do: 'setPlugin', bot: 'research', key: 'image_gen/openai', enabled: false, extra: 1 })).toEqual({ do: 'setPlugin', bot: 'research', key: 'image_gen/openai', enabled: false })
+    expect(parseCommand({ do: 'setPlugin', bot: null, key: 'kanban', enabled: true })).toEqual({ do: 'setPlugin', bot: null, key: 'kanban', enabled: true })
     expect(parseCommand({ do: 'tools', sessionId: null, extra: 1 })).toEqual({ do: 'tools', sessionId: null })
     expect(parseCommand({ do: 'tools', sessionId: 's-1' })).toEqual({ do: 'tools', sessionId: 's-1' })
     expect(parseCommand({ do: 'tools', sessionId: ' ' })).toBeNull()
@@ -369,6 +371,9 @@ describe('validators', () => {
     ['a tool server command whose arguments are not text', { do: 'addToolServer', bot: 'rae', setup: { kind: 'command', name: 'x', command: 'npx', args: [7] } }],
     ['a tool server of a kind Highwing does not add', { do: 'addToolServer', bot: 'rae', setup: { kind: 'preset', name: 'x' } }],
     ['the removal of a tool server with no name', { do: 'removeToolServer', bot: 'rae', name: '' }],
+    ['a plugin switch with no key', { do: 'setPlugin', bot: null, key: ' ', enabled: true }],
+    ['a plugin switch with no state', { do: 'setPlugin', bot: null, key: 'kanban' }],
+    ['a plugin switch for a bot with a blank name', { do: 'setPlugin', bot: ' ', key: 'kanban', enabled: true }],
     ['the tool servers of a bot with a blank name', { do: 'toolServers', bot: ' ' }],
     ['the tool servers of no bot named at all', { do: 'toolServers' }],
     ['the routines of a bot with no name', { do: 'listRoutines', bot: '' }],
@@ -563,7 +568,7 @@ describe('validators', () => {
       'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
       'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'plugins', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
       'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
-      'sendToGroup', 'setAccent', 'setMode', 'setNotice', 'setOnClose', 'setSendKey', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
+      'sendToGroup', 'setAccent', 'setMode', 'setNotice', 'setOnClose', 'setPlugin', 'setSendKey', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
       'takeControl', 'toolServers', 'tools', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'versions'
     ])
   })

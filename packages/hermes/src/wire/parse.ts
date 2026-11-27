@@ -1526,9 +1526,11 @@ export function parsePlugins(reply: PluginsManageResult): readonly Plugin[] {
   return (Array.isArray(rows) ? rows.filter(isObject) : []).flatMap(row => {
     const name = words(row.name)
     if (name === null) return []
-    return [{ name, version: trimmed(row.version) ?? '', description: trimmed(row.description) ?? '', source: trimmed(row.source) ?? '', enabled: row.status === 'enabled' }]
+    return [{ name, key: words(row.key) ?? name, version: trimmed(row.version) ?? '', description: trimmed(row.description) ?? '', source: trimmed(row.source) ?? '', enabled: row.status === 'enabled' }]
   })
 }
+
+export const parseRestartNeeded = (reply: PluginsManageResult): boolean => isObject(reply) && reply.restart_required === true
 
 /**
  * `tools.list` (tui_gateway/methods_tools.py:234-247). Hermes reads the chat's toolsets, or the launch profile's when it holds no

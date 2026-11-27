@@ -1,4 +1,4 @@
 [
-  { "name": "kanban", "version": "1.2.0", "description": "A task board the bot and you share.", "source": "bundled", "status": "enabled" },
+  { "name": "kanban", "version": "1.2.0", "description": "A task board the bot and you share.", "source": "bundled", "status": "enabled", "restart_required": true },
   { "name": "browser-tools", "version": "0.4.1", "description": "Gives the bot a Playwright browser.", "source": "user", "status": "not enabled" }
 ]

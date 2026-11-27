@@ -27,8 +27,8 @@ describe('plugins', () => {
     const { run, calls } = await launched(SEEDS)
     expect(await run({ do: 'plugins', bot: 'research' as BotId })).toEqual({
       ok: true, value: [
-        { name: 'kanban', version: '1.2.0', description: 'A task board the bot and you share.', source: 'bundled', enabled: true },
-        { name: 'browser-tools', version: '0.4.1', description: 'Gives the bot a Playwright browser.', source: 'user', enabled: false }
+        { name: 'kanban', key: 'kanban', version: '1.2.0', description: 'A task board the bot and you share.', source: 'bundled', enabled: true },
+        { name: 'browser-tools', key: 'browser-tools', version: '0.4.1', description: 'Gives the bot a Playwright browser.', source: 'user', enabled: false }
       ]
     })
     expect(calls()).toEqual([expect.objectContaining({ params: { action: 'list', profile: 'research' } })])
@@ -46,8 +46,37 @@ describe('plugins', () => {
   })
 })
 
+describe('setPlugin', () => {
+  it('switches the plugin by its key and answers the list as Hermes reads it after', async () => {
+    const { run, calls } = await launched([...SEEDS, { name: 'openai', key: 'image_gen/openai', version: '', description: '', source: 'bundled', status: 'not enabled' }])
+    const switched = await run({ do: 'setPlugin', bot: 'research' as BotId, key: 'image_gen/openai', enabled: true })
+    expect(switched).toEqual({ ok: true, value: { restart: false, plugins: expect.arrayContaining([expect.objectContaining({ key: 'image_gen/openai', enabled: true })]) } })
+    expect(calls().map(call => call.params)).toEqual([{ action: 'toggle', key: 'image_gen/openai', enable: true, profile: 'research' }, { action: 'list', profile: 'research' }])
+  })
+
+  it('says when the change waits for Hermes to restart', async () => {
+    const { run } = await launched(SEEDS)
+    const switched = await run({ do: 'setPlugin', bot: null, key: 'kanban', enabled: false })
+    expect(switched.ok && switched.value).toMatchObject({ restart: true, plugins: [{ key: 'kanban', enabled: false }, { key: 'browser-tools', enabled: false }] })
+  })
+
+  it('gives Hermes’s words when it refuses', async () => {
+    const { run } = await launched(SEEDS)
+    expect(await run({ do: 'setPlugin', bot: null, key: 'gone', enabled: true })).toEqual({ ok: false, refusal: { kind: 'rejected', message: "Plugin 'gone' is not installed or bundled." } })
+  })
+
+
+  it.each([
+    ['a Hermes without the call', null, WITH_BOTS],
+    ['a Hermes that only lists plugins', SEEDS, { ...WITH_BOTS, header: { ...WITH_BOTS.header, listOnly: true } }]
+  ])('says %s can’t turn plugins on or off', async (_, seeds, fixture) => {
+    const { run } = await launched(seeds, fixture)
+    expect(await run({ do: 'setPlugin', bot: null, key: 'kanban', enabled: false })).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't turn plugins on or off." } })
+  })
+})
+
 describe('parsePlugins', () => {
-  it('reads a disabled plugin as off, drops a row with no name, and fills what a row leaves out', () => {
+  it('reads a disabled plugin as off, drops a row with no name, keys a row by its name when Hermes gives no key, and fills what a row leaves out', () => {
     expect(parsePlugins({
       plugins: [
         { name: 'a', key: 'a', version: '', description: '', source: 'user', status: 'disabled', portable: false, install_dir: '', has_desktop_half: false, servers: [] },
@@ -55,8 +84,8 @@ describe('parsePlugins', () => {
         { name: 'c', status: 'enabled' } as never
       ]
     })).toEqual([
-      { name: 'a', version: '', description: '', source: 'user', enabled: false },
-      { name: 'c', version: '', description: '', source: '', enabled: true }
+      { name: 'a', key: 'a', version: '', description: '', source: 'user', enabled: false },
+      { name: 'c', key: 'c', version: '', description: '', source: '', enabled: true }
     ])
     expect(parsePlugins({})).toEqual([])
   })

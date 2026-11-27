@@ -5,7 +5,7 @@ import type { MessagesRead } from './messages'
 import type { ChatRef, Unstarted } from './open'
 import type { BotManagers, ManagerName } from './passwords'
 import type { PathMatch } from './path'
-import type { Plugin } from './plugins'
+import type { Plugin, PluginSwitched } from './plugins'
 import type { Toolset } from './toolsets'
 import type { Added, ServerSetup, ToolServer } from './tool-servers'
 import type { Routine, RoutineAction, RoutineId } from './routines'
@@ -185,6 +185,8 @@ export type Command =
   | { readonly do: 'removeToolServer'; readonly bot: BotId | null; readonly name: string }
   /** The plugins Hermes lists for `bot`, or for the launch profile for null, read on each ask. */
   | { readonly do: 'plugins'; readonly bot: BotId | null }
+  /** Turns the plugin `key` names on or off for `bot`, or for the launch profile for null, and answers the plugins after. */
+  | { readonly do: 'setPlugin'; readonly bot: BotId | null; readonly key: string; readonly enabled: boolean }
   /** The toolsets Hermes has, each on or off for the chat `sessionId` names, or for the launch profile when it is null or a chat Hermes does not hold. */
   | { readonly do: 'tools'; readonly sessionId: SessionId | null }
   /**
@@ -289,6 +291,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'toolServers' | 'removeToolServer' } ? readonly ToolServer[]
   : C extends { do: 'addToolServer' } ? Added
   : C extends { do: 'plugins' } ? readonly Plugin[]
+  : C extends { do: 'setPlugin' } ? PluginSwitched
   : C extends { do: 'tools' } ? readonly Toolset[]
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown

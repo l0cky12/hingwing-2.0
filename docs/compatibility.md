@@ -1070,18 +1070,21 @@ Hermes can't manage tool servers from Highwing."
 
 ### A bot's plugins and Hermes's toolsets
 
-The Connectors screen's Plugins and Tools tabs list what Hermes has, read-only.
-Neither call is canonical, so each reaches its legacy handler only on a socket
-with the interactive grant.
+The Connectors screen's Plugins tab lists the bot's plugins with a switch on
+each card, and its Tools tab lists Hermes's toolsets read-only. None of these calls is canonical, so each reaches its
+legacy handler only on a socket with the interactive grant.
 
 | Method | Params | What Highwing does with the answer |
 | --- | --- | --- |
 | `plugins.manage` | `{action: "list"}`, with the bot's `profile` when the screen has one | Lists each plugin with its version, where Hermes found it (`bundled`, `user` or `entrypoint`), its description, and On when its `status` is `enabled`. `disabled` and `not enabled` read Off (`hermes_cli/plugins_cmd.py:933-946`). |
+| `plugins.manage` | `{action: "toggle", key, enable}`, with the bot's `profile` when the screen has one | Turns the plugin on or off by its canonical `key`, since a bare name can match a plugin of another category. Highwing then lists the plugins again and refuses the change, "Hermes kept <name> on.", when the list still shows the old state. When the reply says `restart_required`, the card says the change waits for Hermes to restart. A failure is 5026 in Hermes's words (`tui_gateway/methods_tools.py:1743-1762`). |
 | `tools.list` | `{session_id}` of the open chat, or `{}` when the chat has no session yet | Lists each toolset with its description, its tools and whether it is on. Hermes reads the toolsets of the chat it holds by that id, and the launch profile's otherwise (`tui_gateway/methods_tools.py:220-247`). |
 
 On an older Hermes, or a socket bound to one profile, the Plugins tab says
 "This Hermes can't list its plugins." and the Tools tab says "This Hermes can't
-list its tools."
+list its tools." An older Hermes that lists plugins answers a toggle as an
+unknown action (4017), and the Plugins tab then says "This Hermes can't turn
+plugins on or off." with every switch disabled.
 
 ## Task board
 
