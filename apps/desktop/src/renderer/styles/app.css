@@ -525,13 +525,15 @@ textarea::placeholder { color: var(--graphite); }
 textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--ring); }
 .composer textarea:focus { box-shadow: none; }
 .composer .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; font: var(--text-md)/1.4 var(--sans); color: var(--graphite); }
-.tools .end { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; }
+.tools .end { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; margin-left: auto; }
+.tools .shrinks-first { flex: 1 1 8em; max-width: max-content; }
 .tools .end:has(> .model > :is(.later, .err, .confirm)) { flex-basis: 100%; }
 .tools .go { display: flex; flex: none; gap: 4px; padding-left: 4px; }
 .tools :where(.clip, .readout, .pill, .meter) { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; border: 0; border-radius: var(--radius-md); background: transparent; font: inherit; color: var(--graphite); white-space: nowrap; }
 .tools :where(.clip, .readout, .pill, .meter):is(:hover:not(:disabled), [aria-expanded="true"]) { color: var(--ink); background: var(--paper); }
 .tools :is(.readout, .knob, .model .anchor) { min-width: 0; max-width: 100%; }
 .tools .value { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tools .readout > :not(.value) { flex: none; }
 .tools .clip { flex: none; justify-content: center; width: 28px; padding: 0; }
 .tools .clip.mic[aria-pressed="true"] { color: var(--sheet); background: var(--brick); }
 .tools button:disabled { cursor: default; opacity: .45; }
