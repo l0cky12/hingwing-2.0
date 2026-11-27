@@ -30,6 +30,10 @@ const HOST: Target = { kind: 'local' }
 const AT_REST: CardSetup = { at: 'form', live: { target: HOST, epoch: 1 }, notice: null }
 const render = (theme: Theme, accent: Accent = 'bot') => renderToStaticMarkup(<Settings setup={AT_REST} mode="bots" theme={theme} accent={accent} onRequestClose={() => {}} onShowShortcuts={() => {}} />)
 const labelOf = (html: string, id: string) => new RegExp(`id="${id}"[^>]*>([^<]*)<`).exec(html)?.[1]
+const groupOf = (html: string, look: string, labelledBy: string) =>
+  new RegExp(`<div class="${look}" role="radiogroup" aria-labelledby="${labelledBy}" aria-describedby="${labelledBy}-desc">(.*?)</div>`).exec(html)![1]!
+const choicesOf = (group: string) =>
+  Array.from(group.matchAll(/<label><input type="radio"[^>]*?( checked="")?\/>(?:(?!<\/label>).)*?(\w+)<\/label>/g), ([, checked, label]) => `${label}${checked ? ' (checked)' : ''}`)
 
 beforeEach(() => {
   seen.commands = []
@@ -65,9 +69,16 @@ describe('the Theme and window-close rows of Settings', () => {
     const theme = seen.segmented.find(control => labelOf(html, control.labelledBy) === 'Theme')!
     expect(theme.value).toBe('system')
     expect(labelOf(html, `${theme.labelledBy}-desc`)).toBe('System follows your computer’s light or dark setting.')
-    const group = new RegExp(`<div class="seg" role="radiogroup" aria-labelledby="${theme.labelledBy}" aria-describedby="${theme.labelledBy}-desc">(.*?)</div>`).exec(html)![1]!
-    expect(Array.from(group.matchAll(/<label><input type="radio"[^>]*?( checked="")?\/><svg[^>]*>.*?<\/svg>(\w+)<\/label>/g), ([, checked, label]) => `${label}${checked ? ' (checked)' : ''}`))
-      .toEqual(['System (checked)', 'Light', 'Dark'])
+    expect(choicesOf(groupOf(html, 'looks', theme.labelledBy))).toEqual(['System (checked)', 'Light', 'Dark'])
+  })
+
+  it('draws each theme as a small window in its scheme, System as both, colored by the picked accent', () => {
+    const theme = (html: string) => groupOf(html, 'looks', seen.segmented.find(control => labelOf(html, control.labelledBy) === 'Theme')!.labelledBy)
+    const windowsOf = (group: string) => Array.from(group.matchAll(/<label>(.*?)<\/label>/g), ([, choice]) =>
+      Array.from(choice!.matchAll(/<span class="mini-window" data-scheme="(\w+)"(?: data-accent="(\w+)")?>/g), ([, scheme, accent]) => `${scheme} ${accent ?? 'none'}`).join(' + '))
+    expect(windowsOf(theme(render('dark', 'plum')))).toEqual(['light plum + dark plum', 'light plum', 'dark plum'])
+    seen.segmented = []
+    expect(windowsOf(theme(render('dark', 'bot')))).toEqual(['light none + dark none', 'light none', 'dark none'])
   })
 
   it('shows Quit checked for a window close, and asks main to keep Highwing in the tray', () => {
@@ -95,9 +106,7 @@ describe('the Theme and window-close rows of Settings', () => {
     expect(html).toContain('Bot uses the color of the open chat’s bot.')
     const accent = seen.segmented.find(control => labelOf(html, control.labelledBy) === 'Accent')!
     expect(accent.value).toBe('bot')
-    const group = new RegExp(`<div class="seg" role="radiogroup" aria-labelledby="${accent.labelledBy}" aria-describedby="${accent.labelledBy}-desc">(.*?)</div>`).exec(html)![1]!
-    expect(Array.from(group.matchAll(/<label><input type="radio"[^>]*?( checked="")?\/>(?:<svg[^>]*>.*?<\/svg>|<span[^>]*><\/span>)(\w+)<\/label>/g), ([, checked, label]) => `${label}${checked ? ' (checked)' : ''}`))
-      .toEqual(['Bot (checked)', 'Ink', 'Slate', 'Plum', 'Olive', 'Mauve', 'Umber'])
+    expect(choicesOf(groupOf(html, 'tones', accent.labelledBy))).toEqual(['Bot (checked)', 'Ink', 'Slate', 'Plum', 'Olive', 'Mauve', 'Umber'])
   })
 
   it.each(['bot', 'ink', 'slate', 'plum', 'olive', 'mauve', 'umber'] satisfies Accent[])('asks main for the %s accent when that segment is picked', picked => {

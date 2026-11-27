@@ -30,6 +30,17 @@
   --avatar-olive: #5B6A34;
   --avatar-mauve: #7A4A5A;
   --avatar-umber: #6E5640;
+  /* The other scheme's colors, for the Theme previews in Settings, which draw both schemes at once. */
+  --other-rail: #0E0F11;
+  --other-paper: #15161A;
+  --other-sheet: #1E1F24;
+  --other-ink: #ECEDEF;
+  --other-rule: #2B2D33;
+  --other-avatar-slate: #8FB0D2;
+  --other-avatar-plum: #B3A6D8;
+  --other-avatar-olive: #B5C381;
+  --other-avatar-mauve: #D7A3B5;
+  --other-avatar-umber: #CDB197;
   --bots-hover: color-mix(in srgb, var(--sheet) 55%, var(--rail));
   --syn-keyword: var(--brick);
   --syn-string: var(--moss);
@@ -104,6 +115,16 @@
     --avatar-olive: #B5C381;
     --avatar-mauve: #D7A3B5;
     --avatar-umber: #CDB197;
+    --other-rail: #ECEDEF;
+    --other-paper: #F7F7F8;
+    --other-sheet: #FFFFFF;
+    --other-ink: #18191C;
+    --other-rule: #DFE0E4;
+    --other-avatar-slate: #3E5C7A;
+    --other-avatar-plum: #5A4E7C;
+    --other-avatar-olive: #5B6A34;
+    --other-avatar-mauve: #7A4A5A;
+    --other-avatar-umber: #6E5640;
     --shadow-1: 0 1px 3px rgb(var(--shade) / 40%);
     --shadow-2: 0 8px 24px rgb(var(--shade) / 45%);
     --shadow-3: 0 16px 40px rgb(var(--shade) / 55%);
@@ -910,6 +931,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 :is(.settings, .setup) .card .row .text { flex: 1; min-width: 0; }
 :is(.settings, .setup) .card .row.wrapped { flex-wrap: wrap; row-gap: 10px; }
 :is(.settings, .setup) .card .row.wrapped .text { flex-basis: 100%; }
+.settings .card .row.wrapped .control { flex: 1 1 100%; }
 :is(.settings, .setup) .card .label { margin: 0; font-weight: 500; }
 :is(.settings, .setup) .card .desc { margin: 1px 0 0; font-size: var(--text-sm); line-height: 1.45; color: var(--graphite); }
 .settings .rules { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--hair); }
@@ -939,6 +961,43 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 :is(.settings, .setup) .seg input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
 :is(.settings, .setup) .seg label:has(:checked) { color: var(--signal); background: var(--signal-soft); box-shadow: inset 0 0 0 1px var(--signal); }
 :is(.settings, .setup) .seg label:has(:focus-visible) { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+.settings :is(.looks, .tones) { display: grid; width: 100%; }
+.settings :is(.looks, .tones) label { position: relative; display: flex; flex-direction: column; align-items: center; border-radius: var(--radius-md); font-size: var(--text-sm); font-weight: 500; color: var(--graphite); cursor: pointer; }
+.settings :is(.looks, .tones) label:is(:hover, :has(:checked)) { color: var(--ink); }
+.settings :is(.looks, .tones) input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
+.settings :is(.looks, .tones) label:has(:focus-visible) { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+.settings .looks { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.settings .looks label { gap: 8px; padding: 6px 6px 2px; }
+.settings .mini { position: relative; width: 100%; aspect-ratio: 16 / 10; border-radius: var(--radius-sm); overflow: hidden; box-shadow: 0 0 0 1px var(--rule); }
+.settings .looks label:has(:checked) .mini { box-shadow: 0 0 0 2px var(--sheet), 0 0 0 4px var(--signal); }
+@media (prefers-color-scheme: light) {
+  .mini-window[data-scheme="dark"] { --rail: var(--other-rail); --paper: var(--other-paper); --sheet: var(--other-sheet); --ink: var(--other-ink); --rule: var(--other-rule); --avatar-slate: var(--other-avatar-slate); --avatar-plum: var(--other-avatar-plum); --avatar-olive: var(--other-avatar-olive); --avatar-mauve: var(--other-avatar-mauve); --avatar-umber: var(--other-avatar-umber); }
+}
+@media (prefers-color-scheme: dark) {
+  .mini-window[data-scheme="light"] { --rail: var(--other-rail); --paper: var(--other-paper); --sheet: var(--other-sheet); --ink: var(--other-ink); --rule: var(--other-rule); --avatar-slate: var(--other-avatar-slate); --avatar-plum: var(--other-avatar-plum); --avatar-olive: var(--other-avatar-olive); --avatar-mauve: var(--other-avatar-mauve); --avatar-umber: var(--other-avatar-umber); }
+}
+.mini-window { --bar: color-mix(in srgb, var(--ink) 14%, var(--paper)); --tint: var(--accent, var(--ink)); position: absolute; inset: 0; display: grid; grid-template-columns: 26% 1fr; }
+.mini-window + .mini-window { clip-path: polygon(58% 0, 100% 0, 100% 100%, 42% 100%); }
+.mini-side { display: flex; flex-direction: column; gap: 9%; padding: 10% 14%; background: var(--rail); }
+.mini-side > span { height: 9%; border-radius: var(--radius-pill); background: var(--bar); }
+.mini-side > :first-child { width: 70%; background: color-mix(in srgb, var(--tint) 85%, var(--rail)); }
+.mini-chat { display: flex; flex-direction: column; gap: 7%; padding: 10% 9% 8%; background: var(--paper); }
+.mini-chat > span { height: 7%; border-radius: var(--radius-pill); background: var(--bar); }
+.mini-chat > :first-child { width: 70%; }
+.mini-chat > :nth-child(2) { width: 48%; }
+.mini-chat > .mine { align-self: flex-end; width: 38%; background: color-mix(in srgb, var(--tint) 35%, var(--paper)); }
+.mini-chat > .mini-composer { display: flex; align-items: center; justify-content: flex-end; height: 22%; margin-top: auto; padding: 0 4%; background: var(--sheet); box-shadow: inset 0 0 0 1px var(--rule); }
+.mini-composer > span { height: 60%; aspect-ratio: 1; border-radius: var(--radius-round); background: var(--tint); }
+
+.settings .tones { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.settings .tones label { gap: 7px; padding: 12px 4px 9px; }
+.settings .tones label:hover { background: var(--paper); }
+.settings .tones label:has(:checked) { background: var(--signal-soft); box-shadow: inset 0 0 0 1px var(--signal); }
+.settings .orb { display: grid; place-items: center; width: 34px; height: 34px; border-radius: var(--radius-round); color: var(--sheet); background-image: radial-gradient(circle at 34% 28%, color-mix(in srgb, var(--on-scrim) 38%, transparent), transparent 58%); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 14%, transparent); }
+.settings .orb.bot { background-image: radial-gradient(circle at 34% 28%, color-mix(in srgb, var(--on-scrim) 30%, transparent), transparent 58%), conic-gradient(from 200deg, var(--avatar-slate), var(--avatar-plum), var(--avatar-mauve), var(--avatar-umber), var(--avatar-olive), var(--avatar-slate)); }
+.settings .tones label:has(:checked) .orb { box-shadow: 0 0 0 2px var(--signal-soft), 0 0 0 4px var(--signal); }
 
 :is(.settings, .setup) .machine + .edit-form { border-top: 1px solid var(--hair); }
 :is(.settings, .setup) .edit { margin: 0; padding: 0; border: 0; min-width: 0; }
@@ -993,6 +1052,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .settings .manager .problem { margin: 0 18px 14px; padding: 9px 12px; border-left: 3px solid var(--caution); border-radius: 0 var(--radius-md) var(--radius-md) 0; color: var(--ink); background: var(--caution-soft); overflow-wrap: anywhere; }
 
 @container (max-width: 520px) {
+  .settings .tones { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .settings .card .row:has(> .control .seg) .text { flex-basis: 100%; }
   .settings .card .row:has(> .control .seg) .control { margin-left: auto; }
   .settings .card .machine .text { flex-basis: calc(100% - 40px - 16px); }
@@ -1015,6 +1075,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 
 @media (forced-colors: active) {
   :is(.settings, .setup) .seg label:has(:checked) { padding: 3px 11px 3px 9px; border: 2px solid Highlight; }
+  .settings :is(.mini, .orb) { forced-color-adjust: none; }
+  .settings :is(.looks, .tones) label:has(:checked) { outline: 2px solid Highlight; outline-offset: 2px; }
   :is(.settings, .setup) .btn { padding: 4px 13px; border: 1px solid ButtonText; }
   :is(.settings, .setup) .edit-foot .btn { padding: 5px 17px; }
   :is(.settings, .setup) .machine .state, .shortcut-sheet .where, :is(.settings, .setup) .edit-form .problem { border: 1px solid CanvasText; }
@@ -1232,7 +1294,6 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 [data-accent="olive"] { --accent: var(--avatar-olive); }
 [data-accent="mauve"] { --accent: var(--avatar-mauve); }
 [data-accent="umber"] { --accent: var(--avatar-umber); }
-.swatch { flex: none; width: 12px; height: 12px; border-radius: var(--radius-round); box-shadow: inset 0 0 0 1px var(--graphite); }
 .bots-note { margin: 18px 12px; font-size: var(--text-sm); color: var(--graphite); }
 .bots-refused { margin: 0; padding: 10px 20px 14px; font-size: var(--text-sm); color: var(--brick); border-top: 1px solid var(--rule); }
 .bots-warned { color: var(--caution); }

@@ -1,12 +1,13 @@
-import { shownBot, shownChat } from '@highwing/hermes/domain'
+import { shownBot, shownChat, type AvatarTone } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import type { Accent, Mode, NoticeKind, OnClose, Theme } from '../../ipc-contract'
 import { botIn } from '../bots/roster-view'
+import { accentTone, toneOfBot } from '../chrome/accent'
 import { COMMAND_KEY, MAC } from '../keys'
 import { capsOf, SHORTCUTS } from '../shortcuts'
 import { run, useTopic } from '../store'
-import { Bubble, ConnectionCard, line, Monitor, Moon, People, Segmented, Server, Sun, type Segment } from './ConnectionCard'
+import { Bubble, ConnectionCard, line, People, Segmented, Server, type Look, type Segment } from './ConnectionCard'
 import { PasswordManagers } from './PasswordManagers'
 import type { CardSetup } from './screens'
 import { PAGES, settingsViewOf, whereOf, type Check, type Page, type RowId } from './settings-view'
@@ -38,22 +39,35 @@ const SIDEBAR: readonly Segment<Mode>[] = [
   { value: 'chats', label: 'Chats', icon: <Bubble /> }
 ]
 
-const THEMES: readonly Segment<Theme>[] = [
-  { value: 'system', label: 'System', icon: <Monitor /> },
-  { value: 'light', label: 'Light', icon: <Sun /> },
-  { value: 'dark', label: 'Dark', icon: <Moon /> }
+type Scheme = 'light' | 'dark'
+
+const THEMES: readonly { readonly value: Theme; readonly label: string; readonly schemes: readonly Scheme[] }[] = [
+  { value: 'system', label: 'System', schemes: ['light', 'dark'] },
+  { value: 'light', label: 'Light', schemes: ['light'] },
+  { value: 'dark', label: 'Dark', schemes: ['dark'] }
 ]
 
-const swatch = (tone: string) => <span className={`swatch tone-${tone}`} aria-hidden="true" />
+const MiniWindow = ({ scheme, tone }: { readonly scheme: Scheme; readonly tone: AvatarTone | null }) => (
+  <span className="mini-window" data-scheme={scheme} data-accent={tone ?? undefined}>
+    <span className="mini-side"><span /><span /><span /></span>
+    <span className="mini-chat"><span /><span /><span className="mine" /><span className="mini-composer"><span /></span></span>
+  </span>
+)
+
+const looksOf = (tone: AvatarTone | null): readonly Segment<Theme>[] => THEMES.map(({ value, label, schemes }) => ({
+  value, label, icon: <span className="mini" aria-hidden="true">{schemes.map(scheme => <MiniWindow key={scheme} scheme={scheme} tone={tone} />)}</span>
+}))
+
+const orb = (tone: AvatarTone) => <span className={`orb tone-${tone}`} aria-hidden="true" />
 
 const ACCENTS: readonly Segment<Accent>[] = [
-  { value: 'bot', label: 'Bot', icon: <People /> },
-  { value: 'ink', label: 'Ink', icon: swatch('ink') },
-  { value: 'slate', label: 'Slate', icon: swatch('slate') },
-  { value: 'plum', label: 'Plum', icon: swatch('plum') },
-  { value: 'olive', label: 'Olive', icon: swatch('olive') },
-  { value: 'mauve', label: 'Mauve', icon: swatch('mauve') },
-  { value: 'umber', label: 'Umber', icon: swatch('umber') }
+  { value: 'bot', label: 'Bot', icon: <span className="orb bot" aria-hidden="true"><People /></span> },
+  { value: 'ink', label: 'Ink', icon: orb('ink') },
+  { value: 'slate', label: 'Slate', icon: orb('slate') },
+  { value: 'plum', label: 'Plum', icon: orb('plum') },
+  { value: 'olive', label: 'Olive', icon: orb('olive') },
+  { value: 'mauve', label: 'Mauve', icon: orb('mauve') },
+  { value: 'umber', label: 'Umber', icon: orb('umber') }
 ]
 
 const CLOSES: readonly Segment<OnClose>[] = [
@@ -74,24 +88,24 @@ const Count = ({ n }: { readonly n: number }) => (
   <span className="count"><span aria-hidden="true">{n}</span><span className="sr"> ({n} {n === 1 ? 'match' : 'matches'})</span></span>
 )
 
-function Choice<V extends string>({ label, desc, value, segments, hidden, wrapped = false, onPick }: {
+function Choice<V extends string>({ label, desc, value, segments, hidden, look = 'seg', onPick }: {
   readonly label: string
   readonly desc: string
   readonly value: V
   readonly segments: readonly Segment<V>[]
   readonly hidden: boolean
-  /** Puts the choices on a line below the label, for a row with too many to sit beside its description. */
-  readonly wrapped?: boolean
+  /** Cards and tiles take a line of their own below the label. */
+  readonly look?: Look
   readonly onPick: (value: V) => void
 }) {
   const id = useId()
   return (
-    <div className={wrapped ? 'row wrapped' : 'row'} hidden={hidden}>
+    <div className={look === 'seg' ? 'row' : 'row wrapped'} hidden={hidden}>
       <div className="text">
         <p className="label" id={id}>{label}</p>
         <p className="desc" id={`${id}-desc`}>{desc}</p>
       </div>
-      <div className="control"><Segmented labelledBy={id} describedBy={`${id}-desc`} value={value} segments={segments} onPick={onPick} /></div>
+      <div className="control"><Segmented labelledBy={id} describedBy={`${id}-desc`} value={value} segments={segments} look={look} onPick={onPick} /></div>
     </div>
   )
 }
@@ -210,6 +224,7 @@ export function Settings({ setup, mode, theme, accent, onRequestClose, onShowSho
   const saving = setup.at === 'checking' && setup.step === 'save'
   const link = useTopic('link')
   const onClose = useTopic('onClose') ?? 'quit'
+  const tone = accentTone(accent, toneOfBot(useTopic('bots'), shownChat(useTopic('open'))?.bot ?? null))
   const heading = useRef<HTMLHeadingElement>(null)
   const title = useRef<HTMLHeadingElement>(null)
   const ids = useId()
@@ -263,8 +278,8 @@ export function Settings({ setup, mode, theme, accent, onRequestClose, onShowSho
     connection: <ConnectionCard setup={setup} link={link} />,
     appearance: (
       <div className="card rows">
-        <Choice label="Theme" desc="System follows your computer’s light or dark setting." value={theme} segments={THEMES} hidden={off('theme')} onPick={picked => void run({ do: 'setTheme', theme: picked })} />
-        <Choice label="Accent" desc="Bot uses the color of the open chat’s bot." value={accent} segments={ACCENTS} hidden={off('accent')} wrapped onPick={picked => void run({ do: 'setAccent', accent: picked })} />
+        <Choice label="Theme" desc="System follows your computer’s light or dark setting." value={theme} segments={looksOf(tone)} hidden={off('theme')} look="looks" onPick={picked => void run({ do: 'setTheme', theme: picked })} />
+        <Choice label="Accent" desc="Bot uses the color of the open chat’s bot." value={accent} segments={ACCENTS} hidden={off('accent')} look="tones" onPick={picked => void run({ do: 'setAccent', accent: picked })} />
         <Choice label="Show in the sidebar" desc="Bots shows your bots. Chats shows the chats of the open bot." value={mode} segments={SIDEBAR} hidden={off('sidebar')} onPick={picked => void run({ do: 'setMode', mode: picked })} />
       </div>
     ),
