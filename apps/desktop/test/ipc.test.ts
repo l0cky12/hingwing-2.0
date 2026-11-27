@@ -164,6 +164,14 @@ describe('validators', () => {
     expect(parseCommand({ do: 'completePath', sessionId: 's1', word: '@not', extra: 1 })).toEqual({ do: 'completePath', sessionId: 's1', word: '@not' })
   })
 
+  it("keep a password manager change to the bot and manager named, and a master password exactly as typed", () => {
+    expect(parseCommand({ do: 'passwordManagers', bot: 'rae', extra: 1 })).toEqual({ do: 'passwordManagers', bot: 'rae' })
+    expect(parseCommand({ do: 'usePasswordManager', bot: 'rae', manager: 'bitwarden', use: false })).toEqual({ do: 'usePasswordManager', bot: 'rae', manager: 'bitwarden', use: false })
+    expect(parseCommand({ do: 'unlockPasswordManager', bot: 'rae', manager: 'onepassword', password: ' pass word ', extra: 1 }))
+      .toEqual({ do: 'unlockPasswordManager', bot: 'rae', manager: 'onepassword', password: ' pass word ' })
+    expect(parseCommand({ do: 'lockPasswordManager', bot: 'rae', manager: 'bitwarden' })).toEqual({ do: 'lockPasswordManager', bot: 'rae', manager: 'bitwarden' })
+  })
+
   it("keep a bot's edited fields as sent, with the revision it was read at, and a window's removal of a picture", () => {
     expect(parseCommand({ do: 'describeBot', bot: 'rae', extra: 1 })).toEqual({ do: 'describeBot', bot: 'rae' })
     expect(parseCommand({ do: 'markBot', bot: 'rae', mark: 'hide', extra: 1 })).toEqual({ do: 'markBot', bot: 'rae', mark: 'hide' })
@@ -300,6 +308,12 @@ describe('validators', () => {
     ['a model list for a bot with no name', { do: 'botModels', bot: ' ' }],
     ['a model list that names no bot', { do: 'botModels' }],
     ['details of a bot with no name', { do: 'describeBot', bot: '' }],
+    ['the password managers of a bot with no name', { do: 'passwordManagers', bot: ' ' }],
+    ['a password manager Highwing does not set up', { do: 'usePasswordManager', bot: 'rae', manager: 'local', use: true }],
+    ['a use that is not true or false', { do: 'usePasswordManager', bot: 'rae', manager: 'bitwarden', use: 'yes' }],
+    ['an unlock with no password', { do: 'unlockPasswordManager', bot: 'rae', manager: 'bitwarden', password: '' }],
+    ['an unlock whose password is no text', { do: 'unlockPasswordManager', bot: 'rae', manager: 'bitwarden', password: 7 }],
+    ['a lock that names no manager', { do: 'lockPasswordManager', bot: 'rae' }],
     ['an edit that changes nothing', { do: 'editBot', bot: 'rae', edit: {}, revision: 2 }],
     ['a mark that is not one of the four', { do: 'markBot', bot: 'rae', mark: 'flip' }],
     ['an up-front open of a bot\'s chat', { do: 'open', ref: { kind: 'bot', bot: 'rae' }, upFront: true }],
@@ -455,10 +469,12 @@ describe('validators', () => {
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
-      'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard', 'editBot',
-      'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
-      'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename', 'renameGroup',
-      'restore', 'retitle', 'rewind', 'send', 'sendToGroup', 'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
+      'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard',
+      'editBot', 'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'lockPasswordManager', 'markBot', 'models',
+      'move', 'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react',
+      'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'send', 'sendToGroup',
+      'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'unlockPasswordManager',
+      'usePasswordManager', 'versions'
     ])
   })
 })

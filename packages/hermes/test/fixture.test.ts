@@ -184,6 +184,16 @@ describe('loadFixture', () => {
     }
   })
 
+  it("reads each profile's password managers, and refuses a manager it does not know or a seed of another shape", () => {
+    const vault = { default: { bitwarden: { installed: true, password: 'pw', logins: ['github.com'] } }, research: {} }
+    expect(loadFixture(write([{ ...header, vault }])).header.vault).toEqual(vault)
+    const words = '"vault" must map a profile to { onepassword?, bitwarden? }, each { installed, enabled?, unlocked?, logins?, password?, refuses?, token?, listFails? }'
+    for (const value of [{ default: { keeper: { installed: true } } }, { default: { bitwarden: { enabled: true } } }, { default: { bitwarden: { installed: true, master: 'pw' } } }]) {
+      const path = write([{ ...header, vault: value }])
+      expect(() => loadFixture(path)).toThrow(`${path}:1: ${words}`)
+    }
+  })
+
   it('refuses a header whose profiles are not a profiles.list reply', () => {
     const path = write([{ ...header, profiles: [{ name: 'default' }] }])
     expect(() => loadFixture(path)).toThrow(`${path}:1: "profiles" must be a profiles.list reply with "profiles"`)

@@ -67,7 +67,8 @@ const masked = (values: unknown) => (isObject(values) ? Object.fromEntries(Objec
 const maskedResult = (result: unknown) => (isObject(result) && typeof result.value === 'string' && result.value !== '' ? { ...result, value: MASKED } : result)
 
 /**
- * A frame the client sent, safe to keep in a log: the `{value}` of a typed answer and the credentials of a connector card are `MASKED`.
+ * A frame the client sent, safe to keep in a log: the `{value}` of a typed answer, the credentials of a connector card and the master password
+ * of a `vault.unlock` are `MASKED`.
  * Anything else is the frame as it was.
  */
 export function maskedFrame(frame: unknown): unknown {
@@ -77,6 +78,7 @@ export function maskedFrame(frame: unknown): unknown {
 }
 
 function maskedParams(method: string, params: Obj): Obj {
+  if (method === 'vault.unlock' && typeof params.password === 'string' && params.password !== '') return { ...params, password: MASKED }
   if (method !== 'connection.respond' || !isObject(params.result) || !Array.isArray(params.result.targets)) return params
   const targets = params.result.targets.map((target: unknown) => (isObject(target) && 'env' in target ? { ...target, env: masked(target.env) } : target))
   return { ...params, result: { ...params.result, targets } }

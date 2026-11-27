@@ -1,10 +1,11 @@
 import { refusalOf } from './actor'
 import { GENERATED_MAX_BYTES, MARK_SETS, PICTURE_RULE, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotId, type BotMark, type PetChoice } from './domain/bots'
-import type { ModelMenu, Outcome, Refusal } from './domain/command'
+import type { Command, ModelMenu, Outcome, Refusal } from './domain/command'
+import type { BotManagers } from './domain/passwords'
 import { NOT_CONNECTED } from './open'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
 import {
-  parseBotRecord, parseConfigured, parseCreated, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets, parsePicture, type Configured
+  parseBotManagers, parseBotRecord, parseConfigured, parseCreated, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets, parsePicture, type Configured
 } from './wire/parse'
 
 type Wire = Pick<Connection, 'call' | 'as'>
@@ -184,3 +185,40 @@ export const listPets = (conn: Wire): Promise<Outcome<readonly PetChoice[]>> =>
 /** Hermes fetches a sheet only from petdex (agent/pet/store.py:240), so a `url` the window names reaches no other host. */
 export const petPicture = (conn: Wire, slug: string, url: string | null): Promise<Outcome<string | null>> =>
   guarded(PET_REASONS, async () => ({ ok: true, value: parsePetPicture(await conn.call('pet.thumb', url === null ? { slug } : { slug, url })) }))
+
+/** Hermes answers every vault failure with 5095 and its own words, such as the manager tool's reason an unlock failed. */
+const VAULT_REASONS: Reasons = {
+  [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't set up password managers from Highwing." }),
+  5095: message => ({ kind: 'rejected', message })
+}
+
+type PasswordCommand = Extract<Command, { do: 'passwordManagers' | 'usePasswordManager' | 'unlockPasswordManager' | 'lockPasswordManager' }>
+
+function change(calls: ReturnType<Wire['as']>, command: PasswordCommand): Promise<unknown> | null {
+  switch (command.do) {
+    case 'passwordManagers': return null
+    case 'usePasswordManager': return calls.call('vault.source.set', { name: command.manager, enabled: command.use })
+    case 'unlockPasswordManager': return calls.call('vault.unlock', { name: command.manager, password: command.password })
+    case 'lockPasswordManager': return calls.call('vault.lock', { name: command.manager })
+  }
+}
+
+/** `vault.list` can launch Chrome for the browser login source (tui_gateway/methods_vault.py:230-234), so it is asked only to count an unlocked manager's logins. */
+async function loginsOf(calls: ReturnType<Wire['as']>) {
+  try {
+    return await calls.call('vault.list', {})
+  } catch (error) {
+    if (error instanceof RpcRefusal) return null
+    throw error
+  }
+}
+
+export const passwordManagers = (conn: Wire, command: PasswordCommand): Promise<Outcome<BotManagers>> =>
+  guarded(VAULT_REASONS, async () => {
+    const calls = conn.as(command.bot)
+    await change(calls, command)
+    const sources = await calls.call('vault.sources', {})
+    const uncounted = parseBotManagers(command.bot, sources, null)
+    if (!uncounted.managers.some(manager => manager.state.at === 'ready')) return { ok: true, value: uncounted }
+    return { ok: true, value: parseBotManagers(command.bot, sources, await loginsOf(calls)) }
+  })

@@ -1,5 +1,5 @@
 import {
-  APPROVAL_MODES, BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
+  APPROVAL_MODES, BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
@@ -510,6 +510,22 @@ export const validators: Validators = {
   markBot: raw => {
     const bot = botIdOf(raw.bot)
     return bot && isBotMark(raw.mark) ? { do: 'markBot', bot, mark: raw.mark } : null
+  },
+  passwordManagers: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && { do: 'passwordManagers', bot }
+  },
+  usePasswordManager: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && isManagerName(raw.manager) && typeof raw.use === 'boolean' ? { do: 'usePasswordManager', bot, manager: raw.manager, use: raw.use } : null
+  },
+  unlockPasswordManager: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && isManagerName(raw.manager) && text(raw.password) && raw.password !== '' ? { do: 'unlockPasswordManager', bot, manager: raw.manager, password: raw.password } : null
+  },
+  lockPasswordManager: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && isManagerName(raw.manager) ? { do: 'lockPasswordManager', bot, manager: raw.manager } : null
   },
   sendToGroup: raw => (isGroupId(raw.group) && filled(raw.text) ? { do: 'sendToGroup', group: raw.group, text: raw.text } : null),
   stopGroup: raw => (isGroupId(raw.group) ? { do: 'stopGroup', group: raw.group } : null),
