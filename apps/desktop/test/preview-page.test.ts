@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Session, SshHost, Target } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
-import type { Setup } from '../src/ipc-contract'
+import type { PaneLayout, Setup } from '../src/ipc-contract'
 import { failureOf, nextPane, pageFor, pageInView, pageUrlOf, pathOfPageUrl, previewOf, reachable, reachOf, servedPath, type Pane, type PaneEvent } from '../src/main/preview-page'
 
 const SITE = '/tmp/hermes-proto-work/site/index.html'
@@ -13,8 +13,9 @@ const wrote = (path: string) => ({
   run: { state: 'idle' }
 }) as unknown as Session
 
-const local = { session: wrote(SITE), local: true, machine: 'this computer' }
-const remote = { session: wrote(SITE), local: false, machine: 'hermes-host' }
+const local = { session: wrote(SITE), local: true, machine: 'this computer', host: null }
+const remote = { session: wrote(SITE), local: false, machine: 'hermes-host', host: null }
+const overSsh = { ...remote, host: 'hermes-host' as SshHost }
 
 describe('pageFor', () => {
   it.each(['http://localhost:5173/', 'https://example.com/docs?page=2', 'http://127.0.0.1:8000/'])('loads the web page %s from a local Hermes', url => {
@@ -42,6 +43,13 @@ describe('pageFor', () => {
     expect(pageFor(SITE, remote)).toEqual({ address: SITE, failed: 'This file is on hermes-host.' })
   })
 
+  it('reads an HTML page a finished step named over ssh, and only a page', () => {
+    expect(pageFor(SITE, overSsh)).toEqual({ address: SITE, page: { kind: 'ssh', host: 'hermes-host', path: SITE } })
+    const csv = '/tmp/hermes-proto-work/report.csv'
+    expect(pageFor(csv, { ...overSsh, session: wrote(csv) })).toEqual({ address: csv, failed: 'This file is on hermes-host.' })
+    expect(pageFor('/etc/passwd.html', overSsh)).toBeNull()
+  })
+
   it.each([
     ['a path no step named', '/etc/passwd'],
     ['a file url no step named', 'file:///etc/passwd'],
@@ -67,9 +75,10 @@ describe('pageFor', () => {
 describe('reachOf', () => {
   it('reads a fixture run and a local connection as this computer, and a remote one as its machine', () => {
     const live = (target: Target): Setup => ({ at: 'chat', live: { target, epoch: 1 } })
-    expect(reachOf({ at: 'pinned' }, undefined)).toEqual({ session: undefined, local: true, machine: 'this computer' })
-    expect(reachOf(live({ kind: 'local' }), undefined)).toMatchObject({ local: true, machine: 'this computer' })
-    expect(reachOf(live({ kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' as SshHost }), undefined)).toMatchObject({ local: false, machine: 'hermes-host' })
+    expect(reachOf({ at: 'pinned' }, undefined)).toEqual({ session: undefined, local: true, machine: 'this computer', host: null })
+    expect(reachOf(live({ kind: 'local' }), undefined)).toMatchObject({ local: true, machine: 'this computer', host: null })
+    expect(reachOf(live({ kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' as SshHost }), undefined))
+      .toMatchObject({ local: false, machine: 'hermes-host', host: 'hermes-host.example-tailnet.ts.net' })
   })
 })
 
@@ -83,8 +92,8 @@ describe('failureOf', () => {
 
 describe('the pane', () => {
   const run = (...events: PaneEvent[]) => events.reduce<Pane | null>(nextPane, null)
-  const show = (label: string | null = null, address = 'http://localhost:5173/', file: string | null = null): PaneEvent =>
-    ({ on: 'show', asked: address, address, file, label, load: { at: 'loading' } })
+  const show = (label: string | null = null, address = 'http://localhost:5173/', file: string | null = null, layout: PaneLayout = 'beside'): PaneEvent =>
+    ({ on: 'show', layout, asked: address, address, file, label, load: { at: 'loading' } })
 
   it("is titled by Hermes's label, else by the page's own title, else by its address", () => {
     expect(previewOf(run(show('demo'), { on: 'titled', title: 'Vite App' }))).toMatchObject({ state: 'open', title: 'demo' })
@@ -94,7 +103,7 @@ describe('the pane', () => {
 
   it('draws the page once it has loaded, and keeps it in view while it reloads', () => {
     const loading = run(show())
-    expect(previewOf(loading)).toEqual({ state: 'open', title: 'http://localhost:5173/', address: 'http://localhost:5173/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
+    expect(previewOf(loading)).toEqual({ state: 'open', layout: 'beside', title: 'http://localhost:5173/', address: 'http://localhost:5173/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
     expect(pageInView(loading)).toBe(false)
     const shown = nextPane(loading, { on: 'loaded' })
     expect(previewOf(shown)).toMatchObject({ content: { load: { at: 'shown' } } })
@@ -108,6 +117,12 @@ describe('the pane', () => {
     expect(previewOf(run(show(), { on: 'failed', reason: 'x' }, { on: 'loading' }, { on: 'loaded' }))).toMatchObject({ content: { load: { at: 'shown' } } })
   })
 
+  it('fills the window with a page the bot made until another page is shown', () => {
+    const page = run(show(null, SITE, SITE, 'page'), { on: 'loaded' }, { on: 'titled', title: 'Demo page' })
+    expect(previewOf(page)).toMatchObject({ layout: 'page', title: 'Demo page' })
+    expect(previewOf(nextPane(page, show()))).toMatchObject({ layout: 'beside' })
+  })
+
   it('follows the page to where it navigated, and keeps what was asked for', () => {
     const moved = run(show(), { on: 'navigated', address: 'http://localhost:5173/about' })
     expect(moved).toMatchObject({ asked: 'http://localhost:5173/', address: 'http://localhost:5173/about' })
@@ -118,7 +133,7 @@ describe('the pane', () => {
     const table = { header: ['name', 'total'], rows: [['Alice', '120']], total: 1 }
     const report = '/tmp/hermes-proto-work/report.csv'
     expect(previewOf(run(show(null, report, report), { on: 'tabled', table })))
-      .toEqual({ state: 'open', title: 'report.csv', address: report, file: true, content: { kind: 'table', table } })
+      .toEqual({ state: 'open', layout: 'beside', title: 'report.csv', address: report, file: true, content: { kind: 'table', table } })
     expect(previewOf(run(show('Q3 report', report, report), { on: 'tabled', table }))).toMatchObject({ title: 'Q3 report' })
   })
 
@@ -139,7 +154,7 @@ describe('the pane', () => {
 
   it('starts a new page with nothing of the last one', () => {
     expect(previewOf(run(show('demo'), { on: 'loaded' }, show(null, 'https://example.com/'))))
-      .toEqual({ state: 'open', title: 'https://example.com/', address: 'https://example.com/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
+      .toEqual({ state: 'open', layout: 'beside', title: 'https://example.com/', address: 'https://example.com/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
   })
 })
 

@@ -17,6 +17,9 @@ export { fieldId, findInThread, type Beside, type BesideRow, type Changing, type
 export { multiReply } from './multi'
 export { answeringWords, groupThread, namesInWords, type GroupItemView, type GroupThreadView, type GroupTurnView, type NameOf } from './group-thread'
 
+/** A page the bot made: an HTML file a finished step wrote. `title` is the `<title>` a diff of it shows, else the file's name. */
+export interface PageView { readonly path: string; readonly title: string }
+
 /** Text with literal parts. `code` is set in JetBrains Mono; nothing here is HTML. */
 export type Phrase = readonly { readonly t: 'text' | 'code'; readonly v: string }[]
 
@@ -70,6 +73,8 @@ export interface TurnView {
   readonly tokens: string | null
   /** The reactions on the turn's stored answer, and the turn to put one on. null for a turn whose answer Hermes has not stored, which takes none. */
   readonly reactions: { readonly turn: TurnId; readonly given: readonly Reaction[] } | null
+  /** The pages the turn made, in the order it first wrote them, each drawn as a card under the reply. */
+  readonly pages: readonly PageView[]
 }
 
 export type ThreadNode =
@@ -369,8 +374,30 @@ function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<Se
     key: turn.id, time, request: turn.request?.text ?? null, handed: turn.request?.handed === true, attachments: turn.request?.attachments ?? NO_ATTACHMENTS, rowId: turn.request?.rowId ?? null,
     nodes, end: end(nodes),
     tokens: tokenWords(turn.tokens ?? null),
-    reactions: turn.reply == null ? null : { turn: turn.id, given: turn.reply.reactions }
+    reactions: turn.reply == null ? null : { turn: turn.id, given: turn.reply.reactions },
+    pages: pagesOf(turn.items)
   }
+}
+
+const PAGE_FILE = /\.html?$/i
+const TITLE = /<title[^>]*>([^<]*)<\/title>/i
+const NO_PAGES: readonly PageView[] = []
+
+function pagesOf(items: readonly Item[]): readonly PageView[] {
+  const pages = new Map<string, string>()
+  for (const item of items) {
+    if (item.kind !== 'tool') continue
+    for (const diff of diffsOf(item)) {
+      if (!PAGE_FILE.test(diff.path)) continue
+      if (diff.deletesFile) {
+        pages.delete(diff.path)
+        continue
+      }
+      const title = diff.lines.flatMap(line => (line.t === 'del' ? [] : [TITLE.exec(line.text)?.[1]?.trim() ?? ''])).find(Boolean)
+      pages.set(diff.path, title ?? pages.get(diff.path) ?? basename(diff.path) ?? diff.path)
+    }
+  }
+  return pages.size === 0 ? NO_PAGES : [...pages].map(([path, title]) => ({ path, title }))
 }
 
 const COUNT = new Intl.NumberFormat('en-US')

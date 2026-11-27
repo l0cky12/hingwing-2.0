@@ -66,7 +66,10 @@ export type PreviewContent = { readonly kind: 'page'; readonly load: PageLoad } 
  */
 export type Preview =
   | { readonly state: 'closed' }
-  | { readonly state: 'open'; readonly title: string; readonly address: string; readonly file: boolean; readonly content: PreviewContent }
+  | { readonly state: 'open'; readonly layout: PaneLayout; readonly title: string; readonly address: string; readonly file: boolean; readonly content: PreviewContent }
+
+/** `beside`: the pane shares the window with the chat. `page`: a page the bot made fills the window, with the chat in a panel at its side. */
+export type PaneLayout = 'beside' | 'page'
 
 export interface Rect { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 
@@ -201,8 +204,8 @@ export type Push<T extends Topic = Topic> =
   | { readonly topic: T; readonly rev: number; readonly full: TopicValue<T> }
   | (T extends `session:${string}` ? { readonly topic: T; readonly rev: number; readonly patch: SessionPatch } : never)
 
-/** `preview` shows the file in the pane beside the chat. */
-export type FileAction = 'open' | 'show' | 'preview'
+/** `preview` shows the file in the pane beside the chat. `page` shows it filling the window, with the chat at its side. */
+export type FileAction = 'open' | 'show' | 'preview' | 'page'
 export interface FileRequest { readonly action: FileAction; readonly sessionId: SessionId; readonly path: string }
 export type FileOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: 'refused' | 'missing' | 'failed' }
 
@@ -779,7 +782,7 @@ export function parseCommand(raw: unknown): WindowCommand | null {
 export const parseBotId = botIdOf
 
 export function parseFileRequest(raw: unknown): FileRequest | null {
-  if (!isObject(raw) || (raw.action !== 'open' && raw.action !== 'show' && raw.action !== 'preview')) return null
+  if (!isObject(raw) || (raw.action !== 'open' && raw.action !== 'show' && raw.action !== 'preview' && raw.action !== 'page')) return null
   const sessionId = sessionIdOf(raw)
   return sessionId && filled(raw.path) ? { action: raw.action, sessionId, path: raw.path } : null
 }

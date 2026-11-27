@@ -4,12 +4,13 @@
  * real ssh, Tailscale or Hermes ever runs. A fake attach mints from the `loopback()` scripted
  * gateway, which refuses an `Origin` header and a reused ticket as the real one does.
  */
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type AddressInfo, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { hostPart, parseSshHost, type CheckFailure, type SshHost } from '../domain/reach'
 import { TICKET_PREFIX } from '../wire/link'
+import { READ_FILE } from '../wire/ssh'
 import type { Loopback } from './loopback'
 
 export const FAKE_HOST = parseSshHost('hermes-host.example-tailnet.ts.net') as SshHost
@@ -88,7 +89,7 @@ export interface FakeHost {
   readonly ssh: string
   readonly tailscale: string
   readonly hermes: string
-  /** Every hermes command that ran, on either machine, and every relay as `relay <port>`, in order. */
+  /** Every hermes command that ran, on either machine, every relay as `relay <port>` and every file read as `read <path>`, in order. */
   readonly calls: readonly string[]
   /** How many times a tool has finished printing something it was told to print. */
   readonly printed: number
@@ -236,6 +237,16 @@ export async function fakeHost(name: ScenarioName, gateway: Gateway | null, opti
     return { at: null, say: () => UNKNOWN_COMMAND }
   }
 
+  /** The fake machine's disk is this one's. */
+  const read = (path: string): Said => {
+    calls.push(`read ${path}`)
+    try {
+      return { stdout: readFileSync(path, 'utf8'), exit: 0 }
+    } catch {
+      return { exit: 3 }
+    }
+  }
+
   const ssh = (argv: readonly string[]): Answer => {
     const { host, forward, command } = sshCall(argv)
     const refuse = (said: Said): Answer => ({ at: forward === null ? 'ssh' : null, say: () => said })
@@ -247,6 +258,7 @@ export async function fakeHost(name: ScenarioName, gateway: Gateway | null, opti
       calls.push(`relay ${hidden}`)
       return { at: 'relay', say: () => (port === undefined ? { stderr: 'channel 0: open failed: connect failed: Connection refused\r\n', exit: 255 } : { pipe: port }) }
     }
+    if (command === READ_FILE) return { at: null, say: () => ({ then: read }) }
     const args = REMOTE_HERMES.exec(command)?.[1]
     if (args === undefined) return refuse({ stderr: 'sh: this fake runs only the hermes locator\n', exit: 126 })
     return scenario.hermes === null ? refuse({ exit: 127 }) : hermes(args, 'tunnel')

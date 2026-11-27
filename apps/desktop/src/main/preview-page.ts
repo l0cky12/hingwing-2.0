@@ -1,11 +1,15 @@
-import { machineOf, onThisComputer, type Session } from '@highwing/hermes/domain'
+import { byKind, machineOf, onThisComputer, type Session, type SshHost } from '@highwing/hermes/domain'
 import { realpath } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { isWebPage, type PageLoad, type Preview, type Setup, type Table } from '../ipc-contract'
+import { isWebPage, type PageLoad, type PaneLayout, type Preview, type Setup, type Table } from '../ipc-contract'
 import { openablePath } from './files'
 
-export type Page = { readonly kind: 'web'; readonly url: string } | { readonly kind: 'file'; readonly path: string }
+/** `ssh`: an HTML file on the machine Hermes runs on, read over ssh. */
+export type Page =
+  | { readonly kind: 'web'; readonly url: string }
+  | { readonly kind: 'file'; readonly path: string }
+  | { readonly kind: 'ssh'; readonly host: SshHost; readonly path: string }
 
 /** A file page loads from this scheme, never from `file:`, where its script could read any file on the disk. */
 export const PAGE_SCHEME = 'highwing-page'
@@ -52,13 +56,20 @@ export async function servedPath(page: string, path: string, home: string): Prom
 /** What a request to show something comes to. null: refused, so the pane stays as it is. */
 export type Verdict = { readonly address: string; readonly page: Page } | { readonly address: string; readonly failed: string } | null
 
-/** What a request is judged against: the chat that named it, and the machine Hermes runs on. */
-export interface Reach { readonly session: Session | undefined; readonly local: boolean; readonly machine: string }
+/** What a request is judged against: the chat that named it, and the machine Hermes runs on. `host`: that machine, when ssh reaches it. */
+export interface Reach { readonly session: Session | undefined; readonly local: boolean; readonly machine: string; readonly host: SshHost | null }
 
 export const reachOf = (setup: Setup, session: Session | undefined): Reach => {
   const target = setup.at === 'pinned' ? null : setup.live?.target ?? null
-  return { session, local: target === null || onThisComputer(target), machine: target === null ? 'this computer' : machineOf(target) }
+  return {
+    session,
+    local: target === null || onThisComputer(target),
+    machine: target === null ? 'this computer' : machineOf(target),
+    host: target === null ? null : byKind<SshHost | null>(target, { local: () => null, remote: ({ host }) => host, url: () => null })
+  }
 }
+
+const PAGE_FILE = /\.html?$/i
 
 const LOOPBACK = /^(?:localhost|.+\.localhost|0\.0\.0\.0|\[::1\]|127(?:\.\d{1,3}){3})\.?$/i
 
@@ -75,9 +86,10 @@ const pathIn = (request: string, url: URL | null): string | null => {
 /**
  * A web page loads as asked, unless it names the loopback of a remote Hermes, which is that machine's
  * and not this one's. A path, or a `file:` URL, loads only when a finished step of the chat named it,
- * as `openablePath` decides, and only when that chat runs on this computer.
+ * as `openablePath` decides: from this computer when the chat runs here, and over ssh when it is an
+ * HTML page on the ssh machine Hermes runs on.
  */
-export function pageFor(request: string, { session, local, machine }: Reach): Verdict {
+export function pageFor(request: string, { session, local, machine, host }: Reach): Verdict {
   const url = URL.parse(request)
   if (url !== null && isWebPage(request)) {
     return !local && LOOPBACK.test(url.hostname)
@@ -87,7 +99,8 @@ export function pageFor(request: string, { session, local, machine }: Reach): Ve
   const path = pathIn(request, url)
   const named = path === null || session === undefined ? null : openablePath(session, path)
   if (named === null) return null
-  return local ? { address: named, page: { kind: 'file', path: named } } : { address: named, failed: `This file is on ${machine}.` }
+  if (local) return { address: named, page: { kind: 'file', path: named } }
+  return host !== null && PAGE_FILE.test(named) ? { address: named, page: { kind: 'ssh', host, path: named } } : { address: named, failed: `This file is on ${machine}.` }
 }
 
 const FAILURES: { readonly [code: number]: (host: string) => string } = {
@@ -109,6 +122,7 @@ export const failureOf = (code: number, description: string, address: string): s
  * the window in place of a page.
  */
 export interface Pane {
+  readonly layout: PaneLayout
   readonly asked: string
   readonly address: string
   readonly file: string | null
@@ -120,7 +134,7 @@ export interface Pane {
 }
 
 export type PaneEvent =
-  | { readonly on: 'show'; readonly asked: string; readonly address: string; readonly file: string | null; readonly label: string | null; readonly load: PageLoad }
+  | { readonly on: 'show'; readonly layout: PaneLayout; readonly asked: string; readonly address: string; readonly file: string | null; readonly label: string | null; readonly load: PageLoad }
   | { readonly on: 'navigated'; readonly address: string }
   | { readonly on: 'loading' }
   | { readonly on: 'loaded' }
@@ -142,8 +156,8 @@ const MOVES: { readonly [E in Exclude<PaneEvent['on'], 'show' | 'close'>]: Move<
 
 export function nextPane(pane: Pane | null, event: PaneEvent): Pane | null {
   if (event.on === 'show') {
-    const { asked, address, file, label, load } = event
-    return { asked, address, file, label, pageTitle: null, load, painted: false, table: null }
+    const { layout, asked, address, file, label, load } = event
+    return { layout, asked, address, file, label, pageTitle: null, load, painted: false, table: null }
   }
   if (pane === null || event.on === 'close') return null
   return (MOVES[event.on] as Move<typeof event.on>)(pane, event)
@@ -154,6 +168,7 @@ export const previewOf = (pane: Pane | null): Preview =>
     ? { state: 'closed' }
     : {
         state: 'open',
+        layout: pane.layout,
         title: pane.label ?? pane.pageTitle ?? (pane.file === null ? pane.address : basename(pane.address)),
         address: pane.address,
         file: pane.file !== null,

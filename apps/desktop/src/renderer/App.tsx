@@ -139,7 +139,7 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onOp
   const pane = shown === null ? null : samePaneOnFirstMessage(shown)
   useEffect(() => setTasksOpen(false), [pane])
   return (
-    <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined} data-compact={compact || undefined} data-settings={settings !== null || undefined}>
+    <div ref={root} className="window" hidden={hidden} data-preview={paned ? (computer === null && preview?.state === 'open' ? preview.layout : 'beside') : undefined} data-compact={compact || undefined} data-settings={settings !== null || undefined}>
       {mode === 'bots' && <BotsSidebar head={switcher} compact={compact} foot={foot} />}
       {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} foot={foot} />}
       <div key="screen" className="screen" data-accent={tone ?? undefined} hidden={settings !== null || tasksOpen}>

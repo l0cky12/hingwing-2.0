@@ -119,6 +119,35 @@ describe('what a reply used', () => {
   })
 })
 
+describe('pages', () => {
+  const written = (path: string, lines: readonly string[], over: Partial<FileDiff> = {}): FileDiff =>
+    ({ ...diff(path, lines.length, 0, true), lines: [{ t: 'hunk', text: '@@ -0,0 +1 @@' }, ...lines.map(line => ({ t: 'add' as const, text: line }))], ...over })
+  const pagesOf = (items: readonly Item<'settled'>[]) => threadView(session({ history: [settled(items)] }), CLOCK).turns[0]?.pages
+
+  it('lists each HTML file a finished step wrote once, under the title its diff shows, else its name', () => {
+    expect(pagesOf([
+      tool('write_file', { path: '/w/site/index.html' }, { diffs: [written('/w/site/index.html', ['<head>', '<title> Q3 report </title>'])] }),
+      tool('write_file', { path: '/w/notes.md' }, { diffs: [written('/w/notes.md', ['# Notes'])] }),
+      tool('write_file', { path: '/w/board.HTM' }, { diffs: [written('/w/board.HTM', ['<body>'])] }),
+      tool('patch', { path: '/w/site/index.html' }, { diffs: [diff('/w/site/index.html', 1, 1)] })
+    ])).toEqual([{ path: '/w/site/index.html', title: 'Q3 report' }, { path: '/w/board.HTM', title: 'board.HTM' }])
+  })
+
+  it('takes a newer title, and drops a page a later step deleted', () => {
+    expect(pagesOf([
+      tool('write_file', { path: '/w/a.html' }, { diffs: [written('/w/a.html', ['<title>Draft</title>'])] }),
+      tool('patch', { path: '/w/a.html' }, { diffs: [{ ...diff('/w/a.html', 1, 1), lines: [{ t: 'del', text: '<title>Draft</title>' }, { t: 'add', text: '<title>Final</title>' }] }] }),
+      tool('write_file', { path: '/w/b.html' }, { diffs: [written('/w/b.html', ['<p>'])] }),
+      tool('terminal', { command: 'rm /w/b.html' }, { diffs: [{ ...diff('/w/b.html', 0, 1), deletesFile: true }] })
+    ])).toEqual([{ path: '/w/a.html', title: 'Final' }])
+  })
+
+  it('lists nothing for a step still running, and keeps one empty list for a turn with no page', () => {
+    expect(threadView(running([runningTool('write_file', { path: '/w/a.html' })]), CLOCK).turns[0]?.pages).toEqual([])
+    expect(pagesOf([text('Done.')])).toBe(pagesOf([text('Done again.')]))
+  })
+})
+
 describe('approvals beside their tool', () => {
   const answered = approval<'settled'>({ s: 'answered', reply: { kind: 'choice', value: 'session' } })
   const rm = tool('terminal', { command: 'rm -rf scratch' }, { result: command(''), durationS: 4 })
@@ -250,10 +279,10 @@ describe('checkThread', () => {
       state: 'ready', pending: [], asks: [], earlier: 'none', changesAt: null,
       turns: [
         {
-          key: 't1', time: null, request: null, handed: false, attachments: [], rowId: null, end: { kind: 'at', nodeKey: 't1/7', tone: 'live', elapsed: null }, tokens: '9 in, 1 out', reactions: null,
+          key: 't1', time: null, request: null, handed: false, attachments: [], rowId: null, end: { kind: 'at', nodeKey: 't1/7', tone: 'live', elapsed: null }, tokens: '9 in, 1 out', reactions: null, pages: [],
           nodes: [{ kind: 'group', key: 't1/g0', title: [], count: 1, stat: null, steps: [step] }, { kind: 'prose', key: 't1/0', markdown: 'x', streaming: true }]
         },
-        { key: 't2', time: null, request: null, handed: false, attachments: [], rowId: null, end: { kind: 'done', words: 'Done' }, nodes: [], tokens: null, reactions: null }
+        { key: 't2', time: null, request: null, handed: false, attachments: [], rowId: null, end: { kind: 'done', words: 'Done' }, nodes: [], tokens: null, reactions: null, pages: [] }
       ]
     }
     expect(checkThread(view)).toEqual([
@@ -556,7 +585,7 @@ describe('the live end while a hidden tool runs', () => {
 
 describe('checkThread on helpers, plans and reasoning', () => {
   const turn = (nodes: ThreadNode[], end: ThreadView['turns'][number]['end']): ThreadView => ({
-    state: 'ready', pending: [], asks: [], earlier: 'none', changesAt: null, turns: [{ key: 't1', time: null, request: null, handed: false, attachments: [], rowId: null, tokens: null, reactions: null, nodes, end }]
+    state: 'ready', pending: [], asks: [], earlier: 'none', changesAt: null, turns: [{ key: 't1', time: null, request: null, handed: false, attachments: [], rowId: null, tokens: null, reactions: null, pages: [], nodes, end }]
   })
   const planNode = (key: string): ThreadNode => ({ kind: 'plan', key, plan: { done: 0, total: 1, cancelled: 0, openByDefault: true, entries: [{ key: `${key}/e1`, text: 'x', state: 'todo', depth: 0 }] } })
   const reasoningNode = (key: string, streaming: boolean): ThreadNode => ({ kind: 'reasoning', key, text: 'x', streaming, duration: null })

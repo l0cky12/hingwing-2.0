@@ -12,6 +12,7 @@ import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find
 import { isOpen, NONE_OPEN, toggled, type OpenState } from './open'
 import { hasActs, MessageActions, type MessageActs } from './MessageActions'
 import { Given } from './Reactions'
+import { Pages } from './Pages'
 import { placeByTurn } from './relays'
 import { SideTurn } from './Sides'
 import type { SideRow } from './sides'
@@ -362,6 +363,7 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAg
         ))}
         <End turnKey={turn.key} end={end} started={turn.nodes.length > 0} />
       </div>
+      <Pages pages={turn.pages} />
       {turn.tokens !== null && <p className="used">{turn.tokens}</p>}
       {(movesToNewChat || reactions !== null || hasActs(replyActs)) && (
         <div className="turn-actions">

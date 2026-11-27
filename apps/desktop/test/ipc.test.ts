@@ -5,7 +5,7 @@ import type { AttachmentId, BotActivities, Bots, CommandOutcome, Exported, Group
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { DUE, EXAMPLES, nextIntro, OFF, type Intro, type IntroEvent } from '../src/intro'
-import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, RECORDING_MAX_BYTES, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Accent, type Mode, type Notices, type OnClose, type Preview, type PreviewCommand, type Push, type SendKey, type Setup, type SidebarWidth, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, RECORDING_MAX_BYTES, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Accent, type Mode, type Notices, type OnClose, type PaneLayout, type Preview, type PreviewCommand, type Push, type SendKey, type Setup, type SidebarWidth, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
 import { feed, ownConnection, pinnedConnection, type ConnectionOwner } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
@@ -674,11 +674,11 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   const picked: string[] = []
   const lives: (() => boolean)[] = []
   const stored: readonly Draft[] = [{ key: 'new', bot: null, text: 'kept on disk', attachments: [] }]
-  const previewed: { request: string; label: string | null; session: Session | undefined }[] = []
+  const previewed: { request: string; label: string | null; session: Session | undefined; layout?: PaneLayout }[] = []
   const toPane: PreviewCommand[] = []
   const pane: PreviewOwner = {
     preview: still<Preview>({ state: 'closed' }),
-    show: (request, label, session) => (previewed.push({ request, label, session }), request.startsWith('/')),
+    show: (request, label, session, layout) => (previewed.push({ request, label, session, ...(layout && { layout }) }), request.startsWith('/')),
     run: async command => (toPane.push(command), { ok: true, value: undefined })
   }
   const staged: StageSource[] = []
@@ -1118,6 +1118,13 @@ describe('the file call', () => {
     expect(opened).toEqual([])
   })
 
+  it('opens a page filling the window, judged by the pane as a preview is', async () => {
+    const { file, previewed, opened } = watching()
+    await expect(file({ ...asked('open', NOTES), action: 'page' })).resolves.toEqual({ ok: true })
+    expect(previewed).toEqual([{ request: NOTES, label: null, session: diffMoment(), layout: 'page' }])
+    expect(opened).toEqual([])
+  })
+
   it('stops answering once disposed', () => {
     const { handlers, served } = watching()
     served.dispose()
@@ -1136,6 +1143,14 @@ describe('the file call', () => {
     expect(rig.previewed).toEqual([])
   })
 
+  it('passes a page from the live Hermes on another machine to the pane, which reads it there', async () => {
+    const rig = harness(switchable)
+    rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
+    rig.emit(diffMoment())
+    await expect(rig.handlers.get(CHANNEL.file)!(rig.event(), { ...asked('open', NOTES), action: 'page' })).resolves.toEqual({ ok: true })
+    expect(rig.previewed).toEqual([{ request: NOTES, label: null, session: diffMoment(), layout: 'page' }])
+  })
+
   it('refuses a path a remote Hermes served after the connection moves to this computer, until the window watches the session again', async () => {
     let owner: ConnectionOwner | undefined
     const rig = harness(hermes => (owner = switchable(hermes)))
@@ -1146,6 +1161,7 @@ describe('the file call', () => {
     await new Promise(resolve => setImmediate(resolve))
     const file = rig.handlers.get(CHANNEL.file)!
     await expect(file(rig.event(), asked('open', NOTES))).resolves.toEqual({ ok: false, reason: 'refused' })
+    await expect(file(rig.event(), { ...asked('open', NOTES), action: 'page' })).resolves.toEqual({ ok: false, reason: 'refused' })
     expect(rig.opened).toEqual([])
 
     rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)

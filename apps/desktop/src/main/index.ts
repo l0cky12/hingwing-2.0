@@ -1,4 +1,4 @@
-import { checkTarget, gatewaysByUrl, liveRoute, openHermes, remoteRoute, type Dialer, type Hermes, type Route } from '@highwing/hermes'
+import { checkTarget, gatewaysByUrl, liveRoute, openHermes, remoteRoute, sshRead, type Dialer, type Hermes, type Route } from '@highwing/hermes'
 import { byKind, type BotId, type GatewayUrl, type Target } from '@highwing/hermes/domain'
 import { fixtureLatency, fixtureRead, fixtureTranscribe, loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, safeStorage, session, shell, type OpenDialogOptions } from 'electron'
@@ -43,6 +43,9 @@ async function pictureFile(): Promise<string | null> {
   const { canceled, filePaths: [path] } = await (window === null ? dialog.showOpenDialog(PICTURE_DIALOG) : dialog.showOpenDialog(window, PICTURE_DIALOG))
   return canceled ? null : path ?? null
 }
+
+/** A far page as ssh brings it: about as long as a dial's own wait. */
+const REMOTE_READ_MS = 20_000
 
 const recorded = (dial: Dialer): Dialer => (HIGHWING_RECORD ? recordingDialer(dial, HIGHWING_RECORD) : dial)
 
@@ -113,7 +116,11 @@ seedDictionary(dictionary, app.getPath('sessionData'))
 
 app.whenReady().then(async () => {
   const opener = HIGHWING_OPEN_LOG ? recordingOpener(HIGHWING_OPEN_LOG) : desktopOpener(shell)
-  const pane = previewPane({ opener, isAppUrl, reach: session => reachOf(owner.setup.get(), session) })
+  const pane = previewPane({
+    opener, isAppUrl,
+    reach: session => reachOf(owner.setup.get(), session),
+    readRemote: (host, path) => sshRead(host, path, { deadlineMs: REMOTE_READ_MS, signal: new AbortController().signal })
+  })
   const settingsDir = app.getPath('userData')
   const attachments = attachmentStore(join(settingsDir, ATTACHMENTS_DIR), { ...HERMES_LIMITS, ...fixture?.header.attachLimits })
   const drafts = draftStore(join(settingsDir, DRAFTS_DIR))

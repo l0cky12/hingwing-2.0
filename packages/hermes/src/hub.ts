@@ -43,6 +43,7 @@ export { checkTarget, type CheckOptions, type CheckResult } from './wire/check'
 export { gatewaysByUrl, memoryKeep, type GatewayDeps, type Gateways, type Keep, type UrlCheckResult } from './wire/gateways'
 export { DialError } from './wire/link'
 export { remoteRoute, type Route } from './wire/remote'
+export { sshRead, type RemoteRead } from './wire/ssh'
 export { liveRoute } from './wire/tickets'
 export type { Transcribe } from './wire/transcribe'
 

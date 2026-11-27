@@ -12,7 +12,7 @@ type Props = Parameters<typeof Turn>[0]
 const [FIRST, SECOND, THIRD] = ['s1', 's2', 's3'] as SessionId[] as [SessionId, SessionId, SessionId]
 const TRIES: readonly Version[] = [{ sessionId: FIRST, landing: 3 }, { sessionId: SECOND, landing: 3 }, { sessionId: THIRD, landing: 'end' }]
 const at = (current: number): Versions => ({ versions: TRIES, current })
-const turn: TurnView = { key: 't1', time: null, request: 'Group them by month', handed: false, attachments: [], rowId: 3, tokens: null, reactions: null, nodes: [], end: { kind: 'done', words: 'Done' } }
+const turn: TurnView = { key: 't1', time: null, request: 'Group them by month', handed: false, attachments: [], rowId: 3, tokens: null, reactions: null, pages: [], nodes: [], end: { kind: 'done', words: 'Done' } }
 const props = (more: Partial<Props>): Props => ({
   turn, open: NONE_OPEN, onToggle: () => {}, onAnswer: async () => undefined, onAskAgain: async () => false, canEdit: true, showsRegenerate: false, canRegenerate: false,
   canBranch: true, onEdit: () => {}, onRegenerate: () => {}, onBranch: () => {}, onNewChat: () => {}, versions: [at(1)], onVersion: () => {}, canReact: true, onReact: () => {}, helpers: null, ...more

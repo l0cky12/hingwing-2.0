@@ -7,7 +7,7 @@ import { drawnOf, TAIL, useTail, type Drawn } from '../src/renderer/chat/tail'
 import { Thread } from '../src/renderer/chat/Thread'
 
 const turn = (row: number, end: TurnView['end'] = { kind: 'done', words: 'Done' }): TurnView =>
-  ({ key: `t${row}`, time: null, request: `Request ${row}`, handed: false, attachments: [], rowId: row, tokens: null, reactions: null, nodes: [], end })
+  ({ key: `t${row}`, time: null, request: `Request ${row}`, handed: false, attachments: [], rowId: row, tokens: null, reactions: null, pages: [], nodes: [], end })
 const chat = (count: number, more: Partial<ThreadView> = {}): ThreadView =>
   ({ state: 'ready', turns: Array.from({ length: count }, (_, index) => turn(index + 1)), pending: [], asks: [], earlier: 'none', changesAt: null, ...more })
 const relay = (id: string, after: string | null): Relay =>

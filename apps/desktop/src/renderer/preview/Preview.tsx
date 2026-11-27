@@ -1,5 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
-import { isWebPage, type Preview as PreviewState, type PreviewContent, type Rect, type Table } from '../../ipc-contract'
+import { isWebPage, type PaneLayout, type Preview as PreviewState, type PreviewContent, type Rect, type Table } from '../../ipc-contract'
 import { run } from '../store'
 
 type Open = Extract<PreviewState, { state: 'open' }>
@@ -83,9 +83,11 @@ function TableBody({ content: { table } }: BodyProps<'table'>) {
   )
 }
 
+const CLOSE: { readonly [L in PaneLayout]: string } = { beside: 'Close preview', page: 'Close page' }
+
 const BODIES: { readonly [K in PreviewContent['kind']]: (props: BodyProps<K>) => ReactNode } = { page: PageBody, table: TableBody }
 
-export function Preview({ preview: { title, address, file, content } }: { readonly preview: Open }) {
+export function Preview({ preview: { layout, title, address, file, content } }: { readonly preview: Open }) {
   const Body = BODIES[content.kind] as (props: BodyProps<PreviewContent['kind']>) => ReactNode
   const failed = content.kind === 'page' && content.load.at === 'failed'
   const wayOut = <WayOut address={address} file={file} />
@@ -97,7 +99,7 @@ export function Preview({ preview: { title, address, file, content } }: { readon
         <button type="button" onClick={() => void run({ do: 'reloadPreview' })}>Reload</button>
         {/* A failed page offers its own, beside the reason. */}
         {!failed && wayOut}
-        <button type="button" className="preview-close" aria-label="Close preview" title="Close preview" onClick={close}>
+        <button type="button" className="preview-close" aria-label={CLOSE[layout]} title={CLOSE[layout]} onClick={close}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
       </header>

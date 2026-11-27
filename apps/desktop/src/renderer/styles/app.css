@@ -791,6 +791,13 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .knob .folder p { margin: 8px 0 0; }
 
 .used { margin: 2px 0 0 var(--col); color: var(--graphite); font-size: var(--text-sm); }
+.pages { display: grid; gap: 8px; max-width: 480px; margin: 12px 0 0 var(--col); }
+.page-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--sheet); }
+.page-card h3 { margin: 0; font: 700 var(--text-md)/1.4 var(--sans); overflow-wrap: anywhere; }
+.page-card-text p { margin: 2px 0 0; color: var(--graphite); font: var(--text-xs)/16px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-card button { padding: 4px 14px; border: 1px solid var(--ink); border-radius: var(--radius-sm); background: transparent; color: var(--ink); font: 500 var(--text-sm)/1.5 var(--sans); }
+.page-card button:hover { background: var(--paper); }
+.page-card .file-note { grid-column: 1 / -1; }
 .context { flex: none; }
 .context .ring { flex: none; }
 .context .ring circle { fill: none; stroke-width: 2; }
@@ -1368,6 +1375,11 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 }
 /* The pane beside the chat. Main draws the page itself over .preview-page, so this box only holds what shows when there is no page. */
 .window[data-preview] { grid-template-columns: var(--side) minmax(0, 1fr) minmax(0, 1fr); }
+/* A page the bot made fills the window, and the chat moves to a panel at its side. */
+.window[data-preview="page"] { grid-template-columns: minmax(0, 1fr) 400px; }
+.window[data-preview="page"] > :is(.bots, .chats) { display: none; }
+.window[data-preview="page"] > .preview { grid-area: 1 / 1; border-left: 0; border-right: 1px solid var(--rule); }
+.window[data-preview="page"] > .screen { grid-area: 1 / 2; }
 .preview { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--rule); background: var(--paper); }
 .preview-head { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5); border-bottom: 1px solid var(--rule); }
 .preview-head h2 { flex: 1; min-width: 0; margin: 0; font-size: var(--text-md); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1402,6 +1414,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 /* Two columns of chat and page no longer fit: the pane covers the chat, and Back to chat gives it back. */
 @media (max-width: 899px) {
   .window[data-preview] { grid-template-columns: var(--side) minmax(0, 1fr); }
+  .window[data-preview="page"] { grid-template-columns: minmax(0, 1fr); }
+  .window[data-preview="page"] > .preview { border-right: 0; }
   .window[data-preview] .screen { display: none; }
   .preview { border-left: 0; }
   .preview-head .preview-back { display: block; }
