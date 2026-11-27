@@ -1,6 +1,6 @@
 import type { BotId, Target } from '@highwing/hermes/domain'
 import { useEffect, useRef } from 'react'
-import { NO_VISITS, stepped, visited, visitOf } from '../chat-history'
+import { NO_VISITS, stepped, visited } from '../chat-history'
 import { MAC } from '../keys'
 import { listOf, selectedIn } from '../bots/roster-view'
 import { rowsIn, sidebarOf } from '../bots/sidebar-view'
@@ -43,8 +43,7 @@ export function Shortcuts({ target, settingsShown, onSheet }: ShortcutsProps) {
   const shown = open?.shown ?? null
 
   useEffect(() => {
-    const visit = visitOf(shown)
-    if (visit !== null) visits.current = visited(visits.current, visit)
+    visits.current = visited(visits.current, shown)
   }, [shown])
 
   useEffect(() => {

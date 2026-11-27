@@ -21,6 +21,8 @@ export function ShortcutSheet({ back, onClose }: { readonly back: Element | null
     onClose()
   }
   const onKeyDown = (event: KeyboardEvent<HTMLDialogElement>) => {
+    // The window's own Escape listeners, such as Find's, would take the Escape that cancels the sheet.
+    event.stopPropagation()
     if (event.nativeEvent.isComposing || !isShortcut(event.nativeEvent, 'sheet')) return
     event.preventDefault()
     if (!event.repeat) dismiss()
