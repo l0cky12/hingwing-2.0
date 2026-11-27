@@ -999,6 +999,7 @@ export function placeOfRow(page: StoredTranscriptResult, rowId: number): RowPlac
 
 interface TurnInProgress {
   readonly request: string | null
+  readonly handed: boolean
   readonly requestRow: number | null
   readonly began: Began | null
   readonly items: Item<'settled'>[]
@@ -1024,8 +1025,8 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   rows.forEach((value, index) => {
     const row = usable(() => storedRow(value, index))
     if (row === null) return
-    if (row.opensTurn) turns.push({ request: row.text, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [], reply: null })
-    if (row.items.length > 0 && turns.length === 0) turns.push({ request: null, requestRow: null, began: null, items: [], rows: [], reply: null })
+    if (row.opensTurn) turns.push({ request: row.text, handed: row.handed, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [], reply: null })
+    if (row.items.length > 0 && turns.length === 0) turns.push({ request: null, handed: false, requestRow: null, began: null, items: [], rows: [], reply: null })
     const turn = turns.at(-1)
     turn?.items.push(...row.items)
     if (row.rowId !== null) turn?.rows.push(row.rowId)
@@ -1038,7 +1039,7 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   return {
     turns: turns.flatMap((turn, index): SettledTurn[] => turn === open ? [] : [{
       id: `stored:${turn.rows[0] ?? `@${index}`}` as TurnId,
-      request: turn.request === null ? null : { text: turn.request, inputId: null, rowId: turn.requestRow, attachments: [] },
+      request: turn.request === null ? null : { text: turn.request, inputId: null, rowId: turn.requestRow, attachments: [], ...(turn.handed ? HANDED : {}) },
       began: turn.began,
       items: turn.items,
       outcome: answered(turn) ? COMPLETE : LOST,
@@ -1046,9 +1047,11 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
       tokens: null,
       reply: answered(turn) ? turn.reply : null
     }]),
-    unfinished: open === null ? null : { request: open.request, began: open.began, items: open.items, rows: open.rows }
+    unfinished: open === null ? null : { request: open.request, ...(open.handed ? HANDED : {}), began: open.began, items: open.items, rows: open.rows }
   }
 }
+
+const HANDED = { handed: true } as const
 
 function storedRow(value: unknown, index: number) {
   const row = fields<StoredTranscriptRow>(value)
@@ -1062,6 +1065,8 @@ function storedRow(value: unknown, index: number) {
   const at = seconds !== null && seconds > 0 ? Math.round(seconds * 1000) : null
   // Words steered into a turn are stored as a user row of their own, among the turn's rows (agent/prompt_builder.py:585-592).
   const steers = role === 'user' && row.optStr('display_kind') === 'steer'
+  // What Hermes put into the chat itself, such as a message handed over by `bot_relay.deliver` (gateway/response_filters.py:203).
+  const handed = role === 'user' && row.optStr('display_kind') === 'internal_notification'
   const items = ((): Item<'settled'>[] => {
     if (handoff) return [{ kind: 'notice', what: 'said', tone: 'info', text }]
     if (steers) return [{ kind: 'steer', text }]
@@ -1086,7 +1091,7 @@ function storedRow(value: unknown, index: number) {
   })()
   const metadata = row.raw('display_metadata')
   return {
-    opensTurn: role === 'user' && !steers, text, rowId, at, items,
+    opensTurn: role === 'user' && !steers, handed, text, rowId, at, items,
     answers: role === 'assistant' && text.trim() !== '',
     reactions: parseReactions(isObject(metadata) ? metadata.reactions : undefined)
   }

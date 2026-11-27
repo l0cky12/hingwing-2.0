@@ -182,7 +182,7 @@ export interface HistoryPage {
   readonly turns: readonly SettledTurn[]
   /** Set when the last stored turn has no end yet. On a running session it becomes the open turn's start. `rows`: the stored row ids it covers so far. */
   readonly unfinished: {
-    readonly request: string | null; readonly began: Began | null; readonly items: SettledTurn['items']; readonly rows: readonly number[]
+    readonly request: string | null; readonly handed?: true; readonly began: Began | null; readonly items: SettledTurn['items']; readonly rows: readonly number[]
   } | null
   /** null: the gateway holds nothing older. Otherwise where `session.transcript` continues (`cursor` null: from its latest page). */
   readonly older: { readonly cursor: string | null } | null
@@ -500,7 +500,7 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
   const openId = snapshot.running ? runTurnId(snapshot.generation) : `unfinished:${snapshot.watermark.epoch}:${snapshot.watermark.seq}` as TurnId
   const { history, doing } = withPlan(leftOpen === null ? stored : [...stored, {
     id: openId,
-    request: requestOf(leftOpen.request),
+    request: requestOf(leftOpen.request, leftOpen.handed),
     began: leftOpen.began,
     items: leftOpen.items,
     outcome: LOST,
@@ -514,7 +514,7 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
     stop: sameRun ? before.stop : 'none',
     turn: {
       id: openId,
-      request: requestOf(page.unfinished?.request ?? null) ?? startedRequest(state, snapshot.queue),
+      request: requestOf(page.unfinished?.request ?? null, page.unfinished?.handed) ?? startedRequest(state, snapshot.queue),
       began: page.unfinished?.began ?? (before.state === 'running' && sameRun ? before.turn.began : null),
       items: [...doing, ...snapshot.prompts.map(prompt => waitingPrompt(prompt, null))],
       announced: null
@@ -1099,8 +1099,8 @@ function runTurnId(generation: Generation): TurnId {
   return `run:${generation}` as TurnId
 }
 
-function requestOf(text: string | null): Request | null {
-  return text === null ? null : { text, inputId: null, rowId: null, attachments: [] }
+function requestOf(text: string | null, handed?: true): Request | null {
+  return text === null ? null : { text, inputId: null, rowId: null, attachments: [], ...(handed ? { handed } : {}) }
 }
 
 function holdsTurn(content: Pick<SessionContent, 'history' | 'run'>, id: TurnId): boolean {

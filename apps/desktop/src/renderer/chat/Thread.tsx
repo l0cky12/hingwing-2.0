@@ -322,17 +322,20 @@ interface TurnProps {
   readonly helpers: HelperControls | null
 }
 
+const HANDED = 'Handed over'
+
 export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, canReact, onReact, helpers }: TurnProps) {
   const { end, rowId, request, reactions } = turn
   const regenerates = showsRegenerate && rowId !== null && request !== null
   const movesToNewChat = end.kind === 'failed' && end.remedy === 'newChat' && request !== null
   const live = end.kind === 'tip' || (end.kind === 'at' && end.tone === 'live')
   return (
-    <article className={cx('turn', live && 'live-turn', end.kind === 'none' && 'interlude')} data-row={rowId ?? undefined}>
+    <article className={cx('turn', live && 'live-turn', end.kind === 'none' && 'interlude')} data-row={rowId ?? undefined} aria-label={turn.handed ? HANDED : undefined}>
       {turn.time !== null && <p className="when">{turn.time}</p>}
+      {turn.handed && <p className="handed-from" aria-hidden>{HANDED}</p>}
       <SentAttachments attachments={turn.attachments} />
       {request !== null && (
-        <p className="request" data-find={fieldId(turn.key, 'request')}>
+        <p className={cx('request', turn.handed && 'handed')} data-find={fieldId(turn.key, 'request')}>
           {request}
           <span className="actions">
             {versions.map(group => <VersionSwitch key={group.versions[0]?.sessionId} versions={group} onVersion={onVersion} />)}

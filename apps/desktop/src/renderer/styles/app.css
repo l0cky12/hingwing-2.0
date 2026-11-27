@@ -123,7 +123,8 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .detailed.open .details .chev { transform: rotate(45deg); }
 .detailed .detail { max-width: 66ch; margin-top: 4px; color: var(--graphite); white-space: pre-wrap; overflow-wrap: anywhere; }
 
-.when { margin: 0 0 6px var(--col); color: var(--graphite); font-size: 13px; }
+.when, .handed-from { margin: 0 0 6px var(--col); color: var(--graphite); font-size: 13px; }
+.request.handed { border-left-style: dashed; }
 .request {
   margin: 0 0 22px calc(var(--thread-x) - 0.75px); padding: 2px 0 2px calc(var(--col) - var(--thread-x) - 2.25px);
   border-left: 3px solid var(--ink);
