@@ -1,8 +1,8 @@
 # Switch YOLO
 
-Beside the model readout under the message box, a quiet pill says whether Hermes runs this chat's commands without asking. It reads "YOLO" when off and "YOLO on" in the signal color when on, and it is a toggle button (`aria-pressed`). Turning it on opens a small confirmation every time, and nothing reaches Hermes until "Turn on". Turning it off needs none. The switch changes only the open chat. A chat with an approval card already open keeps the card. The pill is not shown while the link is down, or when Hermes never says the chat's state.
+In the composer's toolbar, left of the folder readout, a quiet pill says whether Hermes runs this chat's commands without asking. It reads "YOLO" when off and "YOLO on" in the signal color when on, and it is a toggle button (`aria-pressed`). Turning it on opens a small confirmation every time, and nothing reaches Hermes until "Turn on". Turning it off needs none. The switch changes only the open chat. A chat with an approval card already open keeps the card. The pill is not shown while the link is down, or when Hermes never says the chat's state.
 
-Before the pill, a quiet menu button names the bot's approval mode: "Manual approvals", "Smart approvals" or "Approvals off". It shows whenever Hermes says the mode, YOLO on or off. It opens a menu named "Approvals" above it, of three `menuitemradio` items, "Manual", "Smart" and "Off", the current one checked, each described by one line on what it does. Manual or Smart is sent at once. Off first asks "Turn off approvals for this bot?", and nothing reaches Hermes until "Turn off". The button reads the new mode only once Hermes answers with it, and a reply that names no mode leaves it as it was. Hermes starts a bot on Smart: it runs the commands its judge finds safe and asks about risky ones. A bot whose mode is `off` runs every chat without asking, so the pill reads "YOLO on" there even though Hermes says the chat's own flag is off. Pressing it asks "Turn off YOLO for this bot?", and "Use Smart" moves the whole bot to Smart. It turns the chat's own YOLO off as well only when that was on too.
+Before the pill, a quiet menu button with a shield names the bot's approval mode: "Manual", "Smart" or "Off". Its text content, which `see` matches, and its accessible name read "Manual approvals", "Smart approvals" or "Approvals Off". It shows whenever Hermes says the mode, YOLO on or off. It opens a menu named "Approvals" above it, of three `menuitemradio` items, "Manual", "Smart" and "Off", the current one checked, each described by one line on what it does. Manual or Smart is sent at once. Off first asks "Turn off approvals for this bot?", and nothing reaches Hermes until "Turn off". The button reads the new mode only once Hermes answers with it, and a reply that names no mode leaves it as it was. Hermes starts a bot on Smart: it runs the commands its judge finds safe and asks about risky ones. A bot whose mode is `off` runs every chat without asking, so the pill reads "YOLO on" there even though Hermes says the chat's own flag is off. Pressing it asks "Turn off YOLO for this bot?", and "Use Smart" moves the whole bot to Smart. It turns the chat's own YOLO off as well only when that was on too.
 
 ## Sub-features
 
@@ -22,7 +22,7 @@ Before the pill, a quiet menu button names the bot's approval mode: "Manual appr
 
 ## How to get to it (user POV)
 
-- Open a chat. The pill sits to the right of the model readout. When Hermes lists no models the pill stands alone at the left edge. Press it.
+- Open a chat. The pill sits in the composer's toolbar, after the paperclip and the approval readout. Press it.
 
 ## Driving it with highwing-verify
 

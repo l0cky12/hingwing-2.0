@@ -28,10 +28,11 @@ const CONFIRM = {
   botOff: { title: 'Turn off approvals for this bot?', body: 'Hermes will run every command in every chat with this bot without asking.', yes: 'Turn off' }
 } as const
 
-const MODES: { readonly [M in ApprovalMode]: { readonly name: string; readonly label: string; readonly line: string } } = {
-  manual: { name: 'Manual', label: 'Manual approvals', line: 'Asks you before every risky command.' },
-  smart: { name: 'Smart', label: 'Smart approvals', line: 'Runs safe commands, refuses dangerous ones, asks about the rest.' },
-  off: { name: 'Off', label: 'Approvals off', line: 'Runs every command without asking.' }
+// The readout shows the name alone; its text and accessible name read "Manual approvals", "Smart approvals" or "Approvals Off".
+const MODES: { readonly [M in ApprovalMode]: { readonly name: string; readonly line: string } } = {
+  manual: { name: 'Manual', line: 'Asks you before every risky command.' },
+  smart: { name: 'Smart', line: 'Runs safe commands, refuses dangerous ones, asks about the rest.' },
+  off: { name: 'Off', line: 'Runs every command without asking.' }
 }
 
 export function YoloPill({ on, approvals, onSet, onApprovals }: YoloPillProps) {
@@ -94,7 +95,10 @@ export function YoloPill({ on, approvals, onSet, onApprovals }: YoloPillProps) {
             ref={menu.toggle} type="button" className="readout" aria-haspopup="menu" aria-expanded={menu.open} disabled={asking.at === 'sending'}
             onClick={() => menu.setOpen(shown => !shown)}
           >
-            {MODES[approvals].label}
+            <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14"><path d="M8 2 3 4v3.6c0 3 2.1 5.4 5 6.4 2.9-1 5-3.4 5-6.4V4z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>
+            {approvals === 'off' && <span className="sr">Approvals </span>}
+            <span className="value">{MODES[approvals].name}</span>
+            {approvals !== 'off' && <span className="sr"> approvals</span>}
             <span className="chev" aria-hidden="true" />
           </button>
           {menu.open && (
