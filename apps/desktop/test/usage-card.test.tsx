@@ -9,7 +9,6 @@ const { UsageCard } = await import('../src/renderer/setup/Settings')
 const CSS = readFileSync(new URL('../src/renderer/styles/app.css', import.meta.url), 'utf8')
 const GAUGE = 'Session (5h)  [|||       ]  34% used  ·  resets in 3h 10m'
 
-/** The `white-space` of each app.css rule whose selector ends in one of these classes, so the rule styles that element. */
 const whiteSpaceFor = (classes: readonly string[]) =>
   Array.from(CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)).flatMap(([, selector, body]) =>
     selector!.split(',').some(one => classes.some(name => one.trim().endsWith(`.${name}`)))
