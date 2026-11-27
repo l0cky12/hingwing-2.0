@@ -8,7 +8,7 @@ A page is a document the bot built and showed, such as a report or a dashboard. 
 - `page-full` opens the page full window with the chat beside it.
 - `page-close` returns to the chat from the full page.
 - `page-narrow` covers the chat under 900 px of width, with **Back to chat**, as the preview pane does.
-- `page-relaunch` still opens after Highwing restarts, when the chat comes back from Hermes's stored rows. A stored step keeps no diff, so main takes the `write_file` step's own path as the proof that the chat wrote the file.
+- `page-relaunch` still opens after Highwing restarts, when the chat comes back from Hermes's stored rows. A stored step keeps no diff, so main takes the file in the `write_file` result's `files_modified` as the proof that the chat wrote it.
 - `page-refused` says "Highwing couldn't open this page." under the card when no step of the chat wrote the file.
 
 ## How to get to it (user POV)
