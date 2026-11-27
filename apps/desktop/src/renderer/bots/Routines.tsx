@@ -25,7 +25,7 @@ export function Routines({ bot, name, revision, onList }: RoutinesProps) {
 
 export function RoutinesList({ view }: { readonly view: RoutinesView }) {
   if (view.state === 'loading') return <p className="routines-note" aria-busy="true">Loading routines…</p>
-  if (view.state === 'refused') return <p className="routines-note bots-refused" role="alert">{view.message}</p>
+  if (view.state === 'refused') return <p className="routines-note routines-refused" role="alert">{view.message}</p>
   if (view.state === 'empty') return <p className="routines-note">{view.hint}</p>
   return (
     <ul className="routines" aria-label="Routines">

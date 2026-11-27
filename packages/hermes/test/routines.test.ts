@@ -37,7 +37,10 @@ describe('listRoutines through the hub', () => {
         { id: 'b2', name: 'Backup check', schedule: 'every 60m', paused: true, nextRunAt: null }
       ]
     })
-    expect(calls('cron.manage')).toEqual([{ method: 'cron.manage', params: { action: 'list', include_disabled: true, profile: 'research' } }])
+    expect(calls('cron.manage'), "the first is the scheduled jobs' list of the home store on connect").toEqual([
+      { method: 'cron.manage', params: { action: 'list', include_disabled: true } },
+      { method: 'cron.manage', params: { action: 'list', include_disabled: true, profile: 'research' } }
+    ])
   })
 
   it('keeps only the jobs tagged for the bot, and the untagged ones for the default bot, on a Hermes that cannot scope the list', async () => {

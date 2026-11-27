@@ -1521,7 +1521,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .routines { list-style: none; margin: 0; padding: 0; }
 .routine { display: flex; align-items: baseline; gap: 12px; padding: 10px 20px; border-top: 1px solid var(--rule); }
 .routine:first-child { border-top: 0; }
-.routine-name { flex: 1; color: var(--ink); font-size: 14px; overflow-wrap: anywhere; }
-.routine-when { flex: none; color: var(--graphite); font-size: 13px; }
-.routines-note { margin: 0; padding: 14px 20px; font-size: 13px; color: var(--graphite); }
-.routines-note.bots-refused { color: var(--brick); border-top: 0; }
+.routine-name { flex: 1; color: var(--ink); font-size: var(--text-md); overflow-wrap: anywhere; }
+.routine-when { flex: none; color: var(--graphite); font-size: var(--text-sm); }
+.routines-note { margin: 0; padding: 14px 20px; font-size: var(--text-sm); color: var(--graphite); }
+.routines-refused { color: var(--brick); }
