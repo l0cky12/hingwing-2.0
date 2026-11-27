@@ -1,4 +1,4 @@
-import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, Route } from '@highwing/hermes'
+import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, ReadHermes, Route } from '@highwing/hermes'
 import { firstStep, sameTarget, type CheckStep, type Command, type CommandOutcome, type SetupFailure, type Target } from '@highwing/hermes/domain'
 import { isSetupCommand, NOT_NOW, showsSettings, type HubResult, type Live, type Setup, type SetupCommand } from '../ipc-contract'
 import type { Settings } from './settings'
@@ -11,6 +11,8 @@ export interface ConnectionOwner {
   readonly setup: Feed<Setup>
   /** The Hermes of the live connection. null until a target is saved. */
   readonly hermes: Hermes | null
+  /** One GET of the live Hermes's HTTP API. Rejects when no connection is open. */
+  readonly read: ReadHermes
   run<C extends ConnectionCommand>(command: C): Promise<CommandOutcome<HubResult<C>>>
   close(): Promise<void>
 }
@@ -193,6 +195,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
   return {
     setup,
     get hermes() { return open?.hermes ?? null },
+    read: path => (open === null ? Promise.reject(new Error('No Hermes is connected.')) : open.route.read(path)),
     run: async <C extends ConnectionCommand>(command: C) => {
       const outcome = isSetupCommand(command) ? runSetup(command) : await runChat(command)
       return outcome as CommandOutcome<HubResult<C>>
@@ -207,10 +210,11 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
 }
 
 /** A window served from one fixed `Hermes`, as a fixture run is. It has no setup, so it refuses every setup command. */
-export function pinnedConnection(hermes: Hermes): ConnectionOwner {
+export function pinnedConnection(hermes: Hermes, read: ReadHermes): ConnectionOwner {
   return {
     setup: feed<Setup>({ at: 'pinned' }),
     hermes,
+    read,
     run: async <C extends ConnectionCommand>(command: C) =>
       (isSetupCommand(command) ? NOT_NOW : await hermes.run(command)) as CommandOutcome<HubResult<C>>,
     close: () => hermes.close()

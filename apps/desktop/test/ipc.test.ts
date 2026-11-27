@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
-import type { Hermes, Route } from '@highwing/hermes'
+import type { Hermes, HttpAnswer, Route } from '@highwing/hermes'
 import type { AttachmentId, BotActivities, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, SessionId, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -517,7 +517,10 @@ const switchable = (hermes: Hermes) => ownConnection({
   open: () => ({ ...hermes, close: async () => {} })
 })
 
-function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection) {
+function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
+  const reads: string[] = []
+  let answer: HttpAnswer = { status: 404, body: null }
+  const read = async (path: string) => (reads.push(path), answer)
   const listeners = new Map<string, (event: IpcEvent, ...args: unknown[]) => void>()
   const handlers = new Map<string, (event: IpcEvent, ...args: unknown[]) => unknown>()
   const ipc: IpcMainLike = {
@@ -616,7 +619,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   const onClose = feed<OnClose>('quit')
   const sources: AttachSources = { pick: async () => ['/home/me/error.png', '/home/me/big.zip'], pasted: async () => ({ name: 'Pasted image 1.png', bytes: PNG }) }
   const served = serveWindows(
-    ownerOf(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
+    (ownerOf ?? (held => pinnedConnection(held, read)))(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
     { store, sources }, saver, { mode, theme, snoozes, onClose }
@@ -639,7 +642,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   }
   return {
     listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, lives, stored, previewed, toPane, staged, served,
-    saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, snoozes, onClose
+    reads, answers: (next: HttpAnswer) => void (answer = next), saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, snoozes, onClose
   }
 }
 
@@ -1141,6 +1144,37 @@ describe('the draft calls', () => {
     served.dispose()
     expect(handlers.has(CHANNEL.drafts)).toBe(false)
     expect(listeners.has(CHANNEL.keepDraft)).toBe(false)
+  })
+})
+
+describe('the task calls', () => {
+  const BOARD = { columns: [{ name: 'todo', tasks: [{ id: 't_1', title: 'Sweep', assignee: 'ada', latest_summary: null }] }] }
+  const DETAIL = { events: [{ id: 1, kind: 'owner_admitted', run_id: 4, payload: { session_id: 'local-w1' } }], runs: [{ id: 4, profile: 'Ada' }] }
+
+  it('reads the board and a card, each as the app draws it', async () => {
+    const rig = harness()
+    rig.answers({ status: 200, body: BOARD })
+    await expect(rig.handlers.get(CHANNEL.taskBoard)!(rig.event())).resolves.toEqual({ ok: true, value: { columns: [{ name: 'todo', cards: [{ id: 't_1', title: 'Sweep', assignee: 'ada', summary: null }] }] } })
+    rig.answers({ status: 200, body: DETAIL })
+    await expect(rig.handlers.get(CHANNEL.taskChat)!(rig.event(), 't_1')).resolves.toEqual({ ok: true, value: { bot: 'ada', sessionId: 'local-w1' } })
+    expect(rig.reads).toEqual(['/api/plugins/kanban/board', '/api/plugins/kanban/tasks/t_1'])
+  })
+
+  it('refuse a foreign frame, and a task id that is not one, without reading', async () => {
+    const rig = harness()
+    await expect(rig.handlers.get(CHANNEL.taskBoard)!(rig.event('https://example.com/'))).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    const chat = rig.handlers.get(CHANNEL.taskChat)!
+    for (const [event, raw] of [[rig.event('https://example.com/'), 't_1'], [rig.event(), 'a/b'], [rig.event(), ''], [rig.event(), 7], [rig.event(), { id: 't_1' }]] as const) {
+      await expect(chat(event, raw)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    }
+    expect(rig.reads).toEqual([])
+  })
+
+  it('stop answering once disposed', () => {
+    const { handlers, served } = harness()
+    served.dispose()
+    expect(handlers.has(CHANNEL.taskBoard)).toBe(false)
+    expect(handlers.has(CHANNEL.taskChat)).toBe(false)
   })
 })
 
