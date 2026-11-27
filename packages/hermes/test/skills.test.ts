@@ -94,7 +94,7 @@ describe('the skills library', () => {
     expect(seen.at(-1)).toEqual({ state: 'listed', bot: 'research', skills: [{ name: 'sources', description: '', enabled: false }] })
     expect(await hermes.run({ do: 'skillText', bot: 'research' as BotId, name: 'release-notes' }))
       .toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can show only the default bot's SKILL.md files." } })
-    expect(calls('learning.detail').filter(call => (call.params as { id?: string }).id !== 'weekly-report')).toEqual([])
+    expect(calls('learning.detail').map(call => call.params), 'learning.detail takes only an id, and Hermes refuses any other key').toEqual([{ id: 'weekly-report' }])
   })
 
   it('keeps both of two switches moved at once, since each write replaces the whole off list', async () => {

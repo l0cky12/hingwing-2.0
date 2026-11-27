@@ -1844,8 +1844,10 @@ export class ScriptedGateway {
     }
   }
 
+  /** Hermes refuses a key the contract lacks before the handler runs (tui_gateway/rpc_dispatch.py:24-28), and `learning.detail` takes only `id`. */
   skillDetail(params: Obj): unknown {
     if (this.fixture.header.skills === undefined) throw unknownMethod('learning.detail')
+    if (Object.keys(params).some(key => key !== 'id')) throw new Refused('invalid_params', { code: 4000, message: 'invalid params for learning.detail: extra inputs are not permitted' })
     const id = typeof params.id === 'string' ? params.id : ''
     const skill = (this.skills.get(this.home) ?? []).find(listed => listed.name === id)
     return skill === undefined ? { ok: false, message: `skill '${id}' not found` } : { ok: true, kind: 'skill', id, label: id, content: skill.body }

@@ -885,8 +885,11 @@ keeps skills per profile, and Highwing reads them only while the card is shown.
   hermes-agent on."
 - Open reads the SKILL.md with `learning.detail {id}`, which reaches its legacy
   handler with the interactive grant and names no profile, so it reads the
-  gateway's own. On another bot, Open says "This Hermes can show only the
-  default bot's SKILL.md files."
+  gateway's own. Hermes refuses a `profile` key on it with 4000. On another
+  bot, Open says "This Hermes can show only the default bot's SKILL.md files."
+  Highwing takes the gateway's own profile to be `default`, so a gateway
+  started under a named profile would show that profile's file for the
+  default bot's skill of the same name.
 - `skills.changed` makes Highwing read the list and the slash catalog again.
 - On a socket with no interactive grant, the card says "This Hermes can't list
   skills from Highwing."
