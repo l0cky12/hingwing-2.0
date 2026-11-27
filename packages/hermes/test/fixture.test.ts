@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -187,11 +187,18 @@ describe('loadFixture', () => {
       ['pets', { pets: [], thumbs: { tabby: 7 } }, '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'],
       ['assetFails', ' ', '"assetFails" must be the words a failed write gives'],
       ['oneshot', { text: 7 }, '"oneshot" must be { text?, error?, delay_ms? }'],
-      ['oneshot', { delay_ms: 'soon' }, '"oneshot" must be { text?, error?, delay_ms? }']
+      ['oneshot', { delay_ms: 'soon' }, '"oneshot" must be { text?, error?, delay_ms? }'],
+      ['connectors', { catalog: [], accounts: [], signInUrl: 'not a url' }, '"connectors" must be { catalog, accounts, signInUrl } with a unique slug on every app and an http(s) sign-in page']
     ] as const) {
       const path = write([{ ...header, [key]: value }])
       expect(() => loadFixture(path)).toThrow(`${path}:1: ${words}`)
     }
+  })
+
+  it('reads a connectors board and leaves it off a header that has none', () => {
+    const connectors = JSON.parse(readFileSync(fileURLToPath(new URL('../../../fixtures/connectors/two.json', import.meta.url)), 'utf8'))
+    expect(loadFixture(write([{ ...header, connectors }])).header.connectors).toEqual(connectors)
+    expect(loadFixture(write([header])).header).not.toHaveProperty('connectors')
   })
 
   it("reads each profile's password managers, and refuses a manager it does not know or a seed of another shape", () => {

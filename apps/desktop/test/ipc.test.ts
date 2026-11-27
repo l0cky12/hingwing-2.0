@@ -155,6 +155,17 @@ describe('validators', () => {
     expect(parseCommand({ do: 'canGeneratePicture', extra: 1 })).toEqual({ do: 'canGeneratePicture' })
     expect(parseCommand({ do: 'generatePicture', prompt: 'a cheerful robot', extra: 1 })).toEqual({ do: 'generatePicture', prompt: 'a cheerful robot' })
     expect(parseCommand({ do: 'pets', extra: 1 })).toEqual({ do: 'pets' })
+    expect(parseCommand({ do: 'apps', bot: null, extra: 1 })).toEqual({ do: 'apps', bot: null })
+    expect(parseCommand({ do: 'apps', bot: 'research' })).toEqual({ do: 'apps', bot: 'research' })
+    expect(parseCommand({ do: 'connectApp', slug: 'github', bot: null, connectionId: null, extra: 1 })).toEqual({ do: 'connectApp', slug: 'github', bot: null, connectionId: null })
+    expect(parseCommand({ do: 'connectApp', slug: 'github', bot: 'research', connectionId: 'slack-1' })).toEqual({ do: 'connectApp', slug: 'github', bot: 'research', connectionId: 'slack-1' })
+    expect(parseCommand({ do: 'appSignIn', opId: 'op-1', bot: null })).toEqual({ do: 'appSignIn', opId: 'op-1', bot: null })
+    expect(parseCommand({ do: 'removeApp', connectionId: 'slack-1', bot: null, extra: 1 })).toEqual({ do: 'removeApp', connectionId: 'slack-1', bot: null })
+    expect(parseCommand({ do: 'apps', bot: ' ' })).toBeNull()
+    expect(parseCommand({ do: 'connectApp', slug: ' ', bot: null, connectionId: null })).toBeNull()
+    expect(parseCommand({ do: 'connectApp', slug: 'github', bot: null })).toBeNull()
+    expect(parseCommand({ do: 'appSignIn', opId: '', bot: null })).toBeNull()
+    expect(parseCommand({ do: 'removeApp', connectionId: ' ', bot: null })).toBeNull()
     expect(parseCommand({ do: 'memory', extra: 1 })).toEqual({ do: 'memory' })
     expect(parseCommand({ do: 'saveMemory', id: 'memory:memory:0:abc', text: 'Hello', extra: 1 })).toEqual({ do: 'saveMemory', id: 'memory:memory:0:abc', text: 'Hello' })
     expect(parseCommand({ do: 'saveMemory', id: 'memory:memory:0:abc', text: '' })).toEqual({ do: 'saveMemory', id: 'memory:memory:0:abc', text: '' })
@@ -473,13 +484,13 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'accountUsage', 'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
-      'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard',
-      'editBot', 'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models',
-      'move', 'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react',
-      'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'removeMemory', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send', 'sendToGroup',
-      'setMode', 'setOnClose', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'unlockPasswordManager',
-      'usePasswordManager', 'versions'
+      'accountUsage', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
+      'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard',
+      'editBot', 'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
+      'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect',
+      'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
+      'sendToGroup', 'setMode', 'setOnClose', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune',
+      'unlockPasswordManager', 'usePasswordManager', 'versions'
     ])
   })
 })

@@ -1,5 +1,5 @@
 import type { Shown, ShownGroup, Target } from '@highwing/hermes/domain'
-import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { isSettingsChord } from './keys'
 import { epochOf, type Mode, type Theme } from '../ipc-contract'
 import { BotPicker } from './bots/BotPicker'
@@ -12,6 +12,7 @@ import { Banner, TopBar } from './chrome/Chrome'
 import { ModeSwitch } from './chrome/ModeSwitch'
 import { Preview } from './preview/Preview'
 import { Composer } from './composer/Composer'
+import { Apps, AppsButton } from './apps/Apps'
 import { Palette } from './palette/Palette'
 import { screenOf, type CardSetup } from './setup/screens'
 import { Settings } from './setup/Settings'
@@ -88,6 +89,7 @@ interface ChatWindowProps {
   readonly target: Target | null
   readonly mode: Mode
   readonly theme: Theme
+  readonly onOpenApps: () => void
 }
 
 function useSettingsChord(target: Target | null, settingsOpen: boolean) {
@@ -102,17 +104,18 @@ function useSettingsChord(target: Target | null, settingsOpen: boolean) {
   }, [target, settingsOpen])
 }
 
-function ChatWindow({ hidden, settings, target, mode, theme }: ChatWindowProps) {
+function ChatWindow({ hidden, settings, target, mode, theme, onOpenApps }: ChatWindowProps) {
   const preview = useTopic('preview')
   useSettingsChord(target, settings !== null)
   const { root, pick } = useSwitchModeKeepingFocus(mode)
   const { settingsButton, close } = useCloseSettings(settings !== null)
   const switcher = <ModeSwitch mode={mode} onPick={pick} />
+  const foot = <AppsButton onOpen={onOpenApps} />
   const paned = preview?.state === 'open' && settings === null
   return (
     <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined}>
-      {mode === 'bots' && <BotsSidebar head={switcher} />}
-      {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} />}
+      {mode === 'bots' && <BotsSidebar head={switcher} foot={foot} />}
+      {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} foot={foot} />}
       <div key="screen" className="screen" hidden={settings !== null}>
         <ChatScreen target={target} settingsButton={settingsButton} />
       </div>
@@ -127,6 +130,12 @@ export function App() {
   const setup = useTopic('setup')
   const mode = useTopic('mode')
   const theme = useTopic('theme')
+  const [appsOpen, setAppsOpen] = useState(false)
+  const appsBack = useRef<Element | null>(null)
+  const openApps = useCallback(() => {
+    appsBack.current = document.activeElement
+    setAppsOpen(true)
+  }, [])
   if (setup === undefined || mode === undefined || theme === undefined) return null
   const screen = screenOf(setup)
   const live = setup.at === 'pinned' ? null : setup.live
@@ -134,9 +143,10 @@ export function App() {
     <>
       {(setup.at === 'pinned' || live !== null) && (
         <Epoch value={epochOf(setup)}>
-          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved'} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} />
+          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved'} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} onOpenApps={openApps} />
           {/* Outside the window a new connection remounts, so a pick main refused for the old one comes back over the new one. */}
           {screen.show !== 'saved' && <Palette target={live?.target ?? null} settingsOpen={screen.show === 'settings'} />}
+          {screen.show !== 'saved' && <Apps open={appsOpen} back={appsBack} onOpen={openApps} onClose={() => setAppsOpen(false)} />}
         </Epoch>
       )}
       {screen.show === 'first-run' && <FirstRun setup={screen.setup} />}

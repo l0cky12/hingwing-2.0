@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { DONE, refused, SessionActor, type Upload } from './actor'
 import { activityDesk, busyOf, type Attached } from './activity'
+import { appSignIn, connectApp, listApps, removeApp } from './apps'
 import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, setBotPicture } from './bot-admin'
 import type { BotActivities, UnreadChat } from './domain/activity'
 import { listMemory, removeMemory, saveMemory } from './memory'
@@ -549,6 +550,10 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'generatePicture') return generatePicture(conn, command.prompt)
     if (command.do === 'pets') return listPets(conn)
     if (command.do === 'petPicture') return petPicture(conn, command.slug, command.url)
+    if (command.do === 'apps') return listApps(conn, command.bot)
+    if (command.do === 'connectApp') return connectApp(conn, command.slug, command.bot, command.connectionId)
+    if (command.do === 'appSignIn') return appSignIn(conn, command.opId, command.bot)
+    if (command.do === 'removeApp') return removeApp(conn, command.connectionId, command.bot)
     if (command.do === 'memory') return listMemory(conn)
     if (command.do === 'saveMemory') return saveMemory(conn, command.id, command.text)
     if (command.do === 'removeMemory') return removeMemory(conn, command.id)

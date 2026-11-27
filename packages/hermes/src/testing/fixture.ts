@@ -110,6 +110,12 @@ export interface Fixture {
     /** What `pet.gallery` and `pet.thumb` answer. Absent: the gateway refuses both as unknown methods, as a Hermes without pets does. */
     readonly pets?: Pets
     /**
+     * The Connect apps window's catalog and accounts. Absent: `connectors.catalog`, `connectors.accounts`,
+     * `connectors.accounts.remove` and `connectors.operation.status` are unknown methods, and `connectors.connect`
+     * stays on the story for the in-turn card.
+     */
+    readonly connectors?: Connectors
+    /**
      * What `learning.frames`, `learning.detail`, `learning.edit` and `learning.delete` answer for memory entries.
      * Absent: the gateway refuses each as an unknown method, as a Hermes without the calls does, and so does a socket
      * bound to one profile. `limits` are the char caps. Absent keys use Hermes's defaults, 2200 for MEMORY.md and 1375
@@ -201,6 +207,30 @@ export interface Pets {
   readonly refused_once?: readonly string[]
 }
 
+export interface ConnectorCatalogSeed {
+  readonly slug: string
+  readonly name: string
+  readonly description: string
+  readonly category: string
+  readonly logo_url?: string | null
+}
+
+export interface ConnectorAccountSeed {
+  readonly connection_id: string
+  readonly connector: string
+  readonly status: string
+  readonly label: string
+  readonly active: boolean
+  readonly created_at: string
+  readonly updated_at: string
+}
+
+/** `signInUrl` is the http(s) page every connect in this fixture opens. */
+export interface Connectors {
+  readonly catalog: readonly ConnectorCatalogSeed[]
+  readonly accounts: readonly ConnectorAccountSeed[]
+  readonly signInUrl: string
+}
 /**
  * One password manager of one profile. `enabled`: the profile has not opted out (default true). `unlocked`: unlocked at the start
  * (default false), as a 1Password service-account token always is. `logins`: the labels of its logins. `password`: the master password
@@ -414,6 +444,21 @@ const isRelayScript = (value: unknown): value is RelayScript =>
 
 const isText = (value: unknown): value is string => typeof value === 'string' && value !== ''
 
+const ACCOUNT_STATUS = new Set(['pending', 'active', 'failed', 'expired', 'revoked', 'inactive'])
+
+const isCatalogSeed = (value: unknown): value is ConnectorCatalogSeed =>
+  isObject(value) && isText(value.slug) && isText(value.name) && isText(value.description) && isText(value.category)
+  && (value.logo_url === undefined || value.logo_url === null || typeof value.logo_url === 'string')
+
+const isAccountSeed = (value: unknown): value is ConnectorAccountSeed =>
+  isObject(value) && isText(value.connection_id) && isText(value.connector) && typeof value.status === 'string' && ACCOUNT_STATUS.has(value.status)
+  && isText(value.label) && typeof value.active === 'boolean' && isText(value.created_at) && isText(value.updated_at)
+
+const isConnectors = (value: unknown): value is Connectors =>
+  isObject(value) && Array.isArray(value.catalog) && value.catalog.every(isCatalogSeed)
+  && new Set(value.catalog.map(row => row.slug)).size === value.catalog.length
+  && Array.isArray(value.accounts) && value.accounts.every(isAccountSeed)
+  && typeof value.signInUrl === 'string' && /^https?:\/\//.test(value.signInUrl)
 const isManagerSeed = (value: unknown): value is ManagerSeed =>
   isObject(value) && typeof value.installed === 'boolean'
   && Object.keys(value).every(key => ['installed', 'enabled', 'unlocked', 'logins', 'password', 'refuses', 'token', 'listFails'].includes(key))
@@ -501,6 +546,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (images !== undefined && !isImages(images)) return '"images" must be { available, picture?, error?, delay_ms? }'
   if (oneshot !== undefined && !isOneshot(oneshot)) return '"oneshot" must be { text?, error?, delay_ms? }'
   if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'
+  const { connectors } = value
+  if (connectors !== undefined && !isConnectors(connectors)) return '"connectors" must be { catalog, accounts, signInUrl } with a unique slug on every app and an http(s) sign-in page'
   if (memory !== undefined && !isMemory(memory)) return '"memory" must be { entries, limits? } with each entry { file: "MEMORY.md" or "USER.md", text } and limits { memory?, user? }'
   const { vault } = value
   if (vault !== undefined && !isVaultScript(vault)) {
@@ -567,6 +614,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
     ...(assetFails === undefined ? {} : { assetFails }),
     ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }), ...(vault === undefined ? {} : { vault }),
+    ...(connectors === undefined ? {} : { connectors }),
     ...(memory === undefined ? {} : { memory }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),

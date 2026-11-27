@@ -196,6 +196,8 @@ export class Offline extends Error {}
  * `usage.bars` and `insights.get` are the legacy usage reads. A -32601 from one means this Hermes does not serve that read.
  * The canonical route serves every `groups.*` method (`GROUP_METHODS`, gateway/session_group_controls.py:15-35), though of
  * the calls Highwing makes the contract lists only `groups.create` as canonical (tui_gateway/contracts/canonical_projections.py:126). A -32601 from `groups.capabilities` means this Hermes has no group chats.
+ * The Connect apps window calls `connectors.catalog`, `connectors.accounts`, `connectors.accounts.remove` and `connectors.operation.status`.
+ * A -32601 from them means this Hermes cannot list its apps. `connectors.connect` is already served for the in-turn card.
  * The session authority serves `session.active_list` (gateway/session_active_list.py), which the contract lists only for the legacy
  * handler. A -32601 from it means this Hermes cannot say which chats have a turn under way.
  * `vault.sources`, `vault.list`, `vault.source.set`, `vault.unlock` and `vault.lock` reach their legacy handlers as `profiles.create` does, each
@@ -209,7 +211,8 @@ export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'groups.rename' | 'groups.disband' |
   'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot' | 'session.active_list' | 'usage.bars' | 'insights.get' |
   'learning.frames' | 'learning.detail' | 'learning.edit' | 'learning.delete' |
-  'vault.sources' | 'vault.list' | 'vault.source.set' | 'vault.unlock' | 'vault.lock'>
+  'vault.sources' | 'vault.list' | 'vault.source.set' | 'vault.unlock' | 'vault.lock' |
+  'connectors.catalog' | 'connectors.accounts' | 'connectors.accounts.remove' | 'connectors.operation.status'>
 export type Method = keyof Served
 
 export type Requested = ServerRequestMap

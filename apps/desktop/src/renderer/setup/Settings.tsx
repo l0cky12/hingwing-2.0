@@ -29,11 +29,12 @@ const CLOSES: readonly Segment<OnClose>[] = [
   { value: 'stay', label: 'Keep in the tray', icon: <Tray /> }
 ]
 
-const SHORTCUTS: readonly { readonly label: string; readonly key: string; readonly onlyIn: string | null }[] = [
+const SHORTCUTS: readonly { readonly label: string; readonly key: string; readonly shift?: boolean; readonly onlyIn: string | null }[] = [
   { label: 'Command palette', key: 'K', onlyIn: null },
   { label: 'Settings', key: ',', onlyIn: null },
   { label: 'New chat', key: 'N', onlyIn: 'In a chat' },
-  { label: 'Find in chat', key: 'F', onlyIn: 'In a chat' }
+  { label: 'Find in chat', key: 'F', onlyIn: 'In a chat' },
+  { label: 'Connect apps', key: 'M', shift: true, onlyIn: null }
 ]
 
 const UNREPORTED = 'This Hermes does not report usage.'
@@ -100,10 +101,10 @@ function General({ mode, theme }: { readonly mode: Mode; readonly theme: Theme }
       <section className="group short" aria-labelledby={`${ids}-keys`}>
         <h3 id={`${ids}-keys`}>Keyboard shortcuts</h3>
         <div className="card">
-          {SHORTCUTS.map(({ label, key, onlyIn }) => (
+          {SHORTCUTS.map(({ label, key, shift, onlyIn }) => (
             <div key={key} className="row">
               <div className="text"><p className="label">{label}{onlyIn !== null && <span className="where">{onlyIn}</span>}</p></div>
-              <div className="control keys"><kbd>{COMMAND_KEY}</kbd><kbd>{key}</kbd></div>
+              <div className="control keys"><kbd>{COMMAND_KEY}</kbd>{shift === true && <kbd>Shift</kbd>}<kbd>{key}</kbd></div>
             </div>
           ))}
         </div>
