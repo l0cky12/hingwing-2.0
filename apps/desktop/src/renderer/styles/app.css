@@ -1523,5 +1523,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .routine:first-child { border-top: 0; }
 .routine-name { flex: 1; color: var(--ink); font-size: var(--text-md); overflow-wrap: anywhere; }
 .routine-when { flex: none; color: var(--graphite); font-size: var(--text-sm); }
+.routine-controls { display: flex; flex: none; gap: 6px; }
+.routine-controls button { padding: 2px 8px; font-size: var(--text-xs); }
 .routines-note { margin: 0; padding: 14px 20px; font-size: var(--text-sm); color: var(--graphite); }
 .routines-refused { color: var(--brick); }

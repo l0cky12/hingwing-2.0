@@ -3,7 +3,8 @@ import type { BotId } from '../src/domain/bots'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
 import { scriptedDialer, type CronScript, type Fixture } from '../src/testing/fixture'
-import { parseRoutines } from '../src/wire/parse'
+import type { RoutineId } from '../src/domain/routines'
+import { parseControlled, parseRoutines } from '../src/wire/parse'
 import { BOUND, callsIn, SESSION, WITH_BOTS } from './support/errand'
 
 const RESEARCH = 'research' as BotId
@@ -68,6 +69,57 @@ describe('listRoutines through the hub', () => {
     hermes.watch(SESSION, () => {})
     await clock.advance(1000)
     expect(hermes.routines.get()).toBe(2)
+  })
+})
+
+describe('controlRoutine through the hub', () => {
+  const STORE = withCron({ jobs: [], profiles: { research: [DIGEST, BACKUP] } })
+  const control = (action: 'pause' | 'resume' | 'delete', routine = 'a1') => ({ do: 'controlRoutine', bot: RESEARCH, routine: routine as RoutineId, action }) as const
+
+  it("pauses and resumes by id in the bot's store, answers the routine as Hermes now holds it, and Hermes says the store changed", async () => {
+    const { clock, hermes, calls } = await launched(STORE)
+    const counted = hermes.routines.get()
+    expect(await hermes.run(control('pause'))).toMatchObject({ ok: true, value: { id: 'a1', name: 'Morning digest', paused: true } })
+    expect(await hermes.run(control('resume', 'b2'))).toMatchObject({ ok: true, value: { id: 'b2', paused: false } })
+    expect(calls('cron.manage'), "the first is the scheduled jobs' list of the home store on connect").toEqual([
+      { method: 'cron.manage', params: { action: 'list', include_disabled: true } },
+      { method: 'cron.manage', params: { action: 'pause', name: 'a1', profile: 'research' } },
+      { method: 'cron.manage', params: { action: 'resume', name: 'b2', profile: 'research' } }
+    ])
+    await clock.advance(0)
+    expect(hermes.routines.get()).toBeGreaterThan(counted)
+    expect(await hermes.run({ do: 'listRoutines', bot: RESEARCH })).toMatchObject({ ok: true, value: [{ id: 'a1', paused: true }, { id: 'b2', paused: false }] })
+  })
+
+  it('deletes with remove, answers null, and the routine is gone from the next list', async () => {
+    const { hermes, calls } = await launched(STORE)
+    expect(await hermes.run(control('delete'))).toEqual({ ok: true, value: null })
+    expect(calls('cron.manage')).toEqual([
+      { method: 'cron.manage', params: { action: 'list', include_disabled: true } },
+      { method: 'cron.manage', params: { action: 'remove', name: 'a1', profile: 'research' } }
+    ])
+    expect(await hermes.run({ do: 'listRoutines', bot: RESEARCH })).toMatchObject({ ok: true, value: [{ id: 'b2' }] })
+  })
+
+  it("refuses with Hermes's words for a routine it no longer has", async () => {
+    const { hermes } = await launched(STORE)
+    expect(await hermes.run(control('pause', 'gone'))).toEqual({
+      ok: false, refusal: { kind: 'rejected', message: "Hermes couldn't pause that routine: Job with ID or name 'gone' not found. Use cronjob(action='list') to inspect jobs." }
+    })
+  })
+
+  it('is unsupported on a socket with no interactive grant', async () => {
+    const { hermes } = await launched(withCron({ jobs: [DIGEST] }, BOUND))
+    expect(await hermes.run({ do: 'controlRoutine', bot: DEFAULT, routine: 'a1' as RoutineId, action: 'pause' })).toEqual({
+      ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't show routines to Highwing." }
+    })
+  })
+})
+
+describe('parseControlled', () => {
+  it('reads an error with no success flag as a refusal, and a pause with no job as unusable', () => {
+    expect(parseControlled({ error: 'store locked' }, 'resume')).toEqual({ ok: false, refusal: { kind: 'rejected', message: "Hermes couldn't resume that routine: store locked" } })
+    expect(parseControlled({ success: true }, 'pause')).toEqual({ ok: false, refusal: { kind: 'rejected', message: "Hermes didn't say what became of that routine." } })
   })
 })
 

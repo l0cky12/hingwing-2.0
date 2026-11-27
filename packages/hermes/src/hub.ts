@@ -29,7 +29,7 @@ import { chatDesk } from './open'
 import { relayBook } from './relay'
 import { botList } from './roster'
 import { screenDesk } from './screens'
-import { listRoutines } from './routines'
+import { controlRoutine, listRoutines } from './routines'
 import { deriveSidebar, sessionList } from './sidebar'
 import { readVersions } from './versions'
 import { connect, systemClock, type Clock, type Dialer } from './wire/link'
@@ -662,6 +662,7 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'addToolServer') return addToolServer(conn, command.bot, command.setup)
     if (command.do === 'removeToolServer') return removeToolServer(conn, command.bot, command.name)
     if (command.do === 'listRoutines') return listRoutines(conn, command.bot)
+    if (command.do === 'controlRoutine') return controlRoutine(conn, command.bot, command.routine, command.action)
     if (command.do === 'botPicture') return botPicture(conn, command.bot)
     if (command.do === 'canGeneratePicture') return canGeneratePicture(conn)
     if (command.do === 'generatePicture') return generatePicture(conn, command.prompt)

@@ -22,7 +22,7 @@ import { MANAGER_NAMES, MANAGERS, type BotManagers, type ManagerName, type Manag
 import type { RelayState } from '../domain/relay'
 import type { Lease, ScreenFacts } from '../domain/screen'
 import type { ServerState, Tested, ToolServer } from '../domain/tool-servers'
-import type { Routine, RoutineId } from '../domain/routines'
+import type { Routine, RoutineAction, RoutineId } from '../domain/routines'
 import { OWN_COMMANDS, type SlashCatalog, type SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
 import type {
@@ -2021,4 +2021,12 @@ export function parseRoutines(reply: CronManageResult, bot: BotId): CommandOutco
   const scoped = typeof reply.scoped === 'string' && sameProfile(reply.scoped, bot)
   const listed = (Array.isArray(reply.jobs) ? reply.jobs : []).flatMap(raw => routineOf(raw) ?? [])
   return { ok: true, value: listed.flatMap(({ routine, owner }) => (scoped || sameProfile(owner, bot) ? [routine] : [])) }
+}
+
+/** A pause or a resume answers the job as it is now, and a removal names the job it removed (tools/cronjob_tools.py:765-779). */
+export function parseControlled(reply: CronManageResult, action: RoutineAction): CommandOutcome<Routine | null> {
+  if (reply.success !== true) return { ok: false, refusal: { kind: 'rejected', message: `Hermes couldn't ${action} that routine: ${words(reply.error) ?? 'it gave no reason.'}` } }
+  if (action === 'delete') return { ok: true, value: null }
+  const changed = routineOf(reply.job)
+  return changed === null ? { ok: false, refusal: { kind: 'rejected', message: "Hermes didn't say what became of that routine." } } : { ok: true, value: changed.routine }
 }

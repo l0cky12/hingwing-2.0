@@ -1,9 +1,9 @@
 import {
-  APPROVAL_MODES, BOT_MARKS, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
+  APPROVAL_MODES, BOT_MARKS, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, ROUTINE_ACTIONS, targetOf,
   type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type Recording, type RelayDesk, type RequestId, type RequestReply,
-  type RestoreScope, type ResultOf, type ScreenView, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type Target, type TaskBoard, type TaskChat, type TurnId, type Unstarted
+  type RestoreScope, type ResultOf, type RoutineId, type ScreenView, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type Target, type TaskBoard, type TaskChat, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 import type { Intro } from './intro'
 
@@ -613,6 +613,11 @@ export const validators: Validators = {
   listRoutines: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'listRoutines', bot }
+  },
+  controlRoutine: raw => {
+    const bot = botIdOf(raw.bot)
+    const action = ROUTINE_ACTIONS.find(held => held === raw.action)
+    return bot !== null && filled(raw.routine) && action !== undefined ? { do: 'controlRoutine', bot, routine: raw.routine as RoutineId, action } : null
   },
   editBot: raw => {
     const bot = botIdOf(raw.bot)

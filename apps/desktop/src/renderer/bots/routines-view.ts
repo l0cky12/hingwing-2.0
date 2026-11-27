@@ -1,6 +1,6 @@
 import type { CommandOutcome, Routine, RoutineId } from '@highwing/hermes/domain'
 
-export interface RoutineRow { readonly id: RoutineId; readonly name: string; readonly when: string }
+export interface RoutineRow { readonly id: RoutineId; readonly name: string; readonly when: string; readonly paused: boolean }
 
 export type RoutinesView =
   | { readonly state: 'loading' }
@@ -81,5 +81,18 @@ export function routinesViewOf(listed: CommandOutcome<readonly Routine[]> | null
   if (listed === null) return { state: 'loading' }
   if (!listed.ok) return { state: 'refused', message: listed.refusal.message }
   if (listed.value.length === 0) return { state: 'empty', hint: emptyHint(bot) }
-  return { state: 'listed', rows: listed.value.map(routine => ({ id: routine.id, name: routine.name, when: routine.paused ? 'Paused' : scheduleWords(routine.schedule) })) }
+  return { state: 'listed', rows: listed.value.map(routine => ({ id: routine.id, name: routine.name, when: routine.paused ? 'Paused' : scheduleWords(routine.schedule), paused: routine.paused })) }
+}
+
+/**
+ * The list after Hermes answered a control of routine `id`: the routine as Hermes now holds it, or gone after a delete. A Hermes
+ * that cannot change routines takes the list away with its reason, and any other refusal leaves the list and says why.
+ */
+export function afterControl(
+  listed: CommandOutcome<readonly Routine[]>, id: RoutineId, answered: CommandOutcome<Routine | null>
+): { readonly listed: CommandOutcome<readonly Routine[]>; readonly said: string | null } {
+  if (!answered.ok) return answered.refusal.kind === 'unsupported' ? { listed: answered, said: null } : { listed, said: answered.refusal.message }
+  if (!listed.ok) return { listed, said: null }
+  const now = answered.value
+  return { listed: { ok: true, value: now === null ? listed.value.filter(held => held.id !== id) : listed.value.map(held => (held.id === id ? now : held)) }, said: null }
 }
