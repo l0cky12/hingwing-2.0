@@ -1,7 +1,8 @@
-import { shownChat } from '@highwing/hermes/domain'
+import { shownBot, shownChat } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import type { Mode, NoticeKind, OnClose, Theme } from '../../ipc-contract'
+import { botIn } from '../bots/roster-view'
 import { MAC } from '../keys'
 import { capsOf, SHORTCUTS } from '../shortcuts'
 import { run, useTopic } from '../store'
@@ -230,6 +231,8 @@ export function Settings({ setup, mode, theme, onRequestClose, onShowShortcuts }
         <div className="row" hidden={off('permissions')}>
           <div className="text"><p className="label">Commands are approved on the composer.</p></div>
         </div>
+        {/* Mounted only while shown: it asks Hermes as it mounts. */}
+        {!off('denied') && <DenyRules />}
       </div>
     ),
     keys: (
@@ -317,5 +320,54 @@ export function Settings({ setup, mode, theme, onRequestClose, onShowShortcuts }
         <button type="button" aria-keyshortcuts="Escape" disabled={saving} onClick={onRequestClose}>Close</button>
       </header>
     </div>
+  )
+}
+
+type DenyRead =
+  | { readonly at: 'reading' }
+  | { readonly at: 'read'; readonly rules: readonly string[] }
+  | { readonly at: 'refused'; readonly words: string }
+
+/** Read again when the window comes back to the front: the rules change only in the bot's config.yaml, outside Highwing. */
+function DenyRules() {
+  const bot = shownBot(useTopic('open'))
+  const bots = useTopic('bots')
+  const name = bot === null ? null : botIn(bots, bot)?.name ?? null
+  const [read, setRead] = useState<DenyRead>({ at: 'reading' })
+  const ids = useId()
+
+  useEffect(() => {
+    setRead({ at: 'reading' })
+    let asked = 0
+    const ask = () => {
+      const mine = ++asked
+      void run({ do: 'denyRules', bot }).then(outcome => {
+        if (mine === asked) setRead(outcome.ok ? { at: 'read', rules: outcome.value } : { at: 'refused', words: outcome.refusal.message })
+      })
+    }
+    ask()
+    window.addEventListener('focus', ask)
+    return () => {
+      asked = -1
+      window.removeEventListener('focus', ask)
+    }
+  }, [bot])
+
+  return (
+    <>
+      <div className="row">
+        <div className="text">
+          <p className="label" id={`${ids}-denied`}>Denied commands</p>
+          <p className="desc">{name ?? 'This bot'} never runs a command that matches one of these, even with YOLO on. To change them, edit approvals.deny in the bot’s config.yaml.</p>
+          {read.at === 'read' && read.rules.length === 0 && <p className="desc">No commands are denied.</p>}
+          {read.at === 'refused' && <p className="desc">{read.words}</p>}
+        </div>
+      </div>
+      {read.at === 'read' && read.rules.length > 0 && (
+        <ul className="rules" aria-labelledby={`${ids}-denied`}>
+          {read.rules.map((rule, index) => <li key={index} className="row"><code>{rule}</code></li>)}
+        </ul>
+      )}
+    </>
   )
 }

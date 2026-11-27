@@ -78,6 +78,8 @@ export interface Fixture {
      * `info.yolo` stays the chat's own flag, as on Hermes. Absent: Hermes refuses both, as for a key it does not know.
      */
     readonly approvals?: ApprovalMode
+    /** Every bot's `approvals.deny`, which `config.get` of `full` answers. Absent: that key is refused as `controls` says. */
+    readonly deny?: readonly string[]
     /**
      * The story session's controls as `config.get` answers them, by key: `{ "show_reasoning": "1" }`.
      * `config.set` changes them, except a set of key `yolo`, which `yolo` serves. Absent: the gateway refuses both as unknown methods, as a Hermes
@@ -611,6 +613,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (yolo !== undefined && typeof yolo !== 'boolean') return '"yolo" must be true or false'
   if (approvals !== undefined && !APPROVAL_MODES.some(mode => mode === approvals)) return '"approvals" must be manual, smart or off'
   if (yoloDenied !== undefined && typeof yoloDenied !== 'boolean') return '"yoloDenied" must be true or false'
+  const { deny } = value
+  if (deny !== undefined && !(Array.isArray(deny) && deny.every(rule => typeof rule === 'string'))) return '"deny" must be a list of strings'
   const { info } = value
   if (info !== undefined && !isObject(info)) return '"info" must be an object of attach info fields'
   const { controls } = value
@@ -711,6 +715,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] }),
     ...(usage === undefined ? {} : { usage }),
     ...(yolo === undefined ? {} : { yolo }), ...(yoloDenied === undefined ? {} : { yoloDenied }), ...(approvals === undefined ? {} : { approvals: approvals as ApprovalMode }),
+    ...(deny === undefined ? {} : { deny: deny as string[] }),
     ...(branches === undefined ? {} : { branches }), ...(tree === undefined ? {} : { tree }),
     ...(info === undefined ? {} : { info }),
     ...(controls === undefined ? {} : { controls: controls as Record<string, string> }),

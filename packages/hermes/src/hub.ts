@@ -3,7 +3,7 @@ import { DONE, refused, SessionActor, type Upload } from './actor'
 import { activityDesk, busyOf, type Attached } from './activity'
 import { appSignIn, connectApp, listApps, removeApp } from './apps'
 import {
-  addToolServer, botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, readSkills, removeToolServer,
+  addToolServer, botModels, botPicture, canGeneratePicture, createBot, denyRules, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, readSkills, removeToolServer,
   setBotPicture, setSkill, skillText, toolServers
 } from './bot-admin'
 import type { BotActivities, UnreadChat } from './domain/activity'
@@ -612,6 +612,7 @@ export function openHermes(options: HermesOptions): Hermes {
       return started.ok ? run({ do: 'send', sessionId: started.value, text: command.text, attachments: command.attachments ?? [] }) : started
     }
     if (command.do === 'botModels') return botModels(conn, command.bot)
+    if (command.do === 'denyRules') return denyRules(conn, command.bot)
     if (command.do === 'versions') return versions(command.sessionId)
     if (command.do === 'readMessages') {
       return conn.reach === 'host' && bots.get().state === 'loading' ? refused('rejected', STILL_LISTING) : readMessages(searchPlaces(), command.step, desk.listed)

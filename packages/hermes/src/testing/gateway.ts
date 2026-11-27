@@ -902,7 +902,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     return mutation === undefined ? gateway.story(socket, 'session.mutate', params, routed) : mutation(gateway, params, routed)
   },
   /** gateway/session_config.py:65-73 hands the session controls to gateway/session_busy_controls.py:30-56. */
-  'config.get': (gateway, _socket, params, routed) => (params.key === 'approval_mode' ? gateway.readApprovals(params, routed, null) : gateway.control(params, routed, false)),
+  'config.get': (gateway, _socket, params, routed) => (params.key === 'approval_mode' ? gateway.readApprovals(params, routed, null)
+    : params.key === 'full' && gateway.fixture.header.deny !== undefined ? gateway.fullConfig(params, routed, gateway.fixture.header.deny)
+    : gateway.control(params, routed, false)),
   /** gateway/session_tui_config.py:187-193 */
   'config.set': (gateway, socket, params, routed) => {
     if (gateway.awaits('config.set')) return gateway.story(socket, 'config.set', params, routed)
@@ -1702,6 +1704,13 @@ export class ScriptedGateway {
     if (Object.keys(params).some(key => !['session_id', 'profile', 'key'].includes(key))) throw new Refused('invalid_params')
     if (chat === null) this.authorize(params, routed)
     return { value: this.approvals }
+  }
+
+  /** `config.get` for key `full` (gateway/session_config.py:65-115), holding only the `approvals.deny` the header names for every bot. */
+  fullConfig(params: Obj, routed: string, deny: readonly string[]): unknown {
+    if (Object.keys(params).some(key => !['session_id', 'profile', 'key'].includes(key))) throw new Refused('invalid_params')
+    if (params.session_id !== undefined && params.session_id !== null) this.authorize(params, routed)
+    return { config: { approvals: { deny } } }
   }
 
   /** `config.set` for key `approval_mode`, as `/approvals <mode>` writes it (gateway/session_tui_config.py:202-203,337-350). It sends no session.info. */

@@ -2,7 +2,7 @@ import { SHORTCUTS, type Shortcut, type ShortcutId } from '../shortcuts'
 
 export type Page = 'connection' | 'appearance' | 'window' | 'notifications' | 'passwords' | 'skills' | 'permissions' | 'keys' | 'usage' | 'about'
 export type RowId =
-  | 'connection' | 'theme' | 'sidebar' | 'on-close' | 'notice-asks' | 'notice-replies' | 'notice-jobs' | 'passwords' | 'skills' | 'permissions'
+  | 'connection' | 'theme' | 'sidebar' | 'on-close' | 'notice-asks' | 'notice-replies' | 'notice-jobs' | 'passwords' | 'skills' | 'permissions' | 'denied'
   | 'shortcuts' | `key:${ShortcutId}` | 'usage' | 'about-app' | 'about-hermes'
 
 export const PAGES: readonly { readonly id: Page; readonly label: string; readonly lede: string }[] = [
@@ -53,6 +53,7 @@ export const ROWS: readonly Row[] = [
   { id: 'passwords', page: 'passwords', searchText: 'Password managers. 1Password, Bitwarden. Bot. Each bot keeps its own password managers. unlock lock vault secret login master password token' },
   { id: 'skills', page: 'skills', searchText: 'Skills. Skills this bot can use. A skill turned off stays installed. Open SKILL.md instructions. turn on off enable disable library' },
   { id: 'permissions', page: 'permissions', searchText: 'Commands are approved on the composer. approval approve Manual, Smart, Off. YOLO' },
+  { id: 'denied', page: 'permissions', searchText: 'Denied commands. This bot never runs a command that matches one of these, even with YOLO on. To change them, edit approvals.deny in the bot’s config.yaml. deny block blocked forbid rule glob' },
   { id: 'shortcuts', page: 'keys', searchText: `Show all. Every shortcut Highwing has, grouped by what it does. sheet ${SHORTCUT}` },
   ...shortcutRows,
   { id: 'usage', page: 'usage', searchText: 'Usage. What this Hermes reports. tokens cost plan limit quota account' },

@@ -25,7 +25,7 @@ import type { ServerState, Tested, ToolServer } from '../domain/tool-servers'
 import { OWN_COMMANDS, type SlashCatalog, type SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
 import type {
-  AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
+  AgentPrintPayload, CanonicalBotDeliverResult, CanonicalConfigGetResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
   CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
   CommandDispatchResult, CommandsCatalogResult, CronJobRow, CronManageResult, LearningDetailResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
   ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, DisplayLease, DisplayLeasePayload, DisplayLeaseResult, DisplayObserveResult, DisplayStatus, DisplayThumbnailResult, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, ImageGenerateResult, LoopSnapshot,
@@ -1399,6 +1399,13 @@ export function parsePets(reply: PetGalleryResult): readonly PetChoice[] {
     return [{ pet: { slug, name: words(row.displayName) ?? slug, url: url !== null && /^https?:\/\//.test(url) ? url : null }, curated: row.curated === true }]
   })
   return [...listed.filter(held => held.curated), ...listed.filter(held => !held.curated)].map(held => held.pet)
+}
+
+/** `approvals.deny` from `config.get full` (gateway/session_config.py `_client_config`), each glob trimmed and blanks dropped as tools/approval_floors.py reads them. */
+export function parseDenyRules(reply: CanonicalConfigGetResult): readonly string[] {
+  const approvals = isObject(reply) && isObject(reply.config) ? reply.config.approvals : null
+  const deny = isObject(approvals) && Array.isArray(approvals.deny) ? approvals.deny : []
+  return deny.flatMap(rule => (typeof rule === 'string' && rule.trim() !== '' ? [rule.trim()] : []))
 }
 
 const WEB_PAGE = /^https?:\/\//

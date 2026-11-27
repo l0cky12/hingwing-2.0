@@ -139,6 +139,8 @@ export type Command =
   | { readonly do: 'removeMemory'; readonly id: string }
   /** The models a bot's chat could use, with no chat open. null: the socket's own profile, which a new bot copies its credentials from. */
   | { readonly do: 'botModels'; readonly bot: BotId | null }
+  /** The globs of the bot's `approvals.deny`: Hermes blocks a matching command whatever the approval mode, YOLO included. null: the socket's own profile. */
+  | { readonly do: 'denyRules'; readonly bot: BotId | null }
   | { readonly do: 'describeBot'; readonly bot: BotId }
   /**
    * One save of the details dialog, then the roster is asked for again. `revision` is the one `describeBot` answered:
@@ -268,6 +270,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'apps' } ? AppsBoard
   : C extends { do: 'connectApp' | 'appSignIn' } ? AppSignIn
   : C extends { do: 'memory' } ? readonly MemoryEntry[]
+  : C extends { do: 'denyRules' } ? readonly string[]
   : C extends { do: 'markBot' } ? Marked
   : C extends { do: 'passwordManagers' | 'usePasswordManager' | 'unlockPasswordManager' | 'lockPasswordManager' } ? BotManagers
   : C extends { do: 'toolServers' | 'removeToolServer' } ? readonly ToolServer[]

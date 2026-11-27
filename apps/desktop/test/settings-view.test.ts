@@ -12,7 +12,7 @@ describe('settingsViewOf with no search', () => {
     ['notifications', 'Notifications', 'Which desktop notifications Highwing shows.', ['notice-asks', 'notice-replies', 'notice-jobs']],
     ['passwords', 'Password managers', 'The 1Password and Bitwarden logins each bot can use.', ['passwords']],
     ['skills', 'Skills', 'The skills the open bot can use, and which of them are on.', ['skills']],
-    ['permissions', 'Permissions', 'How Hermes asks before it runs a command.', ['permissions']],
+    ['permissions', 'Permissions', 'How Hermes asks before it runs a command.', ['permissions', 'denied']],
     ['keys', 'Keyboard shortcuts', 'Each shortcut, and where in Highwing it works.', ['shortcuts', ...SHORTCUTS.map(({ id }) => `key:${id}`)]],
     ['usage', 'Usage', 'What this Hermes reports of its use.', ['usage']],
     ['about', 'About', 'The versions of Highwing and of the Hermes it talks to.', ['about-app', 'about-hermes']]
@@ -88,6 +88,8 @@ describe('settingsViewOf with a search', () => {
     ['scheduled', ['notice-jobs']],
     ['bitwarden', ['passwords']],
     ['approved', ['permissions']],
+    ['approvals.deny', ['denied']],
+    ['yolo', ['permissions', 'denied']],
     ['skill.md', ['skills']],
     ['show all', ['shortcuts']],
     ['version', ['about-app', 'about-hermes']]
