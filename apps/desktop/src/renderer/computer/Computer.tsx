@@ -117,10 +117,14 @@ function LiveScreen({ control }: { readonly control: Control }) {
 /** The pane beside the chat that shows the open chat's bot's screen. */
 export function ComputerView({ view: { bot, screen } }: { readonly view: ScreenView }) {
   const [said, setSaid] = useState<string | null>(null)
+  const [pressing, setPressing] = useState(false)
   const press = screen.state === 'on' ? pressOf(screen.control) : null
   useEffect(() => setSaid(null), [bot, screen.state])
+  // A second press while Hermes moves the lease would act on the screen as it was, so the button waits for the first.
   const act = async (take: boolean) => {
+    setPressing(true)
     const outcome = await run(take ? { do: 'takeControl', bot } : { do: 'handBack', bot })
+    setPressing(false)
     setSaid(outcome.ok ? null : outcome.refusal.message)
   }
   return (
@@ -129,7 +133,7 @@ export function ComputerView({ view: { bot, screen } }: { readonly view: ScreenV
         <button type="button" className="preview-back" onClick={close}>Back to chat</button>
         <h2>Screen</h2>
         {screen.state === 'on' && <span className="computer-control" role="status" data-control={screen.control}>{CONTROL_WORDS[screen.control]}</span>}
-        {press !== null && <button type="button" className={press.take ? undefined : 'primary'} onClick={() => void act(press.take)}>{press.label}</button>}
+        {press !== null && <button type="button" disabled={pressing} onClick={() => void act(press.take)}>{press.label}</button>}
         <button type="button" className="preview-close" aria-label="Close screen" title="Close screen" onClick={close}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
