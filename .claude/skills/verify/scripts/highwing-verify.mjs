@@ -53,7 +53,7 @@ const STATES = {
   'setup-failed': page => page.getByRole('alert'),
   'setup-saved': page => page.getByRole('button', { name: 'Open chat', exact: true }),
   intro: page => page.getByRole('region', { name: 'Intro', exact: true }),
-  settings: page => page.getByRole('heading', { name: 'Settings', exact: true, level: 2 }),
+  settings: page => page.getByRole('heading', { name: 'Settings', exact: true, level: 1 }),
   live: page => page.getByRole('button', { name: 'Send', exact: true, disabled: false }),
   'tool-running': page => page.locator('.step[data-end="live"]').filter({ hasText: /^Running / }),
   approval: page => page.getByRole('group', { name: 'Run this command?' }).getByRole('button', { name: 'Run once', exact: true, disabled: false }),

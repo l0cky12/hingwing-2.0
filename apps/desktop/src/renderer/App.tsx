@@ -121,7 +121,7 @@ function ChatWindow({ hidden, settings, target, mode, theme, width, onOpenApps }
   const paned = preview?.state === 'open' && settings === null
   const compact = mode === 'bots' && width === 'compact'
   return (
-    <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined} data-compact={compact || undefined}>
+    <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined} data-compact={compact || undefined} data-settings={settings !== null || undefined}>
       {mode === 'bots' && <BotsSidebar head={switcher} compact={compact} foot={foot} />}
       {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} foot={foot} />}
       <div key="screen" className="screen" hidden={settings !== null}>
