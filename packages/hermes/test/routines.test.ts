@@ -38,17 +38,30 @@ describe('scheduleInWords', () => {
     ['0 10 * * 6,0', 'Weekends at 10:00'],
     ['0 9 * * 5,1', 'Every Monday and Friday at 09:00'],
     ['0 9 * * 7', 'Every Sunday at 09:00'],
+    ['0 9 * * MON-FRI', 'Weekdays at 09:00'],
+    ['0 9 * * sat,sun', 'Weekends at 09:00'],
+    ['0 9 * * mon,wed-fri', 'Every Monday, Wednesday, Thursday and Friday at 09:00'],
+    ['0 9 * * 5-1', '0 9 * * 5-1'],
+    ['5 4 1 * *', 'Monthly on the 1st at 04:05'],
+    ['0 8 22 * *', 'Monthly on the 22nd at 08:00'],
+    ['0 8 11 * *', 'Monthly on the 11th at 08:00'],
     ['0 * * * *', 'Every hour'],
     ['15 * * * *', 'Every hour at :15'],
     ['*/10 * * * *', 'Every 10 minutes'],
     ['0 */4 * * *', 'Every 4 hours'],
+    ['*/7 * * * *', '*/7 * * * *'],
+    ['0 */5 * * *', '0 */5 * * *'],
     ['once at 2026-12-01 09:00', 'Once, at 2026-12-01 09:00'],
     ['once in 2h', 'Once'],
     ['every monday 9am', 'Every monday 9am'],
     ['0 25 * * *', '0 25 * * *'],
-    ['5 4 1 * *', '5 4 1 * *'],
+    ['5 4 1-7 * *', '5 4 1-7 * *'],
     ['', 'No schedule']
   ])('says %j as %j', (display, words) => expect(scheduleInWords(display)).toBe(words))
+
+  it('dates a one-off set as a delay by its next run, in the wall-clock time Hermes gave it', () => {
+    expect(scheduleInWords('once in 2h', '2026-11-27T11:30:00-05:00')).toBe('Once, at 2026-11-27 11:30')
+  })
 })
 
 describe('parseRoutines', () => {
@@ -59,6 +72,13 @@ describe('parseRoutines', () => {
       state: 'listed',
       routines: [{ id: 'a', name: 'Digest', schedule: 'Every 30 minutes', paused: false }, { id: 'b', name: 'Sweep', schedule: 'Every 30 minutes', paused: true }]
     })
+  })
+
+  it('reads paused from state, so a finished one-off is not paused, and from enabled only when there is no state', () => {
+    const listed = parseRoutines({ scoped: 'research', jobs: [
+      row('a', 'Done', { enabled: false, state: 'completed' }), row('b', 'Held', { enabled: false, state: 'paused' }), row('c', 'Old', { enabled: false })
+    ] }, RESEARCH)
+    expect(listed.state === 'listed' && listed.routines.map(routine => routine.paused)).toEqual([false, true, true])
   })
 
   it("keeps only this bot's tagged rows from an unscoped store, and gives untagged rows to the default bot", () => {

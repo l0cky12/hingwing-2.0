@@ -1732,8 +1732,9 @@ const UNTAGGED_OWNER = 'default'
 const asRoutine = (row: CronJobRow, name: string): Routine => ({
   id: row.job_id as RoutineId,
   name: name.replace(BOT_TAG, '').trim() || words(row.prompt_preview) || row.job_id,
-  schedule: scheduleInWords(isString(row.schedule) ? row.schedule : ''),
-  paused: row.enabled === false
+  schedule: scheduleInWords(isString(row.schedule) ? row.schedule : '', isString(row.next_run_at) ? row.next_run_at : null),
+  // A finished one-off is kept disabled with `state: completed`, so `state` decides and `enabled` only stands in for an older reply.
+  paused: isString(row.state) ? row.state === 'paused' : row.enabled === false
 })
 
 /**
