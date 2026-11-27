@@ -151,6 +151,7 @@ const STEPS = {
   inview: { arity: 2, run: async (ctx, role, name) => checkInView(ctx, role, name) },
   'page-fits': { arity: 0, run: async ctx => checkPageFits(ctx) },
   inside: { arity: 4, run: async (ctx, role, name, outerRole, outerName) => checkInside(ctx, role, name, outerRole, outerName) },
+  'same-row': { arity: 4, run: async (ctx, role, name, otherRole, otherName) => checkSameRow(ctx, role, name, otherRole, otherName) },
   reveal: { arity: 2, run: async (ctx, role, name) => byRole(ctx.page, role, name).scrollIntoViewIfNeeded({ timeout: ctx.timeout }) },
   shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
   field: {
@@ -1119,6 +1120,16 @@ async function checkInside(ctx, role, name, outerRole, outerName) {
   if (box.x < bounds.x - 0.5 || box.y < bounds.y - 0.5 || box.x + box.width > bounds.x + bounds.width + 0.5 || box.y + box.height > bounds.y + bounds.height + 0.5) {
     throw new Error(`${role} "${name}" spans ${span(box)}, outside ${outerRole} "${outerName}" at ${span(bounds)}`)
   }
+}
+
+async function checkSameRow(ctx, role, name, otherRole, otherName) {
+  const [one, other] = [byRole(ctx.page, role, name).first(), byRole(ctx.page, otherRole, otherName).first()]
+  await one.waitFor({ state: 'visible', timeout: ctx.timeout })
+  await other.waitFor({ state: 'visible', timeout: ctx.timeout })
+  const [a, b] = await Promise.all([one.boundingBox(), other.boundingBox()])
+  const middle = ({ y, height }) => y + height / 2
+  log(ctx, `  ${role} "${name}" centred at y ${middle(a).toFixed(1)}, ${otherRole} "${otherName}" at y ${middle(b).toFixed(1)}`)
+  if (Math.abs(middle(a) - middle(b)) > 1) throw new Error(`${role} "${name}" and ${otherRole} "${otherName}" sit on different rows`)
 }
 
 async function sizeWindow(ctx, options) {
