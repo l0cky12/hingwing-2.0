@@ -468,8 +468,8 @@ button.file-open:hover { color: var(--signal); text-decoration: underline; text-
 .acts { display: inline-flex; align-items: center; gap: 6px; }
 .copy.icon { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; }
 .copy.icon:disabled { opacity: 0; color: var(--graphite); }
-:is(.request:is(:hover, :has(:focus-visible)), :is(.thread, .prose):hover ~ .turn-actions, .turn-actions:is(:hover, :has(:focus-visible)), .acts:has([aria-expanded="true"])) .copy.icon { opacity: 1; }
-:is(.request:hover, :is(.thread, .prose):hover ~ .turn-actions, .turn-actions:hover) .copy.icon:disabled { opacity: .45; }
+:is(.request:is(:hover, :has(:focus-visible)), :is(.thread, .prose, .relay-reply):hover ~ .turn-actions, .turn-actions:is(:hover, :has(:focus-visible)), .acts:has([aria-expanded="true"])) .copy.icon { opacity: 1; }
+:is(.request:hover, :is(.thread, .prose, .relay-reply):hover ~ .turn-actions, .turn-actions:hover) .copy.icon:disabled { opacity: .45; }
 .versions { display: inline-flex; align-items: center; gap: 2px; color: var(--graphite); font: 500 var(--text-xs)/1.5 var(--sans); font-variant-numeric: tabular-nums; white-space: nowrap; user-select: none; }
 .versions > button { padding: 1px 7px; border: 1px solid var(--rule); border-radius: var(--radius-xs); background: var(--sheet); color: var(--ink); }
 .versions > button:hover:not(:disabled) { background: var(--paper); }
@@ -480,7 +480,7 @@ button.file-open:hover { color: var(--signal); text-decoration: underline; text-
 .versions-end { margin: 22px 0 0 var(--col); }
 .turn-actions { display: flex; align-items: center; gap: 6px; margin: 10px 0 0 var(--col); }
 .turn-actions .copy { position: static; }
-.relay-reply > .turn-actions, .side-row > .turn-actions { margin-left: 0; }
+.side-row > .turn-actions { margin-left: 0; }
 .react { position: relative; }
 .react-pick { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 2; display: flex; gap: 2px; padding: 4px; background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius-md); box-shadow: var(--shadow-2); }
 .react-pick button, .reaction { padding: 1px 7px; border: 1px solid transparent; border-radius: var(--radius-sm); background: none; font: var(--text-lg)/1.5 var(--sans); }
