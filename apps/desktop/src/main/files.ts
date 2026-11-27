@@ -1,4 +1,4 @@
-import type { Item, Session, ToolItem } from '@highwing/hermes/domain'
+import type { Item, Session, ToolItem, ToolResult } from '@highwing/hermes/domain'
 import { appendFile, stat } from 'node:fs/promises'
 import { isAbsolute, normalize, resolve } from 'node:path'
 import type { FileAction, FileOutcome } from '../ipc-contract'
@@ -12,11 +12,24 @@ export function* itemsOf(session: Session): Iterable<Item> {
 
 const WRITES: ReadonlySet<string> = new Set(['write_file', 'patch'])
 
-/** A stored step keeps no diff (wire/parse.ts `parseRows`), so a file tool's own path is the proof once the chat is reloaded. */
+/**
+ * A stored step keeps no diff and reads as no error (wire/parse.ts `parseRows`), so once the chat is reloaded the proof is
+ * the tool's own report: Hermes lists `files_modified` only when the write landed (tools/file_tools.py write_file_tool, patch_tool).
+ */
+const reported = (result: ToolResult, path: string) => {
+  if (result.kind !== 'text' || result.clipped > 0) return false
+  try {
+    const report: unknown = JSON.parse(result.text)
+    return typeof report === 'object' && report !== null && 'files_modified' in report && Array.isArray(report.files_modified) && report.files_modified.includes(path)
+  } catch {
+    return false
+  }
+}
+
 const wrote = (item: ToolItem, path: string) => {
   if (item.status.s !== 'done') return false
   const { diffs, result } = item.status
-  return diffs.some(diff => diff.path === path) || (WRITES.has(item.name) && item.args.path === path && !(result.kind === 'text' && result.isError))
+  return diffs.some(diff => diff.path === path) || (WRITES.has(item.name) && reported(result, path))
 }
 
 const stepNamed = (session: Session, path: string) => {

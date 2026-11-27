@@ -30,15 +30,18 @@ describe('openablePath', () => {
     expect(openablePath(edited('/work/notes.md', null), '/work/other.md')).toBeNull()
   })
 
-  it('takes a stored write of the file, which keeps no diff, and refuses a failed one', () => {
-    const stored = (result: unknown) => ({
+  it("takes a stored write, which keeps no diff, by Hermes's own report of the file it wrote", () => {
+    const stored = (text: string, clipped = 0) => ({
       cwd: null,
-      history: [{ items: [{ kind: 'tool', name: 'write_file', args: { path: '/work/report.html' }, status: { s: 'done', diffs: [], result } }] }],
+      history: [{ items: [{ kind: 'tool', name: 'write_file', args: { path: '/work/report.html' }, status: { s: 'done', diffs: [], result: { kind: 'text', text, isError: false, clipped } } }] }],
       run: { state: 'idle' }
     }) as unknown as Session
-    expect(openablePath(stored({ kind: 'text', text: '{"bytes_written": 10}', isError: false, clipped: 0 }), '/work/report.html')).toBe('/work/report.html')
-    expect(openablePath(stored({ kind: 'text', text: 'Permission denied', isError: true, clipped: 0 }), '/work/report.html')).toBeNull()
-    expect(openablePath(stored({ kind: 'none' }), '/work/other.html')).toBeNull()
+    const wrote = '{"bytes_written": 10, "resolved_path": "/work/report.html", "files_modified": ["/work/report.html"]}'
+    expect(openablePath(stored(wrote), '/work/report.html')).toBe('/work/report.html')
+    expect(openablePath(stored(wrote), '/work/other.html')).toBeNull()
+    expect(openablePath(stored(wrote, 40), '/work/report.html')).toBeNull()
+    expect(openablePath(stored('{"error": "Permission denied"}'), '/work/report.html')).toBeNull()
+    expect(openablePath(stored('{"bytes_written": 0, "error": "stale write refused"}'), '/work/report.html')).toBeNull()
   })
 
   it('refuses a url even when a step named it', () => {
