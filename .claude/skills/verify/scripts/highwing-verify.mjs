@@ -460,6 +460,12 @@ const STEPS = {
       if (!(await byRole(ctx.page, role, name).isChecked({ timeout: ctx.timeout }))) throw new Error(`${role} "${name}" is not checked`)
     }
   },
+  unchecked: {
+    arity: 2,
+    run: async (ctx, role, name) => {
+      if (await byRole(ctx.page, role, name).isChecked({ timeout: ctx.timeout })) throw new Error(`${role} "${name}" is checked`)
+    }
+  },
   current: {
     arity: 2,
     run: async (ctx, role, name) => {

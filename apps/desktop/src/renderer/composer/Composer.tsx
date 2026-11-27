@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEv
 import { MAX_ATTACHMENTS, type StageResult } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
 import { Chips } from '../chat/Attachments'
+import { SEND_KEY_LABEL, sendsMessage } from '../keys'
 import { useTopic } from '../store'
 import { busyHint } from './busy'
 import { attachTo, detach, draftSent, moveAttachment, moveDraft, seedDraft, stagingFor, useAttachments, useDraft, useStaging, writeDraft, type DraftSlot } from './drafts'
@@ -127,6 +128,7 @@ const draggingFiles = (event: DragEvent) => event.dataTransfer?.types.includes('
 export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, planFor = SUBMIT_ALWAYS, editing = null, onCancelEdit, above, onEscape, stack, children }: ComposerProps) {
   const catalog = useTopic('slash') ?? NO_CATALOG
   const roster = useTopic('bots')
+  const sendKey = useTopic('sendKey') ?? 'enter'
   const relay = useTopic('relay')
   const open = useTopic('open')
   const own = shownChat(open)?.bot ?? null
@@ -327,7 +329,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
       cancelEdit()
       return
     }
-    if (event.key !== 'Enter' || event.shiftKey) return
+    if (!sendsMessage(event, sendKey)) return
     event.preventDefault()
     void submit()
   }
@@ -392,7 +394,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
           onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         />
         {showStop && <button type="button" className="stop" disabled={!canSend} onClick={onStop}>Stop</button>}
-        <button type="submit" disabled={!canSend || pending || staging > 0}>Send</button>
+        <button type="submit" title={`Send (${SEND_KEY_LABEL[sendKey]})`} disabled={!canSend || pending || staging > 0}>Send</button>
       </form>
       {hint !== null && <p className="busy" id={HINT_ID}>{hint}</p>}
       {children}

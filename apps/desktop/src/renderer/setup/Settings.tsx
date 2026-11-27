@@ -26,6 +26,8 @@ const SHORTCUTS: readonly { readonly label: string; readonly key: string; readon
 export function Settings({ setup, mode, theme, onRequestClose }: { readonly setup: CardSetup; readonly mode: Mode; readonly theme: Theme; readonly onRequestClose: () => void }) {
   const saving = setup.at === 'checking' && setup.step === 'save'
   const link = useTopic('link')
+  const sendKey = useTopic('sendKey')
+  const spellCheck = useTopic('spellCheck')
   const heading = useRef<HTMLHeadingElement>(null)
   const ids = useId()
 
@@ -78,6 +80,35 @@ export function Settings({ setup, mode, theme, onRequestClose }: { readonly setu
                 </div>
                 <div className="control">
                   <Segmented labelledBy={`${ids}-show`} value={mode} segments={SIDEBAR} onPick={picked => void run({ do: 'setMode', mode: picked })} />
+                </div>
+              </div>
+            </div>
+          </section>
+          <section className="group" aria-labelledby={`${ids}-composer`}>
+            <h3 id={`${ids}-composer`}>Composer</h3>
+            <div className="card">
+              <div className="row">
+                <div className="text">
+                  <p className="label" id={`${ids}-send-key`}>Send with {COMMAND_KEY}+Enter</p>
+                  <p className="desc" id={`${ids}-send-key-desc`}>Enter adds a new line. When off, Enter sends and Shift+Enter adds a line.</p>
+                </div>
+                <div className="control">
+                  <input
+                    type="checkbox" role="switch" aria-labelledby={`${ids}-send-key`} aria-describedby={`${ids}-send-key-desc`}
+                    checked={sendKey === 'modEnter'} onChange={event => void run({ do: 'setSendKey', sendKey: event.target.checked ? 'modEnter' : 'enter' })}
+                  />
+                </div>
+              </div>
+              <div className="row">
+                <div className="text">
+                  <p className="label" id={`${ids}-spell`}>Check spelling</p>
+                  <p className="desc" id={`${ids}-spell-desc`}>Underline misspelled words and suggest fixes.</p>
+                </div>
+                <div className="control">
+                  <input
+                    type="checkbox" role="switch" aria-labelledby={`${ids}-spell`} aria-describedby={`${ids}-spell-desc`}
+                    checked={spellCheck ?? true} onChange={event => void run({ do: 'setSpellCheck', spellCheck: event.target.checked })}
+                  />
                 </div>
               </div>
             </div>

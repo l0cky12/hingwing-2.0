@@ -66,8 +66,14 @@ describe('an open group chat', () => {
     expect(attr(box, 'placeholder')).toBe('Message the group, or type @ to ask specific bots')
     expect(attr(box, 'aria-label')).toBe('Message Launch plan')
     expect(html).toContain(`<p class="busy" id="${attr(box, 'aria-describedby')}">Sam is still answering. If you send now, Sam’s reply won’t be posted.</p>`)
-    expect(html).toMatch(/<button type="button" class="stop">Stop<\/button><button type="submit">Send<\/button>/)
+    expect(html).toMatch(/<button type="button" class="stop">Stop<\/button><button type="submit" title="Send \(Enter\)">Send<\/button>/)
     expect(html, 'a group takes no attachments, so it offers no paperclip').not.toContain('class="clip"')
+  })
+
+  it('says in the Send button\'s tooltip which key sends, whichever the user chose', () => {
+    expect(tagOf(pane(), /<button type="submit"[^>]*>/)).toContain('title="Send (Enter)"')
+    topics.values = { ...topics.values, sendKey: 'modEnter' }
+    expect(tagOf(pane(), /<button type="submit"[^>]*>/)).toContain('title="Send (Ctrl+Enter)"')
   })
 
   it("blocks Send in words while Hermes isn't running group chats", () => {

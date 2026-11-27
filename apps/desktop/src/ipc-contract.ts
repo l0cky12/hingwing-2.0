@@ -91,6 +91,14 @@ export type Theme = 'system' | 'light' | 'dark'
 export type ThemeCommand = { readonly do: 'setTheme'; readonly theme: Theme }
 export const isTheme = (raw: unknown): raw is Theme => raw === 'system' || raw === 'light' || raw === 'dark'
 
+/** Which key sends from the composer: Enter, or Ctrl+Enter (Cmd+Enter on macOS) with Enter adding a line. Owned by Electron main and kept on disk. */
+export type SendKey = 'enter' | 'modEnter'
+export type SendKeyCommand = { readonly do: 'setSendKey'; readonly sendKey: SendKey }
+export const isSendKey = (raw: unknown): raw is SendKey => raw === 'enter' || raw === 'modEnter'
+
+/** Whether Chromium checks spelling in every window. Owned by Electron main and kept on disk. */
+export type SpellCheckCommand = { readonly do: 'setSpellCheck'; readonly spellCheck: boolean }
+
 /** The chats the user snoozed, each to the time it comes back, in epoch ms. Owned by Electron main and kept on disk. */
 export type Snoozes = { readonly [id: SessionId]: number }
 /** `until` null wakes the chat. */
@@ -98,12 +106,12 @@ export type SnoozeCommand = { readonly do: 'snooze'; readonly sessionId: Session
 const isTime = (raw: unknown): raw is number => Number.isSafeInteger(raw) && (raw as number) > 0
 export const isSnoozes = (raw: unknown): raw is Snoozes => isObject(raw) && Object.entries(raw).every(([id, until]) => id.trim() !== '' && isTime(until))
 
-export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SnoozeCommand
+export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SendKeyCommand | SpellCheckCommand | SnoozeCommand
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' | 'refreshBots' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
 
-/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme` and `snoozes`, which belong to the window. */
+/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `sendKey`, `spellCheck` and `snoozes`, which belong to the window. */
 export interface AppTopics {
   readonly setup: Setup
   readonly link: Link
@@ -123,11 +131,13 @@ export interface AppTopics {
   readonly preview: Preview
   readonly mode: Mode
   readonly theme: Theme
+  readonly sendKey: SendKey
+  readonly spellCheck: boolean
   readonly snoozes: Snoozes
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, preview: true, mode: true, theme: true, snoozes: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, preview: true, mode: true, theme: true, sendKey: true, spellCheck: true, snoozes: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -589,6 +599,8 @@ export const validators: Validators = {
   },
   setMode: raw => (isMode(raw.mode) ? { do: 'setMode', mode: raw.mode } : null),
   setTheme: raw => (isTheme(raw.theme) ? { do: 'setTheme', theme: raw.theme } : null),
+  setSendKey: raw => (isSendKey(raw.sendKey) ? { do: 'setSendKey', sendKey: raw.sendKey } : null),
+  setSpellCheck: raw => (typeof raw.spellCheck === 'boolean' ? { do: 'setSpellCheck', spellCheck: raw.spellCheck } : null),
   snooze: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && (raw.until === null || isTime(raw.until)) ? { do: 'snooze', sessionId, until: raw.until } : null
