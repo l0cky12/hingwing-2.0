@@ -31,3 +31,4 @@ Preconditions are those of [Edit a bot](./edit-a-bot.md): `--profiles fixtures/p
 
 - `--bound` launches into a chat with no bot, so it shows no pill, and a refused `profiles.describe` cannot be reached from the window. `apps/desktop/test/bot-panel.test.tsx` covers the refused panel.
 - The pill is named `Details for <bot>`, so `button <bot>` still finds the sidebar row alone.
+- Ctrl+B is the [Compact sidebar](./compact-sidebar.md) shortcut, so the open-and-rename recipe's last `press Control+b` compacts the sidebar and opens no panel. The shortcut sheet (Ctrl+/) lists Bot details under Chat.
