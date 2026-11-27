@@ -371,6 +371,11 @@ export interface Request {
   readonly rowId: number | null
   /** What this client sent with the message, in order. Empty for a message read from Hermes, which keeps no record of them. */
   readonly attachments: readonly Attachment[]
+  /**
+   * Hermes put this message into the chat itself, as a user row of kind `internal_notification`: a message another chat
+   * handed to this bot, for one. The user did not type it here. Only a message read from Hermes carries it.
+   */
+  readonly handed?: true
 }
 
 export type Outcome =

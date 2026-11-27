@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@highwing/hermes/domain'
-import { MODE, preferenceStore, readPreference, SNOOZES, snoozed, THEME, type Preference } from '../src/main/preferences'
+import { MODE, ON_CLOSE, preferenceStore, readPreference, SIDEBAR_WIDTH, SNOOZES, snoozed, THEME, type Preference } from '../src/main/preferences'
 
 const text = (value: unknown) => JSON.stringify(value)
 const emptyDir = () => mkdtempSync(join(tmpdir(), 'highwing-preference-'))
@@ -15,7 +15,9 @@ interface Case<T> {
 }
 const CASES: readonly Case<string>[] = [
   { preference: MODE, values: ['bots', 'chats'], unknown: 'inbox' },
-  { preference: THEME, values: ['system', 'dark', 'light'], unknown: 'sepia' }
+  { preference: THEME, values: ['system', 'dark', 'light'], unknown: 'sepia' },
+  { preference: SIDEBAR_WIDTH, values: ['full', 'compact'], unknown: 'narrow' },
+  { preference: ON_CLOSE, values: ['quit', 'stay'], unknown: 'minimize' }
 ]
 
 describe.each(CASES)('the $preference.file preference', ({ preference, values, unknown }) => {
@@ -98,6 +100,37 @@ describe.each(CASES)('the $preference.file preference', ({ preference, values, u
     await store.settled()
     expect(saved(dir)).toEqual({ version: 1, [key]: fallback })
   })
+})
+
+it('keeps a commit on disk and in what it shows, and leaves both alone when the write fails', async () => {
+  const dir = emptyDir()
+  const store = await preferenceStore(dir, MODE)
+  const heard: string[] = []
+  store.subscribe(value => heard.push(value))
+  const writing = store.commit('chats')
+  expect(store.get()).toBe('bots')
+  expect(heard).toEqual([])
+  await writing
+  expect(store.get()).toBe('chats')
+  expect(heard).toEqual(['chats'])
+  expect(JSON.parse(readFileSync(join(dir, 'mode.json'), 'utf8'))).toEqual({ version: 1, mode: 'chats' })
+  store.set('bots')
+  expect(store.get()).toBe('bots')
+  expect(heard).toEqual(['chats', 'bots'])
+  await store.settled()
+  expect(JSON.parse(readFileSync(join(dir, 'mode.json'), 'utf8'))).toEqual({ version: 1, mode: 'bots' })
+
+  const missing = join(emptyDir(), 'gone')
+  const broken = await preferenceStore(missing, MODE)
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+  await expect(broken.commit('chats')).rejects.toThrow()
+  expect(logged).not.toHaveBeenCalled()
+  logged.mockRestore()
+  expect(broken.get()).toBe('bots')
+  mkdirSync(missing)
+  broken.set('chats')
+  await broken.settled()
+  expect(JSON.parse(readFileSync(join(missing, 'mode.json'), 'utf8'))).toEqual({ version: 1, mode: 'chats' })
 })
 
 it('keeps mode.json as earlier builds wrote it', async () => {
