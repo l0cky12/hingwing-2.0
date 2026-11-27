@@ -10,7 +10,7 @@ import { Turn } from '../src/renderer/chat/Thread'
 type Props = Parameters<typeof Turn>[0]
 
 const TURN = 'run:1' as TurnId
-const turn = (reactions: TurnView['reactions']): TurnView => ({ key: TURN, time: null, request: 'Check the servers', attachments: [], rowId: 1, tokens: null, reactions, nodes: [], end: { kind: 'done', words: 'Done' } })
+const turn = (reactions: TurnView['reactions']): TurnView => ({ key: TURN, time: null, request: 'Check the servers', attachments: [], rowId: 1, tokens: null, reactions, pages: [], nodes: [], end: { kind: 'done', words: 'Done' } })
 const draw = (more: Partial<Props>) => renderToStaticMarkup((
   <Turn
     turn={turn({ turn: TURN, given: [] })} open={NONE_OPEN} onToggle={() => {}} onAnswer={async () => undefined} canEdit canBranch showsRegenerate={false} canRegenerate={false}
