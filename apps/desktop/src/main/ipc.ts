@@ -134,6 +134,9 @@ const FILE_REFUSED: FileOutcome = { ok: false, reason: 'refused' }
 const FILE_DONE: FileOutcome = { ok: true }
 const IMAGE_REFUSED: ImageOutcome = { ok: false }
 
+/** Whether the action reaches a file on the machine Hermes runs on, wherever that is. The pane reads a page there itself. */
+const FAR_ACTIONS: { readonly [A in FileAction]: boolean } = { open: false, show: false, preview: false, page: true }
+
 type FileActions = { readonly [A in FileAction]: (session: Session, path: string) => Promise<FileOutcome> }
 
 /** Each action takes the path as the window named it. Only a path a finished step of the session named goes anywhere. */
@@ -145,7 +148,8 @@ function fileActions(opener: Opener, pane: PreviewOwner): FileActions {
   return {
     open: named(path => opener.open(path)),
     show: named(path => opener.show(path)),
-    preview: async (session, path) => (pane.show(path, null, session) ? FILE_DONE : FILE_REFUSED)
+    preview: async (session, path) => (pane.show(path, null, session) ? FILE_DONE : FILE_REFUSED),
+    page: async (session, path) => (pane.show(path, null, session, 'page') ? FILE_DONE : FILE_REFUSED)
   }
 }
 
@@ -166,7 +170,8 @@ export function serveWindows(
   const owners: Owners = { owner, pane, preferences }
   const files = fileActions(opener, pane)
   const trusted = ({ senderFrame }: IpcEvent) => senderFrame !== null && senderFrame.parent === null && isAppUrl(senderFrame.url)
-  const servedHere = (served: Served | undefined) => served !== undefined && served.servedBy === owner.hermes && isLocal(owner.setup.get())
+  const servedLive = (served: Served | undefined) => served !== undefined && served.servedBy === owner.hermes
+  const servedHere = (served: Served | undefined) => servedLive(served) && isLocal(owner.setup.get())
 
   const stopWindow = (windowId: number) => {
     for (const served of windows.get(windowId)?.values() ?? []) served.stop()
@@ -228,7 +233,7 @@ export function serveWindows(
     if (!trusted(event) || request === null) return FILE_REFUSED
     const watched = [...(windows.get(event.sender.id)?.values() ?? [])].find(served => served.topic === `session:${request.sessionId}`)
     const session = watched?.current() as Session | undefined
-    return session === undefined || !servedHere(watched) ? FILE_REFUSED : files[request.action](session, request.path)
+    return session === undefined || !(FAR_ACTIONS[request.action] ? servedLive : servedHere)(watched) ? FILE_REFUSED : files[request.action](session, request.path)
   })
 
   ipc.handle(CHANNEL.image, async (event, raw) => {

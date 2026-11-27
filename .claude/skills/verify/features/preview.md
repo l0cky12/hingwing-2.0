@@ -16,6 +16,9 @@ A page opens in a pane beside the chat, so the user reads the reply and sees the
 - `preview-csv-cut` shows the first 5,000 rows of a longer CSV, says how many it holds, and scrolls with the keyboard.
 - `preview-pdf` shows a PDF in Chromium's own viewer, with its page count, zoom and paging.
 - `preview-file-refused` shows why a file can't show, over the size limit or not a PDF, with **Open** beside the reason.
+- `page-card` shows each HTML file a turn's finished steps wrote as a card under the reply, titled by the `<title>` its diff shows, else by its name, with **Open**.
+- `page-open` fills the window with the page from the card's **Open**, with the chat in a 400 px panel at its side and no sidebar. **Close page** gives the window back to the chat.
+- `page-remote` reads the page over ssh when Hermes runs on an ssh machine, so the pane has no **Open** for a file on this computer.
 
 ## How to get to it (user POV)
 
@@ -43,6 +46,9 @@ Preconditions:
 - **A PDF.** Run `$H run ... --run preview-pdf FPRE click button "/^Created report.pdf \+/" click button "Preview report.pdf" wait preview previewing "/report\.pdf$/" nothing-opened shot pdf`. `pdf.png` shows "Quarterly report" on the first page and `1 / 2` in the viewer's bar.
 - **Too big.** Run `$H run ... --run preview-huge EPRE click button "/^Edited huge.csv \+/" click button "Preview huge.csv" wait preview see "huge.csv is 12.7 MB. Highwing previews a CSV up to 10 MB." click button Open opened open /tmp/hermes-proto-work/reports/huge.csv`.
 - **Not a PDF.** Run `$H run ... --run preview-fake FPRE click button "/^Created scan.pdf \+/" click button "Preview scan.pdf" wait preview see "This isn't a PDF." shot fake`. `fake.aria.txt` holds the alert and `button "Open"`, and `fake.png` shows no viewer.
+
+- **A page card.** Run `$H run ... --run page-card PRE wait settled click button "Close preview" gone region Preview see "Demo page" shot card click button "Open Demo page" wait preview page-says "Preview works" shot page click button "Close page" gone region Preview`. `card.aria.txt` holds `region "Demo page"` with `heading "Demo page"` and `button "Open Demo page"`. `page.png` shows the page on the left and the chat on the right, with no sidebar.
+- **A page on an ssh machine.** Run `$H run --fake-host ok --saved remote --fixture fixtures/preview.jsonl --run page-remote PRE wait settled click button "Close preview" gone region Preview click button "Open Demo page" wait preview page-says "Preview works" shot remote`. The fake machine's ssh reads the file from this computer's disk, so the same gotcha applies. `remote.aria.txt` holds the pane with `button "Reload"` and `button "Close page"` and no `button "Open"`.
 
 ## Gotchas
 

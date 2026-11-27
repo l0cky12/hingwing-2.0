@@ -10,6 +10,7 @@ import { Helper, Moa, Notice, Plan, Reasoning, type HelperControls } from './Hel
 import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find'
 import { isOpen, NONE_OPEN, toggled, type OpenState } from './open'
 import { Given, Reactions } from './Reactions'
+import { Pages } from './Pages'
 import { placeByTurn } from './relays'
 import { SideTurn } from './Sides'
 import type { SideRow } from './sides'
@@ -348,6 +349,7 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit
         ))}
         <End turnKey={turn.key} end={end} started={turn.nodes.length > 0} />
       </div>
+      <Pages pages={turn.pages} />
       {turn.tokens !== null && <p className="used">{turn.tokens}</p>}
       {(regenerates || movesToNewChat || reactions !== null) && (
         <div className="turn-actions">

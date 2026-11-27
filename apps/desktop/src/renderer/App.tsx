@@ -113,7 +113,7 @@ function ChatWindow({ hidden, settings, target, mode, theme, onOpenApps }: ChatW
   const foot = <AppsButton onOpen={onOpenApps} />
   const paned = preview?.state === 'open' && settings === null
   return (
-    <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined}>
+    <div ref={root} className="window" hidden={hidden} data-preview={paned ? preview.layout : undefined}>
       {mode === 'bots' && <BotsSidebar head={switcher} foot={foot} />}
       {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} foot={foot} />}
       <div key="screen" className="screen" hidden={settings !== null}>

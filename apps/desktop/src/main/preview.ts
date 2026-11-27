@@ -1,10 +1,11 @@
-import type { Feed } from '@highwing/hermes'
-import type { CommandOutcome, PaneAsk, Session } from '@highwing/hermes/domain'
+import type { Feed, RemoteRead } from '@highwing/hermes'
+import type { CommandOutcome, PaneAsk, Session, SshHost } from '@highwing/hermes/domain'
 import { net, protocol, session as sessions, WebContentsView, type BrowserWindow, type Session as WebSession } from 'electron'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { PageLoad, Preview, PreviewCommand, Rect, Setup } from '../ipc-contract'
+import type { PageLoad, PaneLayout, Preview, PreviewCommand, Rect, Setup } from '../ipc-contract'
 import type { Opener } from './files'
 import { formatOf, MISSING, readPreviewFile, type FileContents, type Format } from './preview-file'
 import {
@@ -15,7 +16,7 @@ import {
 export interface PreviewPane {
   readonly preview: Feed<Preview>
   /** A web URL, a path or a `file:` URL, judged against the chat that named it. false: refused, and the pane is as it was. */
-  show(request: string, label: string | null, session: Session | undefined): boolean
+  show(request: string, label: string | null, session: Session | undefined, layout?: PaneLayout): boolean
   ask(ask: PaneAsk, from: Session): void
   run(command: PreviewCommand): Promise<CommandOutcome<void>>
   attach(window: BrowserWindow): void
@@ -27,6 +28,7 @@ export interface PreviewDeps {
   readonly opener: Pick<Opener, 'browse' | 'open'>
   reach(session: Session | undefined): Reach
   isAppUrl(url: string): boolean
+  readRemote(host: SshHost, path: string): Promise<RemoteRead>
 }
 
 const DONE = { ok: true, value: undefined } as const
@@ -38,7 +40,9 @@ const NAVIGABLE: ReadonlySet<string> = new Set(['http:', 'https:', `${PAGE_SCHEM
 export const registerPageScheme = () =>
   protocol.registerSchemesAsPrivileged([{ scheme: PAGE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }])
 
-type Served = { readonly kind: 'folder'; readonly page: string } | { readonly kind: 'pdf'; readonly path: string; readonly checkedBytes: Uint8Array<ArrayBuffer> }
+/** `folder`: a page on this computer and what sits beside it. `bytes`: one file already read, a checked PDF or a far machine's page. */
+type Served = { readonly kind: 'folder'; readonly page: string } | { readonly kind: 'bytes'; readonly path: string; readonly body: Body }
+interface Body { readonly bytes: Uint8Array<ArrayBuffer>; readonly type: string }
 
 let configured: WebSession | null = null
 
@@ -53,13 +57,17 @@ function previewSession(served: () => Served | null): WebSession {
     const serving = served()
     const path = pathOfPageUrl(request.url)
     if (serving === null || path === null) return notFound()
-    if (serving.kind === 'pdf') return path === serving.path ? new Response(serving.checkedBytes, { headers: { 'content-type': 'application/pdf' } }) : notFound()
+    if (serving.kind === 'bytes') return path === serving.path ? new Response(serving.body.bytes, { headers: { 'content-type': serving.body.type } }) : notFound()
     const real = await servedPath(serving.page, path, homedir())
     return real === null ? notFound() : net.fetch(pathToFileURL(real).href)
   })
   configured = session
   return session
 }
+
+/** Why a far machine's page did not come: words for the pane, as the CSV and PDF reasons are. */
+const unread = (why: Exclude<RemoteRead, { ok: true }>['why'], path: string, machine: string): string =>
+  why === 'missing' ? MISSING : why === 'too-big' ? `${basename(path)} is over 10 MB. Highwing shows a page up to 10 MB.` : `Highwing couldn't reach ${machine} to read this page.`
 
 const epochOf = (setup: Setup) => (setup.at === 'pinned' ? 0 : setup.live?.epoch ?? null)
 
@@ -99,9 +107,9 @@ export function previewPane(deps: PreviewDeps): PreviewPane {
     served = null
   }
 
-  const load = (page: Page, pdf: Uint8Array<ArrayBuffer> | null = null) => {
+  const load = (page: Page, body: Body | null = null) => {
     drop()
-    served = page.kind === 'web' ? null : pdf === null ? { kind: 'folder', page: page.path } : { kind: 'pdf', path: page.path, checkedBytes: pdf }
+    served = page.kind === 'web' ? null : body === null ? { kind: 'folder', page: page.path } : { kind: 'bytes', path: page.path, body }
     const created = new WebContentsView({ webPreferences: { session: previewSession(() => served), sandbox: true, contextIsolation: true, nodeIntegration: false } })
     const contents = created.webContents
     const own = <A extends unknown[]>(act: (...args: A) => void) => (...args: A) => {
@@ -136,20 +144,30 @@ export function previewPane(deps: PreviewDeps): PreviewPane {
   }
 
   const LANDS: { readonly [F in Format]: (path: string, value: FileContents[F]) => void } = {
-    pdf: (path, bytes) => load({ kind: 'file', path }, bytes),
+    pdf: (path, bytes) => load({ kind: 'file', path }, { bytes, type: 'application/pdf' }),
     csv: (_path, table) => apply({ on: 'tabled', table })
   }
 
-  const show: PreviewPane['show'] = (request, label, session) => {
-    const verdict = pageFor(request, deps.reach(session))
+  const show: PreviewPane['show'] = (request, label, session, layout = 'beside') => {
+    const reach = deps.reach(session)
+    const verdict = pageFor(request, reach)
     if (verdict === null) return false
     generation++
-    retry = () => show(request, label, session)
+    retry = () => show(request, label, session, layout)
     const page = 'page' in verdict ? verdict.page : null
     const file = page?.kind === 'file' ? page.path : null
     const format = file === null ? null : formatOf(file)
-    const shows = (state: PageLoad) => apply({ on: 'show', asked: request, address: verdict.address, file, label, load: state })
-    if (file !== null && format !== null) {
+    const shows = (state: PageLoad) => apply({ on: 'show', layout, asked: request, address: verdict.address, file, label, load: state })
+    if (page?.kind === 'ssh') {
+      drop()
+      shows({ at: 'loading' })
+      const reading = generation
+      void deps.readRemote(page.host, page.path).then(read => {
+        if (reading !== generation) return
+        if (read.ok) load(page, { bytes: new TextEncoder().encode(read.text), type: 'text/html; charset=utf-8' })
+        else apply({ on: 'failed', reason: unread(read.why, page.path, reach.machine) })
+      })
+    } else if (file !== null && format !== null) {
       drop()
       shows({ at: 'loading' })
       const reading = generation
@@ -178,7 +196,7 @@ export function previewPane(deps: PreviewDeps): PreviewPane {
   const COMMANDS: { readonly [K in PreviewCommand['do']]: (command: Extract<PreviewCommand, { do: K }>) => unknown } = {
     preview: ({ url }) => show(url, null, undefined),
     browse: ({ url }) => deps.opener.browse(url),
-    reloadPreview: () => (view === null || served?.kind === 'pdf' ? retry?.() : view.webContents.reload()),
+    reloadPreview: () => (view === null || served?.kind === 'bytes' ? retry?.() : view.webContents.reload()),
     closePreview: close,
     openPreview: () => (pane?.file ? deps.opener.open(pane.file) : undefined),
     placePreview: ({ rect: next }) => {
