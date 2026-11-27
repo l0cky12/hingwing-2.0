@@ -3,8 +3,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEv
 import { MAX_ATTACHMENTS, type StageResult } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
 import { Chips } from '../chat/Attachments'
+import { COMMAND_KEY, isCommandKey } from '../keys'
 import { useTopic } from '../store'
 import { busyHint } from './busy'
+import { inserted } from './dictation'
+import { Microphone, useDictation } from './Dictate'
 import { attachTo, detach, draftSent, moveAttachment, moveDraft, seedDraft, stagingFor, useAttachments, useDraft, useStaging, writeDraft, type DraftSlot } from './drafts'
 import { EDITING_WORDS, removalWords, type Editing } from './edit'
 import { RemoveDialog } from './RemoveDialog'
@@ -252,6 +255,19 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
     if (canAttach) void take(window.highwing.attachPaste())
   }
 
+  const dictated = (words: string) => {
+    const element = box.current
+    const next = inserted(draft, element?.selectionStart ?? draft.length, element?.selectionEnd ?? draft.length, words)
+    caretTo.current = next.caret
+    edit(next.text, next.caret)
+    element?.focus()
+  }
+  const [dictation, dictate] = useDictation(dictated)
+  /** Set by the Ctrl/Cmd+D that pressed, so only its own keyup can end a push to talk. */
+  const dictateKeyDown = useRef(false)
+  const slotKey = slot?.key ?? null
+  useEffect(() => dictate({ do: 'cancel' }), [slotKey, canAttach, dictate])
+
   const remove = (id: AttachmentId) => {
     detach(slot, id)
     box.current?.focus()
@@ -321,6 +337,13 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
   }
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.nativeEvent.isComposing) return
+    if (group === undefined && isCommandKey(event.nativeEvent, 'd')) {
+      event.preventDefault()
+      if (event.repeat || !canAttach) return
+      dictateKeyDown.current = true
+      dictate({ do: 'press', at: performance.now() })
+      return
+    }
     if (menu.open && onMenuKey(event, menu)) return
     if (event.key === 'Escape' && editing !== null) {
       event.preventDefault()
@@ -330,6 +353,12 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
     if (event.key !== 'Enter' || event.shiftKey) return
     event.preventDefault()
     void submit()
+  }
+  // macOS sends no keyup for D while Cmd is down, so letting go of Cmd ends a push to talk too.
+  const onKeyUp = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!dictateKeyDown.current || !/^(?:d|D|Control|Meta)$/.test(event.key)) return
+    dictateKeyDown.current = false
+    dictate({ do: 'release', at: performance.now() })
   }
   // The model and context popovers and the remove dialog sit in this footer too, and close on their own Escape.
   const onFooterKeyDown = (event: KeyboardEvent<HTMLElement>) => {
@@ -381,6 +410,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
             </svg>
           </button>
         )}
+        {group === undefined && <Microphone state={dictation} disabled={!canAttach} onPress={() => dictate({ do: 'press', at: performance.now() })} />}
         <textarea
           ref={box} autoFocus={autoFocus} rows={1} value={draft}
           placeholder={group === undefined ? 'Ask Hermes to do something' : 'Message the group, or type @ to ask specific bots'}
@@ -388,6 +418,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
           aria-autocomplete="list" aria-controls={menu.open ? MENU_ID : undefined}
           aria-activedescendant={menu.open ? optionId(menu.active) : undefined} aria-describedby={hint === null ? undefined : HINT_ID}
           onChange={event => edit(event.target.value, event.target.selectionStart)} onKeyDown={onKeyDown} onPaste={onPaste}
+          onKeyUp={onKeyUp}
           onSelect={event => setCaret(event.currentTarget.selectionStart)}
           onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         />
@@ -395,6 +426,9 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
         <button type="submit" disabled={!canSend || pending || staging > 0}>Send</button>
       </form>
       {hint !== null && <p className="busy" id={HINT_ID}>{hint}</p>}
+      {dictation.at === 'recording' && <p className="busy" role="status">Listening. Press {COMMAND_KEY}+D or the microphone to stop.</p>}
+      {dictation.at === 'transcribing' && <p className="busy" role="status">Turning speech into text…</p>}
+      {dictation.at === 'idle' && dictation.notice !== null && <p className="err refusal" role="alert">{dictation.notice}</p>}
       {children}
       {refusal !== null && <p className="err refusal">{refusal}</p>}
       {open?.missing != null && <p className="err refusal">That chat isn't on this Hermes.</p>}
