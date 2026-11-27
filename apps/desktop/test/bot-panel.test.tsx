@@ -18,11 +18,14 @@ vi.mock('../src/renderer/store', () => ({
 const { TopBar } = await import('../src/renderer/chrome/Chrome')
 const { BotPanel, TabRow } = await import('../src/renderer/bots/BotPanel')
 const { botIn } = await import('../src/renderer/bots/roster-view')
-const { detailsKeys, isDetailsKey } = await import('../src/renderer/keys')
+const { detailsKeys } = await import('../src/renderer/keys')
+const { capsOf, SHORTCUTS, shortcutOf } = await import('../src/renderer/shortcuts')
+
+const isDetailsKey = (event: KeyboardEvent, mac: boolean) => shortcutOf(event, mac)?.id === 'details'
 
 const RAE = 'rae' as BotId
 const open = (shown: OpenChat['shown']): OpenChat => ({ shown, opening: null, missing: null })
-const bar = () => renderToStaticMarkup(<TopBar target={null} settingsButton={{ current: null }} />)
+const bar = () => renderToStaticMarkup(<TopBar target={null} settingsButton={{ current: null }} onOpenTasks={() => {}} />)
 
 beforeEach(() => {
   topics.values = {
@@ -67,6 +70,12 @@ describe('the details shortcut', () => {
 
   it("reads a key that types no Latin letter by its place", () => {
     expect(isDetailsKey(press({ key: 'и', code: 'KeyB', ctrlKey: true, altKey: true }), false)).toBe(true)
+  })
+
+  it('is listed in the shortcut table with the keys each platform draws', () => {
+    const row = SHORTCUTS.find(shortcut => shortcut.id === 'details')!
+    expect(capsOf(row, false)).toEqual(['Ctrl', 'Alt', 'B'])
+    expect(capsOf(row, true)).toEqual(['⌘', '⇧', 'I'])
   })
 })
 

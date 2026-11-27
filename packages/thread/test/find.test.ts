@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { sessionOf } from '../../hermes/src/domain/reduce'
 import type { Link } from '../../hermes/src/domain/session'
 import { delegate, errand, fold, type Moment } from '../../hermes/test/support/story'
-import { fieldId, findInThread, leafText, outline, parseMarkdown, proseLeaves, threadView, type StepView, type ThreadView } from '../src/thread-view'
+import { fieldId, findInThread, leafText, outline, parseMarkdown, proseLeaves, threadView, type Beside, type StepView, type ThreadView } from '../src/thread-view'
 
 const ONLINE: Link = { state: 'online' }
 const CLOCK = { now: 0, timeZone: 'UTC' }
@@ -89,6 +89,41 @@ describe('words outside steps', () => {
 
   it('does not search the Done words, which only screen readers hear', () => {
     expect(findInThread(view, 'done').every(match => match.field !== fieldId(turn.key, 'end'))).toBe(true)
+  })
+})
+
+describe('rows drawn beside the turns', () => {
+  const [turn] = view.turns
+  if (turn === undefined) throw new Error('the errand has no turn')
+  const bare = (key: string, request: string) => ({ ...turn, key, request, nodes: [] })
+  const ask = { kind: 'secret', key: 'ask:1', requestId: 'r1', heading: 'A zebra key?', waits: null, busy: null, error: null, command: null, why: null, name: null, fields: [], send: 'Send', skip: 'Skip' }
+  const drawn = { ...view, turns: [bare('t1', 'First zebra'), bare('t2', 'Second zebra')], asks: [ask] } as unknown as ThreadView
+  const beside: Beside = {
+    first: [{ key: 'relay-a', asked: 'Ask @Rae about the zebra', reply: null }],
+    after: new Map([['t1', [
+      { key: 'relay-b', asked: 'Zebra again', reply: { kind: 'markdown', markdown: 'One **zebra**.\n\nTwo zebra.' } },
+      { key: 'side:s1', asked: null, reply: { kind: 'error', words: 'No zebra here' } }
+    ]]]),
+    last: [{ key: 'side:s2', asked: 'Why zebra?', reply: { kind: 'markdown', markdown: 'Because zebra.' } }]
+  }
+
+  it('finds their questions, replies and errors where they are drawn: before, between and after the turns, and before the asks', () => {
+    expect(findInThread(drawn, 'zebra', undefined, beside).map(match => match.field)).toEqual([
+      fieldId('relay-a', 'request'),
+      fieldId('t1', 'request'),
+      fieldId('relay-b', 'request'),
+      fieldId('relay-b', 'block 0'),
+      fieldId('relay-b', 'block 1'),
+      fieldId('side:s1', 'error'),
+      fieldId('t2', 'request'),
+      fieldId('side:s2', 'request'),
+      fieldId('side:s2', 'block 0'),
+      fieldId('ask:1', 'heading')
+    ])
+  })
+
+  it('counts a reply in the words a reader sees, without its markdown', () => {
+    expect(findInThread(drawn, 'one zebra.', undefined, beside)).toEqual([{ field: fieldId('relay-b', 'block 0'), start: 0, end: 10, opens: [] }])
   })
 })
 

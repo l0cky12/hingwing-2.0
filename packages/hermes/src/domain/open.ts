@@ -14,8 +14,8 @@ export type ChatRef =
   | { readonly kind: 'bot'; readonly bot: BotId }
   /** A new, empty chat in this bot's profile (null: the socket's own profile). The window mints `draftId`. */
   | { readonly kind: 'new'; readonly bot: BotId | null; readonly draftId: string }
-  /** A chat picked from the list of a bot's chats. */
-  | { readonly kind: 'chat'; readonly sessionId: SessionId }
+  /** A chat picked from the list of a bot's chats. `bot`: the bot whose profile it lives in, from a caller that knows it when no list does, as the Tasks view does for a kanban worker's chat. */
+  | { readonly kind: 'chat'; readonly sessionId: SessionId; readonly bot?: BotId }
   /** A chat named from outside Highwing by its session id alone. Hermes is asked where it lives before it opens. */
   | { readonly kind: 'link'; readonly sessionId: SessionId }
   /** A group chat from the sidebar's Group chats section. */
@@ -119,6 +119,8 @@ export type DeskEvent =
   | { readonly on: 'unsought'; readonly sessionId: SessionId }
   /** Hermes archived or removed this chat. */
   | { readonly on: 'gone'; readonly sessionId: SessionId }
+  /** The user deleted this group chat. */
+  | { readonly on: 'disbanded'; readonly group: GroupId }
 
 /** Where Hermes's lists put a session: in a bot's profile, in the socket's own, or in none it lists. */
 export type Whereabouts = { readonly in: 'bot'; readonly bot: BotId } | { readonly in: 'own' } | { readonly in: 'none' }
@@ -165,8 +167,11 @@ function asked(desk: Desk, ref: ChatRef): { readonly desk: Desk; readonly effect
     }
     case 'new':
       return done({ ...desk, open: { shown: { kind: 'new', bot: ref.bot, draftId: ref.draftId, sessionId: null }, opening: null, missing: null } })
-    case 'chat':
-      return done(picking(desk, ref.sessionId))
+    case 'chat': {
+      const { bot, sessionId } = ref
+      const owned: Desk = bot === undefined || ownerOf(desk, sessionId) !== undefined ? desk : { ...desk, owners: { ...desk.owners, [sessionId]: bot } }
+      return done(picking(owned, sessionId))
+    }
     case 'link': {
       const { sessionId } = ref
       if (shownChat(desk.open)?.sessionId === sessionId || ownerOf(desk, sessionId) !== undefined) return done(picking(desk, sessionId))
@@ -239,6 +244,12 @@ export function nextDesk(desk: Desk, event: DeskEvent): { readonly desk: Desk; r
       return done(waitsForLink(desk.open, event.sessionId) ? { ...desk, open: { ...desk.open, opening: null } } : desk)
     case 'gone':
       return done(gone(desk, event.sessionId))
+    case 'disbanded': {
+      const { shown } = desk.open
+      if (shown?.kind !== 'group' || shown.group !== event.group) return done(desk)
+      const { over } = shown
+      return done({ ...desk, open: { ...desk.open, shown: over === null ? null : { kind: 'bot', bot: over, sessionId: chatOf(desk, over) ?? null } } })
+    }
   }
 }
 

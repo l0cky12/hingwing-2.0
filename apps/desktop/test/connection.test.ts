@@ -3,6 +3,7 @@ import type { BotId, CheckFailure, CheckStep, CommandOutcome, GroupId, SessionId
 import type { GatewayUrl } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { Live, Setup } from '../src/ipc-contract'
+import { OFF } from '../src/intro'
 import { feed, nextSetup, ownConnection, pinnedConnection, refreshBotsOnFocus, type ConnectionDeps, type SetupEvent } from '../src/main/connection'
 import { chatLinks } from '../src/main/links'
 import type { Settings } from '../src/main/settings'
@@ -10,6 +11,7 @@ import type { Settings } from '../src/main/settings'
 const REMOTE: Target = { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' as SshHost }
 const OTHER: Target = { kind: 'remote', host: 'other-host' as SshHost }
 const LOCAL: Target = { kind: 'local' }
+const RECORDING = { mime: 'audio/webm', audio: new Uint8Array([1]) }
 const LIVE: Live = { target: LOCAL, epoch: 1 }
 const NEXT: Live = { target: REMOTE, epoch: 2 }
 
@@ -68,12 +70,12 @@ describe('nextSetup', () => {
   })
 })
 
-interface Opened { readonly target: Target; closed: boolean; disposed: boolean; readonly commands: unknown[] }
+interface Opened { readonly target: Target; closed: boolean; disposed: boolean; readonly commands: unknown[]; place?: string }
 
 /** The owner over a check the test settles by hand, and connections that only record what happened to them. */
 type Answer = (command: unknown) => CommandOutcome<unknown> | Promise<CommandOutcome<unknown>>
 
-function harness(loaded: Settings, save: (target: Target) => Promise<void> = async () => {}) {
+function harness(loaded: Settings, save: (target: Target) => Promise<void> = async () => {}, arm: () => Promise<void> = async () => {}) {
   let answer: Answer = () => ({ ok: true, value: undefined })
   const opened: Opened[] = []
   const saved: Target[] = []
@@ -92,10 +94,16 @@ function harness(loaded: Settings, save: (target: Target) => Promise<void> = asy
       opened.push(held)
       log.push(`open ${opened.length}`)
       const dial = Object.assign(async () => { throw new Error('the test never dials') }, { held })
-      return { dial, dispose: () => { held.disposed = true; log.push(`dispose ${opened.indexOf(held) + 1}`) } } satisfies Route
+      const transcribe = async () => ({ ok: true as const, value: `heard by ${held.target.kind}` })
+      return { dial, read: async path => ({ status: 200, body: { target, path } }), transcribe, dispose: () => { held.disposed = true; log.push(`dispose ${opened.indexOf(held) + 1}`) } } satisfies Route
     },
-    open: (dial: Dialer) => {
+    armIntro: async () => {
+      log.push('arm')
+      await arm()
+    },
+    open: (dial: Dialer, place: string) => {
       const { held } = dial as Dialer & { readonly held: Opened }
+      held.place = place
       return {
         run: async (command: unknown) => {
           held.commands.push(command)
@@ -137,12 +145,14 @@ describe('ownConnection at launch', () => {
     expect(opened).toEqual([])
     expect(owner.hermes).toBeNull()
     expect(await owner.run({ do: 'reconnect', start: true })).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(await owner.transcribe(RECORDING)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    await expect(owner.read('/api/plugins/kanban/board')).rejects.toThrow('No Hermes is connected.')
   })
 })
 
 describe('ownConnection, checking a target', () => {
   it('shows each step, then saves, connects and shows the saved screen', async () => {
-    const { owner, checks, saved, opened, states, pass, at } = harness({ state: 'none' })
+    const { owner, checks, saved, opened, states, log, pass, at } = harness({ state: 'none' })
     expect(await owner.run({ do: 'checkTarget', target: REMOTE })).toEqual({ ok: true, value: undefined })
     checks[0]!.step('tailscale')
     checks[0]!.step('peer')
@@ -153,15 +163,37 @@ describe('ownConnection, checking a target', () => {
     expect(at()).toEqual({ at: 'saved', live: { target: REMOTE, epoch: 1 }, from: 'first-run' })
     expect(saved).toEqual([REMOTE])
     expect(opened.map(({ target }) => target)).toEqual([REMOTE])
+    expect(log).toEqual(['arm', 'save', 'open 1'])
 
     await owner.run({ do: 'keepTarget' })
     expect(at()).toEqual({ at: 'chat', live: { target: REMOTE, epoch: 1 } })
+  })
+
+  it("opens each target's Hermes in a place of its own, the same place each time", async () => {
+    const { owner, opened, pass } = harness({ state: 'saved', target: LOCAL })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    await owner.run({ do: 'checkTarget', target: LOCAL })
+    await pass()
+    const [local, remote, again] = opened.map(({ place }) => place)
+    expect(local).not.toBe(remote)
+    expect(again).toBe(local)
   })
 
   it('sends a chat command to the Hermes of the live connection', async () => {
     const { owner, opened } = harness({ state: 'saved', target: LOCAL })
     await owner.run({ do: 'reconnect', start: false })
     expect(opened[0]!.commands).toEqual([{ do: 'reconnect', start: false }])
+  })
+
+  it('reads the HTTP API through the route of the live connection, which a switch replaces', async () => {
+    const { owner, pass } = harness({ state: 'saved', target: LOCAL })
+    expect(await owner.read('/a')).toEqual({ status: 200, body: { target: LOCAL, path: '/a' } })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    expect(await owner.read('/b')).toEqual({ status: 200, body: { target: REMOTE, path: '/b' } })
   })
 
   it('keeps the live connection and saves nothing when the check fails', async () => {
@@ -186,6 +218,7 @@ describe('ownConnection, checking a target', () => {
     await owner.run({ do: 'reconnect', start: true })
     expect(opened[1]!.commands).toEqual([{ do: 'reconnect', start: true }])
     expect(opened[0]!.commands).toEqual([])
+    expect(await owner.transcribe(RECORDING), 'speech goes to the new connection too').toEqual({ ok: true, value: 'heard by remote' })
   })
 
   it('does not switch when the target checked is the one already live', async () => {
@@ -227,6 +260,15 @@ describe('ownConnection, checking a target', () => {
     expect(opened[0]!.commands).toEqual([])
     await pass()
     expect(opened[0]!.commands).toEqual([{ do: 'reconnect', start: false }])
+  })
+
+  it('fails with cant-save and saves nothing when the intro cannot be written', async () => {
+    const { owner, saved, log, pass, at } = harness({ state: 'none' }, async () => {}, async () => { throw new Error('disk') })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    expect(saved).toEqual([])
+    expect(log).toEqual(['arm'])
+    expect(at()).toEqual({ at: 'failed', live: null, target: REMOTE, failure: 'cant-save' })
   })
 
   it('fails with cant-save and keeps the live connection when the save rejects', async () => {
@@ -565,7 +607,7 @@ describe('ownConnection, opening a chat while Settings is up', () => {
     const held = holdSave()
     const { owner, opened, pass, settled, at } = harness({ state: 'saved', target: LOCAL }, held.save)
     const links = chatLinks()
-    links.serve(owner, () => {})
+    links.serve(owner, feed(OFF), () => {})
     await owner.run({ do: 'editTarget' })
     links.holdLatest(['highwing://chat/local-0001'])
     expect(at()).toEqual({ at: 'chat', live: { target: LOCAL, epoch: 1 } })
@@ -590,7 +632,7 @@ describe('ownConnection, opening a chat while Settings is up', () => {
     const held = holdSave()
     const { owner, opened, pass, settled, at } = harness({ state: 'saved', target: LOCAL }, held.save)
     const links = chatLinks()
-    links.serve(owner, () => {})
+    links.serve(owner, feed(OFF), () => {})
     const window: Setup[] = []
     owner.setup.subscribe(setup => window.push(setup))
     await owner.run({ do: 'editTarget' })
@@ -625,8 +667,11 @@ describe('pinnedConnection', () => {
   it('has no setup, and passes chat commands to its Hermes', async () => {
     const commands: unknown[] = []
     const hermes = { run: async (command: unknown) => { commands.push(command); return { ok: true, value: undefined } }, close: async () => {} } as unknown as Hermes
-    const owner = pinnedConnection(hermes)
+    const read = async () => ({ status: 200, body: 'board' })
+    const owner = pinnedConnection(hermes, read, async () => ({ ok: true, value: 'heard by the fixture' }))
+    expect(owner.read).toBe(read)
     expect(owner.setup.get()).toEqual({ at: 'pinned' })
+    expect(await owner.transcribe(RECORDING)).toEqual({ ok: true, value: 'heard by the fixture' })
     expect(await owner.run({ do: 'checkTarget', target: LOCAL })).toMatchObject({ ok: false })
     await owner.run({ do: 'reconnect', start: false })
     expect(commands).toEqual([{ do: 'reconnect', start: false }])

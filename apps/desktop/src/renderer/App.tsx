@@ -1,19 +1,30 @@
-import type { Shown, ShownGroup, Target } from '@highwing/hermes/domain'
-import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react'
-import { epochOf, type Mode, type Theme } from '../ipc-contract'
+import { shownChat, type Shown, type ShownGroup, type Target } from '@highwing/hermes/domain'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { introInFront } from '../intro'
+import { isSettingsChord } from './keys'
+import { epochOf, type Accent, type Mode, type SidebarWidth, type Theme } from '../ipc-contract'
 import { BotPicker } from './bots/BotPicker'
 import { BotsSidebar } from './bots/Bots'
 import { useRetryPicturesOnceOnline } from './bots/pictures'
 import { ChatsSidebar, DraftSweep } from './chats/Chats'
 import { Chat } from './chat/Chat'
 import { GroupPane } from './groups/GroupPane'
+import { AccountMenu } from './chrome/AccountMenu'
+import { accentTone, toneOfBot } from './chrome/accent'
 import { Banner, TopBar } from './chrome/Chrome'
 import { ModeSwitch } from './chrome/ModeSwitch'
+import { Shortcuts } from './chrome/Shortcuts'
+import { ShortcutSheet } from './chrome/ShortcutSheet'
 import { Preview } from './preview/Preview'
 import { Composer } from './composer/Composer'
+import { showComputer, useComputerShown } from './computer/computer'
+import { ComputerView } from './computer/Computer'
+import { Apps, AppsButton } from './apps/Apps'
 import { Palette } from './palette/Palette'
+import { Tasks } from './tasks/Tasks'
 import { screenOf, type CardSetup } from './setup/screens'
 import { Settings } from './setup/Settings'
+import { Intro } from './setup/Intro'
 import { FirstRun, Saved } from './setup/Setup'
 import { Epoch, run, useTopic } from './store'
 
@@ -35,13 +46,13 @@ function OpenPane() {
   return shown.kind === 'group' ? <GroupPane key={samePaneOnFirstMessage(shown)} shown={shown} /> : <Chat key={samePaneOnFirstMessage(shown)} chat={shown} />
 }
 
-function ChatScreen({ target, settingsButton }: { readonly target: Target | null; readonly settingsButton: RefObject<HTMLButtonElement | null> }) {
+function ChatScreen({ target, settingsButton, onOpenTasks }: { readonly target: Target | null; readonly settingsButton: RefObject<HTMLButtonElement | null>; readonly onOpenTasks: () => void }) {
   const link = useTopic('link')
   useRetryPicturesOnceOnline(link?.state === 'online')
   return (
     <>
       <div className="top">
-        <TopBar target={target} settingsButton={settingsButton} />
+        <TopBar target={target} settingsButton={settingsButton} onOpenTasks={onOpenTasks} />
         {link !== undefined && <Banner link={link} target={target} />}
       </div>
       <OpenPane />
@@ -87,24 +98,59 @@ interface ChatWindowProps {
   readonly target: Target | null
   readonly mode: Mode
   readonly theme: Theme
+  readonly accent: Accent
+  readonly width: SidebarWidth
+  readonly onOpenApps: () => void
 }
 
-function ChatWindow({ hidden, settings, target, mode, theme }: ChatWindowProps) {
+function useSettingsChord(target: Target | null, settingsOpen: boolean) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isSettingsChord(event) || target === null || settingsOpen || document.querySelector('dialog:modal') !== null) return
+      event.preventDefault()
+      void run({ do: 'editTarget' })
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [target, settingsOpen])
+}
+
+function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onOpenApps }: ChatWindowProps) {
   const preview = useTopic('preview')
+  const screen = useTopic('screen')
+  const tone = accentTone(accent, toneOfBot(useTopic('bots'), shownChat(useTopic('open'))?.bot ?? null))
+  useSettingsChord(target, settings !== null)
   const { root, pick } = useSwitchModeKeepingFocus(mode)
   const { settingsButton, close } = useCloseSettings(settings !== null)
+  const [sheet, setSheet] = useState<{ readonly back: Element | null } | null>(null)
+  const openSheet = useCallback(() => setSheet(held => held ?? { back: document.activeElement }), [])
   const switcher = <ModeSwitch mode={mode} onPick={pick} />
-  const paned = preview?.state === 'open' && settings === null
+  const foot = <div className="account"><AccountMenu target={target} /><AppsButton onOpen={onOpenApps} /></div>
+  // A preview asked for while the screen is shown takes the pane, and Screen takes it back.
+  const previewed = preview?.state === 'open' ? preview.address : null
+  useEffect(() => {
+    if (previewed !== null) showComputer(false)
+  }, [previewed])
+  const computer = useComputerShown() && settings === null ? screen ?? null : null
+  const paned = (preview?.state === 'open' || computer !== null) && settings === null
+  const compact = mode === 'bots' && width === 'compact'
+  const [tasksOpen, setTasksOpen] = useState(false)
+  const shown = useTopic('open')?.shown ?? null
+  const pane = shown === null ? null : samePaneOnFirstMessage(shown)
+  useEffect(() => setTasksOpen(false), [pane])
   return (
-    <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined}>
-      {mode === 'bots' && <BotsSidebar head={switcher} />}
-      {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} />}
-      <div key="screen" className="screen" hidden={settings !== null}>
-        <ChatScreen target={target} settingsButton={settingsButton} />
+    <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined} data-compact={compact || undefined} data-settings={settings !== null || undefined}>
+      {mode === 'bots' && <BotsSidebar head={switcher} compact={compact} foot={foot} />}
+      {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} foot={foot} />}
+      <div key="screen" className="screen" data-accent={tone ?? undefined} hidden={settings !== null || tasksOpen}>
+        <ChatScreen target={target} settingsButton={settingsButton} onOpenTasks={() => setTasksOpen(true)} />
       </div>
-      {settings !== null && <Settings setup={settings} mode={mode} theme={theme} onRequestClose={close} />}
+      {tasksOpen && settings === null && <Tasks onClose={() => setTasksOpen(false)} />}
+      {settings !== null && <Settings setup={settings} mode={mode} theme={theme} accent={accent} onRequestClose={close} onShowShortcuts={openSheet} />}
       <DraftSweep />
-      {paned && <Preview preview={preview} />}
+      <Shortcuts onSheet={openSheet} />
+      {sheet !== null && <ShortcutSheet back={sheet.back} onClose={() => setSheet(null)} />}
+      {computer !== null ? <ComputerView view={computer} /> : paned && preview?.state === 'open' && <Preview preview={preview} />}
     </div>
   )
 }
@@ -113,20 +159,32 @@ export function App() {
   const setup = useTopic('setup')
   const mode = useTopic('mode')
   const theme = useTopic('theme')
-  if (setup === undefined || mode === undefined || theme === undefined) return null
+  const accent = useTopic('accent')
+  const width = useTopic('sidebarWidth')
+  const intro = useTopic('intro')
+  const [appsOpen, setAppsOpen] = useState(false)
+  const appsBack = useRef<Element | null>(null)
+  const openApps = useCallback(() => {
+    appsBack.current = document.activeElement
+    setAppsOpen(true)
+  }, [])
+  if (setup === undefined || mode === undefined || theme === undefined || accent === undefined || width === undefined || intro === undefined) return null
   const screen = screenOf(setup)
   const live = setup.at === 'pinned' ? null : setup.live
+  const cover = introInFront(setup, intro)
   return (
     <>
       {(setup.at === 'pinned' || live !== null) && (
         <Epoch value={epochOf(setup)}>
-          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved'} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} />
+          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved' || cover} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} accent={accent} width={width} onOpenApps={openApps} />
           {/* Outside the window a new connection remounts, so a pick main refused for the old one comes back over the new one. */}
-          {screen.show !== 'saved' && <Palette target={live?.target ?? null} settingsOpen={screen.show === 'settings'} />}
+          {screen.show !== 'saved' && !cover && <Palette target={live?.target ?? null} settingsOpen={screen.show === 'settings'} />}
+          {screen.show !== 'saved' && !cover && <Apps open={appsOpen} back={appsBack} onOpen={openApps} onClose={() => setAppsOpen(false)} />}
         </Epoch>
       )}
       {screen.show === 'first-run' && <FirstRun setup={screen.setup} />}
-      {screen.show === 'saved' && <Saved target={screen.live.target} />}
+      {cover && live !== null && <Intro target={live.target} />}
+      {screen.show === 'saved' && !cover && <Saved target={screen.live.target} />}
     </>
   )
 }

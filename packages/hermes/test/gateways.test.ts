@@ -1,6 +1,7 @@
 import { connect } from 'node:net'
 import { inspect, isDeepStrictEqual } from 'node:util'
 import { describe, expect, it } from 'vitest'
+import { BOARD_PATH } from '../src/domain/tasks'
 import { failureOf, URL_FAILURES, type CheckStep, type GatewayUrl, type UrlFailure } from '../src/domain/reach'
 import type { Link } from '../src/domain/session'
 import { DialError, gatewaysByUrl, memoryKeep, openHermes, type GatewayDeps, type Gateways, type Hermes, type Keep, type Route } from '../src/hub'
@@ -222,6 +223,24 @@ describe('the check of a gateway address, against the fake Webapp', () => {
   })
 })
 
+describe('speech to text through a gateway address, against the fake Webapp', () => {
+  const RECORDING = { mime: 'audio/webm;codecs=opus', audio: new Uint8Array([1, 2, 3]) }
+
+  it("posts the recording with the address's sign-in and answers what Hermes heard", async () => {
+    const web = await webapp('ok')
+    const route = routeOf(await signedIn(web), web.url)
+    expect(await route.transcribe(RECORDING)).toEqual({ ok: true, value: 'heard 3 bytes' })
+    expect(count(web, 'POST /api/audio/transcribe')).toBe(1)
+  })
+
+  it('says the sign-in ended, in plain words, once Hermes ends it', async () => {
+    const web = await webapp('ok')
+    const route = routeOf(await signedIn(web), web.url)
+    web.signOut()
+    expect(await route.transcribe(RECORDING)).toEqual({ ok: false, refusal: { kind: 'offline', message: 'Your sign-in to the Hermes on 127.0.0.1 has ended.' } })
+  })
+})
+
 describe('the route to a gateway address, against the fake Webapp', () => {
   it('connects and plays the errand to the session the direct fold gives, on tickets minted with the sign-in', async () => {
     const want = { ...fold(errand()).content, sync: { state: 'live' } }
@@ -273,6 +292,26 @@ describe('the route to a gateway address, against the fake Webapp', () => {
     expect(count(web, 'POST /auth/native/refresh')).toBe(1)
     expect(web.opened).toHaveLength(1)
     sockets.forEach(socket => socket.close())
+  })
+
+  it('reads the gateway\'s HTTP API with the sign-in\'s bearer, refreshing once when Hermes no longer takes it', async () => {
+    const web = await webapp('ok')
+    const route = routeOf(await signedIn(web), web.url)
+    expect(await route.read(BOARD_PATH)).toEqual({ status: 200, body: { columns: [{ name: 'todo', tasks: [] }] } })
+    expect(count(web, 'POST /auth/native/refresh')).toBe(0)
+
+    web.lapse()
+    expect(await route.read(BOARD_PATH)).toMatchObject({ status: 200 })
+    expect(count(web, 'POST /auth/native/refresh')).toBe(1)
+    expect(await route.read('/api/plugins/kanban/missing'), 'a status passes through for the caller to read').toEqual({ status: 404, body: { detail: 'Not Found' } })
+  })
+
+  it('rejects a read for a sign-in Hermes ended', async () => {
+    const web = await webapp('ok')
+    const route = routeOf(await signedIn(web), web.url)
+    web.signOut()
+    await expect(route.read(BOARD_PATH)).rejects.toMatchObject({ kind: 'signed-out' })
+    expect(count(web, `GET ${BOARD_PATH}`), 'the refused bearer was tried once, and not again on a sign-in that is gone').toBe(1)
   })
 
   it('connects after a restart on the refresh token it kept, with no browser, and keeps the token Hermes rotated it to', async () => {

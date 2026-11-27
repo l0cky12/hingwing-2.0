@@ -60,9 +60,9 @@ export function ModelPicker({ view, onOpen, onPick }: ModelPickerProps) {
     else setAsking(outcome.value === null ? { at: 'idle' } : { at: 'confirm', model, confirm: outcome.value })
   }
 
-  const label = view.show === 'none'
-    ? 'No model set up'
-    : `Model${view.current === null ? '' : `: ${view.current.id}`}${view.next === null ? '' : `, then ${view.next.id}`}`
+  const then = view.show === 'none' || view.next === null ? '' : `, then ${view.next.id}`
+  const name = view.show === 'none' ? 'No model set up' : `Model${view.current === null ? '' : `: ${view.current.id}`}${then}`
+  const shown = view.show === 'none' || view.current === null ? name : `${view.current.id}${then}`
 
   // Hermes asked for a yes either in answer to this window's pick, or for a pick it held until a turn ended.
   const held = view.show === 'list' ? view.ask : null
@@ -80,12 +80,13 @@ export function ModelPicker({ view, onOpen, onPick }: ModelPickerProps) {
           type="button"
           ref={readout}
           className={view.show === 'none' ? 'readout none' : 'readout'}
+          aria-label={name}
           aria-expanded={open}
           aria-haspopup="true"
           aria-controls={open ? listId : undefined}
           onClick={toggle}
         >
-          {label}
+          <span className="value">{shown}</span>
           <span className="chev" aria-hidden="true" />
         </button>
         {open && (
@@ -139,7 +140,6 @@ function Choices({ view, asking, onPick }: {
       event.preventDefault()
       if (shown.length > 0) setHighlight((highlight + (event.key === 'ArrowDown' ? 1 : -1) + shown.length) % shown.length)
     } else if (event.key === 'Enter') {
-      // The picker sits inside the composer's form, where Enter would send the message.
       event.preventDefault()
       const model = shown[highlight]
       if (model !== undefined && asking.at !== 'sending') onPick(model)

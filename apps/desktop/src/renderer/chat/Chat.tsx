@@ -1,6 +1,8 @@
 import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, type BackgroundProcess, type BranchId, type ChatVersions, type CommandOutcome, type HelperId, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type TurnId, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
+import { isLocal } from '../../ipc-contract'
+import { botIn } from '../bots/roster-view'
 import { Composer } from '../composer/Composer'
 import { carryToNewChat, slotOf } from '../composer/drafts'
 import { ContextMeter } from '../composer/ContextMeter'
@@ -8,21 +10,25 @@ import { editingOf, type EditTarget } from '../composer/edit'
 import { FolderChip } from '../composer/FolderChip'
 import { ModelPicker } from '../composer/ModelPicker'
 import { StatusStack } from '../composer/StatusStack'
+import { ComputerCard } from '../computer/Computer'
 import { ThinkingPill } from '../composer/ThinkingPill'
 import { folderFieldLabel, thinkingShown } from '../composer/tuning'
 import { YoloPill } from '../composer/YoloPill'
+import { exampleCommand, examplesFor, OFF } from '../../intro'
 import { run, useTopic } from '../store'
-import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
+import { ExampleRequests } from '../setup/Intro'
+import { FileCallContext, fileCallFor, FilesHereContext, NO_FILE_CALL } from './FilePath'
 import type { HelperControls } from './Helpers'
 import { ImageSessionContext } from './Image'
-import { forget, landAt, landed, pressFor } from './landing'
+import { forget, landAt, landed, markLanded, onPress, pressFor, unmarkLanded } from './landing'
 import { marked, pressedOf, unmarked } from './marks'
+import { refusalOnPane, type PaneRefusal } from './refusal'
 import { distanceFrom, FOLLOW_WITHIN, FOLLOWING, jumpWords, placeAfter, progressOf, type Place } from './place'
 import type { RequestAnswer } from './Asks'
 import { Sides } from './Sides'
 import { closeSide, sortSides, useClosedSides } from './sides'
 import { useTail } from './tail'
-import { Thread, type QueueControls, type QueuedRow } from './Thread'
+import { ChatBotContext, Thread, type AskAgain, type QueueControls, type QueuedRow } from './Thread'
 import { TIME_ZONE, useWakeAt } from './wake'
 
 const PAGE = 0.875
@@ -39,6 +45,8 @@ const holdsText = (target: EventTarget | null) =>
 export function Chat({ chat }: { readonly chat: Shown }) {
   const id = chat.sessionId
   const session = useTopic(id === null ? null : `session:${id}`)
+  const bots = useTopic('bots')
+  const bot = useMemo(() => (chat.bot === null ? null : botIn(bots, chat.bot)), [bots, chat.bot])
   const relays = useTopic('relay')?.bySession[id ?? ''] ?? NO_RELAYS
   const [tick, wake] = useReducer((count: number) => count + 1, 0)
   const view = useMemo(() => (session === undefined ? null : threadView(session, { now: Date.now(), timeZone: TIME_ZONE })), [session, tick])
@@ -68,6 +76,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     return () => {
       open = false
       landed(id)
+      unmarkLanded()
     }
   }, [id])
   const versions = read !== null && read.id === id ? read.versions : NO_VERSIONS
@@ -84,11 +93,14 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   }, [drawn, progress, versions])
 
   const [paging, setPaging] = useState(false)
+  const press = useSyncExternalStore(onPress, () => (id === null ? null : pressFor(id)))
   useLayoutEffect(() => {
     const element = scroller.current
-    const press = id === null ? null : pressFor(id)
     if (element === null || id === null || press === null || view === null || view.turns.length === 0) return
-    if (press.landing === 'end') return landed(id)
+    if (press.landing === 'end') {
+      unmarkLanded()
+      return landed(id)
+    }
     if (!whole) return
     const request = element.querySelector(`.turn[data-row="${press.landing}"] > .request`)
     if (request === null) {
@@ -103,9 +115,10 @@ export function Chat({ chat }: { readonly chat: Shown }) {
       return
     }
     landed(id)
-    request.scrollIntoView({ block: 'center', behavior: 'instant' })
+    const shown = markLanded(request.closest('.turn'), press.terms) ?? request
+    shown.scrollIntoView({ block: 'center', behavior: 'instant' })
     setPlace(held => placeAfter(held, distanceFrom(element), progress))
-  }, [id, view, whole, progress, paging])
+  }, [id, view, whole, progress, paging, press])
 
   useLayoutEffect(() => {
     const element = scroller.current
@@ -178,6 +191,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     const outcome = await run({ do: 'answer', sessionId: id, promptId, reply })
     return outcome.ok ? outcome.value : undefined
   }, [id])
+  const onAskAgain = useCallback<NonNullable<AskAgain>>(async text => id !== null && (await run({ do: 'send', sessionId: id, text, attachments: [] })).ok, [id])
   const onAnswerRequest = useCallback<RequestAnswer>(async (requestId, reply) => id !== null && (await run({ do: 'answer', sessionId: id, requestId, reply })).ok, [id])
   const onLoadEarlier = useCallback(() => {
     if (id !== null) void run({ do: 'loadEarlier', sessionId: id })
@@ -194,7 +208,11 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   if (marks.listed !== listed) dispatchMark({ kind: 'listed', listed })
   const pressed = useMemo(() => pressedOf(marks), [marks])
   const mark = useCallback((row: QueuedRow, action: QueuedAction | null) => dispatchMark(action === null ? { kind: 'refused', row } : { kind: 'pressed', row, action }), [])
-  const [refused, setRefused] = useState<{ readonly id: SessionId | null; readonly message: string } | null>(null)
+  const [refused, setRefused] = useState<PaneRefusal | null>(null)
+  const visibleRefusal = refusalOnPane(refused, id)
+  useEffect(() => {
+    if (visibleRefusal !== null && visibleRefusal !== refused) setRefused(visibleRefusal)
+  }, [visibleRefusal, refused])
   const [rewriting, setRewriting] = useState(false)
   const [branching, setBranching] = useState(false)
   const branchKeys = useRef(new Map<number, BranchId>())
@@ -254,7 +272,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     const outcome = await run({ do: 'react', sessionId: id, turn, emoji })
     if (!outcome.ok) setRefused({ id, message: outcome.refusal.message })
   }, [id])
-  const onSend = useCallback(async (text: string, attachments: readonly AttachmentId[]): Promise<CommandOutcome<string | null>> => {
+  const deliver = useCallback(async (text: string, attachments: readonly AttachmentId[]): Promise<CommandOutcome<string | null>> => {
     setRefused(null)
     if (chat.sessionId === null) return run({ do: 'start', chat, text, attachments })
     if (editing === null) return run({ do: 'send', sessionId: chat.sessionId, text, attachments })
@@ -275,6 +293,21 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     setEditing(current => (current?.press === press ? null : current))
     return { ok: true, value: null }
   }, [chat, editing, rewrite, listed, mark])
+  const featured = bots?.state === 'listed' ? { at: 'listed' as const, id: bots.roster.featured?.id ?? null } : { at: 'pending' as const }
+  const requests = examplesFor(useTopic('intro') ?? OFF, chat, featured)
+  const onSend = useCallback(async (text: string, attachments: readonly AttachmentId[]): Promise<CommandOutcome<string | null>> => {
+    const offered = requests.length > 0
+    const outcome = await deliver(text, attachments)
+    if (outcome.ok && offered) void run({ do: 'done' })
+    return outcome
+  }, [deliver, requests])
+  const onExample = useCallback(async (text: string): Promise<CommandOutcome<string | null>> => {
+    setRefused(null)
+    const outcome = await run(exampleCommand(chat, text))
+    if (!outcome.ok) setRefused({ id: chat.sessionId, message: outcome.refusal.message })
+    if (outcome.ok && requests.length > 0) void run({ do: 'done' })
+    return outcome
+  }, [chat, requests])
   const queue = useMemo((): QueueControls => ({ canAct: live, pressed, onAct: onQueued }), [live, pressed, onQueued])
   const [stopping, setStopping] = useState<ReadonlySet<HelperId>>(new Set())
   const onStopHelper = useCallback(async (helperId: HelperId) => {
@@ -306,8 +339,10 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const planFor = (held: readonly Attachment[]) => (session !== undefined && live ? sendPlan(session, held).by : 'submit')
   const tuning = session !== undefined && thinkingShown(session.tuning) ? session.tuning : null
   const cwd = session?.cwd ?? null
+  const screen = useTopic('screen')?.screen
   const setup = useTopic('setup')
   const target = setup === undefined || setup.at === 'pinned' ? null : (setup.live?.target ?? null)
+  const filesHere = setup !== undefined && isLocal(setup)
 
   const onCloseSide = useCallback((side: SideId) => {
     if (id === null) return
@@ -328,15 +363,19 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     <>
       <main id="scroll" ref={scroller} onScroll={onScroll}>
         {drawn !== null && (
-          <FileCallContext value={fileCall}>
-            <ImageSessionContext value={id}>
-              <Thread
-                view={drawn.view} relays={drawn.relays} sides={drawn.sides} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
-                canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
-                canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers}
-              />
-            </ImageSessionContext>
-          </FileCallContext>
+          <FilesHereContext value={filesHere}>
+            <FileCallContext value={fileCall}>
+              <ImageSessionContext value={id}>
+                <ChatBotContext value={bot}>
+                  <Thread
+                    view={drawn.view} relays={drawn.relays} sides={drawn.sides} onAnswer={onAnswer} onAskAgain={live ? onAskAgain : null} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
+                    canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
+                    canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers}
+                  />
+                </ChatBotContext>
+              </ImageSessionContext>
+            </FileCallContext>
+          </FilesHereContext>
         )}
       </main>
       <div className={`jump${shown ? ' shown' : ''}${waitsOnYou ? ' asking' : ''}`}>
@@ -359,7 +398,13 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         planFor={planFor}
         editing={editing}
         onCancelEdit={() => setEditing(null)}
-        above={id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} returnFocus={returnFocus} />}
+        above={(
+          <>
+            {screen?.state === 'on' && <ComputerCard control={screen.control} thumbnail={screen.thumbnail} />}
+            {id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} returnFocus={returnFocus} />}
+            <ExampleRequests requests={requests} onSend={onExample} />
+          </>
+        )}
         onEscape={onEscape}
         onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}
@@ -369,37 +414,39 @@ export function Chat({ chat }: { readonly chat: Shown }) {
             onKill={processId => run({ do: 'killProcess', sessionId: id, processId })} onControl={action => run({ do: 'control', sessionId: id, action })}
           />
         )}
-      >
-        {id !== null && (model.show !== 'hidden' || tuning !== null || cwd !== null || yolo !== null || fill !== null) && (
-          <div className="under">
-            <div className="foot">
-              {model.show !== 'hidden' && (
-                <ModelPicker
-                  key={id} view={model} onOpen={() => void refreshModels()}
-                  onPick={(pick, confirm) => run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) })}
-                />
-              )}
-              {tuning !== null && (
-                <ThinkingPill key={`thinking-${id}`} tuning={tuning} disabled={!live} running={!idle} onTune={change => run({ do: 'tune', sessionId: id, ...change })} />
-              )}
-              {cwd !== null && (
-                <FolderChip
-                  key={`folder-${id}`} cwd={cwd} field={folderFieldLabel(target)} disabled={!live} running={!idle}
-                  onMove={to => run({ do: 'move', sessionId: id, cwd: to })}
-                />
-              )}
-              {yolo !== null && (
-                <YoloPill
-                  key={`yolo-${id}`} on={yolo} approvals={session?.tuning.approvals ?? null}
-                  onSet={on => run({ do: 'tune', sessionId: id, set: 'yolo', on })}
-                  onApprovals={to => run({ do: 'tune', sessionId: id, set: 'approvals', to })}
-                />
-              )}
-            </div>
-            {fill !== null && <ContextMeter key={id} fill={fill} stale={!live} onBreakdown={() => run({ do: 'contextBreakdown', sessionId: id })} />}
-          </div>
+        start={id !== null && (
+          <>
+            {yolo !== null && (
+              <YoloPill
+                key={`yolo-${id}`} on={yolo} approvals={session?.tuning.approvals ?? null}
+                onSet={on => run({ do: 'tune', sessionId: id, set: 'yolo', on })}
+                onApprovals={to => run({ do: 'tune', sessionId: id, set: 'approvals', to })}
+              />
+            )}
+            {cwd !== null && (
+              <FolderChip
+                key={`folder-${id}`} cwd={cwd} field={folderFieldLabel(target)} disabled={!live} running={!idle}
+                onMove={to => run({ do: 'move', sessionId: id, cwd: to })}
+              />
+            )}
+          </>
         )}
-        {refused !== null && refused.id === id && <p className="err refusal">{refused.message}</p>}
+        end={id !== null && (
+          <>
+            {model.show !== 'hidden' && (
+              <ModelPicker
+                key={`model-${id}`} view={model} onOpen={() => void refreshModels()}
+                onPick={(pick, confirm) => run({ do: 'pickModel', sessionId: id, model: pick, ...(confirm === null ? {} : { confirm }) })}
+              />
+            )}
+            {tuning !== null && (
+              <ThinkingPill key={`thinking-${id}`} tuning={tuning} disabled={!live} running={!idle} onTune={change => run({ do: 'tune', sessionId: id, ...change })} />
+            )}
+            {fill !== null && <ContextMeter key={`context-${id}`} fill={fill} stale={!live} onBreakdown={() => run({ do: 'contextBreakdown', sessionId: id })} />}
+          </>
+        )}
+      >
+        {visibleRefusal !== null && <p className="err refusal">{visibleRefusal.message}</p>}
       </Composer>
     </>
   )

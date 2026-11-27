@@ -199,11 +199,15 @@ export type GroupNews =
   | { readonly on: 'link'; readonly offline: boolean }
   | { readonly on: 'support'; readonly support: Exclude<GroupSupport, { readonly is: 'unknown' }> }
   | { readonly on: 'listed'; readonly groups: readonly GroupFacts[] }
+  /** Hermes made or renamed this group, which makes it the most recently changed. */
   | { readonly on: 'made'; readonly facts: GroupFacts }
   | { readonly on: 'followed'; readonly group: GroupId | null }
   | { readonly on: 'state'; readonly facts: GroupFacts; readonly answering: readonly Answering[]; readonly pushes: boolean }
   | { readonly on: 'page'; readonly group: GroupId; readonly after: number; readonly epoch: number | null; readonly events: readonly GroupEvent[]; readonly cursor: number }
+  /** Hermes has no group by this id. A followed group shows as missing. */
   | { readonly on: 'missing'; readonly group: GroupId }
+  /** The user deleted this group. Unlike `missing`, nothing is shown in its place. */
+  | { readonly on: 'disbanded'; readonly group: GroupId }
   | { readonly on: 'sending'; readonly group: GroupId; readonly message: Outgoing }
   | { readonly on: 'unsent'; readonly group: GroupId; readonly key: string }
 
@@ -228,6 +232,10 @@ const changing = (desk: GroupDesk, group: GroupId, change: (held: HeldGroup) => 
   const held = heldIn(desk.held, group)
   return held === undefined ? desk : { ...desk, held: { ...desk.held, [group]: change(held) } }
 }
+
+const without = (desk: GroupDesk, group: GroupId): GroupDesk => ({
+  ...desk, held: Object.fromEntries(Object.entries(desk.held).filter(([id]) => id !== group)), listed: desk.listed?.filter(id => id !== group) ?? null
+})
 
 const logs = (held: HeldGroup, eventId: string) => held.log?.events.some(event => event.kind === 'said' && event.id === eventId) ?? false
 
@@ -263,10 +271,10 @@ export function nextGroups(desk: GroupDesk, news: GroupNews): GroupDesk {
     }
     case 'page':
       return changing(desk, news.group, held => paged(held, news))
-    case 'missing': {
-      const held = Object.fromEntries(Object.entries(desk.held).filter(([id]) => id !== news.group))
-      return { ...desk, held, listed: desk.listed?.filter(id => id !== news.group) ?? null, missing: desk.followed === news.group ? news.group : desk.missing }
-    }
+    case 'missing':
+      return { ...without(desk, news.group), missing: desk.followed === news.group ? news.group : desk.missing }
+    case 'disbanded':
+      return without(desk, news.group)
     case 'sending':
       return changing(desk, news.group, held => (held.sending.some(message => message.key === news.message.key) || logs(held, news.message.eventId) ? held : { ...held, sending: [...held.sending, news.message] }))
     case 'unsent':

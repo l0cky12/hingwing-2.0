@@ -1,15 +1,17 @@
-import { versionLabel, type AdmissionId, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Relay, type Told, type TurnId, type Version, type Versions } from '@highwing/hermes/domain'
-import { fieldId, findInThread, multiReply, type Changing, type FindMatch, type PendingRow, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
-import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { Avatar } from '../bots/Avatar'
+import { versionLabel, type AdmissionId, type Bot, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Relay, type Told, type TurnId, type Version, type Versions } from '@highwing/hermes/domain'
+import { fieldId, findInThread, multiReply, type BesideRow, type Changing, type FindMatch, type PendingRow, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
+import { createContext, Fragment, memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { Avatar, BotFace } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
 import { AskCard, type RequestAnswer } from './Asks'
-import { Command, CopyButton } from './Copy'
-import { isCommandKey } from '../keys'
+import { Command } from './Copy'
+import { isShortcut } from '../keys'
+import { modalOpen } from '../shortcuts'
 import { Helper, Moa, Notice, Plan, Reasoning, type HelperControls } from './Helpers'
 import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find'
 import { isOpen, NONE_OPEN, toggled, type OpenState } from './open'
-import { Given, Reactions } from './Reactions'
+import { hasActs, MessageActions, type MessageActs } from './MessageActions'
+import { Given } from './Reactions'
 import { placeByTurn } from './relays'
 import { SideTurn } from './Sides'
 import type { SideRow } from './sides'
@@ -17,6 +19,8 @@ import { cx, Elapsed, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
 
 type Answer = (promptId: PromptId, reply: PromptReply) => Promise<Told | undefined>
+/** Sends `text` as the next message. Resolves with whether Hermes took it. null while the chat is not live. */
+export type AskAgain = ((text: string) => Promise<boolean>) | null
 
 interface NodeProps {
   readonly node: ThreadNode
@@ -25,6 +29,7 @@ interface NodeProps {
   readonly open: OpenState
   readonly onToggle: (key: string, byDefault?: boolean) => void
   readonly onAnswer: Answer
+  readonly onAskAgain: AskAgain
   readonly helpers: HelperControls | null
 }
 
@@ -35,6 +40,7 @@ interface PromptProps {
   readonly card: PromptCard
   readonly asking: boolean
   readonly onAnswer: Answer
+  readonly onAskAgain: AskAgain
 }
 
 const TOLD_WORDS = {
@@ -43,8 +49,9 @@ const TOLD_WORDS = {
   unsure: "Hermes didn't confirm it read this, so Highwing didn't send it again."
 } as const satisfies Record<Told, string | null>
 
-function Prompt({ nodeKey, card, asking, onAnswer }: PromptProps) {
+function Prompt({ nodeKey, card, asking, onAnswer, onAskAgain }: PromptProps) {
   const [told, setTold] = useState<Told | undefined>(undefined)
+  const [askedAgain, setAskedAgain] = useState(false)
   const toldWords = told === undefined ? null : TOLD_WORDS[told]
   if (card.state === 'answered') {
     return (
@@ -55,17 +62,27 @@ function Prompt({ nodeKey, card, asking, onAnswer }: PromptProps) {
       </div>
     )
   }
-  const answer = (reply: PromptReply) => void onAnswer(card.promptId, reply)
-  const deny = (tell: string) => void onAnswer(card.promptId, { kind: 'deny', tell }).then(setTold)
+  const answer = (reply: PromptReply) => card.state === 'asking' && void onAnswer(card.promptId, reply)
+  const deny = (tell: string) => card.state === 'asking' && void onAnswer(card.promptId, { kind: 'deny', tell }).then(setTold)
+  const askAgain = (text: string) => {
+    if (onAskAgain === null) return
+    setAskedAgain(true)
+    void onAskAgain(text).then(sent => sent || setAskedAgain(false))
+  }
+  // One tree for both states, so the status line below is the same element when the card expires and is read out once.
   return (
-    <div className={cx('approval', asking && 'live')} role="group" aria-label={card.heading} {...(asking ? { 'data-end': 'asking' } : {})}>
+    <div className={cx('approval', card.state === 'expired' ? 'expired' : asking && 'live')} role="group" aria-label={card.heading} {...(asking ? { 'data-end': 'asking' } : {})}>
       <h3 data-find={fieldId(nodeKey, 'heading')}>{card.heading}</h3>
       {card.command !== null && <Command nodeKey={nodeKey} command={card.command} />}
-      {card.why !== null && <p className="why" data-find={fieldId(nodeKey, 'why')}>{card.why}</p>}
-      {card.pick.kind === 'one'
-        ? <Buttons buttons={card.pick.buttons} freeText={card.pick.freeText} tell={card.tell} command={card.command} busy={card.busy} onAnswer={answer} onTell={deny} />
-        : <Checks choices={card.pick.choices} busy={card.busy} onAnswer={answer} />}
-      {card.error !== null && <p className="err" data-find={fieldId(nodeKey, 'error')}>{card.error}</p>}
+      {card.state === 'asking' && card.why !== null && <p className="why" data-find={fieldId(nodeKey, 'why')}>{card.why}</p>}
+      {card.state === 'asking' && card.left !== null && <p className="why left">{card.left}</p>}
+      <p className="why" role="status" {...(card.state === 'expired' ? { 'data-find': fieldId(nodeKey, 'words') } : {})}>{card.state === 'expired' ? card.words : null}</p>
+      {card.state === 'expired'
+        ? <div className="choices"><button type="button" className="primary" disabled={onAskAgain === null || askedAgain} onClick={() => askAgain(card.askAgain)}>Ask again</button></div>
+        : card.pick.kind === 'one'
+          ? <Buttons buttons={card.pick.buttons} freeText={card.pick.freeText} tell={card.tell} command={card.command} busy={card.busy} onAnswer={answer} onTell={deny} />
+          : <Checks choices={card.pick.choices} busy={card.busy} onAnswer={answer} />}
+      {card.state === 'asking' && card.error !== null && <p className="err" data-find={fieldId(nodeKey, 'error')}>{card.error}</p>}
     </div>
   )
 }
@@ -204,7 +221,7 @@ function Checks({ choices, busy, onAnswer }: PickProps & { readonly choices: rea
   )
 }
 
-export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer, helpers }: NodeProps) {
+export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer, onAskAgain, helpers }: NodeProps) {
   const { opened } = state
   const live = endTone === 'live'
   switch (node.kind) {
@@ -212,7 +229,6 @@ export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer, 
       return (
         <div className="prose">
           <Markdown source={node.markdown} caret={node.streaming} nodeKey={node.key} />
-          {!node.streaming && <CopyButton text={node.markdown} name="Copy reply" />}
         </div>
       )
     case 'step':
@@ -235,7 +251,7 @@ export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer, 
       )
     }
     case 'prompt':
-      return <Prompt nodeKey={node.key} card={node.card} asking={endTone === 'asking'} onAnswer={onAnswer} />
+      return <Prompt nodeKey={node.key} card={node.card} asking={endTone === 'asking'} onAnswer={onAnswer} onAskAgain={onAskAgain} />
     case 'reasoning':
       return <Reasoning nodeKey={node.key} text={node.text} streaming={node.streaming} duration={node.duration} open={isOpen(state, node.key, false)} live={live} elapsed={elapsed} onToggle={onToggle} />
     case 'helper':
@@ -259,35 +275,20 @@ const END_CLASS = {
   tip: 'working', paused: 'paused', done: 'complete', failed: 'error', stopped: 'interrupted', lost: 'lost'
 } as const satisfies Record<Exclude<ThreadEnd['kind'], 'at' | 'none'>, string>
 
-function End({ turnKey, end }: { readonly turnKey: string; readonly end: ThreadEnd }) {
+/** The bot of the open chat, which draws the end of a turn whose reply has not started. null where the chat has no listed bot. */
+export const ChatBotContext = createContext<Bot | null>(null)
+
+function End({ turnKey, end, started }: { readonly turnKey: string; readonly end: ThreadEnd; readonly started: boolean }) {
+  const bot = useContext(ChatBotContext)
   if (end.kind === 'at' || end.kind === 'none') return null
   const words = end.kind === 'tip' ? <><span><PhraseText words={end.words} /></span><Elapsed elapsed={end.elapsed} /></> : end.kind === 'done' ? <span className="sr">{end.words}</span> : <span data-find={fieldId(turnKey, 'end')}>{end.words}</span>
-  return <div className={`tip ${END_CLASS[end.kind]}`} role="status" data-end={end.kind}><span className="glyph" />{words}</div>
+  return <div className={`tip ${END_CLASS[end.kind]}`} role="status" data-end={end.kind}>{end.kind === 'tip' && !started && bot !== null ? <BotFace bot={bot} mood="working" size={22} /> : <span className="glyph" />}{words}</div>
 }
 
 /** Acts on a sent message by its stored row and text: `onEdit` puts it in the composer, `onRegenerate` asks again for its reply. */
 export type Rewrite = (rowId: number, text: string) => void
 
 export type ReactOn = (turn: TurnId, emoji: string | null) => void
-
-function Fork() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="3" cy="2.5" r="1.3" />
-      <circle cx="9" cy="2.5" r="1.3" />
-      <circle cx="6" cy="9.5" r="1.3" />
-      <path d="M3 3.8v.7a1.5 1.5 0 0 0 1.5 1.5h3A1.5 1.5 0 0 0 9 4.5v-.7M6 6v2.2" />
-    </svg>
-  )
-}
-
-function Pencil() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 12 12" width="12" height="12">
-      <path d="M2 10 2.6 7.6 8.2 2a1 1 0 0 1 1.4 0l.4.4a1 1 0 0 1 0 1.4L4.4 9.4Z M7.4 2.8l1.8 1.8" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-    </svg>
-  )
-}
 
 export function VersionSwitch({ versions, onVersion }: { readonly versions: Versions; readonly onVersion: (version: Version) => void }) {
   const { versions: all, current } = versions
@@ -303,6 +304,7 @@ interface TurnProps {
   readonly open: OpenState
   readonly onToggle: (key: string, byDefault?: boolean) => void
   readonly onAnswer: Answer
+  readonly onAskAgain: AskAgain
   readonly canEdit: boolean
   readonly showsRegenerate: boolean
   readonly canRegenerate: boolean
@@ -318,39 +320,54 @@ interface TurnProps {
   readonly helpers: HelperControls | null
 }
 
-export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, canReact, onReact, helpers }: TurnProps) {
+const RUNNING_ENDS: ReadonlySet<ThreadEnd['kind']> = new Set(['at', 'tip', 'paused'])
+
+const HANDED = 'Handed over'
+
+export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAgain, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, canReact, onReact, helpers }: TurnProps) {
   const { end, rowId, request, reactions } = turn
   const regenerates = showsRegenerate && rowId !== null && request !== null
   const movesToNewChat = end.kind === 'failed' && end.remedy === 'newChat' && request !== null
   const live = end.kind === 'tip' || (end.kind === 'at' && end.tone === 'live')
+  const requestActs: MessageActs = request === null ? {} : {
+    copy: { text: request, name: 'Copy request' },
+    ...(rowId !== null && {
+      edit: { disabled: !canEdit, run: () => onEdit(rowId, request) },
+      branch: { disabled: !canBranch, run: () => onBranch(rowId) }
+    })
+  }
+  const prose = turn.nodes.flatMap(node => (node.kind === 'prose' ? [node.markdown] : []))
+  const replyActs: MessageActs = {
+    ...(prose.length > 0 && !RUNNING_ENDS.has(end.kind) && { copy: { text: prose.join('\n\n'), name: 'Copy reply' } }),
+    ...(regenerates && { regenerate: { disabled: !canRegenerate, run: () => onRegenerate(rowId, request) } }),
+    ...(reactions !== null && { react: { given: reactions.given, disabled: !canReact, onReact: emoji => onReact(reactions.turn, emoji) } })
+  }
   return (
-    <article className={cx('turn', live && 'live-turn', end.kind === 'none' && 'interlude')} data-row={rowId ?? undefined}>
+    <article className={cx('turn', live && 'live-turn', end.kind === 'none' && 'interlude')} data-row={rowId ?? undefined} aria-label={turn.handed ? HANDED : undefined}>
       {turn.time !== null && <p className="when">{turn.time}</p>}
+      {turn.handed && <p className="handed-from" aria-hidden>{HANDED}</p>}
       <SentAttachments attachments={turn.attachments} />
       {request !== null && (
-        <p className="request" data-find={fieldId(turn.key, 'request')}>
+        <p className={cx('request', turn.handed && 'handed')} data-find={fieldId(turn.key, 'request')}>
           {request}
           <span className="actions">
             {versions.map(group => <VersionSwitch key={group.versions[0]?.sessionId} versions={group} onVersion={onVersion} />)}
-            <CopyButton text={request} name="Copy request" />
-            {rowId !== null && <button type="button" className="copy edit" aria-label="Edit message" disabled={!canEdit} onClick={() => onEdit(rowId, request)}><Pencil /></button>}
-            {rowId !== null && <button type="button" className="copy branch" aria-label="Branch from here" disabled={!canBranch} onClick={() => onBranch(rowId)}><Fork /></button>}
+            <MessageActions acts={requestActs} />
           </span>
         </p>
       )}
       <div className="thread">
         {turn.nodes.map(node => (
-          <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} elapsed={end.kind === 'at' && end.tone === 'live' && end.nodeKey === node.key ? end.elapsed : null} open={open} onToggle={onToggle} onAnswer={onAnswer} helpers={helpers} />
+          <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} elapsed={end.kind === 'at' && end.tone === 'live' && end.nodeKey === node.key ? end.elapsed : null} open={open} onToggle={onToggle} onAnswer={onAnswer} onAskAgain={onAskAgain} helpers={helpers} />
         ))}
-        <End turnKey={turn.key} end={end} />
+        <End turnKey={turn.key} end={end} started={turn.nodes.length > 0} />
       </div>
       {turn.tokens !== null && <p className="used">{turn.tokens}</p>}
-      {(regenerates || movesToNewChat || reactions !== null) && (
+      {(movesToNewChat || reactions !== null || hasActs(replyActs)) && (
         <div className="turn-actions">
           {reactions !== null && <Given given={reactions.given} disabled={!canReact} onReact={emoji => onReact(reactions.turn, emoji)} />}
-          {regenerates && <button type="button" className="regenerate" disabled={!canRegenerate} onClick={() => onRegenerate(rowId, request)}>Regenerate</button>}
           {movesToNewChat && <button type="button" className="new-chat" onClick={() => onNewChat(request)}>Start a new chat</button>}
-          {reactions !== null && <Reactions given={reactions.given} disabled={!canReact} onReact={emoji => onReact(reactions.turn, emoji)} />}
+          <MessageActions acts={replyActs} />
         </div>
       )}
     </article>
@@ -361,15 +378,15 @@ export const RelayTurn = memo(function RelayTurn({ relay }: { readonly relay: Re
   const { name, state } = relay
   return (
     <article className="turn relay">
-      <p className="request">
+      <p className="request" data-find={fieldId(relay.id, 'request')}>
         {relay.text}
-        <span className="actions"><CopyButton text={relay.text} name="Copy request" /></span>
+        <span className="actions"><MessageActions acts={{ copy: { text: relay.text, name: 'Copy request' } }} /></span>
       </p>
       <div className="relay-reply" role="group" aria-label={name}>
         <p className="relay-from"><Avatar bot={relay} size={22} /><span>{name}</span></p>
         {state.s === 'waiting' && <p className="notice" role="status">Waiting for {name}</p>}
-        {state.s === 'answered' && <div className="prose"><Markdown source={state.reply} caret={false} nodeKey={relay.id} /><CopyButton text={state.reply} name="Copy reply" /></div>}
-        {state.s === 'failed' && <p className="err">{state.words}</p>}
+        {state.s === 'answered' && <><div className="prose"><Markdown source={state.reply} caret={false} nodeKey={relay.id} /></div><div className="turn-actions"><MessageActions acts={{ copy: { text: state.reply, name: 'Copy reply' } }} /></div></>}
+        {state.s === 'failed' && <p className="err" data-find={fieldId(relay.id, 'error')}>{state.words}</p>}
       </div>
     </article>
   )
@@ -430,6 +447,7 @@ interface ThreadProps {
   /** The answered side questions, in the order answered. */
   readonly sides: readonly SideRow[]
   readonly onAnswer: Answer
+  readonly onAskAgain: AskAgain
   readonly onAnswerRequest: RequestAnswer
   readonly onLoadEarlier: () => void
   readonly onFindClosed: () => void
@@ -450,10 +468,22 @@ interface ThreadProps {
   readonly helpers: HelperControls | null
 }
 
+type Found = BesideRow & { readonly after: TurnId | null }
+
+const relayFound = ({ id, after, text, state }: Relay): Found => ({
+  key: id, after, asked: text,
+  reply: state.s === 'answered' ? { kind: 'markdown', markdown: state.reply } : state.s === 'failed' ? { kind: 'error', words: state.words } : null
+})
+
+const sideFound = ({ id, after, asked, answer }: SideRow): Found => ({
+  key: `side:${id}`, after, asked,
+  reply: answer.s === 'answered' ? { kind: 'markdown', markdown: answer.markdown } : { kind: 'error', words: answer.message }
+})
+
 const landingOf = ({ versions, current }: Versions) => versions[current]?.landing
 const NO_GROUPS: readonly Versions[] = []
 
-export function Thread({ view, relays, sides, onAnswer, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, queue, canReact, onReact, helpers }: ThreadProps) {
+export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, queue, canReact, onReact, helpers }: ThreadProps) {
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
   const [changing, setChanging] = useState<Changing>(new Map())
@@ -484,7 +514,8 @@ export function Thread({ view, relays, sides, onAnswer, onAnswerRequest, onLoadE
   )
 
   const query = find?.query ?? ''
-  const matches = useMemo(() => findInThread(view, query, changing), [view, query, changing])
+  const findBeside = useMemo(() => placeByTurn([...relays.map(relayFound), ...sides.map(sideFound)], turnKeys), [relays, sides, turnKeys])
+  const matches = useMemo(() => findInThread(view, query, changing, findBeside), [view, query, changing, findBeside])
   const change = (key: string, question: string | null) => setChanging(held => {
     const next = new Map(held)
     if (question === null) next.delete(key)
@@ -498,7 +529,7 @@ export function Thread({ view, relays, sides, onAnswer, onAnswerRequest, onLoadE
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isCommandKey(event, 'f') || transcript.current?.checkVisibility() !== true) return
+      if (!isShortcut(event, 'find') || modalOpen() || transcript.current?.checkVisibility() !== true) return
       event.preventDefault()
       if (findInput.current === null) setFind(FIND_OPEN)
       else {
@@ -581,7 +612,7 @@ export function Thread({ view, relays, sides, onAnswer, onAnswerRequest, onLoadE
         {view.turns.map(turn => (
           <Fragment key={turn.key}>
             <Turn
-              turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer}
+              turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer} onAskAgain={onAskAgain}
               canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} canBranch={canBranch}
               onEdit={onEdit} onRegenerate={onRegenerate} onBranch={onBranch} onNewChat={onNewChat} versions={groupsAt(turn.rowId)} onVersion={onVersion}
               canReact={canReact} onReact={onReact} helpers={helpers}

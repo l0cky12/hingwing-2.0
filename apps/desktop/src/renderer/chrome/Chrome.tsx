@@ -1,13 +1,15 @@
 import { machineOf, shownChat, shownGroup, type Bot, type Link, type Target } from '@highwing/hermes/domain'
 import { useCallback, useEffect, useRef, type ReactNode, type Ref, type RefObject } from 'react'
 import type { WindowCommand } from '../../ipc-contract'
-import { detailsKeys, isCommandKey, isDetailsKey, MAC } from '../keys'
+import { detailsKeys, isShortcut, MAC } from '../keys'
+import { modalOpen } from '../shortcuts'
 import { CopyLink } from '../chat/Copy'
 import { Avatar } from '../bots/Avatar'
 import { BotPanel, useBotPanel } from '../bots/BotPanel'
 import { botIn } from '../bots/roster-view'
 import { openChatName } from '../chats/chat-list'
 import { GroupMembers } from '../groups/GroupThread'
+import { ComputerButton } from '../computer/Computer'
 import { faceOf } from '../groups/group-rows'
 import { newChatIn, newChatKeys } from '../new-chat'
 import { run, useTopic } from '../store'
@@ -32,7 +34,7 @@ function useNewChat(bar: RefObject<HTMLElement | null>) {
   const start = useCallback(() => void run(newChatIn(open, crypto.randomUUID())), [open])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isCommandKey(event, 'n') || bar.current?.checkVisibility() !== true) return
+      if (!isShortcut(event, 'newChat') || modalOpen() || bar.current?.checkVisibility() !== true) return
       event.preventDefault()
       if (!event.repeat) start()
     }
@@ -54,7 +56,7 @@ function useDetailsKey(bar: RefObject<HTMLElement | null>, bot: Bot | null, open
   useEffect(() => {
     if (bot === null) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isDetailsKey(event) || bar.current?.checkVisibility() !== true) return
+      if (!isShortcut(event, 'details') || bar.current?.checkVisibility() !== true) return
       event.preventDefault()
       if (!event.repeat && document.querySelector('dialog[open]') === null) void open(bot)
     }
@@ -72,7 +74,7 @@ function useOpenGroup() {
 }
 
 /** `target` is null in a fixture run, which has no connection to name or to change. */
-export function TopBar({ target, settingsButton }: { readonly target: Target | null; readonly settingsButton: RefObject<HTMLButtonElement | null> }) {
+export function TopBar({ target, settingsButton, onOpenTasks }: { readonly target: Target | null; readonly settingsButton: RefObject<HTMLButtonElement | null>; readonly onOpenTasks: () => void }) {
   const bar = useRef<HTMLElement>(null)
   const startChat = useNewChat(bar)
   const { bot, name, title } = useOpenChat()
@@ -81,6 +83,7 @@ export function TopBar({ target, settingsButton }: { readonly target: Target | n
   const pill = group === null ? bot : null
   useDetailsKey(bar, pill, open)
   const sessionId = shownChat(useTopic('open'))?.sessionId ?? null
+  const screen = useTopic('screen')
   const machine = target === null ? null : `on ${machineOf(target)}`
   const where = [group?.name ?? name, machine].filter(part => part !== null).join(' ')
   const keys = detailsKeys(MAC)
@@ -101,6 +104,8 @@ export function TopBar({ target, settingsButton }: { readonly target: Target | n
         {group === null
           ? <button type="button" aria-keyshortcuts={newChatKeys(MAC).aria} onClick={startChat}>New chat</button>
           : <GroupMembers faces={group.faces} />}
+        <button type="button" onClick={onOpenTasks}>Tasks</button>
+        {screen != null && <ComputerButton view={screen} />}
         {target !== null && <button ref={settingsButton} onClick={() => void run({ do: 'editTarget' })}>Settings</button>}
         {sessionId !== null && <CopyLink sessionId={sessionId} />}
       </Bar>

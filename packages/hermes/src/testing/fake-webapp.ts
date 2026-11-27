@@ -6,7 +6,7 @@
  * - `/auth/native/authorize` takes S256 only, and a redirect that is http to a loopback IP literal;
  * - a code works once, for 120 s, and only with the verifier of its challenge;
  * - a refresh token works once: each refresh returns a new pair and ends the old one;
- * - `/api/auth/ws-ticket` answers 401 without the bearer of a live sign-in;
+ * - `/api/auth/ws-ticket` and the kanban board answer 401 without the bearer of a live sign-in;
  * - the socket is behind the loopback gate: one single-use ticket, no `Origin`.
  * It has no sign-in page. Its user is `browse`, which follows the authorize address as the browser
  * of a user who signs in at once.
@@ -15,6 +15,7 @@ import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createServer } from 'node:https'
 import type { AddressInfo } from 'node:net'
+import { BOARD_PATH } from '../domain/tasks'
 import { parseGatewayUrl, type GatewayUrl, type UrlFailure } from '../domain/reach'
 import { TICKET_PREFIX, type Clock } from '../wire/link'
 import type { Front, Loopback } from './loopback'
@@ -226,7 +227,17 @@ export async function fakeWebapp(
       const ticket = (gateway.mint('host').protocols[1] as string).slice(TICKET_PREFIX.length)
       secrets.push(ticket)
       return { status: 200, json: { ticket, ttl_seconds: 30 } }
-    }
+    },
+    /** Hermes's speech upload (hermes_cli/web_routers/audio.py:89-150). This Hermes hears how many bytes it was sent. */
+    'POST /api/audio/transcribe': ({ bearer, body }) => {
+      if (bearer === null || ![...signIns.values()].includes(bearer)) return refused(401, 'Unauthorized')
+      const audio = /^data:audio\/[^,]*;base64,(.+)$/.exec(String(body.data_url ?? ''))?.[1]
+      return audio === undefined ? refused(400, 'Invalid audio payload') : { status: 200, json: { ok: true, transcript: `heard ${Buffer.from(audio, 'base64').byteLength} bytes`, provider: 'fake' } }
+    },
+    [`GET ${BOARD_PATH}`]: ({ bearer }) =>
+      bearer !== null && [...signIns.values()].includes(bearer)
+        ? { status: 200, json: { columns: [{ name: 'todo', tasks: [] }] } }
+        : { status: 401, json: { error: 'unauthenticated', detail: 'Unauthorized' } }
   }
 
   const serve = async (request: IncomingMessage, response: ServerResponse) => {

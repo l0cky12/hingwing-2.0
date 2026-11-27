@@ -1,9 +1,10 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { type FixtureStep, loadFixture } from '../src/testing/fixture'
+import { BOARD_PATH, taskPath } from '../src/domain/tasks'
+import { type FixtureStep, fixtureRead, loadFixture } from '../src/testing/fixture'
 import { checkParams } from '../src/testing/params'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 
@@ -155,6 +156,13 @@ describe('loadFixture', () => {
     expect(() => loadFixture(path)).toThrow(`${path}:1: "createWarnings" must be a list of strings`)
   })
 
+  it("takes every bot's deny rules as a list of strings", () => {
+    expect(loadFixture(write([{ ...header, deny: ['git push --force*'] }])).header.deny).toEqual(['git push --force*'])
+    expect(loadFixture(write([header])).header).not.toHaveProperty('deny')
+    const path = write([{ ...header, deny: [7] }])
+    expect(() => loadFixture(path)).toThrow(`${path}:1: "deny" must be a list of strings`)
+  })
+
   it("takes each bot's persona as text, and the title of a clash as words", () => {
     const loaded = loadFixture(write([{ ...header, souls: { rae: 'You write.' }, configureClash: 'Robin' }])).header
     expect([loaded.souls, loaded.configureClash]).toEqual([{ rae: 'You write.' }, 'Robin'])
@@ -162,6 +170,24 @@ describe('loadFixture', () => {
     expect(() => loadFixture(souls)).toThrow(`${souls}:1: "souls" must map a profile to its persona`)
     const clash = write([{ ...header, configureClash: ' ' }])
     expect(() => loadFixture(clash)).toThrow(`${clash}:1: "configureClash" must be the title another client writes`)
+  })
+
+  it('keeps the account usage, usage bars and insights replies a file cans, and refuses one that is not an object', () => {
+    const replies = { accountUsage: { lines: ['Acme Pro'], nous_route: false }, usageBars: { available: false }, insights: { days: 30, sessions: 4, messages: 9 } }
+    expect(loadFixture(write([{ ...header, ...replies }])).header).toMatchObject(replies)
+    expect(Object.keys(loadFixture(write([header])).header)).not.toContain('accountUsage')
+    const path = write([{ ...header, accountUsage: ['Acme Pro'] }])
+    expect(() => loadFixture(path)).toThrow(`${path}:1: "accountUsage" must be a session.account_usage reply`)
+  })
+
+  it('reads the memory entries a learning call answers, and refuses any other shape', () => {
+    const memory = { entries: [{ file: 'MEMORY.md', text: 'Prefers short answers.' }, { file: 'USER.md', text: 'Lives in Lisbon.' }], limits: { memory: 40 } }
+    expect(loadFixture(write([{ ...header, memory }])).header.memory).toEqual(memory)
+    expect(loadFixture(write([header])).header).not.toHaveProperty('memory')
+    for (const value of [{ entries: [{ file: 'NOTES.md', text: 'x' }] }, { entries: [{ file: 'MEMORY.md', text: ' ' }] }, { entries: [], limits: { disk: 1 } }, { entries: [], limits: { memory: 0 } }]) {
+      const path = write([{ ...header, memory: value }])
+      expect(() => loadFixture(path)).toThrow(`${path}:1: "memory" must be { entries, limits? } with each entry { file: "MEMORY.md" or "USER.md", text } and limits { memory?, user? }`)
+    }
   })
 
   it('reads what image.generate, llm.oneshot and the pet calls answer and the words a picture write fails with, and refuses any other shape', () => {
@@ -177,9 +203,26 @@ describe('loadFixture', () => {
       ['pets', { pets: [], thumbs: { tabby: 7 } }, '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'],
       ['assetFails', ' ', '"assetFails" must be the words a failed write gives'],
       ['oneshot', { text: 7 }, '"oneshot" must be { text?, error?, delay_ms? }'],
-      ['oneshot', { delay_ms: 'soon' }, '"oneshot" must be { text?, error?, delay_ms? }']
+      ['oneshot', { delay_ms: 'soon' }, '"oneshot" must be { text?, error?, delay_ms? }'],
+      ['connectors', { catalog: [], accounts: [], signInUrl: 'not a url' }, '"connectors" must be { catalog, accounts, signInUrl } with a unique slug on every app and an http(s) sign-in page']
     ] as const) {
       const path = write([{ ...header, [key]: value }])
+      expect(() => loadFixture(path)).toThrow(`${path}:1: ${words}`)
+    }
+  })
+
+  it('reads a connectors board and leaves it off a header that has none', () => {
+    const connectors = JSON.parse(readFileSync(fileURLToPath(new URL('../../../fixtures/connectors/two.json', import.meta.url)), 'utf8'))
+    expect(loadFixture(write([{ ...header, connectors }])).header.connectors).toEqual(connectors)
+    expect(loadFixture(write([header])).header).not.toHaveProperty('connectors')
+  })
+
+  it("reads each profile's password managers, and refuses a manager it does not know or a seed of another shape", () => {
+    const vault = { default: { bitwarden: { installed: true, password: 'pw', logins: ['github.com'] } }, research: {} }
+    expect(loadFixture(write([{ ...header, vault }])).header.vault).toEqual(vault)
+    const words = '"vault" must map a profile to { onepassword?, bitwarden? }, each { installed, enabled?, unlocked?, logins?, password?, refuses?, token?, listFails? }'
+    for (const value of [{ default: { keeper: { installed: true } } }, { default: { bitwarden: { enabled: true } } }, { default: { bitwarden: { installed: true, master: 'pw' } } }]) {
+      const path = write([{ ...header, vault: value }])
       expect(() => loadFixture(path)).toThrow(`${path}:1: ${words}`)
     }
   })
@@ -206,6 +249,31 @@ describe('loadFixture', () => {
       const path = write([{ ...header, media }])
       expect(() => loadFixture(path)).toThrow(`${path}:1: "media" must map a url or path to base64 bytes`)
     }
+  })
+
+  describe('kanban', () => {
+    const kanban = { board: { columns: [{ name: 'running', tasks: [{ id: 't_1', title: 'Sweep' }] }] }, tasks: { t_1: { events: [], runs: [] } } }
+
+    it('reads the kanban replies, and refuses a board the app could not read or tasks that are not by id', () => {
+      expect(loadFixture(write([{ ...header, kanban }])).header.kanban).toEqual(kanban)
+      expect(loadFixture(write([header])).header).not.toHaveProperty('kanban')
+      for (const bad of [[], 'x', { board: kanban.board }, { board: { columns: 'x' }, tasks: {} }, { board: kanban.board, tasks: [] }]) {
+        const path = write([{ ...header, kanban: bad }])
+        expect(() => loadFixture(path)).toThrow(`${path}:1: "kanban" must be { board, tasks }`)
+      }
+    })
+
+    it('answers the board, a card by its path, and a 404 for any other path', async () => {
+      const read = fixtureRead(kanban)
+      expect(await read(BOARD_PATH)).toEqual({ status: 200, body: kanban.board })
+      expect(await read(taskPath('t_1'))).toEqual({ status: 200, body: kanban.tasks.t_1 })
+      expect(await read(taskPath('t_9'))).toMatchObject({ status: 404 })
+      expect(await read('/api/status')).toMatchObject({ status: 404 })
+    })
+
+    it('answers 404 to every path when the fixture has no kanban, as a Hermes without the plugin does', async () => {
+      expect(await fixtureRead(undefined)(BOARD_PATH)).toMatchObject({ status: 404 })
+    })
   })
 
   it('reads the attachment limits a run sets, and refuses a limit that is not a number of bytes', () => {
@@ -255,6 +323,18 @@ describe('loadFixture', () => {
       const bad = write([{ ...header, relay: { rae: entry } }])
       expect(() => loadFixture(bad), JSON.stringify(entry)).toThrow(`${bad}:1: "relay" must map a profile to { reply, delay_ms? } or { refuse }`)
     }
+  })
+
+  it("reads how long each profile's turns take and whether Hermes lists live chats, and refuses a time or a flag of another kind", () => {
+    const turnMs = { 'dr-eggbot': 6000, research: 0 }
+    expect(loadFixture(write([{ ...header, turnMs, activeList: false }])).header).toMatchObject({ turnMs, activeList: false })
+    expect(loadFixture(write([header])).header).not.toHaveProperty('turnMs')
+    for (const ms of [-1, 1.5, '6000']) {
+      const bad = write([{ ...header, turnMs: { 'dr-eggbot': ms } }])
+      expect(() => loadFixture(bad), JSON.stringify(ms)).toThrow(`${bad}:1: "turnMs" must map a profile to a whole number of ms`)
+    }
+    const flag = write([{ ...header, activeList: 'no' }])
+    expect(() => loadFixture(flag)).toThrow(`${flag}:1: "activeList" must be true or false`)
   })
 
   it('reads the group chats of the home profile, and refuses a room that seats too few, too many or an unlisted profile, or a turn of no known shape', () => {

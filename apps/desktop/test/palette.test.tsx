@@ -1,9 +1,10 @@
-import type { BotId, CommandOutcome, GroupId, Link, OpenChat, Session, SessionId, SidebarRow, Target } from '@highwing/hermes/domain'
+import type { BotId, CommandOutcome, FoundMessage, GroupId, Link, OpenChat, Session, SessionId, SidebarRow, Target } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { NOT_NOW, OTHER_CONNECTION } from '../src/ipc-contract'
 import { ACTIONS, type ActionRow, type Scene } from '../src/renderer/palette/actions'
 import { Results } from '../src/renderer/palette/Palette'
+import { begin, NOT_SEARCHED, settle, type MessageSearch } from '../src/renderer/palette/messages'
 import { activeIn, comebackOf, GRADE, paletteOf, rank, step, type PaletteItem, type PaletteView } from '../src/renderer/palette/palette-view'
 import { APPROVED, fact, listed as listedBots } from './support/bots'
 
@@ -46,7 +47,7 @@ describe('ranking what the palette lists', () => {
     const scene = sceneOf([row('s1', 'New pricing page'), row('s2', 'Tidy the scans', { preview: 'Made a new folder for the scans.' })])
     const view = paletteOf(scene, 'new')
     expect(listed(view)).toEqual([['Actions', ['New chat']], ['Chats', ['New pricing page', 'Tidy the scans']]])
-    expect(activeIn(view, null)?.item.command).toEqual({ do: 'open', ref: { kind: 'new', bot: RESEARCH, draftId: 'draft-1' } })
+    expect(activeIn(view, null)?.item).toMatchObject({ command: { do: 'open', ref: { kind: 'new', bot: RESEARCH, draftId: 'draft-1' } } })
   })
 
   it('lists a chat for a word only its preview holds, with the preview under it', () => {
@@ -175,5 +176,67 @@ describe('a refused pick', () => {
       { ok: true, value: undefined }
     ]
     for (const answer of answers) expect(comebackOf(answer)).toBeNull()
+  })
+})
+
+describe('searching the words of messages', () => {
+  const said = (sessionId: string, rowId: number, text: string, more: Partial<FoundMessage> = {}): FoundMessage =>
+    ({ sessionId: sessionId as SessionId, bot: RESEARCH, chat: 'Sort the invoices', rowId, landing: 1, text, at: NOW - rowId * 60_000, ...more })
+  const INBOX = said('s2', 1, 'Sort the invoices in the inbox folder by due date.')
+  const REPLY = said('s2', 2, 'Sorted fourteen invoices by due date; the oldest is due Friday.')
+  const read = (messages: readonly FoundMessage[], reach: 'more' | 'all', unread = 0, from: MessageSearch = NOT_SEARCHED, at = 0): MessageSearch =>
+    settle(begin(from, at), at, { ok: true, value: { messages, reach, unread } })
+  const scene = sceneOf([SORT])
+
+  it('lists a message that holds every typed word under Messages, its chat as the title and its bot at the right', () => {
+    const view = paletteOf(scene, 'inbox due', read([INBOX, REPLY], 'all'))
+    expect(listed(view)).toEqual([['Messages', ['Sort the invoices', 'Searched all messages']]])
+    expect(activeIn(view, null)).toMatchObject({
+      excerpt: INBOX.text,
+      item: { kind: 'message', bot: 'Research', command: { do: 'open', ref: { kind: 'chat', sessionId: 's2' } }, landing: { sessionId: 's2', landing: 1 } }
+    })
+  })
+
+  it('matches the words of the message, not of its chat\'s title', () => {
+    expect(listed(paletteOf(sceneOf([]), 'sort', read([said('s9', 1, 'Tidy the scans')], 'all')))).toEqual({ show: 'note', words: 'No matches' })
+  })
+
+  it('starts a long message near the first word it matched', () => {
+    const long = said('s3', 4, 'We went through every folder on the shared drive last week and finally found the inbox rules.')
+    const view = paletteOf(scene, 'inbox', read([long], 'all'))
+    expect(view).toMatchObject({ sections: [{ rows: [{ excerpt: '…drive last week and finally found the inbox rules.' }, {}] }] })
+  })
+
+  it('cuts a long message to a short run of words around the match', () => {
+    const long = said('s4', 5, `Found the inbox rules. ${'More words follow here. '.repeat(20)}`)
+    const view = paletteOf(scene, 'inbox', read([long], 'all'))
+    const excerpt = view.show === 'rows' ? view.sections[0]?.rows[0]?.excerpt ?? '' : ''
+    expect(excerpt.startsWith('Found the inbox rules.')).toBe(true)
+    expect(excerpt.endsWith('…')).toBe(true)
+    expect(excerpt.length).toBe(161)
+  })
+
+  it('says it is searching while the first step reads, in place of "No matches"', () => {
+    expect(listed(paletteOf(scene, 'inbox', begin(NOT_SEARCHED, 0)))).toEqual([['Messages', ['Searching messages…']]])
+  })
+
+  it('offers older messages while a bot has more chats, and reads the next step when picked', () => {
+    const first = read([REPLY], 'more')
+    const view = paletteOf(scene, 'inbox', first)
+    expect(listed(view)).toEqual([['Messages', ['Search older messages']]])
+    expect(activeIn(view, null)?.item).toMatchObject({ kind: 'status', reads: 1 })
+    const both = read([INBOX], 'all', 0, first, 1)
+    expect(listed(paletteOf(scene, 'inbox', both))).toEqual([['Messages', ['Sort the invoices', 'Searched all messages']]])
+  })
+
+  it('says it searched only what it could read when a chat could not be read', () => {
+    expect(listed(paletteOf(scene, 'inbox', read([INBOX], 'all', 1)))).toEqual([['Messages', ['Sort the invoices', 'Searched all the messages Highwing could read']]])
+  })
+
+  it('shows Hermes\'s refusal with a way to read the same step again, and drops an answer for a step it no longer reads', () => {
+    const failed = settle(begin(NOT_SEARCHED, 0), 0, { ok: false, refusal: { kind: 'offline', message: "Highwing isn't connected to Hermes right now." } })
+    expect(paletteOf(scene, 'inbox', failed)).toMatchObject({ sections: [{ heading: 'Messages', rows: [{ item: { kind: 'status', title: "Highwing isn't connected to Hermes right now.", detail: 'Try again', reads: 0 } }] }] })
+    const reading = begin(failed, 0)
+    expect(settle(reading, 1, { ok: true, value: { messages: [INBOX], reach: 'all', unread: 0 } })).toBe(reading)
   })
 })
