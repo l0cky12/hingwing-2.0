@@ -11,6 +11,7 @@ describe('settingsViewOf with no search', () => {
     ['window', 'Window', 'What closing Highwing’s window does.', ['on-close']],
     ['notifications', 'Notifications', 'Which desktop notifications Highwing shows.', ['notice-asks', 'notice-replies', 'notice-jobs']],
     ['passwords', 'Password managers', 'The 1Password and Bitwarden logins each bot can use.', ['passwords']],
+    ['skills', 'Skills', 'The skills the open bot can use, and which of them are on.', ['skills']],
     ['permissions', 'Permissions', 'How Hermes asks before it runs a command.', ['permissions']],
     ['keys', 'Keyboard shortcuts', 'Each shortcut, and where in Highwing it works.', ['shortcuts', ...SHORTCUTS.map(({ id }) => `key:${id}`)]],
     ['usage', 'Usage', 'What this Hermes reports of its use.', ['usage']],
@@ -87,6 +88,7 @@ describe('settingsViewOf with a search', () => {
     ['scheduled', ['notice-jobs']],
     ['bitwarden', ['passwords']],
     ['approved', ['permissions']],
+    ['skill.md', ['skills']],
     ['show all', ['shortcuts']],
     ['version', ['about-app', 'about-hermes']]
   ] as const)('finds %j by each of its words, wherever they sit in a row', (query, rows) => {

@@ -93,6 +93,10 @@ export interface Fixture {
     readonly createWarnings?: readonly string[]
     /** profile -> its SOUL.md, the persona `profiles.describe` answers. A profile not here has none. */
     readonly souls?: { readonly [profile: string]: string }
+    /** profile -> its installed skills: `description` is what the catalog says, `body` its SKILL.md. Absent: every profile has none. */
+    readonly skills?: { readonly [profile: string]: readonly { readonly name: string; readonly description: string; readonly body: string; readonly enabled?: boolean }[] }
+    /** Another client turns that skill on or off afterMs after the first `profiles.describe` of the profile, and Hermes pushes `skills.changed`. */
+    readonly skillsElsewhere?: { readonly profile: string; readonly name: string; readonly enabled: boolean; readonly afterMs: number }
     /**
      * The first `profiles.configure` that writes `ui_meta` finds another client renamed the bot to this title just before,
      * one revision on, as Hermes's revision check would.
@@ -606,6 +610,16 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (createWarnings !== undefined && !(Array.isArray(createWarnings) && createWarnings.every(warning => typeof warning === 'string'))) return '"createWarnings" must be a list of strings'
   const { souls, configureClash } = value
   if (souls !== undefined && !(isObject(souls) && Object.values(souls).every(soul => typeof soul === 'string'))) return '"souls" must map a profile to its persona'
+  const { skills, skillsElsewhere } = value
+  const isSkill = (skill: unknown) => isObject(skill) && typeof skill.name === 'string' && skill.name !== '' && typeof skill.description === 'string' && typeof skill.body === 'string'
+    && (skill.enabled === undefined || typeof skill.enabled === 'boolean')
+  if (skills !== undefined && !(isObject(skills) && Object.values(skills).every(listed => Array.isArray(listed) && listed.every(isSkill)))) {
+    return '"skills" must map a profile to a list of { name, description, body, enabled? }'
+  }
+  if (skillsElsewhere !== undefined && !(isObject(skillsElsewhere) && typeof skillsElsewhere.profile === 'string' && typeof skillsElsewhere.name === 'string'
+    && typeof skillsElsewhere.enabled === 'boolean' && Number.isSafeInteger(skillsElsewhere.afterMs) && (skillsElsewhere.afterMs as number) >= 0)) {
+    return '"skillsElsewhere" must be { profile, name, enabled, afterMs }'
+  }
   const clashTitle = isObject(configureClash) ? configureClash.title : configureClash
   const clashTimes = isObject(configureClash) ? configureClash.times : 1
   if (configureClash !== undefined && (typeof clashTitle !== 'string' || clashTitle.trim() === '' || !Number.isSafeInteger(clashTimes) || (clashTimes as number) < 1)) {
@@ -690,7 +704,9 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(controls === undefined ? {} : { controls: controls as Record<string, string> }),
     ...(profiles === undefined ? {} : { profiles }),
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
-    ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
+    ...(souls === undefined ? {} : { souls: souls as Record<string, string> }),
+    ...(skills === undefined ? {} : { skills: skills as NonNullable<Fixture['header']['skills']> }),
+    ...(skillsElsewhere === undefined ? {} : { skillsElsewhere: skillsElsewhere as NonNullable<Fixture['header']['skillsElsewhere']> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
     ...(assetFails === undefined ? {} : { assetFails }),
     ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }), ...(vault === undefined ? {} : { vault }),
     ...(connectors === undefined ? {} : { connectors }),

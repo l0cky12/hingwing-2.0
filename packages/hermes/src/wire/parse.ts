@@ -26,7 +26,7 @@ import type { Said, TreeRow } from '../domain/versions'
 import type {
   AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
   CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
-  CommandDispatchResult, CommandsCatalogResult, CronJobRow, CronManageResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
+  CommandDispatchResult, CommandsCatalogResult, CronJobRow, CronManageResult, LearningDetailResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
   ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, ImageGenerateResult, LoopSnapshot,
   McpRuntimeStatus, McpServersListResult, McpServersStatusResult, McpServersTestResult, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
   MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PetGalleryResult, PetThumbResult,
@@ -62,6 +62,8 @@ export type ParsedEvent =
    * Hermes saying anything may have moved (tui_gateway/change_watcher.py:434-441).
    */
   | { readonly scope: 'groups'; readonly rooms: readonly GroupId[] | 'all' }
+  /** `skills.changed`: a skill root or the disabled set changed, so the library and the `/` list are stale. */
+  | { readonly scope: 'skills' }
   /**
    * A session event with no session id, or a frame with no stream position.
    * Never guessed into a session, because one socket serves many of them. Counted as `unrouted`.
@@ -515,7 +517,7 @@ export const UNSHOWN: ReadonlySet<string> = new Set([
   'pet.hatch.progress', 'platforms.changed', 'preview.restart.complete',
   'preview.restart.progress', 'projects.changed', 'reaction',
   'review.summary', 'session.reclaimed', 'session.resume_progress',
-  'setup.ready', 'skills.changed', 'skin.changed', 'terminal.close', 'tip.show', 'tool.output_risk', 'voice.interrupted', 'voice.partial', 'voice.status', 'voice.transcript', 'wake.detected'
+  'setup.ready', 'skin.changed', 'terminal.close', 'tip.show', 'tool.output_risk', 'voice.interrupted', 'voice.partial', 'voice.status', 'voice.transcript', 'wake.detected'
 ])
 
 /**
@@ -581,6 +583,7 @@ export function parseEvent(params: unknown): ParsedEvent {
   if (!isObject(params) || typeof params.type !== 'string' || params.type === '') return { scope: 'unrouted', type: '', why: 'not an event' }
   const { type, session_id: id, payload } = params
   if (type === 'sessions.changed' || type === 'cron.changed') return { scope: 'app', event: type }
+  if (type === 'skills.changed') return { scope: 'skills' }
   if (type === 'groups.changed') return { scope: 'groups', rooms: roomsMoved(payload) }
   if (typeof id !== 'string' || id === '') return { scope: 'unrouted', type, why: 'no session id' }
   const sessionId = id as SessionId
@@ -1210,6 +1213,13 @@ export function parseBots(reply: CanonicalProfilesResult): readonly BotFacts[] {
  * (tui_gateway/methods_profiles.py:524-528). `revision` is null for a Hermes whose rows carry no `ui_meta_revisions`,
  * which predates the per-key check.
  */
+/** The bot whose profile lives at `home`, as `profile_name_for_home` matches a home to a profile (hermes_constants.py:374-394). null: none does. */
+export function parseBotAt(reply: CanonicalProfilesResult, home: string): BotId | null {
+  const trimmed = (path: string) => path.replace(/\/+$/, '')
+  const row = profileRows(reply).find(held => isString(held.path) && trimmed(held.path) === trimmed(home))
+  return row === undefined ? null : row.name as BotId
+}
+
 export function parseBotRecord(reply: CanonicalProfilesResult, bot: BotId): { readonly name: string; readonly meta: Obj; readonly revision: number | null } | null {
   const row = profileRows(reply).find(held => held.name === bot)
   if (row === undefined) return null
@@ -1242,6 +1252,26 @@ export function parseConfigured(reply: ProfilesConfigureResult, sent: readonly s
   if (isObject(applied.ui_meta_conflicts) && Object.keys(applied.ui_meta_conflicts).length > 0) return { is: 'clash' }
   const sections = sent.filter(section => applied[section] !== true)
   return sections.length === 0 ? { is: 'saved' } : { is: 'unsaved', sections }
+}
+
+/** `profiles.describe` lists every installed skill of the profile, `enabled` unless it is in the profile's disabled list. */
+export const parseSkillStates = (described: ProfilesDescribeResult): readonly { readonly name: string; readonly enabled: boolean }[] =>
+  (Array.isArray(described.skills) ? described.skills : []).flatMap(row => (isObject(row) && isString(row.name) && row.name !== '' ? [{ name: row.name, enabled: row.enabled !== false }] : []))
+
+/** The SKILL.md `learning.detail` answers, or null when Hermes says it has none. */
+export const parseSkillText = (reply: LearningDetailResult): string | null => (isObject(reply) && reply.ok === true && isString(reply.content) ? reply.content : null)
+
+/** The `description:` of a SKILL.md's frontmatter as one line. A block scalar (`>` or `|`) is its indented lines joined. */
+export function descriptionOf(markdown: string): string {
+  const head = /^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown)?.[1] ?? ''
+  const lines = head.split(/\r?\n/)
+  const at = lines.findIndex(line => line.startsWith('description:'))
+  if (at < 0) return ''
+  const value = (lines[at] as string).slice('description:'.length).trim()
+  if (!/^[>|][+-]?$/.test(value)) return value.replace(/^(["'])(.*)\1$/, '$2')
+  const block = lines.slice(at + 1)
+  const end = block.findIndex(line => !/^\s/.test(line))
+  return block.slice(0, end < 0 ? block.length : end).map(line => line.trim()).join(' ').trim()
 }
 
 /** `profiles.get_asset`'s picture as the data URL Hermes builds (tui_gateway/methods_profiles.py:451-465), or null for none. */

@@ -36,7 +36,7 @@ beforeEach(() => {
   seen.segmented = []
 })
 
-const PAGE_ORDER = ['Connection', 'Appearance', 'Window', 'Notifications', 'Password managers', 'Permissions', 'Keyboard shortcuts', 'Usage', 'About']
+const PAGE_ORDER = ['Connection', 'Appearance', 'Window', 'Notifications', 'Password managers', 'Skills', 'Permissions', 'Keyboard shortcuts', 'Usage', 'About']
 const cardsOf = (html: string) => Array.from(html.matchAll(/<section([^>]*)>/g), ([, attributes], at) => `${PAGE_ORDER[at]}${attributes!.includes(' hidden=""') ? ' (hidden)' : ''}`)
 const titleId = (html: string) => /<h2 id="([^"]*)"/.exec(html)![1]
 

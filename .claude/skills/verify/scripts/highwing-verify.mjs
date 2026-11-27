@@ -530,6 +530,16 @@ const STEPS = {
       if (held !== value) throw new Error(`${role} "${name}" has aria-pressed ${JSON.stringify(held)}, not ${value}`)
     }
   },
+  switched: {
+    arity: 3,
+    run: async (ctx, role, name, value) => {
+      if (value !== 'on' && value !== 'off') throw new Error(`switched takes "on" or "off", not "${value}"`)
+      const locator = byRole(ctx.page, role, name)
+      const read = async () => `${(await locator.isEnabled({ timeout: ctx.timeout })) ? 'enabled' : 'disabled'} ${(await locator.isChecked({ timeout: ctx.timeout })) ? 'on' : 'off'}`
+      const held = await poll(ctx, read, found => found === `enabled ${value}`)
+      if (held !== `enabled ${value}`) throw new Error(`${role} "${name}" is ${held}, not enabled ${value}`)
+    }
+  },
   avatar: {
     arity: 2,
     run: async (ctx, name, drawn) => {
@@ -1238,13 +1248,15 @@ function withEdits(fixturePath, { dropAfter, models, catalog, connectors, guarde
   if (guarded) header.guarded = guarded.split(',')
   if (usage) header.usage = JSON.parse(readFileSync(resolve(process.cwd(), usage), 'utf8'))
   if (profiles) {
-    const { chats, relay, souls, groups, cron, turn_ms: turnMs, ...reply } = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
+    const { chats, relay, souls, groups, cron, skills, skillsElsewhere, turn_ms: turnMs, ...reply } = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
     header.profiles = reply
     if (chats !== undefined) header.chats = chats
     if (relay !== undefined) header.relay = relay
     if (turnMs !== undefined) header.turnMs = turnMs
     if (souls !== undefined) header.souls = souls
     if (groups !== undefined) header.groups = groups
+    if (skills !== undefined) header.skills = skills
+    if (skillsElsewhere !== undefined) header.skillsElsewhere = skillsElsewhere
     if (cron !== undefined) header.cron = cron
   }
   if (paths) header.paths = JSON.parse(readFileSync(resolve(process.cwd(), paths), 'utf8'))

@@ -2,12 +2,13 @@ import { refusalOf } from './actor'
 import { GENERATED_MAX_BYTES, MARK_SETS, PICTURE_RULE, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotId, type BotMark, type PetChoice } from './domain/bots'
 import type { Command, ModelMenu, Outcome, Refusal } from './domain/command'
 import type { BotManagers } from './domain/passwords'
+import type { Skill } from './domain/skills'
 import type { Added, ServerSetup, Tested, ToolServer } from './domain/tool-servers'
 import { NOT_CONNECTED } from './open'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
 import {
-  parseBotManagers, parseBotRecord, parseConfigured, parseCreated, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets, parsePicture, parseTested,
-  parseToolServers, type Configured
+  descriptionOf, parseBotAt, parseBotManagers, parseBotRecord, parseCatalog, parseConfigured, parseCreated, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets,
+  parsePicture, parseSkillStates, parseSkillText, parseTested, parseToolServers, type Configured
 } from './wire/parse'
 
 type Wire = Pick<Connection, 'call' | 'as'>
@@ -183,6 +184,63 @@ export const generatePicture = (conn: Wire, prompt: string): Promise<Outcome<str
 
 export const listPets = (conn: Wire): Promise<Outcome<readonly PetChoice[]>> =>
   guarded(PET_REASONS, async () => ({ ok: true, value: parsePets(await conn.call('pet.gallery', {})) }))
+
+const SKILL_REASONS: Reasons = { [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't list skills from Highwing." }), [NO_PROFILE]: () => GONE.refusal }
+
+type SkillWire = Pick<Connection, 'call' | 'as' | 'home'>
+
+const UNNAMED: Outcome<never> = { ok: false, refusal: { kind: 'unsupported', message: "This Hermes doesn't say which bot it runs as." } }
+
+/** The bot the gateway runs as. `profiles.describe` needs a name, so `bot` null reads that one. */
+const launchBot = async (conn: SkillWire): Promise<BotId | null> =>
+  conn.home === null ? null : parseBotAt(await conn.call('profiles.list', LIST_ROWS), conn.home)
+
+/** `learning.detail` takes only an id and reads the gateway's own profile (agent/learning_mutations.py:151-159), so only the launch bot's skills can be read. */
+const skillMarkdown = async (conn: SkillWire, name: string): Promise<string> => parseSkillText(await conn.call('learning.detail', { id: name })) ?? ''
+
+/** A skill's description is the catalog's, which lists enabled skills only. One the catalog skips (a disabled one) has the `description:` of its own SKILL.md on the launch bot, and none on another. */
+export const readSkills = (conn: SkillWire, bot: BotId | null): Promise<Outcome<readonly Skill[]>> =>
+  guarded(SKILL_REASONS, async () => {
+    const [launch, catalog] = await Promise.all([
+      launchBot(conn),
+      (bot === null ? conn : conn.as(bot)).call('commands.catalog', {}).then(parseCatalog).catch(() => [])
+    ])
+    const profile = bot ?? launch
+    if (profile === null) return UNNAMED
+    const described = await conn.call('profiles.describe', { name: profile })
+    const said = new Map(catalog.flatMap(entry => (entry.kind === 'skill' ? [[entry.name.toLowerCase(), entry.description] as const] : [])))
+    const skills = await Promise.all(parseSkillStates(described).map(async ({ name, enabled }) => ({
+      name, enabled, description: said.get(name.toLowerCase()) ?? (profile === launch ? descriptionOf(await skillMarkdown(conn, name).catch(() => '')) : '')
+    })))
+    return { ok: true, value: skills.sort((a, b) => a.name.localeCompare(b.name)) }
+  })
+
+export const skillText = (conn: SkillWire, bot: BotId | null, name: string): Promise<Outcome<string>> =>
+  guarded({}, async () => {
+    const launch = await launchBot(conn)
+    if (launch === null || (bot ?? launch) !== launch) return { ok: false, refusal: { kind: 'unsupported', message: "This Hermes can show only the SKILL.md files of the bot it runs as." } }
+    const text = parseSkillText(await conn.call('learning.detail', { id: name }))
+    return text === null ? { ok: false, refusal: { kind: 'rejected', message: `Hermes has no SKILL.md for ${name}.` } } : { ok: true, value: text }
+  })
+
+const SKILL_GONE: Outcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Hermes no longer has this skill.' } }
+
+/**
+ * Hermes replaces the profile's disabled list whole, so it is sent as the list Hermes gives now with this one skill moved.
+ * Hermes saves an essential skill as on and still says it saved (hermes_cli/skills_config.py:43-47), so the skill is read back.
+ */
+export const setSkill = (conn: SkillWire, bot: BotId | null, name: string, enabled: boolean): Promise<Outcome> =>
+  guarded(SKILL_REASONS, async () => {
+    const profile = bot ?? await launchBot(conn)
+    if (profile === null) return UNNAMED
+    const states = async () => parseSkillStates(await conn.call('profiles.describe', { name: profile }))
+    const skills = await states()
+    if (!skills.some(skill => skill.name === name)) return SKILL_GONE
+    const disabled = skills.filter(skill => (skill.name === name ? !enabled : !skill.enabled)).map(skill => skill.name)
+    const configured = parseConfigured(await conn.call('profiles.configure', { name: profile, disabled_skills: disabled }), ['skills'])
+    const kept = configured.is === 'saved' && (await states()).find(skill => skill.name === name)?.enabled === enabled
+    return kept ? DONE : { ok: false, refusal: { kind: 'rejected', message: `Hermes kept ${name} ${enabled ? 'off' : 'on'}.` } }
+  })
 
 /** Hermes fetches a sheet only from petdex (agent/pet/store.py:240), so a `url` the window names reaches no other host. */
 export const petPicture = (conn: Wire, slug: string, url: string | null): Promise<Outcome<string | null>> =>

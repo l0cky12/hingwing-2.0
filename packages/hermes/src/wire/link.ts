@@ -197,6 +197,7 @@ export class Offline extends Error {}
  * `learning.frames`, `learning.detail`, `learning.edit` and `learning.delete` reach the same legacy handlers
  * (tui_gateway/methods_tools.py). None of them takes `profile`: Hermes rejects the key, and a write changes
  * the home the socket was launched with. A -32601 from one means this Hermes cannot edit memory.
+ * `learning.detail` also reads a skill's SKILL.md from the gateway's own profile (tui_gateway/methods_tools.py:1361-1366).
  * `usage.bars` and `insights.get` are the legacy usage reads. A -32601 from one means this Hermes does not serve that read.
  * The canonical route serves every `groups.*` method (`GROUP_METHODS`, gateway/session_group_controls.py:15-35), though of
  * the calls Highwing makes the contract lists only `groups.create` as canonical (tui_gateway/contracts/canonical_projections.py:126). A -32601 from `groups.capabilities` means this Hermes has no group chats.
@@ -254,6 +255,8 @@ export interface Connection {
    */
   readonly clarifyBatch: boolean
   readonly creation: { readonly sources: readonly string[]; readonly parameters: readonly string[] } | null
+  /** The home of the profile the gateway runs as, `runtime.describe`'s `profile_id` (gateway/session_controls.py:582). null while not online. */
+  readonly home: string | null
   retryNow(request: { readonly start: boolean }): void
   close(): void
 }
@@ -292,7 +295,7 @@ type Creation = NonNullable<Connection['creation']>
 type Phase =
   | { readonly at: 'dialing'; readonly attempt: number }
   | { readonly at: 'handshake'; readonly attempt: number; readonly socket: WireSocket; readonly giveUp: () => void }
-  | { readonly at: 'online'; readonly attempt: number; readonly socket: WireSocket; readonly since: number; readonly creation: Creation; readonly clarifyBatch: boolean; readonly heartbeat: { stop(): void } }
+  | { readonly at: 'online'; readonly attempt: number; readonly socket: WireSocket; readonly since: number; readonly creation: Creation; readonly home: string; readonly clarifyBatch: boolean; readonly heartbeat: { stop(): void } }
   | { readonly at: 'waiting'; readonly attempt: number; readonly retryAt: number; readonly why: WaitingWhy; readonly message: string; readonly cancel: () => void }
   | { readonly at: 'blocked'; readonly why: BlockedWhy; readonly message: string }
   | { readonly at: 'closed' }
@@ -431,7 +434,7 @@ export function connect(
       phase.giveUp()
       const { sources, parameters } = described.session_create
       const clarifyBatch = able?.canonical_clarify_batch === true
-      enter({ at: 'online', attempt: phase.attempt, socket, since: clock.now(), creation: { sources, parameters }, clarifyBatch, heartbeat: beat(socket) })
+      enter({ at: 'online', attempt: phase.attempt, socket, since: clock.now(), creation: { sources, parameters }, home: described.profile_id, clarifyBatch, heartbeat: beat(socket) })
       events.onOnline()
     } catch (error) {
       if (error instanceof RpcRefusal) lost(socket, tooOld)
@@ -497,6 +500,7 @@ export function connect(
     get link() { return link },
     get reach() { return phase.at === 'online' ? phase.socket.reach : null },
     get creation() { return phase.at === 'online' ? phase.creation : null },
+    get home() { return phase.at === 'online' ? phase.home : null },
     get clarifyBatch() { return clarifyBatch() },
     call: callAs(null),
     as: bot => ({ get link() { return link }, get clarifyBatch() { return clarifyBatch() }, call: callAs(bot), respond }),

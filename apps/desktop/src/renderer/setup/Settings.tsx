@@ -9,6 +9,7 @@ import { Bubble, ConnectionCard, line, Monitor, Moon, People, Segmented, Server,
 import { PasswordManagers } from './PasswordManagers'
 import type { CardSetup } from './screens'
 import { PAGES, settingsViewOf, whereOf, type Check, type Page, type RowId } from './settings-view'
+import { Skills } from './Skills'
 import { usageNeedsRead, usageView, type UsageAsk } from './usage-view'
 
 const Contrast = () => <svg {...line(16, 1.8)}><circle cx="12" cy="12" r="8.5" /><path d="M12 7a5 5 0 0 1 0 10z" fill="currentColor" /></svg>
@@ -18,6 +19,7 @@ const Search = () => <svg {...line(16, 1.8)}><circle cx="11" cy="11" r="7" /><pa
 const WindowIcon = () => <svg {...line(16, 1.8)}><rect x="3" y="4" width="18" height="16" rx="2.5" /><path d="M3 9h18" /></svg>
 const Bell = () => <svg {...line(16, 1.8)}><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></svg>
 const Key = () => <svg {...line(16, 1.8)}><circle cx="8" cy="15" r="4" /><path d="m11 12 8.5-8.5M16 7l2.5 2.5M14 9l2 2" /></svg>
+const Spark = () => <svg {...line(16, 1.8)}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.5 2.5M15.2 15.2l2.5 2.5M6.3 17.7l2.5-2.5M15.2 8.8l2.5-2.5" /></svg>
 const Shield = () => <svg {...line(16, 1.8)}><path d="M12 3 5 5.8v5.4c0 4.4 3 8 7 9.8 4-1.8 7-5.4 7-9.8V5.8z" /></svg>
 const Gauge = () => <svg {...line(16, 1.8)}><path d="M4 18a8 8 0 1 1 16 0" /><path d="m12 18 4-5" /></svg>
 const Info = () => <svg {...line(16, 1.8)}><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5M12 8h.01" /></svg>
@@ -25,8 +27,8 @@ const Quit = () => <svg {...line(15, 1.9)}><path d="M10 7V6a2 2 0 0 1 2-2h6a2 2 
 const Tray = () => <svg {...line(15, 1.9)}><rect x="4" y="4" width="16" height="11" rx="2" /><path d="M3 20h18" /></svg>
 
 const PAGE_ICONS: { readonly [P in Page]: () => ReactNode } = {
-  connection: () => <Server size={16} width={1.8} />, appearance: Contrast, window: WindowIcon, notifications: Bell, passwords: Key, permissions: Shield, keys: Keyboard,
-  usage: Gauge, about: Info
+  connection: () => <Server size={16} width={1.8} />, appearance: Contrast, window: WindowIcon, notifications: Bell, passwords: Key, skills: Spark, permissions: Shield,
+  keys: Keyboard, usage: Gauge, about: Info
 }
 
 const SIDEBAR: readonly Segment<Mode>[] = [
@@ -222,6 +224,7 @@ export function Settings({ setup, mode, theme, onRequestClose, onShowShortcuts }
     notifications: <div className="card rows"><NoticeRows off={off} /></div>,
     // Mounted only while shown: each asks Hermes as it mounts.
     passwords: shown('passwords') && <PasswordManagers labelledBy={`${ids}-passwords`} />,
+    skills: shown('skills') && <Skills />,
     permissions: (
       <div className="card rows">
         <div className="row" hidden={off('permissions')}>

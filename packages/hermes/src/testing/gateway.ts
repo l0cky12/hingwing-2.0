@@ -61,6 +61,8 @@ export const RING_FRAMES = 512
 export const ABNORMAL_CLOSE = 1006
 
 type Obj = Readonly<Record<string, unknown>>
+/** Skills Hermes never turns off, dropped from any off list it saves (agent/skill_utils.py:278). */
+const ESSENTIAL_SKILLS: ReadonlySet<string> = new Set(['hermes-agent'])
 type Params = Obj & { readonly seq: number }
 type PushStep = Extract<FixtureStep, { push: unknown }>
 
@@ -791,10 +793,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   /** gateway/session_discovery.py:8-35 */
   'commands.catalog': (gateway, _socket, params, routed) => {
     const { catalog } = gateway.fixture.header
-    if (catalog === undefined) throw new Refused('unknown_method', { code: -32601, message: 'unknown method: commands.catalog', data: { reason: 'unknown_method' } })
+    if (catalog === undefined && gateway.fixture.header.skills === undefined) throw new Refused('unknown_method', { code: -32601, message: 'unknown method: commands.catalog', data: { reason: 'unknown_method' } })
     if (!strings(['session_id', 'profile'])(params)) throw new Refused('invalid_params')
     if (params.session_id !== undefined && params.session_id !== '') gateway.authorize(params, routed)
-    return catalog
+    return gateway.withSkills(isObject(catalog) ? catalog : {}, isText(params.profile) ? params.profile : null)
   },
   /**
    * gateway/session_controls.py:505-569: a create ends in a resume of the session, and a titled one
@@ -881,7 +883,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'pet.thumb': (gateway, socket, params) => gateway.petThumb(socket, params),
   /** tui_gateway/methods_tools.py binds these to agent/learning_mutations.py. A profile key is not one of their params. */
   'learning.frames': (gateway, socket) => gateway.learning('learning.frames', socket).frames(),
-  'learning.detail': (gateway, socket, params) => gateway.learning('learning.detail', socket).detail(typeof params.id === 'string' ? params.id : ''),
+  // A `memory:` id names a memory entry. Any other names a skill of the profile the gateway runs as (agent/learning_mutations.py:139-159).
+  'learning.detail': (gateway, socket, params) => (gateway.readsSkill(params)
+    ? gateway.skillDetail(params)
+    : gateway.learning('learning.detail', socket).detail(typeof params.id === 'string' ? params.id : '')),
   'learning.edit': (gateway, socket, params) => gateway.learning('learning.edit', socket).edit(typeof params.id === 'string' ? params.id : '', typeof params.content === 'string' ? params.content : ''),
   'learning.delete': (gateway, socket, params) => gateway.learning('learning.delete', socket).remove(typeof params.id === 'string' ? params.id : ''),
   /** tui_gateway/methods_tools.py:1470-1612 */
@@ -1029,6 +1034,9 @@ export class ScriptedGateway {
   private approvals: ApprovalMode | null
   private readonly profiles: Obj[]
   private readonly souls: Map<string, string>
+  /** profile -> its installed skills, each turned on or off as `profiles.configure` last left it. */
+  private readonly skills: Map<string, { readonly name: string; readonly description: string; readonly body: string; enabled: boolean }[]>
+  private skillsElsewhere: Fixture['header']['skillsElsewhere']
   private readonly pictures = new Map<string, { readonly mime: string; readonly size: number; readonly data: string }>()
   private memory: MemoryBook | null = null
   private readonly thumbsRefused = new Set<string>()
@@ -1100,6 +1108,8 @@ export class ScriptedGateway {
     const botChats = new Set(this.botChats.values())
     this.seeded = seededChats.filter(chat => !botChats.has(chat))
     this.souls = new Map(Object.entries(fixture.header.souls ?? {}))
+    this.skills = new Map(Object.entries(fixture.header.skills ?? {}).map(([profile, listed]) => [profile, listed.map(skill => ({ ...skill, enabled: skill.enabled !== false }))]))
+    this.skillsElsewhere = fixture.header.skillsElsewhere
     const clash = fixture.header.configureClash
     this.clash = clash === undefined ? undefined : typeof clash === 'string' ? { title: clash, left: 1 } : { title: clash.title, left: clash.times }
     const served = this.profiles.flatMap(row => (isText(row.name) ? [row.name] : []))
@@ -2033,11 +2043,59 @@ export class ScriptedGateway {
   describeProfile(socket: Socket, params: Obj): unknown {
     const row = this.profiles[this.profileAt(socket, 'profiles.describe', params)] as Obj
     const name = row.name as string
-    return {
+    const described = {
       name, description: typeof row.description === 'string' ? row.description : '', soul: this.souls.get(name) ?? '',
       model: { provider: isText(row.provider) ? row.provider : '', default: isText(row.model) ? row.model : '' },
-      skills: [], toolsets: [], toolsets_pinned: false, mcp_servers: []
+      skills: (this.skills.get(name) ?? []).map(({ name: skill, enabled }) => ({ name: skill, enabled })), toolsets: [], toolsets_pinned: false, mcp_servers: []
     }
+    this.playSkillsElsewhere(name)
+    return described
+  }
+
+  /** The catalog lists a profile's enabled skills only (agent/skill_commands.py:381-392), each a pair and a `skills` key. */
+  withSkills(catalog: Obj, profile: string | null): Obj {
+    const enabled = (this.skills.get(profile ?? this.home) ?? []).filter(skill => skill.enabled)
+    if (enabled.length === 0) return catalog
+    const pairs = Array.isArray(catalog.pairs) ? catalog.pairs : []
+    const skills = isObject(catalog.skills) ? catalog.skills : {}
+    return {
+      ...catalog,
+      pairs: [...pairs, ...enabled.map(skill => [`/${skill.name}`, skill.description])],
+      skills: { ...skills, ...Object.fromEntries(enabled.map(skill => [`/${skill.name}`, {}])) }
+    }
+  }
+
+  readsSkill(params: Obj): boolean {
+    return this.fixture.header.skills !== undefined && !(typeof params.id === 'string' && params.id.startsWith('memory:'))
+  }
+
+  /** Hermes refuses a key the contract lacks before the handler runs (tui_gateway/rpc_dispatch.py:24-28), and `learning.detail` takes only `id`. */
+  skillDetail(params: Obj): unknown {
+    if (this.fixture.header.skills === undefined) throw unknownMethod('learning.detail')
+    if (Object.keys(params).some(key => key !== 'id')) throw new Refused('invalid_params', { code: 4000, message: 'invalid params for learning.detail: extra inputs are not permitted' })
+    const id = typeof params.id === 'string' ? params.id : ''
+    const { describe } = this.fixture.header
+    const trimmed = (path: unknown) => (typeof path === 'string' ? path.replace(/\/+$/, '') : path)
+    const launch = this.profiles.find(row => isObject(describe) && trimmed(row.path) === trimmed(describe.profile_id))?.name
+    const skill = (this.skills.get(isText(launch) ? launch : this.home) ?? []).find(listed => listed.name === id)
+    return skill === undefined ? { ok: false, message: `skill '${id}' not found` } : { ok: true, kind: 'skill', id, label: id, content: skill.body }
+  }
+
+  /** Hermes broadcasts `skills.changed` when a skill root or the disabled set moves (tui_gateway/change_watcher.py:444-468). */
+  private skillsChanged(): void {
+    for (const socket of this.sockets) socket.peer.write({ jsonrpc: '2.0', method: 'event', params: { type: 'skills.changed', payload: {} } })
+  }
+
+  private playSkillsElsewhere(profile: string): void {
+    const elsewhere = this.skillsElsewhere
+    if (elsewhere === undefined || elsewhere.profile !== profile) return
+    this.skillsElsewhere = undefined
+    this.options.clock.setTimeout(() => {
+      const skill = this.skills.get(profile)?.find(listed => listed.name === elsewhere.name)
+      if (skill === undefined) return
+      skill.enabled = elsewhere.enabled
+      this.skillsChanged()
+    }, elsewhere.afterMs)
   }
 
   /** Each section is applied on its own, and `applied` reports each one sent (tui_gateway/methods_profiles.py:387-410). */
@@ -2052,6 +2110,14 @@ export class ScriptedGateway {
     if (typeof params.description === 'string') {
       this.patchRow(at, { description: params.description.trim() })
       applied.description = true
+    }
+    if (Array.isArray(params.disabled_skills)) {
+      const disabled = new Set(params.disabled_skills.filter(isText).map(name => name.toLowerCase()).filter(name => !ESSENTIAL_SKILLS.has(name)))
+      const skills = this.skills.get(this.profiles[at]?.name as string) ?? []
+      const moved = skills.filter(skill => skill.enabled === disabled.has(skill.name.toLowerCase()))
+      for (const skill of moved) skill.enabled = !skill.enabled
+      applied.skills = true
+      if (moved.length > 0) this.skillsChanged()
     }
     return { ok: Object.values(applied).every(Boolean), applied }
   }
