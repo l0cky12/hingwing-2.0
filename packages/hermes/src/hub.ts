@@ -33,6 +33,7 @@ export { checkTarget, type CheckOptions, type CheckResult } from './wire/check'
 export { gatewaysByUrl, memoryKeep, type GatewayDeps, type Gateways, type Keep, type UrlCheckResult } from './wire/gateways'
 export { DialError } from './wire/link'
 export { remoteRoute, type Route } from './wire/remote'
+export { sshRead, type RemoteRead } from './wire/ssh'
 export { liveDialer } from './wire/tickets'
 
 /** A value that changes. `subscribe` calls back on every change, not for the current value. */

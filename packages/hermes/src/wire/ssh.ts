@@ -119,6 +119,26 @@ export async function sshExec(host: SshHost, args: HermesArgs, options: SshOptio
   return { ok: true, code: run.code, stdout: run.stdout }
 }
 
+/** The most of a far file Highwing reads. */
+export const READ_CAP = 10 * 1024 * 1024
+/**
+ * Prints the file named by stdin's first line, and at most one byte past the cap. A literal, as the hermes
+ * commands are: the path reaches `read` as data, never a shell's parser. Exit 3: there is no such file.
+ */
+export const READ_FILE = `sh -c 'IFS= read -r path || exit 3; [ -f "$path" ] || exit 3; exec head -c ${READ_CAP + 1} -- "$path"'`
+
+export type RemoteRead = { readonly ok: true; readonly text: string } | { readonly ok: false; readonly why: SshFailure | 'missing' | 'too-big' }
+
+/** Reads one file on the far machine as UTF-8 text. A path with a newline can't go as one line, so no file answers to it. */
+export async function sshRead(host: SshHost, path: string, options: SshOptions): Promise<RemoteRead> {
+  if (/[\n\0]/.test(path)) return { ok: false, why: 'missing' }
+  const run = await runTool(options.sshBin ?? 'ssh', [...SSH_OPTIONS, host, READ_FILE], { ...options, input: `${path}\n` })
+  if (run.end === 'missing') return { ok: false, why: 'ssh-missing' }
+  if (run.end === 'cut' || run.code === SSH_FAILED) return { ok: false, why: sshFailureOf(run.stderr) }
+  if (run.code !== 0) return { ok: false, why: 'missing' }
+  return Buffer.byteLength(run.stdout) > READ_CAP ? { ok: false, why: 'too-big' } : { ok: true, text: run.stdout }
+}
+
 export type ProbeFailure = SshFailure | 'hermes-not-found' | 'hermes-too-old'
 export type Probe =
   /** `interactive`: this Hermes mints the ticket that opens one socket for every profile. */

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseSshHost } from '../src/domain/reach'
-import { ASK_INTERACTIVE, ATTACH, attachedOf, HERMES_PATHS, PROBE, probeOf, relay, remoteHermes, runTool, SERVE, servedOf, SSH_OPTIONS, sshFailureOf } from '../src/wire/ssh'
+import { ASK_INTERACTIVE, ATTACH, attachedOf, HERMES_PATHS, PROBE, probeOf, READ_CAP, relay, remoteHermes, runTool, SERVE, servedOf, SSH_OPTIONS, sshFailureOf, sshRead } from '../src/wire/ssh'
 import { manualClock, settle } from '../src/testing/clock'
 
 describe('sshFailureOf', () => {
@@ -202,6 +202,40 @@ describe('runTool', () => {
     life.abort()
     expect(await run).toEqual({ end: 'cut', stderr: '' })
     expect(await runTool('/bin/sh', ['-c', 'echo ran'], { deadlineMs: 5_000, signal: life.signal })).toEqual({ end: 'cut', stderr: '' })
+  })
+})
+
+describe('sshRead, through an ssh that runs its command with sh', () => {
+  const root = mkdtempSync(join(tmpdir(), 'highwing-read-'))
+  const ssh = join(root, 'ssh')
+  writeFileSync(ssh, '#!/bin/sh\nfor arg; do last=$arg; done\nexec /bin/sh -c "$last"\n', { mode: 0o755 })
+  const host = parseSshHost('hermes-host')!
+  const read = (path: string, sshBin = ssh) => sshRead(host, path, { sshBin, deadlineMs: 5_000, signal: new AbortController().signal })
+
+  it('reads a file whose path a shell would expand, and runs none of it', async () => {
+    const page = join(root, "it's $(touch pwned) `touch pwned`.html")
+    writeFileSync(page, '<title>Report</title>\n')
+    expect(await read(page)).toEqual({ ok: true, text: '<title>Report</title>\n' })
+    expect(existsSync(join(root, 'pwned'))).toBe(false)
+  })
+
+  it('says missing for no file, a folder, or a path no line can carry', async () => {
+    expect(await read(join(root, 'gone.html'))).toEqual({ ok: false, why: 'missing' })
+    expect(await read(root)).toEqual({ ok: false, why: 'missing' })
+    expect(await read(`${join(root, 'a')}\n${join(root, 'b')}`, join(root, 'no-ssh'))).toEqual({ ok: false, why: 'missing' })
+  })
+
+  it('refuses a file over the cap', async () => {
+    const big = join(root, 'big.html')
+    writeFileSync(big, 'x'.repeat(READ_CAP + 1))
+    expect(await read(big)).toEqual({ ok: false, why: 'too-big' })
+  })
+
+  it('names what ssh itself failed at', async () => {
+    const denied = join(root, 'denied')
+    writeFileSync(denied, '#!/bin/sh\necho "hermes-host: Permission denied (publickey)." >&2\nexit 255\n', { mode: 0o755 })
+    expect(await read(join(root, 'x.html'), denied)).toEqual({ ok: false, why: 'ssh-denied' })
+    expect(await read(join(root, 'x.html'), join(root, 'no-ssh'))).toEqual({ ok: false, why: 'ssh-missing' })
   })
 })
 
