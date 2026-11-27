@@ -220,7 +220,7 @@ describe('parseEvent outside the happy path', () => {
   })
 
   it('covers every generated event type as shown, for the window, unshown or app-wide', () => {
-    const unlisted = GATEWAY_EVENT_TYPES.filter(type => !(type in SHOWN) && !(type in FOR_WINDOW) && !UNSHOWN.has(type) && !['app', 'groups'].includes(parseEvent({ type }).scope))
+    const unlisted = GATEWAY_EVENT_TYPES.filter(type => !(type in SHOWN) && !(type in FOR_WINDOW) && !UNSHOWN.has(type) && !['app', 'groups', 'cron'].includes(parseEvent({ type }).scope))
     expect(unlisted).toEqual([])
     expect([...Object.keys(SHOWN), ...Object.keys(FOR_WINDOW)].filter(type => UNSHOWN.has(type))).toEqual([])
   })

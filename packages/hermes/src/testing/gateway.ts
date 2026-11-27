@@ -9,7 +9,7 @@ import type { SessionEvent } from '../domain/reduce'
 import { APPROVAL_MODES, type ApprovalMode } from '../domain/session'
 import { GATEWAY_PROTOCOL, type Clock, type Reach } from '../wire/link'
 import { parseEvent } from '../wire/parse'
-import { MASKED, type ChatSeed, type Fixture, type FixtureStep, type Reads } from './fixture'
+import { MASKED, type ChatSeed, type CronJobs, type Fixture, type FixtureStep, type Reads } from './fixture'
 import { checkParams } from './params'
 import { ScriptedRooms } from './rooms'
 
@@ -830,6 +830,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   /** tui_gateway/methods_images.py:57-96 */
   'image.generate': (gateway, socket, params) => gateway.generate(socket, params),
   'llm.oneshot': (gateway, socket) => gateway.oneshot(socket),
+  /** tui_gateway/methods_tools.py:1311-1325 */
+  'cron.manage': (gateway, socket, params) => gateway.cronList(socket, params),
   /** tui_gateway/methods_session.py:1467-1495 */
   'pet.gallery': (gateway, socket) => gateway.petGallery(socket),
   /** tui_gateway/methods_session.py:1557-1563 */
@@ -989,6 +991,7 @@ export class ScriptedGateway {
   private readonly storyIsBotChatOf: string | null
   private readonly afterReply: (() => void)[] = []
   private readonly sockets = new Set<Socket>()
+  private cronJobs: CronJobs | null = null
   private readonly stagedImages = new Set<string>()
   private readonly rooms: ScriptedRooms | null
   private drop: Drop
@@ -1913,6 +1916,29 @@ export class ScriptedGateway {
     const cap = Math.min(isInt(params.max_bytes) && params.max_bytes > 0 ? params.max_bytes : 8_000_000, 16_000_000)
     const fits = images.picture !== undefined && Buffer.from(images.picture.slice(images.picture.indexOf(',') + 1), 'base64').byteLength <= cap
     return after(images.delay_ms, { available: true, success: true, image: '/hermes-home/cache/images/generated.png', ...(fits ? { image_data: images.picture } : {}) })
+  }
+
+  /**
+   * `cron.manage` `list` of the `profile` store, `scoped` to it as Hermes answers, paused jobs only when asked for. The
+   * first list starts the header's `later`.
+   */
+  cronList(socket: Socket, params: Obj): unknown {
+    const { cron } = this.fixture.header
+    if (cron === undefined || socket.reach === 'profile') throw unknownMethod('cron.manage')
+    if (params.action !== 'list') throw refusedProfile(4016, `unknown cron action: ${String(params.action)}`)
+    if (this.cronJobs === null) {
+      this.cronJobs = cron.jobs
+      const { later } = cron
+      if (later !== undefined) {
+        this.options.clock.setTimeout(() => {
+          this.cronJobs = later.jobs
+          for (const each of this.sockets) each.peer.write({ jsonrpc: '2.0', method: 'event', params: { type: 'cron.changed', payload: {} } })
+        }, later.after_ms)
+      }
+    }
+    const profile = isText(params.profile) ? params.profile : this.home
+    const jobs = (this.cronJobs[profile] ?? []).filter(job => params.include_disabled === true || (isObject(job) && job.enabled !== false))
+    return { success: true, count: jobs.length, jobs, ...(isText(params.profile) ? { scoped: params.profile } : {}) }
   }
 
   /** `llm.oneshot` (tui_gateway/methods_session.py:1249-1276), which a socket with no interactive grant does not reach. */

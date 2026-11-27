@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { DONE, refused, SessionActor, type Upload } from './actor'
 import { activityDesk, busyOf, type Attached } from './activity'
-import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, petPicture, setBotPicture } from './bot-admin'
+import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, listRoutines, markBot, petPicture, setBotPicture } from './bot-admin'
 import type { BotActivities, UnreadChat } from './domain/activity'
 import { botsIn, MARK_SETS, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
@@ -74,6 +74,8 @@ export interface Hermes {
    * asking every 2 s on a Hermes that does not push.
    */
   readonly groupChat: Feed<GroupChat | null>
+  /** Moves on each `cron.changed` and each new socket, so a shown list of routines asks again. */
+  readonly cron: Feed<number>
   /**
    * Which bots are working, waiting on the user, or hold a reply no window has shown. Read from the
    * attached chats, and on a socket that reaches every profile from each bot's live chats, asked
@@ -228,6 +230,7 @@ export function openHermes(options: HermesOptions): Hermes {
     gap: parsed => actors.get(parsed.sessionId)?.feed({ in: 'gap' }),
     app: refreshSoon,
     groups: parsed => book.moved(parsed.rooms),
+    cron: () => cron.set(cron.get() + 1),
     unrouted: parsed => count('unrouted', parsed.type)
   }
 
@@ -247,6 +250,7 @@ export function openHermes(options: HermesOptions): Hermes {
       roster.ask()
       book.online()
       activities.poll()
+      cron.set(cron.get() + 1)
     },
     onEvent: params => {
       const parsed = parseEvent(params)
@@ -256,6 +260,7 @@ export function openHermes(options: HermesOptions): Hermes {
   }, { startOnLaunch: options.startGatewayOnLaunch ?? true, clock })
 
   const link = feed<Link>(conn.link)
+  const cron = feed(0)
   const slash = feed<SlashCatalog>([], sameCatalog)
   let catalogReads = 0
   let catalogRead: Promise<void> = Promise.resolve()
@@ -509,6 +514,7 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'renameGroup') return book.rename(command.group, command.name)
     if (command.do === 'deleteGroup') return book.disband(command.group)
     if (command.do === 'describeBot') return describeBot(conn, command.bot)
+    if (command.do === 'routines') return listRoutines(conn, command.bot)
     if (command.do === 'botPicture') return botPicture(conn, command.bot)
     if (command.do === 'canGeneratePicture') return canGeneratePicture(conn)
     if (command.do === 'generatePicture') return generatePicture(conn, command.prompt)
@@ -549,6 +555,7 @@ export function openHermes(options: HermesOptions): Hermes {
     groups,
     groupChat,
     activity,
+    cron,
     watch,
     run: command => run(command) as Promise<Outcome<ResultOf<typeof command>>>,
     close: async () => {

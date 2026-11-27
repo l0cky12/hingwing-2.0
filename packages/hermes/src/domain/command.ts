@@ -2,6 +2,7 @@ import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId, BotMark, Marked,
 import type { GroupDraft, GroupId } from './groups'
 import type { ChatRef, Unstarted } from './open'
 import type { PathMatch } from './path'
+import type { Routine } from './routines'
 import type { ChatVersions } from './versions'
 import type {
   AdmissionId, ApprovalMode, AttachmentId, BranchId, BusyMode, CheckpointId, ContextFill, ControlAction, Effort, HelperId, InputId, ModelOption, ModelRef, ProcessId, PromptId,
@@ -107,6 +108,8 @@ export type Command =
   /** The models a bot's chat could use, with no chat open. null: the socket's own profile, which a new bot copies its credentials from. */
   | { readonly do: 'botModels'; readonly bot: BotId | null }
   | { readonly do: 'describeBot'; readonly bot: BotId }
+  /** The jobs Hermes runs on a schedule for the bot, paused ones included. Read on each ask. */
+  | { readonly do: 'routines'; readonly bot: BotId }
   /**
    * One save of the details dialog, then the roster is asked for again. `revision` is the one `describeBot` answered:
    * a rename refused because the name changed elsewhere since is a `conflict`.
@@ -197,6 +200,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'models' | 'botModels' } ? ModelMenu
   : C extends { do: 'createBot' } ? BotCreated
   : C extends { do: 'describeBot' } ? BotDetails
+  : C extends { do: 'routines' } ? readonly Routine[]
   : C extends { do: 'botPicture' | 'petPicture' } ? string | null
   : C extends { do: 'canGeneratePicture' } ? boolean
   : C extends { do: 'generatePicture' | 'retitle' } ? string

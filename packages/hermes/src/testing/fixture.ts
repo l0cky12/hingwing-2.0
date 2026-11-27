@@ -101,6 +101,8 @@ export interface Fixture {
     readonly images?: Images
     /** What `llm.oneshot` answers. Absent: the gateway refuses it as an unknown method, as a Hermes without it does, and so does a socket bound to one profile. */
     readonly oneshot?: Oneshot
+    /** What `cron.manage` `list` answers. Absent: the gateway refuses it as an unknown method, as a Hermes without it does, and so does a socket bound to one profile. */
+    readonly cron?: Cron
     /** What `pet.gallery` and `pet.thumb` answer. Absent: the gateway refuses both as unknown methods, as a Hermes without pets does. */
     readonly pets?: Pets
     /** `'profile'`: play a Hermes with no `interactive` ticket, whose every socket is bound to the home profile. Default `'host'`. */
@@ -160,6 +162,16 @@ export interface Images { readonly available: boolean; readonly picture?: string
 
 /** What `llm.oneshot` answers: `text` as the model wrote it (default empty) after `delay_ms` (default 0), or a failure with `error` in its words. */
 export interface Oneshot { readonly text?: string; readonly error?: string; readonly delay_ms?: number }
+
+/**
+ * `jobs`: each profile's cron jobs as `cron.manage` lists them (cron/job_args.py:476-511). `later`: `after_ms` after the
+ * first list, its `jobs` replace these and every socket gets `cron.changed`, as Hermes's watcher sends when jobs.json moves.
+ */
+export interface Cron {
+  readonly jobs: CronJobs
+  readonly later?: { readonly after_ms: number; readonly jobs: CronJobs }
+}
+export type CronJobs = { readonly [profile: string]: readonly unknown[] }
 
 /**
  * `pets`: the gallery's entries as Hermes sends them. `thumbs`: slug -> the PNG data URL `pet.thumb` answers for a pet the
@@ -349,6 +361,10 @@ const isImages = (value: unknown): value is Images =>
 const isOneshot = (value: unknown): value is Oneshot =>
   isObject(value) && (value.text === undefined || typeof value.text === 'string') && (value.error === undefined || typeof value.error === 'string') && delay(value.delay_ms)
 
+const isCronJobs = (value: unknown): value is CronJobs => isObject(value) && Object.values(value).every(jobs => Array.isArray(jobs) && jobs.every(isObject))
+const isCron = (value: unknown): value is Cron =>
+  isObject(value) && isCronJobs(value.jobs) && (value.later === undefined || (isObject(value.later) && value.later.after_ms !== undefined && delay(value.later.after_ms) && isCronJobs(value.later.jobs)))
+
 const isPets = (value: unknown): value is Pets =>
   isObject(value) && Array.isArray(value.pets) && isObject(value.thumbs) && Object.values(value.thumbs).every(thumb => typeof thumb === 'string') && delay(value.delay_ms)
   && (value.refused_once === undefined || (Array.isArray(value.refused_once) && value.refused_once.every(slug => typeof slug === 'string')))
@@ -432,9 +448,10 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   const { assetFails } = value
   if (assetFails !== undefined && (typeof assetFails !== 'string' || assetFails.trim() === '')) return '"assetFails" must be the words a failed write gives'
-  const { images, pets, oneshot } = value
+  const { images, pets, oneshot, cron } = value
   if (images !== undefined && !isImages(images)) return '"images" must be { available, picture?, error?, delay_ms? }'
   if (oneshot !== undefined && !isOneshot(oneshot)) return '"oneshot" must be { text?, error?, delay_ms? }'
+  if (cron !== undefined && !isCron(cron)) return '"cron" must be { jobs, later?: { after_ms, jobs } } with "jobs" mapping a profile to its job rows'
   if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
@@ -496,7 +513,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
     ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
     ...(assetFails === undefined ? {} : { assetFails }),
-    ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }),
+    ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }), ...(cron === undefined ? {} : { cron }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),

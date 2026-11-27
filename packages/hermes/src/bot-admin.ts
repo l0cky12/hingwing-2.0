@@ -1,10 +1,11 @@
 import { refusalOf } from './actor'
 import { GENERATED_MAX_BYTES, MARK_SETS, PICTURE_RULE, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotId, type BotMark, type PetChoice } from './domain/bots'
 import type { ModelMenu, Outcome, Refusal } from './domain/command'
+import type { Routine } from './domain/routines'
 import { NOT_CONNECTED } from './open'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
 import {
-  parseBotRecord, parseConfigured, parseCreated, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets, parsePicture, type Configured
+  parseBotRecord, parseConfigured, parseCreated, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets, parsePicture, parseRoutines, type Configured
 } from './wire/parse'
 
 type Wire = Pick<Connection, 'call' | 'as'>
@@ -32,6 +33,10 @@ const DRAW_REASONS: Reasons = {
 }
 const PET_REASONS: Reasons = {
   [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't list pets." })
+}
+
+const ROUTINE_REASONS: Reasons = {
+  [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't list routines." })
 }
 
 const GONE: Outcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Hermes no longer has this bot.' } }
@@ -75,6 +80,14 @@ export const describeBot = (conn: Wire, bot: BotId): Promise<Outcome<BotDetails>
     const [described, listed] = await Promise.all([conn.call('profiles.describe', { name: bot }), conn.call('profiles.list', LIST_ROWS)])
     const details = parseDetails(described, listed, bot)
     return details === null ? GONE : { ok: true, value: details }
+  })
+
+/** `profile` reaches the bot's own cron store, and paused jobs are listed only when asked for (tui_gateway/methods_tools.py:1311-1325). */
+export const listRoutines = (conn: Wire, bot: BotId): Promise<Outcome<readonly Routine[]>> =>
+  guarded(ROUTINE_REASONS, async () => {
+    const reply = await conn.call('cron.manage', { action: 'list', include_disabled: true, profile: bot })
+    if (reply.success === false) return { ok: false, refusal: { kind: 'rejected', message: `Hermes couldn't list routines: ${reply.error ?? 'no reason given'}` } }
+    return { ok: true, value: parseRoutines(reply, bot) }
   })
 
 const SECTION_WORDS: { readonly [section: string]: string } = { ui_meta: 'name', description: 'description', soul: 'persona' }

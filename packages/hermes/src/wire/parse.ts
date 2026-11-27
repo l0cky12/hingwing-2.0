@@ -16,13 +16,14 @@ import type {
   SessionUsage, SettledTurn, SideId, SidebarRow, SideTask, StatusAbout, ToolId, ToolResult, TurnId
 } from '../domain/session'
 import type { PathMatch } from '../domain/path'
+import type { Routine } from '../domain/routines'
 import type { RelayState } from '../domain/relay'
 import { OWN_COMMANDS, type SlashCatalog, type SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
 import type {
   AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
   CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
-  CommandDispatchResult, CommandsCatalogResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
+  CommandDispatchResult, CommandsCatalogResult, CronJobRow, CronManageResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
   ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, ImageGenerateResult, LoopSnapshot,
   MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
   MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PetGalleryResult, PetThumbResult,
@@ -58,6 +59,8 @@ export type ParsedEvent =
    * Hermes saying anything may have moved (tui_gateway/change_watcher.py:434-441).
    */
   | { readonly scope: 'groups'; readonly rooms: readonly GroupId[] | 'all' }
+  /** `cron.changed`: Hermes's cron store moved, so a shown list of routines is asked for again (tui_gateway/change_watcher.py:460). */
+  | { readonly scope: 'cron' }
   /**
    * A session event with no session id, or a frame with no stream position.
    * Never guessed into a session, because one socket serves many of them. Counted as `unrouted`.
@@ -505,7 +508,7 @@ export const UNSHOWN: ReadonlySet<string> = new Set([
   /** Every canonical turn publishes it (`gateway/run_turn_progress.py:1092`); not in the generated contract. */
   'agent.step',
   'agent.terminal.output', 'billing.step_up.verification', 'bot_relay.outbox.pending',
-  'browser.progress', 'cron.changed', 'display.install.done',
+  'browser.progress', 'display.install.done',
   'display.install.log', 'display.lease', 'display.status', 'free_tier.challenge', 'gateway.ready',
   'message.reaction', 'notice', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
   'pet.hatch.progress', 'platforms.changed', 'preview.restart.complete',
@@ -578,6 +581,7 @@ export function parseEvent(params: unknown): ParsedEvent {
   const { type, session_id: id, payload } = params
   if (type === 'sessions.changed') return { scope: 'app', event: 'sessions.changed' }
   if (type === 'groups.changed') return { scope: 'groups', rooms: roomsMoved(payload) }
+  if (type === 'cron.changed') return { scope: 'cron' }
   if (typeof id !== 'string' || id === '') return { scope: 'unrouted', type, why: 'no session id' }
   const sessionId = id as SessionId
   if (type === 'session.replay_gap') return { scope: 'gap', sessionId }
@@ -1233,6 +1237,28 @@ export function parseConfigured(reply: ProfilesConfigureResult, sent: readonly s
   if (isObject(applied.ui_meta_conflicts) && Object.keys(applied.ui_meta_conflicts).length > 0) return { is: 'clash' }
   const sections = sent.filter(section => applied[section] !== true)
   return sections.length === 0 ? { is: 'saved' } : { is: 'unsaved', sections }
+}
+
+const BOT_TAG = /^\[bot:([a-z0-9][a-z0-9_-]*)\]\s*/i
+
+/**
+ * `cron.manage` `list` for one bot. A reply `scoped` to the bot holds only its jobs. An older gateway ignores `profile`
+ * and lists the launch profile's store, where a job is the bot's only when its name is tagged `[bot:<id>]`, and an
+ * untagged one is the default bot's. That is Hermes desktop's rule (apps/desktop/src/plugins/hermes-bots/cron.tsx:75, :216-228).
+ */
+export function parseRoutines(reply: CronManageResult, bot: BotId): readonly Routine[] {
+  const scoped = isString(reply.scoped) && canonicalBotId(reply.scoped) === bot
+  return (Array.isArray(reply.jobs) ? reply.jobs : []).flatMap(raw => {
+    const job = usable(() => {
+      const row = fields<CronJobRow>(raw)
+      return { id: row.str('job_id'), name: row.optStr('name') ?? '', schedule: row.optStr('schedule') ?? '', paused: row.optStr('state') === 'paused' || row.optBool('enabled') === false }
+    })
+    if (job === null) return []
+    const tag = BOT_TAG.exec(job.name)
+    if (!scoped && canonicalBotId(tag?.[1] ?? 'default') !== bot) return []
+    const name = job.name.slice(tag?.[0].length ?? 0).trim()
+    return [{ ...job, name: name === '' ? job.id : name }]
+  })
 }
 
 /** `profiles.get_asset`'s picture as the data URL Hermes builds (tui_gateway/methods_profiles.py:451-465), or null for none. */
