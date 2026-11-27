@@ -2,7 +2,7 @@ import type { Hermes } from '@highwing/hermes'
 import type { BotId, CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
 import {
   CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
-  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type OnClose, type PictureChoice, type PictureFile, type Push, type SessionPatch, type StageResult,
+  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type Notices, type OnClose, type PictureChoice, type PictureFile, type Push, type SessionPatch, type StageResult,
   type SidebarWidth, type Snoozes, type Tail, type Theme, type Topic
 } from '../ipc-contract'
 import { basename } from 'node:path'
@@ -47,7 +47,7 @@ const NEVER: Source = () => () => {}
 /** The pane's side of a window: its topic, its commands, and the files a window previews. */
 export type PreviewOwner = Pick<PreviewPane, 'preview' | 'show' | 'run'>
 type Shown<T> = Pick<PreferenceStore<T>, 'get' | 'subscribe' | 'set'>
-export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme>; readonly sidebarWidth: Shown<SidebarWidth>; readonly snoozes: Shown<Snoozes>; readonly onClose: Shown<OnClose> }
+export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme>; readonly sidebarWidth: Shown<SidebarWidth>; readonly snoozes: Shown<Snoozes>; readonly notices: Shown<Notices>; readonly onClose: Shown<OnClose> }
 interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner; readonly preferences: Preferences; readonly intro: Pick<IntroOwner, 'intro'> }
 
 /** A Hermes topic is bound to the connection that is live when the window asks. A window that sees a new epoch asks again. */
@@ -61,6 +61,7 @@ const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source 
   theme: ({ preferences }) => current(preferences.theme),
   sidebarWidth: ({ preferences }) => current(preferences.sidebarWidth),
   snoozes: ({ preferences }) => current(preferences.snoozes),
+  notices: ({ preferences }) => current(preferences.notices),
   onClose: ({ preferences }) => current(preferences.onClose),
   intro: ({ intro }) => current(intro.intro),
   link: onHermes(hermes => current(hermes.link)),
@@ -221,6 +222,10 @@ export function serveWindows(
     }
     if (command.do === 'snooze') {
       preferences.snoozes.set(snoozed(preferences.snoozes.get(), command, Date.now()))
+      return DONE
+    }
+    if (command.do === 'setNotice') {
+      preferences.notices.set({ ...preferences.notices.get(), [command.kind]: command.on })
       return DONE
     }
     if (command.do === 'examples' || command.do === 'done') {

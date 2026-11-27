@@ -1,6 +1,6 @@
 import { shownChat } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import type { Mode, OnClose, Theme } from '../../ipc-contract'
+import type { Mode, NoticeKind, OnClose, Theme } from '../../ipc-contract'
 import { Bar } from '../chrome/Chrome'
 import { MAC } from '../keys'
 import { run, useTopic } from '../store'
@@ -18,6 +18,12 @@ const THEMES: readonly Segment<Theme>[] = [
   { value: 'system', label: 'System', icon: <Monitor /> },
   { value: 'light', label: 'Light', icon: <Sun /> },
   { value: 'dark', label: 'Dark', icon: <Moon /> }
+]
+
+const NOTICE_ROWS: readonly { readonly kind: NoticeKind; readonly label: string; readonly desc: string }[] = [
+  { kind: 'asks', label: 'Approvals and questions', desc: 'When a bot waits on you in a chat you aren’t looking at.' },
+  { kind: 'replies', label: 'Finished replies', desc: 'When a reply ends in a chat you aren’t looking at.' },
+  { kind: 'jobs', label: 'Scheduled jobs', desc: 'When a scheduled job finishes.' }
 ]
 
 const icon = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true } as const
@@ -43,6 +49,7 @@ const panel = (render: (props: PanelProps) => ReactNode) => render
 function General({ mode, theme, onShowShortcuts }: { readonly mode: Mode; readonly theme: Theme; readonly onShowShortcuts: () => void }) {
   const ids = useId()
   const onClose = useTopic('onClose') ?? 'quit'
+  const notices = useTopic('notices')
   return (
     <>
       <section className="group" aria-labelledby={`${ids}-appearance`}>
@@ -59,6 +66,27 @@ function General({ mode, theme, onShowShortcuts }: { readonly mode: Mode; readon
           </div>
         </div>
       </section>
+      {notices !== undefined && (
+        <section className="group" aria-labelledby={`${ids}-notices`}>
+          <h3 id={`${ids}-notices`}>Notifications</h3>
+          <div className="card">
+            {NOTICE_ROWS.map(({ kind, label, desc }) => (
+              <div key={kind} className="row">
+                <div className="text">
+                  <p className="label" id={`${ids}-${kind}`}>{label}</p>
+                  <p className="desc" id={`${ids}-${kind}-desc`}>{desc}</p>
+                </div>
+                <div className="control">
+                  <input
+                    type="checkbox" role="switch" checked={notices[kind]} aria-labelledby={`${ids}-${kind}`} aria-describedby={`${ids}-${kind}-desc`}
+                    onChange={() => void run({ do: 'setNotice', kind, on: !notices[kind] })}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       <section className="group" aria-labelledby={`${ids}-passwords`}>
         <h3 id={`${ids}-passwords`}>Password managers</h3>
         <PasswordManagers labelledBy={`${ids}-passwords`} />

@@ -1238,13 +1238,14 @@ function withEdits(fixturePath, { dropAfter, models, catalog, connectors, guarde
   if (guarded) header.guarded = guarded.split(',')
   if (usage) header.usage = JSON.parse(readFileSync(resolve(process.cwd(), usage), 'utf8'))
   if (profiles) {
-    const { chats, relay, souls, groups, turn_ms: turnMs, ...reply } = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
+    const { chats, relay, souls, groups, cron, turn_ms: turnMs, ...reply } = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
     header.profiles = reply
     if (chats !== undefined) header.chats = chats
     if (relay !== undefined) header.relay = relay
     if (turnMs !== undefined) header.turnMs = turnMs
     if (souls !== undefined) header.souls = souls
     if (groups !== undefined) header.groups = groups
+    if (cron !== undefined) header.cron = cron
   }
   if (paths) header.paths = JSON.parse(readFileSync(resolve(process.cwd(), paths), 'utf8'))
   if (createWarnings) header.createWarnings = JSON.parse(readFileSync(resolve(process.cwd(), createWarnings), 'utf8'))

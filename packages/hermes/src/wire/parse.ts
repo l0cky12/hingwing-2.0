@@ -16,6 +16,7 @@ import type {
   HelperId, InputId, Item, Json, Loop, ModelId, ModelOption, ModelRef, Outcome, PlanEntry, ProcessId, PromptId, Question, Reaction, RequestId, SessionControl, SessionId,
   SessionUsage, SettledTurn, SideId, SidebarRow, SideTask, StatusAbout, ToolId, ToolResult, TurnId
 } from '../domain/session'
+import type { Job, JobId } from '../domain/jobs'
 import type { PathMatch } from '../domain/path'
 import { MANAGER_NAMES, MANAGERS, type BotManagers, type ManagerName, type ManagerState } from '../domain/passwords'
 import type { RelayState } from '../domain/relay'
@@ -25,7 +26,7 @@ import type { Said, TreeRow } from '../domain/versions'
 import type {
   AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
   CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
-  CommandDispatchResult, CommandsCatalogResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
+  CommandDispatchResult, CommandsCatalogResult, CronJobRow, CronManageResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
   ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, ImageGenerateResult, LoopSnapshot,
   McpRuntimeStatus, McpServersListResult, McpServersStatusResult, McpServersTestResult, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
   MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PetGalleryResult, PetThumbResult,
@@ -54,8 +55,8 @@ export type ParsedEvent =
    * payload, not on the envelope (gateway/session_events.py:93-100), so it cannot pass a seq gate.
    */
   | { readonly scope: 'gap'; readonly sessionId: SessionId }
-  /** `sessions.changed`: the sidebar should refetch. */
-  | { readonly scope: 'app'; readonly event: 'sessions.changed' }
+  /** `sessions.changed`: the sidebar should refetch. `cron.changed`: the scheduled jobs should. */
+  | { readonly scope: 'app'; readonly event: 'sessions.changed' | 'cron.changed' }
   /**
    * `groups.changed`: these groups' logs or who is answering in them moved. `all`: the payload names no rooms, which is
    * Hermes saying anything may have moved (tui_gateway/change_watcher.py:434-441).
@@ -508,7 +509,7 @@ export const UNSHOWN: ReadonlySet<string> = new Set([
   /** Every canonical turn publishes it (`gateway/run_turn_progress.py:1092`); not in the generated contract. */
   'agent.step',
   'agent.terminal.output', 'billing.step_up.verification', 'bot_relay.outbox.pending',
-  'browser.progress', 'cron.changed', 'display.install.done',
+  'browser.progress', 'display.install.done',
   'display.install.log', 'display.lease', 'display.status', 'free_tier.challenge', 'gateway.ready',
   'message.reaction', 'notice', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
   'pet.hatch.progress', 'platforms.changed', 'preview.restart.complete',
@@ -579,7 +580,7 @@ function stampOf(envelope: Obj): Stamp | null {
 export function parseEvent(params: unknown): ParsedEvent {
   if (!isObject(params) || typeof params.type !== 'string' || params.type === '') return { scope: 'unrouted', type: '', why: 'not an event' }
   const { type, session_id: id, payload } = params
-  if (type === 'sessions.changed') return { scope: 'app', event: 'sessions.changed' }
+  if (type === 'sessions.changed' || type === 'cron.changed') return { scope: 'app', event: type }
   if (type === 'groups.changed') return { scope: 'groups', rooms: roomsMoved(payload) }
   if (typeof id !== 'string' || id === '') return { scope: 'unrouted', type, why: 'no session id' }
   const sessionId = id as SessionId
@@ -1837,5 +1838,27 @@ export function parseGroupPage(reply: GroupsLogResult): { readonly events: reado
       events: events.flatMap(event => groupEventOf(event) ?? []), cursor: page.int('cursor'), more: page.optBool('has_more') === true,
       epoch: authority === null ? null : fields<{ epoch: number }>(authority).optInt('epoch')
     }
+  })
+}
+
+/**
+ * A `cron.manage` list (tools/cronjob_tools.py). A run is failed unless Hermes wrote `ok` for it: it also
+ * writes `error`, `delivery_failed` and `blocked_config` (cron/jobs.py:2456-2475). A row with no id is left out.
+ * null: the reply lists nothing, as when the tool failed and says so in `error`.
+ */
+export function parseJobs(reply: CronManageResult): readonly Job[] | null {
+  if (!isObject(reply) || !Array.isArray(reply.jobs)) return null
+  return reply.jobs.flatMap((row): Job[] => {
+    const job = usable(() => fields<CronJobRow>(row))
+    const id = words(job?.raw('job_id'))
+    if (job === null || id === null) return []
+    const status = words(job.raw('last_status'))
+    return [{
+      id: id as JobId,
+      name: words(job.raw('name')) ?? id,
+      ranAt: words(job.raw('last_run_at')),
+      failed: status !== null && status !== 'ok',
+      error: words(job.raw('last_error'))
+    }]
   })
 }

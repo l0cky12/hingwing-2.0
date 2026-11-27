@@ -1050,6 +1050,9 @@ export class ScriptedGateway {
   private readonly sockets = new Set<Socket>()
   private readonly stagedImages = new Set<string>()
   private readonly rooms: ScriptedRooms | null
+  /** The scheduled jobs `cron.manage` lists, rewritten by each run. null: no `cron` in the header. */
+  private readonly jobs: Obj[] | null
+  private jobsListed = false
   private readonly connectorCatalog: readonly { readonly slug: string; readonly name: string; readonly description: string; readonly category: string }[] | null
   private readonly connectorAccounts: HeldAccount[] | null
   private readonly signInUrl: string | null
@@ -1100,6 +1103,7 @@ export class ScriptedGateway {
     const clash = fixture.header.configureClash
     this.clash = clash === undefined ? undefined : typeof clash === 'string' ? { title: clash, left: 1 } : { title: clash.title, left: clash.times }
     const served = this.profiles.flatMap(row => (isText(row.name) ? [row.name] : []))
+    this.jobs = fixture.header.cron === undefined ? null : fixture.header.cron.jobs.map(job => ({ ...job }))
     const board = fixture.header.connectors
     this.connectorCatalog = board === undefined ? null : board.catalog.map(row => ({ slug: row.slug, name: row.name, description: row.description, category: row.category }))
     this.connectorAccounts = board === undefined ? null : board.accounts.map(row => ({ ...row }))
@@ -1269,6 +1273,7 @@ export class ScriptedGateway {
     // A Hermes without the bot relay declares none of its methods, so no param check is reached.
     if (method.startsWith('bot_relay.') && this.fixture.header.relay === undefined) return { error: unknownMethod(method).wire }
     if (method === 'complete.path' && this.fixture.header.paths === undefined) return { error: unknownMethod(method).wire }
+    if (method === 'cron.manage') return this.jobs === null ? { error: unknownMethod(method).wire } : { result: this.cronList(this.jobs) }
     if (method === 'session.active_list' && this.fixture.header.activeList === false) return { error: unknownMethod(method).wire }
     if (method.startsWith('groups.')) return this.rooms === null ? { error: unknownMethod(method).wire } : this.group(this.rooms, method, raw)
     if (!isObject(raw)) return refusal('invalid_params')
@@ -2211,6 +2216,21 @@ export class ScriptedGateway {
     const { step } = this.drop
     this.drop = { at: 'spent' }
     this.publish(step)
+  }
+
+  /** `cron.manage` list (tui_gateway/methods_tools.py:1309). The first list starts the header's runs. */
+  private cronList(jobs: Obj[]): unknown {
+    if (!this.jobsListed) {
+      this.jobsListed = true
+      for (const { after_ms: afterMs, job_id: jobId, ...ran } of this.fixture.header.cron?.runs ?? []) {
+        this.options.clock.setTimeout(() => {
+          const job = jobs.find(row => row.job_id === jobId)
+          if (job !== undefined) Object.assign(job, { last_error: null, ...ran })
+          for (const socket of this.sockets) socket.peer.write({ jsonrpc: '2.0', method: 'event', params: { type: 'cron.changed', payload: {} } })
+        }, afterMs)
+      }
+    }
+    return { success: true, count: jobs.length, jobs: jobs.map(job => ({ ...job })) }
   }
 
   private viewers(sessionId: string = this.sessionId): Socket[] {

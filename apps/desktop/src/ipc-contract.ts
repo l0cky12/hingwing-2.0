@@ -109,14 +109,24 @@ export type SnoozeCommand = { readonly do: 'snooze'; readonly sessionId: Session
 const isTime = (raw: unknown): raw is number => Number.isSafeInteger(raw) && (raw as number) > 0
 export const isSnoozes = (raw: unknown): raw is Snoozes => isObject(raw) && Object.entries(raw).every(([id, until]) => id.trim() !== '' && isTime(until))
 
+/** The kinds of desktop notification. `asks`: a chat waits on an approval or an answer. `replies`: a turn ended. `jobs`: a scheduled job ran. */
+export const NOTICE_KINDS = ['asks', 'replies', 'jobs'] as const
+export type NoticeKind = typeof NOTICE_KINDS[number]
+/** Which kinds of desktop notification main shows. Owned by Electron main and kept on disk. */
+export type Notices = { readonly [K in NoticeKind]: boolean }
+export type NoticeCommand = { readonly do: 'setNotice'; readonly kind: NoticeKind; readonly on: boolean }
+export const isNoticeKind = (raw: unknown): raw is NoticeKind => NOTICE_KINDS.includes(raw as NoticeKind)
+export const isNotices = (raw: unknown): raw is Notices =>
+  isObject(raw) && Object.keys(raw).length === NOTICE_KINDS.length && NOTICE_KINDS.every(kind => typeof raw[kind] === 'boolean')
+
 export type IntroCommand = { readonly do: 'examples' } | { readonly do: 'done' }
 
-export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SidebarWidthCommand | SnoozeCommand | OnCloseCommand | IntroCommand
+export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SidebarWidthCommand | SnoozeCommand | NoticeCommand | OnCloseCommand | IntroCommand
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' | 'refreshBots' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
 
-/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `sidebarWidth`, `snoozes`, `onClose` and `intro`, which belong to the window. */
+/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `sidebarWidth`, `snoozes`, `notices`, `onClose` and `intro`, which belong to the window. */
 export interface AppTopics {
   readonly setup: Setup
   readonly link: Link
@@ -139,12 +149,13 @@ export interface AppTopics {
   readonly theme: Theme
   readonly sidebarWidth: SidebarWidth
   readonly snoozes: Snoozes
+  readonly notices: Notices
   readonly onClose: OnClose
   readonly intro: Intro
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, preview: true, mode: true, theme: true, sidebarWidth: true, snoozes: true, onClose: true, intro: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, preview: true, mode: true, theme: true, sidebarWidth: true, snoozes: true, notices: true, onClose: true, intro: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -679,7 +690,8 @@ export const validators: Validators = {
   snooze: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && (raw.until === null || isTime(raw.until)) ? { do: 'snooze', sessionId, until: raw.until } : null
-  }
+  },
+  setNotice: raw => (isNoticeKind(raw.kind) && typeof raw.on === 'boolean' ? { do: 'setNotice', kind: raw.kind, on: raw.on } : null)
 }
 
 export function parseCommand(raw: unknown): WindowCommand | null {

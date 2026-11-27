@@ -187,6 +187,8 @@ export class Offline extends Error {}
  * handler for a connection with the interactive grant (tui_gateway/ws.py:403-411, tui_gateway/ws_legacy_fallback.py:53-62).
  * A -32601 from it means this Hermes cannot create bots from Highwing. `profiles.describe`, `profiles.configure`,
  * `profiles.set_asset` and `profiles.get_asset` reach the same legacy handlers the same way.
+ * `cron.manage` reaches its legacy handler the same way (tui_gateway/methods_tools.py:1309), and a -32601 from it means
+ * Highwing cannot list this Hermes's scheduled jobs.
  * `mcp.servers.list`, `.status`, `.add`, `.test` and `.remove` reach their legacy handlers too, each in the profile the call names
  * (tui_gateway/methods_tools.py:1470-1612). A -32601 from them means this Hermes cannot manage tool servers from Highwing.
  * `projects.tree` reaches its legacy handler the same way (tui_gateway/methods_config.py:137), and a -32601 from it
@@ -211,7 +213,7 @@ export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'prompt.btw' | 'prompt.background' | 'process.list' | 'process.kill' | 'subagent.interrupt' | 'session.control.read' | 'session.control' | 'rollback.list' |
   'rollback.diff' | 'rollback.restore' | 'message.react' | 'groups.capabilities' | 'groups.list' | 'groups.state' | 'groups.log' | 'groups.send' | 'groups.stop' |
   'groups.rename' | 'groups.disband' |
-  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot' | 'session.active_list' | 'usage.bars' | 'insights.get' |
+  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot' | 'cron.manage' | 'session.active_list' | 'usage.bars' | 'insights.get' |
   'learning.frames' | 'learning.detail' | 'learning.edit' | 'learning.delete' |
   'vault.sources' | 'vault.list' | 'vault.source.set' | 'vault.unlock' | 'vault.lock' |
   'connectors.catalog' | 'connectors.accounts' | 'connectors.accounts.remove' | 'connectors.operation.status' |
