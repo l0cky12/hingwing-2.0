@@ -13,15 +13,17 @@ export function DeleteDialog({ name, words, onCancel, onConfirm }: DeleteDialogP
   const cancel = useRef<HTMLButtonElement>(null)
   const heading = useId()
   useLayoutEffect(() => {
-    if (dialog.current?.open === false) {
-      dialog.current.showModal()
+    const shown = dialog.current
+    if (shown?.open === false) {
+      shown.showModal()
       cancel.current?.focus()
     }
+    return () => shown?.close()
   }, [])
   return (
     <dialog
       ref={dialog} className="confirm-dialog" aria-labelledby={heading}
-      onCancel={event => { event.preventDefault(); onCancel() }}
+      onCancel={event => { event.preventDefault(); event.stopPropagation(); onCancel() }}
     >
       <h2 id={heading}>Delete {name}?</h2>
       <p>{words}</p>

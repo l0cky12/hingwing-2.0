@@ -1,10 +1,11 @@
 import type { Feed, Hermes } from '@highwing/hermes'
-import type { Command, GroupId, OpenChat, Outcome, Session, SessionId, SettledTurn } from '@highwing/hermes/domain'
+import type { Command, GroupId, Job, JobId, OpenChat, Outcome, Session, SessionId, SettledTurn } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
-import type { Setup } from '../src/ipc-contract'
+import { DUE, OFF, type Intro } from '../src/intro'
+import type { Notices, Setup } from '../src/ipc-contract'
 import type { ConnectionOwner } from '../src/main/connection'
-import { noticeOf, notifyTurnEnds, type TurnNotice } from '../src/main/notify'
+import { asksOf, jobNotices, noticeOf, notify, type Notice } from '../src/main/notify'
 
 const fixture = loadFixture('fixtures/errand.jsonl')
 const STORY = fixture.header.sessionId as SessionId
@@ -13,6 +14,7 @@ const OTHER = 'other-chat' as SessionId
 let moments: readonly Session[] = []
 let running: Session
 let ended: Session
+let asking: Session
 
 beforeAll(async () => {
   const sessions: Session[] = []
@@ -21,6 +23,7 @@ beforeAll(async () => {
   const at = sessions.findIndex((session, index) => index > 0 && session.run.state === 'idle' && sessions[index - 1]!.run.state === 'running')
   running = sessions[at - 1]!
   ended = sessions[at]!
+  asking = sessions.find(session => asksOf(session).length > 0)!
 })
 
 const endingAs = (outcome: Outcome): Session => {
@@ -32,7 +35,7 @@ describe('noticeOf', () => {
   it('says Hermes finished, with the start of the reply, once over the whole errand', () => {
     const notices = moments.slice(1).flatMap((after, index) => noticeOf(moments[index]!, after) ?? [])
     expect(notices).toHaveLength(1)
-    expect(notices[0]).toMatchObject({ sessionId: STORY, turnId: ended.history.at(-1)!.id, title: 'Hermes finished' })
+    expect(notices[0]).toMatchObject({ kind: 'replies', key: `${STORY} ${ended.history.at(-1)!.id}`, opens: STORY, title: 'Hermes finished' })
     expect(notices[0]!.body).toMatch(/^Done\. I created/)
     expect(notices[0]!.body.length).toBeLessThanOrEqual(140)
   })
@@ -84,95 +87,199 @@ function changing<T>(initial: T): Feed<T> & { set(next: T): void } {
 
 const showing = (sessionId: SessionId | null): OpenChat => ({ shown: sessionId === null ? null : { kind: 'chat', bot: null, sessionId }, opening: null, missing: null })
 
-function stubHermes(first: Session) {
-  const open = changing(showing(first.id))
-  const sessions = new Map<SessionId, ReturnType<typeof changing<Session>>>()
-  const sessionFeed = (id: SessionId) => sessions.get(id) ?? sessions.set(id, changing({ ...first, id })).get(id)!
-  sessionFeed(first.id)
+function stubHermes(shown: SessionId | null = STORY) {
+  const open = changing(showing(shown))
+  const jobs = changing<readonly Job[] | null>(null)
+  const listeners = new Set<(session: Session, previous: Session) => void>()
+  const held = new Map<SessionId, Session>()
   const hermes = {
     open,
-    watch: (id: SessionId, listener: (session: Session) => void) => {
-      const feed = sessionFeed(id)
-      listener(feed.get())
-      return feed.subscribe(listener)
-    }
+    jobs,
+    changes: (listener: (session: Session, previous: Session) => void) => (listeners.add(listener), () => void listeners.delete(listener))
   } as unknown as Hermes
-  return { hermes, open, publish: (session: Session) => sessionFeed(session.id).set(session) }
+  const publish = (session: Session) => {
+    const previous = held.get(session.id) ?? session
+    held.set(session.id, session)
+    for (const listener of [...listeners]) listener(session, previous)
+  }
+  return { hermes, open, jobs, publish }
 }
 
-function observe(hermes: Hermes, focused = false) {
-  const shown: { notice: TurnNotice; click: () => void }[] = []
+const ON: Notices = { asks: true, replies: true, jobs: true }
+
+function observe(hermes: Hermes, focused = false, kinds: Notices = ON, at: Intro = OFF) {
+  const shown: { notice: Notice; click: () => void }[] = []
   const raise = vi.fn()
   const setup = changing<Setup>({ at: 'pinned' })
+  const intro = changing(at)
   const ran: Command[] = []
   const owner = { setup, hermes: hermes as Hermes | null, run: (async (command: Command) => (ran.push(command), { ok: true, value: undefined })) as ConnectionOwner['run'] }
-  const stop = notifyTurnEnds(owner, { notifier: { show: (notice, click) => shown.push({ notice, click }) }, focused: () => focused, raise })
+  const stop = notify(owner, intro, { notifier: { show: (notice, click) => shown.push({ notice, click }) }, focused: () => focused, raise, kinds: () => kinds })
   return { shown, raise, stop, owner, setup, ran }
 }
 
-describe('notifyTurnEnds', () => {
-  it('watches no chat while a group chat is open, so the chat it covers ends its turn unsaid', () => {
-    const stub = stubHermes(running)
-    const { shown } = observe(stub.hermes)
-    stub.open.set({ shown: { kind: 'group', group: 'launch-plan' as GroupId, over: null }, opening: null, missing: null })
-    stub.publish(ended)
-    expect(shown).toEqual([])
+const titles = (shown: readonly { notice: Notice }[]) => shown.map(({ notice }) => notice.title)
+
+const job = (ranAt: string | null, failed = false): Job => ({ id: 'digest' as JobId, name: 'Morning digest', ranAt, failed, error: failed ? 'Model timed out' : null })
+
+describe('asksOf', () => {
+  it('names the approval the running turn waits on', () => {
+    expect(asksOf(asking)).toEqual([expect.objectContaining({ kind: 'asks', opens: STORY, title: 'Approval needed' })])
   })
 
+  it('is empty once the turn has settled', () => {
+    expect(asksOf(ended)).toEqual([])
+  })
+})
+
+describe('jobNotices', () => {
+  it('counts runs from the first list, so a job that ran before Highwing listed it says nothing', () => {
+    expect(jobNotices(null, [job('2026-11-26T08:00:00')])).toEqual([])
+  })
+
+  it('says a job finished once for each new run, and opens no chat', () => {
+    expect(jobNotices([job(null)], [job('2026-11-26T08:00:00')])).toEqual([
+      { kind: 'jobs', key: 'digest 2026-11-26T08:00:00', opens: null, title: 'Scheduled job finished', body: 'Morning digest' }
+    ])
+    expect(jobNotices([job('2026-11-26T08:00:00')], [job('2026-11-26T08:00:00')])).toEqual([])
+  })
+
+  it('says a job failed, with what went wrong', () => {
+    expect(jobNotices([job(null)], [job('2026-11-26T08:00:00', true)])).toMatchObject([{ title: 'Scheduled job failed', body: 'Morning digest: Model timed out' }])
+  })
+
+  it('says a job new since the last list ran', () => {
+    expect(jobNotices([], [job('2026-11-26T08:00:00')])).toHaveLength(1)
+  })
+})
+
+describe('notify', () => {
   it('notifies once when the shown chat ends a turn while no window has focus', () => {
-    const stub = stubHermes(running)
+    const stub = stubHermes()
     const { shown } = observe(stub.hermes)
+    stub.publish(running)
     stub.publish(ended)
-    expect(shown.map(({ notice }) => notice.title)).toEqual(['Hermes finished'])
+    expect(titles(shown)).toEqual(['Hermes finished'])
   })
 
-  it('stays quiet while a window has focus', () => {
-    const stub = stubHermes(running)
+  it('stays quiet for the shown chat while a window has focus', () => {
+    const stub = stubHermes()
     const { shown } = observe(stub.hermes, true)
+    stub.publish(running)
     stub.publish(ended)
     expect(shown).toEqual([])
   })
 
-  it('stays quiet for a chat that was already settled when it was shown', () => {
-    const stub = stubHermes(ended)
-    const { shown } = observe(stub.hermes)
-    stub.publish({ ...ended })
-    expect(shown).toEqual([])
+  it('notifies the shown chat while Settings covers it in a focused window', () => {
+    const stub = stubHermes()
+    const { shown, setup } = observe(stub.hermes, true)
+    setup.set({ at: 'form', live: { target: { kind: 'local' }, epoch: 1 }, notice: null })
+    stub.publish(asking)
+    stub.publish(ended)
+    expect(titles(shown)).toEqual(['Approval needed', 'Hermes finished'])
+  })
+
+  it('notifies a turn ending in a chat that is not shown, even while a window has focus', () => {
+    const stub = stubHermes(OTHER)
+    const { shown } = observe(stub.hermes, true)
+    stub.publish(running)
+    stub.publish(ended)
+    expect(shown.map(({ notice }) => notice.opens)).toEqual([STORY])
+  })
+
+  it('notifies a turn ending in a chat a group chat covers, since that chat is not on screen', () => {
+    const stub = stubHermes()
+    const { shown } = observe(stub.hermes, true)
+    stub.open.set({ shown: { kind: 'group', group: 'launch-plan' as GroupId, over: null }, opening: null, missing: null })
+    stub.publish(running)
+    stub.publish(ended)
+    expect(titles(shown)).toEqual(['Hermes finished'])
   })
 
   it('notifies once for a turn id it already told about', () => {
-    const stub = stubHermes(running)
+    const stub = stubHermes()
     const { shown } = observe(stub.hermes)
+    stub.publish(running)
     stub.publish(ended)
     stub.publish(running)
     stub.publish(ended)
     expect(shown).toHaveLength(1)
   })
 
-  it('follows the shown chat and stops watching the one before', () => {
-    const stub = stubHermes(running)
-    const { shown } = observe(stub.hermes)
-    stub.publish({ ...running, id: OTHER })
+  it('notifies an approval in a chat that is not on screen once, however often the chat changes', () => {
+    const stub = stubHermes(OTHER)
+    const { shown } = observe(stub.hermes, true)
+    stub.publish(asking)
+    stub.publish({ ...asking })
+    stub.publish({ ...asking })
+    expect(titles(shown)).toEqual(['Approval needed'])
+  })
+
+  it('never notifies an approval first seen on screen, even after the user looks away', () => {
+    const stub = stubHermes()
+    const { shown } = observe(stub.hermes, true)
+    stub.publish(asking)
     stub.open.set(showing(OTHER))
-    stub.publish(ended)
-    stub.publish({ ...ended, id: OTHER })
-    expect(shown.map(({ notice }) => notice.sessionId)).toEqual([OTHER])
+    stub.publish({ ...asking })
+    expect(shown).toEqual([])
+  })
+
+  it.each([['asks', 'Approval needed'], ['replies', 'Hermes finished']] as const)('stays quiet for %s while its switch is off', (kind, title) => {
+    const stub = stubHermes(OTHER)
+    const { shown } = observe(stub.hermes, true, { ...ON, [kind]: false })
+    stub.publish(running)
+    stub.publish(kind === 'asks' ? asking : ended)
+    expect(titles(shown)).not.toContain(title)
+  })
+
+  it('notifies a scheduled job that ran after the first list, whatever is on screen, and a click only raises the window', () => {
+    const stub = stubHermes()
+    const { shown, raise, ran } = observe(stub.hermes, true)
+    stub.jobs.set([job(null)])
+    stub.jobs.set([job('2026-11-26T08:00:00')])
+    stub.jobs.set([job('2026-11-26T08:00:00')])
+    expect(titles(shown)).toEqual(['Scheduled job finished'])
+    shown[0]!.click()
+    expect(raise).toHaveBeenCalledOnce()
+    expect(ran).toEqual([])
+  })
+
+  it('stays quiet for scheduled jobs while their switch is off', () => {
+    const stub = stubHermes()
+    const { shown } = observe(stub.hermes, false, { ...ON, jobs: false })
+    stub.jobs.set([job(null)])
+    stub.jobs.set([job('2026-11-26T08:00:00')])
+    expect(shown).toEqual([])
   })
 
   it('follows a new connection to its Hermes', () => {
-    const old = stubHermes(running)
+    const old = stubHermes(null)
     const { shown, owner, setup } = observe(old.hermes)
-    const next = stubHermes({ ...running, id: OTHER })
+    const next = stubHermes(null)
     owner.hermes = next.hermes
     setup.set({ at: 'pinned' })
+    old.publish(running)
     old.publish(ended)
+    next.publish({ ...running, id: OTHER })
     next.publish({ ...ended, id: OTHER })
-    expect(shown.map(({ notice }) => notice.sessionId)).toEqual([OTHER])
+    expect(shown.map(({ notice }) => notice.opens)).toEqual([OTHER])
+  })
+
+  it('raises the window on a click and leaves the launch chat while the intro covers it', () => {
+    const stub = stubHermes()
+    const { shown, raise, ran, setup } = observe(stub.hermes, false, ON, DUE)
+    stub.publish(running)
+    stub.publish(ended)
+    setup.set({ at: 'chat', live: { target: { kind: 'local' }, epoch: 1 } })
+    shown[0]!.click()
+    expect(raise).toHaveBeenCalledOnce()
+    expect(ran).toEqual([])
   })
 
   it('raises the window on a click and opens the chat even while it is shown, so a pending switch to another bot gives way', () => {
-    const stub = stubHermes(running)
+    const stub = stubHermes()
     const { shown, raise, ran } = observe(stub.hermes)
+    stub.publish(running)
     stub.publish(ended)
     shown[0]!.click()
     expect(raise).toHaveBeenCalledOnce()
@@ -180,33 +287,26 @@ describe('notifyTurnEnds', () => {
   })
 
   it('raises the window and opens nothing on a click from a connection that was replaced', () => {
-    const old = stubHermes(running)
+    const old = stubHermes()
     const { shown, raise, owner, setup, ran } = observe(old.hermes)
+    old.publish(running)
     old.publish(ended)
-    const next = stubHermes({ ...running, id: OTHER })
+    const next = stubHermes()
     owner.hermes = next.hermes
     setup.set({ at: 'pinned' })
-    old.open.set(showing(OTHER))
     shown[0]!.click()
     expect(raise).toHaveBeenCalledOnce()
     expect(ran).toEqual([])
   })
 
-  it('opens the chat again on a click when another chat is shown', () => {
-    const stub = stubHermes(running)
-    const { shown, raise, ran } = observe(stub.hermes)
-    stub.publish(ended)
-    stub.open.set(showing(OTHER))
-    shown[0]!.click()
-    expect(raise).toHaveBeenCalledOnce()
-    expect(ran).toEqual([{ do: 'open', ref: { kind: 'chat', sessionId: STORY } }])
-  })
-
   it('stops when told to', () => {
-    const stub = stubHermes(running)
+    const stub = stubHermes()
     const { shown, stop } = observe(stub.hermes)
     stop()
+    stub.publish(running)
     stub.publish(ended)
+    stub.jobs.set([job(null)])
+    stub.jobs.set([job('2026-11-26T08:00:00')])
     expect(shown).toEqual([])
   })
 })

@@ -1,0 +1,52 @@
+{
+  "board": {
+    "columns": [
+      { "name": "triage", "tasks": [] },
+      {
+        "name": "todo",
+        "tasks": [
+          { "id": "t_a1b2", "title": "Draft the quarterly summary", "body": null, "assignee": null, "status": "todo", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 }
+        ]
+      },
+      { "name": "scheduled", "tasks": [] },
+      { "name": "ready", "tasks": [] },
+      {
+        "name": "running",
+        "tasks": [
+          { "id": "t_c3d4", "title": "Sort the invoices", "body": "Sort the invoices in the inbox folder by due date.", "assignee": "research", "status": "running", "priority": 1, "current_run_id": 7, "session_id": null, "latest_summary": "Sorted fourteen invoices by due date.", "comment_count": 1 }
+        ]
+      },
+      { "name": "blocked", "tasks": [] },
+      { "name": "review", "tasks": [] },
+      {
+        "name": "done",
+        "tasks": [
+          { "id": "t_e5f6", "title": "Clean up Downloads", "body": null, "assignee": "research", "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": "Moved forty installers to the trash.", "comment_count": 0 },
+          { "id": "t_a7b8", "title": "Archive last year's receipts", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 }
+        ]
+      }
+    ],
+    "tenants": [],
+    "assignees": ["research"],
+    "latest_event_id": 5,
+    "now": 1795250000
+  },
+  "tasks": {
+    "t_a1b2": {
+      "task": { "id": "t_a1b2", "title": "Draft the quarterly summary", "status": "todo" },
+      "comments": [],
+      "events": [{ "id": 1, "task_id": "t_a1b2", "run_id": null, "kind": "created", "payload": null, "created_at": 1795240000 }],
+      "runs": []
+    },
+    "t_c3d4": {
+      "task": { "id": "t_c3d4", "title": "Sort the invoices", "status": "running" },
+      "comments": [],
+      "events": [
+        { "id": 2, "task_id": "t_c3d4", "run_id": null, "kind": "created", "payload": null, "created_at": 1795240100 },
+        { "id": 3, "task_id": "t_c3d4", "run_id": 7, "kind": "claimed", "payload": { "lock": "w1" }, "created_at": 1795249000 },
+        { "id": 4, "task_id": "t_c3d4", "run_id": 7, "kind": "owner_admitted", "payload": { "session_id": "local-0102" }, "created_at": 1795249001 }
+      ],
+      "runs": [{ "id": 7, "task_id": "t_c3d4", "profile": "research", "status": "running", "started_at": 1795249000, "ended_at": null }]
+    }
+  }
+}

@@ -1,19 +1,21 @@
 import type { Hermes } from '@highwing/hermes'
-import type { BotId, CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
+import { isTaskId, type BotId, type CommandOutcome, type Session, type SessionId } from '@highwing/hermes/domain'
 import {
-  CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
-  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type OnClose, type PictureChoice, type PictureFile, type Push, type SessionPatch, type StageResult,
-  type Snoozes, type Tail, type Theme, type Topic
+  CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseRecording, parseTopic,
+  type Accent, type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type Notices, type OnClose, type PictureChoice, type PictureFile, type Push, type SessionPatch, type StageResult,
+  type SendKey, type SidebarWidth, type Snoozes, type Tail, type Theme, type Topic
 } from '../ipc-contract'
 import { basename } from 'node:path'
 import type { AttachmentStore, AttachSources, StageSource } from './attachments'
 import type { ConnectionOwner } from './connection'
+import type { IntroOwner } from './intro'
 import type { DraftStore } from './drafts'
 import { openablePath, type Opener } from './files'
 import type { ImageLoader } from './images'
 import { snoozed, type PreferenceStore } from './preferences'
 import type { PreviewPane } from './preview'
 import type { Saver } from './saves'
+import { readTaskBoard, readTaskChat } from './tasks'
 
 export const COALESCE_MS = 16
 
@@ -46,8 +48,8 @@ const NEVER: Source = () => () => {}
 /** The pane's side of a window: its topic, its commands, and the files a window previews. */
 export type PreviewOwner = Pick<PreviewPane, 'preview' | 'show' | 'run'>
 type Shown<T> = Pick<PreferenceStore<T>, 'get' | 'subscribe' | 'set'>
-export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme>; readonly snoozes: Shown<Snoozes>; readonly onClose: Shown<OnClose> }
-interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner; readonly preferences: Preferences }
+export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme>; readonly accent: Shown<Accent>; readonly sidebarWidth: Shown<SidebarWidth>; readonly sendKey: Shown<SendKey>; readonly spellCheck: Shown<boolean>; readonly snoozes: Shown<Snoozes>; readonly notices: Shown<Notices>; readonly onClose: Shown<OnClose> }
+interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner; readonly preferences: Preferences; readonly intro: Pick<IntroOwner, 'intro'> }
 
 /** A Hermes topic is bound to the connection that is live when the window asks. A window that sees a new epoch asks again. */
 const onHermes = (source: (hermes: Hermes, topic: Topic) => Source) => ({ owner }: Owners, topic: Topic): Source =>
@@ -58,8 +60,14 @@ const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source 
   preview: ({ pane }) => current(pane.preview),
   mode: ({ preferences }) => current(preferences.mode),
   theme: ({ preferences }) => current(preferences.theme),
+  accent: ({ preferences }) => current(preferences.accent),
+  sidebarWidth: ({ preferences }) => current(preferences.sidebarWidth),
+  sendKey: ({ preferences }) => current(preferences.sendKey),
+  spellCheck: ({ preferences }) => current(preferences.spellCheck),
   snoozes: ({ preferences }) => current(preferences.snoozes),
+  notices: ({ preferences }) => current(preferences.notices),
   onClose: ({ preferences }) => current(preferences.onClose),
+  intro: ({ intro }) => current(intro.intro),
   link: onHermes(hermes => current(hermes.link)),
   about: onHermes(hermes => current(hermes.about)),
   sidebar: onHermes(hermes => current(hermes.sidebar)),
@@ -70,6 +78,9 @@ const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source 
   groups: onHermes(hermes => current(hermes.groups)),
   groupChat: onHermes(hermes => current(hermes.groupChat)),
   activity: onHermes(hermes => current(hermes.activity)),
+  screen: onHermes(hermes => current(hermes.screen)),
+  skills: onHermes(hermes => listener => hermes.watchSkills(listener)),
+  routines: onHermes(hermes => current(hermes.routines)),
   session: onHermes((hermes, topic) => listener => hermes.watch(topic.slice('session:'.length) as SessionId, listener))
 }
 const kindOf = (topic: Topic): Kind => (isAppTopic(topic) ? topic : 'session')
@@ -164,10 +175,10 @@ export interface Pictures {
 export function serveWindows(
   owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>,
   pane: PreviewOwner, pictures: Pictures, attaching: Attaching,
-  saver: Saver, preferences: Preferences
+  saver: Saver, preferences: Preferences, intro: Pick<IntroOwner, 'intro' | 'apply'>, quit: () => void
 ): { dispose(): void } {
   const windows = new Map<number, Map<number, Served>>()
-  const owners: Owners = { owner, pane, preferences }
+  const owners: Owners = { owner, pane, preferences, intro }
   const files = fileActions(opener, pane)
   const trusted = ({ senderFrame }: IpcEvent) => senderFrame !== null && senderFrame.parent === null && isAppUrl(senderFrame.url)
   const servedLive = (served: Served | undefined) => served !== undefined && served.servedBy === owner.hermes
@@ -205,6 +216,10 @@ export function serveWindows(
     const command = parseCommand(raw)
     if (!trusted(event) || command === null) return REFUSED
     if (isPreviewCommand(command)) return pane.run(command)
+    if (command.do === 'quit') {
+      quit()
+      return DONE
+    }
     if (command.do === 'setMode') {
       preferences.mode.set(command.mode)
       return DONE
@@ -213,12 +228,44 @@ export function serveWindows(
       preferences.theme.set(command.theme)
       return DONE
     }
+    if (command.do === 'setAccent') {
+      preferences.accent.set(command.accent)
+      return DONE
+    }
+    if (command.do === 'setSidebarWidth') {
+      preferences.sidebarWidth.set(command.width)
+      return DONE
+    }
     if (command.do === 'setOnClose') {
       preferences.onClose.set(command.onClose)
       return DONE
     }
+    if (command.do === 'setSendKey') {
+      preferences.sendKey.set(command.sendKey)
+      return DONE
+    }
+    if (command.do === 'setSpellCheck') {
+      preferences.spellCheck.set(command.spellCheck)
+      return DONE
+    }
     if (command.do === 'snooze') {
       preferences.snoozes.set(snoozed(preferences.snoozes.get(), command, Date.now()))
+      return DONE
+    }
+    if (command.do === 'setNotice') {
+      preferences.notices.set({ ...preferences.notices.get(), [command.kind]: command.on })
+      return DONE
+    }
+    if (command.do === 'examples' || command.do === 'done') {
+      // Publishing the requests while the saved screen is still up would flash it. Leave first.
+      if (command.do === 'examples' && intro.intro.get().at === 'due') {
+        const setup = owner.setup.get()
+        if (setup.at === 'saved' && setup.from === 'first-run') {
+          const outcome = await owner.run({ do: 'keepTarget' })
+          if (!outcome.ok) return outcome
+        }
+      }
+      await intro.apply(command)
       return DONE
     }
     if (!isSetupCommand(command) && epoch !== epochOf(owner.setup.get())) return OTHER_CONNECTION
@@ -247,6 +294,9 @@ export function serveWindows(
     return images.load(request, { session: watched?.current() as Session | undefined, local: servedHere(watched) })
   })
 
+  ipc.handle(CHANNEL.taskBoard, async event => (trusted(event) ? readTaskBoard(owner.read) : REFUSED))
+  ipc.handle(CHANNEL.taskChat, async (event, id) => (trusted(event) && isTaskId(id) ? readTaskChat(owner.read, id) : REFUSED))
+
   ipc.handle(CHANNEL.drafts, async event => (trusted(event) ? drafts.load() : []))
   ipc.on(CHANNEL.keepDraft, (event, raw) => {
     const draft = parseDraft(raw)
@@ -260,6 +310,11 @@ export function serveWindows(
     return live() ? pictures.pick(bot, live) : OTHER_CONNECTION
   })
   ipc.handle(CHANNEL.choosePicture, async event => (trusted(event) ? pictures.choose() : REFUSED))
+  ipc.handle(CHANNEL.transcribe, async (event, raw, epoch) => {
+    const recording = parseRecording(raw)
+    if (!trusted(event) || recording === null) return REFUSED
+    return epoch === epochOf(owner.setup.get()) ? owner.transcribe(recording) : OTHER_CONNECTION
+  })
 
   const { store, sources } = attaching
   const notHere = (name: string): StageResult => ({ ok: false, name, reason: `${name} isn't a file on this computer, so Highwing can't attach it.` })
@@ -291,6 +346,8 @@ export function serveWindows(
       ipc.removeHandler(CHANNEL.run)
       ipc.removeHandler(CHANNEL.file)
       ipc.removeHandler(CHANNEL.image)
+      ipc.removeHandler(CHANNEL.taskBoard)
+      ipc.removeHandler(CHANNEL.taskChat)
       ipc.removeHandler(CHANNEL.drafts)
       ipc.removeAllListeners(CHANNEL.keepDraft)
       ipc.removeHandler(CHANNEL.pickPicture)

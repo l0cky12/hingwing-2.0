@@ -1,7 +1,8 @@
 import { appsView, shownBot, STANDING_WORDS, type AppEntry, type AppsBoard } from '@highwing/hermes/domain'
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type RefObject } from 'react'
-import { appsKeys, isCommandShiftKey } from '../keys'
+import { appsKeys, isShortcut } from '../keys'
 import { run, useTopic } from '../store'
+import { ToolServers } from './ToolServers'
 
 const canHoldFocus = (element: Element | null): element is HTMLElement =>
   element instanceof HTMLElement && element !== document.body && element.isConnected && element.closest('[hidden]') === null
@@ -147,7 +148,7 @@ function Sheet({ back, onClose }: SheetProps) {
   const onKeyDown = (event: KeyboardEvent<HTMLDialogElement>) => {
     event.stopPropagation()
     if (event.nativeEvent.isComposing || event.repeat) return
-    if (!isCommandShiftKey(event.nativeEvent, 'm')) return
+    if (!isShortcut(event.nativeEvent, 'apps')) return
     event.preventDefault()
     dismiss()
   }
@@ -178,7 +179,11 @@ function Sheet({ back, onClose }: SheetProps) {
                 <button key={name} type="button" aria-pressed={category === name} onClick={() => setCategory(name)}>{name}</button>
               ))}
             </div>
-            <div className="apps-list">
+          </>
+        )}
+        <div className="apps-list">
+          {view !== null && board !== null && (
+            <>
               {view.sections.map(section => (
                 <section key={section.heading} aria-label={section.heading}>
                   <h3 className="apps-heading">{section.heading}</h3>
@@ -207,9 +212,10 @@ function Sheet({ back, onClose }: SheetProps) {
                 </section>
               ))}
               {view.empty && <p className="apps-empty">{board.apps.length === 0 ? 'No apps.' : 'No apps match.'}</p>}
-            </div>
-          </>
-        )}
+            </>
+          )}
+          <ToolServers key={bot ?? ''} bot={bot} />
+        </div>
       </div>
     </dialog>
   )
@@ -219,7 +225,7 @@ export function Apps({ open, back, onOpen, onClose }: { readonly open: boolean; 
   useEffect(() => {
     if (open) return
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (!isCommandShiftKey(event, 'm') || document.querySelector('dialog:modal') !== null) return
+      if (!isShortcut(event, 'apps') || document.querySelector('dialog:modal') !== null) return
       event.preventDefault()
       if (!event.repeat) onOpen()
     }

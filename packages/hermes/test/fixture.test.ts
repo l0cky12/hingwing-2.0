@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { type FixtureStep, loadFixture } from '../src/testing/fixture'
+import { BOARD_PATH, taskPath } from '../src/domain/tasks'
+import { type FixtureStep, fixtureRead, loadFixture } from '../src/testing/fixture'
 import { checkParams } from '../src/testing/params'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 
@@ -155,6 +156,13 @@ describe('loadFixture', () => {
     expect(() => loadFixture(path)).toThrow(`${path}:1: "createWarnings" must be a list of strings`)
   })
 
+  it("takes every bot's deny rules as a list of strings", () => {
+    expect(loadFixture(write([{ ...header, deny: ['git push --force*'] }])).header.deny).toEqual(['git push --force*'])
+    expect(loadFixture(write([header])).header).not.toHaveProperty('deny')
+    const path = write([{ ...header, deny: [7] }])
+    expect(() => loadFixture(path)).toThrow(`${path}:1: "deny" must be a list of strings`)
+  })
+
   it("takes each bot's persona as text, and the title of a clash as words", () => {
     const loaded = loadFixture(write([{ ...header, souls: { rae: 'You write.' }, configureClash: 'Robin' }])).header
     expect([loaded.souls, loaded.configureClash]).toEqual([{ rae: 'You write.' }, 'Robin'])
@@ -162,6 +170,14 @@ describe('loadFixture', () => {
     expect(() => loadFixture(souls)).toThrow(`${souls}:1: "souls" must map a profile to its persona`)
     const clash = write([{ ...header, configureClash: ' ' }])
     expect(() => loadFixture(clash)).toThrow(`${clash}:1: "configureClash" must be the title another client writes`)
+  })
+
+  it('keeps the account usage, usage bars and insights replies a file cans, and refuses one that is not an object', () => {
+    const replies = { accountUsage: { lines: ['Acme Pro'], nous_route: false }, usageBars: { available: false }, insights: { days: 30, sessions: 4, messages: 9 } }
+    expect(loadFixture(write([{ ...header, ...replies }])).header).toMatchObject(replies)
+    expect(Object.keys(loadFixture(write([header])).header)).not.toContain('accountUsage')
+    const path = write([{ ...header, accountUsage: ['Acme Pro'] }])
+    expect(() => loadFixture(path)).toThrow(`${path}:1: "accountUsage" must be a session.account_usage reply`)
   })
 
   it('reads the memory entries a learning call answers, and refuses any other shape', () => {
@@ -233,6 +249,31 @@ describe('loadFixture', () => {
       const path = write([{ ...header, media }])
       expect(() => loadFixture(path)).toThrow(`${path}:1: "media" must map a url or path to base64 bytes`)
     }
+  })
+
+  describe('kanban', () => {
+    const kanban = { board: { columns: [{ name: 'running', tasks: [{ id: 't_1', title: 'Sweep' }] }] }, tasks: { t_1: { events: [], runs: [] } } }
+
+    it('reads the kanban replies, and refuses a board the app could not read or tasks that are not by id', () => {
+      expect(loadFixture(write([{ ...header, kanban }])).header.kanban).toEqual(kanban)
+      expect(loadFixture(write([header])).header).not.toHaveProperty('kanban')
+      for (const bad of [[], 'x', { board: kanban.board }, { board: { columns: 'x' }, tasks: {} }, { board: kanban.board, tasks: [] }]) {
+        const path = write([{ ...header, kanban: bad }])
+        expect(() => loadFixture(path)).toThrow(`${path}:1: "kanban" must be { board, tasks }`)
+      }
+    })
+
+    it('answers the board, a card by its path, and a 404 for any other path', async () => {
+      const read = fixtureRead(kanban)
+      expect(await read(BOARD_PATH)).toEqual({ status: 200, body: kanban.board })
+      expect(await read(taskPath('t_1'))).toEqual({ status: 200, body: kanban.tasks.t_1 })
+      expect(await read(taskPath('t_9'))).toMatchObject({ status: 404 })
+      expect(await read('/api/status')).toMatchObject({ status: 404 })
+    })
+
+    it('answers 404 to every path when the fixture has no kanban, as a Hermes without the plugin does', async () => {
+      expect(await fixtureRead(undefined)(BOARD_PATH)).toMatchObject({ status: 404 })
+    })
   })
 
   it('reads the attachment limits a run sets, and refuses a limit that is not a number of bytes', () => {

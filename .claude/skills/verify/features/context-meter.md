@@ -1,6 +1,6 @@
 # Context meter and tokens per reply
 
-Under each finished reply a quiet line says what the reply used, such as "1,204 in, 380 out, 412 reasoning". Under the message box, at its right edge, a meter says how full the chat's context window is: a small bar and "about 34%". Pressing the meter opens a panel with the window's size, the model, a bar split into what fills the window, and the list of those parts with their token counts. Above 80 percent the meter turns the caution color and says "nearly full". While the chat is not connected the meter keeps its last value, dims, and says "(stale)". A Hermes that reports no usage shows no meter and no line. Highwing shows tokens only, never money.
+Under each finished reply a quiet line says what the reply used, such as "1,204 in, 380 out, 412 reasoning". In the composer's toolbar, right of the effort readout, a meter says how full the chat's context window is: a small ring and "about 34%". Pressing the meter opens a panel with the window's size, the model, a bar split into what fills the window, and the list of those parts with their token counts. Above 80 percent the meter turns the caution color and says "nearly full". While the chat is not connected the meter keeps its last value, dims, and says "(stale)". A Hermes that reports no usage shows no meter and no line. Highwing shows tokens only, never money.
 
 ## Sub-features
 
@@ -13,7 +13,7 @@ Under each finished reply a quiet line says what the reply used, such as "1,204 
 
 ## How to get to it (user POV)
 
-- Open a chat. The meter sits under the message box, at its right edge, on the same line as the model readout. Press it.
+- Open a chat. The meter sits in the composer's toolbar, just left of Send. Press it.
 - Send a message and wait for the reply to finish. The token line is under the Done ring.
 
 ## Driving it with highwing-verify

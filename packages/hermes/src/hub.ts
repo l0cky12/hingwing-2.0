@@ -2,24 +2,34 @@ import { randomUUID } from 'node:crypto'
 import { DONE, refused, SessionActor, type Upload } from './actor'
 import { activityDesk, busyOf, type Attached } from './activity'
 import { appSignIn, connectApp, listApps, removeApp } from './apps'
-import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, setBotPicture } from './bot-admin'
+import {
+  addToolServer, botModels, botPicture, canGeneratePicture, createBot, denyRules, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, readSkills, removeToolServer,
+  setBotPicture, setSkill, skillText, toolServers
+} from './bot-admin'
 import type { BotActivities, UnreadChat } from './domain/activity'
 import { listMemory, removeMemory, saveMemory } from './memory'
 import { botsIn, MARK_SETS, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
 import type { GroupChat, Groups } from './domain/groups'
+import type { Job } from './domain/jobs'
 import { mentionedBots } from './domain/mention'
 import { shownBot, shownChat, shownGroup, type OpenChat } from './domain/open'
 import type { PaneAsk } from './domain/pane'
 import type { BridgeRequest, ServerRequest } from './domain/reduce'
 import type { RelayDesk } from './domain/relay'
+import type { ScreenView } from './domain/screen'
+import type { SkillLibrary } from './domain/skills'
 import { hermesVersionOf, type About } from './domain/about'
 import type { AttachmentId, BranchId, Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog } from './domain/slash'
 import { groupBook } from './groups'
+import { jobList } from './jobs'
+import { readMessages, type Place } from './messages'
 import { chatDesk } from './open'
 import { relayBook } from './relay'
 import { botList } from './roster'
+import { screenDesk } from './screens'
+import { controlRoutine, listRoutines } from './routines'
 import { deriveSidebar, sessionList } from './sidebar'
 import { readVersions } from './versions'
 import { connect, systemClock, type Clock, type Dialer } from './wire/link'
@@ -28,13 +38,14 @@ import { parseCatalog, parseEvent, parseServerRequest, type ParsedEvent } from '
 
 export type { Command, Outcome, Refusal, ResultOf } from './domain/command'
 export type { Upload } from './actor'
-export type { Clock, Dialer, WireSocket } from './wire/link'
+export type { Clock, Dialer, HttpAnswer, ReadHermes, WireSocket } from './wire/link'
 export { checkTarget, type CheckOptions, type CheckResult } from './wire/check'
 export { gatewaysByUrl, memoryKeep, type GatewayDeps, type Gateways, type Keep, type UrlCheckResult } from './wire/gateways'
 export { DialError } from './wire/link'
 export { remoteRoute, type Route } from './wire/remote'
 export { sshRead, type RemoteRead } from './wire/ssh'
-export { liveDialer } from './wire/tickets'
+export { liveRoute } from './wire/tickets'
+export type { Transcribe } from './wire/transcribe'
 
 /** A value that changes. `subscribe` calls back on every change, not for the current value. */
 export interface Feed<T> {
@@ -80,12 +91,29 @@ export interface Hermes {
    * asking every 2 s on a Hermes that does not push.
    */
   readonly groupChat: Feed<GroupChat | null>
+  /** The scheduled jobs of the socket's own profile. null until Hermes lists them, and on a Hermes without `cron.manage`. Listed on every new socket and on `cron.changed`. */
+  readonly jobs: Feed<readonly Job[] | null>
   /**
    * Which bots are working, waiting on the user, or hold a reply no window has shown. Read from the
    * attached chats, and on a socket that reaches every profile from each bot's live chats, asked
    * once online, when sessions change and when the roster does. A chat is read once a window watches it.
    */
   readonly activity: Feed<BotActivities>
+  /**
+   * The screen of the open chat's bot: whether this Hermes can show it, whether the agent is using it, who has control,
+   * and its latest frame, asked for every 2 s while the agent uses it. null while a group chat is open.
+   */
+  readonly screen: Feed<ScreenView | null>
+  /**
+   * Where to dial the live view of `screen`'s bot: a WebSocket address on the gateway's own origin that carries the
+   * screen as RFB and holds a single-use ticket. It never leaves Electron main. null when Hermes or the route gives none.
+   */
+  screenSocket(): Promise<string | null>
+  /**
+   * Counts the times a bot's routines may have moved: on every `cron.changed` and every new socket. A window showing
+   * routines asks for them again when it changes. The routines themselves are read with `run({ do: 'listRoutines' })`.
+   */
+  readonly routines: Feed<number>
   /**
    * Watch one session. The listener gets the current value at once and every later one. A session is
    * kept attached while a window watches it, while the gateway lists it as running, while its own
@@ -94,13 +122,21 @@ export interface Hermes {
    * Call the returned function to stop watching.
    */
   watch(id: SessionId, listener: (session: Session) => void): () => void
+  /**
+   * Watch the skills of the bot `open` shows. The listener gets the current value at once and every later one. Hermes is
+   * asked only while something watches: on the first watch, when the open bot changes, on a new socket, after `setSkill`
+   * and on `skills.changed`.
+   */
+  watchSkills(listener: (library: SkillLibrary) => void): () => void
+  /** Hears every change of every session the hub keeps attached, with the session as it was before. Call the returned function to stop. */
+  changes(listener: (session: Session, previous: Session) => void): () => void
   /** Never rejects for an expected failure: that is a `Refusal`. Most outcomes also show up in the feeds. */
   run<C extends Command>(command: C): Promise<Outcome<ResultOf<C>>>
   close(): Promise<void>
 }
 
 export interface HermesOptions {
-  /** `liveDialer()` for the real gateway, `scriptedDialer(fixture)` for a recorded one. */
+  /** `liveRoute().dial` for the real gateway, `scriptedDialer(fixture)` for a recorded one. */
   readonly dial: Dialer
   /** Whether the first dial after launch may start the gateway. Automatic retries never do. Default true. */
   readonly startGatewayOnLaunch?: boolean
@@ -156,6 +192,7 @@ function sameSidebar(a: Sidebar, b: Sidebar): boolean {
 }
 
 const sameOpen = (a: OpenChat, b: OpenChat) => JSON.stringify(a) === JSON.stringify(b)
+const sameScreen = (a: ScreenView | null, b: ScreenView | null) => JSON.stringify(a) === JSON.stringify(b)
 
 function sameAbout(left: About, right: About): boolean {
   if (left.app !== right.app) return false
@@ -175,6 +212,8 @@ const CATALOG_TIMEOUT_MS = 10_000
 const ATTACHING: ReadonlySet<Session['sync']['state']> = new Set(['opening', 'catching-up', 'rebuilding'])
 const NO_UPLOADS: NonNullable<HermesOptions['uploads']> = { read: async () => null }
 const COMMAND_WITH_ATTACHMENTS = "A command can't carry attachments. Remove them, or send a message instead."
+/** A socket that reaches every bot searches them all, so a search waits for the list of them. */
+const STILL_LISTING = 'Highwing is still listing your bots.'
 
 export function openHermes(options: HermesOptions): Hermes {
   const clock = options.clock ?? systemClock
@@ -186,6 +225,7 @@ export function openHermes(options: HermesOptions): Hermes {
   /** Actors let go of, oldest first. Each is detached, so no frame, request or badge reaches it, and keeps its content. */
   const released = new Map<SessionId, SessionActor>()
   const watchers = new Map<SessionId, Set<(session: Session) => void>>()
+  const changeListeners = new Set<(session: Session, previous: Session) => void>()
   const windows = new Map<SessionId, number>()
   const releases = new Map<SessionId, () => void>()
   const branchPins = new Map<BranchId, BranchPin>()
@@ -238,7 +278,16 @@ export function openHermes(options: HermesOptions): Hermes {
       if ('ask' in parsed && fresh && shownChat(desk.open)?.sessionId === parsed.sessionId) options.onPane?.(parsed.ask, actor.session)
     },
     gap: parsed => actors.get(parsed.sessionId)?.feed({ in: 'gap' }),
-    app: refreshSoon,
+    app: parsed => {
+      if (parsed.event !== 'cron.changed') return refreshSoon()
+      scheduled.read()
+      routines.set(routines.get() + 1)
+    },
+    skills: () => {
+      catalogRead = readCatalog()
+      void readLibrary()
+    },
+    display: parsed => screens.moved(parsed),
     groups: parsed => book.moved(parsed.rooms),
     unrouted: parsed => count('unrouted', parsed.type)
   }
@@ -262,7 +311,10 @@ export function openHermes(options: HermesOptions): Hermes {
       link.set(next)
       publishAbout()
       for (const actor of [...actors.values()]) actor.linkChanged()
-      if (next.state !== 'online') list.stale()
+      if (next.state !== 'online') {
+        list.stale()
+        screens.offline()
+      }
       roster.linked(next.state)
       book.linked(next.state)
     },
@@ -273,7 +325,11 @@ export function openHermes(options: HermesOptions): Hermes {
       relayRead = relays.probe()
       roster.ask()
       book.online()
+      scheduled.read()
       activities.poll()
+      screens.online()
+      void readLibrary()
+      routines.set(routines.get() + 1)
     },
     onEvent: params => {
       noteVersion(hermesVersionOf(versionOn(params)))
@@ -290,6 +346,9 @@ export function openHermes(options: HermesOptions): Hermes {
   })
   const about = feed<About>(aboutOf(), sameAbout)
   publishAbout = () => about.set(aboutOf())
+  const screens = screenDesk(conn, clock, () => screen.set(screens.view))
+  const screen = feed<ScreenView | null>(null, sameScreen)
+  const routines = feed(0)
   const slash = feed<SlashCatalog>([], sameCatalog)
   let catalogReads = 0
   let catalogRead: Promise<void> = Promise.resolve()
@@ -298,6 +357,35 @@ export function openHermes(options: HermesOptions): Hermes {
     const read = ++catalogReads
     const catalog = await conn.call('commands.catalog', {}, CATALOG_TIMEOUT_MS).then(parseCatalog).catch(() => [])
     if (read === catalogReads) slash.set(catalog)
+  }
+
+  const skillWatchers = new Set<(library: SkillLibrary) => void>()
+  let library: SkillLibrary = { state: 'reading', bot: null }
+  let libraryReads = 0
+  const publishLibrary = (next: SkillLibrary) => {
+    library = next
+    for (const listener of [...skillWatchers]) listener(next)
+  }
+
+  /** A re-read of the same bot keeps its list on screen until the answer comes. */
+  const readLibrary = async () => {
+    if (skillWatchers.size === 0) return
+    const read = ++libraryReads
+    const bot = shownBot(desk.open)
+    if (library.bot !== bot || library.state !== 'listed') publishLibrary({ state: 'reading', bot })
+    const got = await readSkills(conn, bot)
+    if (read !== libraryReads) return
+    publishLibrary(got.ok ? { state: 'listed', bot, skills: got.value } : { state: 'failed', bot, message: got.refusal.message })
+  }
+
+  /** Each write sends a bot's whole off list read just before it, so two at once would undo each other. */
+  let skillWrites: Promise<unknown> = Promise.resolve()
+
+  const watchSkills: Hermes['watchSkills'] = listener => {
+    skillWatchers.add(listener)
+    listener(library)
+    if (skillWatchers.size === 1) void readLibrary()
+    return () => void skillWatchers.delete(listener)
   }
 
   const relays = relayBook(conn, () => relay.set(relays.desk))
@@ -324,7 +412,10 @@ export function openHermes(options: HermesOptions): Hermes {
       open.set(desk.open)
       list.follow(shownBot(desk.open))
       book.follow(shownGroup(desk.open))
+      const shown = desk.open.shown
+      screens.follow(shown === null || shown.kind === 'group' ? undefined : shown.bot)
       publishSidebar()
+      if (shownBot(desk.open) !== library.bot) void readLibrary()
     }
   })
   const open = feed<OpenChat>(desk.open, sameOpen)
@@ -374,6 +465,9 @@ export function openHermes(options: HermesOptions): Hermes {
   const groups = feed<Groups>(book.groups)
   const groupChat = feed<GroupChat | null>(book.chat)
 
+  const scheduled = jobList(conn, () => jobs.set(scheduled.jobs))
+  const jobs = feed<readonly Job[] | null>(scheduled.jobs)
+
   const actorFor = (id: SessionId): SessionActor => {
     const held = actors.get(id)
     if (held !== undefined) return held
@@ -389,7 +483,10 @@ export function openHermes(options: HermesOptions): Hermes {
       conn: bot === undefined ? conn : conn.as(bot), clock, mintId, bridge, noteVersion,
       watched: () => windows.has(id),
       publish: (session, previous) => {
+        const { rewound } = session
+        if (rewound !== previous.rewound) relays.reanchor(id, after => (Object.hasOwn(rewound, after) ? rewound[after] ?? null : after))
         for (const listener of [...(watchers.get(id) ?? [])]) listener(session)
+        for (const listener of [...changeListeners]) listener(session, previous)
         if (session.run.state !== previous.run.state) refreshSoon()
         publishSidebar()
         retain()
@@ -506,6 +603,11 @@ export function openHermes(options: HermesOptions): Hermes {
     return read
   }
 
+  const searchPlaces = (): readonly Place[] => {
+    const listed = bots.get()
+    return conn.reach === 'host' && listed.state === 'listed' ? botsIn(listed.roster).map(bot => ({ bot: bot.id, via: conn.as(bot.id) })) : [{ bot: null, via: conn }]
+  }
+
   const carriesCommand = async (command: Extract<Command, { do: 'send' | 'start' }>): Promise<boolean> => {
     if ((command.attachments ?? []).length === 0 || !command.text.trimStart().startsWith('/')) return false
     await catalogRead
@@ -524,7 +626,11 @@ export function openHermes(options: HermesOptions): Hermes {
       return started.ok ? run({ do: 'send', sessionId: started.value, text: command.text, attachments: command.attachments ?? [] }) : started
     }
     if (command.do === 'botModels') return botModels(conn, command.bot)
+    if (command.do === 'denyRules') return denyRules(conn, command.bot)
     if (command.do === 'versions') return versions(command.sessionId)
+    if (command.do === 'readMessages') {
+      return conn.reach === 'host' && bots.get().state === 'loading' ? refused('rejected', STILL_LISTING) : readMessages(searchPlaces(), command.step, desk.listed)
+    }
     if (command.do === 'createBot') {
       const made = await createBot(conn, command.draft, command.picture)
       // A 5062 may have made the profile, so the roster is read after any attempt.
@@ -543,9 +649,21 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'renameGroup') return book.rename(command.group, command.name)
     if (command.do === 'deleteGroup') return book.disband(command.group)
     if (command.do === 'describeBot') return describeBot(conn, command.bot)
+    if (command.do === 'setSkill') {
+      const done = skillWrites.then(() => setSkill(conn, command.bot, command.name, command.enabled))
+      skillWrites = done
+      void done.then(readLibrary)
+      return done
+    }
+    if (command.do === 'skillText') return skillText(conn, command.bot, command.name)
     if (command.do === 'passwordManagers' || command.do === 'usePasswordManager' || command.do === 'unlockPasswordManager' || command.do === 'lockPasswordManager') {
       return passwordManagers(conn, command)
     }
+    if (command.do === 'toolServers') return toolServers(conn, command.bot)
+    if (command.do === 'addToolServer') return addToolServer(conn, command.bot, command.setup)
+    if (command.do === 'removeToolServer') return removeToolServer(conn, command.bot, command.name)
+    if (command.do === 'listRoutines') return listRoutines(conn, command.bot)
+    if (command.do === 'controlRoutine') return controlRoutine(conn, command.bot, command.routine, command.action)
     if (command.do === 'botPicture') return botPicture(conn, command.bot)
     if (command.do === 'canGeneratePicture') return canGeneratePicture(conn)
     if (command.do === 'generatePicture') return generatePicture(conn, command.prompt)
@@ -571,6 +689,7 @@ export function openHermes(options: HermesOptions): Hermes {
       roster.ask()
       return marked
     }
+    if (command.do === 'takeControl' || command.do === 'handBack') return screens.control(command.bot, command.do === 'takeControl')
     if (command.do === 'refreshBots') {
       roster.refresh()
       return DONE
@@ -593,12 +712,22 @@ export function openHermes(options: HermesOptions): Hermes {
     relay,
     groups,
     groupChat,
+    jobs,
     activity,
+    screen,
+    screenSocket: screens.socket,
+    routines,
     watch,
+    watchSkills,
+    changes: listener => {
+      changeListeners.add(listener)
+      return () => void changeListeners.delete(listener)
+    },
     run: command => run(command) as Promise<Outcome<ResultOf<typeof command>>>,
     close: async () => {
       cancelRefresh?.()
       book.close()
+      screens.close()
       for (const cancel of releases.values()) cancel()
       releases.clear()
       conn.close()

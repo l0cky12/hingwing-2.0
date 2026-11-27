@@ -1,5 +1,5 @@
 import type { Bot, BotDetails, BotDraft, BotId, CommandOutcome } from '@highwing/hermes/domain'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { PictureChoice } from '../../ipc-contract'
 import { Avatar } from './Avatar'
 import { BotForm } from './BotForm'
@@ -12,9 +12,11 @@ export interface BotEditorProps extends EditCalls {
   readonly onPickPicture: (bot: BotId) => Promise<CommandOutcome<PictureChoice>>
   readonly onRemovePicture: (bot: BotId) => Promise<CommandOutcome>
   readonly onClose: () => void
+  readonly className?: string
+  readonly tabs?: ReactNode
 }
 
-export function BotEditor({ bot, details: loaded, onDescribe, onEdit, onPickPicture, onRemovePicture, onClose }: BotEditorProps) {
+export function BotEditor({ bot, details: loaded, onDescribe, onEdit, onPickPicture, onRemovePicture, onClose, className, tabs }: BotEditorProps) {
   const [details, setDetails] = useState(loaded)
   const [picturing, setPicturing] = useState<{ readonly busy: boolean; readonly words: string | null }>({ busy: false, words: null })
   const forget = useForgetPicture()
@@ -32,7 +34,8 @@ export function BotEditor({ bot, details: loaded, onDescribe, onEdit, onPickPict
   }
 
   return (
-    <BotForm title={details.name} submitLabel="Save" initial={draftOf(loaded)} problemOf={() => null} models="none" onSubmit={save} onClose={onClose}>
+    <BotForm title={details.name} submitLabel="Save" initial={draftOf(loaded)} problemOf={() => null} models="none" onSubmit={save} onClose={onClose} className={className}>
+      {tabs}
       <div className="bot-picture">
         <Avatar bot={bot} size={56} />
         <button type="button" disabled={picturing.busy} onClick={() => void picture(() => onPickPicture(bot.id))}>Upload picture</button>

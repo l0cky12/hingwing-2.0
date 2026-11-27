@@ -9,6 +9,8 @@ export interface PopupItem<A extends string> {
   readonly icon?: ReactNode
   /** Shown at the item's right end, and read as its description rather than its name. */
   readonly hint?: string
+  /** Reads as unavailable and does nothing when chosen, yet the arrow keys still reach it, so a screen reader can read it. */
+  readonly disabled?: boolean
   /** Choices that open in a menu beside this item. */
   readonly submenu?: readonly PopupItem<A>[]
   /** Why the item can't be used now, shown as its title and said to a screen reader. It stays focusable. */
@@ -49,10 +51,16 @@ export function PopupMenu<A extends string>({ label, groups, className, anchor, 
   useLayoutEffect(() => {
     const drawn = menu.current
     if (drawn === null) return
-    const { left, top } = placeMenu(anchor(), drawn.getBoundingClientRect(), viewport())
-    drawn.style.left = `${left}px`
-    drawn.style.top = `${top}px`
+    const place = () => {
+      const { left, top } = placeMenu(anchor(), drawn.getBoundingClientRect(), viewport())
+      drawn.style.left = `${left}px`
+      drawn.style.top = `${top}px`
+    }
+    place()
     itemsIn(drawn)[0]?.focus()
+    const observer = new ResizeObserver(place)
+    observer.observe(drawn)
+    return () => observer.disconnect()
   }, [])
 
   useLayoutEffect(() => {
@@ -136,11 +144,11 @@ export function PopupMenu<A extends string>({ label, groups, className, anchor, 
     const described = [item.hint === undefined ? null : hint, item.block === undefined ? null : block].filter(id => id !== null).join(' ')
     return (
       <button
-        key={item.id} type="button" role="menuitem" tabIndex={-1} title={item.block} aria-disabled={item.block !== undefined || undefined}
+        key={item.id} type="button" role="menuitem" tabIndex={-1} title={item.block} aria-disabled={item.block !== undefined || item.disabled || undefined}
         aria-describedby={described === '' ? undefined : described}
         aria-haspopup={item.submenu === undefined ? undefined : 'menu'} aria-expanded={item.submenu === undefined ? undefined : open?.id === item.id}
         onClick={() => {
-          if (item.block !== undefined) return
+          if (item.block !== undefined || item.disabled) return
           if (item.submenu === undefined) onChoose(item.id)
           else setOpen({ id: item.id, focus: true })
         }}
@@ -159,7 +167,7 @@ export function PopupMenu<A extends string>({ label, groups, className, anchor, 
     <div ref={holder} className="popup" onBlur={onBlur} onContextMenu={event => { event.preventDefault(); event.stopPropagation() }}>
       <div ref={menu} className={`file-menu popup-menu ${className}`} role="menu" aria-label={label} onKeyDown={onMenuKey}>
         {groups.map((group, index) => (
-          <Fragment key={group.map(item => item.id).join()}>
+          <Fragment key={index}>
             {index > 0 && <div role="separator" />}
             {group.map(item => choice(item, 'item'))}
           </Fragment>

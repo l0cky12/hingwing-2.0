@@ -23,6 +23,8 @@ export const SERVE = ['gateway', 'tickets', '--serve', '--json'] as const
 export type HermesArgs = typeof PROBE | typeof SERVE | (typeof ATTACH)[keyof typeof ATTACH]
 /** The only line Highwing writes to a `--serve` channel. A literal too, and it names no profile: an interactive ticket takes none. */
 export const ASK_INTERACTIVE = '{"id":1,"purpose":"interactive"}\n'
+/** The line that asks `--serve` for a one-use ticket to the gateway's HTTP routes, such as its speech upload and its kanban board. */
+export const ASK_NATIVE_HTTP = '{"id":1,"purpose":"native-http"}\n'
 
 /** The installer's command locations (Hermes's scripts/install.sh): per-user, root, and the legacy venv. */
 export const HERMES_PATHS = ['$HOME/.local/bin/hermes', '/usr/local/bin/hermes', '$HOME/.hermes/hermes-agent/venv/bin/hermes'] as const
@@ -209,6 +211,21 @@ export function servedOf(code: number, stdout: string): Served {
   return refusal === 'unsupported_purpose' ? { is: 'unsupported' } : { is: 'failed', kind: 'dropped' }
 }
 
+/** Where the gateway that answered a `--serve` run takes HTTP, as its hello names it: a loopback origin on its own machine. */
+export function originOf(stdout: string): string | null {
+  const hello = jsonObjectAt(stdout, 0)
+  const origin = hello?.type === 'hello' && isObject(hello.endpoint) ? hello.endpoint.api_origin : null
+  return typeof origin === 'string' && URL.canParse(origin) ? origin : null
+}
+
+/** Reads a run of `--serve` that was sent `ASK_NATIVE_HTTP`: the hello's `api_origin` and the reply's ticket. null: no gateway to ask, or no ticket came. */
+export function httpTicketOf(code: number, stdout: string): { readonly origin: string; readonly ticket: string } | null {
+  const hello = jsonObjectAt(stdout, 0)
+  const reply = jsonObjectAt(stdout, 1)
+  const origin = hello?.type === 'hello' && isObject(hello.endpoint) ? hello.endpoint.api_origin : null
+  return code === 0 && typeof origin === 'string' && reply?.ok === true && typeof reply.ticket === 'string' && reply.ticket !== '' ? { origin, ticket: reply.ticket } : null
+}
+
 export async function probeHermes(host: SshHost, options: SshOptions): Promise<Probe> {
   const run = await sshExec(host, PROBE, options)
   return run.ok ? probeOf(run.code, run.stdout) : { ok: false, failure: run.why }
@@ -222,8 +239,12 @@ export const UPGRADE_MS = HANDSHAKE_MS
  * `127.0.0.1:port` on the far machine through `ssh -W`. Resolves with the local port. The far side
  * sees a loopback peer, which the gateway requires of a ticket. The ssh ends with the connection,
  * and a crashed Highwing leaves none behind, because `ssh -W` exits when its stdin closes.
+ * `firstByteMs`: how long the far side may stay silent once dialed. A socket upgrade answers at
+ * once, while an HTTP request is answered only when its work is done.
  */
-export function relay(host: SshHost, port: number, { sshBin = 'ssh', signal, clock = systemClock }: Omit<SshOptions, 'deadlineMs'>): Promise<number> {
+export function relay(
+  host: SshHost, port: number, { sshBin = 'ssh', signal, clock = systemClock, firstByteMs = UPGRADE_MS }: Omit<SshOptions, 'deadlineMs'> & { readonly firstByteMs?: number }
+): Promise<number> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) return reject(new Error('The route was disposed.'))
     const server = createServer()
@@ -237,14 +258,14 @@ export function relay(host: SshHost, port: number, { sshBin = 'ssh', signal, clo
     signal.addEventListener('abort', abandon, { once: true })
     server.once('connection', socket => {
       abandon()
-      carry(socket, [...SSH_OPTIONS, '-W', `127.0.0.1:${port}`, host], { sshBin, signal, clock })
+      carry(socket, [...SSH_OPTIONS, '-W', `127.0.0.1:${port}`, host], { sshBin, signal, clock, firstByteMs })
     })
     server.once('error', reject)
     server.listen(0, '127.0.0.1', () => resolve((server.address() as AddressInfo).port))
   })
 }
 
-function carry(socket: Socket, args: readonly string[], { sshBin, signal, clock }: { readonly sshBin: string; readonly signal: AbortSignal; readonly clock: Clock }): void {
+function carry(socket: Socket, args: readonly string[], { sshBin, signal, clock, firstByteMs }: { readonly sshBin: string; readonly signal: AbortSignal; readonly clock: Clock; readonly firstByteMs: number }): void {
   const child = spawn(sshBin, args, { stdio: ['pipe', 'pipe', 'ignore'] })
   const stop = () => {
     heard()
@@ -252,7 +273,7 @@ function carry(socket: Socket, args: readonly string[], { sshBin, signal, clock 
     socket.destroy()
     child.kill()
   }
-  const heard = clock.setTimeout(stop, UPGRADE_MS)
+  const heard = clock.setTimeout(stop, firstByteMs)
   signal.addEventListener('abort', stop, { once: true })
   child.stdout.once('data', heard)
   socket.pipe(child.stdin)

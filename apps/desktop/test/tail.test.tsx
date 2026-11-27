@@ -7,7 +7,7 @@ import { drawnOf, TAIL, useTail, type Drawn } from '../src/renderer/chat/tail'
 import { Thread } from '../src/renderer/chat/Thread'
 
 const turn = (row: number, end: TurnView['end'] = { kind: 'done', words: 'Done' }): TurnView =>
-  ({ key: `t${row}`, time: null, request: `Request ${row}`, attachments: [], rowId: row, tokens: null, reactions: null, pages: [], nodes: [], end })
+  ({ key: `t${row}`, time: null, request: `Request ${row}`, handed: false, attachments: [], rowId: row, tokens: null, reactions: null, pages: [], nodes: [], end })
 const chat = (count: number, more: Partial<ThreadView> = {}): ThreadView =>
   ({ state: 'ready', turns: Array.from({ length: count }, (_, index) => turn(index + 1)), pending: [], asks: [], earlier: 'none', changesAt: null, ...more })
 const relay = (id: string, after: string | null): Relay =>
@@ -19,7 +19,7 @@ const NO_SIDES: readonly SideRow[] = []
 
 const thread = ({ view, relays, sides }: Drawn) => (
   <Thread
-    view={view} relays={relays} sides={sides} onAnswer={async () => undefined} onAnswerRequest={async () => false} onLoadEarlier={() => {}} onFindClosed={() => {}} onFindScrolled={() => {}}
+    view={view} relays={relays} sides={sides} onAnswer={async () => undefined} onAskAgain={async () => false} onAnswerRequest={async () => false} onLoadEarlier={() => {}} onFindClosed={() => {}} onFindScrolled={() => {}}
     canEdit canRegenerate={false} regenerateTurnKey={null} canBranch onEdit={() => {}} onRegenerate={() => {}} onBranch={() => {}} onNewChat={() => {}}
     versions={[]} onVersion={() => {}} queue={{ canAct: true, pressed: new Map(), onAct: () => {} }} canReact onReact={() => {}} helpers={null}
   />
