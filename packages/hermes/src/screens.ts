@@ -49,8 +49,11 @@ export function screenDesk(conn: Pick<Connection, 'call' | 'as' | 'sibling'>, cl
   const ours = new Map<string, string>()
   /** The viewer id Hermes minted on this connection. Only it may take control. */
   let current: string | null = null
-  /** Each `display.observe` waits for the one before, so a second asks with the id the first was minted, not for a new one. */
-  let observing: Promise<unknown> = Promise.resolve()
+  /**
+   * Every call that mints a viewer id or moves the lease waits for the one before: a second observe then asks with the id the first
+   * was minted, and Hand back releases whichever id holds the lease once a move in flight has landed.
+   */
+  let queue: Promise<unknown> = Promise.resolve()
   let followed: BotId | null | undefined
   let thumbnail: string | null = null
   let polling: { readonly bot: BotId | null; cancel: () => void } | null = null
@@ -119,17 +122,19 @@ export function screenDesk(conn: Pick<Connection, 'call' | 'as' | 'sibling'>, cl
     }
   }
 
-  const observe = (bot: BotId | null) => {
-    const asked = observing.then(async () => {
-      const observed = parseObserved(await callsFor(bot).call('display.observe', current === null ? {} : { viewer_id: current }))
-      if (observed !== null) {
-        current = observed.viewerId
-        ours.set(hashOf(current), current)
-      }
-      return observed
-    })
-    observing = asked.catch(() => null)
-    return asked
+  const serially = <T>(work: () => Promise<T>): Promise<T> => {
+    const run = queue.then(work)
+    queue = run.catch(() => null)
+    return run
+  }
+
+  const observe = async (bot: BotId | null) => {
+    const observed = parseObserved(await callsFor(bot).call('display.observe', current === null ? {} : { viewer_id: current }))
+    if (observed !== null) {
+      current = observed.viewerId
+      ours.set(hashOf(current), current)
+    }
+    return observed
   }
 
   const leased = (bot: BotId | null, reply: Lease | null) => {
@@ -180,7 +185,7 @@ export function screenDesk(conn: Pick<Connection, 'call' | 'as' | 'sibling'>, cl
       keepFresh()
       changed()
     },
-    control: async (bot, take) => {
+    control: (bot, take) => serially(async () => {
       try {
         if (take) {
           const id = current ?? (await observe(bot))?.viewerId
@@ -199,18 +204,21 @@ export function screenDesk(conn: Pick<Connection, 'call' | 'as' | 'sibling'>, cl
         if (error instanceof RpcRefusal) return refused('rejected', `Hermes refused: ${error.message}`)
         throw error
       }
-    },
+    }),
     socket: async () => {
       const bot = followed
       if (bot === undefined) return null
       try {
-        const observed = await observe(bot)
+        const observed = await serially(async () => {
+          const minted = await observe(bot)
+          // After a dropped link the user's lease names the id of the last connection, so it moves to the one this view watches with, or Hermes would drop their input.
+          const holder = leaseOf(bot)?.viewerHash
+          if (minted !== null && holder != null && ours.has(holder) && holder !== hashOf(minted.viewerId)) await acquire(bot, minted.viewerId)
+          return minted
+        })
         // A relay to another machine can fail on its own, and the view then says it could not connect.
         const at = observed === null ? null : await conn.sibling(observed.path).catch(() => null)
         if (observed === null || at === null || followed !== bot) return null
-        // After a dropped link the user's lease names the id of the last connection, so it moves to the one this view watches with, or Hermes would drop their input.
-        const holder = leaseOf(bot)?.viewerHash
-        if (holder != null && ours.has(holder) && holder !== hashOf(observed.viewerId)) await acquire(bot, observed.viewerId)
         const url = new URL(at)
         url.searchParams.set('display_ticket', observed.ticket)
         return url.href

@@ -158,12 +158,11 @@ describe('the screen desk, against replies held open', () => {
     const socket = screens.socket()
     const taken = screens.control(DEFAULT, true)
     await answer('display.observe', { ...status(wire('agent', 1)), ticket: 't', path: '/api/display/ws', viewer_id: 'v1' })
-    await answer('display.observe', { ...status(wire('agent', 1)), ticket: 't', path: '/api/display/ws', viewer_id: 'v1' })
     await answer('display.lease.acquire', { lease: wire('human', 2, 'v1') })
     expect(await taken).toEqual({ ok: true, value: undefined })
     expect(await socket).toBe('ws://127.0.0.1:9/api/display/ws?display_ticket=t')
     expect(sent.filter(call => call.method === 'display.observe' || call.method === 'display.lease.acquire').map(call => call.params)).toEqual([
-      { profile: 'default' }, { profile: 'default', viewer_id: 'v1' }, { profile: 'default', viewer_id: 'v1', reason: 'Highwing' }
+      { profile: 'default' }, { profile: 'default', viewer_id: 'v1', reason: 'Highwing' }
     ])
     expect(screens.view?.screen).toEqual({ state: 'on', control: 'you', thumbnail: null })
   })
@@ -212,6 +211,28 @@ describe('the screen desk, against replies held open', () => {
     expect(await socket).toBe('ws://127.0.0.1:9/p?display_ticket=t2')
     expect(sent.filter(call => call.method === 'display.observe').at(-1)?.params, 'the old id is not this connection\'s to ask with').toEqual({ profile: 'default' })
     expect(sent.at(-1)).toEqual({ method: 'display.lease.acquire', params: { profile: 'default', viewer_id: 'v2', reason: 'Highwing' } })
+  })
+
+  it('hands back after a lease move in flight has landed, so the move cannot take control again', async () => {
+    const { screens, sent, answer } = desk()
+    screens.follow(DEFAULT)
+    await answer('display.status', status(wire('agent', 1)))
+    const taken = screens.control(DEFAULT, true)
+    await answer('display.observe', { ...status(wire('agent', 1)), ticket: 't', path: '/p', viewer_id: 'v1' })
+    await answer('display.lease.acquire', { lease: wire('human', 2, 'v1') })
+    await taken
+    screens.offline()
+    screens.online()
+    await answer('display.status', status(wire('human', 2, 'v1')))
+    const socket = screens.socket()
+    const handed = screens.control(DEFAULT, false)
+    await answer('display.observe', { ...status(wire('human', 2, 'v1')), ticket: 't2', path: '/p', viewer_id: 'v2' })
+    await answer('display.lease.acquire', { lease: wire('human', 3, 'v2') })
+    await answer('display.lease.release', { lease: wire('agent', 4) })
+    expect(await handed).toEqual({ ok: true, value: undefined })
+    await socket
+    expect(sent.slice(-3).map(call => [call.method, call.params.viewer_id])).toEqual([['display.observe', undefined], ['display.lease.acquire', 'v2'], ['display.lease.release', 'v2']])
+    expect(screens.view?.screen).toMatchObject({ control: 'agent' })
   })
 
   it('gives no live view of a bot the open chat moved away from while it was asked for', async () => {
