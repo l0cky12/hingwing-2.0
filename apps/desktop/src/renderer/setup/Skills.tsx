@@ -6,16 +6,13 @@ type Opened = { readonly name: string; readonly text: string | null; readonly pr
 type Asked = { readonly bot: BotId | null; readonly skills: ReadonlyMap<string, boolean> }
 const NONE: ReadonlyMap<string, boolean> = new Map()
 
-const nameOf = (bot: BotId | null, bots: Bots | undefined): string =>
+export const nameOf = (bot: BotId | null, bots: Bots | undefined): string =>
   (bot !== null && bots?.state === 'listed' ? botsIn(bots.roster).find(listed => listed.id === bot)?.name : undefined) ?? 'This bot'
 
-export function Skills() {
+export function useSkillSwitches() {
   const library = useTopic('skills')
-  const bots = useTopic('bots')
-  /** Each switch the user moved on that bot, held at the asked value until the library says it or Hermes refuses it. */
   const [asked, setAsked] = useState<Asked>({ bot: null, skills: NONE })
   const [problem, setProblem] = useState<{ readonly bot: BotId | null; readonly message: string } | null>(null)
-  const [opened, setOpened] = useState<Opened | null>(null)
   useEffect(() => {
     if (library?.state !== 'listed') return
     setAsked(held => {
@@ -24,9 +21,6 @@ export function Skills() {
       return skills.size === held.skills.size ? held : { bot: held.bot, skills }
     })
   }, [library])
-  if (library === undefined) return null
-  const name = nameOf(library.bot, bots)
-  const held = asked.bot === library.bot ? asked.skills : NONE
   const ask = (bot: BotId | null, skill: string, wanted: boolean | null) => setAsked(before => {
     if (wanted === null && before.bot !== bot) return before
     const skills = new Map(before.bot === bot ? before.skills : NONE)
@@ -34,8 +28,8 @@ export function Skills() {
     else skills.set(skill, wanted)
     return { bot, skills }
   })
-
   const toggle = async ({ name: skill, enabled }: Skill) => {
+    if (library === undefined) return
     const { bot } = library
     setProblem(null)
     ask(bot, skill, !enabled)
@@ -44,6 +38,20 @@ export function Skills() {
     ask(bot, skill, null)
     setProblem({ bot, message: done.refusal.message })
   }
+  return {
+    library,
+    pending: library !== undefined && asked.bot === library.bot ? asked.skills : NONE,
+    problem: problem !== null && problem.bot === library?.bot ? problem.message : null,
+    toggle
+  }
+}
+
+export function Skills() {
+  const { library, pending, problem, toggle } = useSkillSwitches()
+  const bots = useTopic('bots')
+  const [opened, setOpened] = useState<Opened | null>(null)
+  if (library === undefined) return null
+  const name = nameOf(library.bot, bots)
 
   const open = async (skill: string) => {
     setOpened({ name: skill, text: null, problem: null })
@@ -71,13 +79,13 @@ export function Skills() {
           <div className="control">
             <button type="button" className="btn" aria-label={`Open ${skill.name}`} onClick={() => void open(skill.name)}>Open</button>
             <input
-              type="checkbox" role="switch" aria-label={`Use ${skill.name}`} checked={held.get(skill.name) ?? skill.enabled} disabled={held.has(skill.name)}
+              type="checkbox" role="switch" aria-label={`Use ${skill.name}`} checked={pending.get(skill.name) ?? skill.enabled} disabled={pending.has(skill.name)}
               onChange={() => void toggle(skill)}
             />
           </div>
         </div>
       ))}
-      {problem !== null && problem.bot === library.bot && <div className="row"><p className="desc" role="alert">{problem.message}</p></div>}
+      {problem !== null && <div className="row"><p className="desc" role="alert">{problem}</p></div>}
       {opened !== null && <SkillDialog opened={opened} onClose={() => setOpened(null)} />}
     </div>
   )

@@ -40,7 +40,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   row('focusComposer', 'Chat', 'Focus the message box', 'command', 'i', 'I'),
   row('addSelection', 'Chat', 'Quote the selected text in the message box', 'command', 'l', 'L'),
   row('settings', 'Window', 'Settings', 'command', ',', ','),
-  row('apps', 'Window', 'Connect apps', 'command', 'm', 'M', { shift: true }),
+  row('apps', 'Window', 'Connectors', 'command', 'm', 'M', { shift: true }),
   row('tasks', 'Window', 'Tasks', 'command', 't', 'T', { shift: true }),
   row('compactSidebar', 'Window', 'Compact sidebar', 'command', 'b', 'B', { onlyIn: 'In bot mode' }),
   row('zoomIn', 'Window', 'Zoom in', 'command', '= +', '=', { shift: 'any' }),
