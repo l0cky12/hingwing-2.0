@@ -1,6 +1,6 @@
 import {
-  APPROVAL_MODES, BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
-  type About, type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
+  APPROVAL_MODES, BOT_MARKS, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
+  type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
   type RestoreScope, type ResultOf, type ScreenView, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type Target, type TurnId, type Unstarted
@@ -92,6 +92,11 @@ export type Theme = 'system' | 'light' | 'dark'
 export type ThemeCommand = { readonly do: 'setTheme'; readonly theme: Theme }
 export const isTheme = (raw: unknown): raw is Theme => raw === 'system' || raw === 'light' || raw === 'dark'
 
+/** The color that tints the open chat: the open bot's own, or one the user fixed. Owned by Electron main and kept on disk. */
+export type Accent = 'bot' | AvatarTone
+export type AccentCommand = { readonly do: 'setAccent'; readonly accent: Accent }
+export const isAccent = (raw: unknown): raw is Accent => raw === 'bot' || raw === 'ink' || BOT_TONES.some(tone => tone === raw)
+
 /** How the bots column draws each bot: with its name and last message, or as its face alone. Owned by Electron main and kept on disk. */
 export type SidebarWidth = 'full' | 'compact'
 export type SidebarWidthCommand = { readonly do: 'setSidebarWidth'; readonly width: SidebarWidth }
@@ -129,12 +134,12 @@ export const isNotices = (raw: unknown): raw is Notices =>
 
 export type IntroCommand = { readonly do: 'examples' } | { readonly do: 'done' }
 
-export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SidebarWidthCommand | SendKeyCommand | SpellCheckCommand | SnoozeCommand | NoticeCommand | OnCloseCommand | IntroCommand
+export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | AccentCommand | SidebarWidthCommand | SendKeyCommand | SpellCheckCommand | SnoozeCommand | NoticeCommand | OnCloseCommand | IntroCommand
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' | 'refreshBots' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
 
-/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `sidebarWidth`, `sendKey`, `spellCheck`, `snoozes`, `notices`, `onClose` and `intro`, which belong to the window. */
+/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `accent`, `sidebarWidth`, `sendKey`, `spellCheck`, `snoozes`, `notices`, `onClose` and `intro`, which belong to the window. */
 export interface AppTopics {
   readonly setup: Setup
   readonly link: Link
@@ -159,6 +164,7 @@ export interface AppTopics {
   readonly preview: Preview
   readonly mode: Mode
   readonly theme: Theme
+  readonly accent: Accent
   readonly sidebarWidth: SidebarWidth
   readonly sendKey: SendKey
   readonly spellCheck: boolean
@@ -169,7 +175,7 @@ export interface AppTopics {
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, screen: true, skills: true, preview: true, mode: true, theme: true, sidebarWidth: true, sendKey: true, spellCheck: true, snoozes: true, notices: true, onClose: true, intro: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, screen: true, skills: true, preview: true, mode: true, theme: true, accent: true, sidebarWidth: true, sendKey: true, spellCheck: true, snoozes: true, notices: true, onClose: true, intro: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -731,6 +737,7 @@ export const validators: Validators = {
   done: () => ({ do: 'done' }),
   setMode: raw => (isMode(raw.mode) ? { do: 'setMode', mode: raw.mode } : null),
   setTheme: raw => (isTheme(raw.theme) ? { do: 'setTheme', theme: raw.theme } : null),
+  setAccent: raw => (isAccent(raw.accent) ? { do: 'setAccent', accent: raw.accent } : null),
   setSidebarWidth: raw => (isSidebarWidth(raw.width) ? { do: 'setSidebarWidth', width: raw.width } : null),
   setOnClose: raw => (isOnClose(raw.onClose) ? { do: 'setOnClose', onClose: raw.onClose } : null),
   setSendKey: raw => (isSendKey(raw.sendKey) ? { do: 'setSendKey', sendKey: raw.sendKey } : null),

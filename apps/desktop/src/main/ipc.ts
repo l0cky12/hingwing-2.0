@@ -2,7 +2,7 @@ import type { Hermes } from '@highwing/hermes'
 import type { BotId, CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
 import {
   CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
-  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type Notices, type OnClose, type PictureChoice, type PictureFile, type Push, type SessionPatch, type StageResult,
+  type Accent, type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type Notices, type OnClose, type PictureChoice, type PictureFile, type Push, type SessionPatch, type StageResult,
   type SendKey, type SidebarWidth, type Snoozes, type Tail, type Theme, type Topic
 } from '../ipc-contract'
 import { basename } from 'node:path'
@@ -47,7 +47,7 @@ const NEVER: Source = () => () => {}
 /** The pane's side of a window: its topic, its commands, and the files a window previews. */
 export type PreviewOwner = Pick<PreviewPane, 'preview' | 'show' | 'run'>
 type Shown<T> = Pick<PreferenceStore<T>, 'get' | 'subscribe' | 'set'>
-export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme>; readonly sidebarWidth: Shown<SidebarWidth>; readonly sendKey: Shown<SendKey>; readonly spellCheck: Shown<boolean>; readonly snoozes: Shown<Snoozes>; readonly notices: Shown<Notices>; readonly onClose: Shown<OnClose> }
+export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme>; readonly accent: Shown<Accent>; readonly sidebarWidth: Shown<SidebarWidth>; readonly sendKey: Shown<SendKey>; readonly spellCheck: Shown<boolean>; readonly snoozes: Shown<Snoozes>; readonly notices: Shown<Notices>; readonly onClose: Shown<OnClose> }
 interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner; readonly preferences: Preferences; readonly intro: Pick<IntroOwner, 'intro'> }
 
 /** A Hermes topic is bound to the connection that is live when the window asks. A window that sees a new epoch asks again. */
@@ -59,6 +59,7 @@ const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source 
   preview: ({ pane }) => current(pane.preview),
   mode: ({ preferences }) => current(preferences.mode),
   theme: ({ preferences }) => current(preferences.theme),
+  accent: ({ preferences }) => current(preferences.accent),
   sidebarWidth: ({ preferences }) => current(preferences.sidebarWidth),
   sendKey: ({ preferences }) => current(preferences.sendKey),
   spellCheck: ({ preferences }) => current(preferences.spellCheck),
@@ -214,6 +215,10 @@ export function serveWindows(
     }
     if (command.do === 'setTheme') {
       preferences.theme.set(command.theme)
+      return DONE
+    }
+    if (command.do === 'setAccent') {
+      preferences.accent.set(command.accent)
       return DONE
     }
     if (command.do === 'setSidebarWidth') {

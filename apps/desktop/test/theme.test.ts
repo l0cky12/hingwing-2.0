@@ -158,6 +158,37 @@ describe('the window behind the page', () => {
   })
 })
 
+describe('the accent in app.css', () => {
+  const rules = rulesNestedOnlyInAtRules(CSS)
+  const accentRules = rules.filter(rule => rule.media.length === 0 && /^\[data-accent="\w+"\]$/.test(rule.selector))
+  const TONES = ['ink', 'slate', 'plum', 'olive', 'mauve', 'umber']
+  const tokenOf = (tone: string) => /^var\(--([\w-]+)\)$/.exec(accentRules.find(rule => rule.selector === `[data-accent="${tone}"]`)?.declarations.get('--accent') ?? '')?.[1] ?? ''
+  const bandShare = Number(/color-mix\(in srgb, var\(--accent\) ([\d.]+)%, var\(--sheet\)\)/.exec(rules.find(rule => rule.selector === '.top .bar')?.declarations.get('background') ?? '')?.[1]) / 100
+  const mixed = (accent: string, sheet: string) => {
+    const [a, b] = [channels(accent), channels(sheet)]
+    return '#' + a.map((c, at) => Math.round((c * bandShare + b[at]! * (1 - bandShare)) * 255).toString(16).padStart(2, '0')).join('')
+  }
+
+  it('paints every tone a bot can have, and the header tint is a share the CSS states', () => {
+    expect(accentRules.map(rule => rule.selector.slice('[data-accent="'.length, -2))).toEqual(TONES)
+    expect(bandShare).toBeGreaterThan(0)
+  })
+
+  it.each(SCHEMES)('keeps the send label and the header text readable on every accent in %s', (_name, scheme) => {
+    const palette = paletteOf(scheme)
+    const colorOf = (name: string) => palette.get(`--${name}`) ?? ''
+    const short = TONES.flatMap(tone => {
+      const accent = colorOf(tokenOf(tone))
+      const band = mixed(accent, colorOf('sheet'))
+      return ([['sheet', accent, 'send label'], ['graphite', band, 'header text'], ['ink', band, 'header title']] as const).flatMap(([text, surface, what]) => {
+        const ratio = contrast(colorOf(text), surface)
+        return ratio >= 4.5 ? [] : [`${tone} ${what}: ${ratio.toFixed(2)}, under 4.5`]
+      })
+    })
+    expect(short).toEqual([])
+  })
+})
+
 describe("the marks on a bot's face", () => {
   const RULES = rulesNestedOnlyInAtRules(CSS)
   const inMedia = (feature: string) => RULES.filter(rule => rule.media.some(prelude => prelude.includes(feature)))

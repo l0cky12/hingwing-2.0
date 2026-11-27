@@ -1,7 +1,7 @@
 import type { Feed } from '@highwing/hermes'
 import { open, readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
-import { isMode, isNotices, isOnClose, isSendKey, isSidebarWidth, isSnoozes, isTheme, type Mode, type Notices, type OnClose, type SendKey, type SidebarWidth, type SnoozeCommand, type Snoozes, type Theme } from '../ipc-contract'
+import { isAccent, isMode, isNotices, isOnClose, isSendKey, isSidebarWidth, isSnoozes, isTheme, type Accent, type Mode, type Notices, type OnClose, type SendKey, type SidebarWidth, type SnoozeCommand, type Snoozes, type Theme } from '../ipc-contract'
 import { feed } from './connection'
 
 export interface Preference<T, Missing = T> {
@@ -13,6 +13,7 @@ export interface Preference<T, Missing = T> {
 
 export const MODE: Preference<Mode> = { file: 'mode.json', key: 'mode', is: isMode, fallback: 'bots' }
 export const THEME: Preference<Theme> = { file: 'theme.json', key: 'theme', is: isTheme, fallback: 'system' }
+export const ACCENT: Preference<Accent> = { file: 'accent.json', key: 'accent', is: isAccent, fallback: 'bot' }
 export const SIDEBAR_WIDTH: Preference<SidebarWidth> = { file: 'sidebar-width.json', key: 'width', is: isSidebarWidth, fallback: 'full' }
 export const ON_CLOSE: Preference<OnClose> = { file: 'on-close.json', key: 'onClose', is: isOnClose, fallback: 'quit' }
 export const SEND_KEY: Preference<SendKey> = { file: 'send-key.json', key: 'sendKey', is: isSendKey, fallback: 'enter' }

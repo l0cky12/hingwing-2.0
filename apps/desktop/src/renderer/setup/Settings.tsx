@@ -1,7 +1,7 @@
 import { shownBot, shownChat } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import type { Mode, NoticeKind, OnClose, Theme } from '../../ipc-contract'
+import type { Accent, Mode, NoticeKind, OnClose, Theme } from '../../ipc-contract'
 import { botIn } from '../bots/roster-view'
 import { COMMAND_KEY, MAC } from '../keys'
 import { capsOf, SHORTCUTS } from '../shortcuts'
@@ -44,6 +44,18 @@ const THEMES: readonly Segment<Theme>[] = [
   { value: 'dark', label: 'Dark', icon: <Moon /> }
 ]
 
+const swatch = (tone: string) => <span className={`swatch tone-${tone}`} aria-hidden="true" />
+
+const ACCENTS: readonly Segment<Accent>[] = [
+  { value: 'bot', label: 'Bot', icon: <People /> },
+  { value: 'ink', label: 'Ink', icon: swatch('ink') },
+  { value: 'slate', label: 'Slate', icon: swatch('slate') },
+  { value: 'plum', label: 'Plum', icon: swatch('plum') },
+  { value: 'olive', label: 'Olive', icon: swatch('olive') },
+  { value: 'mauve', label: 'Mauve', icon: swatch('mauve') },
+  { value: 'umber', label: 'Umber', icon: swatch('umber') }
+]
+
 const CLOSES: readonly Segment<OnClose>[] = [
   { value: 'quit', label: 'Quit', icon: <Quit /> },
   { value: 'stay', label: 'Keep in the tray', icon: <Tray /> }
@@ -63,17 +75,19 @@ const Count = ({ n }: { readonly n: number }) => (
   <span className="count"><span aria-hidden="true">{n}</span><span className="sr"> ({n} {n === 1 ? 'match' : 'matches'})</span></span>
 )
 
-function Choice<V extends string>({ label, desc, value, segments, hidden, onPick }: {
+function Choice<V extends string>({ label, desc, value, segments, hidden, wrapped = false, onPick }: {
   readonly label: string
   readonly desc: string
   readonly value: V
   readonly segments: readonly Segment<V>[]
   readonly hidden: boolean
+  /** Puts the choices on a line below the label, for a row with too many to sit beside its description. */
+  readonly wrapped?: boolean
   readonly onPick: (value: V) => void
 }) {
   const id = useId()
   return (
-    <div className="row" hidden={hidden}>
+    <div className={wrapped ? 'row wrapped' : 'row'} hidden={hidden}>
       <div className="text">
         <p className="label" id={id}>{label}</p>
         <p className="desc" id={`${id}-desc`}>{desc}</p>
@@ -186,10 +200,11 @@ function About({ off }: { readonly off: (row: RowId) => boolean }) {
   )
 }
 
-export function Settings({ setup, mode, theme, onRequestClose, onShowShortcuts }: {
+export function Settings({ setup, mode, theme, accent, onRequestClose, onShowShortcuts }: {
   readonly setup: CardSetup
   readonly mode: Mode
   readonly theme: Theme
+  readonly accent: Accent
   readonly onRequestClose: () => void
   readonly onShowShortcuts: () => void
 }) {
@@ -250,6 +265,7 @@ export function Settings({ setup, mode, theme, onRequestClose, onShowShortcuts }
     appearance: (
       <div className="card rows">
         <Choice label="Theme" desc="System follows your computer’s light or dark setting." value={theme} segments={THEMES} hidden={off('theme')} onPick={picked => void run({ do: 'setTheme', theme: picked })} />
+        <Choice label="Accent" desc="Bot uses the color of the open chat’s bot." value={accent} segments={ACCENTS} hidden={off('accent')} wrapped onPick={picked => void run({ do: 'setAccent', accent: picked })} />
         <Choice label="Show in the sidebar" desc="Bots shows your bots. Chats shows the chats of the open bot." value={mode} segments={SIDEBAR} hidden={off('sidebar')} onPick={picked => void run({ do: 'setMode', mode: picked })} />
       </div>
     ),

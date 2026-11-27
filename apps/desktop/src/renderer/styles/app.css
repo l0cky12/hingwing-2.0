@@ -132,6 +132,7 @@ button:disabled { cursor: default; opacity: .45; }
 code, pre { font-family: var(--mono); }
 
 .bar { display: flex; align-items: center; gap: var(--space-6); min-height: 56px; padding: var(--space-3) var(--space-7); border-bottom: 1px solid var(--rule); }
+.top .bar { background: color-mix(in srgb, var(--accent) 10%, var(--sheet)); }
 .bar h1 { margin: 0; font-size: var(--text-md); font-weight: 400; color: var(--graphite); }
 .bar h1 .brand { font-weight: 700; color: var(--ink); margin-right: 8px; }
 .bar button { margin-left: auto; padding: 4px 14px; border-radius: var(--radius-sm); border: 1px solid var(--ink); background: transparent; }
@@ -531,7 +532,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .tools button:disabled { cursor: default; opacity: .45; }
 .tools :is(.send, .stop) { flex: none; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: var(--radius-round); background: transparent; }
 .tools .send { border: 1.5px solid var(--rule); color: var(--graphite); }
-.tools .send.ready { border-color: var(--ink); background: var(--ink); color: var(--sheet); }
+.tools .send.ready { border-color: var(--accent, var(--ink)); background: var(--accent, var(--ink)); color: var(--sheet); }
 .tools .stop { border: 1.5px solid var(--ink); color: var(--ink); }
 .editing { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; max-width: 760px; margin: 0 auto 8px; padding: 0 28px 0 calc(28px + var(--col)); font: 500 var(--text-sm)/1.4 var(--sans); color: var(--graphite); }
 .editing button, .approval .tell { padding: 0; border: 0; background: none; color: var(--signal); font: inherit; text-decoration: underline; }
@@ -878,6 +879,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .settings .card .row { min-height: 64px; padding: 14px 18px; }
 :is(.settings, .setup) .card > * + .row, :is(.settings, .setup) .card .row + .row { border-top: 1px solid var(--hair); }
 :is(.settings, .setup) .card .row .text { flex: 1; min-width: 0; }
+:is(.settings, .setup) .card .row.wrapped { flex-wrap: wrap; row-gap: 10px; }
+:is(.settings, .setup) .card .row.wrapped .text { flex-basis: 100%; }
 :is(.settings, .setup) .card .label { margin: 0; font-weight: 500; }
 :is(.settings, .setup) .card .desc { margin: 1px 0 0; font-size: var(--text-sm); line-height: 1.45; color: var(--graphite); }
 .settings .rules { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--hair); }
@@ -1194,6 +1197,13 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .tone-olive { background: var(--avatar-olive); }
 .tone-mauve { background: var(--avatar-mauve); }
 .tone-umber { background: var(--avatar-umber); }
+[data-accent="ink"] { --accent: var(--ink); }
+[data-accent="slate"] { --accent: var(--avatar-slate); }
+[data-accent="plum"] { --accent: var(--avatar-plum); }
+[data-accent="olive"] { --accent: var(--avatar-olive); }
+[data-accent="mauve"] { --accent: var(--avatar-mauve); }
+[data-accent="umber"] { --accent: var(--avatar-umber); }
+.swatch { flex: none; width: 12px; height: 12px; border-radius: var(--radius-round); box-shadow: inset 0 0 0 1px var(--graphite); }
 .bots-note { margin: 18px 12px; font-size: var(--text-sm); color: var(--graphite); }
 .bots-refused { margin: 0; padding: 10px 20px 14px; font-size: var(--text-sm); color: var(--brick); border-top: 1px solid var(--rule); }
 .bots-warned { color: var(--caution); }

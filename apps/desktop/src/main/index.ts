@@ -17,7 +17,7 @@ import { serveWindows } from './ipc'
 import { serveScreen } from './screen'
 import { dbusSend, hasSecretService } from './keyring'
 import { chatLinks } from './links'
-import { MODE, NOTICES, ON_CLOSE, preferenceStore, SEND_KEY, SIDEBAR_WIDTH, SNOOZES, SPELL_CHECK, THEME } from './preferences'
+import { ACCENT, MODE, NOTICES, ON_CLOSE, preferenceStore, SEND_KEY, SIDEBAR_WIDTH, SNOOZES, SPELL_CHECK, THEME } from './preferences'
 import { desktopNotifier, notify, recordingNotifier } from './notify'
 import { installTray } from './tray'
 import { choosePicture, pickPicture, readHead } from './picture'
@@ -119,6 +119,7 @@ app.whenReady().then(async () => {
   const drafts = draftStore(join(settingsDir, DRAFTS_DIR))
   const mode = await preferenceStore(settingsDir, MODE)
   const theme = await preferenceStore(settingsDir, THEME)
+  const accent = await preferenceStore(settingsDir, ACCENT)
   const sidebarWidth = await preferenceStore(settingsDir, SIDEBAR_WIDTH)
   const sendKey = await preferenceStore(settingsDir, SEND_KEY)
   const spellCheck = await preferenceStore(settingsDir, SPELL_CHECK)
@@ -150,7 +151,7 @@ app.whenReady().then(async () => {
   const saver = HIGHWING_SAVE_DIR ? folderSaver(HIGHWING_SAVE_DIR) : dialogSaver(dialog, () => app.getPath('downloads'))
   const served = serveWindows(
     owner, ipcMain, isAppUrl, opener, images, drafts, pane, { pick: (bot, live) => pickPicture(pictureDeps, bot, live), choose: () => choosePicture(pictureDeps) },
-    { store: attachments, sources }, saver, { mode, theme, sidebarWidth, sendKey, spellCheck, snoozes, notices, onClose }, intro
+    { store: attachments, sources }, saver, { mode, theme, accent, sidebarWidth, sendKey, spellCheck, snoozes, notices, onClose }, intro
   )
   const stopScreen = serveScreen(owner, ipcMain, isAppUrl)
   const stopNotices = notify(owner, intro.intro, {
@@ -164,7 +165,7 @@ app.whenReady().then(async () => {
   const stopLinks = links.serve(owner, intro.intro, raise)
   const stopRefresh = refreshBotsOnFocus(app, owner)
   let closed: Promise<void> | null = null
-  const close = () => (closed ??= (served.dispose(), stopScreen(), stopNotices(), stopLinks(), stopRefresh(), stopTray(), Promise.all([owner.close(), drafts.settled(), unread.settled(), mode.settled(), theme.settled(), sidebarWidth.settled(), sendKey.settled(), spellCheck.settled(), snoozes.settled(), notices.settled(), onClose.settled(), intro.settled()]).then(() => {})))
+  const close = () => (closed ??= (served.dispose(), stopScreen(), stopNotices(), stopLinks(), stopRefresh(), stopTray(), Promise.all([owner.close(), drafts.settled(), unread.settled(), mode.settled(), theme.settled(), accent.settled(), sidebarWidth.settled(), sendKey.settled(), spellCheck.settled(), snoozes.settled(), notices.settled(), onClose.settled(), intro.settled()]).then(() => {})))
   app.on('window-all-closed', () => void close().finally(() => app.quit()))
   // A quit from the menu or the session never emits window-all-closed, and a check or an attach still running would outlive the app.
   // Electron does not wait for a will-quit listener, so the quit is held until a draft or a preference still being written is on disk.

@@ -2,7 +2,7 @@ import { SHORTCUTS, type Shortcut, type ShortcutId } from '../shortcuts'
 
 export type Page = 'connection' | 'appearance' | 'composer' | 'window' | 'notifications' | 'passwords' | 'skills' | 'permissions' | 'keys' | 'usage' | 'about'
 export type RowId =
-  | 'connection' | 'theme' | 'sidebar' | 'send-key' | 'spell-check' | 'on-close' | 'notice-asks' | 'notice-replies' | 'notice-jobs' | 'passwords' | 'skills' | 'permissions' | 'denied'
+  | 'connection' | 'theme' | 'accent' | 'sidebar' | 'send-key' | 'spell-check' | 'on-close' | 'notice-asks' | 'notice-replies' | 'notice-jobs' | 'passwords' | 'skills' | 'permissions' | 'denied'
   | 'shortcuts' | `key:${ShortcutId}` | 'usage' | 'about-app' | 'about-hermes'
 
 export const PAGES: readonly { readonly id: Page; readonly label: string; readonly lede: string }[] = [
@@ -46,6 +46,7 @@ const shortcutRows: readonly Row[] = SHORTCUTS.map(shortcut => ({
 export const ROWS: readonly Row[] = [
   { id: 'connection', page: 'connection', searchText: 'Hermes. Where Hermes runs. Tailnet machine, Web address, This computer. Hermes machine. Gateway address. Change. Connect. server host address SSH Tailscale URL sign in online' },
   { id: 'theme', page: 'appearance', searchText: 'Theme. System, Light, Dark. System follows your computer’s light or dark setting. mode colour color' },
+  { id: 'accent', page: 'appearance', searchText: 'Accent. Bot, Ink, Slate, Plum, Olive, Mauve, Umber. Bot uses the color of the open chat’s bot. colour color tint header send button' },
   { id: 'sidebar', page: 'appearance', searchText: 'Show in the sidebar. Bots, Chats. Bots shows your bots. Chats shows the chats of the open bot.' },
   { id: 'send-key', page: 'composer', searchText: 'Send with Ctrl+Enter. Enter adds a new line. When off, Enter sends and Shift+Enter adds a line. send key message newline line break cmd ⌘' },
   { id: 'spell-check', page: 'composer', searchText: 'Check spelling. Underline misspelled words and suggest fixes. spell check spellcheck spelling dictionary typo' },

@@ -1,14 +1,15 @@
-import type { Shown, ShownGroup, Target } from '@highwing/hermes/domain'
+import { shownChat, type Shown, type ShownGroup, type Target } from '@highwing/hermes/domain'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { introInFront } from '../intro'
 import { isSettingsChord } from './keys'
-import { epochOf, type Mode, type SidebarWidth, type Theme } from '../ipc-contract'
+import { epochOf, type Accent, type Mode, type SidebarWidth, type Theme } from '../ipc-contract'
 import { BotPicker } from './bots/BotPicker'
 import { BotsSidebar } from './bots/Bots'
 import { useRetryPicturesOnceOnline } from './bots/pictures'
 import { ChatsSidebar, DraftSweep } from './chats/Chats'
 import { Chat } from './chat/Chat'
 import { GroupPane } from './groups/GroupPane'
+import { accentTone, toneOfBot } from './chrome/accent'
 import { Banner, TopBar } from './chrome/Chrome'
 import { ModeSwitch } from './chrome/ModeSwitch'
 import { Shortcuts } from './chrome/Shortcuts'
@@ -95,6 +96,7 @@ interface ChatWindowProps {
   readonly target: Target | null
   readonly mode: Mode
   readonly theme: Theme
+  readonly accent: Accent
   readonly width: SidebarWidth
   readonly onOpenApps: () => void
 }
@@ -111,9 +113,10 @@ function useSettingsChord(target: Target | null, settingsOpen: boolean) {
   }, [target, settingsOpen])
 }
 
-function ChatWindow({ hidden, settings, target, mode, theme, width, onOpenApps }: ChatWindowProps) {
+function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onOpenApps }: ChatWindowProps) {
   const preview = useTopic('preview')
   const screen = useTopic('screen')
+  const tone = accentTone(accent, toneOfBot(useTopic('bots'), shownChat(useTopic('open'))?.bot ?? null))
   useSettingsChord(target, settings !== null)
   const { root, pick } = useSwitchModeKeepingFocus(mode)
   const { settingsButton, close } = useCloseSettings(settings !== null)
@@ -133,10 +136,10 @@ function ChatWindow({ hidden, settings, target, mode, theme, width, onOpenApps }
     <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined} data-compact={compact || undefined} data-settings={settings !== null || undefined}>
       {mode === 'bots' && <BotsSidebar head={switcher} compact={compact} foot={foot} />}
       {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} foot={foot} />}
-      <div key="screen" className="screen" hidden={settings !== null}>
+      <div key="screen" className="screen" data-accent={tone ?? undefined} hidden={settings !== null}>
         <ChatScreen target={target} settingsButton={settingsButton} />
       </div>
-      {settings !== null && <Settings setup={settings} mode={mode} theme={theme} onRequestClose={close} onShowShortcuts={openSheet} />}
+      {settings !== null && <Settings setup={settings} mode={mode} theme={theme} accent={accent} onRequestClose={close} onShowShortcuts={openSheet} />}
       <DraftSweep />
       <Shortcuts onSheet={openSheet} />
       {sheet !== null && <ShortcutSheet back={sheet.back} onClose={() => setSheet(null)} />}
@@ -149,6 +152,7 @@ export function App() {
   const setup = useTopic('setup')
   const mode = useTopic('mode')
   const theme = useTopic('theme')
+  const accent = useTopic('accent')
   const width = useTopic('sidebarWidth')
   const intro = useTopic('intro')
   const [appsOpen, setAppsOpen] = useState(false)
@@ -157,7 +161,7 @@ export function App() {
     appsBack.current = document.activeElement
     setAppsOpen(true)
   }, [])
-  if (setup === undefined || mode === undefined || theme === undefined || width === undefined || intro === undefined) return null
+  if (setup === undefined || mode === undefined || theme === undefined || accent === undefined || width === undefined || intro === undefined) return null
   const screen = screenOf(setup)
   const live = setup.at === 'pinned' ? null : setup.live
   const cover = introInFront(setup, intro)
@@ -165,7 +169,7 @@ export function App() {
     <>
       {(setup.at === 'pinned' || live !== null) && (
         <Epoch value={epochOf(setup)}>
-          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved' || cover} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} width={width} onOpenApps={openApps} />
+          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved' || cover} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} accent={accent} width={width} onOpenApps={openApps} />
           {/* Outside the window a new connection remounts, so a pick main refused for the old one comes back over the new one. */}
           {screen.show !== 'saved' && !cover && <Palette target={live?.target ?? null} settingsOpen={screen.show === 'settings'} />}
           {screen.show !== 'saved' && !cover && <Apps open={appsOpen} back={appsBack} onOpen={openApps} onClose={() => setAppsOpen(false)} />}
