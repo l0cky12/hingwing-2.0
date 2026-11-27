@@ -1260,8 +1260,28 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .apps-actions button { border: 1px solid var(--rule); background: var(--paper); color: var(--ink); border-radius: 6px; padding: 4px 10px; font: inherit; font-size: 13px; }
 .apps-actions button:disabled { opacity: .45; }
 .apps-empty, .apps-problem { margin: 0; padding: 14px 18px; color: var(--graphite); }
+.tool-servers { border-top: 1px solid var(--hair); margin-top: 8px; padding-top: 4px; }
+.apps-standing[data-standing="failed"] { color: var(--caution); }
+.tool-where { font-family: var(--mono); overflow-wrap: anywhere; }
+.tool-said { margin: 0; padding: 0 18px; font-size: 13px; color: var(--signal); }
+.tool-said:not(:empty) { padding: 4px 18px 8px; }
+.tool-problem { margin: 4px 18px 8px; padding: 8px 12px; border-radius: 8px; background: var(--caution-soft); color: var(--ink); font-size: 13px; overflow-wrap: anywhere; }
+.tool-form { padding: 0 18px 12px; }
+.tool-form fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.tool-form label, .tool-label { display: block; margin: 10px 0 4px; font-size: 13px; font-weight: 500; }
+.tool-form :is(input, textarea) { width: 100%; min-width: 0; padding: 7px 10px; font: 13px/1.45 var(--mono); color: var(--ink); background: var(--paper); border: 1px solid var(--edge); border-radius: 7px; }
+.tool-form textarea { resize: vertical; }
+.tool-form :is(input, textarea):focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
+.tool-form .apps-chips { padding: 10px 0 0; }
+.tool-hint { margin: 4px 0 0; font-size: 12.5px; color: var(--graphite); }
+.tool-header { display: flex; gap: 6px; margin-top: 6px; }
+.tool-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+:is(.tool-header, .tool-foot) button { flex: none; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); border-radius: 6px; padding: 4px 10px; font: inherit; font-size: 13px; }
+.tool-foot button.primary { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
+:is(.tool-header, .tool-foot) button:disabled, .tool-form fieldset:disabled { opacity: .55; }
 @media (forced-colors: active) {
   .apps { border: 2px solid CanvasText; }
   .apps-chips button[aria-pressed="true"] { outline: 2px solid Highlight; }
   .bots .apps-open, .chats .apps-open, .apps-actions button, .apps-chips button { border: 1px solid ButtonText; }
+  :is(.tool-header, .tool-foot) button, .tool-form :is(input, textarea), .tool-problem { border: 1px solid ButtonText; }
 }
