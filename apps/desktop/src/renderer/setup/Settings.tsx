@@ -12,7 +12,7 @@ import { PasswordManagers } from './PasswordManagers'
 import type { CardSetup } from './screens'
 import { PAGES, settingsViewOf, whereOf, type Check, type Page, type RowId } from './settings-view'
 import { Skills } from './Skills'
-import { UNREPORTED, usageNeedsRead, usageView, type UsageAsk } from './usage-view'
+import { UNREPORTED, usageNeedsRead, usageView, type UsageAsk, type UsageView } from './usage-view'
 
 const Contrast = () => <svg {...line(16, 1.8)}><circle cx="12" cy="12" r="8.5" /><path d="M12 7a5 5 0 0 1 0 10z" fill="currentColor" /></svg>
 const Cross = () => <svg {...line(14, 2)}><path d="M6 6l12 12M18 6 6 18" /></svg>
@@ -179,7 +179,10 @@ function Usage() {
     })
     return () => { current = false }
   }, [sessionId, live])
-  const view = usageView(sessionId, ask)
+  return <UsageCard view={usageView(sessionId, ask)} />
+}
+
+export function UsageCard({ view }: { readonly view: UsageView }) {
   return (
     <div className="card rows">
       {view.state === 'needs-chat' && <div className="row"><div className="text"><p className="label">Open a chat to see what this Hermes reports.</p></div></div>}
@@ -187,7 +190,7 @@ function Usage() {
       {view.state === 'failed' && <div className="row"><div className="text"><p className="label">{view.message}</p></div></div>}
       {view.state === 'unreported' && <div className="row"><div className="text"><p className="label">{UNREPORTED}</p></div></div>}
       {view.state === 'reported' && view.lines.map((line, index) => (
-        <div key={`${index}-${line}`} className="row"><div className="text"><p className="label">{line}</p></div></div>
+        <div key={`${index}-${line}`} className="row"><div className="text"><p className="label usage-line">{line}</p></div></div>
       ))}
     </div>
   )
