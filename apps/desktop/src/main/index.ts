@@ -140,7 +140,7 @@ app.whenReady().then(async () => {
   const saver = HIGHWING_SAVE_DIR ? folderSaver(HIGHWING_SAVE_DIR) : dialogSaver(dialog, () => app.getPath('downloads'))
   const served = serveWindows(
     owner, ipcMain, isAppUrl, opener, images, drafts, pane, { pick: (bot, live) => pickPicture(pictureDeps, bot, live), choose: () => choosePicture(pictureDeps) },
-    { store: attachments, sources }, saver, { mode, theme, snoozes, onClose }
+    { store: attachments, sources }, saver, { mode, theme, snoozes, onClose }, () => app.quit()
   )
   const stopNotices = notifyTurnEnds(owner, {
     notifier: HIGHWING_NOTIFY_LOG ? recordingNotifier(HIGHWING_NOTIFY_LOG) : desktopNotifier(Notification),

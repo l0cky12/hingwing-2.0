@@ -103,7 +103,9 @@ export type SnoozeCommand = { readonly do: 'snooze'; readonly sessionId: Session
 const isTime = (raw: unknown): raw is number => Number.isSafeInteger(raw) && (raw as number) > 0
 export const isSnoozes = (raw: unknown): raw is Snoozes => isObject(raw) && Object.entries(raw).every(([id, until]) => id.trim() !== '' && isTime(until))
 
-export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SnoozeCommand | OnCloseCommand
+export type QuitCommand = { readonly do: 'quit' }
+
+export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SnoozeCommand | OnCloseCommand | QuitCommand
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' | 'refreshBots' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
@@ -636,6 +638,7 @@ export const validators: Validators = {
     const rect = rectOf(raw.rect)
     return rect && { do: 'placePreview', rect }
   },
+  quit: () => ({ do: 'quit' }),
   setMode: raw => (isMode(raw.mode) ? { do: 'setMode', mode: raw.mode } : null),
   setTheme: raw => (isTheme(raw.theme) ? { do: 'setTheme', theme: raw.theme } : null),
   setOnClose: raw => (isOnClose(raw.onClose) ? { do: 'setOnClose', onClose: raw.onClose } : null),

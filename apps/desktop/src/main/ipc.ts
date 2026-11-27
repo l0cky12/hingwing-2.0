@@ -160,7 +160,7 @@ export interface Pictures {
 export function serveWindows(
   owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>,
   pane: PreviewOwner, pictures: Pictures, attaching: Attaching,
-  saver: Saver, preferences: Preferences
+  saver: Saver, preferences: Preferences, quit: () => void
 ): { dispose(): void } {
   const windows = new Map<number, Map<number, Served>>()
   const owners: Owners = { owner, pane, preferences }
@@ -200,6 +200,10 @@ export function serveWindows(
     const command = parseCommand(raw)
     if (!trusted(event) || command === null) return REFUSED
     if (isPreviewCommand(command)) return pane.run(command)
+    if (command.do === 'quit') {
+      quit()
+      return DONE
+    }
     if (command.do === 'setMode') {
       preferences.mode.set(command.mode)
       return DONE

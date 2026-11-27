@@ -452,6 +452,10 @@ describe('validators', () => {
     expect(parseCommand(raw)).toBeNull()
   })
 
+  it('keep a quit', () => {
+    expect(parseCommand({ do: 'quit', extra: 1 })).toEqual({ do: 'quit' })
+  })
+
   it('keep a mode switch', () => {
     expect(parseCommand({ do: 'setMode', mode: 'chats', extra: 1 })).toEqual({ do: 'setMode', mode: 'chats' })
     expect(parseCommand({ do: 'setMode', mode: 'bots' })).toEqual({ do: 'setMode', mode: 'bots' })
@@ -484,13 +488,14 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'accountUsage', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
-      'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard',
-      'editBot', 'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
-      'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect',
-      'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
-      'sendToGroup', 'setMode', 'setOnClose', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune',
-      'unlockPasswordManager', 'usePasswordManager', 'versions'
+      'accountUsage', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget',
+      'checkpointDiff', 'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'createBot',
+      'createGroup', 'deleteGroup', 'describeBot', 'discard', 'editBot', 'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess',
+      'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move', 'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets',
+      'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'quit', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeApp',
+      'removeBotPicture', 'removeMemory', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send', 'sendToGroup', 'setMode',
+      'setOnClose', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'unlockPasswordManager',
+      'usePasswordManager', 'versions'
     ])
   })
 })
@@ -607,6 +612,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
     },
     read: async id => (id === HELD.id ? HELD : null)
   }
+  const quits: true[] = []
   const mode = feed<Mode>('chats')
   const theme = feed<Theme>('system')
   const snoozes = feed<Snoozes>({})
@@ -616,7 +622,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
     ownerOf(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
-    { store, sources }, saver, { mode, theme, snoozes, onClose }
+    { store, sources }, saver, { mode, theme, snoozes, onClose }, () => void quits.push(true)
   )
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
@@ -636,7 +642,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   }
   return {
     listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, lives, stored, previewed, toPane, staged, served,
-    saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, snoozes, onClose
+    saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, snoozes, onClose, quits
   }
 }
 
@@ -817,7 +823,7 @@ describe('serveWindows', () => {
 
   it('refuses a chat command a window sent for a connection that is no longer live, and passes setup, pane, mode and theme commands whatever it sent', async () => {
     let owner: ConnectionOwner | undefined
-    const { handlers, event, commands, toPane, mode, theme } = harness(hermes => (owner = switchable(hermes)))
+    const { handlers, event, commands, toPane, mode, theme, quits } = harness(hermes => (owner = switchable(hermes)))
     const run = handlers.get(CHANNEL.run)!
     const pick = { do: 'open', ref: { kind: 'chat', sessionId: 'box-0001' } }
     await expect(run(event(), { do: 'editTarget' }, 1)).resolves.toEqual({ ok: true, value: undefined })
@@ -834,6 +840,9 @@ describe('serveWindows', () => {
     await expect(run(event(), { do: 'closePreview' }, 1)).resolves.toEqual({ ok: true, value: undefined })
     await expect(run(event(), { do: 'setMode', mode: 'bots' }, 1)).resolves.toEqual({ ok: true, value: undefined })
     await expect(run(event(), { do: 'setTheme', theme: 'light' }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    expect(quits).toEqual([])
+    await expect(run(event(), { do: 'quit' }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    expect(quits).toEqual([true])
     expect(toPane).toEqual([{ do: 'closePreview' }])
     expect(mode.get()).toBe('bots')
     expect(theme.get()).toBe('light')
