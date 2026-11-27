@@ -1,6 +1,6 @@
 import { shownChat } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import type { Mode, Theme } from '../../ipc-contract'
+import type { Mode, OnClose, Theme } from '../../ipc-contract'
 import { Bar } from '../chrome/Chrome'
 import { COMMAND_KEY } from '../keys'
 import { run, useTopic } from '../store'
@@ -18,6 +18,15 @@ const THEMES: readonly Segment<Theme>[] = [
   { value: 'system', label: 'System', icon: <Monitor /> },
   { value: 'light', label: 'Light', icon: <Sun /> },
   { value: 'dark', label: 'Dark', icon: <Moon /> }
+]
+
+const icon = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true } as const
+const Quit = () => <svg {...icon}><path d="M10 7V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2v-1" /><path d="M4 12h10M11 8.5 14.5 12 11 15.5" /></svg>
+const Tray = () => <svg {...icon}><rect x="4" y="4" width="16" height="11" rx="2" /><path d="M3 20h18" /></svg>
+
+const CLOSES: readonly Segment<OnClose>[] = [
+  { value: 'quit', label: 'Quit', icon: <Quit /> },
+  { value: 'stay', label: 'Keep in the tray', icon: <Tray /> }
 ]
 
 const SHORTCUTS: readonly { readonly label: string; readonly key: string; readonly onlyIn: string | null }[] = [
@@ -39,6 +48,7 @@ const panel = (render: (props: PanelProps) => ReactNode) => render
 
 function General({ mode, theme }: { readonly mode: Mode; readonly theme: Theme }) {
   const ids = useId()
+  const onClose = useTopic('onClose') ?? 'quit'
   return (
     <>
       <section className="group" aria-labelledby={`${ids}-appearance`}>
@@ -69,6 +79,20 @@ function General({ mode, theme }: { readonly mode: Mode; readonly theme: Theme }
             </div>
             <div className="control">
               <Segmented labelledBy={`${ids}-show`} value={mode} segments={SIDEBAR} onPick={picked => void run({ do: 'setMode', mode: picked })} />
+            </div>
+          </div>
+        </div>
+      </section>
+      <section className="group" aria-labelledby={`${ids}-window`}>
+        <h3 id={`${ids}-window`}>Window</h3>
+        <div className="card">
+          <div className="row">
+            <div className="text">
+              <p className="label" id={`${ids}-close`}>When the window closes</p>
+              <p className="desc">Quit leaves Highwing. Keep in the tray leaves it running.</p>
+            </div>
+            <div className="control">
+              <Segmented labelledBy={`${ids}-close`} value={onClose} segments={CLOSES} onPick={picked => void run({ do: 'setOnClose', onClose: picked })} />
             </div>
           </div>
         </div>

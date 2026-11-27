@@ -1559,7 +1559,7 @@ async function run(argv) {
   rmSync(calls, { force: true })
   rmSync(join(evidence, 'timings.jsonl'), { force: true })
   const userData = join(scratch, 'user-data')
-  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), menus: join(evidence, 'menus.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set(), exposed: [], latencyMs: Number(options.latency ?? 0), timedShots: options['timed-shot']?.split(',').map(Number) ?? [], cpuProfile: options['cpu-profile'] === true, web: null, realHost: realUrl ? new URL(realUrl).hostname : null, signInFailures: [], pid: null }
+  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), tray: join(evidence, 'tray.jsonl'), menus: join(evidence, 'menus.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set(), exposed: [], latencyMs: Number(options.latency ?? 0), timedShots: options['timed-shot']?.split(',').map(Number) ?? [], cpuProfile: options['cpu-profile'] === true, web: null, realHost: realUrl ? new URL(realUrl).hostname : null, signInFailures: [], pid: null }
   const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }), ...(options['reduced-motion'] && { reducedMotion: 'reduce' }) }
 
   const userFiles = options['login-form'] ? { usernameFile: process.env.HIGHWING_VERIFY_USER_FILE, passwordFile: process.env.HIGHWING_VERIFY_PASSWORD_FILE } : null
@@ -1612,6 +1612,8 @@ async function run(argv) {
   env.HIGHWING_SAVE_DIR = join(evidence, 'saves')
   rmSync(ctx.notices, { force: true })
   env.HIGHWING_NOTIFY_LOG = ctx.notices
+  rmSync(ctx.tray, { force: true })
+  env.HIGHWING_TRAY_LOG = ctx.tray
   rmSync(ctx.menus, { force: true })
   env.HIGHWING_MENU_LOG = ctx.menus
   delete env.HIGHWING_MENU_PICK
