@@ -1049,9 +1049,9 @@ On an older Hermes:
 
 ### A bot's tool servers
 
-The Tool servers section of the Connect apps window lists, adds and removes a
-bot's MCP servers, for the same bot the window lists apps for. Each call names
-that bot's profile when the window has one. None is canonical, so each reaches its legacy handler
+The Connectors tab of the Connectors screen lists, adds and removes a bot's
+MCP servers, for the same bot the screen lists apps for. Each call names that
+bot's profile when the screen has one. None is canonical, so each reaches its legacy handler
 only on a socket with the interactive grant (`tui_gateway/methods_tools.py:1470-1612`).
 
 | Method | Params | What Highwing does with the answer |
@@ -1060,13 +1060,28 @@ only on a socket with the interactive grant (`tui_gateway/methods_tools.py:1470-
 | `mcp.servers.status` | `{}` | Gives each listed server its state and tool count. Hermes reports a state only for the launch profile, so another bot's servers read "Starts when a chat needs it". |
 | `mcp.servers.add` | `{name, config: {url, headers?}}` or `{name, config: {command, args?}}` | Adds the server. Hermes keeps header values in the profile's config and never sends them back, so Highwing never shows one again. |
 | `mcp.servers.test` | `{name}` | Says whether the server answered, and names its tools. Hermes tests only a saved server, so a server that fails is removed again and nothing stays saved. |
-| `mcp.servers.remove` | `{name}` | Removes the server. Hermes refuses a server a plugin provides, and the row shows "From a plugin" in place of Remove. |
+| `mcp.servers.remove` | `{name}` | Removes the server. Hermes refuses a server a plugin provides, and its card says "MCP · Plugin" and has no Remove. |
 
 Highwing does not sign in to a server that asks for OAuth. Its test fails with
 "needs a sign-in, which Highwing can't do yet", and nothing is saved.
 
-On an older Hermes, or a socket bound to one profile, the section says "This
+On an older Hermes, or a socket bound to one profile, the tab says "This
 Hermes can't manage tool servers from Highwing."
+
+### A bot's plugins and Hermes's toolsets
+
+The Connectors screen's Plugins and Tools tabs list what Hermes has, read-only.
+Neither call is canonical, so each reaches its legacy handler only on a socket
+with the interactive grant.
+
+| Method | Params | What Highwing does with the answer |
+| --- | --- | --- |
+| `plugins.manage` | `{action: "list"}`, with the bot's `profile` when the screen has one | Lists each plugin with its version, where Hermes found it (`bundled`, `user` or `entrypoint`), its description, and On when its `status` is `enabled`. `disabled` and `not enabled` read Off (`hermes_cli/plugins_cmd.py:933-946`). |
+| `tools.list` | `{session_id}` of the open chat, or `{}` when the chat has no session yet | Lists each toolset with its description, its tools and whether it is on. Hermes reads the toolsets of the chat it holds by that id, and the launch profile's otherwise (`tui_gateway/methods_tools.py:220-247`). |
+
+On an older Hermes, or a socket bound to one profile, the Plugins tab says
+"This Hermes can't list its plugins." and the Tools tab says "This Hermes can't
+list its tools."
 
 ## Task board
 

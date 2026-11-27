@@ -1,0 +1,49 @@
+# Connectors
+
+A small grid-plus button named Connectors sits at the right of the sidebar's foot, beside the Hermes row, in bot mode, chat mode and the compact bots column. It, or Ctrl+Shift+M (Cmd+Shift+M on a Mac), opens the Connectors screen in place of the chat, as Tasks does, and the sidebar stays. The screen belongs to the open chat's bot, which "Configuring:" names at the top right. Four tabs sit at the top left, each with a count once Hermes answers: Skills, Plugins, Connectors and Tools, with Connectors chosen. The Left and Right arrows move between tabs. Escape, Close or Ctrl+Shift+M again go back to the chat and put focus back where it was. Opening another bot or chat from the sidebar closes the screen.
+
+The Connectors tab has a search field ("Search N connectors") that narrows the cards by name, an "Add your own" button that opens the add-a-tool-server form [Tool servers](./tool-servers.md) covers, and All, Added and Available filters that count the cards the search leaves. Under them, an Added section and an Available section, each with its count, lay their cards out two to a row, and one to a row in a narrow window. Added holds every app with an account, whatever its standing, and every tool server. Available holds every app with no account, Recommended first. An app card shows "App · <category>", its description, and Connected, Needs sign-in again, Disconnected or Available. Connect and Reconnect open the sign-in page in the browser, the card says Connecting…, and Open sign-in again opens that same page if the wait stalls. The card then shows the new standing and moves to its section. Remove drops an account. A tool server card shows "MCP · Custom" or "MCP · Plugin", its address or command, and its state.
+
+The Skills tab lists the bot's skills with a switch each ("Use <name>"), the same switch as Settings' Skills page. The Plugins tab lists the plugins Hermes has for the bot, each with "v<version> · <source>", its description and On or Off. The Tools tab lists Hermes's toolsets, each with its description, its first five tools and how many more, and "On · N tools" or Off. Plugins and Tools are read-only.
+
+## Sub-features
+
+- `cx-after` opens the screen from the bot foot in dark at 1440x900 and shows each tab with its count.
+- `cx-connect` searches, filters, connects GitHub, removes Slack, and closes and opens the screen with Escape and Ctrl+Shift+M.
+- `cx-chats` opens the screen from the Chats column in light, reconnects Notion and closes it with Close.
+- `cx-compact` opens it from the compact bots column.
+- `cx-skill` turns a skill on, and shows the plugins and the tabs' arrow keys.
+- `cx-tools-new` reads the toolsets with an unstarted new chat open.
+- `cx-old-hermes` shows a Hermes with none of the calls.
+
+## How to get to it (user POV)
+
+- Click the grid-plus Connectors button at the bottom right of the Bots or Chats column. Its tooltip names the shortcut.
+- Press Ctrl+Shift+M. It does nothing while a dialog or Settings is open, and the first-run screen has no such shortcut.
+- Settings' Keyboard shortcuts page lists the shortcut as Connectors.
+
+## Driving it with highwing-verify
+
+Preconditions:
+
+- `--connectors fixtures/connectors/two.json` gives the board. GitHub is Recommended and not connected. Slack is Chat and connected. Notion is Notes and needs sign-in again. Every connect opens `https://example.com/connect/github`.
+- `--mcp fixtures/mcp/servers.json` gives Emu a connected `github` server and a plugin's `browser` server.
+- `--plugins fixtures/plugins/two.json` lists kanban on and browser-tools off. `--tools fixtures/tools/three.json` lists browser and file on and image_gen off.
+- `--profiles fixtures/profiles/skills.json` gives Emu release-notes and triage-inbox on and weekly-report off. `--profiles fixtures/profiles/roster.json` gives Emu no skills.
+
+- **Every tab.** Run `$H run --run cx-after --fixture fixtures/errand.jsonl --profiles fixtures/profiles/skills.json --connectors fixtures/connectors/two.json --mcp fixtures/mcp/servers.json --plugins fixtures/plugins/two.json --tools fixtures/tools/three.json --mode bots --theme dark --size 1440x900 wait window wait bots shot after-window click button Connectors wait apps count tab "Skills 3" 1 count tab "Plugins 2" 1 count tab "Connectors 5" 1 count tab "Tools 3" 1 shot after-connectors click tab /^Skills/ shot after-skills click tab /^Plugins/ shot after-plugins click tab /^Tools/ see "On · 9 tools" see "browser_navigate, browser_snapshot, browser_click, browser_type, browser_scroll and 4 more" called tools.list '{}' 1 shot after-tools quiet`. `after-connectors.png` shows Added 4 (Slack, Notion, browser, github) over Available 1 (GitHub).
+- **Search, filters, connect, remove, close.** Run `$H run --run cx-connect --fixture fixtures/errand.jsonl --profiles fixtures/profiles/roster.json --connectors fixtures/connectors/two.json --mcp fixtures/mcp/servers.json --theme dark --size 1440x900 wait live wait bots count button Connectors 1 click button Connectors wait apps focused searchbox "Search connectors" see "Needs sign-in again" type "Search connectors" Git count button "Reconnect Slack" 0 count button "Connect GitHub" 1 count button "Remove tool server github" 1 shot search type "Search connectors" "" click button /^Available/ pressed button /^Available/ true count button "Reconnect Slack" 0 count button "Connect GitHub" 1 click button /^All/ click button "Connect GitHub" see "Connecting…" see "Open sign-in again" disabled button "Connect GitHub" shot connecting gone button "Open sign-in again" count button "Reconnect GitHub" 1 gone region Available opened browse https://example.com/connect/github click button "Remove Slack" gone button "Remove Slack" count button "Connect Slack" 1 shot removed press Escape gone region Connectors focused button Connectors press Control+Shift+M wait apps press Control+Shift+M gone region Connectors called connectors.connect '{"owner":{"type":"account"},"connectors":["github"]}' 1 called connectors.accounts.remove '{"connection_id":"slack-1"}' 1 called connectors.operation.status '{}' 2 quiet`.
+- **Chats column, reconnect, Close.** Run `$H run --run cx-chats --fixture fixtures/errand.jsonl --profiles fixtures/profiles/roster.json --connectors fixtures/connectors/two.json --mcp fixtures/mcp/servers.json --plugins fixtures/plugins/two.json --mode chats --theme light --size 1440x900 wait live wait bots shot chats-foot click button Connectors wait apps shot chats-connectors click button "Reconnect Notion" see "Connecting…" gone button "Open sign-in again" absent "Needs sign-in again" opened browse https://example.com/connect/github click button Close gone region Connectors focused button Connectors quiet`.
+- **Compact column.** Run `$H run --run cx-compact --fixture fixtures/errand.jsonl --profiles fixtures/profiles/roster.json --connectors fixtures/connectors/two.json --mcp fixtures/mcp/servers.json --mode bots --theme dark --size 1440x900 wait live wait bots click button "Compact sidebar" pressed button "Compact sidebar" true shot compact-foot inview button Connectors click button Connectors wait apps shot compact-connectors quiet`. The button sits under the Hermes mark.
+- **A skill, the plugins, the arrow keys.** Run `$H run --run cx-skill --fixture fixtures/errand.jsonl --profiles fixtures/profiles/skills.json --plugins fixtures/plugins/two.json --theme dark --size 1440x900 wait live wait bots click button Connectors wait apps click tab /^Skills/ count tab "Skills 3" 1 count tab "Plugins 2" 1 switched switch "Use weekly-report" off switched switch "Use release-notes" on shot skills-before click switch "Use weekly-report" switched switch "Use weekly-report" on called profiles.configure '{"name":"default","disabled_skills":[]}' 1 shot skills-after click tab /^Plugins/ see "v1.2.0 · Bundled" see "v0.4.1 · User" shot plugins press ArrowLeft focused tab /^Skills/ quiet`. The screen reads the skills itself, so Settings need not have opened.
+- **An unstarted chat's tools.** Run `$H run --run cx-tools-new --fixture fixtures/errand.jsonl --profiles fixtures/profiles/roster.json --tools fixtures/tools/three.json --mode bots --theme dark --size 1440x900 wait live wait bots click button "New chat" wait unstarted click button Connectors wait apps click tab /^Tools/ see "On · 9 tools" shot tools-new-chat quiet`. `gateway-calls.jsonl` holds `tools.list` with `{}`: a chat with no session names none, and Hermes reads the launch profile.
+- **An older Hermes.** Run `$H run --run cx-old-hermes --fixture fixtures/errand.jsonl --profiles fixtures/profiles/roster.json --mode bots --theme dark --size 1440x900 wait live wait bots click button Connectors wait apps see "This Hermes can't list its apps." see "This Hermes can't manage tool servers from Highwing." count button "Add your own" 0 shot old-connectors click tab /^Plugins/ see "This Hermes can't list its plugins." shot old-plugins quiet`.
+
+## Gotchas
+
+- Every tab's panel stays in the page while hidden, so `see` can match a hidden tab's text first and time out. Prefer `count`, `called` or a name only the shown tab has.
+- `count` checks at once. After a Remove, wait with `gone` on the removed control before counting the card in its new section.
+- The sign-in settles on the second status read, about 800 ms after the click. GitHub is proven by Reconnect GitHub and the Available section gone.
+- `opened browse` wants exactly one browser open in the run, so a run that both connects and reconnects fails that step.
+- `--connectors` answers `connectors.connect` itself, so a story that waits on that call does not advance. `fixtures/errand.jsonl` does not wait on it.
+- The in-turn sign-in card is a different surface. These runs do not open it.
