@@ -1,4 +1,4 @@
-import { canonicalBotId } from '@highwing/hermes/domain'
+import { canonicalBotId, type AvatarTone, type Bot } from '@highwing/hermes/domain'
 import { blobUrlOf } from './pictures'
 
 export const FACE_SHAPES = ['circle', 'squircle', 'flower', 'cloud', 'sparkle', 'seal', 'blob', 'drop', 'pill', 'diamond', 'hexagon', 'triangle'] as const
@@ -86,15 +86,26 @@ const SHAPES: { readonly [S in FaceShape]: { readonly body: (fill: string) => st
   triangle: { body: fill => rounded(polygon(3, 38), fill, 16, ' transform="translate(0 6)"'), eyes: [0, 12] }
 }
 
-const EYES = '<rect x="38" y="40" width="7.5" height="17" rx="3.75" transform="rotate(8 41 48)"/><rect x="54.5" y="40" width="7.5" height="17" rx="3.75" transform="rotate(8 58 48)"/>'
+export type FaceMood = 'idle' | 'working' | 'waiting'
 
-export function faceSvg(shape: FaceShape, color: FaceColor, size: number): string {
+const EYES: { readonly [M in FaceMood]: string } = {
+  idle: '<rect x="38" y="40" width="7.5" height="17" rx="3.75" transform="rotate(8 41 48)"/><rect x="54.5" y="40" width="7.5" height="17" rx="3.75" transform="rotate(8 58 48)"/>',
+  working: [34, 50, 66].map(cx => `<circle class="face-dot" cx="${cx}" cy="50" r="6"/>`).join(''),
+  waiting: '<rect x="38" y="35" width="7.5" height="11" rx="3.75" transform="rotate(8 41 40.5)"/><rect x="54.5" y="35" width="7.5" height="11" rx="3.75" transform="rotate(8 58 40.5)"/>'
+}
+
+const TONE_COLORS: { readonly [T in AvatarTone]: FaceColor } = { ink: 'ink', slate: 'slate', umber: 'umber', plum: 'plum', olive: 'olive', mauve: 'rose' }
+
+export const faceOf = (bot: Pick<Bot, 'name' | 'tone'>): { readonly shape: FaceShape; readonly color: FaceColor } =>
+  ({ shape: shapeFor('auto', bot.name), color: TONE_COLORS[bot.tone] })
+
+export function faceSvg(shape: FaceShape, color: FaceColor, size: number, mood: FaceMood = 'idle'): string {
   const { body, eyes: [dx, dy] = [0, 0] } = SHAPES[shape]
   const eye = color === 'ink' ? '#F6F7F3' : FACE_COLORS.ink
   const rim = rimOf(color)
   const behind = rim === null ? '' : `<g transform="translate(50 50) scale(1.08) translate(-50 -50)">${body(rim)}</g>`
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true">${behind}${body(FACE_COLORS[color])}`
-    + `<g fill="${eye}" transform="translate(${dx} ${dy})">${EYES}</g></svg>`
+    + `<g fill="${eye}" transform="translate(${dx} ${dy})">${EYES[mood]}</g></svg>`
 }
 
 const SIDE = 512

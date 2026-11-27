@@ -2,6 +2,7 @@ import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, 
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { isLocal } from '../../ipc-contract'
+import { botIn } from '../bots/roster-view'
 import { Composer } from '../composer/Composer'
 import { carryToNewChat, slotOf } from '../composer/drafts'
 import { ContextMeter } from '../composer/ContextMeter'
@@ -23,7 +24,7 @@ import type { RequestAnswer } from './Asks'
 import { Sides } from './Sides'
 import { closeSide, sortSides, useClosedSides } from './sides'
 import { useTail } from './tail'
-import { Thread, type QueueControls, type QueuedRow } from './Thread'
+import { ChatBotContext, Thread, type QueueControls, type QueuedRow } from './Thread'
 import { TIME_ZONE, useWakeAt } from './wake'
 
 const PAGE = 0.875
@@ -40,6 +41,8 @@ const holdsText = (target: EventTarget | null) =>
 export function Chat({ chat }: { readonly chat: Shown }) {
   const id = chat.sessionId
   const session = useTopic(id === null ? null : `session:${id}`)
+  const bots = useTopic('bots')
+  const bot = useMemo(() => (chat.bot === null ? null : botIn(bots, chat.bot)), [bots, chat.bot])
   const relays = useTopic('relay')?.bySession[id ?? ''] ?? NO_RELAYS
   const [tick, wake] = useReducer((count: number) => count + 1, 0)
   const view = useMemo(() => (session === undefined ? null : threadView(session, { now: Date.now(), timeZone: TIME_ZONE })), [session, tick])
@@ -333,11 +336,13 @@ export function Chat({ chat }: { readonly chat: Shown }) {
           <FilesHereContext value={filesHere}>
             <FileCallContext value={fileCall}>
               <ImageSessionContext value={id}>
-                <Thread
-                  view={drawn.view} relays={drawn.relays} sides={drawn.sides} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
-                  canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
-                  canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers}
-                />
+                <ChatBotContext value={bot}>
+                  <Thread
+                    view={drawn.view} relays={drawn.relays} sides={drawn.sides} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
+                    canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
+                    canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers}
+                  />
+                </ChatBotContext>
               </ImageSessionContext>
             </FileCallContext>
           </FilesHereContext>
