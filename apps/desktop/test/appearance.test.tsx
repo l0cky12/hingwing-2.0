@@ -28,7 +28,7 @@ const { Settings } = await import('../src/renderer/setup/Settings')
 
 const HOST: Target = { kind: 'local' }
 const AT_REST: CardSetup = { at: 'form', live: { target: HOST, epoch: 1 }, notice: null }
-const render = (theme: Theme) => renderToStaticMarkup(<Settings setup={AT_REST} mode="bots" theme={theme} onRequestClose={() => {}} />)
+const render = (theme: Theme) => renderToStaticMarkup(<Settings setup={AT_REST} mode="bots" theme={theme} onRequestClose={() => {}} onShowShortcuts={() => {}} />)
 const labelOf = (html: string, id: string) => new RegExp(`id="${id}"[^>]*>([^<]*)<`).exec(html)?.[1]
 
 beforeEach(() => {
@@ -39,10 +39,10 @@ beforeEach(() => {
 describe('the Appearance section of Settings', () => {
   it('opens on General, above Sidebar, with a Theme row offering System, Light and Dark', () => {
     const html = render('system')
-    expect(Array.from(html.matchAll(/<button type="button"[^>]*>([^<]+)<\/button>/g), ([, label]) => label)).toEqual(['Close', 'General', 'Permissions', 'Hermes machine', 'Usage', 'About'])
+    expect(Array.from(html.matchAll(/<button type="button"[^>]*>([^<]+)<\/button>/g), ([, label]) => label)).toEqual(['Close', 'General', 'Permissions', 'Hermes machine', 'Usage', 'About', 'Show all'])
     expect(html).toContain('aria-current="page">General')
     expect(Array.from(html.matchAll(/<h3 [^>]*>([^<]*)<\/h3>/g), ([, heading]) => heading)).toEqual(['Appearance', 'Password managers', 'Sidebar', 'Window', 'Keyboard shortcuts'])
-    expect(html).toContain('<kbd>,</kbd>')
+    expect(html).toMatch(/aria-keyshortcuts="(Control|Meta)\+\/"[^>]*>Show all</)
     const theme = seen.segmented.find(control => labelOf(html, control.labelledBy) === 'Theme')!
     expect(theme.value).toBe('system')
     expect(html).toContain('System follows your computer’s light or dark setting.')

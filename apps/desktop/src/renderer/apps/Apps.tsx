@@ -1,6 +1,6 @@
 import { appsView, shownBot, STANDING_WORDS, type AppEntry, type AppsBoard } from '@highwing/hermes/domain'
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type RefObject } from 'react'
-import { appsKeys, isCommandShiftKey } from '../keys'
+import { appsKeys, isShortcut } from '../keys'
 import { run, useTopic } from '../store'
 import { ToolServers } from './ToolServers'
 
@@ -148,7 +148,7 @@ function Sheet({ back, onClose }: SheetProps) {
   const onKeyDown = (event: KeyboardEvent<HTMLDialogElement>) => {
     event.stopPropagation()
     if (event.nativeEvent.isComposing || event.repeat) return
-    if (!isCommandShiftKey(event.nativeEvent, 'm')) return
+    if (!isShortcut(event.nativeEvent, 'apps')) return
     event.preventDefault()
     dismiss()
   }
@@ -225,7 +225,7 @@ export function Apps({ open, back, onOpen, onClose }: { readonly open: boolean; 
   useEffect(() => {
     if (open) return
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (!isCommandShiftKey(event, 'm') || document.querySelector('dialog:modal') !== null) return
+      if (!isShortcut(event, 'apps') || document.querySelector('dialog:modal') !== null) return
       event.preventDefault()
       if (!event.repeat) onOpen()
     }

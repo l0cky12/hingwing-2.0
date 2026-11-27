@@ -214,6 +214,8 @@ export interface Bridge {
   attachPaste(): Promise<readonly StageResult[]>
   /** Holds the files of a drop. The window never names a path: the bridge reads it from each `File`. */
   attachDropped(files: readonly File[]): Promise<readonly StageResult[]>
+  /** Zooms this window by half a level, or back to actual size. */
+  zoom(how: 'in' | 'out' | 'reset'): void
 }
 
 export const CHANNEL = {

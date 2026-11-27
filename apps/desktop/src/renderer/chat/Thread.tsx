@@ -5,7 +5,8 @@ import { Avatar, BotFace } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
 import { AskCard, type RequestAnswer } from './Asks'
 import { Command, CopyButton } from './Copy'
-import { isCommandKey } from '../keys'
+import { isShortcut } from '../keys'
+import { modalOpen } from '../shortcuts'
 import { Helper, Moa, Notice, Plan, Reasoning, type HelperControls } from './Helpers'
 import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find'
 import { isOpen, NONE_OPEN, toggled, type OpenState } from './open'
@@ -505,7 +506,7 @@ export function Thread({ view, relays, sides, onAnswer, onAnswerRequest, onLoadE
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isCommandKey(event, 'f') || transcript.current?.checkVisibility() !== true) return
+      if (!isShortcut(event, 'find') || modalOpen() || transcript.current?.checkVisibility() !== true) return
       event.preventDefault()
       if (findInput.current === null) setFind(FIND_OPEN)
       else {

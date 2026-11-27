@@ -2,7 +2,7 @@ import { shownChat } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { Mode, OnClose, Theme } from '../../ipc-contract'
 import { Bar } from '../chrome/Chrome'
-import { COMMAND_KEY } from '../keys'
+import { MAC } from '../keys'
 import { run, useTopic } from '../store'
 import { Bubble, ConnectionCard, Monitor, Moon, People, Segmented, Sun, type Segment } from './ConnectionCard'
 import { PasswordManagers } from './PasswordManagers'
@@ -29,25 +29,18 @@ const CLOSES: readonly Segment<OnClose>[] = [
   { value: 'stay', label: 'Keep in the tray', icon: <Tray /> }
 ]
 
-const SHORTCUTS: readonly { readonly label: string; readonly key: string; readonly shift?: boolean; readonly onlyIn: string | null }[] = [
-  { label: 'Command palette', key: 'K', onlyIn: null },
-  { label: 'Settings', key: ',', onlyIn: null },
-  { label: 'New chat', key: 'N', onlyIn: 'In a chat' },
-  { label: 'Find in chat', key: 'F', onlyIn: 'In a chat' },
-  { label: 'Connect apps', key: 'M', shift: true, onlyIn: null }
-]
-
 const UNREPORTED = 'This Hermes does not report usage.'
 
 interface PanelProps {
   readonly setup: CardSetup
   readonly mode: Mode
   readonly theme: Theme
+  readonly onShowShortcuts: () => void
 }
 
 const panel = (render: (props: PanelProps) => ReactNode) => render
 
-function General({ mode, theme }: { readonly mode: Mode; readonly theme: Theme }) {
+function General({ mode, theme, onShowShortcuts }: { readonly mode: Mode; readonly theme: Theme; readonly onShowShortcuts: () => void }) {
   const ids = useId()
   const onClose = useTopic('onClose') ?? 'quit'
   return (
@@ -98,15 +91,18 @@ function General({ mode, theme }: { readonly mode: Mode; readonly theme: Theme }
           </div>
         </div>
       </section>
-      <section className="group short" aria-labelledby={`${ids}-keys`}>
+      <section className="group" aria-labelledby={`${ids}-keys`}>
         <h3 id={`${ids}-keys`}>Keyboard shortcuts</h3>
         <div className="card">
-          {SHORTCUTS.map(({ label, key, shift, onlyIn }) => (
-            <div key={key} className="row">
-              <div className="text"><p className="label">{label}{onlyIn !== null && <span className="where">{onlyIn}</span>}</p></div>
-              <div className="control keys"><kbd>{COMMAND_KEY}</kbd>{shift === true && <kbd>Shift</kbd>}<kbd>{key}</kbd></div>
+          <div className="row">
+            <div className="text">
+              <p className="label">Keyboard shortcuts</p>
+              <p className="desc">Every shortcut Highwing has, grouped by what it does.</p>
             </div>
-          ))}
+            <div className="control">
+              <button type="button" className="btn" aria-keyshortcuts={MAC ? 'Meta+/' : 'Control+/'} onClick={onShowShortcuts}>Show all</button>
+            </div>
+          </div>
         </div>
       </section>
     </>
@@ -190,7 +186,7 @@ function About() {
 }
 
 const SECTIONS = [
-  { id: 'general', label: 'General', Panel: panel(({ mode, theme }) => <General mode={mode} theme={theme} />) },
+  { id: 'general', label: 'General', Panel: panel(({ mode, theme, onShowShortcuts }) => <General mode={mode} theme={theme} onShowShortcuts={onShowShortcuts} />) },
   { id: 'permissions', label: 'Permissions', Panel: panel(() => <Permissions />) },
   { id: 'machine', label: 'Hermes machine', Panel: panel(({ setup }) => <Machine setup={setup} />) },
   { id: 'usage', label: 'Usage', Panel: panel(() => <Usage />) },
@@ -204,7 +200,7 @@ function sectionBy(id: SectionId): (typeof SECTIONS)[number] {
   throw new Error(`No settings section ${id}`)
 }
 
-export function Settings({ setup, mode, theme, onRequestClose }: { readonly setup: CardSetup; readonly mode: Mode; readonly theme: Theme; readonly onRequestClose: () => void }) {
+export function Settings({ setup, mode, theme, onRequestClose, onShowShortcuts }: { readonly setup: CardSetup; readonly mode: Mode; readonly theme: Theme; readonly onRequestClose: () => void; readonly onShowShortcuts: () => void }) {
   const saving = setup.at === 'checking' && setup.step === 'save'
   const heading = useRef<HTMLHeadingElement>(null)
   const [current, setCurrent] = useState<SectionId>(setup.at === 'saved' ? 'machine' : 'general')
@@ -237,7 +233,7 @@ export function Settings({ setup, mode, theme, onRequestClose }: { readonly setu
             ))}
           </nav>
           <div className="panel">
-            <section.Panel setup={setup} mode={mode} theme={theme} />
+            <section.Panel setup={setup} mode={mode} theme={theme} onShowShortcuts={onShowShortcuts} />
           </div>
         </div>
       </main>

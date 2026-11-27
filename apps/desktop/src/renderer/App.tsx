@@ -11,6 +11,8 @@ import { Chat } from './chat/Chat'
 import { GroupPane } from './groups/GroupPane'
 import { Banner, TopBar } from './chrome/Chrome'
 import { ModeSwitch } from './chrome/ModeSwitch'
+import { Shortcuts } from './chrome/Shortcuts'
+import { ShortcutSheet } from './chrome/ShortcutSheet'
 import { Preview } from './preview/Preview'
 import { Composer } from './composer/Composer'
 import { Apps, AppsButton } from './apps/Apps'
@@ -111,6 +113,8 @@ function ChatWindow({ hidden, settings, target, mode, theme, onOpenApps }: ChatW
   useSettingsChord(target, settings !== null)
   const { root, pick } = useSwitchModeKeepingFocus(mode)
   const { settingsButton, close } = useCloseSettings(settings !== null)
+  const [sheet, setSheet] = useState<{ readonly back: Element | null } | null>(null)
+  const openSheet = useCallback(() => setSheet(held => held ?? { back: document.activeElement }), [])
   const switcher = <ModeSwitch mode={mode} onPick={pick} />
   const foot = <AppsButton onOpen={onOpenApps} />
   const paned = preview?.state === 'open' && settings === null
@@ -121,8 +125,10 @@ function ChatWindow({ hidden, settings, target, mode, theme, onOpenApps }: ChatW
       <div key="screen" className="screen" hidden={settings !== null}>
         <ChatScreen target={target} settingsButton={settingsButton} />
       </div>
-      {settings !== null && <Settings setup={settings} mode={mode} theme={theme} onRequestClose={close} />}
+      {settings !== null && <Settings setup={settings} mode={mode} theme={theme} onRequestClose={close} onShowShortcuts={openSheet} />}
       <DraftSweep />
+      <Shortcuts onSheet={openSheet} />
+      {sheet !== null && <ShortcutSheet back={sheet.back} onClose={() => setSheet(null)} />}
       {paned && <Preview preview={preview} />}
     </div>
   )

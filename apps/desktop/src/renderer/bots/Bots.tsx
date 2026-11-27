@@ -7,6 +7,8 @@ import { GroupForm } from '../groups/GroupForm'
 import { groupRowsOf, type GroupRowView } from '../groups/group-rows'
 import { newChatIn } from '../new-chat'
 import { Chevron } from '../chrome/ModeSwitch'
+import { isShortcut } from '../keys'
+import { modalOpen } from '../shortcuts'
 import { pickBotPicture, run, useTopic } from '../store'
 import { useBotDrafts } from '../composer/drafts'
 import { Avatar } from './Avatar'
@@ -21,7 +23,7 @@ import { anchorOf, botMenuOf, DELETE_WORDS, deleteRefusal, groupMenuOf, sameOwne
 import { afterGroupOf, elementIn, fallbackOf, focusIn, moreOf, openerTarget, rowOf, stayedIn, type FocusTarget } from './focus'
 import { busyIn, focusAfter, runsAt, SAID, type MarkRun } from './marks'
 import { NewMenu } from './NewMenu'
-import { plusMenuOf, seatableIn, type PlusItem } from './plus-menu'
+import { newGroupBlock, plusMenuOf, seatableIn, type PlusItem } from './plus-menu'
 import { botIn, listOf, selectedIn } from './roster-view'
 import { RowMenu } from './RowMenu'
 import { drawnAbove, drawnAboveGroups, HIDDEN_CLOSED, hiddenTriggers, lineOf, nextHidden, rowsIn, sidebarOf, type BotLine, type Row, type RowGroup } from './sidebar-view'
@@ -271,6 +273,18 @@ export function BotsPanel({
     const id = setTimeout(() => setSaid(null), SAID_MS)
     return () => clearTimeout(id)
   }, [said])
+
+  const groupBlocked = newGroupBlock(link, bots, groups) !== null
+  useEffect(() => {
+    if (groupBlocked) return
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (!isShortcut(event, 'newGroup') || event.defaultPrevented || event.isComposing || modalOpen() || sidebar.current?.checkVisibility() !== true) return
+      event.preventDefault()
+      if (!event.repeat) setGrouping(true)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [groupBlocked])
 
   const pick = async (bot: BotId) => {
     setMade(null)
