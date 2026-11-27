@@ -135,6 +135,14 @@ describe('Hermes\'s queue', () => {
     expect(openTurn(running)?.request).toEqual({ text: 'what is this', inputId: 'i1', rowId: null, attachments: [SHOT] })
   })
 
+  it('marks a turn that a message handed over by another chat started as handed, and keeps the mark when the list names it again', () => {
+    const relayed = row('a1', 'bot:0123456789abcdef0123456789abcdef', 'Draft the report', { s: 'started' })
+    const running = feed(live(), event(started(null)), list(relayed))
+    expect(openTurn(running)?.request).toEqual({ text: 'Draft the report', inputId: 'bot:0123456789abcdef0123456789abcdef', rowId: null, attachments: [], handed: true })
+    expect(openTurn(feed(running, list(relayed)))?.request?.handed).toBe(true)
+    expect(openTurn(feed(live(), event(started(null)), list(row('a2', 'theirs-input', 'theirs', { s: 'started' }))))?.request?.handed).toBeUndefined()
+  })
+
   it('names no attachments for another client\'s row, since Hermes\'s list does not say', () => {
     const state = feed(live(), send('i1', 'mine', [SHOT]), list(row('a2', 'theirs-input', 'theirs')), event(started('a2')))
     expect(openTurn(state)?.request).toEqual({ text: 'theirs', inputId: 'theirs-input', rowId: null, attachments: [] })

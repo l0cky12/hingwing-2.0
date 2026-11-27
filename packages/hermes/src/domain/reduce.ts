@@ -653,9 +653,13 @@ function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
   return listed(next, snapshot.queue)
 }
 
+/** A message `bot_relay.deliver` handed over is admitted as `bot:<delivery id>` (gateway/session_bot.py:980). */
+const handedIn = (inputId: InputId): boolean => inputId.startsWith('bot:')
+
 function startedRequest(state: Tracked, rows: readonly Admission[]): Request | null {
   const started = rows.find(row => row.state.s === 'started')
-  return started === undefined ? null : { text: started.text, inputId: started.inputId, rowId: null, attachments: carried(state, started) }
+  if (started === undefined) return null
+  return { text: started.text, inputId: started.inputId, rowId: null, attachments: carried(state, started), ...(handedIn(started.inputId) ? { handed: true } : {}) }
 }
 
 /** A row of one of Hermes's lists, by the ids that can tie it to this client's outbox. */
@@ -689,7 +693,7 @@ function listed(state: Tracked, rows: readonly Admission[]): Tracked {
   }
   if (started === null) return next
   return editTurn(next, turn => (turn.request === null || turn.request.inputId === null
-    ? { ...turn, request: { ...started, text: turn.request?.text ?? started.text, rowId: turn.request?.rowId ?? null } }
+    ? { ...turn, request: { ...started, text: turn.request?.text ?? started.text, rowId: turn.request?.rowId ?? null, ...(turn.request?.handed ? { handed: true } : {}) } }
     : turn))
 }
 

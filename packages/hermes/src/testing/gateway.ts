@@ -915,7 +915,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (typeof id !== 'string' || !/^[0-9a-f]{32,64}$/.test(id) || typeof message !== 'string' || message.trim() === '') throw new Refused('invalid_params')
     const script = gateway.fixture.header.relay?.[routed] ?? { refuse: 'runtime_unavailable' }
     if ('refuse' in script) throw new Refused(script.refuse)
-    const chat = gateway.handIn(routed, message, script.reply, script.delay_ms ?? 0)
+    const chat = gateway.handIn(routed, id, message, script.reply, script.delay_ms ?? 0)
     return new Later(script.delay_ms ?? 0, {
       status: 'settled', delivery_id: id, profile_home: `/fixture/profiles/${routed}`, session_id: chat.id, message,
       admission_id: `${chat.id}-admission-${id.slice(0, 8)}`, reply: script.reply
@@ -1875,14 +1875,18 @@ export class ScriptedGateway {
 
   /**
    * A message handed to `routed` runs as a turn of its Bot Chat, made if it has none. Hermes stores the message as a
-   * user row of kind `internal_notification` (gateway/response_filters.py:203, gateway/run_turn_prepare.py:791), its
-   * `message.start` carries no text (gateway/session_automation.py:394-408), and `sessions.changed` follows the row
-   * count at the turn's start and end (tui_gateway/change_watcher.py:461-478).
+   * user row of kind `internal_notification` (gateway/response_filters.py:203, gateway/run_turn_prepare.py:791). Its
+   * `message.start` carries no text (gateway/session_automation.py:394-408), and the `session.info` after it lists the
+   * claimed row, whose input id is `bot:<delivery id>` (gateway/session_authority.py:1229-1241, gateway/session_bot.py:980).
+   * `sessions.changed` follows the row count at the turn's start and end (tui_gateway/change_watcher.py:461-478).
    */
-  handIn(routed: string, message: string, reply: string, ms: number): EchoChat {
+  handIn(routed: string, id: string, message: string, reply: string, ms: number): EchoChat {
     const chat = this.botChats.get(routed) ?? this.newBotChat(routed)
     const generation = ++chat.generation
     const turn = { authority_epoch: 1, execution_generation: generation, admission_id: `${chat.id}-admission-${generation}` }
+    const claimed = {
+      ...turn, ref: { profile_id: routed, session_id: chat.id }, sequence: generation, status: 'started', outcome: null, input_id: `bot:${id}`, text: message
+    }
     const first = chat.nextRowId
     const changed = () => {
       for (const socket of this.sockets) socket.peer.write({ jsonrpc: '2.0', method: 'event', params: { type: 'sessions.changed' } })
@@ -1890,12 +1894,15 @@ export class ScriptedGateway {
     chat.rows.push({ role: 'user', text: message, display_kind: 'internal_notification', timestamp: this.options.clock.now() / 1000, row_id: first })
     chat.turning = true
     this.say(chat, 'message.start', {}, turn)
+    this.say(chat, 'session.info', { pending: [claimed], running: true, execution_generation: generation, revision: chat.revision })
     changed()
     this.options.clock.setTimeout(() => {
       this.say(chat, 'message.delta', { text: reply, segment: 0, offset: 0 }, turn)
       chat.rows.push({ role: 'assistant', text: reply, timestamp: this.options.clock.now() / 1000, row_id: first + 1 })
-      chat.turning = false
-      this.say(chat, 'message.complete', { text: null, outcome: 'completed', status: 'complete', persisted_turn: { row_ids: [first, first + 1], complete: true } }, turn)
+      if (chat.generation === generation) chat.turning = false
+      this.say(chat, 'message.complete', {
+        text: null, outcome: 'completed', status: 'complete', persisted_turn: { row_ids: [first, first + 1], user_row_id: first, complete: true }
+      }, turn)
       changed()
     }, ms)
     return chat
