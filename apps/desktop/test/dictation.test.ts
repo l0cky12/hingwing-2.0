@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import type { CommandOutcome, Recording } from '@highwing/hermes/domain'
 import {
-  HOLD_MS, IDLE, inserted, microphoneRefusal, nextDictation, NO_WORDS, REFUSAL_WORDS, type Dictation, type DictationEvent
+  dictationDriver, HOLD_MS, IDLE, inserted, microphoneRefusal, nextDictation, NO_WORDS, REFUSAL_WORDS, type Dictation, type DictationEvent, type Take
 } from '../src/renderer/composer/dictation'
 
 const run = (events: readonly DictationEvent[], from: Dictation = IDLE): Dictation =>
@@ -77,5 +78,112 @@ describe('inserted', () => {
 
   it('replaces the selection', () => {
     expect(inserted('Book a chair now', 7, 12, 'table')).toEqual({ text: 'Book a table now', caret: 12 })
+  })
+})
+
+/** A promise and the hands that settle it, so a test decides when the microphone opens or Hermes answers. */
+function pending<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+
+const HEARD: Recording = { mime: 'audio/webm;codecs=opus', audio: new Uint8Array([1, 2, 3]) }
+const settle = () => new Promise(resolve => setImmediate(resolve))
+
+function rig(heard: Recording | null = HEARD) {
+  const opens: ReturnType<typeof pending<Take>>[] = []
+  const answers: ReturnType<typeof pending<CommandOutcome<string>>>[] = []
+  const log: string[] = []
+  const states: Dictation[] = []
+  const texts: string[] = []
+  const move = dictationDriver({
+    listen: () => {
+      const open = pending<Take>()
+      opens.push(open)
+      return open.promise
+    },
+    transcribe: recording => {
+      log.push(`transcribe ${recording.audio.byteLength} bytes`)
+      const answer = pending<CommandOutcome<string>>()
+      answers.push(answer)
+      return answer.promise
+    },
+    onChange: state => states.push(state),
+    onText: text => texts.push(text)
+  })
+  const take: Take = { stop: async () => (log.push('stop'), heard), drop: () => void log.push('drop') }
+  return { move, opens, answers, log, states, texts, take, now: () => states.at(-1) ?? IDLE }
+}
+
+describe('dictationDriver', () => {
+  it('opens the microphone once, sends what it heard when stopped, and hands over the text', async () => {
+    const { move, opens, answers, log, texts, take, now } = rig()
+    move({ do: 'press', at: 0 })
+    opens[0]!.resolve(take)
+    await settle()
+    expect(now()).toEqual({ at: 'recording', since: 0 })
+    move({ do: 'press', at: 2000 })
+    await settle()
+    answers[0]!.resolve({ ok: true, value: 'book a table' })
+    await settle()
+    expect(log).toEqual(['stop', 'transcribe 3 bytes'])
+    expect(texts).toEqual(['book a table'])
+    expect(now()).toEqual(IDLE)
+    expect(opens).toHaveLength(1)
+  })
+
+  it('stops as soon as the microphone opens when keys held to talk came up while it opened, with one open', async () => {
+    const { move, opens, log, take, now } = rig(null)
+    move({ do: 'press', at: 0 })
+    move({ do: 'release', at: HOLD_MS })
+    opens[0]!.resolve(take)
+    await settle()
+    expect(opens, 'a release while it opens asks for no second microphone').toHaveLength(1)
+    expect(log).toEqual(['stop'])
+    expect(now()).toEqual({ at: 'idle', notice: NO_WORDS })
+  })
+
+  it('lets go of a microphone that opens after a cancel, and never records with it', async () => {
+    const { move, opens, log, states, take } = rig()
+    move({ do: 'press', at: 0 })
+    move({ do: 'cancel' })
+    opens[0]!.resolve(take)
+    await settle()
+    expect(log).toEqual(['drop'])
+    expect(states.map(state => state.at)).toEqual(['asking', 'idle'])
+  })
+
+  it('says why the microphone was refused', async () => {
+    const { move, opens, now } = rig()
+    move({ do: 'press', at: 0 })
+    opens[0]!.reject(new DOMException('Permission denied', 'NotAllowedError'))
+    await settle()
+    expect(now()).toEqual({ at: 'idle', notice: REFUSAL_WORDS['not-allowed'] })
+  })
+
+  it("shows Hermes's words, and drops a transcript that comes back after a cancel", async () => {
+    const failing = rig()
+    failing.move({ do: 'press', at: 0 })
+    failing.opens[0]!.resolve(failing.take)
+    await settle()
+    failing.move({ do: 'press', at: 1000 })
+    await settle()
+    failing.answers[0]!.resolve({ ok: false, refusal: { kind: 'rejected', message: "Hermes couldn't turn that into text." } })
+    await settle()
+    expect(failing.now()).toEqual({ at: 'idle', notice: "Hermes couldn't turn that into text." })
+
+    const late = rig()
+    late.move({ do: 'press', at: 0 })
+    late.opens[0]!.resolve(late.take)
+    await settle()
+    late.move({ do: 'press', at: 1000 })
+    await settle()
+    late.move({ do: 'cancel' })
+    late.answers[0]!.resolve({ ok: true, value: 'too late' })
+    await settle()
+    expect(late.texts).toEqual([])
+    expect(late.now()).toEqual(IDLE)
   })
 })

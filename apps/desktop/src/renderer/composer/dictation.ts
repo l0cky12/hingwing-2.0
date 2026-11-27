@@ -1,3 +1,5 @@
+import type { CommandOutcome, Recording } from '@highwing/hermes/domain'
+
 /**
  * Dictation into the composer: where the microphone is, and every move it can make. Pure, so the
  * composer only carries each move out. `since` is when the user pressed to start, so a key held
@@ -72,6 +74,80 @@ const MOVES: { readonly [A in Dictation['at']]: { readonly [E in DictationEvent[
 export function nextDictation(state: Dictation, event: DictationEvent): Dictation | null {
   const move = MOVES[state.at][event.do] as ((state: Dictation, event: DictationEvent) => Dictation | null) | undefined
   return move?.(state, event) ?? null
+}
+
+const NOT_SENT = "Highwing couldn't send that to Hermes. Try again."
+
+/** A recording in progress. `stop` ends it and answers what it heard, null for nothing. `drop` ends it and keeps nothing. */
+export interface Take {
+  stop(): Promise<Recording | null>
+  drop(): void
+}
+
+export interface DictationDeps {
+  /** Opens the microphone and starts recording. Rejects as `getUserMedia` does. */
+  listen(): Promise<Take>
+  transcribe(recording: Recording): Promise<CommandOutcome<string>>
+  onChange(state: Dictation): void
+  onText(text: string): void
+}
+
+/**
+ * Carries out each move of `nextDictation`: asking opens the microphone, transcribing sends what
+ * was heard to Hermes, and idle lets the microphone go. An open is known by its `since`, so a
+ * release while it opens is still the same open. A microphone or a transcript that comes back
+ * after the user moved on is let go unused.
+ */
+export function dictationDriver({ listen, transcribe, onChange, onText }: DictationDeps): (event: DictationEvent) => void {
+  let state: Dictation = IDLE
+  let take: Take | null = null
+
+  const move = (event: DictationEvent) => {
+    const from = state
+    const next = nextDictation(from, event)
+    if (next === null) return
+    state = next
+    onChange(next)
+    if (next.at === 'asking' && from.at !== 'asking') void open(next.since)
+    else if (next.at === 'transcribing') void send(next)
+    else if (next.at === 'idle') {
+      take?.drop()
+      take = null
+    }
+    if (event.do === 'transcribed' && next.at === 'idle' && event.text.trim() !== '') onText(event.text)
+  }
+
+  const open = async (since: number) => {
+    const opening = () => state.at === 'asking' && state.since === since
+    let opened: Take
+    try {
+      opened = await listen()
+    } catch (error) {
+      if (opening()) move({ do: 'refused', why: microphoneRefusal(error) })
+      return
+    }
+    if (!opening()) return opened.drop()
+    take = opened
+    move({ do: 'granted' })
+  }
+
+  const send = async (transcribing: Dictation) => {
+    const taken = take
+    take = null
+    const current = () => state === transcribing
+    if (taken === null) return move({ do: 'failed', message: REFUSAL_WORDS.failed })
+    try {
+      const heard = await taken.stop()
+      if (!current()) return
+      if (heard === null) return move({ do: 'transcribed', text: '' })
+      const outcome = await transcribe(heard)
+      if (current()) move(outcome.ok ? { do: 'transcribed', text: outcome.value } : { do: 'failed', message: outcome.refusal.message })
+    } catch {
+      if (current()) move({ do: 'failed', message: NOT_SENT })
+    }
+  }
+
+  return move
 }
 
 /** Why `getUserMedia` refused, by the names the Media Capture spec gives its errors. */

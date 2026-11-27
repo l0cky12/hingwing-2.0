@@ -1,84 +1,51 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { Recording } from '@highwing/hermes/domain'
 import { transcribe } from '../store'
-import { IDLE, microphoneRefusal, nextDictation, REFUSAL_WORDS, type Dictation, type DictationEvent } from './dictation'
+import { dictationDriver, IDLE, type Dictation, type DictationEvent, type Take } from './dictation'
 
 /** Opus in WebM, which Chromium records and Hermes's transcribers take. */
 const OPUS = 'audio/webm;codecs=opus'
-const NOT_SENT = "Highwing couldn't send that to Hermes. Try again."
-
-interface Capture { readonly stream: MediaStream; readonly recorder: MediaRecorder; readonly chunks: Blob[] }
 
 const stopTracks = (stream: MediaStream) => stream.getTracks().forEach(track => track.stop())
 
-/**
- * The microphone behind the composer's dictation. Each move of `nextDictation` is carried out here:
- * asking opens the microphone, leaving recording sends what was heard to Hermes, and back to idle
- * lets the microphone go. `onText` gets Hermes's text, and nothing else is done with it.
- */
+/** This computer's microphone, recorded by Chromium. A recorder that cannot start lets the microphone go. */
+async function microphone(): Promise<Take> {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+  try {
+    const recorder = new MediaRecorder(stream, MediaRecorder.isTypeSupported(OPUS) ? { mimeType: OPUS } : {})
+    const chunks: Blob[] = []
+    recorder.ondataavailable = ({ data }) => void (data.size > 0 && chunks.push(data))
+    recorder.start()
+    return {
+      stop: () => new Promise<Recording | null>((resolve, reject) => {
+        recorder.onstop = () => {
+          stopTracks(stream)
+          const mime = recorder.mimeType || 'audio/webm'
+          const heard = new Blob(chunks, { type: mime })
+          if (heard.size === 0) return resolve(null)
+          heard.arrayBuffer().then(bytes => resolve({ mime, audio: new Uint8Array(bytes) }), reject)
+        }
+        recorder.stop()
+      }),
+      drop: () => {
+        recorder.ondataavailable = null
+        recorder.onstop = null
+        if (recorder.state !== 'inactive') recorder.stop()
+        stopTracks(stream)
+      }
+    }
+  } catch (error) {
+    stopTracks(stream)
+    throw error
+  }
+}
+
+/** The composer's dictation: its state, and the way to move it. `onText` gets Hermes's text, and nothing else is done with it. */
 export function useDictation(onText: (text: string) => void): readonly [Dictation, (event: DictationEvent) => void] {
   const [state, setState] = useState<Dictation>(IDLE)
-  const held = useRef(state)
-  const capture = useRef<Capture | null>(null)
   const latestOnText = useRef(onText)
   latestOnText.current = onText
-
-  const letGo = () => {
-    const taken = capture.current
-    capture.current = null
-    if (taken === null) return
-    taken.recorder.ondataavailable = null
-    taken.recorder.onstop = null
-    if (taken.recorder.state !== 'inactive') taken.recorder.stop()
-    stopTracks(taken.stream)
-  }
-
-  const move = useCallback((event: DictationEvent) => {
-    const from = held.current
-    const next = nextDictation(from, event)
-    if (next === null) return
-    held.current = next
-    setState(next)
-    if (next.at === 'asking') listen(next)
-    else if (next.at === 'transcribing') send(next)
-    else if (next.at === 'idle') letGo()
-    if (event.do === 'transcribed' && next.at === 'idle' && event.text.trim() !== '') latestOnText.current(event.text)
-  }, [])
-
-  const listen = (asking: Dictation) => {
-    Promise.resolve().then(() => navigator.mediaDevices.getUserMedia({ audio: true })).then(stream => {
-      if (held.current !== asking) return stopTracks(stream)
-      try {
-        const recorder = new MediaRecorder(stream, MediaRecorder.isTypeSupported(OPUS) ? { mimeType: OPUS } : {})
-        const chunks: Blob[] = []
-        recorder.ondataavailable = ({ data }) => void (data.size > 0 && chunks.push(data))
-        recorder.start()
-        capture.current = { stream, recorder, chunks }
-        move({ do: 'granted' })
-      } catch {
-        stopTracks(stream)
-        move({ do: 'refused', why: 'failed' })
-      }
-    }, (error: unknown) => move({ do: 'refused', why: microphoneRefusal(error) }))
-  }
-
-  const send = (transcribing: Dictation) => {
-    const taken = capture.current
-    capture.current = null
-    if (taken === null) return move({ do: 'failed', message: REFUSAL_WORDS.failed })
-    const current = () => held.current === transcribing
-    taken.recorder.onstop = () => {
-      stopTracks(taken.stream)
-      const mime = taken.recorder.mimeType || 'audio/webm'
-      const heard = new Blob(taken.chunks, { type: mime })
-      if (heard.size === 0) return move({ do: 'transcribed', text: '' })
-      void heard.arrayBuffer().then(bytes => transcribe({ mime, audio: new Uint8Array(bytes) })).then(
-        outcome => current() && move(outcome.ok ? { do: 'transcribed', text: outcome.value } : { do: 'failed', message: outcome.refusal.message }),
-        () => current() && move({ do: 'failed', message: NOT_SENT })
-      )
-    }
-    taken.recorder.stop()
-  }
-
+  const [move] = useState(() => dictationDriver({ listen: microphone, transcribe, onChange: setState, onText: text => latestOnText.current(text) }))
   useEffect(() => () => move({ do: 'cancel' }), [move])
   return [state, move]
 }
