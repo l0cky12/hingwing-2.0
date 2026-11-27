@@ -1,3 +1,4 @@
+import type { SendKey } from '../ipc-contract'
 import { shortcutOf, type ShortcutId } from './shortcuts'
 
 export const MAC = navigator.userAgent.includes('Mac')
@@ -13,3 +14,9 @@ export const isSettingsChord = (event: KeyboardEvent) =>
   !event.repeat && !event.isComposing && !event.altKey && !event.shiftKey
   && (event.key === ',' || event.code === 'Comma')
   && (MAC ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)
+
+/** Whether this keydown sends the message. Ctrl+Enter, or Cmd+Enter on macOS, always sends. Plain Enter sends unless `sendKey` leaves it to add a line. */
+export const sendsMessage = (event: Pick<KeyboardEvent, 'key' | 'code' | 'shiftKey' | 'altKey' | 'ctrlKey' | 'metaKey'>, sendKey: SendKey) =>
+  event.key === 'Enter' && (sendKey === 'enter' ? !event.shiftKey : shortcutOf(event, MAC)?.id === 'send')
+
+export const SEND_KEY_LABEL: { readonly [K in SendKey]: string } = { enter: 'Enter', modEnter: `${COMMAND_KEY}+Enter` }

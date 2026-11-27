@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEv
 import { MAX_ATTACHMENTS, type StageResult } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
 import { Chips } from '../chat/Attachments'
+import { SEND_KEY_LABEL, sendsMessage } from '../keys'
 import { useTopic } from '../store'
 import { busyHint } from './busy'
 import { attachTo, detach, draftSent, moveAttachment, moveDraft, seedDraft, stagingFor, useAttachments, useDraft, useStaging, writeDraft, type DraftSlot } from './drafts'
@@ -133,6 +134,7 @@ const draggingFiles = (event: DragEvent) => event.dataTransfer?.types.includes('
 export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionId = null, cwd = null, canSend, canAttach, showStop, onSend, onStop, onInput, planFor = SUBMIT_ALWAYS, editing = null, onCancelEdit, above, onEscape, stack, start, end, children }: ComposerProps) {
   const catalog = useTopic('slash') ?? NO_CATALOG
   const roster = useTopic('bots')
+  const sendKey = useTopic('sendKey') ?? 'enter'
   const relay = useTopic('relay')
   const open = useTopic('open')
   const own = shownChat(open)?.bot ?? null
@@ -328,13 +330,14 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
   }
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.nativeEvent.isComposing) return
-    if (menu.open && onMenuKey(event, menu)) return
+    const sendChord = sendKey === 'modEnter' && sendsMessage(event, sendKey)
+    if (menu.open && !sendChord && onMenuKey(event, menu)) return
     if (event.key === 'Escape' && editing !== null) {
       event.preventDefault()
       cancelEdit()
       return
     }
-    if (event.key !== 'Enter' || event.shiftKey) return
+    if (!sendsMessage(event, sendKey)) return
     event.preventDefault()
     void submit()
   }
@@ -410,7 +413,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
                   <svg aria-hidden="true" viewBox="0 0 10 10" width="10" height="10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" /></svg>
                 </button>
               )}
-              <button type="submit" form={FORM_ID} className={blocked || draft.trim() === '' ? 'send' : 'send ready'} aria-label="Send" disabled={blocked}>
+              <button type="submit" form={FORM_ID} className={blocked || draft.trim() === '' ? 'send' : 'send ready'} aria-label="Send" title={`Send (${SEND_KEY_LABEL[sendKey]})`} disabled={blocked}>
                 <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
               </button>
             </span>

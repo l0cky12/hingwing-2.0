@@ -1,6 +1,6 @@
 export type ShortcutId =
   | 'palette' | 'newChat' | 'find' | 'sheet' | 'bot' | 'previousBot' | 'nextBot' | 'cycleBot' | 'cycleBotBack'
-  | 'back' | 'forward' | 'focusComposer' | 'addSelection' | 'newGroup' | 'settings' | 'apps' | 'compactSidebar' | 'zoomIn' | 'zoomOut' | 'zoomReset'
+  | 'back' | 'forward' | 'focusComposer' | 'addSelection' | 'newGroup' | 'settings' | 'apps' | 'compactSidebar' | 'send' | 'zoomIn' | 'zoomOut' | 'zoomReset'
 
 export interface Shortcut {
   readonly id: ShortcutId
@@ -32,6 +32,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   row('newChat', 'Chat', 'New chat', 'command', 'n', 'N', { onlyIn: 'In a chat' }),
   row('newGroup', 'Chat', 'New group chat', 'command', 'n', 'N', { shift: true, onlyIn: 'In bot mode' }),
   row('find', 'Chat', 'Find in chat', 'command', 'f', 'F', { onlyIn: 'In a chat' }),
+  row('send', 'Chat', 'Send the message, even when Enter adds a line', 'command', 'Enter', 'Enter', { onlyIn: 'In the message box' }),
   row('focusComposer', 'Chat', 'Focus the message box', 'command', 'i', 'I'),
   row('addSelection', 'Chat', 'Quote the selected text in the message box', 'command', 'l', 'L'),
   row('settings', 'Window', 'Settings', 'command', ',', ','),

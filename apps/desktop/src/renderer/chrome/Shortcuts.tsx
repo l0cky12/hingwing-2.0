@@ -8,7 +8,7 @@ import { botBeside, modalOpen, shortcutOf, type ShortcutId } from '../shortcuts'
 import { run, useTopic } from '../store'
 
 // Their own components listen for these, because only they know when the press has a meaning.
-const HANDLED_ELSEWHERE: ReadonlySet<ShortcutId> = new Set(['palette', 'newChat', 'find', 'newGroup', 'settings', 'apps', 'compactSidebar'])
+const HANDLED_ELSEWHERE: ReadonlySet<ShortcutId> = new Set(['palette', 'newChat', 'find', 'newGroup', 'settings', 'apps', 'compactSidebar', 'send'])
 
 const composerBox = () => {
   const box = document.querySelector<HTMLTextAreaElement>('footer.composer textarea')

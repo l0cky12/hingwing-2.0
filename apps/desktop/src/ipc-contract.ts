@@ -102,6 +102,14 @@ export type OnClose = 'quit' | 'stay'
 export type OnCloseCommand = { readonly do: 'setOnClose'; readonly onClose: OnClose }
 export const isOnClose = (raw: unknown): raw is OnClose => raw === 'quit' || raw === 'stay'
 
+/** Which key sends from the composer: Enter, or Ctrl+Enter (Cmd+Enter on macOS) with Enter adding a line. Owned by Electron main and kept on disk. */
+export type SendKey = 'enter' | 'modEnter'
+export type SendKeyCommand = { readonly do: 'setSendKey'; readonly sendKey: SendKey }
+export const isSendKey = (raw: unknown): raw is SendKey => raw === 'enter' || raw === 'modEnter'
+
+/** Whether Chromium checks spelling in every window. Owned by Electron main and kept on disk. */
+export type SpellCheckCommand = { readonly do: 'setSpellCheck'; readonly spellCheck: boolean }
+
 /** The chats the user snoozed, each to the time it comes back, in epoch ms. Owned by Electron main and kept on disk. */
 export type Snoozes = { readonly [id: SessionId]: number }
 /** `until` null wakes the chat. */
@@ -121,12 +129,12 @@ export const isNotices = (raw: unknown): raw is Notices =>
 
 export type IntroCommand = { readonly do: 'examples' } | { readonly do: 'done' }
 
-export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SidebarWidthCommand | SnoozeCommand | NoticeCommand | OnCloseCommand | IntroCommand
+export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SidebarWidthCommand | SendKeyCommand | SpellCheckCommand | SnoozeCommand | NoticeCommand | OnCloseCommand | IntroCommand
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' | 'refreshBots' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
 
-/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `sidebarWidth`, `snoozes`, `notices`, `onClose` and `intro`, which belong to the window. */
+/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `sidebarWidth`, `sendKey`, `spellCheck`, `snoozes`, `notices`, `onClose` and `intro`, which belong to the window. */
 export interface AppTopics {
   readonly setup: Setup
   readonly link: Link
@@ -152,6 +160,8 @@ export interface AppTopics {
   readonly mode: Mode
   readonly theme: Theme
   readonly sidebarWidth: SidebarWidth
+  readonly sendKey: SendKey
+  readonly spellCheck: boolean
   readonly snoozes: Snoozes
   readonly notices: Notices
   readonly onClose: OnClose
@@ -159,7 +169,7 @@ export interface AppTopics {
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, screen: true, skills: true, preview: true, mode: true, theme: true, sidebarWidth: true, snoozes: true, notices: true, onClose: true, intro: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, screen: true, skills: true, preview: true, mode: true, theme: true, sidebarWidth: true, sendKey: true, spellCheck: true, snoozes: true, notices: true, onClose: true, intro: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -723,6 +733,8 @@ export const validators: Validators = {
   setTheme: raw => (isTheme(raw.theme) ? { do: 'setTheme', theme: raw.theme } : null),
   setSidebarWidth: raw => (isSidebarWidth(raw.width) ? { do: 'setSidebarWidth', width: raw.width } : null),
   setOnClose: raw => (isOnClose(raw.onClose) ? { do: 'setOnClose', onClose: raw.onClose } : null),
+  setSendKey: raw => (isSendKey(raw.sendKey) ? { do: 'setSendKey', sendKey: raw.sendKey } : null),
+  setSpellCheck: raw => (typeof raw.spellCheck === 'boolean' ? { do: 'setSpellCheck', spellCheck: raw.spellCheck } : null),
   snooze: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && (raw.until === null || isTime(raw.until)) ? { do: 'snooze', sessionId, until: raw.until } : null

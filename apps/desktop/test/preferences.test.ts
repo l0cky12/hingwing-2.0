@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@highwing/hermes/domain'
-import { MODE, ON_CLOSE, preferenceStore, readPreference, SIDEBAR_WIDTH, SNOOZES, snoozed, THEME, type Preference } from '../src/main/preferences'
+import { MODE, ON_CLOSE, preferenceStore, readPreference, SEND_KEY, SIDEBAR_WIDTH, SNOOZES, snoozed, SPELL_CHECK, THEME, type Preference } from '../src/main/preferences'
 
 const text = (value: unknown) => JSON.stringify(value)
 const emptyDir = () => mkdtempSync(join(tmpdir(), 'highwing-preference-'))
@@ -17,7 +17,8 @@ const CASES: readonly Case<string>[] = [
   { preference: MODE, values: ['bots', 'chats'], unknown: 'inbox' },
   { preference: THEME, values: ['system', 'dark', 'light'], unknown: 'sepia' },
   { preference: SIDEBAR_WIDTH, values: ['full', 'compact'], unknown: 'narrow' },
-  { preference: ON_CLOSE, values: ['quit', 'stay'], unknown: 'minimize' }
+  { preference: ON_CLOSE, values: ['quit', 'stay'], unknown: 'minimize' },
+  { preference: SEND_KEY, values: ['enter', 'modEnter'], unknown: 'altEnter' }
 ]
 
 describe.each(CASES)('the $preference.file preference', ({ preference, values, unknown }) => {
@@ -141,6 +142,27 @@ it('keeps mode.json as earlier builds wrote it', async () => {
   store.set('bots')
   await store.settled()
   expect(readFileSync(join(dir, 'mode.json'), 'utf8')).toBe('{"version":1,"mode":"bots"}\n')
+})
+
+describe('the spell-check.json preference', () => {
+  const dir = emptyDir()
+
+  it('reads a boolean as this build wrote it, and anything else as on', () => {
+    expect(readPreference(SPELL_CHECK, text({ version: 1, spellCheck: false }))).toBe(false)
+    expect(readPreference(SPELL_CHECK, text({ version: 1, spellCheck: true }))).toBe(true)
+    for (const spellCheck of ['false', 0, null]) expect(readPreference(SPELL_CHECK, text({ version: 1, spellCheck })), String(spellCheck)).toBe(true)
+    expect(readPreference(SPELL_CHECK, text({ version: 2, spellCheck: false }))).toBe(true)
+    expect(readPreference(SPELL_CHECK, '{"version": 1, "spellCh')).toBe(true)
+  })
+
+  it('starts on, and the next launch starts off once it was turned off', async () => {
+    const store = await preferenceStore(dir, SPELL_CHECK)
+    expect(store.get()).toBe(true)
+    store.set(false)
+    await store.settled()
+    expect(JSON.parse(readFileSync(join(dir, 'spell-check.json'), 'utf8'))).toEqual({ version: 1, spellCheck: false })
+    expect((await preferenceStore(dir, SPELL_CHECK)).get()).toBe(false)
+  })
 })
 
 describe('the snoozes.json preference', () => {

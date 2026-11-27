@@ -8,6 +8,7 @@ describe('settingsViewOf with no search', () => {
   it.each([
     ['connection', 'Connection', 'The Hermes this app talks to, and how it reaches it.', ['connection']],
     ['appearance', 'Appearance', 'How Highwing looks and what its sidebar shows.', ['theme', 'sidebar']],
+    ['composer', 'Composer', 'How the message box sends and checks what you write.', ['send-key', 'spell-check']],
     ['window', 'Window', 'What closing Highwing’s window does.', ['on-close']],
     ['notifications', 'Notifications', 'Which desktop notifications Highwing shows.', ['notice-asks', 'notice-replies', 'notice-jobs']],
     ['passwords', 'Password managers', 'The 1Password and Bitwarden logins each bot can use.', ['passwords']],
@@ -85,6 +86,8 @@ describe('settingsViewOf with a search', () => {
     ['ctrl a', []],
     ['⌘ s', []],
     ['tray', ['on-close']],
+    ['ctrl enter', ['send-key', 'key:send']],
+    ['spelling', ['spell-check']],
     ['scheduled', ['notice-jobs']],
     ['bitwarden', ['passwords']],
     ['approved', ['permissions']],

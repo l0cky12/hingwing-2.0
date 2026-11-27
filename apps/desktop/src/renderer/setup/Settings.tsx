@@ -3,7 +3,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } f
 import { flushSync } from 'react-dom'
 import type { Mode, NoticeKind, OnClose, Theme } from '../../ipc-contract'
 import { botIn } from '../bots/roster-view'
-import { MAC } from '../keys'
+import { COMMAND_KEY, MAC } from '../keys'
 import { capsOf, SHORTCUTS } from '../shortcuts'
 import { run, useTopic } from '../store'
 import { Bubble, ConnectionCard, line, Monitor, Moon, People, Segmented, Server, Sun, type Segment } from './ConnectionCard'
@@ -23,12 +23,13 @@ const Key = () => <svg {...line(16, 1.8)}><circle cx="8" cy="15" r="4" /><path d
 const Spark = () => <svg {...line(16, 1.8)}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.5 2.5M15.2 15.2l2.5 2.5M6.3 17.7l2.5-2.5M15.2 8.8l2.5-2.5" /></svg>
 const Shield = () => <svg {...line(16, 1.8)}><path d="M12 3 5 5.8v5.4c0 4.4 3 8 7 9.8 4-1.8 7-5.4 7-9.8V5.8z" /></svg>
 const Gauge = () => <svg {...line(16, 1.8)}><path d="M4 18a8 8 0 1 1 16 0" /><path d="m12 18 4-5" /></svg>
+const Pen = () => <svg {...line(16, 1.8)}><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="m13.5 6.5 4 4" /></svg>
 const Info = () => <svg {...line(16, 1.8)}><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5M12 8h.01" /></svg>
 const Quit = () => <svg {...line(15, 1.9)}><path d="M10 7V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2v-1" /><path d="M4 12h10M11 8.5 14.5 12 11 15.5" /></svg>
 const Tray = () => <svg {...line(15, 1.9)}><rect x="4" y="4" width="16" height="11" rx="2" /><path d="M3 20h18" /></svg>
 
 const PAGE_ICONS: { readonly [P in Page]: () => ReactNode } = {
-  connection: () => <Server size={16} width={1.8} />, appearance: Contrast, window: WindowIcon, notifications: Bell, passwords: Key, skills: Spark, permissions: Shield,
+  connection: () => <Server size={16} width={1.8} />, appearance: Contrast, composer: Pen, window: WindowIcon, notifications: Bell, passwords: Key, skills: Spark, permissions: Shield,
   keys: Keyboard, usage: Gauge, about: Info
 }
 
@@ -99,6 +100,41 @@ function NoticeRows({ off }: { readonly off: (row: RowId) => boolean }) {
       </div>
     </div>
   ))
+}
+
+/** The composer's send key and spell check. Each holds across restarts, in every window. */
+export function ComposerRows({ off }: { readonly off: (row: RowId) => boolean }) {
+  const ids = useId()
+  const sendKey = useTopic('sendKey')
+  const spellCheck = useTopic('spellCheck')
+  return (
+    <>
+      <div className="row" hidden={off('send-key')}>
+        <div className="text">
+          <p className="label" id={`${ids}-send-key`}>Send with {COMMAND_KEY}+Enter</p>
+          <p className="desc" id={`${ids}-send-key-desc`}>Enter adds a new line. When off, Enter sends and Shift+Enter adds a line.</p>
+        </div>
+        <div className="control">
+          <input
+            type="checkbox" role="switch" aria-labelledby={`${ids}-send-key`} aria-describedby={`${ids}-send-key-desc`}
+            checked={sendKey === 'modEnter'} onChange={event => void run({ do: 'setSendKey', sendKey: event.target.checked ? 'modEnter' : 'enter' })}
+          />
+        </div>
+      </div>
+      <div className="row" hidden={off('spell-check')}>
+        <div className="text">
+          <p className="label" id={`${ids}-spell`}>Check spelling</p>
+          <p className="desc" id={`${ids}-spell-desc`}>Underline misspelled words and suggest fixes.</p>
+        </div>
+        <div className="control">
+          <input
+            type="checkbox" role="switch" aria-labelledby={`${ids}-spell`} aria-describedby={`${ids}-spell-desc`}
+            checked={spellCheck ?? true} onChange={event => void run({ do: 'setSpellCheck', spellCheck: event.target.checked })}
+          />
+        </div>
+      </div>
+    </>
+  )
 }
 
 function Usage() {
@@ -217,6 +253,7 @@ export function Settings({ setup, mode, theme, onRequestClose, onShowShortcuts }
         <Choice label="Show in the sidebar" desc="Bots shows your bots. Chats shows the chats of the open bot." value={mode} segments={SIDEBAR} hidden={off('sidebar')} onPick={picked => void run({ do: 'setMode', mode: picked })} />
       </div>
     ),
+    composer: <div className="card rows"><ComposerRows off={off} /></div>,
     window: (
       <div className="card rows">
         <Choice label="When the window closes" desc="Quit leaves Highwing. Keep in the tray leaves it running." value={onClose} segments={CLOSES} hidden={off('on-close')} onPick={picked => void run({ do: 'setOnClose', onClose: picked })} />
