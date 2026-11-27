@@ -563,8 +563,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .form-choices button:disabled { opacity: .45; }
 .form-waiting { margin: 0 auto 0 0; align-self: center; font-size: var(--text-sm); color: var(--graphite); }
 .bot-picture { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px; }
-.bot-picture button { padding: 5px 12px; font-size: var(--text-sm); border-radius: var(--radius-sm); border: 1px solid var(--rule); background: transparent; color: var(--ink); }
-.bot-picture button:hover:not(:disabled) { border-color: var(--ink); }
+.bot-picture button, .routine-controls button { padding: 5px 12px; font-size: var(--text-sm); border-radius: var(--radius-sm); border: 1px solid var(--rule); background: transparent; color: var(--ink); }
+.bot-picture button:hover:not(:disabled), .routine-controls button:hover:not(:disabled) { border-color: var(--ink); }
 .bot-picture button:disabled { opacity: .45; }
 .bot-picture .form-refused { flex-basis: 100%; }
 .group-form { width: min(480px, calc(100% - 32px)); }
@@ -600,8 +600,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .bot-tabs button { padding: 6px 10px; border: 0; border-bottom: 2px solid transparent; background: none; }
 .bot-tabs [aria-selected="true"] { border-bottom-color: var(--signal); font-weight: 700; }
 .bot-panel.on-routines .bot-form-body > :not(.bot-tabs, .routines-tab), .bot-panel.on-routines form > :is(.form-refused, .form-choices) { display: none; }
-.routines-tab { margin: 0 -22px; }
-.routines-tab > .form-choices { padding: 14px 22px 0; }
+.routines-tab > .form-choices { padding-top: 14px; }
 .look-row { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .look-button { position: relative; flex: none; width: 64px; height: 64px; padding: 0; border: 0; border-radius: var(--radius-round); background: none; color: var(--ink); }
 .look-button:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
@@ -1533,11 +1532,10 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 }
 
 .routines { list-style: none; margin: 0; padding: 0; }
-.routine { display: flex; align-items: baseline; gap: 12px; padding: 10px 20px; border-top: 1px solid var(--rule); }
+.routine { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--rule); }
 .routine:first-child { border-top: 0; }
-.routine-name { flex: 1; color: var(--ink); font-size: var(--text-md); overflow-wrap: anywhere; }
-.routine-when { flex: none; color: var(--graphite); font-size: var(--text-sm); }
-.routine-controls { display: flex; flex: none; gap: 6px; }
-.routine-controls button { padding: 2px 8px; font-size: var(--text-xs); }
-.routines-note { margin: 0; padding: 14px 20px; font-size: var(--text-sm); color: var(--graphite); }
+.routine-name { color: var(--ink); font-size: var(--text-md); overflow-wrap: anywhere; }
+.routine-when { grid-column: 1; color: var(--graphite); font-size: var(--text-sm); }
+.routine-controls { grid-area: 1 / 2 / 3; display: flex; gap: 6px; }
+.routines-note { margin: 0; padding: 14px 0; font-size: var(--text-sm); color: var(--graphite); }
 .routines-refused { color: var(--brick); }
