@@ -211,8 +211,12 @@ export const UPGRADE_MS = HANDSHAKE_MS
  * `127.0.0.1:port` on the far machine through `ssh -W`. Resolves with the local port. The far side
  * sees a loopback peer, which the gateway requires of a ticket. The ssh ends with the connection,
  * and a crashed Highwing leaves none behind, because `ssh -W` exits when its stdin closes.
+ * `firstByteMs`: how long the far side may stay silent once dialed. A socket upgrade answers at
+ * once, while an HTTP request is answered only when its work is done.
  */
-export function relay(host: SshHost, port: number, { sshBin = 'ssh', signal, clock = systemClock }: Omit<SshOptions, 'deadlineMs'>): Promise<number> {
+export function relay(
+  host: SshHost, port: number, { sshBin = 'ssh', signal, clock = systemClock, firstByteMs = UPGRADE_MS }: Omit<SshOptions, 'deadlineMs'> & { readonly firstByteMs?: number }
+): Promise<number> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) return reject(new Error('The route was disposed.'))
     const server = createServer()
@@ -226,14 +230,14 @@ export function relay(host: SshHost, port: number, { sshBin = 'ssh', signal, clo
     signal.addEventListener('abort', abandon, { once: true })
     server.once('connection', socket => {
       abandon()
-      carry(socket, [...SSH_OPTIONS, '-W', `127.0.0.1:${port}`, host], { sshBin, signal, clock })
+      carry(socket, [...SSH_OPTIONS, '-W', `127.0.0.1:${port}`, host], { sshBin, signal, clock, firstByteMs })
     })
     server.once('error', reject)
     server.listen(0, '127.0.0.1', () => resolve((server.address() as AddressInfo).port))
   })
 }
 
-function carry(socket: Socket, args: readonly string[], { sshBin, signal, clock }: { readonly sshBin: string; readonly signal: AbortSignal; readonly clock: Clock }): void {
+function carry(socket: Socket, args: readonly string[], { sshBin, signal, clock, firstByteMs }: { readonly sshBin: string; readonly signal: AbortSignal; readonly clock: Clock; readonly firstByteMs: number }): void {
   const child = spawn(sshBin, args, { stdio: ['pipe', 'pipe', 'ignore'] })
   const stop = () => {
     heard()
@@ -241,7 +245,7 @@ function carry(socket: Socket, args: readonly string[], { sshBin, signal, clock 
     socket.destroy()
     child.kill()
   }
-  const heard = clock.setTimeout(stop, UPGRADE_MS)
+  const heard = clock.setTimeout(stop, firstByteMs)
   signal.addEventListener('abort', stop, { once: true })
   child.stdout.once('data', heard)
   socket.pipe(child.stdin)

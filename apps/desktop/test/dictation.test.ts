@@ -10,7 +10,7 @@ const STARTED = [{ do: 'press', at: 1000 }, { do: 'granted' }] as const
 
 describe('nextDictation', () => {
   it('starts on a press, records once the microphone opens, and stops on the next press', () => {
-    expect(run([{ do: 'press', at: 1000 }])).toEqual({ at: 'asking', since: 1000 })
+    expect(run([{ do: 'press', at: 1000 }])).toEqual({ at: 'asking', since: 1000, letGo: false })
     expect(run(STARTED)).toEqual({ at: 'recording', since: 1000 })
     expect(run([...STARTED, { do: 'press', at: 5000 }])).toEqual({ at: 'transcribing' })
   })
@@ -18,6 +18,13 @@ describe('nextDictation', () => {
   it('keeps recording after a quick tap of the keys, and stops when keys held to talk come up', () => {
     expect(run([...STARTED, { do: 'release', at: 1000 + HOLD_MS - 1 }])).toEqual({ at: 'recording', since: 1000 })
     expect(run([...STARTED, { do: 'release', at: 1000 + HOLD_MS }])).toEqual({ at: 'transcribing' })
+  })
+
+  it('stops as soon as the microphone opens when keys held to talk came up while it was opening', () => {
+    const opening = [{ do: 'press', at: 1000 }, { do: 'release', at: 1000 + HOLD_MS }] as const
+    expect(run(opening)).toEqual({ at: 'asking', since: 1000, letGo: true })
+    expect(run([...opening, { do: 'granted' }])).toEqual({ at: 'transcribing' })
+    expect(run([{ do: 'press', at: 1000 }, { do: 'release', at: 1100 }, { do: 'granted' }]), 'a tap still toggles').toEqual({ at: 'recording', since: 1000 })
   })
 
   it('ends idle with the text, and says so when Hermes heard no words', () => {
@@ -33,7 +40,7 @@ describe('nextDictation', () => {
   it("shows Hermes's words when it cannot transcribe, and clears them on the next press", () => {
     const failed = run([...STARTED, { do: 'press', at: 3000 }, { do: 'failed', message: "Hermes couldn't turn that into text." }])
     expect(failed).toEqual({ at: 'idle', notice: "Hermes couldn't turn that into text." })
-    expect(run([{ do: 'press', at: 9000 }], failed)).toEqual({ at: 'asking', since: 9000 })
+    expect(run([{ do: 'press', at: 9000 }], failed)).toEqual({ at: 'asking', since: 9000, letGo: false })
   })
 
   it('drops what was heard on a cancel, from any state', () => {

@@ -39,7 +39,7 @@ export function useDictation(onText: (text: string) => void): readonly [Dictatio
     held.current = next
     setState(next)
     if (next.at === 'asking') listen(next)
-    else if (from.at === 'recording' && next.at === 'transcribing') send(next)
+    else if (next.at === 'transcribing') send(next)
     else if (next.at === 'idle') letGo()
     if (event.do === 'transcribed' && next.at === 'idle' && event.text.trim() !== '') latestOnText.current(event.text)
   }, [])
@@ -89,12 +89,14 @@ interface MicrophoneProps {
   readonly onPress: () => void
 }
 
+/** It keeps focus in the message box on a click, so Ctrl/Cmd+D still stops what the button started. */
 export function Microphone({ state, disabled, onPress }: MicrophoneProps) {
   const recording = state.at === 'recording'
   return (
     <button
       type="button" className="clip mic" aria-label={recording ? 'Stop dictating' : 'Dictate'} aria-pressed={recording}
       disabled={disabled || state.at === 'asking' || state.at === 'transcribing'} onClick={onPress}
+      onMouseDown={event => event.preventDefault()}
     >
       <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16">
         <rect x="5.5" y="1.75" width="5" height="8" rx="2.5" fill={recording ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.4" />

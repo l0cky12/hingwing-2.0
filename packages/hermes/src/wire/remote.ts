@@ -2,7 +2,7 @@ import { machineOf, type SshHost } from '../domain/reach'
 import { DialError, dialWith, type Clock, type Dialer, type Mint } from './link'
 import { relay, sshExec } from './ssh'
 import { mintWith, transcribeWith, type RunHermes } from './tickets'
-import type { Transcribe } from './transcribe'
+import { TRANSCRIBE_MS, type Transcribe } from './transcribe'
 
 /** A way to reach one gateway, and the processes that way holds. */
 export interface Route {
@@ -49,7 +49,7 @@ export function remoteRoute(host: SshHost, options: { readonly sshBin?: string; 
   const transcribe = transcribeWith(run, async origin => {
     const port = Number(URL.parse(origin)?.port)
     if (!(port > 0)) throw new DialError('incompatible')
-    return `http://127.0.0.1:${await relay(host, port, { ...options, signal })}`
+    return `http://127.0.0.1:${await relay(host, port, { ...options, signal, firstByteMs: TRANSCRIBE_MS })}`
   })
 
   return { dial: dialWith(mint), transcribe, dispose: () => life.abort() }

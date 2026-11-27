@@ -1,11 +1,12 @@
 /**
  * Dictation into the composer: where the microphone is, and every move it can make. Pure, so the
  * composer only carries each move out. `since` is when the user pressed to start, so a key held
- * that long is a push to talk and its release stops.
+ * that long is a push to talk and its release stops. `letGo`: such a release came while the
+ * microphone was still opening, so it stops as soon as it opens.
  */
 export type Dictation =
   | { readonly at: 'idle'; readonly notice: string | null }
-  | { readonly at: 'asking'; readonly since: number }
+  | { readonly at: 'asking'; readonly since: number; readonly letGo: boolean }
   | { readonly at: 'recording'; readonly since: number }
   | { readonly at: 'transcribing' }
 
@@ -44,11 +45,12 @@ const drop = (): Dictation => IDLE
 /** Every move. A state with no row for an event ignores it. */
 const MOVES: { readonly [A in Dictation['at']]: { readonly [E in DictationEvent['do']]?: (state: At<A>, event: On<E>) => Dictation | null } } = {
   idle: {
-    press: (_, { at }) => ({ at: 'asking', since: at }),
+    press: (_, { at }) => ({ at: 'asking', since: at, letGo: false }),
     cancel: state => (state.notice === null ? null : IDLE)
   },
   asking: {
-    granted: ({ since }) => ({ at: 'recording', since }),
+    granted: ({ since, letGo }) => (letGo ? { at: 'transcribing' } : { at: 'recording', since }),
+    release: (state, { at }) => (at - state.since >= HOLD_MS ? { ...state, letGo: true } : null),
     refused: (_, { why }) => notice(REFUSAL_WORDS[why]),
     failed: (_, { message }) => notice(message),
     cancel: drop
