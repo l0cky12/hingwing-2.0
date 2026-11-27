@@ -322,7 +322,7 @@ export function emptyTracked(id: SessionId): Tracked {
   return {
     content: {
       id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], requests: [], queue: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, tuning: UNTUNED,
-      sides: [], processes: null, control: null
+      sides: [], processes: null, control: null, rewound: {}
     },
     gate: { at: 'detached', why: 'new', cursor: null },
     fence: {
@@ -542,7 +542,8 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       tuning: patch(content.tuning, snapshot.tuning),
       sides: content.sides.map(side => (side.state.s === 'running' ? { ...side, state: LOST_SIDE } : anchored(side))),
       processes: content.processes,
-      control: content.control
+      control: content.control,
+      rewound: content.rewound
     },
     fence: {
       revision: Math.max(fence.revision, snapshot.revision),
@@ -983,17 +984,13 @@ function cutBefore(state: Tracked, rowId: number): Tracked {
   if (at < 0) return state
   const history = content.history.slice(0, at)
   const anchored = reanchor(state, { history, run: content.run }, { page: history, fallback: newestShownSettled(history), older: false })
-  return { ...state, content: { ...content, history, sides: content.sides.map(anchored) } }
-}
-
-type Turns = Pick<SessionContent, 'history' | 'run'>
-
-/** Where a thing drawn after a turn goes once an edit or regenerate cut the history: after the newest turn kept, as `cutBefore` moves side answers. null when `now` cut nothing from `before`. */
-export function cutMoves(before: Turns, now: Turns): ((after: TurnId) => TurnId | null) | null {
-  const cut = now.history.length < before.history.length && now.history.every((turn, at) => turn.id === before.history[at]?.id)
-  if (!cut) return null
-  const kept = newestShownSettled(now.history)
-  return after => (holdsTurn(now, after) ? after : kept)
+  const gone = new Set(content.history.slice(at).map(turn => turn.id))
+  const kept = newestShownSettled(history)
+  const rewound = Object.fromEntries([
+    ...Object.entries(content.rewound).map(([turn, went]) => [turn, went !== null && gone.has(went) ? kept : went]),
+    ...[...gone].map(turn => [turn, kept])
+  ]) as SessionContent['rewound']
+  return { ...state, content: { ...content, history, sides: content.sides.map(anchored), rewound } }
 }
 
 function openRun(state: Tracked, generation: Generation, id: TurnId, request: Request | null, began: Began | null): Tracked {
