@@ -838,7 +838,15 @@ const ENDS_REASONING: ReadonlySet<SessionEvent['type']> = new Set([
   'text.delta', 'text.sealed', 'tool.announced', 'tool.started', 'tool.finished', 'prompt.opened', 'notice', 'plan'
 ] satisfies SessionEvent['type'][])
 
-function fold(before: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | 'seenAt'>, event: SessionEvent): Tracked {
+/**
+ * Events that close a prompt. Hermes names no reason when one times out: it stops waiting at the
+ * deadline and closes the prompt later, lazily or with the turn. So a prompt still waiting when one of
+ * these is heard past its deadline expired.
+ */
+const CLOSES_PROMPTS: ReadonlySet<SessionEvent['type']> = new Set(['prompt.settled', 'prompts.cancelled', 'turn.ended'] satisfies SessionEvent['type'][])
+
+function fold(given: Tracked, { stamp, seenAt }: Pick<StampedEvent, 'stamp' | 'seenAt'>, event: SessionEvent): Tracked {
+  const before = seenAt !== null && CLOSES_PROMPTS.has(event.type) ? expireDue(given, seenAt) : given
   const state = ENDS_REASONING.has(event.type) ? editTurn(before, turn => sealReasoning(turn, seenAt)) : before
   switch (event.type) {
     case 'turn.started': {
@@ -1214,7 +1222,7 @@ function settledItem(item: Item): Item<'settled'> {
 const isSealed = <I extends TextItem | ReasoningItem>(item: I): item is I & { readonly sealed: true } => item.sealed
 const isFinished = (item: ToolItem): item is ToolItem & { readonly status: ToolItem<'settled'>['status'] } => item.status.s !== 'running'
 const isClosed = (item: PromptItem): item is PromptItem & { readonly state: PromptItem<'settled'>['state'] } =>
-  item.state.s === 'answered' || item.state.s === 'withdrawn'
+  item.state.s === 'answered' || item.state.s === 'withdrawn' || item.state.s === 'expired'
 const isPending = (item: Item): item is PromptItem => item.kind === 'prompt' && !isClosed(item)
 
 function answeredFrom(prompt: PromptItem): PromptItem['state'] {
@@ -1230,6 +1238,13 @@ function editTurn(state: Tracked, edit: (turn: OpenTurn) => OpenTurn): Tracked {
   if (run.state !== 'running') return state
   const turn = edit(run.turn)
   return turn === run.turn ? state : { ...state, content: { ...state.content, run: { ...run, turn } } }
+}
+
+const EXPIRED: PromptItem['state'] = { s: 'expired' }
+
+function expireDue(state: Tracked, now: number): Tracked {
+  return editTurn(state, turn => mapItems(turn, item =>
+    item.kind === 'prompt' && item.state.s === 'waiting' && item.deadline !== null && item.deadline <= now ? { ...item, state: EXPIRED } : item))
 }
 
 function editPrompt(state: Tracked, id: PromptId, edit: (prompt: PromptItem) => PromptItem): Tracked {

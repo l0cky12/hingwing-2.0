@@ -359,6 +359,8 @@ button.file-open:hover { color: var(--signal); text-decoration: underline; text-
 .approval h3 { margin: 0 0 8px; font-size: 15px; font-weight: 700; color: var(--caution); }
 .approval pre { margin: 0; padding: 9px 11px; font-size: 13px; background: var(--sheet); border-radius: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .approval .why { margin: 8px 0 0; color: var(--ink); font-size: 13.5px; }
+.approval .why:empty { margin: 0; }
+.approval .left { color: var(--graphite); font-variant-numeric: tabular-nums; }
 .approval .choices { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .approval .choices button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--ink); background: transparent; }
 .approval .choices button:hover { background: var(--sheet); }

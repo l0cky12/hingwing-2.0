@@ -19,6 +19,8 @@ import { cx, Elapsed, Stat, Step } from './Step'
 import { Markdown, PhraseText } from './text'
 
 type Answer = (promptId: PromptId, reply: PromptReply) => Promise<Told | undefined>
+/** Sends `text` as the next message. Resolves with whether Hermes took it. null while the chat is not live. */
+export type AskAgain = ((text: string) => Promise<boolean>) | null
 
 interface NodeProps {
   readonly node: ThreadNode
@@ -27,6 +29,7 @@ interface NodeProps {
   readonly open: OpenState
   readonly onToggle: (key: string, byDefault?: boolean) => void
   readonly onAnswer: Answer
+  readonly onAskAgain: AskAgain
   readonly helpers: HelperControls | null
 }
 
@@ -37,6 +40,7 @@ interface PromptProps {
   readonly card: PromptCard
   readonly asking: boolean
   readonly onAnswer: Answer
+  readonly onAskAgain: AskAgain
 }
 
 const TOLD_WORDS = {
@@ -45,8 +49,9 @@ const TOLD_WORDS = {
   unsure: "Hermes didn't confirm it read this, so Highwing didn't send it again."
 } as const satisfies Record<Told, string | null>
 
-function Prompt({ nodeKey, card, asking, onAnswer }: PromptProps) {
+function Prompt({ nodeKey, card, asking, onAnswer, onAskAgain }: PromptProps) {
   const [told, setTold] = useState<Told | undefined>(undefined)
+  const [askedAgain, setAskedAgain] = useState(false)
   const toldWords = told === undefined ? null : TOLD_WORDS[told]
   if (card.state === 'answered') {
     return (
@@ -57,17 +62,27 @@ function Prompt({ nodeKey, card, asking, onAnswer }: PromptProps) {
       </div>
     )
   }
-  const answer = (reply: PromptReply) => void onAnswer(card.promptId, reply)
-  const deny = (tell: string) => void onAnswer(card.promptId, { kind: 'deny', tell }).then(setTold)
+  const answer = (reply: PromptReply) => card.state === 'asking' && void onAnswer(card.promptId, reply)
+  const deny = (tell: string) => card.state === 'asking' && void onAnswer(card.promptId, { kind: 'deny', tell }).then(setTold)
+  const askAgain = (text: string) => {
+    if (onAskAgain === null) return
+    setAskedAgain(true)
+    void onAskAgain(text).then(sent => sent || setAskedAgain(false))
+  }
+  // One tree for both states, so the status line below is the same element when the card expires and is read out once.
   return (
-    <div className={cx('approval', asking && 'live')} role="group" aria-label={card.heading} {...(asking ? { 'data-end': 'asking' } : {})}>
+    <div className={cx('approval', card.state === 'expired' ? 'expired' : asking && 'live')} role="group" aria-label={card.heading} {...(asking ? { 'data-end': 'asking' } : {})}>
       <h3 data-find={fieldId(nodeKey, 'heading')}>{card.heading}</h3>
       {card.command !== null && <Command nodeKey={nodeKey} command={card.command} />}
-      {card.why !== null && <p className="why" data-find={fieldId(nodeKey, 'why')}>{card.why}</p>}
-      {card.pick.kind === 'one'
-        ? <Buttons buttons={card.pick.buttons} freeText={card.pick.freeText} tell={card.tell} command={card.command} busy={card.busy} onAnswer={answer} onTell={deny} />
-        : <Checks choices={card.pick.choices} busy={card.busy} onAnswer={answer} />}
-      {card.error !== null && <p className="err" data-find={fieldId(nodeKey, 'error')}>{card.error}</p>}
+      {card.state === 'asking' && card.why !== null && <p className="why" data-find={fieldId(nodeKey, 'why')}>{card.why}</p>}
+      {card.state === 'asking' && card.left !== null && <p className="why left">{card.left}</p>}
+      <p className="why" role="status" {...(card.state === 'expired' ? { 'data-find': fieldId(nodeKey, 'words') } : {})}>{card.state === 'expired' ? card.words : null}</p>
+      {card.state === 'expired'
+        ? <div className="choices"><button type="button" className="primary" disabled={onAskAgain === null || askedAgain} onClick={() => askAgain(card.askAgain)}>Ask again</button></div>
+        : card.pick.kind === 'one'
+          ? <Buttons buttons={card.pick.buttons} freeText={card.pick.freeText} tell={card.tell} command={card.command} busy={card.busy} onAnswer={answer} onTell={deny} />
+          : <Checks choices={card.pick.choices} busy={card.busy} onAnswer={answer} />}
+      {card.state === 'asking' && card.error !== null && <p className="err" data-find={fieldId(nodeKey, 'error')}>{card.error}</p>}
     </div>
   )
 }
@@ -206,7 +221,7 @@ function Checks({ choices, busy, onAnswer }: PickProps & { readonly choices: rea
   )
 }
 
-export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer, helpers }: NodeProps) {
+export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer, onAskAgain, helpers }: NodeProps) {
   const { opened } = state
   const live = endTone === 'live'
   switch (node.kind) {
@@ -236,7 +251,7 @@ export function Node({ node, endTone, elapsed, open: state, onToggle, onAnswer, 
       )
     }
     case 'prompt':
-      return <Prompt nodeKey={node.key} card={node.card} asking={endTone === 'asking'} onAnswer={onAnswer} />
+      return <Prompt nodeKey={node.key} card={node.card} asking={endTone === 'asking'} onAnswer={onAnswer} onAskAgain={onAskAgain} />
     case 'reasoning':
       return <Reasoning nodeKey={node.key} text={node.text} streaming={node.streaming} duration={node.duration} open={isOpen(state, node.key, false)} live={live} elapsed={elapsed} onToggle={onToggle} />
     case 'helper':
@@ -289,6 +304,7 @@ interface TurnProps {
   readonly open: OpenState
   readonly onToggle: (key: string, byDefault?: boolean) => void
   readonly onAnswer: Answer
+  readonly onAskAgain: AskAgain
   readonly canEdit: boolean
   readonly showsRegenerate: boolean
   readonly canRegenerate: boolean
@@ -308,7 +324,7 @@ const RUNNING_ENDS: ReadonlySet<ThreadEnd['kind']> = new Set(['at', 'tip', 'paus
 
 const HANDED = 'Handed over'
 
-export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, canReact, onReact, helpers }: TurnProps) {
+export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAgain, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, canReact, onReact, helpers }: TurnProps) {
   const { end, rowId, request, reactions } = turn
   const regenerates = showsRegenerate && rowId !== null && request !== null
   const movesToNewChat = end.kind === 'failed' && end.remedy === 'newChat' && request !== null
@@ -342,7 +358,7 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit
       )}
       <div className="thread">
         {turn.nodes.map(node => (
-          <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} elapsed={end.kind === 'at' && end.tone === 'live' && end.nodeKey === node.key ? end.elapsed : null} open={open} onToggle={onToggle} onAnswer={onAnswer} helpers={helpers} />
+          <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} elapsed={end.kind === 'at' && end.tone === 'live' && end.nodeKey === node.key ? end.elapsed : null} open={open} onToggle={onToggle} onAnswer={onAnswer} onAskAgain={onAskAgain} helpers={helpers} />
         ))}
         <End turnKey={turn.key} end={end} started={turn.nodes.length > 0} />
       </div>
@@ -431,6 +447,7 @@ interface ThreadProps {
   /** The answered side questions, in the order answered. */
   readonly sides: readonly SideRow[]
   readonly onAnswer: Answer
+  readonly onAskAgain: AskAgain
   readonly onAnswerRequest: RequestAnswer
   readonly onLoadEarlier: () => void
   readonly onFindClosed: () => void
@@ -466,7 +483,7 @@ const sideFound = ({ id, after, asked, answer }: SideRow): Found => ({
 const landingOf = ({ versions, current }: Versions) => versions[current]?.landing
 const NO_GROUPS: readonly Versions[] = []
 
-export function Thread({ view, relays, sides, onAnswer, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, queue, canReact, onReact, helpers }: ThreadProps) {
+export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, queue, canReact, onReact, helpers }: ThreadProps) {
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
   const [changing, setChanging] = useState<Changing>(new Map())
@@ -595,7 +612,7 @@ export function Thread({ view, relays, sides, onAnswer, onAnswerRequest, onLoadE
         {view.turns.map(turn => (
           <Fragment key={turn.key}>
             <Turn
-              turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer}
+              turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer} onAskAgain={onAskAgain}
               canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} canBranch={canBranch}
               onEdit={onEdit} onRegenerate={onRegenerate} onBranch={onBranch} onNewChat={onNewChat} versions={groupsAt(turn.rowId)} onVersion={onVersion}
               canReact={canReact} onReact={onReact} helpers={helpers}

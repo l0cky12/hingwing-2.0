@@ -14,7 +14,7 @@ const TRIES: readonly Version[] = [{ sessionId: FIRST, landing: 3 }, { sessionId
 const at = (current: number): Versions => ({ versions: TRIES, current })
 const turn: TurnView = { key: 't1', time: null, request: 'Group them by month', handed: false, attachments: [], rowId: 3, tokens: null, reactions: null, nodes: [], end: { kind: 'done', words: 'Done' } }
 const props = (more: Partial<Props>): Props => ({
-  turn, open: NONE_OPEN, onToggle: () => {}, onAnswer: async () => undefined, canEdit: true, showsRegenerate: false, canRegenerate: false,
+  turn, open: NONE_OPEN, onToggle: () => {}, onAnswer: async () => undefined, onAskAgain: async () => false, canEdit: true, showsRegenerate: false, canRegenerate: false,
   canBranch: true, onEdit: () => {}, onRegenerate: () => {}, onBranch: () => {}, onNewChat: () => {}, versions: [at(1)], onVersion: () => {}, canReact: true, onReact: () => {}, helpers: null, ...more
 })
 const draw = (more: Partial<Props>) => renderToStaticMarkup(<Turn {...props(more)} />)

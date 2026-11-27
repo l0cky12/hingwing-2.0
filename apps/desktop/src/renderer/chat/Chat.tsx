@@ -27,7 +27,7 @@ import type { RequestAnswer } from './Asks'
 import { Sides } from './Sides'
 import { closeSide, sortSides, useClosedSides } from './sides'
 import { useTail } from './tail'
-import { ChatBotContext, Thread, type QueueControls, type QueuedRow } from './Thread'
+import { ChatBotContext, Thread, type AskAgain, type QueueControls, type QueuedRow } from './Thread'
 import { TIME_ZONE, useWakeAt } from './wake'
 
 const PAGE = 0.875
@@ -185,6 +185,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     const outcome = await run({ do: 'answer', sessionId: id, promptId, reply })
     return outcome.ok ? outcome.value : undefined
   }, [id])
+  const onAskAgain = useCallback<NonNullable<AskAgain>>(async text => id !== null && (await run({ do: 'send', sessionId: id, text, attachments: [] })).ok, [id])
   const onAnswerRequest = useCallback<RequestAnswer>(async (requestId, reply) => id !== null && (await run({ do: 'answer', sessionId: id, requestId, reply })).ok, [id])
   const onLoadEarlier = useCallback(() => {
     if (id !== null) void run({ do: 'loadEarlier', sessionId: id })
@@ -360,7 +361,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
               <ImageSessionContext value={id}>
                 <ChatBotContext value={bot}>
                   <Thread
-                    view={drawn.view} relays={drawn.relays} sides={drawn.sides} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
+                    view={drawn.view} relays={drawn.relays} sides={drawn.sides} onAnswer={onAnswer} onAskAgain={live ? onAskAgain : null} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
                     canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
                     canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers}
                   />
