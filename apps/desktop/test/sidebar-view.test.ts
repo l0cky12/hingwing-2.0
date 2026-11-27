@@ -1,7 +1,7 @@
 import type { BotFacts, BotId } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import { botIn, listOf } from '../src/renderer/bots/roster-view'
-import { drawnAbove, HIDDEN_CLOSED, hiddenTriggers, nextHidden, rowsIn, sidebarOf, type HiddenState, type HiddenTrigger, type SidebarView } from '../src/renderer/bots/sidebar-view'
+import { drawnAbove, HIDDEN_CLOSED, hiddenTriggers, lineOf, nextHidden, NO_MESSAGES, rowsIn, sidebarOf, type HiddenState, type HiddenTrigger, type SidebarView } from '../src/renderer/bots/sidebar-view'
 import { fact, listed } from './support/bots'
 
 const id = (name: string) => name as BotId
@@ -77,6 +77,40 @@ describe('what the Bots column draws', () => {
   it('passes loading and every note through', () => {
     expect(sidebarOf({ show: 'loading' }, false, null)).toEqual({ show: 'loading' })
     expect(sidebarOf({ show: 'note', words: 'No bots yet.' }, false, null)).toEqual({ show: 'note', words: 'No bots yet.' })
+  })
+})
+
+describe("the line under a bot's name", () => {
+  const rowFor = (view: SidebarView, bot: string) => rowsIn(view).find(row => row.bot.id === bot)!
+  const editor = rowFor(drawn(marked('editor', { preview: 'The intro reads well now' })), 'editor').bot
+  const drafts = (text: string) => new Map([[id('editor'), text]])
+
+  it('shows the first line of an unsent draft', () => {
+    expect(lineOf(editor, drafts('Tighten the intro\nand the outro'), null)).toEqual({ kind: 'draft', text: 'Tighten the intro' })
+  })
+
+  it("shows the open chat's bot its last message, since its draft is in the composer", () => {
+    expect(lineOf(editor, drafts('Tighten the intro'), id('editor'))).toEqual({ kind: 'last', text: 'The intro reads well now' })
+  })
+
+  it('shows the last message with no draft, or that there are none', () => {
+    expect(lineOf(editor, new Map(), null)).toEqual({ kind: 'last', text: 'The intro reads well now' })
+    expect(lineOf(rowFor(drawn([HERMES, ...WRITING]), 'scout').bot, drafts('Tighten the intro'), null)).toEqual({ kind: 'last', text: NO_MESSAGES })
+  })
+
+  it('skips blank lines and trims the line it shows', () => {
+    expect(lineOf(editor, drafts('\n   \n  Tighten the intro  \nand the outro'), null)).toEqual({ kind: 'draft', text: 'Tighten the intro' })
+  })
+
+  it('shows the label alone for a draft of attachments only', () => {
+    expect(lineOf(editor, drafts(''), null)).toEqual({ kind: 'draft', text: '' })
+  })
+
+  it('shows a draft on a Pinned row and on a row under Hidden', () => {
+    const pinned = rowFor(drawn(marked('editor', { pinned: true })), 'editor')
+    const hidden = rowFor(drawn(marked('editor', { hidden: true }), { open: true }), 'editor')
+    expect([pinned.place, hidden.place]).toEqual(['pinned', 'hidden'])
+    for (const row of [pinned, hidden]) expect(lineOf(row.bot, drafts('Tighten the intro'), null)).toEqual({ kind: 'draft', text: 'Tighten the intro' })
   })
 })
 

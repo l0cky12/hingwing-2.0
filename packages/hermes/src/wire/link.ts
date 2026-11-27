@@ -18,6 +18,8 @@ export interface WireSocket {
   /** Set by the owner right after the dialer resolves. Frames that arrive earlier are buffered by the socket. */
   onText: ((text: string) => void) | null
   onClose: ((code: number, reason: string) => void) | null
+  /** The address of another socket to the same gateway, at `path`. Absent: this socket has no such address, as a fixture's has not. */
+  readonly sibling?: (path: string) => Promise<string>
 }
 
 /**
@@ -63,7 +65,13 @@ export class DialError extends Error {
 }
 
 /** Where to dial, the subprotocols that carry the ticket, and what that ticket reaches. */
-export interface Endpoint { readonly url: string; readonly protocols: readonly string[]; readonly reach: Reach }
+export interface Endpoint {
+  readonly url: string
+  readonly protocols: readonly string[]
+  readonly reach: Reach
+  /** Where another socket to the same gateway is dialed. Absent: on `url`'s own origin. */
+  readonly sibling?: (path: string) => Promise<string>
+}
 /**
  * Each call mints its own ticket, so a reconnect can never reuse one. The ticket lives only in the
  * `Endpoint` passed from here to the dial. It is never logged, stored, recorded or sent over IPC.
@@ -91,7 +99,7 @@ export function sessionAuthorityOf(frame: unknown): boolean | null {
   return isObject(payload) && payload.session_authority === true
 }
 
-export function wireSocket(transport: { send(text: string): void; close(): void }, reach: Reach): {
+export function wireSocket(transport: { send(text: string): void; close(): void }, reach: Reach, sibling?: WireSocket['sibling']): {
   readonly socket: WireSocket
   text(text: string): void
   closed(code: number, reason: string): void
@@ -110,6 +118,7 @@ export function wireSocket(transport: { send(text: string): void; close(): void 
   }
   const socket: WireSocket = {
     reach,
+    ...(sibling === undefined ? {} : { sibling }),
     send: text => transport.send(text),
     close: () => transport.close(),
     get onText() { return onText },
@@ -129,11 +138,11 @@ const CLOSE_KINDS: Readonly<Record<number, Why>> = { 4403: 'refused', 1013: 'dra
 
 export function dialWith(mint: Mint): Dialer {
   return async ({ start }) => {
-    const { url, protocols, reach } = await mint({ start })
+    const { url, protocols, reach, sibling = async path => new URL(path, url).href } = await mint({ start })
     return new Promise<WireSocket>((resolve, reject) => {
       // Node's built-in WebSocket sends no Origin header. The gateway refuses an upgrade that carries one.
       const ws = new WebSocket(url, [...protocols])
-      const wire = wireSocket({ send: text => ws.send(text), close: () => ws.close() }, reach)
+      const wire = wireSocket({ send: text => ws.send(text), close: () => ws.close() }, reach, sibling)
       let open = false
       ws.addEventListener('open', () => {
         if (ws.protocol !== GATEWAY_PROTOCOL) {
@@ -187,15 +196,28 @@ export class Offline extends Error {}
  * handler for a connection with the interactive grant (tui_gateway/ws.py:403-411, tui_gateway/ws_legacy_fallback.py:53-62).
  * A -32601 from it means this Hermes cannot create bots from Highwing. `profiles.describe`, `profiles.configure`,
  * `profiles.set_asset` and `profiles.get_asset` reach the same legacy handlers the same way.
+ * `cron.manage` reaches its legacy handler the same way (tui_gateway/methods_tools.py:1309), and a -32601 from it means
+ * Highwing cannot list this Hermes's scheduled jobs.
+ * `mcp.servers.list`, `.status`, `.add`, `.test` and `.remove` reach their legacy handlers too, each in the profile the call names
+ * (tui_gateway/methods_tools.py:1470-1612). A -32601 from them means this Hermes cannot manage tool servers from Highwing.
  * `projects.tree` reaches its legacy handler the same way (tui_gateway/methods_config.py:137), and a -32601 from it
  * means this Hermes cannot say which chats were branched from which. So does `llm.oneshot` (tui_gateway/methods_session.py:1249),
  * which a -32601 from means this Hermes cannot suggest a title.
+ * `learning.frames`, `learning.detail`, `learning.edit` and `learning.delete` reach the same legacy handlers
+ * (tui_gateway/methods_tools.py). None of them takes `profile`: Hermes rejects the key, and a write changes
+ * the home the socket was launched with. A -32601 from one means this Hermes cannot edit memory.
+ * `learning.detail` also reads a skill's SKILL.md from the gateway's own profile (tui_gateway/methods_tools.py:1361-1366).
+ * `usage.bars` and `insights.get` are the legacy usage reads. A -32601 from one means this Hermes does not serve that read.
  * The canonical route serves every `groups.*` method (`GROUP_METHODS`, gateway/session_group_controls.py:15-35), though of
  * the calls Highwing makes the contract lists only `groups.create` as canonical (tui_gateway/contracts/canonical_projections.py:126). A -32601 from `groups.capabilities` means this Hermes has no group chats.
+ * The Connect apps window calls `connectors.catalog`, `connectors.accounts`, `connectors.accounts.remove` and `connectors.operation.status`.
+ * A -32601 from them means this Hermes cannot list its apps. `connectors.connect` is already served for the in-turn card.
  * The session authority serves `session.active_list` (gateway/session_active_list.py), which the contract lists only for the legacy
  * handler. A -32601 from it means this Hermes cannot say which chats have a turn under way.
  * `vault.sources`, `vault.list`, `vault.source.set`, `vault.unlock` and `vault.lock` reach their legacy handlers as `profiles.create` does, each
  * in the profile the call names (tui_gateway/methods_vault.py). A -32601 from them means this Hermes cannot set up password managers from Highwing.
+ * The `display.*` calls of the bot's screen reach their legacy handlers the same way (tui_gateway/methods_display.py), and a -32601 from
+ * `display.status` means this Hermes cannot show its screen to Highwing.
  */
 export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'connection.respond' | 'connectors.connect' | 'complete.path' | 'file.attach' |
@@ -203,8 +225,12 @@ export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'prompt.btw' | 'prompt.background' | 'process.list' | 'process.kill' | 'subagent.interrupt' | 'session.control.read' | 'session.control' | 'rollback.list' |
   'rollback.diff' | 'rollback.restore' | 'message.react' | 'groups.capabilities' | 'groups.list' | 'groups.state' | 'groups.log' | 'groups.send' | 'groups.stop' |
   'groups.rename' | 'groups.disband' |
-  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot' | 'session.active_list' |
-  'vault.sources' | 'vault.list' | 'vault.source.set' | 'vault.unlock' | 'vault.lock'>
+  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot' | 'cron.manage' | 'session.active_list' | 'usage.bars' | 'insights.get' |
+  'learning.frames' | 'learning.detail' | 'learning.edit' | 'learning.delete' |
+  'vault.sources' | 'vault.list' | 'vault.source.set' | 'vault.unlock' | 'vault.lock' |
+  'connectors.catalog' | 'connectors.accounts' | 'connectors.accounts.remove' | 'connectors.operation.status' |
+  'mcp.servers.list' | 'mcp.servers.status' | 'mcp.servers.add' | 'mcp.servers.test' | 'mcp.servers.remove' |
+  'display.status' | 'display.thumbnail' | 'display.observe' | 'display.lease.acquire' | 'display.lease.release'>
 export type Method = keyof Served
 
 export type Requested = ServerRequestMap
@@ -241,6 +267,10 @@ export interface Connection {
    */
   readonly clarifyBatch: boolean
   readonly creation: { readonly sources: readonly string[]; readonly parameters: readonly string[] } | null
+  /** The home of the profile the gateway runs as, `runtime.describe`'s `profile_id` (gateway/session_controls.py:582). null while not online. */
+  readonly home: string | null
+  /** Where to dial another socket to the gateway the online socket reached, at `path`. null while not online, and for a socket with no such address. */
+  sibling(path: string): Promise<string | null>
   retryNow(request: { readonly start: boolean }): void
   close(): void
 }
@@ -279,7 +309,7 @@ type Creation = NonNullable<Connection['creation']>
 type Phase =
   | { readonly at: 'dialing'; readonly attempt: number }
   | { readonly at: 'handshake'; readonly attempt: number; readonly socket: WireSocket; readonly giveUp: () => void }
-  | { readonly at: 'online'; readonly attempt: number; readonly socket: WireSocket; readonly since: number; readonly creation: Creation; readonly clarifyBatch: boolean; readonly heartbeat: { stop(): void } }
+  | { readonly at: 'online'; readonly attempt: number; readonly socket: WireSocket; readonly since: number; readonly creation: Creation; readonly home: string; readonly clarifyBatch: boolean; readonly heartbeat: { stop(): void } }
   | { readonly at: 'waiting'; readonly attempt: number; readonly retryAt: number; readonly why: WaitingWhy; readonly message: string; readonly cancel: () => void }
   | { readonly at: 'blocked'; readonly why: BlockedWhy; readonly message: string }
   | { readonly at: 'closed' }
@@ -418,7 +448,7 @@ export function connect(
       phase.giveUp()
       const { sources, parameters } = described.session_create
       const clarifyBatch = able?.canonical_clarify_batch === true
-      enter({ at: 'online', attempt: phase.attempt, socket, since: clock.now(), creation: { sources, parameters }, clarifyBatch, heartbeat: beat(socket) })
+      enter({ at: 'online', attempt: phase.attempt, socket, since: clock.now(), creation: { sources, parameters }, home: described.profile_id, clarifyBatch, heartbeat: beat(socket) })
       events.onOnline()
     } catch (error) {
       if (error instanceof RpcRefusal) lost(socket, tooOld)
@@ -484,10 +514,12 @@ export function connect(
     get link() { return link },
     get reach() { return phase.at === 'online' ? phase.socket.reach : null },
     get creation() { return phase.at === 'online' ? phase.creation : null },
+    get home() { return phase.at === 'online' ? phase.home : null },
     get clarifyBatch() { return clarifyBatch() },
     call: callAs(null),
     as: bot => ({ get link() { return link }, get clarifyBatch() { return clarifyBatch() }, call: callAs(bot), respond }),
     respond,
+    sibling: async path => (phase.at === 'online' ? await phase.socket.sibling?.(path) ?? null : null),
     decline: (requestId, message) => {
       if (phase.at === 'online') phase.socket.send(JSON.stringify({ jsonrpc: '2.0', id: requestId, error: { code: METHOD_NOT_FOUND, message } }))
     },
