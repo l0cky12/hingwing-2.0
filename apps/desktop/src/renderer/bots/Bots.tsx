@@ -244,6 +244,7 @@ export function BotsPanel({
   const sidebar = useRef<HTMLElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const searchButton = useRef<HTMLButtonElement>(null)
+  const compactButton = useRef<HTMLButtonElement>(null)
   const selected = selectedIn(bots, open)
   const opening = open?.opening?.kind === 'bot' ? open.opening.bot : null
   useEffect(() => {
@@ -251,11 +252,17 @@ export function BotsPanel({
     const id = setTimeout(() => setSaid(null), SAID_MS)
     return () => clearTimeout(id)
   }, [said])
+  // A compact sidebar has no room for the search, so compacting ends it rather than leave the list filtered by words nobody can see.
+  const toggleCompact = () => {
+    if (!compact) flushSync(() => setQuery(null))
+    if (document.activeElement === document.body) compactButton.current?.focus()
+    onCompact(!compact)
+  }
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (!isCommandKey(event, 'b') || sidebar.current?.checkVisibility() !== true || document.querySelector('dialog:modal') !== null) return
       event.preventDefault()
-      if (!event.repeat) onCompact(!compact)
+      if (!event.repeat) toggleCompact()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -439,7 +446,7 @@ export function BotsPanel({
     <>
       <aside ref={sidebar} className="bots" aria-label="Bots" data-state={bots?.state ?? 'loading'}>
         <div className="bots-head" onBlur={event => { if (query === '' && !event.currentTarget.contains(event.relatedTarget)) setQuery(null) }}>
-          {query === null || compact
+          {query === null
             ? <>
                 {head}
                 <button ref={searchButton} type="button" data-bots-search aria-label="Search bots" title="Search bots" onClick={() => setQuery('')}><Search /></button>
@@ -450,8 +457,8 @@ export function BotsPanel({
                 <button type="button" aria-label="Close search" title="Close search" onClick={closeSearch}><Close /></button>
               </>}
           <button
-            type="button" data-compact-toggle aria-label="Compact sidebar" title={`Compact sidebar (${COMMAND_KEY}+B)`} aria-pressed={compact}
-            aria-keyshortcuts={MAC ? 'Meta+B' : 'Control+B'} onClick={() => onCompact(!compact)}
+            ref={compactButton} type="button" data-compact-toggle aria-label="Compact sidebar" title={`Compact sidebar (${COMMAND_KEY}+B)`} aria-pressed={compact}
+            aria-keyshortcuts={MAC ? 'Meta+B' : 'Control+B'} onClick={toggleCompact}
           >
             <Panel />
           </button>

@@ -1020,6 +1020,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .window[data-compact] .bots-head { flex-direction: column; justify-content: center; padding: 12px 0; }
 .window[data-compact] .bots-head > :is(.mode, [data-bots-search]) { display: none; }
 .window[data-compact] [data-compact-toggle] { order: -1; }
+.window[data-compact] .new-menu { top: 44px; right: auto; left: calc(100% - 8px); width: max-content; }
 .window[data-compact] .bots-list { padding-left: 4px; }
 .window[data-compact] .bots-list h3 { height: 1px; margin: 10px 12px; font-size: 0; background: var(--rule); }
 .window[data-compact] .bots-list .bots-hidden h3 { height: auto; margin-inline: 0; background: none; }
