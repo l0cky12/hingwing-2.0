@@ -8,6 +8,7 @@ import { useRetryPicturesOnceOnline } from './bots/pictures'
 import { ChatsSidebar, DraftSweep } from './chats/Chats'
 import { Chat } from './chat/Chat'
 import { GroupPane } from './groups/GroupPane'
+import { AccountMenu } from './chrome/AccountMenu'
 import { Banner, TopBar } from './chrome/Chrome'
 import { ModeSwitch } from './chrome/ModeSwitch'
 import { Preview } from './preview/Preview'
@@ -110,7 +111,7 @@ function ChatWindow({ hidden, settings, target, mode, theme, onOpenApps }: ChatW
   const { root, pick } = useSwitchModeKeepingFocus(mode)
   const { settingsButton, close } = useCloseSettings(settings !== null)
   const switcher = <ModeSwitch mode={mode} onPick={pick} />
-  const foot = <AppsButton onOpen={onOpenApps} />
+  const foot = <div className="account"><AccountMenu target={target} /><AppsButton onOpen={onOpenApps} /></div>
   const paned = preview?.state === 'open' && settings === null
   return (
     <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined}>

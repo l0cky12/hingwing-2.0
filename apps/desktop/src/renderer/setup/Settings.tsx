@@ -7,7 +7,7 @@ import { run, useTopic } from '../store'
 import { Bubble, ConnectionCard, Monitor, Moon, People, Segmented, Sun, type Segment } from './ConnectionCard'
 import { PasswordManagers } from './PasswordManagers'
 import type { CardSetup } from './screens'
-import { usageNeedsRead, usageView, type UsageAsk } from './usage-view'
+import { UNREPORTED, usageNeedsRead, usageView, type UsageAsk } from './usage-view'
 
 const SIDEBAR: readonly Segment<Mode>[] = [
   { value: 'bots', label: 'Bots', icon: <People /> },
@@ -37,7 +37,6 @@ const SHORTCUTS: readonly { readonly label: string; readonly key: string; readon
   { label: 'Connect apps', key: 'M', shift: true, onlyIn: null }
 ]
 
-const UNREPORTED = 'This Hermes does not report usage.'
 
 interface PanelProps {
   readonly setup: CardSetup
