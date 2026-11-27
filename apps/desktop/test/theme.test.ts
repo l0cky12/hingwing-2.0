@@ -84,10 +84,10 @@ const contrast = (a: string, b: string) => {
 }
 
 const TEXT = ['ink', 'graphite', 'signal', 'caution', 'brick', 'moss']
-const SURFACES = ['paper', 'sheet', 'code-bg', 'signal-soft', 'caution-soft', 'add', 'del']
+const SURFACES = ['rail', 'paper', 'sheet', 'surface-user', 'code-bg', 'signal-soft', 'caution-soft', 'add', 'del']
 const AVATARS = ['avatar-slate', 'avatar-plum', 'avatar-olive', 'avatar-mauve', 'avatar-umber']
 const PAIRS = [...TEXT.flatMap(text => SURFACES.map(surface => [text, surface, 4.5] as const)), ...AVATARS.map(avatar => ['sheet', avatar, 4.5] as const)]
-const EDGES = ['paper', 'sheet'].map(surface => ['edge', surface, 3] as const)
+const EDGES = ['rail', 'paper', 'sheet'].map(surface => ['edge', surface, 3] as const)
 
 const SCHEMES: readonly [string, Scheme][] = [
   ['light', { dark: false, more: false }],
@@ -110,11 +110,30 @@ describe('the palettes in app.css', () => {
   it.each(SCHEMES)('keeps text at 4.5:1 and edges at 3:1 in %s', (_name, scheme) => {
     const palette = paletteOf(scheme)
     const colorOf = (name: string) => palette.get(`--${name}`) ?? ''
-    const short = [...PAIRS, ...EDGES].flatMap(([fore, back, least]) => {
+    const rules = scheme.more ? ['rail', 'paper', 'sheet'].map(surface => ['rule', surface, 3] as const) : []
+    const short = [...PAIRS, ...EDGES, ...rules].flatMap(([fore, back, least]) => {
       const ratio = contrast(colorOf(fore), colorOf(back))
       return ratio >= least ? [] : [`${fore} on ${back}: ${ratio.toFixed(2)}, under ${least}`]
     })
     expect(short).toEqual([])
+  })
+})
+
+const LITERALS: readonly (readonly [string, (property: string, value: string) => boolean])[] = [
+  ['colour', (_property, value) => /#[0-9a-f]{3,8}\b|\b(rgb|hsl)a?\(|\b(white|black)\b/i.test(value)],
+  ['shade', (_property, value) => value.includes('var(--shade)')],
+  ['radius', (property, value) => property.endsWith('radius') && /\d(px|%)/.test(value)],
+  ['type size', (property, value) => (property === 'font' || property === 'font-size') && /(^|\s)[\d.]+px/.test(value)],
+  ['duration', (property, value) => /^(transition|animation)/.test(property) && /(^|[\s,])(?!0s\b)[\d.]+m?s\b/.test(value)]
+]
+
+describe('the component rules in app.css', () => {
+  it('take every colour, radius, type size, shadow and duration from a token on :root', () => {
+    const components = rulesNestedOnlyInAtRules(CSS).filter(rule => rule.selector !== ':root' && rule.selector !== '@font-face')
+    expect(components.length).toBeGreaterThan(500)
+    const literal = components.flatMap(({ selector, declarations }) => [...declarations].flatMap(([property, value]) =>
+      LITERALS.filter(([, matches]) => matches(property, value)).map(([kind]) => `${kind} in ${selector} { ${property}: ${value} }`)))
+    expect(literal).toEqual([])
   })
 })
 
@@ -167,5 +186,42 @@ describe('the accent in app.css', () => {
       })
     })
     expect(short).toEqual([])
+  })
+})
+
+describe("the marks on a bot's face", () => {
+  const RULES = rulesNestedOnlyInAtRules(CSS)
+  const inMedia = (feature: string) => RULES.filter(rule => rule.media.some(prelude => prelude.includes(feature)))
+
+  it('animate the working dots, and stop every animation under reduced motion', () => {
+    const animated = RULES.filter(rule => rule.media.length === 0 && /working-dot/.test(rule.declarations.get('animation') ?? ''))
+    expect(animated.map(rule => rule.selector)).toEqual(['.bot-activity[data-activity="working"] > span'])
+    const stopped = inMedia('prefers-reduced-motion: reduce').filter(rule => rule.selector.split(',').map(part => part.trim()).includes('*'))
+    expect(stopped.map(rule => rule.declarations.get('animation'))).toEqual(['none !important'])
+  })
+
+  /** The value the cascade gives `property` on an element only these selectors match, in forced colors. Specificity counts classes and attributes, all these use. */
+  const forcedValue = (selectors: readonly string[], property: string) => {
+    const specificity = (selector: string) => (selector.match(/[.[]/g) ?? []).length
+    const candidates = RULES.flatMap((rule, order) => {
+      if (!rule.media.every(prelude => prelude.includes('forced-colors: active')) || !rule.declarations.has(property)) return []
+      const matched = rule.selector.split(',').map(part => part.trim()).filter(part => selectors.includes(part))
+      return matched.length === 0 ? [] : [{ weight: Math.max(...matched.map(specificity)), order, value: rule.declarations.get(property) }]
+    })
+    return candidates.sort((a, b) => a.weight - b.weight || a.order - b.order).at(-1)?.value
+  }
+  const SYSTEM = new Set(['Canvas', 'CanvasText', 'Highlight', 'HighlightText'])
+  const markOf = (state: string) => ['.bot-activity', '.bot-activity[data-activity]', `.bot-activity[data-activity="${state}"]`]
+
+  it.each([
+    ['working', 'Canvas', ['.bot-activity[data-activity="working"] > span']],
+    ['waiting', 'Highlight', null],
+    ['unread', 'CanvasText', null]
+  ] as const)('draw the %s mark in forced colors in system colors only, inside a CanvasText border', (state, background, dots) => {
+    expect(forcedValue(markOf(state), 'forced-color-adjust')).toBe('none')
+    expect(forcedValue(markOf(state), 'border')).toBe('1px solid CanvasText')
+    expect(forcedValue(markOf(state), 'background')).toBe(background)
+    if (dots !== null) expect(forcedValue(dots, 'background')).toBe('CanvasText')
+    expect(SYSTEM.has(forcedValue(markOf(state), 'color') ?? '')).toBe(true)
   })
 })

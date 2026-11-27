@@ -71,7 +71,10 @@ export function ContextMeter({ fill, stale, onBreakdown }: ContextMeterProps) {
         aria-label={`Context ${percent} full${marks}`} aria-expanded={open} aria-haspopup="dialog" aria-controls={open ? splitId : undefined}
         onClick={() => void toggle()}
       >
-        <span className="gauge" aria-hidden="true"><span style={{ width: `${fill.percent}%` }} /></span>
+        <svg className="ring" aria-hidden="true" viewBox="0 0 16 16" width="16" height="16">
+          <circle className="track" cx="8" cy="8" r="6" pathLength="100" />
+          <circle className="arc" cx="8" cy="8" r="6" pathLength="100" strokeDasharray="100" strokeDashoffset={100 - Math.min(100, fill.percent)} transform="rotate(-90 8 8)" />
+        </svg>
         {percent}{marks}
       </button>
       {split !== null && (

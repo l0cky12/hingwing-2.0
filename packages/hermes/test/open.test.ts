@@ -401,4 +401,14 @@ describe('a group chat in the pane', () => {
     expect(after([roster([EMU, OPS])], open).desk.open.shown).toEqual({ kind: 'group', group: PLAN, over: EMU })
     expect(after([roster([OPS], null)], open).desk.open.shown).toEqual({ kind: 'group', group: PLAN, over: null })
   })
+
+  it("gives way, once deleted, to the Bot Chat of the bot it was opened over, or to the launch pick over the socket's own profile", () => {
+    const disbanded: DeskEvent = { on: 'disbanded', group: PLAN }
+    expect(after([asked(RESEARCH), grouped, disbanded], LAUNCHED).desk.open.shown).toEqual({ kind: 'bot', bot: RESEARCH, sessionId: R1 })
+    const overOwn = after([grouped, roster([OPS], null), disbanded], LAUNCHED).desk
+    expect(overOwn.open.shown).toBeNull()
+    expect(after([facts({}, { kind: 'bot', bot: EMU, sessionId: HOME })], overOwn).desk.open.shown).toEqual({ kind: 'bot', bot: EMU, sessionId: HOME })
+    const other = after([grouped], LAUNCHED).desk
+    expect(after([{ on: 'disbanded', group: 'standup' as GroupId }], other).desk.open, 'another group leaves the pane alone').toBe(other.open)
+  })
 })

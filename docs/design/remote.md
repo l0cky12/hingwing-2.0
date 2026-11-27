@@ -181,7 +181,7 @@ A failed check never touches the live connection. Re-checking the live target do
 `App.tsx` reads the `setup` topic, and `screenOf` in `renderer/setup/screens.ts` names the screen for each state:
 
 - `chat` and `pinned` draw the chat window, the sidebar beside the chat, keyed by `live.epoch`. A fixture run is `pinned`.
-- `form`, `checking` and `failed` with a `live` connection, and `saved` with `from: 'settings'`, draw Settings (`showsSettings`). `Settings.tsx` takes the chat's place beside the sidebar, under a bar with Close. It holds the Connection card (`ConnectionCard.tsx`), the Sidebar card and the Keyboard shortcuts card.
+- `form`, `checking` and `failed` with a `live` connection, and `saved` with `from: 'settings'`, draw Settings (`showsSettings`). `Settings.tsx` takes the chat's place beside the sidebar, under a bar with Close. It lists General, Permissions, Hermes machine, Usage and About. General holds Appearance, the Sidebar card and the Keyboard shortcuts card, and Hermes machine holds the Connection card (`ConnectionCard.tsx`).
 - `form`, `checking` and `failed` with no `live` connection draw the first run, `FirstRun` in `Setup.tsx`, which holds the Connection card alone.
 - `saved` with `from: 'first-run'` draws `Saved` in `Setup.tsx`, with an Open chat button.
 

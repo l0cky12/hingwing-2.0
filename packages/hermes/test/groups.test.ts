@@ -67,7 +67,7 @@ describe('making a group while an earlier try may have made it', () => {
   const draft = { group: 'g1' as GroupId, name: 'Launch plan', bots: ROSTER.map(bot => bot.id) }
   const room = { room_id: 'g1', name: 'Launch plan', members: [{ member_id: 'default', profile: 'default', handle: 'ada' }, { member_id: 'sam', profile: 'sam', handle: 'sam' }] }
 
-  const DEPS = { clock: manualClock(), mintId: () => 'minted', changed: () => {} }
+  const DEPS = { clock: manualClock(), mintId: () => 'minted', changed: () => {}, disbanded: () => {} }
 
   function wire(list: () => Promise<unknown>) {
     const call = (method: string) => {
@@ -166,6 +166,117 @@ describe('what Highwing holds of a group chat', () => {
     expect(groupsOf(desk)).toMatchObject({ rows: [] })
     expect(groupChatOf(nextGroups(desk, { on: 'missing', group: PLAN }))).toEqual({ group: PLAN, at: 'missing' })
   })
+
+  it('lists a renamed group first under its new name, and keeps its thread', () => {
+    const standup = facts({ id: 'standup' as GroupId, name: 'Standup' })
+    const desk = after(able, { on: 'listed', groups: [standup, facts()] }, { on: 'followed', group: PLAN }, page(0, [said(1)]))
+    const renamed = nextGroups(desk, { on: 'made', facts: facts({ name: 'Ship plan', latestSeq: 4 }) })
+    expect(groupsOf(renamed)).toMatchObject({ rows: [{ id: PLAN, name: 'Ship plan' }, { id: 'standup', name: 'Standup' }] })
+    expect(groupChatOf(renamed)).toMatchObject({ name: 'Ship plan', events: [{ seq: 1 }] })
+  })
+
+  it('takes a deleted group out of the list and never says it is missing, as it does for one Hermes lost', () => {
+    const desk = nextGroups(after(...opened, page(0, [said(1)])), { on: 'disbanded', group: PLAN })
+    expect(groupsOf(desk)).toMatchObject({ rows: [] })
+    expect(groupChatOf(desk)?.at).not.toBe('missing')
+    expect(nextPoll(nextGroups(desk, { on: 'followed', group: null })), 'nothing left to read').toBeNull()
+  })
+})
+
+describe('a rename or a delete Hermes refuses', () => {
+  const PLAN = 'launch-plan' as GroupId
+  const refusing = (error: Error) => {
+    const call = (method: string) => {
+      if (method === 'groups.capabilities') return Promise.resolve({ driver: true })
+      if (method === 'groups.list') return Promise.resolve({ rooms: [] })
+      return Promise.reject(error)
+    }
+    return groupBook({ call } as unknown as GroupWire, { clock: manualClock(), mintId: () => 'k1', changed: () => {}, disbanded: () => {} })
+  }
+
+  it.each([
+    ['a member on a machine Hermes cannot reach', 'peer_unreachable', "A member's machine couldn't be reached. Try Delete again when it's back."],
+    ['a Stop Hermes is still waiting on', 'room_stop_pending', 'Hermes is still stopping this group chat. Try Delete again in a moment.'],
+    ['a grant Hermes has yet to revoke', 'room_disbanding_retry', "Hermes couldn't finish deleting this group chat. Try Delete again."],
+    ['a group Hermes no longer has', 'invalid_params', 'Hermes no longer has this group chat.']
+  ])('says in words why a delete failed for %s', async (_, reason, message) => {
+    expect(await refusing(new RpcRefusal(4001, reason, reason)).disband(PLAN)).toMatchObject({ ok: false, refusal: { message } })
+  })
+
+  it('says a Hermes without the calls cannot rename or delete group chats, and to update it', async () => {
+    const book = refusing(new RpcRefusal(-32601, null, 'Method not found'))
+    expect(await book.rename(PLAN, 'Ship plan')).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't rename group chats. Update Hermes on that machine, then reconnect." } })
+    expect(await book.disband(PLAN)).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't delete group chats. Update Hermes on that machine, then reconnect." } })
+  })
+
+  it('says a rename or a delete with no connection could not reach Hermes', async () => {
+    const book = refusing(new Offline('down'))
+    expect(await book.rename(PLAN, 'Ship plan')).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(await book.disband(PLAN)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+  })
+})
+
+describe('a delete whose answer was lost', () => {
+  const PLAN = 'launch-plan' as GroupId
+  const book = (disband: () => Promise<unknown>) => {
+    const deleted: GroupId[] = []
+    const call = (method: string) => {
+      if (method === 'groups.capabilities') return Promise.resolve({ driver: true })
+      if (method === 'groups.list') return Promise.resolve({ rooms: [] })
+      if (method === 'groups.disband') return disband()
+      return Promise.reject(new RpcRefusal(4001, 'invalid_params', 'invalid_params'))
+    }
+    return { deleted, book: groupBook({ call } as unknown as GroupWire, { clock: manualClock(), mintId: () => 'k1', changed: () => {}, disbanded: group => deleted.push(group) }) }
+  }
+  const settled = () => new Promise(resolve => setTimeout(resolve, 0))
+
+  it("ends as the user's delete once Hermes no longer has the group, not as a missing group", async () => {
+    const { deleted, book: lost } = book(() => Promise.reject(new Offline('groups.disband got no reply in 10000 ms')))
+    expect(await lost.disband(PLAN)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(deleted, 'not yet known to be deleted').toEqual([])
+    lost.follow(PLAN)
+    await settled()
+    expect(deleted).toEqual([PLAN])
+    expect(lost.chat?.at).not.toBe('missing')
+  })
+
+  it('ends as the user\'s delete when Hermes says the group is gone before the delete answers', async () => {
+    let answer: (error: Error) => void = () => {}
+    const { deleted, book: slow } = book(() => new Promise((_, reject) => { answer = reject }))
+    const outcome = slow.disband(PLAN)
+    slow.follow(PLAN)
+    await settled()
+    expect(deleted).toEqual([PLAN])
+    expect(slow.chat?.at).not.toBe('missing')
+    answer(new Offline('groups.disband got no reply in 10000 ms'))
+    expect(await outcome).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(deleted, 'reported once').toEqual([PLAN])
+  })
+
+  it("ends as the user's delete when a retry is refused while the first delete still runs", async () => {
+    const answers = [new Offline('groups.disband got no reply in 10000 ms'), new RpcRefusal(4001, 'room_disbanding_retry', 'room_disbanding_retry')]
+    const { deleted, book: retried } = book(() => Promise.reject(answers.shift()))
+    expect(await retried.disband(PLAN)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    expect(await retried.disband(PLAN)).toMatchObject({ ok: false, refusal: { message: "Hermes couldn't finish deleting this group chat. Try Delete again." } })
+    retried.follow(PLAN)
+    await settled()
+    expect(deleted).toEqual([PLAN])
+    expect(retried.chat?.at).not.toBe('missing')
+  })
+
+  it('leaves a group Hermes lost without a delete shown as missing', async () => {
+    const { deleted, book: unasked } = book(() => Promise.resolve({ tombstone: { room_id: PLAN } }))
+    unasked.follow(PLAN)
+    await settled()
+    expect(deleted).toEqual([])
+    expect(unasked.chat).toEqual({ group: PLAN, at: 'missing' })
+  })
+
+  it('reports a delete Hermes answered at once', async () => {
+    const { deleted, book: answered } = book(() => Promise.resolve({ tombstone: { room_id: PLAN, disbanded_at: 1, idempotent: false } }))
+    expect(await answered.disband(PLAN)).toEqual({ ok: true, value: undefined })
+    expect(deleted).toEqual([PLAN])
+  })
 })
 
 describe('a message while Hermes stops running group chats', () => {
@@ -179,7 +290,7 @@ describe('a message while Hermes stops running group chats', () => {
       driver = false
       return Promise.reject(new RpcRefusal(4001, 'runtime_coordination_required', 'runtime_coordination_required'))
     }
-    const book = groupBook({ call } as unknown as GroupWire, { clock: manualClock(), mintId: () => 'k1', changed: () => {} })
+    const book = groupBook({ call } as unknown as GroupWire, { clock: manualClock(), mintId: () => 'k1', changed: () => {}, disbanded: () => {} })
     book.online()
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(book.groups).toMatchObject({ state: 'listed', driver: true })

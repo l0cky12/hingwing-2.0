@@ -11,7 +11,7 @@ const WAITS_UNTIL_14_07 = CLOCK.now + (6 * 60 + 7) * 60_000
 function session(over: Partial<Session> = {}): Session {
   return {
     id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [],
-    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null, sync: { state: 'live' }, ...over
+    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null, rewound: {}, sync: { state: 'live' }, ...over
   }
 }
 

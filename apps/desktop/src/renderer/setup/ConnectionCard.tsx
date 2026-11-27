@@ -1,14 +1,14 @@
 import type { Link } from '@highwing/hermes/domain'
-import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { press } from '../chrome/Chrome'
 import { run } from '../store'
 import { cardOf, type Editor as EditorView, type Summary } from './card-view'
 import { CHOICES, KINDS as KIND_ORDER, textsOf, type Kind, type Typed } from './form'
 import type { CardSetup } from './screens'
 
-const line = (size: number, width: number) =>
+export const line = (size: number, width: number) =>
   ({ width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: width, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }) as const
-const Server = ({ size = 15, width = 1.9 }) => <svg {...line(size, width)}><rect x="3" y="3.5" width="18" height="7" rx="2" /><rect x="3" y="13.5" width="18" height="7" rx="2" /><path d="M7 7h.01M7 17h.01" /></svg>
+export const Server = ({ size = 15, width = 1.9 }) => <svg {...line(size, width)}><rect x="3" y="3.5" width="18" height="7" rx="2" /><rect x="3" y="13.5" width="18" height="7" rx="2" /><path d="M7 7h.01M7 17h.01" /></svg>
 const Laptop = ({ size = 15, width = 1.9 }) => <svg {...line(size, width)}><rect x="4" y="4.5" width="16" height="11" rx="1.5" /><path d="M2 19.5h20" /></svg>
 const Globe = ({ size = 15, width = 1.9 }) => <svg {...line(size, width)}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>
 export const People = () => <svg {...line(15, 1.9)}><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0" /><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8" /></svg>
@@ -19,15 +19,16 @@ export const Moon = () => <svg {...line(15, 1.9)}><path d="M20 14.5A8 8 0 1 1 9.
 
 export interface Segment<V extends string> { readonly value: V; readonly label: string; readonly icon: ReactNode }
 
-export function Segmented<V extends string>({ labelledBy, value, segments, onPick }: {
+export function Segmented<V extends string>({ labelledBy, describedBy, value, segments, onPick }: {
   readonly labelledBy: string
+  readonly describedBy?: string
   readonly value: V
   readonly segments: readonly Segment<V>[]
   readonly onPick: (value: V) => void
 }) {
   const name = useId()
   return (
-    <div className="seg" role="radiogroup" aria-labelledby={labelledBy}>
+    <div className="seg" role="radiogroup" aria-labelledby={labelledBy} aria-describedby={describedBy}>
       {segments.map(segment => (
         <label key={segment.value}>
           <input type="radio" name={name} checked={segment.value === value} onChange={() => onPick(segment.value)} />
@@ -46,10 +47,10 @@ const KINDS: readonly Segment<Kind>[] = KIND_ORDER.map(value => {
 })
 
 /** Fills after it mounts: a region that mounts holding its words is not announced, and a passing check can remount Settings. */
-function Announce({ words }: { readonly words: string | null }) {
+function Announce({ words, shown }: { readonly words: string | null; readonly shown: boolean }) {
   const [said, setSaid] = useState<string | null>(null)
   useEffect(() => setSaid(words), [words])
-  return <p className="sr" role="status">{said}</p>
+  return <p className={said !== null && shown ? 'passed' : 'sr'} role="status">{said}</p>
 }
 
 function SummaryRow({ summary, folded, change, onChange }: {
@@ -89,7 +90,7 @@ function Editor({ setup, view, onFold }: { readonly setup: CardSetup; readonly v
   }, [])
   // The check disabled the form, which dropped focus.
   useLayoutEffect(() => {
-    if (setup.at === 'failed') (CHOICES[setup.target.kind].field !== null ? field : connect).current?.focus()
+    if (setup.at === 'failed' && document.activeElement === document.body) (CHOICES[setup.target.kind].field !== null ? field : connect).current?.focus()
   }, [setup])
 
   const submit = (event: FormEvent) => {
@@ -102,9 +103,16 @@ function Editor({ setup, view, onFold }: { readonly setup: CardSetup; readonly v
   const { foot, cancel } = view
   const asks = CHOICES[kind].field
   const warning = asks?.warning(texts[kind]) ?? null
+  const onCancel = cancel === 'fold' ? onFold : () => void run({ do: cancel === 'stop' ? 'stopCheck' : 'keepTarget' })
+  // Settings closes on an Escape nobody took, so the editor takes it first, as its Cancel.
+  const onKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
+    if (event.key !== 'Escape' || event.nativeEvent.isComposing || view.disabled || cancel === null) return
+    event.preventDefault()
+    onCancel()
+  }
 
   return (
-    <form className="edit-form" aria-label="Change the connection" onSubmit={submit}>
+    <form className="edit-form" aria-label="Change the connection" onSubmit={submit} onKeyDown={onKeyDown}>
       <fieldset className="edit" disabled={view.disabled}>
         <div className="row">
           <div className="text"><p className="label" id={`${ids}-kind`}>Where Hermes runs</p></div>
@@ -129,7 +137,7 @@ function Editor({ setup, view, onFold }: { readonly setup: CardSetup; readonly v
       </fieldset>
       {problem !== null && (
         <div className="problem" role="alert">
-          <h4>{problem.words}</h4>
+          <p className="what">{problem.words}</p>
           {problem.fix !== null && <p>{problem.fix}</p>}
         </div>
       )}
@@ -142,7 +150,7 @@ function Editor({ setup, view, onFold }: { readonly setup: CardSetup; readonly v
           </div>
         )}
         {cancel !== null && (
-          <button type="button" className="btn" disabled={cancel === 'saving'} onClick={cancel === 'fold' ? onFold : () => void run({ do: cancel === 'stop' ? 'stopCheck' : 'keepTarget' })}>
+          <button type="button" className="btn" disabled={cancel === 'saving'} onClick={onCancel}>
             {cancel === 'stop-waiting' ? 'Stop waiting' : 'Cancel'}
           </button>
         )}
@@ -172,7 +180,7 @@ export function ConnectionCard({ setup, link }: { readonly setup: CardSetup; rea
     <div className="card">
       {view.summary !== null && <SummaryRow summary={view.summary} folded={!open} change={change} onChange={() => setEditing(true)} />}
       {view.editor !== null && <Editor setup={setup} view={view.editor} onFold={() => setEditing(false)} />}
-      <Announce words={view.news} />
+      <Announce words={view.news} shown={!open} />
     </div>
   )
 }
