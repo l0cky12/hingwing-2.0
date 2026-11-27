@@ -443,7 +443,7 @@ button.reaction:hover:not(:disabled) { border-color: var(--signal); }
 .regenerate, .new-chat, .queued button { padding: 2px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); color: var(--ink); font: 500 13px/1.5 var(--sans); }
 :is(.regenerate, .new-chat, .queued button):hover:not(:disabled) { background: var(--paper); }
 :is(.regenerate, .new-chat, .queued button):disabled { color: var(--graphite); }
-.relay-reply { position: relative; margin-left: var(--col); }
+.relay-reply { position: relative; max-width: calc(100% - var(--col)); margin-left: var(--col); }
 .said-by > .relay-from { margin-bottom: 4px; }
 .group-turn .thread > :only-child::after { display: none; }
 .mention { font: 500 0.9em var(--sans); }
