@@ -163,6 +163,8 @@ export interface AppTopics {
   readonly screen: ScreenView | null
   /** The skills of the bot `open` shows. Hermes is asked only while a window watches it. */
   readonly skills: SkillLibrary
+  /** Goes up whenever a bot's routines may have moved. A window showing routines asks for them again. */
+  readonly routines: number
   readonly preview: Preview
   readonly mode: Mode
   readonly theme: Theme
@@ -177,7 +179,7 @@ export interface AppTopics {
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, screen: true, skills: true, preview: true, mode: true, theme: true, accent: true, sidebarWidth: true, sendKey: true, spellCheck: true, snoozes: true, notices: true, onClose: true, intro: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, routines: true, activity: true, screen: true, skills: true, preview: true, mode: true, theme: true, accent: true, sidebarWidth: true, sendKey: true, spellCheck: true, snoozes: true, notices: true, onClose: true, intro: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -607,6 +609,10 @@ export const validators: Validators = {
   describeBot: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'describeBot', bot }
+  },
+  listRoutines: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && { do: 'listRoutines', bot }
   },
   editBot: raw => {
     const bot = botIdOf(raw.bot)

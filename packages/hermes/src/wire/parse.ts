@@ -22,6 +22,7 @@ import { MANAGER_NAMES, MANAGERS, type BotManagers, type ManagerName, type Manag
 import type { RelayState } from '../domain/relay'
 import type { Lease, ScreenFacts } from '../domain/screen'
 import type { ServerState, Tested, ToolServer } from '../domain/tool-servers'
+import type { Routine, RoutineId } from '../domain/routines'
 import { OWN_COMMANDS, type SlashCatalog, type SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
 import type {
@@ -56,7 +57,10 @@ export type ParsedEvent =
    * payload, not on the envelope (gateway/session_events.py:93-100), so it cannot pass a seq gate.
    */
   | { readonly scope: 'gap'; readonly sessionId: SessionId }
-  /** `sessions.changed`: the sidebar should refetch. `cron.changed`: the scheduled jobs should. */
+  /**
+   * `sessions.changed`: the sidebar should refetch. `cron.changed`: a cron store's jobs file moved, by an edit or a scheduler
+   * tick (tui_gateway/change_watcher.py:460), so the scheduled jobs and the routines should. It names no job.
+   */
   | { readonly scope: 'app'; readonly event: 'sessions.changed' | 'cron.changed' }
   /**
    * `groups.changed`: these groups' logs or who is answering in them moved. `all`: the payload names no rooms, which is
@@ -1980,4 +1984,41 @@ export function parseJobs(reply: CronManageResult): readonly Job[] | null {
       error: words(job.raw('last_error'))
     }]
   })
+}
+
+/** Hermes desktop's tag for a job one bot owns in a store several bots share (apps/desktop/src/plugins/hermes-bots/cron.tsx:71-75). */
+const BOT_TAG = /^\[bot:([a-z0-9][a-z0-9_-]*)\]\s*/i
+
+const sameProfile = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
+
+function routineOf(raw: unknown): { readonly routine: Routine; readonly owner: string } | null {
+  return usable(() => {
+    const row = fields<CronJobRow>(raw)
+    const id = row.str('job_id')
+    if (id === '') throw new Unusable()
+    const named = row.optStr('name') ?? ''
+    const state = row.optStr('state')
+    return {
+      routine: {
+        id: id as RoutineId,
+        name: named.replace(BOT_TAG, '').trim() || id,
+        schedule: row.optStr('schedule') ?? '',
+        paused: state === null ? row.optBool('enabled') === false : state === 'paused',
+        nextRunAt: row.optStr('next_run_at')
+      },
+      owner: BOT_TAG.exec(named)?.[1] ?? 'default'
+    }
+  })
+}
+
+/**
+ * The jobs of a `cron.manage` list that belong to `bot`. A gateway that scoped the list to the bot's own store says so in
+ * `scoped`, and every job is the bot's. An older one lists the launch profile's store, where a job is the bot's when its name
+ * carries the bot's tag, and an untagged job is the default bot's (tools/cronjob_tools.py via tui_gateway/methods_tools.py:1311-1325).
+ */
+export function parseRoutines(reply: CronManageResult, bot: BotId): CommandOutcome<readonly Routine[]> {
+  if (reply.success === false || words(reply.error) !== null) return { ok: false, refusal: { kind: 'rejected', message: `Hermes couldn't list the routines: ${words(reply.error) ?? 'it gave no reason.'}` } }
+  const scoped = typeof reply.scoped === 'string' && sameProfile(reply.scoped, bot)
+  const listed = (Array.isArray(reply.jobs) ? reply.jobs : []).flatMap(raw => routineOf(raw) ?? [])
+  return { ok: true, value: listed.flatMap(({ routine, owner }) => (scoped || sameProfile(owner, bot) ? [routine] : [])) }
 }

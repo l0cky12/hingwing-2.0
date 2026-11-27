@@ -6,6 +6,7 @@ import type { ChatRef, Unstarted } from './open'
 import type { BotManagers, ManagerName } from './passwords'
 import type { PathMatch } from './path'
 import type { Added, ServerSetup, ToolServer } from './tool-servers'
+import type { Routine } from './routines'
 import type { ChatVersions } from './versions'
 import type { AccountReport } from './usage'
 export type { AccountReport }
@@ -142,6 +143,8 @@ export type Command =
   /** The globs of the bot's `approvals.deny`: Hermes blocks a matching command whatever the approval mode, YOLO included. null: the socket's own profile. */
   | { readonly do: 'denyRules'; readonly bot: BotId | null }
   | { readonly do: 'describeBot'; readonly bot: BotId }
+  /** The cron jobs this bot owns, paused ones included, read on each ask. */
+  | { readonly do: 'listRoutines'; readonly bot: BotId }
   /**
    * One save of the details dialog, then the roster is asked for again. `revision` is the one `describeBot` answered:
    * a rename refused because the name changed elsewhere since is a `conflict`.
@@ -263,6 +266,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'createBot' } ? BotCreated
   : C extends { do: 'describeBot' } ? BotDetails
   : C extends { do: 'skillText' } ? string
+  : C extends { do: 'listRoutines' } ? readonly Routine[]
   : C extends { do: 'botPicture' | 'petPicture' } ? string | null
   : C extends { do: 'canGeneratePicture' } ? boolean
   : C extends { do: 'generatePicture' | 'retitle' } ? string

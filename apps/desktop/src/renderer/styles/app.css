@@ -599,6 +599,9 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .bot-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--rule); }
 .bot-tabs button { padding: 6px 10px; border: 0; border-bottom: 2px solid transparent; background: none; }
 .bot-tabs [aria-selected="true"] { border-bottom-color: var(--signal); font-weight: 700; }
+.bot-panel.on-routines .bot-form-body > :not(.bot-tabs, .routines-tab), .bot-panel.on-routines form > :is(.form-refused, .form-choices) { display: none; }
+.routines-tab { margin: 0 -22px; }
+.routines-tab > .form-choices { padding: 14px 22px 0; }
 .look-row { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .look-button { position: relative; flex: none; width: 64px; height: 64px; padding: 0; border: 0; border-radius: var(--radius-round); background: none; color: var(--ink); }
 .look-button:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
@@ -1514,3 +1517,11 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
   .bots .apps-open, .chats .apps-open, .apps-actions button, .apps-chips button { border: 1px solid ButtonText; }
   :is(.tool-header, .tool-foot) button, .tool-form :is(input, textarea), .tool-problem { border: 1px solid ButtonText; }
 }
+
+.routines { list-style: none; margin: 0; padding: 0; }
+.routine { display: flex; align-items: baseline; gap: 12px; padding: 10px 20px; border-top: 1px solid var(--rule); }
+.routine:first-child { border-top: 0; }
+.routine-name { flex: 1; color: var(--ink); font-size: var(--text-md); overflow-wrap: anywhere; }
+.routine-when { flex: none; color: var(--graphite); font-size: var(--text-sm); }
+.routines-note { margin: 0; padding: 14px 20px; font-size: var(--text-sm); color: var(--graphite); }
+.routines-refused { color: var(--brick); }

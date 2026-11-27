@@ -897,6 +897,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'learning.delete': (gateway, socket, params) => gateway.learning('learning.delete', socket).remove(typeof params.id === 'string' ? params.id : ''),
   /** tui_gateway/methods_tools.py:1470-1612 */
   ...Object.fromEntries(['list', 'status', 'add', 'test', 'remove'].map(verb => [`mcp.servers.${verb}`, ((gateway, socket, params, routed) => gateway.toolServers(socket, `mcp.servers.${verb}`, params, routed)) satisfies Handler])),
+  /** tui_gateway/methods_tools.py:1311-1325 */
+  'cron.manage': (gateway, socket, params, routed) => gateway.cron(socket, params, routed),
   'session.mutate': (gateway, socket, params, routed) => {
     const mutation = typeof params.operation === 'string' && Object.hasOwn(MUTATIONS, params.operation) ? MUTATIONS[params.operation] : undefined
     return mutation === undefined ? gateway.story(socket, 'session.mutate', params, routed) : mutation(gateway, params, routed)
@@ -1296,7 +1298,6 @@ export class ScriptedGateway {
     // A Hermes without the bot relay declares none of its methods, so no param check is reached.
     if (method.startsWith('bot_relay.') && this.fixture.header.relay === undefined) return { error: unknownMethod(method).wire }
     if (method === 'complete.path' && this.fixture.header.paths === undefined) return { error: unknownMethod(method).wire }
-    if (method === 'cron.manage') return this.jobs === null ? { error: unknownMethod(method).wire } : { result: this.cronList(this.jobs) }
     if (method === 'session.active_list' && this.fixture.header.activeList === false) return { error: unknownMethod(method).wire }
     // The screen's calls reach only the legacy handlers, which a socket with no interactive grant does not.
     if (method.startsWith('display.') && (this.fixture.header.display === undefined || socket.reach === 'profile')) return { error: unknownMethod(method).wire }
@@ -2308,6 +2309,20 @@ export class ScriptedGateway {
     return this.mcp.call(method, params, routed)
   }
 
+  /**
+   * `cron.manage` list (tui_gateway/methods_tools.py:1311-1325), which a socket with no interactive grant does not reach. It lists
+   * the store of the profile the frame names, and paused jobs only when asked for. The first list starts the header's runs.
+   */
+  cron(socket: Socket, params: Obj, routed: string): unknown {
+    const { cron } = this.fixture.header
+    if (cron === undefined || this.jobs === null || socket.reach === 'profile') throw unknownMethod('cron.manage')
+    if ((params.action ?? 'list') !== 'list') throw new Refused('unknown cron action', { code: 4016, message: `unknown cron action: ${String(params.action)}` })
+    this.startRuns(this.jobs)
+    const store = cron.unscoped === true || routed === this.home ? this.jobs : cron.profiles?.[routed] ?? []
+    const rows = store.filter(row => params.include_disabled === true || !(row.state === 'paused' || row.enabled === false)).map(row => ({ ...row }))
+    return { success: true, count: rows.length, jobs: rows, ...(cron.unscoped === true || !isText(params.profile) ? {} : { scoped: params.profile }) }
+  }
+
   /** `pet.gallery` (tui_gateway/methods_session.py:1467-1495), which a socket with no interactive grant does not reach. */
   petGallery(socket: Socket): unknown {
     const { pets } = this.fixture.header
@@ -2361,19 +2376,17 @@ export class ScriptedGateway {
     this.publish(step)
   }
 
-  /** `cron.manage` list (tui_gateway/methods_tools.py:1309). The first list starts the header's runs. */
-  private cronList(jobs: Obj[]): unknown {
-    if (!this.jobsListed) {
-      this.jobsListed = true
-      for (const { after_ms: afterMs, job_id: jobId, ...ran } of this.fixture.header.cron?.runs ?? []) {
-        this.options.clock.setTimeout(() => {
-          const job = jobs.find(row => row.job_id === jobId)
-          if (job !== undefined) Object.assign(job, { last_error: null, ...ran })
-          for (const socket of this.sockets) socket.peer.write({ jsonrpc: '2.0', method: 'event', params: { type: 'cron.changed', payload: {} } })
-        }, afterMs)
-      }
+  /** Each of the header's runs rewrites its home job `after_ms` after the first `cron.manage` list. */
+  private startRuns(jobs: Obj[]): void {
+    if (this.jobsListed) return
+    this.jobsListed = true
+    for (const { after_ms: afterMs, job_id: jobId, ...ran } of this.fixture.header.cron?.runs ?? []) {
+      this.options.clock.setTimeout(() => {
+        const job = jobs.find(row => row.job_id === jobId)
+        if (job !== undefined) Object.assign(job, { last_error: null, ...ran })
+        for (const socket of this.sockets) socket.peer.write({ jsonrpc: '2.0', method: 'event', params: { type: 'cron.changed', payload: {} } })
+      }, afterMs)
     }
-    return { success: true, count: jobs.length, jobs: jobs.map(job => ({ ...job })) }
   }
 
   private viewers(sessionId: string = this.sessionId): Socket[] {

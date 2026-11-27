@@ -1,0 +1,9 @@
+{
+  "jobs": [],
+  "profiles": {
+    "rae": [
+      { "job_id": "4f1c2a9e0b7d", "name": "Morning digest", "schedule": "0 9 * * 1-5", "enabled": true, "state": "scheduled", "next_run_at": "2026-11-27T09:00:00+00:00", "deliver": "local" },
+      { "job_id": "9a3e6d21c4f8", "name": "Backup check", "schedule": "every 60m", "enabled": false, "state": "paused", "paused_at": "2026-11-26T18:00:00+00:00", "next_run_at": null, "deliver": "local" }
+    ]
+  }
+}

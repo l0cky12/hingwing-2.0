@@ -80,10 +80,10 @@ describe('the details shortcut', () => {
 })
 
 describe('the panel tab row', () => {
-  it('draws nothing for one tab, and a tab list once there are more', () => {
-    expect(renderToStaticMarkup(<TabRow tabs={[{ id: 'details', label: 'Details' }]} />)).toBe('')
-    const html = renderToStaticMarkup(<TabRow tabs={[{ id: 'details', label: 'Details' }, { id: 'memory', label: 'Memory' }]} />)
-    expect(html).toMatch(/role="tablist".*role="tab" aria-selected="true">Details<.*role="tab" aria-selected="false">Memory</)
+  it('draws nothing for one tab, and a tab list once there are more, with the chosen tab selected', () => {
+    expect(renderToStaticMarkup(<TabRow tabs={[{ id: 'details', label: 'Details' }]} selected="details" onSelect={() => {}} />)).toBe('')
+    const html = renderToStaticMarkup(<TabRow tabs={[{ id: 'details', label: 'Details' }, { id: 'routines', label: 'Routines' }]} selected="routines" onSelect={() => {}} />)
+    expect(html).toMatch(/role="tablist".*role="tab" aria-selected="false" tabindex="-1">Details<.*role="tab" aria-selected="true" tabindex="0">Routines</)
   })
 })
 

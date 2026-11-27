@@ -1,14 +1,19 @@
 import type { Bot, BotDetails } from '@highwing/hermes/domain'
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
-import { pickBotPicture, run } from '../store'
+import { useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { pickBotPicture, run, useTopic } from '../store'
 import { Avatar } from './Avatar'
 import { BotEditor, type BotEditorProps } from './BotEditor'
+import { Routines, type RoutinesProps } from './Routines'
 
 export const BOT_EDIT_CALLS: Pick<BotEditorProps, 'onDescribe' | 'onEdit' | 'onPickPicture' | 'onRemovePicture'> = {
   onDescribe: bot => run({ do: 'describeBot', bot }),
   onEdit: (bot, edit, revision) => run({ do: 'editBot', bot, edit, revision }),
   onPickPicture: bot => pickBotPicture(bot),
   onRemovePicture: bot => run({ do: 'removeBotPicture', bot })
+}
+
+const ROUTINE_CALLS: Pick<RoutinesProps, 'onList'> = {
+  onList: bot => run({ do: 'listRoutines', bot })
 }
 
 type Panel =
@@ -19,7 +24,8 @@ type Panel =
 const CLOSED: Panel = { at: 'closed' }
 
 /** Add a tab here when its content lands. The row stays hidden until there is more than one. */
-const TABS = [{ id: 'details', label: 'Details' }] as const
+const TABS = [{ id: 'details', label: 'Details' }, { id: 'routines', label: 'Routines' }] as const
+type TabId = typeof TABS[number]['id']
 
 export function useBotPanel() {
   const [panel, setPanel] = useState<Panel>(CLOSED)
@@ -38,11 +44,26 @@ export function useBotPanel() {
   return { panel, open, close }
 }
 
-export function TabRow({ tabs }: { readonly tabs: readonly { readonly id: string; readonly label: string }[] }) {
+export interface TabRowProps<T extends string> {
+  readonly tabs: readonly { readonly id: T; readonly label: string }[]
+  readonly selected: T
+  readonly onSelect: (id: T) => void
+}
+
+export function TabRow<T extends string>({ tabs, selected, onSelect }: TabRowProps<T>) {
   if (tabs.length < 2) return null
+  const step = (event: KeyboardEvent<HTMLDivElement>) => {
+    const by = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+    if (by === 0) return
+    const at = (tabs.findIndex(tab => tab.id === selected) + by + tabs.length) % tabs.length
+    onSelect(tabs[at]!.id)
+    event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[at]?.focus()
+  }
   return (
-    <div role="tablist" className="bot-tabs">
-      {tabs.map((tab, at) => <button key={tab.id} type="button" role="tab" aria-selected={at === 0}>{tab.label}</button>)}
+    <div role="tablist" className="bot-tabs" onKeyDown={step}>
+      {tabs.map(tab => (
+        <button key={tab.id} type="button" role="tab" aria-selected={tab.id === selected} tabIndex={tab.id === selected ? 0 : -1} onClick={() => onSelect(tab.id)}>{tab.label}</button>
+      ))}
     </div>
   )
 }
@@ -51,9 +72,31 @@ export function TabRow({ tabs }: { readonly tabs: readonly { readonly id: string
 export function BotPanel({ panel, current, onClose }: { readonly panel: Panel; readonly current: Bot | null; readonly onClose: () => void }) {
   if (panel.at === 'open') {
     const bot = current?.id === panel.bot.id ? current : panel.bot
-    return <BotEditor key={bot.id} bot={bot} details={panel.details} className="bot-panel" tabs={<TabRow tabs={TABS} />} {...BOT_EDIT_CALLS} onClose={onClose} />
+    return <OpenPanel key={bot.id} bot={bot} details={panel.details} onClose={onClose} />
   }
   return panel.at === 'refused' ? <Refused bot={panel.bot} words={panel.words} onClose={onClose} /> : null
+}
+
+/** The Details form stays mounted under another tab, so an edit not yet saved is still there on the way back. */
+function OpenPanel({ bot, details, onClose }: { readonly bot: Bot; readonly details: BotDetails; readonly onClose: () => void }) {
+  const [tab, setTab] = useState<TabId>('details')
+  const tabs = <TabRow tabs={TABS} selected={tab} onSelect={setTab} />
+  return (
+    <BotEditor
+      bot={bot} details={details} className={tab === 'details' ? 'bot-panel' : `bot-panel on-${tab}`}
+      tabs={<>{tabs}{tab === 'routines' ? <RoutinesTab bot={bot} onClose={onClose} /> : null}</>} {...BOT_EDIT_CALLS} onClose={onClose}
+    />
+  )
+}
+
+/** The Details form's Save and Cancel are hidden under this tab, so it has a Close of its own. */
+function RoutinesTab({ bot, onClose }: { readonly bot: Bot; readonly onClose: () => void }) {
+  return (
+    <div className="routines-tab" role="tabpanel" aria-label="Routines">
+      <Routines bot={bot.id} name={bot.name} revision={useTopic('routines')} {...ROUTINE_CALLS} />
+      <div className="form-choices"><button type="button" onClick={onClose}>Close</button></div>
+    </div>
+  )
 }
 
 function Refused({ bot, words, onClose }: { readonly bot: Bot; readonly words: string; readonly onClose: () => void }) {

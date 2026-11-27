@@ -207,6 +207,7 @@ describe('validators', () => {
 
   it("keep a bot's edited fields as sent, with the revision it was read at, and a window's removal of a picture", () => {
     expect(parseCommand({ do: 'describeBot', bot: 'rae', extra: 1 })).toEqual({ do: 'describeBot', bot: 'rae' })
+    expect(parseCommand({ do: 'listRoutines', bot: 'rae', extra: 1 })).toEqual({ do: 'listRoutines', bot: 'rae' })
     expect(parseCommand({ do: 'markBot', bot: 'rae', mark: 'hide', extra: 1 })).toEqual({ do: 'markBot', bot: 'rae', mark: 'hide' })
     expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: 'rae', draftId: 'd1', upFront: true }, upFront: true }))
       .toEqual({ do: 'open', ref: { kind: 'new', bot: 'rae', draftId: 'd1' }, upFront: true })
@@ -362,6 +363,7 @@ describe('validators', () => {
     ['the removal of a tool server with no name', { do: 'removeToolServer', bot: 'rae', name: '' }],
     ['the tool servers of a bot with a blank name', { do: 'toolServers', bot: ' ' }],
     ['the tool servers of no bot named at all', { do: 'toolServers' }],
+    ['the routines of a bot with no name', { do: 'listRoutines', bot: '' }],
     ['an edit that changes nothing', { do: 'editBot', bot: 'rae', edit: {}, revision: 2 }],
     ['a mark that is not one of the four', { do: 'markBot', bot: 'rae', mark: 'flip' }],
     ['an up-front open of a bot\'s chat', { do: 'open', ref: { kind: 'bot', bot: 'rae' }, upFront: true }],
@@ -552,7 +554,7 @@ describe('validators', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'accountUsage', 'addToolServer', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
       'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'denyRules', 'describeBot', 'discard',
-      'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'keepTarget', 'killProcess', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
+      'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
       'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'quit', 'react', 'readMessages', 'reconnect',
       'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
       'sendToGroup', 'setAccent', 'setMode', 'setNotice', 'setOnClose', 'setSendKey', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
@@ -634,6 +636,7 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
     groupChat: still(null),
     activity: still(RESEARCH_WAITING),
     screen: still(null),
+    routines: still(0),
     slash: {
       get: () => catalog,
       subscribe: (listener: (value: SlashCatalog) => void) => {
@@ -765,7 +768,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, about: ABOUT, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, activity: RESEARCH_WAITING, screen: null, skills: { state: 'reading', bot: null }, preview: { state: 'closed' }, mode: 'chats', theme: 'system', accent: 'bot', sidebarWidth: 'full', sendKey: 'enter', spellCheck: true, snoozes: {}, notices: { asks: true, replies: true, jobs: true }, onClose: 'quit', intro: { at: 'off' } }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, about: ABOUT, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, routines: 0, activity: RESEARCH_WAITING, screen: null, skills: { state: 'reading', bot: null }, preview: { state: 'closed' }, mode: 'chats', theme: 'system', accent: 'bot', sidebarWidth: 'full', sendKey: 'enter', spellCheck: true, snoozes: {}, notices: { asks: true, replies: true, jobs: true }, onClose: 'quit', intro: { at: 'off' } }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))
