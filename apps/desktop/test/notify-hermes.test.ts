@@ -3,6 +3,7 @@ import { openHermes, type Hermes } from '@highwing/hermes'
 import { shownChat, type BotId, type Command, type PromptId, type SessionId } from '@highwing/hermes/domain'
 import { loadFixture, scriptedDialer, type Fixture, type FixtureStep } from '@highwing/hermes/testing'
 import { afterEach, describe, expect, it } from 'vitest'
+import { OFF, type Intro } from '../src/intro'
 import type { Notices, Setup } from '../src/ipc-contract'
 import type { ConnectionOwner } from '../src/main/connection'
 import { notify, type Notice } from '../src/main/notify'
@@ -36,7 +37,8 @@ function served(fixture: Fixture, kinds: Notices = ON) {
   let raised = 0
   const setup = { get: (): Setup => ({ at: 'pinned' }), subscribe: () => () => {} }
   const owner = { setup, hermes: hermes as Hermes | null, run: ((command: Command) => hermes.run(command)) as ConnectionOwner['run'] }
-  const stop = notify(owner, { notifier: { show: (notice, click) => shown.push({ notice, click }) }, focused: () => true, raise: () => void raised++, kinds: () => kinds })
+  const intro = { get: (): Intro => OFF, subscribe: () => () => {} }
+  const stop = notify(owner, intro, { notifier: { show: (notice, click) => shown.push({ notice, click }) }, focused: () => true, raise: () => void raised++, kinds: () => kinds })
   closers.push(() => hermes.close(), stop)
   return { hermes, shown, raised: () => raised }
 }
