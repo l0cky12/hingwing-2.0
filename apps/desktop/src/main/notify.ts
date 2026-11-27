@@ -1,8 +1,9 @@
-import type { Hermes } from '@highwing/hermes'
+import type { Feed, Hermes } from '@highwing/hermes'
 import { shownChat, type HermesRequest, type Job, type PromptItem, type Session, type SessionId, type SettledTurn } from '@highwing/hermes/domain'
 import { failureWords } from '@highwing/thread'
 import { appendFile } from 'node:fs/promises'
 import type { NoticeKind, Notices } from '../ipc-contract'
+import { introInFront, type Intro } from '../intro'
 import type { ConnectionOwner } from './connection'
 
 export interface Notice {
@@ -96,16 +97,16 @@ export function jobNotices(before: readonly Job[] | null, after: readonly Job[])
 
 /**
  * Shows each notice once, at its first sight, and only when its kind is on and its chat is not on screen: shown in a
- * focused window, with no Settings or setup screen over it. A notice first seen on screen is not shown later, and one of a kind switched off is not shown when it
+ * focused window, with no Settings, setup screen or first-run intro over it. A notice first seen on screen is not shown later, and one of a kind switched off is not shown when it
  * is switched on.
  */
-export function notify(owner: Pick<ConnectionOwner, 'setup' | 'hermes' | 'run'>, deps: NotifyDeps): () => void {
+export function notify(owner: Pick<ConnectionOwner, 'setup' | 'hermes' | 'run'>, intro: Feed<Intro>, deps: NotifyDeps): () => void {
   const told = new Set<string>()
 
   const serve = (hermes: Hermes) => {
     const onScreen = (id: SessionId) => {
-      const { at } = owner.setup.get()
-      return deps.focused() && (at === 'chat' || at === 'pinned') && shownChat(hermes.open.get())?.sessionId === id
+      const setup = owner.setup.get()
+      return deps.focused() && (setup.at === 'chat' || setup.at === 'pinned') && !introInFront(setup, intro.get()) && shownChat(hermes.open.get())?.sessionId === id
     }
 
     const tell = (notice: Notice) => {
@@ -115,7 +116,7 @@ export function notify(owner: Pick<ConnectionOwner, 'setup' | 'hermes' | 'run'>,
       deps.notifier.show(notice, () => {
         deps.raise()
         // A chat of a connection that was replaced is not this Hermes's to open.
-        if (notice.opens === null || owner.hermes !== hermes) return
+        if (notice.opens === null || owner.hermes !== hermes || introInFront(owner.setup.get(), intro.get())) return
         // Opening the shown chat again keeps it and drops a switch to another bot still waiting on its lookup.
         void owner.run({ do: 'open', ref: { kind: 'chat', sessionId: notice.opens } })
       })

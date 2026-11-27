@@ -1,6 +1,7 @@
 export interface ViewClock { readonly now: number; readonly timeZone: string }
 
-const MINUTE = 60_000
+const SECOND = 1000
+const MINUTE = 60 * SECOND
 const HOUR = 60 * MINUTE
 const GAP = 15 * MINUTE
 const PAST_THE_LONGEST_DAY = 26 * HOUR
@@ -88,6 +89,21 @@ export function elapsedWords(began: number | null, now: number): string | null {
   if (minutes < 60) return `${minutes} min`
   const rest = minutes % 60
   return rest === 0 ? `${minutes / 60} h` : `${Math.floor(minutes / 60)} h ${rest} min`
+}
+
+/** "5 min left", then "45 s left" in the last minute. null once the time is up. */
+export function leftWords(until: number, now: number): string | null {
+  const left = until - now
+  if (left <= 0) return null
+  return left > MINUTE ? `${Math.ceil(left / MINUTE)} min left` : `${Math.ceil(left / SECOND)} s left`
+}
+
+/** When `leftWords` next reads differently. */
+export function leftChangesAt(until: number, now: number): number | null {
+  const left = until - now
+  if (left <= 0) return null
+  const unit = left > MINUTE ? MINUTE : SECOND
+  return until - (Math.ceil(left / unit) - 1) * unit
 }
 
 export function changesAt(starts: readonly (number | null)[], lines: readonly (string | null)[], liveStart: number | null, clock: ViewClock): number | null {

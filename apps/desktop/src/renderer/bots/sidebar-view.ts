@@ -63,6 +63,16 @@ export function rowsIn(view: SidebarView): readonly Row[] {
   ]
 }
 
+export const NO_MESSAGES = 'No messages yet'
+
+export type BotLine = { readonly kind: 'draft' | 'last'; readonly text: string }
+
+export function lineOf(bot: Bot, drafts: ReadonlyMap<BotId, string>, selected: BotId | null): BotLine {
+  const draft = bot.id === selected ? undefined : drafts.get(bot.id)
+  if (draft === undefined) return { kind: 'last', text: bot.preview ?? NO_MESSAGES }
+  return { kind: 'draft', text: draft.split('\n').map(line => line.trim()).find(line => line !== '') ?? '' }
+}
+
 export function drawnAbove(view: SidebarView, bot: BotId): string | null {
   if (view.show !== 'groups') return null
   const drawn: (readonly [string, string | boolean])[] = []
@@ -71,6 +81,12 @@ export function drawnAbove(view: SidebarView, bot: BotId): string | null {
   if (view.hidden !== null) drawn.push(['hidden', view.hidden.open], ...(view.hidden.open ? view.hidden.bots.map(held => ['row', held.id] as const) : []))
   const at = drawn.findIndex(([kind, id]) => (kind === 'card' || kind === 'row') && id === bot)
   return at === -1 ? null : JSON.stringify(drawn.slice(0, at))
+}
+
+/** What is drawn above the Group chats section: the default bot's card and Pinned. */
+export function drawnAboveGroups(view: SidebarView): string | null {
+  if (view.show !== 'groups') return null
+  return JSON.stringify([view.card?.id ?? null, ...view.groups.filter(group => group.place === 'pinned').flatMap(group => group.bots.map(bot => bot.id))])
 }
 
 export type HiddenTrigger = 'search' | 'all-hidden' | `open:${string}`

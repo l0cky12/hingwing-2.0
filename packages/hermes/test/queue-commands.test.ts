@@ -419,3 +419,31 @@ describe('the busy mode', () => {
     expect(actor.session.tuning.busy).toBe('interrupt')
   })
 })
+
+describe('the bot\'s approval mode', () => {
+  const smart = async () => {
+    const staged = await stage({ watched: true })
+    await staged.answer('config.get', refusal('invalid_params'))
+    await staged.answer('config.get', refusal('invalid_params'))
+    await staged.answer('config.get', { value: 'smart' })
+    return staged
+  }
+
+  it('changes only when Hermes answers, and to the mode Hermes names', async () => {
+    const { actor, command, sent, answer } = await smart()
+    const set = command({ do: 'tune', sessionId: ID, set: 'approvals', to: 'off' })
+    expect(sent()).toEqual([['config.set', { session_id: ID, key: 'approval_mode', value: 'off' }]])
+    expect(actor.session.tuning.approvals).toBe('smart')
+    await answer('config.set', { key: 'approvals.mode', value: 'manual' })
+    expect(await set).toEqual({ ok: true, value: undefined })
+    expect(actor.session.tuning.approvals).toBe('manual')
+  })
+
+  it('keeps the mode Hermes last said when its answer names none', async () => {
+    const { actor, command, answer } = await smart()
+    const set = command({ do: 'tune', sessionId: ID, set: 'approvals', to: 'off' })
+    await answer('config.set', { key: 'approvals.mode' })
+    expect(await set).toEqual({ ok: true, value: undefined })
+    expect(actor.session.tuning.approvals).toBe('smart')
+  })
+})

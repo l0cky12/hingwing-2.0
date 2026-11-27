@@ -1,7 +1,8 @@
 import { machineOf, shownChat, shownGroup, type Link, type Target } from '@highwing/hermes/domain'
 import { useCallback, useEffect, useRef, type ReactNode, type Ref, type RefObject } from 'react'
 import type { WindowCommand } from '../../ipc-contract'
-import { isCommandKey, MAC } from '../keys'
+import { isShortcut, MAC } from '../keys'
+import { modalOpen } from '../shortcuts'
 import { CopyLink } from '../chat/Copy'
 import { botNameOf, openChatName } from '../chats/chat-list'
 import { GroupMembers } from '../groups/GroupThread'
@@ -24,7 +25,7 @@ function useNewChat(bar: RefObject<HTMLElement | null>) {
   const start = useCallback(() => void run(newChatIn(open, crypto.randomUUID())), [open])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isCommandKey(event, 'n') || bar.current?.checkVisibility() !== true) return
+      if (!isShortcut(event, 'newChat') || modalOpen() || bar.current?.checkVisibility() !== true) return
       event.preventDefault()
       if (!event.repeat) start()
     }

@@ -2,6 +2,7 @@
  * The only place gateway shapes become domain shapes. Everything past these functions trusts its types.
  * Pure. Never throws on bad input: a frame it cannot use is still classified, and the hub counts it.
  */
+import { betterAccount, standingOf, standingOfTarget, type AppAccount, type AppSignIn, type AppsBoard } from '../domain/apps'
 import { canonicalBotId, GENERATED_MAX_BYTES, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, type BotCreated, type BotDetails, type BotFacts, type BotId, type PetChoice } from '../domain/bots'
 import type { CheckpointDiff, Checkpoints, ContextBreakdown, ModelConfirm, ModelMenu, Outcome as CommandOutcome, Restored } from '../domain/command'
 import { isGroupId, type Answering, type GroupEvent, type GroupFacts, type GroupId, type GroupMember, type GroupSupport, type MemberId } from '../domain/groups'
@@ -17,7 +18,9 @@ import type {
 } from '../domain/session'
 import type { Job, JobId } from '../domain/jobs'
 import type { PathMatch } from '../domain/path'
+import { MANAGER_NAMES, MANAGERS, type BotManagers, type ManagerName, type ManagerState } from '../domain/passwords'
 import type { RelayState } from '../domain/relay'
+import type { ServerState, Tested, ToolServer } from '../domain/tool-servers'
 import { OWN_COMMANDS, type SlashCatalog, type SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
 import type {
@@ -25,7 +28,7 @@ import type {
   CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
   CommandDispatchResult, CommandsCatalogResult, CronJobRow, CronManageResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
   ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, ImageGenerateResult, LoopSnapshot,
-  MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
+  McpRuntimeStatus, McpServersListResult, McpServersStatusResult, McpServersTestResult, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
   MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PetGalleryResult, PetThumbResult,
   PreviewClosePayload, PreviewOpenPayload, ProcessEntry, ProcessListResult, ProfilesConfigureResult, ProfilesCreateResult, ProfilesDescribeResult,
   ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, RequestCancelPayload, RollbackCheckpoint,
@@ -33,7 +36,7 @@ import type {
   SessionControlSnapshot, SessionLiveInfo, SessionMutateResult, SessionStats, SessionTitlePayload, SessionUsagePayload, SideAgentCompletePayload,
   StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload,
   SubagentEventPayload, SudoRequestParams, TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage,
-  VaultCodeRequestParams, VaultSaveLoginRequestParams, VaultUnlockRequestParams
+  VaultCodeRequestParams, VaultListResult, VaultSaveLoginRequestParams, VaultSourcesResult, VaultUnlockRequestParams
 } from './contract.generated'
 
 export type ParsedEvent =
@@ -998,6 +1001,7 @@ export function placeOfRow(page: StoredTranscriptResult, rowId: number): RowPlac
 
 interface TurnInProgress {
   readonly request: string | null
+  readonly handed: boolean
   readonly requestRow: number | null
   readonly began: Began | null
   readonly items: Item<'settled'>[]
@@ -1023,8 +1027,8 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   rows.forEach((value, index) => {
     const row = usable(() => storedRow(value, index))
     if (row === null) return
-    if (row.opensTurn) turns.push({ request: row.text, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [], reply: null })
-    if (row.items.length > 0 && turns.length === 0) turns.push({ request: null, requestRow: null, began: null, items: [], rows: [], reply: null })
+    if (row.opensTurn) turns.push({ request: row.text, handed: row.handed, requestRow: row.rowId, began: row.at === null ? null : { at: row.at, clock: 'hermes' }, items: [], rows: [], reply: null })
+    if (row.items.length > 0 && turns.length === 0) turns.push({ request: null, handed: false, requestRow: null, began: null, items: [], rows: [], reply: null })
     const turn = turns.at(-1)
     turn?.items.push(...row.items)
     if (row.rowId !== null) turn?.rows.push(row.rowId)
@@ -1037,7 +1041,7 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
   return {
     turns: turns.flatMap((turn, index): SettledTurn[] => turn === open ? [] : [{
       id: `stored:${turn.rows[0] ?? `@${index}`}` as TurnId,
-      request: turn.request === null ? null : { text: turn.request, inputId: null, rowId: turn.requestRow, attachments: [] },
+      request: turn.request === null ? null : { text: turn.request, inputId: null, rowId: turn.requestRow, attachments: [], ...(turn.handed ? HANDED : {}) },
       began: turn.began,
       items: turn.items,
       outcome: answered(turn) ? COMPLETE : LOST,
@@ -1045,9 +1049,11 @@ export function parseRows(rows: readonly unknown[]): Pick<HistoryPage, 'turns' |
       tokens: null,
       reply: answered(turn) ? turn.reply : null
     }]),
-    unfinished: open === null ? null : { request: open.request, began: open.began, items: open.items, rows: open.rows }
+    unfinished: open === null ? null : { request: open.request, ...(open.handed ? HANDED : {}), began: open.began, items: open.items, rows: open.rows }
   }
 }
+
+const HANDED = { handed: true } as const
 
 function storedRow(value: unknown, index: number) {
   const row = fields<StoredTranscriptRow>(value)
@@ -1061,6 +1067,8 @@ function storedRow(value: unknown, index: number) {
   const at = seconds !== null && seconds > 0 ? Math.round(seconds * 1000) : null
   // Words steered into a turn are stored as a user row of their own, among the turn's rows (agent/prompt_builder.py:585-592).
   const steers = role === 'user' && row.optStr('display_kind') === 'steer'
+  // What Hermes put into the chat itself, such as a message handed over by `bot_relay.deliver` (gateway/response_filters.py:203).
+  const handed = role === 'user' && row.optStr('display_kind') === 'internal_notification'
   const items = ((): Item<'settled'>[] => {
     if (handoff) return [{ kind: 'notice', what: 'said', tone: 'info', text }]
     if (steers) return [{ kind: 'steer', text }]
@@ -1085,7 +1093,7 @@ function storedRow(value: unknown, index: number) {
   })()
   const metadata = row.raw('display_metadata')
   return {
-    opensTurn: role === 'user' && !steers, text, rowId, at, items,
+    opensTurn: role === 'user' && !steers, handed, text, rowId, at, items,
     answers: role === 'assistant' && text.trim() !== '',
     reactions: parseReactions(isObject(metadata) ? metadata.reactions : undefined)
   }
@@ -1285,8 +1293,119 @@ export function parsePets(reply: PetGalleryResult): readonly PetChoice[] {
   return [...listed.filter(held => held.curated), ...listed.filter(held => !held.curated)].map(held => held.pet)
 }
 
+const WEB_PAGE = /^https?:\/\//
+
+const OTHER = 'Other'
+
+const trimmed = (raw: unknown): string | null => (isString(raw) ? raw.trim() : null)
+
+/** `connectors.catalog` joined to `connectors.accounts`. An account whose connector is not in the catalog is dropped. */
+export function parseApps(catalog: unknown, accounts: unknown): AppsBoard {
+  const rows = isObject(catalog) && Array.isArray(catalog.connectors) ? catalog.connectors.filter(isObject) : []
+  const held = isObject(accounts) && Array.isArray(accounts.accounts) ? accounts.accounts.filter(isObject) : []
+  const seen = new Set<string>()
+  const apps = rows.flatMap(row => {
+    const slug = words(row.slug)
+    const name = words(row.name)
+    const description = trimmed(row.description)
+    const category = trimmed(row.category)
+    if (slug === null || name === null || description === null || category === null || seen.has(slug)) return []
+    seen.add(slug)
+    const account = held.reduce<AppAccount | null>((best, entry) => {
+      if (words(entry.connector) !== slug) return best
+      const connectionId = words(entry.connection_id)
+      const status = words(entry.status)
+      if (connectionId === null || status === null) return best
+      return betterAccount(best, { connectionId, standing: standingOf(status), label: words(entry.label) ?? name })
+    }, null)
+    return [{ slug, name, description, category: category === '' ? OTHER : category, account }]
+  })
+  return { apps }
+}
+
+/** `connectors.connect` and `connectors.operation.status`. A link that is not http(s) is dropped, as the in-turn card drops it. */
+export function parseSignIn(reply: unknown): AppSignIn {
+  const body = isObject(reply) ? reply : {}
+  const target = Array.isArray(body.targets) ? body.targets.find(isObject) : undefined
+  const rawUrl = target === undefined ? null : words(target.connect_url)
+  const state = target === undefined ? null : words(target.state)
+  const settled = body.settled === true
+  return {
+    opId: words(body.op_id) ?? '',
+    settled,
+    url: rawUrl !== null && WEB_PAGE.test(rawUrl) ? rawUrl : null,
+    standing: settled && state !== null ? standingOfTarget(state) : null
+  }
+}
+
 /** `pet.thumb`'s idle frame, a PNG data URL (tui_gateway/methods_session.py:1557-1563), or null when Hermes has none. */
 export const parsePetPicture = (reply: PetThumbResult): string | null => (isObject(reply) && reply.ok === true ? pictureDataUrlOf(reply.dataUri, PICTURE_MAX_BYTES) : null)
+
+function managerStateOf(row: Obj, logins: number | null): ManagerState {
+  if (row.installed === false) return { at: 'missing' }
+  if (row.enabled !== true) return { at: 'off' }
+  return row.unlocked === true ? { at: 'ready', logins } : { at: 'locked' }
+}
+
+export function parseBotManagers(bot: BotId, sources: VaultSourcesResult, listed: VaultListResult | null): BotManagers {
+  const rows = isObject(sources) && Array.isArray(sources.sources) ? sources.sources.filter(isObject) : []
+  const items = listed === null ? null : isObject(listed) && Array.isArray(listed.items) ? listed.items.filter(isObject) : []
+  const loginsOf = (name: ManagerName) => (items === null ? null : items.filter(item => item.backend === name).length)
+  const managers = MANAGER_NAMES.flatMap(name => {
+    const row = rows.find(held => held.name === name)
+    return row === undefined ? [] : [{ name, label: MANAGERS[name].label, state: managerStateOf(row, loginsOf(name)) }]
+  })
+  return { bot, managers }
+}
+
+/** What `mcp.servers.status` says of a server, in the words of a row. A status this table lacks reads as `idle`. */
+const SERVER_STATES: { readonly [S in McpRuntimeStatus]: ServerState } = {
+  connected: 'connected', connecting: 'connecting', failed: 'failed', disabled: 'off', lazy: 'idle', configured: 'idle'
+}
+
+/** A query or a fragment is where an address keeps a key, so only the host and path are kept. */
+function shownAddress(url: string): string {
+  const parsed = URL.parse(url)
+  return parsed === null ? url.split(/[?#]/, 1)[0] as string : `${parsed.origin}${parsed.pathname}`
+}
+
+function stateOf(live: Obj | undefined, enabled: unknown): ServerState {
+  if (live === undefined) return enabled === false ? 'off' : 'idle'
+  if (live.needs_auth === true) return 'needs-sign-in'
+  return isString(live.status) && Object.hasOwn(SERVER_STATES, live.status) ? SERVER_STATES[live.status as McpRuntimeStatus] : 'idle'
+}
+
+const serverRows = (reply: unknown): readonly Obj[] => {
+  const rows: unknown = isObject(reply) ? reply.servers : undefined
+  return Array.isArray(rows) ? rows.filter(isObject) : []
+}
+
+/**
+ * A bot's tool servers: `mcp.servers.list` names and describes them, and `mcp.servers.status` says how each runs
+ * (tui_gateway/methods_tools.py:1470-1495). Neither holds a header value (tui_gateway/mcp_rpc_helpers.py:32-54).
+ */
+export function parseToolServers(listed: McpServersListResult, status: McpServersStatusResult): readonly ToolServer[] {
+  const live = new Map(serverRows(status).flatMap(row => (isString(row.name) ? [[row.name, row] as const] : [])))
+  return serverRows(listed).flatMap(row => {
+    const name = words(row.name)
+    if (name === null) return []
+    const running = live.get(name)
+    const url = words(row.url)
+    const where = url !== null ? shownAddress(url) : [words(row.command), ...(isStrings(row.args) ? row.args : [])].filter(part => part !== null).join(' ')
+    return [{ name, where, state: stateOf(running, row.enabled), tools: running !== undefined && isCount(running.tools) ? running.tools : 0, removable: row.source !== 'plugin' }]
+  })
+}
+
+const REASON_MAX = 200
+
+/** `mcp.servers.test`'s answer (tui_gateway/methods_tools.py:1566-1590). Only a server with `auth: oauth` says `oauth_needed`, which Highwing never sets, so a server that wants a sign-in usually fails with its own words. */
+export function parseTested(reply: McpServersTestResult): Tested {
+  const said: Obj = isObject(reply) ? reply : {}
+  if (said.ok === true) return { ok: true, tools: (Array.isArray(said.tools) ? said.tools.filter(isObject) : []).flatMap(tool => words(tool.name) ?? []) }
+  if (said.oauth_needed === true) return { ok: false, why: 'sign-in' }
+  const reason = words(said.error)?.split('\n', 1)[0]?.trim()
+  return { ok: false, why: 'failed', reason: reason === undefined || reason === '' ? 'Hermes got no answer from it.' : reason.slice(0, REASON_MAX) }
+}
 
 /** A target that is not running answers with one of these, as a refusal or in a failed receipt (tui_gateway/methods_bot_relay.py:122). */
 const NOT_RUNNING: ReadonlySet<string> = new Set(['runtime_unavailable', 'runtime_offline'])

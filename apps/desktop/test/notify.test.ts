@@ -2,6 +2,7 @@ import type { Feed, Hermes } from '@highwing/hermes'
 import type { Command, GroupId, Job, JobId, OpenChat, Outcome, Session, SessionId, SettledTurn } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { DUE, OFF, type Intro } from '../src/intro'
 import type { Notices, Setup } from '../src/ipc-contract'
 import type { ConnectionOwner } from '../src/main/connection'
 import { asksOf, jobNotices, noticeOf, notify, type Notice } from '../src/main/notify'
@@ -106,13 +107,14 @@ function stubHermes(shown: SessionId | null = STORY) {
 
 const ON: Notices = { asks: true, replies: true, jobs: true }
 
-function observe(hermes: Hermes, focused = false, kinds: Notices = ON) {
+function observe(hermes: Hermes, focused = false, kinds: Notices = ON, at: Intro = OFF) {
   const shown: { notice: Notice; click: () => void }[] = []
   const raise = vi.fn()
   const setup = changing<Setup>({ at: 'pinned' })
+  const intro = changing(at)
   const ran: Command[] = []
   const owner = { setup, hermes: hermes as Hermes | null, run: (async (command: Command) => (ran.push(command), { ok: true, value: undefined })) as ConnectionOwner['run'] }
-  const stop = notify(owner, { notifier: { show: (notice, click) => shown.push({ notice, click }) }, focused: () => focused, raise, kinds: () => kinds })
+  const stop = notify(owner, intro, { notifier: { show: (notice, click) => shown.push({ notice, click }) }, focused: () => focused, raise, kinds: () => kinds })
   return { shown, raise, stop, owner, setup, ran }
 }
 
@@ -261,6 +263,17 @@ describe('notify', () => {
     next.publish({ ...running, id: OTHER })
     next.publish({ ...ended, id: OTHER })
     expect(shown.map(({ notice }) => notice.opens)).toEqual([OTHER])
+  })
+
+  it('raises the window on a click and leaves the launch chat while the intro covers it', () => {
+    const stub = stubHermes()
+    const { shown, raise, ran, setup } = observe(stub.hermes, false, ON, DUE)
+    stub.publish(running)
+    stub.publish(ended)
+    setup.set({ at: 'chat', live: { target: { kind: 'local' }, epoch: 1 } })
+    shown[0]!.click()
+    expect(raise).toHaveBeenCalledOnce()
+    expect(ran).toEqual([])
   })
 
   it('raises the window on a click and opens the chat even while it is shown, so a pending switch to another bot gives way', () => {

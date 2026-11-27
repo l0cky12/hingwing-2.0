@@ -55,6 +55,12 @@ export interface Fixture {
      * unknown methods, as a Hermes older than them does, and no frame carries usage.
      */
     readonly usage?: { readonly before: Json; readonly after: Json; readonly breakdown: Json }
+    /** Canned `session.account_usage`. Absent: the gateway refuses it as an unknown method. */
+    readonly accountUsage?: Json
+    /** Canned `usage.bars`. Absent: the gateway refuses it as an unknown method. */
+    readonly usageBars?: Json
+    /** Canned `insights.get`. Absent: the gateway refuses it as an unknown method. */
+    readonly insights?: Json
     /**
      * The story chat's YOLO at the start; every Bot Chat starts off. Absent: attach replies carry no
      * `info.yolo` until a recorded frame names it, and the gateway refuses a `config.set` of `yolo` as an unknown method, as a Hermes without `config.set` does.
@@ -103,6 +109,26 @@ export interface Fixture {
     readonly oneshot?: Oneshot
     /** What `pet.gallery` and `pet.thumb` answer. Absent: the gateway refuses both as unknown methods, as a Hermes without pets does. */
     readonly pets?: Pets
+    /**
+     * The Connect apps window's catalog and accounts. Absent: `connectors.catalog`, `connectors.accounts`,
+     * `connectors.accounts.remove` and `connectors.operation.status` are unknown methods, and `connectors.connect`
+     * stays on the story for the in-turn card.
+     */
+    readonly connectors?: Connectors
+    /**
+     * What `learning.frames`, `learning.detail`, `learning.edit` and `learning.delete` answer for memory entries.
+     * Absent: the gateway refuses each as an unknown method, as a Hermes without the calls does, and so does a socket
+     * bound to one profile. `limits` are the char caps. Absent keys use Hermes's defaults, 2200 for MEMORY.md and 1375
+     * for USER.md. A replacement over a cap is refused in Hermes's words. A removal is not capped.
+     */
+    readonly memory?: MemoryScript
+    /**
+     * profile -> the password managers on the Hermes machine for that profile, which `vault.*` answers and changes. A profile or a
+     * manager not here is not installed. Absent: the gateway refuses every `vault.*` call as an unknown method, as a Hermes without them does.
+     */
+    readonly vault?: VaultScript
+    /** What `mcp.servers.*` answer. Absent: the gateway refuses every one as an unknown method, as a Hermes without them does, and so does a socket bound to one profile. */
+    readonly mcp?: McpScript
     /** `'profile'`: play a Hermes with no `interactive` ticket, whose every socket is bound to the home profile. Default `'host'`. */
     readonly reach?: Reach
     /** false: the home bot has no Bot Chat, and the story session is only a chat of the home profile. Default true. */
@@ -119,6 +145,13 @@ export interface Fixture {
      * method, as a Hermes without the bot relay does.
      */
     readonly relay?: { readonly [profile: string]: RelayScript }
+    /**
+     * profile -> how long each turn of its chats takes, in ms. A message starts its turn at once and its reply ends it
+     * this long after, so the bot is seen working. A profile not here answers before the next frame is read.
+     */
+    readonly turnMs?: { readonly [profile: string]: number }
+    /** false: the gateway refuses `session.active_list` as an unknown method, as a Hermes older than it does. Default true. */
+    readonly activeList?: boolean
     /**
      * The group chats of the home profile and what Hermes says of them. Absent: the gateway refuses every `groups.*`
      * call as an unknown method, as a Hermes without group chats does.
@@ -165,11 +198,89 @@ export interface Oneshot { readonly text?: string; readonly error?: string; read
  * each call takes (default 0). `refused_once`: slugs whose first `pet.thumb` answers `{ ok: false }`, as Hermes does for a petdex
  * fetch that timed out and keeps nothing (agent/pet/store.py:240-246), and is answered as usual after.
  */
+/**
+ * `entries` are the chunks of MEMORY.md and USER.md, in file order. `limits.memory` caps MEMORY.md and `limits.user`
+ * caps USER.md, in characters, the way MemoryStore does.
+ */
+export interface MemoryScript {
+  readonly entries: readonly { readonly file: 'MEMORY.md' | 'USER.md'; readonly text: string }[]
+  readonly limits?: { readonly memory?: number; readonly user?: number }
+}
+
 export interface Pets {
   readonly pets: readonly unknown[]
   readonly thumbs: { readonly [slug: string]: string }
   readonly delay_ms?: number
   readonly refused_once?: readonly string[]
+}
+
+export interface ConnectorCatalogSeed {
+  readonly slug: string
+  readonly name: string
+  readonly description: string
+  readonly category: string
+  readonly logo_url?: string | null
+}
+
+export interface ConnectorAccountSeed {
+  readonly connection_id: string
+  readonly connector: string
+  readonly status: string
+  readonly label: string
+  readonly active: boolean
+  readonly created_at: string
+  readonly updated_at: string
+}
+
+/** `signInUrl` is the http(s) page every connect in this fixture opens. */
+export interface Connectors {
+  readonly catalog: readonly ConnectorCatalogSeed[]
+  readonly accounts: readonly ConnectorAccountSeed[]
+  readonly signInUrl: string
+}
+/**
+ * One password manager of one profile. `enabled`: the profile has not opted out (default true). `unlocked`: unlocked at the start
+ * (default false), as a 1Password service-account token always is. `logins`: the labels of its logins. `password`: the master password
+ * that unlocks it; absent, none does. `refuses`: what Hermes says to any other, default the manager tool's "Invalid master password."
+ * `token`: a 1Password service-account token, which keeps it unlocked through a lock (agent/vault_backends/onepassword.py:73).
+ * `listFails`: what `vault.list` refuses with while it is unlocked, as Hermes does when `op` rejects a revoked token.
+ */
+export interface ManagerSeed {
+  readonly installed: boolean
+  readonly enabled?: boolean
+  readonly unlocked?: boolean
+  readonly logins?: readonly string[]
+  readonly password?: string
+  readonly refuses?: string
+  readonly token?: boolean
+  readonly listFails?: string
+}
+export const VAULT_MANAGERS = ['onepassword', 'bitwarden'] as const
+export type VaultScript = { readonly [profile: string]: { readonly [M in typeof VAULT_MANAGERS[number]]?: ManagerSeed } }
+
+/**
+ * One tool server a profile holds. `status` and `tools`: what `mcp.servers.status` says of it (default `configured`, 0).
+ * `needs_auth`: Hermes parked it on a rejected sign-in. `plugin`: the plugin that provides it, which Hermes won't let a client change.
+ */
+export interface McpServerSeed {
+  readonly name: string
+  readonly url?: string
+  readonly headers?: { readonly [name: string]: string }
+  readonly command?: string
+  readonly args?: readonly string[]
+  readonly status?: 'connected' | 'disabled' | 'connecting' | 'failed' | 'lazy' | 'configured'
+  readonly tools?: number
+  readonly needs_auth?: boolean
+  readonly plugin?: string
+}
+
+/** What `mcp.servers.test` finds at a server, by its name: its tools, an error, or a wish to sign in. A name not here fails with "Connection refused". */
+export type McpProbe = { readonly tools: readonly string[] } | { readonly error: string } | { readonly oauth_needed: true }
+
+/** `servers`: profile -> the servers it holds at the start. */
+export interface McpScript {
+  readonly servers: { readonly [profile: string]: readonly McpServerSeed[] }
+  readonly probes?: { readonly [name: string]: McpProbe }
 }
 
 /** `reply`: the bot's one answer, sent `delay_ms` after the call (default 0). `refuse`: the reason Hermes refuses the delivery with. */
@@ -370,6 +481,32 @@ const isCronScript = (value: unknown): value is CronScript =>
   isObject(value) && Array.isArray(value.jobs) && value.jobs.every(job => isObject(job) && isText(job.job_id))
   && (value.runs === undefined || (Array.isArray(value.runs) && value.runs.every(run => isCronRun(run) && (value.jobs as { job_id: string }[]).some(job => job.job_id === run.job_id))))
 
+const MEMORY_FILES = new Set(['MEMORY.md', 'USER.md'])
+const isCharLimit = (value: unknown) => value === undefined || (Number.isSafeInteger(value) && (value as number) > 0)
+const isMemory = (value: unknown): value is MemoryScript =>
+  isObject(value) && Array.isArray(value.entries) && value.entries.every(entry => isObject(entry) && typeof entry.file === 'string' && MEMORY_FILES.has(entry.file) && typeof entry.text === 'string' && entry.text.trim() !== '')
+  && (value.limits === undefined || (isObject(value.limits) && Object.keys(value.limits).every(key => key === 'memory' || key === 'user') && isCharLimit(value.limits.memory) && isCharLimit(value.limits.user)))
+
+const MCP_STATUSES: readonly unknown[] = ['connected', 'disabled', 'connecting', 'failed', 'lazy', 'configured']
+const SEED_KEYS = ['name', 'url', 'headers', 'command', 'args', 'status', 'tools', 'needs_auth', 'plugin']
+
+const isMcpServerSeed = (value: unknown): value is McpServerSeed =>
+  isObject(value) && Object.keys(value).every(key => SEED_KEYS.includes(key)) && typeof value.name === 'string' && value.name !== ''
+  && (typeof value.url === 'string') !== (typeof value.command === 'string')
+  && (value.headers === undefined || (isObject(value.headers) && Object.values(value.headers).every(header => typeof header === 'string')))
+  && (value.args === undefined || (Array.isArray(value.args) && value.args.every(arg => typeof arg === 'string')))
+  && (value.status === undefined || MCP_STATUSES.includes(value.status)) && (value.tools === undefined || Number.isSafeInteger(value.tools))
+  && (value.needs_auth === undefined || typeof value.needs_auth === 'boolean') && (value.plugin === undefined || typeof value.plugin === 'string')
+
+const isMcpProbe = (value: unknown): value is McpProbe =>
+  isObject(value) && Object.keys(value).length === 1
+  && ((Array.isArray(value.tools) && value.tools.every(tool => typeof tool === 'string')) || typeof value.error === 'string' || value.oauth_needed === true)
+
+const isMcpScript = (value: unknown): value is McpScript =>
+  isObject(value) && Object.keys(value).every(key => key === 'servers' || key === 'probes')
+  && isObject(value.servers) && Object.values(value.servers).every(seeds => Array.isArray(seeds) && seeds.every(isMcpServerSeed))
+  && (value.probes === undefined || (isObject(value.probes) && Object.values(value.probes).every(isMcpProbe)))
+
 const isRelayScript = (value: unknown): value is RelayScript =>
   isObject(value) && ('refuse' in value
     ? typeof value.refuse === 'string' && value.refuse !== '' && Object.keys(value).length === 1
@@ -377,6 +514,33 @@ const isRelayScript = (value: unknown): value is RelayScript =>
       && Object.keys(value).every(key => key === 'reply' || key === 'delay_ms'))
 
 const isText = (value: unknown): value is string => typeof value === 'string' && value !== ''
+
+const ACCOUNT_STATUS = new Set(['pending', 'active', 'failed', 'expired', 'revoked', 'inactive'])
+
+const isCatalogSeed = (value: unknown): value is ConnectorCatalogSeed =>
+  isObject(value) && isText(value.slug) && isText(value.name) && isText(value.description) && isText(value.category)
+  && (value.logo_url === undefined || value.logo_url === null || typeof value.logo_url === 'string')
+
+const isAccountSeed = (value: unknown): value is ConnectorAccountSeed =>
+  isObject(value) && isText(value.connection_id) && isText(value.connector) && typeof value.status === 'string' && ACCOUNT_STATUS.has(value.status)
+  && isText(value.label) && typeof value.active === 'boolean' && isText(value.created_at) && isText(value.updated_at)
+
+const isConnectors = (value: unknown): value is Connectors =>
+  isObject(value) && Array.isArray(value.catalog) && value.catalog.every(isCatalogSeed)
+  && new Set(value.catalog.map(row => row.slug)).size === value.catalog.length
+  && Array.isArray(value.accounts) && value.accounts.every(isAccountSeed)
+  && typeof value.signInUrl === 'string' && /^https?:\/\//.test(value.signInUrl)
+const isManagerSeed = (value: unknown): value is ManagerSeed =>
+  isObject(value) && typeof value.installed === 'boolean'
+  && Object.keys(value).every(key => ['installed', 'enabled', 'unlocked', 'logins', 'password', 'refuses', 'token', 'listFails'].includes(key))
+  && (value.enabled === undefined || typeof value.enabled === 'boolean') && (value.unlocked === undefined || typeof value.unlocked === 'boolean')
+  && (value.logins === undefined || (Array.isArray(value.logins) && value.logins.every(isText)))
+  && (value.password === undefined || isText(value.password)) && (value.refuses === undefined || isText(value.refuses))
+  && (value.token === undefined || typeof value.token === 'boolean') && (value.listFails === undefined || isText(value.listFails))
+
+const isVaultScript = (value: unknown): value is VaultScript =>
+  isObject(value) && Object.values(value).every(managers => isObject(managers)
+    && Object.entries(managers).every(([name, seed]) => VAULT_MANAGERS.some(known => known === name) && isManagerSeed(seed)))
 
 const isDelay = (value: unknown) => value === undefined || (typeof value === 'number' && value >= 0)
 
@@ -449,10 +613,21 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   const { assetFails } = value
   if (assetFails !== undefined && (typeof assetFails !== 'string' || assetFails.trim() === '')) return '"assetFails" must be the words a failed write gives'
-  const { images, pets, oneshot } = value
+  const { images, pets, oneshot, memory } = value
   if (images !== undefined && !isImages(images)) return '"images" must be { available, picture?, error?, delay_ms? }'
   if (oneshot !== undefined && !isOneshot(oneshot)) return '"oneshot" must be { text?, error?, delay_ms? }'
   if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'
+  const { connectors } = value
+  if (connectors !== undefined && !isConnectors(connectors)) return '"connectors" must be { catalog, accounts, signInUrl } with a unique slug on every app and an http(s) sign-in page'
+  if (memory !== undefined && !isMemory(memory)) return '"memory" must be { entries, limits? } with each entry { file: "MEMORY.md" or "USER.md", text } and limits { memory?, user? }'
+  const { vault } = value
+  if (vault !== undefined && !isVaultScript(vault)) {
+    return '"vault" must map a profile to { onepassword?, bitwarden? }, each { installed, enabled?, unlocked?, logins?, password?, refuses?, token?, listFails? }'
+  }
+  const { mcp } = value
+  if (mcp !== undefined && !isMcpScript(mcp)) {
+    return '"mcp" must be { servers, probes? }: "servers" maps a profile to its servers, each { name, url or command, headers?, args?, status?, tools?, needs_auth?, plugin? }, and "probes" maps a name to { tools }, { error } or { oauth_needed: true }'
+  }
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
@@ -484,6 +659,11 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (cron !== undefined && !isCronScript(cron)) {
     return '"cron" must be { jobs, runs? }: each job with a "job_id", each run { after_ms, job_id, last_run_at, last_status, last_error? } of a listed job'
   }
+  const { turnMs, activeList } = value
+  if (turnMs !== undefined && !(isObject(turnMs) && Object.values(turnMs).every(ms => Number.isSafeInteger(ms) && (ms as number) >= 0))) {
+    return '"turnMs" must map a profile to a whole number of ms'
+  }
+  if (activeList !== undefined && typeof activeList !== 'boolean') return '"activeList" must be true or false'
   const { groups } = value
   if (groups !== undefined && !isGroupsScript(groups)) {
     return '"groups" may hold only "driver", "seatable", "rooms", "change_events" and "turns": each room { id, name, members, epoch?, log? } seating 2 to 6 { profile, handle }, and each turn { reply, delay_ms? }, { fail, delay_ms? } or { hold: true }'
@@ -512,12 +692,16 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
     ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
     ...(assetFails === undefined ? {} : { assetFails }),
-    ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }),
+    ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }), ...(vault === undefined ? {} : { vault }),
+    ...(connectors === undefined ? {} : { connectors }),
+    ...(memory === undefined ? {} : { memory }),
+    ...(mcp === undefined ? {} : { mcp }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),
     ...(relay === undefined ? {} : { relay: relay as { readonly [profile: string]: RelayScript } }),
+    ...(turnMs === undefined ? {} : { turnMs: turnMs as { readonly [profile: string]: number } }), ...(activeList === undefined ? {} : { activeList }),
     ...(groups === undefined ? {} : { groups }),
     ...(cron === undefined ? {} : { cron }),
     ...(paths === undefined ? {} : { paths: paths as NonNullable<Fixture['header']['paths']> }),

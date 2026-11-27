@@ -27,7 +27,9 @@ const FIELDS: { readonly [method: string]: readonly string[] } = {
   'groups.state': ['room_id', 'include_disbanded'],
   'groups.log': ['room_id', 'since_seq', 'limit', 'include_disbanded'],
   'groups.send': ['room_id', 'event_id', 'payload'],
-  'groups.stop': ['room_id', 'cancel_id']
+  'groups.stop': ['room_id', 'cancel_id'],
+  'groups.rename': ['room_id', 'event_id', 'name'],
+  'groups.disband': ['room_id', 'cancel_id']
 }
 
 /** gateway/hosted_room_discussion.py:30-35 */
@@ -86,9 +88,10 @@ interface Discussion {
 
 interface Room {
   readonly room_id: string
-  readonly name: string
+  name: string
   readonly members: readonly Seat[]
   readonly at: number
+  updated: number
   readonly epoch: number
   readonly log: LogEvent[]
   running: Turn | null
@@ -105,8 +108,8 @@ const identifier = (value: unknown): string | null => {
 const userEventId = (key: string) => `user:${createHash('sha256').update(key).digest('hex')}`
 
 /** `_room_from_row` (gateway/hosted_rooms.py) as `groups.list`, `groups.state` and `groups.create` send a room. */
-const wire = ({ room_id, name, members, at, epoch, log }: Room) =>
-  ({ room_id, name, members, authority_gateway_id: GATEWAY, authority_epoch: epoch, revision: 1, created_at: at, updated_at: at, latest_seq: log.length })
+const wire = ({ room_id, name, members, at, updated, epoch, log }: Room) =>
+  ({ room_id, name, members, authority_gateway_id: GATEWAY, authority_epoch: epoch, revision: 1, created_at: at, updated_at: updated, latest_seq: log.length })
 
 /** `resolve_mentions` (gateway/hosted_room_discussion.py:347-363): the members a text names, in roster order. */
 function mentioned(text: string, members: readonly Seat[], everyoneByDefault: boolean): readonly Seat[] {
@@ -125,13 +128,16 @@ function mentioned(text: string, members: readonly Seat[], everyoneByDefault: bo
  * a turn in the next round. Three rounds and ten messages at most, one turn at a time. A newer message makes the
  * running turn log `turn.cancelled` `superseded_by_newer_user_event` when it ends, in place of its reply
  * (`plan_publication`), and its discussion then starts. A held turn has no end of its own, so a newer message ends it.
- * A Stop ends the running turn at once. Every change pushes `groups.changed` with the room's id, unless the header
+ * A Stop ends the running turn at once. A rename lists the room first, and a disband ends its turn and retires its id.
+ * Every change pushes `groups.changed` with the room's id, unless the header
  * says `change_events: false`.
  */
 export class ScriptedRooms {
   private readonly rooms: Room[]
   private readonly seatable: readonly string[] | null
   private readonly turns: Map<string, TurnScript[]>
+  /** room id -> when it was disbanded. */
+  private readonly tombstones = new Map<string, number>()
   private broadcasts = 0
   private tasks = 0
 
@@ -152,13 +158,15 @@ export class ScriptedRooms {
       case 'groups.state': return this.state(this.room(params.room_id))
       case 'groups.log': return this.read(this.room(params.room_id), params)
       case 'groups.send': return this.send(params)
+      case 'groups.rename': return this.rename(params)
+      case 'groups.disband': return this.disband(params)
       default: return this.stop(params)
     }
   }
 
   private seeded({ id, name, members, epoch = 1, log = [] }: RoomSeed): Room {
     const room: Room = {
-      room_id: id, name, at: this.now(), epoch, log: [], running: null, discussion: null,
+      room_id: id, name, at: this.now(), updated: this.now(), epoch, log: [], running: null, discussion: null,
       members: members.map(({ profile, handle }) => ({ member_id: profile, profile, handle, target: { kind: 'local', profile } }))
     }
     let about: LogEvent | null = null
@@ -219,7 +227,9 @@ export class ScriptedRooms {
       if (held.name !== name || JSON.stringify(held.members) !== JSON.stringify(seats)) this.deps.refuse('invalid_params')
       return { room: { ...wire(held), idempotent: true } }
     }
-    const made: Room = { room_id: id, name, members: seats, at: this.now(), epoch: 1, log: [], running: null, discussion: null }
+    // A disbanded id stays retired (`_INSERT_RETIRED`, persistence/sqlite/gateway/hosted_rooms.py:755).
+    if (this.tombstones.has(id)) this.deps.refuse('invalid_params')
+    const made: Room = { room_id: id, name, members: seats, at: this.now(), updated: this.now(), epoch: 1, log: [], running: null, discussion: null }
     this.rooms.unshift(made)
     this.changed(made)
     return { room: wire(made) }
@@ -284,6 +294,50 @@ export class ScriptedRooms {
     if (running !== null) this.end(room, running, 'cancelled', { reason: 'member turn cancelled' })
     this.changed(room)
     return { cancelled: running === null ? 0 : 1 }
+  }
+
+  /**
+   * `rename_room` (gateway/hosted_rooms.py:855-863, persistence/sqlite/gateway/hosted_rooms.py:661-686): the name
+   * stripped, 1 to 200 characters, then a `room.renamed` event, which makes the room the most recently changed. The
+   * same `event_id` with the same name replays, and with another name refuses.
+   */
+  private rename({ room_id, event_id, name }: Obj): unknown {
+    const room = this.room(room_id)
+    const key = identifier(event_id) ?? this.deps.refuse('invalid_params')
+    const named = typeof name === 'string' ? name.trim() : ''
+    if (named === '' || named.length > MAX_NAME) this.deps.refuse('invalid_params')
+    const held = room.log.find(event => event.event_id === key)
+    if (held !== undefined) {
+      if (held.kind !== 'room.renamed' || held.payload.name !== named) this.deps.refuse('invalid_params')
+      return { room: { ...wire(room), idempotent: true } }
+    }
+    room.name = named
+    room.updated = this.now()
+    const event = this.append(room, key, 'room.renamed', { kind: 'system', id: 'room-control' }, { name: named })
+    this.rooms.splice(this.rooms.indexOf(room), 1)
+    this.rooms.unshift(room)
+    this.changed(room)
+    return { room: { ...wire(room), event } }
+  }
+
+  /**
+   * `_disband` (gateway/session_group_controls.py:266-302) and `disband_room` (persistence/sqlite/gateway/hosted_rooms.py:730-760):
+   * the running turn stops, then the room leaves every list and read for good. A disbanded id answers its tombstone again.
+   */
+  private disband({ room_id }: Obj): unknown {
+    const id = identifier(room_id) ?? this.deps.refuse('invalid_params')
+    const gone = this.tombstones.get(id)
+    if (gone !== undefined) return { tombstone: { room_id: id, disbanded_at: gone, idempotent: true } }
+    const room = this.room(id)
+    const { running } = room
+    room.discussion = null
+    if (running !== null) this.end(room, running, 'cancelled', { reason: 'member turn cancelled' })
+    const at = this.now()
+    const event = this.append(room, 'system:room-disbanded', 'room.disbanded', { kind: 'system', id: 'room-control' }, { room_id: id })
+    this.rooms.splice(this.rooms.indexOf(room), 1)
+    this.tombstones.set(id, at)
+    this.changed(room)
+    return { tombstone: { room_id: id, disbanded_at: at, idempotent: false, event } }
   }
 
   /** The members a discussion's replies `@handle`d and have not spoken since (`_unaddressed_member_mentions`), rotated by round as `_rotate` does. */

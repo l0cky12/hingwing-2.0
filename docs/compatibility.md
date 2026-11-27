@@ -965,6 +965,29 @@ every `groups.*` method (`GROUP_METHODS`,
   reads "Hermes didn't accept this group chat. Try again.", and
   `permission_denied` or `profile_mismatch` reads "Hermes won't let this
   connection make group chats."
+- Edit… in a group's menu renames it with `groups.rename {room_id, event_id,
+  name}`, a fresh `event_id` each time and the name trimmed to 1 to 200
+  characters, as `_validate_room_name` takes it
+  (`gateway/hosted_rooms.py:855-863`). Hermes logs a `room.renamed` line,
+  which the thread does not draw, and lists the group first. Hermes never
+  changes who is in a group, so the dialog shows the members and offers no
+  way to change them.
+- Delete… sends `groups.disband {room_id}` after a confirmation. Hermes stops
+  the group's running turns, then deletes it and its log for good and retires
+  its id (`_disband`, `gateway/session_group_controls.py:266-302`). A group
+  already deleted answers its tombstone again, so a second delete is no error.
+  A window showing the group moves to the bot it was opened over.
+  `peer_unreachable` reads "A member's machine couldn't be reached. Try
+  Delete again when it's back.", `room_stop_pending` reads "Hermes is still
+  stopping this group chat. Try Delete again in a moment.", and
+  `room_disbanding_retry` reads "Hermes couldn't finish deleting this group
+  chat. Try Delete again."
+- A bare `invalid_params` on a rename or a delete means the group is gone
+  (`RoomNotFoundError`), since Highwing checks the name as Hermes does. It
+  reads "Hermes no longer has this group chat." and the row leaves the list.
+  An unknown-method error reads "This Hermes can't rename group chats." or
+  "This Hermes can't delete group chats.", then "Update Hermes on that machine,
+  then reconnect."
 - A recording made with `HIGHWING_RECORD` keeps the group calls out of its
   story and its header, so it plays back as a Hermes without group chats.
 
@@ -996,3 +1019,24 @@ On an older Hermes:
 - Without `pet.gallery` or `pet.thumb`, the Pet tab says "This Hermes can't list
   pets."
 - The Shape and Upload tabs need no new call.
+
+### A bot's tool servers
+
+The Tool servers section of the Connect apps window lists, adds and removes a
+bot's MCP servers, for the same bot the window lists apps for. Each call names
+that bot's profile when the window has one. None is canonical, so each reaches its legacy handler
+only on a socket with the interactive grant (`tui_gateway/methods_tools.py:1470-1612`).
+
+| Method | Params | What Highwing does with the answer |
+| --- | --- | --- |
+| `mcp.servers.list` | `{}` | Lists each server with its address, or its command and arguments. An address is shown without its query or fragment. |
+| `mcp.servers.status` | `{}` | Gives each listed server its state and tool count. Hermes reports a state only for the launch profile, so another bot's servers read "Starts when a chat needs it". |
+| `mcp.servers.add` | `{name, config: {url, headers?}}` or `{name, config: {command, args?}}` | Adds the server. Hermes keeps header values in the profile's config and never sends them back, so Highwing never shows one again. |
+| `mcp.servers.test` | `{name}` | Says whether the server answered, and names its tools. Hermes tests only a saved server, so a server that fails is removed again and nothing stays saved. |
+| `mcp.servers.remove` | `{name}` | Removes the server. Hermes refuses a server a plugin provides, and the row shows "From a plugin" in place of Remove. |
+
+Highwing does not sign in to a server that asks for OAuth. Its test fails with
+"needs a sign-in, which Highwing can't do yet", and nothing is saved.
+
+On an older Hermes, or a socket bound to one profile, the section says "This
+Hermes can't manage tool servers from Highwing."

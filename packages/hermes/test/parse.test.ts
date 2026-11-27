@@ -287,6 +287,13 @@ describe('parseRows and when a turn began', () => {
     expect(turns.map(turn => turn.began)).toEqual([{ at: 1_795_251_600_000, clock: 'hermes' }])
     expect(unfinished?.began).toEqual({ at: 1_795_251_900_000, clock: 'hermes' })
   })
+
+  it('marks a request Hermes put into the chat itself as handed, finished or not, and leaves a typed one unmarked', () => {
+    const handed = (text: string): TranscriptMessage => ({ role: 'user', text, display_kind: 'internal_notification' })
+    const { turns, unfinished } = parseRows([handed('Draft the report'), answer('Drafted.'), user('Thanks'), answer('Any time.'), handed('Check the build')])
+    expect(turns.map(turn => [turn.request?.text, turn.request?.handed])).toEqual([['Draft the report', true], ['Thanks', undefined]])
+    expect(unfinished).toMatchObject({ request: 'Check the build', handed: true })
+  })
 })
 
 describe('parseRows on the stored errand', () => {

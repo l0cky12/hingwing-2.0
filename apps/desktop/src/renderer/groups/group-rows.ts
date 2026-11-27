@@ -12,6 +12,9 @@ const STACK_SLOTS = 3
 export interface GroupRowView {
   readonly id: GroupId
   readonly name: string
+  /** Every member, in the order they answer. */
+  readonly members: readonly Bot[]
+  /** The members the row draws. */
   readonly faces: readonly Bot[]
   readonly more: number
   readonly preview: string
@@ -28,6 +31,6 @@ export function groupRowsOf(groups: Groups | undefined, bots: Bots | undefined, 
     const stacked = faces.length > STACK_SLOTS ? STACK_SLOTS - 1 : faces.length
     const names = namesInWords(faces.map(face => face.name))
     const live = answeringWords(answering, members, namesFrom(bots))
-    return { id, name, faces: faces.slice(0, stacked), more: faces.length - stacked, preview: live ?? names, live: live !== null, current: id === shown, label: `${name}, group chat with ${names}` }
+    return { id, name, members: faces, faces: faces.slice(0, stacked), more: faces.length - stacked, preview: live ?? names, live: live !== null, current: id === shown, label: `${name}, group chat with ${names}` }
   })
 }
