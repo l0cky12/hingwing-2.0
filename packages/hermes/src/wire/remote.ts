@@ -27,20 +27,33 @@ export function remoteRoute(host: SshHost, options: { readonly sshBin?: string; 
   const life = new AbortController()
   const { signal } = life
 
+  /** Each relay carries one connection, so another socket to the gateway gets one of its own, to the port the attach of its dial named. */
+  const farPorts = new Map<string, number>()
+  const relayed = async (port: number, path: string) => `ws://127.0.0.1:${await relay(host, port, { ...options, signal })}${path}`
+
   const minted = mintWith((args, asked) => sshExec(host, args, { ...options, ...asked, signal }), {
     machine: machineOf({ kind: 'remote', host }),
     unprobed: 'refuse',
     forward: async url => {
       const tunnel = tunnelOf(url)
       if (tunnel === null) throw new DialError('incompatible')
-      return `ws://127.0.0.1:${await relay(host, tunnel.port, { ...options, signal })}${tunnel.path}`
+      const local = await relayed(tunnel.port, tunnel.path)
+      farPorts.set(local, tunnel.port)
+      return local
     }
   })
 
   /** A dial that a dispose cut short fails as `dropped`, whatever its killed ssh looked like. */
-  const mint: Mint = request => minted(request).catch((error: unknown) => {
-    throw signal.aborted ? new DialError('dropped') : error
-  })
+  const mint: Mint = async request => {
+    try {
+      const endpoint = await minted(request)
+      const port = farPorts.get(endpoint.url)
+      farPorts.delete(endpoint.url)
+      return port === undefined ? endpoint : { ...endpoint, sibling: path => relayed(port, path) }
+    } catch (error) {
+      throw signal.aborted ? new DialError('dropped') : error
+    }
+  }
 
   return { dial: dialWith(mint), dispose: () => life.abort() }
 }

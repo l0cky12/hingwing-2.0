@@ -15,6 +15,8 @@ import { Shortcuts } from './chrome/Shortcuts'
 import { ShortcutSheet } from './chrome/ShortcutSheet'
 import { Preview } from './preview/Preview'
 import { Composer } from './composer/Composer'
+import { showComputer, useComputerShown } from './computer/computer'
+import { ComputerView } from './computer/Computer'
 import { Apps, AppsButton } from './apps/Apps'
 import { Palette } from './palette/Palette'
 import { screenOf, type CardSetup } from './setup/screens'
@@ -111,6 +113,7 @@ function useSettingsChord(target: Target | null, settingsOpen: boolean) {
 
 function ChatWindow({ hidden, settings, target, mode, theme, width, onOpenApps }: ChatWindowProps) {
   const preview = useTopic('preview')
+  const screen = useTopic('screen')
   useSettingsChord(target, settings !== null)
   const { root, pick } = useSwitchModeKeepingFocus(mode)
   const { settingsButton, close } = useCloseSettings(settings !== null)
@@ -118,7 +121,13 @@ function ChatWindow({ hidden, settings, target, mode, theme, width, onOpenApps }
   const openSheet = useCallback(() => setSheet(held => held ?? { back: document.activeElement }), [])
   const switcher = <ModeSwitch mode={mode} onPick={pick} />
   const foot = <AppsButton onOpen={onOpenApps} />
-  const paned = preview?.state === 'open' && settings === null
+  // A preview asked for while the screen is shown takes the pane, and Screen takes it back.
+  const previewed = preview?.state === 'open' ? preview.address : null
+  useEffect(() => {
+    if (previewed !== null) showComputer(false)
+  }, [previewed])
+  const computer = useComputerShown() && settings === null ? screen ?? null : null
+  const paned = (preview?.state === 'open' || computer !== null) && settings === null
   const compact = mode === 'bots' && width === 'compact'
   return (
     <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined} data-compact={compact || undefined} data-settings={settings !== null || undefined}>
@@ -131,7 +140,7 @@ function ChatWindow({ hidden, settings, target, mode, theme, width, onOpenApps }
       <DraftSweep />
       <Shortcuts onSheet={openSheet} />
       {sheet !== null && <ShortcutSheet back={sheet.back} onClose={() => setSheet(null)} />}
-      {paned && <Preview preview={preview} />}
+      {computer !== null ? <ComputerView view={computer} /> : paned && preview?.state === 'open' && <Preview preview={preview} />}
     </div>
   )
 }

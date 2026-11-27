@@ -35,8 +35,9 @@ describe('the errand, played through the real client', () => {
     const sent = methodsOf(script.received)
     expect(sent.map(call => call.method)).toEqual([
       'client.capabilities', 'runtime.describe', 'session.resume', 'session.list', 'session.list', 'session.list', 'commands.catalog', 'bot_relay.deliver', 'profiles.list', 'groups.capabilities', 'cron.manage',
-      'session.stats', 'config.get', 'config.get', 'config.get', 'session.control.read', 'process.list', 'session.stats', 'prompt.submit', 'approval.respond', 'session.stats', 'process.list'
+      'session.stats', 'config.get', 'config.get', 'config.get', 'session.control.read', 'process.list', 'display.status', 'session.stats', 'prompt.submit', 'approval.respond', 'session.stats', 'process.list'
     ])
+    expect(sent.splice(17, 1).map(call => call.params), "the open chat's bot is asked after its screen once, as the socket's own profile").toEqual([{}])
     expect(sent.splice(15, 2).map(call => call.params), 'the panel is read with the switches').toEqual([{ session_id: fixture.header.sessionId }, { session_id: fixture.header.sessionId }])
     expect(sent.splice(12, 3).map(call => call.params)).toEqual(['show_reasoning', 'busy', 'approval_mode'].map(key => ({ session_id: fixture.header.sessionId, key })))
     expect(sent.splice(9, 1).map(call => call.params), 'the errand\'s Hermes has no group chats, so it is asked nothing more').toEqual([{}])

@@ -31,6 +31,11 @@ const OWN_ANSWERS: Readonly<Record<string, (header: Header, reply: Obj, params: 
   'groups.disband': () => NOTHING,
   'complete.path': () => NOTHING,
   'cron.manage': () => NOTHING,
+  'display.status': () => NOTHING,
+  'display.thumbnail': () => NOTHING,
+  'display.observe': () => NOTHING,
+  'display.lease.acquire': () => NOTHING,
+  'display.lease.release': () => NOTHING,
   'runtime.describe': (header, reply) => {
     header.describe ??= reply
     return NOTHING
@@ -180,7 +185,7 @@ export function recordingDialer(inner: Dialer, path: string, clock: Clock = syst
         socket.send(text)
       },
       close: () => socket.close()
-    }, socket.reach)
+    }, socket.reach, socket.sibling)
     socket.onText = text => {
       heard(JSON.parse(text))
       flush()

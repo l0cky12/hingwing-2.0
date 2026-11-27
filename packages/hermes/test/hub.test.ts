@@ -517,10 +517,11 @@ describe('the open chat', () => {
     const before = opened.sent().length
     expect(await opened.hermes.run({ do: 'open', ref: bot(RESEARCH) })).toEqual({ ok: true, value: RESEARCH_CHAT })
     expect(opened.hermes.open.get()).toEqual({ shown: { kind: 'bot', bot: RESEARCH, sessionId: RESEARCH_CHAT }, opening: null, missing: null })
-    expect(opened.sent().slice(before), "the roster named the chat, so the click only lists the bot's chats").toEqual([
+    expect(opened.sent().slice(before), "the roster named the chat, so the click only lists the bot's chats and asks after its screen").toEqual([
       { method: 'session.list', params: { scope: 'live', picker: true, profile: 'research' } },
       { method: 'session.list', params: { scope: 'live', include_hidden: true, profile: 'research' } },
-      { method: 'session.list', params: { scope: 'stored', limit: 100, include_hidden: true, picker: true, profile: 'research' } }
+      { method: 'session.list', params: { scope: 'stored', limit: 100, include_hidden: true, picker: true, profile: 'research' } },
+      { method: 'display.status', params: { profile: 'research' } }
     ])
 
     const unwatch = opened.hermes.watch(RESEARCH_CHAT, () => {})

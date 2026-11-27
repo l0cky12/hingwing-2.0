@@ -109,6 +109,12 @@ export interface Fixture {
      * A socket bound to one profile is refused it too, since it reaches no legacy handler.
      */
     readonly images?: Images
+    /**
+     * Each profile's screen, as `display.*` answers it: whether the agent uses it, and its frame as a JPEG data URL. A profile not
+     * named has a screen that is off. Absent: the gateway refuses every `display.*` call as an unknown method, as a Hermes without
+     * the screen does, and so does a socket bound to one profile.
+     */
+    readonly display?: Display
     /** What `llm.oneshot` answers. Absent: the gateway refuses it as an unknown method, as a Hermes without it does, and so does a socket bound to one profile. */
     readonly oneshot?: Oneshot
     /** What `pet.gallery` and `pet.thumb` answer. Absent: the gateway refuses both as unknown methods, as a Hermes without pets does. */
@@ -191,6 +197,7 @@ export interface Fixture {
  * download failed, so the reply names only the backend's `image`. `error`: every generation fails with these words.
  * `delay_ms`: how long a generation takes (default 0).
  */
+export interface Display { readonly [profile: string]: { readonly running: boolean; readonly thumbnail?: string } }
 export interface Images { readonly available: boolean; readonly picture?: string; readonly error?: string; readonly delay_ms?: number }
 
 /** What `llm.oneshot` answers: `text` as the model wrote it (default empty) after `delay_ms` (default 0), or a failure with `error` in its words. */
@@ -470,6 +477,10 @@ const isImages = (value: unknown): value is Images =>
   isObject(value) && typeof value.available === 'boolean' && (value.picture === undefined || typeof value.picture === 'string')
   && (value.error === undefined || typeof value.error === 'string') && delay(value.delay_ms)
 
+const isDisplay = (value: unknown): value is Display =>
+  isObject(value) && Object.values(value).every(screen => isObject(screen) && typeof screen.running === 'boolean'
+    && (screen.thumbnail === undefined || (typeof screen.thumbnail === 'string' && screen.thumbnail.startsWith('data:image/'))))
+
 const isOneshot = (value: unknown): value is Oneshot =>
   isObject(value) && (value.text === undefined || typeof value.text === 'string') && (value.error === undefined || typeof value.error === 'string') && delay(value.delay_ms)
 
@@ -627,8 +638,9 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   const { assetFails } = value
   if (assetFails !== undefined && (typeof assetFails !== 'string' || assetFails.trim() === '')) return '"assetFails" must be the words a failed write gives'
-  const { images, pets, oneshot, memory } = value
+  const { images, pets, oneshot, display, memory } = value
   if (images !== undefined && !isImages(images)) return '"images" must be { available, picture?, error?, delay_ms? }'
+  if (display !== undefined && !isDisplay(display)) return '"display" must map a profile to { running, thumbnail? } with "thumbnail" a data URL'
   if (oneshot !== undefined && !isOneshot(oneshot)) return '"oneshot" must be { text?, error?, delay_ms? }'
   if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'
   const { connectors } = value
@@ -708,7 +720,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(skills === undefined ? {} : { skills: skills as NonNullable<Fixture['header']['skills']> }),
     ...(skillsElsewhere === undefined ? {} : { skillsElsewhere: skillsElsewhere as NonNullable<Fixture['header']['skillsElsewhere']> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
     ...(assetFails === undefined ? {} : { assetFails }),
-    ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }), ...(vault === undefined ? {} : { vault }),
+    ...(images === undefined ? {} : { images }), ...(display === undefined ? {} : { display }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }), ...(vault === undefined ? {} : { vault }),
     ...(connectors === undefined ? {} : { connectors }),
     ...(memory === undefined ? {} : { memory }),
     ...(mcp === undefined ? {} : { mcp }),

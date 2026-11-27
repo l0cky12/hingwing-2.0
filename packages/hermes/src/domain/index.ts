@@ -26,6 +26,7 @@ export {
 export type { PaneAsk } from './pane'
 export { activityIn, botActivitiesOf, sameActivities, unreadAfter, type BotActivities, type BotActivity, type Busy, type BusyChats, type ChatBusy, type UnreadChat } from './activity'
 export type { FoundMessage, MessagesRead } from './messages'
+export type { Control, Screen, ScreenView } from './screen'
 export { label as versionLabel, type ChatVersions, type Landing, type Version, type Versions } from './versions'
 export { hermesVersionOf, type About, type HermesRelease } from './about'
 export { modelViewOf, sameModel, type ModelView } from './model'

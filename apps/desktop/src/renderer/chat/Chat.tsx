@@ -10,6 +10,7 @@ import { editingOf, type EditTarget } from '../composer/edit'
 import { FolderChip } from '../composer/FolderChip'
 import { ModelPicker } from '../composer/ModelPicker'
 import { StatusStack } from '../composer/StatusStack'
+import { ComputerCard } from '../computer/Computer'
 import { ThinkingPill } from '../composer/ThinkingPill'
 import { folderFieldLabel, thinkingShown } from '../composer/tuning'
 import { YoloPill } from '../composer/YoloPill'
@@ -338,6 +339,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const planFor = (held: readonly Attachment[]) => (session !== undefined && live ? sendPlan(session, held).by : 'submit')
   const tuning = session !== undefined && thinkingShown(session.tuning) ? session.tuning : null
   const cwd = session?.cwd ?? null
+  const screen = useTopic('screen')?.screen
   const setup = useTopic('setup')
   const target = setup === undefined || setup.at === 'pinned' ? null : (setup.live?.target ?? null)
   const filesHere = setup !== undefined && isLocal(setup)
@@ -396,7 +398,13 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         planFor={planFor}
         editing={editing}
         onCancelEdit={() => setEditing(null)}
-        above={<>{id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} returnFocus={returnFocus} />}<ExampleRequests requests={requests} onSend={onExample} /></>}
+        above={(
+          <>
+            {screen?.state === 'on' && <ComputerCard control={screen.control} thumbnail={screen.thumbnail} />}
+            {id !== null && cards.length > 0 && <Sides cards={cards} onClose={onCloseSide} returnFocus={returnFocus} />}
+            <ExampleRequests requests={requests} onSend={onExample} />
+          </>
+        )}
         onEscape={onEscape}
         onStop={() => { if (id !== null) void run({ do: 'stop', sessionId: id }) }}
         onInput={onInput}
