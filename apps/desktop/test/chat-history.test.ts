@@ -71,6 +71,13 @@ describe('visited and stepped', () => {
     expect(visits).toEqual({ refs: [bot('a'), chat('s')], at: 1 })
   })
 
+  it('keeps the places ahead when a new chat it stepped back to gets its first message', () => {
+    const back = stepped(through(botShown('a'), draft('d'), botShown('b')), -1)!
+    const sent = visited(back, draft('d', 's'))
+    expect(sent).toEqual({ refs: [bot('a'), chat('s'), bot('b')], at: 1 })
+    expect(stepped(sent, 1)?.refs[2]).toEqual(bot('b'))
+  })
+
   it('leaves nothing shown out', () => {
     const visits = through(botShown('a'))
     expect(visited(visits, null)).toBe(visits)

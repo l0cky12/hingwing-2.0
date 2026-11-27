@@ -30,8 +30,8 @@ export function visited(visits: Visits, shown: Shown | ShownGroup | null): Visit
   const visit = visitOf(shown)
   const current = visits.refs[visits.at]
   if (visit === null || (current !== undefined && same(current, visit))) return visits
-  const started = current?.kind === 'new' && shown?.kind === 'new' && shown.draftId === current.draftId
-  const refs = [...visits.refs.slice(0, visits.at + (started ? 0 : 1)), visit].slice(-KEPT)
+  if (current?.kind === 'new' && shown?.kind === 'new' && shown.draftId === current.draftId) return { refs: visits.refs.with(visits.at, visit), at: visits.at }
+  const refs = [...visits.refs.slice(0, visits.at + 1), visit].slice(-KEPT)
   return { refs, at: refs.length - 1 }
 }
 
