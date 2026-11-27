@@ -19,7 +19,8 @@ export const PAGES: readonly { readonly id: Page; readonly label: string; readon
   { id: 'about', label: 'About', lede: 'The versions of Highwing and of the Hermes it talks to.' }
 ]
 
-const SHORTCUT = 'keys keyboard shortcut hotkey ctrl control cmd command ⌘'
+const SHORTCUT = 'keys keyboard shortcut hotkey'
+const CTRL = 'ctrl control cmd command ⌘'
 const NOTICE = 'notification notify alert desktop'
 
 /** Where a shortcut works, as its row's description. */
@@ -38,7 +39,7 @@ const shortcutRows: readonly Row[] = SHORTCUTS.map(shortcut => ({
   page: 'keys' as const,
   searchText: [
     `${shortcut.label}. ${whereOf(shortcut)} ${shortcut.group}.`, ...shortcut.keys.filter(key => key.length > 1),
-    ...(shortcut.mod === 'alt' || shortcut.mod === 'ctrlAlt' ? ['alt option ⌥'] : []), ...(shortcut.shift === true ? ['shift ⇧'] : []), SHORTCUT
+    ...(shortcut.mod === 'alt' ? [] : [CTRL]), ...(shortcut.mod === 'alt' || shortcut.mod === 'ctrlAlt' ? ['alt option ⌥'] : []), ...(shortcut.shift === true ? ['shift ⇧'] : []), SHORTCUT
   ].join(' '),
   ...(shortcut.mod === 'alt' ? {} : { keys: shortcut.keys.map(key => key.toLowerCase()) })
 }))
@@ -58,7 +59,7 @@ export const ROWS: readonly Row[] = [
   { id: 'skills', page: 'skills', searchText: 'Skills. Skills this bot can use. A skill turned off stays installed. Open SKILL.md instructions. turn on off enable disable library' },
   { id: 'permissions', page: 'permissions', searchText: 'Commands are approved on the composer. approval approve Manual, Smart, Off. YOLO' },
   { id: 'denied', page: 'permissions', searchText: 'Denied commands. This bot never runs a command that matches one of these, even with YOLO on. To change them, edit approvals.deny in the bot’s config.yaml. deny block blocked forbid rule glob' },
-  { id: 'shortcuts', page: 'keys', searchText: `Show all. Every shortcut Highwing has, grouped by what it does. sheet ${SHORTCUT}` },
+  { id: 'shortcuts', page: 'keys', searchText: `Show all. Every shortcut Highwing has, grouped by what it does. sheet ${SHORTCUT} ${CTRL}` },
   ...shortcutRows,
   { id: 'usage', page: 'usage', searchText: 'Usage. What this Hermes reports. tokens cost plan limit quota account' },
   { id: 'about-app', page: 'about', searchText: 'App. Highwing version' },
@@ -91,7 +92,12 @@ const fold = (text: string) => text.toLowerCase().replaceAll('’', "'")
 function byKey(needle: string): readonly Row[] | null {
   const chord = /^(?:ctrl|control|cmd|command|⌘)\s*\+?\s*(\S)?$/.exec(needle)
   if (chord === null) return null
-  const keyed = ROWS.filter(row => row.keys !== undefined && (chord[1] === undefined || row.keys.includes(chord[1])))
+  const key = chord[1]
+  if (key === undefined) {
+    const worded = byWords(needle)
+    return ROWS.filter(row => row.keys !== undefined || worded.includes(row))
+  }
+  const keyed = ROWS.filter(row => row.keys?.includes(key) === true)
   return keyed.length > 0 ? keyed : ROWS.filter(row => fold(row.searchText).startsWith(needle))
 }
 
