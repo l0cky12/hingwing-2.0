@@ -152,6 +152,7 @@ const STEPS = {
   'page-fits': { arity: 0, run: async ctx => checkPageFits(ctx) },
   inside: { arity: 4, run: async (ctx, role, name, outerRole, outerName) => checkInside(ctx, role, name, outerRole, outerName) },
   'same-row': { arity: 4, run: async (ctx, role, name, otherRole, otherName) => checkSameRow(ctx, role, name, otherRole, otherName) },
+  'one-line': { arity: 1, run: async (ctx, text) => checkOneLine(ctx, text) },
   reveal: { arity: 2, run: async (ctx, role, name) => byRole(ctx.page, role, name).scrollIntoViewIfNeeded({ timeout: ctx.timeout }) },
   shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
   field: {
@@ -1130,6 +1131,18 @@ async function checkSameRow(ctx, role, name, otherRole, otherName) {
   const middle = ({ y, height }) => y + height / 2
   log(ctx, `  ${role} "${name}" centred at y ${middle(a).toFixed(1)}, ${otherRole} "${otherName}" at y ${middle(b).toFixed(1)}`)
   if (Math.abs(middle(a) - middle(b)) > 1) throw new Error(`${role} "${name}" and ${otherRole} "${otherName}" sit on different rows`)
+}
+
+async function checkOneLine(ctx, text) {
+  const matches = ctx.page.getByText(text, { exact: true }).filter({ visible: true })
+  await matches.first().waitFor({ state: 'visible', timeout: ctx.timeout })
+  const lines = await matches.evaluateAll(elements => elements.map(el => {
+    const range = document.createRange()
+    range.selectNodeContents(el)
+    return new Set([...range.getClientRects()].filter(rect => rect.width > 0).map(rect => Math.round(rect.top))).size
+  }))
+  log(ctx, `  "${text}" draws on ${lines.join(', ')} line(s) in ${lines.length} place(s)`)
+  if (lines.some(count => count > 1)) throw new Error(`"${text}" breaks across ${Math.max(...lines)} lines`)
 }
 
 async function sizeWindow(ctx, options) {
