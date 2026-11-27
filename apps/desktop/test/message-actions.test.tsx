@@ -15,7 +15,7 @@ const turn = (nodes: readonly ThreadNode[]): TurnView => ({
   key: 't1', time: null, request: 'List the folder', handed: false, attachments: [], rowId: 5, tokens: null, reactions: { turn: TURN, given: [] }, nodes, end: { kind: 'done', words: 'Done' }
 })
 const props = (more: Partial<Props>): Props => ({
-  turn: turn([prose('p1', 'The folder holds two files.'), prose('p2', 'Both are notes.')]), open: NONE_OPEN, onToggle: () => {}, onAnswer: async () => undefined,
+  turn: turn([prose('p1', 'The folder holds two files.'), prose('p2', 'Both are notes.')]), open: NONE_OPEN, onToggle: () => {}, onAnswer: async () => undefined, onAskAgain: async () => false,
   canEdit: true, canBranch: true, showsRegenerate: true, canRegenerate: true, onEdit: () => {}, onRegenerate: () => {}, onBranch: () => {}, onNewChat: () => {},
   versions: [], onVersion: () => {}, canReact: true, onReact: () => {}, helpers: null, ...more
 })
