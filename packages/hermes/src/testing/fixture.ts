@@ -563,6 +563,10 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (attachLimits !== undefined && !(isObject(attachLimits) && Object.keys(attachLimits).every(key => key === 'image' || key === 'file') && limit(attachLimits.image) && limit(attachLimits.file))) {
     return '"attachLimits" may hold only "image" and "file", each a number of bytes above 0'
   }
+  const { accountUsage, usageBars, insights } = value
+  if (accountUsage !== undefined && !isObject(accountUsage)) return '"accountUsage" must be a session.account_usage reply'
+  if (usageBars !== undefined && !isObject(usageBars)) return '"usageBars" must be a usage.bars reply'
+  if (insights !== undefined && !isObject(insights)) return '"insights" must be an insights.get reply'
   const { reads } = value
   if (reads !== undefined && !isReads(reads)) return `"reads" must map ${READS.join(' or ')} to a reply`
   const { todo_state: todoState } = value
@@ -605,6 +609,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...('catalog' in value ? { catalog: value.catalog } : {}),
     ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] }),
     ...(usage === undefined ? {} : { usage }),
+    ...(accountUsage === undefined ? {} : { accountUsage }), ...(usageBars === undefined ? {} : { usageBars }), ...(insights === undefined ? {} : { insights }),
     ...(yolo === undefined ? {} : { yolo }), ...(yoloDenied === undefined ? {} : { yoloDenied }), ...(approvals === undefined ? {} : { approvals: approvals as ApprovalMode }),
     ...(branches === undefined ? {} : { branches }), ...(tree === undefined ? {} : { tree }),
     ...(info === undefined ? {} : { info }),

@@ -164,6 +164,14 @@ describe('loadFixture', () => {
     expect(() => loadFixture(clash)).toThrow(`${clash}:1: "configureClash" must be the title another client writes`)
   })
 
+  it('keeps the account usage, usage bars and insights replies a file cans, and refuses one that is not an object', () => {
+    const replies = { accountUsage: { lines: ['Acme Pro'], nous_route: false }, usageBars: { available: false }, insights: { days: 30, sessions: 4, messages: 9 } }
+    expect(loadFixture(write([{ ...header, ...replies }])).header).toMatchObject(replies)
+    expect(Object.keys(loadFixture(write([header])).header)).not.toContain('accountUsage')
+    const path = write([{ ...header, accountUsage: ['Acme Pro'] }])
+    expect(() => loadFixture(path)).toThrow(`${path}:1: "accountUsage" must be a session.account_usage reply`)
+  })
+
   it('reads the memory entries a learning call answers, and refuses any other shape', () => {
     const memory = { entries: [{ file: 'MEMORY.md', text: 'Prefers short answers.' }, { file: 'USER.md', text: 'Lives in Lisbon.' }], limits: { memory: 40 } }
     expect(loadFixture(write([{ ...header, memory }])).header.memory).toEqual(memory)
