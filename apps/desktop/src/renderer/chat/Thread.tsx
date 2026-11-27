@@ -387,9 +387,10 @@ export const RelayTurn = memo(function RelayTurn({ relay }: { readonly relay: Re
       <div className="relay-reply" role="group" aria-label={name}>
         <p className="relay-from"><Avatar bot={relay} size={22} /><span>{name}</span></p>
         {state.s === 'waiting' && <p className="notice" role="status">Waiting for {name}</p>}
-        {state.s === 'answered' && <><div className="prose"><Markdown source={state.reply} caret={false} nodeKey={relay.id} /></div><div className="turn-actions"><MessageActions acts={{ copy: { text: state.reply, name: 'Copy reply' } }} /></div></>}
+        {state.s === 'answered' && <div className="prose"><Markdown source={state.reply} caret={false} nodeKey={relay.id} /></div>}
         {state.s === 'failed' && <p className="err" data-find={fieldId(relay.id, 'error')}>{state.words}</p>}
       </div>
+      {state.s === 'answered' && <div className="turn-actions"><MessageActions acts={{ copy: { text: state.reply, name: 'Copy reply' } }} /></div>}
     </article>
   )
 })

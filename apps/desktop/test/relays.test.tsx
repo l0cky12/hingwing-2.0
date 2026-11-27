@@ -46,6 +46,10 @@ describe('a message handed to another bot, in the thread', () => {
     expect(markup).not.toContain('Waiting for Rae')
   })
 
+  it('puts the reply hover actions under its card, as on any other reply, so the hidden row takes no room inside it', () => {
+    expect(render({ s: 'answered', reply: 'Drafted.' })).toMatch(/<div class="prose"><p[^>]*>Drafted\.<\/p><\/div><\/div><div class="turn-actions">.*aria-label="Copy reply".*<\/div><\/article>$/)
+  })
+
   it('says in words why no reply came', () => {
     expect(render({ s: 'failed', words: "Rae is offline, so it didn't get your message." })).toContain('<p class="err" data-find="a error">Rae is offline, so it didn&#x27;t get your message.</p>')
   })
