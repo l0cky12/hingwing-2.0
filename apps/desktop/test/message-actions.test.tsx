@@ -12,7 +12,7 @@ type Props = Parameters<typeof Turn>[0]
 const TURN = 'run:1' as TurnId
 const prose = (key: string, markdown: string): ThreadNode => ({ kind: 'prose', key, markdown, streaming: false })
 const turn = (nodes: readonly ThreadNode[]): TurnView => ({
-  key: 't1', time: null, request: 'List the folder', attachments: [], rowId: 5, tokens: null, reactions: { turn: TURN, given: [] }, nodes, end: { kind: 'done', words: 'Done' }
+  key: 't1', time: null, request: 'List the folder', handed: false, attachments: [], rowId: 5, tokens: null, reactions: { turn: TURN, given: [] }, nodes, end: { kind: 'done', words: 'Done' }
 })
 const props = (more: Partial<Props>): Props => ({
   turn: turn([prose('p1', 'The folder holds two files.'), prose('p2', 'Both are notes.')]), open: NONE_OPEN, onToggle: () => {}, onAnswer: async () => undefined,
