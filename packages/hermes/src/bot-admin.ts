@@ -188,15 +188,15 @@ const SKILL_REASONS: Reasons = { [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported
 /** Hermes names the launch profile `default`, and `profiles.describe` needs a name, so a window with no bot open reads that one. */
 const HOME_PROFILE = 'default'
 
-/** `learning.detail` names no profile and reads the gateway's own (agent/learning_mutations.py:151-159), so it reaches only the launch profile's skills. */
-const readsOwnSkills = (bot: BotId | null) => bot === null || bot === HOME_PROFILE
-
-const skillMarkdown = async (conn: Wire, name: string): Promise<string> => parseSkillText(await conn.call('learning.detail', { id: name })) ?? ''
-
 /**
- * A skill's description is the catalog's, which lists enabled skills only. One the catalog skips (a disabled one) has the
- * `description:` of its own SKILL.md where Hermes can read it, and none on another bot.
+ * `learning.detail` reads the profile its scope is bound to (agent/learning_mutations.py:151-159). Its contract has no
+ * `profile`, but the legacy dispatcher binds a request that names one to that profile's home (tui_gateway/ws_legacy_fallback.py:175-183),
+ * so the call carries the bot's, or none for the socket's own profile.
  */
+const skillMarkdown = async (conn: Wire, bot: BotId | null, name: string): Promise<string | null> =>
+  parseSkillText(await (bot === null ? conn : conn.as(bot)).call('learning.detail', { id: name }))
+
+/** A skill's description is the catalog's, which lists enabled skills only. One the catalog skips (a disabled one) has the `description:` of its own SKILL.md. */
 export const readSkills = (conn: Wire, bot: BotId | null): Promise<Outcome<readonly Skill[]>> =>
   guarded(SKILL_REASONS, async () => {
     const [described, catalog] = await Promise.all([
@@ -205,15 +205,14 @@ export const readSkills = (conn: Wire, bot: BotId | null): Promise<Outcome<reado
     ])
     const said = new Map(catalog.flatMap(entry => (entry.kind === 'skill' ? [[entry.name.toLowerCase(), entry.description] as const] : [])))
     const skills = await Promise.all(parseSkillStates(described).map(async ({ name, enabled }) => ({
-      name, enabled, description: said.get(name.toLowerCase()) ?? (readsOwnSkills(bot) ? descriptionOf(await skillMarkdown(conn, name).catch(() => '')) : '')
+      name, enabled, description: said.get(name.toLowerCase()) ?? descriptionOf((await skillMarkdown(conn, bot, name).catch(() => null)) ?? '')
     })))
     return { ok: true, value: skills.sort((a, b) => a.name.localeCompare(b.name)) }
   })
 
 export const skillText = (conn: Wire, bot: BotId | null, name: string): Promise<Outcome<string>> =>
   guarded({}, async () => {
-    if (!readsOwnSkills(bot)) return { ok: false, refusal: { kind: 'unsupported', message: "This Hermes can show only the default bot's SKILL.md files." } }
-    const text = parseSkillText(await conn.call('learning.detail', { id: name }))
+    const text = await skillMarkdown(conn, bot, name)
     return text === null ? { ok: false, refusal: { kind: 'rejected', message: `Hermes has no SKILL.md for ${name}.` } } : { ok: true, value: text }
   })
 

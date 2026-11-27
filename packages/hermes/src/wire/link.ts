@@ -190,7 +190,7 @@ export class Offline extends Error {}
  * `projects.tree` reaches its legacy handler the same way (tui_gateway/methods_config.py:137), and a -32601 from it
  * means this Hermes cannot say which chats were branched from which. So does `llm.oneshot` (tui_gateway/methods_session.py:1249),
  * which a -32601 from means this Hermes cannot suggest a title.
- * `learning.detail` reaches its legacy handler the same way (tui_gateway/methods_tools.py:1361-1366), and reads a skill's SKILL.md from the gateway's own profile.
+ * `learning.detail` reaches its legacy handler the same way (tui_gateway/methods_tools.py:1361-1366), which runs it in the home of the `profile` it names.
  * The canonical route serves every `groups.*` method (`GROUP_METHODS`, gateway/session_group_controls.py:15-35), though of
  * the calls Highwing makes the contract lists only `groups.create` as canonical (tui_gateway/contracts/canonical_projections.py:126). A -32601 from `groups.capabilities` means this Hermes has no group chats.
  * The session authority serves `session.active_list` (gateway/session_active_list.py), which the contract lists only for the legacy
