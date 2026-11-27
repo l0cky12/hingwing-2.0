@@ -864,8 +864,32 @@ A click on a bot opens its Bot Chat, the session of that profile titled exactly
   isn't running that bot right now."
 
 The slash menu lists the commands of the profile Highwing connected through, in
-every bot's chat. `commands.catalog` is read once per connection. A command
-still runs in the chat's own profile.
+every bot's chat. `commands.catalog` is read once per connection, and again
+when Hermes pushes `skills.changed`. A command still runs in the chat's own
+profile.
+
+### A bot's skills
+
+Settings' Skills card lists the skills of the bot the window has open. Hermes
+keeps skills per profile, and Highwing reads them only while the card is shown.
+
+- `profiles.describe {name}` lists every installed skill with `enabled`. Its
+  description is the one `commands.catalog` gives for that profile, which lists
+  enabled skills only. A turned-off skill of the default bot takes the
+  `description:` of its SKILL.md.
+- A switch sends `profiles.configure {name, disabled_skills}` with the whole off
+  list, since Hermes replaces it, and Highwing sends one at a time. Highwing
+  reads the skill back after, because Hermes keeps an essential skill such as
+  `hermes-agent` on and still answers `applied.skills: true`
+  (`hermes_cli/skills_config.py:43-47`). It then says "Hermes kept
+  hermes-agent on."
+- Open reads the SKILL.md with `learning.detail {id}`, which reaches its legacy
+  handler with the interactive grant and names no profile, so it reads the
+  gateway's own. On another bot, Open says "This Hermes can show only the
+  default bot's SKILL.md files."
+- `skills.changed` makes Highwing read the list and the slash catalog again.
+- On a socket with no interactive grant, the card says "This Hermes can't list
+  skills from Highwing."
 
 A message that names another bot (`@Rae`) is handed to that bot with
 `bot_relay.deliver`, sent with the bot's `profile` and no `author`, because the
