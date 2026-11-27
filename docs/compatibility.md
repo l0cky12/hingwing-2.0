@@ -1027,8 +1027,9 @@ Highwing keeps no scheduler and changes no job. It asks
 `cron.manage {action: "list", include_disabled: true, profile}` with the bot's
 id, so paused jobs are listed too (`tui_gateway/methods_tools.py:1311-1325`).
 Each row shows the job's `name`, its `schedule` in plain words where Highwing
-knows the form, and Paused when `state` is `paused` or `enabled` is false
-(`cron/jobs.py:546-559`). Highwing asks again each time Hermes sends
+knows the form, and Paused when `state` is `paused`, Hermes's effective state
+(`cron/jobs.py:546-559`). A finished one-shot job is `completed`, not paused.
+Only a row with no `state` falls back to `enabled` false. Highwing asks again each time Hermes sends
 `cron.changed` and after each new socket.
 
 `cron.manage` is no canonical method, so it reaches its legacy handler only on a
