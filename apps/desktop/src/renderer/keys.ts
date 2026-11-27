@@ -9,6 +9,9 @@ export const COMMAND_KEY = MAC ? '⌘' : 'Ctrl'
 
 export const appsKeys = () => (MAC ? 'Meta+Shift+M' : 'Control+Shift+M')
 
+/** Ctrl+Alt+B, or Cmd+Shift+I on macOS, where Option+B types a character. */
+export const detailsKeys = (mac: boolean) => (mac ? { shown: '⌘⇧I', aria: 'Meta+Shift+I' } : { shown: 'Ctrl+Alt+B', aria: 'Control+Alt+B' })
+
 /** Ctrl+Comma, or Cmd+Comma on macOS. A letter chord cannot name the comma key. */
 export const isSettingsChord = (event: KeyboardEvent) =>
   !event.repeat && !event.isComposing && !event.altKey && !event.shiftKey

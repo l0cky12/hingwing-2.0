@@ -13,11 +13,12 @@ interface BotFormProps {
   readonly focusName?: boolean
   readonly children?: ReactNode | ((draft: BotDraft) => ReactNode)
   readonly waitingFor?: string | null
+  readonly className?: string | undefined
 }
 
 const DEFAULT_MODEL = "Hermes's default"
 
-export function BotForm({ title, submitLabel, initial, problemOf, models, onSubmit, onClose, focusName = false, children, waitingFor = null }: BotFormProps) {
+export function BotForm({ title, submitLabel, initial, problemOf, models, onSubmit, onClose, focusName = false, children, waitingFor = null, className }: BotFormProps) {
   const [{ draft, send }, dispatch] = useReducer(nextForm, initial, startForm)
   const dialog = useRef<HTMLDialogElement>(null)
   const nameField = useRef<HTMLInputElement>(null)
@@ -50,7 +51,7 @@ export function BotForm({ title, submitLabel, initial, problemOf, models, onSubm
   }
 
   return (
-    <dialog ref={dialog} className="bot-form" aria-labelledby={`${ids}-title`} onCancel={event => { event.preventDefault(); if (!sending) onClose() }}>
+    <dialog ref={dialog} className={className === undefined ? 'bot-form' : `bot-form ${className}`} aria-labelledby={`${ids}-title`} onCancel={event => { event.preventDefault(); if (!sending) onClose() }}>
       <form onSubmit={event => void submit(event)} noValidate>
         <h2 id={`${ids}-title`}>{title}</h2>
         <div className="bot-form-body">

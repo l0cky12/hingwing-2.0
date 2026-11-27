@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { botBeside, capsOf, matches, SHORTCUTS, shortcutOf, type Shortcut } from '../src/renderer/shortcuts'
+import { botBeside, capsOf, matches, onPlatform, SHORTCUTS, shortcutOf, type Shortcut } from '../src/renderer/shortcuts'
 
 interface Press { key: string; code: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean }
 
@@ -7,19 +7,21 @@ const press = (key: string, mods: Partial<Omit<Press, 'key' | 'code'>> = {}, cod
   ({ key, code, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods })
 
 /** The press that is this shortcut on this platform, with `key` the first one it matches. */
-const pressOf = (shortcut: Shortcut, mac: boolean, key = shortcut.keys[0] ?? ''): Press =>
-  press(key, {
-    ctrlKey: shortcut.mod === 'ctrl' || (shortcut.mod === 'command' && !mac),
+const pressOf = (row: Shortcut, mac: boolean, key = onPlatform(row, mac).keys[0] ?? ''): Press => {
+  const shortcut = onPlatform(row, mac)
+  return press(key, {
+    ctrlKey: shortcut.mod === 'ctrl' || shortcut.mod === 'ctrlAlt' || (shortcut.mod === 'command' && !mac),
     metaKey: shortcut.mod === 'command' && mac,
-    altKey: shortcut.mod === 'alt',
+    altKey: shortcut.mod === 'alt' || shortcut.mod === 'ctrlAlt',
     shiftKey: shortcut.shift === true
   })
+}
 
 const byId = (id: Shortcut['id']) => SHORTCUTS.find(shortcut => shortcut.id === id)!
 
 describe.each([false, true])('the shortcut table (mac: %s)', mac => {
   it.each(SHORTCUTS.map(shortcut => [shortcut.id, shortcut] as const))('%s matches its own key press', (id, shortcut) => {
-    for (const key of shortcut.keys) {
+    for (const key of onPlatform(shortcut, mac).keys) {
       expect(shortcutOf(pressOf(shortcut, mac, key), mac)?.id).toBe(id)
     }
   })

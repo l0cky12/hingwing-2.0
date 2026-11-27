@@ -9,10 +9,11 @@ import { newChatIn } from '../new-chat'
 import { Chevron } from '../chrome/ModeSwitch'
 import { COMMAND_KEY, isShortcut } from '../keys'
 import { modalOpen } from '../shortcuts'
-import { pickBotPicture, run, useTopic } from '../store'
+import { run, useTopic } from '../store'
 import { useBotDrafts } from '../composer/drafts'
 import { Avatar } from './Avatar'
 import { BotEditor, type BotEditorProps } from './BotEditor'
+import { BOT_EDIT_CALLS } from './BotPanel'
 import { nameProblem } from './bot-form'
 import type { LookCalls } from './LookPicker'
 import { NewBotForm } from './NewBotForm'
@@ -56,10 +57,7 @@ export function BotsSidebar({ head, compact, foot = null }: { readonly head: Rea
       onRenameGroup={(group, name) => run({ do: 'renameGroup', group, name })}
       onDeleteGroup={group => run({ do: 'deleteGroup', group })}
       onModels={() => run({ do: 'botModels', bot: null })}
-      onDescribe={bot => run({ do: 'describeBot', bot })}
-      onEdit={(bot, edit, revision) => run({ do: 'editBot', bot, edit, revision })}
-      onPickPicture={pickBotPicture}
-      onRemovePicture={bot => run({ do: 'removeBotPicture', bot })}
+      {...BOT_EDIT_CALLS}
       looks={LOOKS}
       foot={foot}
     />

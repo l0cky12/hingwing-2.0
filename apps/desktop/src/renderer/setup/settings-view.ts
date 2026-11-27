@@ -38,7 +38,7 @@ const shortcutRows: readonly Row[] = SHORTCUTS.map(shortcut => ({
   page: 'keys' as const,
   searchText: [
     `${shortcut.label}. ${whereOf(shortcut)} ${shortcut.group}.`, ...shortcut.keys.filter(key => key.length > 1),
-    ...(shortcut.mod === 'alt' ? ['alt option ⌥'] : []), ...(shortcut.shift === true ? ['shift ⇧'] : []), SHORTCUT
+    ...(shortcut.mod === 'alt' || shortcut.mod === 'ctrlAlt' ? ['alt option ⌥'] : []), ...(shortcut.shift === true ? ['shift ⇧'] : []), SHORTCUT
   ].join(' '),
   ...(shortcut.mod === 'alt' ? {} : { keys: shortcut.keys.map(key => key.toLowerCase()) })
 }))

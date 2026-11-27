@@ -1,5 +1,5 @@
 export type ShortcutId =
-  | 'palette' | 'newChat' | 'find' | 'sheet' | 'bot' | 'previousBot' | 'nextBot' | 'cycleBot' | 'cycleBotBack'
+  | 'palette' | 'newChat' | 'details' | 'find' | 'sheet' | 'bot' | 'previousBot' | 'nextBot' | 'cycleBot' | 'cycleBotBack'
   | 'back' | 'forward' | 'focusComposer' | 'addSelection' | 'newGroup' | 'settings' | 'apps' | 'compactSidebar' | 'send' | 'dictate' | 'zoomIn' | 'zoomOut' | 'zoomReset'
 
 export interface Shortcut {
@@ -7,18 +7,20 @@ export interface Shortcut {
   /** The sheet's heading. */
   readonly group: 'Go to' | 'Chat' | 'Window'
   readonly label: string
-  /** `command` is Ctrl on Linux and Windows and Cmd on macOS. `ctrl` is Ctrl everywhere. */
-  readonly mod: 'command' | 'ctrl' | 'alt'
+  /** `command` is Ctrl on Linux and Windows and Cmd on macOS. `ctrl` is Ctrl everywhere. `ctrlAlt` is Ctrl and Alt together. */
+  readonly mod: 'command' | 'ctrl' | 'alt' | 'ctrlAlt'
   readonly shift: boolean | 'any'
   /** The `KeyboardEvent.key` values it matches, letters in lowercase. */
   readonly keys: readonly string[]
   /** The key cap the sheet draws after the modifiers. */
   readonly shown: string
   readonly onlyIn: string | null
+  /** The keys on macOS when they differ, as where Option+letter types a character. */
+  readonly mac: Pick<Shortcut, 'mod' | 'shift' | 'keys' | 'shown'> | null
 }
 
-const row = (id: ShortcutId, group: Shortcut['group'], label: string, mod: Shortcut['mod'], keys: string, shown: string, more: { shift?: boolean | 'any'; onlyIn?: string } = {}): Shortcut =>
-  ({ id, group, label, mod, shift: more.shift ?? false, keys: keys.split(' '), shown, onlyIn: more.onlyIn ?? null })
+const row = (id: ShortcutId, group: Shortcut['group'], label: string, mod: Shortcut['mod'], keys: string, shown: string, more: { shift?: boolean | 'any'; onlyIn?: string; mac?: Shortcut['mac'] } = {}): Shortcut =>
+  ({ id, group, label, mod, shift: more.shift ?? false, keys: keys.split(' '), shown, onlyIn: more.onlyIn ?? null, mac: more.mac ?? null })
 
 export const SHORTCUTS: readonly Shortcut[] = [
   row('palette', 'Go to', 'Command palette', 'command', 'k', 'K'),
@@ -31,6 +33,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   row('forward', 'Go to', 'Forward to the chat after', 'command', ']', ']'),
   row('newChat', 'Chat', 'New chat', 'command', 'n', 'N', { onlyIn: 'In a chat' }),
   row('newGroup', 'Chat', 'New group chat', 'command', 'n', 'N', { shift: true, onlyIn: 'In bot mode' }),
+  row('details', 'Chat', 'Bot details', 'ctrlAlt', 'b', 'B', { onlyIn: 'In a bot chat', mac: { mod: 'command', shift: true, keys: ['i'], shown: 'I' } }),
   row('find', 'Chat', 'Find in chat', 'command', 'f', 'F', { onlyIn: 'In a chat' }),
   row('send', 'Chat', 'Send the message, even when Enter adds a line', 'command', 'Enter', 'Enter', { onlyIn: 'In the message box' }),
   row('dictate', 'Chat', 'Start or stop dictation, or hold to talk', 'command', 'd', 'D', { onlyIn: 'In the message box' }),
@@ -57,9 +60,13 @@ function keyMatches({ keys }: Shortcut, { key, code }: Press): boolean {
   return LETTER.test(typed) ? typed === letter : code === `Key${letter.toUpperCase()}`
 }
 
-export function matches(shortcut: Shortcut, press: Press, mac: boolean): boolean {
+/** The shortcut as it is pressed on this platform. */
+export const onPlatform = (shortcut: Shortcut, mac: boolean): Shortcut => (mac && shortcut.mac !== null ? { ...shortcut, ...shortcut.mac } : shortcut)
+
+export function matches(row: Shortcut, press: Press, mac: boolean): boolean {
+  const shortcut = onPlatform(row, mac)
   const { mod, shift } = shortcut
-  if (press.altKey !== (mod === 'alt') || (shift !== 'any' && press.shiftKey !== shift)) return false
+  if (press.altKey !== (mod === 'alt' || mod === 'ctrlAlt') || (shift !== 'any' && press.shiftKey !== shift)) return false
   const [held, other] = mod === 'command' && mac ? [press.metaKey, press.ctrlKey] : [press.ctrlKey, press.metaKey]
   return (mod === 'alt' ? !held : held) && !other && keyMatches(shortcut, press)
 }
@@ -70,9 +77,11 @@ export function shortcutOf(press: Press, mac: boolean): { readonly id: ShortcutI
   return hit === undefined ? null : { id: hit.id, digit: hit.id === 'bot' ? Number(press.key) : null }
 }
 
-export function capsOf({ mod, shift, shown }: Shortcut, mac: boolean): readonly string[] {
-  const modifier = mod === 'alt' ? (mac ? '⌥' : 'Alt') : mod === 'command' && mac ? '⌘' : 'Ctrl'
-  return [modifier, ...(shift === true ? [mac ? '⇧' : 'Shift'] : []), shown]
+export function capsOf(row: Shortcut, mac: boolean): readonly string[] {
+  const { mod, shift, shown } = onPlatform(row, mac)
+  const alt = mac ? '⌥' : 'Alt'
+  const modifiers = mod === 'alt' ? [alt] : mod === 'ctrlAlt' ? ['Ctrl', alt] : [mod === 'command' && mac ? '⌘' : 'Ctrl']
+  return [...modifiers, ...(shift === true ? [mac ? '⇧' : 'Shift'] : []), shown]
 }
 
 /** The item `by` places from `current` in sidebar order. With none current, forward is the first and back the last. */
