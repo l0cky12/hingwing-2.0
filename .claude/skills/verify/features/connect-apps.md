@@ -1,6 +1,6 @@
 # Connect apps
 
-Ctrl+Shift+M (Cmd+Shift+M on a Mac) or the Connect apps button at the bottom of the sidebar opens a dialog over the chat. One search field narrows the list by app name. Chips filter by category, and All lifts the Recommended category above the others. The line under the search says how many apps are connected, for the whole list. Each app shows Connected, Needs sign-in again, or Disconnected. Connect and Reconnect open the sign-in page in the browser, the row says Connecting…, and Open sign-in again opens that same page if the wait stalls. The row then shows the new standing. Remove drops a connected app. Escape or Ctrl+Shift+M closes the dialog.
+Ctrl+Shift+M (Cmd+Shift+M on a Mac) or the Connect apps button at the bottom of the sidebar opens a dialog over the chat. One search field narrows the list by app name. Chips filter by category, and All lifts the Recommended category above the others. The line under the search says how many apps are connected, for the whole list. Each app shows Connected, Needs sign-in again, or Disconnected. Connect and Reconnect open the sign-in page in the browser, the row says Connecting…, and Open sign-in again opens that same page if the wait stalls. The row then shows the new standing. Remove drops a connected app. Escape or Ctrl+Shift+M closes the dialog. Below the apps, a Tool servers section lists the bot's own MCP servers, as [Tool servers](./tool-servers.md) covers.
 
 ## Sub-features
 

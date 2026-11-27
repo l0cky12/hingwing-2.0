@@ -1,10 +1,12 @@
 import { machineOf, shownChat, shownGroup, type Link, type Target } from '@highwing/hermes/domain'
 import { useCallback, useEffect, useRef, type ReactNode, type Ref, type RefObject } from 'react'
 import type { WindowCommand } from '../../ipc-contract'
-import { isCommandKey, MAC } from '../keys'
+import { isShortcut, MAC } from '../keys'
+import { modalOpen } from '../shortcuts'
 import { CopyLink } from '../chat/Copy'
 import { botNameOf, openChatName } from '../chats/chat-list'
 import { GroupMembers } from '../groups/GroupThread'
+import { ComputerButton } from '../computer/Computer'
 import { faceOf } from '../groups/group-rows'
 import { newChatIn, newChatKeys } from '../new-chat'
 import { run, useTopic } from '../store'
@@ -24,7 +26,7 @@ function useNewChat(bar: RefObject<HTMLElement | null>) {
   const start = useCallback(() => void run(newChatIn(open, crypto.randomUUID())), [open])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isCommandKey(event, 'n') || bar.current?.checkVisibility() !== true) return
+      if (!isShortcut(event, 'newChat') || modalOpen() || bar.current?.checkVisibility() !== true) return
       event.preventDefault()
       if (!event.repeat) start()
     }
@@ -56,6 +58,7 @@ export function TopBar({ target, settingsButton, onOpenTasks }: { readonly targe
   const chat = useOpenChatName()
   const group = useOpenGroup()
   const sessionId = shownChat(useTopic('open'))?.sessionId ?? null
+  const screen = useTopic('screen')
   const where = [group?.name ?? chat, target === null ? null : `on ${machineOf(target)}`].filter(part => part !== null).join(' ')
   return (
     <Bar ref={bar} where={where === '' ? null : where}>
@@ -63,6 +66,7 @@ export function TopBar({ target, settingsButton, onOpenTasks }: { readonly targe
         ? <button type="button" aria-keyshortcuts={newChatKeys(MAC).aria} onClick={startChat}>New chat</button>
         : <GroupMembers faces={group.faces} />}
       <button type="button" onClick={onOpenTasks}>Tasks</button>
+      {screen != null && <ComputerButton view={screen} />}
       {target !== null && <button ref={settingsButton} onClick={() => void run({ do: 'editTarget' })}>Settings</button>}
       {sessionId !== null && <CopyLink sessionId={sessionId} />}
     </Bar>

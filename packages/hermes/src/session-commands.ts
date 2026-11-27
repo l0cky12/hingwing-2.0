@@ -461,7 +461,10 @@ const SWITCHES: { readonly [S in Switched['set']]: (command: Extract<Switched, {
    */
   yolo: ({ on }) => ({ key: 'yolo', value: on ? 'on' : 'off', said: reply => ({ yolo: reply.value === '1' || reply.value === true }) }),
   /** A profile write, as `/approvals <mode>` is. Hermes sends no session.info for it, so the reply is the only word (gateway/session_tui_config.py:202-203,337-350). */
-  approvals: ({ to }) => ({ key: 'approval_mode', value: to, said: reply => ({ approvals: parseApprovalMode(reply.value) ?? to }) }),
+  approvals: ({ to }) => ({ key: 'approval_mode', value: to, said: reply => {
+    const approvals = parseApprovalMode(reply.value)
+    return approvals === null ? {} : { approvals }
+  } }),
   /** Hermes answers the tier's word (gateway/session_tui_config.py:274-298). */
   fast: ({ on }) => ({ key: 'fast', value: on ? 'fast' : 'normal', said: reply => ({ fast: parseFast(reply) ?? on }) })
 }

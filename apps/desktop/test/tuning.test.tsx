@@ -2,12 +2,13 @@ import { parseSshHost, type SshHost, type Tuning } from '@highwing/hermes/domain
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { FolderChip } from '../src/renderer/composer/FolderChip'
-import { ThinkingChoices } from '../src/renderer/composer/ThinkingPill'
+import { ThinkingChoices, ThinkingPill } from '../src/renderer/composer/ThinkingPill'
 import { folderFieldLabel, thinkingLabel, thinkingShown } from '../src/renderer/composer/tuning'
 
 const UNREAD: Tuning = { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }
 const tuning = (said: Partial<Tuning>): Tuning => ({ ...UNREAD, ...said })
 const choices = (said: Partial<Tuning>) => renderToStaticMarkup(<ThinkingChoices tuning={tuning(said)} sending={false} onTune={() => {}} />)
+const pill = (said: Partial<Tuning>) => renderToStaticMarkup(<ThinkingPill tuning={tuning(said)} disabled={false} running={false} onTune={() => new Promise(() => {})} />)
 const named = (markup: string, type: 'radio' | 'checkbox') => [...markup.matchAll(new RegExp(`<label[^>]*><input type="${type}"[^>]*/>([^<]*)</label>`, 'g'))].map(match => match[1])
 
 describe('the Thinking pill', () => {
@@ -16,6 +17,12 @@ describe('the Thinking pill', () => {
     expect(thinkingLabel(tuning({ effort: 'xhigh' }))).toBe('Effort: Extra high')
     expect(thinkingLabel(tuning({ effort: 'none' }))).toBe('Effort: Off')
     expect(thinkingLabel(tuning({ effort: 'default' }))).toBe('Effort: Default')
+  })
+
+  it('shows only the level on the button, while its name stays Effort: and the level', () => {
+    const markup = pill({ effort: 'medium' })
+    expect(markup).toContain('aria-label="Effort: Medium"')
+    expect(markup.replace(/<[^>]*>/g, '')).toBe('Medium')
   })
 
   it('reads Thinking when Hermes answered fast or reasoning but not the effort', () => {
@@ -44,9 +51,18 @@ describe('the Thinking pill', () => {
 })
 
 describe('the folder chip', () => {
-  it('shows the folder exactly as Hermes names it', () => {
+  it('shows the folder\'s own name, and keeps the whole path as Hermes names it in its name and tooltip', () => {
     const markup = renderToStaticMarkup(<FolderChip cwd="/home/ada/work" field="" disabled={false} running={false} onMove={() => new Promise(() => {})} />)
-    expect(markup.replace(/<[^>]*>/g, '')).toBe('Folder: /home/ada/work')
+    expect(markup.replace(/<[^>]*>/g, '')).toBe('work')
+    expect(markup).toContain('aria-label="Folder: /home/ada/work"')
+    expect(markup).toContain('title="/home/ada/work"')
+  })
+
+  it('names a folder by its own name when Hermes ends the path with a separator', () => {
+    const shown = (cwd: string) => renderToStaticMarkup(<FolderChip cwd={cwd} field="" disabled={false} running={false} onMove={() => new Promise(() => {})} />).replace(/<[^>]*>/g, '')
+    expect(shown('/home/ada/work/')).toBe('work')
+    expect(shown('C:\\Users\\ada\\')).toBe('ada')
+    expect(shown('/')).toBe('/')
   })
 
   it('names the machine the folder is on, or the Hermes machine when it has no name', () => {

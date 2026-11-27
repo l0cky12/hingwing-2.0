@@ -156,6 +156,13 @@ describe('loadFixture', () => {
     expect(() => loadFixture(path)).toThrow(`${path}:1: "createWarnings" must be a list of strings`)
   })
 
+  it("takes every bot's deny rules as a list of strings", () => {
+    expect(loadFixture(write([{ ...header, deny: ['git push --force*'] }])).header.deny).toEqual(['git push --force*'])
+    expect(loadFixture(write([header])).header).not.toHaveProperty('deny')
+    const path = write([{ ...header, deny: [7] }])
+    expect(() => loadFixture(path)).toThrow(`${path}:1: "deny" must be a list of strings`)
+  })
+
   it("takes each bot's persona as text, and the title of a clash as words", () => {
     const loaded = loadFixture(write([{ ...header, souls: { rae: 'You write.' }, configureClash: 'Robin' }])).header
     expect([loaded.souls, loaded.configureClash]).toEqual([{ rae: 'You write.' }, 'Robin'])

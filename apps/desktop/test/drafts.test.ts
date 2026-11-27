@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -12,6 +12,7 @@ const UNSTARTED = draftOf('bot:research', 'research', 'Rename every photo')
 const text = (value: unknown) => JSON.stringify(value)
 const emptyDir = () => join(mkdtempSync(join(tmpdir(), 'highwing-drafts-')), 'drafts')
 const filesIn = (dir: string) => readdirSync(dir).sort()
+const fileFor = (dir: string, draft: Draft) => join(dir, filesIn(dir).find(name => readFileSync(join(dir, name), 'utf8').includes(`"key":"${draft.key}"`))!)
 
 describe('readDraft', () => {
   it('reads a draft this build wrote, and one an earlier build wrote with no attachments', () => {
@@ -56,6 +57,21 @@ describe('draftStore', () => {
     expect([...loaded].sort((a, b) => a.key.localeCompare(b.key))).toEqual([UNSTARTED, { ...CHAT, text: 'half a thought, and more' }])
     expect(filesIn(dir)).toHaveLength(2)
     for (const name of filesIn(dir)) expect(statSync(join(dir, name)).mode & 0o777).toBe(0o600)
+  })
+
+  it('loads the drafts oldest saved first, whatever their file names', async () => {
+    const dir = emptyDir()
+    const store = draftStore(dir)
+    store.keep(CHAT)
+    store.keep(UNSTARTED)
+    await store.settled()
+    const savedAt = (draft: Draft, seconds: number) => utimesSync(fileFor(dir, draft), seconds, seconds)
+    const keys = async () => (await draftStore(dir).load()).map(draft => draft.key)
+    savedAt(CHAT, 1_000)
+    savedAt(UNSTARTED, 2_000)
+    expect(await keys()).toEqual([CHAT.key, UNSTARTED.key])
+    savedAt(CHAT, 3_000)
+    expect(await keys()).toEqual([UNSTARTED.key, CHAT.key])
   })
 
   it('deletes a draft kept with empty text, and is fine when there was none', async () => {

@@ -7,11 +7,11 @@ import { ChatBotContext, Thread } from '../src/renderer/chat/Thread'
 const BOT: Bot = { id: 'rae' as BotId, name: 'Rae', preview: '', description: '', tone: 'plum', picture: false, pinned: false, hidden: false }
 const tip = { kind: 'tip', words: [], elapsed: null } as unknown as TurnView['end']
 const turn = (nodes: TurnView['nodes']): TurnView =>
-  ({ key: 't1', time: null, request: 'Hello', attachments: [], rowId: 1, tokens: null, reactions: null, nodes, end: tip })
+  ({ key: 't1', time: null, request: 'Hello', handed: false, attachments: [], rowId: 1, tokens: null, reactions: null, nodes, end: tip })
 const drawn = (view: TurnView, bot: Bot | null) => renderToStaticMarkup(
   <ChatBotContext value={bot}>
     <Thread
-      view={{ state: 'ready', turns: [view], pending: [], asks: [], earlier: 'none', changesAt: null } as ThreadView} relays={[]} sides={[]} onAnswer={async () => undefined} onAnswerRequest={async () => false}
+      view={{ state: 'ready', turns: [view], pending: [], asks: [], earlier: 'none', changesAt: null } as ThreadView} relays={[]} sides={[]} onAnswer={async () => undefined} onAskAgain={async () => false} onAnswerRequest={async () => false}
       onLoadEarlier={() => {}} onFindClosed={() => {}} onFindScrolled={() => {}} canEdit canRegenerate={false} regenerateTurnKey={null} canBranch onEdit={() => {}} onRegenerate={() => {}}
       onBranch={() => {}} onNewChat={() => {}} versions={[]} onVersion={() => {}} queue={{ canAct: true, pressed: new Map(), onAct: () => {} }} canReact onReact={() => {}} helpers={null}
     />
