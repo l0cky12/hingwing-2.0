@@ -1,10 +1,10 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
 import type { Hermes, Route } from '@highwing/hermes'
-import type { AttachmentId, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, SessionId, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
+import type { AttachmentId, BotActivities, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, SessionId, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type Preview, type PreviewCommand, type Push, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type OnClose, type Preview, type PreviewCommand, type Push, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
 import { feed, ownConnection, pinnedConnection, type ConnectionOwner } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
@@ -166,6 +166,11 @@ describe('validators', () => {
     expect(parseCommand({ do: 'connectApp', slug: 'github', bot: null })).toBeNull()
     expect(parseCommand({ do: 'appSignIn', opId: '', bot: null })).toBeNull()
     expect(parseCommand({ do: 'removeApp', connectionId: ' ', bot: null })).toBeNull()
+    expect(parseCommand({ do: 'memory', extra: 1 })).toEqual({ do: 'memory' })
+    expect(parseCommand({ do: 'saveMemory', id: 'memory:memory:0:abc', text: 'Hello', extra: 1 })).toEqual({ do: 'saveMemory', id: 'memory:memory:0:abc', text: 'Hello' })
+    expect(parseCommand({ do: 'saveMemory', id: 'memory:memory:0:abc', text: '' })).toEqual({ do: 'saveMemory', id: 'memory:memory:0:abc', text: '' })
+    expect(parseCommand({ do: 'saveMemory', id: ' ', text: 'Hello' })).toBeNull()
+    expect(parseCommand({ do: 'removeMemory', id: 'memory:profile:1:def', extra: 1 })).toEqual({ do: 'removeMemory', id: 'memory:profile:1:def' })
     expect(parseCommand({ do: 'petPicture', slug: 'tabby', url: 'https://petdex.example/tabby.webp', name: 'Tabby' })).toEqual({ do: 'petPicture', slug: 'tabby', url: 'https://petdex.example/tabby.webp' })
     expect(parseCommand({ do: 'petPicture', slug: 'mochi', url: null })).toEqual({ do: 'petPicture', slug: 'mochi', url: null })
     expect(parseCommand({ do: 'petPicture', slug: 'mr.whiskers', url: null })).toEqual({ do: 'petPicture', slug: 'mr.whiskers', url: null })
@@ -173,6 +178,14 @@ describe('validators', () => {
 
   it('keep a path completion to a chat and the mention typed', () => {
     expect(parseCommand({ do: 'completePath', sessionId: 's1', word: '@not', extra: 1 })).toEqual({ do: 'completePath', sessionId: 's1', word: '@not' })
+  })
+
+  it("keep a password manager change to the bot and manager named, and a master password exactly as typed", () => {
+    expect(parseCommand({ do: 'passwordManagers', bot: 'rae', extra: 1 })).toEqual({ do: 'passwordManagers', bot: 'rae' })
+    expect(parseCommand({ do: 'usePasswordManager', bot: 'rae', manager: 'bitwarden', use: false })).toEqual({ do: 'usePasswordManager', bot: 'rae', manager: 'bitwarden', use: false })
+    expect(parseCommand({ do: 'unlockPasswordManager', bot: 'rae', manager: 'onepassword', password: ' pass word ', extra: 1 }))
+      .toEqual({ do: 'unlockPasswordManager', bot: 'rae', manager: 'onepassword', password: ' pass word ' })
+    expect(parseCommand({ do: 'lockPasswordManager', bot: 'rae', manager: 'bitwarden' })).toEqual({ do: 'lockPasswordManager', bot: 'rae', manager: 'bitwarden' })
   })
 
   it("keep a bot's edited fields as sent, with the revision it was read at, and a window's removal of a picture", () => {
@@ -311,6 +324,12 @@ describe('validators', () => {
     ['a model list for a bot with no name', { do: 'botModels', bot: ' ' }],
     ['a model list that names no bot', { do: 'botModels' }],
     ['details of a bot with no name', { do: 'describeBot', bot: '' }],
+    ['the password managers of a bot with no name', { do: 'passwordManagers', bot: ' ' }],
+    ['a password manager Highwing does not set up', { do: 'usePasswordManager', bot: 'rae', manager: 'local', use: true }],
+    ['a use that is not true or false', { do: 'usePasswordManager', bot: 'rae', manager: 'bitwarden', use: 'yes' }],
+    ['an unlock with no password', { do: 'unlockPasswordManager', bot: 'rae', manager: 'bitwarden', password: '' }],
+    ['an unlock whose password is no text', { do: 'unlockPasswordManager', bot: 'rae', manager: 'bitwarden', password: 7 }],
+    ['a lock that names no manager', { do: 'lockPasswordManager', bot: 'rae' }],
     ['an edit that changes nothing', { do: 'editBot', bot: 'rae', edit: {}, revision: 2 }],
     ['a mark that is not one of the four', { do: 'markBot', bot: 'rae', mark: 'flip' }],
     ['an up-front open of a bot\'s chat', { do: 'open', ref: { kind: 'bot', bot: 'rae' }, upFront: true }],
@@ -465,22 +484,26 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
-      'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard', 'editBot',
-      'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
-      'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'rename', 'renameGroup',
-      'restore', 'retitle', 'rewind', 'send', 'sendToGroup', 'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
+      'accountUsage', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
+      'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard',
+      'editBot', 'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
+      'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect',
+      'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
+      'sendToGroup', 'setMode', 'setOnClose', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune',
+      'unlockPasswordManager', 'usePasswordManager', 'versions'
     ])
   })
 })
 
 const still = <T>(value: T) => ({ get: () => value, subscribe: () => () => {} })
 const LINK: Link = { state: 'blocked', why: 'hermes-missing', message: 'A link of this test.' }
+const ABOUT = { app: '0.1.0', hermes: { state: 'offline' } } as const
 const SIDEBAR: Sidebar = { bot: null, status: 'stale', rows: [], complete: true }
 const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] }, edition: 1 }
 const NOTHING_OPEN: OpenChat = { shown: null, opening: null, missing: null }
 const NO_RELAYS: RelayDesk = { supported: false, bySession: {} }
 const NO_GROUPS: Groups = { state: 'unsupported' }
+const RESEARCH_WAITING = { research: 'waiting' } as BotActivities
 
 /** An owner live on a remote machine, whose every check passes, so a check of this computer switches to it at epoch 2. */
 const switchable = (hermes: Hermes) => ownConnection({
@@ -518,6 +541,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   const openListeners = new Set<(value: OpenChat) => void>()
   const hermes = {
     link: still(LINK),
+    about: still(ABOUT),
     sidebar: still(SIDEBAR),
     open: {
       get: () => open,
@@ -536,6 +560,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
     relay: still(NO_RELAYS),
     groups: still(NO_GROUPS),
     groupChat: still(null),
+    activity: still(RESEARCH_WAITING),
     slash: {
       get: () => catalog,
       subscribe: (listener: (value: SlashCatalog) => void) => {
@@ -585,12 +610,13 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   const mode = feed<Mode>('chats')
   const theme = feed<Theme>('system')
   const snoozes = feed<Snoozes>({})
+  const onClose = feed<OnClose>('quit')
   const sources: AttachSources = { pick: async () => ['/home/me/error.png', '/home/me/big.zip'], pasted: async () => ({ name: 'Pasted image 1.png', bytes: PNG }) }
   const served = serveWindows(
     ownerOf(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
-    { store, sources }, saver, { mode, theme, snoozes }
+    { store, sources }, saver, { mode, theme, snoozes, onClose }
   )
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
@@ -610,7 +636,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   }
   return {
     listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, lives, stored, previewed, toPane, staged, served,
-    saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, snoozes
+    saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, snoozes, onClose
   }
 }
 
@@ -654,7 +680,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {} }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, about: ABOUT, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, activity: RESEARCH_WAITING, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {}, onClose: 'quit' }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))
@@ -713,7 +739,8 @@ describe('serveWindows', () => {
 
   it.each([
     { topic: 'mode', verb: 'setMode', was: 'chats', picked: 'bots', unknown: 'inbox' },
-    { topic: 'theme', verb: 'setTheme', was: 'system', picked: 'dark', unknown: 'sepia' }
+    { topic: 'theme', verb: 'setTheme', was: 'system', picked: 'dark', unknown: 'sepia' },
+    { topic: 'onClose', verb: 'setOnClose', was: 'quit', picked: 'stay', unknown: 'minimize' }
   ] as const)('sets the $topic a trusted window picks and pushes it, and never passes it to Hermes', async ({ topic, verb, was, picked, unknown }) => {
     vi.useFakeTimers()
     const { listeners, handlers, pushes, event, commands, ...shown } = harness()

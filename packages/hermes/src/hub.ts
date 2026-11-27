@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { DONE, refused, SessionActor, type Upload } from './actor'
+import { activityDesk, busyOf, type Attached } from './activity'
 import { appSignIn, connectApp, listApps, removeApp } from './apps'
-import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, petPicture, setBotPicture } from './bot-admin'
+import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, setBotPicture } from './bot-admin'
+import type { BotActivities, UnreadChat } from './domain/activity'
+import { listMemory, removeMemory, saveMemory } from './memory'
 import { botsIn, MARK_SETS, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
 import type { GroupChat, Groups } from './domain/groups'
@@ -10,6 +13,7 @@ import { shownBot, shownChat, shownGroup, type OpenChat } from './domain/open'
 import type { PaneAsk } from './domain/pane'
 import type { BridgeRequest, ServerRequest } from './domain/reduce'
 import type { RelayDesk } from './domain/relay'
+import { hermesVersionOf, type About } from './domain/about'
 import type { AttachmentId, BranchId, Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog } from './domain/slash'
 import { groupBook } from './groups'
@@ -39,6 +43,8 @@ export interface Feed<T> {
 
 export interface Hermes {
   readonly link: Feed<Link>
+  /** The app version and the Hermes version this socket has reported. Offline while the link is down. */
+  readonly about: Feed<About>
   /** The chats of the open chat's bot, or of the socket's own profile when the open chat has no bot. It follows the open chat to another bot. */
   readonly sidebar: Feed<Sidebar>
   /** The commands and skills a `/` line can run, read once per connection. Empty when Hermes has no catalog or refused it. */
@@ -74,6 +80,12 @@ export interface Hermes {
    */
   readonly groupChat: Feed<GroupChat | null>
   /**
+   * Which bots are working, waiting on the user, or hold a reply no window has shown. Read from the
+   * attached chats, and on a socket that reaches every profile from each bot's live chats, asked
+   * once online, when sessions change and when the roster does. A chat is read once a window watches it.
+   */
+  readonly activity: Feed<BotActivities>
+  /**
    * Watch one session. The listener gets the current value at once and every later one. A session is
    * kept attached while a window watches it, while the gateway lists it as running, while its own
    * run is open, while Hermes waits on a request in it, and while it has unsent messages. It is
@@ -106,6 +118,8 @@ export interface HermesOptions {
   readonly client: { readonly name: string; readonly version: string }
   /** Where a message's attachments are read from when it is sent. null: Highwing no longer holds it. Default: holds none. */
   readonly uploads?: { read(id: AttachmentId): Promise<Upload | null> }
+  /** The unread chats kept from the last run, and where each change to them goes. Default: none kept. */
+  readonly unread?: { readonly chats: readonly UnreadChat[]; keep(chats: readonly UnreadChat[]): void }
 }
 
 /** How long a session nothing retains stays attached. */
@@ -141,6 +155,12 @@ function sameSidebar(a: Sidebar, b: Sidebar): boolean {
 }
 
 const sameOpen = (a: OpenChat, b: OpenChat) => JSON.stringify(a) === JSON.stringify(b)
+
+function sameAbout(left: About, right: About): boolean {
+  if (left.app !== right.app) return false
+  if (left.hermes.state !== 'known' || right.hermes.state !== 'known') return left.hermes.state === right.hermes.state
+  return left.hermes.version === right.hermes.version
+}
 
 const sameCatalog = (a: SlashCatalog, b: SlashCatalog) =>
   a.length === b.length && a.every((entry, index) => {
@@ -203,6 +223,7 @@ export function openHermes(options: HermesOptions): Hermes {
       list.refresh()
       roster.refresh()
       book.refresh()
+      activities.poll()
     }, LIST_DEBOUNCE_MS)
   }
 
@@ -221,9 +242,24 @@ export function openHermes(options: HermesOptions): Hermes {
     unrouted: parsed => count('unrouted', parsed.type)
   }
 
+  let heardVersion: string | null = null
+  const noteVersion = (version: string | null) => {
+    if (version === null || version === heardVersion) return
+    heardVersion = version
+    publishAbout()
+  }
+  const versionOn = (params: unknown): unknown => {
+    if (typeof params !== 'object' || params === null || !('type' in params) || params.type !== 'session.info') return null
+    const payload = 'payload' in params ? params.payload : null
+    return typeof payload === 'object' && payload !== null && 'version' in payload ? payload.version : null
+  }
+  let publishAbout = () => {}
+
   const conn = connect(options.dial, {
     onLink: next => {
+      if (next.state === 'online') heardVersion = null
       link.set(next)
+      publishAbout()
       for (const actor of [...actors.values()]) actor.linkChanged()
       if (next.state !== 'online') list.stale()
       roster.linked(next.state)
@@ -236,8 +272,10 @@ export function openHermes(options: HermesOptions): Hermes {
       relayRead = relays.probe()
       roster.ask()
       book.online()
+      activities.poll()
     },
     onEvent: params => {
+      noteVersion(hermesVersionOf(versionOn(params)))
       const parsed = parseEvent(params)
       ;(routes[parsed.scope] as (parsed: ParsedEvent) => void)(parsed)
     },
@@ -245,6 +283,12 @@ export function openHermes(options: HermesOptions): Hermes {
   }, { startOnLaunch: options.startGatewayOnLaunch ?? true, clock })
 
   const link = feed<Link>(conn.link)
+  const aboutOf = (): About => ({
+    app: options.client.version,
+    hermes: conn.link.state !== 'online' ? { state: 'offline' } : heardVersion === null ? { state: 'unreported' } : { state: 'known', version: heardVersion }
+  })
+  const about = feed<About>(aboutOf(), sameAbout)
+  publishAbout = () => about.set(aboutOf())
   const slash = feed<SlashCatalog>([], sameCatalog)
   let catalogReads = 0
   let catalogRead: Promise<void> = Promise.resolve()
@@ -270,6 +314,7 @@ export function openHermes(options: HermesOptions): Hermes {
     const settled = new Map<SessionId, SessionContent>()
     for (const [id, actor] of actors) if (actor.session.sync.state !== 'opening') settled.set(id, actor.session)
     sidebar.set(deriveSidebar(list, settled, desk.isBotChat))
+    activities.update()
   }
 
   const desk = chatDesk({
@@ -295,9 +340,24 @@ export function openHermes(options: HermesOptions): Hermes {
     bots.set(roster.bots)
     settle()
     const listed = roster.bots
-    if (conn.reach === 'host' && listed.state === 'listed') list.warm(botsIn(listed.roster).map(bot => bot.id))
+    const ids = listed.state === 'listed' ? botsIn(listed.roster).map(bot => bot.id) : null
+    if (conn.reach === 'host' && ids !== null) list.warm(ids)
+    activities.roster(ids)
   })
   const bots = feed<Bots>(roster.bots)
+
+  const attachedChats = () => {
+    const held = new Map<SessionId, Attached>()
+    for (const [id, actor] of actors) if (actor.session.sync.state !== 'opening') held.set(id, { bot: desk.botOf(id), busy: busyOf(actor.session) })
+    return held
+  }
+  const activities = activityDesk(conn, {
+    unread: options.unread?.chats ?? [],
+    keep: chats => options.unread?.keep(chats),
+    local: () => ({ attached: attachedChats(), shown: new Set(windows.keys()) }),
+    changed: () => activity.set(activities.activity)
+  })
+  const activity = feed<BotActivities>(activities.activity)
 
   const book = groupBook(conn, {
     clock, mintId,
@@ -325,7 +385,7 @@ export function openHermes(options: HermesOptions): Hermes {
     }
     const bot = desk.botOf(id)
     const actor = new SessionActor(id, {
-      conn: bot === undefined ? conn : conn.as(bot), clock, mintId, bridge,
+      conn: bot === undefined ? conn : conn.as(bot), clock, mintId, bridge, noteVersion,
       watched: () => windows.has(id),
       publish: (session, previous) => {
         for (const listener of [...(watchers.get(id) ?? [])]) listener(session)
@@ -384,6 +444,7 @@ export function openHermes(options: HermesOptions): Hermes {
     windows.set(id, before + 1)
     const stop = follow(id, listener)
     if (before === 0) actorFor(id).watchBegan()
+    activities.update()
     let watching = true
     return () => {
       if (!watching) return
@@ -392,6 +453,7 @@ export function openHermes(options: HermesOptions): Hermes {
       if (left === 0) windows.delete(id)
       else windows.set(id, left)
       stop()
+      activities.update()
     }
   }
 
@@ -411,7 +473,10 @@ export function openHermes(options: HermesOptions): Hermes {
     },
     retitle: list.retitle,
     pin: list.pin,
-    drop: list.drop,
+    drop: id => {
+      list.drop(id)
+      activities.forget(id)
+    },
     refreshSoon,
     settledRelay: () => relayRead,
     mentioned,
@@ -477,6 +542,9 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'renameGroup') return book.rename(command.group, command.name)
     if (command.do === 'deleteGroup') return book.disband(command.group)
     if (command.do === 'describeBot') return describeBot(conn, command.bot)
+    if (command.do === 'passwordManagers' || command.do === 'usePasswordManager' || command.do === 'unlockPasswordManager' || command.do === 'lockPasswordManager') {
+      return passwordManagers(conn, command)
+    }
     if (command.do === 'botPicture') return botPicture(conn, command.bot)
     if (command.do === 'canGeneratePicture') return canGeneratePicture(conn)
     if (command.do === 'generatePicture') return generatePicture(conn, command.prompt)
@@ -486,6 +554,9 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'connectApp') return connectApp(conn, command.slug, command.bot, command.connectionId)
     if (command.do === 'appSignIn') return appSignIn(conn, command.opId, command.bot)
     if (command.do === 'removeApp') return removeApp(conn, command.connectionId, command.bot)
+    if (command.do === 'memory') return listMemory(conn)
+    if (command.do === 'saveMemory') return saveMemory(conn, command.id, command.text)
+    if (command.do === 'removeMemory') return removeMemory(conn, command.id)
     if (command.do === 'editBot' || command.do === 'setBotPicture' || command.do === 'removeBotPicture') {
       const done = command.do === 'editBot' ? await editBot(conn, command.bot, command.edit, command.revision)
         : await setBotPicture(conn, command.bot, command.do === 'setBotPicture' ? command.data : null)
@@ -513,6 +584,7 @@ export function openHermes(options: HermesOptions): Hermes {
 
   return {
     link,
+    about,
     sidebar,
     slash,
     bots,
@@ -520,6 +592,7 @@ export function openHermes(options: HermesOptions): Hermes {
     relay,
     groups,
     groupChat,
+    activity,
     watch,
     run: command => run(command) as Promise<Outcome<ResultOf<typeof command>>>,
     close: async () => {

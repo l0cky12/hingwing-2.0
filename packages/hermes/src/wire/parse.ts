@@ -17,6 +17,7 @@ import type {
   SessionUsage, SettledTurn, SideId, SidebarRow, SideTask, StatusAbout, ToolId, ToolResult, TurnId
 } from '../domain/session'
 import type { PathMatch } from '../domain/path'
+import { MANAGER_NAMES, MANAGERS, type BotManagers, type ManagerName, type ManagerState } from '../domain/passwords'
 import type { RelayState } from '../domain/relay'
 import { OWN_COMMANDS, type SlashCatalog, type SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
@@ -33,7 +34,7 @@ import type {
   SessionControlSnapshot, SessionLiveInfo, SessionMutateResult, SessionStats, SessionTitlePayload, SessionUsagePayload, SideAgentCompletePayload,
   StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload,
   SubagentEventPayload, SudoRequestParams, TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage,
-  VaultCodeRequestParams, VaultSaveLoginRequestParams, VaultUnlockRequestParams
+  VaultCodeRequestParams, VaultListResult, VaultSaveLoginRequestParams, VaultSourcesResult, VaultUnlockRequestParams
 } from './contract.generated'
 
 export type ParsedEvent =
@@ -1332,6 +1333,23 @@ export function parseSignIn(reply: unknown): AppSignIn {
 
 /** `pet.thumb`'s idle frame, a PNG data URL (tui_gateway/methods_session.py:1557-1563), or null when Hermes has none. */
 export const parsePetPicture = (reply: PetThumbResult): string | null => (isObject(reply) && reply.ok === true ? pictureDataUrlOf(reply.dataUri, PICTURE_MAX_BYTES) : null)
+
+function managerStateOf(row: Obj, logins: number | null): ManagerState {
+  if (row.installed === false) return { at: 'missing' }
+  if (row.enabled !== true) return { at: 'off' }
+  return row.unlocked === true ? { at: 'ready', logins } : { at: 'locked' }
+}
+
+export function parseBotManagers(bot: BotId, sources: VaultSourcesResult, listed: VaultListResult | null): BotManagers {
+  const rows = isObject(sources) && Array.isArray(sources.sources) ? sources.sources.filter(isObject) : []
+  const items = listed === null ? null : isObject(listed) && Array.isArray(listed.items) ? listed.items.filter(isObject) : []
+  const loginsOf = (name: ManagerName) => (items === null ? null : items.filter(item => item.backend === name).length)
+  const managers = MANAGER_NAMES.flatMap(name => {
+    const row = rows.find(held => held.name === name)
+    return row === undefined ? [] : [{ name, label: MANAGERS[name].label, state: managerStateOf(row, loginsOf(name)) }]
+  })
+  return { bot, managers }
+}
 
 /** A target that is not running answers with one of these, as a refusal or in a failed receipt (tui_gateway/methods_bot_relay.py:122). */
 const NOT_RUNNING: ReadonlySet<string> = new Set(['runtime_unavailable', 'runtime_offline'])

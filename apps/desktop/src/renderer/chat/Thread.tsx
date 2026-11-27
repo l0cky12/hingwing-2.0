@@ -1,7 +1,7 @@
-import { versionLabel, type AdmissionId, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Relay, type Told, type TurnId, type Version, type Versions } from '@highwing/hermes/domain'
+import { versionLabel, type AdmissionId, type Bot, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Relay, type Told, type TurnId, type Version, type Versions } from '@highwing/hermes/domain'
 import { fieldId, findInThread, multiReply, type Changing, type FindMatch, type PendingRow, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
-import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { Avatar } from '../bots/Avatar'
+import { createContext, Fragment, memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { Avatar, BotFace } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
 import { AskCard, type RequestAnswer } from './Asks'
 import { Command, CopyButton } from './Copy'
@@ -259,10 +259,14 @@ const END_CLASS = {
   tip: 'working', paused: 'paused', done: 'complete', failed: 'error', stopped: 'interrupted', lost: 'lost'
 } as const satisfies Record<Exclude<ThreadEnd['kind'], 'at' | 'none'>, string>
 
-function End({ turnKey, end }: { readonly turnKey: string; readonly end: ThreadEnd }) {
+/** The bot of the open chat, which draws the end of a turn whose reply has not started. null where the chat has no listed bot. */
+export const ChatBotContext = createContext<Bot | null>(null)
+
+function End({ turnKey, end, started }: { readonly turnKey: string; readonly end: ThreadEnd; readonly started: boolean }) {
+  const bot = useContext(ChatBotContext)
   if (end.kind === 'at' || end.kind === 'none') return null
   const words = end.kind === 'tip' ? <><span><PhraseText words={end.words} /></span><Elapsed elapsed={end.elapsed} /></> : end.kind === 'done' ? <span className="sr">{end.words}</span> : <span data-find={fieldId(turnKey, 'end')}>{end.words}</span>
-  return <div className={`tip ${END_CLASS[end.kind]}`} role="status" data-end={end.kind}><span className="glyph" />{words}</div>
+  return <div className={`tip ${END_CLASS[end.kind]}`} role="status" data-end={end.kind}>{end.kind === 'tip' && !started && bot !== null ? <BotFace bot={bot} mood="working" size={22} /> : <span className="glyph" />}{words}</div>
 }
 
 /** Acts on a sent message by its stored row and text: `onEdit` puts it in the composer, `onRegenerate` asks again for its reply. */
@@ -342,7 +346,7 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, canEdit
         {turn.nodes.map(node => (
           <Node key={node.key} node={node} endTone={end.kind === 'at' && end.nodeKey === node.key ? end.tone : null} elapsed={end.kind === 'at' && end.tone === 'live' && end.nodeKey === node.key ? end.elapsed : null} open={open} onToggle={onToggle} onAnswer={onAnswer} helpers={helpers} />
         ))}
-        <End turnKey={turn.key} end={end} />
+        <End turnKey={turn.key} end={end} started={turn.nodes.length > 0} />
       </div>
       {turn.tokens !== null && <p className="used">{turn.tokens}</p>}
       {(regenerates || movesToNewChat || reactions !== null) && (

@@ -1,6 +1,7 @@
-import type { Bot, BotCreated, BotDetails, BotDraft, BotId, BotMark, Bots, CommandOutcome, GroupDraft, GroupId, Groups, Link, Marked, ModelMenu, OpenChat } from '@highwing/hermes/domain'
+import type { Bot, BotActivities, BotActivity, BotCreated, BotDetails, BotDraft, BotId, BotMark, Bots, CommandOutcome, GroupDraft, GroupId, Groups, Link, Marked, ModelMenu, OpenChat } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
+import { activityIn } from '@highwing/hermes/domain'
 import { GroupEditor } from '../groups/GroupEditor'
 import { GroupForm } from '../groups/GroupForm'
 import { groupRowsOf, type GroupRowView } from '../groups/group-rows'
@@ -13,6 +14,7 @@ import { nameProblem } from './bot-form'
 import type { LookCalls } from './LookPicker'
 import { NewBotForm } from './NewBotForm'
 import { DeleteDialog } from './DeleteDialog'
+import { MemoryDialog } from './MemoryDialog'
 import { isMenuKey, type Box, type Opener } from '../chrome/popup-menu'
 import { anchorOf, botMenuOf, DELETE_WORDS, deleteRefusal, groupMenuOf, sameOwner, type GroupAction, type MenuAction, type MenuOwner, type OpenMenu } from './bot-menu'
 import { afterGroupOf, elementIn, fallbackOf, focusIn, moreOf, openerTarget, rowOf, stayedIn, type FocusTarget } from './focus'
@@ -39,7 +41,7 @@ export function BotsSidebar({ head, foot = null }: { readonly head: ReactNode; r
   const open = useTopic('open')
   return (
     <BotsPanel
-      head={head} bots={useTopic('bots')} open={open} link={useTopic('link')} groups={useTopic('groups')}
+      head={head} bots={useTopic('bots')} open={open} link={useTopic('link')} groups={useTopic('groups')} activity={useTopic('activity')}
       onOpen={bot => run({ do: 'open', ref: { kind: 'bot', bot } })}
       onNewChat={() => void run(newChatIn(open, crypto.randomUUID()))}
       onNew={bot => run({ do: 'open', ref: { kind: 'new', bot, draftId: crypto.randomUUID() }, upFront: true })}
@@ -68,6 +70,7 @@ interface BotsPanelProps extends EditorCalls {
   readonly open: OpenChat | undefined
   readonly link: Link | undefined
   readonly groups: Groups | undefined
+  readonly activity: BotActivities | undefined
   readonly onOpen: (bot: BotId) => Promise<CommandOutcome<unknown>>
   readonly onNewChat: () => void
   readonly onNew: (bot: BotId) => Promise<CommandOutcome<unknown>>
@@ -144,31 +147,50 @@ function GroupRow({ row, busy, menuBy, onOpen, onMenu }: GroupRowProps) {
   )
 }
 
+const ACTIVITY_WORDS: { readonly [A in BotActivity]: string } = { working: 'Working', waiting: 'Waiting for you', unread: 'New reply' }
+const Exclaim = () => <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round"><path d="M12 4v10M12 20v.01" /></svg>
+const ACTIVITY_MARKS: { readonly [A in BotActivity]: ReactNode } = { working: <><span /><span /><span /></>, waiting: <Exclaim />, unread: null }
+
+function ActivityMark({ activity }: { readonly activity: BotActivity | null }) {
+  return activity === null ? null : <span className="bot-activity" data-activity={activity} aria-hidden="true">{ACTIVITY_MARKS[activity]}</span>
+}
+
 interface BotRowProps {
   readonly row: Row
   readonly current: boolean
   readonly busy: boolean
+  readonly activity: BotActivity | null
   readonly menuBy: Opener['by'] | null
   readonly onPick: () => void
   readonly onMenu: (opener: Opener) => void
 }
 
-function BotRow({ row: { bot, place }, current, busy, menuBy, onPick, onMenu }: BotRowProps) {
+function BotRow({ row: { bot, place }, current, busy, activity, menuBy, onPick, onMenu }: BotRowProps) {
   const preview = useId()
+  const status = useId()
+  const said = activity === null ? null : <span className="sr" id={status}>{ACTIVITY_WORDS[activity]}</span>
   const openers = useMenuOpeners('data-more', onMenu)
   const more = `More for ${bot.name}`
   return (
     <div
-      className={place === 'card' ? 'bot-row bot-row-feature' : 'bot-row'} data-place={place} data-menu={menuBy !== null || undefined}
+      className={place === 'card' ? 'bot-row bot-row-feature' : 'bot-row'} data-place={place} data-menu={menuBy !== null || undefined} data-activity={activity ?? undefined}
       {...openers}
     >
       {place === 'card'
-        ? <button type="button" className="bot-feature" data-bot={bot.id} aria-label={`${bot.name}, default bot`} aria-current={current || undefined} aria-busy={busy || undefined} onClick={onPick}>
-            <span className="bot-badged"><Avatar bot={bot} size={48} /><span className="bot-badge" title="Default bot"><Star /></span></span>
+        ? <button
+            type="button" className="bot-feature" data-bot={bot.id} aria-label={`${bot.name}, default bot`} aria-describedby={said === null ? undefined : status}
+            aria-current={current || undefined} aria-busy={busy || undefined} onClick={onPick}
+          >
+            <span className="bot-badged"><Avatar bot={bot} size={48} /><ActivityMark activity={activity} /><span className="bot-badge" title="Default bot"><Star /></span></span>
+            {said}
             <span className="bot-name">{bot.name}</span>
           </button>
-        : <button type="button" className="bot" data-bot={bot.id} aria-label={bot.name} aria-describedby={preview} aria-current={current || undefined} aria-busy={busy || undefined} onClick={onPick}>
-            <Avatar bot={bot} size={32} />
+        : <button
+            type="button" className="bot" data-bot={bot.id} aria-label={bot.name} aria-describedby={said === null ? preview : `${status} ${preview}`}
+            aria-current={current || undefined} aria-busy={busy || undefined} onClick={onPick}
+          >
+            <span className="bot-face"><Avatar bot={bot} size={32} /><ActivityMark activity={activity} /></span>
+            {said}
             <span className="bot-text">
               <span className="bot-name">{bot.name}</span>
               <span className="bot-preview" id={preview}>{bot.preview ?? 'No messages yet'}</span>
@@ -218,7 +240,7 @@ function useMarks({ bots, onMark, onRefused, onLanded }: MarkCalls) {
 const NO_BOX: Box = { left: 0, top: 0, right: 0, bottom: 0 }
 
 export function BotsPanel({
-  head = <h2>Bots</h2>, bots, open, link, groups, onOpen, onNewChat, onNew, onMark, onCreate, onCreateGroup, onOpenGroup, onRenameGroup, onDeleteGroup, onModels, looks, foot = null, ...editor
+  head = <h2>Bots</h2>, bots, open, link, groups, activity, onOpen, onNewChat, onNew, onMark, onCreate, onCreateGroup, onOpenGroup, onRenameGroup, onDeleteGroup, onModels, looks, foot = null, ...editor
 }: BotsPanelProps) {
   const [refused, setRefused] = useState<string | null>(null)
   const [form, setForm] = useState<{ readonly models: ModelMenu | 'loading' } | null>(null)
@@ -227,6 +249,7 @@ export function BotsPanel({
   const [made, setMade] = useState<BotCreated | null>(null)
   const [editing, setEditing] = useState<BotDetails | null>(null)
   const [deleting, setDeleting] = useState<Bot | null>(null)
+  const [memory, setMemory] = useState(false)
   const [editingGroup, setEditingGroup] = useState<GroupRowView | null>(null)
   const [deletingGroup, setDeletingGroup] = useState<GroupRowView | null>(null)
   /** A group whose delete Hermes has not answered yet, and where focus goes once its row leaves. */
@@ -322,6 +345,7 @@ export function BotsPanel({
     open: bot => void pick(bot.id),
     new: bot => void onNew(bot.id).then(outcome => setRefused(outcome.ok ? null : outcome.refusal.message)),
     edit: bot => void describe(bot.id),
+    memory: () => setMemory(true),
     pin: bot => mark(bot, 'pin'),
     unpin: bot => mark(bot, 'unpin'),
     hide: bot => mark(bot, 'hide'),
@@ -379,7 +403,7 @@ export function BotsPanel({
     const row = rows.find(held => held.bot.id === owner.bot)
     return row && (
       <RowMenu
-        key={key} name={row.bot.name} items={botMenuOf(row.place)} more={moreOf(owner)} anchor={() => anchorOf(opener, row.place, measure(owner))}
+        key={key} name={row.bot.name} items={botMenuOf(row.place, bots?.state === 'listed' && bots.roster.featured?.id === row.bot.id)} more={moreOf(owner)} anchor={() => anchorOf(opener, row.place, measure(owner))}
         onChoose={action => choose(row.bot, action)} onClose={closeMenu}
       />
     )
@@ -389,7 +413,7 @@ export function BotsPanel({
     const owner: MenuOwner = { kind: 'bot', bot: row.bot.id }
     return (
       <BotRow
-        key={row.bot.id} row={row} current={selected === row.bot.id} busy={opening === row.bot.id || marks.busy.has(row.bot.id)}
+        key={row.bot.id} row={row} current={selected === row.bot.id} busy={opening === row.bot.id || marks.busy.has(row.bot.id)} activity={activityIn(activity, row.bot.id)}
         menuBy={menuBy(owner)} onPick={() => void pick(row.bot.id)} onMenu={opener => openMenu(owner, opener)}
       />
     )
@@ -487,6 +511,13 @@ export function BotsPanel({
           {...editor}
           onClose={() => closeDialog(() => setEditing(null), { to: 'row', bot: editing.bot })}
         />
+      )}
+      {memory && (
+        <MemoryDialog onClose={() => {
+          const bot = bots?.state === 'listed' ? bots.roster.featured?.id : undefined
+          if (bot === undefined) setMemory(false)
+          else closeDialog(() => setMemory(false), { to: 'row', bot })
+        }} />
       )}
       {deleting !== null && (
         <DeleteDialog
