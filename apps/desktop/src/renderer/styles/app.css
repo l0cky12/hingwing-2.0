@@ -664,7 +664,10 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .foot .pill { order: 1; padding: 2px 0; border: 0; background: transparent; font: inherit; color: var(--graphite); }
 .foot .pill:hover { color: var(--ink); }
 .foot .pill[aria-pressed="true"] { color: var(--signal); font-weight: 500; }
-.foot .approvals { order: 1; padding: 2px 0; color: var(--graphite); }
+.foot .approvals { order: 1; }
+.approvals-menu { top: auto; bottom: calc(100% + 8px); left: -6px; right: auto; width: max-content; max-width: min(340px, calc(100vw - 32px)); }
+.approvals-menu button { display: grid; grid-template-columns: 14px 1fr; column-gap: 6px; padding-left: 6px; color: var(--ink); }
+.approvals-menu .approvals-line { grid-column: 2; color: var(--graphite); font-size: 12px; }
 .confirm-dialog { width: min(360px, calc(100vw - 32px)); padding: 20px 22px; border: 1px solid var(--rule); border-radius: 10px; background: var(--sheet); color: var(--ink); font: 14px/1.45 var(--sans); }
 .confirm-dialog::backdrop { background: rgb(var(--shade) / .35); }
 .confirm-dialog h2 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
