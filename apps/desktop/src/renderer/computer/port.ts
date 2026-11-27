@@ -1,4 +1,4 @@
-import type { ScreenFrame } from '../../ipc-contract'
+import { SCREEN_PORT, type ScreenFrame } from '../../ipc-contract'
 
 type Handler = ((event: unknown) => void) | null
 
@@ -39,4 +39,31 @@ export function portSocket(port: MessagePort, closed: (code: number) => void) {
   }
   port.start()
   return socket
+}
+
+const waiting = new Map<number, (port: MessagePort) => void>()
+let requests = 0
+let listening = false
+
+/** A port main posted for an ask no view waits for any more is closed, so main closes its socket too. */
+function deliver(event: MessageEvent) {
+  const [port] = event.ports
+  const request: unknown = event.source === window && typeof event.data === 'object' && event.data !== null ? (event.data as Record<string, unknown>)[SCREEN_PORT] : undefined
+  if (port === undefined || typeof request !== 'number') return
+  const adopt = waiting.get(request)
+  waiting.delete(request)
+  if (adopt === undefined) port.close()
+  else adopt(port)
+}
+
+/** Asks main for a live view's port. The returned function withdraws the ask. */
+export function askForPort(epoch: number, adopt: (port: MessagePort) => void): () => void {
+  if (!listening) {
+    window.addEventListener('message', deliver)
+    listening = true
+  }
+  const request = ++requests
+  waiting.set(request, adopt)
+  window.highwing.openScreen(epoch, request)
+  return () => void waiting.delete(request)
 }

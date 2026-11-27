@@ -207,12 +207,13 @@ export interface Bridge {
   attachDropped(files: readonly File[]): Promise<readonly StageResult[]>
   /**
    * Asks main for a live view of the `screen` topic's bot. Main answers with a `MessagePort`, posted to the window as the message
-   * `SCREEN_PORT`, that carries `ScreenFrame`s one way and the view's input bytes, or `'close'`, the other. `epoch` is as for `run`.
+   * `{ [SCREEN_PORT]: request }`, that carries `ScreenFrame`s one way and the view's input bytes, or `'close'`, the other. `epoch`
+   * is as for `run`. `request` names the ask, so a view takes only the port it asked for.
    */
-  openScreen(epoch: number): void
+  openScreen(epoch: number, request: number): void
 }
 
-/** The window message that carries a live view's port. */
+/** The key of the window message that carries a live view's port. */
 export const SCREEN_PORT = 'highwing:screen-port'
 /** What main sends on a live view's port: `'open'` once the socket is up, then the screen's RFB bytes, then why it closed, once. */
 export type ScreenFrame = 'open' | ArrayBuffer | { readonly closed: number }

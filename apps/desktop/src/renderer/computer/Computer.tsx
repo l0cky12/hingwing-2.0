@@ -1,11 +1,10 @@
 import type RFB from '@novnc/novnc'
 import type { Control, ScreenView } from '@highwing/hermes/domain'
 import { useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { SCREEN_PORT } from '../../ipc-contract'
 import { blobUrlOf } from '../bots/pictures'
 import { Epoch, run } from '../store'
 import { CARD_WORDS, closedWords, CONTROL_WORDS, NO_SCREEN_WORDS, pressOf, showComputer, useComputerShown } from './computer'
-import { portSocket } from './port'
+import { askForPort, portSocket } from './port'
 
 const close = () => showComputer(false)
 
@@ -30,7 +29,7 @@ export function ComputerCard({ control, thumbnail }: { readonly control: Control
     <div className="computer-card">
       <button type="button" aria-label="Open screen" onClick={() => showComputer(true)}>
         {frame === null ? <span className="computer-thumb" /> : <img className="computer-thumb" src={frame} alt="" data-frame="shown" />}
-        <span className="computer-says">{CARD_WORDS[control]}</span>
+        <span>{CARD_WORDS[control]}</span>
       </button>
     </div>
   )
@@ -79,22 +78,17 @@ function LiveScreen({ control }: { readonly control: Control }) {
       })
       rfb.current = viewer
     }
-    const take = (event: MessageEvent) => {
-      const [port] = event.ports
-      if (event.source !== window || event.data !== SCREEN_PORT || port === undefined) return
-      window.removeEventListener('message', take)
+    setLive({ at: 'connecting' })
+    const withdraw = askForPort(epoch, port => {
       // noVNC reads the window as it loads, so it is loaded only when a view opens.
       void import('@novnc/novnc').then(({ default: Viewer }) => {
         if (gone || target.current === null) return port.close()
         watch(new Viewer(target.current, portSocket(port, closed => (code = closed)), { shared: true }))
       })
-    }
-    setLive({ at: 'connecting' })
-    window.addEventListener('message', take)
-    window.highwing.openScreen(epoch)
+    })
     return () => {
       gone = true
-      window.removeEventListener('message', take)
+      withdraw()
       rfb.current?.disconnect()
       rfb.current = null
     }

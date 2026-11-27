@@ -670,7 +670,8 @@ export const parseObserved = (reply: DisplayObserveResult): { readonly ticket: s
   usable(() => {
     const p = fields<DisplayObserveResult>(reply)
     const path = p.str('path')
-    if (!path.startsWith('/')) throw new Unusable()
+    // Resolved against the gateway's origin, so only a plain path may name it: `//host/` would leave that origin with the ticket.
+    if (!/^\/[\w.\-/]*$/.test(path) || path.startsWith('//')) throw new Unusable()
     return { ticket: p.str('ticket'), path, viewerId: p.str('viewer_id') }
   })
 

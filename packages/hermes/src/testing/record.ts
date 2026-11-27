@@ -183,7 +183,7 @@ export function recordingDialer(inner: Dialer, path: string, clock: Clock = syst
         socket.send(text)
       },
       close: () => socket.close()
-    }, socket.reach)
+    }, socket.reach, socket.sibling)
     socket.onText = text => {
       heard(JSON.parse(text))
       flush()

@@ -1005,8 +1005,9 @@ export class ScriptedGateway {
   private readonly stagedImages = new Set<string>()
   /** Each profile's takeover lease. `viewer` is the id of the person who holds it. */
   private readonly leases = new Map<string, { readonly holder: 'agent' | 'human'; readonly viewer: string | null; readonly epoch: number }>()
-  /** The viewer id `display.observe` minted on each socket, as Hermes mints one per connection. */
-  private readonly viewerIds = new Map<Socket, string>()
+  /** The viewer ids `display.observe` minted on each socket. Hermes keeps them per connection. */
+  private readonly viewerIds = new Map<Socket, Set<string>>()
+  private minted = 0
   private readonly rooms: ScriptedRooms | null
   private readonly vault: ScriptedVault | null
   private drop: Drop
@@ -1956,21 +1957,28 @@ export class ScriptedGateway {
     return { data_url: screen?.running === true ? screen.thumbnail ?? null : null }
   }
 
-  /** `display.observe` (tui_gateway/methods_display.py:149-171). The ticket opens nothing here: a fixture has no screen to stream. */
+  /**
+   * `display.observe` (tui_gateway/methods_display.py:122-171). An id this socket was minted is kept, and any other ask mints a new
+   * one. The ticket opens nothing here: a fixture has no screen to stream.
+   */
   observe(socket: Socket, params: Obj, profile: string): Obj {
     if (this.fixture.header.display?.[profile]?.running !== true) throw new Refused('not running', { code: 5300, message: "this profile's Bot Desktop is not running; call display.start first" })
-    const viewer_id = this.viewerIds.get(socket) ?? `viewer-${this.viewerIds.size + 1}`
-    this.viewerIds.set(socket, viewer_id)
+    const mine = this.viewerIds.get(socket) ?? new Set<string>()
+    this.viewerIds.set(socket, mine)
+    const asked = typeof params.viewer_id === 'string' ? params.viewer_id : ''
+    const viewer_id = mine.has(asked) ? asked : `viewer-${++this.minted}`
+    mine.add(viewer_id)
     return { ...this.screenStatus(profile), ticket: 'fixture-display-ticket', path: '/api/display/ws', viewer_id }
   }
 
   /**
    * `display.lease.acquire` and `release` (tui_gateway/methods_display.py:239-268). Only a viewer id this socket was minted may take or
-   * hand back control, and each change reaches every client as `display.lease`.
+   * hand back control, or one from another socket handing back with `force`, and each change reaches every client as `display.lease`.
    */
   lease(socket: Socket, params: Obj, profile: string, holder: 'agent' | 'human'): Obj {
     const viewer = typeof params.viewer_id === 'string' ? params.viewer_id : null
-    if (viewer === null || this.viewerIds.get(socket) !== viewer) {
+    const forced = holder === 'agent' && params.force === true
+    if (viewer === null || (!forced && this.viewerIds.get(socket)?.has(viewer) !== true)) {
       throw new Refused('viewer_mismatch', { code: 5300, message: 'viewer_id was not minted for this connection; call display.observe first', data: { code: 'viewer_mismatch' } })
     }
     const { held } = this.leaseOf(profile)

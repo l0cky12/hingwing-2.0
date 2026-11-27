@@ -4,6 +4,11 @@ import type { ConnectionOwner } from './connection'
 
 /** The close code a live view reports when it never reached the screen: Hermes gave no ticket, or no socket could reach it. */
 export const UNREACHED = 4404
+/**
+ * How main closes the socket when the view goes away. Hermes hands control back to the agent on a clean close (1000 or 1001), as
+ * when a person closes its own viewer, but leaving Highwing's view, for another chat or for Settings, is not Hand back.
+ */
+const LEFT = 4100
 
 /**
  * Carries the live view of a bot's screen between Hermes and the window. The window cannot dial it: its page may open no
@@ -11,11 +16,11 @@ export const UNREACHED = 4404
  * none, and relays the RFB bytes over a MessagePort. The address holds a single-use ticket and never leaves main.
  */
 export function serveScreen(owner: ConnectionOwner, ipc: Pick<IpcMain, 'on' | 'removeAllListeners'>, isAppUrl: (url: string) => boolean): () => void {
-  ipc.on(CHANNEL.screen, (event: IpcMainEvent, epoch: unknown) => {
+  ipc.on(CHANNEL.screen, (event: IpcMainEvent, epoch: unknown, request: unknown) => {
     const frame = event.senderFrame
-    if (frame === null || frame.parent !== null || !isAppUrl(frame.url)) return
+    if (frame === null || frame.parent !== null || !isAppUrl(frame.url) || !Number.isSafeInteger(request)) return
     const { port1: port, port2 } = new MessageChannelMain()
-    event.sender.postMessage(CHANNEL.screen, null, [port2])
+    event.sender.postMessage(CHANNEL.screen, request, [port2])
     const send = (sent: ScreenFrame) => port.postMessage(sent)
     let socket: WebSocket | null = null
     let ended = false
@@ -24,7 +29,7 @@ export function serveScreen(owner: ConnectionOwner, ipc: Pick<IpcMain, 'on' | 'r
       ended = true
       send({ closed: code })
       port.close()
-      socket?.close()
+      socket?.close(LEFT)
     }
     port.on('message', ({ data }) => {
       if (data === 'close') return end(1000)
@@ -34,10 +39,11 @@ export function serveScreen(owner: ConnectionOwner, ipc: Pick<IpcMain, 'on' | 'r
     port.start()
 
     const hermes = owner.hermes
-    if (hermes === null || epoch !== epochOf(owner.setup.get())) return end(UNREACHED)
+    const live = () => owner.hermes === hermes && epoch === epochOf(owner.setup.get())
+    if (hermes === null || !live()) return end(UNREACHED)
     void hermes.screenSocket().then(address => {
       if (ended) return
-      if (address === null) return end(UNREACHED)
+      if (address === null || !live()) return end(UNREACHED)
       const opened = new WebSocket(address)
       socket = opened
       opened.binaryType = 'arraybuffer'

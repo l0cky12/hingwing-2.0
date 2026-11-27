@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { DONE, refused } from './actor'
 import type { BotId } from './domain/bots'
 import type { Outcome } from './domain/command'
-import { controlOf, newerLease, type Lease, type Screen, type ScreenFacts, type ScreenView } from './domain/screen'
+import { controlOf, newerLease, type Lease, type Screen, type ScreenView } from './domain/screen'
 import { NOT_CONNECTED } from './open'
 import { Offline, RpcRefusal, type Calls, type Clock, type Connection } from './wire/link'
 import { parseLease, parseObserved, parseScreenFacts, parseThumbnail } from './wire/parse'
@@ -10,7 +10,8 @@ import { parseLease, parseObserved, parseScreenFacts, parseThumbnail } from './w
 /** How often the open chat's bot is asked for a new frame of its screen while the agent uses it. */
 export const THUMBNAIL_MS = 2_000
 
-type Held = { readonly state: 'asking' } | { readonly state: 'unavailable' } | { readonly state: 'known'; readonly facts: ScreenFacts }
+/** `key`: the profile's home, the name Hermes's events give it. */
+type Held = { readonly state: 'asking' } | { readonly state: 'unavailable' } | { readonly state: 'known'; readonly key: string; readonly running: boolean }
 
 const ASKING: Held = { state: 'asking' }
 const UNAVAILABLE: Held = { state: 'unavailable' }
@@ -30,7 +31,7 @@ export interface ScreenDesk {
   moved(change: { readonly key: string; readonly running: boolean | null; readonly lease: Lease }): void
   /** Takes control of the bot's screen from the agent, or hands it back. */
   control(bot: BotId | null, take: boolean): Promise<Outcome>
-  /** Where to dial the live view of the followed bot's screen, ticket included. null when Hermes gives none, or no socket can reach it. */
+  /** Where to dial the live view of the followed bot's screen, ticket included. null when Hermes gives none, no socket can reach it, or the open chat moved to another bot meanwhile. */
   socket(): Promise<string | null>
   close(): void
 }
@@ -42,18 +43,29 @@ export interface ScreenDesk {
 export function screenDesk(conn: Pick<Connection, 'call' | 'as' | 'sibling'>, clock: Clock, changed: () => void): ScreenDesk {
   const held = new Map<BotId | null, Held>()
   const asking = new Set<BotId | null>()
+  /** The newest lease of each profile, by its home. An event can come before the reply that names a bot's home. */
+  const leases = new Map<string, Lease>()
+  /** Every viewer id Hermes minted for this Highwing, by its hash. A lease taken before a dropped link is still this Highwing's. */
+  const ours = new Map<string, string>()
+  /** The viewer id Hermes minted on this connection. Only it may take control. */
+  let current: string | null = null
+  /** Each `display.observe` waits for the one before, so a second asks with the id the first was minted, not for a new one. */
+  let observing: Promise<unknown> = Promise.resolve()
   let followed: BotId | null | undefined
   let thumbnail: string | null = null
-  /** Minted by Hermes per connection, so a new socket forgets it. */
-  let viewer: { readonly id: string; readonly hash: string } | null = null
   let polling: { readonly bot: BotId | null; cancel: () => void } | null = null
 
   const callsFor = (bot: BotId | null): Pick<Calls, 'call'> => (bot === null ? conn : conn.as(bot))
   const heldOf = (bot: BotId | null): Held => held.get(bot) ?? ASKING
   const running = (bot: BotId | null) => {
     const now = heldOf(bot)
-    return now.state === 'known' && now.facts.running
+    return now.state === 'known' && now.running
   }
+  const leaseOf = (bot: BotId | null) => {
+    const now = heldOf(bot)
+    return now.state === 'known' ? leases.get(now.key) ?? null : null
+  }
+  const lease = (key: string, next: Lease) => leases.set(key, newerLease(leases.get(key) ?? null, next))
 
   const stopPolling = () => {
     polling?.cancel()
@@ -90,18 +102,14 @@ export function screenDesk(conn: Pick<Connection, 'call' | 'as' | 'sibling'>, cl
     changed()
   }
 
-  const known = (bot: BotId | null, facts: ScreenFacts) => {
-    const before = heldOf(bot)
-    put(bot, { state: 'known', facts: { ...facts, lease: newerLease(before.state === 'known' ? before.facts.lease : null, facts.lease) } })
-  }
-
   const ask = async (bot: BotId | null) => {
     if (asking.has(bot)) return
     asking.add(bot)
     try {
       const facts = parseScreenFacts(await callsFor(bot).call('display.status', {}))
-      if (facts === null) put(bot, UNAVAILABLE)
-      else known(bot, facts)
+      if (facts === null) return put(bot, UNAVAILABLE)
+      lease(facts.key, facts.lease)
+      put(bot, { state: 'known', key: facts.key, running: facts.running })
     } catch (error) {
       // -32601 on an older Hermes, or on a socket without the interactive grant; profile_mismatch for another bot on a socket bound to one.
       if (error instanceof RpcRefusal) put(bot, UNAVAILABLE)
@@ -111,32 +119,40 @@ export function screenDesk(conn: Pick<Connection, 'call' | 'as' | 'sibling'>, cl
     }
   }
 
-  const minted = (viewerId: string) => {
-    if (viewer?.id !== viewerId) viewer = { id: viewerId, hash: hashOf(viewerId) }
-    return viewer
+  const observe = (bot: BotId | null) => {
+    const asked = observing.then(async () => {
+      const observed = parseObserved(await callsFor(bot).call('display.observe', current === null ? {} : { viewer_id: current }))
+      if (observed !== null) {
+        current = observed.viewerId
+        ours.set(hashOf(current), current)
+      }
+      return observed
+    })
+    observing = asked.catch(() => null)
+    return asked
   }
 
-  const observe = async (bot: BotId | null) => {
-    const observed = parseObserved(await callsFor(bot).call('display.observe', viewer === null ? {} : { viewer_id: viewer.id }))
-    if (observed !== null) minted(observed.viewerId)
-    return observed
-  }
-
-  const leased = (bot: BotId | null, lease: Lease | null) => {
+  const leased = (bot: BotId | null, reply: Lease | null) => {
     const now = heldOf(bot)
-    if (lease !== null && now.state === 'known') known(bot, { ...now.facts, lease })
+    if (reply === null || now.state !== 'known') return
+    lease(now.key, reply)
+    changed()
   }
+  const acquire = async (bot: BotId | null, id: string) =>
+    leased(bot, parseLease(await callsFor(bot).call('display.lease.acquire', { viewer_id: id, reason: 'Highwing' })))
 
-  const screenOf = (now: Held): Screen => {
+  const screenOf = (bot: BotId | null): Screen => {
+    const now = heldOf(bot)
     if (now.state !== 'known') return now
-    if (!now.facts.running) return OFF
-    const control = controlOf(now.facts.lease, viewer?.hash ?? null)
+    if (!now.running) return OFF
+    const taken = leases.get(now.key)
+    const control = taken === undefined ? 'agent' : controlOf(taken, ours)
     return { state: 'on', control, thumbnail: control === 'agent' ? thumbnail : null }
   }
 
   return {
     get view() {
-      return followed === undefined ? null : { bot: followed, screen: screenOf(heldOf(followed)) }
+      return followed === undefined ? null : { bot: followed, screen: screenOf(followed) }
     },
     follow: bot => {
       if (bot === followed) return
@@ -147,29 +163,36 @@ export function screenDesk(conn: Pick<Connection, 'call' | 'as' | 'sibling'>, cl
       changed()
     },
     online: () => {
-      viewer = null
+      current = null
       for (const bot of [...held.keys()]) if (bot !== followed) held.delete(bot)
       if (followed !== undefined) void ask(followed)
     },
     offline: () => {
-      viewer = null
+      current = null
       stopPolling()
     },
-    moved: ({ key, running: now, lease }) => {
+    moved: ({ key, running: now, lease: next }) => {
+      lease(key, next)
       for (const [bot, was] of [...held]) {
-        if (was.state === 'known' && was.facts.key === key) known(bot, { key, running: now ?? was.facts.running, lease })
+        if (was.state === 'known' && was.key === key && now !== null) held.set(bot, { ...was, running: now })
       }
+      if (followed !== undefined && !running(followed)) thumbnail = null
+      keepFresh()
+      changed()
     },
     control: async (bot, take) => {
       try {
         if (take) {
-          const id = viewer?.id ?? (await observe(bot))?.viewerId
+          const id = current ?? (await observe(bot))?.viewerId
           if (id === undefined) return refused('rejected', "Hermes didn't let Highwing watch this screen.")
-          leased(bot, parseLease(await callsFor(bot).call('display.lease.acquire', { viewer_id: id, reason: 'Highwing' })))
-        } else {
-          if (viewer === null) return refused('rejected', "Highwing doesn't have control of this screen.")
-          leased(bot, parseLease(await callsFor(bot).call('display.lease.release', { viewer_id: viewer.id })))
+          await acquire(bot, id)
+          return DONE
         }
+        const holder = leaseOf(bot)?.viewerHash
+        const id = holder === undefined || holder === null ? undefined : ours.get(holder)
+        if (id === undefined) return refused('rejected', "Highwing doesn't have control of this screen.")
+        // An id minted on an earlier connection is no longer this connection's, which only `force` lets through. Hermes still releases only a lease that id holds.
+        leased(bot, parseLease(await callsFor(bot).call('display.lease.release', { viewer_id: id, force: true })))
         return DONE
       } catch (error) {
         if (error instanceof Offline) return NOT_CONNECTED
@@ -178,12 +201,16 @@ export function screenDesk(conn: Pick<Connection, 'call' | 'as' | 'sibling'>, cl
       }
     },
     socket: async () => {
-      if (followed === undefined) return null
+      const bot = followed
+      if (bot === undefined) return null
       try {
-        const observed = await observe(followed)
+        const observed = await observe(bot)
         // A relay to another machine can fail on its own, and the view then says it could not connect.
         const at = observed === null ? null : await conn.sibling(observed.path).catch(() => null)
-        if (observed === null || at === null) return null
+        if (observed === null || at === null || followed !== bot) return null
+        // After a dropped link the user's lease names the id of the last connection, so it moves to the one this view watches with, or Hermes would drop their input.
+        const holder = leaseOf(bot)?.viewerHash
+        if (holder != null && ours.has(holder) && holder !== hashOf(observed.viewerId)) await acquire(bot, observed.viewerId)
         const url = new URL(at)
         url.searchParams.set('display_ticket', observed.ticket)
         return url.href

@@ -26,6 +26,6 @@ export interface ScreenFacts { readonly key: string; readonly running: boolean; 
 /** A reply can be overtaken by an event about a newer lease, so the lease with the higher epoch wins, and a tie keeps the newest word. */
 export const newerLease = (held: Lease | null, next: Lease): Lease => (held !== null && held.epoch > next.epoch ? held : next)
 
-/** `mine`: the hash of the viewer id Hermes minted for this connection, or null before it minted one. */
-export const controlOf = (lease: Lease, mine: string | null): Control =>
-  lease.holder === 'agent' ? 'agent' : mine !== null && lease.viewerHash === mine ? 'you' : 'someone'
+/** `mine`: the hashes of the viewer ids Hermes minted for this Highwing. */
+export const controlOf = (lease: Lease, mine: { has(hash: string): boolean }): Control =>
+  lease.holder === 'agent' ? 'agent' : lease.viewerHash !== null && mine.has(lease.viewerHash) ? 'you' : 'someone'
