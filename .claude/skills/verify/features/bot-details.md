@@ -10,6 +10,7 @@ The panel is the Edit… dialog of [Edit a bot](./edit-a-bot.md) drawn as a shee
 - `bot-details-picture` uploads a picture from the panel, and the sidebar row draws it.
 - `bot-details-clash` shows a rename made elsewhere in the panel and reloads its fields.
 - `bot-details-asset-refused` shows Hermes's words when it cannot keep the picture.
+- `bot-details-double` opens once for two quick clicks on a slow Hermes, and stays closed after Escape.
 
 ## How to get to it (user POV)
 
@@ -24,6 +25,7 @@ Preconditions are those of [Edit a bot](./edit-a-bot.md): `--profiles fixtures/p
 - **Picture.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/rae.json --pick-file fixtures/pictures/rae.png --run bot-details-picture wait live wait bots click button Rae avatar Rae letter press Control+Alt+b see "Upload picture" click button "Upload picture" reached profiles.set_asset '{"name":"rae","asset":"avatar"}' 1 avatar Rae picture count button "Remove picture" 1 shot panel-picture press Escape gone dialog Rae quiet`.
 - **Clash.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/rae.json --configure-clash Robin --run bot-details-clash wait live wait bots click button Rae said "The weekly report is ready" click button "Details for Rae" see "Upload picture" type Name Ray click button Save see "This bot changed elsewhere." count dialog Robin 1 value Name Robin count alert "" 1 shot panel-clash quiet`.
 - **Picture refused.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/rae.json --pick-file fixtures/pictures/rae.png --asset-fails "[Errno 28] No space left on device" --run bot-details-asset-refused wait live wait bots click button Rae said "The weekly report is ready" click button "Details for Rae" see "Upload picture" click button "Upload picture" see "No space left on device" count alert "" 1 shot panel-asset-refused quiet`.
+- **Two quick opens.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/rae.json --latency 400 --run bot-details-double wait live wait bots click button Rae said "The weekly report is ready" click button "Details for Rae" pause 200 click button "Details for Rae" see "Upload picture" press Escape gone dialog Rae pause 800 count dialog Rae 0 quiet`. Each click asks Hermes again, and only the newest answer opens the panel, so the answer to the first click does not open it again after Escape.
 
 ## Gotchas
 

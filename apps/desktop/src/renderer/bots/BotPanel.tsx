@@ -23,11 +23,18 @@ const TABS = [{ id: 'details', label: 'Details' }] as const
 
 export function useBotPanel() {
   const [panel, setPanel] = useState<Panel>(CLOSED)
+  const asked = useRef(0)
   const open = useCallback(async (bot: Bot) => {
+    const at = ++asked.current
     const outcome = await BOT_EDIT_CALLS.onDescribe(bot.id)
+    // Only the newest open lands, and never over a dialog another control opened while Hermes answered.
+    if (at !== asked.current || document.querySelector('dialog[open]') !== null) return
     setPanel(outcome.ok ? { at: 'open', bot, details: outcome.value } : { at: 'refused', bot, words: outcome.refusal.message })
   }, [])
-  const close = useCallback(() => setPanel(CLOSED), [])
+  const close = useCallback(() => {
+    asked.current++
+    setPanel(CLOSED)
+  }, [])
   return { panel, open, close }
 }
 
