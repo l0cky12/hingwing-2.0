@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { DONE, refused, SessionActor, type Upload } from './actor'
-import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, petPicture, setBotPicture } from './bot-admin'
+import { activityDesk, busyOf, type Attached } from './activity'
+import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, setBotPicture } from './bot-admin'
+import type { BotActivities, UnreadChat } from './domain/activity'
 import { listMemory, removeMemory, saveMemory } from './memory'
 import { botsIn, MARK_SETS, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
@@ -74,6 +76,12 @@ export interface Hermes {
    */
   readonly groupChat: Feed<GroupChat | null>
   /**
+   * Which bots are working, waiting on the user, or hold a reply no window has shown. Read from the
+   * attached chats, and on a socket that reaches every profile from each bot's live chats, asked
+   * once online, when sessions change and when the roster does. A chat is read once a window watches it.
+   */
+  readonly activity: Feed<BotActivities>
+  /**
    * Watch one session. The listener gets the current value at once and every later one. A session is
    * kept attached while a window watches it, while the gateway lists it as running, while its own
    * run is open, while Hermes waits on a request in it, and while it has unsent messages. It is
@@ -106,6 +114,8 @@ export interface HermesOptions {
   readonly client: { readonly name: string; readonly version: string }
   /** Where a message's attachments are read from when it is sent. null: Highwing no longer holds it. Default: holds none. */
   readonly uploads?: { read(id: AttachmentId): Promise<Upload | null> }
+  /** The unread chats kept from the last run, and where each change to them goes. Default: none kept. */
+  readonly unread?: { readonly chats: readonly UnreadChat[]; keep(chats: readonly UnreadChat[]): void }
 }
 
 /** How long a session nothing retains stays attached. */
@@ -203,6 +213,7 @@ export function openHermes(options: HermesOptions): Hermes {
       list.refresh()
       roster.refresh()
       book.refresh()
+      activities.poll()
     }, LIST_DEBOUNCE_MS)
   }
 
@@ -236,6 +247,7 @@ export function openHermes(options: HermesOptions): Hermes {
       relayRead = relays.probe()
       roster.ask()
       book.online()
+      activities.poll()
     },
     onEvent: params => {
       const parsed = parseEvent(params)
@@ -270,6 +282,7 @@ export function openHermes(options: HermesOptions): Hermes {
     const settled = new Map<SessionId, SessionContent>()
     for (const [id, actor] of actors) if (actor.session.sync.state !== 'opening') settled.set(id, actor.session)
     sidebar.set(deriveSidebar(list, settled, desk.isBotChat))
+    activities.update()
   }
 
   const desk = chatDesk({
@@ -295,9 +308,24 @@ export function openHermes(options: HermesOptions): Hermes {
     bots.set(roster.bots)
     settle()
     const listed = roster.bots
-    if (conn.reach === 'host' && listed.state === 'listed') list.warm(botsIn(listed.roster).map(bot => bot.id))
+    const ids = listed.state === 'listed' ? botsIn(listed.roster).map(bot => bot.id) : null
+    if (conn.reach === 'host' && ids !== null) list.warm(ids)
+    activities.roster(ids)
   })
   const bots = feed<Bots>(roster.bots)
+
+  const attachedChats = () => {
+    const held = new Map<SessionId, Attached>()
+    for (const [id, actor] of actors) if (actor.session.sync.state !== 'opening') held.set(id, { bot: desk.botOf(id), busy: busyOf(actor.session) })
+    return held
+  }
+  const activities = activityDesk(conn, {
+    unread: options.unread?.chats ?? [],
+    keep: chats => options.unread?.keep(chats),
+    local: () => ({ attached: attachedChats(), shown: new Set(windows.keys()) }),
+    changed: () => activity.set(activities.activity)
+  })
+  const activity = feed<BotActivities>(activities.activity)
 
   const book = groupBook(conn, {
     clock, mintId,
@@ -384,6 +412,7 @@ export function openHermes(options: HermesOptions): Hermes {
     windows.set(id, before + 1)
     const stop = follow(id, listener)
     if (before === 0) actorFor(id).watchBegan()
+    activities.update()
     let watching = true
     return () => {
       if (!watching) return
@@ -392,6 +421,7 @@ export function openHermes(options: HermesOptions): Hermes {
       if (left === 0) windows.delete(id)
       else windows.set(id, left)
       stop()
+      activities.update()
     }
   }
 
@@ -411,7 +441,10 @@ export function openHermes(options: HermesOptions): Hermes {
     },
     retitle: list.retitle,
     pin: list.pin,
-    drop: list.drop,
+    drop: id => {
+      list.drop(id)
+      activities.forget(id)
+    },
     refreshSoon,
     settledRelay: () => relayRead,
     mentioned,
@@ -477,6 +510,9 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'renameGroup') return book.rename(command.group, command.name)
     if (command.do === 'deleteGroup') return book.disband(command.group)
     if (command.do === 'describeBot') return describeBot(conn, command.bot)
+    if (command.do === 'passwordManagers' || command.do === 'usePasswordManager' || command.do === 'unlockPasswordManager' || command.do === 'lockPasswordManager') {
+      return passwordManagers(conn, command)
+    }
     if (command.do === 'botPicture') return botPicture(conn, command.bot)
     if (command.do === 'canGeneratePicture') return canGeneratePicture(conn)
     if (command.do === 'generatePicture') return generatePicture(conn, command.prompt)
@@ -519,6 +555,7 @@ export function openHermes(options: HermesOptions): Hermes {
     relay,
     groups,
     groupChat,
+    activity,
     watch,
     run: command => run(command) as Promise<Outcome<ResultOf<typeof command>>>,
     close: async () => {

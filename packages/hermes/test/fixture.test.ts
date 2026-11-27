@@ -194,6 +194,16 @@ describe('loadFixture', () => {
     }
   })
 
+  it("reads each profile's password managers, and refuses a manager it does not know or a seed of another shape", () => {
+    const vault = { default: { bitwarden: { installed: true, password: 'pw', logins: ['github.com'] } }, research: {} }
+    expect(loadFixture(write([{ ...header, vault }])).header.vault).toEqual(vault)
+    const words = '"vault" must map a profile to { onepassword?, bitwarden? }, each { installed, enabled?, unlocked?, logins?, password?, refuses?, token?, listFails? }'
+    for (const value of [{ default: { keeper: { installed: true } } }, { default: { bitwarden: { enabled: true } } }, { default: { bitwarden: { installed: true, master: 'pw' } } }]) {
+      const path = write([{ ...header, vault: value }])
+      expect(() => loadFixture(path)).toThrow(`${path}:1: ${words}`)
+    }
+  })
+
   it('refuses a header whose profiles are not a profiles.list reply', () => {
     const path = write([{ ...header, profiles: [{ name: 'default' }] }])
     expect(() => loadFixture(path)).toThrow(`${path}:1: "profiles" must be a profiles.list reply with "profiles"`)
@@ -265,6 +275,18 @@ describe('loadFixture', () => {
       const bad = write([{ ...header, relay: { rae: entry } }])
       expect(() => loadFixture(bad), JSON.stringify(entry)).toThrow(`${bad}:1: "relay" must map a profile to { reply, delay_ms? } or { refuse }`)
     }
+  })
+
+  it("reads how long each profile's turns take and whether Hermes lists live chats, and refuses a time or a flag of another kind", () => {
+    const turnMs = { 'dr-eggbot': 6000, research: 0 }
+    expect(loadFixture(write([{ ...header, turnMs, activeList: false }])).header).toMatchObject({ turnMs, activeList: false })
+    expect(loadFixture(write([header])).header).not.toHaveProperty('turnMs')
+    for (const ms of [-1, 1.5, '6000']) {
+      const bad = write([{ ...header, turnMs: { 'dr-eggbot': ms } }])
+      expect(() => loadFixture(bad), JSON.stringify(ms)).toThrow(`${bad}:1: "turnMs" must map a profile to a whole number of ms`)
+    }
+    const flag = write([{ ...header, activeList: 'no' }])
+    expect(() => loadFixture(flag)).toThrow(`${flag}:1: "activeList" must be true or false`)
   })
 
   it('reads the group chats of the home profile, and refuses a room that seats too few, too many or an unlisted profile, or a turn of no known shape', () => {

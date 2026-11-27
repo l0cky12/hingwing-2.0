@@ -195,6 +195,10 @@ export class Offline extends Error {}
  * the home the socket was launched with. A -32601 from one means this Hermes cannot edit memory.
  * The canonical route serves every `groups.*` method (`GROUP_METHODS`, gateway/session_group_controls.py:15-35), though of
  * the calls Highwing makes the contract lists only `groups.create` as canonical (tui_gateway/contracts/canonical_projections.py:126). A -32601 from `groups.capabilities` means this Hermes has no group chats.
+ * The session authority serves `session.active_list` (gateway/session_active_list.py), which the contract lists only for the legacy
+ * handler. A -32601 from it means this Hermes cannot say which chats have a turn under way.
+ * `vault.sources`, `vault.list`, `vault.source.set`, `vault.unlock` and `vault.lock` reach their legacy handlers as `profiles.create` does, each
+ * in the profile the call names (tui_gateway/methods_vault.py). A -32601 from them means this Hermes cannot set up password managers from Highwing.
  */
 export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'connection.respond' | 'connectors.connect' | 'complete.path' | 'file.attach' |
@@ -202,8 +206,9 @@ export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'prompt.btw' | 'prompt.background' | 'process.list' | 'process.kill' | 'subagent.interrupt' | 'session.control.read' | 'session.control' | 'rollback.list' |
   'rollback.diff' | 'rollback.restore' | 'message.react' | 'groups.capabilities' | 'groups.list' | 'groups.state' | 'groups.log' | 'groups.send' | 'groups.stop' |
   'groups.rename' | 'groups.disband' |
-  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot' |
-  'learning.frames' | 'learning.detail' | 'learning.edit' | 'learning.delete'>
+  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot' | 'session.active_list' |
+  'learning.frames' | 'learning.detail' | 'learning.edit' | 'learning.delete' |
+  'vault.sources' | 'vault.list' | 'vault.source.set' | 'vault.unlock' | 'vault.lock'>
 export type Method = keyof Served
 
 export type Requested = ServerRequestMap

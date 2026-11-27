@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { BotForm } from '../src/renderer/bots/BotForm'
 import { EMPTY_DRAFT } from '../src/renderer/bots/bot-form'
-import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_SHAPES, faceSvg, lookWords, shapeFor, surpriseFor } from '../src/renderer/bots/look'
+import { DEFAULT_LOOK, FACE_COLOR_NAMES, FACE_SHAPES, faceOf, faceSvg, lookWords, shapeFor, surpriseFor } from '../src/renderer/bots/look'
 import { LookPicker, pendingLook, PetTile, thumbOf, type LookCalls } from '../src/renderer/bots/LookPicker'
 import { NewBotForm } from '../src/renderer/bots/NewBotForm'
 
@@ -65,6 +65,27 @@ describe('a face', () => {
       expect(svg.match(/<rect x="(38|54\.5)"/g), shape).toHaveLength(2)
       expect(svg, shape).toContain('#4F7396')
     }
+  })
+
+  it('is idle unless a mood is named, so saved pictures and the picker draw what they drew', () => {
+    for (const shape of FACE_SHAPES) expect(faceSvg(shape, 'slate', 64, 'idle'), shape).toBe(faceSvg(shape, 'slate', 64))
+  })
+
+  it('draws three dots for eyes while working, and two shorter, raised eyes while waiting', () => {
+    for (const shape of FACE_SHAPES) {
+      const working = faceSvg(shape, 'slate', 64, 'working')
+      expect(working.match(/<circle class="face-dot"/g), shape).toHaveLength(3)
+      expect(working, shape).not.toMatch(/<rect x="(38|54\.5)"/)
+      const waiting = faceSvg(shape, 'slate', 64, 'waiting')
+      expect(waiting.match(/<rect x="(38|54\.5)" y="35"[^>]* height="11"/g), shape).toHaveLength(2)
+      expect(waiting, shape).not.toBe(faceSvg(shape, 'slate', 64))
+    }
+  })
+
+  it("gives a bot the shape of its name and a face color for its tone", () => {
+    const tones = ['ink', 'slate', 'umber', 'plum', 'olive', 'mauve'] as const
+    for (const tone of tones) expect(FACE_COLOR_NAMES, tone).toContain(faceOf({ name: 'Rae', tone }).color)
+    expect(faceOf({ name: 'Rae', tone: 'mauve' })).toEqual({ shape: shapeFor('auto', 'Rae'), color: 'rose' })
   })
 
   it('has dark eyes, and light ones on ink', () => {

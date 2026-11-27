@@ -110,6 +110,11 @@ export interface Fixture {
      * for USER.md. A replacement over a cap is refused in Hermes's words. A removal is not capped.
      */
     readonly memory?: MemoryScript
+    /**
+     * profile -> the password managers on the Hermes machine for that profile, which `vault.*` answers and changes. A profile or a
+     * manager not here is not installed. Absent: the gateway refuses every `vault.*` call as an unknown method, as a Hermes without them does.
+     */
+    readonly vault?: VaultScript
     /** `'profile'`: play a Hermes with no `interactive` ticket, whose every socket is bound to the home profile. Default `'host'`. */
     readonly reach?: Reach
     /** false: the home bot has no Bot Chat, and the story session is only a chat of the home profile. Default true. */
@@ -126,6 +131,13 @@ export interface Fixture {
      * method, as a Hermes without the bot relay does.
      */
     readonly relay?: { readonly [profile: string]: RelayScript }
+    /**
+     * profile -> how long each turn of its chats takes, in ms. A message starts its turn at once and its reply ends it
+     * this long after, so the bot is seen working. A profile not here answers before the next frame is read.
+     */
+    readonly turnMs?: { readonly [profile: string]: number }
+    /** false: the gateway refuses `session.active_list` as an unknown method, as a Hermes older than it does. Default true. */
+    readonly activeList?: boolean
     /**
      * The group chats of the home profile and what Hermes says of them. Absent: the gateway refuses every `groups.*`
      * call as an unknown method, as a Hermes without group chats does.
@@ -182,6 +194,26 @@ export interface Pets {
   readonly delay_ms?: number
   readonly refused_once?: readonly string[]
 }
+
+/**
+ * One password manager of one profile. `enabled`: the profile has not opted out (default true). `unlocked`: unlocked at the start
+ * (default false), as a 1Password service-account token always is. `logins`: the labels of its logins. `password`: the master password
+ * that unlocks it; absent, none does. `refuses`: what Hermes says to any other, default the manager tool's "Invalid master password."
+ * `token`: a 1Password service-account token, which keeps it unlocked through a lock (agent/vault_backends/onepassword.py:73).
+ * `listFails`: what `vault.list` refuses with while it is unlocked, as Hermes does when `op` rejects a revoked token.
+ */
+export interface ManagerSeed {
+  readonly installed: boolean
+  readonly enabled?: boolean
+  readonly unlocked?: boolean
+  readonly logins?: readonly string[]
+  readonly password?: string
+  readonly refuses?: string
+  readonly token?: boolean
+  readonly listFails?: string
+}
+export const VAULT_MANAGERS = ['onepassword', 'bitwarden'] as const
+export type VaultScript = { readonly [profile: string]: { readonly [M in typeof VAULT_MANAGERS[number]]?: ManagerSeed } }
 
 /** `reply`: the bot's one answer, sent `delay_ms` after the call (default 0). `refuse`: the reason Hermes refuses the delivery with. */
 export type RelayScript = { readonly reply: string; readonly delay_ms?: number } | { readonly refuse: string }
@@ -376,6 +408,18 @@ const isRelayScript = (value: unknown): value is RelayScript =>
 
 const isText = (value: unknown): value is string => typeof value === 'string' && value !== ''
 
+const isManagerSeed = (value: unknown): value is ManagerSeed =>
+  isObject(value) && typeof value.installed === 'boolean'
+  && Object.keys(value).every(key => ['installed', 'enabled', 'unlocked', 'logins', 'password', 'refuses', 'token', 'listFails'].includes(key))
+  && (value.enabled === undefined || typeof value.enabled === 'boolean') && (value.unlocked === undefined || typeof value.unlocked === 'boolean')
+  && (value.logins === undefined || (Array.isArray(value.logins) && value.logins.every(isText)))
+  && (value.password === undefined || isText(value.password)) && (value.refuses === undefined || isText(value.refuses))
+  && (value.token === undefined || typeof value.token === 'boolean') && (value.listFails === undefined || isText(value.listFails))
+
+const isVaultScript = (value: unknown): value is VaultScript =>
+  isObject(value) && Object.values(value).every(managers => isObject(managers)
+    && Object.entries(managers).every(([name, seed]) => VAULT_MANAGERS.some(known => known === name) && isManagerSeed(seed)))
+
 const isDelay = (value: unknown) => value === undefined || (typeof value === 'number' && value >= 0)
 
 const isTurnScript = (value: unknown): value is TurnScript => {
@@ -452,6 +496,10 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (oneshot !== undefined && !isOneshot(oneshot)) return '"oneshot" must be { text?, error?, delay_ms? }'
   if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'
   if (memory !== undefined && !isMemory(memory)) return '"memory" must be { entries, limits? } with each entry { file: "MEMORY.md" or "USER.md", text } and limits { memory?, user? }'
+  const { vault } = value
+  if (vault !== undefined && !isVaultScript(vault)) {
+    return '"vault" must map a profile to { onepassword?, bitwarden? }, each { installed, enabled?, unlocked?, logins?, password?, refuses?, token?, listFails? }'
+  }
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
@@ -479,6 +527,11 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (relay !== undefined && !(isObject(relay) && Object.values(relay).every(isRelayScript))) {
     return '"relay" must map a profile to { reply, delay_ms? } or { refuse }'
   }
+  const { turnMs, activeList } = value
+  if (turnMs !== undefined && !(isObject(turnMs) && Object.values(turnMs).every(ms => Number.isSafeInteger(ms) && (ms as number) >= 0))) {
+    return '"turnMs" must map a profile to a whole number of ms'
+  }
+  if (activeList !== undefined && typeof activeList !== 'boolean') return '"activeList" must be true or false'
   const { groups } = value
   if (groups !== undefined && !isGroupsScript(groups)) {
     return '"groups" may hold only "driver", "seatable", "rooms", "change_events" and "turns": each room { id, name, members, epoch?, log? } seating 2 to 6 { profile, handle }, and each turn { reply, delay_ms? }, { fail, delay_ms? } or { hold: true }'
@@ -507,13 +560,14 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
     ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
     ...(assetFails === undefined ? {} : { assetFails }),
-    ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }),
+    ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }), ...(vault === undefined ? {} : { vault }),
     ...(memory === undefined ? {} : { memory }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),
     ...(relay === undefined ? {} : { relay: relay as { readonly [profile: string]: RelayScript } }),
+    ...(turnMs === undefined ? {} : { turnMs: turnMs as { readonly [profile: string]: number } }), ...(activeList === undefined ? {} : { activeList }),
     ...(groups === undefined ? {} : { groups }),
     ...(paths === undefined ? {} : { paths: paths as NonNullable<Fixture['header']['paths']> }),
     ...(reads === undefined ? {} : { reads }),

@@ -4,6 +4,7 @@ import { Bar } from '../chrome/Chrome'
 import { COMMAND_KEY } from '../keys'
 import { run, useTopic } from '../store'
 import { Bubble, ConnectionCard, Monitor, Moon, People, Segmented, Sun, type Segment } from './ConnectionCard'
+import { PasswordManagers } from './PasswordManagers'
 import type { CardSetup } from './screens'
 
 const SIDEBAR: readonly Segment<Mode>[] = [
@@ -67,6 +68,10 @@ export function Settings({ setup, mode, theme, onRequestClose }: { readonly setu
                 </div>
               </div>
             </div>
+          </section>
+          <section className="group" aria-labelledby={`${ids}-passwords`}>
+            <h3 id={`${ids}-passwords`}>Password managers</h3>
+            <PasswordManagers labelledBy={`${ids}-passwords`} />
           </section>
           <section className="group" aria-labelledby={`${ids}-sidebar`}>
             <h3 id={`${ids}-sidebar`}>Sidebar</h3>
