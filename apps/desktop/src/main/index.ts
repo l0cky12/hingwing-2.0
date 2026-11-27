@@ -13,8 +13,8 @@ import { draftStore, DRAFTS_DIR } from './drafts'
 import { serveWindows } from './ipc'
 import { dbusSend, hasSecretService } from './keyring'
 import { chatLinks } from './links'
-import { MODE, preferenceStore, SNOOZES, THEME } from './preferences'
-import { desktopNotifier, notifyTurnEnds, recordingNotifier } from './notify'
+import { MODE, NOTICES, preferenceStore, SNOOZES, THEME } from './preferences'
+import { desktopNotifier, notify, recordingNotifier } from './notify'
 import { choosePicture, pickPicture, readHead } from './picture'
 import { previewPane, registerPageScheme } from './preview'
 import { reachOf } from './preview-page'
@@ -111,6 +111,7 @@ app.whenReady().then(async () => {
   const mode = await preferenceStore(settingsDir, MODE)
   const theme = await preferenceStore(settingsDir, THEME)
   const snoozes = await preferenceStore(settingsDir, SNOOZES)
+  const notices = await preferenceStore(settingsDir, NOTICES)
   nativeTheme.themeSource = theme.get()
   theme.subscribe(source => (nativeTheme.themeSource = source))
   await attachments.sweep(new Set((await drafts.load()).flatMap(draft => draft.attachments.map(held => held.id))))
@@ -128,18 +129,19 @@ app.whenReady().then(async () => {
   const saver = HIGHWING_SAVE_DIR ? folderSaver(HIGHWING_SAVE_DIR) : dialogSaver(dialog, () => app.getPath('downloads'))
   const served = serveWindows(
     owner, ipcMain, isAppUrl, opener, images, drafts, pane, { pick: (bot, live) => pickPicture(pictureDeps, bot, live), choose: () => choosePicture(pictureDeps) },
-    { store: attachments, sources }, saver, { mode, theme, snoozes }
+    { store: attachments, sources }, saver, { mode, theme, snoozes, notices }
   )
-  const stopNotices = notifyTurnEnds(owner, {
+  const stopNotices = notify(owner, {
     notifier: HIGHWING_NOTIFY_LOG ? recordingNotifier(HIGHWING_NOTIFY_LOG) : desktopNotifier(Notification),
     focused: () => BrowserWindow.getFocusedWindow() !== null,
-    raise
+    raise,
+    kinds: () => notices.get()
   })
   openWindow(opener, pane, HIGHWING_MENU_LOG ? recordingMenus(HIGHWING_MENU_LOG, HIGHWING_MENU_PICK) : desktopMenus(Menu))
   const stopLinks = links.serve(owner, raise)
   const stopRefresh = refreshBotsOnFocus(app, owner)
   let closed: Promise<void> | null = null
-  const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), stopRefresh(), Promise.all([owner.close(), drafts.settled(), mode.settled(), theme.settled(), snoozes.settled()]).then(() => {})))
+  const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), stopRefresh(), Promise.all([owner.close(), drafts.settled(), mode.settled(), theme.settled(), snoozes.settled(), notices.settled()]).then(() => {})))
   app.on('window-all-closed', () => void close().finally(() => app.quit()))
   // A quit from the menu or the session never emits window-all-closed, and a check or an attach still running would outlive the app.
   // Electron does not wait for a will-quit listener, so the quit is held until a draft or a preference still being written is on disk.

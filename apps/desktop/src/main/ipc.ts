@@ -3,7 +3,7 @@ import { onThisComputer, type BotId, type CommandOutcome, type Session, type Ses
 import {
   CHANNEL, epochOf, isAppTopic, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
   type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type PictureChoice, type PictureFile, type Push, type SessionPatch, type Setup, type StageResult,
-  type Snoozes, type Tail, type Theme, type Topic
+  type Notices, type Snoozes, type Tail, type Theme, type Topic
 } from '../ipc-contract'
 import { basename } from 'node:path'
 import type { AttachmentStore, AttachSources, StageSource } from './attachments'
@@ -46,7 +46,7 @@ const NEVER: Source = () => () => {}
 /** The pane's side of a window: its topic, its commands, and the files a window previews. */
 export type PreviewOwner = Pick<PreviewPane, 'preview' | 'show' | 'run'>
 type Shown<T> = Pick<PreferenceStore<T>, 'get' | 'subscribe' | 'set'>
-export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme>; readonly snoozes: Shown<Snoozes> }
+export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme>; readonly snoozes: Shown<Snoozes>; readonly notices: Shown<Notices> }
 interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner; readonly preferences: Preferences }
 
 /** A Hermes topic is bound to the connection that is live when the window asks. A window that sees a new epoch asks again. */
@@ -59,6 +59,7 @@ const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source 
   mode: ({ preferences }) => current(preferences.mode),
   theme: ({ preferences }) => current(preferences.theme),
   snoozes: ({ preferences }) => current(preferences.snoozes),
+  notices: ({ preferences }) => current(preferences.notices),
   link: onHermes(hermes => current(hermes.link)),
   sidebar: onHermes(hermes => current(hermes.sidebar)),
   slash: onHermes(hermes => current(hermes.slash)),
@@ -208,6 +209,10 @@ export function serveWindows(
     }
     if (command.do === 'snooze') {
       preferences.snoozes.set(snoozed(preferences.snoozes.get(), command, Date.now()))
+      return DONE
+    }
+    if (command.do === 'setNotice') {
+      preferences.notices.set({ ...preferences.notices.get(), [command.kind]: command.on })
       return DONE
     }
     if (!isSetupCommand(command) && epoch !== epochOf(owner.setup.get())) return OTHER_CONNECTION

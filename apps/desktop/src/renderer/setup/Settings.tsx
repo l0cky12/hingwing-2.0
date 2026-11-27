@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef } from 'react'
-import type { Mode, Theme } from '../../ipc-contract'
+import type { Mode, NoticeKind, Theme } from '../../ipc-contract'
 import { Bar } from '../chrome/Chrome'
 import { COMMAND_KEY } from '../keys'
 import { run, useTopic } from '../store'
@@ -17,6 +17,12 @@ const THEMES: readonly Segment<Theme>[] = [
   { value: 'dark', label: 'Dark', icon: <Moon /> }
 ]
 
+const NOTICE_ROWS: readonly { readonly kind: NoticeKind; readonly label: string; readonly desc: string }[] = [
+  { kind: 'asks', label: 'Approvals and questions', desc: 'When a bot waits on you in a chat you aren’t looking at.' },
+  { kind: 'replies', label: 'Finished replies', desc: 'When a reply ends in a chat you aren’t looking at.' },
+  { kind: 'jobs', label: 'Scheduled jobs', desc: 'When a scheduled job finishes.' }
+]
+
 const SHORTCUTS: readonly { readonly label: string; readonly key: string; readonly onlyIn: string | null }[] = [
   { label: 'Command palette', key: 'K', onlyIn: null },
   { label: 'New chat', key: 'N', onlyIn: 'In a chat' },
@@ -26,6 +32,7 @@ const SHORTCUTS: readonly { readonly label: string; readonly key: string; readon
 export function Settings({ setup, mode, theme, onRequestClose }: { readonly setup: CardSetup; readonly mode: Mode; readonly theme: Theme; readonly onRequestClose: () => void }) {
   const saving = setup.at === 'checking' && setup.step === 'save'
   const link = useTopic('link')
+  const notices = useTopic('notices')
   const heading = useRef<HTMLHeadingElement>(null)
   const ids = useId()
 
@@ -68,6 +75,27 @@ export function Settings({ setup, mode, theme, onRequestClose }: { readonly setu
               </div>
             </div>
           </section>
+          {notices !== undefined && (
+            <section className="group" aria-labelledby={`${ids}-notices`}>
+              <h3 id={`${ids}-notices`}>Notifications</h3>
+              <div className="card">
+                {NOTICE_ROWS.map(({ kind, label, desc }) => (
+                  <div key={kind} className="row">
+                    <div className="text">
+                      <p className="label" id={`${ids}-${kind}`}>{label}</p>
+                      <p className="desc" id={`${ids}-${kind}-desc`}>{desc}</p>
+                    </div>
+                    <div className="control">
+                      <input
+                        type="checkbox" role="switch" checked={notices[kind]} aria-labelledby={`${ids}-${kind}`} aria-describedby={`${ids}-${kind}-desc`}
+                        onChange={() => void run({ do: 'setNotice', kind, on: !notices[kind] })}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
           <section className="group" aria-labelledby={`${ids}-sidebar`}>
             <h3 id={`${ids}-sidebar`}>Sidebar</h3>
             <div className="card">
