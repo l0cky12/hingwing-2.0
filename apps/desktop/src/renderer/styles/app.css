@@ -135,7 +135,7 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .request {
   width: fit-content; margin: 0 0 22px auto; padding: 7px 14px;
   background: var(--surface-user); border-radius: var(--radius-pill);
-  font-size: 16px; line-height: 1.5; max-width: min(62ch, 100% - 104px); white-space: pre-wrap; position: relative;
+  font-size: 16px; line-height: 1.5; max-width: min(62ch, 100% - 112px); white-space: pre-wrap; position: relative;
 }
 
 .thread { position: relative; padding-left: var(--col); display: flex; flex-direction: column; gap: var(--gap); }
@@ -165,6 +165,8 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 }
 :is(.thread > .prose, .said-by, .relay-reply) :is(pre, :not(pre) > code, .drawn) { background: var(--paper); }
 :is(.said-by, .relay-reply) > .prose { padding: 0; }
+/* A card is only as wide as its words, so its copy button sits on the top edge, over the padding and not the text. */
+:is(.thread > .prose, .relay-reply > .prose) > .copy { top: -10px; right: 12px; }
 :is(.thread > .prose, .said-by > .prose, .relay-reply > .prose) > :nth-last-child(1 of :not(.copy, .sr)) { margin-bottom: 0; }
 .prose p { max-width: 66ch; }
 .prose p { margin: 0 0 10px; }
@@ -425,8 +427,8 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .versions > button { padding: 1px 7px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); color: var(--ink); }
 .versions > button:hover:not(:disabled) { background: var(--paper); }
 .versions > span { padding: 0 4px; }
-.request:has(.versions) { max-width: min(62ch, 100% - 188px); }
-.request:has(.versions ~ .versions) { max-width: min(62ch, 100% - 272px); }
+.request:has(.versions) { max-width: min(62ch, 100% - 196px); }
+.request:has(.versions ~ .versions) { max-width: min(62ch, 100% - 280px); }
 .versions + .versions { margin-left: 6px; }
 .versions-end { margin: 22px 0 0 var(--col); }
 .turn-actions { display: flex; align-items: center; gap: 6px; margin: 10px 0 0 var(--col); }
@@ -441,7 +443,7 @@ button.reaction:hover:not(:disabled) { border-color: var(--signal); }
 .regenerate, .new-chat, .queued button { padding: 2px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); color: var(--ink); font: 500 13px/1.5 var(--sans); }
 :is(.regenerate, .new-chat, .queued button):hover:not(:disabled) { background: var(--paper); }
 :is(.regenerate, .new-chat, .queued button):disabled { color: var(--graphite); }
-.relay-reply { margin-left: var(--col); }
+.relay-reply { position: relative; margin-left: var(--col); }
 .said-by > .relay-from { margin-bottom: 4px; }
 .group-turn .thread > :only-child::after { display: none; }
 .mention { font: 500 0.9em var(--sans); }
@@ -449,7 +451,6 @@ button.reaction:hover:not(:disabled) { border-color: var(--signal); }
 .bar .members .stack { min-width: 0; margin-left: 0; }
 .bar .members ~ button { margin-left: 0; }
 .relay-from { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font: 500 13.5px/1.4 var(--sans); }
-.relay-reply > .prose { position: relative; }
 .relay-reply > :is(.notice, .err) { margin: 0; }
 .chip > .copy { position: static; padding: 0 6px; border: 0; background: none; color: var(--graphite); font: inherit; opacity: 1; }
 .chip > .copy:hover, .chip > .copy.shown { color: var(--ink); }
