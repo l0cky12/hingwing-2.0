@@ -491,11 +491,14 @@ const filePathOf = (url: string): string | null => {
   }
 }
 
-/** A finished `desktop_preview` open of a file. A web address is no page: it keeps drawing as a step. */
+/**
+ * A finished `desktop_preview` open of a file. Hermes reads a bare `example.com` or `localhost:3000` as a web
+ * address (tools/open_preview_tool.py `_normalize_target`), and a web address is no page: it keeps drawing as a step.
+ */
 export function pageOf(tool: ToolItem): PageView | null {
   if (tool.name !== 'desktop_preview' || tool.args.action !== 'open' || tool.status.s !== 'done' || isError(tool.status.result)) return null
-  const url = text(tool.args.url)
-  const path = url === null ? null : url.startsWith('file:') ? filePathOf(url) : url.includes('://') ? null : url
+  const url = text(tool.args.url)?.trim() ?? null
+  const path = url === null ? null : url.startsWith('file:') ? filePathOf(url) : url.startsWith('/') ? url : null
   if (path === null) return null
   const label = text(tool.args.label)?.trim() || null
   const name = basename(path)

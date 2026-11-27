@@ -34,6 +34,8 @@ describe('a page the bot built and showed', () => {
 
   it('is no page for a web address, a close, a failed open or one still running', () => {
     expect(pageOf(preview({ action: 'open', url: 'http://localhost:5173/' }))).toBeNull()
+    expect(pageOf(preview({ action: 'open', url: 'www.example.com' }))).toBeNull()
+    expect(pageOf(preview({ action: 'open', url: 'localhost:3000/report.html' }))).toBeNull()
     expect(pageOf(preview({ action: 'close', url: '/tmp/site/report.html' }))).toBeNull()
     expect(pageOf(preview({ action: 'open', url: '/tmp/site/report.html' }, { ...DONE, result: { kind: 'text', text: 'no', isError: true, clipped: 0 } } as ToolItem['status']))).toBeNull()
     expect(pageOf(preview({ action: 'open', url: '/tmp/site/report.html' }, { s: 'running', note: null }))).toBeNull()

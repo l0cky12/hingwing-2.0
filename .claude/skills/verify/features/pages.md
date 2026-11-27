@@ -8,6 +8,7 @@ A page is a document the bot built and showed, such as a report or a dashboard. 
 - `page-full` opens the page full window with the chat beside it.
 - `page-close` returns to the chat from the full page.
 - `page-narrow` covers the chat under 900 px of width, with **Back to chat**, as the preview pane does.
+- `page-relaunch` still opens after Highwing restarts, when the chat comes back from Hermes's stored rows. A stored step keeps no diff, so main takes the `write_file` step's own path as the proof that the chat wrote the file.
 - `page-refused` says "Highwing couldn't open this page." under the card when no step of the chat wrote the file.
 
 ## How to get to it (user POV)
@@ -26,6 +27,7 @@ Preconditions:
 - **The card.** Run `$H run --fixture fixtures/page.jsonl --run page-card PRE count button "Open Weekly sign-ups" 1 shot card`. `card.aria.txt` holds `article "Weekly sign-ups"` with `heading "Weekly sign-ups"`, `report.html` and `button "Open Weekly sign-ups"`, after the step "Created report.html".
 - **Full window, then Close.** Run `$H run --fixture fixtures/page.jsonl --run page-full PRE click button "Open Weekly sign-ups" wait preview previewing "/report\.html$/" page-says "Weekly sign-ups" nothing-opened shot full click button "Close preview" gone region Preview wait live shot closed`. `full.png` shows the chat as a panel on the left and the page filling the rest, with no Bots column. `closed.png` shows the window as it was before Open.
 - **Narrow.** Run `$H run --fixture fixtures/page.jsonl --size 860x860 --run page-narrow wait live type "Message Hermes" @request click button Send wait preview click button "Back to chat" gone region Preview wait settled click button "Open Weekly sign-ups" wait preview previewing "/report\.html$/" shot narrow click button "Back to chat" gone region Preview wait live`. Under 900 px the pane covers the chat, so the recipe waits for `preview` before `settled`.
+- **After a restart.** Run `$H run --fake-host ok --saved local --fixture fixtures/page.jsonl --run page-relaunch PRE relaunch wait live said "Tuesday was the busiest day" click button "Open Weekly sign-ups" wait preview previewing "/report\.html$/" page-says "Weekly sign-ups"`. The fake machine's gateway outlives the `relaunch`, so the chat comes back from its stored rows, and `--saved local` makes it this computer.
 
 ## Gotchas
 

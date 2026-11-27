@@ -30,6 +30,17 @@ describe('openablePath', () => {
     expect(openablePath(edited('/work/notes.md', null), '/work/other.md')).toBeNull()
   })
 
+  it('takes a stored write of the file, which keeps no diff, and refuses a failed one', () => {
+    const stored = (result: unknown) => ({
+      cwd: null,
+      history: [{ items: [{ kind: 'tool', name: 'write_file', args: { path: '/work/report.html' }, status: { s: 'done', diffs: [], result } }] }],
+      run: { state: 'idle' }
+    }) as unknown as Session
+    expect(openablePath(stored({ kind: 'text', text: '{"bytes_written": 10}', isError: false, clipped: 0 }), '/work/report.html')).toBe('/work/report.html')
+    expect(openablePath(stored({ kind: 'text', text: 'Permission denied', isError: true, clipped: 0 }), '/work/report.html')).toBeNull()
+    expect(openablePath(stored({ kind: 'none' }), '/work/other.html')).toBeNull()
+  })
+
   it('refuses a url even when a step named it', () => {
     expect(openablePath(edited('file:///work/notes.md', null), 'file:///work/notes.md')).toBeNull()
   })

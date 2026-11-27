@@ -1,4 +1,4 @@
-import type { Item, Session } from '@highwing/hermes/domain'
+import type { Item, Session, ToolItem } from '@highwing/hermes/domain'
 import { appendFile, stat } from 'node:fs/promises'
 import { isAbsolute, normalize, resolve } from 'node:path'
 import type { FileAction, FileOutcome } from '../ipc-contract'
@@ -10,9 +10,18 @@ export function* itemsOf(session: Session): Iterable<Item> {
   if (session.run.state === 'running') yield* session.run.turn.items
 }
 
+const WRITES: ReadonlySet<string> = new Set(['write_file', 'patch'])
+
+/** A stored step keeps no diff (wire/parse.ts `parseRows`), so a file tool's own path is the proof once the chat is reloaded. */
+const wrote = (item: ToolItem, path: string) => {
+  if (item.status.s !== 'done') return false
+  const { diffs, result } = item.status
+  return diffs.some(diff => diff.path === path) || (WRITES.has(item.name) && item.args.path === path && !(result.kind === 'text' && result.isError))
+}
+
 const stepNamed = (session: Session, path: string) => {
   for (const item of itemsOf(session)) {
-    if (item.kind === 'tool' && item.status.s === 'done' && item.status.diffs.some(diff => diff.path === path)) return true
+    if (item.kind === 'tool' && wrote(item, path)) return true
   }
   return false
 }
