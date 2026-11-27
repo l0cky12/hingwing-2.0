@@ -1,18 +1,33 @@
+import { shownChat } from '@highwing/hermes/domain'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import type { Mode, Theme } from '../../ipc-contract'
-import { COMMAND_KEY } from '../keys'
+import type { Mode, NoticeKind, OnClose, Theme } from '../../ipc-contract'
+import { MAC } from '../keys'
+import { capsOf, SHORTCUTS } from '../shortcuts'
 import { run, useTopic } from '../store'
 import { Bubble, ConnectionCard, line, Monitor, Moon, People, Segmented, Server, Sun, type Segment } from './ConnectionCard'
+import { PasswordManagers } from './PasswordManagers'
 import type { CardSetup } from './screens'
-import { PAGES, settingsViewOf, type Check, type Page, type RowId } from './settings-view'
+import { PAGES, settingsViewOf, whereOf, type Check, type Page, type RowId } from './settings-view'
+import { usageNeedsRead, usageView, type UsageAsk } from './usage-view'
 
 const Contrast = () => <svg {...line(16, 1.8)}><circle cx="12" cy="12" r="8.5" /><path d="M12 7a5 5 0 0 1 0 10z" fill="currentColor" /></svg>
 const Cross = () => <svg {...line(14, 2)}><path d="M6 6l12 12M18 6 6 18" /></svg>
 const Keyboard = () => <svg {...line(16, 1.8)}><rect x="2.5" y="5.5" width="19" height="13" rx="2.5" /><path d="M6.5 9.5h.01M10 9.5h.01M14 9.5h.01M17.5 9.5h.01M6.5 12.5h.01M17.5 12.5h.01M9 15.5h6" /></svg>
 const Search = () => <svg {...line(16, 1.8)}><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
+const WindowIcon = () => <svg {...line(16, 1.8)}><rect x="3" y="4" width="18" height="16" rx="2.5" /><path d="M3 9h18" /></svg>
+const Bell = () => <svg {...line(16, 1.8)}><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></svg>
+const Key = () => <svg {...line(16, 1.8)}><circle cx="8" cy="15" r="4" /><path d="m11 12 8.5-8.5M16 7l2.5 2.5M14 9l2 2" /></svg>
+const Shield = () => <svg {...line(16, 1.8)}><path d="M12 3 5 5.8v5.4c0 4.4 3 8 7 9.8 4-1.8 7-5.4 7-9.8V5.8z" /></svg>
+const Gauge = () => <svg {...line(16, 1.8)}><path d="M4 18a8 8 0 1 1 16 0" /><path d="m12 18 4-5" /></svg>
+const Info = () => <svg {...line(16, 1.8)}><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5M12 8h.01" /></svg>
+const Quit = () => <svg {...line(15, 1.9)}><path d="M10 7V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2v-1" /><path d="M4 12h10M11 8.5 14.5 12 11 15.5" /></svg>
+const Tray = () => <svg {...line(15, 1.9)}><rect x="4" y="4" width="16" height="11" rx="2" /><path d="M3 20h18" /></svg>
 
-const PAGE_ICONS: { readonly [P in Page]: () => ReactNode } = { connection: () => <Server size={16} width={1.8} />, appearance: Contrast, keys: Keyboard }
+const PAGE_ICONS: { readonly [P in Page]: () => ReactNode } = {
+  connection: () => <Server size={16} width={1.8} />, appearance: Contrast, window: WindowIcon, notifications: Bell, passwords: Key, permissions: Shield, keys: Keyboard,
+  usage: Gauge, about: Info
+}
 
 const SIDEBAR: readonly Segment<Mode>[] = [
   { value: 'bots', label: 'Bots', icon: <People /> },
@@ -25,11 +40,18 @@ const THEMES: readonly Segment<Theme>[] = [
   { value: 'dark', label: 'Dark', icon: <Moon /> }
 ]
 
-const SHORTCUTS: readonly { readonly id: RowId; readonly label: string; readonly key: string; readonly where: string }[] = [
-  { id: 'palette', label: 'Command palette', key: 'K', where: 'Works anywhere in Highwing.' },
-  { id: 'new-chat', label: 'New chat', key: 'N', where: 'Works on the chat screen.' },
-  { id: 'find', label: 'Find in chat', key: 'F', where: 'Works in an open chat.' }
+const CLOSES: readonly Segment<OnClose>[] = [
+  { value: 'quit', label: 'Quit', icon: <Quit /> },
+  { value: 'stay', label: 'Keep in the tray', icon: <Tray /> }
 ]
+
+const NOTICE_ROWS: readonly { readonly kind: NoticeKind; readonly id: RowId; readonly label: string; readonly desc: string }[] = [
+  { kind: 'asks', id: 'notice-asks', label: 'Approvals and questions', desc: 'When a bot waits on you in a chat you aren’t looking at.' },
+  { kind: 'replies', id: 'notice-replies', label: 'Finished replies', desc: 'When a reply ends in a chat you aren’t looking at.' },
+  { kind: 'jobs', id: 'notice-jobs', label: 'Scheduled jobs', desc: 'When a scheduled job finishes.' }
+]
+
+const UNREPORTED = 'This Hermes does not report usage.'
 
 const CHECK_SAID: { readonly [C in Exclude<Check, 'idle'>]: string } = { checking: 'checking', failed: 'check failed' }
 
@@ -57,9 +79,84 @@ function Choice<V extends string>({ label, desc, value, segments, hidden, onPick
   )
 }
 
-export function Settings({ setup, mode, theme, onRequestClose }: { readonly setup: CardSetup; readonly mode: Mode; readonly theme: Theme; readonly onRequestClose: () => void }) {
+function NoticeRows({ off }: { readonly off: (row: RowId) => boolean }) {
+  const ids = useId()
+  const notices = useTopic('notices')
+  return NOTICE_ROWS.map(({ kind, id, label, desc }) => (
+    <div key={kind} className="row" hidden={off(id)}>
+      <div className="text">
+        <p className="label" id={`${ids}-${kind}`}>{label}</p>
+        <p className="desc" id={`${ids}-${kind}-desc`}>{desc}</p>
+      </div>
+      <div className="control">
+        <input
+          type="checkbox" role="switch" checked={notices?.[kind] ?? true} disabled={notices === undefined} aria-labelledby={`${ids}-${kind}`} aria-describedby={`${ids}-${kind}-desc`}
+          onChange={() => notices !== undefined && void run({ do: 'setNotice', kind, on: !notices[kind] })}
+        />
+      </div>
+    </div>
+  ))
+}
+
+function Usage() {
+  const sessionId = shownChat(useTopic('open'))?.sessionId ?? null
+  const live = useTopic(sessionId === null ? null : `session:${sessionId}`)?.sync.state === 'live'
+  const [ask, setAsk] = useState<UsageAsk>({ at: 'idle' })
+  const askRef = useRef(ask)
+  askRef.current = ask
+  useEffect(() => {
+    if (sessionId === null || !usageNeedsRead(sessionId, live, askRef.current)) return
+    let current = true
+    setAsk({ at: 'reading', sessionId })
+    void run({ do: 'accountUsage', sessionId }).then(outcome => {
+      if (current) setAsk({ at: 'settled', sessionId, outcome })
+    })
+    return () => { current = false }
+  }, [sessionId, live])
+  const view = usageView(sessionId, ask)
+  return (
+    <div className="card rows">
+      {view.state === 'needs-chat' && <div className="row"><div className="text"><p className="label">Open a chat to see what this Hermes reports.</p></div></div>}
+      {view.state === 'reading' && <div className="row"><div className="text"><p className="desc">Reading usage…</p></div></div>}
+      {view.state === 'failed' && <div className="row"><div className="text"><p className="label">{view.message}</p></div></div>}
+      {view.state === 'unreported' && <div className="row"><div className="text"><p className="label">{UNREPORTED}</p></div></div>}
+      {view.state === 'reported' && view.lines.map((line, index) => (
+        <div key={`${index}-${line}`} className="row"><div className="text"><p className="label">{line}</p></div></div>
+      ))}
+    </div>
+  )
+}
+
+function About({ off }: { readonly off: (row: RowId) => boolean }) {
+  const about = useTopic('about')
+  const hermes = about === undefined ? null
+    : about.hermes.state === 'known' ? about.hermes.version
+    : about.hermes.state === 'offline' ? 'Not connected.'
+    : 'This Hermes hasn’t reported a version.'
+  return (
+    <div className="card rows">
+      <div className="row" hidden={off('about-app')}>
+        <div className="text"><p className="label">App</p></div>
+        <div className="control">{about?.app ?? ''}</div>
+      </div>
+      <div className="row" hidden={off('about-hermes')}>
+        <div className="text"><p className="label">Hermes</p></div>
+        <div className="control">{hermes}</div>
+      </div>
+    </div>
+  )
+}
+
+export function Settings({ setup, mode, theme, onRequestClose, onShowShortcuts }: {
+  readonly setup: CardSetup
+  readonly mode: Mode
+  readonly theme: Theme
+  readonly onRequestClose: () => void
+  readonly onShowShortcuts: () => void
+}) {
   const saving = setup.at === 'checking' && setup.step === 'save'
   const link = useTopic('link')
+  const onClose = useTopic('onClose') ?? 'quit'
   const heading = useRef<HTMLHeadingElement>(null)
   const title = useRef<HTMLHeadingElement>(null)
   const ids = useId()
@@ -108,6 +205,7 @@ export function Settings({ setup, mode, theme, onRequestClose }: { readonly setu
   }
 
   const off = (row: RowId) => !view.rows.has(row)
+  const shown = (at: Page) => view.pages.includes(at)
   const cards: { readonly [P in Page]: ReactNode } = {
     connection: <ConnectionCard setup={setup} link={link} />,
     appearance: (
@@ -116,16 +214,42 @@ export function Settings({ setup, mode, theme, onRequestClose }: { readonly setu
         <Choice label="Show in the sidebar" desc="Bots shows your bots. Chats shows the chats of the open bot." value={mode} segments={SIDEBAR} hidden={off('sidebar')} onPick={picked => void run({ do: 'setMode', mode: picked })} />
       </div>
     ),
+    window: (
+      <div className="card rows">
+        <Choice label="When the window closes" desc="Quit leaves Highwing. Keep in the tray leaves it running." value={onClose} segments={CLOSES} hidden={off('on-close')} onPick={picked => void run({ do: 'setOnClose', onClose: picked })} />
+      </div>
+    ),
+    notifications: <div className="card rows"><NoticeRows off={off} /></div>,
+    // Mounted only while shown: each asks Hermes as it mounts.
+    passwords: shown('passwords') && <PasswordManagers labelledBy={`${ids}-passwords`} />,
+    permissions: (
+      <div className="card rows">
+        <div className="row" hidden={off('permissions')}>
+          <div className="text"><p className="label">Commands are approved on the composer.</p></div>
+        </div>
+      </div>
+    ),
     keys: (
       <div className="card rows">
-        {SHORTCUTS.map(({ id, label, key, where }) => (
-          <div key={id} className="row" hidden={off(id)}>
-            <div className="text"><p className="label">{label}</p><p className="desc">{where}</p></div>
-            <div className="control keys"><kbd>{COMMAND_KEY}</kbd><kbd>{key}</kbd></div>
+        <div className="row" hidden={off('shortcuts')}>
+          <div className="text">
+            <p className="label">All shortcuts</p>
+            <p className="desc">Every shortcut Highwing has, grouped by what it does.</p>
+          </div>
+          <div className="control">
+            <button type="button" className="btn" aria-keyshortcuts={MAC ? 'Meta+/' : 'Control+/'} onClick={onShowShortcuts}>Show all</button>
+          </div>
+        </div>
+        {SHORTCUTS.map(shortcut => (
+          <div key={shortcut.id} className="row" hidden={off(`key:${shortcut.id}`)}>
+            <div className="text"><p className="label">{shortcut.label}</p><p className="desc">{whereOf(shortcut)}</p></div>
+            <div className="control keys">{capsOf(shortcut, MAC).map(cap => <kbd key={cap}>{cap}</kbd>)}</div>
           </div>
         ))}
       </div>
-    )
+    ),
+    usage: shown('usage') && <Usage />,
+    about: <About off={off} />
   }
 
   return (
@@ -171,7 +295,7 @@ export function Settings({ setup, mode, theme, onRequestClose }: { readonly setu
             </div>
           )}
           {PAGES.map(({ id, label }) => (
-            <section key={id} className="group" hidden={!view.pages.includes(id)} aria-labelledby={view.titlesPages ? `${ids}-${id}` : `${ids}-title`}>
+            <section key={id} className="group" hidden={!shown(id)} aria-labelledby={view.titlesPages ? `${ids}-${id}` : `${ids}-title`}>
               {view.titlesPages && <h3 id={`${ids}-${id}`}>{label}</h3>}
               {cards[id]}
             </section>

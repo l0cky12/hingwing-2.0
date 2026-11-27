@@ -52,6 +52,7 @@ const STATES = {
   'setup-checking': page => page.getByRole('status', { name: 'Checking' }),
   'setup-failed': page => page.getByRole('alert'),
   'setup-saved': page => page.getByRole('button', { name: 'Open chat', exact: true }),
+  intro: page => page.getByRole('region', { name: 'Intro', exact: true }),
   settings: page => page.getByRole('heading', { name: 'Settings', exact: true, level: 1 }),
   live: page => page.getByRole('button', { name: 'Send', exact: true, disabled: false }),
   'tool-running': page => page.locator('.step[data-end="live"]').filter({ hasText: /^Running / }),
@@ -64,6 +65,7 @@ const STATES = {
   mentions: page => page.getByRole('listbox', { name: 'Mentions' }),
   'relay-waiting': page => page.locator('.turn.relay [role="status"]'),
   bots: page => page.locator('aside[data-state="listed"], .bot-pick[data-state="listed"]'),
+  apps: page => page.getByRole('dialog', { name: 'Connect apps', exact: true }),
   unstarted: page => page.locator('main#scroll:empty'),
   'helper-running': page => page.locator('.helper[data-end="live"]').filter({ has: page.locator('> .head > .sr', { hasText: /^working$/ }) }),
   preview: page => page.getByRole('region', { name: 'Preview', exact: true }),
@@ -1208,7 +1210,7 @@ const requestMethods = steps => new Map(steps.flatMap(step => {
 
 const answerTo = step => step.answer ?? step.params?.request_id ?? step.params?.op_id
 
-function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, profiles, paths, createWarnings, configureClash, assetFails, images, titles, pets, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, approvals, answeredElsewhere, answerHere, cancel, actedElsewhere, windowMakes, origin, attachLimit }, out) {
+function withEdits(fixturePath, { dropAfter, models, catalog, connectors, guarded, usage, profiles, paths, createWarnings, configureClash, assetFails, images, titles, pets, memory, vault, mcp, bound, noBotChat, tree, yolo, yoloDenied, yoloElsewhereAfter, approvals, answeredElsewhere, answerHere, cancel, actedElsewhere, windowMakes, origin, attachLimit }, out) {
   const lines = readFileSync(fixturePath, 'utf8').split('\n').filter(line => line.trim() !== '')
   const header = JSON.parse(lines[0])
   const recorded = lines.slice(1).map(line => JSON.parse(line))
@@ -1232,16 +1234,18 @@ function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, pr
   }
   if (models) header.models = JSON.parse(readFileSync(resolve(process.cwd(), models), 'utf8'))
   if (catalog) header.catalog = JSON.parse(readFileSync(resolve(process.cwd(), catalog), 'utf8'))
+  if (connectors) header.connectors = JSON.parse(readFileSync(resolve(process.cwd(), connectors), 'utf8'))
   if (guarded) header.guarded = guarded.split(',')
   if (usage) header.usage = JSON.parse(readFileSync(resolve(process.cwd(), usage), 'utf8'))
   if (profiles) {
-    const { chats, relay, souls, groups, turn_ms: turnMs, ...reply } = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
+    const { chats, relay, souls, groups, cron, turn_ms: turnMs, ...reply } = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
     header.profiles = reply
     if (chats !== undefined) header.chats = chats
     if (relay !== undefined) header.relay = relay
     if (turnMs !== undefined) header.turnMs = turnMs
     if (souls !== undefined) header.souls = souls
     if (groups !== undefined) header.groups = groups
+    if (cron !== undefined) header.cron = cron
   }
   if (paths) header.paths = JSON.parse(readFileSync(resolve(process.cwd(), paths), 'utf8'))
   if (createWarnings) header.createWarnings = JSON.parse(readFileSync(resolve(process.cwd(), createWarnings), 'utf8'))
@@ -1249,7 +1253,10 @@ function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, pr
   if (assetFails) header.assetFails = assetFails
   if (images) header.images = JSON.parse(readFileSync(resolve(process.cwd(), images), 'utf8'))
   if (pets) header.pets = JSON.parse(readFileSync(resolve(process.cwd(), pets), 'utf8'))
+  if (memory) header.memory = JSON.parse(readFileSync(resolve(process.cwd(), memory), 'utf8'))
   if (titles) header.oneshot = JSON.parse(readFileSync(resolve(process.cwd(), titles), 'utf8'))
+  if (mcp) header.mcp = JSON.parse(readFileSync(resolve(process.cwd(), mcp), 'utf8'))
+  if (vault) header.vault = JSON.parse(readFileSync(resolve(process.cwd(), vault), 'utf8'))
   if (bound) header.reach = 'profile'
   if (noBotChat) header.homeBotChat = false
   if (tree) header.tree = true
@@ -1283,9 +1290,9 @@ function withEdits(fixturePath, { dropAfter, models, catalog, guarded, usage, pr
  * ssh, tailscale and hermes. The app is then launched with that directory as its whole PATH, so it
  * cannot reach the real ones.
  */
-function startFakeHost(scenario, fixture, holdAt, scratch) {
+function startFakeHost(scenario, fixture, holdAt, scratch, calls) {
   const child = spawn(process.execPath, ['--import', tsxLoader() ?? fail('tsx is missing; run doctor'), join(REPO, 'scripts/fake-host.ts'), scenario, fixture, ...(holdAt ? [holdAt] : [])], {
-    cwd: REPO, stdio: ['ignore', 'pipe', 'inherit']
+    cwd: REPO, stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, HIGHWING_FIXTURE_CALLS: calls }
   })
   writeFileSync(join(scratch, 'host-pid'), String(child.pid))
   return new Promise(resolve => {
@@ -1501,7 +1508,7 @@ async function quitApp(ctx) {
 
 async function run(argv) {
   ownDisplay()
-  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'asset-fails': 'value', images: 'value', titles: 'value', pets: 'value', video: 'flag', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', approvals: 'value', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'fake-webapp': 'value', 'webapp-url': 'value', 'login-form': 'flag', keyring: 'value', 'sign-in-ms': 'value', mode: 'value', theme: 'value', 'system-theme': 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', 'reduced-motion': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value', latency: 'value', 'timed-shot': 'value', 'cpu-profile': 'flag' })
+  const { options, rest } = parseOptions(argv, { fixture: 'value', run: 'value', timeout: 'value', 'drop-after': 'value', models: 'value', catalog: 'value', connectors: 'value', guarded: 'value', usage: 'value', profiles: 'value', paths: 'value', 'create-warnings': 'value', 'configure-clash': 'value', 'asset-fails': 'value', images: 'value', titles: 'value', pets: 'value', memory: 'value', vault: 'value', mcp: 'value', video: 'flag', 'pick-file': 'value', pick: 'value', 'menu-pick': 'value', 'attach-limit': 'value', bound: 'flag', 'no-bot-chat': 'flag', tree: 'flag', yolo: 'value', 'yolo-denied': 'flag', approvals: 'value', 'yolo-elsewhere-after': 'value', serve: 'value', 'fake-host': 'value', 'hold-at': 'value', saved: 'value', 'fake-webapp': 'value', 'webapp-url': 'value', 'login-form': 'flag', keyring: 'value', 'sign-in-ms': 'value', mode: 'value', theme: 'value', 'system-theme': 'value', 'forced-colors': 'flag', 'more-contrast': 'flag', 'reduced-motion': 'flag', size: 'value', 'chat-only': 'flag', 'answered-elsewhere': 'flag', 'acted-elsewhere': 'flag', 'window-makes': 'value', 'answer-here': 'value', cancel: 'value', arg: 'value', latency: 'value', 'timed-shot': 'value', 'cpu-profile': 'flag' })
   const steps = parseSteps(rest)
   const scenario = options['fake-host']
   const webScenario = options['fake-webapp']
@@ -1520,7 +1527,7 @@ async function run(argv) {
   const signsInOnPage = Boolean(options['login-form'] || realUrl)
   if (signsInOnPage) for (const name of USER_FILES) if (!process.env[name]) fail(`set ${name} to a file that holds it, for the sign-in page`)
   const site = options.serve ? await serve(options.serve) : null
-  const edits = { dropAfter: options['drop-after'], models: options.models, catalog: options.catalog, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], assetFails: options['asset-fails'], images: options.images, titles: options.titles, pets: options.pets, bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], approvals: options.approvals, answeredElsewhere: options['answered-elsewhere'], answerHere: options['answer-here'], cancel: options.cancel, actedElsewhere: options['acted-elsewhere'], windowMakes: options['window-makes'], origin: site?.origin, attachLimit: options['attach-limit'] }
+  const edits = { dropAfter: options['drop-after'], models: options.models, catalog: options.catalog, connectors: options.connectors, guarded: options.guarded, usage: options.usage, profiles: options.profiles, paths: options.paths, createWarnings: options['create-warnings'], configureClash: options['configure-clash'], assetFails: options['asset-fails'], images: options.images, titles: options.titles, pets: options.pets, memory: options.memory, vault: options.vault, mcp: options.mcp, bound: options.bound, noBotChat: options['no-bot-chat'], tree: options.tree, yolo: options.yolo, yoloDenied: options['yolo-denied'], yoloElsewhereAfter: options['yolo-elsewhere-after'], approvals: options.approvals, answeredElsewhere: options['answered-elsewhere'], answerHere: options['answer-here'], cancel: options.cancel, actedElsewhere: options['acted-elsewhere'], windowMakes: options['window-makes'], origin: site?.origin, attachLimit: options['attach-limit'] }
   const edited = Object.values(edits).some(Boolean)
   if (options.yolo && options.yolo !== 'on' && options.yolo !== 'off') fail(`--yolo takes on or off, not "${options.yolo}"`)
   if (options.approvals && !['manual', 'smart', 'off'].includes(options.approvals)) fail(`--approvals takes manual, smart or off, not "${options.approvals}"`)
@@ -1530,7 +1537,7 @@ async function run(argv) {
   if (options.cancel && !/^[^=]+=[^=]+$/.test(options.cancel)) fail(`--cancel takes <method>=<reason>, not "${options.cancel}"`)
   if (!options.yolo && (options['yolo-denied'] || options['yolo-elsewhere-after'])) fail('--yolo-denied and --yolo-elsewhere-after need --yolo, because a Hermes with no YOLO answers neither')
   if (options.tree && !options.profiles) fail('--tree needs --profiles, because the tree lists the chats that file seeds')
-  if ((scenario || byAddress) && edited) fail('--drop-after, --models, --catalog, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --asset-fails, --images, --titles, --pets, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --approvals, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host, --fake-webapp or --webapp-url')
+  if ((scenario || byAddress) && edited) fail('--drop-after, --models, --catalog, --connectors, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --asset-fails, --images, --titles, --pets, --memory, --vault, --mcp, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --approvals, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve and --attach-limit edit the fixture a --fixture run replays. They do nothing with --fake-host, --fake-webapp or --webapp-url')
   if (options['configure-clash'] && !options.profiles) fail('--configure-clash needs --profiles: without it Hermes has no bots to rename')
   if (options['asset-fails'] && !options.profiles) fail('--asset-fails needs --profiles: without it Hermes stores no pictures')
   if (options['attach-limit'] && !/^[1-9]\d*$/.test(options['attach-limit'])) fail(`--attach-limit takes a number of bytes, not "${options['attach-limit']}"`)
@@ -1557,7 +1564,7 @@ async function run(argv) {
   rmSync(calls, { force: true })
   rmSync(join(evidence, 'timings.jsonl'), { force: true })
   const userData = join(scratch, 'user-data')
-  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), menus: join(evidence, 'menus.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set(), exposed: [], latencyMs: Number(options.latency ?? 0), timedShots: options['timed-shot']?.split(',').map(Number) ?? [], cpuProfile: options['cpu-profile'] === true, web: null, realHost: realUrl ? new URL(realUrl).hostname : null, signInFailures: [], pid: null }
+  const ctx = { app: null, page: null, evidence, fixture, calls, userData, called: [], answered: [], errors: [], timeout: Number(options.timeout ?? 15_000), opens: join(evidence, 'opens.jsonl'), notices: join(evidence, 'notices.jsonl'), tray: join(evidence, 'tray.jsonl'), menus: join(evidence, 'menus.jsonl'), notified: [], holding: null, clipboard: null, size: SIZE, clip: null, origin: site?.origin ?? null, home: null, dialogs: [], secrets: new Set(), secretLabels: new Set(), exposed: [], latencyMs: Number(options.latency ?? 0), timedShots: options['timed-shot']?.split(',').map(Number) ?? [], cpuProfile: options['cpu-profile'] === true, web: null, realHost: realUrl ? new URL(realUrl).hostname : null, signInFailures: [], pid: null }
   const media = { ...(options['forced-colors'] && { forcedColors: 'active' }), ...(options['more-contrast'] && { contrast: 'more' }), ...(options['reduced-motion'] && { reducedMotion: 'reduce' }) }
 
   const userFiles = options['login-form'] ? { usernameFile: process.env.HIGHWING_VERIFY_USER_FILE, passwordFile: process.env.HIGHWING_VERIFY_PASSWORD_FILE } : null
@@ -1580,7 +1587,7 @@ async function run(argv) {
     mkdirSync(userData, { recursive: true })
     writeFileSync(join(userData, THEME_FILE), JSON.stringify({ version: 1, theme: options.theme }))
   }
-  const host = scenario ? await startFakeHost(scenario, fixture, options['hold-at'], scratch) : null
+  const host = scenario ? await startFakeHost(scenario, fixture, options['hold-at'], scratch, calls) : null
 
   const noTools = byAddress ? join(scratch, 'bin') : null
   if (noTools) {
@@ -1610,6 +1617,8 @@ async function run(argv) {
   env.HIGHWING_SAVE_DIR = join(evidence, 'saves')
   rmSync(ctx.notices, { force: true })
   env.HIGHWING_NOTIFY_LOG = ctx.notices
+  rmSync(ctx.tray, { force: true })
+  env.HIGHWING_TRAY_LOG = ctx.tray
   rmSync(ctx.menus, { force: true })
   env.HIGHWING_MENU_LOG = ctx.menus
   delete env.HIGHWING_MENU_PICK

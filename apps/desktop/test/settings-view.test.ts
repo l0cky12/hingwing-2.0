@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { settingsViewOf } from '../src/renderer/setup/settings-view'
+import { ROWS, settingsViewOf } from '../src/renderer/setup/settings-view'
+import { SHORTCUTS } from '../src/renderer/shortcuts'
+
+const KEYED = SHORTCUTS.filter(({ mod }) => mod !== 'alt').map(({ id }) => `key:${id}`)
 
 describe('settingsViewOf with no search', () => {
   it.each([
     ['connection', 'Connection', 'The Hermes this app talks to, and how it reaches it.', ['connection']],
     ['appearance', 'Appearance', 'How Highwing looks and what its sidebar shows.', ['theme', 'sidebar']],
-    ['keys', 'Keyboard shortcuts', 'Each shortcut, and where in Highwing it works.', ['palette', 'new-chat', 'find']]
+    ['window', 'Window', 'What closing Highwing’s window does.', ['on-close']],
+    ['notifications', 'Notifications', 'Which desktop notifications Highwing shows.', ['notice-asks', 'notice-replies', 'notice-jobs']],
+    ['passwords', 'Password managers', 'The 1Password and Bitwarden logins each bot can use.', ['passwords']],
+    ['permissions', 'Permissions', 'How Hermes asks before it runs a command.', ['permissions']],
+    ['keys', 'Keyboard shortcuts', 'Each shortcut, and where in Highwing it works.', ['shortcuts', ...SHORTCUTS.map(({ id }) => `key:${id}`)]],
+    ['usage', 'Usage', 'What this Hermes reports of its use.', ['usage']],
+    ['about', 'About', 'The versions of Highwing and of the Hermes it talks to.', ['about-app', 'about-hermes']]
   ] as const)('shows the %s page alone, untitled, under its own heading and lede', (page, heading, lede, rows) => {
     const view = settingsViewOf(page, '', 'idle')
     expect(view).toMatchObject({ heading, lede, pages: [page], titlesPages: false, emptyAdvice: null, announcement: null, current: page })
@@ -36,45 +45,56 @@ describe('settingsViewOf with a search', () => {
   it('shows only the matching rows of a page, not its whole card', () => {
     const view = settingsViewOf('connection', 'palette', 'idle')
     expect(view.pages).toEqual(['keys'])
-    expect([...view.rows]).toEqual(['palette'])
+    expect([...view.rows]).toEqual(['key:palette'])
   })
 
   it('lists matches from several pages in page order', () => {
-    const view = settingsViewOf('keys', 'chat', 'idle')
+    const view = settingsViewOf('keys', 'sidebar', 'idle')
     expect(view.pages).toEqual(['appearance', 'keys'])
-    expect([...view.rows]).toEqual(['sidebar', 'new-chat', 'find'])
-    expect(view.announcement).toBe('3 settings found for “chat”')
-    expect([...view.hits]).toEqual([['appearance', 1], ['keys', 2]])
+    expect([...view.rows]).toEqual(['sidebar', 'key:compactSidebar'])
+    expect(view.announcement).toBe('2 settings found for “sidebar”')
+    expect([...view.hits]).toEqual([['appearance', 1], ['keys', 1]])
   })
 
   it.each([
     ['dark mode', ['theme']],
-    ['find chat', ['find']],
+    ['find chat', ['key:find']],
     ['change address', ['connection']],
     ['gateway address', ['connection']],
-    ['Ctrl+K', ['palette']],
-    ['⌘F', ['find']],
-    ['ctrl f', ['find']],
-    ['Ctrl K', ['palette']],
-    ['Ctrl + K', ['palette']],
-    ['Cmd N', ['new-chat']],
-    ['ctrl', ['palette', 'new-chat', 'find']],
+    ['Ctrl+K', ['key:palette']],
+    ['⌘F', ['key:find']],
+    ['ctrl f', ['key:find']],
+    ['Ctrl K', ['key:palette']],
+    ['Ctrl + K', ['key:palette']],
+    ['Cmd N', ['key:newChat', 'key:newGroup']],
+    ['ctrl', KEYED],
     ["computer's light", ['theme']],
-    ['command p', ['palette']],
-    ['Ctrl+', ['palette', 'new-chat', 'find']],
-    ['ctrl +', ['palette', 'new-chat', 'find']],
+    ['command p', ['key:palette']],
+    ['Ctrl+', KEYED],
+    ['ctrl +', KEYED],
+    ['Ctrl+,', ['key:settings']],
+    ['ctrl /', ['key:sheet']],
+    ['Ctrl 3', ['key:bot']],
+    ['ctrl tab', ['key:cycleBot', 'key:cycleBotBack']],
+    ['alt up', ['key:previousBot']],
     ['Ctrl+Z', []],
     ['Ctrl C', []],
-    ['command  p', ['palette']],
+    ['command  p', ['key:palette']],
     ['Ctrl S', []],
     ['ctrl a', []],
-    ['⌘ s', []]
+    ['⌘ s', []],
+    ['tray', ['on-close']],
+    ['scheduled', ['notice-jobs']],
+    ['bitwarden', ['passwords']],
+    ['approved', ['permissions']],
+    ['show all', ['shortcuts']],
+    ['version', ['about-app', 'about-hermes']]
   ] as const)('finds %j by each of its words, wherever they sit in a row', (query, rows) => {
     expect([...settingsViewOf('appearance', query, 'idle').rows]).toEqual(rows)
   })
 
   it('matches every row of a page by the page name', () => {
-    expect([...settingsViewOf('connection', 'keyboard', 'idle').rows]).toEqual(['palette', 'new-chat', 'find'])
+    expect([...settingsViewOf('connection', 'keyboard', 'idle').rows]).toEqual(ROWS.filter(row => row.page === 'keys').map(row => row.id))
   })
 
   it('shows nothing and says so when no setting matches', () => {

@@ -28,7 +28,7 @@ const { Settings } = await import('../src/renderer/setup/Settings')
 
 const HOST: Target = { kind: 'local' }
 const AT_REST: CardSetup = { at: 'form', live: { target: HOST, epoch: 1 }, notice: null }
-const render = (theme: Theme) => renderToStaticMarkup(<Settings setup={AT_REST} mode="bots" theme={theme} onRequestClose={() => {}} />)
+const render = (theme: Theme) => renderToStaticMarkup(<Settings setup={AT_REST} mode="bots" theme={theme} onRequestClose={() => {}} onShowShortcuts={() => {}} />)
 const labelOf = (html: string, id: string) => new RegExp(`id="${id}"[^>]*>([^<]*)<`).exec(html)?.[1]
 
 beforeEach(() => {
@@ -36,23 +36,30 @@ beforeEach(() => {
   seen.segmented = []
 })
 
-const PAGE_ORDER = ['Connection', 'Appearance', 'Keyboard shortcuts']
+const PAGE_ORDER = ['Connection', 'Appearance', 'Window', 'Notifications', 'Password managers', 'Permissions', 'Keyboard shortcuts', 'Usage', 'About']
 const cardsOf = (html: string) => Array.from(html.matchAll(/<section([^>]*)>/g), ([, attributes], at) => `${PAGE_ORDER[at]}${attributes!.includes(' hidden=""') ? ' (hidden)' : ''}`)
 const titleId = (html: string) => /<h2 id="([^"]*)"/.exec(html)![1]
 
 describe('Settings', () => {
-  it('opens on the Connection page, with Appearance and Keyboard shortcuts beside it in the nav', () => {
+  it('opens on the Connection page, with every other page beside it in the nav', () => {
     const html = render('system')
     const nav = /<nav [^>]*aria-label="Settings pages">(.*?)<\/nav>/.exec(html)![1]!
     expect(Array.from(nav.matchAll(/<button type="button"( aria-current="page")?[^>]*>.*?<\/svg>([^<]*)<\/button>/g), ([, current, label]) => `${label}${current ? ' (current)' : ''}`))
-      .toEqual(['Connection (current)', 'Appearance', 'Keyboard shortcuts'])
+      .toEqual(PAGE_ORDER.map((label, at) => (at === 0 ? `${label} (current)` : label)))
     expect(/<h2[^>]*>([^<]*)<\/h2><p>([^<]*)<\/p>/.exec(html)!.slice(1)).toEqual(['Connection', 'The Hermes this app talks to, and how it reaches it.'])
-    expect(cardsOf(html)).toEqual(['Connection', 'Appearance (hidden)', 'Keyboard shortcuts (hidden)'])
-    expect(Array.from(html.matchAll(/<section[^>]*aria-labelledby="([^"]*)"/g), ([, id]) => id)).toEqual(Array(3).fill(titleId(html)))
+    expect(cardsOf(html)).toEqual(PAGE_ORDER.map((label, at) => (at === 0 ? label : `${label} (hidden)`)))
+    expect(Array.from(html.matchAll(/<section[^>]*aria-labelledby="([^"]*)"/g), ([, id]) => id)).toEqual(Array(PAGE_ORDER.length).fill(titleId(html)))
+  })
+
+  it('keeps Show all, which opens the shortcut sheet, on the Keyboard shortcuts page with a row for each shortcut', () => {
+    const html = render('system')
+    expect(html).toMatch(/aria-keyshortcuts="(Control|Meta)\+\/"[^>]*>Show all</)
+    expect(html).toContain('<p class="label">Command palette</p><p class="desc">Works anywhere in Highwing.</p>')
+    expect(html).toContain('<p class="label">Find in chat</p><p class="desc">Works in a chat.</p>')
   })
 })
 
-describe('the Theme row of Settings', () => {
+describe('the Theme and window-close rows of Settings', () => {
   it('sits on the Appearance page above Show in the sidebar, offering System, Light and Dark', () => {
     const html = render('system')
     const theme = seen.segmented.find(control => labelOf(html, control.labelledBy) === 'Theme')!
@@ -61,6 +68,18 @@ describe('the Theme row of Settings', () => {
     const group = new RegExp(`<div class="seg" role="radiogroup" aria-labelledby="${theme.labelledBy}" aria-describedby="${theme.labelledBy}-desc">(.*?)</div>`).exec(html)![1]!
     expect(Array.from(group.matchAll(/<label><input type="radio"[^>]*?( checked="")?\/><svg[^>]*>.*?<\/svg>(\w+)<\/label>/g), ([, checked, label]) => `${label}${checked ? ' (checked)' : ''}`))
       .toEqual(['System (checked)', 'Light', 'Dark'])
+  })
+
+  it('shows Quit checked for a window close, and asks main to keep Highwing in the tray', () => {
+    const html = render('system')
+    const close = seen.segmented.find(control => labelOf(html, control.labelledBy) === 'When the window closes')!
+    expect(close.value).toBe('quit')
+    expect(labelOf(html, `${close.labelledBy}-desc`)).toBe('Quit leaves Highwing. Keep in the tray leaves it running.')
+    const group = new RegExp(`<div class="seg" role="radiogroup" aria-labelledby="${close.labelledBy}" aria-describedby="${close.labelledBy}-desc">(.*?)</div>`).exec(html)![1]!
+    expect(Array.from(group.matchAll(/<label><input type="radio"[^>]*?( checked="")?\/><svg[^>]*>.*?<\/svg>(.*?)<\/label>/g), ([, checked, label]) => `${label}${checked ? ' (checked)' : ''}`))
+      .toEqual(['Quit (checked)', 'Keep in the tray'])
+    close.onPick('stay')
+    expect(seen.commands).toEqual([{ do: 'setOnClose', onClose: 'stay' }])
   })
 
   it.each(['light', 'dark', 'system'] satisfies Theme[])('asks main to draw %s when that segment is picked', picked => {
