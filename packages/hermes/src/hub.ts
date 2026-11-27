@@ -11,12 +11,14 @@ import { shownBot, shownChat, shownGroup, type OpenChat } from './domain/open'
 import type { PaneAsk } from './domain/pane'
 import type { BridgeRequest, ServerRequest } from './domain/reduce'
 import type { RelayDesk } from './domain/relay'
+import type { ScreenView } from './domain/screen'
 import type { AttachmentId, BranchId, Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog } from './domain/slash'
 import { groupBook } from './groups'
 import { chatDesk } from './open'
 import { relayBook } from './relay'
 import { botList } from './roster'
+import { screenDesk } from './screens'
 import { deriveSidebar, sessionList } from './sidebar'
 import { readVersions } from './versions'
 import { connect, systemClock, type Clock, type Dialer } from './wire/link'
@@ -80,6 +82,16 @@ export interface Hermes {
    * once online, when sessions change and when the roster does. A chat is read once a window watches it.
    */
   readonly activity: Feed<BotActivities>
+  /**
+   * The screen of the open chat's bot: whether this Hermes can show it, whether the agent is using it, who has control,
+   * and its latest frame, asked for every 2 s while the agent uses it. null while a group chat is open.
+   */
+  readonly screen: Feed<ScreenView | null>
+  /**
+   * Where to dial the live view of `screen`'s bot: a WebSocket address on the gateway's own origin that carries the
+   * screen as RFB and holds a single-use ticket. It never leaves Electron main. null when Hermes or the route gives none.
+   */
+  screenSocket(): Promise<string | null>
   /**
    * Watch one session. The listener gets the current value at once and every later one. A session is
    * kept attached while a window watches it, while the gateway lists it as running, while its own
@@ -150,6 +162,7 @@ function sameSidebar(a: Sidebar, b: Sidebar): boolean {
 }
 
 const sameOpen = (a: OpenChat, b: OpenChat) => JSON.stringify(a) === JSON.stringify(b)
+const sameScreen = (a: ScreenView | null, b: ScreenView | null) => JSON.stringify(a) === JSON.stringify(b)
 
 const sameCatalog = (a: SlashCatalog, b: SlashCatalog) =>
   a.length === b.length && a.every((entry, index) => {
@@ -227,6 +240,7 @@ export function openHermes(options: HermesOptions): Hermes {
     },
     gap: parsed => actors.get(parsed.sessionId)?.feed({ in: 'gap' }),
     app: refreshSoon,
+    display: parsed => screens.moved(parsed),
     groups: parsed => book.moved(parsed.rooms),
     unrouted: parsed => count('unrouted', parsed.type)
   }
@@ -235,7 +249,10 @@ export function openHermes(options: HermesOptions): Hermes {
     onLink: next => {
       link.set(next)
       for (const actor of [...actors.values()]) actor.linkChanged()
-      if (next.state !== 'online') list.stale()
+      if (next.state !== 'online') {
+        list.stale()
+        screens.offline()
+      }
       roster.linked(next.state)
       book.linked(next.state)
     },
@@ -247,6 +264,7 @@ export function openHermes(options: HermesOptions): Hermes {
       roster.ask()
       book.online()
       activities.poll()
+      screens.online()
     },
     onEvent: params => {
       const parsed = parseEvent(params)
@@ -256,6 +274,8 @@ export function openHermes(options: HermesOptions): Hermes {
   }, { startOnLaunch: options.startGatewayOnLaunch ?? true, clock })
 
   const link = feed<Link>(conn.link)
+  const screens = screenDesk(conn, clock, () => screen.set(screens.view))
+  const screen = feed<ScreenView | null>(null, sameScreen)
   const slash = feed<SlashCatalog>([], sameCatalog)
   let catalogReads = 0
   let catalogRead: Promise<void> = Promise.resolve()
@@ -290,6 +310,8 @@ export function openHermes(options: HermesOptions): Hermes {
       open.set(desk.open)
       list.follow(shownBot(desk.open))
       book.follow(shownGroup(desk.open))
+      const shown = desk.open.shown
+      screens.follow(shown === null || shown.kind === 'group' ? undefined : shown.bot)
       publishSidebar()
     }
   })
@@ -530,6 +552,7 @@ export function openHermes(options: HermesOptions): Hermes {
       roster.ask()
       return marked
     }
+    if (command.do === 'takeControl' || command.do === 'handBack') return screens.control(command.bot, command.do === 'takeControl')
     if (command.do === 'refreshBots') {
       roster.refresh()
       return DONE
@@ -552,11 +575,14 @@ export function openHermes(options: HermesOptions): Hermes {
     groups,
     groupChat,
     activity,
+    screen,
+    screenSocket: screens.socket,
     watch,
     run: command => run(command) as Promise<Outcome<ResultOf<typeof command>>>,
     close: async () => {
       cancelRefresh?.()
       book.close()
+      screens.close()
       for (const cancel of releases.values()) cancel()
       releases.clear()
       conn.close()

@@ -4,6 +4,7 @@
  * header seeds, and the chats an untitled create makes. Each rule cites the Hermes 0.23.3 source it
  * copies.
  */
+import { createHash } from 'node:crypto'
 import { PICTURE_MAX_BYTES, pictureTypeOf } from '../domain/bots'
 import type { SessionEvent } from '../domain/reduce'
 import { APPROVAL_MODES, type ApprovalMode } from '../domain/session'
@@ -830,6 +831,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'profiles.get_asset': (gateway, socket, params) => gateway.getAsset(socket, params),
   /** tui_gateway/methods_images.py:57-96 */
   'image.generate': (gateway, socket, params) => gateway.generate(socket, params),
+  'display.status': (gateway, _socket, _params, routed) => gateway.screenStatus(routed),
+  'display.thumbnail': (gateway, _socket, _params, routed) => gateway.screenFrame(routed),
+  'display.observe': (gateway, socket, params, routed) => gateway.observe(socket, params, routed),
+  'display.lease.acquire': (gateway, socket, params, routed) => gateway.lease(socket, params, routed, 'human'),
+  'display.lease.release': (gateway, socket, params, routed) => gateway.lease(socket, params, routed, 'agent'),
   'llm.oneshot': (gateway, socket) => gateway.oneshot(socket),
   /** tui_gateway/methods_vault.py */
   'vault.sources': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.sources', params, routed),
@@ -997,6 +1003,10 @@ export class ScriptedGateway {
   private readonly afterReply: (() => void)[] = []
   private readonly sockets = new Set<Socket>()
   private readonly stagedImages = new Set<string>()
+  /** Each profile's takeover lease. `viewer` is the id of the person who holds it. */
+  private readonly leases = new Map<string, { readonly holder: 'agent' | 'human'; readonly viewer: string | null; readonly epoch: number }>()
+  /** The viewer id `display.observe` minted on each socket, as Hermes mints one per connection. */
+  private readonly viewerIds = new Map<Socket, string>()
   private readonly rooms: ScriptedRooms | null
   private readonly vault: ScriptedVault | null
   private drop: Drop
@@ -1111,6 +1121,8 @@ export class ScriptedGateway {
     if (method.startsWith('bot_relay.') && this.fixture.header.relay === undefined) return { error: unknownMethod(method).wire }
     if (method === 'complete.path' && this.fixture.header.paths === undefined) return { error: unknownMethod(method).wire }
     if (method === 'session.active_list' && this.fixture.header.activeList === false) return { error: unknownMethod(method).wire }
+    // The screen's calls reach only the legacy handlers, which a socket with no interactive grant does not.
+    if (method.startsWith('display.') && (this.fixture.header.display === undefined || socket.reach === 'profile')) return { error: unknownMethod(method).wire }
     if (method.startsWith('groups.')) return this.rooms === null ? { error: unknownMethod(method).wire } : this.group(this.rooms, method, raw)
     if (!isObject(raw)) return refusal('invalid_params')
     const { profile, ...unscoped } = raw
@@ -1923,6 +1935,54 @@ export class ScriptedGateway {
     const cap = Math.min(isInt(params.max_bytes) && params.max_bytes > 0 ? params.max_bytes : 8_000_000, 16_000_000)
     const fits = images.picture !== undefined && Buffer.from(images.picture.slice(images.picture.indexOf(',') + 1), 'base64').byteLength <= cap
     return after(images.delay_ms, { available: true, success: true, image: '/hermes-home/cache/images/generated.png', ...(fits ? { image_data: images.picture } : {}) })
+  }
+
+  private leaseOf(profile: string) {
+    const held = this.leases.get(profile) ?? { holder: 'agent', viewer: null, epoch: 0 }
+    const viewer_hash = held.viewer === null ? null : createHash('sha256').update(held.viewer).digest('hex').slice(0, 12)
+    return { held, wire: { holder: held.holder, viewer_id: null, viewer_hash, since: 0, epoch: held.epoch } }
+  }
+
+  /** `display.status` (tui_gateway/methods_display.py:31-56). `profile_key` stands in for the profile's home. */
+  screenStatus(profile: string): Obj {
+    const running = this.fixture.header.display?.[profile]?.running ?? false
+    return { profile, supported: true, installed: true, missing: [], running, geometry: '1440x900', lease: this.leaseOf(profile).wire, profile_key: `/hermes-home/profiles/${profile}` }
+  }
+
+  /** `display.thumbnail` (tui_gateway/methods_display.py:60-78): no frame while the screen is off or a person has control. */
+  screenFrame(profile: string): Obj {
+    if (this.leaseOf(profile).held.holder === 'human') return { data_url: null, suppressed: 'human_has_control' }
+    const screen = this.fixture.header.display?.[profile]
+    return { data_url: screen?.running === true ? screen.thumbnail ?? null : null }
+  }
+
+  /** `display.observe` (tui_gateway/methods_display.py:149-171). The ticket opens nothing here: a fixture has no screen to stream. */
+  observe(socket: Socket, params: Obj, profile: string): Obj {
+    if (this.fixture.header.display?.[profile]?.running !== true) throw new Refused('not running', { code: 5300, message: "this profile's Bot Desktop is not running; call display.start first" })
+    const viewer_id = this.viewerIds.get(socket) ?? `viewer-${this.viewerIds.size + 1}`
+    this.viewerIds.set(socket, viewer_id)
+    return { ...this.screenStatus(profile), ticket: 'fixture-display-ticket', path: '/api/display/ws', viewer_id }
+  }
+
+  /**
+   * `display.lease.acquire` and `release` (tui_gateway/methods_display.py:239-268). Only a viewer id this socket was minted may take or
+   * hand back control, and each change reaches every client as `display.lease`.
+   */
+  lease(socket: Socket, params: Obj, profile: string, holder: 'agent' | 'human'): Obj {
+    const viewer = typeof params.viewer_id === 'string' ? params.viewer_id : null
+    if (viewer === null || this.viewerIds.get(socket) !== viewer) {
+      throw new Refused('viewer_mismatch', { code: 5300, message: 'viewer_id was not minted for this connection; call display.observe first', data: { code: 'viewer_mismatch' } })
+    }
+    const { held } = this.leaseOf(profile)
+    const moves = holder === 'human' ? held.holder !== 'human' || held.viewer !== viewer : held.holder === 'human' && held.viewer === viewer
+    if (moves) {
+      this.leases.set(profile, { holder, viewer: holder === 'human' ? viewer : null, epoch: held.epoch + 1 })
+      const payload = { profile_key: `/hermes-home/profiles/${profile}`, lease: this.leaseOf(profile).wire }
+      this.afterReply.push(() => {
+        for (const each of this.sockets) each.peer.write({ jsonrpc: '2.0', method: 'event', params: { type: 'display.lease', payload } })
+      })
+    }
+    return { lease: this.leaseOf(profile).wire }
   }
 
   /** `llm.oneshot` (tui_gateway/methods_session.py:1249-1276), which a socket with no interactive grant does not reach. */

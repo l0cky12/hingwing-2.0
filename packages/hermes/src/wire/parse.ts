@@ -18,13 +18,14 @@ import type {
 import type { PathMatch } from '../domain/path'
 import { MANAGER_NAMES, MANAGERS, type BotManagers, type ManagerName, type ManagerState } from '../domain/passwords'
 import type { RelayState } from '../domain/relay'
+import type { Lease, ScreenFacts } from '../domain/screen'
 import { OWN_COMMANDS, type SlashCatalog, type SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
 import type {
   AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
   CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
   CommandDispatchResult, CommandsCatalogResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
-  ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, ImageGenerateResult, LoopSnapshot,
+  ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, DisplayLease, DisplayLeasePayload, DisplayLeaseResult, DisplayObserveResult, DisplayStatus, DisplayThumbnailResult, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, ImageGenerateResult, LoopSnapshot,
   MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
   MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PetGalleryResult, PetThumbResult,
   PreviewClosePayload, PreviewOpenPayload, ProcessEntry, ProcessListResult, ProfilesConfigureResult, ProfilesCreateResult, ProfilesDescribeResult,
@@ -59,6 +60,12 @@ export type ParsedEvent =
    * Hermes saying anything may have moved (tui_gateway/change_watcher.py:434-441).
    */
   | { readonly scope: 'groups'; readonly rooms: readonly GroupId[] | 'all' }
+  /**
+   * `display.status` (a profile's screen started or stopped) and `display.lease` (control changed hands), sent to every
+   * client with the profile's home as `key` (tui_gateway/methods_display.py:41-46, methods_display_watch.py:96-102).
+   * `running` null: the frame does not say.
+   */
+  | { readonly scope: 'display'; readonly key: string; readonly running: boolean | null; readonly lease: Lease }
   /**
    * A session event with no session id, or a frame with no stream position.
    * Never guessed into a session, because one socket serves many of them. Counted as `unrouted`.
@@ -507,7 +514,7 @@ export const UNSHOWN: ReadonlySet<string> = new Set([
   'agent.step',
   'agent.terminal.output', 'billing.step_up.verification', 'bot_relay.outbox.pending',
   'browser.progress', 'cron.changed', 'display.install.done',
-  'display.install.log', 'display.lease', 'display.status', 'free_tier.challenge', 'gateway.ready',
+  'display.install.log', 'free_tier.challenge', 'gateway.ready',
   'message.reaction', 'notice', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
   'pet.hatch.progress', 'platforms.changed', 'preview.restart.complete',
   'preview.restart.progress', 'projects.changed', 'reaction',
@@ -579,6 +586,17 @@ export function parseEvent(params: unknown): ParsedEvent {
   const { type, session_id: id, payload } = params
   if (type === 'sessions.changed') return { scope: 'app', event: 'sessions.changed' }
   if (type === 'groups.changed') return { scope: 'groups', rooms: roomsMoved(payload) }
+  if (type === 'display.status') {
+    const facts = parseScreenFacts(payload)
+    return facts === null ? { scope: 'unrouted', type, why: 'unusable payload' } : { scope: 'display', ...facts }
+  }
+  if (type === 'display.lease') {
+    const moved = usable(() => {
+      const p = fields<DisplayLeasePayload>(payload)
+      return { key: p.str('profile_key'), lease: leaseOf(p.raw('lease')) }
+    })
+    return moved === null ? { scope: 'unrouted', type, why: 'unusable payload' } : { scope: 'display', running: null, ...moved }
+  }
   if (typeof id !== 'string' || id === '') return { scope: 'unrouted', type, why: 'no session id' }
   const sessionId = id as SessionId
   if (type === 'session.replay_gap') return { scope: 'gap', sessionId }
@@ -617,6 +635,45 @@ function saidIn(info: unknown): Partial<SaidTuning> {
  * own display rows, through `parseRows`. `older` is set when the first stored row carries
  * `archived_truncated` (`gateway/session_local_recovery.py:388`), which only `messages` keeps.
  */
+/** The events `parseEvent` files under `display`. */
+export const DISPLAY_EVENTS: ReadonlySet<string> = new Set(['display.status', 'display.lease'])
+
+function leaseOf(raw: unknown): Lease {
+  const p = fields<DisplayLease>(raw)
+  const holder = p.str('holder')
+  if (holder !== 'agent' && holder !== 'human') throw new Unusable()
+  return { holder, viewerHash: p.optStr('viewer_hash'), epoch: p.int('epoch') }
+}
+
+/** `display.status`'s reply and event: `DisplayStatus` (tui_gateway/methods_display.py:31-35). null when unusable. */
+export function parseScreenFacts(status: DisplayStatus | unknown): ScreenFacts | null {
+  return usable(() => {
+    const p = fields<DisplayStatus>(status)
+    const running = p.optBool('running')
+    if (running === null) throw new Unusable()
+    return { key: p.str('profile_key'), running, lease: leaseOf(p.raw('lease')) }
+  })
+}
+
+export const parseLease = (reply: DisplayLeaseResult): Lease | null => usable(() => leaseOf(fields<DisplayLeaseResult>(reply).raw('lease')))
+
+const SCREEN_FRAME = /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/
+
+/** A frame of the screen as a data URL. null while Hermes sends none: the screen is stopped, or a person has control. */
+export function parseThumbnail(reply: DisplayThumbnailResult): string | null {
+  const frame = usable(() => fields<DisplayThumbnailResult>(reply).optStr('data_url'))
+  return frame !== null && SCREEN_FRAME.test(frame) ? frame : null
+}
+
+/** `display.observe`: a ticket for one socket at `path`, and the viewer id Hermes minted for this connection. */
+export const parseObserved = (reply: DisplayObserveResult): { readonly ticket: string; readonly path: string; readonly viewerId: string } | null =>
+  usable(() => {
+    const p = fields<DisplayObserveResult>(reply)
+    const path = p.str('path')
+    if (!path.startsWith('/')) throw new Unusable()
+    return { ticket: p.str('ticket'), path, viewerId: p.str('viewer_id') }
+  })
+
 export function parseSnapshot(reply: CanonicalSnapshot): Snapshot {
   const first = reply.messages[0]
   return {

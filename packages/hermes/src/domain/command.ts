@@ -188,6 +188,12 @@ export type Command =
    * takes it off, and another emoji replaces it.
    */
   | { readonly do: 'react'; readonly sessionId: SessionId; readonly turn: TurnId; readonly emoji: string | null }
+  /**
+   * Takes the bot's screen from the agent, so the user can do a step only a person can, such as a sign-in. Input reaches
+   * the screen from Highwing's live view alone until `handBack`. `bot` null: the profile the connection itself uses.
+   */
+  | { readonly do: 'takeControl'; readonly bot: BotId | null }
+  | { readonly do: 'handBack'; readonly bot: BotId | null }
   /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
   | { readonly do: 'reconnect'; readonly start: boolean }
 

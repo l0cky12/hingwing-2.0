@@ -10,7 +10,7 @@ import type {
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 import {
   FOR_WINDOW, parseBranched, parseContextBreakdown, parseEvent, parseGroupList, parseGroupMade, parseGroupPage, parseGroupState, parseGroupSupport, parseInlineDiff, parseUserChats, parseModelMenu, parseModelReceipt, parsePathMatches,
-  parseReplay, parseRows, parseServerRequest, parseShown, parseSnapshot, parseStats, parseToolResult, parseTranscript, SHOWN, UNSHOWN
+  parseReplay, parseRows, parseServerRequest, parseShown, parseSnapshot, parseStats, parseToolResult, parseTranscript, SHOWN, UNSHOWN, DISPLAY_EVENTS
 } from '../src/wire/parse'
 
 const ERRAND = fileURLToPath(new URL('../../../fixtures/errand.jsonl', import.meta.url))
@@ -220,7 +220,7 @@ describe('parseEvent outside the happy path', () => {
   })
 
   it('covers every generated event type as shown, for the window, unshown or app-wide', () => {
-    const unlisted = GATEWAY_EVENT_TYPES.filter(type => !(type in SHOWN) && !(type in FOR_WINDOW) && !UNSHOWN.has(type) && !['app', 'groups'].includes(parseEvent({ type }).scope))
+    const unlisted = GATEWAY_EVENT_TYPES.filter(type => !(type in SHOWN) && !(type in FOR_WINDOW) && !UNSHOWN.has(type) && !DISPLAY_EVENTS.has(type) && !['app', 'groups'].includes(parseEvent({ type }).scope))
     expect(unlisted).toEqual([])
     expect([...Object.keys(SHOWN), ...Object.keys(FOR_WINDOW)].filter(type => UNSHOWN.has(type))).toEqual([])
   })

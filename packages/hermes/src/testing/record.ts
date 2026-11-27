@@ -30,6 +30,11 @@ const OWN_ANSWERS: Readonly<Record<string, (header: Header, reply: Obj, params: 
   'groups.rename': () => NOTHING,
   'groups.disband': () => NOTHING,
   'complete.path': () => NOTHING,
+  'display.status': () => NOTHING,
+  'display.thumbnail': () => NOTHING,
+  'display.observe': () => NOTHING,
+  'display.lease.acquire': () => NOTHING,
+  'display.lease.release': () => NOTHING,
   'runtime.describe': (header, reply) => {
     header.describe ??= reply
     return NOTHING
