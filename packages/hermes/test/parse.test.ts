@@ -9,7 +9,7 @@ import type {
 } from '../src/wire/contract.generated'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 import {
-  FOR_WINDOW, parseBranched, parseContextBreakdown, parseEvent, parseGroupList, parseGroupMade, parseGroupPage, parseGroupState, parseGroupSupport, parseInlineDiff, parseUserChats, parseModelMenu, parseModelReceipt, parsePathMatches,
+  FOR_WINDOW, parseBranched, parseContextBreakdown, parseEvent, parseGroupList, parseGroupMade, parseGroupPage, parseGroupState, parseGroupSupport, parseInlineDiff, parseJobs, parseUserChats, parseModelMenu, parseModelReceipt, parsePathMatches,
   parseReplay, parseRows, parseServerRequest, parseShown, parseSnapshot, parseStats, parseToolResult, parseTranscript, SHOWN, UNSHOWN
 } from '../src/wire/parse'
 
@@ -1091,5 +1091,24 @@ describe('group chats, parsed', () => {
     expect(parseGroupSupport({ ...answer, seatable_profiles: ['default', 'sam'] })).toEqual({ is: 'able', driver: true, seatable: ['default', 'sam'] })
     expect(parseGroupSupport({ ...answer, driver: false })).toEqual({ is: 'able', driver: false, seatable: null })
     expect(parseGroupSupport({ ...answer, seatable_profiles: [1] as never })).toEqual({ is: 'able', driver: true, seatable: null })
+  })
+})
+
+describe('parseJobs', () => {
+  it('reads when each job last ran and whether that run failed', () => {
+    expect(parseJobs({ jobs: [
+      { job_id: 'digest', name: 'Morning digest', last_run_at: '2026-11-26T08:00:00', last_status: 'ok' },
+      { job_id: 'sync', last_run_at: '2026-11-26T09:00:00', last_status: 'delivery_failed', last_error: 'Telegram refused' },
+      { job_id: 'new', name: 'Weekly report', last_run_at: null, last_status: null }
+    ] })).toEqual([
+      { id: 'digest', name: 'Morning digest', ranAt: '2026-11-26T08:00:00', failed: false, error: null },
+      { id: 'sync', name: 'sync', ranAt: '2026-11-26T09:00:00', failed: true, error: 'Telegram refused' },
+      { id: 'new', name: 'Weekly report', ranAt: null, failed: false, error: null }
+    ])
+  })
+
+  it('leaves out a row with no id, and reads a failed list as no list at all', () => {
+    expect(parseJobs({ jobs: [{ name: 'Nameless' }, 'digest'] as never })).toEqual([])
+    expect(parseJobs({ success: false, error: 'cron is off' })).toBeNull()
   })
 })

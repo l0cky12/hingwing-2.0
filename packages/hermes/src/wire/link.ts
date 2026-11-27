@@ -187,6 +187,8 @@ export class Offline extends Error {}
  * handler for a connection with the interactive grant (tui_gateway/ws.py:403-411, tui_gateway/ws_legacy_fallback.py:53-62).
  * A -32601 from it means this Hermes cannot create bots from Highwing. `profiles.describe`, `profiles.configure`,
  * `profiles.set_asset` and `profiles.get_asset` reach the same legacy handlers the same way.
+ * `cron.manage` reaches its legacy handler the same way (tui_gateway/methods_tools.py:1309), and a -32601 from it means
+ * Highwing cannot list this Hermes's scheduled jobs.
  * `projects.tree` reaches its legacy handler the same way (tui_gateway/methods_config.py:137), and a -32601 from it
  * means this Hermes cannot say which chats were branched from which. So does `llm.oneshot` (tui_gateway/methods_session.py:1249),
  * which a -32601 from means this Hermes cannot suggest a title.
@@ -198,7 +200,7 @@ export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'profiles.create' | 'profiles.describe' | 'profiles.configure' | 'profiles.set_asset' | 'profiles.get_asset' | 'projects.tree' |
   'prompt.btw' | 'prompt.background' | 'process.list' | 'process.kill' | 'subagent.interrupt' | 'session.control.read' | 'session.control' | 'rollback.list' |
   'rollback.diff' | 'rollback.restore' | 'message.react' | 'groups.capabilities' | 'groups.list' | 'groups.state' | 'groups.log' | 'groups.send' | 'groups.stop' |
-  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot'>
+  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot' | 'cron.manage'>
 export type Method = keyof Served
 
 export type Requested = ServerRequestMap

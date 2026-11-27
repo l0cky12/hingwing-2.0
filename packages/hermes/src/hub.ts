@@ -4,6 +4,7 @@ import { botModels, botPicture, canGeneratePicture, createBot, describeBot, edit
 import { botsIn, MARK_SETS, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
 import type { GroupChat, Groups } from './domain/groups'
+import type { Job } from './domain/jobs'
 import { mentionedBots } from './domain/mention'
 import { shownBot, shownChat, shownGroup, type OpenChat } from './domain/open'
 import type { PaneAsk } from './domain/pane'
@@ -12,6 +13,7 @@ import type { RelayDesk } from './domain/relay'
 import type { AttachmentId, BranchId, Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog } from './domain/slash'
 import { groupBook } from './groups'
+import { jobList } from './jobs'
 import { chatDesk } from './open'
 import { relayBook } from './relay'
 import { botList } from './roster'
@@ -72,6 +74,8 @@ export interface Hermes {
    * asking every 2 s on a Hermes that does not push.
    */
   readonly groupChat: Feed<GroupChat | null>
+  /** The scheduled jobs of the socket's own profile. null until Hermes lists them, and on a Hermes without `cron.manage`. Listed on every new socket and on `cron.changed`. */
+  readonly jobs: Feed<readonly Job[] | null>
   /**
    * Watch one session. The listener gets the current value at once and every later one. A session is
    * kept attached while a window watches it, while the gateway lists it as running, while its own
@@ -80,6 +84,8 @@ export interface Hermes {
    * Call the returned function to stop watching.
    */
   watch(id: SessionId, listener: (session: Session) => void): () => void
+  /** Hears every change of every session the hub keeps attached, with the session as it was before. Call the returned function to stop. */
+  changes(listener: (session: Session, previous: Session) => void): () => void
   /** Never rejects for an expected failure: that is a `Refusal`. Most outcomes also show up in the feeds. */
   run<C extends Command>(command: C): Promise<Outcome<ResultOf<C>>>
   close(): Promise<void>
@@ -164,6 +170,7 @@ export function openHermes(options: HermesOptions): Hermes {
   /** Actors let go of, oldest first. Each is detached, so no frame, request or badge reaches it, and keeps its content. */
   const released = new Map<SessionId, SessionActor>()
   const watchers = new Map<SessionId, Set<(session: Session) => void>>()
+  const changeListeners = new Set<(session: Session, previous: Session) => void>()
   const windows = new Map<SessionId, number>()
   const releases = new Map<SessionId, () => void>()
   const branchPins = new Map<BranchId, BranchPin>()
@@ -215,7 +222,7 @@ export function openHermes(options: HermesOptions): Hermes {
       if ('ask' in parsed && fresh && shownChat(desk.open)?.sessionId === parsed.sessionId) options.onPane?.(parsed.ask, actor.session)
     },
     gap: parsed => actors.get(parsed.sessionId)?.feed({ in: 'gap' }),
-    app: refreshSoon,
+    app: parsed => (parsed.event === 'cron.changed' ? scheduled.read() : refreshSoon()),
     groups: parsed => book.moved(parsed.rooms),
     unrouted: parsed => count('unrouted', parsed.type)
   }
@@ -235,6 +242,7 @@ export function openHermes(options: HermesOptions): Hermes {
       relayRead = relays.probe()
       roster.ask()
       book.online()
+      scheduled.read()
     },
     onEvent: params => {
       const parsed = parseEvent(params)
@@ -308,6 +316,9 @@ export function openHermes(options: HermesOptions): Hermes {
   const groups = feed<Groups>(book.groups)
   const groupChat = feed<GroupChat | null>(book.chat)
 
+  const scheduled = jobList(conn, () => jobs.set(scheduled.jobs))
+  const jobs = feed<readonly Job[] | null>(scheduled.jobs)
+
   const actorFor = (id: SessionId): SessionActor => {
     const held = actors.get(id)
     if (held !== undefined) return held
@@ -324,6 +335,7 @@ export function openHermes(options: HermesOptions): Hermes {
       watched: () => windows.has(id),
       publish: (session, previous) => {
         for (const listener of [...(watchers.get(id) ?? [])]) listener(session)
+        for (const listener of [...changeListeners]) listener(session, previous)
         if (session.run.state !== previous.run.state) refreshSoon()
         publishSidebar()
         retain()
@@ -509,7 +521,12 @@ export function openHermes(options: HermesOptions): Hermes {
     relay,
     groups,
     groupChat,
+    jobs,
     watch,
+    changes: listener => {
+      changeListeners.add(listener)
+      return () => void changeListeners.delete(listener)
+    },
     run: command => run(command) as Promise<Outcome<ResultOf<typeof command>>>,
     close: async () => {
       cancelRefresh?.()

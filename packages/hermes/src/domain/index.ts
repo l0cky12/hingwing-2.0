@@ -13,6 +13,7 @@ export {
 } from './bots'
 export type { PathMatch } from './path'
 export { mentionedBots, mentionOf, typedMention } from './mention'
+export type { Job, JobId } from './jobs'
 export type { Relay, RelayDesk, RelayId, RelayState } from './relay'
 export { shownBot, shownChat, shownGroup, type ChatRef, type OpenChat, type Shown, type ShownGroup, type Unstarted } from './open'
 export {
