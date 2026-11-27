@@ -50,7 +50,7 @@ function useOpenGroup() {
 }
 
 /** `target` is null in a fixture run, which has no connection to name or to change. */
-export function TopBar({ target, settingsButton }: { readonly target: Target | null; readonly settingsButton: RefObject<HTMLButtonElement | null> }) {
+export function TopBar({ target, settingsButton, onOpenTasks }: { readonly target: Target | null; readonly settingsButton: RefObject<HTMLButtonElement | null>; readonly onOpenTasks: () => void }) {
   const bar = useRef<HTMLElement>(null)
   const startChat = useNewChat(bar)
   const chat = useOpenChatName()
@@ -62,6 +62,7 @@ export function TopBar({ target, settingsButton }: { readonly target: Target | n
       {group === null
         ? <button type="button" aria-keyshortcuts={newChatKeys(MAC).aria} onClick={startChat}>New chat</button>
         : <GroupMembers faces={group.faces} />}
+      <button type="button" onClick={onOpenTasks}>Tasks</button>
       {target !== null && <button ref={settingsButton} onClick={() => void run({ do: 'editTarget' })}>Settings</button>}
       {sessionId !== null && <CopyLink sessionId={sessionId} />}
     </Bar>
