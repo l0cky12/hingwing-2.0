@@ -1,4 +1,5 @@
 import type { SideId } from '@highwing/hermes/domain'
+import { fieldId } from '@highwing/thread'
 import { memo, useId, useLayoutEffect, useRef } from 'react'
 import { CopyButton } from './Copy'
 import type { SideAnswer, SideCard, SideRow } from './sides'
@@ -63,10 +64,10 @@ export const SideTurn = memo(function SideTurn({ row }: { readonly row: SideRow 
   return (
     <article className="turn side side-row" aria-labelledby={heading}>
       <h2 id={heading}>Side question</h2>
-      <p className="side-asked">{row.asked ?? 'Asked in another window'}</p>
+      <p className="side-asked" data-find={row.asked === null ? undefined : fieldId(`side:${row.id}`, 'request')}>{row.asked ?? 'Asked in another window'}</p>
       {answer.s === 'answered'
         ? <div className="prose"><Markdown source={answer.markdown} caret={false} nodeKey={`side:${row.id}`} /><CopyButton text={answer.markdown} name="Copy reply" /></div>
-        : <p className="err">{answer.message}</p>}
+        : <p className="err" data-find={fieldId(`side:${row.id}`, 'error')}>{answer.message}</p>}
       <p className="side-note">Not saved with the chat. Later replies won't see it.</p>
     </article>
   )
