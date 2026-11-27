@@ -1,5 +1,5 @@
 import type { Hermes } from '@highwing/hermes'
-import type { BotId, CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
+import { isTaskId, type BotId, type CommandOutcome, type Session, type SessionId } from '@highwing/hermes/domain'
 import {
   CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
   type Accent, type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type Notices, type OnClose, type PictureChoice, type PictureFile, type Push, type SessionPatch, type StageResult,
@@ -15,6 +15,7 @@ import type { ImageLoader } from './images'
 import { snoozed, type PreferenceStore } from './preferences'
 import type { PreviewPane } from './preview'
 import type { Saver } from './saves'
+import { readTaskBoard, readTaskChat } from './tasks'
 
 export const COALESCE_MS = 16
 
@@ -283,6 +284,9 @@ export function serveWindows(
     return images.load(request, { session: watched?.current() as Session | undefined, local: servedHere(watched) })
   })
 
+  ipc.handle(CHANNEL.taskBoard, async event => (trusted(event) ? readTaskBoard(owner.read) : REFUSED))
+  ipc.handle(CHANNEL.taskChat, async (event, id) => (trusted(event) && isTaskId(id) ? readTaskChat(owner.read, id) : REFUSED))
+
   ipc.handle(CHANNEL.drafts, async event => (trusted(event) ? drafts.load() : []))
   ipc.on(CHANNEL.keepDraft, (event, raw) => {
     const draft = parseDraft(raw)
@@ -327,6 +331,8 @@ export function serveWindows(
       ipc.removeHandler(CHANNEL.run)
       ipc.removeHandler(CHANNEL.file)
       ipc.removeHandler(CHANNEL.image)
+      ipc.removeHandler(CHANNEL.taskBoard)
+      ipc.removeHandler(CHANNEL.taskChat)
       ipc.removeHandler(CHANNEL.drafts)
       ipc.removeAllListeners(CHANNEL.keepDraft)
       ipc.removeHandler(CHANNEL.pickPicture)

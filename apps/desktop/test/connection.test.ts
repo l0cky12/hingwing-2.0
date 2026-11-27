@@ -93,7 +93,7 @@ function harness(loaded: Settings, save: (target: Target) => Promise<void> = asy
       opened.push(held)
       log.push(`open ${opened.length}`)
       const dial = Object.assign(async () => { throw new Error('the test never dials') }, { held })
-      return { dial, dispose: () => { held.disposed = true; log.push(`dispose ${opened.indexOf(held) + 1}`) } } satisfies Route
+      return { dial, read: async path => ({ status: 200, body: { target, path } }), dispose: () => { held.disposed = true; log.push(`dispose ${opened.indexOf(held) + 1}`) } } satisfies Route
     },
     armIntro: async () => {
       log.push('arm')
@@ -143,6 +143,7 @@ describe('ownConnection at launch', () => {
     expect(opened).toEqual([])
     expect(owner.hermes).toBeNull()
     expect(await owner.run({ do: 'reconnect', start: true })).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+    await expect(owner.read('/api/plugins/kanban/board')).rejects.toThrow('No Hermes is connected.')
   })
 })
 
@@ -181,6 +182,15 @@ describe('ownConnection, checking a target', () => {
     const { owner, opened } = harness({ state: 'saved', target: LOCAL })
     await owner.run({ do: 'reconnect', start: false })
     expect(opened[0]!.commands).toEqual([{ do: 'reconnect', start: false }])
+  })
+
+  it('reads the HTTP API through the route of the live connection, which a switch replaces', async () => {
+    const { owner, pass } = harness({ state: 'saved', target: LOCAL })
+    expect(await owner.read('/a')).toEqual({ status: 200, body: { target: LOCAL, path: '/a' } })
+    await owner.run({ do: 'editTarget' })
+    await owner.run({ do: 'checkTarget', target: REMOTE })
+    await pass()
+    expect(await owner.read('/b')).toEqual({ status: 200, body: { target: REMOTE, path: '/b' } })
   })
 
   it('keeps the live connection and saves nothing when the check fails', async () => {
@@ -653,7 +663,9 @@ describe('pinnedConnection', () => {
   it('has no setup, and passes chat commands to its Hermes', async () => {
     const commands: unknown[] = []
     const hermes = { run: async (command: unknown) => { commands.push(command); return { ok: true, value: undefined } }, close: async () => {} } as unknown as Hermes
-    const owner = pinnedConnection(hermes)
+    const read = async () => ({ status: 200, body: 'board' })
+    const owner = pinnedConnection(hermes, read)
+    expect(owner.read).toBe(read)
     expect(owner.setup.get()).toEqual({ at: 'pinned' })
     expect(await owner.run({ do: 'checkTarget', target: LOCAL })).toMatchObject({ ok: false })
     await owner.run({ do: 'reconnect', start: false })

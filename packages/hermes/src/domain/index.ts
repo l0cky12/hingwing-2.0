@@ -23,6 +23,7 @@ export { shownBot, shownChat, shownGroup, type ChatRef, type OpenChat, type Show
 export {
   GROUP_NAME_MAX, GROUP_SIZE, groupIdFor, isGroupId, seatsFor, type Answering, type GroupChat, type GroupDraft, type GroupEvent, type GroupId, type GroupMember, type GroupRow, type Groups, type MemberId
 } from './groups'
+export { BOARD_PATH, isTaskId, parseTaskBoard, parseTaskChat, taskPath, type TaskBoard, type TaskCard, type TaskChat, type TaskColumn } from './tasks'
 export type { PaneAsk } from './pane'
 export { activityIn, botActivitiesOf, sameActivities, unreadAfter, type BotActivities, type BotActivity, type Busy, type BusyChats, type ChatBusy, type UnreadChat } from './activity'
 export type { FoundMessage, MessagesRead } from './messages'

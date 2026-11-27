@@ -20,6 +20,7 @@ import { showComputer, useComputerShown } from './computer/computer'
 import { ComputerView } from './computer/Computer'
 import { Apps, AppsButton } from './apps/Apps'
 import { Palette } from './palette/Palette'
+import { Tasks } from './tasks/Tasks'
 import { screenOf, type CardSetup } from './setup/screens'
 import { Settings } from './setup/Settings'
 import { Intro } from './setup/Intro'
@@ -44,13 +45,13 @@ function OpenPane() {
   return shown.kind === 'group' ? <GroupPane key={samePaneOnFirstMessage(shown)} shown={shown} /> : <Chat key={samePaneOnFirstMessage(shown)} chat={shown} />
 }
 
-function ChatScreen({ target, settingsButton }: { readonly target: Target | null; readonly settingsButton: RefObject<HTMLButtonElement | null> }) {
+function ChatScreen({ target, settingsButton, onOpenTasks }: { readonly target: Target | null; readonly settingsButton: RefObject<HTMLButtonElement | null>; readonly onOpenTasks: () => void }) {
   const link = useTopic('link')
   useRetryPicturesOnceOnline(link?.state === 'online')
   return (
     <>
       <div className="top">
-        <TopBar target={target} settingsButton={settingsButton} />
+        <TopBar target={target} settingsButton={settingsButton} onOpenTasks={onOpenTasks} />
         {link !== undefined && <Banner link={link} target={target} />}
       </div>
       <OpenPane />
@@ -132,13 +133,18 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onOp
   const computer = useComputerShown() && settings === null ? screen ?? null : null
   const paned = (preview?.state === 'open' || computer !== null) && settings === null
   const compact = mode === 'bots' && width === 'compact'
+  const [tasksOpen, setTasksOpen] = useState(false)
+  const shown = useTopic('open')?.shown ?? null
+  const pane = shown === null ? null : samePaneOnFirstMessage(shown)
+  useEffect(() => setTasksOpen(false), [pane])
   return (
     <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined} data-compact={compact || undefined} data-settings={settings !== null || undefined}>
       {mode === 'bots' && <BotsSidebar head={switcher} compact={compact} foot={foot} />}
       {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} foot={foot} />}
-      <div key="screen" className="screen" data-accent={tone ?? undefined} hidden={settings !== null}>
-        <ChatScreen target={target} settingsButton={settingsButton} />
+      <div key="screen" className="screen" data-accent={tone ?? undefined} hidden={settings !== null || tasksOpen}>
+        <ChatScreen target={target} settingsButton={settingsButton} onOpenTasks={() => setTasksOpen(true)} />
       </div>
+      {tasksOpen && settings === null && <Tasks onClose={() => setTasksOpen(false)} />}
       {settings !== null && <Settings setup={settings} mode={mode} theme={theme} accent={accent} onRequestClose={close} onShowShortcuts={openSheet} />}
       <DraftSweep />
       <Shortcuts onSheet={openSheet} />

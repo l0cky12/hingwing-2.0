@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseSshHost } from '../src/domain/reach'
-import { ASK_INTERACTIVE, ATTACH, attachedOf, HERMES_PATHS, PROBE, probeOf, relay, remoteHermes, runTool, SERVE, servedOf, SSH_OPTIONS, sshFailureOf } from '../src/wire/ssh'
+import { ASK_INTERACTIVE, ASK_NATIVE_HTTP, ATTACH, attachedOf, HERMES_PATHS, httpTicketOf, PROBE, probeOf, relay, remoteHermes, runTool, SERVE, servedOf, SSH_OPTIONS, sshFailureOf } from '../src/wire/ssh'
 import { manualClock, settle } from '../src/testing/clock'
 
 describe('sshFailureOf', () => {
@@ -89,6 +89,29 @@ describe('servedOf', () => {
   it('asks for the one ticket that takes no profile, on one line', () => {
     expect(JSON.parse(ASK_INTERACTIVE)).toEqual({ id: 1, purpose: 'interactive' })
     expect(ASK_INTERACTIVE.endsWith('\n') && ASK_INTERACTIVE.indexOf('\n') === ASK_INTERACTIVE.length - 1).toBe(true)
+  })
+})
+
+describe('httpTicketOf', () => {
+  const hello = '{"type": "hello", "protocol": 1, "endpoint": {"api_origin": "http://127.0.0.1:35187", "instance_id": "i-1"}}'
+
+  it.each([
+    [0, `${hello}\n{"id": 1, "ok": true, "ticket": "t-1", "expires_in": 30}\n`, { origin: 'http://127.0.0.1:35187', ticket: 't-1' }],
+    [0, `a banner\n${hello}\n{"id": 1, "ok": true, "ticket": "t-1"}\n`, null],
+    [0, '{"type": "hello", "protocol": 1}\n{"id": 1, "ok": true, "ticket": "t-1"}\n', null],
+    [0, `${hello}\n{"id": 1, "ok": false, "error": {"code": "unsupported_purpose"}}\n`, null],
+    [0, `${hello}\n{"id": 1, "ok": true, "ticket": ""}\n`, null],
+    [0, `${hello}\n`, null],
+    [5, '{"type": "error", "error": {"code": "absent"}}\n', null],
+    [1, `${hello}\n{"id": 1, "ok": true, "ticket": "t-1"}\n`, null],
+    [0, '', null]
+  ])('reads exit %i with %j', (code, stdout, ticket) => {
+    expect(httpTicketOf(code, stdout)).toEqual(ticket)
+  })
+
+  it('asks for the HTTP ticket on one line', () => {
+    expect(JSON.parse(ASK_NATIVE_HTTP)).toEqual({ id: 1, purpose: 'native-http' })
+    expect(ASK_NATIVE_HTTP.indexOf('\n')).toBe(ASK_NATIVE_HTTP.length - 1)
   })
 })
 

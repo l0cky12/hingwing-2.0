@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { type FixtureStep, loadFixture } from '../src/testing/fixture'
+import { BOARD_PATH, taskPath } from '../src/domain/tasks'
+import { type FixtureStep, fixtureRead, loadFixture } from '../src/testing/fixture'
 import { checkParams } from '../src/testing/params'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 
@@ -240,6 +241,31 @@ describe('loadFixture', () => {
       const path = write([{ ...header, media }])
       expect(() => loadFixture(path)).toThrow(`${path}:1: "media" must map a url or path to base64 bytes`)
     }
+  })
+
+  describe('kanban', () => {
+    const kanban = { board: { columns: [{ name: 'running', tasks: [{ id: 't_1', title: 'Sweep' }] }] }, tasks: { t_1: { events: [], runs: [] } } }
+
+    it('reads the kanban replies, and refuses a board the app could not read or tasks that are not by id', () => {
+      expect(loadFixture(write([{ ...header, kanban }])).header.kanban).toEqual(kanban)
+      expect(loadFixture(write([header])).header).not.toHaveProperty('kanban')
+      for (const bad of [[], 'x', { board: kanban.board }, { board: { columns: 'x' }, tasks: {} }, { board: kanban.board, tasks: [] }]) {
+        const path = write([{ ...header, kanban: bad }])
+        expect(() => loadFixture(path)).toThrow(`${path}:1: "kanban" must be { board, tasks }`)
+      }
+    })
+
+    it('answers the board, a card by its path, and a 404 for any other path', async () => {
+      const read = fixtureRead(kanban)
+      expect(await read(BOARD_PATH)).toEqual({ status: 200, body: kanban.board })
+      expect(await read(taskPath('t_1'))).toEqual({ status: 200, body: kanban.tasks.t_1 })
+      expect(await read(taskPath('t_9'))).toMatchObject({ status: 404 })
+      expect(await read('/api/status')).toMatchObject({ status: 404 })
+    })
+
+    it('answers 404 to every path when the fixture has no kanban, as a Hermes without the plugin does', async () => {
+      expect(await fixtureRead(undefined)(BOARD_PATH)).toMatchObject({ status: 404 })
+    })
   })
 
   it('reads the attachment limits a run sets, and refuses a limit that is not a number of bytes', () => {

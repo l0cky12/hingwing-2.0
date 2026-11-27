@@ -3,7 +3,7 @@ import {
   type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
-  type RestoreScope, type ResultOf, type ScreenView, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type Target, type TurnId, type Unstarted
+  type RestoreScope, type ResultOf, type ScreenView, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type Target, type TaskBoard, type TaskChat, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 import type { Intro } from './intro'
 
@@ -245,6 +245,10 @@ export interface Bridge {
   pickBotPicture(bot: BotId, epoch: number): Promise<CommandOutcome<PictureChoice>>
   /** Main shows the same picker and checks the file the same way, and answers the picture. Nothing is sent to Hermes. */
   choosePicture(): Promise<CommandOutcome<PictureFile>>
+  /** The kanban board of the connected Hermes, read afresh. */
+  taskBoard(): Promise<CommandOutcome<TaskBoard>>
+  /** The chat working on a card, read afresh. null: the card has none yet. */
+  taskChat(id: string): Promise<CommandOutcome<TaskChat | null>>
   /** Opens the file dialog and holds each file picked, in the order picked. Nothing picked: an empty list. */
   attachPick(): Promise<readonly StageResult[]>
   /** Holds the image on the clipboard. No image there: an empty list. */
@@ -269,7 +273,7 @@ export type ScreenFrame = 'open' | ArrayBuffer | { readonly closed: number }
 export const CHANNEL = {
   watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image',
   drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft', pickPicture: 'highwing:pick-picture', choosePicture: 'highwing:choose-picture', attachPick: 'highwing:attach-pick',
-  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop', screen: 'highwing:screen'
+  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop', screen: 'highwing:screen', taskBoard: 'highwing:task-board', taskChat: 'highwing:task-chat'
 } as const
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
@@ -352,7 +356,9 @@ const REFS: { readonly [K in ChatRef['kind']]: (raw: Obj) => Extract<ChatRef, { 
   },
   chat: raw => {
     const sessionId = sessionIdOf(raw)
-    return sessionId && { kind: 'chat', sessionId }
+    const bot = botIdOf(raw.bot)
+    if (sessionId === null || (raw.bot !== undefined && bot === null)) return null
+    return { kind: 'chat', sessionId, ...(bot === null ? {} : { bot }) }
   },
   link: raw => {
     const sessionId = sessionIdOf(raw)
