@@ -1019,3 +1019,33 @@ On an older Hermes:
 - Without `pet.gallery` or `pet.thumb`, the Pet tab says "This Hermes can't list
   pets."
 - The Shape and Upload tabs need no new call.
+
+## Task board
+
+Hermes has no socket method that reads its kanban board. The Tasks view reads
+the kanban plugin's routes over the gateway's HTTP API. That API is on the same
+listener as the socket (`plugins/kanban/dashboard/plugin_api.py`).
+
+| Route | When |
+| --- | --- |
+| `GET /api/plugins/kanban/board` | When the Tasks view opens, and on Refresh |
+| `GET /api/plugins/kanban/tasks/<id>` | When a card is clicked. The card's chat is the `session_id` of its newest `owner_admitted` event, in the bot that its run's `profile` names |
+
+Each read sends one credential:
+
+| Connection | Credential |
+| --- | --- |
+| This computer, or another machine | A new ticket for each read. Highwing runs `hermes gateway tickets --serve --json`, writes the one line `{"id":1,"purpose":"native-http"}`, and sends the reply's ticket as `x-hermes-gateway-ticket` to the hello's `endpoint.api_origin`, with no `Origin`. For another machine, that origin goes through its own `ssh -W` relay. A ticket works once and expires after 30 s (the SSH client contract, rule 3) |
+| A web address | `Authorization: Bearer <access token>`, refreshed once on a 401, as for the socket's ticket |
+
+Hermes lists a kanban worker's chat in no `session.list`. So a card names the bot
+that the chat opens in, and Highwing does not search for it.
+
+On an older Hermes, or one without the kanban plugin:
+
+- If the board route answers 404, the view says "This Hermes has no task board."
+- If no ticket can be had (for example, `--serve` answers `unsupported_purpose`),
+  or the read gets no answer, the view says "Highwing couldn't reach Hermes's
+  task board."
+- If the reply isn't Hermes's board, the view says "Hermes answered with a task
+  board Highwing can't read."
