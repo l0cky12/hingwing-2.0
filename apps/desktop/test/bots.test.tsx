@@ -1,4 +1,4 @@
-import { BOT_TONES, type BotId, type Bots, type GroupId, type Groups, type Link, type MemberId, type OpenChat, type SessionId } from '@highwing/hermes/domain'
+import { BOT_TONES, type BotActivities, type BotId, type Bots, type GroupId, type Groups, type Link, type MemberId, type OpenChat, type SessionId } from '@highwing/hermes/domain'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
@@ -13,10 +13,13 @@ const NO_LOOKS: LookCalls = {
   canGenerate: async () => ({ ok: true, value: false }), generate: async () => ({ ok: true, value: '' }), choose: async () => ({ ok: true, value: 'cancelled' }),
   pets: async () => ({ ok: true, value: [] }), petPicture: async () => ({ ok: true, value: null })
 }
-const showing = (bots: Bots | undefined, open: OpenChat | undefined, link: Link | undefined = ONLINE, groups: Groups | undefined = NO_GROUPS, compact = false) =>
+const showing = (
+  bots: Bots | undefined, open: OpenChat | undefined, link: Link | undefined = ONLINE, groups: Groups | undefined = NO_GROUPS, activity: BotActivities | undefined = {},
+  drafts: ReadonlyMap<BotId, string> = new Map(), compact = false
+) =>
   renderToStaticMarkup(
     <BotsPanel
-      compact={compact} onCompact={() => {}} bots={bots} open={open} link={link} groups={groups} onOpen={async () => ({ ok: true, value: null })} onNewChat={() => {}} onNew={async () => ({ ok: true, value: null })}
+      compact={compact} onCompact={() => {}} bots={bots} open={open} link={link} groups={groups} activity={activity} drafts={drafts} onOpen={async () => ({ ok: true, value: null })} onNewChat={() => {}} onNew={async () => ({ ok: true, value: null })}
       onMark={async () => ({ ok: true, value: { edition: 2 } })}
       onCreate={async () => ({ ok: true, value: { bot: 'rae' as BotId, warnings: [] } })} onCreateGroup={async () => ({ ok: true, value: undefined })} onOpenGroup={() => {}}
       onRenameGroup={async () => ({ ok: true, value: undefined })} onDeleteGroup={async () => ({ ok: true, value: undefined })}
@@ -87,6 +90,14 @@ describe('the bots sidebar', () => {
     expect(markup).toContain(`id="${timothy}">Should I start building Launch<`)
     const fresh = render(listed(fact('fresh', 'Fresh')))
     expect(fresh).toContain(`id="${attr(named(fresh, 'Fresh')!, 'aria-describedby')}">No messages yet<`)
+  })
+
+  it("describes a bot by the first line of its unsent draft, and by its preview once the draft is gone", () => {
+    const describing = (html: string, label: string) =>
+      new RegExp(`id="${attr(named(html, label)!, 'aria-describedby')}">(.*?)</span></span>`).exec(html)?.[1]?.replace(/<[^>]*>/g, '')
+    const drafted = showing(APPROVED, AT_LAUNCH, ONLINE, NO_GROUPS, {}, new Map([['timothy' as BotId, 'Ship the launch post\nthen the email']]))
+    expect(describing(drafted, 'Timothy · CEO')).toBe('Draft: Ship the launch post')
+    expect(describing(render(APPROVED), 'Timothy · CEO')).toBe('Should I start building Launch')
   })
 
   it('has one plus, a closed menu button named New, whatever the link says, and draws no dialog until a row is picked', () => {
@@ -176,7 +187,7 @@ describe('the bots sidebar', () => {
 
   it('has a Compact sidebar toggle that says whether the sidebar is compact, and Ctrl+B as its keys', () => {
     for (const compact of [false, true]) {
-      const toggle = named(showing(APPROVED, AT_LAUNCH, ONLINE, NO_GROUPS, compact), 'Compact sidebar')!
+      const toggle = named(showing(APPROVED, AT_LAUNCH, ONLINE, NO_GROUPS, {}, new Map(), compact), 'Compact sidebar')!
       expect(attr(toggle, 'aria-pressed')).toBe(String(compact))
       expect(attr(toggle, 'aria-keyshortcuts')).toBe('Control+B')
       expect(attr(toggle, 'title')).toBe('Compact sidebar (Ctrl+B)')
@@ -185,7 +196,7 @@ describe('the bots sidebar', () => {
 
   it("names each face by its bot or group in a tooltip when compact, and draws no tooltip over a row that shows its name", () => {
     const plan = groups(['plan', 'Launch plan', seat('default', 'emu'), seat('research')])
-    const tips = (compact: boolean) => buttons(showing(APPROVED, AT_LAUNCH, ONLINE, plan, compact))
+    const tips = (compact: boolean) => buttons(showing(APPROVED, AT_LAUNCH, ONLINE, plan, {}, new Map(), compact))
       .filter(tag => /class="bot(-feature)?"/.test(tag)).map(tag => attr(tag, 'title'))
     expect(tips(true)).toEqual(['Emu', 'Launch plan', 'dr eggbot', 'Research', 'Timothy · CEO', 'Hermes', 'highwing'])
     expect(tips(false).every(tip => tip === undefined)).toBe(true)
@@ -194,6 +205,43 @@ describe('the bots sidebar', () => {
   it('has a paint for every tone a bot can carry', () => {
     const css = readFileSync('apps/desktop/src/renderer/styles/app.css', 'utf8')
     for (const tone of ['ink', ...BOT_TONES]) expect(css, tone).toMatch(new RegExp(`\\.tone-${tone} \\{ background: var\\(--`))
+  })
+})
+
+describe('bot activity in the sidebar', () => {
+  const busy = (activity: BotActivities) => showing(APPROVED, AT_LAUNCH, ONLINE, NO_GROUPS, activity)
+  const rowOf = (html: string, bot: string) => new RegExp(`<div class="bot-row[^"]*"[^>]*>(?:(?!<div class="bot-row).)*data-bot="${bot}"(?:(?!<div class="bot-row).)*`, 's').exec(html)?.[0] ?? ''
+  const markOf = (row: string) => /<span class="bot-activity" data-activity="(\w+)" aria-hidden="true">(.*?)<\/span>(?=<span class="bot-badge"|<\/span>)/s.exec(row)
+  const described = (html: string, label: string) =>
+    (attr(named(html, label)!, 'aria-describedby') ?? '').split(' ').map(id => new RegExp(`id="${id}">([^<]*)<`).exec(html)?.[1])
+
+  it.each([
+    ['working', 'Working', 3], ['waiting', 'Waiting for you', 0], ['unread', 'New reply', 0]
+  ] as const)('draws a %s mark on a row, hidden from a screen reader, which hears %j before the preview', (state, words, dots) => {
+    const html = busy({ timothy: state } as BotActivities)
+    const row = rowOf(html, 'timothy')
+    expect(row).toContain(`data-activity="${state}"`)
+    expect(markOf(row)?.[1]).toBe(state)
+    expect((markOf(row)?.[2] ?? '').match(/<span>/g) ?? [], 'three dots for working').toHaveLength(dots)
+    expect(described(html, 'Timothy · CEO')).toEqual([words, 'Should I start building Launch'])
+    expect(named(html, 'Timothy · CEO'), 'the name stays as other steps find it').toBeDefined()
+  })
+
+  it('draws the mark on the default bot\'s card beside its star, described by the words alone', () => {
+    const html = busy({ default: 'waiting' } as BotActivities)
+    const card = rowOf(html, 'default')
+    expect(card).toMatch(/class="bot-row bot-row-feature"[^>]*data-activity="waiting"/)
+    expect(card).toMatch(/<span class="bot-activity" data-activity="waiting" aria-hidden="true">.*<\/span><span class="bot-badge"/s)
+    expect(described(html, 'Emu, default bot')).toEqual(['Waiting for you'])
+  })
+
+  it('draws nothing on a bot with nothing to show, and only on the bots that have something', () => {
+    const html = busy({ research: 'unread' } as BotActivities)
+    expect(html.match(/class="bot-activity"/g)).toHaveLength(1)
+    expect(rowOf(html, 'timothy')).not.toContain('data-activity')
+    expect(described(html, 'Timothy · CEO')).toEqual(['Should I start building Launch'])
+    expect(attr(named(html, 'Emu, default bot')!, 'aria-describedby')).toBeUndefined()
+    expect(showing(APPROVED, AT_LAUNCH, ONLINE, NO_GROUPS, undefined)).not.toContain('bot-activity')
   })
 })
 

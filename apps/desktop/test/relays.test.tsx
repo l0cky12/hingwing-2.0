@@ -30,7 +30,7 @@ describe('a message handed to another bot, in the thread', () => {
 
   it('shows what the user sent, then a group named for the bot with its avatar', () => {
     const markup = render({ s: 'waiting' })
-    expect(markup).toMatch(/^<article class="turn relay"><p class="request">Ask @Rae for the weekly report<span class="actions"><button[^>]*aria-label="Copy request"/)
+    expect(markup).toMatch(/^<article class="turn relay"><p class="request">Ask @Rae for the weekly report<span class="actions"><span class="acts"><button[^>]*aria-label="Copy request"/)
     expect(markup).toContain('<div class="relay-reply" role="group" aria-label="Rae">')
     expect(markup).toMatch(/<span class="avatar tone-umber"[^>]*aria-hidden="true">R<\/span><span>Rae<\/span>/)
   })

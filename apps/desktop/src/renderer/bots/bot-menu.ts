@@ -3,7 +3,7 @@ import { anchorAt, type Anchor, type Box, type Opener } from '../chrome/popup-me
 import { NEW_GROUP_BLOCKS } from './plus-menu'
 import type { BotPlace } from './sidebar-view'
 
-export type MenuAction = 'open' | 'new' | 'edit' | BotMark | 'delete'
+export type MenuAction = 'open' | 'new' | 'edit' | 'memory' | BotMark | 'delete'
 export type GroupAction = Extract<MenuAction, 'open' | 'edit' | 'delete'>
 
 export const MENUS: { readonly [P in BotPlace]: readonly (readonly MenuAction[])[] } = {
@@ -17,6 +17,7 @@ const LABELS: { readonly [A in MenuAction]: string } = {
   open: 'Open chat',
   new: 'New chat',
   edit: 'Edit…',
+  memory: 'Memory…',
   pin: 'Pin to top',
   unpin: 'Unpin',
   hide: 'Hide from list',
@@ -37,8 +38,9 @@ export interface MenuItem<A extends MenuAction = MenuAction> {
   readonly block: string | null
 }
 
-export const botMenuOf = (place: BotPlace): readonly (readonly MenuItem[])[] =>
-  MENUS[place].map(group => group.map(action => ({ action, label: LABELS[action], block: null })))
+/** Memory… sits beside Edit… only for the default bot. The call edits the home the socket was launched with, which is that bot. */
+export const botMenuOf = (place: BotPlace, featured = false): readonly (readonly MenuItem[])[] =>
+  MENUS[place].map(group => group.flatMap(action => (featured && action === 'edit' ? [action, 'memory' as const] : [action])).map(action => ({ action, label: LABELS[action], block: null })))
 
 export const groupMenuOf = (link: Link | undefined): readonly (readonly MenuItem<GroupAction>[])[] => {
   const block = link?.state === 'online' ? null : NEW_GROUP_BLOCKS.offline

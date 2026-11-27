@@ -1,6 +1,6 @@
 import type { SideId } from '@highwing/hermes/domain'
 import { memo, useId, useLayoutEffect, useRef } from 'react'
-import { CopyButton } from './Copy'
+import { MessageActions } from './MessageActions'
 import type { SideAnswer, SideCard, SideRow } from './sides'
 import { Markdown } from './text'
 
@@ -65,7 +65,7 @@ export const SideTurn = memo(function SideTurn({ row }: { readonly row: SideRow 
       <h2 id={heading}>Side question</h2>
       <p className="side-asked">{row.asked ?? 'Asked in another window'}</p>
       {answer.s === 'answered'
-        ? <div className="prose"><Markdown source={answer.markdown} caret={false} nodeKey={`side:${row.id}`} /><CopyButton text={answer.markdown} name="Copy reply" /></div>
+        ? <><div className="prose"><Markdown source={answer.markdown} caret={false} nodeKey={`side:${row.id}`} /></div><div className="turn-actions"><MessageActions acts={{ copy: { text: answer.markdown, name: 'Copy reply' } }} /></div></>
         : <p className="err">{answer.message}</p>}
       <p className="side-note">Not saved with the chat. Later replies won't see it.</p>
     </article>
