@@ -43,6 +43,8 @@ export interface ScreenDesk {
 export function screenDesk(conn: Pick<Connection, 'call' | 'as' | 'sibling'>, clock: Clock, changed: () => void): ScreenDesk {
   const held = new Map<BotId | null, Held>()
   const asking = new Set<BotId | null>()
+  /** Profile homes whose screen started or stopped while a status was asked. `running` has no epoch, so such a reply is asked again. */
+  const turned = new Set<string>()
   /** The newest lease of each profile, by its home. An event can come before the reply that names a bot's home. */
   const leases = new Map<string, Lease>()
   /** Every viewer id Hermes minted for this Highwing, by its hash. A lease taken before a dropped link is still this Highwing's. */
@@ -108,9 +110,11 @@ export function screenDesk(conn: Pick<Connection, 'call' | 'as' | 'sibling'>, cl
   const ask = async (bot: BotId | null) => {
     if (asking.has(bot)) return
     asking.add(bot)
+    let again = false
     try {
       const facts = parseScreenFacts(await callsFor(bot).call('display.status', {}))
       if (facts === null) return put(bot, UNAVAILABLE)
+      again = turned.has(facts.key)
       lease(facts.key, facts.lease)
       put(bot, { state: 'known', key: facts.key, running: facts.running })
     } catch (error) {
@@ -119,7 +123,9 @@ export function screenDesk(conn: Pick<Connection, 'call' | 'as' | 'sibling'>, cl
       else if (!(error instanceof Offline)) throw error
     } finally {
       asking.delete(bot)
+      if (asking.size === 0) turned.clear()
     }
+    if (again) await ask(bot)
   }
 
   const serially = <T>(work: () => Promise<T>): Promise<T> => {
@@ -178,6 +184,7 @@ export function screenDesk(conn: Pick<Connection, 'call' | 'as' | 'sibling'>, cl
     },
     moved: ({ key, running: now, lease: next }) => {
       lease(key, next)
+      if (now !== null && asking.size > 0) turned.add(key)
       for (const [bot, was] of [...held]) {
         if (was.state === 'known' && was.key === key && now !== null) held.set(bot, { ...was, running: now })
       }

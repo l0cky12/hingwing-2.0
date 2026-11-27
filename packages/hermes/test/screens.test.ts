@@ -175,6 +175,16 @@ describe('the screen desk, against replies held open', () => {
     expect(screens.view?.screen).toMatchObject({ state: 'on', control: 'someone' })
   })
 
+  it('asks again when the screen started while its status was asked, since a start carries no epoch', async () => {
+    const { screens, sent, answer } = desk()
+    screens.follow(DEFAULT)
+    screens.moved({ key: '/k', running: true, lease: agent(1) })
+    await answer('display.status', status(wire('agent', 1), false))
+    expect(sent.filter(call => call.method === 'display.status')).toHaveLength(2)
+    await answer('display.status', status(wire('agent', 1), true))
+    expect(screens.view?.screen).toMatchObject({ state: 'on', control: 'agent' })
+  })
+
   it("still shows the user's control after the link dropped, and hands it back with the id it was taken with", async () => {
     const { screens, sent, answer } = desk()
     screens.follow(DEFAULT)

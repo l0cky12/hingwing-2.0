@@ -8,6 +8,7 @@ While the agent of the open chat's bot uses its screen, a card above the compose
 - `computer-control` takes control and hands it back, each call made once with the viewer id Hermes minted for the socket.
 - `computer-unavailable` says plainly that this Hermes can't show its screen.
 - `computer-off` says the agent isn't using its screen, and asks for no frame.
+- `computer-preview` gives the pane to a preview asked for while the screen is shown, and Screen takes it back.
 - `computer-live` draws the real screen and passes input to it while the user has control. Only a real Hermes streams a screen.
 
 ## How to get to it (user POV)
@@ -20,6 +21,8 @@ While the agent of the open chat's bot uses its screen, a card above the compose
 - **The card, take control, hand back.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/roster.json --display fixtures/display/running.json --run computer-control wait live wait bots see "Hermes is using its screen" shot card click button "Open screen" see "Hermes has control" see "Highwing couldn't reach the screen." click button "Take control" see "You have control" pressed button Screen true shot taken click button "Hand back" see "Hermes has control" see "Hermes is using its screen" called display.lease.acquire '{"profile":"default","viewer_id":"viewer-1"}' 1 called display.lease.release '{"profile":"default","viewer_id":"viewer-1"}' 1`.
 - **A Hermes that cannot show its screen.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/roster.json --run computer-unavailable wait live wait bots click button Screen see "This Hermes can't show its screen." called display.status '{"profile":"default"}' 1`.
 - **A screen that is off.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/roster.json --display fixtures/display/off.json --run computer-off wait live wait bots click button Screen see "Hermes isn't using its screen right now." gone button "Open screen" called display.thumbnail '{}' 0`.
+
+- **A preview takes the pane.** Run `$H run --fixture fixtures/preview.jsonl --serve fixtures/preview --display fixtures/display/running.json --run computer-preview wait live click button Screen pressed button Screen true type "Message Hermes" @request click button Send wait preview gone region Screen pressed button Screen false click button Screen pressed button Screen true gone region Preview`.
 
 ## Gotchas
 

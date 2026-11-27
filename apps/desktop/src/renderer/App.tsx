@@ -1,5 +1,5 @@
 import type { Shown, ShownGroup, Target } from '@highwing/hermes/domain'
-import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
 import { epochOf, type Mode, type Theme } from '../ipc-contract'
 import { BotPicker } from './bots/BotPicker'
 import { BotsSidebar } from './bots/Bots'
@@ -11,7 +11,7 @@ import { Banner, TopBar } from './chrome/Chrome'
 import { ModeSwitch } from './chrome/ModeSwitch'
 import { Preview } from './preview/Preview'
 import { Composer } from './composer/Composer'
-import { useComputerShown } from './computer/computer'
+import { showComputer, useComputerShown } from './computer/computer'
 import { ComputerView } from './computer/Computer'
 import { Palette } from './palette/Palette'
 import { screenOf, type CardSetup } from './setup/screens'
@@ -97,6 +97,11 @@ function ChatWindow({ hidden, settings, target, mode, theme }: ChatWindowProps) 
   const { root, pick } = useSwitchModeKeepingFocus(mode)
   const { settingsButton, close } = useCloseSettings(settings !== null)
   const switcher = <ModeSwitch mode={mode} onPick={pick} />
+  // A preview asked for while the screen is shown takes the pane, and Screen takes it back.
+  const previewed = preview?.state === 'open' ? preview.address : null
+  useEffect(() => {
+    if (previewed !== null) showComputer(false)
+  }, [previewed])
   const computer = useComputerShown() && settings === null ? screen ?? null : null
   const paned = (preview?.state === 'open' || computer !== null) && settings === null
   return (
