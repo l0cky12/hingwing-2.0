@@ -4,6 +4,7 @@ import type { GroupDraft, GroupId } from './groups'
 import type { ChatRef, Unstarted } from './open'
 import type { BotManagers, ManagerName } from './passwords'
 import type { PathMatch } from './path'
+import type { Added, ServerSetup, ToolServer } from './tool-servers'
 import type { ChatVersions } from './versions'
 import type { AccountReport } from './usage'
 export type { AccountReport }
@@ -151,6 +152,15 @@ export type Command =
   /** Hermes drops the unlock after 30 idle minutes (agent/vault_backends/unlock.py:29) or on a lock, and the agent then asks for it again in the chat. */
   | { readonly do: 'unlockPasswordManager'; readonly bot: BotId; readonly manager: ManagerName; readonly password: string }
   | { readonly do: 'lockPasswordManager'; readonly bot: BotId; readonly manager: ManagerName }
+  /** The tool servers `bot` has, with each one's state, or the launch profile's for null. Hermes reports a state only for the launch profile, so another bot's servers are mostly `idle`. */
+  | { readonly do: 'toolServers'; readonly bot: BotId | null }
+  /**
+   * Adds the tool server to `bot`, tests it, and takes it out again when the test fails, so only a server that passed is kept.
+   * A failed test answers ok with `tested` saying why. A refused add (a name that is taken, a command Hermes calls unsafe) is a refusal.
+   */
+  | { readonly do: 'addToolServer'; readonly bot: BotId | null; readonly setup: ServerSetup }
+  /** Removing a server that is gone already is no refusal. A server a plugin provides is refused. */
+  | { readonly do: 'removeToolServer'; readonly bot: BotId | null; readonly name: string }
   /**
    * Makes the group chat, lists it in `groups` and shows it. The same draft sent again makes no second group: Hermes
    * answers a repeated id with the group it already made.
@@ -239,6 +249,8 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'memory' } ? readonly MemoryEntry[]
   : C extends { do: 'markBot' } ? Marked
   : C extends { do: 'passwordManagers' | 'usePasswordManager' | 'unlockPasswordManager' | 'lockPasswordManager' } ? BotManagers
+  : C extends { do: 'toolServers' | 'removeToolServer' } ? readonly ToolServer[]
+  : C extends { do: 'addToolServer' } ? Added
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
   : C extends { do: 'accountUsage' } ? AccountReport

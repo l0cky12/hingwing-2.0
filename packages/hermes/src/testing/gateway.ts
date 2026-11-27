@@ -14,6 +14,7 @@ import { memoryBook, type MemoryBook } from './memory-book'
 import { checkParams } from './params'
 import { ScriptedRooms } from './rooms'
 import { ScriptedVault } from './vault'
+import { ScriptedToolServers } from './tool-servers'
 
 export interface Peer {
   write(frame: unknown): void
@@ -883,6 +884,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'learning.detail': (gateway, socket, params) => gateway.learning('learning.detail', socket).detail(typeof params.id === 'string' ? params.id : ''),
   'learning.edit': (gateway, socket, params) => gateway.learning('learning.edit', socket).edit(typeof params.id === 'string' ? params.id : '', typeof params.content === 'string' ? params.content : ''),
   'learning.delete': (gateway, socket, params) => gateway.learning('learning.delete', socket).remove(typeof params.id === 'string' ? params.id : ''),
+  /** tui_gateway/methods_tools.py:1470-1612 */
+  ...Object.fromEntries(['list', 'status', 'add', 'test', 'remove'].map(verb => [`mcp.servers.${verb}`, ((gateway, socket, params, routed) => gateway.toolServers(socket, `mcp.servers.${verb}`, params, routed)) satisfies Handler])),
   'session.mutate': (gateway, socket, params, routed) => {
     const mutation = typeof params.operation === 'string' && Object.hasOwn(MUTATIONS, params.operation) ? MUTATIONS[params.operation] : undefined
     return mutation === undefined ? gateway.story(socket, 'session.mutate', params, routed) : mutation(gateway, params, routed)
@@ -1052,6 +1055,7 @@ export class ScriptedGateway {
   private readonly connectorOps = new Map<string, ConnectorOp>()
   private connectorOpSeq = 0
   private readonly vault: ScriptedVault | null
+  private readonly mcp: ScriptedToolServers | null
   private drop: Drop
   private delivered = 0
   private seqShift = 0
@@ -1114,6 +1118,8 @@ export class ScriptedGateway {
     })
     // tui_gateway/methods_vault.py answers every failure with 5095 and its own words.
     this.vault = fixture.header.vault === undefined ? null : new ScriptedVault(fixture.header.vault, message => { throw new Refused(message, { code: 5095, message }) })
+    const { mcp } = fixture.header
+    this.mcp = mcp === undefined ? null : new ScriptedToolServers(mcp, (code, message) => { throw new Refused(message, { code, message }) })
   }
 
   get latest(): number {
@@ -2109,6 +2115,12 @@ export class ScriptedGateway {
   vaultCall(socket: Socket, method: string, params: Obj, routed: string): unknown {
     if (this.vault === null || socket.reach === 'profile') throw unknownMethod(method)
     return this.vault.call(method, params, routed)
+  }
+
+  /** `mcp.servers.*` reach only the legacy handlers, as `profiles.create` does, each in the profile the call names. */
+  toolServers(socket: Socket, method: string, params: Obj, routed: string): unknown {
+    if (this.mcp === null || socket.reach === 'profile') throw unknownMethod(method)
+    return this.mcp.call(method, params, routed)
   }
 
   /** `pet.gallery` (tui_gateway/methods_session.py:1467-1495), which a socket with no interactive grant does not reach. */

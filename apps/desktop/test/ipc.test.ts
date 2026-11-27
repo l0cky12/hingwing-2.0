@@ -177,6 +177,17 @@ describe('validators', () => {
     expect(parseCommand({ do: 'petPicture', slug: 'mr.whiskers', url: null })).toEqual({ do: 'petPicture', slug: 'mr.whiskers', url: null })
   })
 
+  it('keep a tool server to add as typed, and the name of one to remove', () => {
+    const address = { kind: 'address', name: 'linear', url: 'https://mcp.linear.example/mcp', headers: [{ name: 'Authorization', value: 'Bearer s3cret' }] }
+    expect(parseCommand({ do: 'addToolServer', bot: 'rae', setup: address, extra: 1 })).toEqual({ do: 'addToolServer', bot: 'rae', setup: address })
+    const command = { kind: 'command', name: 'files', command: 'npx', args: ['-y', 'server-filesystem'] }
+    expect(parseCommand({ do: 'addToolServer', bot: 'rae', setup: command })).toEqual({ do: 'addToolServer', bot: 'rae', setup: command })
+    expect(parseCommand({ do: 'toolServers', bot: 'rae', extra: 1 })).toEqual({ do: 'toolServers', bot: 'rae' })
+    expect(parseCommand({ do: 'toolServers', bot: null })).toEqual({ do: 'toolServers', bot: null })
+    expect(parseCommand({ do: 'addToolServer', bot: null, setup: command })).toEqual({ do: 'addToolServer', bot: null, setup: command })
+    expect(parseCommand({ do: 'removeToolServer', bot: 'rae', name: 'linear' })).toEqual({ do: 'removeToolServer', bot: 'rae', name: 'linear' })
+  })
+
   it('keep a path completion to a chat and the mention typed', () => {
     expect(parseCommand({ do: 'completePath', sessionId: 's1', word: '@not', extra: 1 })).toEqual({ do: 'completePath', sessionId: 's1', word: '@not' })
   })
@@ -331,6 +342,15 @@ describe('validators', () => {
     ['an unlock with no password', { do: 'unlockPasswordManager', bot: 'rae', manager: 'bitwarden', password: '' }],
     ['an unlock whose password is no text', { do: 'unlockPasswordManager', bot: 'rae', manager: 'bitwarden', password: 7 }],
     ['a lock that names no manager', { do: 'lockPasswordManager', bot: 'rae' }],
+    ['a tool server with no name', { do: 'addToolServer', bot: 'rae', setup: { kind: 'command', name: ' ', command: 'npx', args: [] } }],
+    ['a tool server at an address that is not a web page', { do: 'addToolServer', bot: 'rae', setup: { kind: 'address', name: 'x', url: 'file:///etc/passwd', headers: [] } }],
+    ['a tool server header with no value', { do: 'addToolServer', bot: 'rae', setup: { kind: 'address', name: 'x', url: 'https://x.example', headers: [{ name: 'Authorization', value: '' }] } }],
+    ['a tool server command with no command', { do: 'addToolServer', bot: 'rae', setup: { kind: 'command', name: 'x', command: '', args: [] } }],
+    ['a tool server command whose arguments are not text', { do: 'addToolServer', bot: 'rae', setup: { kind: 'command', name: 'x', command: 'npx', args: [7] } }],
+    ['a tool server of a kind Highwing does not add', { do: 'addToolServer', bot: 'rae', setup: { kind: 'preset', name: 'x' } }],
+    ['the removal of a tool server with no name', { do: 'removeToolServer', bot: 'rae', name: '' }],
+    ['the tool servers of a bot with a blank name', { do: 'toolServers', bot: ' ' }],
+    ['the tool servers of no bot named at all', { do: 'toolServers' }],
     ['an edit that changes nothing', { do: 'editBot', bot: 'rae', edit: {}, revision: 2 }],
     ['a mark that is not one of the four', { do: 'markBot', bot: 'rae', mark: 'flip' }],
     ['an up-front open of a bot\'s chat', { do: 'open', ref: { kind: 'bot', bot: 'rae' }, upFront: true }],
@@ -485,12 +505,12 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'accountUsage', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
+      'accountUsage', 'addToolServer', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
       'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard',
       'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
       'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect',
-      'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
-      'sendToGroup', 'setMode', 'setOnClose', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune',
+      'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
+      'sendToGroup', 'setMode', 'setOnClose', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'toolServers', 'tune',
       'unlockPasswordManager', 'usePasswordManager', 'versions'
     ])
   })
