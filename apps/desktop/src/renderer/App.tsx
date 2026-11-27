@@ -12,7 +12,7 @@ import { GroupPane } from './groups/GroupPane'
 import { AccountMenu } from './chrome/AccountMenu'
 import { accentTone, toneOfBot } from './chrome/accent'
 import { Banner, TopBar } from './chrome/Chrome'
-import { ModeSwitch } from './chrome/ModeSwitch'
+import { ModeSwitch, ModeToggle } from './chrome/ModeSwitch'
 import { Shortcuts } from './chrome/Shortcuts'
 import { ShortcutSheet } from './chrome/ShortcutSheet'
 import { Preview } from './preview/Preview'
@@ -60,16 +60,19 @@ function ChatScreen({ target, settingsButton, onOpenTasks }: { readonly target: 
   )
 }
 
+type ModeControl = '.mode-switch' | '.mode-toggle'
+
 function useSwitchModeKeepingFocus(mode: Mode) {
   const root = useRef<HTMLDivElement>(null)
-  const switchUnmountedWithItsColumn = useRef(false)
+  const controlUnmountedWithItsColumn = useRef<ModeControl | null>(null)
   useLayoutEffect(() => {
-    if (!switchUnmountedWithItsColumn.current) return
-    switchUnmountedWithItsColumn.current = false
-    if (document.activeElement === document.body) root.current?.querySelector<HTMLButtonElement>('.mode-switch')?.focus()
+    const control = controlUnmountedWithItsColumn.current
+    if (control === null) return
+    controlUnmountedWithItsColumn.current = null
+    if (document.activeElement === document.body) root.current?.querySelector<HTMLButtonElement>(control)?.focus()
   }, [mode])
-  const pick = (next: Mode) => {
-    switchUnmountedWithItsColumn.current = true
+  const pick = (next: Mode, from: ModeControl) => {
+    controlUnmountedWithItsColumn.current = from
     void run({ do: 'setMode', mode: next })
   }
   return { root, pick }
@@ -124,8 +127,8 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onOp
   const { settingsButton, close } = useCloseSettings(settings !== null)
   const [sheet, setSheet] = useState<{ readonly back: Element | null } | null>(null)
   const openSheet = useCallback(() => setSheet(held => held ?? { back: document.activeElement }), [])
-  const switcher = <ModeSwitch mode={mode} onPick={pick} />
-  const foot = <div className="account"><AccountMenu target={target} /><AppsButton onOpen={onOpenApps} /></div>
+  const switcher = <ModeSwitch mode={mode} onPick={next => pick(next, '.mode-switch')} />
+  const foot = <div className="account"><AccountMenu target={target} /><AppsButton onOpen={onOpenApps} /><ModeToggle mode={mode} onPick={next => pick(next, '.mode-toggle')} /></div>
   // A preview asked for while the screen is shown takes the pane, and Screen takes it back.
   const previewed = preview?.state === 'open' ? preview.address : null
   useEffect(() => {

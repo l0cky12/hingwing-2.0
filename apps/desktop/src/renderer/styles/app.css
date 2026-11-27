@@ -1351,6 +1351,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .account-name { display: flex; flex-direction: column; min-width: 0; font-size: var(--text-sm); font-weight: 500; }
 .account-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); font-weight: 400; color: var(--graphite); }
 .account-detail[data-online] { color: var(--signal); }
+.account .mode-toggle { flex: none; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--radius-sm); background: var(--sheet); color: var(--graphite); }
+.account .mode-toggle:hover { background: var(--rule); color: var(--ink); }
 .account-menu { width: 320px; }
 .account-menu button { white-space: normal; }
 .account-menu button[aria-disabled="true"] { opacity: 1; font: var(--text-xs)/1.45 var(--mono); white-space: pre-wrap; }
@@ -1359,9 +1361,10 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .window[data-compact] .account-button { flex: none; justify-content: center; padding: 6px 0; }
 .window[data-compact] .account-name { display: none; }
 .window[data-compact] .account .apps-open { margin: 0; }
+.window[data-compact] .mode-toggle { align-self: center; }
 @media (forced-colors: active) {
   .account-mark { border: 1px solid CanvasText; }
-  .account-button:is(:hover, [aria-expanded="true"]) { outline: 1px solid ButtonText; }
+  .account-button:is(:hover, [aria-expanded="true"]), .mode-toggle:hover { outline: 1px solid ButtonText; }
 }
 /* 288 px of sidebar plus the narrowest chat its compact layout fits. Below that the chat keeps the whole window. */
 @media (max-width: 679px) {
