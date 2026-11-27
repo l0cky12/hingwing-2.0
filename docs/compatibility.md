@@ -1019,3 +1019,22 @@ On an older Hermes:
 - Without `pet.gallery` or `pet.thumb`, the Pet tab says "This Hermes can't list
   pets."
 - The Shape and Upload tabs need no new call.
+
+### A bot's routines
+
+Routines… in a bot's menu lists the jobs Hermes's scheduler runs for that bot.
+Highwing keeps no scheduler and changes no job. It asks
+`cron.manage {action: "list", include_disabled: true, profile}` with the bot's
+id, so paused jobs are listed too (`tui_gateway/methods_tools.py:1311-1325`).
+Each row shows the job's `name`, its `schedule` in plain words where Highwing
+knows the form, and Paused when `state` is `paused` or `enabled` is false
+(`cron/jobs.py:546-559`). Highwing asks again each time Hermes sends
+`cron.changed` and after each new socket.
+
+`cron.manage` is no canonical method, so it reaches its legacy handler only on a
+socket with the interactive grant. On an older Hermes:
+
+- Without `cron.manage`, the dialog says "This Hermes can't list routines."
+- A Hermes that ignores `profile` answers with no `scoped` and lists the launch
+  profile's jobs. Highwing then shows a bot only the jobs named
+  `[bot:<id>] …`, and the default bot the untagged ones, as Hermes desktop does.
