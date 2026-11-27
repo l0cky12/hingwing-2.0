@@ -1,0 +1,12 @@
+{
+  "catalog": [
+    {"slug": "github", "name": "GitHub", "description": "Repositories, issues and pull requests.", "category": "Recommended"},
+    {"slug": "slack", "name": "Slack", "description": "Channels and direct messages.", "category": "Chat"},
+    {"slug": "notion", "name": "Notion", "description": "Pages and databases.", "category": "Notes"}
+  ],
+  "accounts": [
+    {"connection_id": "slack-1", "connector": "slack", "status": "active", "label": "Work", "active": true, "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-02T00:00:00Z"},
+    {"connection_id": "notion-1", "connector": "notion", "status": "expired", "label": "Notes", "active": false, "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-02T00:00:00Z"}
+  ],
+  "signInUrl": "https://example.com/connect/github"
+}

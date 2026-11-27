@@ -1,4 +1,4 @@
-import type { BotId, Target } from '@highwing/hermes/domain'
+import type { BotId } from '@highwing/hermes/domain'
 import { useEffect, useRef } from 'react'
 import { NO_VISITS, stepped, visited } from '../chat-history'
 import { MAC } from '../keys'
@@ -8,7 +8,7 @@ import { botBeside, modalOpen, shortcutOf, type ShortcutId } from '../shortcuts'
 import { run, useTopic } from '../store'
 
 // Their own components listen for these, because only they know when the press has a meaning.
-const HANDLED_ELSEWHERE: ReadonlySet<ShortcutId> = new Set(['palette', 'newChat', 'find', 'newGroup'])
+const HANDLED_ELSEWHERE: ReadonlySet<ShortcutId> = new Set(['palette', 'newChat', 'find', 'newGroup', 'settings', 'apps'])
 
 const composerBox = () => {
   const box = document.querySelector<HTMLTextAreaElement>('footer.composer textarea')
@@ -30,13 +30,11 @@ function addSelectionToComposer() {
 }
 
 interface ShortcutsProps {
-  readonly target: Target | null
-  readonly settingsShown: boolean
   readonly onSheet: () => void
 }
 
 /** Every window shortcut that needs no component of its own, from one listener. */
-export function Shortcuts({ target, settingsShown, onSheet }: ShortcutsProps) {
+export function Shortcuts({ onSheet }: ShortcutsProps) {
   const bots = useTopic('bots')
   const open = useTopic('open')
   const visits = useRef(NO_VISITS)
@@ -73,7 +71,6 @@ export function Shortcuts({ target, settingsShown, onSheet }: ShortcutsProps) {
         case 'forward': return walk(1)
         case 'focusComposer': return composerBox()?.focus()
         case 'addSelection': return addSelectionToComposer()
-        case 'settings': return target !== null && !settingsShown && !event.repeat ? void run({ do: 'editTarget' }) : undefined
         case 'zoomIn': return window.highwing.zoom('in')
         case 'zoomOut': return window.highwing.zoom('out')
         case 'zoomReset': return window.highwing.zoom('reset')
@@ -82,7 +79,7 @@ export function Shortcuts({ target, settingsShown, onSheet }: ShortcutsProps) {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [bots, open, target, settingsShown, onSheet])
+  }, [bots, open, onSheet])
 
   return null
 }

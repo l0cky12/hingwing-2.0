@@ -2,6 +2,7 @@ import type { Outcome, Refusal } from './domain/command'
 import { emptyTracked, reduce, sessionOf, type BridgeRequest, type Fence, type Gate, type HistoryPage, type LocalAction, type SessionInput, type Tracked } from './domain/reduce'
 import type { AdmissionId, Attachment, InputId, OutboxEntry, RequestId, Session, SessionContent, SessionId } from './domain/session'
 import { Offline, RpcRefusal, type Calls, type Clock, type Method, type Requested, type RequestMethod, type Served } from './wire/link'
+import { hermesVersionOf } from './domain/about'
 import { parseApprovalMode, parseBusy, parseControl, parseProcesses, parseReplay, parseShown, parseSnapshot, parseStats } from './wire/parse'
 
 export const DONE: Outcome = { ok: true, value: undefined }
@@ -90,6 +91,8 @@ export interface ActorDeps {
   readonly bridge: (request: BridgeRequest) => void
   readonly mintId: () => string
   readonly watched: () => boolean
+  /** A version heard on this socket's attach. null does not clear one already heard. */
+  readonly noteVersion?: (version: string | null) => void
 }
 
 export interface SessionPort {
@@ -294,11 +297,14 @@ export class SessionActor {
         const since = conn.call('session.events.since', { session_id, last_seen: plan.from.seq, replay_epoch: plan.from.epoch })
         const resume = conn.call('session.resume', { session_id, omit_messages: true, defer_history: true })
         const [replay, snapshot] = await Promise.all([since, resume])
+        this.deps.noteVersion?.(hermesVersionOf(snapshot.info.version))
         this.attached(attempt, parseSnapshot(snapshot), parseReplay(replay))
       } else {
         // History comes inline. The gateway reads these rows and the watermark under one lock
         // (Hermes's gateway/session_authority.py:390-412), so no stored turn can also arrive as events.
-        this.attached(attempt, parseSnapshot(await conn.call('session.resume', { session_id, display_projection: true })), null)
+        const snapshot = await conn.call('session.resume', { session_id, display_projection: true })
+        this.deps.noteVersion?.(hermesVersionOf(snapshot.info.version))
+        this.attached(attempt, parseSnapshot(snapshot), null)
       }
     } catch (error) {
       if (!(error instanceof Offline)) this.step({ in: 'attach.failed', attempt, refused: refusalOf(error).message })

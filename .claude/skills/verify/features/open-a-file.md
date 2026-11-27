@@ -1,6 +1,6 @@
 # Open a file
 
-The path of a file that Hermes wrote or edited is a button in the step's open record. Pressing it opens the file with the desktop's default program. An HTML, PDF or CSV file also has a **Preview** button beside the path, which [Preview pane](./preview.md) covers. The **More for** button shows **Show in folder** and **Copy path**. Main opens only a path that a finished step of a session this window watches named. A file that no longer exists shows "This file isn't there any more." under the path.
+The path of a file that Hermes wrote or edited is a button in the step's open record. Pressing it opens the file with the desktop's default program. An HTML, PDF or CSV file also has a **Preview** button beside the path, which [Preview pane](./preview.md) covers. The **More for** button shows **Show in folder** and **Copy path**. Main opens only a path that a finished step of a session this window watches named, and only when that session's Hermes runs on this computer. With a remote Hermes the path is text, and the menu offers **Copy path** only. A file that no longer exists shows "This file isn't there any more." under the path.
 
 ## Sub-features
 

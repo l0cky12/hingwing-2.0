@@ -86,6 +86,13 @@ const heading: Starter = (lines, at) => {
 const RULE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/
 const rule: Starter = (lines, at) => (RULE.test(lines[at]!) ? { block: { kind: 'rule' }, next: at + 1 } : null)
 
+const SETEXT = /^ {0,3}(=+|-+)[ \t]*$/
+function setextLevel(line: string): 1 | 2 | null {
+  const match = SETEXT.exec(line)
+  if (match === null) return null
+  return match[1]![0] === '=' ? 1 : 2
+}
+
 const QUOTE = /^ {0,3}> ?/
 const quote: Starter = (lines, at) => {
   if (!QUOTE.test(lines[at]!)) return null
@@ -127,6 +134,7 @@ const list: Starter = (lines, at, interrupting) => {
     const body = [lines[next++]!.slice(marker.width)]
     while (next < lines.length && (blank(lines[next]) || indentOf(lines[next]!) >= marker.width || wraps(lines, next))) body.push(dedent(lines[next++]!, marker.width))
     items.push(parseLines(body))
+    if (next < lines.length && RULE.test(lines[next]!)) break
     marker = next < lines.length ? markerOf(lines[next]!) : null
   }
   return { block: { kind: 'list', ordered: first.ordered, start: first.start, items }, next }
@@ -171,7 +179,12 @@ function startsBlock(lines: readonly string[], at: number, interrupting: boolean
 function paragraph(lines: readonly string[], at: number): Read {
   const text = [lines[at]!.trim()]
   let next = at + 1
-  while (next < lines.length && !blank(lines[next]) && startsBlock(lines, next, true) === null) text.push(lines[next++]!.trim())
+  while (next < lines.length && !blank(lines[next])) {
+    const level = setextLevel(lines[next]!)
+    if (level !== null) return { block: { kind: 'heading', level, inline: parseInline(text.join('\n')) }, next: next + 1 }
+    if (startsBlock(lines, next, true) !== null) break
+    text.push(lines[next++]!.trim())
+  }
   return { block: { kind: 'paragraph', inline: parseInline(text.join('\n')) }, next }
 }
 
@@ -293,7 +306,11 @@ function bareUrl(source: string, at: number): string | null {
   return url
 }
 
-const unlinked = (nodes: readonly Inline[]): Inline[] => nodes.flatMap(node => (node.t === 'link' ? unlinked(node.children) : [node]))
+const unlinked = (nodes: readonly Inline[]): Inline[] => nodes.flatMap(node => {
+  if (node.t === 'link') return unlinked(node.children)
+  if (node.t === 'strong' || node.t === 'em' || node.t === 'del') return [{ ...node, children: unlinked(node.children) }]
+  return [node]
+})
 
 function parseInline(source: string): Inline[] {
   const out: Inline[] = []
