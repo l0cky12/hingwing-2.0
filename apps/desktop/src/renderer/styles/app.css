@@ -912,6 +912,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 :is(.settings, .setup) .card .row.wrapped { flex-wrap: wrap; row-gap: 10px; }
 :is(.settings, .setup) .card .row.wrapped .text { flex-basis: 100%; }
 :is(.settings, .setup) .card .label { margin: 0; font-weight: 500; }
+.settings .card .usage-line { font: var(--text-sm)/1.5 var(--mono); white-space: pre-wrap; }
 :is(.settings, .setup) .card .desc { margin: 1px 0 0; font-size: var(--text-sm); line-height: 1.45; color: var(--graphite); }
 .settings .rules { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--hair); }
 .settings .rules .row { min-height: 0; padding: 9px 18px; }

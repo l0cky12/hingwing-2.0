@@ -176,7 +176,7 @@ export function UsageCard({ view }: { readonly view: UsageView }) {
       {view.state === 'failed' && <div className="row"><div className="text"><p className="label">{view.message}</p></div></div>}
       {view.state === 'unreported' && <div className="row"><div className="text"><p className="label">{UNREPORTED}</p></div></div>}
       {view.state === 'reported' && view.lines.map((line, index) => (
-        <div key={`${index}-${line}`} className="row"><div className="text"><p className="label">{line}</p></div></div>
+        <div key={`${index}-${line}`} className="row"><div className="text"><p className="label usage-line">{line}</p></div></div>
       ))}
     </div>
   )
