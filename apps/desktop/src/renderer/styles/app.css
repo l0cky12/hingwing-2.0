@@ -1029,6 +1029,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .bot-text { display: flex; flex-direction: column; min-width: 0; }
 .bot-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bot-preview { font-size: 13px; color: var(--graphite); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bot-draft { color: var(--ink); font-weight: 500; }
 .bot-feature { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; padding: 14px 12px 12px; border-radius: 6px; }
 .bot-badged { position: relative; display: inline-block; }
 .bot-badge { position: absolute; right: -3px; bottom: -3px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; color: var(--sheet); background: var(--ink); box-shadow: 0 0 0 2px var(--paper); }
