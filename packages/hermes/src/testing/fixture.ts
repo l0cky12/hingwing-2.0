@@ -125,6 +125,11 @@ export interface Fixture {
      */
     readonly groups?: GroupsScript
     /**
+     * The home profile's scheduled jobs and their runs. Absent: the gateway refuses `cron.manage` as an unknown
+     * method, as a Hermes that serves no scheduled jobs to Highwing does.
+     */
+    readonly cron?: CronScript
+    /**
      * What `complete.path` answers. `words` maps a typed word (`@not`) to the reply as Hermes sends it, and a
      * word not listed answers `{ items: [] }`. `cwd` is the story session's `info.cwd`. Absent: the gateway
      * refuses `complete.path` as an unknown method, as a Hermes without it does.
@@ -169,6 +174,17 @@ export interface Pets {
 
 /** `reply`: the bot's one answer, sent `delay_ms` after the call (default 0). `refuse`: the reason Hermes refuses the delivery with. */
 export type RelayScript = { readonly reply: string; readonly delay_ms?: number } | { readonly refuse: string }
+/**
+ * `jobs`: the rows `cron.manage` lists, each with at least `job_id`. `runs`: each one rewrites its job's `last_run_at`,
+ * `last_status` and `last_error` `after_ms` after the gateway's first list, and pushes `cron.changed` to every socket,
+ * as Hermes's watcher does when the scheduler writes cron/jobs.json (tui_gateway/change_watcher.py:468).
+ */
+export interface CronScript {
+  readonly jobs: readonly { readonly job_id: string; readonly [key: string]: unknown }[]
+  readonly runs?: readonly CronRun[]
+}
+export interface CronRun { readonly after_ms: number; readonly job_id: string; readonly last_run_at: string; readonly last_status: string; readonly last_error?: string }
+
 export interface GroupsScript {
   /**
    * What `groups.capabilities` says of `driver`: whether Hermes runs its group chats now. Default true. Hermes makes a
@@ -346,6 +362,14 @@ const isPets = (value: unknown): value is Pets =>
   isObject(value) && Array.isArray(value.pets) && isObject(value.thumbs) && Object.values(value.thumbs).every(thumb => typeof thumb === 'string') && delay(value.delay_ms)
   && (value.refused_once === undefined || (Array.isArray(value.refused_once) && value.refused_once.every(slug => typeof slug === 'string')))
 
+const isCronRun = (value: unknown): value is CronRun =>
+  isObject(value) && typeof value.after_ms === 'number' && value.after_ms >= 0 && isText(value.job_id) && isText(value.last_run_at) && isText(value.last_status)
+  && (value.last_error === undefined || typeof value.last_error === 'string')
+
+const isCronScript = (value: unknown): value is CronScript =>
+  isObject(value) && Array.isArray(value.jobs) && value.jobs.every(job => isObject(job) && isText(job.job_id))
+  && (value.runs === undefined || (Array.isArray(value.runs) && value.runs.every(run => isCronRun(run) && (value.jobs as { job_id: string }[]).some(job => job.job_id === run.job_id))))
+
 const isRelayScript = (value: unknown): value is RelayScript =>
   isObject(value) && ('refuse' in value
     ? typeof value.refuse === 'string' && value.refuse !== '' && Object.keys(value).length === 1
@@ -456,6 +480,10 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (relay !== undefined && !(isObject(relay) && Object.values(relay).every(isRelayScript))) {
     return '"relay" must map a profile to { reply, delay_ms? } or { refuse }'
   }
+  const { cron } = value
+  if (cron !== undefined && !isCronScript(cron)) {
+    return '"cron" must be { jobs, runs? }: each job with a "job_id", each run { after_ms, job_id, last_run_at, last_status, last_error? } of a listed job'
+  }
   const { groups } = value
   if (groups !== undefined && !isGroupsScript(groups)) {
     return '"groups" may hold only "driver", "seatable", "rooms", "change_events" and "turns": each room { id, name, members, epoch?, log? } seating 2 to 6 { profile, handle }, and each turn { reply, delay_ms? }, { fail, delay_ms? } or { hold: true }'
@@ -491,6 +519,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),
     ...(relay === undefined ? {} : { relay: relay as { readonly [profile: string]: RelayScript } }),
     ...(groups === undefined ? {} : { groups }),
+    ...(cron === undefined ? {} : { cron }),
     ...(paths === undefined ? {} : { paths: paths as NonNullable<Fixture['header']['paths']> }),
     ...(reads === undefined ? {} : { reads }),
     ...(todoState === undefined ? {} : { todo_state: todoState as NonNullable<Fixture['header']['todo_state']> })
