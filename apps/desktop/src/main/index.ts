@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { attachmentStore, ATTACHMENTS_DIR, desktopSources, HERMES_LIMITS } from './attachments'
 import { ownConnection, pinnedConnection, refreshBotsOnFocus, type ConnectionOwner } from './connection'
 import { desktopMenus, recordingMenus } from './context-menu'
+import { seedDictionary } from './dictionary'
 import { desktopOpener, recordingOpener, type Opener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
 import { draftStore, DRAFTS_DIR } from './drafts'
@@ -23,6 +24,7 @@ import { loadSettings, saveSettings } from './settings'
 import { keyringSeal, signInStore, UNSEALED } from './sign-ins'
 import { unreadStore, UNREAD_DIR } from './unread'
 import { isAppUrl, openWindow } from './windows'
+import dictionary from '../../dictionaries/en-US-10-2.bdic?asset'
 
 const { HIGHWING_FIXTURE, HIGHWING_FIXTURE_CALLS, HIGHWING_FIXTURE_LATENCY_MS, HIGHWING_RECORD, HIGHWING_OPEN_LOG, HIGHWING_PICK_FILE, HIGHWING_PICK_FILES, HIGHWING_SAVE_DIR, HIGHWING_NOTIFY_LOG, HIGHWING_MENU_LOG, HIGHWING_MENU_PICK, HIGHWING_SIGN_IN_MS, HIGHWING_TEST_KEYRING } = process.env
 const fixture = HIGHWING_FIXTURE ? loadFixture(HIGHWING_FIXTURE) : null
@@ -102,6 +104,7 @@ if (process.platform === 'linux' && fixture === null && !app.commandLine.hasSwit
 if (app.isPackaged) app.setAsDefaultProtocolClient('highwing')
 
 registerPageScheme()
+seedDictionary(dictionary, app.getPath('sessionData'))
 
 app.whenReady().then(async () => {
   const opener = HIGHWING_OPEN_LOG ? recordingOpener(HIGHWING_OPEN_LOG) : desktopOpener(shell)
