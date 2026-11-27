@@ -1,9 +1,9 @@
 import {
   APPROVAL_MODES, BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
   type About, type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
-  type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type HelperId, type Item, type Link, type ModelOption,
+  type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
-  type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
+  type RestoreScope, type ResultOf, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 
 /** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
@@ -276,6 +276,15 @@ const groupDraftOf = (raw: unknown): GroupDraft | null => {
 }
 const revisionOf = (raw: unknown): number | null | undefined =>
   raw === null ? null : Number.isInteger(raw) && (raw as number) >= 0 ? (raw as number) : undefined
+const isHeader = (raw: unknown): raw is Header => isObject(raw) && Object.keys(raw).length === 2 && filled(raw.name) && filled(raw.value)
+const setupOf = (raw: unknown): ServerSetup | null => {
+  if (!isObject(raw) || !filled(raw.name)) return null
+  const name = raw.name
+  if (raw.kind === 'address') {
+    return text(raw.url) && isWebPage(raw.url) && Array.isArray(raw.headers) && raw.headers.every(isHeader) ? { kind: 'address', name, url: raw.url, headers: raw.headers } : null
+  }
+  return raw.kind === 'command' && filled(raw.command) && texts(raw.args) ? { kind: 'command', name, command: raw.command, args: raw.args } : null
+}
 const REFS: { readonly [K in ChatRef['kind']]: (raw: Obj) => Extract<ChatRef, { kind: K }> | null } = {
   bot: raw => {
     const bot = botIdOf(raw.bot)
@@ -535,6 +544,19 @@ export const validators: Validators = {
   botPicture: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'botPicture', bot }
+  },
+  toolServers: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return raw.bot !== null && bot === null ? null : { do: 'toolServers', bot }
+  },
+  addToolServer: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    const setup = setupOf(raw.setup)
+    return (raw.bot !== null && bot === null) || setup === null ? null : { do: 'addToolServer', bot, setup }
+  },
+  removeToolServer: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return (raw.bot !== null && bot === null) || !filled(raw.name) ? null : { do: 'removeToolServer', bot, name: raw.name }
   },
   createGroup: raw => {
     const draft = groupDraftOf(raw.draft)

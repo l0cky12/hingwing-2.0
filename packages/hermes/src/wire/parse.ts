@@ -19,6 +19,7 @@ import type {
 import type { PathMatch } from '../domain/path'
 import { MANAGER_NAMES, MANAGERS, type BotManagers, type ManagerName, type ManagerState } from '../domain/passwords'
 import type { RelayState } from '../domain/relay'
+import type { ServerState, Tested, ToolServer } from '../domain/tool-servers'
 import { OWN_COMMANDS, type SlashCatalog, type SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
 import type {
@@ -26,7 +27,7 @@ import type {
   CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
   CommandDispatchResult, CommandsCatalogResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
   ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, ImageGenerateResult, LoopSnapshot,
-  MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
+  McpRuntimeStatus, McpServersListResult, McpServersStatusResult, McpServersTestResult, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
   MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PetGalleryResult, PetThumbResult,
   PreviewClosePayload, PreviewOpenPayload, ProcessEntry, ProcessListResult, ProfilesConfigureResult, ProfilesCreateResult, ProfilesDescribeResult,
   ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, RequestCancelPayload, RollbackCheckpoint,
@@ -1349,6 +1350,55 @@ export function parseBotManagers(bot: BotId, sources: VaultSourcesResult, listed
     return row === undefined ? [] : [{ name, label: MANAGERS[name].label, state: managerStateOf(row, loginsOf(name)) }]
   })
   return { bot, managers }
+}
+
+/** What `mcp.servers.status` says of a server, in the words of a row. A status this table lacks reads as `idle`. */
+const SERVER_STATES: { readonly [S in McpRuntimeStatus]: ServerState } = {
+  connected: 'connected', connecting: 'connecting', failed: 'failed', disabled: 'off', lazy: 'idle', configured: 'idle'
+}
+
+/** A query or a fragment is where an address keeps a key, so only the host and path are kept. */
+function shownAddress(url: string): string {
+  const parsed = URL.parse(url)
+  return parsed === null ? url.split(/[?#]/, 1)[0] as string : `${parsed.origin}${parsed.pathname}`
+}
+
+function stateOf(live: Obj | undefined, enabled: unknown): ServerState {
+  if (live === undefined) return enabled === false ? 'off' : 'idle'
+  if (live.needs_auth === true) return 'needs-sign-in'
+  return isString(live.status) && Object.hasOwn(SERVER_STATES, live.status) ? SERVER_STATES[live.status as McpRuntimeStatus] : 'idle'
+}
+
+const serverRows = (reply: unknown): readonly Obj[] => {
+  const rows: unknown = isObject(reply) ? reply.servers : undefined
+  return Array.isArray(rows) ? rows.filter(isObject) : []
+}
+
+/**
+ * A bot's tool servers: `mcp.servers.list` names and describes them, and `mcp.servers.status` says how each runs
+ * (tui_gateway/methods_tools.py:1470-1495). Neither holds a header value (tui_gateway/mcp_rpc_helpers.py:32-54).
+ */
+export function parseToolServers(listed: McpServersListResult, status: McpServersStatusResult): readonly ToolServer[] {
+  const live = new Map(serverRows(status).flatMap(row => (isString(row.name) ? [[row.name, row] as const] : [])))
+  return serverRows(listed).flatMap(row => {
+    const name = words(row.name)
+    if (name === null) return []
+    const running = live.get(name)
+    const url = words(row.url)
+    const where = url !== null ? shownAddress(url) : [words(row.command), ...(isStrings(row.args) ? row.args : [])].filter(part => part !== null).join(' ')
+    return [{ name, where, state: stateOf(running, row.enabled), tools: running !== undefined && isCount(running.tools) ? running.tools : 0, removable: row.source !== 'plugin' }]
+  })
+}
+
+const REASON_MAX = 200
+
+/** `mcp.servers.test`'s answer (tui_gateway/methods_tools.py:1566-1590). Only a server with `auth: oauth` says `oauth_needed`, which Highwing never sets, so a server that wants a sign-in usually fails with its own words. */
+export function parseTested(reply: McpServersTestResult): Tested {
+  const said: Obj = isObject(reply) ? reply : {}
+  if (said.ok === true) return { ok: true, tools: (Array.isArray(said.tools) ? said.tools.filter(isObject) : []).flatMap(tool => words(tool.name) ?? []) }
+  if (said.oauth_needed === true) return { ok: false, why: 'sign-in' }
+  const reason = words(said.error)?.split('\n', 1)[0]?.trim()
+  return { ok: false, why: 'failed', reason: reason === undefined || reason === '' ? 'Hermes got no answer from it.' : reason.slice(0, REASON_MAX) }
 }
 
 /** A target that is not running answers with one of these, as a refusal or in a failed receipt (tui_gateway/methods_bot_relay.py:122). */

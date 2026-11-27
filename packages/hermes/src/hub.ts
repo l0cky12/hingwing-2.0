@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { DONE, refused, SessionActor, type Upload } from './actor'
 import { activityDesk, busyOf, type Attached } from './activity'
 import { appSignIn, connectApp, listApps, removeApp } from './apps'
-import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, setBotPicture } from './bot-admin'
+import {
+  addToolServer, botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, removeToolServer, setBotPicture,
+  toolServers
+} from './bot-admin'
 import type { BotActivities, UnreadChat } from './domain/activity'
 import { listMemory, removeMemory, saveMemory } from './memory'
 import { botsIn, MARK_SETS, type Bot, type Bots } from './domain/bots'
@@ -545,6 +548,9 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'passwordManagers' || command.do === 'usePasswordManager' || command.do === 'unlockPasswordManager' || command.do === 'lockPasswordManager') {
       return passwordManagers(conn, command)
     }
+    if (command.do === 'toolServers') return toolServers(conn, command.bot)
+    if (command.do === 'addToolServer') return addToolServer(conn, command.bot, command.setup)
+    if (command.do === 'removeToolServer') return removeToolServer(conn, command.bot, command.name)
     if (command.do === 'botPicture') return botPicture(conn, command.bot)
     if (command.do === 'canGeneratePicture') return canGeneratePicture(conn)
     if (command.do === 'generatePicture') return generatePicture(conn, command.prompt)
