@@ -141,6 +141,10 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onOp
   const shown = useTopic('open')?.shown ?? null
   const pane = shown === null ? null : samePaneOnFirstMessage(shown)
   useEffect(() => setTasksOpen(false), [pane])
+  const settingsOpen = settings !== null
+  const openTasks = useCallback(() => {
+    if (!settingsOpen && !hidden) setTasksOpen(true)
+  }, [settingsOpen, hidden])
   return (
     <div ref={root} className="window" hidden={hidden} data-preview={paned ? (computer === null && preview?.state === 'open' ? preview.layout : 'beside') : undefined} data-compact={compact || undefined} data-settings={settings !== null || undefined}>
       {mode === 'bots' && <BotsSidebar head={switcher} compact={compact} foot={foot} />}
@@ -151,7 +155,7 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onOp
       {tasksOpen && settings === null && <Tasks onClose={() => setTasksOpen(false)} />}
       {settings !== null && <Settings setup={settings} mode={mode} theme={theme} accent={accent} onRequestClose={close} onShowShortcuts={openSheet} />}
       <DraftSweep />
-      <Shortcuts onSheet={openSheet} />
+      <Shortcuts onSheet={openSheet} onTasks={openTasks} />
       {sheet !== null && <ShortcutSheet back={sheet.back} onClose={() => setSheet(null)} />}
       {computer !== null ? <ComputerView view={computer} /> : paned && preview?.state === 'open' && <Preview preview={preview} />}
     </div>

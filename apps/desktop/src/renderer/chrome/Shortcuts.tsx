@@ -31,10 +31,11 @@ function addSelectionToComposer() {
 
 interface ShortcutsProps {
   readonly onSheet: () => void
+  readonly onTasks: () => void
 }
 
 /** Every window shortcut that needs no component of its own, from one listener. */
-export function Shortcuts({ onSheet }: ShortcutsProps) {
+export function Shortcuts({ onSheet, onTasks }: ShortcutsProps) {
   const bots = useTopic('bots')
   const open = useTopic('open')
   const visits = useRef(NO_VISITS)
@@ -75,11 +76,12 @@ export function Shortcuts({ onSheet }: ShortcutsProps) {
         case 'zoomOut': return window.highwing.zoom('out')
         case 'zoomReset': return window.highwing.zoom('reset')
         case 'sheet': return event.repeat ? undefined : onSheet()
+        case 'tasks': return event.repeat ? undefined : onTasks()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [bots, open, onSheet])
+  }, [bots, open, onSheet, onTasks])
 
   return null
 }
