@@ -1,5 +1,5 @@
 import { shownChat, type Shown, type ShownGroup, type Target } from '@highwing/hermes/domain'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { introInFront } from '../intro'
 import { isSettingsChord } from './keys'
 import { epochOf, type Accent, type Mode, type SidebarWidth, type Theme } from '../ipc-contract'
@@ -9,11 +9,11 @@ import { useRetryPicturesOnceOnline } from './bots/pictures'
 import { ChatsSidebar, DraftSweep } from './chats/Chats'
 import { Chat } from './chat/Chat'
 import { GroupPane } from './groups/GroupPane'
-import { AccountMenu } from './chrome/AccountMenu'
 import { accentTone, toneOfBot } from './chrome/accent'
 import { Banner, TopBar } from './chrome/Chrome'
+import { HermesFoot } from './chrome/HermesFoot'
 import { ModeSwitch, ModeToggle } from './chrome/ModeSwitch'
-import { Shortcuts } from './chrome/Shortcuts'
+import { composerBox, Shortcuts } from './chrome/Shortcuts'
 import { ShortcutSheet } from './chrome/ShortcutSheet'
 import { Preview } from './preview/Preview'
 import { Composer } from './composer/Composer'
@@ -46,13 +46,13 @@ function OpenPane() {
   return shown.kind === 'group' ? <GroupPane key={samePaneOnFirstMessage(shown)} shown={shown} /> : <Chat key={samePaneOnFirstMessage(shown)} chat={shown} />
 }
 
-function ChatScreen({ target, settingsButton, onOpenTasks }: { readonly target: Target | null; readonly settingsButton: RefObject<HTMLButtonElement | null>; readonly onOpenTasks: () => void }) {
+function ChatScreen({ target, onOpenTasks }: { readonly target: Target | null; readonly onOpenTasks: () => void }) {
   const link = useTopic('link')
   useRetryPicturesOnceOnline(link?.state === 'online')
   return (
     <>
       <div className="top">
-        <TopBar target={target} settingsButton={settingsButton} onOpenTasks={onOpenTasks} />
+        <TopBar target={target} onOpenTasks={onOpenTasks} />
         {link !== undefined && <Banner link={link} target={target} />}
       </div>
       <OpenPane />
@@ -84,7 +84,9 @@ function useCloseSettings(shown: boolean) {
   useLayoutEffect(() => {
     if (shown || !closing.current) return
     closing.current = false
-    settingsButton.current?.focus()
+    const button = settingsButton.current
+    if (button?.checkVisibility() === true) button.focus()
+    else composerBox()?.focus()
   }, [shown])
   const close = useCallback(() => {
     closing.current = true
@@ -128,7 +130,7 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onOp
   const [sheet, setSheet] = useState<{ readonly back: Element | null } | null>(null)
   const openSheet = useCallback(() => setSheet(held => held ?? { back: document.activeElement }), [])
   const switcher = <ModeSwitch mode={mode} onPick={next => pick(next, '.mode-switch')} />
-  const foot = <div className="account"><AccountMenu target={target} /><AppsButton onOpen={onOpenApps} /><ModeToggle mode={mode} onPick={next => pick(next, '.mode-toggle')} /></div>
+  const foot = <div className="account"><HermesFoot target={target} ref={settingsButton} /><AppsButton onOpen={onOpenApps} /><ModeToggle mode={mode} onPick={next => pick(next, '.mode-toggle')} /></div>
   // A preview asked for while the screen is shown takes the pane, and Screen takes it back.
   const previewed = preview?.state === 'open' ? preview.address : null
   useEffect(() => {
@@ -150,7 +152,7 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onOp
       {mode === 'bots' && <BotsSidebar head={switcher} compact={compact} foot={foot} />}
       {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} foot={foot} />}
       <div key="screen" className="screen" data-accent={tone ?? undefined} hidden={settings !== null || tasksOpen}>
-        <ChatScreen target={target} settingsButton={settingsButton} onOpenTasks={() => setTasksOpen(true)} />
+        <ChatScreen target={target} onOpenTasks={() => setTasksOpen(true)} />
       </div>
       {tasksOpen && settings === null && <Tasks onClose={() => setTasksOpen(false)} />}
       {settings !== null && <Settings setup={settings} mode={mode} theme={theme} accent={accent} onRequestClose={close} onShowShortcuts={openSheet} />}

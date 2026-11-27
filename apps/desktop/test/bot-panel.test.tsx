@@ -25,7 +25,7 @@ const isDetailsKey = (event: KeyboardEvent, mac: boolean) => shortcutOf(event, m
 
 const RAE = 'rae' as BotId
 const open = (shown: OpenChat['shown']): OpenChat => ({ shown, opening: null, missing: null })
-const bar = () => renderToStaticMarkup(<TopBar target={null} settingsButton={{ current: null }} onOpenTasks={() => {}} />)
+const bar = () => renderToStaticMarkup(<TopBar target={null} onOpenTasks={() => {}} />)
 
 beforeEach(() => {
   topics.values = {

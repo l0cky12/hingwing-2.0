@@ -74,7 +74,7 @@ function useOpenGroup() {
 }
 
 /** `target` is null in a fixture run, which has no connection to name or to change. */
-export function TopBar({ target, settingsButton, onOpenTasks }: { readonly target: Target | null; readonly settingsButton: RefObject<HTMLButtonElement | null>; readonly onOpenTasks: () => void }) {
+export function TopBar({ target, onOpenTasks }: { readonly target: Target | null; readonly onOpenTasks: () => void }) {
   const bar = useRef<HTMLElement>(null)
   const startChat = useNewChat(bar)
   const { bot, name, title } = useOpenChat()
@@ -106,7 +106,7 @@ export function TopBar({ target, settingsButton, onOpenTasks }: { readonly targe
           : <GroupMembers faces={group.faces} />}
         <button type="button" onClick={onOpenTasks}>Tasks</button>
         {screen != null && <ComputerButton view={screen} />}
-        {target !== null && <button ref={settingsButton} onClick={() => void run({ do: 'editTarget' })}>Settings</button>}
+        {target !== null && <button onClick={() => void run({ do: 'editTarget' })}>Settings</button>}
         {sessionId !== null && <CopyLink sessionId={sessionId} />}
       </Bar>
       <BotPanel panel={panel} current={bot} onClose={close} />
