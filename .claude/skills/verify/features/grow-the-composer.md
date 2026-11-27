@@ -1,6 +1,6 @@
 # Grow the composer
 
-The "Message Hermes" box starts at one line and grows as the user adds lines. It stops growing at eight lines, or at 40% of the window height if that is smaller, and then scrolls inside itself. Send and Stop stay on the box's bottom edge. When the thread was at its end, it stays at its end as the box grows, so the last line of the reply stays above the composer. Deleting the text returns the box to one line.
+The "Message Hermes" box starts at one line and grows as the user adds lines. It stops growing at eight lines, or at 40% of the window height if that is smaller, and then scrolls inside itself. Send and Stop stay in the toolbar row under the box. When the thread was at its end, it stays at its end as the box grows, so the last line of the reply stays above the composer. Deleting the text returns the box to one line.
 
 ## Sub-features
 
@@ -27,7 +27,7 @@ Preconditions:
 ## Gotchas
 
 - At the reference size of 1180x860, 40% of the window is 344px, so the eight-line cap applies. A shorter window caps the box at fewer lines, and the expected count in `field` changes with it.
-- `field` reports `clientHeight`, which leaves out the 1px border. One line reads 42px and eight lines read 194px.
+- `field` reports `clientHeight`. The box has no border of its own. One line reads 30px and eight lines read 182px.
 - `scrolls` holds only when the text is taller than the box and the box draws a scrollbar wider than 2px, so a box that clips its text or hides its scrollbar fails it.
 - A run with only `type` and `shot` steps also passes on a box that never grows. Keep the `field` steps in.
 - `pinned` needs the thread's last row, such as the Done ring or a pending message's status line, wholly in view, not only the turn around it. A row taller than the thread area only needs its bottom in view.

@@ -7,7 +7,7 @@ const CLOCK = { now: 1_800_000_000_000, timeZone: 'UTC' }
 
 const session = (requests: readonly HermesRequest[], sync: Session['sync'] = { state: 'live' }): Session => ({
   id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, interlude: [], requests, queue: [], outbox: [],
-  model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null, sync
+  model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null, rewound: {}, sync
 })
 
 const request = (id: string, ask: RequestAsk, state: HermesRequest['state'] = { s: 'waiting', error: null }): HermesRequest =>

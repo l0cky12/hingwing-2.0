@@ -8,7 +8,7 @@ import { manualClock } from '../src/testing/clock'
 import { MASKED, play, scriptedDialer, type Fixture, type FixtureStep, type GroupsScript, type Moment, type ScriptOptions } from '../src/testing/fixture'
 import {
   BOUND, BRANCH, BRANCH_COMPACTED, BRANCH_OLD, callsIn, DOWNLOADS, EDIT_COMPACTED, ERRAND, INVOICES, LAUNCH, LAUNCH_GROUP, LAUNCH_NO_GROUPS, NO_HOME_CHAT, NO_TREE, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, RAE_SAID,
-  REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, SORTED, SORTED_2, SORTED_3, SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, withGroups, withSteps
+  REGENERATE_TEAM, REMINDER, RESEARCH_CHAT, RESEARCH_SAID, SESSION, SLASH, stepOf, SORTED, SORTED_2, SORTED_3, SUDO, SUDO_ASK, TEAM, TEAM_NO_RELAY, WITH_BOTS, WITH_CHATS, WITH_VERSIONS, withGroups, withSteps
 } from './support/errand'
 
 const CLIENT = { name: 'highwing-test', version: '0.0.0' }
@@ -1407,6 +1407,18 @@ describe('mentioning another bot', () => {
     expect(last).toBeDefined()
     await send(opened, ASK)
     expect(relays(opened)).toMatchObject([{ after: last }])
+  })
+
+  it('moves a handed message to the newest turn kept when a regenerate cuts the turn it was sent after', async () => {
+    const opened = open(REGENERATE_TEAM)
+    opened.watch()
+    await send(opened, ASK)
+    const [, kept, cut] = opened.seen.at(-1)?.history.map(turn => turn.id) ?? []
+    expect(kept).toBeDefined()
+    expect(relays(opened)).toMatchObject([{ after: cut }])
+    await opened.hermes.run({ do: 'rewind', sessionId: SESSION, rowId: 5, text: 'List the folder' })
+    await opened.clock.advance(0)
+    expect(relays(opened)).toMatchObject([{ after: kept }])
   })
 
   it('gives up in words when no reply comes in 25 minutes', async () => {

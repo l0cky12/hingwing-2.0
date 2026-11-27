@@ -12,7 +12,7 @@ const NONE: ToolResult = { kind: 'none' }
 function session(over: Partial<Session> = {}): Session {
   return {
     id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [],
-    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null, sync: { state: 'live' }, ...over
+    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null, rewound: {}, sync: { state: 'live' }, ...over
   }
 }
 
@@ -250,10 +250,10 @@ describe('checkThread', () => {
       state: 'ready', pending: [], asks: [], earlier: 'none', changesAt: null,
       turns: [
         {
-          key: 't1', time: null, request: null, attachments: [], rowId: null, end: { kind: 'at', nodeKey: 't1/7', tone: 'live', elapsed: null }, tokens: '9 in, 1 out', reactions: null,
+          key: 't1', time: null, request: null, handed: false, attachments: [], rowId: null, end: { kind: 'at', nodeKey: 't1/7', tone: 'live', elapsed: null }, tokens: '9 in, 1 out', reactions: null,
           nodes: [{ kind: 'group', key: 't1/g0', title: [], count: 1, stat: null, steps: [step] }, { kind: 'prose', key: 't1/0', markdown: 'x', streaming: true }]
         },
-        { key: 't2', time: null, request: null, attachments: [], rowId: null, end: { kind: 'done', words: 'Done' }, nodes: [], tokens: null, reactions: null }
+        { key: 't2', time: null, request: null, handed: false, attachments: [], rowId: null, end: { kind: 'done', words: 'Done' }, nodes: [], tokens: null, reactions: null }
       ]
     }
     expect(checkThread(view)).toEqual([
@@ -556,7 +556,7 @@ describe('the live end while a hidden tool runs', () => {
 
 describe('checkThread on helpers, plans and reasoning', () => {
   const turn = (nodes: ThreadNode[], end: ThreadView['turns'][number]['end']): ThreadView => ({
-    state: 'ready', pending: [], asks: [], earlier: 'none', changesAt: null, turns: [{ key: 't1', time: null, request: null, attachments: [], rowId: null, tokens: null, reactions: null, nodes, end }]
+    state: 'ready', pending: [], asks: [], earlier: 'none', changesAt: null, turns: [{ key: 't1', time: null, request: null, handed: false, attachments: [], rowId: null, tokens: null, reactions: null, nodes, end }]
   })
   const planNode = (key: string): ThreadNode => ({ kind: 'plan', key, plan: { done: 0, total: 1, cancelled: 0, openByDefault: true, entries: [{ key: `${key}/e1`, text: 'x', state: 'todo', depth: 0 }] } })
   const reasoningNode = (key: string, streaming: boolean): ThreadNode => ({ kind: 'reasoning', key, text: 'x', streaming, duration: null })

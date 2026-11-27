@@ -4,7 +4,8 @@ import type { WindowCommand } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
 import { agoOf } from '../chats/chat-list'
 import { landAt } from '../chat/landing'
-import { isCommandKey } from '../keys'
+import { isShortcut } from '../keys'
+import { modalOpen } from '../shortcuts'
 import { run, useTopic } from '../store'
 import { begin, NOT_SEARCHED, settle, type MessageSearch } from './messages'
 import { activeIn, comebackOf, paletteOf, step, termsOf, type PaletteItem, type PaletteView, type Row } from './palette-view'
@@ -12,8 +13,7 @@ import { activeIn, comebackOf, paletteOf, step, termsOf, type PaletteItem, type 
 const canHoldFocus = (element: Element | null): element is HTMLElement =>
   element instanceof HTMLElement && element !== document.body && element.isConnected && element.closest('[hidden]') === null
   && element.checkVisibility() && !element.matches(':disabled')
-/** Settings hides the chat's composer. Its connection card's Change takes focus there, or the Settings heading while the editor is open. */
-const FALLBACKS = ['.settings .change', '.settings > h2', '.composer textarea']
+const FALLBACKS = ['.settings .change', '.settings-head > h1', '.composer textarea']
 const fallbackFocus = () => FALLBACKS.map(selector => document.querySelector(selector)).find(canHoldFocus) ?? null
 
 function detailOf(item: PaletteItem, now: number): string | null {
@@ -142,7 +142,7 @@ function Sheet({ opened, target, settingsOpen, onClose, onPick }: SheetProps) {
     event.stopPropagation()
     if (event.nativeEvent.isComposing) return
     const by = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : null
-    if (isCommandKey(event.nativeEvent, 'k')) {
+    if (isShortcut(event.nativeEvent, 'palette')) {
       if (!event.repeat) dismiss()
     } else if (by !== null) setPicked(step(view, picked, by))
     else if (event.key === 'Enter' && active !== null) pick(active.item)
@@ -184,7 +184,7 @@ export function Palette({ target, settingsOpen }: { readonly target: Target | nu
   useEffect(() => {
     if (shown) return
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (!isCommandKey(event, 'k') || document.querySelector('dialog:modal') !== null) return
+      if (!isShortcut(event, 'palette') || modalOpen()) return
       event.preventDefault()
       if (!event.repeat) setOpened({ back: document.activeElement, query: '', note: null })
     }

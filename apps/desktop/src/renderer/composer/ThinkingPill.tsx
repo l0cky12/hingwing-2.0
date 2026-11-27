@@ -33,10 +33,10 @@ export function ThinkingPill({ tuning, disabled, running, onTune }: ThinkingPill
   return (
     <div className="knob" ref={anchor}>
       <button
-        ref={button} type="button" className="readout" disabled={disabled}
+        ref={button} type="button" className="readout" disabled={disabled} aria-label={thinkingLabel(tuning)}
         aria-expanded={shown} aria-haspopup="dialog" aria-controls={shown ? boxId : undefined} onClick={toggle}
       >
-        {thinkingLabel(tuning)}
+        <span className="value">{tuning.effort === null ? 'Thinking' : EFFORT_WORDS[tuning.effort]}</span>
         <span className="chev" aria-hidden="true" />
       </button>
       {shown && (

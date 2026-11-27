@@ -9,7 +9,8 @@ import { sidebarOf, type BotPlace } from '../src/renderer/bots/sidebar-view'
 import { fact, listed } from './support/bots'
 
 const id = (name: string) => name as BotId
-const words = (place: BotPlace) => botMenuOf(place).map(group => group.map(item => item.label))
+const words = (place: BotPlace, featured = false) => botMenuOf(place, featured).map(group => group.map(item => item.label))
+const actions = (place: BotPlace, featured = false) => botMenuOf(place, featured).flat().map(item => item.action)
 
 describe("a bot's menu", () => {
   it('offers a normal row Open chat and New chat, Edit…, then Pin to top and Hide from list', () => {
@@ -18,12 +19,14 @@ describe("a bot's menu", () => {
 
   it('offers Unpin on a pinned row, no Pin on the default bot, and Show in list on a hidden row', () => {
     expect(words('pinned')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Unpin', 'Hide from list'], ['Delete…']])
-    expect(words('card')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Hide from list']])
+    expect(words('card', true)).toEqual([['Open chat', 'New chat'], ['Edit…', 'Memory…'], ['Hide from list']])
+    expect(words('hidden', true)).toEqual([['Open chat', 'New chat'], ['Edit…', 'Memory…'], ['Show in list'], ['Delete…']])
     expect(words('hidden')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Show in list'], ['Delete…']])
   })
 
   it('offers Delete… last in every menu except the default bot\'s card', () => {
     expect(MENUS.card.flat()).not.toContain('delete')
+    expect(actions('card', true)).not.toContain('delete')
     for (const place of ['pinned', 'section', 'hidden'] as const) expect(MENUS[place].flat().at(-1), place).toBe('delete')
   })
 
@@ -35,8 +38,13 @@ describe("a bot's menu", () => {
     expect(deleteRefusal(bots.roster.featured, true)).toBe("The default bot can't be deleted.")
   })
 
-  it('keeps Edit… third in every menu', () => {
-    for (const place of ['card', 'pinned', 'section', 'hidden'] as const) expect(MENUS[place].flat()[2], place).toBe('edit')
+  it('keeps Edit… third in every menu, and Memory… only on the default bot', () => {
+    for (const place of ['card', 'pinned', 'section', 'hidden'] as const) {
+      expect(actions(place, false)[2], place).toBe('edit')
+      expect(actions(place, true)[2], place).toBe('edit')
+      expect(actions(place, true)[3], place).toBe('memory')
+      expect(actions(place, false), place).not.toContain('memory')
+    }
   })
 
   it('opens from Shift+F10 and the Menu key, and not from F10 alone', () => {
@@ -94,6 +102,13 @@ describe("where a bot's menu sits", () => {
 
   it('opens 2px under the whole card for the default bot, right-aligned to its ⋯', () => {
     expect(placeMenu(anchorOf({ by: 'keys' }, 'card', { row: CARD, more: CARD_MORE }), MENU, WINDOW)).toEqual({ left: CARD_MORE.right - MENU.width, top: CARD.bottom + GAP })
+  })
+
+  it('opens beside the face from the keyboard when the row draws no ⋯, as in a compact sidebar', () => {
+    const FACE = box(4, 200, 64, 246)
+    expect(placeMenu(anchorOf({ by: 'keys' }, 'section', { row: FACE, more: null }), MENU, WINDOW)).toEqual({ left: FACE.right, top: FACE.top })
+    expect(placeMenu(anchorOf({ by: 'keys' }, 'card', { row: FACE, more: null }), MENU, WINDOW)).toEqual({ left: FACE.right, top: FACE.top })
+    expect(placeMenu(anchorOf({ by: 'pointer', x: 30, y: 220 }, 'section', { row: FACE, more: null }), MENU, WINDOW)).toEqual({ left: 30, top: 220 })
   })
 
   it('flips over ⋯ near the bottom edge', () => {
