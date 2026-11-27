@@ -7,7 +7,6 @@ const UNREACHABLE = refused('offline', "Highwing couldn't reach Hermes's task bo
 const UNREADABLE = refused('unsupported', "Hermes answered with a task board Highwing can't read.")
 const NO_TASK = refused('stale', "That task isn't on the board any more.")
 
-/** null: no answer came. The callers word it as an unreachable board, as they do a status they have no words for. */
 const answered = (read: ReadHermes, path: string) => read(path).catch(() => null)
 
 export async function readTaskBoard(read: ReadHermes): Promise<CommandOutcome<TaskBoard>> {
@@ -18,7 +17,6 @@ export async function readTaskBoard(read: ReadHermes): Promise<CommandOutcome<Ta
   return board === null ? UNREADABLE : { ok: true, value: board }
 }
 
-/** null: the card has no chat Highwing can open. */
 export async function readTaskChat(read: ReadHermes, id: string): Promise<CommandOutcome<TaskChat | null>> {
   const answer = await answered(read, taskPath(id))
   if (answer?.status === 404) return NO_TASK

@@ -115,7 +115,6 @@ function ChatWindow({ hidden, settings, target, mode, theme, onOpenApps }: ChatW
   const [tasksOpen, setTasksOpen] = useState(false)
   const shown = useTopic('open')?.shown ?? null
   const pane = shown === null ? null : samePaneOnFirstMessage(shown)
-  // A chat picked in the sidebar leaves the board, which would otherwise cover it.
   useEffect(() => setTasksOpen(false), [pane])
   const paned = preview?.state === 'open' && settings === null
   return (

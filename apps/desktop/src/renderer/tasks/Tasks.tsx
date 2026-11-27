@@ -6,12 +6,10 @@ import { run } from '../store'
 type Read = { readonly state: 'reading' } | { readonly state: 'refused'; readonly message: string } | { readonly state: 'read'; readonly board: TaskBoard }
 const READING: Read = { state: 'reading' }
 
-/** What a card says after it was pressed and had nothing to open. */
 export interface Note { readonly id: string; readonly words: string }
 
-/** The columns that hold a card, side by side in Hermes's order, each with its count, and each card a button that names its assignee and what its run last said. */
 export function Board({ board, note, onPick }: { readonly board: TaskBoard; readonly note: Note | null; readonly onPick: (card: TaskCard) => void }) {
-  // Hermes sends all eight columns, so the empty ones would push the cards past the pane's edge.
+  // Hermes sends all eight columns, empty or not.
   const lanes = board.columns.filter(column => column.cards.length > 0)
   if (lanes.length === 0) return <p className="notice">No tasks yet.</p>
   return (
@@ -35,7 +33,6 @@ export function Board({ board, note, onPick }: { readonly board: TaskBoard; read
   )
 }
 
-/** The board of the connected Hermes, read when it opens and again on Refresh. A card opens the chat working on it. */
 export function Tasks({ onClose }: { readonly onClose: () => void }) {
   const [read, setRead] = useState<Read>(READING)
   const [note, setNote] = useState<Note | null>(null)

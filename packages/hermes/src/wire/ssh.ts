@@ -23,7 +23,6 @@ export const SERVE = ['gateway', 'tickets', '--serve', '--json'] as const
 export type HermesArgs = typeof PROBE | typeof SERVE | (typeof ATTACH)[keyof typeof ATTACH]
 /** The only line Highwing writes to a `--serve` channel. A literal too, and it names no profile: an interactive ticket takes none. */
 export const ASK_INTERACTIVE = '{"id":1,"purpose":"interactive"}\n'
-/** The line for the one-use ticket that opens a request of the gateway's HTTP API. */
 export const ASK_NATIVE_HTTP = '{"id":1,"purpose":"native-http"}\n'
 
 /** The installer's command locations (Hermes's scripts/install.sh): per-user, root, and the legacy venv. */

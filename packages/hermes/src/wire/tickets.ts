@@ -90,12 +90,7 @@ export function mintWith(run: RunHermes, options: MintOptions): Mint {
 
 const EXIT_AS_LOCATOR: Readonly<Record<'missing' | 'cut', number>> = { missing: NOT_FOUND, cut: 7 }
 
-/**
- * One GET of the gateway's HTTP API per call, on a fresh ticket from `--serve` (client rule 3): a ticket
- * is single use and lives 30 seconds, and it travels from the command's stdout to this request's header
- * and nowhere else. `forward` turns the gateway's loopback origin into one this computer can reach, as
- * for a socket.
- */
+/** A fresh ticket per GET: Hermes's ticket is single use and lives 30 seconds (gateway-ssh-clients.md, client rule 3). */
 export function readWith(run: RunHermes, forward: (origin: string) => Promise<string>, fetcher: typeof fetch = fetch): ReadHermes {
   return async path => {
     const serve = await run(SERVE, { deadlineMs: SERVE_MS, input: ASK_NATIVE_HTTP })

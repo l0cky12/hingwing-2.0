@@ -39,7 +39,6 @@ export function remoteRoute(host: SshHost, options: { readonly sshBin?: string; 
       return `ws://127.0.0.1:${await relay(host, tunnel.port, { ...options, signal })}${tunnel.path}`
     }
   })
-  /** One relay carries one connection, so a read forwards its origin afresh and sends exactly one request. */
   const read = readWith(run, async origin => {
     const tunnel = tunnelOf(origin, 'http:')
     if (tunnel === null) throw new Error('Hermes named an HTTP address Highwing cannot forward.')

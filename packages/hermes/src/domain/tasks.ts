@@ -1,8 +1,4 @@
-/**
- * The kanban board of the Hermes home, as the Tasks view draws it. Plain JSON data, because it crosses
- * Electron IPC. Hermes serves it over its HTTP API, not the socket, and these readers are the one place its
- * JSON is trusted (hermes-agent plugins/kanban/dashboard/plugin_api.py).
- */
+/** Hermes's kanban replies as hermes-agent plugins/kanban/dashboard/plugin_api.py sends them, read into what the Tasks view draws. */
 import { canonicalBotId, type BotId } from './bots'
 import type { SessionId } from './session'
 
@@ -27,7 +23,6 @@ const isObject = (value: unknown): value is Obj => value !== null && typeof valu
 const filled = (value: unknown): value is string => typeof value === 'string' && value !== ''
 const orNull = (value: unknown): string | null => (filled(value) ? value : null)
 
-/** What Hermes calls a task: `t_` and a few hex digits. The window names one, so main checks it before it goes into a path. */
 export const isTaskId = (raw: unknown): raw is string => typeof raw === 'string' && /^[\w-]{1,64}$/.test(raw)
 
 function cardOf(raw: unknown): TaskCard | null {
