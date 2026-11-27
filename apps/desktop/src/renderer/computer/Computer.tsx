@@ -3,16 +3,10 @@ import type { Control, ScreenView } from '@highwing/hermes/domain'
 import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { blobUrlOf } from '../bots/pictures'
 import { Epoch, run } from '../store'
-import { CARD_WORDS, closedWords, CONTROL_WORDS, NO_SCREEN_WORDS, pressOf, showComputer, useComputerShown } from './computer'
+import { CARD_WORDS, closedWords, CONTROL_WORDS, NO_SCREEN_WORDS, pressOf, showComputer } from './computer'
 import { askForPort, portSocket } from './port'
 
 const close = () => showComputer(false)
-
-/** In the top bar of a bot's chat: opens the view, which says what it can when there is no screen to show. */
-export function ComputerButton({ view }: { readonly view: ScreenView }) {
-  const shown = useComputerShown()
-  return <button type="button" aria-pressed={shown} data-screen={view.screen.state} onClick={() => showComputer(!shown)}>Screen</button>
-}
 
 function useFrame(thumbnail: string | null): string | null {
   const url = useMemo(() => (thumbnail === null ? null : blobUrlOf(thumbnail)), [thumbnail])

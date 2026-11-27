@@ -499,10 +499,6 @@ describe('validators', () => {
     expect(parseCommand(raw)).toBeNull()
   })
 
-  it('keep a quit', () => {
-    expect(parseCommand({ do: 'quit', extra: 1 })).toEqual({ do: 'quit' })
-  })
-
   it('keep a mode switch', () => {
     expect(parseCommand({ do: 'setMode', mode: 'chats', extra: 1 })).toEqual({ do: 'setMode', mode: 'chats' })
     expect(parseCommand({ do: 'setMode', mode: 'bots' })).toEqual({ do: 'setMode', mode: 'bots' })
@@ -558,7 +554,7 @@ describe('validators', () => {
       'accountUsage', 'addToolServer', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
       'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'controlRoutine', 'createBot', 'createGroup', 'deleteGroup', 'denyRules', 'describeBot', 'discard',
       'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
-      'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'quit', 'react', 'readMessages', 'reconnect',
+      'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
       'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
       'sendToGroup', 'setAccent', 'setMode', 'setNotice', 'setOnClose', 'setSendKey', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
       'takeControl', 'toolServers', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'versions'
@@ -690,7 +686,6 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
     },
     read: async id => (id === HELD.id ? HELD : null)
   }
-  const quits: true[] = []
   const mode = feed<Mode>('chats')
   const theme = feed<Theme>('system')
   const accent = feed<Accent>('bot')
@@ -707,7 +702,7 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
     { store, sources }, saver, { mode, theme, accent, sidebarWidth, sendKey, spellCheck, snoozes, notices, onClose },
-    { intro, apply: async (event: IntroEvent) => intro.set(nextIntro(intro.get(), event)) }, () => void quits.push(true)
+    { intro, apply: async (event: IntroEvent) => intro.set(nextIntro(intro.get(), event)) }
   )
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
@@ -727,7 +722,7 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   }
   return {
     listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, lives, stored, previewed, toPane, staged, served,
-    reads, answers: (next: HttpAnswer) => void (answer = next), saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, accent, sidebarWidth, sendKey, spellCheck, snoozes, notices, onClose, intro, quits
+    reads, answers: (next: HttpAnswer) => void (answer = next), saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, accent, sidebarWidth, sendKey, spellCheck, snoozes, notices, onClose, intro
   }
 }
 
@@ -953,9 +948,9 @@ describe('serveWindows', () => {
     expect(commands).toEqual([{ do: 'stop', sessionId: 's1' }])
   })
 
-  it('refuses a chat command a window sent for a connection that is no longer live, and passes setup, pane, mode, theme, accent, send key, spell-check and quit commands whatever it sent', async () => {
+  it('refuses a chat command a window sent for a connection that is no longer live, and passes setup, pane, mode, theme, accent, send key and spell-check commands whatever it sent', async () => {
     let owner: ConnectionOwner | undefined
-    const { handlers, event, commands, toPane, mode, theme, accent, notices, sendKey, spellCheck, quits } = harness(hermes => (owner = switchable(hermes)))
+    const { handlers, event, commands, toPane, mode, theme, accent, notices, sendKey, spellCheck } = harness(hermes => (owner = switchable(hermes)))
     const run = handlers.get(CHANNEL.run)!
     const pick = { do: 'open', ref: { kind: 'chat', sessionId: 'box-0001' } }
     await expect(run(event(), { do: 'editTarget' }, 1)).resolves.toEqual({ ok: true, value: undefined })
@@ -972,9 +967,6 @@ describe('serveWindows', () => {
     await expect(run(event(), { do: 'closePreview' }, 1)).resolves.toEqual({ ok: true, value: undefined })
     await expect(run(event(), { do: 'setMode', mode: 'bots' }, 1)).resolves.toEqual({ ok: true, value: undefined })
     await expect(run(event(), { do: 'setTheme', theme: 'light' }, 1)).resolves.toEqual({ ok: true, value: undefined })
-    expect(quits).toEqual([])
-    await expect(run(event(), { do: 'quit' }, 1)).resolves.toEqual({ ok: true, value: undefined })
-    expect(quits).toEqual([true])
     await expect(run(event(), { do: 'setNotice', kind: 'replies', on: false }, 1)).resolves.toEqual({ ok: true, value: undefined })
     await expect(run(event(), { do: 'setSendKey', sendKey: 'modEnter' }, 1)).resolves.toEqual({ ok: true, value: undefined })
     await expect(run(event(), { do: 'setSpellCheck', spellCheck: false }, 1)).resolves.toEqual({ ok: true, value: undefined })

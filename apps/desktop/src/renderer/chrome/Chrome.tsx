@@ -3,13 +3,11 @@ import { useCallback, useEffect, useRef, type ReactNode, type Ref, type RefObjec
 import type { WindowCommand } from '../../ipc-contract'
 import { detailsKeys, isShortcut, MAC } from '../keys'
 import { modalOpen } from '../shortcuts'
-import { CopyLink } from '../chat/Copy'
 import { Avatar } from '../bots/Avatar'
 import { BotPanel, useBotPanel } from '../bots/BotPanel'
 import { botIn } from '../bots/roster-view'
 import { openChatName } from '../chats/chat-list'
 import { GroupMembers } from '../groups/GroupThread'
-import { ComputerButton } from '../computer/Computer'
 import { faceOf } from '../groups/group-rows'
 import { newChatIn, newChatKeys } from '../new-chat'
 import { run, useTopic } from '../store'
@@ -73,8 +71,7 @@ function useOpenGroup() {
   return row === undefined ? null : { name: row.name, faces: row.members.map(member => faceOf(member, bots)) }
 }
 
-/** `target` is null in a fixture run, which has no connection to name or to change. */
-export function TopBar({ target, settingsButton, onOpenTasks }: { readonly target: Target | null; readonly settingsButton: RefObject<HTMLButtonElement | null>; readonly onOpenTasks: () => void }) {
+export function TopBar({ target }: { readonly target: Target | null }) {
   const bar = useRef<HTMLElement>(null)
   const startChat = useNewChat(bar)
   const { bot, name, title } = useOpenChat()
@@ -82,8 +79,6 @@ export function TopBar({ target, settingsButton, onOpenTasks }: { readonly targe
   const { panel, open, close } = useBotPanel()
   const pill = group === null ? bot : null
   useDetailsKey(bar, pill, open)
-  const sessionId = shownChat(useTopic('open'))?.sessionId ?? null
-  const screen = useTopic('screen')
   const machine = target === null ? null : `on ${machineOf(target)}`
   const where = [group?.name ?? name, machine].filter(part => part !== null).join(' ')
   const keys = detailsKeys(MAC)
@@ -104,10 +99,6 @@ export function TopBar({ target, settingsButton, onOpenTasks }: { readonly targe
         {group === null
           ? <button type="button" aria-keyshortcuts={newChatKeys(MAC).aria} onClick={startChat}>New chat</button>
           : <GroupMembers faces={group.faces} />}
-        <button type="button" onClick={onOpenTasks}>Tasks</button>
-        {screen != null && <ComputerButton view={screen} />}
-        {target !== null && <button ref={settingsButton} onClick={() => void run({ do: 'editTarget' })}>Settings</button>}
-        {sessionId !== null && <CopyLink sessionId={sessionId} />}
       </Bar>
       <BotPanel panel={panel} current={bot} onClose={close} />
     </>

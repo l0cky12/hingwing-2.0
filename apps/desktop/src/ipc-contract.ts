@@ -137,9 +137,7 @@ export const isNotices = (raw: unknown): raw is Notices =>
 
 export type IntroCommand = { readonly do: 'examples' } | { readonly do: 'done' }
 
-export type QuitCommand = { readonly do: 'quit' }
-
-export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | AccentCommand | SidebarWidthCommand | SendKeyCommand | SpellCheckCommand | SnoozeCommand | NoticeCommand | OnCloseCommand | IntroCommand | QuitCommand
+export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | AccentCommand | SidebarWidthCommand | SendKeyCommand | SpellCheckCommand | SnoozeCommand | NoticeCommand | OnCloseCommand | IntroCommand
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' | 'refreshBots' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
@@ -757,7 +755,6 @@ export const validators: Validators = {
     const rect = rectOf(raw.rect)
     return rect && { do: 'placePreview', rect }
   },
-  quit: () => ({ do: 'quit' }),
   examples: () => ({ do: 'examples' }),
   done: () => ({ do: 'done' }),
   setMode: raw => (isMode(raw.mode) ? { do: 'setMode', mode: raw.mode } : null),

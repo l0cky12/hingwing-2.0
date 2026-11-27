@@ -1,7 +1,5 @@
-import type { SessionId } from '@highwing/hermes/domain'
 import { fieldId } from '@highwing/thread'
 import { useEffect, useRef, useState } from 'react'
-import { chatLink } from '../../chat-link'
 
 const SHOWN_MS = 2000
 
@@ -29,16 +27,6 @@ export function CopyButton({ text, name }: { readonly text: string; readonly nam
       <button type="button" className={said === null ? 'copy' : 'copy shown'} aria-label={name} onClick={() => copy(text)}>
         {said ?? 'Copy'}
       </button>
-      <span className="sr" aria-live="polite">{said ?? ''}</span>
-    </>
-  )
-}
-
-export function CopyLink({ sessionId }: { readonly sessionId: SessionId }) {
-  const { said, copy } = useCopy()
-  return (
-    <>
-      <button type="button" aria-label="Copy link" onClick={() => copy(chatLink(sessionId))}>{said ?? 'Copy link'}</button>
       <span className="sr" aria-live="polite">{said ?? ''}</span>
     </>
   )
