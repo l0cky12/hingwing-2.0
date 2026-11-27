@@ -39,7 +39,7 @@ beforeEach(() => {
 describe('the Appearance section of Settings', () => {
   it('sits between Connection and Sidebar, with a Theme row offering System, Light and Dark', () => {
     const html = render('system')
-    expect(Array.from(html.matchAll(/<h3 [^>]*>([^<]*)<\/h3>/g), ([, heading]) => heading)).toEqual(['Connection', 'Appearance', 'Sidebar', 'Keyboard shortcuts'])
+    expect(Array.from(html.matchAll(/<h3 [^>]*>([^<]*)<\/h3>/g), ([, heading]) => heading)).toEqual(['Connection', 'Appearance', 'Sidebar', 'Skills', 'Keyboard shortcuts'])
     const theme = seen.segmented.find(control => labelOf(html, control.labelledBy) === 'Theme')!
     expect(theme.value).toBe('system')
     expect(html).toContain('System follows your computer’s light or dark setting.')

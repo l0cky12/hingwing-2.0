@@ -3,7 +3,7 @@ import {
   type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
-  type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
+  type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type Target, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 
 /** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
@@ -120,6 +120,8 @@ export interface AppTopics {
   readonly groupChat: GroupChat | null
   /** Which bots are working, waiting on the user, or hold a reply not yet seen. */
   readonly activity: BotActivities
+  /** The skills of the bot `open` shows. Hermes is asked only while a window watches it. */
+  readonly skills: SkillLibrary
   readonly preview: Preview
   readonly mode: Mode
   readonly theme: Theme
@@ -127,7 +129,7 @@ export interface AppTopics {
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, preview: true, mode: true, theme: true, snoozes: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, skills: true, preview: true, mode: true, theme: true, snoozes: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -494,6 +496,14 @@ export const validators: Validators = {
     const edit = editOf(raw.edit)
     const revision = revisionOf(raw.revision)
     return bot && edit && revision !== undefined ? { do: 'editBot', bot, edit, revision } : null
+  },
+  setSkill: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return (raw.bot === null || bot !== null) && filled(raw.name) && typeof raw.enabled === 'boolean' ? { do: 'setSkill', bot, name: raw.name, enabled: raw.enabled } : null
+  },
+  skillText: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return (raw.bot === null || bot !== null) && filled(raw.name) ? { do: 'skillText', bot, name: raw.name } : null
   },
   removeBotPicture: raw => {
     const bot = botIdOf(raw.bot)

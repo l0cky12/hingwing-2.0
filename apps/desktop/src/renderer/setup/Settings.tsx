@@ -5,6 +5,7 @@ import { COMMAND_KEY } from '../keys'
 import { run, useTopic } from '../store'
 import { Bubble, ConnectionCard, Monitor, Moon, People, Segmented, Sun, type Segment } from './ConnectionCard'
 import type { CardSetup } from './screens'
+import { Skills } from './Skills'
 
 const SIDEBAR: readonly Segment<Mode>[] = [
   { value: 'bots', label: 'Bots', icon: <People /> },
@@ -81,6 +82,10 @@ export function Settings({ setup, mode, theme, onRequestClose }: { readonly setu
                 </div>
               </div>
             </div>
+          </section>
+          <section className="group" aria-labelledby={`${ids}-skills`}>
+            <h3 id={`${ids}-skills`}>Skills</h3>
+            <Skills />
           </section>
           <section className="group short" aria-labelledby={`${ids}-keys`}>
             <h3 id={`${ids}-keys`}>Keyboard shortcuts</h3>
