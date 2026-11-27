@@ -534,6 +534,7 @@ export type PromptState =
   | { readonly s: 'sending'; readonly reply: PromptReply }
   | { readonly s: 'answered'; readonly reply: PromptReply | null } // null: answered from another client
   | { readonly s: 'withdrawn' } // Hermes cancelled it, or the turn ended
+  | { readonly s: 'expired' } // its deadline passed with no answer, so Hermes ran nothing (tools/approval.py:1120-1123)
 
 export type NoticeItem =
   /** Hermes's own words. */

@@ -9,7 +9,7 @@ type Props = Parameters<typeof Turn>[0]
 
 const turn = (rowId: number | null): TurnView => ({ key: 't1', time: null, request: 'Check the servers', attachments: [], rowId, tokens: null, reactions: null, nodes: [], end: { kind: 'done', words: 'Done' } })
 const props = (more: Partial<Props>): Props => ({
-  turn: turn(3), open: NONE_OPEN, onToggle: () => {}, onAnswer: async () => undefined, canEdit: true, showsRegenerate: false, canRegenerate: false,
+  turn: turn(3), open: NONE_OPEN, onToggle: () => {}, onAnswer: async () => undefined, onAskAgain: async () => false, canEdit: true, showsRegenerate: false, canRegenerate: false,
   canBranch: true, onEdit: () => {}, onRegenerate: () => {}, onBranch: () => {}, onNewChat: () => {}, versions: [], onVersion: () => {}, canReact: true, onReact: () => {}, helpers: null, ...more
 })
 const draw = (more: Partial<Props>) => renderToStaticMarkup(<Turn {...props(more)} />)

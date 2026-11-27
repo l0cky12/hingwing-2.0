@@ -62,6 +62,10 @@ function fields(view: ThreadView, changing: Changing): Field[] {
           if (card.state === 'answered') {
             add(node.key, 'words', card.words)
             if (card.command !== null) add(node.key, 'command', card.command)
+          } else if (card.state === 'expired') {
+            add(node.key, 'heading', card.heading)
+            if (card.command !== null) add(node.key, 'command', card.command)
+            add(node.key, 'words', card.words)
           } else {
             add(node.key, 'heading', card.heading)
             if (card.command !== null) add(node.key, 'command', card.command)

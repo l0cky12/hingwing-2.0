@@ -1303,6 +1303,21 @@ describe('what Hermes says', () => {
     expect(settled.content.history[0]?.items).toMatchObject([{ kind: 'prompt', state: { s: 'withdrawn' }, deadline: null }])
   })
 
+  it('marks a prompt that Hermes closes after its deadline, with no answer, as expired, and one it closes before as before', () => {
+    const asked: SessionEvent = { type: 'prompt.opened', id: promptId('p1'), generation: generation(1), ask: APPROVAL, timeoutS: 60 }
+    const waiting = feed(live(), event(1, started('t1')), event(2, asked, 1, EPOCH, 5_000))
+    const settledAt = (at: number) => feed(waiting, event(3, { type: 'prompt.settled', id: promptId('p1') }, 1, EPOCH, at))
+    expect(openItems(settledAt(65_000))).toMatchObject([{ kind: 'prompt', state: { s: 'expired' } }])
+    expect(openItems(settledAt(64_999))).toMatchObject([{ kind: 'prompt', state: { s: 'answered', reply: null } }])
+    const endedAt = (at: number) => feed(waiting, event(3, ended(COMPLETE), 1, EPOCH, at)).content.history[0]?.items
+    expect(endedAt(70_000)).toMatchObject([{ kind: 'prompt', state: { s: 'expired' }, deadline: null }])
+    expect(endedAt(10_000)).toMatchObject([{ kind: 'prompt', state: { s: 'withdrawn' } }])
+    const cancelled = feed(waiting, event(3, { type: 'prompts.cancelled', ids: [promptId('p1')] }, 1, EPOCH, 70_000))
+    expect(openItems(cancelled)).toMatchObject([{ kind: 'prompt', state: { s: 'expired' } }])
+    const sent = feed(waiting, { in: 'local', action: { did: 'answer', promptId: promptId('p1'), reply: { kind: 'choice', value: 'once' } } }, event(3, ended(COMPLETE), 1, EPOCH, 70_000))
+    expect(sent.content.history[0]?.items).toMatchObject([{ kind: 'prompt', state: { s: 'withdrawn' } }])
+  })
+
   it('gives a prompt found in a snapshot no deadline', () => {
     const state = feed(emptyTracked('s1' as SessionId), { in: 'attach' }, {
       in: 'attached', attempt: 1, replay: null,
