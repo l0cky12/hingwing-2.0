@@ -10,8 +10,7 @@ import { activeIn, comebackOf, paletteOf, step, type PaletteItem, type PaletteVi
 const canHoldFocus = (element: Element | null): element is HTMLElement =>
   element instanceof HTMLElement && element !== document.body && element.isConnected && element.closest('[hidden]') === null
   && element.checkVisibility() && !element.matches(':disabled')
-/** Settings hides the chat's composer. Its connection card's Change takes focus there, or the Settings heading while the editor is open. */
-const FALLBACKS = ['.settings .change', '.settings > h2', '.composer textarea']
+const FALLBACKS = ['.settings .change', '.settings-head > h1', '.composer textarea']
 const fallbackFocus = () => FALLBACKS.map(selector => document.querySelector(selector)).find(canHoldFocus) ?? null
 
 function detailOf(item: PaletteItem, now: number): string | null {

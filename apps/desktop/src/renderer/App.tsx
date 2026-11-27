@@ -96,7 +96,7 @@ function ChatWindow({ hidden, settings, target, mode, theme }: ChatWindowProps) 
   const switcher = <ModeSwitch mode={mode} onPick={pick} />
   const paned = preview?.state === 'open' && settings === null
   return (
-    <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined}>
+    <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined} data-settings={settings !== null || undefined}>
       {mode === 'bots' && <BotsSidebar head={switcher} />}
       {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} />}
       <div key="screen" className="screen" hidden={settings !== null}>
