@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -164,6 +164,16 @@ describe('loadFixture', () => {
     expect(() => loadFixture(clash)).toThrow(`${clash}:1: "configureClash" must be the title another client writes`)
   })
 
+  it('reads the memory entries a learning call answers, and refuses any other shape', () => {
+    const memory = { entries: [{ file: 'MEMORY.md', text: 'Prefers short answers.' }, { file: 'USER.md', text: 'Lives in Lisbon.' }], limits: { memory: 40 } }
+    expect(loadFixture(write([{ ...header, memory }])).header.memory).toEqual(memory)
+    expect(loadFixture(write([header])).header).not.toHaveProperty('memory')
+    for (const value of [{ entries: [{ file: 'NOTES.md', text: 'x' }] }, { entries: [{ file: 'MEMORY.md', text: ' ' }] }, { entries: [], limits: { disk: 1 } }, { entries: [], limits: { memory: 0 } }]) {
+      const path = write([{ ...header, memory: value }])
+      expect(() => loadFixture(path)).toThrow(`${path}:1: "memory" must be { entries, limits? } with each entry { file: "MEMORY.md" or "USER.md", text } and limits { memory?, user? }`)
+    }
+  })
+
   it('reads what image.generate, llm.oneshot and the pet calls answer and the words a picture write fails with, and refuses any other shape', () => {
     const images = { available: true, picture: 'data:image/png;base64,iVBORw0K', delay_ms: 1200 }
     const pets = { pets: [{ slug: 'tabby' }], thumbs: { tabby: 'data:image/png;base64,iVBORw0K' } }
@@ -177,9 +187,26 @@ describe('loadFixture', () => {
       ['pets', { pets: [], thumbs: { tabby: 7 } }, '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'],
       ['assetFails', ' ', '"assetFails" must be the words a failed write gives'],
       ['oneshot', { text: 7 }, '"oneshot" must be { text?, error?, delay_ms? }'],
-      ['oneshot', { delay_ms: 'soon' }, '"oneshot" must be { text?, error?, delay_ms? }']
+      ['oneshot', { delay_ms: 'soon' }, '"oneshot" must be { text?, error?, delay_ms? }'],
+      ['connectors', { catalog: [], accounts: [], signInUrl: 'not a url' }, '"connectors" must be { catalog, accounts, signInUrl } with a unique slug on every app and an http(s) sign-in page']
     ] as const) {
       const path = write([{ ...header, [key]: value }])
+      expect(() => loadFixture(path)).toThrow(`${path}:1: ${words}`)
+    }
+  })
+
+  it('reads a connectors board and leaves it off a header that has none', () => {
+    const connectors = JSON.parse(readFileSync(fileURLToPath(new URL('../../../fixtures/connectors/two.json', import.meta.url)), 'utf8'))
+    expect(loadFixture(write([{ ...header, connectors }])).header.connectors).toEqual(connectors)
+    expect(loadFixture(write([header])).header).not.toHaveProperty('connectors')
+  })
+
+  it("reads each profile's password managers, and refuses a manager it does not know or a seed of another shape", () => {
+    const vault = { default: { bitwarden: { installed: true, password: 'pw', logins: ['github.com'] } }, research: {} }
+    expect(loadFixture(write([{ ...header, vault }])).header.vault).toEqual(vault)
+    const words = '"vault" must map a profile to { onepassword?, bitwarden? }, each { installed, enabled?, unlocked?, logins?, password?, refuses?, token?, listFails? }'
+    for (const value of [{ default: { keeper: { installed: true } } }, { default: { bitwarden: { enabled: true } } }, { default: { bitwarden: { installed: true, master: 'pw' } } }]) {
+      const path = write([{ ...header, vault: value }])
       expect(() => loadFixture(path)).toThrow(`${path}:1: ${words}`)
     }
   })

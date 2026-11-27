@@ -15,6 +15,7 @@ import { nameProblem } from './bot-form'
 import type { LookCalls } from './LookPicker'
 import { NewBotForm } from './NewBotForm'
 import { DeleteDialog } from './DeleteDialog'
+import { MemoryDialog } from './MemoryDialog'
 import { isMenuKey, type Box, type Opener } from '../chrome/popup-menu'
 import { anchorOf, botMenuOf, DELETE_WORDS, deleteRefusal, groupMenuOf, sameOwner, type GroupAction, type MenuAction, type MenuOwner, type OpenMenu } from './bot-menu'
 import { afterGroupOf, elementIn, fallbackOf, focusIn, moreOf, openerTarget, rowOf, stayedIn, type FocusTarget } from './focus'
@@ -37,7 +38,7 @@ const LOOKS: LookCalls = {
   petPicture: ({ slug, url }) => run({ do: 'petPicture', slug, url })
 }
 
-export function BotsSidebar({ head }: { readonly head: ReactNode }) {
+export function BotsSidebar({ head, foot = null }: { readonly head: ReactNode; readonly foot?: ReactNode }) {
   const open = useTopic('open')
   return (
     <BotsPanel
@@ -57,6 +58,7 @@ export function BotsSidebar({ head }: { readonly head: ReactNode }) {
       onPickPicture={pickBotPicture}
       onRemovePicture={bot => run({ do: 'removeBotPicture', bot })}
       looks={LOOKS}
+      foot={foot}
     />
   )
 }
@@ -82,6 +84,7 @@ interface BotsPanelProps extends EditorCalls {
   readonly onDeleteGroup: (group: GroupId) => Promise<CommandOutcome>
   readonly onModels: () => Promise<CommandOutcome<ModelMenu>>
   readonly looks: LookCalls
+  readonly foot?: ReactNode
 }
 
 const icon = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 } as const
@@ -240,7 +243,7 @@ function useMarks({ bots, onMark, onRefused, onLanded }: MarkCalls) {
 const NO_BOX: Box = { left: 0, top: 0, right: 0, bottom: 0 }
 
 export function BotsPanel({
-  head = <h2>Bots</h2>, bots, open, link, groups, activity, drafts, onOpen, onNewChat, onNew, onMark, onCreate, onCreateGroup, onOpenGroup, onRenameGroup, onDeleteGroup, onModels, looks, ...editor
+  head = <h2>Bots</h2>, bots, open, link, groups, activity, drafts, onOpen, onNewChat, onNew, onMark, onCreate, onCreateGroup, onOpenGroup, onRenameGroup, onDeleteGroup, onModels, looks, foot = null, ...editor
 }: BotsPanelProps) {
   const [refused, setRefused] = useState<string | null>(null)
   const [form, setForm] = useState<{ readonly models: ModelMenu | 'loading' } | null>(null)
@@ -249,6 +252,7 @@ export function BotsPanel({
   const [made, setMade] = useState<BotCreated | null>(null)
   const [editing, setEditing] = useState<BotDetails | null>(null)
   const [deleting, setDeleting] = useState<Bot | null>(null)
+  const [memory, setMemory] = useState(false)
   const [editingGroup, setEditingGroup] = useState<GroupRowView | null>(null)
   const [deletingGroup, setDeletingGroup] = useState<GroupRowView | null>(null)
   /** A group whose delete Hermes has not answered yet, and where focus goes once its row leaves. */
@@ -344,6 +348,7 @@ export function BotsPanel({
     open: bot => void pick(bot.id),
     new: bot => void onNew(bot.id).then(outcome => setRefused(outcome.ok ? null : outcome.refusal.message)),
     edit: bot => void describe(bot.id),
+    memory: () => setMemory(true),
     pin: bot => mark(bot, 'pin'),
     unpin: bot => mark(bot, 'unpin'),
     hide: bot => mark(bot, 'hide'),
@@ -401,7 +406,7 @@ export function BotsPanel({
     const row = rows.find(held => held.bot.id === owner.bot)
     return row && (
       <RowMenu
-        key={key} name={row.bot.name} items={botMenuOf(row.place)} more={moreOf(owner)} anchor={() => anchorOf(opener, row.place, measure(owner))}
+        key={key} name={row.bot.name} items={botMenuOf(row.place, bots?.state === 'listed' && bots.roster.featured?.id === row.bot.id)} more={moreOf(owner)} anchor={() => anchorOf(opener, row.place, measure(owner))}
         onChoose={action => choose(row.bot, action)} onClose={closeMenu}
       />
     )
@@ -497,6 +502,7 @@ export function BotsPanel({
             {made.warnings.map((warning, at) => <span key={at}>Hermes made {made.bot}, with a warning: {warning}</span>)}
           </p>
         )}
+        {foot}
       </aside>
       {form !== null && (
         <NewBotForm problemOf={name => nameProblem(name, bots)} models={form.models} looks={looks} onCreate={create} onClose={() => setForm(null)} />
@@ -508,6 +514,13 @@ export function BotsPanel({
           {...editor}
           onClose={() => closeDialog(() => setEditing(null), { to: 'row', bot: editing.bot })}
         />
+      )}
+      {memory && (
+        <MemoryDialog onClose={() => {
+          const bot = bots?.state === 'listed' ? bots.roster.featured?.id : undefined
+          if (bot === undefined) setMemory(false)
+          else closeDialog(() => setMemory(false), { to: 'row', bot })
+        }} />
       )}
       {deleting !== null && (
         <DeleteDialog

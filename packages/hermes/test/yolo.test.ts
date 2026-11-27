@@ -93,6 +93,16 @@ describe('the bot\'s approval mode', () => {
     expect(last.session.tuning).toMatchObject({ approvals: 'smart', yolo: false })
   })
 
+  it.each(['off', 'manual'] as const)('moves a bot on Smart to %s with one config.set of approval_mode', async to => {
+    const { last, result } = await playWith(withYolo({ approvals: 'smart' }), ({ hermes, session }) =>
+      session.sync.state === 'live' && session.tuning.approvals === 'smart' && session.run.state === 'idle' && session.history.length === 0
+        ? hermes.run({ do: 'tune', sessionId: SESSION, set: 'approvals', to })
+        : null)
+    expect(await result).toEqual({ ok: true, value: undefined })
+    expect(sets(last).map(call => call.params)).toEqual([{ session_id: SESSION, key: 'approval_mode', value: to }])
+    expect(last.session.tuning).toMatchObject({ approvals: to, yolo: false })
+  })
+
   it('names no mode when Hermes refuses the read', async () => {
     const { seen } = await watched({})
     expect(live(seen)?.tuning.approvals).toBeNull()

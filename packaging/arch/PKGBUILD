@@ -4,7 +4,7 @@ pkgrel=1
 pkgdesc='Desktop client for the Hermes agent gateway'
 arch=('x86_64')
 url='https://github.com/l0cky12/hingwing-2.0'
-license=('LicenseRef-all-rights-reserved' 'MIT' 'BSD-3-Clause')
+license=('LicenseRef-all-rights-reserved' 'MIT' 'BSD-3-Clause' 'LicenseRef-SCOWL')
 depends=('alsa-lib' 'at-spi2-core' 'bash' 'cairo' 'dbus' 'expat' 'glib2' 'glibc' 'gtk3' 'hicolor-icon-theme'
          'libcups' 'libgcc' 'libx11' 'libxcb' 'libxcomposite' 'libxdamage' 'libxext' 'libxfixes'
          'libxkbcommon' 'libxrandr' 'mesa' 'nspr' 'nss' 'openssh' 'pango' 'systemd-libs')
@@ -55,7 +55,9 @@ package() {
   cat > "$licenses/LICENSE.highwing" <<'NOTICE'
 Highwing has no license file in its source repository. Its authors reserve all rights.
 Electron is under the MIT license (LICENSE.electron). Chromium's licenses are in LICENSES.chromium.html.
+The bundled en-US spell check dictionary is from SCOWL and Hunspell. Its license is in LICENSE.hunspell-en_US.
 NOTICE
+  install -Dm644 "$srcdir/$pkgname/apps/desktop/dictionaries/README_en_US.txt" "$licenses/LICENSE.hunspell-en_US"
 
   local packaging="$srcdir/$pkgname/packaging/arch"
   install -Dm755 "$packaging/highwing.sh" "$pkgdir/usr/bin/$pkgname"
