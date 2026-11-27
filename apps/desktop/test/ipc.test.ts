@@ -208,6 +208,7 @@ describe('validators', () => {
   it("keep a bot's edited fields as sent, with the revision it was read at, and a window's removal of a picture", () => {
     expect(parseCommand({ do: 'describeBot', bot: 'rae', extra: 1 })).toEqual({ do: 'describeBot', bot: 'rae' })
     expect(parseCommand({ do: 'listRoutines', bot: 'rae', extra: 1 })).toEqual({ do: 'listRoutines', bot: 'rae' })
+    expect(parseCommand({ do: 'controlRoutine', bot: 'rae', routine: 'a1', action: 'delete', extra: 1 })).toEqual({ do: 'controlRoutine', bot: 'rae', routine: 'a1', action: 'delete' })
     expect(parseCommand({ do: 'markBot', bot: 'rae', mark: 'hide', extra: 1 })).toEqual({ do: 'markBot', bot: 'rae', mark: 'hide' })
     expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: 'rae', draftId: 'd1', upFront: true }, upFront: true }))
       .toEqual({ do: 'open', ref: { kind: 'new', bot: 'rae', draftId: 'd1' }, upFront: true })
@@ -364,6 +365,8 @@ describe('validators', () => {
     ['the tool servers of a bot with a blank name', { do: 'toolServers', bot: ' ' }],
     ['the tool servers of no bot named at all', { do: 'toolServers' }],
     ['the routines of a bot with no name', { do: 'listRoutines', bot: '' }],
+    ['a routine control that names no routine', { do: 'controlRoutine', bot: 'rae', routine: '', action: 'pause' }],
+    ['a routine control Hermes has no action for', { do: 'controlRoutine', bot: 'rae', routine: 'a1', action: 'run' }],
     ['an edit that changes nothing', { do: 'editBot', bot: 'rae', edit: {}, revision: 2 }],
     ['a mark that is not one of the four', { do: 'markBot', bot: 'rae', mark: 'flip' }],
     ['an up-front open of a bot\'s chat', { do: 'open', ref: { kind: 'bot', bot: 'rae' }, upFront: true }],
@@ -553,7 +556,7 @@ describe('validators', () => {
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'accountUsage', 'addToolServer', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
-      'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'denyRules', 'describeBot', 'discard',
+      'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'controlRoutine', 'createBot', 'createGroup', 'deleteGroup', 'denyRules', 'describeBot', 'discard',
       'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
       'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'quit', 'react', 'readMessages', 'reconnect',
       'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',

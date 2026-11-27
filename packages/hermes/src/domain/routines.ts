@@ -17,3 +17,7 @@ export interface Routine {
   /** ISO 8601, as Hermes stores it. null: Hermes has no next run for it. */
   readonly nextRunAt: string | null
 }
+
+/** What a person can do to a routine from Highwing. Each is one `cron.manage` action. */
+export const ROUTINE_ACTIONS = ['pause', 'resume', 'delete'] as const
+export type RoutineAction = typeof ROUTINE_ACTIONS[number]

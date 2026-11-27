@@ -1047,6 +1047,8 @@ export class ScriptedGateway {
   /** profile -> its installed skills, each turned on or off as `profiles.configure` last left it. */
   private readonly skills: Map<string, { readonly name: string; readonly description: string; readonly body: string; enabled: boolean }[]>
   private skillsElsewhere: Fixture['header']['skillsElsewhere']
+  /** profile -> its cron store. The home profile's is `jobs`. */
+  private readonly cronStores: Map<string, Obj[]>
   private readonly pictures = new Map<string, { readonly mime: string; readonly size: number; readonly data: string }>()
   private memory: MemoryBook | null = null
   private readonly thumbsRefused = new Set<string>()
@@ -1129,6 +1131,8 @@ export class ScriptedGateway {
     this.clash = clash === undefined ? undefined : typeof clash === 'string' ? { title: clash, left: 1 } : { title: clash.title, left: clash.times }
     const served = this.profiles.flatMap(row => (isText(row.name) ? [row.name] : []))
     this.jobs = fixture.header.cron === undefined ? null : fixture.header.cron.jobs.map(job => ({ ...job }))
+    // Each profile's store, with the home profile's being `jobs`, which the header's runs rewrite.
+    this.cronStores = new Map([...Object.entries(fixture.header.cron?.profiles ?? {}).map(([profile, rows]) => [profile, rows.map(row => ({ ...row }))] as const), ...(this.jobs === null ? [] : [[this.home, this.jobs] as const])])
     const board = fixture.header.connectors
     this.connectorCatalog = board === undefined ? null : board.catalog.map(row => ({ slug: row.slug, name: row.name, description: row.description, category: row.category }))
     this.connectorAccounts = board === undefined ? null : board.accounts.map(row => ({ ...row }))
@@ -2288,39 +2292,40 @@ export class ScriptedGateway {
   }
 
   /**
-   * `learning.*` (tui_gateway/methods_tools.py) is no canonical method, so like `image.generate` only a socket with the
-   * interactive grant reaches it. The handler ignores `profile` and writes the launch home. Hermes rejects the key
-   * before the handler, which the param check of a sidecar-only method does not reproduce, so the client must omit it.
-   */
-  learning(method: string, socket: Socket): MemoryBook {
-    if (this.memory === null || socket.reach === 'profile') throw unknownMethod(method)
-    return this.memory
-  }
-
-  /** `vault.*` reaches only the legacy handlers, as `profiles.create` does, each in the profile the call names. */
-  vaultCall(socket: Socket, method: string, params: Obj, routed: string): unknown {
-    if (this.vault === null || socket.reach === 'profile') throw unknownMethod(method)
-    return this.vault.call(method, params, routed)
-  }
-
-  /** `mcp.servers.*` reach only the legacy handlers, as `profiles.create` does, each in the profile the call names. */
-  toolServers(socket: Socket, method: string, params: Obj, routed: string): unknown {
-    if (this.mcp === null || socket.reach === 'profile') throw unknownMethod(method)
-    return this.mcp.call(method, params, routed)
-  }
-
-  /**
-   * `cron.manage` list (tui_gateway/methods_tools.py:1311-1325), which a socket with no interactive grant does not reach. It lists
-   * the store of the profile the frame names, and paused jobs only when asked for. The first list starts the header's runs.
+   * `cron.manage` (tui_gateway/methods_tools.py:1311-1325), which a socket with no interactive grant does not reach. A list names
+   * the store of the profile the frame names, and leaves paused jobs out unless asked for them. The first list starts the header's
+   * runs. `pause`, `resume` and `remove` find the job by id in the store, change it as the cron tool does
+   * (tools/cronjob_tools.py:765-779, 1030-1034), and are followed by the watcher's `cron.changed`.
    */
   cron(socket: Socket, params: Obj, routed: string): unknown {
     const { cron } = this.fixture.header
     if (cron === undefined || this.jobs === null || socket.reach === 'profile') throw unknownMethod('cron.manage')
-    if ((params.action ?? 'list') !== 'list') throw new Refused('unknown cron action', { code: 4016, message: `unknown cron action: ${String(params.action)}` })
-    this.startRuns(this.jobs)
-    const store = cron.unscoped === true || routed === this.home ? this.jobs : cron.profiles?.[routed] ?? []
-    const rows = store.filter(row => params.include_disabled === true || !(row.state === 'paused' || row.enabled === false)).map(row => ({ ...row }))
-    return { success: true, count: rows.length, jobs: rows, ...(cron.unscoped === true || !isText(params.profile) ? {} : { scoped: params.profile }) }
+    const store = this.cronStores.get(cron.unscoped === true ? this.home : routed) ?? []
+    const action = params.action ?? 'list'
+    if (action === 'list') {
+      this.startRuns(this.jobs)
+      const rows = store.filter(row => params.include_disabled === true || !(row.state === 'paused' || row.enabled === false)).map(row => ({ ...row }))
+      return { success: true, count: rows.length, jobs: rows, ...(cron.unscoped === true || !isText(params.profile) ? {} : { scoped: params.profile }) }
+    }
+    if (action !== 'pause' && action !== 'resume' && action !== 'remove') throw new Refused('unknown cron action', { code: 4016, message: `unknown cron action: ${String(action)}` })
+    const at = store.findIndex(row => row.job_id === params.name)
+    const job = store[at]
+    if (job === undefined) return { success: false, error: `Job with ID or name '${String(params.name)}' not found. Use cronjob(action='list') to inspect jobs.` }
+    this.cronChanged()
+    if (action === 'remove') {
+      store.splice(at, 1)
+      return { success: true, message: `Cron job '${String(job.name)}' removed.`, removed_job: { id: job.job_id, name: job.name, schedule: job.schedule } }
+    }
+    const paused = action === 'pause'
+    Object.assign(job, { enabled: !paused, state: paused ? 'paused' : 'scheduled' })
+    return { success: true, job: { ...job } }
+  }
+
+  /** `cron.changed` (tui_gateway/change_watcher.py:460) to every socket, after the reply that caused it, as the watcher's tick is. */
+  private cronChanged(): void {
+    this.options.clock.setTimeout(() => {
+      for (const socket of this.sockets) socket.peer.write({ jsonrpc: '2.0', method: 'event', params: { type: 'cron.changed', payload: {} } })
+    }, 0)
   }
 
   /** `pet.gallery` (tui_gateway/methods_session.py:1467-1495), which a socket with no interactive grant does not reach. */

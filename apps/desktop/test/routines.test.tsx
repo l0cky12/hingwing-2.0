@@ -2,8 +2,9 @@ import type { Routine, RoutineId } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { RoutinesList } from '../src/renderer/bots/Routines'
-import { routinesViewOf, scheduleWords } from '../src/renderer/bots/routines-view'
+import { afterControl, routinesViewOf, scheduleWords } from '../src/renderer/bots/routines-view'
 
+const NONE = { busy: null, onToggle: () => {}, onDelete: () => {} }
 const routine = (id: string, name: string, schedule: string, paused = false): Routine => ({ id: id as RoutineId, name, schedule, paused, nextRunAt: null })
 
 describe('scheduleWords', () => {
@@ -48,14 +49,22 @@ describe('scheduleWords', () => {
 })
 
 describe('the Routines tab', () => {
-  it('lists each routine by name with when it runs, or Paused', () => {
+  it('lists each routine by name with when it runs, or Paused, with Pause or Resume and Delete', () => {
     const view = routinesViewOf({ ok: true, value: [routine('a1', 'Morning digest', '0 9 * * 1-5'), routine('b2', 'Backup check', 'every 60m', true)] }, 'Research')
-    const html = renderToStaticMarkup(<RoutinesList view={view} />)
+    const html = renderToStaticMarkup(<RoutinesList view={view} {...NONE} />)
     expect(html).toContain('<ul class="routines" aria-label="Routines">')
-    expect([...html.matchAll(/<li class="routine"><span class="routine-name">([^<]*)<\/span><span class="routine-when">([^<]*)<\/span><\/li>/g)].map(([, name, when]) => [name, when])).toEqual([
-      ['Morning digest', 'Weekdays at 09:00'],
-      ['Backup check', 'Paused']
+    const rows = [...html.matchAll(/<li class="routine" aria-busy="false"><span class="routine-name">([^<]*)<\/span><span class="routine-when">([^<]*)<\/span><span class="routine-controls">(.*?)<\/span><\/li>/g)]
+    expect(rows.map(([, name, when, controls]) => [name, when, [...controls!.matchAll(/aria-label="([^"]*)"/g)].map(([, label]) => label)])).toEqual([
+      ['Morning digest', 'Weekdays at 09:00', ['Pause Morning digest', 'Delete Morning digest…']],
+      ['Backup check', 'Paused', ['Resume Backup check', 'Delete Backup check…']]
     ])
+  })
+
+  it('disables every control while one is on its way to Hermes', () => {
+    const view = routinesViewOf({ ok: true, value: [routine('a1', 'Morning digest', 'every 60m'), routine('b2', 'Backup check', 'every 60m')] }, 'Research')
+    const html = renderToStaticMarkup(<RoutinesList view={view} {...NONE} busy={'a1' as RoutineId} />)
+    expect(html).toContain('<li class="routine" aria-busy="true">')
+    expect(html.match(/<button[^>]*disabled=""/g)).toHaveLength(4)
   })
 
   it('says how to make one by asking the bot when it has none', () => {
@@ -66,7 +75,25 @@ describe('the Routines tab', () => {
 
   it("shows Hermes's refusal as an alert, and a loading line before the first answer", () => {
     const refused = routinesViewOf({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't show routines to Highwing." } }, 'Research')
-    expect(renderToStaticMarkup(<RoutinesList view={refused} />)).toContain('role="alert">This Hermes can&#x27;t show routines to Highwing.</p>')
-    expect(renderToStaticMarkup(<RoutinesList view={routinesViewOf(null, 'Research')} />)).toContain('Loading routines…')
+    expect(renderToStaticMarkup(<RoutinesList view={refused} {...NONE} />)).toContain('role="alert">This Hermes can&#x27;t show routines to Highwing.</p>')
+    expect(renderToStaticMarkup(<RoutinesList view={routinesViewOf(null, 'Research')} {...NONE} />)).toContain('Loading routines…')
+  })
+})
+
+describe('a control of a routine', () => {
+  const LISTED = { ok: true, value: [routine('a1', 'Morning digest', 'every 60m'), routine('b2', 'Backup check', 'every 60m')] } as const
+
+  it("puts Hermes's answer in the row, and takes a deleted routine out", () => {
+    const paused = routine('a1', 'Morning digest', 'every 60m', true)
+    expect(afterControl(LISTED, 'a1' as RoutineId, { ok: true, value: paused })).toEqual({ listed: { ok: true, value: [paused, LISTED.value[1]] }, said: null })
+    expect(afterControl(LISTED, 'a1' as RoutineId, { ok: true, value: null })).toEqual({ listed: { ok: true, value: [LISTED.value[1]] }, said: null })
+  })
+
+  it("keeps the list and says why when Hermes refused, and takes the list away when Hermes can't change routines", () => {
+    expect(afterControl(LISTED, 'a1' as RoutineId, { ok: false, refusal: { kind: 'rejected', message: "Hermes couldn't pause that routine: busy" } })).toEqual({
+      listed: LISTED, said: "Hermes couldn't pause that routine: busy"
+    })
+    const unsupported = { ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't show routines to Highwing." } } as const
+    expect(afterControl(LISTED, 'a1' as RoutineId, unsupported)).toEqual({ listed: unsupported, said: null })
   })
 })

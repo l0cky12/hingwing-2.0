@@ -12,8 +12,9 @@ export const BOT_EDIT_CALLS: Pick<BotEditorProps, 'onDescribe' | 'onEdit' | 'onP
   onRemovePicture: bot => run({ do: 'removeBotPicture', bot })
 }
 
-const ROUTINE_CALLS: Pick<RoutinesProps, 'onList'> = {
-  onList: bot => run({ do: 'listRoutines', bot })
+const ROUTINE_CALLS: Pick<RoutinesProps, 'onList' | 'onControl'> = {
+  onList: bot => run({ do: 'listRoutines', bot }),
+  onControl: (bot, routine, action) => run({ do: 'controlRoutine', bot, routine, action })
 }
 
 type Panel =
