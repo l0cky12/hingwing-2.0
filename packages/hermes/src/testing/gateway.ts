@@ -899,6 +899,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   ...Object.fromEntries(['list', 'status', 'add', 'test', 'remove'].map(verb => [`mcp.servers.${verb}`, ((gateway, socket, params, routed) => gateway.toolServers(socket, `mcp.servers.${verb}`, params, routed)) satisfies Handler])),
   /** tui_gateway/methods_tools.py:1939-1947 */
   'plugins.manage': (gateway, socket, params) => gateway.plugins(socket, params),
+  /** tui_gateway/methods_tools.py:234-273 */
+  'tools.list': (gateway, socket, params) => gateway.toolsets(socket, params),
   /** tui_gateway/methods_tools.py:1311-1325 */
   'cron.manage': (gateway, socket, params, routed) => gateway.cron(socket, params, routed),
   'session.mutate': (gateway, socket, params, routed) => {
@@ -2324,6 +2326,14 @@ export class ScriptedGateway {
     const rows = listed.map(plugin => ({ ...plugin, key: plugin.name, portable: false, install_dir: '', has_desktop_half: false, servers: [], tools: [] }))
     const userCount = rows.filter(row => row.source !== 'bundled').length
     return { plugins: rows, user_count: userCount, bundled_count: rows.length - userCount }
+  }
+
+  /** `tools.list` reaches only the legacy handler. Every chat, and none, has the header's toolsets, as a profile with no toolsets of its own does. */
+  toolsets(socket: Socket, params: Obj): unknown {
+    const listed = this.fixture.header.tools
+    if (listed === undefined || socket.reach === 'profile') throw unknownMethod('tools.list')
+    if (params.session_id !== undefined && typeof params.session_id !== 'string') throw new Refused('invalid_params')
+    return { toolsets: listed.map(({ tools, ...row }) => ({ ...row, tool_count: tools.length, tools: [...tools] })) }
   }
 
   /**

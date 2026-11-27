@@ -171,6 +171,10 @@ describe('validators', () => {
     expect(parseCommand({ do: 'plugins', bot: null, extra: 1 })).toEqual({ do: 'plugins', bot: null })
     expect(parseCommand({ do: 'plugins', bot: 'research' })).toEqual({ do: 'plugins', bot: 'research' })
     expect(parseCommand({ do: 'plugins', bot: ' ' })).toBeNull()
+    expect(parseCommand({ do: 'tools', sessionId: null, extra: 1 })).toEqual({ do: 'tools', sessionId: null })
+    expect(parseCommand({ do: 'tools', sessionId: 's-1' })).toEqual({ do: 'tools', sessionId: 's-1' })
+    expect(parseCommand({ do: 'tools', sessionId: ' ' })).toBeNull()
+    expect(parseCommand({ do: 'tools' })).toBeNull()
     expect(parseCommand({ do: 'connectApp', slug: ' ', bot: null, connectionId: null })).toBeNull()
     expect(parseCommand({ do: 'connectApp', slug: 'github', bot: null })).toBeNull()
     expect(parseCommand({ do: 'appSignIn', opId: '', bot: null })).toBeNull()
@@ -560,7 +564,7 @@ describe('validators', () => {
       'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'plugins', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
       'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
       'sendToGroup', 'setAccent', 'setMode', 'setNotice', 'setOnClose', 'setSendKey', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
-      'takeControl', 'toolServers', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'versions'
+      'takeControl', 'toolServers', 'tools', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'versions'
     ])
   })
 })

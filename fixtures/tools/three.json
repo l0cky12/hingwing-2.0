@@ -1,0 +1,5 @@
+[
+  { "name": "browser", "description": "Browse the web: open pages, click, type and read them.", "enabled": true, "tools": ["browser_navigate", "browser_snapshot", "browser_click", "browser_type", "browser_scroll", "browser_back", "browser_press", "browser_get_images", "browser_vision"] },
+  { "name": "file", "description": "Read, write, search and patch files.", "enabled": true, "tools": ["read_file", "write_file", "patch", "search_files"] },
+  { "name": "image_gen", "description": "Draw pictures from a description.", "enabled": false, "tools": ["image_generate"] }
+]

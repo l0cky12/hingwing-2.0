@@ -3,13 +3,15 @@ import { GENERATED_MAX_BYTES, MARK_SETS, PICTURE_RULE, type BotCreated, type Bot
 import type { Command, ModelMenu, Outcome, Refusal } from './domain/command'
 import type { BotManagers } from './domain/passwords'
 import type { Plugin } from './domain/plugins'
+import type { Toolset } from './domain/toolsets'
+import type { SessionId } from './domain/session'
 import type { Skill } from './domain/skills'
 import type { Added, ServerSetup, Tested, ToolServer } from './domain/tool-servers'
 import { NOT_CONNECTED } from './open'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
 import {
   descriptionOf, parseBotAt, parseBotManagers, parseBotRecord, parseCatalog, parseConfigured, parseCreated, parseDenyRules, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets,
-  parsePicture, parsePlugins, parseSkillStates, parseSkillText, parseTested, parseToolServers, type Configured
+  parsePicture, parsePlugins, parseSkillStates, parseSkillText, parseTested, parseToolsets, parseToolServers, type Configured
 } from './wire/parse'
 
 export type Wire = Pick<Connection, 'call' | 'as'>
@@ -342,6 +344,11 @@ const PLUGIN_REASONS: Reasons = { [METHOD_NOT_FOUND]: () => ({ kind: 'unsupporte
 
 export const listPlugins = (conn: Wire, bot: BotId | null): Promise<Outcome<readonly Plugin[]>> =>
   guarded(PLUGIN_REASONS, async () => ({ ok: true, value: parsePlugins(await scoped(conn, bot).call('plugins.manage', { action: 'list' })) }))
+
+const TOOLSET_REASONS: Reasons = { [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't list its tools." }) }
+
+export const listToolsets = (conn: Wire, sessionId: SessionId | null): Promise<Outcome<readonly Toolset[]>> =>
+  guarded(TOOLSET_REASONS, async () => ({ ok: true, value: parseToolsets(await conn.call('tools.list', sessionId === null ? {} : { session_id: sessionId })) }))
 
 export const removeToolServer = (conn: Wire, bot: BotId | null, name: string): Promise<Outcome<readonly ToolServer[]>> =>
   guarded(REMOVE_REASONS, async () => {

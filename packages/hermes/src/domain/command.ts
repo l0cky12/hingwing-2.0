@@ -6,6 +6,7 @@ import type { ChatRef, Unstarted } from './open'
 import type { BotManagers, ManagerName } from './passwords'
 import type { PathMatch } from './path'
 import type { Plugin } from './plugins'
+import type { Toolset } from './toolsets'
 import type { Added, ServerSetup, ToolServer } from './tool-servers'
 import type { Routine, RoutineAction, RoutineId } from './routines'
 import type { ChatVersions } from './versions'
@@ -184,6 +185,8 @@ export type Command =
   | { readonly do: 'removeToolServer'; readonly bot: BotId | null; readonly name: string }
   /** The plugins Hermes lists for `bot`, or for the launch profile for null, read on each ask. */
   | { readonly do: 'plugins'; readonly bot: BotId | null }
+  /** The toolsets Hermes has, each on or off for the chat `sessionId` names, or for the launch profile when it is null or a chat Hermes does not hold. */
+  | { readonly do: 'tools'; readonly sessionId: SessionId | null }
   /**
    * Makes the group chat, lists it in `groups` and shows it. The same draft sent again makes no second group: Hermes
    * answers a repeated id with the group it already made.
@@ -286,6 +289,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'toolServers' | 'removeToolServer' } ? readonly ToolServer[]
   : C extends { do: 'addToolServer' } ? Added
   : C extends { do: 'plugins' } ? readonly Plugin[]
+  : C extends { do: 'tools' } ? readonly Toolset[]
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
   : C extends { do: 'accountUsage' } ? AccountReport

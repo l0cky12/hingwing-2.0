@@ -23,6 +23,7 @@ import type { RelayState } from '../domain/relay'
 import type { Lease, ScreenFacts } from '../domain/screen'
 import type { Plugin } from '../domain/plugins'
 import type { ServerState, Tested, ToolServer } from '../domain/tool-servers'
+import type { Toolset } from '../domain/toolsets'
 import type { Routine, RoutineAction, RoutineId } from '../domain/routines'
 import { OWN_COMMANDS, type SlashCatalog, type SlashEntry } from '../domain/slash'
 import type { Said, TreeRow } from '../domain/versions'
@@ -37,7 +38,7 @@ import type {
   PluginsManageResult, ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, RequestCancelPayload, RollbackCheckpoint,
   RollbackDiffResult, RollbackListResult, RollbackRestoreResult, SecretRequestParams, SessionContextBreakdownResult, SessionControlDispatch,
   SessionControlSnapshot, SessionLiveInfo, SessionMutateResult, SessionStats, SessionTitlePayload, SessionUsagePayload, SideAgentCompletePayload,
-  StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload,
+  StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload, ToolsetsListResult,
   SubagentEventPayload, SudoRequestParams, TodoUpdatedPayload, ToolCompletePayload, ToolGeneratingPayload, ToolProgressPayload, ToolStartPayload, Usage,
   VaultCodeRequestParams, VaultListResult, VaultSaveLoginRequestParams, VaultSourcesResult, VaultUnlockRequestParams
 } from './contract.generated'
@@ -1526,6 +1527,20 @@ export function parsePlugins(reply: PluginsManageResult): readonly Plugin[] {
     const name = words(row.name)
     if (name === null) return []
     return [{ name, version: trimmed(row.version) ?? '', description: trimmed(row.description) ?? '', source: trimmed(row.source) ?? '', enabled: row.status === 'enabled' }]
+  })
+}
+
+/**
+ * `tools.list` (tui_gateway/methods_tools.py:234-247). Hermes reads the chat's toolsets, or the launch profile's when it holds no
+ * such session, and a profile that names no toolsets has every one on. A row with no name is dropped, and a blank tool name with it.
+ */
+export function parseToolsets(reply: ToolsetsListResult): readonly Toolset[] {
+  const rows: unknown = isObject(reply) ? reply.toolsets : undefined
+  return (Array.isArray(rows) ? rows.filter(isObject) : []).flatMap(row => {
+    const name = words(row.name)
+    if (name === null) return []
+    const tools = (Array.isArray(row.tools) ? row.tools : []).flatMap(tool => words(tool) ?? [])
+    return [{ name, description: trimmed(row.description) ?? '', tools, toolCount: isCount(row.tool_count) ? row.tool_count : tools.length, enabled: row.enabled === true }]
   })
 }
 
