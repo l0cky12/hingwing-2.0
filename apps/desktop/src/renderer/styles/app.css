@@ -107,11 +107,11 @@
 }
 
 @media (prefers-contrast: more) {
-  :root { --graphite: #43464E; --rule: #8A8D96; }
+  :root { --graphite: #43464E; --rule: #7E8189; }
 }
 
 @media (prefers-contrast: more) and (prefers-color-scheme: dark) {
-  :root { --graphite: #C2C5CC; --rule: #5E616B; }
+  :root { --graphite: #C2C5CC; --rule: #6E717B; }
 }
 
 * { box-sizing: border-box; }
@@ -200,7 +200,7 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .prose pre code :is(.hljs-title, .hljs-section) { color: var(--syn-title); }
 .prose pre code .hljs-subst { color: var(--ink); }
 .prose > :not(.code) { max-width: 66ch; }
-.prose :is(h1, h2, h3, h4, h5, h6) { margin: 18px 0 6px; font-weight: 600; line-height: 1.35; }
+.prose :is(h1, h2, h3, h4, h5, h6) { margin: 18px 0 6px; font-weight: 700; line-height: 1.35; }
 .prose :is(h1, h2) { font-size: var(--text-2xl); }
 .prose :is(h3, h4, h5, h6) { font-size: var(--text-xl); }
 .prose > :first-child { margin-top: 0; }
@@ -217,7 +217,7 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .prose table { border-collapse: collapse; line-height: 1.45; font-variant-numeric: tabular-nums; }
 .prose :is(th, td) { padding: 5px 18px 5px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
 .prose :is(th, td):last-child { padding-right: 0; }
-.prose th { font-weight: 600; border-bottom: 1.5px solid var(--graphite); }
+.prose th { font-weight: 700; border-bottom: 1.5px solid var(--graphite); }
 .prose .katex-display { margin: 6px 0; padding: 4px 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
 .prose .code { position: relative; }
 .prose .code:not(:last-child) { margin-bottom: 10px; }

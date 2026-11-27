@@ -110,7 +110,8 @@ describe('the palettes in app.css', () => {
   it.each(SCHEMES)('keeps text at 4.5:1 and edges at 3:1 in %s', (_name, scheme) => {
     const palette = paletteOf(scheme)
     const colorOf = (name: string) => palette.get(`--${name}`) ?? ''
-    const short = [...PAIRS, ...EDGES].flatMap(([fore, back, least]) => {
+    const rules = scheme.more ? ['rail', 'paper', 'sheet'].map(surface => ['rule', surface, 3] as const) : []
+    const short = [...PAIRS, ...EDGES, ...rules].flatMap(([fore, back, least]) => {
       const ratio = contrast(colorOf(fore), colorOf(back))
       return ratio >= least ? [] : [`${fore} on ${back}: ${ratio.toFixed(2)}, under ${least}`]
     })

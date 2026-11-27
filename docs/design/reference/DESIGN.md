@@ -42,7 +42,7 @@ Superseded by #205. The colors, type sizes, spacing, radii, shadows and duration
 Left aligned throughout. No chat bubbles, no cards around steps when closed.
 
 ## Review against the generic defaults
-- Was: near-black ground with one bright blue accent (default 2). Now: cool light paper, viridian signal.
+- Was: near-black ground with one bright blue accent (default 2). Now: a dark-first rail, paper and sheet with one teal signal, and the same roles in light.
 - Was: rounded identical cards for every tool row (default 4). Now: closed steps are thread nodes with no box; only an open record gets a sheet.
 - Was: ALL-CAPS section labels and middle-dot meta strings (default 5). Now: sentence-case labels, meta set as separate quiet text.
 - Was: mono for durations and badges (default 5). Now: tabular sans numerals.
