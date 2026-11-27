@@ -101,8 +101,7 @@ describe('a control of a routine', () => {
 
 const CSS = readFileSync(new URL('../src/renderer/styles/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
 
-/** What the rules outside any at-rule give `selector`, a later rule winning, as the window draws it outside forced colors. */
-function styleOf(selector: string): ReadonlyMap<string, string> {
+function topLevelStyleOf(selector: string): ReadonlyMap<string, string> {
   const style = new Map<string, string>()
   let depth = 0
   let prelude = ''
@@ -131,15 +130,15 @@ const LOOK = ['padding', 'font-size', 'border', 'border-radius', 'background', '
 
 describe('the Routines tab in the details panel', () => {
   it('draws its Pause, Resume and Delete… as the panel\'s Upload picture button, at rest and under the pointer', () => {
-    const upload = styleOf('.bot-picture button')
-    const control = styleOf('.routine-controls button')
+    const upload = topLevelStyleOf('.bot-picture button')
+    const control = topLevelStyleOf('.routine-controls button')
     expect(Object.fromEntries(LOOK.map(name => [name, control.get(name)]))).toEqual(Object.fromEntries(LOOK.map(name => [name, upload.get(name)])))
-    expect(styleOf('.routine-controls button:hover:not(:disabled)').get('border-color')).toBe(styleOf('.bot-picture button:hover:not(:disabled)').get('border-color'))
+    expect(topLevelStyleOf('.routine-controls button:hover:not(:disabled)').get('border-color')).toBe(topLevelStyleOf('.bot-picture button:hover:not(:disabled)').get('border-color'))
   })
 
   it('ends each row\'s buttons at the panel\'s inner edge, where the tab line and Close end', () => {
-    const tab = rightOf(styleOf('.routines-tab').get('margin'))
-    expect(tab + rightOf(styleOf('.routine').get('padding')), 'the rows').toBe(0)
-    expect(tab + rightOf(styleOf('.routines-tab > .form-choices').get('padding')), 'Close').toBe(0)
+    const tab = rightOf(topLevelStyleOf('.routines-tab').get('margin'))
+    expect(tab + rightOf(topLevelStyleOf('.routine').get('padding')), 'the rows').toBe(0)
+    expect(tab + rightOf(topLevelStyleOf('.routines-tab > .form-choices').get('padding')), 'Close').toBe(0)
   })
 })
