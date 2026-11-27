@@ -39,7 +39,8 @@ function cronWords(expression: string): string | null {
   const [minute, hour, date, month, weekday] = fields as [string, string, string, string, string]
   if (date !== '*' || month !== '*') return null
   const step = /^\*\/(\d+)$/.exec(minute)
-  if (step !== null && hour === '*' && weekday === '*') return Number(step[1]) > 0 ? every(Number(step[1])) : null
+  // `*/45` fires at :00 and :45, so only a step that divides the hour runs evenly.
+  if (step !== null && hour === '*' && weekday === '*') return 60 % Number(step[1]) === 0 ? every(Number(step[1])) : null
   const atMinute = whole(minute, 60)
   if (atMinute === null) return null
   if (hour === '*' && weekday === '*') return atMinute === 0 ? 'Every hour' : `Every hour at ${atMinute} past`

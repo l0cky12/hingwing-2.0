@@ -70,4 +70,13 @@ describe('parseRoutines', () => {
   it('names a job with no name by its id, and skips a row with no id', () => {
     expect(parseRoutines({ jobs: [{ job_id: 'x', name: '' }, { name: 'no id' } as never], scoped: 'research' }, RESEARCH)).toEqual([{ id: 'x', name: 'x', schedule: '', paused: false }])
   })
+
+  it("reads paused from Hermes's state, so a finished one-shot is not paused, and from enabled only when there is no state", () => {
+    const jobs = [
+      { job_id: 'done', enabled: false, state: 'completed' },
+      { job_id: 'held', enabled: false, state: 'paused' },
+      { job_id: 'old', enabled: false }
+    ]
+    expect(parseRoutines({ jobs, scoped: 'research' }, RESEARCH).map(routine => [routine.id, routine.paused])).toEqual([['done', false], ['held', true], ['old', true]])
+  })
 })

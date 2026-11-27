@@ -24,7 +24,7 @@ describe("a routine's schedule in plain words", () => {
     expect(scheduleWords(schedule)).toBe(words)
   })
 
-  it.each(['0 9 1 * *', '0 9-17 * * *', '0 25 * * *', '*/0 * * * *', 'every 0m', 'every weekday at 9am', '?'])('keeps %s as Hermes wrote it', schedule => {
+  it.each(['0 9 1 * *', '0 9-17 * * *', '0 25 * * *', '*/0 * * * *', '*/45 * * * *', 'every 0m', 'every weekday at 9am', '?'])('keeps %s as Hermes wrote it', schedule => {
     expect(scheduleWords(schedule)).toBe(schedule)
   })
 })

@@ -1251,7 +1251,9 @@ export function parseRoutines(reply: CronManageResult, bot: BotId): readonly Rou
   return (Array.isArray(reply.jobs) ? reply.jobs : []).flatMap(raw => {
     const job = usable(() => {
       const row = fields<CronJobRow>(raw)
-      return { id: row.str('job_id'), name: row.optStr('name') ?? '', schedule: row.optStr('schedule') ?? '', paused: row.optStr('state') === 'paused' || row.optBool('enabled') === false }
+      // `state` is already Hermes's effective one (cron/jobs.py:546-559): a finished one-shot is `completed` with `enabled` false, not paused.
+      const state = row.optStr('state')
+      return { id: row.str('job_id'), name: row.optStr('name') ?? '', schedule: row.optStr('schedule') ?? '', paused: state === null ? row.optBool('enabled') === false : state === 'paused' }
     })
     if (job === null) return []
     const tag = BOT_TAG.exec(job.name)
