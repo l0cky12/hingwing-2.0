@@ -165,6 +165,7 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `gone <role> <name>` | ARIA role, exact accessible name or `/regex/` | polls until no visible element has that role and name, and fails at the timeout. Waits out a fade |
 | `reveal <role> <name>` | ARIA role, exact accessible name or `/regex/` | scrolls that element into view, as a user scrolling to it does, even while it is disabled |
 | `inview <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that element's box lies fully inside the visible area of every scrolling ancestor and of the window |
+| `page-fits` | none | fails if the page itself scrolls, so the window shows empty space past the app. It logs the page's size and each element that reaches past the window with no scrolling or clipping ancestor. An absolutely positioned element with no positioned ancestor still grows the page while a scroller around it hides it |
 | `inside <role> <name> <role> <name>` | two ARIA roles and exact accessible names or `/regex/` | fails unless the first element's box lies fully inside the second's, as a control inside the card it belongs to. `inview` cannot see an overflow that no scrolling ancestor clips |
 | `enabled <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that control is enabled now |
 | `checked <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that radio, checkbox or switch (`role=switch`) is checked now |
