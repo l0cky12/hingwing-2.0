@@ -986,6 +986,16 @@ function cutBefore(state: Tracked, rowId: number): Tracked {
   return { ...state, content: { ...content, history, sides: content.sides.map(anchored) } }
 }
 
+type Turns = Pick<SessionContent, 'history' | 'run'>
+
+/** Where a thing drawn after a turn goes once an edit or regenerate cut the history: after the newest turn kept, as `cutBefore` moves side answers. null when `now` cut nothing from `before`. */
+export function cutMoves(before: Turns, now: Turns): ((after: TurnId) => TurnId | null) | null {
+  const cut = now.history.length < before.history.length && now.history.every((turn, at) => turn.id === before.history[at]?.id)
+  if (!cut) return null
+  const kept = newestShownSettled(now.history)
+  return after => (holdsTurn(now, after) ? after : kept)
+}
+
 function openRun(state: Tracked, generation: Generation, id: TurnId, request: Request | null, began: Began | null): Tracked {
   const run: Run = { state: 'running', generation, stop: 'none', turn: { id, request, began, items: [], announced: null } }
   const { history, interlude } = state.content

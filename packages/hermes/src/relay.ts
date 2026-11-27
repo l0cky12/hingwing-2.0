@@ -25,6 +25,8 @@ export interface RelayBook {
   probe(): Promise<void>
   /** Hands `text` to `to` and files it under `sessionId` as waiting, then as what came back. Never rejects. */
   send(sessionId: SessionId, after: TurnId | null, to: Bot, text: string): void
+  /** Moves each message of `sessionId` to the turn `moved` names for the turn it sat after. */
+  reanchor(sessionId: SessionId, moved: (after: TurnId) => TurnId | null): void
 }
 
 /** Owns the messages handed to other bots, for the hub's lifetime. `changed` runs after every change of `desk`. */
@@ -55,6 +57,14 @@ export function relayBook(conn: Pick<Connection, 'call' | 'as' | 'link'>, change
         reply => parseDelivery(reply, to.name),
         (error: unknown): RelayState => ({ s: 'failed', words: failureWords(error, to.name, conn.link.state === 'online') })
       ).then(state => settle(sessionId, relay.id, state))
+    },
+    reanchor: (sessionId, moved) => {
+      const held = desk.bySession[sessionId] ?? []
+      const placed = held.map(relay => {
+        const after = relay.after === null ? null : moved(relay.after)
+        return after === relay.after ? relay : { ...relay, after }
+      })
+      if (placed.some((relay, at) => relay !== held[at])) put({ ...desk, bySession: { ...desk.bySession, [sessionId]: placed } })
     }
   }
 }

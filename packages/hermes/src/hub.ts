@@ -7,7 +7,7 @@ import type { GroupChat, Groups } from './domain/groups'
 import { mentionedBots } from './domain/mention'
 import { shownBot, shownChat, shownGroup, type OpenChat } from './domain/open'
 import type { PaneAsk } from './domain/pane'
-import type { BridgeRequest, ServerRequest } from './domain/reduce'
+import { cutMoves, type BridgeRequest, type ServerRequest } from './domain/reduce'
 import type { RelayDesk } from './domain/relay'
 import type { AttachmentId, BranchId, Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog } from './domain/slash'
@@ -327,6 +327,8 @@ export function openHermes(options: HermesOptions): Hermes {
       conn: bot === undefined ? conn : conn.as(bot), clock, mintId, bridge,
       watched: () => windows.has(id),
       publish: (session, previous) => {
+        const moved = cutMoves(previous, session)
+        if (moved !== null) relays.reanchor(id, moved)
         for (const listener of [...(watchers.get(id) ?? [])]) listener(session)
         if (session.run.state !== previous.run.state) refreshSoon()
         publishSidebar()
