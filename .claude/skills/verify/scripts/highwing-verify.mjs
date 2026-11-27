@@ -149,6 +149,7 @@ const STEPS = {
   },
   gone: { arity: 2, run: async (ctx, role, name) => waitGone(ctx, role, name) },
   inview: { arity: 2, run: async (ctx, role, name) => checkInView(ctx, role, name) },
+  'page-fits': { arity: 0, run: async ctx => checkPageFits(ctx) },
   inside: { arity: 4, run: async (ctx, role, name, outerRole, outerName) => checkInside(ctx, role, name, outerRole, outerName) },
   reveal: { arity: 2, run: async (ctx, role, name) => byRole(ctx.page, role, name).scrollIntoViewIfNeeded({ timeout: ctx.timeout }) },
   shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
@@ -1081,6 +1082,32 @@ async function checkInView(ctx, role, name) {
     return outside({ top: 0, bottom: innerHeight, left: 0, right: innerWidth }, 'window')
   })
   if (problem) throw new Error(`${role} "${name}" is not fully in view: ${problem}`)
+}
+
+async function checkPageFits(ctx) {
+  const m = await ctx.page.evaluate(() => {
+    const page = document.scrollingElement
+    const name = el => `<${el.localName}${el.id ? `#${el.id}` : ''}${el.classList.length ? `.${[...el.classList].join('.')}` : ''}>`
+    const clipped = el => {
+      let block = getComputedStyle(el).position === 'absolute' ? el.offsetParent : null
+      for (let parent = el.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+        if (block !== null && parent !== block) continue
+        block = null
+        if (/(auto|scroll|hidden|clip)/.test(getComputedStyle(parent).overflowX + getComputedStyle(parent).overflowY)) return true
+      }
+      return false
+    }
+    const over = []
+    for (const el of document.body.querySelectorAll('*')) {
+      const box = el.getBoundingClientRect()
+      if ((box.width === 0 && box.height === 0) || getComputedStyle(el).position === 'fixed') continue
+      if ((box.bottom > innerHeight + 0.5 || box.right > innerWidth + 0.5) && !clipped(el)) over.push(`${name(el)} ends at x ${Math.round(box.right)}, y ${Math.round(box.bottom)}`)
+    }
+    return { height: page.scrollHeight, width: page.scrollWidth, viewHeight: page.clientHeight, viewWidth: page.clientWidth, over: over.slice(0, 8) }
+  })
+  log(ctx, `  page ${m.width}x${m.height} in a ${m.viewWidth}x${m.viewHeight} window`)
+  for (const line of m.over) log(ctx, `  past the window: ${line}`)
+  if (m.height > m.viewHeight || m.width > m.viewWidth) throw new Error(`the page scrolls: it is ${m.width}x${m.height} in a ${m.viewWidth}x${m.viewHeight} window`)
 }
 
 async function checkInside(ctx, role, name, outerRole, outerName) {
