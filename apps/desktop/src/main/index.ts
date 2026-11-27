@@ -1,6 +1,6 @@
-import { checkTarget, gatewaysByUrl, liveDialer, openHermes, remoteRoute, type Dialer, type Hermes, type Route } from '@highwing/hermes'
+import { checkTarget, gatewaysByUrl, liveDialer, liveTranscribe, openHermes, remoteRoute, type Dialer, type Hermes, type Route } from '@highwing/hermes'
 import { byKind, type BotId, type GatewayUrl, type Target } from '@highwing/hermes/domain'
-import { fixtureLatency, loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
+import { fixtureLatency, fixtureTranscribe, loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, safeStorage, shell, type OpenDialogOptions } from 'electron'
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -55,7 +55,7 @@ async function savedConnection(settingsDir: string, opener: Opener, open: (dial:
 
   const routeFor = (target: Target): Route => {
     const route = byKind<Route>(target, {
-      local: () => ({ dial: liveDialer(), dispose: () => {} }),
+      local: () => ({ dial: liveDialer(), transcribe: liveTranscribe(), dispose: () => {} }),
       remote: ({ host }) => remoteRoute(host),
       url: ({ url }) => gateways.route(url)
     })
@@ -131,7 +131,7 @@ app.whenReady().then(async () => {
     ? pinnedConnection(open(scriptedDialer(fixture, {
       timing: 'recorded', latencyMs: fixtureLatency(HIGHWING_FIXTURE_LATENCY_MS),
       ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(maskedFrame(frame))}\n`) } : {})
-    }), 'fixture'))
+    }), 'fixture'), fixtureTranscribe(fixture.header.transcribe))
     : await savedConnection(settingsDir, opener, open)
   pane.follow(owner.setup)
   const pictureDeps = { choose: pictureFile, read: readHead, set: (bot: BotId, data: string) => owner.run({ do: 'setBotPicture', bot, data }) }

@@ -3,7 +3,8 @@
  */
 import { readFileSync } from 'node:fs'
 import { APPROVAL_MODES, type ApprovalMode, type SessionId } from '../domain/session'
-import type { Reach } from '../wire/link'
+import { systemClock, type Reach } from '../wire/link'
+import { transcriptOf, type Transcribe } from '../wire/transcribe'
 
 export { play, playToEnd, type Moment } from './play'
 export { maskedFrame, recordingDialer } from './record'
@@ -133,6 +134,8 @@ export interface Fixture {
     readonly homeBotChat?: boolean
     /** Bytes the app's image loader answers with in place of the network and the disk, as base64 under the web URL or absolute path asked for. A key not here is missing. */
     readonly media?: Readonly<Record<string, string>>
+    /** What Hermes's speech upload answers: `text` heard (default empty) after `delay_ms` (default 0), or a failure with `error` in its words. Absent: a Hermes with no speech-to-text. */
+    readonly transcribe?: Oneshot
     /** The app's limits on an attachment, in bytes, lower than Hermes's own so a run can stage a file over one. Either may be absent. */
     readonly attachLimits?: { readonly image?: number; readonly file?: number }
     /** profile -> the chats it has beside its Bot Chat, before the story starts. Not for the home profile, whose list is `list`. */
@@ -556,7 +559,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
-  const { media } = value
+  const { media, transcribe } = value
+  if (transcribe !== undefined && !isOneshot(transcribe)) return '"transcribe" must be { text?, error?, delay_ms? }'
   if (media !== undefined && !(isObject(media) && Object.values(media).every(bytes => typeof bytes === 'string'))) return '"media" must map a url or path to base64 bytes'
   const { attachLimits } = value
   const limit = (bytes: unknown) => bytes === undefined || (Number.isSafeInteger(bytes) && (bytes as number) > 0)
@@ -617,7 +621,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(connectors === undefined ? {} : { connectors }),
     ...(memory === undefined ? {} : { memory }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
-    ...(media === undefined ? {} : { media: media as Record<string, string> }),
+    ...(media === undefined ? {} : { media: media as Record<string, string> }), ...(transcribe === undefined ? {} : { transcribe }),
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),
     ...(relay === undefined ? {} : { relay: relay as { readonly [profile: string]: RelayScript } }),
@@ -630,6 +634,19 @@ function parseHeader(value: unknown): Fixture['header'] | string {
 }
 
 /** Reads a fixture file, checking the header and every step. Throws with the line number of the first bad line. */
+/** Hermes's words when it has no speech-to-text (tools/transcription_tools.py), shortened. */
+const NO_STT = 'No STT provider available. Install faster-whisper for free local transcription.'
+
+/** Speech to text as the header's `transcribe` answers it, through the same reading of Hermes's answer as a live route. */
+export function fixtureTranscribe(answer: Oneshot | undefined): Transcribe {
+  return async () => {
+    await new Promise<void>(resolve => void systemClock.setTimeout(resolve, answer?.delay_ms ?? 0))
+    return answer === undefined || answer.error !== undefined
+      ? transcriptOf(400, { detail: answer?.error ?? NO_STT })
+      : transcriptOf(200, { ok: true, transcript: answer.text ?? '' })
+  }
+}
+
 export function loadFixture(path: string): Fixture {
   const lines = readFileSync(path, 'utf8').split('\n')
   if (lines.at(-1) === '') lines.pop()

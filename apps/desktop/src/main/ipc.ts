@@ -1,7 +1,7 @@
 import type { Hermes } from '@highwing/hermes'
 import type { BotId, CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
 import {
-  CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
+  CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseRecording, parseTopic,
   type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type OnClose, type PictureChoice, type PictureFile, type Push, type SessionPatch, type StageResult,
   type Snoozes, type Tail, type Theme, type Topic
 } from '../ipc-contract'
@@ -255,6 +255,11 @@ export function serveWindows(
     return live() ? pictures.pick(bot, live) : OTHER_CONNECTION
   })
   ipc.handle(CHANNEL.choosePicture, async event => (trusted(event) ? pictures.choose() : REFUSED))
+  ipc.handle(CHANNEL.transcribe, async (event, raw, epoch) => {
+    const recording = parseRecording(raw)
+    if (!trusted(event) || recording === null) return REFUSED
+    return epoch === epochOf(owner.setup.get()) ? owner.transcribe(recording) : OTHER_CONNECTION
+  })
 
   const { store, sources } = attaching
   const notHere = (name: string): StageResult => ({ ok: false, name, reason: `${name} isn't a file on this computer, so Highwing can't attach it.` })

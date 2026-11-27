@@ -226,6 +226,12 @@ export async function fakeWebapp(
       const ticket = (gateway.mint('host').protocols[1] as string).slice(TICKET_PREFIX.length)
       secrets.push(ticket)
       return { status: 200, json: { ticket, ttl_seconds: 30 } }
+    },
+    /** Hermes's speech upload (hermes_cli/web_routers/audio.py:89-150). This Hermes hears how many bytes it was sent. */
+    'POST /api/audio/transcribe': ({ bearer, body }) => {
+      if (bearer === null || ![...signIns.values()].includes(bearer)) return refused(401, 'Unauthorized')
+      const audio = /^data:audio\/[^,]*;base64,(.+)$/.exec(String(body.data_url ?? ''))?.[1]
+      return audio === undefined ? refused(400, 'Invalid audio payload') : { status: 200, json: { ok: true, transcript: `heard ${Buffer.from(audio, 'base64').byteLength} bytes`, provider: 'fake' } }
     }
   }
 

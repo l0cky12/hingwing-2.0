@@ -25,6 +25,7 @@ const bridge: Bridge = {
   attachPick: () => ipcRenderer.invoke(CHANNEL.attachPick),
   attachPaste: () => ipcRenderer.invoke(CHANNEL.attachPaste),
   // getPathForFile answers '' for a File the page built itself, so a window can only name a file the user gave it.
+  transcribe: (recording, epoch) => ipcRenderer.invoke(CHANNEL.transcribe, recording, epoch),
   attachDropped: files => ipcRenderer.invoke(CHANNEL.attachDrop, files.map(file => ({ name: file.name, path: webUtils.getPathForFile(file) || null })))
 }
 

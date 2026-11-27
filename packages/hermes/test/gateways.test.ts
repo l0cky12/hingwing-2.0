@@ -222,6 +222,24 @@ describe('the check of a gateway address, against the fake Webapp', () => {
   })
 })
 
+describe('speech to text through a gateway address, against the fake Webapp', () => {
+  const RECORDING = { mime: 'audio/webm;codecs=opus', audio: new Uint8Array([1, 2, 3]) }
+
+  it("posts the recording with the address's sign-in and answers what Hermes heard", async () => {
+    const web = await webapp('ok')
+    const route = routeOf(await signedIn(web), web.url)
+    expect(await route.transcribe(RECORDING)).toEqual({ ok: true, value: 'heard 3 bytes' })
+    expect(count(web, 'POST /api/audio/transcribe')).toBe(1)
+  })
+
+  it('says the sign-in ended, in plain words, once Hermes ends it', async () => {
+    const web = await webapp('ok')
+    const route = routeOf(await signedIn(web), web.url)
+    web.signOut()
+    expect(await route.transcribe(RECORDING)).toEqual({ ok: false, refusal: { kind: 'offline', message: 'Your sign-in to the Hermes on 127.0.0.1 has ended.' } })
+  })
+})
+
 describe('the route to a gateway address, against the fake Webapp', () => {
   it('connects and plays the errand to the session the direct fold gives, on tickets minted with the sign-in', async () => {
     const want = { ...fold(errand()).content, sync: { state: 'live' } }

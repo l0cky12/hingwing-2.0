@@ -23,6 +23,8 @@ export const SERVE = ['gateway', 'tickets', '--serve', '--json'] as const
 export type HermesArgs = typeof PROBE | typeof SERVE | (typeof ATTACH)[keyof typeof ATTACH]
 /** The only line Highwing writes to a `--serve` channel. A literal too, and it names no profile: an interactive ticket takes none. */
 export const ASK_INTERACTIVE = '{"id":1,"purpose":"interactive"}\n'
+/** The line that asks `--serve` for a one-use ticket to the gateway's HTTP routes, such as its speech upload. */
+export const ASK_NATIVE_HTTP = '{"id":1,"purpose":"native-http"}\n'
 
 /** The installer's command locations (Hermes's scripts/install.sh): per-user, root, and the legacy venv. */
 export const HERMES_PATHS = ['$HOME/.local/bin/hermes', '/usr/local/bin/hermes', '$HOME/.hermes/hermes-agent/venv/bin/hermes'] as const
@@ -187,6 +189,13 @@ export function servedOf(code: number, stdout: string): Served {
   }
   const refusal = isObject(reply?.error) ? reply.error.code : null
   return refusal === 'unsupported_purpose' ? { is: 'unsupported' } : { is: 'failed', kind: 'dropped' }
+}
+
+/** Where the gateway that answered a `--serve` run takes HTTP, as its hello names it: a loopback origin on its own machine. */
+export function originOf(stdout: string): string | null {
+  const hello = jsonObjectAt(stdout, 0)
+  const origin = hello?.type === 'hello' && isObject(hello.endpoint) ? hello.endpoint.api_origin : null
+  return typeof origin === 'string' && URL.canParse(origin) ? origin : null
 }
 
 export async function probeHermes(host: SshHost, options: SshOptions): Promise<Probe> {

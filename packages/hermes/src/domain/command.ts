@@ -299,4 +299,7 @@ export interface Refusal {
   /** The field of the request Hermes refused, so a form shows the reason under it. `members`: the bots of a new group chat. */
   readonly field?: 'name' | 'members'
 }
+/** What the composer heard, for Hermes to turn into text. `mime` is the recorder's own, such as `audio/webm;codecs=opus`. */
+export interface Recording { readonly mime: string; readonly audio: Uint8Array }
+
 export type Outcome<T = void> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly refusal: Refusal }

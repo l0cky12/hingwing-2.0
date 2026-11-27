@@ -1,5 +1,5 @@
-import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, Route } from '@highwing/hermes'
-import { firstStep, sameTarget, type CheckStep, type Command, type CommandOutcome, type SetupFailure, type Target } from '@highwing/hermes/domain'
+import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, Route, Transcribe } from '@highwing/hermes'
+import { firstStep, sameTarget, type CheckStep, type Command, type CommandOutcome, type Recording, type SetupFailure, type Target } from '@highwing/hermes/domain'
 import { isSetupCommand, NOT_NOW, showsSettings, type HubResult, type Live, type Setup, type SetupCommand } from '../ipc-contract'
 import type { Settings } from './settings'
 
@@ -12,6 +12,8 @@ export interface ConnectionOwner {
   /** The Hermes of the live connection. null until a target is saved. */
   readonly hermes: Hermes | null
   run<C extends ConnectionCommand>(command: C): Promise<CommandOutcome<HubResult<C>>>
+  /** Speech to text by the Hermes of the live connection. */
+  transcribe(recording: Recording): Promise<CommandOutcome<string>>
   close(): Promise<void>
 }
 
@@ -197,6 +199,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
       const outcome = isSetupCommand(command) ? runSetup(command) : await runChat(command)
       return outcome as CommandOutcome<HubResult<C>>
     },
+    transcribe: async recording => (open === null ? NOT_CONNECTED : open.route.transcribe(recording)),
     close: async () => {
       closed = true
       checking?.abort()
@@ -207,10 +210,11 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
 }
 
 /** A window served from one fixed `Hermes`, as a fixture run is. It has no setup, so it refuses every setup command. */
-export function pinnedConnection(hermes: Hermes): ConnectionOwner {
+export function pinnedConnection(hermes: Hermes, transcribe: Transcribe): ConnectionOwner {
   return {
     setup: feed<Setup>({ at: 'pinned' }),
     hermes,
+    transcribe: recording => transcribe(recording),
     run: async <C extends ConnectionCommand>(command: C) =>
       (isSetupCommand(command) ? NOT_NOW : await hermes.run(command)) as CommandOutcome<HubResult<C>>,
     close: () => hermes.close()

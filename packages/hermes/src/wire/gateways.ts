@@ -13,6 +13,7 @@ import { gatewayHost, URL_FAILURES, type GatewayUrl, type UrlFailure } from '../
 import type { CheckOptions } from './check'
 import { DialError, dialWith, GATEWAY_PROTOCOL, HANDSHAKE_MS, sessionAuthorityOf, systemClock, TICKET_PREFIX, type Clock, type Endpoint, type Mint } from './link'
 import type { Route } from './remote'
+import { CANT_REACH, TRANSCRIBE_MS, TRANSCRIBE_PATH, transcribeBody, transcriptOf, type Transcribe } from './transcribe'
 
 /**
  * Where a sign-in is kept between runs, one per gateway address. `secret` is text this module wrote
@@ -130,6 +131,8 @@ interface Asked {
   readonly json?: unknown
   readonly bearer?: string
   readonly signal?: AbortSignal
+  /** How long the request may take. Default `REQUEST_MS`. */
+  readonly ms?: number
 }
 
 interface Answer {
@@ -193,7 +196,7 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
   const signInMs = deps.signInMs ?? SIGN_IN_MS
 
   const send = async (method: 'GET' | 'POST', address: string, asked: Asked): Promise<Answer> => {
-    const deadline = AbortSignal.timeout(REQUEST_MS)
+    const deadline = AbortSignal.timeout(asked.ms ?? REQUEST_MS)
     const response = await fetcher(address, {
       method,
       // Never followed, so a bearer goes only to the address the user gave.
@@ -313,6 +316,25 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
     return { url: `${url.replace(/^http/, 'ws')}/api/ws`, protocols: [GATEWAY_PROTOCOL, TICKET_PREFIX + reply.ticket], reach: 'host' }
   }
 
+  /** The upload goes with the address's sign-in, which Hermes's gate takes on any route (dashboard_auth/middleware.py:299-305). */
+  const transcribeAt = (url: GatewayUrl): Transcribe => async (recording, signal) => {
+    const held = loginOf(url)
+    const post = async (bearer: string) =>
+      send('POST', `${url}${TRANSCRIBE_PATH}`, { json: transcribeBody(recording), bearer, ms: TRANSCRIBE_MS, ...(signal === undefined ? {} : { signal }) })
+    try {
+      const bearer = await held.bearer()
+      let answer = await post(bearer)
+      if (answer.status === 401) {
+        await held.replaceRefused(bearer)
+        answer = await post(await held.bearer())
+      }
+      if (answer.status === 401) throw ended(url)
+      return transcriptOf(answer.status, answer.body)
+    } catch (error) {
+      return error instanceof DialError && error.kind === 'signed-out' ? { ok: false, refusal: { kind: 'offline', message: error.message } } : CANT_REACH
+    }
+  }
+
   const signIn = async (url: GatewayUrl, signal: AbortSignal): Promise<Credential> => {
     const server = createServer()
     await new Promise<void>((resolve, reject) => server.once('error', reject).listen(0, '127.0.0.1', resolve))
@@ -411,7 +433,7 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
           throw life.signal.aborted ? new DialError('dropped') : error
         }
       }
-      return { dial: dialWith(minted), dispose: () => life.abort() }
+      return { dial: dialWith(minted), transcribe: transcribeAt(url), dispose: () => life.abort() }
     },
 
     keepOnly: async url => {
