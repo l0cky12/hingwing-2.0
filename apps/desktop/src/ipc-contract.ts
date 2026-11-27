@@ -646,6 +646,14 @@ export const validators: Validators = {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     return raw.bot !== null && bot === null ? null : { do: 'toolServers', bot }
   },
+  plugins: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return raw.bot !== null && bot === null ? null : { do: 'plugins', bot }
+  },
+  tools: raw => {
+    const sessionId = sessionIdOf(raw)
+    return raw.sessionId !== null && sessionId === null ? null : { do: 'tools', sessionId }
+  },
   addToolServer: raw => {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     const setup = setupOf(raw.setup)

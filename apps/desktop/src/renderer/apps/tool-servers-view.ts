@@ -8,10 +8,10 @@ export type Read =
 export const readOf = (outcome: CommandOutcome<readonly ToolServer[]>): Read =>
   outcome.ok ? { at: 'read', servers: outcome.value } : { at: 'refused', words: outcome.refusal.message, unsupported: outcome.refusal.kind === 'unsupported' }
 
-const count = (tools: number) => `${tools} ${tools === 1 ? 'tool' : 'tools'}`
+export const toolCount = (tools: number) => `${tools} ${tools === 1 ? 'tool' : 'tools'}`
 
 export const STATES: { readonly [S in ServerState]: (tools: number) => string } = {
-  connected: tools => `Connected · ${count(tools)}`,
+  connected: tools => `Connected · ${toolCount(tools)}`,
   connecting: () => 'Connecting',
   failed: () => "Couldn't connect",
   'needs-sign-in': () => 'Needs sign-in',
@@ -21,14 +21,13 @@ export const STATES: { readonly [S in ServerState]: (tools: number) => string } 
 
 const LISTED_TOOLS = 5
 
-function toolList(tools: readonly string[]): string {
-  if (tools.length === 0) return ''
+export function namedTools(tools: readonly string[]): string {
   const shown = tools.slice(0, LISTED_TOOLS).join(', ')
-  return tools.length > LISTED_TOOLS ? `: ${shown} and ${tools.length - LISTED_TOOLS} more` : `: ${shown}`
+  return tools.length > LISTED_TOOLS ? `${shown} and ${tools.length - LISTED_TOOLS} more` : shown
 }
 
 export function testedWords(name: string, tested: Tested): string {
-  if (tested.ok) return `Connected. ${name} has ${count(tested.tools.length)}${toolList(tested.tools)}.`
+  if (tested.ok) return `Connected. ${name} has ${toolCount(tested.tools.length)}${tested.tools.length === 0 ? '' : `: ${namedTools(tested.tools)}`}.`
   if (tested.why === 'sign-in') return `${name} needs a sign-in, which Highwing can't do yet. Nothing was saved.`
   return `Couldn't connect to ${name}: ${tested.reason.replace(/\.$/, '')}. Nothing was saved.`
 }

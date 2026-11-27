@@ -38,25 +38,6 @@ export const STANDING_WORDS: { readonly [S in AppStanding]: string } = {
   disconnected: 'Disconnected'
 }
 
-export interface AppsQuery {
-  /** Substring of the app's name. Empty matches every name. */
-  readonly text: string
-  /** A category chip. null is All. */
-  readonly category: string | null
-}
-
-export interface AppsSection {
-  readonly heading: string
-  readonly apps: readonly AppEntry[]
-}
-
-export interface AppsView {
-  readonly summary: string
-  readonly categories: readonly string[]
-  readonly sections: readonly AppsSection[]
-  readonly empty: boolean
-}
-
 export interface AppSignIn {
   readonly opId: string
   readonly settled: boolean
@@ -69,25 +50,3 @@ const RANK: { readonly [S in AppStanding]: number } = { connected: 0, 'needs-sig
 /** The account the row's Reconnect and Remove act on. A better standing wins. The first of a tie stays. */
 export const betterAccount = (held: AppAccount | null, next: AppAccount): AppAccount =>
   held !== null && RANK[held.standing] <= RANK[next.standing] ? held : next
-
-const summaryOf = (board: AppsBoard): string => {
-  const connected = board.apps.filter(app => app.account?.standing === 'connected').length
-  return connected === 0 ? 'None connected' : connected === 1 ? '1 connected' : `${connected} connected`
-}
-
-const named = (app: AppEntry, text: string) => app.name.toLowerCase().includes(text.trim().toLowerCase())
-
-export function appsView(board: AppsBoard, query: AppsQuery): AppsView {
-  const categories: string[] = []
-  for (const app of board.apps) if (!categories.includes(app.category)) categories.push(app.category)
-  const shown = board.apps.filter(app => (query.category === null || app.category === query.category) && named(app, query.text))
-  const sections: AppsSection[] = []
-  const add = (heading: string, apps: readonly AppEntry[]) => {
-    if (apps.length > 0) sections.push({ heading, apps })
-  }
-  if (query.category === null) {
-    add(RECOMMENDED, shown.filter(app => app.category === RECOMMENDED))
-    for (const category of categories) if (category !== RECOMMENDED) add(category, shown.filter(app => app.category === category))
-  } else add(query.category, shown)
-  return { summary: summaryOf(board), categories, sections, empty: shown.length === 0 }
-}

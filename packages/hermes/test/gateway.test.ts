@@ -1575,6 +1575,39 @@ describe('the Connect apps board', () => {
   })
 })
 
+describe('the plugins list', () => {
+  const plugins = JSON.parse(readFileSync(fileURLToPath(new URL('../../../fixtures/plugins/two.json', import.meta.url)), 'utf8'))
+
+  it('is an unknown method when the fixture lists no plugins', async () => {
+    const { call } = await rawSocket()
+    expect(await call('plugins.manage', { action: 'list' })).toMatchObject({ error: { code: -32601, data: { reason: 'unknown_method' } } })
+  })
+
+  it('lists the fixture’s plugins with Hermes’s counts, and plays no other action', async () => {
+    const { call } = await rawSocket({}, { ...ERRAND, header: { ...ERRAND.header, plugins } })
+    expect(await call('plugins.manage', { action: 'list', profile: 'default' })).toMatchObject({
+      result: { plugins: [{ name: 'kanban', status: 'enabled', source: 'bundled' }, { name: 'browser-tools', status: 'not enabled', source: 'user' }], user_count: 1, bundled_count: 1 }
+    })
+    expect(await call('plugins.manage', { action: 'toggle', name: 'kanban', enable: false })).toMatchObject({ error: { code: 4019 } })
+  })
+})
+
+describe('the toolsets list', () => {
+  const tools = JSON.parse(readFileSync(fileURLToPath(new URL('../../../fixtures/tools/three.json', import.meta.url)), 'utf8'))
+
+  it('is an unknown method when the fixture lists no toolsets', async () => {
+    const { call } = await rawSocket()
+    expect(await call('tools.list', {})).toMatchObject({ error: { code: -32601, data: { reason: 'unknown_method' } } })
+  })
+
+  it('answers the fixture’s toolsets with each one’s count, for a chat or none', async () => {
+    const { call } = await rawSocket({}, { ...ERRAND, header: { ...ERRAND.header, tools } })
+    const listed = { result: { toolsets: [{ name: 'browser', tool_count: 9, enabled: true }, { name: 'file', tool_count: 4 }, { name: 'image_gen', tool_count: 1, enabled: false, tools: ['image_generate'] }] } }
+    expect(await call('tools.list', {})).toMatchObject(listed)
+    expect(await call('tools.list', { session_id: 'any-chat' })).toMatchObject(listed)
+  })
+})
+
 describe("the scripted gateway and a Bot Chat seeded with rows", () => {
   const rows = [{ role: 'user', text: 'one' }, { role: 'assistant', text: 'two' }, { role: 'user', text: 'three' }] as const
   const fixture: Fixture = { ...WITH_BOTS, header: { ...WITH_BOTS.header, chats: { research: [{ id: RESEARCH_CHAT, title: 'Bot Chat', hidden: true, last_active: 1795250000, rows }] } } }

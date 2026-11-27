@@ -1,6 +1,7 @@
 /** `@highwing/hermes/domain`: what the renderer and `@highwing/thread` may import. Types, pure selectors, and the tables that name a target and its failures. */
 export type * from './session'
-export { RECOMMENDED, STANDING_WORDS, appsView, betterAccount, standingOf, standingOfTarget, type AppAccount, type AppEntry, type AppSignIn, type AppStanding, type AppsBoard, type AppsQuery, type AppsSection, type AppsView } from './apps'
+export { RECOMMENDED, STANDING_WORDS, betterAccount, standingOf, standingOfTarget, type AppAccount, type AppEntry, type AppSignIn, type AppStanding, type AppsBoard } from './apps'
+export { CONNECTOR_FILTERS, connectorsView, type ConnectorCard, type ConnectorFilter, type ConnectorShelf, type ConnectorsQuery, type ConnectorsSection, type ConnectorsView } from './connectors'
 export { APPROVAL_MODES, EFFORTS, PLAIN_CONTROLS, reissues } from './session'
 export {
   EXPORT_FORMATS, type Checkpoint, type CheckpointDiff, type Checkpoints, type Command, type ContextBreakdown, type ExportFormat, type Exported, type MemoryEntry, type ModelConfirm, type ModelMenu, type Outcome as CommandOutcome, type Recording, type Refusal, type Restored, type RestoreScope,
@@ -15,6 +16,8 @@ export {
 export type { Added, Header, ServerSetup, ServerState, Tested, ToolServer } from './tool-servers'
 export type { PathMatch } from './path'
 export { isManagerName, MANAGER_NAMES, MANAGERS, type BotManagers, type FirstTime, type Manager, type ManagerFacts, type ManagerName, type ManagerState } from './passwords'
+export type { Plugin } from './plugins'
+export type { Toolset } from './toolsets'
 export type { Skill, SkillLibrary } from './skills'
 export { ROUTINE_ACTIONS, type Routine, type RoutineAction, type RoutineId } from './routines'
 export { mentionedBots, mentionOf, typedMention } from './mention'

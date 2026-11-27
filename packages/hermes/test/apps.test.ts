@@ -1,49 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { appsView, betterAccount, standingOf, standingOfTarget, RECOMMENDED, type AppsBoard } from '../src/domain/apps'
+import { betterAccount, standingOf, standingOfTarget } from '../src/domain/apps'
 import { parseApps, parseSignIn } from '../src/wire/parse'
-
-const BOARD: AppsBoard = {
-  apps: [
-    { slug: 'github', name: 'GitHub', description: 'Repositories, issues and pull requests.', category: 'Recommended', account: null },
-    { slug: 'slack', name: 'Slack', description: 'Channels and direct messages.', category: 'Chat', account: { connectionId: 'slack-1', standing: 'connected', label: 'Work' } },
-    { slug: 'notion', name: 'Notion', description: 'Pages and databases.', category: 'Notes', account: { connectionId: 'notion-1', standing: 'needs-sign-in', label: 'Notes' } }
-  ]
-}
-
-describe('appsView', () => {
-  it('lifts Recommended above the other categories and counts the whole board', () => {
-    const view = appsView(BOARD, { text: '', category: null })
-    expect(view.summary).toBe('1 connected')
-    expect(view.categories).toEqual(['Recommended', 'Chat', 'Notes'])
-    expect(view.sections.map(section => section.heading)).toEqual(['Recommended', 'Chat', 'Notes'])
-    expect(view.sections[0]?.apps.map(app => app.slug)).toEqual(['github'])
-    expect(view.empty).toBe(false)
-  })
-
-  it('filters by the app name and still lists every category', () => {
-    const view = appsView(BOARD, { text: ' git ', category: null })
-    expect(view.categories).toEqual(['Recommended', 'Chat', 'Notes'])
-    expect(view.sections.map(section => section.apps.map(app => app.name))).toEqual([['GitHub']])
-  })
-
-  it('shows one category and hides the recommended section', () => {
-    const view = appsView(BOARD, { text: '', category: 'Chat' })
-    expect(view.sections).toEqual([{ heading: 'Chat', apps: [BOARD.apps[1]] }])
-  })
-
-  it('keeps the recommended section when that chip is selected', () => {
-    const view = appsView(BOARD, { text: '', category: RECOMMENDED })
-    expect(view.sections.map(section => section.heading)).toEqual([RECOMMENDED])
-  })
-
-  it('says when nothing matches, and when the catalog is empty', () => {
-    expect(appsView(BOARD, { text: 'zzz', category: null }).empty).toBe(true)
-    expect(appsView({ apps: [] }, { text: '', category: null })).toMatchObject({ summary: 'None connected', categories: [], sections: [], empty: true })
-    expect(appsView({ apps: [BOARD.apps[0]!, BOARD.apps[1]!] }, { text: '', category: null }).summary).toBe('1 connected')
-    const both = { apps: [BOARD.apps[1]!, { ...BOARD.apps[1]!, slug: 'slack-2', name: 'Slack two' }] }
-    expect(appsView(both, { text: '', category: null }).summary).toBe('2 connected')
-  })
-})
 
 describe('standing', () => {
   it('uses the three words the window shows', () => {

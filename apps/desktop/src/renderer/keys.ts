@@ -7,7 +7,7 @@ export const isShortcut = (event: KeyboardEvent, id: ShortcutId) => shortcutOf(e
 
 export const COMMAND_KEY = MAC ? '⌘' : 'Ctrl'
 
-export const appsKeys = () => (MAC ? 'Meta+Shift+M' : 'Control+Shift+M')
+export const connectorsKeys = () => (MAC ? { shown: '⌘⇧M', aria: 'Meta+Shift+M' } : { shown: 'Ctrl+Shift+M', aria: 'Control+Shift+M' })
 
 /** Ctrl+Alt+B, or Cmd+Shift+I on macOS, where Option+B types a character. */
 export const detailsKeys = (mac: boolean) => (mac ? { shown: '⌘⇧I', aria: 'Meta+Shift+I' } : { shown: 'Ctrl+Alt+B', aria: 'Control+Alt+B' })
