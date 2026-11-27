@@ -168,6 +168,9 @@ describe('validators', () => {
     expect(parseCommand({ do: 'appSignIn', opId: 'op-1', bot: null })).toEqual({ do: 'appSignIn', opId: 'op-1', bot: null })
     expect(parseCommand({ do: 'removeApp', connectionId: 'slack-1', bot: null, extra: 1 })).toEqual({ do: 'removeApp', connectionId: 'slack-1', bot: null })
     expect(parseCommand({ do: 'apps', bot: ' ' })).toBeNull()
+    expect(parseCommand({ do: 'plugins', bot: null, extra: 1 })).toEqual({ do: 'plugins', bot: null })
+    expect(parseCommand({ do: 'plugins', bot: 'research' })).toEqual({ do: 'plugins', bot: 'research' })
+    expect(parseCommand({ do: 'plugins', bot: ' ' })).toBeNull()
     expect(parseCommand({ do: 'connectApp', slug: ' ', bot: null, connectionId: null })).toBeNull()
     expect(parseCommand({ do: 'connectApp', slug: 'github', bot: null })).toBeNull()
     expect(parseCommand({ do: 'appSignIn', opId: '', bot: null })).toBeNull()
@@ -554,7 +557,7 @@ describe('validators', () => {
       'accountUsage', 'addToolServer', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
       'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'controlRoutine', 'createBot', 'createGroup', 'deleteGroup', 'denyRules', 'describeBot', 'discard',
       'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
-      'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
+      'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'plugins', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
       'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
       'sendToGroup', 'setAccent', 'setMode', 'setNotice', 'setOnClose', 'setSendKey', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
       'takeControl', 'toolServers', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'versions'

@@ -2,13 +2,14 @@ import { refusalOf } from './actor'
 import { GENERATED_MAX_BYTES, MARK_SETS, PICTURE_RULE, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotId, type BotMark, type PetChoice } from './domain/bots'
 import type { Command, ModelMenu, Outcome, Refusal } from './domain/command'
 import type { BotManagers } from './domain/passwords'
+import type { Plugin } from './domain/plugins'
 import type { Skill } from './domain/skills'
 import type { Added, ServerSetup, Tested, ToolServer } from './domain/tool-servers'
 import { NOT_CONNECTED } from './open'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
 import {
   descriptionOf, parseBotAt, parseBotManagers, parseBotRecord, parseCatalog, parseConfigured, parseCreated, parseDenyRules, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets,
-  parsePicture, parseSkillStates, parseSkillText, parseTested, parseToolServers, type Configured
+  parsePicture, parsePlugins, parseSkillStates, parseSkillText, parseTested, parseToolServers, type Configured
 } from './wire/parse'
 
 export type Wire = Pick<Connection, 'call' | 'as'>
@@ -336,6 +337,11 @@ export const addToolServer = (conn: Wire, bot: BotId | null, setup: ServerSetup)
     const tested = await probed(hermes, setup.name)
     return { ok: true, value: { tested, servers: await readServers(hermes) } }
   })
+
+const PLUGIN_REASONS: Reasons = { [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't list its plugins." }) }
+
+export const listPlugins = (conn: Wire, bot: BotId | null): Promise<Outcome<readonly Plugin[]>> =>
+  guarded(PLUGIN_REASONS, async () => ({ ok: true, value: parsePlugins(await scoped(conn, bot).call('plugins.manage', { action: 'list' })) }))
 
 export const removeToolServer = (conn: Wire, bot: BotId | null, name: string): Promise<Outcome<readonly ToolServer[]>> =>
   guarded(REMOVE_REASONS, async () => {

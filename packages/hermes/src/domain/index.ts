@@ -15,6 +15,7 @@ export {
 export type { Added, Header, ServerSetup, ServerState, Tested, ToolServer } from './tool-servers'
 export type { PathMatch } from './path'
 export { isManagerName, MANAGER_NAMES, MANAGERS, type BotManagers, type FirstTime, type Manager, type ManagerFacts, type ManagerName, type ManagerState } from './passwords'
+export type { Plugin } from './plugins'
 export type { Skill, SkillLibrary } from './skills'
 export { ROUTINE_ACTIONS, type Routine, type RoutineAction, type RoutineId } from './routines'
 export { mentionedBots, mentionOf, typedMention } from './mention'

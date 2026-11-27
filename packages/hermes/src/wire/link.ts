@@ -208,6 +208,8 @@ export class Offline extends Error {}
  * Highwing cannot list this Hermes's scheduled jobs.
  * `mcp.servers.list`, `.status`, `.add`, `.test` and `.remove` reach their legacy handlers too, each in the profile the call names
  * (tui_gateway/methods_tools.py:1470-1612). A -32601 from them means this Hermes cannot manage tool servers from Highwing.
+ * `plugins.manage` reaches its legacy handler the same way, in the profile the call names (tui_gateway/methods_tools.py:1939). Highwing
+ * sends only its `list` action, and a -32601 from it means this Hermes cannot list its plugins.
  * `projects.tree` reaches its legacy handler the same way (tui_gateway/methods_config.py:137), and a -32601 from it
  * means this Hermes cannot say which chats were branched from which. So does `llm.oneshot` (tui_gateway/methods_session.py:1249),
  * which a -32601 from means this Hermes cannot suggest a title.
@@ -239,7 +241,7 @@ export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'learning.frames' | 'learning.detail' | 'learning.edit' | 'learning.delete' |
   'vault.sources' | 'vault.list' | 'vault.source.set' | 'vault.unlock' | 'vault.lock' |
   'connectors.catalog' | 'connectors.accounts' | 'connectors.accounts.remove' | 'connectors.operation.status' |
-  'mcp.servers.list' | 'mcp.servers.status' | 'mcp.servers.add' | 'mcp.servers.test' | 'mcp.servers.remove' |
+  'mcp.servers.list' | 'mcp.servers.status' | 'mcp.servers.add' | 'mcp.servers.test' | 'mcp.servers.remove' | 'plugins.manage' |
   'display.status' | 'display.thumbnail' | 'display.observe' | 'display.lease.acquire' | 'display.lease.release'>
 export type Method = keyof Served
 

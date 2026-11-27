@@ -897,6 +897,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'learning.delete': (gateway, socket, params) => gateway.learning('learning.delete', socket).remove(typeof params.id === 'string' ? params.id : ''),
   /** tui_gateway/methods_tools.py:1470-1612 */
   ...Object.fromEntries(['list', 'status', 'add', 'test', 'remove'].map(verb => [`mcp.servers.${verb}`, ((gateway, socket, params, routed) => gateway.toolServers(socket, `mcp.servers.${verb}`, params, routed)) satisfies Handler])),
+  /** tui_gateway/methods_tools.py:1939-1947 */
+  'plugins.manage': (gateway, socket, params) => gateway.plugins(socket, params),
   /** tui_gateway/methods_tools.py:1311-1325 */
   'cron.manage': (gateway, socket, params, routed) => gateway.cron(socket, params, routed),
   'session.mutate': (gateway, socket, params, routed) => {
@@ -2311,6 +2313,17 @@ export class ScriptedGateway {
   toolServers(socket: Socket, method: string, params: Obj, routed: string): unknown {
     if (this.mcp === null || socket.reach === 'profile') throw unknownMethod(method)
     return this.mcp.call(method, params, routed)
+  }
+
+  /** `plugins.manage` reaches only the legacy handler. Only `list` is played, with the same rows for every profile (tui_gateway/methods_tools.py:1737-1740). */
+  plugins(socket: Socket, params: Obj): unknown {
+    const listed = this.fixture.header.plugins
+    if (listed === undefined || socket.reach === 'profile') throw unknownMethod('plugins.manage')
+    const action = params.action ?? 'list'
+    if (action !== 'list') throw new Refused('unplayed_action', { code: 4019, message: `the scripted gateway plays no plugins.manage ${String(action)}` })
+    const rows = listed.map(plugin => ({ ...plugin, key: plugin.name, portable: false, install_dir: '', has_desktop_half: false, servers: [], tools: [] }))
+    const userCount = rows.filter(row => row.source !== 'bundled').length
+    return { plugins: rows, user_count: userCount, bundled_count: rows.length - userCount }
   }
 
   /**

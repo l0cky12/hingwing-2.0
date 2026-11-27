@@ -21,6 +21,7 @@ import type { PathMatch } from '../domain/path'
 import { MANAGER_NAMES, MANAGERS, type BotManagers, type ManagerName, type ManagerState } from '../domain/passwords'
 import type { RelayState } from '../domain/relay'
 import type { Lease, ScreenFacts } from '../domain/screen'
+import type { Plugin } from '../domain/plugins'
 import type { ServerState, Tested, ToolServer } from '../domain/tool-servers'
 import type { Routine, RoutineAction, RoutineId } from '../domain/routines'
 import { OWN_COMMANDS, type SlashCatalog, type SlashEntry } from '../domain/slash'
@@ -33,7 +34,7 @@ import type {
   McpRuntimeStatus, McpServersListResult, McpServersStatusResult, McpServersTestResult, MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
   MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PetGalleryResult, PetThumbResult,
   PreviewClosePayload, PreviewOpenPayload, ProcessEntry, ProcessListResult, ProfilesConfigureResult, ProfilesCreateResult, ProfilesDescribeResult,
-  ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, RequestCancelPayload, RollbackCheckpoint,
+  PluginsManageResult, ProfilesGetAssetResult, ProjectsTreeResult, ProjectTreeLane, ProjectTreeNode, ProjectTreeRepo, ProjectTreeSession, RequestCancelPayload, RollbackCheckpoint,
   RollbackDiffResult, RollbackListResult, RollbackRestoreResult, SecretRequestParams, SessionContextBreakdownResult, SessionControlDispatch,
   SessionControlSnapshot, SessionLiveInfo, SessionMutateResult, SessionStats, SessionTitlePayload, SessionUsagePayload, SideAgentCompletePayload,
   StatusUpdatePayload, StoredTranscriptResult, StoredTranscriptRow, StreamDeltaPayload,
@@ -1512,6 +1513,19 @@ export function parseToolServers(listed: McpServersListResult, status: McpServer
     const url = words(row.url)
     const where = url !== null ? shownAddress(url) : [words(row.command), ...(isStrings(row.args) ? row.args : [])].filter(part => part !== null).join(' ')
     return [{ name, where, state: stateOf(running, row.enabled), tools: running !== undefined && isCount(running.tools) ? running.tools : 0, removable: row.source !== 'plugin' }]
+  })
+}
+
+/**
+ * `plugins.manage` `list` (tui_gateway/methods_tools.py:1665-1702). `status` is `_plugin_status`'s word (hermes_cli/plugins_cmd.py:933-946):
+ * `enabled`, `disabled` or `not enabled`, and only the first is on. A row with no name is dropped.
+ */
+export function parsePlugins(reply: PluginsManageResult): readonly Plugin[] {
+  const rows: unknown = isObject(reply) ? reply.plugins : undefined
+  return (Array.isArray(rows) ? rows.filter(isObject) : []).flatMap(row => {
+    const name = words(row.name)
+    if (name === null) return []
+    return [{ name, version: trimmed(row.version) ?? '', description: trimmed(row.description) ?? '', source: trimmed(row.source) ?? '', enabled: row.status === 'enabled' }]
   })
 }
 
