@@ -454,8 +454,8 @@ button.reaction:hover:not(:disabled) { border-color: var(--signal); }
 
 .composer { position: relative; min-width: 0; padding: 8px 0 16px; background: var(--paper); }
 .composer > .box { --line: 21.75px; --box-chrome: 8px; position: relative; display: flex; flex-direction: column; gap: 4px; margin: 0 calc(max(0px, (100% - 760px) / 2) + 28px) 0 calc(max(0px, (100% - 760px) / 2) + 28px + var(--col)); padding: 10px 10px 8px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 18px; }
-/* The card's top sits at most 40vh of text box plus about 120px of chrome, a wrapped toolbar row included, above the window's bottom, so a popover opening above it gets the rest. */
-.composer > .box { --pop-room: calc(60vh - 160px); }
+/* The text box stops at eight lines or 40vh, whichever is smaller, and the card adds about 170px of chrome under it, a wrapped toolbar row included. A popover opening above the card gets the rest of the window. */
+.composer > .box { --pop-room: calc(100vh - min(calc(8 * var(--line) + var(--box-chrome)), 40vh) - 170px); }
 .composer > .box:has(textarea:focus) { border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
 .composer > .box > form { display: flex; }
 .composer textarea { flex: 1; min-width: 0; resize: none; field-sizing: content; min-height: calc(var(--line) + var(--box-chrome)); max-height: min(calc(8 * var(--line) + var(--box-chrome)), 40vh); overflow-y: auto; padding: 4px 8px; font: 15px/var(--line) var(--sans); color: var(--ink); background: transparent; border: 0; }
@@ -464,6 +464,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .composer textarea:focus { box-shadow: none; }
 .composer .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; font: 14px/1.4 var(--sans); color: var(--graphite); }
 .tools .end { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; }
+.tools .end:has(> .model > :is(.later, .err, .confirm)) { flex-basis: 100%; }
 .tools .go { display: flex; flex: none; gap: 4px; padding-left: 4px; }
 .tools :where(.clip, .readout, .pill, .meter) { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; border: 0; border-radius: 8px; background: transparent; font: inherit; color: var(--graphite); white-space: nowrap; }
 .tools :where(.clip, .readout, .pill, .meter):is(:hover:not(:disabled), [aria-expanded="true"]) { color: var(--ink); background: var(--paper); }
