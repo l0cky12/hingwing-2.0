@@ -18,7 +18,7 @@ highwing-2.0/
   packages/
     hermes/                      @highwing/hermes        Node. No Electron, no DOM.
       src/
-        hub.ts                   public entry "."         openHermes, Hermes, Command, Feed, liveDialer, remoteRoute, Route, checkTarget
+        hub.ts                   public entry "."         openHermes, Hermes, Command, Feed, liveRoute, remoteRoute, Route, checkTarget
         actor.ts                 private                  one session: owns its Tracked state, makes the calls a state asks for (attach, resubmit, the facts a watched chat needs), lends commands a SessionPort
         session-commands.ts      private                  one row per command about one chat, over that chat's SessionPort. `versions` stays in hub.ts: it must not attach the chat
         sidebar.ts               private                  stored rows, the running set, deriveSidebar
@@ -41,7 +41,7 @@ highwing-2.0/
           contract.generated.ts                           copied from Hermes by `pnpm sync:contract`
           contract.openrpc.json                           copied with it; read only by testing/ for key sets
           link.ts                                         dial, handshake, heartbeat, JSON-RPC, backoff, and `as(bot)`, which adds a bot's profile to a call
-          tickets.ts                                      mintWith: probe, attach and the ticket that reaches every profile, for both routes; liveDialer
+          tickets.ts                                      mintWith: probe, attach and the ticket that reaches every profile, for both routes; liveRoute, readWith (one ticketed GET of the HTTP API)
           ssh.ts                                          Hermes's SSH client contract: the locator, one hermes command over ssh, its replies, the stderr table, the relay
           remote.ts                                       remoteRoute: a Dialer to the gateway on another machine, and its processes
           check.ts                                        checkTarget: Tailscale, ssh and Hermes, one step at a time

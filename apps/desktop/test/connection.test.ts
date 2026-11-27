@@ -92,7 +92,7 @@ function harness(loaded: Settings, save: (target: Target) => Promise<void> = asy
       opened.push(held)
       log.push(`open ${opened.length}`)
       const dial = Object.assign(async () => { throw new Error('the test never dials') }, { held })
-      return { dial, dispose: () => { held.disposed = true; log.push(`dispose ${opened.indexOf(held) + 1}`) } } satisfies Route
+      return { dial, read: async () => { throw new Error('the test never reads') }, dispose: () => { held.disposed = true; log.push(`dispose ${opened.indexOf(held) + 1}`) } } satisfies Route
     },
     open: (dial: Dialer, place: string) => {
       const { held } = dial as Dialer & { readonly held: Opened }

@@ -4,8 +4,9 @@
  * one on another machine. Nothing here outlives a dial: the `--serve` run is sent one line and ends.
  */
 import { CHECK_FAILURES } from '../domain/reach'
-import { DialError, dialWith, EXIT_KINDS, GATEWAY_PROTOCOL, TICKET_PREFIX, type Clock, type Dialer, type Mint } from './link'
-import { ASK_INTERACTIVE, ATTACH, attachedOf, NOT_FOUND, PROBE, probeOf, runTool, SERVE, servedOf, type HermesArgs, type ProbeFailure, type SshRun } from './ssh'
+import { DialError, dialWith, EXIT_KINDS, GATEWAY_PROTOCOL, TICKET_PREFIX, type Clock, type Mint, type ReadHermes } from './link'
+import type { Route } from './remote'
+import { ASK_INTERACTIVE, ASK_NATIVE_HTTP, ATTACH, attachedOf, httpTicketOf, NOT_FOUND, PROBE, probeOf, runTool, SERVE, servedOf, type HermesArgs, type ProbeFailure, type SshRun } from './ssh'
 
 /** How a hermes command runs on the gateway's machine: `runTool` here, `sshExec` on another. */
 export type RunHermes = (args: HermesArgs, options: { readonly deadlineMs: number; readonly input?: string }) => Promise<SshRun>
@@ -19,6 +20,7 @@ const PROBE_MS = 20_000
 /** attach's own `--timeout`, plus ssh's ConnectTimeout and room to exit. */
 const ATTACH_MS = { start: 90_000, retry: 35_000 } as const
 const SERVE_MS = 20_000
+const READ_MS = 10_000
 const ATTACH_ONLY = { windowsServiceSession: false, interactive: false } as const
 
 export interface MintOptions {
@@ -88,13 +90,35 @@ export function mintWith(run: RunHermes, options: MintOptions): Mint {
 
 const EXIT_AS_LOCATOR: Readonly<Record<'missing' | 'cut', number>> = { missing: NOT_FOUND, cut: 7 }
 
+/**
+ * One GET of the gateway's HTTP API per call, on a fresh ticket from `--serve` (client rule 3): a ticket
+ * is single use and lives 30 seconds, and it travels from the command's stdout to this request's header
+ * and nowhere else. `forward` turns the gateway's loopback origin into one this computer can reach, as
+ * for a socket.
+ */
+export function readWith(run: RunHermes, forward: (origin: string) => Promise<string>, fetcher: typeof fetch = fetch): ReadHermes {
+  return async path => {
+    const serve = await run(SERVE, { deadlineMs: SERVE_MS, input: ASK_NATIVE_HTTP })
+    const minted = serve.ok ? httpTicketOf(serve.code, serve.stdout) : null
+    if (minted === null) throw new Error('Hermes minted no ticket for its HTTP API.')
+    const response = await fetcher(`${await forward(minted.origin)}${path}`, {
+      // Never followed, so the ticket goes only to the address the gateway named.
+      redirect: 'manual',
+      signal: AbortSignal.timeout(READ_MS),
+      headers: { accept: 'application/json', 'x-hermes-gateway-ticket': minted.ticket }
+    })
+    return { status: response.status, body: await response.json().catch(() => null) }
+  }
+}
+
 /** The gateway of the Hermes on this computer. */
-export function liveDialer(options: { readonly hermesBin?: string; readonly clock?: Clock } = {}): Dialer {
+export function liveRoute(options: { readonly hermesBin?: string; readonly clock?: Clock } = {}): Route {
   const { signal } = new AbortController()
   const run: RunHermes = async (args, asked) => {
     const tool = await runTool(options.hermesBin ?? 'hermes', args, { ...asked, signal, ...(options.clock === undefined ? {} : { clock: options.clock }) })
     if (tool.end === 'exit') return { ok: true, code: tool.code, stdout: tool.stdout }
     return { ok: true, code: EXIT_AS_LOCATOR[tool.end], stdout: '' }
   }
-  return dialWith(mintWith(run, { machine: null, forward: async url => url, unprobed: 'attach' }))
+  const here = async (url: string) => url
+  return { dial: dialWith(mintWith(run, { machine: null, forward: here, unprobed: 'attach' })), read: readWith(run, here), dispose: () => {} }
 }

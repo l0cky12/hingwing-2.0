@@ -70,6 +70,14 @@ export interface Endpoint { readonly url: string; readonly protocols: readonly s
  */
 export type Mint = (request: { readonly start: boolean }) => Promise<Endpoint>
 
+/** What a gateway's HTTP API answered: the status, and the body as JSON (null when it was not JSON). */
+export interface HttpAnswer { readonly status: number; readonly body: unknown }
+/**
+ * One authenticated GET of the gateway's HTTP API, `path` being its path and query. A call that cannot get an
+ * answer rejects. Any answer resolves, 404 and 401 included, so the caller names what each status means.
+ */
+export type ReadHermes = (path: string) => Promise<HttpAnswer>
+
 export const GATEWAY_PROTOCOL = 'hermes-gateway-v1'
 /** Hermes's hermes_cli/gateway_client.py:16 */
 export const TICKET_PREFIX = 'hermes-gateway-ticket.'

@@ -28,12 +28,12 @@ import { parseCatalog, parseEvent, parseServerRequest, type ParsedEvent } from '
 
 export type { Command, Outcome, Refusal, ResultOf } from './domain/command'
 export type { Upload } from './actor'
-export type { Clock, Dialer, WireSocket } from './wire/link'
+export type { Clock, Dialer, HttpAnswer, ReadHermes, WireSocket } from './wire/link'
 export { checkTarget, type CheckOptions, type CheckResult } from './wire/check'
 export { gatewaysByUrl, memoryKeep, type GatewayDeps, type Gateways, type Keep, type UrlCheckResult } from './wire/gateways'
 export { DialError } from './wire/link'
 export { remoteRoute, type Route } from './wire/remote'
-export { liveDialer } from './wire/tickets'
+export { liveRoute } from './wire/tickets'
 
 /** A value that changes. `subscribe` calls back on every change, not for the current value. */
 export interface Feed<T> {
@@ -99,7 +99,7 @@ export interface Hermes {
 }
 
 export interface HermesOptions {
-  /** `liveDialer()` for the real gateway, `scriptedDialer(fixture)` for a recorded one. */
+  /** `liveRoute().dial` for the real gateway, `scriptedDialer(fixture)` for a recorded one. */
   readonly dial: Dialer
   /** Whether the first dial after launch may start the gateway. Automatic retries never do. Default true. */
   readonly startGatewayOnLaunch?: boolean
