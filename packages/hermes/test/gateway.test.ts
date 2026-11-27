@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { manualClock, settle } from '../src/testing/clock'
 import { fixtureLatency, MASKED, scriptedDialer, type Fixture, type FixtureStep, type Images, type Pets, type ScriptOptions } from '../src/testing/fixture'
@@ -1539,6 +1541,37 @@ describe('the scripted gateway with latency', () => {
   it('reads its latency from a whole number of ms, and refuses anything else', () => {
     expect([undefined, '', '0', '75'].map(fixtureLatency)).toEqual([0, 0, 0, 75])
     for (const text of ['-5', '7.5', 'fast', '75ms']) expect(() => fixtureLatency(text), text).toThrow(/whole number/)
+  })
+})
+
+describe('the Connect apps board', () => {
+  const connectors = JSON.parse(readFileSync(fileURLToPath(new URL('../../../fixtures/connectors/two.json', import.meta.url)), 'utf8'))
+  const withApps: Fixture = { ...ERRAND, header: { ...ERRAND.header, connectors } }
+
+  it('answers the window reads as unknown methods when the fixture has no board', async () => {
+    const { call } = await rawSocket()
+    for (const method of ['connectors.catalog', 'connectors.accounts', 'connectors.accounts.remove', 'connectors.operation.status']) {
+      expect(await call(method, {})).toMatchObject({ error: { code: -32601, data: { reason: 'unknown_method' } } })
+    }
+  })
+
+  it('lists the catalog, settles a connect on the second status read, and removes an account', async () => {
+    const { call } = await rawSocket({}, withApps)
+    expect(await call('connectors.catalog', {})).toMatchObject({ result: { connectors: [{ slug: 'github' }, { slug: 'slack' }, { slug: 'notion' }] } })
+    expect(await call('connectors.accounts', {})).toMatchObject({ result: { accounts: [{ connection_id: 'slack-1', status: 'active' }, { connection_id: 'notion-1', status: 'expired' }] } })
+    expect(await call('connectors.connect', { owner: { type: 'account' }, connectors: ['github'], reconnect: true })).toMatchObject(refusal('invalid_params'))
+    expect(await call('connectors.connect', { owner: { type: 'account' }, connectors: ['nope'] })).toMatchObject(refusal('invalid_params'))
+    const started = await call('connectors.connect', { owner: { type: 'account' }, connectors: ['github'] })
+    const opId = started.result?.op_id
+    expect(started.result).toMatchObject({ settled: false, targets: [{ state: 'initiated', connect_url: 'https://example.com/connect/github' }] })
+    expect(await call('connectors.operation.status', { owner: { type: 'account' }, op_id: opId })).toMatchObject({ result: { settled: false, targets: [{ state: 'initiated' }] } })
+    expect(await call('connectors.operation.status', { owner: { type: 'account' }, op_id: opId })).toMatchObject({ result: { settled: true, targets: [{ state: 'connected' }] } })
+    expect(await call('connectors.accounts', {})).toMatchObject({
+      result: { accounts: [{ connection_id: 'slack-1' }, { connection_id: 'notion-1' }, { connection_id: 'conn-github', connector: 'github', status: 'active' }] }
+    })
+    expect(await call('connectors.accounts.remove', { connection_id: 'slack-1' })).toMatchObject({ result: { connection_id: 'slack-1', connector: 'slack', status: 'removed' } })
+    expect(await call('connectors.accounts', {})).toMatchObject({ result: { accounts: [{ connection_id: 'notion-1' }, { connection_id: 'conn-github' }] } })
+    expect(await call('connectors.accounts.remove', { connection_id: 'missing' })).toMatchObject(refusal('not_found'))
   })
 })
 

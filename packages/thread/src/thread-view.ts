@@ -13,7 +13,7 @@ export type { ViewClock }
 
 export { leafText, parseMarkdown, proseLeaves, type Align, type Block, type Cell, type CodeBlock, type Inline, type ProseLeaf } from './prose'
 export { drawnQuestions, type AskCard, type ConnectCard, type DrawnQuestion, type QuestionsCard, type QuestionView, type SecretCard, type SecretField, type TargetView } from './asks'
-export { fieldId, findInThread, type Changing, type FieldPart, type FindMatch } from './find'
+export { fieldId, findInThread, type Beside, type BesideRow, type Changing, type FieldPart, type FindMatch } from './find'
 export { multiReply } from './multi'
 export { answeringWords, groupThread, namesInWords, type GroupItemView, type GroupThreadView, type GroupTurnView, type NameOf } from './group-thread'
 
@@ -57,6 +57,8 @@ export interface TurnView {
   /** The quiet line above the request: "Today 14:05". null draws nothing. Never the empty string. */
   readonly time: string | null
   readonly request: string | null
+  /** Hermes put the request into the chat itself, such as a message another chat handed to this bot. */
+  readonly handed: boolean
   /** What was sent with the request, drawn above it. Empty for a turn with no request. */
   readonly attachments: readonly Attachment[]
   /** The stored row id of the request, the address an edit or a regenerate cuts before. null for a turn with no request, and for a running turn's until it settles. */
@@ -364,7 +366,7 @@ function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<Se
     }
   })
   return {
-    key: turn.id, time, request: turn.request?.text ?? null, attachments: turn.request?.attachments ?? NO_ATTACHMENTS, rowId: turn.request?.rowId ?? null,
+    key: turn.id, time, request: turn.request?.text ?? null, handed: turn.request?.handed === true, attachments: turn.request?.attachments ?? NO_ATTACHMENTS, rowId: turn.request?.rowId ?? null,
     nodes, end: end(nodes),
     tokens: tokenWords(turn.tokens ?? null),
     reactions: turn.reply == null ? null : { turn: turn.id, given: turn.reply.reactions }

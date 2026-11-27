@@ -314,7 +314,7 @@ describe('attached', () => {
       snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 9 }, history: { turns, unfinished: null, older: { cursor: 'c1' } } })
     })
     expect(state.gate).toEqual({ at: 'live', cursor: { epoch: EPOCH, seq: 9 }, subscriptionId: 'sub-1' })
-    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null })
+    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null, rewound: {} })
   })
 
   it('B: opens the unfinished turn of a running snapshot with its waiting prompts, then the parked frames above the watermark', () => {
@@ -880,6 +880,16 @@ describe('rewinding', () => {
     expect(cut.content.history.map(turn => turn.id)).toEqual(['a'])
     expect(cut.fence.revision).toBe(2)
     expect(reduce(cut, event(10, { type: 'meta', cutBefore: 3 }, null)).content).toBe(cut.content)
+  })
+
+  it('notes where each cut turn went, and keeps it through the turns after, as a replay that cuts and runs a new turn reduces', () => {
+    const cut = reduce(held(), event(9, { type: 'meta', revision: 2, cutBefore: 5 }, null))
+    expect(cut.content.rewound).toEqual({ c: 'b' })
+    const ran = feed(cut, event(10, started('t1')), event(11, ended(COMPLETE, 'Done', [7, 8], 7)))
+    const added = ran.content.history.at(-1)?.id
+    expect(ran.content.history.map(turn => turn.id)).toEqual(['a', 'b', added])
+    expect(ran.content.rewound).toBe(cut.content.rewound)
+    expect(rewound(ran, 3).content.rewound, 'a later cut takes what went to a turn it cuts').toEqual({ c: 'a', b: 'a', [String(added)]: 'a' })
   })
 
   it('does nothing for a row no turn opens', () => {

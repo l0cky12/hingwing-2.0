@@ -14,7 +14,7 @@ const MESSAGE = 'Check the backups ran'
 const WORDS = 'This chat runs a scheduled job, so your message was not run. Start a new chat to send it.'
 const REFUSED: ThreadEnd = { kind: 'failed', words: WORDS, remedy: 'newChat' }
 const turn = (end: ThreadEnd, request: string | null = MESSAGE): TurnView =>
-  ({ key: 't1', time: null, request, attachments: [], rowId: null, tokens: null, reactions: null, nodes: [], end })
+  ({ key: 't1', time: null, request, handed: false, attachments: [], rowId: null, tokens: null, reactions: null, nodes: [], end })
 const props = (more: Partial<Props>): Props => ({
   turn: turn(REFUSED), open: NONE_OPEN, onToggle: () => {}, onAnswer: async () => undefined, onAskAgain: async () => false, canEdit: true, showsRegenerate: false, canRegenerate: false,
   canBranch: true, onEdit: () => {}, onRegenerate: () => {}, onBranch: () => {}, onNewChat: () => {}, versions: [], onVersion: () => {}, canReact: false, onReact: () => {}, helpers: null, ...more

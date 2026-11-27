@@ -13,10 +13,13 @@ const NO_LOOKS: LookCalls = {
   canGenerate: async () => ({ ok: true, value: false }), generate: async () => ({ ok: true, value: '' }), choose: async () => ({ ok: true, value: 'cancelled' }),
   pets: async () => ({ ok: true, value: [] }), petPicture: async () => ({ ok: true, value: null })
 }
-const showing = (bots: Bots | undefined, open: OpenChat | undefined, link: Link | undefined = ONLINE, groups: Groups | undefined = NO_GROUPS, activity: BotActivities | undefined = {}) =>
+const showing = (
+  bots: Bots | undefined, open: OpenChat | undefined, link: Link | undefined = ONLINE, groups: Groups | undefined = NO_GROUPS, activity: BotActivities | undefined = {},
+  drafts: ReadonlyMap<BotId, string> = new Map(), compact = false
+) =>
   renderToStaticMarkup(
     <BotsPanel
-      bots={bots} open={open} link={link} groups={groups} activity={activity} onOpen={async () => ({ ok: true, value: null })} onNewChat={() => {}} onNew={async () => ({ ok: true, value: null })}
+      compact={compact} onCompact={() => {}} bots={bots} open={open} link={link} groups={groups} activity={activity} drafts={drafts} onOpen={async () => ({ ok: true, value: null })} onNewChat={() => {}} onNew={async () => ({ ok: true, value: null })}
       onMark={async () => ({ ok: true, value: { edition: 2 } })}
       onCreate={async () => ({ ok: true, value: { bot: 'rae' as BotId, warnings: [] } })} onCreateGroup={async () => ({ ok: true, value: undefined })} onOpenGroup={() => {}}
       onRenameGroup={async () => ({ ok: true, value: undefined })} onDeleteGroup={async () => ({ ok: true, value: undefined })}
@@ -43,7 +46,7 @@ describe('the bots sidebar', () => {
 
   it("names each row by its bot, and the default bot as the default bot, each followed by its More button", () => {
     expect(buttons(markup).map(tag => attr(tag, 'aria-label'))).toEqual([
-      'Search bots', 'New', 'Emu, default bot', 'More for Emu', 'dr eggbot', 'More for dr eggbot', 'Research', 'More for Research',
+      'Search bots', 'New', 'Compact sidebar', 'Emu, default bot', 'More for Emu', 'dr eggbot', 'More for dr eggbot', 'Research', 'More for Research',
       'Timothy · CEO', 'More for Timothy · CEO', 'Hermes', 'More for Hermes', 'highwing', 'More for highwing'
     ])
     expect(markup).toMatch(/<h3>New section<\/h3>.*<h3>Unassigned<\/h3>/s)
@@ -87,6 +90,14 @@ describe('the bots sidebar', () => {
     expect(markup).toContain(`id="${timothy}">Should I start building Launch<`)
     const fresh = render(listed(fact('fresh', 'Fresh')))
     expect(fresh).toContain(`id="${attr(named(fresh, 'Fresh')!, 'aria-describedby')}">No messages yet<`)
+  })
+
+  it("describes a bot by the first line of its unsent draft, and by its preview once the draft is gone", () => {
+    const describing = (html: string, label: string) =>
+      new RegExp(`id="${attr(named(html, label)!, 'aria-describedby')}">(.*?)</span></span>`).exec(html)?.[1]?.replace(/<[^>]*>/g, '')
+    const drafted = showing(APPROVED, AT_LAUNCH, ONLINE, NO_GROUPS, {}, new Map([['timothy' as BotId, 'Ship the launch post\nthen the email']]))
+    expect(describing(drafted, 'Timothy · CEO')).toBe('Draft: Ship the launch post')
+    expect(describing(render(APPROVED), 'Timothy · CEO')).toBe('Should I start building Launch')
   })
 
   it('has one plus, a closed menu button named New, whatever the link says, and draws no dialog until a row is picked', () => {
@@ -172,6 +183,23 @@ describe('the bots sidebar', () => {
     ['Hermes has made none', NO_GROUPS], ['this Hermes has no group chats', { state: 'unsupported' }], ['Hermes has not said yet', { state: 'loading' }], ['nothing has been pushed yet', undefined]
   ] as [string, Groups | undefined][])('draws no Group chats section when %s', (_, held) => {
     expect(section(showing(APPROVED, AT_LAUNCH, ONLINE, held))).toBeNull()
+  })
+
+  it('has a Compact sidebar toggle that says whether the sidebar is compact, and Ctrl+B as its keys', () => {
+    for (const compact of [false, true]) {
+      const toggle = named(showing(APPROVED, AT_LAUNCH, ONLINE, NO_GROUPS, {}, new Map(), compact), 'Compact sidebar')!
+      expect(attr(toggle, 'aria-pressed')).toBe(String(compact))
+      expect(attr(toggle, 'aria-keyshortcuts')).toBe('Control+B')
+      expect(attr(toggle, 'title')).toBe('Compact sidebar (Ctrl+B)')
+    }
+  })
+
+  it("names each face by its bot or group in a tooltip when compact, and draws no tooltip over a row that shows its name", () => {
+    const plan = groups(['plan', 'Launch plan', seat('default', 'emu'), seat('research')])
+    const tips = (compact: boolean) => buttons(showing(APPROVED, AT_LAUNCH, ONLINE, plan, {}, new Map(), compact))
+      .filter(tag => /class="bot(-feature)?"/.test(tag)).map(tag => attr(tag, 'title'))
+    expect(tips(true)).toEqual(['Emu', 'Launch plan', 'dr eggbot', 'Research', 'Timothy · CEO', 'Hermes', 'highwing'])
+    expect(tips(false).every(tip => tip === undefined)).toBe(true)
   })
 
   it('has a paint for every tone a bot can carry', () => {

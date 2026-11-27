@@ -10,7 +10,7 @@ function session(items: readonly PromptItem[], live = true): Session {
   return {
     id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', interlude: [], requests: [], queue: [], outbox: [],
     model: { current: null, next: null, ask: null }, usage: { totals: null, context: null },
-    tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null,
+    tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null, rewound: {},
     sync: live ? { state: 'live' } : { state: 'offline' },
     run: { state: 'running', generation: 1 as Generation, stop: 'none', turn: { id: 't1' as TurnId, request: { text: 'Deploy it', inputId: null, rowId: null, attachments: [] }, began: null, items, announced: null } }
   }

@@ -85,7 +85,7 @@ describe('an answered side question, in the thread', () => {
     const html = render()
     const [, labelId] = /^<article[^>]*aria-labelledby="([^"]+)"/.exec(html) ?? []
     expect(html).toContain(`<h2 id="${labelId}">Side question</h2>`)
-    expect(html).toContain('<p class="side-asked">what does this flag do?</p>')
+    expect(html).toContain('<p class="side-asked" data-find="side:btw_1 request">what does this flag do?</p>')
     expect(html).toContain('<strong>dry-run</strong>')
     expect(html).toContain('aria-label="Copy reply"')
     expect(html).toContain('Not saved with the chat. Later replies won&#x27;t see it.')
@@ -97,7 +97,7 @@ describe('an answered side question, in the thread', () => {
 
   it('shows a failure in the error color, with the question kept', () => {
     const html = render({ answer: { s: 'failed', message: 'no model' } })
-    expect(html).toContain('<p class="err">no model</p>')
+    expect(html).toContain('<p class="err" data-find="side:btw_1 error">no model</p>')
     expect(html).toContain('what does this flag do?')
     expect(html).not.toContain('Copy reply')
   })

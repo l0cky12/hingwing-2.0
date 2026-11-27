@@ -13,6 +13,7 @@ import {
   beginsAtTurn, parseApprovalMode, parseBranched, parseBusy, parseCheckpointDiff, parseCheckpoints, parseCompressed, parseContextBreakdown, parseCorrection, parseDirective, parseFast,
   parseModelMenu, parseModelReceipt, parsePathMatches, parseReactions, parseRestored, parseShown, parseTranscript, placeOfRow, type Correction, type Directive
 } from './wire/parse'
+import { linesFromBars, linesFromInsights, parseAccountReport, type AccountReport } from './domain/usage'
 
 /** `versions` stays with the hub: reading a chat's versions must not attach it. */
 export type SessionCommand = Exclude<Extract<Command, { readonly sessionId: SessionId }>, { readonly do: 'versions' }>
@@ -327,6 +328,22 @@ const sessionCommands: { readonly [K in SessionCommand['do']]: Row<Extract<Sessi
     return breakdown.ok ? { ok: true, value: parseContextBreakdown(breakdown.value) } : breakdown
   }),
 
+  /** A missing method tries the next read. Any other refusal stops, so a missing chat is not "does not report usage". */
+  accountUsage: port => port.whenLive(async () => {
+    const account = await port.call('session.account_usage', { session_id: port.id })
+    if (account.ok) return { ok: true, value: parseAccountReport(account.value) }
+    if (account.refusal.kind !== 'unsupported') return account
+    const bars = await port.call('usage.bars', {})
+    if (bars.ok) {
+      const lines = linesFromBars(bars.value)
+      if (lines !== null) return { ok: true, value: { state: 'reported', lines } satisfies AccountReport }
+    } else if (bars.refusal.kind !== 'unsupported') return bars
+    const insights = await port.call('insights.get', {})
+    if (insights.ok) return { ok: true, value: { state: 'reported', lines: linesFromInsights(insights.value) } satisfies AccountReport }
+    if (insights.refusal.kind === 'unsupported') return { ok: true, value: { state: 'unreported' } satisfies AccountReport }
+    return insights
+  }),
+
   completePath: (port, { word }) => port.whenLive(async () => {
     const matches = await port.call('complete.path', { session_id: port.id, word })
     return matches.ok ? { ok: true, value: parsePathMatches(matches.value) } : matches
@@ -444,7 +461,10 @@ const SWITCHES: { readonly [S in Switched['set']]: (command: Extract<Switched, {
    */
   yolo: ({ on }) => ({ key: 'yolo', value: on ? 'on' : 'off', said: reply => ({ yolo: reply.value === '1' || reply.value === true }) }),
   /** A profile write, as `/approvals <mode>` is. Hermes sends no session.info for it, so the reply is the only word (gateway/session_tui_config.py:202-203,337-350). */
-  approvals: ({ to }) => ({ key: 'approval_mode', value: to, said: reply => ({ approvals: parseApprovalMode(reply.value) ?? to }) }),
+  approvals: ({ to }) => ({ key: 'approval_mode', value: to, said: reply => {
+    const approvals = parseApprovalMode(reply.value)
+    return approvals === null ? {} : { approvals }
+  } }),
   /** Hermes answers the tier's word (gateway/session_tui_config.py:274-298). */
   fast: ({ on }) => ({ key: 'fast', value: on ? 'fast' : 'normal', said: reply => ({ fast: parseFast(reply) ?? on }) })
 }

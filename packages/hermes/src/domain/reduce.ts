@@ -182,7 +182,7 @@ export interface HistoryPage {
   readonly turns: readonly SettledTurn[]
   /** Set when the last stored turn has no end yet. On a running session it becomes the open turn's start. `rows`: the stored row ids it covers so far. */
   readonly unfinished: {
-    readonly request: string | null; readonly began: Began | null; readonly items: SettledTurn['items']; readonly rows: readonly number[]
+    readonly request: string | null; readonly handed?: true; readonly began: Began | null; readonly items: SettledTurn['items']; readonly rows: readonly number[]
   } | null
   /** null: the gateway holds nothing older. Otherwise where `session.transcript` continues (`cursor` null: from its latest page). */
   readonly older: { readonly cursor: string | null } | null
@@ -322,7 +322,7 @@ export function emptyTracked(id: SessionId): Tracked {
   return {
     content: {
       id, title: '', cwd: null, history: [], earlier: 'none', run: IDLE, interlude: [], requests: [], queue: [], outbox: [], model: NO_MODEL, usage: NO_USAGE, tuning: UNTUNED,
-      sides: [], processes: null, control: null
+      sides: [], processes: null, control: null, rewound: {}
     },
     gate: { at: 'detached', why: 'new', cursor: null },
     fence: {
@@ -500,7 +500,7 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
   const openId = snapshot.running ? runTurnId(snapshot.generation) : `unfinished:${snapshot.watermark.epoch}:${snapshot.watermark.seq}` as TurnId
   const { history, doing } = withPlan(leftOpen === null ? stored : [...stored, {
     id: openId,
-    request: requestOf(leftOpen.request),
+    request: requestOf(leftOpen.request, leftOpen.handed),
     began: leftOpen.began,
     items: leftOpen.items,
     outcome: LOST,
@@ -514,7 +514,7 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
     stop: sameRun ? before.stop : 'none',
     turn: {
       id: openId,
-      request: requestOf(page.unfinished?.request ?? null) ?? startedRequest(state, snapshot.queue),
+      request: requestOf(page.unfinished?.request ?? null, page.unfinished?.handed) ?? startedRequest(state, snapshot.queue),
       began: page.unfinished?.began ?? (before.state === 'running' && sameRun ? before.turn.began : null),
       items: [...doing, ...snapshot.prompts.map(prompt => waitingPrompt(prompt, null))],
       announced: null
@@ -542,7 +542,8 @@ function seed(state: Tracked, snapshot: Snapshot, page: HistoryPage): Tracked {
       tuning: patch(content.tuning, snapshot.tuning),
       sides: content.sides.map(side => (side.state.s === 'running' ? { ...side, state: LOST_SIDE } : anchored(side))),
       processes: content.processes,
-      control: content.control
+      control: content.control,
+      rewound: content.rewound
     },
     fence: {
       revision: Math.max(fence.revision, snapshot.revision),
@@ -653,9 +654,12 @@ function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
   return listed(next, snapshot.queue)
 }
 
+/** A message `bot_relay.deliver` handed over is admitted as `bot:<delivery id>` (gateway/session_bot.py:980). */
+const markHanded = (request: Request): Request => (request.inputId?.startsWith('bot:') === true ? { ...request, handed: true } : request)
+
 function startedRequest(state: Tracked, rows: readonly Admission[]): Request | null {
   const started = rows.find(row => row.state.s === 'started')
-  return started === undefined ? null : { text: started.text, inputId: started.inputId, rowId: null, attachments: carried(state, started) }
+  return started === undefined ? null : markHanded({ text: started.text, inputId: started.inputId, rowId: null, attachments: carried(state, started) })
 }
 
 /** A row of one of Hermes's lists, by the ids that can tie it to this client's outbox. */
@@ -689,7 +693,7 @@ function listed(state: Tracked, rows: readonly Admission[]): Tracked {
   }
   if (started === null) return next
   return editTurn(next, turn => (turn.request === null || turn.request.inputId === null
-    ? { ...turn, request: { ...started, text: turn.request?.text ?? started.text, rowId: turn.request?.rowId ?? null } }
+    ? { ...turn, request: { ...started, text: turn.request?.text ?? started.text, rowId: turn.request?.rowId ?? null, ...(turn.request?.handed ? { handed: true } : {}) } }
     : turn))
 }
 
@@ -991,7 +995,13 @@ function cutBefore(state: Tracked, rowId: number): Tracked {
   if (at < 0) return state
   const history = content.history.slice(0, at)
   const anchored = reanchor(state, { history, run: content.run }, { page: history, fallback: newestShownSettled(history), older: false })
-  return { ...state, content: { ...content, history, sides: content.sides.map(anchored) } }
+  const gone = new Set(content.history.slice(at).map(turn => turn.id))
+  const kept = newestShownSettled(history)
+  const rewound = Object.fromEntries([
+    ...Object.entries(content.rewound).map(([turn, went]) => [turn, went !== null && gone.has(went) ? kept : went]),
+    ...[...gone].map(turn => [turn, kept])
+  ]) as SessionContent['rewound']
+  return { ...state, content: { ...content, history, sides: content.sides.map(anchored), rewound } }
 }
 
 function openRun(state: Tracked, generation: Generation, id: TurnId, request: Request | null, began: Began | null): Tracked {
@@ -1107,8 +1117,8 @@ function runTurnId(generation: Generation): TurnId {
   return `run:${generation}` as TurnId
 }
 
-function requestOf(text: string | null): Request | null {
-  return text === null ? null : { text, inputId: null, rowId: null, attachments: [] }
+function requestOf(text: string | null, handed?: true): Request | null {
+  return text === null ? null : { text, inputId: null, rowId: null, attachments: [], ...(handed ? { handed } : {}) }
 }
 
 function holdsTurn(content: Pick<SessionContent, 'history' | 'run'>, id: TurnId): boolean {
@@ -1128,7 +1138,7 @@ function requestFor(state: Tracked, admissionId: string | null, requestText: str
   const row = admissionId === null ? undefined : admissions[admissionId]
   // Hermes's own words for the request, when the start carries them, are what a person reads. The row's text is what the model reads.
   if (admissionId !== null && row !== undefined) {
-    return { ...row, text: requestText ?? row.text, rowId: null, attachments: carried(state, { admissionId, inputId: row.inputId }) }
+    return markHanded({ ...row, text: requestText ?? row.text, rowId: null, attachments: carried(state, { admissionId, inputId: row.inputId }) })
   }
   const admitted = outbox.find(entry => admissionId !== null && entry.inputId === sent[admissionId])
   if (admitted !== undefined) return { text: admitted.text, inputId: admitted.inputId, rowId: null, attachments: admitted.attachments }
