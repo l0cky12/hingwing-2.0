@@ -20,7 +20,8 @@ export interface ConnectionDeps {
   save(target: Target): Promise<void>
   check(target: Target, options: Pick<CheckOptions, 'signal' | 'onStep'>): Promise<CheckResult>
   routeFor(target: Target): Route
-  open(dial: Dialer): Hermes
+  /** `place`: which connection this is, the same for the same target in every run. */
+  open(dial: Dialer, place: string): Hermes
 }
 
 export type SetupEvent =
@@ -114,7 +115,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
   type Open = { readonly live: Live; readonly hermes: Hermes; readonly route: Route }
   const connect = (target: Target, epoch: number): Open => {
     const route = deps.routeFor(target)
-    return { live: { target, epoch }, hermes: deps.open(route.dial), route }
+    return { live: { target, epoch }, hermes: deps.open(route.dial, JSON.stringify(target)), route }
   }
   /** Both end before this returns, so a quit that does not wait for the promise still leaves no process behind. */
   const disconnect = ({ hermes, route }: Open): Promise<void> => {

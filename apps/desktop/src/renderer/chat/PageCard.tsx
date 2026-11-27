@@ -1,11 +1,12 @@
 import { fieldId, type PageView } from '@highwing/thread'
 import { useContext, useState } from 'react'
-import { baseName, FileCallContext } from './FilePath'
+import { baseName, FileCallContext, FilesHereContext } from './FilePath'
 
 const WORDS = { missing: "This page isn't there any more.", failed: "Highwing couldn't open this page.", refused: "Highwing couldn't open this page." } as const
 
 export function PageCard({ page: { path, label, title }, nodeKey }: { readonly page: PageView; readonly nodeKey: string }) {
   const fileCall = useContext(FileCallContext)
+  const here = useContext(FilesHereContext)
   const [note, setNote] = useState<string | null>(null)
   const open = async () => {
     const outcome = await fileCall('page', path, label)
@@ -21,7 +22,7 @@ export function PageCard({ page: { path, label, title }, nodeKey }: { readonly p
           <h3 data-find={fieldId(nodeKey, 'title')}>{title}</h3>
           <p title={path}>{baseName(path)}</p>
         </div>
-        <button type="button" aria-label={`Open ${title}`} onClick={() => void open()}>Open</button>
+        {here && <button type="button" aria-label={`Open ${title}`} onClick={() => void open()}>Open</button>}
       </div>
       {note !== null && <p className="page-card-note" role="alert">{note}</p>}
     </article>

@@ -12,6 +12,7 @@ import { parseEvent } from '../wire/parse'
 import { MASKED, type ChatSeed, type Fixture, type FixtureStep, type Reads } from './fixture'
 import { checkParams } from './params'
 import { ScriptedRooms } from './rooms'
+import { ScriptedVault } from './vault'
 
 export interface Peer {
   write(frame: unknown): void
@@ -413,6 +414,8 @@ class EchoChat implements Stream {
   generation = 0
   revision = 0
   asking: SeededApproval | null = null
+  /** A turn under way that `turnMs` holds open. */
+  turning = false
   archived = false
   pinned = false
   yolo = false
@@ -434,9 +437,17 @@ class EchoChat implements Stream {
     return Math.max(0, ...this.rows.map(row => (isInt(row.row_id) ? row.row_id : 0))) + 1
   }
 
-  /** Only a seeded approval keeps a turn open: an echo turn ends before the next frame is read. */
+  /** Only a seeded approval or a `turnMs` turn keeps a turn open: any other echo turn ends before the next frame is read. */
   get running(): boolean {
-    return this.asking !== null
+    return this.asking !== null || this.turning
+  }
+
+  /** A row of `session.active_list` (gateway/session_active_list.py:36-46). Only a running chat is live here, as `listed` says. */
+  activeRow(): Obj {
+    return {
+      current: false, id: this.id, session_key: this.id, last_active: this.startedAt, started_at: this.startedAt, message_count: this.rows.length,
+      model: this.model.model, preview: '', title: this.title, source: 'gui', status: this.asking === null ? 'working' : 'waiting'
+    }
   }
 
   /** A row of `session.list` (gateway/session_listing.py:67-70). `picker` adds what a picker shows (gateway/session_picker_fields.py:24-43). */
@@ -753,6 +764,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const story = { running: gateway.view.running, ...(params.picker === true ? { pinned: gateway.storyPinned() } : {}) }
     return { sessions: shown.map(row => (row.session_id === gateway.sessionId ? { ...row, ...story } : row)), scope }
   },
+  /** gateway/session_active_list.py:27-47 */
+  'session.active_list': (gateway, _socket, _params, routed) => ({ sessions: gateway.activeRows(routed) }),
   /** gateway/session_discovery.py:8-35 */
   'commands.catalog': (gateway, _socket, params, routed) => {
     const { catalog } = gateway.fixture.header
@@ -818,6 +831,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   /** tui_gateway/methods_images.py:57-96 */
   'image.generate': (gateway, socket, params) => gateway.generate(socket, params),
   'llm.oneshot': (gateway, socket) => gateway.oneshot(socket),
+  /** tui_gateway/methods_vault.py */
+  'vault.sources': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.sources', params, routed),
+  'vault.list': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.list', params, routed),
+  'vault.source.set': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.source.set', params, routed),
+  'vault.unlock': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.unlock', params, routed),
+  'vault.lock': (gateway, socket, params, routed) => gateway.vaultCall(socket, 'vault.lock', params, routed),
   /** tui_gateway/methods_session.py:1467-1495 */
   'pet.gallery': (gateway, socket) => gateway.petGallery(socket),
   /** tui_gateway/methods_session.py:1557-1563 */
@@ -979,6 +998,7 @@ export class ScriptedGateway {
   private readonly sockets = new Set<Socket>()
   private readonly stagedImages = new Set<string>()
   private readonly rooms: ScriptedRooms | null
+  private readonly vault: ScriptedVault | null
   private drop: Drop
   private delivered = 0
   private seqShift = 0
@@ -1034,6 +1054,8 @@ export class ScriptedGateway {
         throw new Refused(unexpected, { code: -32603, message: unexpected })
       }
     })
+    // tui_gateway/methods_vault.py answers every failure with 5095 and its own words.
+    this.vault = fixture.header.vault === undefined ? null : new ScriptedVault(fixture.header.vault, message => { throw new Refused(message, { code: 5095, message }) })
   }
 
   get latest(): number {
@@ -1088,6 +1110,7 @@ export class ScriptedGateway {
     // A Hermes without the bot relay declares none of its methods, so no param check is reached.
     if (method.startsWith('bot_relay.') && this.fixture.header.relay === undefined) return { error: unknownMethod(method).wire }
     if (method === 'complete.path' && this.fixture.header.paths === undefined) return { error: unknownMethod(method).wire }
+    if (method === 'session.active_list' && this.fixture.header.activeList === false) return { error: unknownMethod(method).wire }
     if (method.startsWith('groups.')) return this.rooms === null ? { error: unknownMethod(method).wire } : this.group(this.rooms, method, raw)
     if (!isObject(raw)) return refusal('invalid_params')
     const { profile, ...unscoped } = raw
@@ -1236,6 +1259,18 @@ export class ScriptedGateway {
       chat.profile === routed && (hidden || !chat.hidden) && (scope === 'stored' || chat.running) && (!chat.archived || (hidden && scope === 'live')))
     const rows = chats.map(chat => chat.listRow(picker)).sort((a, b) => Number(b.last_active_at ?? b.started_at ?? 0) - Number(a.last_active_at ?? a.started_at ?? 0))
     return scope === 'live' ? { sessions: rows, scope } : { sessions: rows.map(row => ({ ...row, running: false })), scope, next_cursor: null }
+  }
+
+  /**
+   * The live chats of the routed profile with their turn's status. The story holds its turn open while an approval or a
+   * request waits on the user (gateway/session_active_list.py:15-24).
+   */
+  activeRows(routed: string): readonly Obj[] {
+    const chats = this.echoChats().filter(chat => chat.profile === routed && chat.running && !chat.archived).map(chat => chat.activeRow())
+    if (routed !== this.home || !this.view.running || !this.storyListed(true)) return chats
+    const status = this.view.prompts.size > 0 || this.view.requests.size > 0 ? 'waiting' : 'working'
+    const story = { current: false, id: this.sessionId, session_key: this.sessionId, last_active: 0, started_at: 0, message_count: 0, model: '', preview: '', title: this.view.title, source: 'gui', status }
+    return [story, ...chats]
   }
 
   /** `authority.authorize` for the story session (gateway/session_authority.py:225-229). */
@@ -1655,14 +1690,22 @@ export class ScriptedGateway {
     const said = `${routed}: ${text}`
     const timestamp = this.options.clock.now() / 1000
     const first = chat.nextRowId
-    this.afterReply.push(() => {
-      this.say(chat, 'session.info', { pending: [{ ...admission, input_id: inputId, text }], running: false, execution_generation: generation - 1, revision: chat.revision })
-      this.say(chat, 'message.start', {}, turn)
+    const reply = () => {
       this.say(chat, 'message.delta', { text: said, segment: 0, offset: 0 }, turn)
-      chat.rows.push({ role: 'user', text, timestamp, row_id: first }, { role: 'assistant', text: said, timestamp, row_id: first + 1 })
+      chat.rows.push({ role: 'assistant', text: said, timestamp: this.options.clock.now() / 1000, row_id: first + 1 })
+      chat.turning = false
       this.say(chat, 'message.complete', {
         text: null, outcome: 'completed', status: 'complete', persisted_turn: { row_ids: [first, first + 1], complete: true, submission_id: inputId }
       }, turn)
+    }
+    const turnMs = this.fixture.header.turnMs?.[routed] ?? 0
+    this.afterReply.push(() => {
+      this.say(chat, 'session.info', { pending: [{ ...admission, input_id: inputId, text }], running: false, execution_generation: generation - 1, revision: chat.revision })
+      this.say(chat, 'message.start', {}, turn)
+      chat.rows.push({ role: 'user', text, timestamp, row_id: first })
+      chat.turning = true
+      if (turnMs > 0) this.options.clock.setTimeout(reply, turnMs)
+      else reply()
     })
     return admission
   }
@@ -1888,6 +1931,12 @@ export class ScriptedGateway {
     if (oneshot === undefined || socket.reach === 'profile') throw unknownMethod('llm.oneshot')
     if (oneshot.error !== undefined) throw refusedProfile(5030, `one-shot generation failed: ${oneshot.error}`)
     return after(oneshot.delay_ms, { text: oneshot.text ?? '' })
+  }
+
+  /** `vault.*` reaches only the legacy handlers, as `profiles.create` does, each in the profile the call names. */
+  vaultCall(socket: Socket, method: string, params: Obj, routed: string): unknown {
+    if (this.vault === null || socket.reach === 'profile') throw unknownMethod(method)
+    return this.vault.call(method, params, routed)
   }
 
   /** `pet.gallery` (tui_gateway/methods_session.py:1467-1495), which a socket with no interactive grant does not reach. */

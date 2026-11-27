@@ -2,11 +2,13 @@ import { useId, useLayoutEffect, useRef } from 'react'
 
 interface DeleteDialogProps {
   readonly name: string
+  /** What deleting it takes with it, and that Hermes cannot bring it back. */
+  readonly words: string
   readonly onCancel: () => void
   readonly onConfirm: () => void
 }
 
-export function DeleteDialog({ name, onCancel, onConfirm }: DeleteDialogProps) {
+export function DeleteDialog({ name, words, onCancel, onConfirm }: DeleteDialogProps) {
   const dialog = useRef<HTMLDialogElement>(null)
   const cancel = useRef<HTMLButtonElement>(null)
   const heading = useId()
@@ -22,7 +24,7 @@ export function DeleteDialog({ name, onCancel, onConfirm }: DeleteDialogProps) {
       onCancel={event => { event.preventDefault(); onCancel() }}
     >
       <h2 id={heading}>Delete {name}?</h2>
-      <p>Hermes removes the bot, its chats and its settings. It can't bring them back.</p>
+      <p>{words}</p>
       <div className="actions">
         <button ref={cancel} type="button" onClick={onCancel}>Cancel</button>
         <button type="button" className="primary" onClick={onConfirm}>Delete</button>

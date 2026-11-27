@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
 import type { Hermes, Route } from '@highwing/hermes'
-import type { AttachmentId, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, SessionId, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
+import type { AttachmentId, BotActivities, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, SessionId, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type PaneLayout, type Preview, type PreviewCommand, type Push, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
@@ -164,6 +164,14 @@ describe('validators', () => {
     expect(parseCommand({ do: 'completePath', sessionId: 's1', word: '@not', extra: 1 })).toEqual({ do: 'completePath', sessionId: 's1', word: '@not' })
   })
 
+  it("keep a password manager change to the bot and manager named, and a master password exactly as typed", () => {
+    expect(parseCommand({ do: 'passwordManagers', bot: 'rae', extra: 1 })).toEqual({ do: 'passwordManagers', bot: 'rae' })
+    expect(parseCommand({ do: 'usePasswordManager', bot: 'rae', manager: 'bitwarden', use: false })).toEqual({ do: 'usePasswordManager', bot: 'rae', manager: 'bitwarden', use: false })
+    expect(parseCommand({ do: 'unlockPasswordManager', bot: 'rae', manager: 'onepassword', password: ' pass word ', extra: 1 }))
+      .toEqual({ do: 'unlockPasswordManager', bot: 'rae', manager: 'onepassword', password: ' pass word ' })
+    expect(parseCommand({ do: 'lockPasswordManager', bot: 'rae', manager: 'bitwarden' })).toEqual({ do: 'lockPasswordManager', bot: 'rae', manager: 'bitwarden' })
+  })
+
   it("keep a bot's edited fields as sent, with the revision it was read at, and a window's removal of a picture", () => {
     expect(parseCommand({ do: 'describeBot', bot: 'rae', extra: 1 })).toEqual({ do: 'describeBot', bot: 'rae' })
     expect(parseCommand({ do: 'markBot', bot: 'rae', mark: 'hide', extra: 1 })).toEqual({ do: 'markBot', bot: 'rae', mark: 'hide' })
@@ -300,6 +308,12 @@ describe('validators', () => {
     ['a model list for a bot with no name', { do: 'botModels', bot: ' ' }],
     ['a model list that names no bot', { do: 'botModels' }],
     ['details of a bot with no name', { do: 'describeBot', bot: '' }],
+    ['the password managers of a bot with no name', { do: 'passwordManagers', bot: ' ' }],
+    ['a password manager Highwing does not set up', { do: 'usePasswordManager', bot: 'rae', manager: 'local', use: true }],
+    ['a use that is not true or false', { do: 'usePasswordManager', bot: 'rae', manager: 'bitwarden', use: 'yes' }],
+    ['an unlock with no password', { do: 'unlockPasswordManager', bot: 'rae', manager: 'bitwarden', password: '' }],
+    ['an unlock whose password is no text', { do: 'unlockPasswordManager', bot: 'rae', manager: 'bitwarden', password: 7 }],
+    ['a lock that names no manager', { do: 'lockPasswordManager', bot: 'rae' }],
     ['an edit that changes nothing', { do: 'editBot', bot: 'rae', edit: {}, revision: 2 }],
     ['a mark that is not one of the four', { do: 'markBot', bot: 'rae', mark: 'flip' }],
     ['an up-front open of a bot\'s chat', { do: 'open', ref: { kind: 'bot', bot: 'rae' }, upFront: true }],
@@ -397,10 +411,22 @@ describe('validators', () => {
   it('keep a message and a Stop for a group Hermes could name, and open it by its id', () => {
     expect(parseCommand({ do: 'sendToGroup', group: 'launch-plan', text: '@sam go', extra: 1 })).toEqual({ do: 'sendToGroup', group: 'launch-plan', text: '@sam go' })
     expect(parseCommand({ do: 'stopGroup', group: 'launch-plan', cancel: 'all' })).toEqual({ do: 'stopGroup', group: 'launch-plan' })
+    expect(parseCommand({ do: 'deleteGroup', group: 'launch-plan', cancel_id: 'x' })).toEqual({ do: 'deleteGroup', group: 'launch-plan' })
     expect(parseCommand({ do: 'open', ref: { kind: 'group', group: 'launch-plan', over: 'sam' } })).toEqual({ do: 'open', ref: { kind: 'group', group: 'launch-plan' } })
   })
 
+  it('keep a group chat rename trimmed, up to the 200 characters Hermes takes', () => {
+    expect(parseCommand({ do: 'renameGroup', group: 'launch-plan', name: '  Ship plan ', event_id: 'e1' })).toEqual({ do: 'renameGroup', group: 'launch-plan', name: 'Ship plan' })
+    expect(parseCommand({ do: 'renameGroup', group: 'launch-plan', name: ` ${'x'.repeat(200)} ` })).toMatchObject({ name: 'x'.repeat(200) })
+  })
+
   it.each([
+    ['a rename to a blank name', { do: 'renameGroup', group: 'launch-plan', name: '   ' }],
+    ['a rename to a name too long for Hermes', { do: 'renameGroup', group: 'launch-plan', name: 'x'.repeat(201) }],
+    ['a rename with no name', { do: 'renameGroup', group: 'launch-plan' }],
+    ['a rename of an id Hermes would not take', { do: 'renameGroup', group: 'launch plan', name: 'Ship plan' }],
+    ['a delete of no group', { do: 'deleteGroup' }],
+    ['a delete of an id Hermes would not take', { do: 'deleteGroup', group: '-plan' }],
     ['a message with no words', { do: 'sendToGroup', group: 'launch-plan', text: '  ' }],
     ['a message to an id Hermes would not take', { do: 'sendToGroup', group: 'launch plan', text: 'hi' }],
     ['a Stop of no group', { do: 'stopGroup' }],
@@ -443,10 +469,12 @@ describe('validators', () => {
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
-      'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'describeBot', 'discard', 'editBot',
-      'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
-      'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename',
-      'restore', 'retitle', 'rewind', 'send', 'sendToGroup', 'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
+      'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard',
+      'editBot', 'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'lockPasswordManager', 'markBot', 'models',
+      'move', 'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react',
+      'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'send', 'sendToGroup',
+      'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'unlockPasswordManager',
+      'usePasswordManager', 'versions'
     ])
   })
 })
@@ -458,6 +486,7 @@ const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] 
 const NOTHING_OPEN: OpenChat = { shown: null, opening: null, missing: null }
 const NO_RELAYS: RelayDesk = { supported: false, bySession: {} }
 const NO_GROUPS: Groups = { state: 'unsupported' }
+const RESEARCH_WAITING = { research: 'waiting' } as BotActivities
 
 /** An owner live on a remote machine, whose every check passes, so a check of this computer switches to it at epoch 2. */
 const switchable = (hermes: Hermes) => ownConnection({
@@ -513,6 +542,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
     relay: still(NO_RELAYS),
     groups: still(NO_GROUPS),
     groupChat: still(null),
+    activity: still(RESEARCH_WAITING),
     slash: {
       get: () => catalog,
       subscribe: (listener: (value: SlashCatalog) => void) => {
@@ -631,7 +661,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {} }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, activity: RESEARCH_WAITING, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {} }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))
@@ -930,6 +960,37 @@ describe('the file call', () => {
     const { handlers, served } = watching()
     served.dispose()
     expect(handlers.has(CHANNEL.file)).toBe(false)
+  })
+
+  it('refuses open, show, preview and page for a session the live Hermes is serving on another machine', async () => {
+    const rig = harness(switchable)
+    rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
+    rig.emit(diffMoment())
+    const file = rig.handlers.get(CHANNEL.file)!
+    for (const action of ['open', 'show', 'preview'] as const) {
+      await expect(file(rig.event(), { ...asked('open', NOTES), action })).resolves.toEqual({ ok: false, reason: 'refused' })
+    }
+    await expect(file(rig.event(), { ...asked('open', NOTES), action: 'page', label: 'Notes' })).resolves.toEqual({ ok: false, reason: 'refused' })
+    expect(rig.opened).toEqual([])
+    expect(rig.previewed).toEqual([])
+  })
+
+  it('refuses a path a remote Hermes served after the connection moves to this computer, until the window watches the session again', async () => {
+    let owner: ConnectionOwner | undefined
+    const rig = harness(hermes => (owner = switchable(hermes)))
+    rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
+    rig.emit(diffMoment())
+    await owner!.run({ do: 'editTarget' })
+    await owner!.run({ do: 'checkTarget', target: { kind: 'local' } })
+    await new Promise(resolve => setImmediate(resolve))
+    const file = rig.handlers.get(CHANNEL.file)!
+    await expect(file(rig.event(), asked('open', NOTES))).resolves.toEqual({ ok: false, reason: 'refused' })
+    expect(rig.opened).toEqual([])
+
+    rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
+    rig.emit(diffMoment())
+    await expect(file(rig.event(), asked('open', NOTES))).resolves.toEqual({ ok: true })
+    expect(rig.opened).toEqual([{ action: 'open', path: NOTES }])
   })
 })
 

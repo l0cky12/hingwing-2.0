@@ -12,6 +12,7 @@ export {
   BOT_MARKS, BOT_TONES, botsIn, canonicalBotId, GENERATED_MAX_BYTES, isPetSlug, MARK_SETS, PICTURE_MAX_BYTES, PICTURE_RULE, pictureDataUrlOf, pictureTypeOf, rosterOf, shownUnasked, type AvatarTone, type Bot, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotFacts, type BotFlag, type BotId, type BotMark, type Bots, type BotSection, type BotTone, type Marked, type PetChoice, type PictureType, type Roster
 } from './bots'
 export type { PathMatch } from './path'
+export { isManagerName, MANAGER_NAMES, MANAGERS, type BotManagers, type FirstTime, type Manager, type ManagerFacts, type ManagerName, type ManagerState } from './passwords'
 export { mentionedBots, mentionOf, typedMention } from './mention'
 export type { Relay, RelayDesk, RelayId, RelayState } from './relay'
 export { shownBot, shownChat, shownGroup, type ChatRef, type OpenChat, type Shown, type ShownGroup, type Unstarted } from './open'
@@ -19,6 +20,7 @@ export {
   GROUP_NAME_MAX, GROUP_SIZE, groupIdFor, isGroupId, seatsFor, type Answering, type GroupChat, type GroupDraft, type GroupEvent, type GroupId, type GroupMember, type GroupRow, type Groups, type MemberId
 } from './groups'
 export type { PaneAsk } from './pane'
+export { activityIn, botActivitiesOf, sameActivities, unreadAfter, type BotActivities, type BotActivity, type Busy, type BusyChats, type ChatBusy, type UnreadChat } from './activity'
 export { label as versionLabel, type ChatVersions, type Landing, type Version, type Versions } from './versions'
 export { modelViewOf, sameModel, type ModelView } from './model'
 export { CHECK_FAILURES, STEP_WORDS, URL_FAILURES, URL_PROBLEMS, byKind, failureOf, firstStep, gatewayHost, isPlainHttp, machineOf, onThisComputer, parseGatewayUrl, parseSshHost, sameTarget, targetOf, type CheckFailure, type CheckStep, type Failure, type GatewayUrl, type ParsedUrl, type SetupFailure, type SshHost, type Target, type UrlFailure, type UrlProblem } from './reach'

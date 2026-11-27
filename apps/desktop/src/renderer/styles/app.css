@@ -227,7 +227,7 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .file { margin: 0 0 6px; }
 .file-row { display: flex; align-items: flex-start; gap: 4px; }
 .file-open { min-width: 0; padding: 0; border: 0; background: none; text-align: left; overflow-wrap: anywhere; font: 12.5px var(--mono); color: var(--graphite); }
-.file-open:hover { color: var(--signal); text-decoration: underline; text-underline-offset: 2px; }
+button.file-open:hover { color: var(--signal); text-decoration: underline; text-underline-offset: 2px; }
 .file-side { position: relative; flex: none; }
 .file-more { width: 20px; height: 16px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--graphite); font: 12.5px/16px var(--sans); opacity: .55; }
 .file-row:hover .file-more, .file-more:focus-visible, .file-more[aria-expanded="true"] { opacity: 1; }
@@ -396,6 +396,12 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .tip code { font-size: 12.5px; font-weight: 400; margin-left: 2px; }
 .tip .glyph { position: absolute; z-index: 1; left: calc(var(--thread-x) - var(--col) - 6.25px); width: 14px; height: 14px; border-radius: 50%; background: var(--signal); }
 .tip.thinking .glyph, .tip.streaming .glyph, .tip.working .glyph { animation: halo 1.6s ease-out infinite; }
+.tip .face { position: absolute; z-index: 1; left: calc(var(--thread-x) - var(--col) - 10.25px); width: 22px; height: 22px; }
+.tip .face svg { display: block; }
+.face-dot { transform-box: fill-box; transform-origin: center; }
+.face[data-mood="working"] .face-dot { animation: dot 1.2s ease-in-out infinite; }
+.face[data-mood="working"] .face-dot:nth-child(2) { animation-delay: 0.15s; }
+.face[data-mood="working"] .face-dot:nth-child(3) { animation-delay: 0.3s; }
 .tip.blocked { color: var(--caution); }
 .tip.blocked .glyph { background: var(--caution); }
 .tip.complete { color: var(--graphite); font-weight: 400; }
@@ -461,7 +467,9 @@ button.reaction:hover:not(:disabled) { border-color: var(--signal); }
 .err { color: var(--brick); margin: 4px 0; }
 
 @keyframes halo { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--signal) 45%, transparent); } 100% { box-shadow: 0 0 0 9px transparent; } }
+@keyframes dot { 50% { transform: translateY(-10px); opacity: .45; } }
 @keyframes blink { 50% { opacity: 0; } }
+@keyframes working-dot { 0%, 70%, 100% { opacity: .35; } 35% { opacity: 1; } }
 
 .composer { position: relative; min-width: 0; padding: 14px 0 18px; border-top: 1px solid var(--rule); background: var(--paper); }
 .composer > form { --line: 21.75px; --box-chrome: 22px; --box-one: calc(var(--line) + var(--box-chrome)); display: flex; align-items: flex-end; gap: 10px; max-width: 760px; margin: 0 auto; padding: 0 28px 0 calc(28px + var(--col)); }
@@ -500,6 +508,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .bot-picture .form-refused { flex-basis: 100%; }
 .group-form { width: min(480px, calc(100% - 32px)); }
 .group-form h2 { margin-bottom: 4px; }
+.group-editor h2 { margin-bottom: 16px; }
 .group-form .lede { margin: 0 0 16px; font-size: 13px; line-height: 1.5; color: var(--graphite); }
 .group-form .stacked { margin-bottom: 14px; }
 .group-form .stacked > label, .group-form .stacked > .flabel { display: block; padding: 0; margin-bottom: 6px; font-size: 13px; color: var(--graphite); }
@@ -521,6 +530,9 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .pick-none { padding: 6px 8px; font-size: 13px; color: var(--graphite); }
 .group-form .tally { margin: 8px 0 0; font-size: 12.5px; color: var(--graphite); }
 .group-form .field-words { margin: 6px 0 0; }
+.member-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.member-list li { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink); }
+.group-form .member-note { margin: 8px 0 0; font-size: 12.5px; color: var(--graphite); }
 .bot-form-body { position: relative; }
 .look-row { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .look-button { position: relative; flex: none; width: 64px; height: 64px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink); }
@@ -799,6 +811,25 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 :is(.settings, .setup) .short .row { min-height: 44px; padding-top: 8px; padding-bottom: 8px; }
 :is(.settings, .setup) .card .where { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--rule); font-size: 12px; font-weight: 400; color: var(--graphite); vertical-align: 1px; }
 :is(.settings, .setup) .card kbd { display: inline-block; min-width: 22px; padding: 0 6px; font: 500 11.5px/18px var(--sans); text-align: center; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 5px; }
+.settings .card > * + .manager { border-top: 1px solid var(--hair); }
+.settings .card a.btn { display: inline-block; color: var(--ink); text-decoration: none; }
+.settings .managers .btn:disabled { opacity: .5; cursor: default; }
+.settings .managers .problem-line { flex: 1; min-width: 0; margin: 0; font-weight: 500; color: var(--caution); overflow-wrap: anywhere; }
+.settings .bot-choose .bot-pick-button { --name-room-beside-mode-switch: 220px; margin-right: 0; padding: 5px 10px 5px 8px; box-shadow: inset 0 0 0 1px var(--rule); }
+.settings .bot-choose .bot-pick-button:enabled:hover, .settings .bot-choose .bot-pick-button[aria-expanded="true"] { background: var(--paper); }
+.settings .manager .label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.settings .manager .state { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 7px; border-radius: 999px; font: 500 12px/20px var(--sans); }
+.settings .manager .state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.settings .manager .state.signal { color: var(--signal); background: var(--signal-soft); }
+.settings .manager .state.caution { color: var(--caution); background: var(--caution-soft); }
+.settings .manager .state.quiet { color: var(--graphite); background: var(--paper); box-shadow: inset 0 0 0 1px var(--hair); }
+.settings .manager .unlock { display: grid; gap: 6px; margin: -4px 0 0; padding: 0 18px 14px; }
+.settings .manager .unlock label { font-size: 13px; font-weight: 500; }
+.settings .manager .unlock-line { display: flex; gap: 8px; }
+.settings .manager .unlock input { flex: 1; min-width: 0; max-width: 320px; padding: 6px 11px; font: 13px/1.45 var(--sans); color: var(--ink); background: var(--paper); border: 1px solid var(--edge); border-radius: 7px; }
+.settings .manager .unlock input:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
+.settings .manager .unlock code { padding: 1px 5px; border-radius: 4px; font-size: 12.5px; color: var(--ink); background: var(--paper); box-shadow: inset 0 0 0 1px var(--hair); overflow-wrap: anywhere; }
+.settings .manager .problem { margin: 0 18px 14px; padding: 9px 12px; border-left: 3px solid var(--caution); border-radius: 0 8px 8px 0; color: var(--ink); background: var(--caution-soft); overflow-wrap: anywhere; }
 
 @container (max-width: 660px) {
   .settings { padding: 24px 16px; }
@@ -812,6 +843,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   :is(.settings, .setup) .machine .text { flex-basis: 160px; }
   :is(.settings, .setup) .edit-foot { flex-wrap: wrap; }
   :is(.settings, .setup) .edit-foot .note { flex-basis: 100%; }
+  .settings .manager .unlock input { max-width: none; }
 }
 
 @media (forced-colors: active) {
@@ -821,6 +853,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   :is(.settings, .setup) .machine .state, :is(.settings, .setup) .card .where, :is(.settings, .setup) .edit-form .problem { border: 1px solid CanvasText; }
   :is(.settings, .setup) .machine .state::before { box-sizing: border-box; background: none; border: 3.5px solid CanvasText; }
   :is(.settings, .setup) .edit-foot .progress .glyph { background: none; border: 5px solid CanvasText; }
+  .settings .manager .state, .settings .manager .problem, .settings .bot-choose .bot-pick-button { border: 1px solid CanvasText; }
+  .settings .manager .state::before { box-sizing: border-box; background: none; border: 3.5px solid CanvasText; }
 }
 
 .jump {
@@ -970,6 +1004,18 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .bot-badge { position: absolute; right: -3px; bottom: -3px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; color: var(--sheet); background: var(--ink); box-shadow: 0 0 0 2px var(--paper); }
 .avatar { display: grid; place-items: center; flex: none; border-radius: 50%; font-weight: 700; color: var(--sheet); text-transform: uppercase; }
 .avatar-picture { object-fit: cover; }
+.bot-face { position: relative; display: grid; flex: none; }
+.bot-activity { position: absolute; top: -3px; right: -4px; display: flex; align-items: center; justify-content: center; gap: 2px; border-radius: 999px; box-shadow: 0 0 0 2px var(--paper); }
+.bot-activity[data-activity="working"] { height: 10px; padding: 0 3px; background: var(--signal); }
+.bot-activity[data-activity="working"] > span { width: 3px; height: 3px; border-radius: 50%; background: var(--sheet); animation: working-dot 1.2s ease-in-out infinite; }
+.bot-activity[data-activity="working"] > span:nth-child(2) { animation-delay: .2s; }
+.bot-activity[data-activity="working"] > span:nth-child(3) { animation-delay: .4s; }
+.bot-activity[data-activity="waiting"] { width: 14px; height: 14px; color: var(--sheet); background: var(--caution); }
+.bot-activity[data-activity="unread"] { width: 10px; height: 10px; top: -1px; right: -1px; background: var(--signal); }
+.bot-badged .bot-activity { top: -1px; right: -3px; }
+.bot-badged .bot-activity[data-activity="unread"] { top: 1px; right: 1px; }
+:is(.bot, .bot-feature)[aria-current] .bot-activity { box-shadow: 0 0 0 2px var(--sheet); }
+:is(.bot, .bot-feature):hover:not([aria-current]) .bot-activity, .bot-row[data-menu] :is(.bot, .bot-feature):not([aria-current]) .bot-activity { box-shadow: 0 0 0 2px var(--bots-hover); }
 .bot-row { position: relative; }
 .bots .bot-more { position: absolute; top: 50%; right: 8px; translate: 0 -50%; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; color: var(--graphite); background: var(--sheet); font-size: 16px; letter-spacing: 1px; opacity: 0; }
 .bot-row-feature .bot-more { top: 8px; translate: none; }
@@ -985,6 +1031,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .popup-menu svg { flex: none; color: var(--graphite); }
 .popup-menu [role="separator"] { height: 1px; margin: 3px 6px; background: var(--rule); }
 .popup-menu button[aria-expanded="true"] { background: var(--signal-soft); }
+.popup-menu button[aria-disabled="true"] { opacity: .45; cursor: default; }
+.popup-menu button[aria-disabled="true"]:hover { background: none; }
 .popup-menu .popup-more { margin-left: auto; }
 .popup-hint { margin-left: auto; padding-left: 16px; font-size: 12.5px; color: var(--graphite); font-variant-numeric: tabular-nums; }
 .bots-said { flex: none; margin: 0 12px 12px 20px; }
@@ -1027,13 +1075,18 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
   .bot-feature[aria-current] .avatar { outline: 2px solid Highlight; outline-offset: 2px; }
   .bots-head input:focus { outline: 2px solid Highlight; outline-offset: 2px; }
   .avatar, .bot-badge { border: 1px solid CanvasText; }
+  .bot-activity[data-activity] { forced-color-adjust: none; border: 1px solid CanvasText; background: Canvas; color: CanvasText; }
+  .bot-activity[data-activity="working"] > span { background: CanvasText; }
+  .bot-activity[data-activity="waiting"] { background: Highlight; color: HighlightText; }
+  .bot-activity[data-activity="unread"] { background: CanvasText; }
   .bots .bot-more, .bot-picture button { border: 1px solid ButtonText; }
   .look-pop { border: 2px solid CanvasText; }
   .look-badge { border: 1px solid CanvasText; }
   .look-button:focus-visible { outline-color: Highlight; }
   .look-tabs button[aria-selected="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
   .look-quiet { border-color: ButtonText; }
-  .look-color, .look-face { forced-color-adjust: none; }
+  .look-color, .look-face, .face { forced-color-adjust: none; }
+  .tip .face { border-radius: 50%; outline: 2px solid Highlight; outline-offset: 1px; }
   :is(.look-shape, .look-color)[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: 2px; }
   .look-pet[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
   .popup-menu [role="separator"] { background: CanvasText; }

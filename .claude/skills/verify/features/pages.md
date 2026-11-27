@@ -33,4 +33,4 @@ Preconditions:
 
 - The page is drawn by main over the window, so `see` and the ARIA snapshot never find its text. Use `page-says` and `shot`.
 - Every story of `fixtures/make_fixture.py` deletes `/tmp/hermes-proto-work` first. Run `page` again after recording any other story.
-- A fixture run is a local connection. A page of a remote Hermes shows "This file is on <machine>." in the pane, which `apps/desktop/test/preview-page.test.ts` covers.
+- A fixture run is a local connection. With a remote Hermes the card has no **Open**, and main refuses the page as it refuses a remote path's Open (`apps/desktop/test/page-card.test.tsx`, `apps/desktop/test/ipc.test.ts`). The page Hermes opens itself shows "This file is on <machine>." in the pane, which `apps/desktop/test/preview-page.test.ts` covers. `--fake-host ok --saved remote --fixture fixtures/page.jsonl` shows both.

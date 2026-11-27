@@ -1,6 +1,8 @@
 import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, type BackgroundProcess, type BranchId, type ChatVersions, type CommandOutcome, type HelperId, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type TurnId, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { isLocal } from '../../ipc-contract'
+import { botIn } from '../bots/roster-view'
 import { Composer } from '../composer/Composer'
 import { carryToNewChat, slotOf } from '../composer/drafts'
 import { ContextMeter } from '../composer/ContextMeter'
@@ -12,7 +14,7 @@ import { ThinkingPill } from '../composer/ThinkingPill'
 import { folderFieldLabel, thinkingShown } from '../composer/tuning'
 import { YoloPill } from '../composer/YoloPill'
 import { run, useTopic } from '../store'
-import { FileCallContext, fileCallFor, NO_FILE_CALL } from './FilePath'
+import { FileCallContext, fileCallFor, FilesHereContext, NO_FILE_CALL } from './FilePath'
 import type { HelperControls } from './Helpers'
 import { ImageSessionContext } from './Image'
 import { forget, landAt, landed, pressFor } from './landing'
@@ -22,7 +24,7 @@ import type { RequestAnswer } from './Asks'
 import { Sides } from './Sides'
 import { closeSide, sortSides, useClosedSides } from './sides'
 import { useTail } from './tail'
-import { Thread, type QueueControls, type QueuedRow } from './Thread'
+import { ChatBotContext, Thread, type QueueControls, type QueuedRow } from './Thread'
 import { TIME_ZONE, useWakeAt } from './wake'
 
 const PAGE = 0.875
@@ -39,6 +41,8 @@ const holdsText = (target: EventTarget | null) =>
 export function Chat({ chat }: { readonly chat: Shown }) {
   const id = chat.sessionId
   const session = useTopic(id === null ? null : `session:${id}`)
+  const bots = useTopic('bots')
+  const bot = useMemo(() => (chat.bot === null ? null : botIn(bots, chat.bot)), [bots, chat.bot])
   const relays = useTopic('relay')?.bySession[id ?? ''] ?? NO_RELAYS
   const [tick, wake] = useReducer((count: number) => count + 1, 0)
   const view = useMemo(() => (session === undefined ? null : threadView(session, { now: Date.now(), timeZone: TIME_ZONE })), [session, tick])
@@ -308,6 +312,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const cwd = session?.cwd ?? null
   const setup = useTopic('setup')
   const target = setup === undefined || setup.at === 'pinned' ? null : (setup.live?.target ?? null)
+  const filesHere = setup !== undefined && isLocal(setup)
 
   const onCloseSide = useCallback((side: SideId) => {
     if (id === null) return
@@ -328,15 +333,19 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     <>
       <main id="scroll" ref={scroller} onScroll={onScroll}>
         {drawn !== null && (
-          <FileCallContext value={fileCall}>
-            <ImageSessionContext value={id}>
-              <Thread
-                view={drawn.view} relays={drawn.relays} sides={drawn.sides} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
-                canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
-                canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers}
-              />
-            </ImageSessionContext>
-          </FileCallContext>
+          <FilesHereContext value={filesHere}>
+            <FileCallContext value={fileCall}>
+              <ImageSessionContext value={id}>
+                <ChatBotContext value={bot}>
+                  <Thread
+                    view={drawn.view} relays={drawn.relays} sides={drawn.sides} onAnswer={onAnswer} onAnswerRequest={onAnswerRequest} onLoadEarlier={onLoadEarlier} onFindClosed={onFindClosed} onFindScrolled={onScroll}
+                    canEdit={canEdit} regenerateTurnKey={regenerateTurnKey} canRegenerate={canEdit && editing === null} onEdit={onEdit} onRegenerate={onRegenerate}
+                    canBranch={canBranch} onBranch={onBranch} onNewChat={onNewChat} versions={versions} onVersion={onVersion} queue={queue} canReact={live === true} onReact={onReact} helpers={helpers}
+                  />
+                </ChatBotContext>
+              </ImageSessionContext>
+            </FileCallContext>
+          </FilesHereContext>
         )}
       </main>
       <div className={`jump${shown ? ' shown' : ''}${waitsOnYou ? ' asking' : ''}`}>
