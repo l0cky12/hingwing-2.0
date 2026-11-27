@@ -117,7 +117,7 @@ export type Command =
    * library is read again after. `bot` null: the socket's own profile.
    */
   | { readonly do: 'setSkill'; readonly bot: BotId | null; readonly name: string; readonly enabled: boolean }
-  /** A skill's SKILL.md, read from the bot's own profile. `bot` null: the socket's own profile. */
+  /** A skill's SKILL.md. Hermes reads only the default bot's, so another bot's is `unsupported`. */
   | { readonly do: 'skillText'; readonly bot: BotId | null; readonly name: string }
   /** `data`: a PNG, JPEG or WebP as a data URL. The roster is asked for again after. */
   | { readonly do: 'setBotPicture'; readonly bot: BotId; readonly data: string }

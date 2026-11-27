@@ -832,7 +832,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   /** tui_gateway/methods_images.py:57-96 */
   'image.generate': (gateway, socket, params) => gateway.generate(socket, params),
   'llm.oneshot': (gateway, socket) => gateway.oneshot(socket),
-  /** agent/learning_mutations.py:139-159, in the home of the profile the request names (tui_gateway/ws_legacy_fallback.py:175-183), else the gateway's own. */
+  /** agent/learning_mutations.py:139-159: it names no profile, so it reads the gateway's own. */
   'learning.detail': (gateway, _socket, params) => gateway.skillDetail(params),
   /** tui_gateway/methods_session.py:1467-1495 */
   'pet.gallery': (gateway, socket) => gateway.petGallery(socket),
@@ -1847,7 +1847,7 @@ export class ScriptedGateway {
   skillDetail(params: Obj): unknown {
     if (this.fixture.header.skills === undefined) throw unknownMethod('learning.detail')
     const id = typeof params.id === 'string' ? params.id : ''
-    const skill = (this.skills.get(isText(params.profile) ? params.profile : this.home) ?? []).find(listed => listed.name === id)
+    const skill = (this.skills.get(this.home) ?? []).find(listed => listed.name === id)
     return skill === undefined ? { ok: false, message: `skill '${id}' not found` } : { ok: true, kind: 'skill', id, label: id, content: skill.body }
   }
 

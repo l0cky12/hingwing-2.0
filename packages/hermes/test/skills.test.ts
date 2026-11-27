@@ -86,16 +86,15 @@ describe('the skills library', () => {
     expect(await hermes.run({ do: 'skillText', bot: null, name: 'nothing' })).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'Hermes has no SKILL.md for nothing.' } })
   })
 
-  it("reads another bot's SKILL.md from that bot's own profile, for its description and for Open", async () => {
+  it("never shows the default bot's SKILL.md for another bot's skill, since Hermes reads only its own profile's", async () => {
     const { clock, hermes, calls, seen, watch } = await launched(WITH_SKILLS)
     watch()
     await hermes.run({ do: 'open', ref: { kind: 'bot', bot: 'research' as BotId } })
     await clock.advance(0)
-    expect(seen.at(-1)).toEqual({ state: 'listed', bot: 'research', skills: [{ name: 'sources', description: 'Cite sources.', enabled: false }] })
-    expect(await hermes.run({ do: 'skillText', bot: 'research' as BotId, name: 'sources' })).toEqual({ ok: true, value: RESEARCH[0]?.body })
-    expect(await hermes.run({ do: 'skillText', bot: 'research' as BotId, name: 'release-notes' }), "the default bot's skill is not Research's")
-      .toEqual({ ok: false, refusal: { kind: 'rejected', message: 'Hermes has no SKILL.md for release-notes.' } })
-    expect(calls('learning.detail').filter(call => (call.params as { profile?: string }).profile === 'research')).toHaveLength(3)
+    expect(seen.at(-1)).toEqual({ state: 'listed', bot: 'research', skills: [{ name: 'sources', description: '', enabled: false }] })
+    expect(await hermes.run({ do: 'skillText', bot: 'research' as BotId, name: 'release-notes' }))
+      .toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can show only the default bot's SKILL.md files." } })
+    expect(calls('learning.detail').filter(call => (call.params as { id?: string }).id !== 'weekly-report')).toEqual([])
   })
 
   it('keeps both of two switches moved at once, since each write replaces the whole off list', async () => {
