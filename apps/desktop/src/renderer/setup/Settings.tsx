@@ -11,7 +11,7 @@ import { PasswordManagers } from './PasswordManagers'
 import type { CardSetup } from './screens'
 import { PAGES, settingsViewOf, whereOf, type Check, type Page, type RowId } from './settings-view'
 import { Skills } from './Skills'
-import { usageNeedsRead, usageView, type UsageAsk } from './usage-view'
+import { UNREPORTED, usageNeedsRead, usageView, type UsageAsk } from './usage-view'
 
 const Contrast = () => <svg {...line(16, 1.8)}><circle cx="12" cy="12" r="8.5" /><path d="M12 7a5 5 0 0 1 0 10z" fill="currentColor" /></svg>
 const Cross = () => <svg {...line(14, 2)}><path d="M6 6l12 12M18 6 6 18" /></svg>
@@ -67,7 +67,6 @@ const NOTICE_ROWS: readonly { readonly kind: NoticeKind; readonly id: RowId; rea
   { kind: 'jobs', id: 'notice-jobs', label: 'Scheduled jobs', desc: 'When a scheduled job finishes.' }
 ]
 
-const UNREPORTED = 'This Hermes does not report usage.'
 
 const CHECK_SAID: { readonly [C in Exclude<Check, 'idle'>]: string } = { checking: 'checking', failed: 'check failed' }
 

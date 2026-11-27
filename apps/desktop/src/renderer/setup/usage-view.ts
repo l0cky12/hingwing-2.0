@@ -1,5 +1,7 @@
 import type { AccountReport, CommandOutcome } from '@highwing/hermes/domain'
 
+export const UNREPORTED = 'This Hermes does not report usage.'
+
 /** What the Usage panel draws. `reading` covers the ask that has not settled for this chat. */
 export type UsageView =
   | { readonly state: 'needs-chat' }

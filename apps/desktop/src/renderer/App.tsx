@@ -9,6 +9,7 @@ import { useRetryPicturesOnceOnline } from './bots/pictures'
 import { ChatsSidebar, DraftSweep } from './chats/Chats'
 import { Chat } from './chat/Chat'
 import { GroupPane } from './groups/GroupPane'
+import { AccountMenu } from './chrome/AccountMenu'
 import { accentTone, toneOfBot } from './chrome/accent'
 import { Banner, TopBar } from './chrome/Chrome'
 import { ModeSwitch } from './chrome/ModeSwitch'
@@ -124,7 +125,7 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onOp
   const [sheet, setSheet] = useState<{ readonly back: Element | null } | null>(null)
   const openSheet = useCallback(() => setSheet(held => held ?? { back: document.activeElement }), [])
   const switcher = <ModeSwitch mode={mode} onPick={pick} />
-  const foot = <AppsButton onOpen={onOpenApps} />
+  const foot = <div className="account"><AccountMenu target={target} /><AppsButton onOpen={onOpenApps} /></div>
   // A preview asked for while the screen is shown takes the pane, and Screen takes it back.
   const previewed = preview?.state === 'open' ? preview.address : null
   useEffect(() => {
