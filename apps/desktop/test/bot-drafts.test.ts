@@ -1,5 +1,6 @@
 import type { BotId, GroupId, SessionId } from '@highwing/hermes/domain'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { Draft } from '../src/ipc-contract'
 import type {} from '../src/renderer/store'
 
 vi.mock('react', async actual => ({ ...(await actual<typeof import('react')>()), useSyncExternalStore: (_subscribe: unknown, snapshot: () => unknown) => snapshot() }))
@@ -7,14 +8,17 @@ vi.mock('react', async actual => ({ ...(await actual<typeof import('react')>()),
 const BOT = 'research' as BotId
 const chat = (id: string) => ({ key: `chat:${id as SessionId}`, bot: BOT }) as const
 
-async function openWindow() {
+async function openWindow(saved: readonly Draft[] = [], typeFirst: (store: typeof import('../src/renderer/composer/drafts')) => void = () => {}) {
   vi.useFakeTimers()
   vi.resetModules()
-  vi.stubGlobal('window', { addEventListener: () => {}, highwing: { drafts: async () => [], keepDraft: () => {} } })
+  vi.stubGlobal('window', { addEventListener: () => {}, highwing: { drafts: async () => saved, keepDraft: () => {} } })
   const store = await import('../src/renderer/composer/drafts')
-  await store.startDrafts()
+  const started = store.startDrafts()
+  typeFirst(store)
+  await started
   return store
 }
+const savedIn = (id: string, text: string): Draft => ({ ...chat(id), text, attachments: [] })
 
 describe("a bot's unsent draft, as its row reads it", () => {
   afterEach(() => {
@@ -33,6 +37,13 @@ describe("a bot's unsent draft, as its row reads it", () => {
     expect(useBotDrafts().get(BOT)).toBe('Summarise the second')
     writeDraft(chat('s2'), '')
     expect(useBotDrafts().has(BOT)).toBe(false)
+  })
+
+  it('is the newest saved draft after a restart, and a draft typed before they loaded stays newer', async () => {
+    const saved = [savedIn('s1', 'Compare the two papers'), savedIn('s2', 'Summarise the second')]
+    expect((await openWindow(saved)).useBotDrafts().get(BOT)).toBe('Summarise the second')
+    const typedFirst = await openWindow(saved, store => store.writeDraft(chat('s3'), 'Find a third'))
+    expect(typedFirst.useBotDrafts().get(BOT)).toBe('Find a third')
   })
 
   it('is gone once the draft is sent', async () => {

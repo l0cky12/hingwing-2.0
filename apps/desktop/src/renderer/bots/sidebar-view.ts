@@ -67,7 +67,6 @@ export const NO_MESSAGES = 'No messages yet'
 
 export type BotLine = { readonly kind: 'draft' | 'last'; readonly text: string }
 
-/** The open chat's bot never shows its draft, which is in the composer already. */
 export function lineOf(bot: Bot, drafts: ReadonlyMap<BotId, string>, selected: BotId | null): BotLine {
   const draft = bot.id === selected ? undefined : drafts.get(bot.id)
   if (draft === undefined) return { kind: 'last', text: bot.preview ?? NO_MESSAGES }

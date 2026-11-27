@@ -22,7 +22,7 @@ let loose: Held = EMPTY
 /** Seeds asked for before main's drafts are read. A saved draft for the same chat wins over them. */
 let seeds: Draft[] | null = []
 let chats: ReadonlySet<SessionId> = new Set()
-let bots: ReadonlyMap<BotId, string> = new Map()
+let newestByBot: ReadonlyMap<BotId, string> = new Map()
 const listeners = new Set<() => void>()
 
 const sameMembers = (a: ReadonlySet<SessionId>, b: ReadonlySet<SessionId>) => a.size === b.size && [...a].every(id => b.has(id))
@@ -33,17 +33,21 @@ function changed() {
   if (!sameMembers(next, chats)) chats = next
   const texts = new Map<BotId, string>()
   for (const draft of drafts.values()) if (draft.bot !== null) texts.set(draft.bot, draft.text)
-  if (!sameTexts(texts, bots)) bots = texts
+  if (!sameTexts(texts, newestByBot)) newestByBot = texts
   for (const listener of listeners) listener()
+}
+
+function setNewest(draft: Draft) {
+  drafts.delete(draft.key)
+  drafts.set(draft.key, draft)
 }
 
 function keep(draft: Draft, when: 'soon' | 'now') {
   const { key } = draft
   typed.add(key)
   restored.delete(key)
-  // Re-inserting keeps the Map in the order drafts were last typed, so a bot's newest draft is the last one read.
-  drafts.delete(key)
-  if (!isEmptyDraft(draft)) drafts.set(key, draft)
+  if (isEmptyDraft(draft)) drafts.delete(key)
+  else setNewest(draft)
   clearTimeout(saving.get(key)?.timer)
   saving.delete(key)
   if (when === 'now') window.highwing.keepDraft(draft)
@@ -73,11 +77,14 @@ function put(slot: DraftSlot, change: Partial<Held>, when: 'soon' | 'now') {
 export async function startDrafts(): Promise<void> {
   window.addEventListener('pagehide', flush)
   try {
-    for (const draft of await window.highwing.drafts()) {
-      if (typed.has(draft.key)) continue
+    const saved = (await window.highwing.drafts()).filter(draft => !typed.has(draft.key))
+    const typedHere = [...drafts.values()]
+    drafts.clear()
+    for (const draft of saved) {
       drafts.set(draft.key, draft)
       restored.add(draft.key)
     }
+    typedHere.forEach(setNewest)
   } finally {
     const asked = seeds ?? []
     seeds = null
@@ -177,4 +184,4 @@ export const useAttachments = (slot: DraftSlot): readonly Attachment[] => useSyn
 
 export const useChatDrafts = (): ReadonlySet<SessionId> => useSyncExternalStore(subscribe, () => chats)
 
-export const useBotDrafts = (): ReadonlyMap<BotId, string> => useSyncExternalStore(subscribe, () => bots)
+export const useBotDrafts = (): ReadonlyMap<BotId, string> => useSyncExternalStore(subscribe, () => newestByBot)
