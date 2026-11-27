@@ -30,6 +30,12 @@ const OWN_ANSWERS: Readonly<Record<string, (header: Header, reply: Obj, params: 
   'groups.rename': () => NOTHING,
   'groups.disband': () => NOTHING,
   'complete.path': () => NOTHING,
+  'cron.manage': () => NOTHING,
+  'display.status': () => NOTHING,
+  'display.thumbnail': () => NOTHING,
+  'display.observe': () => NOTHING,
+  'display.lease.acquire': () => NOTHING,
+  'display.lease.release': () => NOTHING,
   'runtime.describe': (header, reply) => {
     header.describe ??= reply
     return NOTHING
@@ -67,8 +73,8 @@ const masked = (values: unknown) => (isObject(values) ? Object.fromEntries(Objec
 const maskedResult = (result: unknown) => (isObject(result) && typeof result.value === 'string' && result.value !== '' ? { ...result, value: MASKED } : result)
 
 /**
- * A frame the client sent, safe to keep in a log: the `{value}` of a typed answer, the credentials of a connector card and the master password
- * of a `vault.unlock` are `MASKED`.
+ * A frame the client sent, safe to keep in a log: the `{value}` of a typed answer, the credentials of a connector card, the master password
+ * of a `vault.unlock` and the header values of an added tool server are `MASKED`.
  * Anything else is the frame as it was.
  */
 export function maskedFrame(frame: unknown): unknown {
@@ -79,6 +85,7 @@ export function maskedFrame(frame: unknown): unknown {
 
 function maskedParams(method: string, params: Obj): Obj {
   if (method === 'vault.unlock' && typeof params.password === 'string' && params.password !== '') return { ...params, password: MASKED }
+  if (method === 'mcp.servers.add' && isObject(params.config) && isObject(params.config.headers)) return { ...params, config: { ...params.config, headers: masked(params.config.headers) } }
   if (method !== 'connection.respond' || !isObject(params.result) || !Array.isArray(params.result.targets)) return params
   const targets = params.result.targets.map((target: unknown) => (isObject(target) && 'env' in target ? { ...target, env: masked(target.env) } : target))
   return { ...params, result: { ...params.result, targets } }
@@ -178,7 +185,7 @@ export function recordingDialer(inner: Dialer, path: string, clock: Clock = syst
         socket.send(text)
       },
       close: () => socket.close()
-    }, socket.reach)
+    }, socket.reach, socket.sibling)
     socket.onText = text => {
       heard(JSON.parse(text))
       flush()

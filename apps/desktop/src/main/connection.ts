@@ -1,5 +1,6 @@
-import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, Route, Transcribe } from '@highwing/hermes'
+import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, ReadHermes, Route, Transcribe } from '@highwing/hermes'
 import { firstStep, sameTarget, type CheckStep, type Command, type CommandOutcome, type Recording, type SetupFailure, type Target } from '@highwing/hermes/domain'
+import { introInFront, type Intro } from '../intro'
 import { isSetupCommand, NOT_NOW, showsSettings, type HubResult, type Live, type Setup, type SetupCommand } from '../ipc-contract'
 import type { Settings } from './settings'
 
@@ -11,6 +12,8 @@ export interface ConnectionOwner {
   readonly setup: Feed<Setup>
   /** The Hermes of the live connection. null until a target is saved. */
   readonly hermes: Hermes | null
+  /** One GET of the live Hermes's HTTP API. Rejects when no connection is open. */
+  readonly read: ReadHermes
   run<C extends ConnectionCommand>(command: C): Promise<CommandOutcome<HubResult<C>>>
   /** Speech to text by the Hermes of the live connection. */
   transcribe(recording: Recording): Promise<CommandOutcome<string>>
@@ -24,6 +27,7 @@ export interface ConnectionDeps {
   routeFor(target: Target): Route
   /** `place`: which connection this is, the same for the same target in every run. */
   open(dial: Dialer, place: string): Hermes
+  armIntro(): Promise<void>
 }
 
 export type SetupEvent =
@@ -70,8 +74,8 @@ const KEEP = { do: 'keepTarget' } as const
 const STOP = { do: 'stopCheck' } as const
 
 /** Whether an open runs now: in the chat, or in Settings, which it leaves first. It waits through first run, and through a save, which refuses to leave. */
-export const opensNow = (setup: Setup): boolean =>
-  setup.at === 'chat' || setup.at === 'pinned' || (showsSettings(setup) && nextSetup(setup, KEEP) !== null)
+export const opensNow = (setup: Setup, intro: Intro): boolean =>
+  !introInFront(setup, intro) && (setup.at === 'chat' || setup.at === 'pinned' || (showsSettings(setup) && nextSetup(setup, KEEP) !== null))
 
 /** The hub opens a bot or group chat it made, so making one is an open too. */
 const makesChat = (command: Command): boolean => command.do === 'createBot' || command.do === 'createGroup'
@@ -152,6 +156,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
     }
     apply({ do: 'step', step: 'save' })
     try {
+      if (open === null) await deps.armIntro()
       await deps.save(target)
     } catch {
       if (!stale()) apply({ do: 'fail', failure: 'cant-save' })
@@ -195,6 +200,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
   return {
     setup,
     get hermes() { return open?.hermes ?? null },
+    read: path => (open === null ? Promise.reject(new Error('No Hermes is connected.')) : open.route.read(path)),
     run: async <C extends ConnectionCommand>(command: C) => {
       const outcome = isSetupCommand(command) ? runSetup(command) : await runChat(command)
       return outcome as CommandOutcome<HubResult<C>>
@@ -210,11 +216,12 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
 }
 
 /** A window served from one fixed `Hermes`, as a fixture run is. It has no setup, so it refuses every setup command. */
-export function pinnedConnection(hermes: Hermes, transcribe: Transcribe): ConnectionOwner {
+export function pinnedConnection(hermes: Hermes, read: ReadHermes, transcribe: Transcribe): ConnectionOwner {
   return {
     setup: feed<Setup>({ at: 'pinned' }),
     hermes,
     transcribe: recording => transcribe(recording),
+    read,
     run: async <C extends ConnectionCommand>(command: C) =>
       (isSetupCommand(command) ? NOT_NOW : await hermes.run(command)) as CommandOutcome<HubResult<C>>,
     close: () => hermes.close()

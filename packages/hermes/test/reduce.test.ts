@@ -314,7 +314,7 @@ describe('attached', () => {
       snapshot: snapshot({ watermark: { epoch: EPOCH, seq: 9 }, history: { turns, unfinished: null, older: { cursor: 'c1' } } })
     })
     expect(state.gate).toEqual({ at: 'live', cursor: { epoch: EPOCH, seq: 9 }, subscriptionId: 'sub-1' })
-    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null })
+    expect(state.content).toEqual({ id: 's1', title: 'Errand', cwd: '/home/u', history: turns, earlier: 'more', run: { state: 'idle' }, interlude: [], requests: [], queue: [], outbox: [], model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null, rewound: {} })
   })
 
   it('B: opens the unfinished turn of a running snapshot with its waiting prompts, then the parked frames above the watermark', () => {
@@ -882,6 +882,16 @@ describe('rewinding', () => {
     expect(reduce(cut, event(10, { type: 'meta', cutBefore: 3 }, null)).content).toBe(cut.content)
   })
 
+  it('notes where each cut turn went, and keeps it through the turns after, as a replay that cuts and runs a new turn reduces', () => {
+    const cut = reduce(held(), event(9, { type: 'meta', revision: 2, cutBefore: 5 }, null))
+    expect(cut.content.rewound).toEqual({ c: 'b' })
+    const ran = feed(cut, event(10, started('t1')), event(11, ended(COMPLETE, 'Done', [7, 8], 7)))
+    const added = ran.content.history.at(-1)?.id
+    expect(ran.content.history.map(turn => turn.id)).toEqual(['a', 'b', added])
+    expect(ran.content.rewound).toBe(cut.content.rewound)
+    expect(rewound(ran, 3).content.rewound, 'a later cut takes what went to a turn it cuts').toEqual({ c: 'a', b: 'a', [String(added)]: 'a' })
+  })
+
   it('does nothing for a row no turn opens', () => {
     const before = held()
     expect(rewound(before, 4)).toBe(before)
@@ -1301,6 +1311,21 @@ describe('what Hermes says', () => {
     expect(openItems(feed(live(), event(1, started('t1')), event(2, asked)))).toMatchObject([{ kind: 'prompt', deadline: null }])
     const settled = feed(live(), event(1, started('t1')), event(2, asked, 1, EPOCH, 5_000), event(3, ended(COMPLETE)))
     expect(settled.content.history[0]?.items).toMatchObject([{ kind: 'prompt', state: { s: 'withdrawn' }, deadline: null }])
+  })
+
+  it('marks a prompt that Hermes closes after its deadline, with no answer, as expired, and one it closes before as before', () => {
+    const asked: SessionEvent = { type: 'prompt.opened', id: promptId('p1'), generation: generation(1), ask: APPROVAL, timeoutS: 60 }
+    const waiting = feed(live(), event(1, started('t1')), event(2, asked, 1, EPOCH, 5_000))
+    const settledAt = (at: number) => feed(waiting, event(3, { type: 'prompt.settled', id: promptId('p1') }, 1, EPOCH, at))
+    expect(openItems(settledAt(65_000))).toMatchObject([{ kind: 'prompt', state: { s: 'expired' } }])
+    expect(openItems(settledAt(64_999))).toMatchObject([{ kind: 'prompt', state: { s: 'answered', reply: null } }])
+    const endedAt = (at: number) => feed(waiting, event(3, ended(COMPLETE), 1, EPOCH, at)).content.history[0]?.items
+    expect(endedAt(70_000)).toMatchObject([{ kind: 'prompt', state: { s: 'expired' }, deadline: null }])
+    expect(endedAt(10_000)).toMatchObject([{ kind: 'prompt', state: { s: 'withdrawn' } }])
+    const cancelled = feed(waiting, event(3, { type: 'prompts.cancelled', ids: [promptId('p1')] }, 1, EPOCH, 70_000))
+    expect(openItems(cancelled)).toMatchObject([{ kind: 'prompt', state: { s: 'expired' } }])
+    const sent = feed(waiting, { in: 'local', action: { did: 'answer', promptId: promptId('p1'), reply: { kind: 'choice', value: 'once' } } }, event(3, ended(COMPLETE), 1, EPOCH, 70_000))
+    expect(sent.content.history[0]?.items).toMatchObject([{ kind: 'prompt', state: { s: 'withdrawn' } }])
   })
 
   it('gives a prompt found in a snapshot no deadline', () => {

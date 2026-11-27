@@ -11,7 +11,7 @@ import type { AddressInfo } from 'node:net'
 import { inspect } from 'node:util'
 import { gatewayHost, URL_FAILURES, type GatewayUrl, type UrlFailure } from '../domain/reach'
 import type { CheckOptions } from './check'
-import { DialError, dialWith, GATEWAY_PROTOCOL, HANDSHAKE_MS, sessionAuthorityOf, systemClock, TICKET_PREFIX, type Clock, type Endpoint, type Mint } from './link'
+import { DialError, dialWith, GATEWAY_PROTOCOL, HANDSHAKE_MS, sessionAuthorityOf, systemClock, TICKET_PREFIX, type Clock, type Endpoint, type Mint, type ReadHermes } from './link'
 import type { Route } from './remote'
 import { CANT_REACH, TRANSCRIBE_MS, TRANSCRIBE_PATH, transcribeBody, transcriptOf, type Transcribe } from './transcribe'
 
@@ -433,7 +433,15 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
           throw life.signal.aborted ? new DialError('dropped') : error
         }
       }
-      return { dial: dialWith(minted), transcribe: transcribeAt(url), dispose: () => life.abort() }
+      const read: ReadHermes = async path => {
+        const held = loginOf(url)
+        const bearer = await held.bearer()
+        const answer = await send('GET', `${url}${path}`, { bearer, signal: life.signal })
+        if (answer.status !== 401) return answer
+        await held.replaceRefused(bearer)
+        return send('GET', `${url}${path}`, { bearer: await held.bearer(), signal: life.signal })
+      }
+      return { dial: dialWith(minted), read, transcribe: transcribeAt(url), dispose: () => life.abort() }
     },
 
     keepOnly: async url => {

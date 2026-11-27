@@ -14,8 +14,8 @@ export type ChatRef =
   | { readonly kind: 'bot'; readonly bot: BotId }
   /** A new, empty chat in this bot's profile (null: the socket's own profile). The window mints `draftId`. */
   | { readonly kind: 'new'; readonly bot: BotId | null; readonly draftId: string }
-  /** A chat picked from the list of a bot's chats. */
-  | { readonly kind: 'chat'; readonly sessionId: SessionId }
+  /** A chat picked from the list of a bot's chats. `bot`: the bot whose profile it lives in, from a caller that knows it when no list does, as the Tasks view does for a kanban worker's chat. */
+  | { readonly kind: 'chat'; readonly sessionId: SessionId; readonly bot?: BotId }
   /** A chat named from outside Highwing by its session id alone. Hermes is asked where it lives before it opens. */
   | { readonly kind: 'link'; readonly sessionId: SessionId }
   /** A group chat from the sidebar's Group chats section. */
@@ -167,8 +167,11 @@ function asked(desk: Desk, ref: ChatRef): { readonly desk: Desk; readonly effect
     }
     case 'new':
       return done({ ...desk, open: { shown: { kind: 'new', bot: ref.bot, draftId: ref.draftId, sessionId: null }, opening: null, missing: null } })
-    case 'chat':
-      return done(picking(desk, ref.sessionId))
+    case 'chat': {
+      const { bot, sessionId } = ref
+      const owned: Desk = bot === undefined || ownerOf(desk, sessionId) !== undefined ? desk : { ...desk, owners: { ...desk.owners, [sessionId]: bot } }
+      return done(picking(owned, sessionId))
+    }
     case 'link': {
       const { sessionId } = ref
       if (shownChat(desk.open)?.sessionId === sessionId || ownerOf(desk, sessionId) !== undefined) return done(picking(desk, sessionId))

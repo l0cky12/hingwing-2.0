@@ -5,8 +5,10 @@ import { readFileSync } from 'node:fs'
 import { APPROVAL_MODES, type ApprovalMode, type SessionId } from '../domain/session'
 import { systemClock, type Reach } from '../wire/link'
 import { transcriptOf, type Transcribe } from '../wire/transcribe'
+import { isKanban, type Kanban } from './kanban'
 
 export { play, playToEnd, type Moment } from './play'
+export { fixtureRead } from './kanban'
 export { maskedFrame, recordingDialer } from './record'
 export { fixtureLatency, scriptedDialer, type ScriptedDialer, type ScriptOptions } from './script'
 
@@ -79,6 +81,8 @@ export interface Fixture {
      * `info.yolo` stays the chat's own flag, as on Hermes. Absent: Hermes refuses both, as for a key it does not know.
      */
     readonly approvals?: ApprovalMode
+    /** Every bot's `approvals.deny`, which `config.get` of `full` answers. Absent: that key is refused as `controls` says. */
+    readonly deny?: readonly string[]
     /**
      * The story session's controls as `config.get` answers them, by key: `{ "show_reasoning": "1" }`.
      * `config.set` changes them, except a set of key `yolo`, which `yolo` serves. Absent: the gateway refuses both as unknown methods, as a Hermes
@@ -94,6 +98,10 @@ export interface Fixture {
     readonly createWarnings?: readonly string[]
     /** profile -> its SOUL.md, the persona `profiles.describe` answers. A profile not here has none. */
     readonly souls?: { readonly [profile: string]: string }
+    /** profile -> its installed skills: `description` is what the catalog says, `body` its SKILL.md. Absent: every profile has none. */
+    readonly skills?: { readonly [profile: string]: readonly { readonly name: string; readonly description: string; readonly body: string; readonly enabled?: boolean }[] }
+    /** Another client turns that skill on or off afterMs after the first `profiles.describe` of the profile, and Hermes pushes `skills.changed`. */
+    readonly skillsElsewhere?: { readonly profile: string; readonly name: string; readonly enabled: boolean; readonly afterMs: number }
     /**
      * The first `profiles.configure` that writes `ui_meta` finds another client renamed the bot to this title just before,
      * one revision on, as Hermes's revision check would.
@@ -106,6 +114,12 @@ export interface Fixture {
      * A socket bound to one profile is refused it too, since it reaches no legacy handler.
      */
     readonly images?: Images
+    /**
+     * Each profile's screen, as `display.*` answers it: whether the agent uses it, and its frame as a JPEG data URL. A profile not
+     * named has a screen that is off. Absent: the gateway refuses every `display.*` call as an unknown method, as a Hermes without
+     * the screen does, and so does a socket bound to one profile.
+     */
+    readonly display?: Display
     /** What `llm.oneshot` answers. Absent: the gateway refuses it as an unknown method, as a Hermes without it does, and so does a socket bound to one profile. */
     readonly oneshot?: Oneshot
     /** What `pet.gallery` and `pet.thumb` answer. Absent: the gateway refuses both as unknown methods, as a Hermes without pets does. */
@@ -128,10 +142,14 @@ export interface Fixture {
      * manager not here is not installed. Absent: the gateway refuses every `vault.*` call as an unknown method, as a Hermes without them does.
      */
     readonly vault?: VaultScript
+    /** What `mcp.servers.*` answer. Absent: the gateway refuses every one as an unknown method, as a Hermes without them does, and so does a socket bound to one profile. */
+    readonly mcp?: McpScript
     /** `'profile'`: play a Hermes with no `interactive` ticket, whose every socket is bound to the home profile. Default `'host'`. */
     readonly reach?: Reach
     /** false: the home bot has no Bot Chat, and the story session is only a chat of the home profile. Default true. */
     readonly homeBotChat?: boolean
+    /** The kanban plugin's replies, which the app reads over HTTP rather than the socket. Absent: the Hermes has no kanban plugin and every read of it is a 404. */
+    readonly kanban?: Kanban
     /** Bytes the app's image loader answers with in place of the network and the disk, as base64 under the web URL or absolute path asked for. A key not here is missing. */
     readonly media?: Readonly<Record<string, string>>
     /** What Hermes's speech upload answers: `text` heard (default empty) after `delay_ms` (default 0), or a failure with `error` in its words. Absent: a Hermes with no speech-to-text. */
@@ -159,6 +177,11 @@ export interface Fixture {
      */
     readonly groups?: GroupsScript
     /**
+     * The home profile's scheduled jobs and their runs. Absent: the gateway refuses `cron.manage` as an unknown
+     * method, as a Hermes that serves no scheduled jobs to Highwing does.
+     */
+    readonly cron?: CronScript
+    /**
      * What `complete.path` answers. `words` maps a typed word (`@not`) to the reply as Hermes sends it, and a
      * word not listed answers `{ items: [] }`. `cwd` is the story session's `info.cwd`. Absent: the gateway
      * refuses `complete.path` as an unknown method, as a Hermes without it does.
@@ -183,6 +206,7 @@ export interface Fixture {
  * download failed, so the reply names only the backend's `image`. `error`: every generation fails with these words.
  * `delay_ms`: how long a generation takes (default 0).
  */
+export interface Display { readonly [profile: string]: { readonly running: boolean; readonly thumbnail?: string } }
 export interface Images { readonly available: boolean; readonly picture?: string; readonly error?: string; readonly delay_ms?: number }
 
 /** What `llm.oneshot` answers: `text` as the model wrote it (default empty) after `delay_ms` (default 0), or a failure with `error` in its words. */
@@ -254,8 +278,44 @@ export interface ManagerSeed {
 export const VAULT_MANAGERS = ['onepassword', 'bitwarden'] as const
 export type VaultScript = { readonly [profile: string]: { readonly [M in typeof VAULT_MANAGERS[number]]?: ManagerSeed } }
 
+/**
+ * One tool server a profile holds. `status` and `tools`: what `mcp.servers.status` says of it (default `configured`, 0).
+ * `needs_auth`: Hermes parked it on a rejected sign-in. `plugin`: the plugin that provides it, which Hermes won't let a client change.
+ */
+export interface McpServerSeed {
+  readonly name: string
+  readonly url?: string
+  readonly headers?: { readonly [name: string]: string }
+  readonly command?: string
+  readonly args?: readonly string[]
+  readonly status?: 'connected' | 'disabled' | 'connecting' | 'failed' | 'lazy' | 'configured'
+  readonly tools?: number
+  readonly needs_auth?: boolean
+  readonly plugin?: string
+}
+
+/** What `mcp.servers.test` finds at a server, by its name: its tools, an error, or a wish to sign in. A name not here fails with "Connection refused". */
+export type McpProbe = { readonly tools: readonly string[] } | { readonly error: string } | { readonly oauth_needed: true }
+
+/** `servers`: profile -> the servers it holds at the start. */
+export interface McpScript {
+  readonly servers: { readonly [profile: string]: readonly McpServerSeed[] }
+  readonly probes?: { readonly [name: string]: McpProbe }
+}
+
 /** `reply`: the bot's one answer, sent `delay_ms` after the call (default 0). `refuse`: the reason Hermes refuses the delivery with. */
 export type RelayScript = { readonly reply: string; readonly delay_ms?: number } | { readonly refuse: string }
+/**
+ * `jobs`: the rows `cron.manage` lists, each with at least `job_id`. `runs`: each one rewrites its job's `last_run_at`,
+ * `last_status` and `last_error` `after_ms` after the gateway's first list, and pushes `cron.changed` to every socket,
+ * as Hermes's watcher does when the scheduler writes cron/jobs.json (tui_gateway/change_watcher.py:468).
+ */
+export interface CronScript {
+  readonly jobs: readonly { readonly job_id: string; readonly [key: string]: unknown }[]
+  readonly runs?: readonly CronRun[]
+}
+export interface CronRun { readonly after_ms: number; readonly job_id: string; readonly last_run_at: string; readonly last_status: string; readonly last_error?: string }
+
 export interface GroupsScript {
   /**
    * What `groups.capabilities` says of `driver`: whether Hermes runs its group chats now. Default true. Hermes makes a
@@ -426,6 +486,10 @@ const isImages = (value: unknown): value is Images =>
   isObject(value) && typeof value.available === 'boolean' && (value.picture === undefined || typeof value.picture === 'string')
   && (value.error === undefined || typeof value.error === 'string') && delay(value.delay_ms)
 
+const isDisplay = (value: unknown): value is Display =>
+  isObject(value) && Object.values(value).every(screen => isObject(screen) && typeof screen.running === 'boolean'
+    && (screen.thumbnail === undefined || (typeof screen.thumbnail === 'string' && screen.thumbnail.startsWith('data:image/'))))
+
 const isOneshot = (value: unknown): value is Oneshot =>
   isObject(value) && (value.text === undefined || typeof value.text === 'string') && (value.error === undefined || typeof value.error === 'string') && delay(value.delay_ms)
 
@@ -433,11 +497,39 @@ const isPets = (value: unknown): value is Pets =>
   isObject(value) && Array.isArray(value.pets) && isObject(value.thumbs) && Object.values(value.thumbs).every(thumb => typeof thumb === 'string') && delay(value.delay_ms)
   && (value.refused_once === undefined || (Array.isArray(value.refused_once) && value.refused_once.every(slug => typeof slug === 'string')))
 
+const isCronRun = (value: unknown): value is CronRun =>
+  isObject(value) && typeof value.after_ms === 'number' && value.after_ms >= 0 && isText(value.job_id) && isText(value.last_run_at) && isText(value.last_status)
+  && (value.last_error === undefined || typeof value.last_error === 'string')
+
+const isCronScript = (value: unknown): value is CronScript =>
+  isObject(value) && Array.isArray(value.jobs) && value.jobs.every(job => isObject(job) && isText(job.job_id))
+  && (value.runs === undefined || (Array.isArray(value.runs) && value.runs.every(run => isCronRun(run) && (value.jobs as { job_id: string }[]).some(job => job.job_id === run.job_id))))
+
 const MEMORY_FILES = new Set(['MEMORY.md', 'USER.md'])
 const isCharLimit = (value: unknown) => value === undefined || (Number.isSafeInteger(value) && (value as number) > 0)
 const isMemory = (value: unknown): value is MemoryScript =>
   isObject(value) && Array.isArray(value.entries) && value.entries.every(entry => isObject(entry) && typeof entry.file === 'string' && MEMORY_FILES.has(entry.file) && typeof entry.text === 'string' && entry.text.trim() !== '')
   && (value.limits === undefined || (isObject(value.limits) && Object.keys(value.limits).every(key => key === 'memory' || key === 'user') && isCharLimit(value.limits.memory) && isCharLimit(value.limits.user)))
+
+const MCP_STATUSES: readonly unknown[] = ['connected', 'disabled', 'connecting', 'failed', 'lazy', 'configured']
+const SEED_KEYS = ['name', 'url', 'headers', 'command', 'args', 'status', 'tools', 'needs_auth', 'plugin']
+
+const isMcpServerSeed = (value: unknown): value is McpServerSeed =>
+  isObject(value) && Object.keys(value).every(key => SEED_KEYS.includes(key)) && typeof value.name === 'string' && value.name !== ''
+  && (typeof value.url === 'string') !== (typeof value.command === 'string')
+  && (value.headers === undefined || (isObject(value.headers) && Object.values(value.headers).every(header => typeof header === 'string')))
+  && (value.args === undefined || (Array.isArray(value.args) && value.args.every(arg => typeof arg === 'string')))
+  && (value.status === undefined || MCP_STATUSES.includes(value.status)) && (value.tools === undefined || Number.isSafeInteger(value.tools))
+  && (value.needs_auth === undefined || typeof value.needs_auth === 'boolean') && (value.plugin === undefined || typeof value.plugin === 'string')
+
+const isMcpProbe = (value: unknown): value is McpProbe =>
+  isObject(value) && Object.keys(value).length === 1
+  && ((Array.isArray(value.tools) && value.tools.every(tool => typeof tool === 'string')) || typeof value.error === 'string' || value.oauth_needed === true)
+
+const isMcpScript = (value: unknown): value is McpScript =>
+  isObject(value) && Object.keys(value).every(key => key === 'servers' || key === 'probes')
+  && isObject(value.servers) && Object.values(value.servers).every(seeds => Array.isArray(seeds) && seeds.every(isMcpServerSeed))
+  && (value.probes === undefined || (isObject(value.probes) && Object.values(value.probes).every(isMcpProbe)))
 
 const isRelayScript = (value: unknown): value is RelayScript =>
   isObject(value) && ('refuse' in value
@@ -528,6 +620,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (yolo !== undefined && typeof yolo !== 'boolean') return '"yolo" must be true or false'
   if (approvals !== undefined && !APPROVAL_MODES.some(mode => mode === approvals)) return '"approvals" must be manual, smart or off'
   if (yoloDenied !== undefined && typeof yoloDenied !== 'boolean') return '"yoloDenied" must be true or false'
+  const { deny } = value
+  if (deny !== undefined && !(Array.isArray(deny) && deny.every(rule => typeof rule === 'string'))) return '"deny" must be a list of strings'
   const { info } = value
   if (info !== undefined && !isObject(info)) return '"info" must be an object of attach info fields'
   const { controls } = value
@@ -538,6 +632,16 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (createWarnings !== undefined && !(Array.isArray(createWarnings) && createWarnings.every(warning => typeof warning === 'string'))) return '"createWarnings" must be a list of strings'
   const { souls, configureClash } = value
   if (souls !== undefined && !(isObject(souls) && Object.values(souls).every(soul => typeof soul === 'string'))) return '"souls" must map a profile to its persona'
+  const { skills, skillsElsewhere } = value
+  const isSkill = (skill: unknown) => isObject(skill) && typeof skill.name === 'string' && skill.name !== '' && typeof skill.description === 'string' && typeof skill.body === 'string'
+    && (skill.enabled === undefined || typeof skill.enabled === 'boolean')
+  if (skills !== undefined && !(isObject(skills) && Object.values(skills).every(listed => Array.isArray(listed) && listed.every(isSkill)))) {
+    return '"skills" must map a profile to a list of { name, description, body, enabled? }'
+  }
+  if (skillsElsewhere !== undefined && !(isObject(skillsElsewhere) && typeof skillsElsewhere.profile === 'string' && typeof skillsElsewhere.name === 'string'
+    && typeof skillsElsewhere.enabled === 'boolean' && Number.isSafeInteger(skillsElsewhere.afterMs) && (skillsElsewhere.afterMs as number) >= 0)) {
+    return '"skillsElsewhere" must be { profile, name, enabled, afterMs }'
+  }
   const clashTitle = isObject(configureClash) ? configureClash.title : configureClash
   const clashTimes = isObject(configureClash) ? configureClash.times : 1
   if (configureClash !== undefined && (typeof clashTitle !== 'string' || clashTitle.trim() === '' || !Number.isSafeInteger(clashTimes) || (clashTimes as number) < 1)) {
@@ -545,8 +649,9 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   const { assetFails } = value
   if (assetFails !== undefined && (typeof assetFails !== 'string' || assetFails.trim() === '')) return '"assetFails" must be the words a failed write gives'
-  const { images, pets, oneshot, memory } = value
+  const { images, pets, oneshot, display, memory } = value
   if (images !== undefined && !isImages(images)) return '"images" must be { available, picture?, error?, delay_ms? }'
+  if (display !== undefined && !isDisplay(display)) return '"display" must map a profile to { running, thumbnail? } with "thumbnail" a data URL'
   if (oneshot !== undefined && !isOneshot(oneshot)) return '"oneshot" must be { text?, error?, delay_ms? }'
   if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'
   const { connectors } = value
@@ -556,9 +661,15 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (vault !== undefined && !isVaultScript(vault)) {
     return '"vault" must map a profile to { onepassword?, bitwarden? }, each { installed, enabled?, unlocked?, logins?, password?, refuses?, token?, listFails? }'
   }
+  const { mcp } = value
+  if (mcp !== undefined && !isMcpScript(mcp)) {
+    return '"mcp" must be { servers, probes? }: "servers" maps a profile to its servers, each { name, url or command, headers?, args?, status?, tools?, needs_auth?, plugin? }, and "probes" maps a name to { tools }, { error } or { oauth_needed: true }'
+  }
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
+  const { kanban } = value
+  if (kanban !== undefined && !isKanban(kanban)) return '"kanban" must be { board, tasks }: a kanban board reply, and each card\'s detail reply by task id'
   const { media, transcribe } = value
   if (transcribe !== undefined && !isOneshot(transcribe)) return '"transcribe" must be { text?, error?, delay_ms? }'
   if (media !== undefined && !(isObject(media) && Object.values(media).every(bytes => typeof bytes === 'string'))) return '"media" must map a url or path to base64 bytes'
@@ -583,6 +694,10 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   const { relay } = value
   if (relay !== undefined && !(isObject(relay) && Object.values(relay).every(isRelayScript))) {
     return '"relay" must map a profile to { reply, delay_ms? } or { refuse }'
+  }
+  const { cron } = value
+  if (cron !== undefined && !isCronScript(cron)) {
+    return '"cron" must be { jobs, runs? }: each job with a "job_id", each run { after_ms, job_id, last_run_at, last_status, last_error? } of a listed job'
   }
   const { turnMs, activeList } = value
   if (turnMs !== undefined && !(isObject(turnMs) && Object.values(turnMs).every(ms => Number.isSafeInteger(ms) && (ms as number) >= 0))) {
@@ -610,23 +725,29 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(models === undefined ? {} : { models }), ...(guarded === undefined ? {} : { guarded: guarded as string[] }),
     ...(usage === undefined ? {} : { usage }),
     ...(yolo === undefined ? {} : { yolo }), ...(yoloDenied === undefined ? {} : { yoloDenied }), ...(approvals === undefined ? {} : { approvals: approvals as ApprovalMode }),
+    ...(deny === undefined ? {} : { deny: deny as string[] }),
     ...(branches === undefined ? {} : { branches }), ...(tree === undefined ? {} : { tree }),
     ...(info === undefined ? {} : { info }),
     ...(controls === undefined ? {} : { controls: controls as Record<string, string> }),
     ...(profiles === undefined ? {} : { profiles }),
     ...(createWarnings === undefined ? {} : { createWarnings: createWarnings as string[] }),
-    ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
+    ...(souls === undefined ? {} : { souls: souls as Record<string, string> }),
+    ...(skills === undefined ? {} : { skills: skills as NonNullable<Fixture['header']['skills']> }),
+    ...(skillsElsewhere === undefined ? {} : { skillsElsewhere: skillsElsewhere as NonNullable<Fixture['header']['skillsElsewhere']> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
     ...(assetFails === undefined ? {} : { assetFails }),
-    ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }), ...(vault === undefined ? {} : { vault }),
+    ...(images === undefined ? {} : { images }), ...(display === undefined ? {} : { display }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }), ...(vault === undefined ? {} : { vault }),
     ...(connectors === undefined ? {} : { connectors }),
     ...(memory === undefined ? {} : { memory }),
+    ...(mcp === undefined ? {} : { mcp }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
+    ...(kanban === undefined ? {} : { kanban }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }), ...(transcribe === undefined ? {} : { transcribe }),
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),
     ...(chats === undefined ? {} : { chats: chats as { readonly [profile: string]: readonly ChatSeed[] } }),
     ...(relay === undefined ? {} : { relay: relay as { readonly [profile: string]: RelayScript } }),
     ...(turnMs === undefined ? {} : { turnMs: turnMs as { readonly [profile: string]: number } }), ...(activeList === undefined ? {} : { activeList }),
     ...(groups === undefined ? {} : { groups }),
+    ...(cron === undefined ? {} : { cron }),
     ...(paths === undefined ? {} : { paths: paths as NonNullable<Fixture['header']['paths']> }),
     ...(reads === undefined ? {} : { reads }),
     ...(todoState === undefined ? {} : { todo_state: todoState as NonNullable<Fixture['header']['todo_state']> })

@@ -1,22 +1,24 @@
-import { checkTarget, gatewaysByUrl, liveDialer, liveTranscribe, openHermes, remoteRoute, type Dialer, type Hermes, type Route } from '@highwing/hermes'
+import { checkTarget, gatewaysByUrl, liveRoute, openHermes, remoteRoute, type Dialer, type Hermes, type Route } from '@highwing/hermes'
 import { byKind, type BotId, type GatewayUrl, type Target } from '@highwing/hermes/domain'
-import { fixtureLatency, fixtureTranscribe, loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, safeStorage, shell, type OpenDialogOptions } from 'electron'
+import { fixtureLatency, fixtureRead, fixtureTranscribe, loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, safeStorage, session, shell, type OpenDialogOptions } from 'electron'
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { version } from '../../package.json'
 import { attachmentStore, ATTACHMENTS_DIR, desktopSources, HERMES_LIMITS } from './attachments'
 import { ownConnection, pinnedConnection, refreshBotsOnFocus, type ConnectionOwner } from './connection'
+import { ownIntro } from './intro'
 import { desktopMenus, recordingMenus } from './context-menu'
 import { seedDictionary } from './dictionary'
 import { desktopOpener, recordingOpener, type Opener } from './files'
 import { desktopImageDeps, fixtureImageDeps, imageLoader } from './images'
 import { draftStore, DRAFTS_DIR } from './drafts'
 import { serveWindows } from './ipc'
+import { serveScreen } from './screen'
 import { dbusSend, hasSecretService } from './keyring'
 import { chatLinks } from './links'
-import { MODE, ON_CLOSE, preferenceStore, SNOOZES, THEME } from './preferences'
-import { desktopNotifier, notifyTurnEnds, recordingNotifier } from './notify'
+import { ACCENT, MODE, NOTICES, ON_CLOSE, preferenceStore, SEND_KEY, SIDEBAR_WIDTH, SNOOZES, SPELL_CHECK, THEME } from './preferences'
+import { desktopNotifier, notify, recordingNotifier } from './notify'
 import { installTray } from './tray'
 import { choosePicture, pickPicture, readHead } from './picture'
 import { previewPane, registerPageScheme } from './preview'
@@ -46,7 +48,7 @@ const recorded = (dial: Dialer): Dialer => (HIGHWING_RECORD ? recordingDialer(di
 
 const addressOf = (target: Target) => byKind<GatewayUrl | null>(target, { local: () => null, remote: () => null, url: ({ url }) => url })
 
-async function savedConnection(settingsDir: string, opener: Opener, open: (dial: Dialer, place: string) => Hermes): Promise<ConnectionOwner> {
+async function savedConnection(settingsDir: string, opener: Opener, open: (dial: Dialer, place: string) => Hermes, armIntro: () => Promise<void>): Promise<ConnectionOwner> {
   // An installed build takes neither variable: one would keep sign-ins unsealed, the other would cut a real sign-in short.
   const verifying = !app.isPackaged
   const signInMs = verifying && /^[1-9]\d*$/.test(HIGHWING_SIGN_IN_MS ?? '') ? Number(HIGHWING_SIGN_IN_MS) : null
@@ -55,7 +57,7 @@ async function savedConnection(settingsDir: string, opener: Opener, open: (dial:
 
   const routeFor = (target: Target): Route => {
     const route = byKind<Route>(target, {
-      local: () => ({ dial: liveDialer(), transcribe: liveTranscribe(), dispose: () => {} }),
+      local: () => liveRoute(),
       remote: ({ host }) => remoteRoute(host),
       url: ({ url }) => gateways.route(url)
     })
@@ -74,7 +76,8 @@ async function savedConnection(settingsDir: string, opener: Opener, open: (dial:
     },
     check: (target, options) => checkTarget(target, { ...options, gateways }),
     routeFor,
-    open
+    open,
+    armIntro
   })
 }
 
@@ -116,10 +119,18 @@ app.whenReady().then(async () => {
   const drafts = draftStore(join(settingsDir, DRAFTS_DIR))
   const mode = await preferenceStore(settingsDir, MODE)
   const theme = await preferenceStore(settingsDir, THEME)
+  const accent = await preferenceStore(settingsDir, ACCENT)
+  const sidebarWidth = await preferenceStore(settingsDir, SIDEBAR_WIDTH)
+  const sendKey = await preferenceStore(settingsDir, SEND_KEY)
+  const spellCheck = await preferenceStore(settingsDir, SPELL_CHECK)
   const snoozes = await preferenceStore(settingsDir, SNOOZES)
+  const notices = await preferenceStore(settingsDir, NOTICES)
+  const intro = await ownIntro(settingsDir)
   const onClose = await preferenceStore(settingsDir, ON_CLOSE)
   nativeTheme.themeSource = theme.get()
   theme.subscribe(source => (nativeTheme.themeSource = source))
+  session.defaultSession.setSpellCheckerEnabled(spellCheck.get())
+  spellCheck.subscribe(on => session.defaultSession.setSpellCheckerEnabled(on))
   await attachments.sweep(new Set((await drafts.load()).flatMap(draft => draft.attachments.map(held => held.id))))
   const unread = unreadStore(join(settingsDir, UNREAD_DIR))
   // Unpackaged Electron reports its own version. The desktop package is the app version.
@@ -131,8 +142,8 @@ app.whenReady().then(async () => {
     ? pinnedConnection(open(scriptedDialer(fixture, {
       timing: 'recorded', latencyMs: fixtureLatency(HIGHWING_FIXTURE_LATENCY_MS),
       ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(maskedFrame(frame))}\n`) } : {})
-    }), 'fixture'), fixtureTranscribe(fixture.header.transcribe))
-    : await savedConnection(settingsDir, opener, open)
+    }), 'fixture'), fixtureRead(fixture.header.kanban), fixtureTranscribe(fixture.header.transcribe))
+    : await savedConnection(settingsDir, opener, open, intro.armIntro)
   pane.follow(owner.setup)
   const pictureDeps = { choose: pictureFile, read: readHead, set: (bot: BotId, data: string) => owner.run({ do: 'setBotPicture', bot, data }) }
   const sources = desktopSources({ dialog, clipboard, focused: () => BrowserWindow.getFocusedWindow() }, HIGHWING_PICK_FILES)
@@ -140,19 +151,21 @@ app.whenReady().then(async () => {
   const saver = HIGHWING_SAVE_DIR ? folderSaver(HIGHWING_SAVE_DIR) : dialogSaver(dialog, () => app.getPath('downloads'))
   const served = serveWindows(
     owner, ipcMain, isAppUrl, opener, images, drafts, pane, { pick: (bot, live) => pickPicture(pictureDeps, bot, live), choose: () => choosePicture(pictureDeps) },
-    { store: attachments, sources }, saver, { mode, theme, snoozes, onClose }
+    { store: attachments, sources }, saver, { mode, theme, accent, sidebarWidth, sendKey, spellCheck, snoozes, notices, onClose }, intro
   )
-  const stopNotices = notifyTurnEnds(owner, {
+  const stopScreen = serveScreen(owner, ipcMain, isAppUrl)
+  const stopNotices = notify(owner, intro.intro, {
     notifier: HIGHWING_NOTIFY_LOG ? recordingNotifier(HIGHWING_NOTIFY_LOG) : desktopNotifier(Notification),
     focused: () => BrowserWindow.getFocusedWindow() !== null,
-    raise
+    raise,
+    kinds: () => notices.get()
   })
   const window = openWindow(opener, pane, HIGHWING_MENU_LOG ? recordingMenus(HIGHWING_MENU_LOG, HIGHWING_MENU_PICK) : desktopMenus(Menu))
   const stopTray = installTray(window, owner, onClose, raise, HIGHWING_TRAY_LOG)
-  const stopLinks = links.serve(owner, raise)
+  const stopLinks = links.serve(owner, intro.intro, raise)
   const stopRefresh = refreshBotsOnFocus(app, owner)
   let closed: Promise<void> | null = null
-  const close = () => (closed ??= (served.dispose(), stopNotices(), stopLinks(), stopRefresh(), stopTray(), Promise.all([owner.close(), drafts.settled(), unread.settled(), mode.settled(), theme.settled(), snoozes.settled(), onClose.settled()]).then(() => {})))
+  const close = () => (closed ??= (served.dispose(), stopScreen(), stopNotices(), stopLinks(), stopRefresh(), stopTray(), Promise.all([owner.close(), drafts.settled(), unread.settled(), mode.settled(), theme.settled(), accent.settled(), sidebarWidth.settled(), sendKey.settled(), spellCheck.settled(), snoozes.settled(), notices.settled(), onClose.settled(), intro.settled()]).then(() => {})))
   app.on('window-all-closed', () => void close().finally(() => app.quit()))
   // A quit from the menu or the session never emits window-all-closed, and a check or an attach still running would outlive the app.
   // Electron does not wait for a will-quit listener, so the quit is held until a draft or a preference still being written is on disk.

@@ -16,6 +16,7 @@ const facts = (named: Record<string, SessionId>, launch: Shown | null = null): D
 const askedNew = (bot: BotId | null, draftId: string): DeskEvent => ({ on: 'asked', ref: { kind: 'new', bot, draftId } })
 const made = (bot: BotId | null, draftId: string, sessionId: SessionId): DeskEvent => ({ on: 'made', bot, draftId, sessionId })
 const picked = (sessionId: SessionId): DeskEvent => ({ on: 'asked', ref: { kind: 'chat', sessionId } })
+const pickedIn = (sessionId: SessionId, bot: BotId): DeskEvent => ({ on: 'asked', ref: { kind: 'chat', sessionId, bot } })
 const listed = (bot: BotId, sessions: readonly SessionId[]): DeskEvent => ({ on: 'listed', bot, sessions })
 const branched = (from: SessionId, sessionId: SessionId, text: string): DeskEvent => ({ on: 'branched', from, sessionId, text })
 const linked = (sessionId: SessionId): DeskEvent => ({ on: 'asked', ref: { kind: 'link', sessionId } })
@@ -92,6 +93,12 @@ describe('the open chat', () => {
       [askedNew(null, 'd1'), made(null, 'd1', R1), facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME })], { shown: draft(null, 'd1', R1), opening: null }, [[], [], []]],
     ['opens a chat picked from the list in the bot that listed it, with no call',
       [facts({ [EMU]: HOME }, { kind: 'bot', bot: EMU, sessionId: HOME }), listed(RESEARCH, [R1, R2]), picked(R2)], { shown: { kind: 'chat', bot: RESEARCH, sessionId: R2 }, opening: null }, [[], [], []]],
+    ['opens a chat no list shows in the bot its caller names, and keeps that owner for a branch',
+      [pickedIn(R2, RESEARCH), branched(R2, B1, 'again')], { shown: { kind: 'branch', bot: RESEARCH, sessionId: B1, text: 'again' }, opening: null }, [[], []]],
+    ['opens a chat in the bot its caller names with no call',
+      [pickedIn(R2, RESEARCH)], { shown: { kind: 'chat', bot: RESEARCH, sessionId: R2 }, opening: null }, [[]]],
+    ['trusts the bot a list gave over the one a caller names',
+      [listed(OPS, [R2]), pickedIn(R2, RESEARCH)], { shown: { kind: 'chat', bot: OPS, sessionId: R2 }, opening: null }, [[], []]],
     ["opens a picked chat no bot listed in the socket's own profile",
       [picked(R2)], { shown: { kind: 'chat', bot: null, sessionId: R2 }, opening: null }, [[]]],
     ['lets an earlier click go when a chat is picked',

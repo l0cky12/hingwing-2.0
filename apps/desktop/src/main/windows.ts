@@ -17,7 +17,7 @@ export const isAppUrl = (url: string) => {
 /** The content size design C was drawn and reviewed at. */
 const DESIGN_SIZE = { width: 1180, height: 860 } as const
 
-const APP_CSS_PAPER = { light: '#E8EBE4', dark: '#1A1F1C' } as const
+const APP_CSS_PAPER = { light: '#F7F7F8', dark: '#15161A' } as const
 const paper = () => APP_CSS_PAPER[nativeTheme.shouldUseDarkColors ? 'dark' : 'light']
 
 export function openWindow(opener: Pick<Opener, 'browse'>, pane: Pick<PreviewPane, 'attach'>, show: ShowMenu): BrowserWindow {

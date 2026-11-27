@@ -1,10 +1,10 @@
 import { createServer, type IncomingHttpHeaders } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { describe, expect, it } from 'vitest'
-import { DialError, liveDialer } from '../src/hub'
+import { DialError, liveRoute } from '../src/hub'
 import type { ScenarioName } from '../src/testing/fake-host'
-import { ATTACH, PROBE, SERVE, type HermesArgs, type SshRun } from '../src/wire/ssh'
-import { mintWith, transcribeWith, type MintOptions, type RunHermes } from '../src/wire/tickets'
+import { ASK_NATIVE_HTTP, ATTACH, PROBE, SERVE, type HermesArgs, type SshRun } from '../src/wire/ssh'
+import { mintWith, readWith, transcribeWith, type MintOptions, type RunHermes } from '../src/wire/tickets'
 import { closing, errandGateway, host, listen } from './support/host'
 
 const failureOf = (dial: Promise<unknown>) => dial.then(
@@ -117,11 +117,11 @@ describe('mintWith', () => {
   })
 })
 
-describe('liveDialer, against the fake hermes of this computer', () => {
+describe('liveRoute, against the fake hermes of this computer', () => {
   const dialed = async (name: ScenarioName) => {
     const listening = await listen(errandGateway())
     const here = await host(name, listening)
-    const socket = await liveDialer({ hermesBin: here.hermes })({ start: true })
+    const socket = await liveRoute({ hermesBin: here.hermes }).dial({ start: true })
     socket.close()
     return { reach: socket.reach, calls: here.calls, upgrades: listening.upgrades }
   }
@@ -144,9 +144,59 @@ describe('liveDialer, against the fake hermes of this computer', () => {
 
   it('reads a missing hermes command as hermes-missing, and no gateway as not-running', async () => {
     const gone = await host('hermes-not-found')
-    expect(await failureOf(liveDialer({ hermesBin: gone.hermes })({ start: false })), 'in the words the banner had before the probe').toEqual({ kind: 'hermes-missing', message: "Highwing can't find the hermes command." })
+    expect(await failureOf(liveRoute({ hermesBin: gone.hermes }).dial({ start: false })), 'in the words the banner had before the probe').toEqual({ kind: 'hermes-missing', message: "Highwing can't find the hermes command." })
     const idle = await host('ok')
-    expect(await failureOf(liveDialer({ hermesBin: idle.hermes })({ start: false }))).toMatchObject({ kind: 'not-running' })
+    expect(await failureOf(liveRoute({ hermesBin: idle.hermes }).dial({ start: false }))).toMatchObject({ kind: 'not-running' })
+  })
+})
+
+describe('readWith', () => {
+  const HTTP_TICKET = out(`${JSON.stringify({ type: 'hello', protocol: 1, endpoint: { api_origin: 'http://127.0.0.1:4100', instance_id: 'i-1' } })}\n${JSON.stringify({ id: 1, ok: true, ticket: 'once', expires_in: 30 })}\n`)
+
+  function reading(serve: SshRun, answer: () => Response = () => Response.json({ columns: [] })) {
+    const ran: { readonly args: string; readonly input: string | undefined }[] = []
+    const run: RunHermes = async (args, { input }) => (ran.push({ args: args.join(' '), input }), serve)
+    const sent: { readonly url: string; readonly init: RequestInit | undefined }[] = []
+    const fetcher = (async (url: string, init?: RequestInit) => (sent.push({ url, init }), answer())) as unknown as typeof fetch
+    const forwarded: string[] = []
+    const read = readWith(run, async origin => (forwarded.push(origin), origin.replace('4100', '5200')), fetcher)
+    return { read, ran, sent, forwarded }
+  }
+
+  it('asks --serve for a native-http ticket, and sends it as the one header of one request to the forwarded origin', async () => {
+    const far = reading(HTTP_TICKET)
+    expect(await far.read('/api/plugins/kanban/board')).toEqual({ status: 200, body: { columns: [] } })
+    expect(far.ran).toEqual([{ args: SERVE.join(' '), input: ASK_NATIVE_HTTP }])
+    expect(far.forwarded).toEqual(['http://127.0.0.1:4100'])
+    expect(far.sent).toHaveLength(1)
+    expect(far.sent[0]?.url).toBe('http://127.0.0.1:5200/api/plugins/kanban/board')
+    expect(far.sent[0]?.init).toMatchObject({ redirect: 'manual', headers: { 'x-hermes-gateway-ticket': 'once' } })
+  })
+
+  it('mints a new ticket for every read', async () => {
+    const far = reading(HTTP_TICKET)
+    await far.read('/a')
+    await far.read('/b')
+    expect(far.ran).toHaveLength(2)
+  })
+
+  it('passes a 404 and a body that is not JSON through for the caller to read', async () => {
+    expect(await reading(HTTP_TICKET, () => new Response('Not Found', { status: 404 })).read('/missing')).toEqual({ status: 404, body: null })
+  })
+
+  it.each<[string, SshRun]>([
+    ['a gateway that is absent', out({ type: 'error', error: { code: 'absent' } }, 5)],
+    ['a ticket the gateway would not mint', out(`${JSON.stringify({ type: 'hello', endpoint: { api_origin: 'http://127.0.0.1:4100' } })}\n{"id":1,"ok":false,"error":{"code":"unsupported_purpose"}}\n`)],
+    ['a ssh that could not reach the machine', { ok: false, why: 'unreachable' }]
+  ])('rejects without a request on %s', async (_what, serve) => {
+    const far = reading(serve)
+    await expect(far.read('/a')).rejects.toThrow('Hermes minted no ticket for its HTTP API.')
+    expect(far.sent).toEqual([])
+  })
+
+  it('rejects when the request does, and keeps the ticket out of the error', async () => {
+    const far = reading(HTTP_TICKET, () => { throw new Error('connect ECONNREFUSED') })
+    await expect(far.read('/a')).rejects.not.toThrow(/once/)
   })
 })
 

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, open, readdir, readFile, rename, unlink } from 'node:fs/promises'
+import { mkdir, open, readdir, readFile, rename, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isEmptyDraft, parseDraft, type Draft, type DraftKey } from '../ipc-contract'
 
@@ -48,10 +48,19 @@ async function write(dir: string, draft: Draft): Promise<void> {
   await rename(`${file}.tmp`, file)
 }
 
-async function readAll(dir: string): Promise<readonly Draft[]> {
+async function readOne(file: string): Promise<{ readonly draft: Draft | null; readonly at: number }> {
+  try {
+    const [text, { mtimeMs }] = await Promise.all([readFile(file, 'utf8'), stat(file)])
+    return { draft: readDraft(text), at: mtimeMs }
+  } catch {
+    return { draft: null, at: 0 }
+  }
+}
+
+async function readOldestFirst(dir: string): Promise<readonly Draft[]> {
   const names = await readdir(dir).catch(() => [])
-  const read = await Promise.all(names.filter(name => name.endsWith('.json')).map(name => readFile(join(dir, name), 'utf8').then(readDraft, () => null)))
-  return read.filter(draft => draft !== null)
+  const read = await Promise.all(names.filter(name => name.endsWith('.json')).map(name => readOne(join(dir, name))))
+  return [...read].sort((a, b) => a.at - b.at).flatMap(({ draft }) => (draft === null ? [] : [draft]))
 }
 
 export function draftStore(dir: string): DraftStore {
@@ -60,7 +69,7 @@ export function draftStore(dir: string): DraftStore {
     keep(draft) {
       chain = chain.then(() => write(dir, draft)).catch((error: unknown) => console.error('Highwing could not keep a draft:', error))
     },
-    load: () => chain.then(() => readAll(dir)),
+    load: () => chain.then(() => readOldestFirst(dir)),
     settled: () => chain
   }
 }

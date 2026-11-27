@@ -4,8 +4,9 @@
  * one on another machine. Nothing here outlives a dial: the `--serve` run is sent one line and ends.
  */
 import { CHECK_FAILURES } from '../domain/reach'
-import { DialError, dialWith, EXIT_KINDS, GATEWAY_PROTOCOL, TICKET_PREFIX, type Clock, type Dialer, type Mint } from './link'
-import { ASK_INTERACTIVE, ASK_NATIVE_HTTP, ATTACH, attachedOf, NOT_FOUND, originOf, PROBE, probeOf, runTool, SERVE, servedOf, type HermesArgs, type ProbeFailure, type SshRun } from './ssh'
+import { DialError, dialWith, EXIT_KINDS, GATEWAY_PROTOCOL, TICKET_PREFIX, type Clock, type Mint, type ReadHermes } from './link'
+import type { Route } from './remote'
+import { ASK_INTERACTIVE, ASK_NATIVE_HTTP, ATTACH, attachedOf, httpTicketOf, NOT_FOUND, originOf, PROBE, probeOf, runTool, SERVE, servedOf, type HermesArgs, type ProbeFailure, type SshRun } from './ssh'
 import { CANT_REACH, CANT_TRANSCRIBE, postWithTicket, transcriptOf, type Transcribe } from './transcribe'
 
 /** How a hermes command runs on the gateway's machine: `runTool` here, `sshExec` on another. */
@@ -20,6 +21,7 @@ const PROBE_MS = 20_000
 /** attach's own `--timeout`, plus ssh's ConnectTimeout and room to exit. */
 const ATTACH_MS = { start: 90_000, retry: 35_000 } as const
 const SERVE_MS = 20_000
+const READ_MS = 10_000
 const ATTACH_ONLY = { windowsServiceSession: false, interactive: false } as const
 
 export interface MintOptions {
@@ -112,23 +114,30 @@ export function transcribeWith(run: RunHermes, reach: (origin: string) => Promis
   }
 }
 
-type LocalOptions = { readonly hermesBin?: string; readonly clock?: Clock }
-
-function localRun(options: LocalOptions): RunHermes {
-  const { signal } = new AbortController()
-  return async (args, asked) => {
-    const tool = await runTool(options.hermesBin ?? 'hermes', args, { ...asked, signal, ...(options.clock === undefined ? {} : { clock: options.clock }) })
-    if (tool.end === 'exit') return { ok: true, code: tool.code, stdout: tool.stdout }
-    return { ok: true, code: EXIT_AS_LOCATOR[tool.end], stdout: '' }
+/** A fresh ticket per GET: Hermes's ticket is single use and lives 30 seconds (gateway-ssh-clients.md, client rule 3). */
+export function readWith(run: RunHermes, forward: (origin: string) => Promise<string>, fetcher: typeof fetch = fetch): ReadHermes {
+  return async path => {
+    const serve = await run(SERVE, { deadlineMs: SERVE_MS, input: ASK_NATIVE_HTTP })
+    const minted = serve.ok ? httpTicketOf(serve.code, serve.stdout) : null
+    if (minted === null) throw new Error('Hermes minted no ticket for its HTTP API.')
+    const response = await fetcher(`${await forward(minted.origin)}${path}`, {
+      // Never followed, so the ticket goes only to the address the gateway named.
+      redirect: 'manual',
+      signal: AbortSignal.timeout(READ_MS),
+      headers: { accept: 'application/json', 'x-hermes-gateway-ticket': minted.ticket }
+    })
+    return { status: response.status, body: await response.json().catch(() => null) }
   }
 }
 
 /** The gateway of the Hermes on this computer. */
-export function liveDialer(options: LocalOptions = {}): Dialer {
-  return dialWith(mintWith(localRun(options), { machine: null, forward: async url => url, unprobed: 'attach' }))
-}
-
-/** Speech to text by the Hermes on this computer, whose loopback origin this computer dials as it is. */
-export function liveTranscribe(options: LocalOptions = {}): Transcribe {
-  return transcribeWith(localRun(options), async origin => origin)
+export function liveRoute(options: { readonly hermesBin?: string; readonly clock?: Clock } = {}): Route {
+  const { signal } = new AbortController()
+  const run: RunHermes = async (args, asked) => {
+    const tool = await runTool(options.hermesBin ?? 'hermes', args, { ...asked, signal, ...(options.clock === undefined ? {} : { clock: options.clock }) })
+    if (tool.end === 'exit') return { ok: true, code: tool.code, stdout: tool.stdout }
+    return { ok: true, code: EXIT_AS_LOCATOR[tool.end], stdout: '' }
+  }
+  const here = async (url: string) => url
+  return { dial: dialWith(mintWith(run, { machine: null, forward: here, unprobed: 'attach' })), read: readWith(run, here), transcribe: transcribeWith(run, here), dispose: () => {} }
 }

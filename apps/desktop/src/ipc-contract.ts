@@ -1,10 +1,11 @@
 import {
-  APPROVAL_MODES, BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
-  type About, type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
-  type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type HelperId, type Item, type Link, type ModelOption,
+  APPROVAL_MODES, BOT_MARKS, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
+  type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
+  type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type Recording, type RelayDesk, type RequestId, type RequestReply,
-  type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
+  type RestoreScope, type ResultOf, type ScreenView, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type Target, type TaskBoard, type TaskChat, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
+import type { Intro } from './intro'
 
 /** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
 export interface Live { readonly target: Target; readonly epoch: number }
@@ -91,10 +92,28 @@ export type Theme = 'system' | 'light' | 'dark'
 export type ThemeCommand = { readonly do: 'setTheme'; readonly theme: Theme }
 export const isTheme = (raw: unknown): raw is Theme => raw === 'system' || raw === 'light' || raw === 'dark'
 
+/** The color that tints the open chat: the open bot's own, or one the user fixed. Owned by Electron main and kept on disk. */
+export type Accent = 'bot' | AvatarTone
+export type AccentCommand = { readonly do: 'setAccent'; readonly accent: Accent }
+export const isAccent = (raw: unknown): raw is Accent => raw === 'bot' || raw === 'ink' || BOT_TONES.some(tone => tone === raw)
+
+/** How the bots column draws each bot: with its name and last message, or as its face alone. Owned by Electron main and kept on disk. */
+export type SidebarWidth = 'full' | 'compact'
+export type SidebarWidthCommand = { readonly do: 'setSidebarWidth'; readonly width: SidebarWidth }
+export const isSidebarWidth = (raw: unknown): raw is SidebarWidth => raw === 'full' || raw === 'compact'
+
 /** What closing the window does. `quit` ends Highwing. `stay` leaves it in the tray. Owned by Electron main and kept on disk. */
 export type OnClose = 'quit' | 'stay'
 export type OnCloseCommand = { readonly do: 'setOnClose'; readonly onClose: OnClose }
 export const isOnClose = (raw: unknown): raw is OnClose => raw === 'quit' || raw === 'stay'
+
+/** Which key sends from the composer: Enter, or Ctrl+Enter (Cmd+Enter on macOS) with Enter adding a line. Owned by Electron main and kept on disk. */
+export type SendKey = 'enter' | 'modEnter'
+export type SendKeyCommand = { readonly do: 'setSendKey'; readonly sendKey: SendKey }
+export const isSendKey = (raw: unknown): raw is SendKey => raw === 'enter' || raw === 'modEnter'
+
+/** Whether Chromium checks spelling in every window. Owned by Electron main and kept on disk. */
+export type SpellCheckCommand = { readonly do: 'setSpellCheck'; readonly spellCheck: boolean }
 
 /** The chats the user snoozed, each to the time it comes back, in epoch ms. Owned by Electron main and kept on disk. */
 export type Snoozes = { readonly [id: SessionId]: number }
@@ -103,12 +122,24 @@ export type SnoozeCommand = { readonly do: 'snooze'; readonly sessionId: Session
 const isTime = (raw: unknown): raw is number => Number.isSafeInteger(raw) && (raw as number) > 0
 export const isSnoozes = (raw: unknown): raw is Snoozes => isObject(raw) && Object.entries(raw).every(([id, until]) => id.trim() !== '' && isTime(until))
 
-export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SnoozeCommand | OnCloseCommand
+/** The kinds of desktop notification. `asks`: a chat waits on an approval or an answer. `replies`: a turn ended. `jobs`: a scheduled job ran. */
+export const NOTICE_KINDS = ['asks', 'replies', 'jobs'] as const
+export type NoticeKind = typeof NOTICE_KINDS[number]
+/** Which kinds of desktop notification main shows. Owned by Electron main and kept on disk. */
+export type Notices = { readonly [K in NoticeKind]: boolean }
+export type NoticeCommand = { readonly do: 'setNotice'; readonly kind: NoticeKind; readonly on: boolean }
+export const isNoticeKind = (raw: unknown): raw is NoticeKind => NOTICE_KINDS.includes(raw as NoticeKind)
+export const isNotices = (raw: unknown): raw is Notices =>
+  isObject(raw) && Object.keys(raw).length === NOTICE_KINDS.length && NOTICE_KINDS.every(kind => typeof raw[kind] === 'boolean')
+
+export type IntroCommand = { readonly do: 'examples' } | { readonly do: 'done' }
+
+export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | AccentCommand | SidebarWidthCommand | SendKeyCommand | SpellCheckCommand | SnoozeCommand | NoticeCommand | OnCloseCommand | IntroCommand
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' | 'refreshBots' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
 
-/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `snoozes` and `onClose`, which belong to the window. */
+/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `accent`, `sidebarWidth`, `sendKey`, `spellCheck`, `snoozes`, `notices`, `onClose` and `intro`, which belong to the window. */
 export interface AppTopics {
   readonly setup: Setup
   readonly link: Link
@@ -126,15 +157,25 @@ export interface AppTopics {
   readonly groupChat: GroupChat | null
   /** Which bots are working, waiting on the user, or hold a reply not yet seen. */
   readonly activity: BotActivities
+  /** The screen of the open chat's bot, or null while a group chat is open. */
+  readonly screen: ScreenView | null
+  /** The skills of the bot `open` shows. Hermes is asked only while a window watches it. */
+  readonly skills: SkillLibrary
   readonly preview: Preview
   readonly mode: Mode
   readonly theme: Theme
+  readonly accent: Accent
+  readonly sidebarWidth: SidebarWidth
+  readonly sendKey: SendKey
+  readonly spellCheck: boolean
   readonly snoozes: Snoozes
+  readonly notices: Notices
   readonly onClose: OnClose
+  readonly intro: Intro
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, preview: true, mode: true, theme: true, snoozes: true, onClose: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, screen: true, skills: true, preview: true, mode: true, theme: true, accent: true, sidebarWidth: true, sendKey: true, spellCheck: true, snoozes: true, notices: true, onClose: true, intro: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -204,6 +245,10 @@ export interface Bridge {
   pickBotPicture(bot: BotId, epoch: number): Promise<CommandOutcome<PictureChoice>>
   /** Main shows the same picker and checks the file the same way, and answers the picture. Nothing is sent to Hermes. */
   choosePicture(): Promise<CommandOutcome<PictureFile>>
+  /** The kanban board of the connected Hermes, read afresh. */
+  taskBoard(): Promise<CommandOutcome<TaskBoard>>
+  /** The chat working on a card, read afresh. null: the card has none yet. */
+  taskChat(id: string): Promise<CommandOutcome<TaskChat | null>>
   /** Opens the file dialog and holds each file picked, in the order picked. Nothing picked: an empty list. */
   attachPick(): Promise<readonly StageResult[]>
   /** Holds the image on the clipboard. No image there: an empty list. */
@@ -212,12 +257,25 @@ export interface Bridge {
   attachDropped(files: readonly File[]): Promise<readonly StageResult[]>
   /** Hermes turns the recording into text, which comes back to the composer. Nothing goes to the chat. `epoch` is as for `run`. */
   transcribe(recording: Recording, epoch: number): Promise<CommandOutcome<string>>
+  /**
+   * Asks main for a live view of the `screen` topic's bot. Main answers with a `MessagePort`, posted to the window as the message
+   * `{ [SCREEN_PORT]: request }`, that carries `ScreenFrame`s one way and the view's input bytes, or `'close'`, the other. `epoch`
+   * is as for `run`. `request` names the ask, so a view takes only the port it asked for.
+   */
+  openScreen(epoch: number, request: number): void
+  /** Zooms this window by half a level, or back to actual size. */
+  zoom(how: 'in' | 'out' | 'reset'): void
 }
+
+/** The key of the window message that carries a live view's port. */
+export const SCREEN_PORT = 'highwing:screen-port'
+/** What main sends on a live view's port: `'open'` once the socket is up, then the screen's RFB bytes, then why it closed, once. */
+export type ScreenFrame = 'open' | ArrayBuffer | { readonly closed: number }
 
 export const CHANNEL = {
   watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image',
   drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft', pickPicture: 'highwing:pick-picture', choosePicture: 'highwing:choose-picture', attachPick: 'highwing:attach-pick',
-  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop', transcribe: 'highwing:transcribe'
+  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop', screen: 'highwing:screen', taskBoard: 'highwing:task-board', taskChat: 'highwing:task-chat', transcribe: 'highwing:transcribe'
 } as const
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
@@ -278,6 +336,15 @@ const groupDraftOf = (raw: unknown): GroupDraft | null => {
 }
 const revisionOf = (raw: unknown): number | null | undefined =>
   raw === null ? null : Number.isInteger(raw) && (raw as number) >= 0 ? (raw as number) : undefined
+const isHeader = (raw: unknown): raw is Header => isObject(raw) && Object.keys(raw).length === 2 && filled(raw.name) && filled(raw.value)
+const setupOf = (raw: unknown): ServerSetup | null => {
+  if (!isObject(raw) || !filled(raw.name)) return null
+  const name = raw.name
+  if (raw.kind === 'address') {
+    return text(raw.url) && isWebPage(raw.url) && Array.isArray(raw.headers) && raw.headers.every(isHeader) ? { kind: 'address', name, url: raw.url, headers: raw.headers } : null
+  }
+  return raw.kind === 'command' && filled(raw.command) && texts(raw.args) ? { kind: 'command', name, command: raw.command, args: raw.args } : null
+}
 const REFS: { readonly [K in ChatRef['kind']]: (raw: Obj) => Extract<ChatRef, { kind: K }> | null } = {
   bot: raw => {
     const bot = botIdOf(raw.bot)
@@ -291,7 +358,9 @@ const REFS: { readonly [K in ChatRef['kind']]: (raw: Obj) => Extract<ChatRef, { 
   },
   chat: raw => {
     const sessionId = sessionIdOf(raw)
-    return sessionId && { kind: 'chat', sessionId }
+    const bot = botIdOf(raw.bot)
+    if (sessionId === null || (raw.bot !== undefined && bot === null)) return null
+    return { kind: 'chat', sessionId, ...(bot === null ? {} : { bot }) }
   },
   link: raw => {
     const sessionId = sessionIdOf(raw)
@@ -414,6 +483,7 @@ export const validators: Validators = {
     const sessionId = sessionIdOf(raw)
     return sessionId && { do: 'versions', sessionId }
   },
+  readMessages: raw => (Number.isSafeInteger(raw.step) && (raw.step as number) >= 0 ? { do: 'readMessages', step: raw.step as number } : null),
   stop: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && { do: 'stop', sessionId }
@@ -520,6 +590,18 @@ export const validators: Validators = {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     return raw.bot !== null && bot === null ? null : { do: 'botModels', bot }
   },
+  takeControl: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return raw.bot !== null && bot === null ? null : { do: 'takeControl', bot }
+  },
+  handBack: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return raw.bot !== null && bot === null ? null : { do: 'handBack', bot }
+  },
+  denyRules: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return raw.bot !== null && bot === null ? null : { do: 'denyRules', bot }
+  },
   describeBot: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'describeBot', bot }
@@ -530,6 +612,14 @@ export const validators: Validators = {
     const revision = revisionOf(raw.revision)
     return bot && edit && revision !== undefined ? { do: 'editBot', bot, edit, revision } : null
   },
+  setSkill: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return (raw.bot === null || bot !== null) && filled(raw.name) && typeof raw.enabled === 'boolean' ? { do: 'setSkill', bot, name: raw.name, enabled: raw.enabled } : null
+  },
+  skillText: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return (raw.bot === null || bot !== null) && filled(raw.name) ? { do: 'skillText', bot, name: raw.name } : null
+  },
   removeBotPicture: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'removeBotPicture', bot }
@@ -537,6 +627,19 @@ export const validators: Validators = {
   botPicture: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'botPicture', bot }
+  },
+  toolServers: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return raw.bot !== null && bot === null ? null : { do: 'toolServers', bot }
+  },
+  addToolServer: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    const setup = setupOf(raw.setup)
+    return (raw.bot !== null && bot === null) || setup === null ? null : { do: 'addToolServer', bot, setup }
+  },
+  removeToolServer: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return (raw.bot !== null && bot === null) || !filled(raw.name) ? null : { do: 'removeToolServer', bot, name: raw.name }
   },
   createGroup: raw => {
     const draft = groupDraftOf(raw.draft)
@@ -638,13 +741,20 @@ export const validators: Validators = {
     const rect = rectOf(raw.rect)
     return rect && { do: 'placePreview', rect }
   },
+  examples: () => ({ do: 'examples' }),
+  done: () => ({ do: 'done' }),
   setMode: raw => (isMode(raw.mode) ? { do: 'setMode', mode: raw.mode } : null),
   setTheme: raw => (isTheme(raw.theme) ? { do: 'setTheme', theme: raw.theme } : null),
+  setAccent: raw => (isAccent(raw.accent) ? { do: 'setAccent', accent: raw.accent } : null),
+  setSidebarWidth: raw => (isSidebarWidth(raw.width) ? { do: 'setSidebarWidth', width: raw.width } : null),
   setOnClose: raw => (isOnClose(raw.onClose) ? { do: 'setOnClose', onClose: raw.onClose } : null),
+  setSendKey: raw => (isSendKey(raw.sendKey) ? { do: 'setSendKey', sendKey: raw.sendKey } : null),
+  setSpellCheck: raw => (typeof raw.spellCheck === 'boolean' ? { do: 'setSpellCheck', spellCheck: raw.spellCheck } : null),
   snooze: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && (raw.until === null || isTime(raw.until)) ? { do: 'snooze', sessionId, until: raw.until } : null
-  }
+  },
+  setNotice: raw => (isNoticeKind(raw.kind) && typeof raw.on === 'boolean' ? { do: 'setNotice', kind: raw.kind, on: raw.on } : null)
 }
 
 export function parseCommand(raw: unknown): WindowCommand | null {
