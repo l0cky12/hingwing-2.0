@@ -1,8 +1,12 @@
+import type { AppSignIn, AppsBoard } from './apps'
 import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId, BotMark, Marked, PetChoice } from './bots'
 import type { GroupDraft, GroupId } from './groups'
 import type { ChatRef, Unstarted } from './open'
+import type { BotManagers, ManagerName } from './passwords'
 import type { PathMatch } from './path'
 import type { ChatVersions } from './versions'
+import type { AccountReport } from './usage'
+export type { AccountReport }
 import type {
   AdmissionId, ApprovalMode, AttachmentId, BranchId, BusyMode, CheckpointId, ContextFill, ControlAction, Effort, HelperId, InputId, ModelOption, ModelRef, ProcessId, PromptId,
   PromptReply, QueuedAction, RequestId, RequestReply, SessionId, SideTask, Told, TurnId
@@ -89,6 +93,11 @@ export type Command =
   /** `confirm` is the token of a `ModelConfirm`, sent to say yes to it. */
   | { readonly do: 'pickModel'; readonly sessionId: SessionId; readonly model: ModelOption; readonly confirm?: string }
   | { readonly do: 'contextBreakdown'; readonly sessionId: SessionId }
+  /**
+   * What this Hermes reports for the account behind the chat: `session.account_usage`, then `usage.bars`, then
+   * `insights.get`. `unreported` means each of those calls is missing. Any other refusal is the refusal itself.
+   */
+  | { readonly do: 'accountUsage'; readonly sessionId: SessionId }
   /** The files and folders in this chat's working folder that `word` (an `@` and what follows it) starts. */
   | { readonly do: 'completePath'; readonly sessionId: SessionId; readonly word: string }
   /**
@@ -102,8 +111,25 @@ export type Command =
   | { readonly do: 'generatePicture'; readonly prompt: string }
   /** The pets Hermes lists, curated ones first, read on each ask. */
   | { readonly do: 'pets' }
+  /** Every app Hermes can connect, with the account the window shows for each. `bot` null asks the socket's own profile. */
+  | { readonly do: 'apps'; readonly bot: BotId | null }
+  /** Starts browser sign-in for `slug`. `connectionId` set reconnects that account. */
+  | { readonly do: 'connectApp'; readonly slug: string; readonly bot: BotId | null; readonly connectionId: string | null }
+  /** The sign-in `connectApp` started. The window reads it until it settles. */
+  | { readonly do: 'appSignIn'; readonly opId: string; readonly bot: BotId | null }
+  /** Drops the account. The window reads the board again after. */
+  | { readonly do: 'removeApp'; readonly connectionId: string; readonly bot: BotId | null }
   /** A pet's idle frame as a PNG data URL, or null when Hermes has none. `url` is the pet's `PetChoice.url`. */
   | { readonly do: 'petPicture'; readonly slug: string; readonly url: string | null }
+  /**
+   * The entries Hermes keeps in the home this socket was launched with, MEMORY.md then USER.md.
+   * The calls take no profile, so this is that home's memory, which the default bot's menu edits.
+   */
+  | { readonly do: 'memory' }
+  /** Replaces one entry. A save past the file's size cap is refused in the words Hermes sends. */
+  | { readonly do: 'saveMemory'; readonly id: string; readonly text: string }
+  /** Removes one entry. Hermes does not apply the size cap to a removal. */
+  | { readonly do: 'removeMemory'; readonly id: string }
   /** The models a bot's chat could use, with no chat open. null: the socket's own profile, which a new bot copies its credentials from. */
   | { readonly do: 'botModels'; readonly bot: BotId | null }
   | { readonly do: 'describeBot'; readonly bot: BotId }
@@ -118,6 +144,13 @@ export type Command =
   | { readonly do: 'removeBotPicture'; readonly bot: BotId }
   /** The bot's picture as a data URL, or null for none. */
   | { readonly do: 'botPicture'; readonly bot: BotId }
+  /** The password managers `bot` can use. Each change below answers them read again after it. */
+  | { readonly do: 'passwordManagers'; readonly bot: BotId }
+  /** Turns a manager on or off for `bot`. Off also locks it. */
+  | { readonly do: 'usePasswordManager'; readonly bot: BotId; readonly manager: ManagerName; readonly use: boolean }
+  /** Hermes drops the unlock after 30 idle minutes (agent/vault_backends/unlock.py:29) or on a lock, and the agent then asks for it again in the chat. */
+  | { readonly do: 'unlockPasswordManager'; readonly bot: BotId; readonly manager: ManagerName; readonly password: string }
+  | { readonly do: 'lockPasswordManager'; readonly bot: BotId; readonly manager: ManagerName }
   /**
    * Makes the group chat, lists it in `groups` and shows it. The same draft sent again makes no second group: Hermes
    * answers a repeated id with the group it already made.
@@ -139,6 +172,13 @@ export type Command =
   | { readonly do: 'sendToGroup'; readonly group: GroupId; readonly text: string }
   /** Stops every member's running turn in the group. */
   | { readonly do: 'stopGroup'; readonly group: GroupId }
+  /** `name`: trimmed, 1 to `GROUP_NAME_MAX` characters. The row and the open group's top bar show it before this answers. */
+  | { readonly do: 'renameGroup'; readonly group: GroupId; readonly name: string }
+  /**
+   * Hermes stops the group's running turns and deletes it with its messages, for good. It leaves `groups` before this
+   * answers, and a window showing it moves to the bot it was opened over.
+   */
+  | { readonly do: 'deleteGroup'; readonly group: GroupId }
   /** Sets one of Hermes's switches for the chat, for every client that has it open. */
   | { readonly do: 'tune'; readonly sessionId: SessionId; readonly set: 'reasoning'; readonly on: boolean }
   /** YOLO: Hermes runs this chat's commands without asking. */
@@ -194,14 +234,26 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'canGeneratePicture' } ? boolean
   : C extends { do: 'generatePicture' | 'retitle' } ? string
   : C extends { do: 'pets' } ? readonly PetChoice[]
+  : C extends { do: 'apps' } ? AppsBoard
+  : C extends { do: 'connectApp' | 'appSignIn' } ? AppSignIn
+  : C extends { do: 'memory' } ? readonly MemoryEntry[]
   : C extends { do: 'markBot' } ? Marked
+  : C extends { do: 'passwordManagers' | 'usePasswordManager' | 'unlockPasswordManager' | 'lockPasswordManager' } ? BotManagers
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
+  : C extends { do: 'accountUsage' } ? AccountReport
   : C extends { do: 'completePath' } ? readonly PathMatch[]
   : C extends { do: 'checkpoints' } ? Checkpoints
   : C extends { do: 'checkpointDiff' } ? CheckpointDiff
   : C extends { do: 'restore' } ? Restored
   : void
+
+/** One remembered entry. `id` is Hermes's node id. `file` is which of the two memory files holds the text. */
+export interface MemoryEntry {
+  readonly id: string
+  readonly file: 'MEMORY.md' | 'USER.md'
+  readonly text: string
+}
 
 export type ExportFormat = 'md' | 'json' | 'html'
 export const EXPORT_FORMATS: readonly ExportFormat[] = ['md', 'json', 'html']

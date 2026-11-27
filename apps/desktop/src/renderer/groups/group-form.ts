@@ -76,3 +76,9 @@ export function groupFormOf(state: GroupFormState, offered: readonly Bot[]): Gro
  */
 export const madeBy = (state: GroupFormState, listed: readonly GroupId[]): boolean =>
   Array.from({ length: state.refusals + 1 }, (_, refusals) => groupIdFor(state.seed, refusals)).some(id => listed.includes(id))
+
+/** The name a rename sends, or null while Save can't be used: blank, unchanged, or longer than Hermes takes. */
+export function renamedTo(typed: string, was: string): string | null {
+  const name = typed.trim()
+  return name === '' || name === was || name.length > GROUP_NAME_MAX ? null : name
+}

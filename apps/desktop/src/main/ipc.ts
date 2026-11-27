@@ -1,8 +1,8 @@
 import type { Hermes } from '@highwing/hermes'
-import { onThisComputer, type BotId, type CommandOutcome, type Session, type SessionId } from '@highwing/hermes/domain'
+import type { BotId, CommandOutcome, Session, SessionId } from '@highwing/hermes/domain'
 import {
-  CHANNEL, epochOf, isAppTopic, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
-  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type PictureChoice, type PictureFile, type Push, type SessionPatch, type Setup, type StageResult,
+  CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
+  type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type OnClose, type PictureChoice, type PictureFile, type Push, type SessionPatch, type StageResult,
   type Snoozes, type Tail, type Theme, type Topic
 } from '../ipc-contract'
 import { basename } from 'node:path'
@@ -47,7 +47,7 @@ const NEVER: Source = () => () => {}
 /** The pane's side of a window: its topic, its commands, and the files a window previews. */
 export type PreviewOwner = Pick<PreviewPane, 'preview' | 'show' | 'run'>
 type Shown<T> = Pick<PreferenceStore<T>, 'get' | 'subscribe' | 'set'>
-export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme>; readonly snoozes: Shown<Snoozes> }
+export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme>; readonly snoozes: Shown<Snoozes>; readonly onClose: Shown<OnClose> }
 interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner; readonly preferences: Preferences; readonly intro: Pick<IntroOwner, 'intro'> }
 
 /** A Hermes topic is bound to the connection that is live when the window asks. A window that sees a new epoch asks again. */
@@ -60,8 +60,10 @@ const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source 
   mode: ({ preferences }) => current(preferences.mode),
   theme: ({ preferences }) => current(preferences.theme),
   snoozes: ({ preferences }) => current(preferences.snoozes),
+  onClose: ({ preferences }) => current(preferences.onClose),
   intro: ({ intro }) => current(intro.intro),
   link: onHermes(hermes => current(hermes.link)),
+  about: onHermes(hermes => current(hermes.about)),
   sidebar: onHermes(hermes => current(hermes.sidebar)),
   slash: onHermes(hermes => current(hermes.slash)),
   bots: onHermes(hermes => current(hermes.bots)),
@@ -69,6 +71,7 @@ const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source 
   relay: onHermes(hermes => current(hermes.relay)),
   groups: onHermes(hermes => current(hermes.groups)),
   groupChat: onHermes(hermes => current(hermes.groupChat)),
+  activity: onHermes(hermes => current(hermes.activity)),
   session: onHermes((hermes, topic) => listener => hermes.watch(topic.slice('session:'.length) as SessionId, listener))
 }
 const kindOf = (topic: Topic): Kind => (isAppTopic(topic) ? topic : 'session')
@@ -133,8 +136,6 @@ const FILE_REFUSED: FileOutcome = { ok: false, reason: 'refused' }
 const FILE_DONE: FileOutcome = { ok: true }
 const IMAGE_REFUSED: ImageOutcome = { ok: false }
 
-const isLocal = (setup: Setup) => setup.at === 'pinned' || (setup.live !== null && onThisComputer(setup.live.target))
-
 type FileActions = { readonly [A in FileAction]: (session: Session, path: string) => Promise<FileOutcome> }
 
 /** Each action takes the path as the window named it. Only a path a finished step of the session named goes anywhere. */
@@ -167,6 +168,7 @@ export function serveWindows(
   const owners: Owners = { owner, pane, preferences, intro }
   const files = fileActions(opener, pane)
   const trusted = ({ senderFrame }: IpcEvent) => senderFrame !== null && senderFrame.parent === null && isAppUrl(senderFrame.url)
+  const servedHere = (served: Served | undefined) => served !== undefined && served.servedBy === owner.hermes && isLocal(owner.setup.get())
 
   const stopWindow = (windowId: number) => {
     for (const served of windows.get(windowId)?.values() ?? []) served.stop()
@@ -208,6 +210,10 @@ export function serveWindows(
       preferences.theme.set(command.theme)
       return DONE
     }
+    if (command.do === 'setOnClose') {
+      preferences.onClose.set(command.onClose)
+      return DONE
+    }
     if (command.do === 'snooze') {
       preferences.snoozes.set(snoozed(preferences.snoozes.get(), command, Date.now()))
       return DONE
@@ -236,7 +242,7 @@ export function serveWindows(
     if (!trusted(event) || request === null) return FILE_REFUSED
     const watched = [...(windows.get(event.sender.id)?.values() ?? [])].find(served => served.topic === `session:${request.sessionId}`)
     const session = watched?.current() as Session | undefined
-    return session === undefined ? FILE_REFUSED : files[request.action](session, request.path)
+    return session === undefined || !servedHere(watched) ? FILE_REFUSED : files[request.action](session, request.path)
   })
 
   ipc.handle(CHANNEL.image, async (event, raw) => {
@@ -247,7 +253,7 @@ export function serveWindows(
       return held?.kind === 'image' ? { ok: true, type: held.mime as ImageType, bytes: held.bytes } : IMAGE_REFUSED
     }
     const watched = request.kind === 'tool' ? [...(windows.get(event.sender.id)?.values() ?? [])].find(served => served.topic === `session:${request.sessionId}`) : undefined
-    return images.load(request, { session: watched?.current() as Session | undefined, local: watched !== undefined && watched.servedBy === owner.hermes && isLocal(owner.setup.get()) })
+    return images.load(request, { session: watched?.current() as Session | undefined, local: servedHere(watched) })
   })
 
   ipc.handle(CHANNEL.drafts, async event => (trusted(event) ? drafts.load() : []))

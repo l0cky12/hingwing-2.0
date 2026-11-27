@@ -1,8 +1,9 @@
 import { botsIn, type Bot, type BotId, type GroupId, type Refusal } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { GroupEditor } from '../src/renderer/groups/GroupEditor'
 import { GroupForm } from '../src/renderer/groups/GroupForm'
-import { groupFormOf, madeBy, nextGroupForm, startGroupForm, type GroupFormEvent } from '../src/renderer/groups/group-form'
+import { groupFormOf, madeBy, nextGroupForm, renamedTo, startGroupForm, type GroupFormEvent } from '../src/renderer/groups/group-form'
 import { fact, listed } from './support/bots'
 
 const ROSTER = listed(
@@ -127,5 +128,35 @@ describe('the New group chat dialog, drawn', () => {
     expect(markup).toContain('<p class="tally" role="status">Pick at least 2 bots</p>')
     expect(markup).toMatch(/<button type="submit" class="primary" disabled="">Create group chat<\/button>/)
     expect(markup).toMatch(/<button type="button">Cancel<\/button>/)
+  })
+})
+
+describe('the Edit group chat dialog', () => {
+  it('saves a new name, trimmed, and nothing while the name is blank, unchanged or longer than Hermes takes', () => {
+    expect(renamedTo('  Ship plan ', 'Launch plan')).toBe('Ship plan')
+    expect(renamedTo(' Launch plan  ', 'Launch plan'), 'unchanged once trimmed').toBeNull()
+    expect(renamedTo('   ', 'Launch plan')).toBeNull()
+    expect(renamedTo('x'.repeat(200), 'Launch plan')).toBe('x'.repeat(200))
+    expect(renamedTo('x'.repeat(201), 'Launch plan')).toBeNull()
+  })
+
+  const markup = renderToStaticMarkup(
+    <GroupEditor group={{ id: 'launch-plan' as GroupId, name: 'Launch plan', members: OFFERED.slice(0, 3) }} onRename={async () => ({ ok: true, value: undefined })} onClose={() => {}} />
+  )
+
+  it('is a dialog named Edit group chat, with the name in its Name field and Save off until the name changes', () => {
+    const dialog = /<dialog[^>]*>/.exec(markup)![0]
+    expect(new RegExp(`id="${/aria-labelledby="([^"]*)"/.exec(dialog)?.[1]}"[^>]*>Edit group chat<`).test(markup)).toBe(true)
+    const name = /<input[^>]*>/.exec(markup.slice(markup.indexOf('>Name</label>')))![0]
+    expect(name).toContain('value="Launch plan"')
+    expect(name).toContain('maxLength="200"')
+    expect(markup).toMatch(/<button type="submit" class="primary" disabled="">Save<\/button>/)
+    expect(markup).toMatch(/<button type="button">Cancel<\/button>/)
+  })
+
+  it('shows every member with a face and no control, and says Hermes cannot change them', () => {
+    expect(markup.match(/<input/g)).toHaveLength(1)
+    expect(Array.from(markup.matchAll(/<li><span class="avatar[^"]*"[^>]*>.*?<\/span>([^<]*)<\/li>/g), ([, name]) => name)).toEqual(['Ada', 'Sam', 'Rae'])
+    expect(markup).toContain('Hermes can’t change who’s in a group.')
   })
 })

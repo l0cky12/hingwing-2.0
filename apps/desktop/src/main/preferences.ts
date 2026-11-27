@@ -1,7 +1,7 @@
 import type { Feed } from '@highwing/hermes'
 import { open, readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
-import { isMode, isSnoozes, isTheme, type Mode, type SnoozeCommand, type Snoozes, type Theme } from '../ipc-contract'
+import { isMode, isOnClose, isSnoozes, isTheme, type Mode, type OnClose, type SnoozeCommand, type Snoozes, type Theme } from '../ipc-contract'
 import { feed } from './connection'
 
 export interface Preference<T, Missing = T> {
@@ -13,6 +13,7 @@ export interface Preference<T, Missing = T> {
 
 export const MODE: Preference<Mode> = { file: 'mode.json', key: 'mode', is: isMode, fallback: 'bots' }
 export const THEME: Preference<Theme> = { file: 'theme.json', key: 'theme', is: isTheme, fallback: 'system' }
+export const ON_CLOSE: Preference<OnClose> = { file: 'on-close.json', key: 'onClose', is: isOnClose, fallback: 'quit' }
 export const SNOOZES: Preference<Snoozes> = { file: 'snoozes.json', key: 'snoozes', is: isSnoozes, fallback: {} }
 
 /** The snoozes after one snooze or wake. A snooze whose time has passed is dropped, so the file never grows with chats long awake. */

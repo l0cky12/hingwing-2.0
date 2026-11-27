@@ -11,6 +11,8 @@ export interface PopupItem<A extends string> {
   readonly hint?: string
   /** Choices that open in a menu beside this item. */
   readonly submenu?: readonly PopupItem<A>[]
+  /** Why the item can't be used now, shown as its title and said to a screen reader. It stays focusable. */
+  readonly block?: string
 }
 
 export interface PopupMenuProps<A extends string> {
@@ -130,17 +132,24 @@ export function PopupMenu<A extends string>({ label, groups, className, anchor, 
   }
 
   const choice = (item: PopupItem<A>, kind: 'item' | 'choice') => {
-    const hint = `${ids}-${item.id}`
+    const [hint, block] = [`${ids}-${item.id}`, `${ids}-${item.id}-block`]
+    const described = [item.hint === undefined ? null : hint, item.block === undefined ? null : block].filter(id => id !== null).join(' ')
     return (
       <button
-        key={item.id} type="button" role="menuitem" tabIndex={-1} aria-describedby={item.hint === undefined ? undefined : hint}
+        key={item.id} type="button" role="menuitem" tabIndex={-1} title={item.block} aria-disabled={item.block !== undefined || undefined}
+        aria-describedby={described === '' ? undefined : described}
         aria-haspopup={item.submenu === undefined ? undefined : 'menu'} aria-expanded={item.submenu === undefined ? undefined : open?.id === item.id}
-        onClick={() => (item.submenu === undefined ? onChoose(item.id) : setOpen({ id: item.id, focus: true }))}
+        onClick={() => {
+          if (item.block !== undefined) return
+          if (item.submenu === undefined) onChoose(item.id)
+          else setOpen({ id: item.id, focus: true })
+        }}
         onPointerEnter={kind === 'item' ? event => onHover(item, event.currentTarget) : undefined}
       >
         {item.icon}
         {item.label}
         {item.hint !== undefined && <span className="popup-hint" id={hint} aria-hidden="true">{item.hint}</span>}
+        {item.block !== undefined && <span className="sr" id={block} aria-hidden="true">{item.block}</span>}
         {item.submenu !== undefined && <Chevron />}
       </button>
     )

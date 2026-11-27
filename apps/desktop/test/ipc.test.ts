@@ -1,11 +1,11 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
 import type { Hermes, Route } from '@highwing/hermes'
-import type { AttachmentId, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, SessionId, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
+import type { AttachmentId, BotActivities, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, SessionId, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { DUE, EXAMPLES, nextIntro, OFF, type Intro, type IntroEvent } from '../src/intro'
-import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type Preview, type PreviewCommand, type Push, type Setup, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type OnClose, type Preview, type PreviewCommand, type Push, type Setup, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
 import { feed, ownConnection, pinnedConnection, type ConnectionOwner } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
@@ -156,6 +156,22 @@ describe('validators', () => {
     expect(parseCommand({ do: 'canGeneratePicture', extra: 1 })).toEqual({ do: 'canGeneratePicture' })
     expect(parseCommand({ do: 'generatePicture', prompt: 'a cheerful robot', extra: 1 })).toEqual({ do: 'generatePicture', prompt: 'a cheerful robot' })
     expect(parseCommand({ do: 'pets', extra: 1 })).toEqual({ do: 'pets' })
+    expect(parseCommand({ do: 'apps', bot: null, extra: 1 })).toEqual({ do: 'apps', bot: null })
+    expect(parseCommand({ do: 'apps', bot: 'research' })).toEqual({ do: 'apps', bot: 'research' })
+    expect(parseCommand({ do: 'connectApp', slug: 'github', bot: null, connectionId: null, extra: 1 })).toEqual({ do: 'connectApp', slug: 'github', bot: null, connectionId: null })
+    expect(parseCommand({ do: 'connectApp', slug: 'github', bot: 'research', connectionId: 'slack-1' })).toEqual({ do: 'connectApp', slug: 'github', bot: 'research', connectionId: 'slack-1' })
+    expect(parseCommand({ do: 'appSignIn', opId: 'op-1', bot: null })).toEqual({ do: 'appSignIn', opId: 'op-1', bot: null })
+    expect(parseCommand({ do: 'removeApp', connectionId: 'slack-1', bot: null, extra: 1 })).toEqual({ do: 'removeApp', connectionId: 'slack-1', bot: null })
+    expect(parseCommand({ do: 'apps', bot: ' ' })).toBeNull()
+    expect(parseCommand({ do: 'connectApp', slug: ' ', bot: null, connectionId: null })).toBeNull()
+    expect(parseCommand({ do: 'connectApp', slug: 'github', bot: null })).toBeNull()
+    expect(parseCommand({ do: 'appSignIn', opId: '', bot: null })).toBeNull()
+    expect(parseCommand({ do: 'removeApp', connectionId: ' ', bot: null })).toBeNull()
+    expect(parseCommand({ do: 'memory', extra: 1 })).toEqual({ do: 'memory' })
+    expect(parseCommand({ do: 'saveMemory', id: 'memory:memory:0:abc', text: 'Hello', extra: 1 })).toEqual({ do: 'saveMemory', id: 'memory:memory:0:abc', text: 'Hello' })
+    expect(parseCommand({ do: 'saveMemory', id: 'memory:memory:0:abc', text: '' })).toEqual({ do: 'saveMemory', id: 'memory:memory:0:abc', text: '' })
+    expect(parseCommand({ do: 'saveMemory', id: ' ', text: 'Hello' })).toBeNull()
+    expect(parseCommand({ do: 'removeMemory', id: 'memory:profile:1:def', extra: 1 })).toEqual({ do: 'removeMemory', id: 'memory:profile:1:def' })
     expect(parseCommand({ do: 'petPicture', slug: 'tabby', url: 'https://petdex.example/tabby.webp', name: 'Tabby' })).toEqual({ do: 'petPicture', slug: 'tabby', url: 'https://petdex.example/tabby.webp' })
     expect(parseCommand({ do: 'petPicture', slug: 'mochi', url: null })).toEqual({ do: 'petPicture', slug: 'mochi', url: null })
     expect(parseCommand({ do: 'petPicture', slug: 'mr.whiskers', url: null })).toEqual({ do: 'petPicture', slug: 'mr.whiskers', url: null })
@@ -163,6 +179,14 @@ describe('validators', () => {
 
   it('keep a path completion to a chat and the mention typed', () => {
     expect(parseCommand({ do: 'completePath', sessionId: 's1', word: '@not', extra: 1 })).toEqual({ do: 'completePath', sessionId: 's1', word: '@not' })
+  })
+
+  it("keep a password manager change to the bot and manager named, and a master password exactly as typed", () => {
+    expect(parseCommand({ do: 'passwordManagers', bot: 'rae', extra: 1 })).toEqual({ do: 'passwordManagers', bot: 'rae' })
+    expect(parseCommand({ do: 'usePasswordManager', bot: 'rae', manager: 'bitwarden', use: false })).toEqual({ do: 'usePasswordManager', bot: 'rae', manager: 'bitwarden', use: false })
+    expect(parseCommand({ do: 'unlockPasswordManager', bot: 'rae', manager: 'onepassword', password: ' pass word ', extra: 1 }))
+      .toEqual({ do: 'unlockPasswordManager', bot: 'rae', manager: 'onepassword', password: ' pass word ' })
+    expect(parseCommand({ do: 'lockPasswordManager', bot: 'rae', manager: 'bitwarden' })).toEqual({ do: 'lockPasswordManager', bot: 'rae', manager: 'bitwarden' })
   })
 
   it("keep a bot's edited fields as sent, with the revision it was read at, and a window's removal of a picture", () => {
@@ -301,6 +325,12 @@ describe('validators', () => {
     ['a model list for a bot with no name', { do: 'botModels', bot: ' ' }],
     ['a model list that names no bot', { do: 'botModels' }],
     ['details of a bot with no name', { do: 'describeBot', bot: '' }],
+    ['the password managers of a bot with no name', { do: 'passwordManagers', bot: ' ' }],
+    ['a password manager Highwing does not set up', { do: 'usePasswordManager', bot: 'rae', manager: 'local', use: true }],
+    ['a use that is not true or false', { do: 'usePasswordManager', bot: 'rae', manager: 'bitwarden', use: 'yes' }],
+    ['an unlock with no password', { do: 'unlockPasswordManager', bot: 'rae', manager: 'bitwarden', password: '' }],
+    ['an unlock whose password is no text', { do: 'unlockPasswordManager', bot: 'rae', manager: 'bitwarden', password: 7 }],
+    ['a lock that names no manager', { do: 'lockPasswordManager', bot: 'rae' }],
     ['an edit that changes nothing', { do: 'editBot', bot: 'rae', edit: {}, revision: 2 }],
     ['a mark that is not one of the four', { do: 'markBot', bot: 'rae', mark: 'flip' }],
     ['an up-front open of a bot\'s chat', { do: 'open', ref: { kind: 'bot', bot: 'rae' }, upFront: true }],
@@ -398,10 +428,22 @@ describe('validators', () => {
   it('keep a message and a Stop for a group Hermes could name, and open it by its id', () => {
     expect(parseCommand({ do: 'sendToGroup', group: 'launch-plan', text: '@sam go', extra: 1 })).toEqual({ do: 'sendToGroup', group: 'launch-plan', text: '@sam go' })
     expect(parseCommand({ do: 'stopGroup', group: 'launch-plan', cancel: 'all' })).toEqual({ do: 'stopGroup', group: 'launch-plan' })
+    expect(parseCommand({ do: 'deleteGroup', group: 'launch-plan', cancel_id: 'x' })).toEqual({ do: 'deleteGroup', group: 'launch-plan' })
     expect(parseCommand({ do: 'open', ref: { kind: 'group', group: 'launch-plan', over: 'sam' } })).toEqual({ do: 'open', ref: { kind: 'group', group: 'launch-plan' } })
   })
 
+  it('keep a group chat rename trimmed, up to the 200 characters Hermes takes', () => {
+    expect(parseCommand({ do: 'renameGroup', group: 'launch-plan', name: '  Ship plan ', event_id: 'e1' })).toEqual({ do: 'renameGroup', group: 'launch-plan', name: 'Ship plan' })
+    expect(parseCommand({ do: 'renameGroup', group: 'launch-plan', name: ` ${'x'.repeat(200)} ` })).toMatchObject({ name: 'x'.repeat(200) })
+  })
+
   it.each([
+    ['a rename to a blank name', { do: 'renameGroup', group: 'launch-plan', name: '   ' }],
+    ['a rename to a name too long for Hermes', { do: 'renameGroup', group: 'launch-plan', name: 'x'.repeat(201) }],
+    ['a rename with no name', { do: 'renameGroup', group: 'launch-plan' }],
+    ['a rename of an id Hermes would not take', { do: 'renameGroup', group: 'launch plan', name: 'Ship plan' }],
+    ['a delete of no group', { do: 'deleteGroup' }],
+    ['a delete of an id Hermes would not take', { do: 'deleteGroup', group: '-plan' }],
     ['a message with no words', { do: 'sendToGroup', group: 'launch-plan', text: '  ' }],
     ['a message to an id Hermes would not take', { do: 'sendToGroup', group: 'launch plan', text: 'hi' }],
     ['a Stop of no group', { do: 'stopGroup' }],
@@ -443,22 +485,26 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
-      'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'describeBot', 'discard', 'done', 'editBot',
-      'editTarget', 'examples', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
-      'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename',
-      'restore', 'retitle', 'rewind', 'send', 'sendToGroup', 'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
+      'accountUsage', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
+      'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard',
+      'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
+      'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect',
+      'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
+      'sendToGroup', 'setMode', 'setOnClose', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune',
+      'unlockPasswordManager', 'usePasswordManager', 'versions'
     ])
   })
 })
 
 const still = <T>(value: T) => ({ get: () => value, subscribe: () => () => {} })
 const LINK: Link = { state: 'blocked', why: 'hermes-missing', message: 'A link of this test.' }
+const ABOUT = { app: '0.1.0', hermes: { state: 'offline' } } as const
 const SIDEBAR: Sidebar = { bot: null, status: 'stale', rows: [], complete: true }
 const NO_BOTS: Bots = { state: 'listed', roster: { featured: null, sections: [] }, edition: 1 }
 const NOTHING_OPEN: OpenChat = { shown: null, opening: null, missing: null }
 const NO_RELAYS: RelayDesk = { supported: false, bySession: {} }
 const NO_GROUPS: Groups = { state: 'unsupported' }
+const RESEARCH_WAITING = { research: 'waiting' } as BotActivities
 
 /** An owner live on a remote machine, whose every check passes, so a check of this computer switches to it at epoch 2. */
 const switchable = (hermes: Hermes) => ownConnection({
@@ -497,6 +543,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   const openListeners = new Set<(value: OpenChat) => void>()
   const hermes = {
     link: still(LINK),
+    about: still(ABOUT),
     sidebar: still(SIDEBAR),
     open: {
       get: () => open,
@@ -515,6 +562,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
     relay: still(NO_RELAYS),
     groups: still(NO_GROUPS),
     groupChat: still(null),
+    activity: still(RESEARCH_WAITING),
     slash: {
       get: () => catalog,
       subscribe: (listener: (value: SlashCatalog) => void) => {
@@ -565,12 +613,13 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   const theme = feed<Theme>('system')
   const snoozes = feed<Snoozes>({})
   const intro = feed<Intro>(OFF)
+  const onClose = feed<OnClose>('quit')
   const sources: AttachSources = { pick: async () => ['/home/me/error.png', '/home/me/big.zip'], pasted: async () => ({ name: 'Pasted image 1.png', bytes: PNG }) }
   const served = serveWindows(
     ownerOf(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
-    { store, sources }, saver, { mode, theme, snoozes },
+    { store, sources }, saver, { mode, theme, snoozes, onClose },
     { intro, apply: async (event: IntroEvent) => intro.set(nextIntro(intro.get(), event)) }
   )
   const setCatalog = (next: SlashCatalog) => {
@@ -591,7 +640,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   }
   return {
     listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, lives, stored, previewed, toPane, staged, served,
-    saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, snoozes, intro
+    saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, snoozes, onClose, intro
   }
 }
 
@@ -635,7 +684,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {}, intro: { at: 'off' } }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, about: ABOUT, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, activity: RESEARCH_WAITING, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {}, onClose: 'quit', intro: { at: 'off' } }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))
@@ -735,7 +784,8 @@ describe('serveWindows', () => {
 
   it.each([
     { topic: 'mode', verb: 'setMode', was: 'chats', picked: 'bots', unknown: 'inbox' },
-    { topic: 'theme', verb: 'setTheme', was: 'system', picked: 'dark', unknown: 'sepia' }
+    { topic: 'theme', verb: 'setTheme', was: 'system', picked: 'dark', unknown: 'sepia' },
+    { topic: 'onClose', verb: 'setOnClose', was: 'quit', picked: 'stay', unknown: 'minimize' }
   ] as const)('sets the $topic a trusted window picks and pushes it, and never passes it to Hermes', async ({ topic, verb, was, picked, unknown }) => {
     vi.useFakeTimers()
     const { listeners, handlers, pushes, event, commands, ...shown } = harness()
@@ -968,6 +1018,36 @@ describe('the file call', () => {
     const { handlers, served } = watching()
     served.dispose()
     expect(handlers.has(CHANNEL.file)).toBe(false)
+  })
+
+  it('refuses open, show and preview for a session the live Hermes is serving on another machine', async () => {
+    const rig = harness(switchable)
+    rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
+    rig.emit(diffMoment())
+    const file = rig.handlers.get(CHANNEL.file)!
+    for (const action of ['open', 'show', 'preview'] as const) {
+      await expect(file(rig.event(), { ...asked('open', NOTES), action })).resolves.toEqual({ ok: false, reason: 'refused' })
+    }
+    expect(rig.opened).toEqual([])
+    expect(rig.previewed).toEqual([])
+  })
+
+  it('refuses a path a remote Hermes served after the connection moves to this computer, until the window watches the session again', async () => {
+    let owner: ConnectionOwner | undefined
+    const rig = harness(hermes => (owner = switchable(hermes)))
+    rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
+    rig.emit(diffMoment())
+    await owner!.run({ do: 'editTarget' })
+    await owner!.run({ do: 'checkTarget', target: { kind: 'local' } })
+    await new Promise(resolve => setImmediate(resolve))
+    const file = rig.handlers.get(CHANNEL.file)!
+    await expect(file(rig.event(), asked('open', NOTES))).resolves.toEqual({ ok: false, reason: 'refused' })
+    expect(rig.opened).toEqual([])
+
+    rig.listeners.get(CHANNEL.watch)!(rig.event(), 1, topic)
+    rig.emit(diffMoment())
+    await expect(file(rig.event(), asked('open', NOTES))).resolves.toEqual({ ok: true })
+    expect(rig.opened).toEqual([{ action: 'open', path: NOTES }])
   })
 })
 

@@ -190,15 +190,29 @@ export class Offline extends Error {}
  * `projects.tree` reaches its legacy handler the same way (tui_gateway/methods_config.py:137), and a -32601 from it
  * means this Hermes cannot say which chats were branched from which. So does `llm.oneshot` (tui_gateway/methods_session.py:1249),
  * which a -32601 from means this Hermes cannot suggest a title.
+ * `learning.frames`, `learning.detail`, `learning.edit` and `learning.delete` reach the same legacy handlers
+ * (tui_gateway/methods_tools.py). None of them takes `profile`: Hermes rejects the key, and a write changes
+ * the home the socket was launched with. A -32601 from one means this Hermes cannot edit memory.
+ * `usage.bars` and `insights.get` are the legacy usage reads. A -32601 from one means this Hermes does not serve that read.
  * The canonical route serves every `groups.*` method (`GROUP_METHODS`, gateway/session_group_controls.py:15-35), though of
  * the calls Highwing makes the contract lists only `groups.create` as canonical (tui_gateway/contracts/canonical_projections.py:126). A -32601 from `groups.capabilities` means this Hermes has no group chats.
+ * The Connect apps window calls `connectors.catalog`, `connectors.accounts`, `connectors.accounts.remove` and `connectors.operation.status`.
+ * A -32601 from them means this Hermes cannot list its apps. `connectors.connect` is already served for the in-turn card.
+ * The session authority serves `session.active_list` (gateway/session_active_list.py), which the contract lists only for the legacy
+ * handler. A -32601 from it means this Hermes cannot say which chats have a turn under way.
+ * `vault.sources`, `vault.list`, `vault.source.set`, `vault.unlock` and `vault.lock` reach their legacy handlers as `profiles.create` does, each
+ * in the profile the call names (tui_gateway/methods_vault.py). A -32601 from them means this Hermes cannot set up password managers from Highwing.
  */
 export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'commands.catalog' | 'command.dispatch' | 'model.options' | 'session.context_breakdown' | 'connection.respond' | 'connectors.connect' | 'complete.path' | 'file.attach' |
   'profiles.create' | 'profiles.describe' | 'profiles.configure' | 'profiles.set_asset' | 'profiles.get_asset' | 'projects.tree' |
   'prompt.btw' | 'prompt.background' | 'process.list' | 'process.kill' | 'subagent.interrupt' | 'session.control.read' | 'session.control' | 'rollback.list' |
   'rollback.diff' | 'rollback.restore' | 'message.react' | 'groups.capabilities' | 'groups.list' | 'groups.state' | 'groups.log' | 'groups.send' | 'groups.stop' |
-  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot'>
+  'groups.rename' | 'groups.disband' |
+  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot' | 'session.active_list' | 'usage.bars' | 'insights.get' |
+  'learning.frames' | 'learning.detail' | 'learning.edit' | 'learning.delete' |
+  'vault.sources' | 'vault.list' | 'vault.source.set' | 'vault.unlock' | 'vault.lock' |
+  'connectors.catalog' | 'connectors.accounts' | 'connectors.accounts.remove' | 'connectors.operation.status'>
 export type Method = keyof Served
 
 export type Requested = ServerRequestMap

@@ -1,8 +1,8 @@
 import {
-  APPROVAL_MODES, BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isPetSlug, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
-  type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
+  APPROVAL_MODES, BOT_MARKS, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, targetOf,
+  type About, type AdmissionId, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type HelperId, type Item, type Link, type ModelOption,
-  type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
+  type BotActivities, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type RelayDesk, type RequestId, type RequestReply,
   type RestoreScope, type ResultOf, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SlashCatalog, type Target, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 import type { Intro } from './intro'
@@ -26,6 +26,8 @@ export type Setup =
 
 /** The epoch of the connection `setup` keeps the chat on. 0 when it keeps none, as on a first run or in a fixture run. */
 export const epochOf = (setup: Setup): number => (setup.at === 'pinned' || setup.live === null ? 0 : setup.live.epoch)
+
+export const isLocal = (setup: Setup): boolean => setup.at === 'pinned' || (setup.live !== null && onThisComputer(setup.live.target))
 /** Main's answer to a command the screen it is on has no use for, such as an open while a new connection is saved. Nothing went to Hermes. */
 export const NOT_NOW: CommandOutcome<never> = { ok: false, refusal: { kind: 'rejected', message: "Highwing can't do that from this screen." } }
 /** Main's answer to a chat command a window sent for a connection that is no longer live. Nothing went to Hermes. */
@@ -90,6 +92,11 @@ export type Theme = 'system' | 'light' | 'dark'
 export type ThemeCommand = { readonly do: 'setTheme'; readonly theme: Theme }
 export const isTheme = (raw: unknown): raw is Theme => raw === 'system' || raw === 'light' || raw === 'dark'
 
+/** What closing the window does. `quit` ends Highwing. `stay` leaves it in the tray. Owned by Electron main and kept on disk. */
+export type OnClose = 'quit' | 'stay'
+export type OnCloseCommand = { readonly do: 'setOnClose'; readonly onClose: OnClose }
+export const isOnClose = (raw: unknown): raw is OnClose => raw === 'quit' || raw === 'stay'
+
 /** The chats the user snoozed, each to the time it comes back, in epoch ms. Owned by Electron main and kept on disk. */
 export type Snoozes = { readonly [id: SessionId]: number }
 /** `until` null wakes the chat. */
@@ -99,15 +106,16 @@ export const isSnoozes = (raw: unknown): raw is Snoozes => isObject(raw) && Obje
 
 export type IntroCommand = { readonly do: 'examples' } | { readonly do: 'done' }
 
-export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SnoozeCommand | IntroCommand
+export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | SnoozeCommand | OnCloseCommand | IntroCommand
 export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' | 'refreshBots' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : HubResult<C>
 
-/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `snoozes` and `intro`, which belong to the window. */
+/** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `snoozes`, `onClose` and `intro`, which belong to the window. */
 export interface AppTopics {
   readonly setup: Setup
   readonly link: Link
+  readonly about: About
   readonly sidebar: Sidebar
   readonly slash: SlashCatalog
   readonly bots: Bots
@@ -119,15 +127,18 @@ export interface AppTopics {
   readonly groups: Groups
   /** The group chat `open` shows, or null while it shows anything else. */
   readonly groupChat: GroupChat | null
+  /** Which bots are working, waiting on the user, or hold a reply not yet seen. */
+  readonly activity: BotActivities
   readonly preview: Preview
   readonly mode: Mode
   readonly theme: Theme
   readonly snoozes: Snoozes
+  readonly onClose: OnClose
   readonly intro: Intro
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, preview: true, mode: true, theme: true, snoozes: true, intro: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, activity: true, preview: true, mode: true, theme: true, snoozes: true, onClose: true, intro: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -472,6 +483,10 @@ export const validators: Validators = {
     const sessionId = sessionIdOf(raw)
     return sessionId && { do: 'contextBreakdown', sessionId }
   },
+  accountUsage: raw => {
+    const sessionId = sessionIdOf(raw)
+    return sessionId && { do: 'accountUsage', sessionId }
+  },
   createBot: raw => {
     const draft = draftOf(raw.draft)
     const picture = raw.picture === null ? null : pictureDataUrlOf(raw.picture, PICTURE_MAX_BYTES)
@@ -481,6 +496,28 @@ export const validators: Validators = {
   generatePicture: raw => (filled(raw.prompt) ? { do: 'generatePicture', prompt: raw.prompt } : null),
   pets: () => ({ do: 'pets' }),
   petPicture: raw => (text(raw.slug) && isPetSlug(raw.slug) && (raw.url === null || webPage(raw.url)) ? { do: 'petPicture', slug: raw.slug, url: raw.url } : null),
+  apps: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return raw.bot !== null && bot === null ? null : { do: 'apps', bot }
+  },
+  connectApp: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    if (!filled(raw.slug) || (raw.bot !== null && bot === null) || !(raw.connectionId === null || filled(raw.connectionId))) return null
+    return { do: 'connectApp', slug: raw.slug, bot, connectionId: raw.connectionId }
+  },
+  appSignIn: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    if (!filled(raw.opId) || (raw.bot !== null && bot === null)) return null
+    return { do: 'appSignIn', opId: raw.opId, bot }
+  },
+  removeApp: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    if (!filled(raw.connectionId) || (raw.bot !== null && bot === null)) return null
+    return { do: 'removeApp', connectionId: raw.connectionId, bot }
+  },
+  memory: () => ({ do: 'memory' }),
+  saveMemory: raw => (filled(raw.id) && text(raw.text) ? { do: 'saveMemory', id: raw.id, text: raw.text } : null),
+  removeMemory: raw => (filled(raw.id) ? { do: 'removeMemory', id: raw.id } : null),
   botModels: raw => {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     return raw.bot !== null && bot === null ? null : { do: 'botModels', bot }
@@ -511,8 +548,26 @@ export const validators: Validators = {
     const bot = botIdOf(raw.bot)
     return bot && isBotMark(raw.mark) ? { do: 'markBot', bot, mark: raw.mark } : null
   },
+  passwordManagers: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && { do: 'passwordManagers', bot }
+  },
+  usePasswordManager: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && isManagerName(raw.manager) && typeof raw.use === 'boolean' ? { do: 'usePasswordManager', bot, manager: raw.manager, use: raw.use } : null
+  },
+  unlockPasswordManager: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && isManagerName(raw.manager) && text(raw.password) && raw.password !== '' ? { do: 'unlockPasswordManager', bot, manager: raw.manager, password: raw.password } : null
+  },
+  lockPasswordManager: raw => {
+    const bot = botIdOf(raw.bot)
+    return bot && isManagerName(raw.manager) ? { do: 'lockPasswordManager', bot, manager: raw.manager } : null
+  },
   sendToGroup: raw => (isGroupId(raw.group) && filled(raw.text) ? { do: 'sendToGroup', group: raw.group, text: raw.text } : null),
   stopGroup: raw => (isGroupId(raw.group) ? { do: 'stopGroup', group: raw.group } : null),
+  renameGroup: raw => (isGroupId(raw.group) && filled(raw.name) && raw.name.trim().length <= GROUP_NAME_MAX ? { do: 'renameGroup', group: raw.group, name: raw.name.trim() } : null),
+  deleteGroup: raw => (isGroupId(raw.group) ? { do: 'deleteGroup', group: raw.group } : null),
   tune: raw => {
     const sessionId = sessionIdOf(raw)
     if (!sessionId) return null
@@ -589,6 +644,7 @@ export const validators: Validators = {
   done: () => ({ do: 'done' }),
   setMode: raw => (isMode(raw.mode) ? { do: 'setMode', mode: raw.mode } : null),
   setTheme: raw => (isTheme(raw.theme) ? { do: 'setTheme', theme: raw.theme } : null),
+  setOnClose: raw => (isOnClose(raw.onClose) ? { do: 'setOnClose', onClose: raw.onClose } : null),
   snooze: raw => {
     const sessionId = sessionIdOf(raw)
     return sessionId && (raw.until === null || isTime(raw.until)) ? { do: 'snooze', sessionId, until: raw.until } : null

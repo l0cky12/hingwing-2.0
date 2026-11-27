@@ -1903,6 +1903,55 @@ describe('a group chat', () => {
     expect(opened.sent().filter(call => call.method === 'session.list'), 'no list of another bot\'s chats').toHaveLength(lists)
   })
 
+  it('renames a group in its row and its top bar, lists it first, and keeps its thread', async () => {
+    const opened = await shown(withGroups({ rooms: [STANDUP, { ...ROOM, log: [{ user: 'Ship it?' }, { member: 'sam', text: 'Yes.' }] }] }))
+    expect(opened.hermes.groups.get()).toMatchObject({ rows: [{ id: 'standup' }, { id: PLAN }] })
+    expect(await opened.hermes.run({ do: 'renameGroup', group: PLAN, name: 'Ship plan' })).toEqual({ ok: true, value: undefined })
+    expect(opened.hermes.groups.get(), 'before the answer to the command').toMatchObject({ rows: [{ id: PLAN, name: 'Ship plan' }, { id: 'standup', name: 'Standup' }] })
+    expect(readOf(opened.chat())?.name).toBe('Ship plan')
+    await opened.clock.advance(0)
+    expect(thread(opened.chat())).toEqual([['said', 'Ship it?'], ['sam', 'Yes.']])
+    expect(opened.calls('groups.rename').map(call => call.params)).toEqual([{ room_id: PLAN, event_id: expect.any(String), name: 'Ship plan' }])
+    const other = opened.client()
+    await opened.clock.advance(0)
+    expect(other.groups.get(), 'another window reads the new name from Hermes').toMatchObject({ rows: [{ id: PLAN, name: 'Ship plan' }, { id: 'standup' }] })
+  })
+
+  it('deletes a group: it leaves the list, the pane moves to the bot it was opened over, and a second delete is no error', async () => {
+    const opened = await shown(withGroups({ rooms: [ROOM, STANDUP], turns: { default: [{ hold: true }] } }))
+    await opened.say('Ship it?')
+    await opened.clock.advance(0)
+    expect(who(opened.chat())).toEqual([['default', 'thinking']])
+    expect(await opened.hermes.run({ do: 'deleteGroup', group: PLAN })).toEqual({ ok: true, value: undefined })
+    expect(opened.hermes.groups.get()).toMatchObject({ rows: [{ id: 'standup' }] })
+    expect(opened.hermes.open.get().shown).toMatchObject({ kind: 'bot', bot: 'default' })
+    expect(opened.hermes.groupChat.get()).toBeNull()
+    const asks = () => opened.sent().filter(call => (call.method === 'groups.state' || call.method === 'groups.log') && call.params?.room_id === PLAN).length
+    const before = asks()
+    await opened.clock.advance(60_000)
+    expect(opened.hermes.groups.get(), 'Hermes lists it no more').toMatchObject({ rows: [{ id: 'standup' }] })
+    expect(asks(), 'and nothing asks about it').toBe(before)
+    expect(await opened.hermes.run({ do: 'deleteGroup', group: PLAN })).toEqual({ ok: true, value: undefined })
+    expect(opened.calls('groups.disband').map(call => call.params)).toEqual([{ room_id: PLAN }, { room_id: PLAN }])
+  })
+
+  it('leaves the pane alone when the deleted group is not the one shown', async () => {
+    const opened = await shown(room({ rooms: [ROOM, STANDUP] }))
+    expect(await opened.hermes.run({ do: 'deleteGroup', group: 'standup' as GroupId })).toEqual({ ok: true, value: undefined })
+    expect(opened.hermes.open.get().shown).toEqual({ kind: 'group', group: PLAN, over: 'default' })
+    expect(opened.hermes.groups.get()).toMatchObject({ rows: [{ id: PLAN }] })
+  })
+
+  it('refuses to rename a group another window deleted, says so, and takes it out of the list', async () => {
+    const opened = await shown(room({ rooms: [ROOM, STANDUP] }))
+    const other = opened.client()
+    await opened.clock.advance(0)
+    expect(await other.run({ do: 'deleteGroup', group: 'standup' as GroupId })).toEqual({ ok: true, value: undefined })
+    expect(await opened.hermes.run({ do: 'renameGroup', group: 'standup' as GroupId, name: 'Daily' })).toEqual({ ok: false, refusal: { kind: 'stale', message: 'Hermes no longer has this group chat.' } })
+    await opened.clock.advance(0)
+    expect(opened.hermes.groups.get()).toMatchObject({ rows: [{ id: PLAN }] })
+  })
+
   it('says a group Hermes does not have is missing, and refuses a message to it', async () => {
     const opened = open(room())
     await opened.clock.advance(0)

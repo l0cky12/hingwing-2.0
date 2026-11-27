@@ -1,15 +1,16 @@
-import { rosterOf, type BotFacts, type BotId, type BotMark, type Bots } from '@highwing/hermes/domain'
+import { rosterOf, type BotFacts, type BotId, type BotMark, type Bots, type GroupId } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
-import { anchorOf, deleteRefusal, LABELS, MENUS, type OpenMenu } from '../src/renderer/bots/bot-menu'
+import { anchorOf, botMenuOf, DELETE_WORDS, deleteRefusal, groupMenuOf, MENUS, type MenuOwner, type OpenMenu } from '../src/renderer/bots/bot-menu'
 import { EDGE, GAP, isMenuKey, keyMove, placeMenu, type Box } from '../src/renderer/chrome/popup-menu'
-import { fallbackOf, openerTarget } from '../src/renderer/bots/focus'
+import { afterGroupOf, fallbackOf, openerTarget } from '../src/renderer/bots/focus'
 import { busyIn, focusAfter, runsAt, SAID, type MarkRun } from '../src/renderer/bots/marks'
 import { listOf } from '../src/renderer/bots/roster-view'
 import { sidebarOf, type BotPlace } from '../src/renderer/bots/sidebar-view'
 import { fact, listed } from './support/bots'
 
 const id = (name: string) => name as BotId
-const words = (place: BotPlace) => MENUS[place].map(group => group.map(action => LABELS[action]))
+const words = (place: BotPlace, featured = false) => botMenuOf(place, featured).map(group => group.map(item => item.label))
+const actions = (place: BotPlace, featured = false) => botMenuOf(place, featured).flat().map(item => item.action)
 
 describe("a bot's menu", () => {
   it('offers a normal row Open chat and New chat, Edit…, then Pin to top and Hide from list', () => {
@@ -18,12 +19,14 @@ describe("a bot's menu", () => {
 
   it('offers Unpin on a pinned row, no Pin on the default bot, and Show in list on a hidden row', () => {
     expect(words('pinned')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Unpin', 'Hide from list'], ['Delete…']])
-    expect(words('card')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Hide from list']])
+    expect(words('card', true)).toEqual([['Open chat', 'New chat'], ['Edit…', 'Memory…'], ['Hide from list']])
+    expect(words('hidden', true)).toEqual([['Open chat', 'New chat'], ['Edit…', 'Memory…'], ['Show in list'], ['Delete…']])
     expect(words('hidden')).toEqual([['Open chat', 'New chat'], ['Edit…'], ['Show in list'], ['Delete…']])
   })
 
   it('offers Delete… last in every menu except the default bot\'s card', () => {
     expect(MENUS.card.flat()).not.toContain('delete')
+    expect(actions('card', true)).not.toContain('delete')
     for (const place of ['pinned', 'section', 'hidden'] as const) expect(MENUS[place].flat().at(-1), place).toBe('delete')
   })
 
@@ -35,8 +38,13 @@ describe("a bot's menu", () => {
     expect(deleteRefusal(bots.roster.featured, true)).toBe("The default bot can't be deleted.")
   })
 
-  it('keeps Edit… third in every menu', () => {
-    for (const place of ['card', 'pinned', 'section', 'hidden'] as const) expect(MENUS[place].flat()[2], place).toBe('edit')
+  it('keeps Edit… third in every menu, and Memory… only on the default bot', () => {
+    for (const place of ['card', 'pinned', 'section', 'hidden'] as const) {
+      expect(actions(place, false)[2], place).toBe('edit')
+      expect(actions(place, true)[2], place).toBe('edit')
+      expect(actions(place, true)[3], place).toBe('memory')
+      expect(actions(place, false), place).not.toContain('memory')
+    }
   })
 
   it('opens from Shift+F10 and the Menu key, and not from F10 alone', () => {
@@ -44,6 +52,28 @@ describe("a bot's menu", () => {
     expect(isMenuKey({ key: 'ContextMenu', shiftKey: false })).toBe(true)
     expect(isMenuKey({ key: 'F10', shiftKey: false })).toBe(false)
     expect(isMenuKey({ key: 'Enter', shiftKey: true })).toBe(false)
+  })
+
+  it('can use every item at once', () => {
+    for (const place of ['card', 'pinned', 'section', 'hidden'] as const) expect(botMenuOf(place).flat().every(item => item.block === null), place).toBe(true)
+  })
+})
+
+describe("a group chat's menu", () => {
+  it('offers Open and Edit…, then Delete… on its own', () => {
+    expect(groupMenuOf({ state: 'online' }).map(group => group.map(item => [item.label, item.block]))).toEqual([[['Open', null], ['Edit…', null]], [['Delete…', null]]])
+  })
+
+  it('says why Edit… and Delete… cannot be used while Highwing is not connected, and still opens the group', () => {
+    const offline = "Highwing isn't connected to Hermes right now."
+    for (const link of [{ state: 'connecting', attempt: 2 } as const, undefined]) {
+      expect(groupMenuOf(link).flat().map(item => [item.action, item.block])).toEqual([['open', null], ['edit', offline], ['delete', offline]])
+    }
+  })
+
+  it('says what deleting takes, and that Hermes cannot bring it back', () => {
+    expect(DELETE_WORDS.group).toBe("Hermes ends this group chat and deletes its messages. It can't bring them back.")
+    expect(DELETE_WORDS.bot).toBe("Hermes removes the bot, its chats and its settings. It can't bring them back.")
   })
 })
 
@@ -102,7 +132,9 @@ describe('keys in the menu', () => {
 })
 
 describe('focus when the menu closes', () => {
-  const menu = (by: 'pointer' | 'more' | 'keys'): OpenMenu => ({ bot: id('scout'), opener: by === 'pointer' ? { by, x: 1, y: 1 } : { by }, above: '[]', scrolled: 0 })
+  const menu = (by: 'pointer' | 'more' | 'keys', owner: MenuOwner = { kind: 'bot', bot: id('scout') }): OpenMenu =>
+    ({ owner, opener: by === 'pointer' ? { by, x: 1, y: 1 } : { by }, above: '[]', scrolled: 0 })
+  const view = sidebarOf(listOf(listed(fact('default', 'Hermes', { isDefault: true }), fact('editor', 'Editor')), null), false, null)
 
   it('goes back to ⋯ only when ⋯ opened the menu, and to the row otherwise', () => {
     expect(openerTarget(menu('more'))).toEqual({ to: 'more', bot: 'scout' })
@@ -110,9 +142,23 @@ describe('focus when the menu closes', () => {
     expect(openerTarget(menu('keys'))).toEqual({ to: 'row', bot: 'scout' })
   })
 
+  it("goes back to a group's own ⋯ or row, never a bot's of the same name", () => {
+    const plan: MenuOwner = { kind: 'group', group: 'scout' as GroupId }
+    expect(openerTarget(menu('more', plan))).toEqual({ to: 'group-more', group: 'scout' })
+    expect(openerTarget(menu('keys', plan))).toEqual({ to: 'group', group: 'scout' })
+  })
+
   it('falls back to each row in the page from the top, then search', () => {
-    const view = sidebarOf(listOf(listed(fact('default', 'Hermes', { isDefault: true }), fact('editor', 'Editor')), null), false, null)
     expect(fallbackOf({ to: 'row', bot: id('gone') }, view)).toEqual([{ to: 'row', bot: 'gone' }, { to: 'row', bot: 'default' }, { to: 'row', bot: 'editor' }, { to: 'search' }])
+  })
+
+  it('moves from a deleted group to the group below it, else the one above, else the first bot', () => {
+    const groups = ['plan', 'standup', 'ops'] as GroupId[]
+    const group = (name: string) => ({ to: 'group', group: name })
+    const bots = [{ to: 'row', bot: 'default' }, { to: 'row', bot: 'editor' }, { to: 'search' }]
+    expect(afterGroupOf('standup' as GroupId, groups, view)).toEqual([group('ops'), group('plan'), ...bots])
+    expect(afterGroupOf('ops' as GroupId, groups, view)).toEqual([group('standup'), group('plan'), ...bots])
+    expect(afterGroupOf('plan' as GroupId, ['plan'] as GroupId[], view)).toEqual(bots)
   })
 })
 
