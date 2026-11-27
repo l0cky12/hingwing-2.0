@@ -1,4 +1,4 @@
-import type { BotId, GroupId, OpenChat } from '@highwing/hermes/domain'
+import type { BotId, GroupId, OpenChat, SshHost, Target } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fact, listed } from './support/bots'
@@ -25,7 +25,7 @@ const isDetailsKey = (event: KeyboardEvent, mac: boolean) => shortcutOf(event, m
 
 const RAE = 'rae' as BotId
 const open = (shown: OpenChat['shown']): OpenChat => ({ shown, opening: null, missing: null })
-const bar = () => renderToStaticMarkup(<TopBar target={null} onOpenTasks={() => {}} />)
+const bar = () => renderToStaticMarkup(<TopBar target={null} />)
 
 beforeEach(() => {
   topics.values = {
@@ -44,6 +44,13 @@ describe("a bot chat's top bar", () => {
   it('leaves the heading as plain text for a bot the roster does not list', () => {
     topics.values = { ...topics.values, bots: listed(fact('sam', 'Sam')) }
     expect(bar()).toMatch(/<h1><span class="brand">Hermes<\/span> Bot Chat<\/h1>/)
+  })
+
+  it('holds only New chat at its right end', () => {
+    const target: Target = { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' as SshHost }
+    topics.values = { ...topics.values, screen: { bot: RAE, screen: { state: 'off' } } }
+    const html = renderToStaticMarkup(<TopBar target={target} />)
+    expect(html.slice(html.indexOf('</h1>'))).toMatch(/^<\/h1><button type="button" aria-keyshortcuts="Control\+N">New chat<\/button><\/header>/)
   })
 
   it('draws no bot button over a group chat', () => {

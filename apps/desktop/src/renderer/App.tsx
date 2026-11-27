@@ -46,13 +46,13 @@ function OpenPane() {
   return shown.kind === 'group' ? <GroupPane key={samePaneOnFirstMessage(shown)} shown={shown} /> : <Chat key={samePaneOnFirstMessage(shown)} chat={shown} />
 }
 
-function ChatScreen({ target, onOpenTasks }: { readonly target: Target | null; readonly onOpenTasks: () => void }) {
+function ChatScreen({ target }: { readonly target: Target | null }) {
   const link = useTopic('link')
   useRetryPicturesOnceOnline(link?.state === 'online')
   return (
     <>
       <div className="top">
-        <TopBar target={target} onOpenTasks={onOpenTasks} />
+        <TopBar target={target} />
         {link !== undefined && <Banner link={link} target={target} />}
       </div>
       <OpenPane />
@@ -131,7 +131,6 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onOp
   const openSheet = useCallback(() => setSheet(held => held ?? { back: document.activeElement }), [])
   const switcher = <ModeSwitch mode={mode} onPick={next => pick(next, '.mode-switch')} />
   const foot = <div className="account"><HermesFoot target={target} ref={settingsButton} /><AppsButton onOpen={onOpenApps} /><ModeToggle mode={mode} onPick={next => pick(next, '.mode-toggle')} /></div>
-  // A preview asked for while the screen is shown takes the pane, and Screen takes it back.
   const previewed = preview?.state === 'open' ? preview.address : null
   useEffect(() => {
     if (previewed !== null) showComputer(false)
@@ -152,7 +151,7 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onOp
       {mode === 'bots' && <BotsSidebar head={switcher} compact={compact} foot={foot} />}
       {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} foot={foot} />}
       <div key="screen" className="screen" data-accent={tone ?? undefined} hidden={settings !== null || tasksOpen}>
-        <ChatScreen target={target} onOpenTasks={() => setTasksOpen(true)} />
+        <ChatScreen target={target} />
       </div>
       {tasksOpen && settings === null && <Tasks onClose={() => setTasksOpen(false)} />}
       {settings !== null && <Settings setup={settings} mode={mode} theme={theme} accent={accent} onRequestClose={close} onShowShortcuts={openSheet} />}
