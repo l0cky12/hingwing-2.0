@@ -50,8 +50,10 @@ function keep(draft: Draft, when: 'soon' | 'now') {
   else setNewest(draft)
   clearTimeout(saving.get(key)?.timer)
   saving.delete(key)
-  if (when === 'now') window.highwing.keepDraft(draft)
-  else saving.set(key, { draft, timer: setTimeout(() => (saving.delete(key), window.highwing.keepDraft(draft)), SAVE_MS) })
+  if (when === 'now') {
+    flush()
+    window.highwing.keepDraft(draft)
+  } else saving.set(key, { draft, timer: setTimeout(() => (saving.delete(key), window.highwing.keepDraft(draft)), SAVE_MS) })
 }
 
 function flush() {

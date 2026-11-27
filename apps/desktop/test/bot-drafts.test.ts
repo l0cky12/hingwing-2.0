@@ -1,4 +1,4 @@
-import type { BotId, GroupId, SessionId } from '@highwing/hermes/domain'
+import type { AttachmentId, BotId, GroupId, SessionId } from '@highwing/hermes/domain'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Draft } from '../src/ipc-contract'
 import type {} from '../src/renderer/store'
@@ -11,12 +11,13 @@ const chat = (id: string) => ({ key: `chat:${id as SessionId}`, bot: BOT }) as c
 async function openWindow(saved: readonly Draft[] = [], typeFirst: (store: typeof import('../src/renderer/composer/drafts')) => void = () => {}) {
   vi.useFakeTimers()
   vi.resetModules()
-  vi.stubGlobal('window', { addEventListener: () => {}, highwing: { drafts: async () => saved, keepDraft: () => {} } })
+  const kept: string[] = []
+  vi.stubGlobal('window', { addEventListener: () => {}, highwing: { drafts: async () => saved, keepDraft: (draft: Draft) => kept.push(draft.key) } })
   const store = await import('../src/renderer/composer/drafts')
   const started = store.startDrafts()
   typeFirst(store)
   await started
-  return store
+  return { ...store, kept }
 }
 const savedIn = (id: string, text: string): Draft => ({ ...chat(id), text, attachments: [] })
 
@@ -44,6 +45,15 @@ describe("a bot's unsent draft, as its row reads it", () => {
     expect((await openWindow(saved)).useBotDrafts().get(BOT)).toBe('Summarise the second')
     const typedFirst = await openWindow(saved, store => store.writeDraft(chat('s3'), 'Find a third'))
     expect(typedFirst.useBotDrafts().get(BOT)).toBe('Find a third')
+  })
+
+  it('is saved in the order it was typed, so a restart finds the same draft newest', async () => {
+    const { attachTo, kept, useBotDrafts, writeDraft } = await openWindow()
+    writeDraft(chat('s1'), 'Compare the two papers')
+    attachTo(chat('s2'), [{ id: 'a-1' as AttachmentId, name: 'paper.pdf', kind: 'file', size: 2048 }])
+    vi.advanceTimersByTime(1_000)
+    expect(useBotDrafts().get(BOT)).toBe('')
+    expect(kept).toEqual(['chat:s1', 'chat:s2'])
   })
 
   it('is gone once the draft is sent', async () => {
