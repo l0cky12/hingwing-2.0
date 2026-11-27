@@ -910,17 +910,18 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   /**
    * `_delivery_params` (gateway/session_bot.py:804-827), with the id rule of tools/bot_live_delivery.py:131-134,
    * then the target: a profile that is not running refuses `runtime_unavailable` (tui_gateway/methods_bot_relay.py:122).
-   * The call answers once the target's turn ends, with the receipt `_result` builds (gateway/session_bot.py:480-512).
+   * The message runs as a turn of the target's Bot Chat (gateway/session_bot.py:954-1000, `handIn`). The call answers once
+   * that turn ends, with the receipt `_result` builds (gateway/session_bot.py:480-512).
    */
   'bot_relay.deliver': (gateway, _socket, params, routed) => {
     const { id, message } = params
     if (typeof id !== 'string' || !/^[0-9a-f]{32,64}$/.test(id) || typeof message !== 'string' || message.trim() === '') throw new Refused('invalid_params')
     const script = gateway.fixture.header.relay?.[routed] ?? { refuse: 'runtime_unavailable' }
     if ('refuse' in script) throw new Refused(script.refuse)
-    const sessionId = `bot-chat-${routed}`
+    const chat = gateway.handIn(routed, id, message, script.reply, script.delay_ms ?? 0)
     return new Later(script.delay_ms ?? 0, {
-      status: 'settled', delivery_id: id, profile_home: `/fixture/profiles/${routed}`, session_id: sessionId, message,
-      admission_id: `${sessionId}-admission-${id.slice(0, 8)}`, reply: script.reply
+      status: 'settled', delivery_id: id, profile_home: `/fixture/profiles/${routed}`, session_id: chat.id, message,
+      admission_id: `${chat.id}-admission-${id.slice(0, 8)}`, reply: script.reply
     })
   },
   'image.attach_bytes': (gateway, socket, params, routed) => {
@@ -1876,6 +1877,42 @@ export class ScriptedGateway {
       else reply()
     })
     return admission
+  }
+
+  /**
+   * A message handed to `routed` runs as a turn of its Bot Chat, made if it has none. Hermes stores the message as a
+   * user row of kind `internal_notification` (gateway/response_filters.py:203, gateway/run_turn_prepare.py:791). Its
+   * admission is listed queued, then claimed, with input id `bot:<delivery id>` (gateway/session_authority.py:680,
+   * :1229-1241, gateway/session_bot.py:980), and its `message.start` carries no text (gateway/session_automation.py:394-408).
+   * `sessions.changed` follows the row count at the turn's start and end (tui_gateway/change_watcher.py:461-478).
+   */
+  handIn(routed: string, id: string, message: string, reply: string, ms: number): EchoChat {
+    const chat = this.botChats.get(routed) ?? this.newBotChat(routed)
+    const generation = ++chat.generation
+    const turn = { authority_epoch: 1, execution_generation: generation, admission_id: `${chat.id}-admission-${generation}` }
+    const claimed = {
+      ...turn, ref: { profile_id: routed, session_id: chat.id }, sequence: generation, status: 'started', outcome: null, input_id: `bot:${id}`, text: message
+    }
+    const first = chat.nextRowId
+    const changed = () => {
+      for (const socket of this.sockets) socket.peer.write({ jsonrpc: '2.0', method: 'event', params: { type: 'sessions.changed' } })
+    }
+    chat.rows.push({ role: 'user', text: message, display_kind: 'internal_notification', timestamp: this.options.clock.now() / 1000, row_id: first })
+    chat.turning = true
+    this.say(chat, 'session.info', { pending: [{ ...claimed, status: 'queued' }], running: false, execution_generation: generation - 1, revision: chat.revision })
+    this.say(chat, 'message.start', {}, turn)
+    this.say(chat, 'session.info', { pending: [claimed], running: true, execution_generation: generation, revision: chat.revision })
+    changed()
+    this.options.clock.setTimeout(() => {
+      this.say(chat, 'message.delta', { text: reply, segment: 0, offset: 0 }, turn)
+      chat.rows.push({ role: 'assistant', text: reply, timestamp: this.options.clock.now() / 1000, row_id: first + 1 })
+      if (chat.generation === generation) chat.turning = false
+      this.say(chat, 'message.complete', {
+        text: null, outcome: 'completed', status: 'complete', persisted_turn: { row_ids: [first, first + 1], user_row_id: first, complete: true }
+      }, turn)
+      changed()
+    }, ms)
+    return chat
   }
 
   private say(chat: EchoChat, type: string, payload: Obj, stamp: Obj = {}): void {

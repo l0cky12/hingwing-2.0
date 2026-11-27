@@ -132,6 +132,8 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .detailed .detail { max-width: 66ch; margin-top: 4px; color: var(--graphite); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .when { margin: 0 0 14px; color: var(--graphite); font-size: 12.5px; text-align: center; }
+.handed-from { margin: 0 0 6px; color: var(--graphite); font-size: 13px; text-align: right; }
+.request.handed { background: transparent; border: 1px dashed var(--graphite); padding: 6px 13px; }
 .request {
   width: fit-content; margin: 0 0 22px auto; padding: 7px 14px;
   background: var(--surface-user); border-radius: var(--radius-pill);
