@@ -104,6 +104,13 @@ describe("where a bot's menu sits", () => {
     expect(placeMenu(anchorOf({ by: 'keys' }, 'card', { row: CARD, more: CARD_MORE }), MENU, WINDOW)).toEqual({ left: CARD_MORE.right - MENU.width, top: CARD.bottom + GAP })
   })
 
+  it('opens beside the face from the keyboard when the row draws no ⋯, as in a compact sidebar', () => {
+    const FACE = box(4, 200, 64, 246)
+    expect(placeMenu(anchorOf({ by: 'keys' }, 'section', { row: FACE, more: null }), MENU, WINDOW)).toEqual({ left: FACE.right, top: FACE.top })
+    expect(placeMenu(anchorOf({ by: 'keys' }, 'card', { row: FACE, more: null }), MENU, WINDOW)).toEqual({ left: FACE.right, top: FACE.top })
+    expect(placeMenu(anchorOf({ by: 'pointer', x: 30, y: 220 }, 'section', { row: FACE, more: null }), MENU, WINDOW)).toEqual({ left: 30, top: 220 })
+  })
+
   it('flips over ⋯ near the bottom edge', () => {
     const low = box(244, 760, 272, 788)
     expect(placeMenu(anchorOf({ by: 'more' }, 'section', { row: ROW, more: low }), MENU, WINDOW)).toEqual({ left: low.right - MENU.width, top: low.top - GAP - MENU.height })

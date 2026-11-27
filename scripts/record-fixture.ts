@@ -12,7 +12,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { Session, SessionId } from '../packages/hermes/src/domain/session'
-import { liveDialer, openHermes, type Hermes } from '../packages/hermes/src/hub'
+import { liveRoute, openHermes, type Hermes } from '../packages/hermes/src/hub'
 import { recordingDialer } from '../packages/hermes/src/testing/record'
 
 const [out, request] = process.argv.slice(2)
@@ -20,7 +20,7 @@ if (!out || !request) throw new Error('usage: record-fixture.ts <out.jsonl> <req
 
 const TURN_MS = 15 * 60_000
 const QUIET_MS = 30_000
-const dial = recordingDialer(liveDialer(), out)
+const dial = recordingDialer(liveRoute().dial, out)
 const client = { name: 'highwing-record', version: '0' }
 
 function until(hermes: Hermes, id: SessionId, done: (session: Session) => boolean, ms: number): Promise<Session> {

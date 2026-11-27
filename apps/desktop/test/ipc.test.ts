@@ -1,10 +1,11 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
-import type { Hermes, Route } from '@highwing/hermes'
-import type { AttachmentId, BotActivities, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, SessionId, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
+import type { Hermes, HttpAnswer, Route } from '@highwing/hermes'
+import type { AttachmentId, BotActivities, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, Recording, RelayDesk, Session, SessionId, Sidebar, SkillLibrary, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type OnClose, type Preview, type PreviewCommand, type Push, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
+import { DUE, EXAMPLES, nextIntro, OFF, type Intro, type IntroEvent } from '../src/intro'
+import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, RECORDING_MAX_BYTES, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Accent, type Mode, type Notices, type OnClose, type Preview, type PreviewCommand, type Push, type SendKey, type Setup, type SidebarWidth, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
 import { feed, ownConnection, pinnedConnection, type ConnectionOwner } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
@@ -118,7 +119,10 @@ describe('validators', () => {
     expect(parseCommand({ do: 'open', ref: { kind: 'bot', bot: 'research', sessionId: 's9' }, sessionId: 's9' })).toEqual({ do: 'open', ref: { kind: 'bot', bot: 'research' } })
     expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: 'research', draftId: 'd1', sessionId: 's9' } })).toEqual({ do: 'open', ref: { kind: 'new', bot: 'research', draftId: 'd1' } })
     expect(parseCommand({ do: 'open', ref: { kind: 'new', bot: null, draftId: 'd1' } })).toEqual({ do: 'open', ref: { kind: 'new', bot: null, draftId: 'd1' } })
-    expect(parseCommand({ do: 'open', ref: { kind: 'chat', sessionId: 's9', bot: 'research' } })).toEqual({ do: 'open', ref: { kind: 'chat', sessionId: 's9' } })
+    expect(parseCommand({ do: 'open', ref: { kind: 'chat', sessionId: 's9', bot: 'research', x: 1 } })).toEqual({ do: 'open', ref: { kind: 'chat', sessionId: 's9', bot: 'research' } })
+    expect(parseCommand({ do: 'open', ref: { kind: 'chat', sessionId: 's9' } })).toEqual({ do: 'open', ref: { kind: 'chat', sessionId: 's9' } })
+    expect(parseCommand({ do: 'open', ref: { kind: 'chat', sessionId: 's9', bot: '' } })).toBeNull()
+    expect(parseCommand({ do: 'open', ref: { kind: 'chat', sessionId: 's9', bot: 7 } })).toBeNull()
     expect(parseCommand({ do: 'open', ref: { kind: 'link', sessionId: 's9', bot: 'research' } })).toEqual({ do: 'open', ref: { kind: 'link', sessionId: 's9' } })
     expect(parseCommand({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null, draftId: 'd1' }, text: 'hello', sessionId: 's9' }))
       .toEqual({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello', attachments: [] })
@@ -145,6 +149,8 @@ describe('validators', () => {
     expect(parseCommand({ do: 'createBot', draft: { ...draft, model: null }, picture: null })).toEqual({ do: 'createBot', draft: { ...draft, model: null }, picture: null })
     expect(parseCommand({ do: 'botModels', bot: null, extra: 1 })).toEqual({ do: 'botModels', bot: null })
     expect(parseCommand({ do: 'botModels', bot: 'research' })).toEqual({ do: 'botModels', bot: 'research' })
+    expect(parseCommand({ do: 'denyRules', bot: null, extra: 1 })).toEqual({ do: 'denyRules', bot: null })
+    expect(parseCommand({ do: 'denyRules', bot: 'research' })).toEqual({ do: 'denyRules', bot: 'research' })
   })
 
   it("keep a new bot's picture typed by its bytes, and the calls that draw a picture and list pets", () => {
@@ -174,6 +180,17 @@ describe('validators', () => {
     expect(parseCommand({ do: 'petPicture', slug: 'tabby', url: 'https://petdex.example/tabby.webp', name: 'Tabby' })).toEqual({ do: 'petPicture', slug: 'tabby', url: 'https://petdex.example/tabby.webp' })
     expect(parseCommand({ do: 'petPicture', slug: 'mochi', url: null })).toEqual({ do: 'petPicture', slug: 'mochi', url: null })
     expect(parseCommand({ do: 'petPicture', slug: 'mr.whiskers', url: null })).toEqual({ do: 'petPicture', slug: 'mr.whiskers', url: null })
+  })
+
+  it('keep a tool server to add as typed, and the name of one to remove', () => {
+    const address = { kind: 'address', name: 'linear', url: 'https://mcp.linear.example/mcp', headers: [{ name: 'Authorization', value: 'Bearer s3cret' }] }
+    expect(parseCommand({ do: 'addToolServer', bot: 'rae', setup: address, extra: 1 })).toEqual({ do: 'addToolServer', bot: 'rae', setup: address })
+    const command = { kind: 'command', name: 'files', command: 'npx', args: ['-y', 'server-filesystem'] }
+    expect(parseCommand({ do: 'addToolServer', bot: 'rae', setup: command })).toEqual({ do: 'addToolServer', bot: 'rae', setup: command })
+    expect(parseCommand({ do: 'toolServers', bot: 'rae', extra: 1 })).toEqual({ do: 'toolServers', bot: 'rae' })
+    expect(parseCommand({ do: 'toolServers', bot: null })).toEqual({ do: 'toolServers', bot: null })
+    expect(parseCommand({ do: 'addToolServer', bot: null, setup: command })).toEqual({ do: 'addToolServer', bot: null, setup: command })
+    expect(parseCommand({ do: 'removeToolServer', bot: 'rae', name: 'linear' })).toEqual({ do: 'removeToolServer', bot: 'rae', name: 'linear' })
   })
 
   it('keep a path completion to a chat and the mention typed', () => {
@@ -242,6 +259,10 @@ describe('validators', () => {
     expect(parseCommand({ do: 'versions', sessionId: 's1', extra: 1 })).toEqual({ do: 'versions', sessionId: 's1' })
     expect(parseCommand({ do: 'versions', sessionId: ' ' })).toBeNull()
     expect(parseCommand({ do: 'versions' })).toBeNull()
+    expect(parseCommand({ do: 'readMessages', step: 2, extra: 1 })).toEqual({ do: 'readMessages', step: 2 })
+    expect(parseCommand({ do: 'readMessages', step: -1 })).toBeNull()
+    expect(parseCommand({ do: 'readMessages', step: 1.5 })).toBeNull()
+    expect(parseCommand({ do: 'readMessages' })).toBeNull()
   })
 
   it('read the queue actions, the busy mode and a denial with words, and drop keys the command does not have', () => {
@@ -323,6 +344,8 @@ describe('validators', () => {
     ['a pet picture whose slug has spaces Hermes would trim', { do: 'petPicture', slug: ' tabby', url: null }],
     ['a model list for a bot with no name', { do: 'botModels', bot: ' ' }],
     ['a model list that names no bot', { do: 'botModels' }],
+    ['deny rules for a bot with no name', { do: 'denyRules', bot: ' ' }],
+    ['deny rules that name no bot', { do: 'denyRules' }],
     ['details of a bot with no name', { do: 'describeBot', bot: '' }],
     ['the password managers of a bot with no name', { do: 'passwordManagers', bot: ' ' }],
     ['a password manager Highwing does not set up', { do: 'usePasswordManager', bot: 'rae', manager: 'local', use: true }],
@@ -330,6 +353,15 @@ describe('validators', () => {
     ['an unlock with no password', { do: 'unlockPasswordManager', bot: 'rae', manager: 'bitwarden', password: '' }],
     ['an unlock whose password is no text', { do: 'unlockPasswordManager', bot: 'rae', manager: 'bitwarden', password: 7 }],
     ['a lock that names no manager', { do: 'lockPasswordManager', bot: 'rae' }],
+    ['a tool server with no name', { do: 'addToolServer', bot: 'rae', setup: { kind: 'command', name: ' ', command: 'npx', args: [] } }],
+    ['a tool server at an address that is not a web page', { do: 'addToolServer', bot: 'rae', setup: { kind: 'address', name: 'x', url: 'file:///etc/passwd', headers: [] } }],
+    ['a tool server header with no value', { do: 'addToolServer', bot: 'rae', setup: { kind: 'address', name: 'x', url: 'https://x.example', headers: [{ name: 'Authorization', value: '' }] } }],
+    ['a tool server command with no command', { do: 'addToolServer', bot: 'rae', setup: { kind: 'command', name: 'x', command: '', args: [] } }],
+    ['a tool server command whose arguments are not text', { do: 'addToolServer', bot: 'rae', setup: { kind: 'command', name: 'x', command: 'npx', args: [7] } }],
+    ['a tool server of a kind Highwing does not add', { do: 'addToolServer', bot: 'rae', setup: { kind: 'preset', name: 'x' } }],
+    ['the removal of a tool server with no name', { do: 'removeToolServer', bot: 'rae', name: '' }],
+    ['the tool servers of a bot with a blank name', { do: 'toolServers', bot: ' ' }],
+    ['the tool servers of no bot named at all', { do: 'toolServers' }],
     ['an edit that changes nothing', { do: 'editBot', bot: 'rae', edit: {}, revision: 2 }],
     ['a mark that is not one of the four', { do: 'markBot', bot: 'rae', mark: 'flip' }],
     ['an up-front open of a bot\'s chat', { do: 'open', ref: { kind: 'bot', bot: 'rae' }, upFront: true }],
@@ -387,6 +419,16 @@ describe('validators', () => {
     ['a mode switch that names no mode', { do: 'setMode' }],
     ['a theme Highwing does not have', { do: 'setTheme', theme: 'sepia' }],
     ['a theme pick that names no theme', { do: 'setTheme' }],
+    ['an accent Highwing does not have', { do: 'setAccent', accent: 'teal' }],
+    ['an accent pick that names no accent', { do: 'setAccent' }],
+    ['a notice switch of a kind Highwing does not have', { do: 'setNotice', kind: 'sounds', on: false }],
+    ['a notice switch that says neither on nor off', { do: 'setNotice', kind: 'asks', on: 'no' }],
+    ['a sidebar width Highwing does not have', { do: 'setSidebarWidth', width: 'narrow' }],
+    ['a sidebar width pick that names no width', { do: 'setSidebarWidth' }],
+    ['a send key Highwing does not have', { do: 'setSendKey', sendKey: 'altEnter' }],
+    ['a send key pick that names no key', { do: 'setSendKey' }],
+    ['a spell-check pick that is no boolean', { do: 'setSpellCheck', spellCheck: 'false' }],
+    ['a spell-check pick that names no choice', { do: 'setSpellCheck' }],
     ['a rename with AI of no chat', { do: 'retitle' }],
     ['a snooze of no chat', { do: 'snooze', until: 1_800_000_000_000 }],
     ['a snooze to no time', { do: 'snooze', sessionId: 's1' }],
@@ -465,6 +507,26 @@ describe('validators', () => {
     expect(parseCommand({ do: 'setTheme', theme, extra: 1 })).toEqual({ do: 'setTheme', theme })
   })
 
+  it.each(['bot', 'ink', 'slate', 'plum', 'olive', 'mauve', 'umber'] satisfies Accent[])('keep a pick of the %s accent', accent => {
+    expect(parseCommand({ do: 'setAccent', accent, extra: 1 })).toEqual({ do: 'setAccent', accent })
+  })
+
+  it('keep a notice switch', () => {
+    expect(parseCommand({ do: 'setNotice', kind: 'jobs', on: false, extra: 1 })).toEqual({ do: 'setNotice', kind: 'jobs', on: false })
+  })
+
+  it.each(['full', 'compact'] satisfies SidebarWidth[])('keep a pick of the %s sidebar', width => {
+    expect(parseCommand({ do: 'setSidebarWidth', width, extra: 1 })).toEqual({ do: 'setSidebarWidth', width })
+  })
+
+  it.each(['enter', 'modEnter'] satisfies SendKey[])('keep a pick of the %s send key', sendKey => {
+    expect(parseCommand({ do: 'setSendKey', sendKey, extra: 1 })).toEqual({ do: 'setSendKey', sendKey })
+  })
+
+  it.each([true, false])('keep spell check set to %s', spellCheck => {
+    expect(parseCommand({ do: 'setSpellCheck', spellCheck, extra: 1 })).toEqual({ do: 'setSpellCheck', spellCheck })
+  })
+
   it('keep a snooze and a wake', () => {
     expect(parseCommand({ do: 'snooze', sessionId: 's1', until: 1_800_000_000_000, extra: 1 })).toEqual({ do: 'snooze', sessionId: 's1', until: 1_800_000_000_000 })
     expect(parseCommand({ do: 'snooze', sessionId: 's1', until: null })).toEqual({ do: 'snooze', sessionId: 's1', until: null })
@@ -488,14 +550,13 @@ describe('validators', () => {
 
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
-      'accountUsage', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget',
-      'checkpointDiff', 'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'createBot',
-      'createGroup', 'deleteGroup', 'describeBot', 'discard', 'editBot', 'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess',
-      'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move', 'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets',
-      'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'quit', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeApp',
-      'removeBotPicture', 'removeMemory', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send', 'sendToGroup', 'setMode',
-      'setOnClose', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'unlockPasswordManager',
-      'usePasswordManager', 'versions'
+      'accountUsage', 'addToolServer', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
+      'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'denyRules', 'describeBot', 'discard',
+      'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'keepTarget', 'killProcess', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
+      'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'quit', 'react', 'readMessages', 'reconnect',
+      'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
+      'sendToGroup', 'setAccent', 'setMode', 'setNotice', 'setOnClose', 'setSendKey', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
+      'takeControl', 'toolServers', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'versions'
     ])
   })
 })
@@ -510,16 +571,22 @@ const NO_RELAYS: RelayDesk = { supported: false, bySession: {} }
 const NO_GROUPS: Groups = { state: 'unsupported' }
 const RESEARCH_WAITING = { research: 'waiting' } as BotActivities
 
+const HEARD = async ({ mime, audio }: Recording): Promise<CommandOutcome<string>> => ({ ok: true, value: `${audio.byteLength} bytes of ${mime}` })
+
 /** An owner live on a remote machine, whose every check passes, so a check of this computer switches to it at epoch 2. */
 const switchable = (hermes: Hermes) => ownConnection({
   loaded: { state: 'saved', target: { kind: 'remote', host: 'box' as SshHost } },
   save: async () => {},
   check: async () => ({ ok: true }),
-  routeFor: () => ({ dial: async () => { throw new Error('the test never dials') }, dispose: () => {} }) as unknown as Route,
-  open: () => ({ ...hermes, close: async () => {} })
+  routeFor: () => ({ dial: async () => { throw new Error('the test never dials') }, transcribe: HEARD, dispose: () => {} }) as unknown as Route,
+  open: () => ({ ...hermes, close: async () => {} }),
+  armIntro: async () => {}
 })
 
-function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection) {
+function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
+  const reads: string[] = []
+  let answer: HttpAnswer = { status: 404, body: null }
+  const read = async (path: string) => (reads.push(path), answer)
   const listeners = new Map<string, (event: IpcEvent, ...args: unknown[]) => void>()
   const handlers = new Map<string, (event: IpcEvent, ...args: unknown[]) => unknown>()
   const ipc: IpcMainLike = {
@@ -566,6 +633,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
     groups: still(NO_GROUPS),
     groupChat: still(null),
     activity: still(RESEARCH_WAITING),
+    screen: still(null),
     slash: {
       get: () => catalog,
       subscribe: (listener: (value: SlashCatalog) => void) => {
@@ -577,6 +645,10 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
       emit = listener
       listener(moments[0]!)
       return () => { emit = () => {} }
+    },
+    watchSkills: (listener: (library: SkillLibrary) => void) => {
+      listener({ state: 'reading', bot: null })
+      return () => {}
     },
     run: async (command: unknown) => {
       commands.push(command)
@@ -615,14 +687,21 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   const quits: true[] = []
   const mode = feed<Mode>('chats')
   const theme = feed<Theme>('system')
+  const accent = feed<Accent>('bot')
+  const sidebarWidth = feed<SidebarWidth>('full')
+  const sendKey = feed<SendKey>('enter')
+  const spellCheck = feed(true)
   const snoozes = feed<Snoozes>({})
+  const notices = feed<Notices>({ asks: true, replies: true, jobs: true })
+  const intro = feed<Intro>(OFF)
   const onClose = feed<OnClose>('quit')
   const sources: AttachSources = { pick: async () => ['/home/me/error.png', '/home/me/big.zip'], pasted: async () => ({ name: 'Pasted image 1.png', bytes: PNG }) }
   const served = serveWindows(
-    ownerOf(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
+    (ownerOf ?? (held => pinnedConnection(held, read, HEARD)))(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
-    { store, sources }, saver, { mode, theme, snoozes, onClose }, () => void quits.push(true)
+    { store, sources }, saver, { mode, theme, accent, sidebarWidth, sendKey, spellCheck, snoozes, notices, onClose },
+    { intro, apply: async (event: IntroEvent) => intro.set(nextIntro(intro.get(), event)) }, () => void quits.push(true)
   )
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
@@ -642,7 +721,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   }
   return {
     listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, lives, stored, previewed, toPane, staged, served,
-    saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, snoozes, onClose, quits
+    reads, answers: (next: HttpAnswer) => void (answer = next), saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, accent, sidebarWidth, sendKey, spellCheck, snoozes, notices, onClose, intro, quits
   }
 }
 
@@ -686,7 +765,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, about: ABOUT, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, activity: RESEARCH_WAITING, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {}, onClose: 'quit' }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, about: ABOUT, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, activity: RESEARCH_WAITING, screen: null, skills: { state: 'reading', bot: null }, preview: { state: 'closed' }, mode: 'chats', theme: 'system', accent: 'bot', sidebarWidth: 'full', sendKey: 'enter', spellCheck: true, snoozes: {}, notices: { asks: true, replies: true, jobs: true }, onClose: 'quit', intro: { at: 'off' } }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))
@@ -743,20 +822,67 @@ describe('serveWindows', () => {
     expect(commands).toEqual([])
   })
 
+  it('opens the chat before it publishes the example requests, and leaves them due when that open is refused', async () => {
+    const live = { target: { kind: 'local' as const }, epoch: 1 }
+    const setup = feed<Setup>({ at: 'saved', live, from: 'first-run' })
+    let allow = true
+    const ran: string[] = []
+    const owner = {
+      setup,
+      hermes: null,
+      read: async () => { throw new Error('the test never reads') },
+      transcribe: HEARD,
+      close: async () => {},
+      run: async (command: { readonly do: string }) => {
+        ran.push(command.do)
+        if (command.do !== 'keepTarget' || !allow) return { ok: false, refusal: { kind: 'rejected', message: "Highwing can't do that from this screen." } }
+        setup.set({ at: 'chat', live })
+        return { ok: true, value: undefined }
+      }
+    } as ConnectionOwner
+    const { handlers, event, intro } = harness(() => owner)
+    const run = handlers.get(CHANNEL.run)!
+    intro.set(DUE)
+    const seen: string[] = [intro.get().at]
+    setup.subscribe(next => seen.push(next.at))
+    intro.subscribe(next => seen.push(next.at))
+    await expect(run(event(), { do: 'examples' }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    expect(seen).toEqual(['due', 'chat', 'examples'])
+    expect(ran).toEqual(['keepTarget'])
+    expect(intro.get()).toBe(EXAMPLES)
+
+    allow = false
+    setup.set({ at: 'saved', live, from: 'first-run' })
+    intro.set(DUE)
+    await expect(run(event(), { do: 'examples' }, 1)).resolves.toMatchObject({ ok: false })
+    expect(intro.get()).toBe(DUE)
+    expect(setup.get().at).toBe('saved')
+
+    ran.length = 0
+    setup.set({ at: 'chat', live })
+    await expect(run(event(), { do: 'examples' }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    expect(ran).toEqual([])
+    expect(intro.get()).toBe(EXAMPLES)
+  })
+
   it.each([
-    { topic: 'mode', verb: 'setMode', was: 'chats', picked: 'bots', unknown: 'inbox' },
-    { topic: 'theme', verb: 'setTheme', was: 'system', picked: 'dark', unknown: 'sepia' },
-    { topic: 'onClose', verb: 'setOnClose', was: 'quit', picked: 'stay', unknown: 'minimize' }
-  ] as const)('sets the $topic a trusted window picks and pushes it, and never passes it to Hermes', async ({ topic, verb, was, picked, unknown }) => {
+    { topic: 'mode', verb: 'setMode', key: 'mode', was: 'chats', picked: 'bots', unknown: 'inbox' },
+    { topic: 'theme', verb: 'setTheme', key: 'theme', was: 'system', picked: 'dark', unknown: 'sepia' },
+    { topic: 'accent', verb: 'setAccent', key: 'accent', was: 'bot', picked: 'plum', unknown: 'teal' },
+    { topic: 'sidebarWidth', verb: 'setSidebarWidth', key: 'width', was: 'full', picked: 'compact', unknown: 'narrow' },
+    { topic: 'onClose', verb: 'setOnClose', key: 'onClose', was: 'quit', picked: 'stay', unknown: 'minimize' },
+    { topic: 'sendKey', verb: 'setSendKey', key: 'sendKey', was: 'enter', picked: 'modEnter', unknown: 'altEnter' },
+    { topic: 'spellCheck', verb: 'setSpellCheck', key: 'spellCheck', was: true, picked: false, unknown: 'no' }
+  ] as const)('sets the $topic a trusted window picks and pushes it, and never passes it to Hermes', async ({ topic, verb, key, was, picked, unknown }) => {
     vi.useFakeTimers()
     const { listeners, handlers, pushes, event, commands, ...shown } = harness()
     listeners.get(CHANNEL.watch)!(event(), 6, topic)
     vi.advanceTimersByTime(COALESCE_MS)
     const run = handlers.get(CHANNEL.run)!
-    await expect(run(event('https://example.com/'), { do: verb, [topic]: picked })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
-    await expect(run(event(), { do: verb, [topic]: unknown })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    await expect(run(event('https://example.com/'), { do: verb, [key]: picked })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    await expect(run(event(), { do: verb, [key]: unknown })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
     expect(shown[topic].get()).toBe(was)
-    await expect(run(event(), { do: verb, [topic]: picked })).resolves.toEqual({ ok: true, value: undefined })
+    await expect(run(event(), { do: verb, [key]: picked })).resolves.toEqual({ ok: true, value: undefined })
     expect(shown[topic].get()).toBe(picked)
     expect(pushes).toEqual([{ topic, rev: 1, full: was }, { topic, rev: 2, full: picked }])
     expect(commands).toEqual([])
@@ -821,9 +947,9 @@ describe('serveWindows', () => {
     expect(commands).toEqual([{ do: 'stop', sessionId: 's1' }])
   })
 
-  it('refuses a chat command a window sent for a connection that is no longer live, and passes setup, pane, mode and theme commands whatever it sent', async () => {
+  it('refuses a chat command a window sent for a connection that is no longer live, and passes setup, pane, mode, theme, accent, send key, spell-check and quit commands whatever it sent', async () => {
     let owner: ConnectionOwner | undefined
-    const { handlers, event, commands, toPane, mode, theme, quits } = harness(hermes => (owner = switchable(hermes)))
+    const { handlers, event, commands, toPane, mode, theme, accent, notices, sendKey, spellCheck, quits } = harness(hermes => (owner = switchable(hermes)))
     const run = handlers.get(CHANNEL.run)!
     const pick = { do: 'open', ref: { kind: 'chat', sessionId: 'box-0001' } }
     await expect(run(event(), { do: 'editTarget' }, 1)).resolves.toEqual({ ok: true, value: undefined })
@@ -843,9 +969,17 @@ describe('serveWindows', () => {
     expect(quits).toEqual([])
     await expect(run(event(), { do: 'quit' }, 1)).resolves.toEqual({ ok: true, value: undefined })
     expect(quits).toEqual([true])
+    await expect(run(event(), { do: 'setNotice', kind: 'replies', on: false }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    await expect(run(event(), { do: 'setSendKey', sendKey: 'modEnter' }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    await expect(run(event(), { do: 'setSpellCheck', spellCheck: false }, 1)).resolves.toEqual({ ok: true, value: undefined })
     expect(toPane).toEqual([{ do: 'closePreview' }])
+    await expect(run(event(), { do: 'setAccent', accent: 'olive' }, 1)).resolves.toEqual({ ok: true, value: undefined })
     expect(mode.get()).toBe('bots')
     expect(theme.get()).toBe('light')
+    expect(accent.get()).toBe('olive')
+    expect(notices.get(), 'one switch turns off one kind').toEqual({ asks: true, replies: false, jobs: true })
+    expect(sendKey.get()).toBe('modEnter')
+    expect(spellCheck.get()).toBe(false)
 
     await expect(run(event(), pick, 2)).resolves.toEqual({ ok: true, value: undefined })
     expect(commands).toEqual([pick])
@@ -1150,6 +1284,37 @@ describe('the draft calls', () => {
   })
 })
 
+describe('the task calls', () => {
+  const BOARD = { columns: [{ name: 'todo', tasks: [{ id: 't_1', title: 'Sweep', assignee: 'ada', latest_summary: null }] }] }
+  const DETAIL = { events: [{ id: 1, kind: 'owner_admitted', run_id: 4, payload: { session_id: 'local-w1' } }], runs: [{ id: 4, profile: 'Ada' }] }
+
+  it('reads the board and a card, each as the app draws it', async () => {
+    const rig = harness()
+    rig.answers({ status: 200, body: BOARD })
+    await expect(rig.handlers.get(CHANNEL.taskBoard)!(rig.event())).resolves.toEqual({ ok: true, value: { columns: [{ name: 'todo', cards: [{ id: 't_1', title: 'Sweep', assignee: 'ada', summary: null }] }] } })
+    rig.answers({ status: 200, body: DETAIL })
+    await expect(rig.handlers.get(CHANNEL.taskChat)!(rig.event(), 't_1')).resolves.toEqual({ ok: true, value: { bot: 'ada', sessionId: 'local-w1' } })
+    expect(rig.reads).toEqual(['/api/plugins/kanban/board', '/api/plugins/kanban/tasks/t_1'])
+  })
+
+  it('refuse a foreign frame, and a task id that is not one, without reading', async () => {
+    const rig = harness()
+    await expect(rig.handlers.get(CHANNEL.taskBoard)!(rig.event('https://example.com/'))).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    const chat = rig.handlers.get(CHANNEL.taskChat)!
+    for (const [event, raw] of [[rig.event('https://example.com/'), 't_1'], [rig.event(), 'a/b'], [rig.event(), ''], [rig.event(), 7], [rig.event(), { id: 't_1' }]] as const) {
+      await expect(chat(event, raw)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    }
+    expect(rig.reads).toEqual([])
+  })
+
+  it('stop answering once disposed', () => {
+    const { handlers, served } = harness()
+    served.dispose()
+    expect(handlers.has(CHANNEL.taskBoard)).toBe(false)
+    expect(handlers.has(CHANNEL.taskChat)).toBe(false)
+  })
+})
+
 describe('the picture call', () => {
   it("asks main's picker for the named bot, and refuses a foreign frame or a bot with no name without asking", async () => {
     const rig = harness()
@@ -1196,6 +1361,36 @@ describe('the picture call', () => {
     served.dispose()
     expect(handlers.has(CHANNEL.pickPicture)).toBe(false)
     expect(handlers.has(CHANNEL.choosePicture)).toBe(false)
+  })
+})
+
+describe('the transcribe call', () => {
+  const RECORDING = { mime: 'audio/webm;codecs=opus', audio: new Uint8Array([1, 2, 3]) }
+
+  it("hands a recording from the app's own frame to the live connection, and refuses anything else without sending it", async () => {
+    const rig = harness()
+    const call = rig.handlers.get(CHANNEL.transcribe)!
+    await expect(call(rig.event(), RECORDING, 0)).resolves.toEqual({ ok: true, value: '3 bytes of audio/webm;codecs=opus' })
+    for (const [event, raw] of [
+      [rig.event('https://example.com/'), RECORDING],
+      [rig.event(), { ...RECORDING, mime: 'text/html' }],
+      [rig.event(), { ...RECORDING, audio: new Uint8Array() }],
+      [rig.event(), { ...RECORDING, audio: [1, 2, 3] }],
+      [rig.event(), { ...RECORDING, audio: new Uint8Array(RECORDING_MAX_BYTES + 1) }]
+    ] as const) {
+      await expect(call(event, raw, 0)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    }
+  })
+
+  it('refuses a recording made for a connection that is no longer live', async () => {
+    const rig = harness(switchable)
+    const run = rig.handlers.get(CHANNEL.run)!
+    const call = rig.handlers.get(CHANNEL.transcribe)!
+    await run(rig.event(), { do: 'editTarget' }, 1)
+    await run(rig.event(), { do: 'checkTarget', target: { kind: 'local' } }, 1)
+    await new Promise(resolve => setImmediate(resolve))
+    await expect(call(rig.event(), RECORDING, 1)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    await expect(call(rig.event(), RECORDING, 2)).resolves.toEqual({ ok: true, value: '3 bytes of audio/webm;codecs=opus' })
   })
 })
 

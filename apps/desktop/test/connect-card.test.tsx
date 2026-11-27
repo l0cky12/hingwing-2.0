@@ -17,7 +17,7 @@ function drawn(targets: readonly ConnectTarget[], state: HermesRequest['state'] 
   const request: HermesRequest = { id: 'op-1' as RequestId, ask: { kind: 'connect', rev: 1, targets, suggested: [] }, state, deadline: null }
   const session: Session = {
     id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', run: { state: 'idle' }, interlude: [], requests: [request], queue: [], outbox: [],
-    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null, sync
+    model: { current: null, next: null, ask: null }, usage: { totals: null, context: null }, tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null, rewound: {}, sync
   }
   const [card] = threadView(session, { now: 0, timeZone: 'UTC' }).asks
   return renderToStaticMarkup(<AskCard card={card!} changing={null} onChange={() => {}} onAnswer={async () => true} />)

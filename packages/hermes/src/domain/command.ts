@@ -1,9 +1,11 @@
 import type { AppSignIn, AppsBoard } from './apps'
 import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId, BotMark, Marked, PetChoice } from './bots'
 import type { GroupDraft, GroupId } from './groups'
+import type { MessagesRead } from './messages'
 import type { ChatRef, Unstarted } from './open'
 import type { BotManagers, ManagerName } from './passwords'
 import type { PathMatch } from './path'
+import type { Added, ServerSetup, ToolServer } from './tool-servers'
 import type { ChatVersions } from './versions'
 import type { AccountReport } from './usage'
 export type { AccountReport }
@@ -54,6 +56,11 @@ export type Command =
    * Hermes on each ask, never stored. Empty when the chat has none. Refused when Hermes cannot say.
    */
   | { readonly do: 'versions'; readonly sessionId: SessionId }
+  /**
+   * Step `step` of reading every bot's chats for message search: the next few chats of each bot, newest first, read whole.
+   * Read from Hermes on each ask, never stored.
+   */
+  | { readonly do: 'readMessages'; readonly step: number }
   | { readonly do: 'stop'; readonly sessionId: SessionId }
   /** Moves the chat to another folder on the machine Hermes runs on. Refused while a turn runs. */
   | { readonly do: 'move'; readonly sessionId: SessionId; readonly cwd: string }
@@ -132,12 +139,21 @@ export type Command =
   | { readonly do: 'removeMemory'; readonly id: string }
   /** The models a bot's chat could use, with no chat open. null: the socket's own profile, which a new bot copies its credentials from. */
   | { readonly do: 'botModels'; readonly bot: BotId | null }
+  /** The globs of the bot's `approvals.deny`: Hermes blocks a matching command whatever the approval mode, YOLO included. null: the socket's own profile. */
+  | { readonly do: 'denyRules'; readonly bot: BotId | null }
   | { readonly do: 'describeBot'; readonly bot: BotId }
   /**
    * One save of the details dialog, then the roster is asked for again. `revision` is the one `describeBot` answered:
    * a rename refused because the name changed elsewhere since is a `conflict`.
    */
   | { readonly do: 'editBot'; readonly bot: BotId; readonly edit: BotEdit; readonly revision: number | null }
+  /**
+   * Turns one of the bot's skills on or off, sending Hermes the bot's whole disabled list as Hermes lists it now. The
+   * library is read again after. `bot` null: the socket's own profile.
+   */
+  | { readonly do: 'setSkill'; readonly bot: BotId | null; readonly name: string; readonly enabled: boolean }
+  /** A skill's SKILL.md. Hermes reads only the default bot's, so another bot's is `unsupported`. */
+  | { readonly do: 'skillText'; readonly bot: BotId | null; readonly name: string }
   /** `data`: a PNG, JPEG or WebP as a data URL. The roster is asked for again after. */
   | { readonly do: 'setBotPicture'; readonly bot: BotId; readonly data: string }
   /** The roster is asked for again after. */
@@ -151,6 +167,15 @@ export type Command =
   /** Hermes drops the unlock after 30 idle minutes (agent/vault_backends/unlock.py:29) or on a lock, and the agent then asks for it again in the chat. */
   | { readonly do: 'unlockPasswordManager'; readonly bot: BotId; readonly manager: ManagerName; readonly password: string }
   | { readonly do: 'lockPasswordManager'; readonly bot: BotId; readonly manager: ManagerName }
+  /** The tool servers `bot` has, with each one's state, or the launch profile's for null. Hermes reports a state only for the launch profile, so another bot's servers are mostly `idle`. */
+  | { readonly do: 'toolServers'; readonly bot: BotId | null }
+  /**
+   * Adds the tool server to `bot`, tests it, and takes it out again when the test fails, so only a server that passed is kept.
+   * A failed test answers ok with `tested` saying why. A refused add (a name that is taken, a command Hermes calls unsafe) is a refusal.
+   */
+  | { readonly do: 'addToolServer'; readonly bot: BotId | null; readonly setup: ServerSetup }
+  /** Removing a server that is gone already is no refusal. A server a plugin provides is refused. */
+  | { readonly do: 'removeToolServer'; readonly bot: BotId | null; readonly name: string }
   /**
    * Makes the group chat, lists it in `groups` and shows it. The same draft sent again makes no second group: Hermes
    * answers a repeated id with the group it already made.
@@ -213,6 +238,12 @@ export type Command =
    * takes it off, and another emoji replaces it.
    */
   | { readonly do: 'react'; readonly sessionId: SessionId; readonly turn: TurnId; readonly emoji: string | null }
+  /**
+   * Takes the bot's screen from the agent, so the user can do a step only a person can, such as a sign-in. Input reaches
+   * the screen from Highwing's live view alone until `handBack`. `bot` null: the profile the connection itself uses.
+   */
+  | { readonly do: 'takeControl'; readonly bot: BotId | null }
+  | { readonly do: 'handBack'; readonly bot: BotId | null }
   /** Retry: dial now. Start: dial now and let Hermes start its gateway. The only way a dial after launch starts it. */
   | { readonly do: 'reconnect'; readonly start: boolean }
 
@@ -226,10 +257,12 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'export' } ? Exported
   : C extends { do: 'branch' } ? SessionId
   : C extends { do: 'versions' } ? ChatVersions
+  : C extends { do: 'readMessages' } ? MessagesRead
   : C extends { do: 'answer' } ? Told | undefined
   : C extends { do: 'models' | 'botModels' } ? ModelMenu
   : C extends { do: 'createBot' } ? BotCreated
   : C extends { do: 'describeBot' } ? BotDetails
+  : C extends { do: 'skillText' } ? string
   : C extends { do: 'botPicture' | 'petPicture' } ? string | null
   : C extends { do: 'canGeneratePicture' } ? boolean
   : C extends { do: 'generatePicture' | 'retitle' } ? string
@@ -237,8 +270,11 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'apps' } ? AppsBoard
   : C extends { do: 'connectApp' | 'appSignIn' } ? AppSignIn
   : C extends { do: 'memory' } ? readonly MemoryEntry[]
+  : C extends { do: 'denyRules' } ? readonly string[]
   : C extends { do: 'markBot' } ? Marked
   : C extends { do: 'passwordManagers' | 'usePasswordManager' | 'unlockPasswordManager' | 'lockPasswordManager' } ? BotManagers
+  : C extends { do: 'toolServers' | 'removeToolServer' } ? readonly ToolServer[]
+  : C extends { do: 'addToolServer' } ? Added
   : C extends { do: 'pickModel' } ? ModelConfirm | null
   : C extends { do: 'contextBreakdown' } ? ContextBreakdown
   : C extends { do: 'accountUsage' } ? AccountReport
@@ -299,4 +335,7 @@ export interface Refusal {
   /** The field of the request Hermes refused, so a form shows the reason under it. `members`: the bots of a new group chat. */
   readonly field?: 'name' | 'members'
 }
+/** What the composer heard, for Hermes to turn into text. `mime` is the recorder's own, such as `audio/webm;codecs=opus`. */
+export interface Recording { readonly mime: string; readonly audio: Uint8Array }
+
 export type Outcome<T = void> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly refusal: Refusal }
