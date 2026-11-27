@@ -323,7 +323,8 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
   }
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.nativeEvent.isComposing) return
-    if (menu.open && onMenuKey(event, menu)) return
+    const sendChord = sendKey === 'modEnter' && sendsMessage(event, sendKey)
+    if (menu.open && !sendChord && onMenuKey(event, menu)) return
     if (event.key === 'Escape' && editing !== null) {
       event.preventDefault()
       cancelEdit()

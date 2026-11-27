@@ -1,6 +1,7 @@
 import type { BotId, GroupChat, GroupId, Groups, Link, MemberId, OpenChat } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { COMMAND_KEY } from '../src/renderer/keys'
 import { fact, listed } from './support/bots'
 
 const topics = vi.hoisted(() => ({ values: {} as Record<string, unknown> }))
@@ -73,7 +74,7 @@ describe('an open group chat', () => {
   it('says in the Send button\'s tooltip which key sends, whichever the user chose', () => {
     expect(tagOf(pane(), /<button type="submit"[^>]*>/)).toContain('title="Send (Enter)"')
     topics.values = { ...topics.values, sendKey: 'modEnter' }
-    expect(tagOf(pane(), /<button type="submit"[^>]*>/)).toContain('title="Send (Ctrl+Enter)"')
+    expect(tagOf(pane(), /<button type="submit"[^>]*>/)).toContain(`title="Send (${COMMAND_KEY}+Enter)"`)
   })
 
   it("blocks Send in words while Hermes isn't running group chats", () => {
