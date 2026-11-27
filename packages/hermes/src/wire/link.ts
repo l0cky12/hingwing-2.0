@@ -187,6 +187,8 @@ export class Offline extends Error {}
  * handler for a connection with the interactive grant (tui_gateway/ws.py:403-411, tui_gateway/ws_legacy_fallback.py:53-62).
  * A -32601 from it means this Hermes cannot create bots from Highwing. `profiles.describe`, `profiles.configure`,
  * `profiles.set_asset` and `profiles.get_asset` reach the same legacy handlers the same way.
+ * `mcp.servers.list`, `.status`, `.add`, `.test` and `.remove` reach their legacy handlers too, each in the profile the call names
+ * (tui_gateway/methods_tools.py:1470-1612). A -32601 from them means this Hermes cannot manage tool servers from Highwing.
  * `projects.tree` reaches its legacy handler the same way (tui_gateway/methods_config.py:137), and a -32601 from it
  * means this Hermes cannot say which chats were branched from which. So does `llm.oneshot` (tui_gateway/methods_session.py:1249),
  * which a -32601 from means this Hermes cannot suggest a title.
@@ -212,7 +214,8 @@ export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot' | 'session.active_list' | 'usage.bars' | 'insights.get' |
   'learning.frames' | 'learning.detail' | 'learning.edit' | 'learning.delete' |
   'vault.sources' | 'vault.list' | 'vault.source.set' | 'vault.unlock' | 'vault.lock' |
-  'connectors.catalog' | 'connectors.accounts' | 'connectors.accounts.remove' | 'connectors.operation.status'>
+  'connectors.catalog' | 'connectors.accounts' | 'connectors.accounts.remove' | 'connectors.operation.status' |
+  'mcp.servers.list' | 'mcp.servers.status' | 'mcp.servers.add' | 'mcp.servers.test' | 'mcp.servers.remove'>
 export type Method = keyof Served
 
 export type Requested = ServerRequestMap

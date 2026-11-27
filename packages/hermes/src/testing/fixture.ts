@@ -127,6 +127,8 @@ export interface Fixture {
      * manager not here is not installed. Absent: the gateway refuses every `vault.*` call as an unknown method, as a Hermes without them does.
      */
     readonly vault?: VaultScript
+    /** What `mcp.servers.*` answer. Absent: the gateway refuses every one as an unknown method, as a Hermes without them does, and so does a socket bound to one profile. */
+    readonly mcp?: McpScript
     /** `'profile'`: play a Hermes with no `interactive` ticket, whose every socket is bound to the home profile. Default `'host'`. */
     readonly reach?: Reach
     /** false: the home bot has no Bot Chat, and the story session is only a chat of the home profile. Default true. */
@@ -250,6 +252,31 @@ export interface ManagerSeed {
 }
 export const VAULT_MANAGERS = ['onepassword', 'bitwarden'] as const
 export type VaultScript = { readonly [profile: string]: { readonly [M in typeof VAULT_MANAGERS[number]]?: ManagerSeed } }
+
+/**
+ * One tool server a profile holds. `status` and `tools`: what `mcp.servers.status` says of it (default `configured`, 0).
+ * `needs_auth`: Hermes parked it on a rejected sign-in. `plugin`: the plugin that provides it, which Hermes won't let a client change.
+ */
+export interface McpServerSeed {
+  readonly name: string
+  readonly url?: string
+  readonly headers?: { readonly [name: string]: string }
+  readonly command?: string
+  readonly args?: readonly string[]
+  readonly status?: 'connected' | 'disabled' | 'connecting' | 'failed' | 'lazy' | 'configured'
+  readonly tools?: number
+  readonly needs_auth?: boolean
+  readonly plugin?: string
+}
+
+/** What `mcp.servers.test` finds at a server, by its name: its tools, an error, or a wish to sign in. A name not here fails with "Connection refused". */
+export type McpProbe = { readonly tools: readonly string[] } | { readonly error: string } | { readonly oauth_needed: true }
+
+/** `servers`: profile -> the servers it holds at the start. */
+export interface McpScript {
+  readonly servers: { readonly [profile: string]: readonly McpServerSeed[] }
+  readonly probes?: { readonly [name: string]: McpProbe }
+}
 
 /** `reply`: the bot's one answer, sent `delay_ms` after the call (default 0). `refuse`: the reason Hermes refuses the delivery with. */
 export type RelayScript = { readonly reply: string; readonly delay_ms?: number } | { readonly refuse: string }
@@ -436,6 +463,26 @@ const isMemory = (value: unknown): value is MemoryScript =>
   isObject(value) && Array.isArray(value.entries) && value.entries.every(entry => isObject(entry) && typeof entry.file === 'string' && MEMORY_FILES.has(entry.file) && typeof entry.text === 'string' && entry.text.trim() !== '')
   && (value.limits === undefined || (isObject(value.limits) && Object.keys(value.limits).every(key => key === 'memory' || key === 'user') && isCharLimit(value.limits.memory) && isCharLimit(value.limits.user)))
 
+const MCP_STATUSES: readonly unknown[] = ['connected', 'disabled', 'connecting', 'failed', 'lazy', 'configured']
+const SEED_KEYS = ['name', 'url', 'headers', 'command', 'args', 'status', 'tools', 'needs_auth', 'plugin']
+
+const isMcpServerSeed = (value: unknown): value is McpServerSeed =>
+  isObject(value) && Object.keys(value).every(key => SEED_KEYS.includes(key)) && typeof value.name === 'string' && value.name !== ''
+  && (typeof value.url === 'string') !== (typeof value.command === 'string')
+  && (value.headers === undefined || (isObject(value.headers) && Object.values(value.headers).every(header => typeof header === 'string')))
+  && (value.args === undefined || (Array.isArray(value.args) && value.args.every(arg => typeof arg === 'string')))
+  && (value.status === undefined || MCP_STATUSES.includes(value.status)) && (value.tools === undefined || Number.isSafeInteger(value.tools))
+  && (value.needs_auth === undefined || typeof value.needs_auth === 'boolean') && (value.plugin === undefined || typeof value.plugin === 'string')
+
+const isMcpProbe = (value: unknown): value is McpProbe =>
+  isObject(value) && Object.keys(value).length === 1
+  && ((Array.isArray(value.tools) && value.tools.every(tool => typeof tool === 'string')) || typeof value.error === 'string' || value.oauth_needed === true)
+
+const isMcpScript = (value: unknown): value is McpScript =>
+  isObject(value) && Object.keys(value).every(key => key === 'servers' || key === 'probes')
+  && isObject(value.servers) && Object.values(value.servers).every(seeds => Array.isArray(seeds) && seeds.every(isMcpServerSeed))
+  && (value.probes === undefined || (isObject(value.probes) && Object.values(value.probes).every(isMcpProbe)))
+
 const isRelayScript = (value: unknown): value is RelayScript =>
   isObject(value) && ('refuse' in value
     ? typeof value.refuse === 'string' && value.refuse !== '' && Object.keys(value).length === 1
@@ -553,6 +600,10 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (vault !== undefined && !isVaultScript(vault)) {
     return '"vault" must map a profile to { onepassword?, bitwarden? }, each { installed, enabled?, unlocked?, logins?, password?, refuses?, token?, listFails? }'
   }
+  const { mcp } = value
+  if (mcp !== undefined && !isMcpScript(mcp)) {
+    return '"mcp" must be { servers, probes? }: "servers" maps a profile to its servers, each { name, url or command, headers?, args?, status?, tools?, needs_auth?, plugin? }, and "probes" maps a name to { tools }, { error } or { oauth_needed: true }'
+  }
   const { reach, homeBotChat } = value
   if (reach !== undefined && reach !== 'host' && reach !== 'profile') return '"reach" must be "host" or "profile"'
   if (homeBotChat !== undefined && typeof homeBotChat !== 'boolean') return '"homeBotChat" must be true or false'
@@ -616,6 +667,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }), ...(vault === undefined ? {} : { vault }),
     ...(connectors === undefined ? {} : { connectors }),
     ...(memory === undefined ? {} : { memory }),
+    ...(mcp === undefined ? {} : { mcp }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),

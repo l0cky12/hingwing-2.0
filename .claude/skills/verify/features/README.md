@@ -33,10 +33,12 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 ## Features
 
 - [Open the app](./open-the-app.md) covers launching a window at the reference size.
-- [Set up a connection](./set-up-a-connection.md) covers the first-run setup screen, each check failure, the saved screen, the remote chat, and changing the connection from Settings.
+- [Set up a connection](./set-up-a-connection.md) covers the first-run setup screen, each check failure, the remote chat, and changing the connection from Settings.
+- [First-run intro](./first-run-intro.md) covers the three steps after the first successful connection, Skip, and the example requests on the default bot's chat.
 - [Connect by URL](./connect-by-url.md) covers the connection card's Web address choice, the words for a bad address, the plain http warning, the sign-in in the browser with Stop waiting, each failure of the check, the chat through the fake Webapp, the restart with and without a keyring, the Sign in banner, and a run against a real gateway.
 - [Settings](./settings.md) covers Settings in the chat column: opening and closing it with focus, the connection card's failed, running, cancelled and passed checks, a blocked link, the sidebar and palette picks that close it, a group chat opened or made beside it, the Appearance and Sidebar cards, a narrow window and forced colors.
 - [Password managers](./password-managers.md) covers the Password managers card in Settings: the Bot row, 1Password and Bitwarden not installed, off, locked and unlocked for the chosen bot, Use with, a wrong and a right master password, Lock, Stop using, another bot's managers, no connection, a Hermes without the calls, a narrow window, and the password kept out of every file.
+- [Tool servers](./tool-servers.md) covers the Tool servers section of the Connect apps window: a bot's servers and their states, adding a web address with headers or a command, the test that keeps only a server that passes, and Remove.
 - [Theme](./theme.md) covers the System, Light and Dark picks in Settings, System following the desktop at launch and live, a pick kept across a restart, diagrams redrawn on a switch, and the dark palette with more contrast and in forced colors.
 - [Replay a fixture](./replay-a-fixture.md) covers `HIGHWING_FIXTURE`, the tool-running, approval and settled moments, open records, and the reference composites.
 - [Send a message](./send-a-message.md) covers the composer's Send button, Enter, and Stop while a turn runs.
@@ -48,7 +50,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Images in the thread](./images.md) covers a reply image, a tool image, the larger view and what main refuses.
 - [Choose the model](./choose-the-model.md) covers the model readout under the composer, the list of models, a switch, a switch during a turn, "No model set up", and a Hermes that does not list its models.
 - [Context meter and tokens per reply](./context-meter.md) covers the token line under a reply, the context meter beside the model readout, its breakdown panel, "nearly full", the stale meter while the link is down, and a Hermes that reports no usage.
-- [Switch YOLO](./yolo.md) covers the YOLO pill beside the model readout, its confirmation, turning it off, one chat's state staying out of another's, another client turning it on, a refusal, a Hermes without the key, the bot's Smart or Manual approvals beside the pill, and moving a bot on `off` to Smart.
+- [Switch YOLO](./yolo.md) covers the YOLO pill beside the model readout, its confirmation, turning it off, one chat's state staying out of another's, another client turning it on, a refusal, a Hermes without the key, the bot's approval mode beside the pill and its Manual, Smart or Off menu, and moving a bot on `off` to Smart.
 - [Offline banner](./offline-banner.md) covers the blocked banner with Retry, the dropped banner with disabled buttons, and recovery.
 - [Copy a block](./copy-a-block.md) covers the Copy control on the request, a reply, an approval command, a command that ran and an open step's record, its keyboard reach, and the closed thread without controls.
 - [Grow the composer](./grow-the-composer.md) covers the message box growing with its text, its cap and scrollbar, the thread staying pinned, and shrinking back to one line.
