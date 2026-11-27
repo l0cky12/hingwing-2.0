@@ -82,6 +82,7 @@ export function TopBar({ target }: { readonly target: Target | null }) {
   const machine = target === null ? null : `on ${machineOf(target)}`
   const where = [group?.name ?? name, machine].filter(part => part !== null).join(' ')
   const keys = detailsKeys(MAC)
+  const rest = [title === null ? null : `· ${title}`, machine].filter(part => part !== null).join(' ')
   const shown = pill === null ? undefined : (
     <>
       <button
@@ -90,7 +91,7 @@ export function TopBar({ target }: { readonly target: Target | null }) {
       >
         <Avatar bot={pill} size={20} />{pill.name}
       </button>
-      {[title === null ? null : `· ${title}`, machine].filter(part => part !== null).map(part => ` ${part}`).join('')}
+      {rest !== '' && <span className="where">{rest}</span>}
     </>
   )
   return (
