@@ -52,6 +52,7 @@ Preconditions:
 
 ## Gotchas
 
+- A page open full window shares its layout with the other views. The top bar's Tasks button draws the board in the chat's side panel, the bot's screen (the computer view) takes the pane back beside the chat with the sidebar, and Settings hides the pane. Leaving the screen or Settings brings the full-window page back.
 - The page is not in the renderer, so `see` and the ARIA snapshot never find its text. Use `page-says`, and `shot`, which draws the page onto the PNG.
 - A fixture run is a local connection. The words for a remote Hermes's localhost and files come from `apps/desktop/test/preview-page.test.ts`, not a run.
 - **An HTML file** reads the file from this machine's disk. The fixture's recording leaves it at `/tmp/hermes-proto-work/site/index.html`. Without it the pane says "This file isn't there any more." Copy `fixtures/preview/index.html` there to bring it back.

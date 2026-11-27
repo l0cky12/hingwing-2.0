@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { NONE_OPEN } from '../src/renderer/chat/open'
 import { Turn } from '../src/renderer/chat/Thread'
 
-const turn = (handed: boolean): TurnView => ({ key: 't1', time: null, request: 'Draft the weekly report', handed, attachments: [], rowId: 3, tokens: null, reactions: null, nodes: [], end: { kind: 'done', words: 'Done' } })
+const turn = (handed: boolean): TurnView => ({ key: 't1', time: null, request: 'Draft the weekly report', handed, attachments: [], rowId: 3, tokens: null, reactions: null, pages: [], nodes: [], end: { kind: 'done', words: 'Done' } })
 const draw = (handed: boolean) => renderToStaticMarkup(
   <Turn
     turn={turn(handed)} open={NONE_OPEN} onToggle={() => {}} onAnswer={async () => undefined} onAskAgain={async () => false} canEdit showsRegenerate={false} canRegenerate={false} canBranch
