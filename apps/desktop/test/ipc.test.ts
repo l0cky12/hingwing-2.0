@@ -254,6 +254,10 @@ describe('validators', () => {
     expect(parseCommand({ do: 'versions', sessionId: 's1', extra: 1 })).toEqual({ do: 'versions', sessionId: 's1' })
     expect(parseCommand({ do: 'versions', sessionId: ' ' })).toBeNull()
     expect(parseCommand({ do: 'versions' })).toBeNull()
+    expect(parseCommand({ do: 'readMessages', step: 2, extra: 1 })).toEqual({ do: 'readMessages', step: 2 })
+    expect(parseCommand({ do: 'readMessages', step: -1 })).toBeNull()
+    expect(parseCommand({ do: 'readMessages', step: 1.5 })).toBeNull()
+    expect(parseCommand({ do: 'readMessages' })).toBeNull()
   })
 
   it('read the queue actions, the busy mode and a denial with words, and drop keys the command does not have', () => {
@@ -520,7 +524,7 @@ describe('validators', () => {
       'accountUsage', 'addToolServer', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
       'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard',
       'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
-      'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect',
+      'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
       'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
       'sendToGroup', 'setMode', 'setNotice', 'setOnClose', 'setSidebarWidth', 'setSkill', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
       'toolServers', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'versions'

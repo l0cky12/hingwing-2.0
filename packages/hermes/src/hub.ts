@@ -23,6 +23,7 @@ import type { AttachmentId, BranchId, Link, Session, SessionContent, SessionId, 
 import { slashLineOf, type SlashCatalog } from './domain/slash'
 import { groupBook } from './groups'
 import { jobList } from './jobs'
+import { readMessages, type Place } from './messages'
 import { chatDesk } from './open'
 import { relayBook } from './relay'
 import { botList } from './roster'
@@ -190,6 +191,8 @@ const CATALOG_TIMEOUT_MS = 10_000
 const ATTACHING: ReadonlySet<Session['sync']['state']> = new Set(['opening', 'catching-up', 'rebuilding'])
 const NO_UPLOADS: NonNullable<HermesOptions['uploads']> = { read: async () => null }
 const COMMAND_WITH_ATTACHMENTS = "A command can't carry attachments. Remove them, or send a message instead."
+/** A socket that reaches every bot searches them all, so a search waits for the list of them. */
+const STILL_LISTING = 'Highwing is still listing your bots.'
 
 export function openHermes(options: HermesOptions): Hermes {
   const clock = options.clock ?? systemClock
@@ -564,6 +567,11 @@ export function openHermes(options: HermesOptions): Hermes {
     return read
   }
 
+  const searchPlaces = (): readonly Place[] => {
+    const listed = bots.get()
+    return conn.reach === 'host' && listed.state === 'listed' ? botsIn(listed.roster).map(bot => ({ bot: bot.id, via: conn.as(bot.id) })) : [{ bot: null, via: conn }]
+  }
+
   const carriesCommand = async (command: Extract<Command, { do: 'send' | 'start' }>): Promise<boolean> => {
     if ((command.attachments ?? []).length === 0 || !command.text.trimStart().startsWith('/')) return false
     await catalogRead
@@ -583,6 +591,9 @@ export function openHermes(options: HermesOptions): Hermes {
     }
     if (command.do === 'botModels') return botModels(conn, command.bot)
     if (command.do === 'versions') return versions(command.sessionId)
+    if (command.do === 'readMessages') {
+      return conn.reach === 'host' && bots.get().state === 'loading' ? refused('rejected', STILL_LISTING) : readMessages(searchPlaces(), command.step, desk.listed)
+    }
     if (command.do === 'createBot') {
       const made = await createBot(conn, command.draft, command.picture)
       // A 5062 may have made the profile, so the roster is read after any attempt.

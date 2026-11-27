@@ -1,6 +1,6 @@
 import { activityOf, modelViewOf, sendPlan, type Attachment, type AttachmentId, type BackgroundProcess, type BranchId, type ChatVersions, type CommandOutcome, type HelperId, type ModelMenu, type PromptId, type PromptReply, type QueuedAction, type Relay, type SessionId, type Shown, type SideId, type TurnId, type Version } from '@highwing/hermes/domain'
 import { threadView } from '@highwing/thread'
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { isLocal } from '../../ipc-contract'
 import { botIn } from '../bots/roster-view'
 import { Composer } from '../composer/Composer'
@@ -19,7 +19,7 @@ import { ExampleRequests } from '../setup/Intro'
 import { FileCallContext, fileCallFor, FilesHereContext, NO_FILE_CALL } from './FilePath'
 import type { HelperControls } from './Helpers'
 import { ImageSessionContext } from './Image'
-import { forget, landAt, landed, pressFor } from './landing'
+import { forget, landAt, landed, markLanded, onPress, pressFor, unmarkLanded } from './landing'
 import { marked, pressedOf, unmarked } from './marks'
 import { refusalOnPane, type PaneRefusal } from './refusal'
 import { distanceFrom, FOLLOW_WITHIN, FOLLOWING, jumpWords, placeAfter, progressOf, type Place } from './place'
@@ -75,6 +75,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
     return () => {
       open = false
       landed(id)
+      unmarkLanded()
     }
   }, [id])
   const versions = read !== null && read.id === id ? read.versions : NO_VERSIONS
@@ -91,11 +92,14 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   }, [drawn, progress, versions])
 
   const [paging, setPaging] = useState(false)
+  const press = useSyncExternalStore(onPress, () => (id === null ? null : pressFor(id)))
   useLayoutEffect(() => {
     const element = scroller.current
-    const press = id === null ? null : pressFor(id)
     if (element === null || id === null || press === null || view === null || view.turns.length === 0) return
-    if (press.landing === 'end') return landed(id)
+    if (press.landing === 'end') {
+      unmarkLanded()
+      return landed(id)
+    }
     if (!whole) return
     const request = element.querySelector(`.turn[data-row="${press.landing}"] > .request`)
     if (request === null) {
@@ -110,9 +114,10 @@ export function Chat({ chat }: { readonly chat: Shown }) {
       return
     }
     landed(id)
-    request.scrollIntoView({ block: 'center', behavior: 'instant' })
+    const shown = markLanded(request.closest('.turn'), press.terms) ?? request
+    shown.scrollIntoView({ block: 'center', behavior: 'instant' })
     setPlace(held => placeAfter(held, distanceFrom(element), progress))
-  }, [id, view, whole, progress, paging])
+  }, [id, view, whole, progress, paging, press])
 
   useLayoutEffect(() => {
     const element = scroller.current

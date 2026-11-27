@@ -1004,7 +1004,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3
 .find .note button { width: auto; height: auto; padding: 0; color: var(--signal); text-decoration: underline; }
 
 ::highlight(find) { background-color: var(--signal-soft); color: var(--ink); text-decoration: underline 2px var(--signal); }
-::highlight(find-current) { background-color: var(--signal); color: var(--sheet); }
+::highlight(find-current), ::highlight(landed) { background-color: var(--signal); color: var(--sheet); }
 
 @container (max-width: 640px) {
   .find-anchor { padding: 12px 16px 0; }
