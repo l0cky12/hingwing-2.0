@@ -3,7 +3,7 @@ import type { BotId, CommandOutcome, Session, SessionId } from '@highwing/hermes
 import {
   CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseTopic,
   type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type PictureChoice, type PictureFile, type Push, type SessionPatch, type StageResult,
-  type Snoozes, type Tail, type Theme, type Topic
+  type SidebarWidth, type Snoozes, type Tail, type Theme, type Topic
 } from '../ipc-contract'
 import { basename } from 'node:path'
 import type { AttachmentStore, AttachSources, StageSource } from './attachments'
@@ -46,7 +46,7 @@ const NEVER: Source = () => () => {}
 /** The pane's side of a window: its topic, its commands, and the files a window previews. */
 export type PreviewOwner = Pick<PreviewPane, 'preview' | 'show' | 'run'>
 type Shown<T> = Pick<PreferenceStore<T>, 'get' | 'subscribe' | 'set'>
-export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme>; readonly snoozes: Shown<Snoozes> }
+export interface Preferences { readonly mode: Shown<Mode>; readonly theme: Shown<Theme>; readonly sidebarWidth: Shown<SidebarWidth>; readonly snoozes: Shown<Snoozes> }
 interface Owners { readonly owner: ConnectionOwner; readonly pane: PreviewOwner; readonly preferences: Preferences }
 
 /** A Hermes topic is bound to the connection that is live when the window asks. A window that sees a new epoch asks again. */
@@ -58,6 +58,7 @@ const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source 
   preview: ({ pane }) => current(pane.preview),
   mode: ({ preferences }) => current(preferences.mode),
   theme: ({ preferences }) => current(preferences.theme),
+  sidebarWidth: ({ preferences }) => current(preferences.sidebarWidth),
   snoozes: ({ preferences }) => current(preferences.snoozes),
   link: onHermes(hermes => current(hermes.link)),
   sidebar: onHermes(hermes => current(hermes.sidebar)),
@@ -203,6 +204,10 @@ export function serveWindows(
     }
     if (command.do === 'setTheme') {
       preferences.theme.set(command.theme)
+      return DONE
+    }
+    if (command.do === 'setSidebarWidth') {
+      preferences.sidebarWidth.set(command.width)
       return DONE
     }
     if (command.do === 'snooze') {

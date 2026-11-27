@@ -71,6 +71,8 @@ export interface OpenMenu {
   readonly scrolled: number
 }
 
-/** Under the row's ⋯, or under the whole card for the default bot, from ⋯ or the keyboard. */
-export const anchorOf = (opener: Opener, place: BotPlace, { row, more }: { readonly row: Box; readonly more: Box }): Anchor =>
-  anchorAt(opener, place === 'card' ? row : more, more.right)
+/** Under the row's ⋯, or under the whole card for the default bot, from ⋯ or the keyboard. Beside a row with no ⋯ drawn (`more` null). */
+export const anchorOf = (opener: Opener, place: BotPlace, { row, more }: { readonly row: Box; readonly more: Box | null }): Anchor =>
+  more === null
+    ? (opener.by === 'pointer' ? anchorAt(opener, row, row.right) : { at: 'point', x: row.right, y: row.top })
+    : anchorAt(opener, place === 'card' ? row : more, more.right)

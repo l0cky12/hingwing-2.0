@@ -1,6 +1,6 @@
 import type { Shown, ShownGroup, Target } from '@highwing/hermes/domain'
 import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react'
-import { epochOf, type Mode, type Theme } from '../ipc-contract'
+import { epochOf, type Mode, type SidebarWidth, type Theme } from '../ipc-contract'
 import { BotPicker } from './bots/BotPicker'
 import { BotsSidebar } from './bots/Bots'
 import { useRetryPicturesOnceOnline } from './bots/pictures'
@@ -87,17 +87,19 @@ interface ChatWindowProps {
   readonly target: Target | null
   readonly mode: Mode
   readonly theme: Theme
+  readonly width: SidebarWidth
 }
 
-function ChatWindow({ hidden, settings, target, mode, theme }: ChatWindowProps) {
+function ChatWindow({ hidden, settings, target, mode, theme, width }: ChatWindowProps) {
   const preview = useTopic('preview')
   const { root, pick } = useSwitchModeKeepingFocus(mode)
   const { settingsButton, close } = useCloseSettings(settings !== null)
   const switcher = <ModeSwitch mode={mode} onPick={pick} />
   const paned = preview?.state === 'open' && settings === null
+  const compact = mode === 'bots' && width === 'compact'
   return (
-    <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined}>
-      {mode === 'bots' && <BotsSidebar head={switcher} />}
+    <div ref={root} className="window" hidden={hidden} data-preview={paned || undefined} data-compact={compact || undefined}>
+      {mode === 'bots' && <BotsSidebar head={switcher} compact={compact} />}
       {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} />}
       <div key="screen" className="screen" hidden={settings !== null}>
         <ChatScreen target={target} settingsButton={settingsButton} />
@@ -113,14 +115,15 @@ export function App() {
   const setup = useTopic('setup')
   const mode = useTopic('mode')
   const theme = useTopic('theme')
-  if (setup === undefined || mode === undefined || theme === undefined) return null
+  const width = useTopic('sidebarWidth')
+  if (setup === undefined || mode === undefined || theme === undefined || width === undefined) return null
   const screen = screenOf(setup)
   const live = setup.at === 'pinned' ? null : setup.live
   return (
     <>
       {(setup.at === 'pinned' || live !== null) && (
         <Epoch value={epochOf(setup)}>
-          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved'} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} />
+          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved'} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} width={width} />
           {/* Outside the window a new connection remounts, so a pick main refused for the old one comes back over the new one. */}
           {screen.show !== 'saved' && <Palette target={live?.target ?? null} settingsOpen={screen.show === 'settings'} />}
         </Epoch>

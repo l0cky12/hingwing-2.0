@@ -4,7 +4,7 @@ import type { Hermes, Route } from '@highwing/hermes'
 import type { AttachmentId, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, RelayDesk, Session, SessionId, Sidebar, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type Preview, type PreviewCommand, type Push, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
+import { applyPush, CHANNEL, isWebLink, MAX_ATTACHMENTS, parseCommand, parseDraft, parseFileRequest, validators, type AppTopics, type Draft, type FileOutcome, type ImageOutcome, type ImageRequest, type Mode, type Preview, type PreviewCommand, type Push, type SidebarWidth, type Snoozes, type Theme, type Topic } from '../src/ipc-contract'
 import { feed, ownConnection, pinnedConnection, type ConnectionOwner } from '../src/main/connection'
 import type { Opener } from '../src/main/files'
 import type { ImageContext } from '../src/main/images'
@@ -357,6 +357,8 @@ describe('validators', () => {
     ['a mode switch that names no mode', { do: 'setMode' }],
     ['a theme Highwing does not have', { do: 'setTheme', theme: 'sepia' }],
     ['a theme pick that names no theme', { do: 'setTheme' }],
+    ['a sidebar width Highwing does not have', { do: 'setSidebarWidth', width: 'narrow' }],
+    ['a sidebar width pick that names no width', { do: 'setSidebarWidth' }],
     ['a rename with AI of no chat', { do: 'retitle' }],
     ['a snooze of no chat', { do: 'snooze', until: 1_800_000_000_000 }],
     ['a snooze to no time', { do: 'snooze', sessionId: 's1' }],
@@ -431,6 +433,10 @@ describe('validators', () => {
     expect(parseCommand({ do: 'setTheme', theme, extra: 1 })).toEqual({ do: 'setTheme', theme })
   })
 
+  it.each(['full', 'compact'] satisfies SidebarWidth[])('keep a pick of the %s sidebar', width => {
+    expect(parseCommand({ do: 'setSidebarWidth', width, extra: 1 })).toEqual({ do: 'setSidebarWidth', width })
+  })
+
   it('keep a snooze and a wake', () => {
     expect(parseCommand({ do: 'snooze', sessionId: 's1', until: 1_800_000_000_000, extra: 1 })).toEqual({ do: 'snooze', sessionId: 's1', until: 1_800_000_000_000 })
     expect(parseCommand({ do: 'snooze', sessionId: 's1', until: null })).toEqual({ do: 'snooze', sessionId: 's1', until: null })
@@ -458,7 +464,7 @@ describe('validators', () => {
       'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard', 'editBot',
       'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'markBot', 'models', 'move', 'open', 'openPreview',
       'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react', 'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename', 'renameGroup',
-      'restore', 'retitle', 'rewind', 'send', 'sendToGroup', 'setMode', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
+      'restore', 'retitle', 'rewind', 'send', 'sendToGroup', 'setMode', 'setSidebarWidth', 'setTheme', 'side', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper', 'tune', 'versions'
     ])
   })
 })
@@ -573,13 +579,14 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   }
   const mode = feed<Mode>('chats')
   const theme = feed<Theme>('system')
+  const sidebarWidth = feed<SidebarWidth>('full')
   const snoozes = feed<Snoozes>({})
   const sources: AttachSources = { pick: async () => ['/home/me/error.png', '/home/me/big.zip'], pasted: async () => ({ name: 'Pasted image 1.png', bytes: PNG }) }
   const served = serveWindows(
     ownerOf(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
-    { store, sources }, saver, { mode, theme, snoozes }
+    { store, sources }, saver, { mode, theme, sidebarWidth, snoozes }
   )
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
@@ -599,7 +606,7 @@ function harness(ownerOf: (hermes: Hermes) => ConnectionOwner = pinnedConnection
   }
   return {
     listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, lives, stored, previewed, toPane, staged, served,
-    saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, snoozes
+    saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, sidebarWidth, snoozes
   }
 }
 
@@ -643,7 +650,7 @@ describe('serveWindows', () => {
 
   it('serves every app topic a full value from its own feed, and nothing for a name that is no topic', () => {
     const { listeners, pushes, event } = harness()
-    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, preview: { state: 'closed' }, mode: 'chats', theme: 'system', snoozes: {} }
+    const served: AppTopics = { setup: { at: 'pinned' }, link: LINK, sidebar: SIDEBAR, slash: [], bots: { state: 'loading' }, open: NOTHING_OPEN, relay: NO_RELAYS, groups: NO_GROUPS, groupChat: null, preview: { state: 'closed' }, mode: 'chats', theme: 'system', sidebarWidth: 'full', snoozes: {} }
     const watch = listeners.get(CHANNEL.watch)!
     Object.keys(served).forEach((name, id) => watch(event(), id, name))
     expect(pushes).toEqual(Object.entries(served).map(([name, full]) => ({ topic: name, rev: 1, full })))
@@ -701,18 +708,19 @@ describe('serveWindows', () => {
   })
 
   it.each([
-    { topic: 'mode', verb: 'setMode', was: 'chats', picked: 'bots', unknown: 'inbox' },
-    { topic: 'theme', verb: 'setTheme', was: 'system', picked: 'dark', unknown: 'sepia' }
-  ] as const)('sets the $topic a trusted window picks and pushes it, and never passes it to Hermes', async ({ topic, verb, was, picked, unknown }) => {
+    { topic: 'mode', verb: 'setMode', key: 'mode', was: 'chats', picked: 'bots', unknown: 'inbox' },
+    { topic: 'theme', verb: 'setTheme', key: 'theme', was: 'system', picked: 'dark', unknown: 'sepia' },
+    { topic: 'sidebarWidth', verb: 'setSidebarWidth', key: 'width', was: 'full', picked: 'compact', unknown: 'narrow' }
+  ] as const)('sets the $topic a trusted window picks and pushes it, and never passes it to Hermes', async ({ topic, verb, key, was, picked, unknown }) => {
     vi.useFakeTimers()
     const { listeners, handlers, pushes, event, commands, ...shown } = harness()
     listeners.get(CHANNEL.watch)!(event(), 6, topic)
     vi.advanceTimersByTime(COALESCE_MS)
     const run = handlers.get(CHANNEL.run)!
-    await expect(run(event('https://example.com/'), { do: verb, [topic]: picked })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
-    await expect(run(event(), { do: verb, [topic]: unknown })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    await expect(run(event('https://example.com/'), { do: verb, [key]: picked })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    await expect(run(event(), { do: verb, [key]: unknown })).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
     expect(shown[topic].get()).toBe(was)
-    await expect(run(event(), { do: verb, [topic]: picked })).resolves.toEqual({ ok: true, value: undefined })
+    await expect(run(event(), { do: verb, [key]: picked })).resolves.toEqual({ ok: true, value: undefined })
     expect(shown[topic].get()).toBe(picked)
     expect(pushes).toEqual([{ topic, rev: 1, full: was }, { topic, rev: 2, full: picked }])
     expect(commands).toEqual([])
