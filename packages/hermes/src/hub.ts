@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { DONE, refused, SessionActor, type Upload } from './actor'
 import { activityDesk, busyOf, type Attached } from './activity'
-import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, petPicture, setBotPicture } from './bot-admin'
+import { botModels, botPicture, canGeneratePicture, createBot, describeBot, editBot, generatePicture, listPets, markBot, petPicture, readSkills, setBotPicture, setSkill, skillText } from './bot-admin'
 import type { BotActivities, UnreadChat } from './domain/activity'
 import { botsIn, MARK_SETS, type Bot, type Bots } from './domain/bots'
 import type { Command, Outcome, ResultOf } from './domain/command'
@@ -11,6 +11,7 @@ import { shownBot, shownChat, shownGroup, type OpenChat } from './domain/open'
 import type { PaneAsk } from './domain/pane'
 import type { BridgeRequest, ServerRequest } from './domain/reduce'
 import type { RelayDesk } from './domain/relay'
+import type { SkillLibrary } from './domain/skills'
 import type { AttachmentId, BranchId, Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog } from './domain/slash'
 import { groupBook } from './groups'
@@ -88,6 +89,12 @@ export interface Hermes {
    * Call the returned function to stop watching.
    */
   watch(id: SessionId, listener: (session: Session) => void): () => void
+  /**
+   * Watch the skills of the bot `open` shows. The listener gets the current value at once and every later one. Hermes is
+   * asked only while something watches: on the first watch, when the open bot changes, on a new socket, after `setSkill`
+   * and on `skills.changed`.
+   */
+  watchSkills(listener: (library: SkillLibrary) => void): () => void
   /** Never rejects for an expected failure: that is a `Refusal`. Most outcomes also show up in the feeds. */
   run<C extends Command>(command: C): Promise<Outcome<ResultOf<C>>>
   close(): Promise<void>
@@ -227,6 +234,10 @@ export function openHermes(options: HermesOptions): Hermes {
     },
     gap: parsed => actors.get(parsed.sessionId)?.feed({ in: 'gap' }),
     app: refreshSoon,
+    skills: () => {
+      catalogRead = readCatalog()
+      void readLibrary()
+    },
     groups: parsed => book.moved(parsed.rooms),
     unrouted: parsed => count('unrouted', parsed.type)
   }
@@ -247,6 +258,7 @@ export function openHermes(options: HermesOptions): Hermes {
       roster.ask()
       book.online()
       activities.poll()
+      void readLibrary()
     },
     onEvent: params => {
       const parsed = parseEvent(params)
@@ -264,6 +276,35 @@ export function openHermes(options: HermesOptions): Hermes {
     const read = ++catalogReads
     const catalog = await conn.call('commands.catalog', {}, CATALOG_TIMEOUT_MS).then(parseCatalog).catch(() => [])
     if (read === catalogReads) slash.set(catalog)
+  }
+
+  const skillWatchers = new Set<(library: SkillLibrary) => void>()
+  let library: SkillLibrary = { state: 'reading', bot: null }
+  let libraryReads = 0
+  const publishLibrary = (next: SkillLibrary) => {
+    library = next
+    for (const listener of [...skillWatchers]) listener(next)
+  }
+
+  /** A re-read of the same bot keeps its list on screen until the answer comes. */
+  const readLibrary = async () => {
+    if (skillWatchers.size === 0) return
+    const read = ++libraryReads
+    const bot = shownBot(desk.open)
+    if (library.bot !== bot || library.state !== 'listed') publishLibrary({ state: 'reading', bot })
+    const got = await readSkills(conn, bot)
+    if (read !== libraryReads) return
+    publishLibrary(got.ok ? { state: 'listed', bot, skills: got.value } : { state: 'failed', bot, message: got.refusal.message })
+  }
+
+  /** Each write sends a bot's whole off list read just before it, so two at once would undo each other. */
+  let skillWrites: Promise<unknown> = Promise.resolve()
+
+  const watchSkills: Hermes['watchSkills'] = listener => {
+    skillWatchers.add(listener)
+    listener(library)
+    if (skillWatchers.size === 1) void readLibrary()
+    return () => void skillWatchers.delete(listener)
   }
 
   const relays = relayBook(conn, () => relay.set(relays.desk))
@@ -291,6 +332,7 @@ export function openHermes(options: HermesOptions): Hermes {
       list.follow(shownBot(desk.open))
       book.follow(shownGroup(desk.open))
       publishSidebar()
+      if (shownBot(desk.open) !== library.bot) void readLibrary()
     }
   })
   const open = feed<OpenChat>(desk.open, sameOpen)
@@ -509,6 +551,13 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'renameGroup') return book.rename(command.group, command.name)
     if (command.do === 'deleteGroup') return book.disband(command.group)
     if (command.do === 'describeBot') return describeBot(conn, command.bot)
+    if (command.do === 'setSkill') {
+      const done = skillWrites.then(() => setSkill(conn, command.bot, command.name, command.enabled))
+      skillWrites = done
+      void done.then(readLibrary)
+      return done
+    }
+    if (command.do === 'skillText') return skillText(conn, command.bot, command.name)
     if (command.do === 'botPicture') return botPicture(conn, command.bot)
     if (command.do === 'canGeneratePicture') return canGeneratePicture(conn)
     if (command.do === 'generatePicture') return generatePicture(conn, command.prompt)
@@ -550,6 +599,7 @@ export function openHermes(options: HermesOptions): Hermes {
     groupChat,
     activity,
     watch,
+    watchSkills,
     run: command => run(command) as Promise<Outcome<ResultOf<typeof command>>>,
     close: async () => {
       cancelRefresh?.()

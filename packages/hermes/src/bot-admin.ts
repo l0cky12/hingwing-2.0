@@ -1,10 +1,12 @@
 import { refusalOf } from './actor'
 import { GENERATED_MAX_BYTES, MARK_SETS, PICTURE_RULE, type BotCreated, type BotDetails, type BotDraft, type BotEdit, type BotId, type BotMark, type PetChoice } from './domain/bots'
 import type { ModelMenu, Outcome, Refusal } from './domain/command'
+import type { Skill } from './domain/skills'
 import { NOT_CONNECTED } from './open'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
 import {
-  parseBotRecord, parseConfigured, parseCreated, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets, parsePicture, type Configured
+  descriptionOf, parseBotRecord, parseCatalog, parseConfigured, parseCreated, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets, parsePicture,
+  parseSkillStates, parseSkillText, type Configured
 } from './wire/parse'
 
 type Wire = Pick<Connection, 'call' | 'as'>
@@ -180,6 +182,58 @@ export const generatePicture = (conn: Wire, prompt: string): Promise<Outcome<str
 
 export const listPets = (conn: Wire): Promise<Outcome<readonly PetChoice[]>> =>
   guarded(PET_REASONS, async () => ({ ok: true, value: parsePets(await conn.call('pet.gallery', {})) }))
+
+const SKILL_REASONS: Reasons = { [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't list skills from Highwing." }), [NO_PROFILE]: () => GONE.refusal }
+
+/** Hermes names the launch profile `default`, and `profiles.describe` needs a name, so a window with no bot open reads that one. */
+const HOME_PROFILE = 'default'
+
+/** `learning.detail` names no profile and reads the gateway's own (agent/learning_mutations.py:151-159), so it reaches only the launch profile's skills. */
+const readsOwnSkills = (bot: BotId | null) => bot === null || bot === HOME_PROFILE
+
+const skillMarkdown = async (conn: Wire, name: string): Promise<string> => parseSkillText(await conn.call('learning.detail', { id: name })) ?? ''
+
+/**
+ * A skill's description is the catalog's, which lists enabled skills only. One the catalog skips (a disabled one) has the
+ * `description:` of its own SKILL.md where Hermes can read it, and none on another bot.
+ */
+export const readSkills = (conn: Wire, bot: BotId | null): Promise<Outcome<readonly Skill[]>> =>
+  guarded(SKILL_REASONS, async () => {
+    const [described, catalog] = await Promise.all([
+      conn.call('profiles.describe', { name: bot ?? HOME_PROFILE }),
+      (bot === null ? conn : conn.as(bot)).call('commands.catalog', {}).then(parseCatalog).catch(() => [])
+    ])
+    const said = new Map(catalog.flatMap(entry => (entry.kind === 'skill' ? [[entry.name.toLowerCase(), entry.description] as const] : [])))
+    const skills = await Promise.all(parseSkillStates(described).map(async ({ name, enabled }) => ({
+      name, enabled, description: said.get(name.toLowerCase()) ?? (readsOwnSkills(bot) ? descriptionOf(await skillMarkdown(conn, name).catch(() => '')) : '')
+    })))
+    return { ok: true, value: skills.sort((a, b) => a.name.localeCompare(b.name)) }
+  })
+
+export const skillText = (conn: Wire, bot: BotId | null, name: string): Promise<Outcome<string>> =>
+  guarded({}, async () => {
+    if (!readsOwnSkills(bot)) return { ok: false, refusal: { kind: 'unsupported', message: "This Hermes can show only the default bot's SKILL.md files." } }
+    const text = parseSkillText(await conn.call('learning.detail', { id: name }))
+    return text === null ? { ok: false, refusal: { kind: 'rejected', message: `Hermes has no SKILL.md for ${name}.` } } : { ok: true, value: text }
+  })
+
+const SKILL_GONE: Outcome<never> = { ok: false, refusal: { kind: 'rejected', message: 'Hermes no longer has this skill.' } }
+
+/**
+ * Hermes replaces the profile's disabled list whole, so it is sent as the list Hermes gives now with this one skill moved.
+ * Hermes saves an essential skill as on and still says it saved (hermes_cli/skills_config.py:43-47), so the skill is read back.
+ */
+export const setSkill = (conn: Wire, bot: BotId | null, name: string, enabled: boolean): Promise<Outcome> =>
+  guarded(SKILL_REASONS, async () => {
+    const profile = bot ?? HOME_PROFILE
+    const states = async () => parseSkillStates(await conn.call('profiles.describe', { name: profile }))
+    const skills = await states()
+    if (!skills.some(skill => skill.name === name)) return SKILL_GONE
+    const disabled = skills.filter(skill => (skill.name === name ? !enabled : !skill.enabled)).map(skill => skill.name)
+    const configured = parseConfigured(await conn.call('profiles.configure', { name: profile, disabled_skills: disabled }), ['skills'])
+    const kept = configured.is === 'saved' && (await states()).find(skill => skill.name === name)?.enabled === enabled
+    return kept ? DONE : { ok: false, refusal: { kind: 'rejected', message: `Hermes kept ${name} ${enabled ? 'off' : 'on'}.` } }
+  })
 
 /** Hermes fetches a sheet only from petdex (agent/pet/store.py:240), so a `url` the window names reaches no other host. */
 export const petPicture = (conn: Wire, slug: string, url: string | null): Promise<Outcome<string | null>> =>
