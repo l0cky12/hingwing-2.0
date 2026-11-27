@@ -485,6 +485,10 @@ export const validators: Validators = {
     const bot = raw.bot === null ? null : botIdOf(raw.bot)
     return raw.bot !== null && bot === null ? null : { do: 'botModels', bot }
   },
+  denyRules: raw => {
+    const bot = raw.bot === null ? null : botIdOf(raw.bot)
+    return raw.bot !== null && bot === null ? null : { do: 'denyRules', bot }
+  },
   describeBot: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'describeBot', bot }

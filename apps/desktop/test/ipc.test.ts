@@ -145,6 +145,8 @@ describe('validators', () => {
     expect(parseCommand({ do: 'createBot', draft: { ...draft, model: null }, picture: null })).toEqual({ do: 'createBot', draft: { ...draft, model: null }, picture: null })
     expect(parseCommand({ do: 'botModels', bot: null, extra: 1 })).toEqual({ do: 'botModels', bot: null })
     expect(parseCommand({ do: 'botModels', bot: 'research' })).toEqual({ do: 'botModels', bot: 'research' })
+    expect(parseCommand({ do: 'denyRules', bot: null, extra: 1 })).toEqual({ do: 'denyRules', bot: null })
+    expect(parseCommand({ do: 'denyRules', bot: 'research' })).toEqual({ do: 'denyRules', bot: 'research' })
   })
 
   it("keep a new bot's picture typed by its bytes, and the calls that draw a picture and list pets", () => {
@@ -307,6 +309,8 @@ describe('validators', () => {
     ['a pet picture whose slug has spaces Hermes would trim', { do: 'petPicture', slug: ' tabby', url: null }],
     ['a model list for a bot with no name', { do: 'botModels', bot: ' ' }],
     ['a model list that names no bot', { do: 'botModels' }],
+    ['deny rules for a bot with no name', { do: 'denyRules', bot: ' ' }],
+    ['deny rules that name no bot', { do: 'denyRules' }],
     ['details of a bot with no name', { do: 'describeBot', bot: '' }],
     ['the password managers of a bot with no name', { do: 'passwordManagers', bot: ' ' }],
     ['a password manager Highwing does not set up', { do: 'usePasswordManager', bot: 'rae', manager: 'local', use: true }],
@@ -469,7 +473,7 @@ describe('validators', () => {
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'answer', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff', 'checkpoints',
-      'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'describeBot', 'discard',
+      'closePreview', 'completePath', 'compress', 'contextBreakdown', 'control', 'createBot', 'createGroup', 'deleteGroup', 'denyRules', 'describeBot', 'discard',
       'editBot', 'editTarget', 'export', 'generatePicture', 'keepTarget', 'killProcess', 'loadEarlier', 'lockPasswordManager', 'markBot', 'models',
       'move', 'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'preview', 'queued', 'react',
       'reconnect', 'reloadPreview', 'remove', 'removeBotPicture', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'send', 'sendToGroup',

@@ -1,5 +1,7 @@
-import { useEffect, useId, useLayoutEffect, useRef } from 'react'
+import { shownBot } from '@highwing/hermes/domain'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { Mode, Theme } from '../../ipc-contract'
+import { botIn } from '../bots/roster-view'
 import { Bar } from '../chrome/Chrome'
 import { COMMAND_KEY } from '../keys'
 import { run, useTopic } from '../store'
@@ -87,6 +89,10 @@ export function Settings({ setup, mode, theme, onRequestClose }: { readonly setu
               </div>
             </div>
           </section>
+          <section className="group" aria-labelledby={`${ids}-permissions`}>
+            <h3 id={`${ids}-permissions`}>Permissions</h3>
+            <DenyRules />
+          </section>
           <section className="group short" aria-labelledby={`${ids}-keys`}>
             <h3 id={`${ids}-keys`}>Keyboard shortcuts</h3>
             <div className="card">
@@ -100,6 +106,55 @@ export function Settings({ setup, mode, theme, onRequestClose }: { readonly setu
           </section>
         </div>
       </main>
+    </div>
+  )
+}
+
+type DenyRead =
+  | { readonly at: 'reading' }
+  | { readonly at: 'read'; readonly rules: readonly string[] }
+  | { readonly at: 'refused'; readonly words: string }
+
+/** Read again when the window comes back to the front: the rules change only in the bot's config.yaml, outside Highwing. */
+function DenyRules() {
+  const bot = shownBot(useTopic('open'))
+  const bots = useTopic('bots')
+  const name = bot === null ? null : botIn(bots, bot)?.name ?? null
+  const [read, setRead] = useState<DenyRead>({ at: 'reading' })
+  const ids = useId()
+
+  useEffect(() => {
+    setRead({ at: 'reading' })
+    let asked = 0
+    const ask = () => {
+      const mine = ++asked
+      void run({ do: 'denyRules', bot }).then(outcome => {
+        if (mine === asked) setRead(outcome.ok ? { at: 'read', rules: outcome.value } : { at: 'refused', words: outcome.refusal.message })
+      })
+    }
+    ask()
+    window.addEventListener('focus', ask)
+    return () => {
+      asked = -1
+      window.removeEventListener('focus', ask)
+    }
+  }, [bot])
+
+  return (
+    <div className="card">
+      <div className="row">
+        <div className="text">
+          <p className="label" id={`${ids}-denied`}>Denied commands</p>
+          <p className="desc">{name ?? 'This bot'} never runs a command that matches one of these, even with YOLO on. To change them, edit approvals.deny in the bot’s config.yaml.</p>
+          {read.at === 'read' && read.rules.length === 0 && <p className="desc">No commands are denied.</p>}
+          {read.at === 'refused' && <p className="desc">{read.words}</p>}
+        </div>
+      </div>
+      {read.at === 'read' && read.rules.length > 0 && (
+        <ul className="rules" aria-labelledby={`${ids}-denied`}>
+          {read.rules.map((rule, index) => <li key={index} className="row"><code>{rule}</code></li>)}
+        </ul>
+      )}
     </div>
   )
 }

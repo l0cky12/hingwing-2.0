@@ -5,7 +5,7 @@ import type { BotManagers } from './domain/passwords'
 import { NOT_CONNECTED } from './open'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
 import {
-  parseBotManagers, parseBotRecord, parseConfigured, parseCreated, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets, parsePicture, type Configured
+  parseBotManagers, parseBotRecord, parseConfigured, parseCreated, parseDenyRules, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets, parsePicture, type Configured
 } from './wire/parse'
 
 type Wire = Pick<Connection, 'call' | 'as'>
@@ -68,6 +68,10 @@ export async function createBot(conn: Wire, draft: BotDraft, picture: string | n
 /** With no session Hermes reads the profile's own config (tui_gateway/methods_complete.py:297-299, :320-334), so a bot with no chat has a list. */
 export const botModels = (conn: Wire, bot: BotId | null): Promise<Outcome<ModelMenu>> =>
   guarded({}, async () => ({ ok: true, value: parseModelMenu(await (bot === null ? conn : conn.as(bot)).call('model.options', { explicit_only: true })) }))
+
+/** With no session `config.get full` reads the profile's own config.yaml (gateway/session_config.py:65-115). */
+export const denyRules = (conn: Wire, bot: BotId | null): Promise<Outcome<readonly string[]>> =>
+  guarded({}, async () => ({ ok: true, value: parseDenyRules(await (bot === null ? conn : conn.as(bot)).call('config.get', { key: 'full' })) }))
 
 const LIST_ROWS = { include_sessions: false } as const
 
