@@ -1,4 +1,5 @@
 import type { Routine, RoutineId } from '@highwing/hermes/domain'
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { RoutinesList } from '../src/renderer/bots/Routines'
@@ -95,5 +96,49 @@ describe('a control of a routine', () => {
     })
     const unsupported = { ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't show routines to Highwing." } } as const
     expect(afterControl(LISTED, 'a1' as RoutineId, unsupported)).toEqual({ listed: unsupported, said: null })
+  })
+})
+
+const CSS = readFileSync(new URL('../src/renderer/styles/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+
+function topLevelStyleOf(selector: string): ReadonlyMap<string, string> {
+  const style = new Map<string, string>()
+  let depth = 0
+  let prelude = ''
+  let text = ''
+  for (const char of CSS) {
+    if (char === '{') {
+      if (depth === 0) prelude = text.trim()
+      depth++
+      text = ''
+    } else if (char === '}') {
+      depth--
+      if (depth === 0 && prelude.split(/\s*,\s*/).includes(selector)) {
+        for (const line of text.split(';')) {
+          const at = line.indexOf(':')
+          if (at > 0) style.set(line.slice(0, at).trim(), line.slice(at + 1).trim())
+        }
+      }
+      text = ''
+    } else text += char
+  }
+  return style
+}
+
+const rightOf = (shorthand = '0') => { const sides = shorthand.split(/\s+/); return parseFloat(sides[1] ?? sides[0]!) }
+const LOOK = ['padding', 'font-size', 'border', 'border-radius', 'background', 'color']
+
+describe('the Routines tab in the details panel', () => {
+  it('draws its Pause, Resume and Delete… as the panel\'s Upload picture button, at rest and under the pointer', () => {
+    const upload = topLevelStyleOf('.bot-picture button')
+    const control = topLevelStyleOf('.routine-controls button')
+    expect(Object.fromEntries(LOOK.map(name => [name, control.get(name)]))).toEqual(Object.fromEntries(LOOK.map(name => [name, upload.get(name)])))
+    expect(topLevelStyleOf('.routine-controls button:hover:not(:disabled)').get('border-color')).toBe(topLevelStyleOf('.bot-picture button:hover:not(:disabled)').get('border-color'))
+  })
+
+  it('ends each row\'s buttons at the panel\'s inner edge, where the tab line and Close end', () => {
+    const tab = rightOf(topLevelStyleOf('.routines-tab').get('margin'))
+    expect(tab + rightOf(topLevelStyleOf('.routine').get('padding')), 'the rows').toBe(0)
+    expect(tab + rightOf(topLevelStyleOf('.routines-tab > .form-choices').get('padding')), 'Close').toBe(0)
   })
 })
