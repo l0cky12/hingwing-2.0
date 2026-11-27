@@ -1,5 +1,5 @@
 import { versionLabel, type AdmissionId, type Bot, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Relay, type Told, type TurnId, type Version, type Versions } from '@highwing/hermes/domain'
-import { fieldId, findInThread, multiReply, type Changing, type FindMatch, type PendingRow, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
+import { fieldId, findInThread, multiReply, type BesideRow, type Changing, type FindMatch, type PendingRow, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { createContext, Fragment, memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Avatar, BotFace } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
@@ -362,7 +362,7 @@ export const RelayTurn = memo(function RelayTurn({ relay }: { readonly relay: Re
   const { name, state } = relay
   return (
     <article className="turn relay">
-      <p className="request">
+      <p className="request" data-find={fieldId(relay.id, 'request')}>
         {relay.text}
         <span className="actions"><MessageActions acts={{ copy: { text: relay.text, name: 'Copy request' } }} /></span>
       </p>
@@ -370,7 +370,7 @@ export const RelayTurn = memo(function RelayTurn({ relay }: { readonly relay: Re
         <p className="relay-from"><Avatar bot={relay} size={22} /><span>{name}</span></p>
         {state.s === 'waiting' && <p className="notice" role="status">Waiting for {name}</p>}
         {state.s === 'answered' && <><div className="prose"><Markdown source={state.reply} caret={false} nodeKey={relay.id} /></div><div className="turn-actions"><MessageActions acts={{ copy: { text: state.reply, name: 'Copy reply' } }} /></div></>}
-        {state.s === 'failed' && <p className="err">{state.words}</p>}
+        {state.s === 'failed' && <p className="err" data-find={fieldId(relay.id, 'error')}>{state.words}</p>}
       </div>
     </article>
   )
@@ -451,6 +451,18 @@ interface ThreadProps {
   readonly helpers: HelperControls | null
 }
 
+type Found = BesideRow & { readonly after: TurnId | null }
+
+const relayFound = ({ id, after, text, state }: Relay): Found => ({
+  key: id, after, asked: text,
+  reply: state.s === 'answered' ? { kind: 'markdown', markdown: state.reply } : state.s === 'failed' ? { kind: 'error', words: state.words } : null
+})
+
+const sideFound = ({ id, after, asked, answer }: SideRow): Found => ({
+  key: `side:${id}`, after, asked,
+  reply: answer.s === 'answered' ? { kind: 'markdown', markdown: answer.markdown } : { kind: 'error', words: answer.message }
+})
+
 const landingOf = ({ versions, current }: Versions) => versions[current]?.landing
 const NO_GROUPS: readonly Versions[] = []
 
@@ -485,7 +497,8 @@ export function Thread({ view, relays, sides, onAnswer, onAnswerRequest, onLoadE
   )
 
   const query = find?.query ?? ''
-  const matches = useMemo(() => findInThread(view, query, changing), [view, query, changing])
+  const findBeside = useMemo(() => placeByTurn([...relays.map(relayFound), ...sides.map(sideFound)], turnKeys), [relays, sides, turnKeys])
+  const matches = useMemo(() => findInThread(view, query, changing, findBeside), [view, query, changing, findBeside])
   const change = (key: string, question: string | null) => setChanging(held => {
     const next = new Map(held)
     if (question === null) next.delete(key)

@@ -30,7 +30,7 @@ describe('a message handed to another bot, in the thread', () => {
 
   it('shows what the user sent, then a group named for the bot with its avatar', () => {
     const markup = render({ s: 'waiting' })
-    expect(markup).toMatch(/^<article class="turn relay"><p class="request">Ask @Rae for the weekly report<span class="actions"><span class="acts"><button[^>]*aria-label="Copy request"/)
+    expect(markup).toMatch(/^<article class="turn relay"><p class="request" data-find="a request">Ask @Rae for the weekly report<span class="actions"><span class="acts"><button[^>]*aria-label="Copy request"/)
     expect(markup).toContain('<div class="relay-reply" role="group" aria-label="Rae">')
     expect(markup).toMatch(/<span class="avatar tone-umber"[^>]*aria-hidden="true">R<\/span><span>Rae<\/span>/)
   })
@@ -47,6 +47,6 @@ describe('a message handed to another bot, in the thread', () => {
   })
 
   it('says in words why no reply came', () => {
-    expect(render({ s: 'failed', words: "Rae is offline, so it didn't get your message." })).toContain('<p class="err">Rae is offline, so it didn&#x27;t get your message.</p>')
+    expect(render({ s: 'failed', words: "Rae is offline, so it didn't get your message." })).toContain('<p class="err" data-find="a error">Rae is offline, so it didn&#x27;t get your message.</p>')
   })
 })

@@ -54,7 +54,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Offline banner](./offline-banner.md) covers the blocked banner with Retry, the dropped banner with disabled buttons, and recovery.
 - [Copy a block](./copy-a-block.md) covers the Copy control on the request, a reply, an approval command, a command that ran and an open step's record, its keyboard reach, and the closed thread without controls.
 - [Grow the composer](./grow-the-composer.md) covers the message box growing with its text, its cap and scrollbar, the thread staying pinned, and shrinking back to one line.
-- [Find in chat](./find-in-chat.md) covers Ctrl+F, the match count, stepping, opening closed steps, the highlight marks, and Escape returning focus to the composer.
+- [Find in chat](./find-in-chat.md) covers Ctrl+F, the match count, stepping, opening closed steps, the highlight marks, matches in handed messages and side questions, and Escape returning focus to the composer.
 - [Forced colors](./forced-colors.md) covers the forced-colors and more-contrast renderings of the thread, the waiting card, diffs and focus, and the pixel checker.
 - [Jump to latest](./jump-to-latest.md) covers the round control that appears when you scroll up, its "New steps below" and "Waiting for your OK" words, and the End key.
 - [Bots sidebar](./bots-sidebar.md) covers the list of Hermes's bots, Pinned and Hidden (N), search, a bot's working, waiting and unread marks across a restart, under reduced motion and in forced colors, a Hermes that cannot list its bots, the unavailable New bot… row, and pixel parity of the chat column.

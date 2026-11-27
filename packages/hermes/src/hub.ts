@@ -391,6 +391,8 @@ export function openHermes(options: HermesOptions): Hermes {
       conn: bot === undefined ? conn : conn.as(bot), clock, mintId, bridge, noteVersion,
       watched: () => windows.has(id),
       publish: (session, previous) => {
+        const { rewound } = session
+        if (rewound !== previous.rewound) relays.reanchor(id, after => (Object.hasOwn(rewound, after) ? rewound[after] ?? null : after))
         for (const listener of [...(watchers.get(id) ?? [])]) listener(session)
         if (session.run.state !== previous.run.state) refreshSoon()
         publishSidebar()

@@ -26,9 +26,35 @@ export type Changing = ReadonlyMap<string, string>
 
 const NOTHING_CHANGING: Changing = new Map()
 
-function fields(view: ThreadView, changing: Changing): Field[] {
+/** A message drawn beside the turns, outside `ThreadView`: one handed to another bot, or an answered side question. */
+export interface BesideRow {
+  readonly key: string
+  /** What the user sent, as drawn. null: the row draws no words of the user's. */
+  readonly asked: string | null
+  readonly reply: { readonly kind: 'markdown'; readonly markdown: string } | { readonly kind: 'error'; readonly words: string } | null
+}
+
+/** Rows drawn beside the turns, in drawn order: before every turn, after a turn by its key, and after the last turn. */
+export interface Beside {
+  readonly first: readonly BesideRow[]
+  readonly after: ReadonlyMap<string, readonly BesideRow[]>
+  readonly last: readonly BesideRow[]
+}
+
+const NOTHING_BESIDE: Beside = { first: [], after: new Map(), last: [] }
+
+function fields(view: ThreadView, changing: Changing, beside: Beside): Field[] {
   const out: Field[] = []
   const add = (key: string, part: FieldPart, text: string, opens: readonly string[] = []) => out.push({ id: fieldId(key, part), text, opens })
+  const proseFields = (key: string, markdown: string) =>
+    proseLeaves(parseMarkdown(markdown)).forEach((leaf, index) => add(key, `block ${index}`, leafText(leaf)))
+  const besideFields = (rows: readonly BesideRow[] = []) => {
+    for (const { key, asked, reply } of rows) {
+      if (asked !== null) add(key, 'request', asked)
+      if (reply?.kind === 'markdown') proseFields(key, reply.markdown)
+      if (reply?.kind === 'error') add(key, 'error', reply.words)
+    }
+  }
 
   const stepFields = (step: StepView, group: string | null) => {
     add(step.key, 'title', joined(step.title), group === null ? [] : [group])
@@ -43,12 +69,13 @@ function fields(view: ThreadView, changing: Changing): Field[] {
     })
   }
 
+  besideFields(beside.first)
   for (const turn of view.turns) {
     if (turn.request !== null) add(turn.key, 'request', turn.request)
     for (const node of turn.nodes) {
       switch (node.kind) {
         case 'prose':
-          proseLeaves(parseMarkdown(node.markdown)).forEach((leaf, index) => add(node.key, `block ${index}`, leafText(leaf)))
+          proseFields(node.key, node.markdown)
           break
         case 'step':
           stepFields(node.step, null)
@@ -106,7 +133,9 @@ function fields(view: ThreadView, changing: Changing): Field[] {
     }
     const { end } = turn
     if (end.kind === 'paused' || end.kind === 'failed' || end.kind === 'stopped' || end.kind === 'lost') add(turn.key, 'end', end.words)
+    besideFields(beside.after.get(turn.key))
   }
+  besideFields(beside.last)
   for (const card of view.asks) {
     add(card.key, 'heading', card.heading)
     switch (card.kind) {
@@ -145,9 +174,9 @@ function fields(view: ThreadView, changing: Changing): Field[] {
 
 const escaped = (query: string) => query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-export function findInThread(view: ThreadView, query: string, changing = NOTHING_CHANGING): readonly FindMatch[] {
+export function findInThread(view: ThreadView, query: string, changing = NOTHING_CHANGING, beside = NOTHING_BESIDE): readonly FindMatch[] {
   if (query === '') return []
   const pattern = new RegExp(escaped(query), 'giu')
-  return fields(view, changing).flatMap(field =>
+  return fields(view, changing, beside).flatMap(field =>
     Array.from(field.text.matchAll(pattern), match => ({ field: field.id, start: match.index, end: match.index + match[0].length, opens: field.opens })))
 }

@@ -13,7 +13,7 @@ export type { ViewClock }
 
 export { leafText, parseMarkdown, proseLeaves, type Align, type Block, type Cell, type CodeBlock, type Inline, type ProseLeaf } from './prose'
 export { drawnQuestions, type AskCard, type ConnectCard, type DrawnQuestion, type QuestionsCard, type QuestionView, type SecretCard, type SecretField, type TargetView } from './asks'
-export { fieldId, findInThread, type Changing, type FieldPart, type FindMatch } from './find'
+export { fieldId, findInThread, type Beside, type BesideRow, type Changing, type FieldPart, type FindMatch } from './find'
 export { multiReply } from './multi'
 export { answeringWords, groupThread, namesInWords, type GroupItemView, type GroupThreadView, type GroupTurnView, type NameOf } from './group-thread'
 

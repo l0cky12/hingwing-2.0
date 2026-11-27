@@ -42,6 +42,7 @@ Preconditions:
 - `called bot_relay.deliver '{}' <n>` counts the question Highwing asks each new socket as well, because `{}` matches every call. Name the profile to count deliveries only.
 - Rae's reply comes 1500 ms after Send. `wait relay-waiting` before a shot proves the shot shows the waiting moment.
 - A handed message is not a turn. `wait settled` does not see it, and Stop does not show for it.
+- An edit or Regenerate that cuts the turn a handed message sat after moves it to the newest turn kept, so it stays above the turn the edited message starts. Run `$H run --fixture fixtures/regenerate.jsonl --profiles fixtures/profiles/team.json --run mention-cut wait live wait bots type "Message Hermes" "Ask @Rae for the weekly report" click button Send said "The weekly report is drafted." click button "Regenerate" wait tool-running wait regenerate see "Here is the folder" shot mention-cut quiet`, and `mention-cut.aria.txt` holds the handed message before "List the folder".
 - The handed messages live in Electron main for as long as the connection does. They are not in Hermes's history of the chat, so a restart of the app shows the chat without them.
 - The list offers every listed bot but the open chat's own. In Ada's chat `@Ada` opens no list and is sent as plain text.
 - `type` replaces the box's text and leaves the caret at its end. Use `press` with arrow keys to move the caret.
