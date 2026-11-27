@@ -18,6 +18,7 @@ export { shownBot, shownChat, shownGroup, type ChatRef, type OpenChat, type Show
 export {
   GROUP_NAME_MAX, GROUP_SIZE, groupIdFor, isGroupId, seatsFor, type Answering, type GroupChat, type GroupDraft, type GroupEvent, type GroupId, type GroupMember, type GroupRow, type Groups, type MemberId
 } from './groups'
+export { scheduleInWords, type Routine, type RoutineId, type RoutineList, type Routines } from './routines'
 export type { PaneAsk } from './pane'
 export { label as versionLabel, type ChatVersions, type Landing, type Version, type Versions } from './versions'
 export { modelViewOf, sameModel, type ModelView } from './model'

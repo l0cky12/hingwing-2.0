@@ -190,6 +190,7 @@ export class Offline extends Error {}
  * `projects.tree` reaches its legacy handler the same way (tui_gateway/methods_config.py:137), and a -32601 from it
  * means this Hermes cannot say which chats were branched from which. So does `llm.oneshot` (tui_gateway/methods_session.py:1249),
  * which a -32601 from means this Hermes cannot suggest a title.
+ * `cron.manage` reaches its legacy handler like `profiles.describe` (tui_gateway/methods_tools.py:1311), and a -32601 from it means this Hermes can't list routines.
  * The canonical route serves every `groups.*` method (`GROUP_METHODS`, gateway/session_group_controls.py:15-35), though of
  * the calls Highwing makes the contract lists only `groups.create` as canonical (tui_gateway/contracts/canonical_projections.py:126). A -32601 from `groups.capabilities` means this Hermes has no group chats.
  */
@@ -198,7 +199,7 @@ export type Served = CanonicalRpcMethods & Pick<RpcMethods,
   'profiles.create' | 'profiles.describe' | 'profiles.configure' | 'profiles.set_asset' | 'profiles.get_asset' | 'projects.tree' |
   'prompt.btw' | 'prompt.background' | 'process.list' | 'process.kill' | 'subagent.interrupt' | 'session.control.read' | 'session.control' | 'rollback.list' |
   'rollback.diff' | 'rollback.restore' | 'message.react' | 'groups.capabilities' | 'groups.list' | 'groups.state' | 'groups.log' | 'groups.send' | 'groups.stop' |
-  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot'>
+  'image.generate' | 'pet.gallery' | 'pet.thumb' | 'llm.oneshot' | 'cron.manage'>
 export type Method = keyof Served
 
 export type Requested = ServerRequestMap

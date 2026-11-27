@@ -180,6 +180,10 @@ describe('parseEvent outside the happy path', () => {
     expect(parseEvent({ type: 'sessions.changed', session_id: '', payload: {} })).toEqual({ scope: 'app', event: 'sessions.changed' })
   })
 
+  it('routes cron.changed to the routines', () => {
+    expect(parseEvent({ type: 'cron.changed', payload: {} })).toEqual({ scope: 'cron' })
+  })
+
   it('keeps a malformed payload in the stream as invalid', () => {
     const invalid = { scope: 'session', sessionId: SESSION, event: null, skipped: 'invalid' }
     expect(parseEvent(frame({ payload: { tool_id: 7, name: 'terminal' } }))).toMatchObject(invalid)
@@ -220,7 +224,7 @@ describe('parseEvent outside the happy path', () => {
   })
 
   it('covers every generated event type as shown, for the window, unshown or app-wide', () => {
-    const unlisted = GATEWAY_EVENT_TYPES.filter(type => !(type in SHOWN) && !(type in FOR_WINDOW) && !UNSHOWN.has(type) && !['app', 'groups'].includes(parseEvent({ type }).scope))
+    const unlisted = GATEWAY_EVENT_TYPES.filter(type => !(type in SHOWN) && !(type in FOR_WINDOW) && !UNSHOWN.has(type) && !['app', 'groups', 'cron'].includes(parseEvent({ type }).scope))
     expect(unlisted).toEqual([])
     expect([...Object.keys(SHOWN), ...Object.keys(FOR_WINDOW)].filter(type => UNSHOWN.has(type))).toEqual([])
   })

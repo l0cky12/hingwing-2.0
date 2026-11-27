@@ -101,6 +101,8 @@ export interface Fixture {
     readonly images?: Images
     /** What `llm.oneshot` answers. Absent: the gateway refuses it as an unknown method, as a Hermes without it does, and so does a socket bound to one profile. */
     readonly oneshot?: Oneshot
+    /** What `cron.manage` `list` answers. Absent: the gateway refuses it as an unknown method, as a Hermes without it does, and so does a socket bound to one profile. */
+    readonly cron?: CronScript
     /** What `pet.gallery` and `pet.thumb` answer. Absent: the gateway refuses both as unknown methods, as a Hermes without pets does. */
     readonly pets?: Pets
     /** `'profile'`: play a Hermes with no `interactive` ticket, whose every socket is bound to the home profile. Default `'host'`. */
@@ -153,6 +155,22 @@ export interface Images { readonly available: boolean; readonly picture?: string
 
 /** What `llm.oneshot` answers: `text` as the model wrote it (default empty) after `delay_ms` (default 0), or a failure with `error` in its words. */
 export interface Oneshot { readonly text?: string; readonly error?: string; readonly delay_ms?: number }
+
+/**
+ * `jobs`: profile -> its `cron.manage` rows (`CronJobRow`), none for a profile not listed. `scoped` false plays an older
+ * Hermes that ignores `profile` and answers the launch profile's store with no `scoped` (default true). `then`: `after_ms`
+ * after the first `cron.manage`, its `jobs` replace these and every socket gets one `cron.changed`.
+ */
+export interface CronScript {
+  readonly jobs: Readonly<Record<string, readonly Readonly<Record<string, unknown>>[]>>
+  readonly scoped?: boolean
+  readonly then?: { readonly after_ms: number; readonly jobs: Readonly<Record<string, readonly Readonly<Record<string, unknown>>[]>> }
+}
+
+const isJobs = (raw: unknown): boolean => isObject(raw) && Object.values(raw).every(rows => Array.isArray(rows) && rows.every(row => isObject(row) && typeof row.job_id === 'string'))
+const isCron = (raw: unknown): raw is CronScript =>
+  isObject(raw) && isJobs(raw.jobs) && (raw.scoped === undefined || typeof raw.scoped === 'boolean') &&
+  (raw.then === undefined || (isObject(raw.then) && Number.isSafeInteger(raw.then.after_ms) && (raw.then.after_ms as number) >= 0 && isJobs(raw.then.jobs)))
 
 /**
  * `pets`: the gallery's entries as Hermes sends them. `thumbs`: slug -> the PNG data URL `pet.thumb` answers for a pet the
@@ -425,7 +443,8 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   const { assetFails } = value
   if (assetFails !== undefined && (typeof assetFails !== 'string' || assetFails.trim() === '')) return '"assetFails" must be the words a failed write gives'
-  const { images, pets, oneshot } = value
+  const { images, pets, oneshot, cron } = value
+  if (cron !== undefined && !isCron(cron)) return '"cron" must be { jobs, scoped?, then? } with "jobs" mapping a profile to rows that each have a job_id, and "then" { after_ms, jobs }'
   if (images !== undefined && !isImages(images)) return '"images" must be { available, picture?, error?, delay_ms? }'
   if (oneshot !== undefined && !isOneshot(oneshot)) return '"oneshot" must be { text?, error?, delay_ms? }'
   if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'
@@ -485,6 +504,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
     ...(souls === undefined ? {} : { souls: souls as Record<string, string> }), ...(configureClash === undefined ? {} : { configureClash: configureClash as string | { title: string; times: number } }),
     ...(assetFails === undefined ? {} : { assetFails }),
     ...(images === undefined ? {} : { images }), ...(pets === undefined ? {} : { pets }), ...(oneshot === undefined ? {} : { oneshot }),
+    ...(cron === undefined ? {} : { cron }),
     ...(reach === undefined ? {} : { reach }), ...(homeBotChat === undefined ? {} : { homeBotChat }),
     ...(media === undefined ? {} : { media: media as Record<string, string> }),
     ...(attachLimits === undefined ? {} : { attachLimits: attachLimits as { image?: number; file?: number } }),

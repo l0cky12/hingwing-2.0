@@ -9,7 +9,7 @@ import type { SessionEvent } from '../domain/reduce'
 import { APPROVAL_MODES, type ApprovalMode } from '../domain/session'
 import { GATEWAY_PROTOCOL, type Clock, type Reach } from '../wire/link'
 import { parseEvent } from '../wire/parse'
-import { MASKED, type ChatSeed, type Fixture, type FixtureStep, type Reads } from './fixture'
+import { MASKED, type ChatSeed, type CronScript, type Fixture, type FixtureStep, type Reads } from './fixture'
 import { checkParams } from './params'
 import { ScriptedRooms } from './rooms'
 
@@ -818,6 +818,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   /** tui_gateway/methods_images.py:57-96 */
   'image.generate': (gateway, socket, params) => gateway.generate(socket, params),
   'llm.oneshot': (gateway, socket) => gateway.oneshot(socket),
+  /** tui_gateway/methods_tools.py:1311-1335 */
+  'cron.manage': (gateway, socket, params, routed) => gateway.cron(socket, params, routed),
   /** tui_gateway/methods_session.py:1467-1495 */
   'pet.gallery': (gateway, socket) => gateway.petGallery(socket),
   /** tui_gateway/methods_session.py:1557-1563 */
@@ -979,6 +981,7 @@ export class ScriptedGateway {
   private readonly sockets = new Set<Socket>()
   private readonly stagedImages = new Set<string>()
   private readonly rooms: ScriptedRooms | null
+  private cronJobs: CronScript['jobs'] | null = null
   private drop: Drop
   private delivered = 0
   private seqShift = 0
@@ -1888,6 +1891,29 @@ export class ScriptedGateway {
     if (oneshot === undefined || socket.reach === 'profile') throw unknownMethod('llm.oneshot')
     if (oneshot.error !== undefined) throw refusedProfile(5030, `one-shot generation failed: ${oneshot.error}`)
     return after(oneshot.delay_ms, { text: oneshot.text ?? '' })
+  }
+
+  /**
+   * `cron.manage` `list` (tui_gateway/methods_tools.py:1311-1335), which a socket with no interactive grant does not reach.
+   * Its first call starts the script's `then`.
+   */
+  cron(socket: Socket, params: Obj, routed: string): unknown {
+    const { cron } = this.fixture.header
+    if (cron === undefined || socket.reach === 'profile') throw unknownMethod('cron.manage')
+    if (params.action !== 'list') throw refusedProfile(4016, `unknown cron action: ${String(params.action)}`)
+    if (this.cronJobs === null) {
+      this.cronJobs = cron.jobs
+      const { then } = cron
+      if (then !== undefined) {
+        this.options.clock.setTimeout(() => {
+          this.cronJobs = then.jobs
+          for (const socket of this.sockets) socket.peer.write({ jsonrpc: '2.0', method: 'event', params: { type: 'cron.changed', payload: {} } })
+        }, then.after_ms)
+      }
+    }
+    const scoped = cron.scoped !== false
+    const jobs = this.cronJobs[scoped ? routed : this.home] ?? []
+    return { success: true, count: jobs.length, jobs, ...(scoped && isText(params.profile) ? { scoped: params.profile } : {}) }
   }
 
   /** `pet.gallery` (tui_gateway/methods_session.py:1467-1495), which a socket with no interactive grant does not reach. */

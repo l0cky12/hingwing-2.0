@@ -1,0 +1,18 @@
+{
+  "jobs": {
+    "research": [
+      { "job_id": "a1f3c9", "name": "Morning brief", "prompt_preview": "Summarise what changed overnight.", "schedule": "0 9 * * 1-5", "enabled": true, "state": "scheduled", "next_run_at": "2026-11-27T09:00:00+00:00" },
+      { "job_id": "b7e2d4", "name": "[bot:research] Backup check", "prompt_preview": "Check the backups ran.", "schedule": "every 360m", "enabled": false, "state": "paused", "paused_at": "2026-11-20T10:00:00+00:00" }
+    ]
+  },
+  "then": {
+    "after_ms": 1500,
+    "jobs": {
+      "research": [
+        { "job_id": "a1f3c9", "name": "Morning brief", "prompt_preview": "Summarise what changed overnight.", "schedule": "0 9 * * 1-5", "enabled": true, "state": "scheduled", "next_run_at": "2026-11-27T09:00:00+00:00" },
+        { "job_id": "b7e2d4", "name": "[bot:research] Backup check", "prompt_preview": "Check the backups ran.", "schedule": "every 360m", "enabled": false, "state": "paused", "paused_at": "2026-11-20T10:00:00+00:00" },
+        { "job_id": "c4d8e1", "name": "Inbox sweep", "prompt_preview": "File new mail.", "schedule": "every 30m", "enabled": true, "state": "scheduled", "next_run_at": "2026-11-26T20:30:00+00:00" }
+      ]
+    }
+  }
+}

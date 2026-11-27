@@ -6,6 +6,7 @@ import { canonicalBotId, GENERATED_MAX_BYTES, isPetSlug, PICTURE_MAX_BYTES, pict
 import type { CheckpointDiff, Checkpoints, ContextBreakdown, ModelConfirm, ModelMenu, Outcome as CommandOutcome, Restored } from '../domain/command'
 import { isGroupId, type Answering, type GroupEvent, type GroupFacts, type GroupId, type GroupMember, type GroupSupport, type MemberId } from '../domain/groups'
 import type { PaneAsk } from '../domain/pane'
+import { scheduleInWords, type Routine, type RoutineId, type RoutineList } from '../domain/routines'
 import type { Admission } from '../domain/queue'
 import type { CardRequest, HelperUpdate, HistoryPage, PickOutcome, Replay, Said as SaidTuning, ServerRequest, SessionEvent, ShownNotice, Snapshot, StampedEvent, Stamp } from '../domain/reduce'
 import type { CloseWhy } from '../domain/requests'
@@ -22,7 +23,7 @@ import type { Said, TreeRow } from '../domain/versions'
 import type {
   AgentPrintPayload, CanonicalBotDeliverResult, CanonicalCorrectionResult, CanonicalEventsResult, CanonicalListResult, CanonicalPendingAdmission,
   CanonicalPendingPrompt, CanonicalProfilesResult, CanonicalReplayEvent, CanonicalSessionListRow, CanonicalSnapshot, ClarifyQuestion, ClarifyRequestParams,
-  CommandDispatchResult, CommandsCatalogResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
+  CommandDispatchResult, CommandsCatalogResult, CronJobRow, CronManageResult, GroupsCapabilitiesResult, GroupsChangedPayload, GroupsCreateResult, GroupsListResult, GroupsLogResult, GroupsStateResult, Room, RoomEvent, RoomMember, RoomMemberActivity, CompletionItem, CompletionItemsResult, ConnectionDisplay, ConnectionOperationTarget, ConnectionRequestPayload,
   ConnectionTargetEnvField, ConnectionUpdatePayload, ContextCategory, ErrorPayload, ErrorSurface, GoalSnapshot, HeartbeatSnapshot, ImageGenerateResult, LoopSnapshot,
   MessageCompletePayload, MessageDeltaPayload, MessageInterimPayload, MessageReaction, MessageStartPayload, MoaAggregatingPayload, MoaPhasePayload,
   MoaProgressPayload, MoaReferencePayload, ModelOptionProvider, ModelOptionsResult, NotificationClearPayload, NotificationShowPayload, PersistedTurn, PetGalleryResult, PetThumbResult,
@@ -58,6 +59,8 @@ export type ParsedEvent =
    * Hermes saying anything may have moved (tui_gateway/change_watcher.py:434-441).
    */
   | { readonly scope: 'groups'; readonly rooms: readonly GroupId[] | 'all' }
+  /** `cron.changed`: a bare signal that the launch profile's jobs moved (tui_gateway/change_watcher.py:460). */
+  | { readonly scope: 'cron' }
   /**
    * A session event with no session id, or a frame with no stream position.
    * Never guessed into a session, because one socket serves many of them. Counted as `unrouted`.
@@ -505,7 +508,7 @@ export const UNSHOWN: ReadonlySet<string> = new Set([
   /** Every canonical turn publishes it (`gateway/run_turn_progress.py:1092`); not in the generated contract. */
   'agent.step',
   'agent.terminal.output', 'billing.step_up.verification', 'bot_relay.outbox.pending',
-  'browser.progress', 'cron.changed', 'display.install.done',
+  'browser.progress', 'display.install.done',
   'display.install.log', 'display.lease', 'display.status', 'free_tier.challenge', 'gateway.ready',
   'message.reaction', 'notice', 'onboarding.ended', 'pairing.changed', 'pane.reveal', 'pet.changed', 'pet.generate.progress',
   'pet.hatch.progress', 'platforms.changed', 'preview.restart.complete',
@@ -577,6 +580,7 @@ export function parseEvent(params: unknown): ParsedEvent {
   if (!isObject(params) || typeof params.type !== 'string' || params.type === '') return { scope: 'unrouted', type: '', why: 'not an event' }
   const { type, session_id: id, payload } = params
   if (type === 'sessions.changed') return { scope: 'app', event: 'sessions.changed' }
+  if (type === 'cron.changed') return { scope: 'cron' }
   if (type === 'groups.changed') return { scope: 'groups', rooms: roomsMoved(payload) }
   if (typeof id !== 'string' || id === '') return { scope: 'unrouted', type, why: 'no session id' }
   const sessionId = id as SessionId
@@ -1719,4 +1723,35 @@ export function parseGroupPage(reply: GroupsLogResult): { readonly events: reado
       epoch: authority === null ? null : fields<{ epoch: number }>(authority).optInt('epoch')
     }
   })
+}
+
+/** `[bot:<profile>] ` at the start of a job's name: how Hermes desktop marks whose job it is in the launch profile's store (apps/desktop/src/plugins/hermes-bots/cron.tsx:75). */
+const BOT_TAG = /^\[bot:([a-z0-9][a-z0-9_-]*)\]\s*/i
+const UNTAGGED_OWNER = 'default'
+
+const asRoutine = (row: CronJobRow, name: string): Routine => ({
+  id: row.job_id as RoutineId,
+  name: name.replace(BOT_TAG, '').trim() || words(row.prompt_preview) || row.job_id,
+  schedule: scheduleInWords(isString(row.schedule) ? row.schedule : ''),
+  paused: row.enabled === false
+})
+
+/**
+ * `cron.manage` `list` as one bot's routines. A gateway that honoured `profile` says so in `scoped`. One that did not
+ * answered with the launch profile's store, so only the rows tagged for this bot, or untagged for the default one, are its own.
+ */
+export function parseRoutines(result: CronManageResult, bot: BotId): Exclude<RoutineList, { state: 'reading' }> {
+  if (!isObject(result)) return { state: 'refused', message: 'Hermes sent routines Highwing could not read.' }
+  const error = words(result.error)
+  if (result.success === false || error !== null) {
+    return { state: 'refused', message: error === null ? "Hermes couldn't read the routines." : `Hermes couldn't read the routines: ${error}` }
+  }
+  const scoped = result.scoped === bot
+  const rows = Array.isArray(result.jobs) ? result.jobs.filter((row): row is CronJobRow => isObject(row) && isString(row.job_id) && row.job_id !== '') : []
+  const routines = rows.flatMap((row): Routine[] => {
+    const name = isString(row.name) ? row.name : ''
+    const owner = BOT_TAG.exec(name)?.[1]?.toLowerCase() ?? UNTAGGED_OWNER
+    return scoped || owner === bot.toLowerCase() ? [asRoutine(row, name)] : []
+  })
+  return { state: 'listed', routines }
 }

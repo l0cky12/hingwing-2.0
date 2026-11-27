@@ -107,6 +107,8 @@ export type Command =
   /** The models a bot's chat could use, with no chat open. null: the socket's own profile, which a new bot copies its credentials from. */
   | { readonly do: 'botModels'; readonly bot: BotId | null }
   | { readonly do: 'describeBot'; readonly bot: BotId }
+  /** Show this bot's routines in `routines`, and keep them current until `null`. */
+  | { readonly do: 'showRoutines'; readonly bot: BotId | null }
   /**
    * One save of the details dialog, then the roster is asked for again. `revision` is the one `describeBot` answered:
    * a rename refused because the name changed elsewhere since is a `conflict`.

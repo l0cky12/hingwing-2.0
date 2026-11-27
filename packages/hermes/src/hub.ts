@@ -9,11 +9,13 @@ import { shownBot, shownChat, shownGroup, type OpenChat } from './domain/open'
 import type { PaneAsk } from './domain/pane'
 import type { BridgeRequest, ServerRequest } from './domain/reduce'
 import type { RelayDesk } from './domain/relay'
+import type { Routines } from './domain/routines'
 import type { AttachmentId, BranchId, Link, Session, SessionContent, SessionId, Sidebar } from './domain/session'
 import { slashLineOf, type SlashCatalog } from './domain/slash'
 import { groupBook } from './groups'
 import { chatDesk } from './open'
 import { relayBook } from './relay'
+import { routineBook } from './routines'
 import { botList } from './roster'
 import { deriveSidebar, sessionList } from './sidebar'
 import { readVersions } from './versions'
@@ -72,6 +74,11 @@ export interface Hermes {
    * asking every 2 s on a Hermes that does not push.
    */
   readonly groupChat: Feed<GroupChat | null>
+  /**
+   * The routines of the bot `showRoutines` named, read from Hermes and read again on `cron.changed` and when the link
+   * comes back. null while no window shows any. A listed value stays while the link is down.
+   */
+  readonly routines: Feed<Routines>
   /**
    * Watch one session. The listener gets the current value at once and every later one. A session is
    * kept attached while a window watches it, while the gateway lists it as running, while its own
@@ -217,6 +224,7 @@ export function openHermes(options: HermesOptions): Hermes {
     gap: parsed => actors.get(parsed.sessionId)?.feed({ in: 'gap' }),
     app: refreshSoon,
     groups: parsed => book.moved(parsed.rooms),
+    cron: () => rota.reread(),
     unrouted: parsed => count('unrouted', parsed.type)
   }
 
@@ -235,6 +243,7 @@ export function openHermes(options: HermesOptions): Hermes {
       relayRead = relays.probe()
       roster.ask()
       book.online()
+      rota.reread()
     },
     onEvent: params => {
       const parsed = parseEvent(params)
@@ -307,6 +316,9 @@ export function openHermes(options: HermesOptions): Hermes {
   })
   const groups = feed<Groups>(book.groups)
   const groupChat = feed<GroupChat | null>(book.chat)
+
+  const rota = routineBook(conn, () => routines.set(rota.routines))
+  const routines = feed<Routines>(rota.routines)
 
   const actorFor = (id: SessionId): SessionActor => {
     const held = actors.get(id)
@@ -470,6 +482,10 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'sendToGroup') return book.send(command.group, command.text)
     if (command.do === 'stopGroup') return book.stop(command.group)
     if (command.do === 'describeBot') return describeBot(conn, command.bot)
+    if (command.do === 'showRoutines') {
+      rota.show(command.bot)
+      return DONE
+    }
     if (command.do === 'botPicture') return botPicture(conn, command.bot)
     if (command.do === 'canGeneratePicture') return canGeneratePicture(conn)
     if (command.do === 'generatePicture') return generatePicture(conn, command.prompt)
@@ -509,6 +525,7 @@ export function openHermes(options: HermesOptions): Hermes {
     relay,
     groups,
     groupChat,
+    routines,
     watch,
     run: command => run(command) as Promise<Outcome<ResultOf<typeof command>>>,
     close: async () => {
