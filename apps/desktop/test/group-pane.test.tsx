@@ -66,7 +66,7 @@ describe('an open group chat', () => {
     expect(attr(box, 'placeholder')).toBe('Message the group, or type @ to ask specific bots')
     expect(attr(box, 'aria-label')).toBe('Message Launch plan')
     expect(html).toContain(`<p class="busy" id="${attr(box, 'aria-describedby')}">Sam is still answering. If you send now, Sam’s reply won’t be posted.</p>`)
-    expect(html).toMatch(/<button type="button" class="stop">Stop<\/button><button type="submit">Send<\/button>/)
+    expect(html).toMatch(/<button type="button" class="stop" aria-label="Stop">.*?<\/button><button type="submit"[^>]*aria-label="Send"/)
     expect(html, 'a group takes no attachments, so it offers no paperclip').not.toContain('class="clip"')
   })
 

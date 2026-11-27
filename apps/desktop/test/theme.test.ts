@@ -84,7 +84,7 @@ const contrast = (a: string, b: string) => {
 }
 
 const TEXT = ['ink', 'graphite', 'signal', 'caution', 'brick', 'moss']
-const SURFACES = ['rail', 'paper', 'sheet', 'code-bg', 'signal-soft', 'caution-soft', 'add', 'del']
+const SURFACES = ['rail', 'paper', 'sheet', 'surface-user', 'code-bg', 'signal-soft', 'caution-soft', 'add', 'del']
 const AVATARS = ['avatar-slate', 'avatar-plum', 'avatar-olive', 'avatar-mauve', 'avatar-umber']
 const PAIRS = [...TEXT.flatMap(text => SURFACES.map(surface => [text, surface, 4.5] as const)), ...AVATARS.map(avatar => ['sheet', avatar, 4.5] as const)]
 const EDGES = ['rail', 'paper', 'sheet'].map(surface => ['edge', surface, 3] as const)
@@ -155,5 +155,42 @@ describe('the window behind the page', () => {
     expect(window.background).toBe(paperOf(true))
     window.closed.forEach(listener => listener())
     expect(electron.updated.size).toBe(0)
+  })
+})
+
+describe("the marks on a bot's face", () => {
+  const RULES = rulesNestedOnlyInAtRules(CSS)
+  const inMedia = (feature: string) => RULES.filter(rule => rule.media.some(prelude => prelude.includes(feature)))
+
+  it('animate the working dots, and stop every animation under reduced motion', () => {
+    const animated = RULES.filter(rule => rule.media.length === 0 && /working-dot/.test(rule.declarations.get('animation') ?? ''))
+    expect(animated.map(rule => rule.selector)).toEqual(['.bot-activity[data-activity="working"] > span'])
+    const stopped = inMedia('prefers-reduced-motion: reduce').filter(rule => rule.selector.split(',').map(part => part.trim()).includes('*'))
+    expect(stopped.map(rule => rule.declarations.get('animation'))).toEqual(['none !important'])
+  })
+
+  /** The value the cascade gives `property` on an element only these selectors match, in forced colors. Specificity counts classes and attributes, all these use. */
+  const forcedValue = (selectors: readonly string[], property: string) => {
+    const specificity = (selector: string) => (selector.match(/[.[]/g) ?? []).length
+    const candidates = RULES.flatMap((rule, order) => {
+      if (!rule.media.every(prelude => prelude.includes('forced-colors: active')) || !rule.declarations.has(property)) return []
+      const matched = rule.selector.split(',').map(part => part.trim()).filter(part => selectors.includes(part))
+      return matched.length === 0 ? [] : [{ weight: Math.max(...matched.map(specificity)), order, value: rule.declarations.get(property) }]
+    })
+    return candidates.sort((a, b) => a.weight - b.weight || a.order - b.order).at(-1)?.value
+  }
+  const SYSTEM = new Set(['Canvas', 'CanvasText', 'Highlight', 'HighlightText'])
+  const markOf = (state: string) => ['.bot-activity', '.bot-activity[data-activity]', `.bot-activity[data-activity="${state}"]`]
+
+  it.each([
+    ['working', 'Canvas', ['.bot-activity[data-activity="working"] > span']],
+    ['waiting', 'Highlight', null],
+    ['unread', 'CanvasText', null]
+  ] as const)('draw the %s mark in forced colors in system colors only, inside a CanvasText border', (state, background, dots) => {
+    expect(forcedValue(markOf(state), 'forced-color-adjust')).toBe('none')
+    expect(forcedValue(markOf(state), 'border')).toBe('1px solid CanvasText')
+    expect(forcedValue(markOf(state), 'background')).toBe(background)
+    if (dots !== null) expect(forcedValue(dots, 'background')).toBe('CanvasText')
+    expect(SYSTEM.has(forcedValue(markOf(state), 'color') ?? '')).toBe(true)
   })
 })

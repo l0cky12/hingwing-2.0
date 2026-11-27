@@ -3,15 +3,17 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent
 import type { WindowCommand } from '../../ipc-contract'
 import { Avatar } from '../bots/Avatar'
 import { agoOf } from '../chats/chat-list'
-import { isCommandKey } from '../keys'
+import { landAt } from '../chat/landing'
+import { isShortcut } from '../keys'
+import { modalOpen } from '../shortcuts'
 import { run, useTopic } from '../store'
-import { activeIn, comebackOf, paletteOf, step, type PaletteItem, type PaletteView, type Row } from './palette-view'
+import { begin, NOT_SEARCHED, settle, type MessageSearch } from './messages'
+import { activeIn, comebackOf, paletteOf, step, termsOf, type PaletteItem, type PaletteView, type Row } from './palette-view'
 
 const canHoldFocus = (element: Element | null): element is HTMLElement =>
   element instanceof HTMLElement && element !== document.body && element.isConnected && element.closest('[hidden]') === null
   && element.checkVisibility() && !element.matches(':disabled')
-/** Settings hides the chat's composer. Its connection card's Change takes focus there, or the Settings heading while the editor is open. */
-const FALLBACKS = ['.settings .change', '.settings > h2', '.composer textarea']
+const FALLBACKS = ['.settings .change', '.settings-head > h1', '.composer textarea']
 const fallbackFocus = () => FALLBACKS.map(selector => document.querySelector(selector)).find(canHoldFocus) ?? null
 
 function detailOf(item: PaletteItem, now: number): string | null {
@@ -19,6 +21,8 @@ function detailOf(item: PaletteItem, now: number): string | null {
     case 'chat': return item.doing ?? (item.lastActiveAt === null ? null : agoOf(item.lastActiveAt, now))
     case 'action': return item.keys
     case 'bot': return null
+    case 'message': return item.bot
+    case 'status': return item.detail
   }
 }
 
@@ -46,6 +50,7 @@ export function Results({ view, active, listId, now, onPick }: ResultsProps) {
             return (
               <div
                 key={item.key} id={id} role="option" aria-selected={item.key === active?.item.key} aria-label={item.title}
+                aria-disabled={item.kind === 'status' && item.reads === null ? true : undefined}
                 aria-describedby={described === '' ? undefined : described}
                 className={item.key === active?.item.key ? `palette-row ${item.kind} active` : `palette-row ${item.kind}`} onClick={() => onPick(item)}
               >
@@ -89,18 +94,27 @@ function Sheet({ opened, target, settingsOpen, onClose, onPick }: SheetProps) {
   const [query, setQuery] = useState(opened.query)
   const [note, setNote] = useState(opened.note)
   const [picked, setPicked] = useState<string | null>(null)
+  const [search, setSearch] = useState<MessageSearch>(NOT_SEARCHED)
   const dialog = useRef<HTMLDialogElement>(null)
   const field = useRef<HTMLInputElement>(null)
   const leaving = useRef(false)
   const listId = useId()
 
-  const view: PaletteView = note === null ? paletteOf({ sidebar, bots, open, link, openSession, target, settingsOpen, draftId }, query) : { show: 'note', words: note }
+  const view: PaletteView = note === null ? paletteOf({ sidebar, bots, open, link, openSession, target, settingsOpen, draftId }, query, search) : { show: 'note', words: note }
   const active = activeIn(view, picked)
   const activeId = active === null ? undefined : optionId(listId, active.item)
 
   useLayoutEffect(() => {
     if (dialog.current?.open === false) dialog.current.showModal()
   }, [])
+  const readMessages = (from: number) => {
+    setSearch(held => begin(held, from))
+    void run({ do: 'readMessages', step: from }).then(outcome => setSearch(held => settle(held, from, outcome)))
+  }
+  const typed = query.trim() !== ''
+  useEffect(() => {
+    if (typed && search.state === 'idle') readMessages(0)
+  }, [typed, search.state])
   useEffect(() => {
     if (activeId !== undefined) document.getElementById(activeId)?.scrollIntoView({ block: 'nearest' })
   }, [activeId])
@@ -114,6 +128,11 @@ function Sheet({ opened, target, settingsOpen, onClose, onPick }: SheetProps) {
     onClose()
   }
   const pick = (item: PaletteItem) => {
+    if (item.kind === 'status') {
+      if (item.reads !== null) readMessages(item.reads)
+      return
+    }
+    if (item.kind === 'message' && item.landing !== null) landAt(item.landing, termsOf(query))
     leaving.current = true
     dialog.current?.close()
     onPick(item.command, query)
@@ -123,7 +142,7 @@ function Sheet({ opened, target, settingsOpen, onClose, onPick }: SheetProps) {
     event.stopPropagation()
     if (event.nativeEvent.isComposing) return
     const by = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : null
-    if (isCommandKey(event.nativeEvent, 'k')) {
+    if (isShortcut(event.nativeEvent, 'palette')) {
       if (!event.repeat) dismiss()
     } else if (by !== null) setPicked(step(view, picked, by))
     else if (event.key === 'Enter' && active !== null) pick(active.item)
@@ -165,7 +184,7 @@ export function Palette({ target, settingsOpen }: { readonly target: Target | nu
   useEffect(() => {
     if (shown) return
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (!isCommandKey(event, 'k') || document.querySelector('dialog:modal') !== null) return
+      if (!isShortcut(event, 'palette') || modalOpen()) return
       event.preventDefault()
       if (!event.repeat) setOpened({ back: document.activeElement, query: '', note: null })
     }

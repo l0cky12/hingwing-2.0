@@ -10,7 +10,7 @@ function session(items: readonly PromptItem[], live = true): Session {
   return {
     id: 's1' as Session['id'], title: '', cwd: null, history: [], earlier: 'none', interlude: [], requests: [], queue: [], outbox: [],
     model: { current: null, next: null, ask: null }, usage: { totals: null, context: null },
-    tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null,
+    tuning: { reasoning: null, busy: null, effort: null, fast: null, yolo: null, approvals: null }, sides: [], processes: null, control: null, rewound: {},
     sync: live ? { state: 'live' } : { state: 'offline' },
     run: { state: 'running', generation: 1 as Generation, stop: 'none', turn: { id: 't1' as TurnId, request: { text: 'Deploy it', inputId: null, rowId: null, attachments: [] }, began: null, items, announced: null } }
   }
@@ -126,5 +126,65 @@ describe('the recorded multi-select question', () => {
 
   it('settles into the labels the story checked, in plain words', () => {
     expect(view(fold(story))).toContain('○ You answered “staging (Recommended)” and “canary”.')
+  })
+})
+
+describe('an approval Hermes waits on for a limited time', () => {
+  const { now } = CLOCK
+  const due = (deadline: number, state?: PromptItem['state']): PromptItem => ({ ...prompt(approval(null), state), deadline })
+  const at = (item: PromptItem, clock: number) => threadView(session([item]), { ...CLOCK, now: clock })
+  const shown = (item: PromptItem, clock: number) => {
+    const node = at(item, clock).turns[0]?.nodes[0]
+    if (node?.kind !== 'prompt') throw new Error(`expected a prompt, got ${node?.kind}`)
+    return node.card
+  }
+
+  it('counts down in whole minutes, then in seconds in the last minute', () => {
+    const item = due(now + 5 * 60_000)
+    expect(shown(item, now)).toMatchObject({ state: 'asking', left: '5 min left' })
+    expect(shown(item, now + 1)).toMatchObject({ state: 'asking', left: '5 min left' })
+    expect(shown(item, now + 60_000)).toMatchObject({ state: 'asking', left: '4 min left' })
+    expect(shown(item, now + 4 * 60_000)).toMatchObject({ state: 'asking', left: '60 s left' })
+    expect(shown(item, now + 4 * 60_000 + 15_500)).toMatchObject({ state: 'asking', left: '45 s left' })
+    expect(shown(item, now + 5 * 60_000 - 1)).toMatchObject({ state: 'asking', left: '1 s left' })
+  })
+
+  it('wakes the window each time the words change: each minute, then each second, then at the deadline', () => {
+    const item = due(now + 5 * 60_000)
+    expect(at(item, now + 1).changesAt).toBe(now + 60_000)
+    expect(at(item, now + 3 * 60_000 + 30_000).changesAt).toBe(now + 4 * 60_000)
+    expect(at(item, now + 4 * 60_000 + 15_500).changesAt).toBe(now + 4 * 60_000 + 16_000)
+    expect(at(item, now + 5 * 60_000 - 1).changesAt).toBe(now + 5 * 60_000)
+  })
+
+  it('says it expired and that nothing was done once the deadline passes, and offers to ask again', () => {
+    const expired = { state: 'expired', heading: 'Approval expired', command: 'rm -rf scratch', words: 'Nobody answered in time, so Hermes did not run it.', askAgain: "I didn't answer in time. Please ask me again." }
+    expect(shown(due(now + 5 * 60_000), now + 5 * 60_000)).toEqual(expired)
+    expect(shown(due(now - 60_000, { s: 'expired' }), now)).toEqual(expired)
+    expect(outline(at(due(now), now)).split('\n').slice(1)).toEqual([
+      '◇ Approval expired `rm -rf scratch`',
+      '    Nobody answered in time, so Hermes did not run it.',
+      '    [Ask again]',
+      '◉ Thinking'
+    ])
+  })
+
+  it('draws the same expired card once the turn has ended, whether or not the chat is live', () => {
+    const running = shown(due(now - 60_000, { s: 'expired' }), now)
+    const ended = (live: boolean): Session => ({
+      ...session([], live),
+      run: { state: 'idle' },
+      history: [{ id: 't1' as TurnId, request: null, began: null, items: [{ kind: 'prompt', id: 'p1' as PromptId, generation: 1 as Generation, ask: approval(null), state: { s: 'expired' }, deadline: null }], outcome: { kind: 'complete' }, rows: [], tokens: null, reply: null }]
+    })
+    for (const live of [true, false]) expect(threadView(ended(live), CLOCK).turns[0]?.nodes[0]).toMatchObject({ kind: 'prompt', card: running })
+  })
+
+  it('keeps counting nothing down once an answer is on its way', () => {
+    expect(shown(due(now - 1, { s: 'sending', reply: { kind: 'choice', value: 'once' } }), now)).toMatchObject({ state: 'asking', left: null, busy: true })
+  })
+
+  it('shows no time left when Hermes named no limit', () => {
+    expect(cardOf(prompt(approval(null)))).toMatchObject({ state: 'asking', left: null })
+    expect(threadView(session([prompt(approval(null))]), CLOCK).changesAt).toBeNull()
   })
 })

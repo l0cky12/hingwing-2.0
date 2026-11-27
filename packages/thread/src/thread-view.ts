@@ -7,13 +7,13 @@ import {
 import { askCard, askLines, closedWords, type AskCard } from './asks'
 import { multiAnswers } from './multi'
 import { hidesAt, isShownAt, moaWords, NOTICE_TONES } from './says'
-import { changesAt, elapsedWords, timeLines, type ViewClock } from './when'
+import { changesAt, elapsedWords, leftChangesAt, leftWords, timeLines, type ViewClock } from './when'
 
 export type { ViewClock }
 
 export { leafText, parseMarkdown, proseLeaves, type Align, type Block, type Cell, type CodeBlock, type Inline, type ProseLeaf } from './prose'
 export { drawnQuestions, type AskCard, type ConnectCard, type DrawnQuestion, type QuestionsCard, type QuestionView, type SecretCard, type SecretField, type TargetView } from './asks'
-export { fieldId, findInThread, type Changing, type FieldPart, type FindMatch } from './find'
+export { fieldId, findInThread, type Beside, type BesideRow, type Changing, type FieldPart, type FindMatch } from './find'
 export { multiReply } from './multi'
 export { answeringWords, groupThread, namesInWords, type GroupItemView, type GroupThreadView, type GroupTurnView, type NameOf } from './group-thread'
 
@@ -57,6 +57,8 @@ export interface TurnView {
   /** The quiet line above the request: "Today 14:05". null draws nothing. Never the empty string. */
   readonly time: string | null
   readonly request: string | null
+  /** Hermes put the request into the chat itself, such as a message another chat handed to this bot. */
+  readonly handed: boolean
   /** What was sent with the request, drawn above it. Empty for a turn with no request. */
   readonly attachments: readonly Attachment[]
   /** The stored row id of the request, the address an edit or a regenerate cuts before. null for a turn with no request, and for a running turn's until it settles. */
@@ -228,7 +230,11 @@ export type PromptCard =
       /** An answer is on its way, or the session is not live. Buttons are disabled, the card stays amber. */
       readonly busy: boolean
       readonly error: string | null
+      /** How long Hermes still waits: "4 min left", then "45 s left". null when Hermes named no limit. */
+      readonly left: string | null
     }
+  /** Nobody answered before Hermes stopped waiting, so it did nothing. `askAgain` is the message that asks Hermes to retry. */
+  | { readonly state: 'expired'; readonly heading: string; readonly command: string | null; readonly words: string; readonly askAgain: string }
   /** Hollow caution ring. `command` is null when the step next to the card already shows it. */
   | { readonly state: 'answered'; readonly words: string; readonly command: string | null }
 
@@ -275,7 +281,8 @@ export function threadView(session: Session, clock: ViewClock): ThreadView {
   const hides = [
     ...settled.map(memo => memo.until),
     hidesAt(session.interlude, clock.now),
-    run.state === 'running' ? hidesAt(run.turn.items, clock.now) : null
+    run.state === 'running' ? hidesAt(run.turn.items, clock.now) : null,
+    ...(run.state === 'running' ? run.turn.items.map(item => (item.kind === 'prompt' && item.state.s === 'waiting' && item.deadline !== null ? leftChangesAt(item.deadline, clock.now) : null)) : [])
   ]
   return {
     state: VIEW_STATE[sync.state],
@@ -339,7 +346,7 @@ function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<Se
       case 'text':
         return { kind: 'prose', key, markdown: trimBlankLines(item.markdown), streaming: !item.sealed }
       case 'prompt':
-        return { kind: 'prompt', key, card: promptCard(item, partner !== null, live) }
+        return { kind: 'prompt', key, card: promptCard(item, partner !== null, live, now) }
       case 'notice':
         return item.what === 'closed' ? { kind: 'closed', key, asked: item.asked, end: item.end, words: closedWords(item.asked, item.end) } : { kind: 'notice', key, ...noticeWords(item) }
       case 'reasoning':
@@ -359,7 +366,7 @@ function turnView(turn: Pick<Turn, 'id' | 'request' | 'items'> & Partial<Pick<Se
     }
   })
   return {
-    key: turn.id, time, request: turn.request?.text ?? null, attachments: turn.request?.attachments ?? NO_ATTACHMENTS, rowId: turn.request?.rowId ?? null,
+    key: turn.id, time, request: turn.request?.text ?? null, handed: turn.request?.handed === true, attachments: turn.request?.attachments ?? NO_ATTACHMENTS, rowId: turn.request?.rowId ?? null,
     nodes, end: end(nodes),
     tokens: tokenWords(turn.tokens ?? null),
     reactions: turn.reply == null ? null : { turn: turn.id, given: turn.reply.reactions }
@@ -739,9 +746,11 @@ const APPROVAL_CHOICES: { readonly [choice: string]: { readonly label: string; r
 const ROLE_ORDER = { primary: 0, plain: 1, decline: 2 } as const satisfies Record<Role, number>
 
 const PROMPT_WORDS = {
-  approval: { heading: 'Run this command?', freeText: false },
-  clarify: { heading: 'Hermes has a question', freeText: true }
-} as const satisfies Record<PromptItem['ask']['kind'], { heading: string; freeText: boolean }>
+  approval: { heading: 'Run this command?', freeText: false, expired: { heading: 'Approval expired', words: 'Nobody answered in time, so Hermes did not run it.' } },
+  clarify: { heading: 'Hermes has a question', freeText: true, expired: { heading: 'Question expired', words: 'Nobody answered in time, so Hermes went on without an answer.' } }
+} as const satisfies Record<PromptItem['ask']['kind'], { heading: string; freeText: boolean; expired: { heading: string; words: string } }>
+
+const ASK_AGAIN = "I didn't answer in time. Please ask me again."
 
 function alwaysConfirm(ask: Extract<PromptItem['ask'], { kind: 'approval' }>): PromptButton['confirm'] {
   return {
@@ -764,8 +773,12 @@ function promptPick(ask: PromptItem['ask']): PromptPick {
   return { kind: 'one', buttons, freeText: PROMPT_WORDS[ask.kind].freeText }
 }
 
-function promptCard(prompt: PromptItem, paired: boolean, live: boolean): PromptCard {
-  const { ask, state } = prompt
+function promptCard(prompt: PromptItem, paired: boolean, live: boolean, now: number): PromptCard {
+  const { ask, state, deadline } = prompt
+  const left = deadline === null ? null : leftWords(deadline, now)
+  if (state.s === 'expired' || (state.s === 'waiting' && deadline !== null && left === null)) {
+    return { state: 'expired', ...PROMPT_WORDS[ask.kind].expired, command: ask.kind === 'approval' ? ask.command : null, askAgain: ASK_AGAIN }
+  }
   if (state.s === 'waiting' || state.s === 'sending') {
     return {
       state: 'asking',
@@ -776,7 +789,8 @@ function promptCard(prompt: PromptItem, paired: boolean, live: boolean): PromptC
       pick: promptPick(ask),
       tell: ask.kind === 'approval' && ask.choices.includes('deny'),
       busy: state.s === 'sending' || !live,
-      error: state.s === 'waiting' ? state.error : null
+      error: state.s === 'waiting' ? state.error : null,
+      left
     }
   }
   return {
@@ -786,7 +800,7 @@ function promptCard(prompt: PromptItem, paired: boolean, live: boolean): PromptC
   }
 }
 
-function answeredWords(prompt: PromptItem, state: Exclude<PromptItem['state'], { s: 'waiting' | 'sending' }>): string {
+function answeredWords(prompt: PromptItem, state: Exclude<PromptItem['state'], { s: 'waiting' | 'sending' | 'expired' }>): string {
   if (state.s === 'withdrawn') return 'Hermes withdrew this request.'
   const { reply } = state
   if (reply === null) return 'Answered from another window.'
@@ -837,8 +851,11 @@ function openEnd(turn: Turn, nodes: readonly ThreadNode[], activity: TurnActivit
     return nodes.find(n => n.key === key || (n.kind === 'group' && n.steps.some(step => step.key === key)))
   }
   switch (activity.kind) {
-    case 'asking':
-      return { kind: 'at', nodeKey: nodeOf(activity.item)?.key ?? `${turn.id}/${activity.item}`, tone: 'asking' }
+    case 'asking': {
+      const node = nodeOf(activity.item)
+      if (node?.kind === 'prompt' && node.card.state === 'expired') return tip(TIP_WORDS.thinking)
+      return { kind: 'at', nodeKey: node?.key ?? `${turn.id}/${activity.item}`, tone: 'asking' }
+    }
     case 'working': {
       const tool = turn.items[activity.item]
       const shownIn = tool?.kind === 'tool' ? SHOWN_ELSEWHERE.get(tool.name) : undefined
@@ -982,10 +999,12 @@ function nodeLines(node: ThreadNode, live: boolean, elapsed: string | null, open
     case 'prompt': {
       const { card } = node
       if (card.state === 'answered') return [`○ ${card.words}${card.command === null ? '' : ` \`${card.command}\``}`]
+      if (card.state === 'expired') return [`◇ ${card.heading}${card.command === null ? '' : ` \`${card.command}\``}`, `    ${card.words}`, '    [Ask again]']
       return [
         `◆ ${card.heading}${card.busy ? '  (busy)' : ''}`,
         ...(card.command === null ? [] : [`    ${card.command}`]),
         ...(card.why === null ? [] : [`    ${card.why}`]),
+        ...(card.left === null ? [] : [`    ${card.left}`]),
         `    ${pickLine(card.pick)}`,
         ...(card.error === null ? [] : [`    ! ${card.error}`])
       ]

@@ -122,6 +122,8 @@ export interface SessionContent {
   readonly processes: readonly BackgroundProcess[] | null
   /** The chat's goal, loop and heartbeat, as Hermes last said. null until it says, and on a Hermes that refuses the read. */
   readonly control: SessionControl | null
+  /** Each turn an edit or regenerate cut, by id, and the newest turn kept at that cut, where things drawn after it now go. Live only. */
+  readonly rewound: { readonly [turn: string]: TurnId | null }
 }
 
 /** A process the agent started to run in the background (`terminal(background=true)`). Times are Unix ms on Hermes's clock. */
@@ -369,6 +371,11 @@ export interface Request {
   readonly rowId: number | null
   /** What this client sent with the message, in order. Empty for a message read from Hermes, which keeps no record of them. */
   readonly attachments: readonly Attachment[]
+  /**
+   * Hermes put this message into the chat itself, as a user row of kind `internal_notification`: a message another chat
+   * handed to this bot, for one. The user did not type it here. Only a message read from Hermes carries it.
+   */
+  readonly handed?: true
 }
 
 export type Outcome =
@@ -534,6 +541,7 @@ export type PromptState =
   | { readonly s: 'sending'; readonly reply: PromptReply }
   | { readonly s: 'answered'; readonly reply: PromptReply | null } // null: answered from another client
   | { readonly s: 'withdrawn' } // Hermes cancelled it, or the turn ended
+  | { readonly s: 'expired' } // its deadline passed with no answer, so Hermes ran nothing (tools/approval.py:1120-1123)
 
 export type NoticeItem =
   /** Hermes's own words. */

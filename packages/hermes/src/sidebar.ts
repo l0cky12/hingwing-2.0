@@ -145,7 +145,7 @@ export function sessionList(conn: Connection, owned: (bot: BotId, sessions: read
   }
 }
 
-const BADGES = {
+export const BADGES = {
   idle: 'none', thinking: 'running', preparing: 'running', writing: 'running', working: 'running', reasoning: 'running', helping: 'running',
   stopping: 'running', asking: 'asking', answering: 'asking'
 } as const satisfies Record<ReturnType<typeof activityOf>['kind'], SidebarRow['badge']>
