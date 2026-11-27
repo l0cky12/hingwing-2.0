@@ -167,6 +167,7 @@ Steps run in order. Each step's arguments are literal; quote names with spaces.
 | `inview <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that element's box lies fully inside the visible area of every scrolling ancestor and of the window |
 | `page-fits` | none | fails if the page itself scrolls, so the window shows empty space past the app. It logs the page's size and each element that reaches past the window with no scrolling or clipping ancestor. An absolutely positioned element with no positioned ancestor still grows the page while a scroller around it hides it |
 | `inside <role> <name> <role> <name>` | two ARIA roles and exact accessible names or `/regex/` | fails unless the first element's box lies fully inside the second's, as a control inside the card it belongs to. `inview` cannot see an overflow that no scrolling ancestor clips |
+| `same-row <role> <name> <role> <name>` | two ARIA roles and exact accessible names or `/regex/` | logs where each element's box is centred, and fails unless the two centres sit within 1px of each other, as two controls on one toolbar row |
 | `enabled <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that control is enabled now |
 | `checked <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that radio, checkbox or switch (`role=switch`) is checked now |
 | `unchecked <role> <name>` | ARIA role, exact accessible name or `/regex/` | fails unless that radio, checkbox or switch (`role=switch`) is unchecked now |

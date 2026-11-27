@@ -9,6 +9,7 @@ The "Message Hermes" box starts at one line and grows as the user adds lines. It
 - `grow-pinned` keeps the thread at its end while the box grows.
 - `grow-paste` keeps the thread at its end when a paste replaces the text of a full box.
 - `grow-shrink` returns the box to one line when the text is deleted.
+- `toolbar-row` keeps the whole toolbar on one row at the reference size, with the folder, approval mode, effort and context ring all showing, and wraps the right-hand group under the left only in a narrow window.
 
 ## How to get to it (user POV)
 
@@ -23,10 +24,12 @@ Preconditions:
 - **Grow, cap and shrink.** Run `$H run --fixture fixtures/errand.jsonl --run grow-checked wait live field "Message Hermes" 1 fits shot one-line type "Message Hermes" "$T2" field "Message Hermes" 2 fits type "Message Hermes" "$T12" field "Message Hermes" 8 scrolls pinned shot grown type "Message Hermes" "$T30" field "Message Hermes" 8 scrolls pinned shot capped type "Message Hermes" "" field "Message Hermes" 1 fits shot cleared`. `grown.png` and `capped.png` show an eight-line box with its scrollbar and Send on its bottom edge. `cleared.png` shows a one-line box again. It keeps the focus ring, which `one-line.png` does not.
 - **The thread stays pinned.** Run `$H run --fixture fixtures/errand.jsonl --run grow-thread wait live type "Message Hermes" @request click button Send wait approval type "Message Hermes" "$T12" shot running-grown click button "Run once" wait settled shot settled type "Message Hermes" "$T30" field "Message Hermes" 8 scrolls pinned shot settled-grown`. `running-grown.png` shows Stop and Send on the bottom edge of the grown box while the turn waits for approval. `settled-grown.png` shows the Done ring of the settled turn above the grown box.
 - **Paste over a full box.** Run `$H run --fixture fixtures/errand.jsonl --run grow-paste wait live type "Message Hermes" @request click button Send wait approval click button "Run once" wait settled type "Message Hermes" "$T30" press Control+a press Control+c press Control+End press x press Control+a press Control+v value "Message Hermes" "$T30" pinned shot pasted`. The `value` step proves the paste replaced the text. `pasted.png` shows the Done ring above the full box.
+- **Toolbar on one row.** Run `$H run --fixture fixtures/commands.jsonl --acted-elsewhere --models fixtures/models/three.json --usage fixtures/usage/errand.json --yolo off --approvals smart --run toolbar-row wait live see "about 3%" see "Smart approvals" enabled button "Effort: Default" same-row button "Attach files" button Send shot toolbar-1180`. `toolbar-1180.png` shows attach, microphone, Smart, YOLO and the folder on the left of one row, and the model, Default, the context ring and Send on the right of the same row. Run it again with `--size 600x860 --run toolbar-600` and `--size 420x860 --run toolbar-420`, without the `same-row` step. Each shot shows the right-hand group whole on a second row, flush right, under the left-hand group.
 
 ## Gotchas
 
 - At the reference size of 1180x860, 40% of the window is 344px, so the eight-line cap applies. A shorter window caps the box at fewer lines, and the expected count in `field` changes with it.
+- In `toolbar-row` the folder's name is cut short with an ellipsis before the right-hand group wraps. Its button's title and accessible name keep the whole path.
 - `field` reports `clientHeight`. The box has no border of its own. One line reads 30px and eight lines read 182px.
 - `scrolls` holds only when the text is taller than the box and the box draws a scrollbar wider than 2px, so a box that clips its text or hides its scrollbar fails it.
 - A run with only `type` and `shot` steps also passes on a box that never grows. Keep the `field` steps in.
