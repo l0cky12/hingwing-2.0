@@ -1876,8 +1876,8 @@ export class ScriptedGateway {
   /**
    * A message handed to `routed` runs as a turn of its Bot Chat, made if it has none. Hermes stores the message as a
    * user row of kind `internal_notification` (gateway/response_filters.py:203, gateway/run_turn_prepare.py:791). Its
-   * `message.start` carries no text (gateway/session_automation.py:394-408), and the `session.info` after it lists the
-   * claimed row, whose input id is `bot:<delivery id>` (gateway/session_authority.py:1229-1241, gateway/session_bot.py:980).
+   * admission is listed queued, then claimed, with input id `bot:<delivery id>` (gateway/session_authority.py:680,
+   * :1229-1241, gateway/session_bot.py:980), and its `message.start` carries no text (gateway/session_automation.py:394-408).
    * `sessions.changed` follows the row count at the turn's start and end (tui_gateway/change_watcher.py:461-478).
    */
   handIn(routed: string, id: string, message: string, reply: string, ms: number): EchoChat {
@@ -1893,6 +1893,7 @@ export class ScriptedGateway {
     }
     chat.rows.push({ role: 'user', text: message, display_kind: 'internal_notification', timestamp: this.options.clock.now() / 1000, row_id: first })
     chat.turning = true
+    this.say(chat, 'session.info', { pending: [{ ...claimed, status: 'queued' }], running: false, execution_generation: generation - 1, revision: chat.revision })
     this.say(chat, 'message.start', {}, turn)
     this.say(chat, 'session.info', { pending: [claimed], running: true, execution_generation: generation, revision: chat.revision })
     changed()

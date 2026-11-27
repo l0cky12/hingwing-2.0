@@ -654,12 +654,11 @@ function reconcile(state: Tracked, snapshot: Snapshot): Tracked {
 }
 
 /** A message `bot_relay.deliver` handed over is admitted as `bot:<delivery id>` (gateway/session_bot.py:980). */
-const handedIn = (inputId: InputId): boolean => inputId.startsWith('bot:')
+const markHanded = (request: Request): Request => (request.inputId?.startsWith('bot:') === true ? { ...request, handed: true } : request)
 
 function startedRequest(state: Tracked, rows: readonly Admission[]): Request | null {
   const started = rows.find(row => row.state.s === 'started')
-  if (started === undefined) return null
-  return { text: started.text, inputId: started.inputId, rowId: null, attachments: carried(state, started), ...(handedIn(started.inputId) ? { handed: true } : {}) }
+  return started === undefined ? null : markHanded({ text: started.text, inputId: started.inputId, rowId: null, attachments: carried(state, started) })
 }
 
 /** A row of one of Hermes's lists, by the ids that can tie it to this client's outbox. */
@@ -1124,7 +1123,7 @@ function requestFor(state: Tracked, admissionId: string | null, requestText: str
   const row = admissionId === null ? undefined : admissions[admissionId]
   // Hermes's own words for the request, when the start carries them, are what a person reads. The row's text is what the model reads.
   if (admissionId !== null && row !== undefined) {
-    return { ...row, text: requestText ?? row.text, rowId: null, attachments: carried(state, { admissionId, inputId: row.inputId }) }
+    return markHanded({ ...row, text: requestText ?? row.text, rowId: null, attachments: carried(state, { admissionId, inputId: row.inputId }) })
   }
   const admitted = outbox.find(entry => admissionId !== null && entry.inputId === sent[admissionId])
   if (admitted !== undefined) return { text: admitted.text, inputId: admitted.inputId, rowId: null, attachments: admitted.attachments }
