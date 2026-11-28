@@ -47,7 +47,21 @@
         "name": "done",
         "tasks": [
           { "id": "t_e5f6", "title": "Clean up Downloads", "body": null, "assignee": "research", "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": "Moved forty installers to the trash.", "comment_count": 0 },
-          { "id": "t_a7b8", "title": "Archive last year's receipts", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 }
+          { "id": "t_a7b8", "title": "Archive last year's receipts", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 },
+          { "id": "t_d001", "title": "Close finished job 1", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 },
+          { "id": "t_d002", "title": "Close finished job 2", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 },
+          { "id": "t_d003", "title": "Close finished job 3", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 },
+          { "id": "t_d004", "title": "Close finished job 4", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 },
+          { "id": "t_d005", "title": "Close finished job 5", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 },
+          { "id": "t_d006", "title": "Close finished job 6", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 },
+          { "id": "t_d007", "title": "Close finished job 7", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 },
+          { "id": "t_d008", "title": "Close finished job 8", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 },
+          { "id": "t_d009", "title": "Close finished job 9", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 },
+          { "id": "t_d010", "title": "Close finished job 10", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 },
+          { "id": "t_d011", "title": "Close finished job 11", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 },
+          { "id": "t_d012", "title": "Close finished job 12", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 },
+          { "id": "t_d013", "title": "Close finished job 13", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 },
+          { "id": "t_d014", "title": "Close finished job 14", "body": null, "assignee": null, "status": "done", "priority": 0, "current_run_id": null, "session_id": null, "latest_summary": null, "comment_count": 0 }
         ]
       }
     ],
