@@ -21,7 +21,7 @@ import type { PathMatch } from '../domain/path'
 import { MANAGER_NAMES, MANAGERS, type BotManagers, type ManagerName, type ManagerState } from '../domain/passwords'
 import type { RelayState } from '../domain/relay'
 import type { Lease, ScreenFacts } from '../domain/screen'
-import type { Plugin } from '../domain/plugins'
+import type { Plugin, PluginInstalled } from '../domain/plugins'
 import type { ServerState, Tested, ToolServer } from '../domain/tool-servers'
 import type { Toolset } from '../domain/toolsets'
 import type { Routine, RoutineAction, RoutineId } from '../domain/routines'
@@ -1536,6 +1536,19 @@ export function parsePlugins(reply: PluginsManageResult): readonly Plugin[] {
 }
 
 export const parseRestartNeeded = (reply: PluginsManageResult): boolean => isObject(reply) && reply.restart_required === true
+
+/**
+ * `plugins.manage` `install` of a catalog entry (tui_gateway/methods_tools.py:1772-1786). Hermes refuses a failed install with error 5026, so
+ * `ok: false` here is only a reply that says so without the error. `plugin_name` is the name Hermes installed it under, `asked` when it gives none.
+ */
+export function parsePluginInstalled(reply: PluginsManageResult, asked: string): CommandOutcome<PluginInstalled> {
+  if (!isObject(reply) || reply.ok !== true) return { ok: false, refusal: { kind: 'rejected', message: (isObject(reply) ? words(reply.error) : null) ?? `Hermes didn't install ${asked}.` } }
+  const named = (raw: unknown) => (isStrings(raw) ? raw.flatMap(item => words(item) ?? []) : [])
+  return {
+    ok: true,
+    value: { name: words(reply.plugin_name) ?? asked, enabled: reply.enabled === true, restartRequired: reply.restart_required === true, missingEnv: named(reply.missing_env), warnings: named(reply.warnings) }
+  }
+}
 
 /**
  * `tools.list` (tui_gateway/methods_tools.py:234-247). Hermes reads the chat's toolsets, or the launch profile's when it holds no

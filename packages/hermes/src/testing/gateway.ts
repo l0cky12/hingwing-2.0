@@ -602,10 +602,10 @@ const BUSY_MODES: readonly unknown[] = ['interrupt', 'steer', 'queue']
 
 const refusal = (reason: string, data: Obj = {}): { error: WireError } => ({ error: { code: 4001, message: reason, data: { reason, ...data } } })
 
-type PluginState = Omit<PluginSeed, 'key' | 'status'> & { readonly key: string; status: PluginSeed['status'] }
+type PluginState = Omit<PluginSeed, 'key' | 'status'> & { readonly key: string; status: PluginSeed['status']; readonly catalog_name?: string }
 
-const pluginRow = ({ name, key, version, description, source, status }: PluginState) =>
-  ({ name, key, version, description, source, status, portable: false, install_dir: '', has_desktop_half: false, servers: [], tools: [] })
+const pluginRow = ({ name, key, version, description, source, status, catalog_name }: PluginState) =>
+  ({ name, key, version, description, source, status, portable: false, install_dir: '', has_desktop_half: false, servers: [], tools: [], ...(catalog_name === undefined ? {} : { catalog_name }) })
 
 /** gateway/session_controls.py:386-392 */
 const unknownMethod = (method: string) => new Refused('unknown_method', { code: -32601, message: `unknown method: ${method}`, data: { reason: 'unknown_method' } })
@@ -903,7 +903,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   /** tui_gateway/methods_tools.py:1470-1612 */
   ...Object.fromEntries(['list', 'status', 'add', 'test', 'remove'].map(verb => [`mcp.servers.${verb}`, ((gateway, socket, params, routed) => gateway.toolServers(socket, `mcp.servers.${verb}`, params, routed)) satisfies Handler])),
   /** tui_gateway/methods_tools.py:1939-1947 */
-  'plugins.manage': (gateway, socket, params) => gateway.plugins(socket, params),
+  'plugins.manage': (gateway, socket, params, routed) => gateway.plugins(socket, params, routed),
   /** tui_gateway/methods_tools.py:234-273 */
   'tools.list': (gateway, socket, params) => gateway.toolsets(socket, params),
   /** tui_gateway/methods_tools.py:1311-1325 */
@@ -1095,6 +1095,8 @@ export class ScriptedGateway {
   private readonly vault: ScriptedVault | null
   private readonly mcp: ScriptedToolServers | null
   private readonly pluginRows: PluginState[] | null
+  /** profile -> the plugins `plugins.manage` installed there, listed after the header's. */
+  private readonly installedPlugins = new Map<string, PluginState[]>()
   private drop: Drop
   private delivered = 0
   private seqShift = 0
@@ -2327,12 +2329,19 @@ export class ScriptedGateway {
     return this.mcp.call(method, params, routed)
   }
 
-  /** tui_gateway/methods_tools.py:1737-1762 */
-  plugins(socket: Socket, params: Obj): unknown {
-    const rows = this.pluginRows
-    if (rows === null || socket.reach === 'profile') throw unknownMethod('plugins.manage')
+  /**
+   * tui_gateway/methods_tools.py:1737-1762. `list` answers the header's rows for every profile, then what was installed in the profile the
+   * call names. `install` plays only a `catalog_name`, enabled, and refuses in Hermes's words a name the catalog lacks or one installed
+   * already (hermes_cli/plugins_cmd_install.py:504, :844, tui_gateway/methods_tools.py:1784-1785).
+   */
+  plugins(socket: Socket, params: Obj, routed: string): unknown {
+    const shared = this.pluginRows
+    if (shared === null || socket.reach === 'profile') throw unknownMethod('plugins.manage')
     const action = params.action ?? 'list'
+    const installed = this.installedPlugins.get(routed) ?? []
+    const rows = [...shared, ...installed]
     if (action === 'toggle') return this.togglePlugin(rows, params)
+    if (action === 'install') return this.installPlugin(rows, installed, params, routed)
     if (action !== 'list') throw new Refused('unplayed_action', { code: 4019, message: `the scripted gateway plays no plugins.manage ${String(action)}` })
     const listed = rows.map(pluginRow)
     const userCount = listed.filter(row => row.source !== 'bundled').length
@@ -2350,6 +2359,20 @@ export class ScriptedGateway {
     const changed = row.status !== status
     row.status = status
     return { ok: true, unchanged: !changed, restart_required: changed && (status === 'disabled' || row.restart_required === true), gateway_reloaded: false, activation: null, name: row.key, plugin: pluginRow(row) }
+  }
+
+  private installPlugin(rows: readonly PluginState[], installed: readonly PluginState[], params: Obj, routed: string): unknown {
+    const { pluginCatalog, pluginRefusals } = this.fixture.header
+    const name = isString(params.catalog_name) ? params.catalog_name.trim() : ''
+    const refuse = (message: string) => new Refused('install_failed', { code: 5026, message })
+    if (name === '') throw new Refused('invalid_params', { code: 4019, message: "plugins.install requires 'identifier', 'repo', or 'catalog_name'" })
+    const row = pluginCatalog?.find(entry => entry.name === name)
+    if (row === undefined) throw refuse(`'${name}' is not in the Hermes plugin catalog.`)
+    if (pluginRefusals !== undefined && Object.hasOwn(pluginRefusals, name)) throw refuse(pluginRefusals[name]!)
+    if (rows.some(plugin => plugin.name === name)) throw refuse(`Plugin '${name}' already exists.`)
+    const text = (raw: unknown) => (typeof raw === 'string' ? raw : '')
+    this.installedPlugins.set(routed, [...installed, { name, key: name, version: text(row.version), description: text(row.description), source: 'user', status: 'enabled', catalog_name: name }])
+    return { ok: true, plugin_name: name, enabled: true, restart_required: false, warnings: [], missing_env: [], gateway_reloaded: true }
   }
 
   /** `tools.list` reaches only the legacy handler. Every chat, and none, has the header's toolsets, as a profile with no toolsets of its own does. */

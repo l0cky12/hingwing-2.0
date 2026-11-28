@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest'
+import catalog from '../../../fixtures/plugins/catalog.json' with { type: 'json' }
 import plugins from '../../../fixtures/plugins/two.json' with { type: 'json' }
 import type { BotId } from '../src/domain/bots'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
 import { scriptedDialer, type Fixture, type PluginSeed } from '../src/testing/fixture'
-import { parsePlugins } from '../src/wire/parse'
+import { parsePluginInstalled, parsePlugins } from '../src/wire/parse'
 import { BOUND, callsIn, WITH_BOTS } from './support/errand'
 
 const SEEDS = plugins as readonly PluginSeed[]
 
-async function launched(seeds: readonly PluginSeed[] | null, fixture: Fixture = WITH_BOTS) {
+async function launched(seeds: readonly PluginSeed[] | null, fixture: Fixture = WITH_BOTS, more: Partial<Fixture['header']> = {}) {
   const clock = manualClock()
-  const script = scriptedDialer({ ...fixture, header: { ...fixture.header, ...(seeds === null ? {} : { plugins: seeds }) } }, { clock })
+  const script = scriptedDialer({ ...fixture, header: { ...fixture.header, ...(seeds === null ? {} : { plugins: seeds }), ...more } }, { clock })
   const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
   await clock.advance(0)
   const run: typeof hermes.run = async command => {
@@ -72,6 +73,54 @@ describe('setPlugin', () => {
   ])('says %s can’t turn plugins on or off', async (_, seeds, fixture) => {
     const { run } = await launched(seeds, fixture)
     expect(await run({ do: 'setPlugin', bot: null, key: 'kanban', enabled: false })).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't turn plugins on or off." } })
+  })
+})
+
+describe('installing a catalog plugin', () => {
+  const RESEARCH = 'research' as BotId
+  const withCatalog = (pluginRefusals?: Record<string, string>) => launched(SEEDS, WITH_BOTS, { pluginCatalog: catalog, ...(pluginRefusals === undefined ? {} : { pluginRefusals }) })
+
+  it('asks Hermes for the catalog entry by name in the bot’s profile, and the bot then lists it on', async () => {
+    const { run, calls } = await withCatalog()
+    expect(await run({ do: 'installPlugin', bot: RESEARCH, name: 'mem0' })).toEqual({
+      ok: true, value: { name: 'mem0', enabled: true, restartRequired: false, missingEnv: [], warnings: [] }
+    })
+    expect(calls()).toEqual([expect.objectContaining({ params: { action: 'install', catalog_name: 'mem0', enable: true, profile: 'research' } })])
+    const listed = await run({ do: 'plugins', bot: RESEARCH })
+    expect(listed.ok && listed.value.at(-1)).toEqual({ name: 'mem0', key: 'mem0', version: '1.3.0', description: 'Mem0 memory provider with semantic search.', source: 'user', enabled: true, catalogName: 'mem0' })
+  })
+
+  it('installs into the bot it names and no other', async () => {
+    const { run } = await withCatalog()
+    await run({ do: 'installPlugin', bot: RESEARCH, name: 'mem0' })
+    const home = await run({ do: 'plugins', bot: null })
+    expect(home.ok && home.value.map(plugin => plugin.name)).toEqual(['kanban', 'browser-tools'])
+  })
+
+  it('answers Hermes’s words when it refuses the install', async () => {
+    const { run } = await withCatalog({ pomodoro: 'Security scan blocked the install: the plugin runs a shell at import.' })
+    expect(await run({ do: 'installPlugin', bot: RESEARCH, name: 'pomodoro' })).toEqual({
+      ok: false, refusal: { kind: 'rejected', message: 'Security scan blocked the install: the plugin runs a shell at import.' }
+    })
+    expect(await run({ do: 'installPlugin', bot: RESEARCH, name: 'not-listed' })).toEqual({
+      ok: false, refusal: { kind: 'rejected', message: "'not-listed' is not in the Hermes plugin catalog." }
+    })
+  })
+
+  it.each([['a Hermes without the call', null, WITH_BOTS], ['a socket bound to one profile', SEEDS, BOUND]])('says %s can’t install plugins', async (_, seeds, fixture) => {
+    const { run } = await launched(seeds, fixture, { pluginCatalog: catalog })
+    expect(await run({ do: 'installPlugin', bot: null, name: 'mem0' })).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't install plugins." } })
+  })
+})
+
+describe('parsePluginInstalled', () => {
+  it('reads what Hermes says after an install, and refuses a reply that does not say ok', () => {
+    expect(parsePluginInstalled({ ok: true, plugin_name: 'spotify-hermes', enabled: true, restart_required: true, missing_env: ['SPOTIFY_CLIENT_ID', ' '], warnings: ['Known issue: slow first start.'] }, 'spotify')).toEqual({
+      ok: true, value: { name: 'spotify-hermes', enabled: true, restartRequired: true, missingEnv: ['SPOTIFY_CLIENT_ID'], warnings: ['Known issue: slow first start.'] }
+    })
+    expect(parsePluginInstalled({ ok: true }, 'spotify')).toEqual({ ok: true, value: { name: 'spotify', enabled: false, restartRequired: false, missingEnv: [], warnings: [] } })
+    expect(parsePluginInstalled({ ok: false, error: 'clone failed' }, 'spotify')).toEqual({ ok: false, refusal: { kind: 'rejected', message: 'clone failed' } })
+    expect(parsePluginInstalled({}, 'spotify')).toEqual({ ok: false, refusal: { kind: 'rejected', message: "Hermes didn't install spotify." } })
   })
 })
 
