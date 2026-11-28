@@ -1264,7 +1264,7 @@ long for the first byte. Closing the connection cancels a write that is waiting.
 
 | Answer | What the tab says |
 | --- | --- |
-| `200` with a job record | Run now: "Ran <name>." Edit schedule…: "Saved. Hermes runs it next <time>.", "Saved. It's paused, so it has no next run." or "Saved. Hermes has no next run for it." |
+| `200` with a job record | Run now: "Ran <name>." and how it went, from the job's `last_status` and `last_error` (`cron/jobs.py:2371-2373`): "It succeeded.", "It failed: <error>", "It ran, but its result didn't reach where it goes." or "It was stopped before it finished." A status Highwing doesn't know adds nothing. Edit schedule…: "Saved. Hermes runs it next <time>.", "Saved. It's paused, so it has no next run." or "Saved. Hermes has no next run for it." |
 | `409` `Job is already running or was claimed by another scheduler` | "This routine is already running." |
 | `400` with a `detail` | Under the field: "Hermes couldn't use that schedule: <detail>" |
 | `404` `Job not found` | "That routine isn't there any more." The list is read again |
@@ -1275,9 +1275,7 @@ long for the first byte. Closing the connection cancels a write that is waiting.
 On an older Hermes, or one without the run list, the probe answers 404, or gets no
 answer, and the tab shows neither Run now nor Edit schedule…, with no words about
 it. A Hermes from before 2026-06-06 has the two routes and no run list, so it
-shows neither, which is the safe side. Pause, Resume, Delete… and Past runs work as they did. A `200` for a run does
-not say whether the run went well: "Ran <name>." means Hermes ran it, and the
-Past runs list says how it ended.
+shows neither, which is the safe side. Pause, Resume, Delete… and Past runs work as they did.
 
 ## Task board
 
