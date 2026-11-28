@@ -9,6 +9,7 @@ import { basename } from 'node:path'
 import type { AttachmentStore, AttachSources, StageSource } from './attachments'
 import type { ConnectionOwner } from './connection'
 import type { IntroOwner } from './intro'
+import type { PluginCatalog } from './plugin-catalog'
 import type { DraftStore } from './drafts'
 import { openablePath, type Opener } from './files'
 import type { ImageLoader } from './images'
@@ -175,7 +176,7 @@ export interface Pictures {
 export function serveWindows(
   owner: ConnectionOwner, ipc: IpcMainLike, isAppUrl: (url: string) => boolean, opener: Opener, images: ImageLoader, drafts: Pick<DraftStore, 'keep' | 'load'>,
   pane: PreviewOwner, pictures: Pictures, attaching: Attaching,
-  saver: Saver, preferences: Preferences, intro: Pick<IntroOwner, 'intro' | 'apply'>
+  saver: Saver, preferences: Preferences, intro: Pick<IntroOwner, 'intro' | 'apply'>, catalog: PluginCatalog
 ): { dispose(): void } {
   const windows = new Map<number, Map<number, Served>>()
   const owners: Owners = { owner, pane, preferences, intro }
@@ -264,6 +265,7 @@ export function serveWindows(
       await intro.apply(command)
       return DONE
     }
+    if (command.do === 'pluginCatalog') return catalog.read()
     if (!isSetupCommand(command) && epoch !== epochOf(owner.setup.get())) return OTHER_CONNECTION
     if (command.do !== 'export') return owner.run(command)
     const rendered = await owner.run(command)

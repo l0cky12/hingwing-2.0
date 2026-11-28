@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
 import type { Hermes, HttpAnswer, Route } from '@highwing/hermes'
-import type { AttachmentId, BotActivities, Bots, CommandOutcome, Exported, Groups, Link, OpenChat, Recording, RelayDesk, Session, SessionId, Sidebar, SkillLibrary, SlashCatalog, SshHost } from '@highwing/hermes/domain'
+import type { AttachmentId, BotActivities, Bots, CatalogPlugin, CommandOutcome, Exported, Groups, Link, OpenChat, Recording, RelayDesk, Session, SessionId, Sidebar, SkillLibrary, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { DUE, EXAMPLES, nextIntro, OFF, type Intro, type IntroEvent } from '../src/intro'
@@ -565,8 +565,8 @@ describe('validators', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'accountUsage', 'addToolServer', 'answer', 'appSignIn', 'apps', 'archive', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
       'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'controlRoutine', 'createBot', 'createGroup', 'deleteGroup', 'denyRules', 'describeBot', 'discard',
-      'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
-      'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'plugins', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
+      'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'installPlugin', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
+      'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'pluginCatalog', 'plugins', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
       'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
       'sendToGroup', 'setAccent', 'setMode', 'setNotice', 'setOnClose', 'setPlugin', 'setSendKey', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
       'takeControl', 'toolServers', 'tools', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'versions'
@@ -574,6 +574,9 @@ describe('validators', () => {
   })
 })
 
+const CATALOG: readonly CatalogPlugin[] = [
+  { name: 'mem0', description: 'Memory.', tier: 'community', category: 'memory', maintainer: 'mem0ai', version: '1.3.0', platforms: [], stars: 3, featured: null, repo: 'https://github.com/mem0ai/mem0' }
+]
 const still = <T>(value: T) => ({ get: () => value, subscribe: () => () => {} })
 const LINK: Link = { state: 'blocked', why: 'hermes-missing', message: 'A link of this test.' }
 const ABOUT = { app: '0.1.0', hermes: { state: 'offline' } } as const
@@ -714,7 +717,8 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
     { store, sources }, saver, { mode, theme, accent, sidebarWidth, sendKey, spellCheck, snoozes, notices, onClose },
-    { intro, apply: async (event: IntroEvent) => intro.set(nextIntro(intro.get(), event)) }
+    { intro, apply: async (event: IntroEvent) => intro.set(nextIntro(intro.get(), event)) },
+    { read: async () => ({ ok: true, value: CATALOG }) }
   )
   const setCatalog = (next: SlashCatalog) => {
     catalog = next
@@ -977,6 +981,7 @@ describe('serveWindows', () => {
     expect(owner!.setup.get(), 'a refused pick leaves Settings up').toMatchObject({ at: 'saved' })
 
     await expect(run(event(), { do: 'closePreview' }, 1)).resolves.toEqual({ ok: true, value: undefined })
+    await expect(run(event(), { do: 'pluginCatalog' }, 1), 'the catalog comes from the web, whichever Hermes is live').resolves.toEqual({ ok: true, value: CATALOG })
     await expect(run(event(), { do: 'setMode', mode: 'bots' }, 1)).resolves.toEqual({ ok: true, value: undefined })
     await expect(run(event(), { do: 'setTheme', theme: 'light' }, 1)).resolves.toEqual({ ok: true, value: undefined })
     await expect(run(event(), { do: 'setNotice', kind: 'replies', on: false }, 1)).resolves.toEqual({ ok: true, value: undefined })
