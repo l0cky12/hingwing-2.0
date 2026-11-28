@@ -13,7 +13,7 @@ Under each finished reply a quiet line says what the reply used, such as "1,204 
 
 ## How to get to it (user POV)
 
-- Open a chat. The meter sits in the composer's toolbar, just left of Send. Press it.
+- Open a chat. The meter sits at the right end of the row under the composer's pill. Press it.
 - Send a message and wait for the reply to finish. The token line is under the Done ring.
 
 ## Driving it with highwing-verify

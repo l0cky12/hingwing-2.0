@@ -13,7 +13,6 @@ describe('settingsViewOf with no search', () => {
     ['window', 'Window', 'What closing Highwing’s window does.', ['on-close']],
     ['notifications', 'Notifications', 'Which desktop notifications Highwing shows.', ['notice-asks', 'notice-replies', 'notice-jobs']],
     ['passwords', 'Password managers', 'The 1Password and Bitwarden logins each bot can use.', ['passwords']],
-    ['skills', 'Skills', 'The skills the open bot can use, and which of them are on.', ['skills']],
     ['permissions', 'Permissions', 'How Hermes asks before it runs a command.', ['permissions', 'denied']],
     ['keys', 'Keyboard shortcuts', 'Each shortcut, and where in Highwing it works.', ['shortcuts', ...SHORTCUTS.map(({ id }) => `key:${id}`)]],
     ['usage', 'Usage', 'What this Hermes reports of its use.', ['usage']],
@@ -110,7 +109,6 @@ describe('settingsViewOf with a search', () => {
     ['approved', ['permissions']],
     ['approvals.deny', ['denied']],
     ['yolo', ['permissions', 'denied']],
-    ['skill.md', ['skills']],
     ['show all', ['show-work', 'shortcuts']],
     ['version', ['about-app', 'about-hermes']],
     ['font', ['font-interface', 'font-prompt', 'font-code', 'font-terminal']],
@@ -133,9 +131,9 @@ describe('settingsViewOf with a search', () => {
     expect([...settingsViewOf('connection', 'keyboard', 'idle').rows]).toEqual(ROWS.filter(row => row.page === 'keys').map(row => row.id))
   })
 
-  it('shows nothing and says so when no setting matches', () => {
-    const view = settingsViewOf('connection', 'zzz', 'idle')
-    expect(view).toMatchObject({ heading: 'Search results', lede: 'No settings match “zzz”.', pages: [], emptyAdvice: 'Try another word, such as theme, keys or address.', announcement: 'No settings match “zzz”.', current: null })
+  it.each(['zzz', 'skills'])('shows nothing and says so when no setting matches %j', query => {
+    const view = settingsViewOf('connection', query, 'idle')
+    expect(view).toMatchObject({ heading: 'Search results', lede: `No settings match “${query}”.`, pages: [], emptyAdvice: 'Try another word, such as theme, keys or address.', announcement: `No settings match “${query}”.`, current: null })
     expect(view.rows.size).toBe(0)
     expect(view.hits.size).toBe(0)
   })

@@ -5,7 +5,7 @@ import { BOARD_PATH } from '../src/domain/tasks'
 import { failureOf, URL_FAILURES, type CheckStep, type GatewayUrl, type UrlFailure } from '../src/domain/reach'
 import type { Link } from '../src/domain/session'
 import { DialError, gatewaysByUrl, memoryKeep, openHermes, type GatewayDeps, type Gateways, type Hermes, type Keep, type Route } from '../src/hub'
-import { manualClock } from '../src/testing/clock'
+import { manualClock, settle } from '../src/testing/clock'
 import { WEBAPP_SCENARIOS, type FakeWebapp, type WebappScenarioName } from '../src/testing/fake-webapp'
 import { playToEnd } from '../src/testing/fixture'
 import type { Loopback } from '../src/testing/loopback'
@@ -46,11 +46,11 @@ const dialFailure = (dial: Promise<unknown>) => dial.then(
 
 const count = (web: FakeWebapp, request: string) => web.requests.filter(made => made === request).length
 const callbackOf = (authorize: string) => new URL(authorize).searchParams.get('redirect_uri') as string
-/** Sends `request` as written and resolves with everything the server sent before it closed the connection. */
-const raw = (address: string, request: string) => new Promise<string>((resolve, reject) => {
+/** Sends `request` as written, calls `sent` once it is written, and resolves with everything the server sent before it closed the connection. */
+const raw = (address: string, request: string, sent?: () => void) => new Promise<string>((resolve, reject) => {
   const { hostname, port } = new URL(address)
   let heard = ''
-  const socket = connect(Number(port), hostname, () => socket.write(request))
+  const socket = connect(Number(port), hostname, () => socket.write(request, sent))
   socket.on('data', chunk => { heard += chunk.toString() })
   socket.on('error', reject)
   socket.on('close', () => resolve(heard))
@@ -160,8 +160,13 @@ describe('the check of a gateway address, against the fake Webapp', () => {
     const web = await webapp('sign-in-cancelled')
     const { result, life } = check(gatewaysTo(web), web.url)
     await until('the browser to open', () => web.opened.length === 1)
-    const hanging = raw(callbackOf(web.opened[0] ?? ''), 'GET /callback HTTP/1.1\r\n')
-    await new Promise(resolve => setTimeout(resolve, 20))
+    let sent = () => {}
+    const written = new Promise<void>(resolve => { sent = resolve })
+    const hanging = raw(callbackOf(web.opened[0] ?? ''), 'GET /callback HTTP/1.1\r\n', sent)
+    await written
+    // The listener accepted the connection on the poll that connected it, and reads the bytes on the next one.
+    await settle()
+    await settle()
     life.abort()
     expect(await result).toEqual({ ok: false, failure: 'sign-in-cancelled' })
     expect(await hanging).toBe('')

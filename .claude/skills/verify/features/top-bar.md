@@ -1,6 +1,6 @@
 # Top bar
 
-The bar across the top of the chat names the chat, and the bot's pill opens its details. At its right end is a group's member faces, or, below 680 px where the left column is hidden, the New chat pencil. The bar stays one row at any width of the chat column, so its bottom edge lines up with the header of the pane beside it. When the chat's name does not fit, as in a 420 px window, beside a page open full window or beside the computer view, it is cut short with an ellipsis and the pencil keeps its size.
+The bar floats over the top of the chat, and the thread scrolls under it. Its pill names the chat with the bot's face and name, and pressing the bot opens its details. At its right end is a group's member faces, or, below 680 px where the left column is hidden, the New chat pencil. The bar stays one row at any width of the chat column, so its bottom edge lines up with the header of the pane beside it. When the chat's name does not fit, as in a 420 px window, beside a page open full window or beside the computer view, it is cut short with an ellipsis and the pencil keeps its size.
 
 ## Sub-features
 

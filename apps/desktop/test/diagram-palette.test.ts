@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const page = vi.hoisted(() => ({ dark: false, face: 'x' }))
+const page = vi.hoisted(() => ({ dark: false, face: 'x', accent: '' }))
 const load = vi.hoisted(() => {
   let open = () => {}
   const opened = new Promise<void>(resolve => { open = resolve })
@@ -37,7 +37,7 @@ vi.mock('mermaid', async () => {
 vi.mock('dompurify', () => ({ default: { sanitize: (svg: string) => svg } }))
 vi.stubGlobal('matchMedia', () => ({ matches: page.dark, addEventListener: () => {}, removeEventListener: () => {} }))
 vi.stubGlobal('document', { documentElement: {} })
-vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: (name: string) => (name === '--signal-soft' ? (page.dark ? 'dark-fill' : 'light-fill') : name === '--sans' ? page.face : 'x') }))
+vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: (name: string) => (name === '--signal-soft' ? `${page.dark ? 'dark' : 'light'}-fill${page.accent}` : name === '--signal' ? `teal${page.accent}` : name === '--sans' ? page.face : 'x') }))
 
 const { drawDiagram, drawnBefore, lookOf } = await import('../src/renderer/chat/diagrams')
 const flush = () => new Promise(done => setTimeout(done, 0))
@@ -45,6 +45,7 @@ const flush = () => new Promise(done => setTimeout(done, 0))
 afterEach(() => {
   page.dark = false
   page.face = 'x'
+  page.accent = ''
 })
 
 describe('diagrams drawn across a theme switch', () => {
@@ -84,5 +85,12 @@ describe('diagrams drawn across a theme switch', () => {
     expect(await drawDiagram('faced')).toMatchObject({ svg: expect.stringContaining('data-face="x"') })
     page.face = 'DejaVu Serif'
     expect(await drawDiagram('faced')).toMatchObject({ svg: expect.stringContaining('data-face="DejaVu Serif"') })
+  })
+
+  it('draws again in the accent Settings → Appearance picked, after a drawing in the old accent', async () => {
+    load.open()
+    expect(await drawDiagram('accented')).toMatchObject({ svg: expect.stringContaining('data-fill="light-fill"') })
+    page.accent = '-plum'
+    expect(await drawDiagram('accented')).toMatchObject({ svg: expect.stringContaining('data-fill="light-fill-plum"') })
   })
 })
