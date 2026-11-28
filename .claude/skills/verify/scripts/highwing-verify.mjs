@@ -2,8 +2,8 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync, appendFileSync, openSync, readSync, closeSync } from 'node:fs'
-import { delimiter, dirname, extname, join, resolve, sep } from 'node:path'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync, appendFileSync, openSync, readSync, closeSync } from 'node:fs'
+import { delimiter, dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
@@ -659,6 +659,14 @@ const STEPS = {
         clipboard.write([new ClipboardItem({ 'image/png': new Blob([Buffer.from(png, 'base64')], { type: 'image/png' }) })]), bytes)
       await ctx.page.getByLabel('Message Hermes', { exact: true }).focus({ timeout: ctx.timeout })
       await ctx.page.keyboard.press('Control+V')
+    }
+  },
+  put: {
+    arity: 2,
+    run: async (ctx, from, to) => {
+      if (!isAbsolute(to)) throw new Error(`put writes to an absolute path, not ${JSON.stringify(to)}`)
+      mkdirSync(dirname(to), { recursive: true })
+      copyFileSync(join(REPO, from), to)
     }
   },
   'drag-file': {
