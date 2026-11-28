@@ -127,6 +127,7 @@ function sampleCode({ lang, ms }) {
 }
 
 const ACTIVITIES = ['working', 'waiting', 'unread', 'none']
+const WORKING_MARK_SIZES = { picture: 44, face: 22 }
 
 const STEPS = {
   wait: { arity: 1, run: async (ctx, state) => waitFor(ctx, state) },
@@ -617,18 +618,21 @@ const STEPS = {
         const loaded = element instanceof HTMLImageElement && element.complete && element.naturalWidth > 0
         const running = element.getAnimations().filter(animation => animation.animationName === 'hop' && animation.playState === 'running' && Number(animation.effect?.getTiming().duration) > 0)
         const words = [...element.closest('.tip').children].filter(child => child !== element && !child.matches('.sr, .elapsed')).map(child => child.textContent).join(' ').trim()
+        const read = [...element.closest('.tip').querySelectorAll(':scope > .sr')].map(child => child.textContent).join(' ').trim()
         return {
           drawn: element instanceof HTMLImageElement ? (loaded ? 'picture' : 'unloaded picture') : 'face',
           motion: running.length > 0 ? 'hopping' : 'still',
           size: Math.round(element.getBoundingClientRect().width),
           animations: running.map(animation => `${animation.animationName} ${animation.effect.getTiming().duration} ms`).join(', ') || 'none',
-          words
+          words,
+          read
         }
       }, undefined, { timeout: ctx.timeout })
-      const fits = found => found.drawn === drawn && found.motion === motion && (drawn === 'picture') === (found.words === '')
+      const fits = found => found.drawn === drawn && found.motion === motion && found.size === WORKING_MARK_SIZES[drawn]
+        && (drawn === 'picture' ? found.words === '' && found.read !== '' : found.words !== '')
       const held = await poll(ctx, read, fits)
-      log(ctx, `  the working mark is a ${held.size} px ${held.drawn}, ${held.motion} (${held.animations}), beside "${held.words}"`)
-      if (!fits(held)) throw new Error(`the working mark is a ${held.drawn}, ${held.motion}, beside "${held.words}", not a ${drawn}, ${motion}${drawn === 'picture' ? ' with its words for screen readers only' : ' beside its words'}`)
+      log(ctx, `  the working mark is a ${held.size} px ${held.drawn}, ${held.motion} (${held.animations}), beside "${held.words}", read out as "${held.read}"`)
+      if (!fits(held)) throw new Error(`the working mark is a ${held.drawn}, ${held.motion}, beside "${held.words}", not a ${WORKING_MARK_SIZES[drawn]} px ${drawn}, ${motion}${drawn === 'picture' ? ' with its words for screen readers only' : ' beside its words'}`)
     }
   },
   tile: {
