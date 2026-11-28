@@ -1,4 +1,4 @@
-import { EFFORTS, machineOf, type Effort, type Target, type Tuning } from '@highwing/hermes/domain'
+import { EFFORTS, type Effort, type Tuning } from '@highwing/hermes/domain'
 
 export type ThinkingTune =
   | { readonly set: 'effort'; readonly to: Effort | 'default' }
@@ -15,4 +15,5 @@ export const thinkingShown = (tuning: Tuning): boolean => tuning.effort !== null
 
 export const thinkingLabel = (tuning: Tuning): string => (tuning.effort === null ? 'Thinking' : `Effort: ${EFFORT_WORDS[tuning.effort]}`)
 
-export const folderFieldLabel = (target: Target | null): string => `Folder on ${target === null ? 'the Hermes machine' : machineOf(target)}`
+/** `hermes`: the name the top bar gives the Hermes, or null with no connection. */
+export const folderFieldLabel = (hermes: string | null): string => `Folder on ${hermes ?? 'the Hermes machine'}`

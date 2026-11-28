@@ -1,7 +1,8 @@
-import { checkTarget, gatewaysByUrl, liveRoute, openHermes, remoteRoute, sshRead, type Dialer, type Hermes, type Route } from '@highwing/hermes'
-import { byKind, type BotId, type GatewayUrl, type Target } from '@highwing/hermes/domain'
+import { checkTarget, gatewaysByUrl, liveRoute, openHermes, pickedRoute, remoteRoute, sshRead, timeWay, type Dialer, type Hermes, type Route } from '@highwing/hermes'
+import { byKind, type BotId, type GatewayUrl, type ServerId, type Servers, type Target } from '@highwing/hermes/domain'
 import { fixtureLatency, fixtureRead, fixtureTranscribe, loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, safeStorage, session, shell, type OpenDialogOptions } from 'electron'
+import { randomUUID } from 'node:crypto'
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { version } from '../../package.json'
@@ -50,7 +51,9 @@ const REMOTE_READ_MS = 20_000
 
 const recorded = (dial: Dialer): Dialer => (HIGHWING_RECORD ? recordingDialer(dial, HIGHWING_RECORD) : dial)
 
-const addressOf = (target: Target) => byKind<GatewayUrl | null>(target, { local: () => null, remote: () => null, url: ({ url }) => url })
+const addressesOf = (target: Target) => byKind<readonly GatewayUrl[]>(target, { local: () => [], remote: () => [], ssh: () => [], url: ({ url }) => [url] })
+/** Every gateway address a saved server can be reached at, so a sign-in is kept for as long as a way needs it. */
+const addressesIn = ({ list }: Servers) => list.flatMap(({ ways }) => ways.flatMap(addressesOf))
 
 async function savedConnection(settingsDir: string, opener: Opener, open: (dial: Dialer, place: string) => Hermes, armIntro: () => Promise<void>): Promise<ConnectionOwner> {
   // An installed build takes neither variable: one would keep sign-ins unsealed, the other would cut a real sign-in short.
@@ -59,10 +62,11 @@ async function savedConnection(settingsDir: string, opener: Opener, open: (dial:
   const keep = signInStore(settingsDir, async () => (verifying && HIGHWING_TEST_KEYRING ? UNSEALED : keyringSeal(safeStorage, process.platform)))
   const gateways = gatewaysByUrl({ keep, browse: opener.browse, ...(signInMs === null ? {} : { signInMs }) })
 
-  const routeFor = (target: Target): Route => {
+  const routeOf = (target: Target): Route => {
     const route = byKind<Route>(target, {
       local: () => liveRoute(),
       remote: ({ host }) => remoteRoute(host),
+      ssh: ({ host }) => remoteRoute(host),
       url: ({ url }) => gateways.route(url)
     })
     return { ...route, dial: recorded(route.dial) }
@@ -70,16 +74,17 @@ async function savedConnection(settingsDir: string, opener: Opener, open: (dial:
 
   const loaded = await loadSettings(settingsDir)
   // A file this build cannot read may name an address, so its sign-in stays until a save replaces the file.
-  if (loaded.state === 'saved') await gateways.keepOnly(addressOf(loaded.target))
-  if (loaded.state === 'none') await gateways.keepOnly(null)
+  if (loaded.state === 'saved') await gateways.keepOnly(addressesIn(loaded.servers))
+  if (loaded.state === 'none') await gateways.keepOnly([])
   return ownConnection({
     loaded,
-    save: async target => {
-      await saveSettings(settingsDir, target)
-      await gateways.keepOnly(addressOf(target))
+    save: async servers => {
+      await saveSettings(settingsDir, servers)
+      await gateways.keepOnly(addressesIn(servers))
     },
     check: (target, options) => checkTarget(target, { ...options, gateways }),
-    routeFor,
+    routeFor: (server, onPick) => pickedRoute(server, target => ({ target, route: routeOf(target), time: signal => timeWay(target, { signal }) }), onPick),
+    newId: () => randomUUID() as ServerId,
     open,
     armIntro
   })

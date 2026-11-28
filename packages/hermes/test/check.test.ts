@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CHECK_FAILURES, type CheckFailure, type CheckStep, type SshHost, type Target } from '../src/domain/reach'
 import { manualClock } from '../src/testing/clock'
-import { FAKE_HOST, SCENARIOS, type FakeHost, type ScenarioName } from '../src/testing/fake-host'
+import { FAKE_HOST, FAKE_LAN_HOST, SCENARIOS, type FakeHost, type ScenarioName } from '../src/testing/fake-host'
 import { checkTarget, peerFailure, tailnetOf, type Peer } from '../src/wire/check'
 import type { Clock } from '../src/wire/link'
 import { host, until } from './support/host'
@@ -132,6 +132,30 @@ describe('checkTarget, against the fake host', () => {
     life.abort()
     await result
     await until('the held ssh to end', () => held.running().length === 0)
+  })
+})
+
+describe('checkTarget, for an ssh destination', () => {
+  const LAN: Target = { kind: 'ssh', host: FAKE_LAN_HOST }
+
+  it.each(['ok', 'tailscale-missing', 'host-not-found'] as const)('passes at ssh then hermes in the %s scenario, since it never asks Tailscale', async name => {
+    const held = await host(name)
+    const { result, steps } = check(held, LAN)
+    expect(await result).toEqual({ ok: true })
+    expect(steps).toEqual(['ssh', 'hermes'])
+    expect(held.calls).toEqual(['gateway tickets --probe --json'])
+  })
+
+  it.each(['ssh-denied', 'hermes-too-old'] as const)('fails as %s at the step that names', async name => {
+    const { result, steps } = check(await host(name), LAN)
+    expect(await result).toEqual({ ok: false, failure: name })
+    expect(steps).toEqual(name === 'ssh-denied' ? ['ssh'] : ['ssh', 'hermes'])
+  })
+
+  it('fails as unreachable for a destination ssh cannot resolve', async () => {
+    const { result, steps } = check(await host('ok'), { kind: 'ssh', host: '192.168.1.99' as SshHost })
+    expect(await result).toEqual({ ok: false, failure: 'unreachable' })
+    expect(steps).toEqual(['ssh'])
   })
 })
 

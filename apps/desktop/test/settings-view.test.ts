@@ -38,6 +38,12 @@ describe('settingsViewOf with a search', () => {
     expect([...view.hits]).toEqual([['appearance', 1]])
   })
 
+  it.each(['add a server', 'way in', 'fastest', 'in order', 'move up', 'servers', 'LAN', 'ssh destination'])('finds the Connection page by "%s", the words of its servers and ways', query => {
+    const view = settingsViewOf('appearance', query, 'idle')
+    expect(view.pages).toContain('connection')
+    expect(view.rows.has('connection')).toBe(true)
+  })
+
   it('ignores case and the spaces around the query', () => {
     const view = settingsViewOf('connection', '  BOTS ', 'idle')
     expect(view.lede).toBe('Settings that match “BOTS”.')

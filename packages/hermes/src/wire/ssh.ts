@@ -121,6 +121,15 @@ export async function sshExec(host: SshHost, args: HermesArgs, options: SshOptio
   return { ok: true, code: run.code, stdout: run.stdout }
 }
 
+/** What a ping runs on the far machine. A literal, and a word that sh, cmd and PowerShell all know. */
+export const PING = 'exit'
+
+/** Whether ssh logs in to `host` and runs a command there before the deadline. It runs no hermes command, so it says nothing about Hermes. */
+export async function sshPing(host: SshHost, options: SshOptions): Promise<boolean> {
+  const run = await runTool(options.sshBin ?? 'ssh', [...SSH_OPTIONS, host, PING], options)
+  return run.end === 'exit' && run.code === 0
+}
+
 /** The most of a far file Highwing reads. */
 export const READ_CAP = 10 * 1024 * 1024
 /**

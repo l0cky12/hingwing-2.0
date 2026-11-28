@@ -36,6 +36,13 @@ computer needs `ssh`.
 Highwing runs the same probe, attach and ticket commands for the Hermes on this
 computer, with no ssh and no forward. See `packages/hermes/src/wire/tickets.ts`.
 
+A server saved with several ways in adds no Hermes command and no Hermes route.
+Before each dial Highwing times every way: one `ssh <destination> exit` for a way
+over ssh, which logs in and runs nothing of Hermes, and one `HEAD` request for a
+gateway address, where any HTTP status counts as an answer. It then runs the
+commands above through the way it picked, and through the next way if that dial
+fails. A server with one way is not timed. See `packages/hermes/src/wire/pick.ts`.
+
 Highwing finds `hermes` on the far machine the way Hermes's own SSH client does. It
 asks the login shell first, then tries `~/.local/bin/hermes`,
 `/usr/local/bin/hermes` and `~/.hermes/hermes-agent/venv/bin/hermes`.

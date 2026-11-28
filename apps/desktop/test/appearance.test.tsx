@@ -24,10 +24,11 @@ vi.mock('../src/renderer/setup/ConnectionCard', async original => {
   }
 })
 
+import { live } from './support/live'
 const { Settings } = await import('../src/renderer/setup/Settings')
 
 const HOST: Target = { kind: 'local' }
-const AT_REST: CardSetup = { at: 'form', live: { target: HOST, epoch: 1 }, notice: null }
+const AT_REST: CardSetup = { at: 'form', live: live(HOST, 1), notice: null }
 const render = (theme: Theme, accent: Accent = 'bot') => renderToStaticMarkup(<Settings setup={AT_REST} mode="bots" theme={theme} accent={accent} onRequestClose={() => {}} onShowShortcuts={() => {}} />)
 const labelOf = (html: string, id: string) => new RegExp(`id="${id}"[^>]*>([^<]*)<`).exec(html)?.[1]
 const groupOf = (html: string, look: string, labelledBy: string) =>

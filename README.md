@@ -78,12 +78,24 @@ You do not need to start the Hermes gateway. Highwing starts it when it first co
 
    To log in as a different user on the Hermes machine, use `user@hermes-host` here and in step 4.
 
-3. Start Highwing. On the setup screen, choose **Tailnet machine**.
+3. Start Highwing. On the setup screen, choose **Tailnet machine**. For a machine that is not on your tailnet, choose **SSH** and type any SSH destination. Highwing then skips the Tailscale steps of the check.
 4. In **Hermes machine**, type the machine's Tailscale name, for example `hermes-host` or `hermes-host.example-tailnet.ts.net`. To log in as a different user, type `user@hermes-host`.
 5. Choose **Connect**. Highwing checks Tailscale on this computer, finds the machine on your tailnet, logs in over SSH and finds Hermes there. The screen shows each step.
 6. When the check passes, choose **Open chat**.
 
-Highwing saves the connection in `~/.config/Highwing/connection.json` and opens on the chat from then on. The file holds only the SSH destination you typed, including a `user@` part if you typed one. Ports, keys and any other SSH options come from your SSH configuration. To change the machine, choose **Settings** in the top bar, then **Change**. **Close** goes back to the chat and keeps your draft.
+Highwing saves the connection in `~/.config/Highwing/connection.json` and opens on the chat from then on. The file holds each server you saved: its name, its ways in and which server is in use. A way in holds only what you typed, such as the SSH destination with its `user@` part, or a gateway address. Ports, keys and any other SSH options come from your SSH configuration. To change the machine, choose **Settings** in the top bar, then **Change**. **Close** goes back to the chat and keeps your draft.
+
+### Several ways in, and several servers
+
+One Hermes machine can have several ways in, for example its Tailscale name, its address on your home network, and a host from your SSH configuration.
+
+1. Choose **Settings**, then **Add a way in** under the connection.
+2. Choose **SSH** and type the destination, for example `192.168.1.20`, or choose another kind.
+3. Choose **Connect**. When the check passes, the connection lists both ways.
+
+Each time Highwing connects, it times every way and uses the fastest one that answers. If that way fails, it uses the next. To prefer one way whenever it answers, set **Pick** to **In order** and move that way to the top with the arrow buttons. **Remove** takes a way out. While a server has several ways, **Change** is not shown: remove a way and add another instead.
+
+To keep a second Hermes, choose **Add a server**. Highwing saves it and moves to it. The **Servers** list then shows every server. **Use** moves to another server, and **Remove** forgets one that is not in use. Each server keeps its own unread marks.
 
 ### If the check fails
 

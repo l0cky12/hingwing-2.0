@@ -14,6 +14,7 @@ import { StatusStack } from '../composer/StatusStack'
 import { ComputerCard } from '../computer/Computer'
 import { ThinkingPill } from '../composer/ThinkingPill'
 import { folderFieldLabel, thinkingShown } from '../composer/tuning'
+import { useHermesName } from '../chrome/HermesFoot'
 import { exampleCommand, examplesFor, OFF } from '../../intro'
 import { run, useTopic } from '../store'
 import { ExampleRequests } from '../setup/Intro'
@@ -342,6 +343,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   const screen = useTopic('screen')?.screen
   const setup = useTopic('setup')
   const target = setup === undefined || setup.at === 'pinned' ? null : (setup.live?.target ?? null)
+  const hermes = useHermesName(target)
   const filesHere = setup !== undefined && isLocal(setup)
 
   const onCloseSide = useCallback((side: SideId) => {
@@ -425,7 +427,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
             )}
             {cwd !== null && (
               <FolderChip
-                key={`folder-${id}`} cwd={cwd} field={folderFieldLabel(target)} disabled={!live} running={!idle}
+                key={`folder-${id}`} cwd={cwd} field={folderFieldLabel(hermes)} disabled={!live} running={!idle}
                 onMove={to => run({ do: 'move', sessionId: id, cwd: to })}
               />
             )}

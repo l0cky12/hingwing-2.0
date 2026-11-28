@@ -27,8 +27,8 @@ export interface Keep {
   load(url: GatewayUrl): Promise<string | null>
   /** Keeps `secret` for the address in place of what it held. null: keeps nothing for it. */
   save(url: GatewayUrl, secret: string | null): Promise<void>
-  /** Forgets every address but `url`. null: all of them. */
-  keepOnly(url: GatewayUrl | null): Promise<void>
+  /** Forgets every address but those of `urls`. */
+  keepOnly(urls: readonly GatewayUrl[]): Promise<void>
 }
 
 /** A keeper that writes nothing. For tests, and for a computer with no keyring. */
@@ -38,8 +38,8 @@ export function memoryKeep(): Keep {
     durable: false,
     load: async url => kept.get(url) ?? null,
     save: async (url, secret) => void (secret === null ? kept.delete(url) : kept.set(url, secret)),
-    keepOnly: async url => {
-      for (const held of [...kept.keys()]) if (held !== url) kept.delete(held)
+    keepOnly: async urls => {
+      for (const held of [...kept.keys()]) if (!urls.includes(held)) kept.delete(held)
     }
   }
 }
@@ -73,8 +73,8 @@ export interface Gateways {
    * started over HTTP, so no dial fails as `not-running`.
    */
   route(url: GatewayUrl): Route
-  /** Forgets every sign-in but that of `url`. null: all of them. Never rejects. */
-  keepOnly(url: GatewayUrl | null): Promise<void>
+  /** Forgets every sign-in but those of `urls`. Never rejects. */
+  keepOnly(urls: readonly GatewayUrl[]): Promise<void>
 }
 
 const SIGN_IN_MS = 600_000
@@ -444,9 +444,9 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
       return { dial: dialWith(minted), read, transcribe: transcribeAt(url), dispose: () => life.abort() }
     },
 
-    keepOnly: async url => {
-      for (const held of [...logins.keys()]) if (held !== url) logins.delete(held)
-      await deps.keep.keepOnly(url).catch(() => {})
+    keepOnly: async urls => {
+      for (const held of [...logins.keys()]) if (!urls.includes(held)) logins.delete(held)
+      await deps.keep.keepOnly(urls).catch(() => {})
     }
   }
 }

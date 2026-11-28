@@ -1,12 +1,13 @@
 import type { BotId, GatewayUrl, GroupId, SessionId, SshHost } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { Setup } from '../src/ipc-contract'
+import { live } from './support/live'
 import { DONE, DUE, EXAMPLE_REQUESTS, EXAMPLES, exampleCommand, examplesFor, introInFront, introSteps, nextIntro, OFF } from '../src/intro'
 
 const LOCAL = { kind: 'local' } as const
 const REMOTE = { kind: 'remote', host: 'hermes-host.example-tailnet.ts.net' as SshHost } as const
 const GATEWAY = { kind: 'url', url: 'https://hermes.example.com:8443/hermes' as GatewayUrl } as const
-const LIVE = { target: LOCAL, epoch: 1 }
+const LIVE = live(LOCAL, 1)
 const ARM = { do: 'arm' } as const
 const LEAVE = { do: 'examples' } as const
 const FINISH = { do: 'done' } as const
@@ -49,11 +50,11 @@ describe('when the intro covers the screen', () => {
   const places: readonly [string, Setup, boolean][] = [
     ['the chat', { at: 'chat', live: LIVE }, true],
     ['a fixture', { at: 'pinned' }, false],
-    ['the first connection', { at: 'saved', live: LIVE, from: 'first-run' }, true],
-    ['settings', { at: 'saved', live: LIVE, from: 'settings' }, false],
+    ['the first connection', { at: 'saved', live: LIVE, from: 'first-run', into: 'replace' }, true],
+    ['settings', { at: 'saved', live: LIVE, from: 'settings', into: 'replace' }, false],
     ['the form', { at: 'form', live: null, notice: null }, false],
-    ['a check', { at: 'checking', live: null, target: LOCAL, step: 'hermes' }, false],
-    ['a failed check', { at: 'failed', live: null, target: LOCAL, failure: 'cant-save' }, false]
+    ['a check', { at: 'checking', live: null, target: LOCAL, into: 'replace', step: 'hermes' }, false],
+    ['a failed check', { at: 'failed', live: null, target: LOCAL, into: 'replace', failure: 'cant-save' }, false]
   ]
 
   it.each(places)('covers %s only while the steps are due', (_where, setup, covered) => {

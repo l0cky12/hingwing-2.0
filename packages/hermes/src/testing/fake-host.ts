@@ -9,11 +9,15 @@ import { createServer, type AddressInfo, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { hostPart, parseSshHost, type CheckFailure, type SshHost } from '../domain/reach'
-import { TICKET_PREFIX } from '../wire/link'
-import { READ_FILE } from '../wire/ssh'
+import { systemClock, TICKET_PREFIX } from '../wire/link'
+import { PING, READ_FILE } from '../wire/ssh'
 import type { Loopback } from './loopback'
 
 export const FAKE_HOST = parseSshHost('hermes-host.example-tailnet.ts.net') as SshHost
+/** The same machine by its address on the local network. Tailscale does not list it, and ssh reaches it sooner. */
+export const FAKE_LAN_HOST = parseSshHost('192.168.1.20') as SshHost
+/** How long the machine takes to answer a ping at each of its names. Far enough apart that the faster one is never a tie. */
+export const PING_MS: Readonly<Record<string, number>> = { [hostPart(FAKE_HOST)]: 120, [hostPart(FAKE_LAN_HOST)]: 15 }
 
 /** What one run of a tool prints, and the code it exits with. `never`: it waits to be killed. */
 interface Said {
@@ -89,7 +93,7 @@ export interface FakeHost {
   readonly ssh: string
   readonly tailscale: string
   readonly hermes: string
-  /** Every hermes command that ran, on either machine, every relay as `relay <port>` and every file read as `read <path>`, in order. */
+  /** Every hermes command that ran, on either machine, every relay as `relay <port>`, every file read as `read <path>` and every ping as `ping <host>`, in order. */
   readonly calls: readonly string[]
   /** How many times a tool has finished printing something it was told to print. */
   readonly printed: number
@@ -110,7 +114,7 @@ type Tool = (typeof TOOLS)[number]
 type Order = readonly [verb: 'stdout' | 'stderr' | 'exit' | 'pipe' | 'ask', value: string | number]
 interface Asked { readonly tool: Tool; readonly argv: readonly string[]; readonly pid: number }
 type ToolSaid = { readonly asked: Asked } | { readonly printed: true } | { readonly read: string }
-interface Answer { readonly at: Hold | null; say(): Said | Asks | { readonly pipe: number } }
+interface Answer { readonly at: Hold | null; readonly afterMs?: number; say(): Said | Asks | { readonly pipe: number } }
 
 const toolScript = (tool: Tool, port: number) => `#!${process.execPath}
 const net = require('node:net')
@@ -251,12 +255,17 @@ export async function fakeHost(name: ScenarioName, gateway: Gateway | null, opti
     const { host, forward, command } = sshCall(argv)
     const refuse = (said: Said): Answer => ({ at: forward === null ? 'ssh' : null, say: () => said })
     if (scenario.ssh !== 'through' && scenario.ssh !== null) return refuse(scenario.ssh)
-    if (host === undefined || hostPart(host as SshHost) !== hostPart(FAKE_HOST)) return refuse({ stderr: `ssh: Could not resolve hostname ${host}: Name or service not known\r\n`, exit: 255 })
+    const pingMs = host === undefined ? undefined : PING_MS[hostPart(host as SshHost)]
+    if (host === undefined || pingMs === undefined) return refuse({ stderr: `ssh: Could not resolve hostname ${host}: Name or service not known\r\n`, exit: 255 })
     if (forward !== null) {
       const hidden = Number(forward.split(':')[1])
       const port = tunnels.get(hidden)
       calls.push(`relay ${hidden}`)
       return { at: 'relay', say: () => (port === undefined ? { stderr: 'channel 0: open failed: connect failed: Connection refused\r\n', exit: 255 } : { pipe: port }) }
+    }
+    if (command === PING) {
+      calls.push(`ping ${host}`)
+      return { at: null, afterMs: pingMs, say: () => ({ exit: 0 }) }
     }
     if (command === READ_FILE) return { at: null, say: () => ({ then: read }) }
     const args = REMOTE_HERMES.exec(command)?.[1]
@@ -288,6 +297,7 @@ export async function fakeHost(name: ScenarioName, gateway: Gateway | null, opti
     pids.add(asked.pid)
     const answer = answers[asked.tool](asked.argv)
     if (answer.at !== null && answer.at === holding) await new Promise<void>(resolve => waiting.push(resolve))
+    if (answer.afterMs !== undefined) await new Promise<void>(resolve => void systemClock.setTimeout(resolve, answer.afterMs as number))
     return order(socket, answer.say())
   }
 

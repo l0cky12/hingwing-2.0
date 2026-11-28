@@ -58,6 +58,7 @@ const onHermes = (source: (hermes: Hermes, topic: Topic) => Source) => ({ owner 
 
 const SOURCES: { readonly [K in Kind]: (owners: Owners, topic: Topic) => Source } = {
   setup: ({ owner }) => current(owner.setup),
+  servers: ({ owner }) => current(owner.servers),
   preview: ({ pane }) => current(pane.preview),
   mode: ({ preferences }) => current(preferences.mode),
   theme: ({ preferences }) => current(preferences.theme),

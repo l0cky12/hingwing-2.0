@@ -5,6 +5,7 @@ import { failureOf, gatewayHost, URL_FAILURES } from '../src/domain/reach'
 import { byKind, firstStep, onThisComputer, type Target } from '../src/domain/reach'
 
 const remote = (host: string) => ({ kind: 'remote', host: host as SshHost }) as const
+const LAN = { kind: 'ssh', host: '192.168.1.20' as SshHost } as const
 
 describe('parseSshHost', () => {
   it.each([
@@ -282,8 +283,28 @@ describe('a target that is a gateway address', () => {
     expect(onThisComputer(at('http://127.0.0.1:9120'))).toBe(false)
   })
 
-  it('is one of three kinds, and byKind hands each kind to its own branch', () => {
-    const branch = (target: Target) => byKind(target, { local: () => 'local', remote: ({ host }) => `remote ${host}`, url: ({ url }) => `url ${url}` })
-    expect([{ kind: 'local' } as const, remote('hermes-host'), HERE].map(branch)).toEqual(['local', 'remote hermes-host', 'url https://hermes.example.com'])
+  it('is one of four kinds, and byKind hands each kind to its own branch', () => {
+    const branch = (target: Target) => byKind(target, { local: () => 'local', remote: ({ host }) => `remote ${host}`, ssh: ({ host }) => `ssh ${host}`, url: ({ url }) => `url ${url}` })
+    expect([{ kind: 'local' } as const, remote('hermes-host'), LAN, HERE].map(branch)).toEqual(['local', 'remote hermes-host', 'ssh 192.168.1.20', 'url https://hermes.example.com'])
+  })
+})
+
+describe('an ssh destination', () => {
+  it('is read from a saved file with its host as ssh takes it', () => {
+    expect(targetOf({ kind: 'ssh', host: ' ada@192.168.1.20 ' })).toEqual({ kind: 'ssh', host: 'ada@192.168.1.20' })
+    expect(targetOf({ kind: 'ssh', host: '-oProxyCommand=true' })).toBeNull()
+  })
+
+  it('is another way than the tailnet machine of the same name', () => {
+    expect(sameTarget(LAN, { kind: 'ssh', host: '192.168.1.20' as SshHost })).toBe(true)
+    expect(sameTarget(LAN, remote('192.168.1.20'))).toBe(false)
+    expect(sameTarget(remote('192.168.1.20'), LAN)).toBe(false)
+  })
+
+  it('is named as a tailnet machine is, starts its check at ssh, and is never taken for this computer', () => {
+    expect(machineOf(LAN)).toBe('192.168.1.20')
+    expect(machineOf({ kind: 'ssh', host: 'ada@workshop.lan' as SshHost })).toBe('workshop')
+    expect(firstStep(LAN)).toBe('ssh')
+    expect(onThisComputer(LAN)).toBe(false)
   })
 })

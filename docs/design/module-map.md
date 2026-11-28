@@ -18,7 +18,7 @@ highwing-2.0/
   packages/
     hermes/                      @highwing/hermes        Node. No Electron, no DOM.
       src/
-        hub.ts                   public entry "."         openHermes, Hermes, Command, Feed, liveRoute, remoteRoute, Route, checkTarget
+        hub.ts                   public entry "."         openHermes, Hermes, Command, Feed, liveRoute, remoteRoute, pickedRoute, timeWay, Route, checkTarget
         actor.ts                 private                  one session: owns its Tracked state, makes the calls a state asks for (attach, resubmit, the facts a watched chat needs), lends commands a SessionPort
         session-commands.ts      private                  one row per command about one chat, over that chat's SessionPort. `versions` stays in hub.ts: it must not attach the chat
         sidebar.ts               private                  stored rows, the running set, deriveSidebar
@@ -36,6 +36,7 @@ highwing-2.0/
           groups.ts                                       Groups, GroupRow, GroupChat, GroupEvent, Answering, GroupDraft, seatsFor, groupIdFor; GroupDesk, nextGroups, logStart and nextPoll, which only the hub uses
           open.ts                                         OpenChat, Shown, ShownGroup, ChatRef, shownChat, shownBot, shownGroup, nextDesk, launchChat: the open chat or group chat and every move it can make
           reach.ts                                        Target, SshHost, CheckStep, CheckFailure, CHECK_FAILURES: where Hermes runs and what can stop Highwing reaching it
+          servers.ts                                      Server, Servers, ServerEdit, nextServers, serversOf, rankWays, wayLabel: the saved servers, the ways in to each, every edit of them, and the order a dial tries the ways in
           index.ts                                        exports the session, command, slash, bots, open and reach types, activityOf, rosterOf and the reach tables
         wire/                    private                  the only code that knows gateway shapes
           contract.generated.ts                           copied from Hermes by `pnpm sync:contract`
@@ -45,6 +46,7 @@ highwing-2.0/
           ssh.ts                                          Hermes's SSH client contract: the locator, one hermes command over ssh, its replies, the stderr table, the relay
           remote.ts                                       remoteRoute: a Dialer to the gateway on another machine, and its processes
           check.ts                                        checkTarget: Tailscale, ssh and Hermes, one step at a time
+          pick.ts                                         pickedRoute: one Route over the ways in to a server, which times them and dials the best that connects; timeWay
           parse.ts                                        gateway shapes -> domain shapes
         testing/                 public entry "./testing" Node
           fixture.ts                                      fixture format, scriptedDialer, recordingDialer, play
@@ -63,7 +65,7 @@ highwing-2.0/
       drafts.ts                  no Electron              readDraft, draftStore: drafts/, one file per chat's unsent draft
       mode.ts                    no Electron              readMode, modeStore: mode.json, whether the window shows the bots or the chats beside the chat
       attachments.ts             no Electron              attachmentStore: attachments/, the files staged for messages; desktopSources: the file dialog and clipboard, or HIGHWING_PICK_FILES
-      connection.ts              no Electron              ownConnection, nextSetup, pinnedConnection: the setup state, the saved target, the live Hermes
+      connection.ts              no Electron              ownConnection, nextSetup, pinnedConnection: the setup state, the saved servers, the live Hermes
       notify.ts                  no Electron              noticeOf, notifyTurnEnds: a desktop notification when the shown chat's turn ends while no window has focus
     src/preload/index.ts         preload                  exposes Bridge: watch, run, file, image, drafts, keepDraft, attachPick, attachPaste and attachDropped
     src/renderer/                renderer                 store.ts (useTopic), new-chat.ts (newChatIn), setup/, bots/ (NewMenu.tsx: the plus menu), groups/ (GroupForm.tsx: New group chat; GroupPane.tsx: the open group chat), chats/, chat/ (Attachments.tsx: chips and sent files), composer/ (drafts.ts: useDraft, useAttachments), chrome/, styles/
@@ -105,8 +107,10 @@ highwing-2.0/
 | Which chat is open, the Bot Chat of each bot, and which bot owns a session | `open.ts`, changed only through `nextDesk` in `domain/open.ts` | windows read the `open` topic and send `open` and `start`. The hub reads `botOf` to build a session's actor |
 | Which profile a call runs in | `Connection.as(bot)` in `wire/link.ts`, which adds `profile` to every call made through it | an actor calls only through the connection it was given |
 | Where Hermes runs, which screen shows, and which `Hermes` is live | `ownConnection` in `main/connection.ts`, changed only through `nextSetup` | windows read the `setup` topic and send `checkTarget`, `editTarget`, `keepTarget`, `stopCheck` |
+| The saved servers, their ways in and which server is current | `ownConnection` in `main/connection.ts`, changed only through `nextServers` in `domain/servers.ts`, and saved before anything else changes | windows read the `servers` topic and send `checkTarget` with an `into`, `useServer`, `arrangeWays`, `removeServer` |
+| Which way in a dial takes, and the way a connection goes through now | `pickedRoute` in `wire/pick.ts`, which ranks with `rankWays`. It tells `ownConnection`, which puts the way in `Live.target` | the connection's `Hermes` dials it and never knows there are several ways. Windows read the way in use from `setup` and the times from `servers` |
 | Which turn ends were told as desktop notifications | `notifyTurnEnds` in `main/notify.ts`, one per app, keyed by session and turn id. `noticeOf` decides from two values of the shown chat | windows never notify. `main/index.ts` passes Electron's `Notification`, or a recorder when `HIGHWING_NOTIFY_LOG` is set |
-| The saved connection on disk | `main/settings.ts` | nobody. `ownConnection` gets `loaded` and `save` as arguments |
+| The saved servers on disk, `connection.json` version 2, and the reading of a version 1 file | `main/settings.ts` | nobody. `ownConnection` gets `loaded` and `save` as arguments |
 | Bot mode or chat mode (`Mode`), and its `mode.json` | `modeStore` in `main/mode.ts`, one per app, loaded before any window is served | windows read the `mode` topic once, in `App`, and send `setMode`. `main/index.ts` waits for its save on quit |
 | A window's copy of a topic | `renderer/store.ts` in that window, written only by `applyPush` | components read with `useTopic` |
 | A chat's or a group chat's unsent draft | `renderer/composer/drafts.ts` in that window, kept on disk by `main/drafts.ts` | the composer reads it with `useDraft`, the chat list with `useChatDrafts`, and `DraftSweep` in `chats/Chats.tsx` drops one whose chat its bot's list no longer holds, in either mode. A group chat's draft (`group:<id>`) is never swept; not Hermes's state |

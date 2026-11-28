@@ -4,19 +4,21 @@ import { CHOICES, KINDS, textsOf } from '../src/renderer/setup/form'
 import { parseCommand } from '../src/ipc-contract'
 
 describe('the choices of the setup form', () => {
-  it('are another machine, a web address and this computer, in that order', () => {
-    expect(KINDS.map(kind => CHOICES[kind].label)).toEqual(['Tailnet machine', 'Web address', 'This computer'])
-    expect(KINDS.map(kind => CHOICES[kind].field?.label ?? null)).toEqual(['Hermes machine', 'Gateway address', null])
+  it('are a tailnet machine, an ssh destination, a web address and this computer, in that order', () => {
+    expect(KINDS.map(kind => CHOICES[kind].label)).toEqual(['Tailnet machine', 'SSH', 'Web address', 'This computer'])
+    expect(KINDS.map(kind => CHOICES[kind].field?.label ?? null)).toEqual(['Hermes machine', 'SSH destination', 'Gateway address', null])
   })
 
   it.each([
     ['remote', ' ada@hermes-host ', { kind: 'remote', host: 'ada@hermes-host' }],
+    ['ssh', ' ada@192.168.1.20 ', { kind: 'ssh', host: 'ada@192.168.1.20' }],
+    ['ssh', 'workshop', { kind: 'ssh', host: 'workshop' }],
     ['url', 'hermes.example.com', { kind: 'url', url: 'https://hermes.example.com' }],
     ['url', ' HTTP://Hermes-Host:9120/ ', { kind: 'url', url: 'http://hermes-host:9120' }],
     ['local', 'ignored', { kind: 'local' }]
   ] as const)('read the %s choice with %j typed as a target main accepts', (kind, typed, target) => {
     expect(CHOICES[kind].read(typed)).toEqual({ ok: true, target })
-    expect(parseCommand({ do: 'checkTarget', target })).toEqual({ do: 'checkTarget', target })
+    expect(parseCommand({ do: 'checkTarget', target, into: 'addWay' })).toEqual({ do: 'checkTarget', target, into: 'addWay' })
   })
 
   it.each([
@@ -31,6 +33,10 @@ describe('the choices of the setup form', () => {
 
   it('say that text which is no machine name is none', () => {
     expect(CHOICES.remote.read('hermes host')).toEqual({ ok: false, words: "That isn't a machine name. Use the name Tailscale lists, such as hermes-host.", fix: null })
+  })
+
+  it('say that text which is no ssh destination is none', () => {
+    expect(CHOICES.ssh.read('-oProxyCommand=true')).toEqual({ ok: false, words: "That isn't an SSH destination. Use an address such as 192.168.1.20, or a host in your SSH config.", fix: null })
   })
 
   it.each(['http://hermes.example.com', 'http://192.168.1.20:9120/hermes', 'HTTP://Hermes.Example.com'])('warn that %s travels unencrypted, naming its host', typed => {
@@ -54,9 +60,11 @@ describe('the choices of the setup form', () => {
 
 describe('textsOf', () => {
   it('fills the field of the target being edited, and leaves the others empty', () => {
-    expect(textsOf(undefined)).toEqual({ local: '', remote: '', url: '' })
-    expect(textsOf({ kind: 'local' })).toEqual({ local: '', remote: '', url: '' })
-    expect(textsOf({ kind: 'remote', host: 'ada@hermes-host' as SshHost })).toEqual({ local: '', remote: 'ada@hermes-host', url: '' })
-    expect(textsOf({ kind: 'url', url: 'https://hermes.example.com' as GatewayUrl })).toEqual({ local: '', remote: '', url: 'https://hermes.example.com' })
+    const EMPTY = { local: '', remote: '', ssh: '', url: '' }
+    expect(textsOf(undefined)).toEqual(EMPTY)
+    expect(textsOf({ kind: 'local' })).toEqual(EMPTY)
+    expect(textsOf({ kind: 'remote', host: 'ada@hermes-host' as SshHost })).toEqual({ ...EMPTY, remote: 'ada@hermes-host' })
+    expect(textsOf({ kind: 'ssh', host: '192.168.1.20' as SshHost })).toEqual({ ...EMPTY, ssh: '192.168.1.20' })
+    expect(textsOf({ kind: 'url', url: 'https://hermes.example.com' as GatewayUrl })).toEqual({ ...EMPTY, url: 'https://hermes.example.com' })
   })
 })

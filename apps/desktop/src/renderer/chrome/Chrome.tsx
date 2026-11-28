@@ -1,4 +1,4 @@
-import { machineOf, shownChat, shownGroup, type Bot, type Link, type Target } from '@highwing/hermes/domain'
+import { shownChat, shownGroup, type Bot, type Link, type Target } from '@highwing/hermes/domain'
 import { useCallback, useEffect, useRef, type ReactNode, type Ref, type RefObject } from 'react'
 import type { WindowCommand } from '../../ipc-contract'
 import { detailsKeys, isShortcut, MAC } from '../keys'
@@ -10,6 +10,7 @@ import { openChatName } from '../chats/chat-list'
 import { GroupMembers } from '../groups/GroupThread'
 import { faceOf } from '../groups/group-rows'
 import { newChatIn } from '../new-chat'
+import { useHermesName } from './HermesFoot'
 import { NewChatButton } from './SidebarHead'
 import { run, useTopic } from '../store'
 
@@ -79,7 +80,8 @@ export function TopBar({ target }: { readonly target: Target | null }) {
   const { panel, open, close } = useBotPanel()
   const pill = group === null ? bot : null
   useDetailsKey(bar, pill, open)
-  const machine = target === null ? null : `on ${machineOf(target)}`
+  const named = useHermesName(target)
+  const machine = named === null ? null : `on ${named}`
   const where = [group?.name ?? name, machine].filter(part => part !== null).join(' ')
   const keys = detailsKeys(MAC)
   const rest = [title === null ? null : `· ${title}`, machine].filter(part => part !== null).join(' ')
@@ -120,7 +122,7 @@ export function bannerOf(link: Link, target: Target | null): BannerCopy | null {
     case 'blocked': return {
       words: link.message,
       action: link.why === 'signed-out' && target !== null
-        ? { label: 'Sign in', run: [{ do: 'editTarget' }, { do: 'checkTarget', target }] }
+        ? { label: 'Sign in', run: [{ do: 'editTarget' }, { do: 'checkTarget', target, into: 'replace' }] }
         : reconnect('Retry', false)
     }
     case 'waiting': return { words: link.message, action: link.why === 'not-running' ? reconnect('Start Hermes', true) : null }

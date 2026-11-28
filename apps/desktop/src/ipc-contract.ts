@@ -1,14 +1,26 @@
 import {
-  APPROVAL_MODES, BOT_MARKS, BOT_TEMPLATES, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, ROUTINE_ACTIONS, targetOf,
+  APPROVAL_MODES, BOT_MARKS, BOT_TEMPLATES, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICK_MODES, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, ROUTINE_ACTIONS, targetOf,
   type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type CatalogPlugin, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type Recording, type RelayDesk, type RequestId, type RequestReply,
-  type RestoreScope, type ResultOf, type RoutineId, type ScreenView, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type Target, type TaskBoard, type TaskChat, type TurnId, type Unstarted
+  type PickMode, type RestoreScope, type ResultOf, type RoutineId, type ScreenView, type Server, type ServerId, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type Target, type TaskBoard, type TaskChat, type Timed, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 import type { Intro } from './intro'
 
-/** The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one. */
-export interface Live { readonly target: Target; readonly epoch: number }
+/**
+ * The connection a window is talking through. A new `epoch` means a new connection, so a window drops what it held from the old one.
+ * `target` is the way in the connection uses now, and until its first dial connects, the server's first way. A dial that lands on
+ * another way of the same server changes `target` and keeps the `epoch`.
+ */
+export interface Live { readonly server: ServerId; readonly target: Target; readonly epoch: number }
+
+/** What a passed check does with its target: swaps the current server for it, adds it as another server, or adds it as another way in to the current server. */
+export type Into = 'replace' | 'addServer' | 'addWay'
+const INTOS: readonly Into[] = ['replace', 'addServer', 'addWay']
+
+/** The saved servers as Settings lists them. `current` is null before the first is saved, and in a fixture run. `times`: how long each way of the current server took when it was last timed. */
+export interface ServerBook { readonly list: readonly Server[]; readonly current: ServerId | null; readonly times: readonly Timed[] }
+export const NO_SERVERS: ServerBook = { list: [], current: null, times: [] }
 
 /**
  * Which screen a window shows, and what that screen needs. Owned by Electron main. `live` is the
@@ -17,10 +29,10 @@ export interface Live { readonly target: Target; readonly epoch: number }
 export type Setup =
   | { readonly at: 'chat'; readonly live: Live }
   | { readonly at: 'form'; readonly live: Live | null; readonly notice: 'unreadable' | 'newer' | null }
-  | { readonly at: 'checking'; readonly live: Live | null; readonly target: Target; readonly step: CheckStep }
-  | { readonly at: 'failed'; readonly live: Live | null; readonly target: Target; readonly failure: SetupFailure }
-  /** A check passed and `live` is its target. `from`: `first-run` when nothing was live before, which shows the first run's Saved screen, or `settings`, which keeps Settings open. */
-  | { readonly at: 'saved'; readonly live: Live; readonly from: 'first-run' | 'settings' }
+  | { readonly at: 'checking'; readonly live: Live | null; readonly target: Target; readonly into: Into; readonly step: CheckStep }
+  | { readonly at: 'failed'; readonly live: Live | null; readonly target: Target; readonly into: Into; readonly failure: SetupFailure }
+  /** A check passed, or the user picked another server, and `live` is the connection to it. `from`: `first-run` when nothing was live before, which shows the first run's Saved screen, or `settings`, which keeps Settings open. `into`: what the check did, and `replace` after a pick. */
+  | { readonly at: 'saved'; readonly live: Live; readonly from: 'first-run' | 'settings'; readonly into: Into }
   /** `HIGHWING_FIXTURE` plays a recorded gateway. There is nothing to set up. */
   | { readonly at: 'pinned' }
 
@@ -38,8 +50,14 @@ export const showsSettings = (setup: Setup): boolean =>
   setup.at !== 'chat' && setup.at !== 'pinned' && setup.live !== null && !(setup.at === 'saved' && setup.from === 'first-run')
 
 export type SetupCommand =
-  /** Check a target and, when it passes, save it and connect to it. */
-  | { readonly do: 'checkTarget'; readonly target: Target }
+  /** Check a target and, when it passes, save it as `into` says. `replace` and `addServer` then connect to it. `addWay` keeps the connection. */
+  | { readonly do: 'checkTarget'; readonly target: Target; readonly into: Into }
+  /** Connect to another saved server. Settings then shows it as a passed check does. Refused while a check runs. */
+  | { readonly do: 'useServer'; readonly server: ServerId }
+  /** Reorder or cut down the ways in to the current server, and set its pick. The connection stays, and picks again. Refused while a check runs. */
+  | { readonly do: 'arrangeWays'; readonly ways: readonly Target[]; readonly pick: PickMode }
+  /** Forget a saved server other than the current one. Refused while a check runs. */
+  | { readonly do: 'removeServer'; readonly server: ServerId }
   /** Open Settings over the chat. */
   | { readonly do: 'editTarget' }
   /** Leave setup for the chat on the live connection, aborting any running check. Close, Esc and Open chat send it, and main applies it before an open from Settings. With no live connection it is a first run's Stop waiting, which ends the wait for a sign-in as a failure. Refused while the check writes its target to disk. */
@@ -47,7 +65,7 @@ export type SetupCommand =
   /** Abort the running check, or drop the failed one, and stay in Settings on the form. Cancel sends it. Refused while the check writes its target to disk. */
   | { readonly do: 'stopCheck' }
 
-const SETUP_VERBS: { readonly [K in SetupCommand['do']]: true } = { checkTarget: true, editTarget: true, keepTarget: true, stopCheck: true }
+const SETUP_VERBS: { readonly [K in SetupCommand['do']]: true } = { checkTarget: true, useServer: true, arrangeWays: true, removeServer: true, editTarget: true, keepTarget: true, stopCheck: true }
 export const isSetupCommand = (command: AppCommand): command is SetupCommand => Object.hasOwn(SETUP_VERBS, command.do)
 
 /** How a page main draws in its own view is doing. `failed` hides the view, so the window shows the reason in its place. */
@@ -148,6 +166,7 @@ export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? strin
 /** Every topic and what it carries. Each has one value per connection, except `preview`, `mode`, `theme`, `accent`, `sidebarWidth`, `sendKey`, `spellCheck`, `snoozes`, `notices`, `onClose` and `intro`, which belong to the window. */
 export interface AppTopics {
   readonly setup: Setup
+  readonly servers: ServerBook
   readonly link: Link
   readonly about: About
   readonly sidebar: Sidebar
@@ -183,7 +202,7 @@ export interface AppTopics {
 }
 export type AppTopic = keyof AppTopics
 
-const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, routines: true, activity: true, screen: true, skills: true, preview: true, mode: true, theme: true, accent: true, sidebarWidth: true, sendKey: true, spellCheck: true, snoozes: true, notices: true, onClose: true, intro: true }
+const APP_TOPICS: { readonly [T in AppTopic]: true } = { setup: true, servers: true, link: true, about: true, sidebar: true, slash: true, bots: true, open: true, relay: true, groups: true, groupChat: true, routines: true, activity: true, screen: true, skills: true, preview: true, mode: true, theme: true, accent: true, sidebarWidth: true, sendKey: true, spellCheck: true, snoozes: true, notices: true, onClose: true, intro: true }
 
 export const isAppTopic = (raw: unknown): raw is AppTopic => typeof raw === 'string' && Object.hasOwn(APP_TOPICS, raw)
 
@@ -766,8 +785,14 @@ export const validators: Validators = {
   reconnect: raw => (typeof raw.start === 'boolean' ? { do: 'reconnect', start: raw.start } : null),
   checkTarget: raw => {
     const target = targetOf(raw.target)
-    return target && { do: 'checkTarget', target }
+    return target && INTOS.includes(raw.into as Into) ? { do: 'checkTarget', target, into: raw.into as Into } : null
   },
+  useServer: raw => (filled(raw.server) ? { do: 'useServer', server: raw.server as ServerId } : null),
+  arrangeWays: raw => {
+    const ways = Array.isArray(raw.ways) ? raw.ways.map(targetOf) : null
+    return ways !== null && ways.every(way => way !== null) && PICK_MODES.includes(raw.pick as PickMode) ? { do: 'arrangeWays', ways, pick: raw.pick as PickMode } : null
+  },
+  removeServer: raw => (filled(raw.server) ? { do: 'removeServer', server: raw.server as ServerId } : null),
   editTarget: () => ({ do: 'editTarget' }),
   keepTarget: () => ({ do: 'keepTarget' }),
   stopCheck: () => ({ do: 'stopCheck' }),

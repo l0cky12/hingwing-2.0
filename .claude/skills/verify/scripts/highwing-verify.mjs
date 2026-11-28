@@ -19,6 +19,8 @@ const VIDEO_HOLD_MS = 700
 const requireDesktop = createRequire(join(DESKTOP, 'package.json'))
 
 const FAKE_HOST = 'hermes-host.example-tailnet.ts.net'
+/** The fake machine's address on the local network, which answers a timing sooner than its tailnet name. */
+const FAKE_LAN_HOST = '192.168.1.20'
 /** The dev server a fixture names. `--serve` puts its own origin in its place. */
 const DEV_ORIGIN = 'http://localhost:5173'
 const ERRAND = join(REPO, 'fixtures/errand.jsonl')
@@ -35,15 +37,24 @@ const THEMES = ['system', 'light', 'dark']
 const COLOR_SCHEMES = { light: 'default', dark: 'prefer-dark' }
 const BUS_QUIT_MS = 3_000
 
+const HOME = { id: 'home', name: 'hermes-host', pick: 'fastest', ways: [{ kind: 'remote', host: FAKE_HOST }, { kind: 'ssh', host: FAKE_LAN_HOST }] }
+const LAPTOP = { id: 'laptop', name: 'This computer', pick: 'fastest', ways: [{ kind: 'local' }] }
+/** An address the fake ssh cannot resolve, first in priority, so every dial has to fall back to the tailnet name. */
+const DEAD_FIRST = { id: 'home', name: 'hermes-host', pick: 'order', ways: [{ kind: 'ssh', host: '192.168.1.99' }, { kind: 'remote', host: FAKE_HOST }] }
+const savedServers = servers => JSON.stringify({ version: 2, current: servers[0].id, servers })
+
 const SAVED = {
   none: () => null,
   local: () => JSON.stringify({ version: 1, target: { kind: 'local' } }),
   remote: () => JSON.stringify({ version: 1, target: { kind: 'remote', host: FAKE_HOST } }),
   url: url => JSON.stringify({ version: 1, target: { kind: 'url', url } }),
+  ways: () => savedServers([HOME]),
+  servers: () => savedServers([HOME, LAPTOP]),
+  fallback: () => savedServers([DEAD_FIRST]),
   unreadable: () => '{"version": 1, "target"',
-  newer: () => JSON.stringify({ version: 2, target: { kind: 'relay' } })
+  newer: () => JSON.stringify({ version: 3, servers: [{ kind: 'relay' }] })
 }
-const SAVED_WITH = { host: ['none', 'local', 'remote', 'unreadable', 'newer'], webapp: ['none', 'url', 'unreadable', 'newer'] }
+const SAVED_WITH = { host: ['none', 'local', 'remote', 'ways', 'servers', 'fallback', 'unreadable', 'newer'], webapp: ['none', 'url', 'unreadable', 'newer'] }
 const STAND_IN_HOST = 'hermes.example.com'
 
 const STATES = {
@@ -52,6 +63,8 @@ const STATES = {
   'setup-checking': page => page.getByRole('status', { name: 'Checking' }),
   'setup-failed': page => page.getByRole('alert'),
   'setup-saved': page => page.getByRole('button', { name: 'Open chat', exact: true }),
+  'via-lan': page => page.locator('.ways [aria-current="true"]', { hasText: FAKE_LAN_HOST }),
+  'via-tailnet': page => page.locator('.ways [aria-current="true"]', { hasText: FAKE_HOST }),
   intro: page => page.getByRole('region', { name: 'Intro', exact: true }),
   settings: page => page.getByRole('heading', { name: 'Settings', exact: true, level: 1 }),
   live: page => page.getByRole('button', { name: 'Send', exact: true, disabled: false }),

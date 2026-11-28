@@ -28,6 +28,18 @@ describe('the Hermes at the foot of the sidebar', () => {
     expect(foot(HOST, 'connecting')).toContain('aria-label="Hermes on hermes-host, Not connected"')
   })
 
+  it('names a server with several ways by its name, whichever way is in use', () => {
+    const lan: Target = { kind: 'ssh', host: '192.168.1.20' as SshHost }
+    topics.values = { link: { state: 'online' }, servers: { list: [{ id: 's1', name: 'hermes-host', pick: 'fastest', ways: [HOST, lan] }], current: 's1', times: [] } }
+    expect(renderToStaticMarkup(<HermesFoot target={lan} ref={null} />)).toContain('aria-label="Hermes on hermes-host, Connected"')
+  })
+
+  it('names a server with one way by its machine', () => {
+    const lan: Target = { kind: 'ssh', host: '192.168.1.20' as SshHost }
+    topics.values = { link: { state: 'online' }, servers: { list: [{ id: 's1', name: '192.168.1.20', pick: 'fastest', ways: [lan] }], current: 's1', times: [] } }
+    expect(renderToStaticMarkup(<HermesFoot target={lan} ref={null} />)).toContain('aria-label="Hermes on 192.168.1.20, Connected"')
+  })
+
   it('is off when there is no connection to change', () => {
     expect(foot(null, 'online')).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Hermes, Connected"/)
   })

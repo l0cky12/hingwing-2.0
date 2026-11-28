@@ -44,6 +44,7 @@ export type { Clock, Dialer, HttpAnswer, ReadHermes, WireSocket } from './wire/l
 export { checkTarget, type CheckOptions, type CheckResult } from './wire/check'
 export { gatewaysByUrl, memoryKeep, type GatewayDeps, type Gateways, type Keep, type UrlCheckResult } from './wire/gateways'
 export { DialError } from './wire/link'
+export { pickedRoute, timeWay, type Picked, type PickedRoute, type Way } from './wire/pick'
 export { remoteRoute, type Route } from './wire/remote'
 export { sshRead, type RemoteRead } from './wire/ssh'
 export { liveRoute } from './wire/tickets'
