@@ -3,6 +3,7 @@ import { threadView } from '@highwing/thread'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { isLocal } from '../../ipc-contract'
 import { botIn } from '../bots/roster-view'
+import { Approvals } from '../composer/Approvals'
 import { Composer } from '../composer/Composer'
 import { carryToNewChat, slotOf } from '../composer/drafts'
 import { ContextMeter } from '../composer/ContextMeter'
@@ -13,7 +14,6 @@ import { StatusStack } from '../composer/StatusStack'
 import { ComputerCard } from '../computer/Computer'
 import { ThinkingPill } from '../composer/ThinkingPill'
 import { folderFieldLabel, thinkingShown } from '../composer/tuning'
-import { YoloPill } from '../composer/YoloPill'
 import { exampleCommand, examplesFor, OFF } from '../../intro'
 import { run, useTopic } from '../store'
 import { ExampleRequests } from '../setup/Intro'
@@ -334,7 +334,7 @@ export function Chat({ chat }: { readonly chat: Shown }) {
   useEffect(() => { if (live) void refreshModels() }, [live, refreshModels])
   const model = modelViewOf(menu.id === id ? menu.menu : null, session)
   const fill = session?.usage.context ?? null
-  const yolo = id !== null && live ? (session?.tuning.yolo ?? null) : null
+  const approvals = id !== null && live ? (session?.tuning.approvals ?? null) : null
   const online = useTopic('link')?.state === 'online'
   const planFor = (held: readonly Attachment[]) => (session !== undefined && live ? sendPlan(session, held).by : 'submit')
   const tuning = session !== undefined && thinkingShown(session.tuning) ? session.tuning : null
@@ -416,11 +416,11 @@ export function Chat({ chat }: { readonly chat: Shown }) {
         )}
         start={id !== null && (
           <>
-            {yolo !== null && (
-              <YoloPill
-                key={`yolo-${id}`} on={yolo} approvals={session?.tuning.approvals ?? null}
-                onSet={on => run({ do: 'tune', sessionId: id, set: 'yolo', on })}
-                onApprovals={to => run({ do: 'tune', sessionId: id, set: 'approvals', to })}
+            {approvals !== null && (
+              <Approvals
+                key={`approvals-${id}`} mode={approvals} yolo={session?.tuning.yolo === true}
+                onMode={to => run({ do: 'tune', sessionId: id, set: 'approvals', to })}
+                onYolo={on => run({ do: 'tune', sessionId: id, set: 'yolo', on })}
               />
             )}
             {cwd !== null && (

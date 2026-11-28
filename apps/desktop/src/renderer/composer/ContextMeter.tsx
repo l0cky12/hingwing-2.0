@@ -75,7 +75,7 @@ export function ContextMeter({ fill, stale, onBreakdown }: ContextMeterProps) {
           <circle className="track" cx="8" cy="8" r="6" pathLength="100" />
           <circle className="arc" cx="8" cy="8" r="6" pathLength="100" strokeDasharray="100" strokeDashoffset={100 - Math.min(100, fill.percent)} transform="rotate(-90 8 8)" />
         </svg>
-        {percent}{marks}
+        <span className="value">{percent}{marks}</span>
       </button>
       {split !== null && (
         <div className="split" id={splitId} role="dialog" aria-label="What fills the context">
