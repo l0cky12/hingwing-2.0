@@ -4,7 +4,6 @@ import { givePet, petForNewBot, petPrompt, type PetCalls } from '../src/renderer
 
 const redraw = vi.hoisted(() => ({ calls: [] as unknown[][], result: (): Promise<string> => Promise.resolve('') }))
 
-// A plain function, because vitest reports a rejection that a mock's own results hold as unhandled.
 vi.mock('../src/renderer/bots/look', () => ({ pictureOf: (...args: unknown[]) => (redraw.calls.push(args), redraw.result()) }))
 vi.mock('../src/renderer/store', () => ({ run: vi.fn() }))
 vi.mock('../src/renderer/bots/pictures', () => ({ useForgetPicture: vi.fn() }))
@@ -80,9 +79,9 @@ describe('a new bot', () => {
   it.each([
     ['a look its maker picked', MADE, false],
     ['a refused create', refused('rejected', 'Hermes would not make it.'), true]
-  ])('gets no pet for %s', (_, made, untouched) => {
+  ])('gets no pet for %s', (_, made, keptDefaultLook) => {
     const draw = vi.fn(async () => ({ ok: true as const, value: undefined }))
-    petForNewBot(made, untouched, draw, ABOUT)
+    petForNewBot(made, keptDefaultLook, draw, ABOUT)
     expect(draw).not.toHaveBeenCalled()
   })
 })

@@ -297,7 +297,7 @@ function End({ turnKey, end, started, showWork }: { readonly turnKey: string; re
   const pictured = pet && picture.url !== null
   const words = end.kind === 'tip' ? <><span className={pictured ? 'sr' : undefined}><PhraseText words={end.words} /></span><Elapsed elapsed={end.elapsed} /></> : end.kind === 'done' ? <span className="sr">{end.words}</span> : <span data-find={fieldId(turnKey, 'end')}>{end.words}</span>
   const face = pet ? bot ?? STAND_IN : end.kind === 'tip' && !started ? bot : null
-  return <div className={cx('tip', END_CLASS[end.kind], pet && 'pet')} role="status" data-end={end.kind}>{pictured ? <img className="face pet-picture" src={picture.url} alt="" width={PET_PICTURE_SIDE} height={PET_PICTURE_SIDE} onError={picture.failed} /> : face !== null ? <BotFace bot={face} mood="working" size={22} /> : <span className="glyph" />}{words}</div>
+  return <div className={cx('tip', END_CLASS[end.kind], pet && 'pet')} role="status" data-end={end.kind}>{pictured ? <img className="face pet-picture" src={picture.url} alt="" width={PET_PICTURE_SIDE} height={PET_PICTURE_SIDE} onError={picture.onDecodeError} /> : face !== null ? <BotFace bot={face} mood="working" size={22} /> : <span className="glyph" />}{words}</div>
 }
 
 /** Acts on a sent message by its stored row and text: `onEdit` puts it in the composer, `onRegenerate` asks again for its reply. */
