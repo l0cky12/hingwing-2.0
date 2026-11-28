@@ -45,11 +45,11 @@ function MemorySection({ file }: { readonly file: MemoryFile }) {
     <section className="memory-file" aria-label={name}>
       <h3>{name}</h3>
       <p className="memory-about">{ABOUT[name]}</p>
-      {cap === null ? null : (
+      {cap === null || cap === 0 ? null : (
         // A meter's high region starts above `high`, so this is the whole number just under nine tenths of the cap.
         <meter className="memory-meter" min={0} max={cap} high={Math.ceil(cap * NEAR_FULL) - 1} optimum={0} value={used} aria-label={size} />
       )}
-      <p className="memory-size" aria-hidden={cap === null ? undefined : true}>{size}</p>
+      <p className="memory-size" aria-hidden={cap === null || cap === 0 ? undefined : true}>{size}</p>
       {cap === null ? <p className="memory-note">Highwing couldn't read how much this file may hold from Hermes, so it has no meter.</p> : null}
       {entries.length === 0 ? <p className="memory-note">Nothing yet.</p> : (
         <ul className="memory-entries" aria-label={`${name} entries`}>

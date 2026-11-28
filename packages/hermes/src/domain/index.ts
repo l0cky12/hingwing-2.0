@@ -35,7 +35,7 @@ export {
 } from './groups'
 export { BOARD_PATH, isTaskId, parseTaskBoard, parseTaskChat, taskPath, type TaskBoard, type TaskCard, type TaskChat, type TaskColumn } from './tasks'
 export {
-  botMemoryOf, isAmbiguousProfile, memoryCapsPath, memoryEntryPath, memoryGraphPath, NO_MEMORY_CAPS, parseMemoryCaps, parseMemoryEntry, parseMemoryGraph, pythonStrip, type BotMemory, type MemoryCaps, type MemoryCard, type MemoryFile, type MemoryFileName
+  botMemoryOf, memoryCapsPath, memoryEntryPath, memoryGraphPath, NO_MEMORY_CAPS, parseMemoryCaps, parseMemoryEntry, parseMemoryGraph, pythonStrip, type BotMemory, type MemoryCaps, type MemoryCard, type MemoryFile, type MemoryFileName
 } from './memory'
 export type { PaneAsk } from './pane'
 export { activityIn, botActivitiesOf, sameActivities, unreadAfter, type BotActivities, type BotActivity, type Busy, type BusyChats, type ChatBusy, type UnreadChat } from './activity'

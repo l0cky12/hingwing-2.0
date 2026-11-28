@@ -112,9 +112,9 @@ describe('readBotMemory', () => {
     expect(asked).toEqual([GRAPH_PATH, CONFIG_PATH])
   })
 
-  it('reads nothing for a bot named current, which Hermes takes for the bot it runs as', async () => {
-    const { read, asked } = reading(OK)
-    expect(await readBotMemory(read, 'current' as BotId)).toEqual({ ok: false, refusal: { kind: 'unsupported', message: "Hermes can't tell a bot named current from the bot it runs as, so Highwing can't show its memory. Rename the bot to see it." } })
-    expect(asked).toEqual([])
+  it('reads a bot named current like any other, and says it could not when the route refuses it', async () => {
+    const { read, asked } = reading({ '/api/learning/graph?profile=current': new Error('Over a web address, Hermes reads a bot named current as the bot it runs as.') })
+    expect(await readBotMemory(read, 'current' as BotId)).toEqual({ ok: false, refusal: REFUSALS.unreached })
+    expect(asked).toContain('/api/learning/graph?profile=current')
   })
 })

@@ -311,6 +311,14 @@ describe('the route to a gateway address, against the fake Webapp', () => {
     expect(await route.read('/api/plugins/kanban/missing'), 'a status passes through for the caller to read').toEqual({ status: 404, body: { detail: 'Not Found' } })
   })
 
+  it('reads nothing for a bot named current, which Hermes would take for the bot it runs as', async () => {
+    const web = await webapp('ok')
+    const route = routeOf(await signedIn(web), web.url)
+    await expect(route.read('/api/learning/graph?profile=current')).rejects.toThrow('a bot named current')
+    await expect(route.read('/api/config?profile=Current')).rejects.toThrow('a bot named current')
+    expect(web.requests.filter(request => request.includes('/api/learning/') || request.includes('/api/config')), 'no request left the app').toEqual([])
+  })
+
   it('rejects a read for a sign-in Hermes ended', async () => {
     const web = await webapp('ok')
     const route = routeOf(await signedIn(web), web.url)

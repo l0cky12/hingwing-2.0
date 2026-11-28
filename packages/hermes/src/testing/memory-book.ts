@@ -26,8 +26,8 @@ export interface MemoryBook {
 /** The memory files a fixture holds, written the way agent/learning_mutations.py writes them. */
 export function memoryBook(script: MemoryFiles): MemoryBook {
   const entries: { readonly [S in Source]: string[] } = {
-    memory: script.entries.flatMap(entry => entry.file === 'MEMORY.md' ? [entry.text.trim()] : []),
-    profile: script.entries.flatMap(entry => entry.file === 'USER.md' ? [entry.text.trim()] : [])
+    memory: script.entries.flatMap(entry => entry.file === 'MEMORY.md' ? [pythonStrip(entry.text)] : []),
+    profile: script.entries.flatMap(entry => entry.file === 'USER.md' ? [pythonStrip(entry.text)] : [])
   }
   const limitOf = (source: Source) => (source === 'profile' ? script.limits?.user ?? DEFAULT_LIMITS.user : script.limits?.memory ?? DEFAULT_LIMITS.memory)
   const cards = () => [...entries.memory.map(text => ({ source: 'memory' as const, text })), ...entries.profile.map(text => ({ source: 'profile' as const, text }))]
@@ -111,9 +111,9 @@ function bookFor(script: MemoryScript, profile: string): MemoryFiles {
   return { entries: own?.entries ?? [], ...(own?.limits === undefined ? {} : { limits: own.limits }) }
 }
 
-export const GRAPH_ROUTE = '/api/learning/graph'
-export const CONFIG_ROUTE = '/api/config'
-export const NODE_ROUTE = '/api/learning/node'
+const GRAPH_ROUTE = '/api/learning/graph'
+const CONFIG_ROUTE = '/api/config'
+const NODE_ROUTE = '/api/learning/node'
 
 /**
  * The dashboard API's memory reads of a fixture's Hermes, one book per profile asked. null: not a memory route.

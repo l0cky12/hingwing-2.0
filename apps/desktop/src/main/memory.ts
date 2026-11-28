@@ -1,14 +1,13 @@
 import { createHash } from 'node:crypto'
 import type { ReadHermes } from '@highwing/hermes'
 import {
-  botMemoryOf, isAmbiguousProfile, memoryCapsPath, memoryEntryPath, memoryGraphPath, NO_MEMORY_CAPS, parseMemoryCaps, parseMemoryEntry, parseMemoryGraph, pythonStrip, type BotId, type BotMemory, type CommandOutcome, type MemoryCard, type Refusal
+  botMemoryOf, memoryCapsPath, memoryEntryPath, memoryGraphPath, NO_MEMORY_CAPS, parseMemoryCaps, parseMemoryEntry, parseMemoryGraph, pythonStrip, type BotId, type BotMemory, type CommandOutcome, type MemoryCard, type Refusal
 } from '@highwing/hermes/domain'
 
 const refused = (kind: Refusal['kind'], message: string) => ({ ok: false, refusal: { kind, message } }) as const
 const NO_MEMORY = refused('unsupported', "This Hermes can't show memory yet.")
 const UNREACHABLE = refused('offline', "Highwing couldn't read this bot's memory from Hermes.")
 const UNREADABLE = refused('unsupported', "Hermes answered with memory Highwing can't read.")
-const AMBIGUOUS = refused('unsupported', "Hermes can't tell a bot named current from the bot it runs as, so Highwing can't show its memory. Rename the bot to see it.")
 
 const answered = (read: ReadHermes, path: string) => read(path).catch(() => null)
 
@@ -24,7 +23,6 @@ async function entryOf(read: ReadHermes, bot: BotId, card: MemoryCard): Promise<
 }
 
 export async function readBotMemory(read: ReadHermes, bot: BotId): Promise<CommandOutcome<BotMemory>> {
-  if (isAmbiguousProfile(bot)) return AMBIGUOUS
   const [graph, config] = await Promise.all([answered(read, memoryGraphPath(bot)), answered(read, memoryCapsPath(bot))])
   if (graph?.status === 404) return NO_MEMORY
   if (graph?.status !== 200) return UNREACHABLE

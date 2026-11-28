@@ -190,6 +190,14 @@ interface Login {
 }
 
 /** One per process. Its sign-ins, one per address, are what a check and a route share. */
+/**
+ * Over a web address Hermes reads `?profile=current` as the profile it runs as (hermes_cli/web_server_profiles.py), yet
+ * `current` is a valid profile name, so a read for a bot named `current` would answer with another bot's data. A ticket
+ * read has no such doubt, because the ticket's own profile decides.
+ */
+const namesCurrent = (path: string): boolean => new URL(path, 'http://hermes.invalid').searchParams.getAll('profile').some(name => name.trim().toLowerCase() === 'current')
+const CURRENT_IS_OWN = 'Over a web address, Hermes reads a bot named current as the bot it runs as.'
+
 export function gatewaysByUrl(deps: GatewayDeps): Gateways {
   const clock = deps.clock ?? systemClock
   const fetcher = deps.fetch ?? fetch
@@ -434,6 +442,7 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
         }
       }
       const read: ReadHermes = async path => {
+        if (namesCurrent(path)) throw new Error(CURRENT_IS_OWN)
         const held = loginOf(url)
         const bearer = await held.bearer()
         const answer = await send('GET', `${url}${path}`, { bearer, signal: life.signal })

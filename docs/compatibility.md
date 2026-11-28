@@ -949,9 +949,10 @@ mints a ticket for another bot of the same gateway when the line names it
 
 Hermes takes `?profile=current` to mean the profile it runs as
 (`hermes_cli/web_server_profiles.py`), yet `current` is a valid profile name.
-Highwing reads nothing for a bot named `current` and says "Hermes can't tell a
-bot named current from the bot it runs as, so Highwing can't show its memory.
-Rename the bot to see it."
+Over a web address, Highwing sends no read that names `current`, so the tab of
+a bot named `current` says "Highwing couldn't read this bot's memory from
+Hermes." A ticket read has no such doubt, because the ticket's own profile
+decides, so that bot's tab works on this computer and over SSH.
 
 Each meter counts a file the way Hermes's memory tool does
 (`tools/memory_tool_store.py:314-315`): the entries joined by Hermes's
@@ -962,6 +963,7 @@ On an older Hermes:
 
 - If the graph route answers 404, the tab says "This Hermes can't show memory
   yet."
+- A cap of 0 shows the size as words, with no meter.
 - If the config route gives no cap for a file, or does not answer, the tab
   shows that file's entries and its size with no meter, and says Highwing
   couldn't read how much the file may hold.

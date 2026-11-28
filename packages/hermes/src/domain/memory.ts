@@ -27,9 +27,6 @@ const PYTHON_SPACE = '[\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u20
 const PYTHON_ENDS = new RegExp(`^${PYTHON_SPACE}+|${PYTHON_SPACE}+$`, 'g')
 export const pythonStrip = (text: string): string => text.replace(PYTHON_ENDS, '')
 
-/** Hermes cannot tell a bot named `current` from the one it runs as on a web address: it reads `?profile=current` as its own (hermes_cli/web_server_profiles.py). */
-export const isAmbiguousProfile = (bot: BotId): boolean => bot.toLowerCase() === 'current'
-
 export const memoryGraphPath = (bot: BotId): string => `/api/learning/graph?profile=${encodeURIComponent(bot)}`
 export const memoryCapsPath = (bot: BotId): string => `/api/config?profile=${encodeURIComponent(bot)}`
 export const memoryEntryPath = (bot: BotId, node: string): string => `/api/learning/node?id=${encodeURIComponent(node)}&profile=${encodeURIComponent(bot)}`
@@ -38,8 +35,7 @@ type Obj = Readonly<Record<string, unknown>>
 const isObject = (value: unknown): value is Obj => value !== null && typeof value === 'object' && !Array.isArray(value)
 const filled = (value: unknown): value is string => typeof value === 'string' && value !== ''
 
-const FILE_OF_SOURCE: Readonly<Record<string, MemoryFileName>> = { memory: 'MEMORY.md', profile: 'USER.md' }
-const fileOf = (source: unknown): MemoryFileName | null => (typeof source === 'string' ? FILE_OF_SOURCE[source] ?? null : null)
+const fileOf = (source: unknown): MemoryFileName | null => (source === 'memory' ? 'MEMORY.md' : source === 'profile' ? 'USER.md' : null)
 
 /** null: the reply is not Hermes's memory graph, or its cards and memory nodes do not pair. */
 export function parseMemoryGraph(raw: unknown): readonly MemoryCard[] | null {
@@ -57,9 +53,9 @@ export function parseMemoryGraph(raw: unknown): readonly MemoryCard[] | null {
   return cards
 }
 
-const capOf = (value: unknown): number | null => (typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null)
+const capOf = (value: unknown): number | null => (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null)
 
-/** null: the reply is not a config. A file whose cap is not a positive integer has none. */
+/** null: the reply is not a config. A file whose cap is not a whole number of zero or more has none. Hermes keeps a cap of 0, which lets nothing in. */
 export function parseMemoryCaps(raw: unknown): MemoryCaps | null {
   if (!isObject(raw)) return null
   const memory = isObject(raw.memory) ? raw.memory : {}

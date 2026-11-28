@@ -62,6 +62,13 @@ describe('the Memory tab', () => {
     expect(html).toContain("Highwing couldn&#x27;t read how much this file may hold from Hermes, so it has no meter.")
   })
 
+  it('shows a cap of 0 as written words, with no meter and no claim that the cap was unread', () => {
+    const html = ready({ files: [{ ...memory.files[0], used: 0, entries: [], cap: 0 }, memory.files[1]] })
+    expect(html).toContain('MEMORY.md: 0 of 0 characters')
+    expect(html.match(/<meter/g)).toHaveLength(1)
+    expect(html).not.toContain('couldn&#x27;t read how much')
+  })
+
   it('offers nothing to change', () => {
     expect(ready(memory)).not.toContain('<button')
   })

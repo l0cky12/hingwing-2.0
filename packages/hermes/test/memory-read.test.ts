@@ -38,6 +38,10 @@ describe('parseMemoryGraph', () => {
     ])
   })
 
+  it('refuses a source that is neither memory nor profile, even one every object has', () => {
+    expect(parseMemoryGraph({ memory: [{ source: 'constructor', body: 'x', fingerprint: 'f' }], nodes: [{ id: 'n', kind: 'memory', memorySource: 'constructor' }] })).toBeNull()
+  })
+
   it('reads a graph with no memory as no cards', () => {
     expect(parseMemoryGraph({ memory: [], nodes: [{ id: 's', kind: 'skill' }] })).toEqual([])
   })
@@ -62,8 +66,12 @@ describe('parseMemoryCaps', () => {
     expect(parseMemoryCaps({ memory: { memory_char_limit: 2200, user_char_limit: 1375 } })).toEqual({ 'MEMORY.md': 2200, 'USER.md': 1375 })
   })
 
-  it('leaves a file with no positive whole number without a cap', () => {
-    expect(parseMemoryCaps({ memory: { memory_char_limit: 0, user_char_limit: '1375' } })).toEqual(NO_MEMORY_CAPS)
+  it('keeps a cap of 0, which Hermes keeps too', () => {
+    expect(parseMemoryCaps({ memory: { memory_char_limit: 0, user_char_limit: 1375 } })).toEqual({ 'MEMORY.md': 0, 'USER.md': 1375 })
+  })
+
+  it('leaves a file with no whole number of zero or more without a cap', () => {
+    expect(parseMemoryCaps({ memory: { memory_char_limit: -1, user_char_limit: '1375' } })).toEqual(NO_MEMORY_CAPS)
     expect(parseMemoryCaps({ memory: { memory_char_limit: 1.5 } })).toEqual(NO_MEMORY_CAPS)
     expect(parseMemoryCaps({})).toEqual(NO_MEMORY_CAPS)
   })
@@ -152,6 +160,15 @@ describe("the fixture's memory routes", () => {
     expect(parseMemoryCaps(reads(memoryCapsPath(RAE))!.body)).toEqual({ 'MEMORY.md': 2200, 'USER.md': 1375 })
     expect(parseMemoryCaps(reads(memoryCapsPath('zed' as BotId))!.body)).toEqual({ 'MEMORY.md': 2200, 'USER.md': 1375 })
     expect(parseMemoryCaps(reads(memoryCapsPath('default' as BotId))!.body)).toEqual({ 'MEMORY.md': 40, 'USER.md': 30 })
+  })
+})
+
+describe('the fake keeps a trailing byte-order mark, as Hermes does', () => {
+  it('digests and serves the entry with it', async () => {
+    const marked = 'Keeps notes.\ufeff'
+    const read = fixtureRead({ memory: { entries: [{ file: 'MEMORY.md', text: marked }] } })
+    const cards = parseMemoryGraph((await read(memoryGraphPath('default' as BotId))).body)!
+    expect(cards.map(card => card.text)).toEqual([marked])
   })
 })
 
