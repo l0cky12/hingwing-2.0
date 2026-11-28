@@ -1,4 +1,4 @@
-import type { Bot, BotDetails, ModelMenu } from '@highwing/hermes/domain'
+import type { Bot, BotCreated, BotDetails, BotDraft, ModelMenu } from '@highwing/hermes/domain'
 import { useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { pickBotPicture, run, useTopic } from '../store'
 import { Avatar } from './Avatar'
@@ -32,7 +32,6 @@ type Panel =
   | { readonly at: 'closed' }
   | { readonly at: 'open'; readonly bot: Bot; readonly details: BotDetails }
   | { readonly at: 'refused'; readonly bot: Bot; readonly words: string }
-  | { readonly at: 'new'; readonly models: ModelMenu | 'loading' }
 
 const CLOSED: Panel = { at: 'closed' }
 
@@ -54,12 +53,7 @@ export function useBotPanel() {
     asked.current++
     setPanel(CLOSED)
   }, [])
-  const startNew = useCallback(() => {
-    asked.current++
-    setPanel({ at: 'new', models: 'loading' })
-    void run({ do: 'botModels', bot: null }).then(outcome => { if (outcome.ok) setPanel(held => held.at === 'new' ? { at: 'new', models: outcome.value } : held) })
-  }, [])
-  return { panel, open, close, startNew }
+  return { panel, open, close }
 }
 
 export interface TabRowProps<T extends string> {
@@ -87,29 +81,55 @@ export function TabRow<T extends string>({ tabs, selected, onSelect }: TabRowPro
 }
 
 /** `current` is the roster's entry for the open chat's bot, which shows a picture changed in the panel. */
-export function BotPanel({ panel, current, onClose, onNewBot }: { readonly panel: Panel; readonly current: Bot | null; readonly onClose: () => void; readonly onNewBot: () => void }) {
-  const bots = useTopic('bots')
+export function BotPanel({ panel, current, onClose }: { readonly panel: Panel; readonly current: Bot | null; readonly onClose: () => void }) {
   if (panel.at === 'open') {
     const bot = current?.id === panel.bot.id ? current : panel.bot
-    return <OpenPanel key={bot.id} bot={bot} details={panel.details} onClose={onClose} onNewBot={onNewBot} />
-  }
-  // The plus menu's form, drawn here because chat mode has no Bots column to draw it.
-  if (panel.at === 'new') {
-    return <NewBotForm problemOf={name => nameProblem(name, bots)} models={panel.models} looks={LOOKS} onCreate={(draft, picture) => run({ do: 'createBot', draft, picture })} onClose={onClose} />
+    return <OpenPanel key={bot.id} bot={bot} details={panel.details} onClose={onClose} />
   }
   return panel.at === 'refused' ? <Refused bot={panel.bot} words={panel.words} onClose={onClose} /> : null
 }
 
-/** The Details form stays mounted under another tab, so an edit not yet saved is still there on the way back. */
-function OpenPanel({ bot, details, onClose, onNewBot }: { readonly bot: Bot; readonly details: BotDetails; readonly onClose: () => void; readonly onNewBot: () => void }) {
+/**
+ * The Details form stays mounted under another tab and under the New bot form, so an edit not yet saved is still there on the way back.
+ * New bot… is off while Save is out: a save that lands closes the panel, and would take an open New bot form with it.
+ */
+function OpenPanel({ bot, details, onClose }: { readonly bot: Bot; readonly details: BotDetails; readonly onClose: () => void }) {
   const [tab, setTab] = useState<TabId>('details')
+  const [making, setMaking] = useState<ModelMenu | 'loading' | null>(null)
+  const [made, setMade] = useState<BotCreated | null>(null)
+  const bots = useTopic('bots')
+  const startNew = () => {
+    setMade(null)
+    setMaking('loading')
+    void run({ do: 'botModels', bot: null }).then(outcome => { if (outcome.ok) setMaking(held => held && outcome.value) })
+  }
+  const create = async (draft: BotDraft, picture: string) => {
+    const outcome = await run({ do: 'createBot', draft, picture })
+    if (outcome.ok) setMade(outcome.value)
+    return outcome
+  }
   const tabs = <TabRow tabs={TABS} selected={tab} onSelect={setTab} />
-  const newBot = <button type="button" className="bot-new" aria-haspopup="dialog" onClick={onNewBot}>New bot…</button>
+  const warned = made !== null && made.warnings.length > 0 && (
+    <p className="form-refused bots-warned" role="status">
+      {made.warnings.map((warning, at) => <span key={at}>Hermes made {made.bot}, with a warning: {warning}</span>)}
+    </p>
+  )
   return (
-    <BotEditor
-      bot={bot} details={details} className={tab === 'details' ? 'bot-panel' : `bot-panel on-${tab}`}
-      tabs={<>{tabs}{newBot}{tab === 'routines' ? <RoutinesTab bot={bot} onClose={onClose} /> : null}</>} {...BOT_EDIT_CALLS} onClose={onClose}
-    />
+    <>
+      <BotEditor
+        bot={bot} details={details} className={tab === 'details' ? 'bot-panel' : `bot-panel on-${tab}`}
+        tabs={sending => (
+          <>
+            {tabs}
+            <button type="button" className="bot-new" aria-haspopup="dialog" disabled={sending} onClick={startNew}>New bot…</button>
+            {warned}
+            {tab === 'routines' ? <RoutinesTab bot={bot} onClose={onClose} /> : null}
+          </>
+        )}
+        {...BOT_EDIT_CALLS} onClose={onClose}
+      />
+      {making !== null && <NewBotForm problemOf={name => nameProblem(name, bots)} models={making} looks={LOOKS} onCreate={create} onClose={() => setMaking(null)} />}
+    </>
   )
 }
 

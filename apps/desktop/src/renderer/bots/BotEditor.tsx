@@ -13,7 +13,7 @@ export interface BotEditorProps extends EditCalls {
   readonly onRemovePicture: (bot: BotId) => Promise<CommandOutcome>
   readonly onClose: () => void
   readonly className?: string
-  readonly tabs?: ReactNode
+  readonly tabs?: (sending: boolean) => ReactNode
 }
 
 export function BotEditor({ bot, details: loaded, onDescribe, onEdit, onPickPicture, onRemovePicture, onClose, className, tabs }: BotEditorProps) {
@@ -35,13 +35,17 @@ export function BotEditor({ bot, details: loaded, onDescribe, onEdit, onPickPict
 
   return (
     <BotForm title={details.name} submitLabel="Save" initial={draftOf(loaded)} problemOf={() => null} models="none" onSubmit={save} onClose={onClose} className={className}>
-      {tabs}
-      <div className="bot-picture">
-        <Avatar bot={bot} size={56} />
-        <button type="button" disabled={picturing.busy} onClick={() => void picture(() => onPickPicture(bot.id))}>Upload picture</button>
-        {bot.picture && <button type="button" disabled={picturing.busy} onClick={() => void picture(() => onRemovePicture(bot.id))}>Remove picture</button>}
-        {picturing.words !== null && <p className="form-refused" role="alert">{picturing.words}</p>}
-      </div>
+      {(_, sending) => (
+        <>
+          {tabs?.(sending)}
+          <div className="bot-picture">
+            <Avatar bot={bot} size={56} />
+            <button type="button" disabled={picturing.busy} onClick={() => void picture(() => onPickPicture(bot.id))}>Upload picture</button>
+            {bot.picture && <button type="button" disabled={picturing.busy} onClick={() => void picture(() => onRemovePicture(bot.id))}>Remove picture</button>}
+            {picturing.words !== null && <p className="form-refused" role="alert">{picturing.words}</p>}
+          </div>
+        </>
+      )}
     </BotForm>
   )
 }

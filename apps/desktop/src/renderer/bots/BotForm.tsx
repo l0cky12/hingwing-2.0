@@ -11,7 +11,7 @@ interface BotFormProps {
   readonly onSubmit: (draft: BotDraft) => Promise<Submitted>
   readonly onClose: () => void
   readonly focusName?: boolean
-  readonly children?: ReactNode | ((draft: BotDraft) => ReactNode)
+  readonly children?: ReactNode | ((draft: BotDraft, sending: boolean) => ReactNode)
   readonly waitingFor?: string | null
   readonly className?: string | undefined
 }
@@ -55,7 +55,7 @@ export function BotForm({ title, submitLabel, initial, problemOf, models, onSubm
       <form onSubmit={event => void submit(event)} noValidate>
         <h2 id={`${ids}-title`}>{title}</h2>
         <div className="bot-form-body">
-          {typeof children === 'function' ? children(draft) : children}
+          {typeof children === 'function' ? children(draft, sending) : children}
           <div className="field">
             <label htmlFor={`${ids}-name`}>Name</label>
             <input

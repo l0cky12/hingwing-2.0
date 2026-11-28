@@ -77,7 +77,7 @@ export function TopBar({ target }: { readonly target: Target | null }) {
   useNewChatKey(bar)
   const { bot, name, title } = useOpenChat()
   const group = useOpenGroup()
-  const { panel, open, close, startNew } = useBotPanel()
+  const { panel, open, close } = useBotPanel()
   const pill = group === null ? bot : null
   useDetailsKey(bar, pill, open)
   const named = useHermesName(target)
@@ -101,7 +101,7 @@ export function TopBar({ target }: { readonly target: Target | null }) {
       <Bar ref={bar} where={where === '' ? null : where} shown={shown}>
         {group === null ? <NewChatButton /> : <GroupMembers faces={group.faces} />}
       </Bar>
-      <BotPanel panel={panel} current={bot} onClose={close} onNewBot={startNew} />
+      <BotPanel panel={panel} current={bot} onClose={close} />
     </>
   )
 }
