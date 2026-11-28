@@ -1,10 +1,10 @@
 # Connect by URL
 
-The connection card has a third segment, "Web address", with a "Gateway address" field. Connect checks the address, opens Hermes's sign-in page in the browser, and waits. After the sign-in the check opens the gateway and saves the connection. On a first run it shows the intro, and Skip opens the chat. [First-run intro](./first-run-intro.md) covers the steps. In Settings the card folds on the address and says "Highwing now uses the Hermes on <host>." A bad address is refused in words before anything is contacted, and a plain http address gets a warning under the field while Connect stays on. A check that fails says what is wrong and one thing to try. After a restart the chat opens with no browser when the computer has a keyring. With no keyring, or after Hermes ended the sign-in, the banner says so and offers Sign in, which opens Settings and checks the address there. Close then goes back to the chat.
+The connection card has a second segment, "Web", with a "Gateway address" field. Connect checks the address, opens Hermes's sign-in page in the browser, and waits. After the sign-in the check opens the gateway and saves the connection. On a first run it shows the intro, and Skip opens the chat. [First-run intro](./first-run-intro.md) covers the steps. In Settings the card folds on the address and says "Highwing now uses the Hermes on <host>." A bad address is refused in words before anything is contacted, and a plain http address gets a warning under the field while Connect stays on. A check that fails says what is wrong and one thing to try. After a restart the chat opens with no browser when the computer has a keyring. With no keyring, or after Hermes ended the sign-in, the banner says so and offers Sign in, which opens Settings and checks the address there. Close then goes back to the chat.
 
 ## Sub-features
 
-- `url-form` shows the four segments and the "Gateway address" field.
+- `url-form` shows the three segments and the "Gateway address" field.
 - `url-plain-http` shows the warning under the field for an `http://` address, with Connect on.
 - `url-problem` shows "That isn't a web address.", the username-or-password words and the `?`-or-`#` words, each before any request.
 - `url-sign-in-waiting` shows "Waiting for you to sign in" with "It never sees your password." and Stop waiting.
@@ -17,7 +17,7 @@ The connection card has a third segment, "Web address", with a "Gateway address"
 
 ## How to get to it (user POV)
 
-- Start Highwing for the first time, or press the Hermes button at the foot of the sidebar (or Ctrl+,) and then Change, and pick "Web address".
+- Start Highwing for the first time, or press the Hermes button at the foot of the sidebar (or Ctrl+,) and then Change, and pick "Web".
 
 ## Driving it with highwing-verify
 
@@ -26,13 +26,13 @@ Preconditions:
 - `$H doctor` prints only `ok` lines.
 - Every recipe passes `--fake-webapp`, except the last, which reaches a real gateway.
 
-Set `U="Web address"` first. `@webapp` types the address of the run's gateway. Each recipe that connects starts with `C`:
+Set `U=Web` first. `@webapp` types the address of the run's gateway. Each recipe that connects starts with `C`:
 
 ```
 C=(wait setup click radio "$U" type "Gateway address" @webapp click button Connect)
 ```
 
-- **The form.** Run `$H run --fake-webapp ok --run url-form wait setup click radio "$U" shot url-form`. The shot shows the four segments and the field with `https://hermes.example.com` as its placeholder.
+- **The form.** Run `$H run --fake-webapp ok --run url-form wait setup click radio "$U" shot url-form`. The shot shows the three segments and the field with `https://hermes.example.com` as its placeholder.
 - **Plain http.** Run `$H run --fake-webapp ok --run url-plain-http wait setup click radio "$U" type "Gateway address" "http://hermes.example.com:9120" see "This address uses plain http" enabled button Connect shot url-plain-http browsed 0`.
 - **A problem with the address.** Run `$H run --fake-webapp ok --run url-problems wait setup click radio "$U" type "Gateway address" "ftp://hermes.example.com" click button Connect wait setup-failed shot url-not-an-address type "Gateway address" "https://ada:password@hermes.example.com" click button Connect wait setup-failed shot url-credentials type "Gateway address" "https://hermes.example.com/?token=abc" click button Connect wait setup-failed shot url-extras browsed 0`.
 - **Connect and chat.** Run `$H run --fake-webapp ok --run url-connect "${C[@]}" wait intro click button Skip wait live shot url-chat-live browsed 1 type "Message Hermes" @request click button Send wait approval click button "Run once" wait settled shot url-chat-settled quiet`. The top bar reads "on 127.0.0.1".

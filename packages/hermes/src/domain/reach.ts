@@ -273,7 +273,7 @@ export const URL_FAILURES: Readonly<Record<UrlFailure, Failure>> = {
   dashboard: {
     step: 'hermes',
     words: machine => `What answers at ${machine} is the Hermes dashboard, which Highwing can't chat through.`,
-    fix: () => "On that machine, turn on the gateway's Webapp with webapp.enabled and webapp.host in ~/.hermes/config.yaml, restart the gateway, and use the Webapp's address."
+    fix: () => "Use the address of the gateway's Webapp instead. That is webapp.public_url in ~/.hermes/config.yaml on that machine, or, when it is empty, http:// with the machine's address and webapp.port, such as http://192.168.1.20:9120. If nothing answers there, set webapp.enabled, and set webapp.host to the machine's LAN address, then restart the gateway."
   },
   'sign-in-cancelled': {
     step: 'sign-in',

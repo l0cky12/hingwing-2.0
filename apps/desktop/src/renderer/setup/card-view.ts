@@ -1,11 +1,11 @@
 import { byKind, failureOf, hermesName, machineOf, sameTarget, serverName, STEP_WORDS, wayLabel, type Link, type PickMode, type Server, type ServerId, type Target, type WayLabel } from '@highwing/hermes/domain'
 import { NO_SERVERS, type Into, type ServerBook } from '../../ipc-contract'
 import { bannerOf, type BannerAction } from '../chrome/Chrome'
-import { KINDS, SIGN_IN_HINT, type Kind } from './form'
+import { KINDS, kindOf, SIGN_IN_HINT, type Kind } from './form'
 import type { CardSetup } from './screens'
 
 export interface Summary {
-  readonly kind: Target['kind']
+  readonly kind: Kind
   readonly title: string
   readonly host: string | null
   readonly linkMessage: string | null
@@ -86,7 +86,7 @@ function summaryOf(target: Target, link: Link | undefined, server: Server | unde
   const action = link === undefined ? null : (bannerOf(link, target)?.action ?? null)
   return {
     // The first way's, so the tile stays the same picture whichever way a dial lands on.
-    kind: (server?.ways[0] ?? target).kind,
+    kind: kindOf(server?.ways[0] ?? target),
     title,
     // The rows of a server with several ways name each address.
     host: saved === title || (server !== undefined && server.ways.length > 1) ? null : saved,
@@ -132,7 +132,7 @@ const TITLES: { readonly [I in Into]: (server: string) => { readonly title: stri
 
 /** A new way starts on the first kind the server has no way of, since a second way of one kind is the rarer wish. */
 const firstKind = (into: Into, server: Server | undefined): Kind =>
-  (into === 'addWay' ? KINDS.find(kind => server?.ways.every(way => way.kind !== kind) === true) : undefined) ?? 'remote'
+  (into === 'addWay' ? KINDS.find(kind => server?.ways.every(way => way.kind !== kind) === true) : undefined) ?? 'ssh'
 
 /**
  * What the Connection page shows. `editing`: the editor the user opened, which a check in `setup` overrides.

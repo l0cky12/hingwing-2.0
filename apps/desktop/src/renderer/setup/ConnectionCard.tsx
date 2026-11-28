@@ -4,7 +4,7 @@ import { NO_SERVERS, type Into, type ServerBook, type WindowCommand } from '../.
 import { press } from '../chrome/Chrome'
 import { run } from '../store'
 import { cardOf, type Editor as EditorView, type ServerRow, type Summary, type Ways } from './card-view'
-import { CHOICES, KINDS as KIND_ORDER, textsOf, type Kind, type Typed } from './form'
+import { CHOICES, KINDS as KIND_ORDER, kindOf, textsOf, type Kind, type Typed } from './form'
 import type { CardSetup } from './screens'
 
 export const line = (size: number, width: number) =>
@@ -44,7 +44,7 @@ export function Segmented<V extends string>({ labelledBy, describedBy, value, se
   )
 }
 
-const ICONS: { readonly [K in Kind]: (props: { readonly size?: number; readonly width?: number }) => ReactNode } = { remote: Server, ssh: Terminal, url: Globe, local: Laptop }
+const ICONS: { readonly [K in Kind]: (props: { readonly size?: number; readonly width?: number }) => ReactNode } = { ssh: Terminal, url: Globe, local: Laptop }
 
 const KINDS: readonly Segment<Kind>[] = KIND_ORDER.map(value => {
   const Icon = ICONS[value]
@@ -148,7 +148,7 @@ function WayRows({ ways, busy, onEdit }: { readonly ways: Ways; readonly busy: b
 }
 
 function Editor({ setup, view, onFold }: { readonly setup: CardSetup; readonly view: EditorView; readonly onFold: () => void }) {
-  const [kind, setKind] = useState<Kind>(view.seed?.kind ?? view.kind)
+  const [kind, setKind] = useState<Kind>(view.seed === null ? view.kind : kindOf(view.seed))
   const [texts, setTexts] = useState(() => textsOf(view.seed ?? undefined))
   const [typo, setTypo] = useState<Extract<Typed, { ok: false }> | null>(null)
   const ids = useId()
@@ -161,7 +161,7 @@ function Editor({ setup, view, onFold }: { readonly setup: CardSetup; readonly v
   }, [])
   // The check disabled the form, which dropped focus.
   useLayoutEffect(() => {
-    if (setup.at === 'failed' && document.activeElement === document.body) (CHOICES[setup.target.kind].field !== null ? field : connect).current?.focus()
+    if (setup.at === 'failed' && document.activeElement === document.body) (CHOICES[kindOf(setup.target)].field !== null ? field : connect).current?.focus()
   }, [setup])
 
   const submit = (event: FormEvent) => {

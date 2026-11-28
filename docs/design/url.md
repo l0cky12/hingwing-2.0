@@ -180,7 +180,7 @@ The check shows these failures.
 | `hermes` | `not-hermes` | Something answers at gw, but it isn't Hermes. | Use the address of the gateway's Webapp. Add a path only if a proxy serves Hermes under one. |
 | `hermes` | `hermes-too-old` (existing) | The Hermes on gw is too old for Highwing. | Update Hermes there, then try again. |
 | `hermes` | `no-sign-in` | The Hermes on gw has no sign-in that Highwing can use. | On that machine, give the Webapp a sign-in, such as a username and password under dashboard.basic_auth, then restart the gateway. |
-| `hermes` | `dashboard` | What answers at gw is the Hermes dashboard, which Highwing can't chat through. | On that machine, turn on the gateway's Webapp with webapp.enabled and webapp.host in ~/.hermes/config.yaml, restart the gateway, and use the Webapp's address. |
+| `hermes` | `dashboard` | What answers at gw is the Hermes dashboard, which Highwing can't chat through. | Use the address of the gateway's Webapp instead. That is webapp.public_url in ~/.hermes/config.yaml on that machine, or, when it is empty, http:// with the machine's address and webapp.port, such as http://192.168.1.20:9120. If nothing answers there, set webapp.enabled, and set webapp.host to the machine's LAN address, then restart the gateway. |
 | `sign-in` | `sign-in-cancelled` | You stopped the sign-in to gw. | Press Connect when you want to sign in. |
 | `sign-in` | `sign-in-timed-out` | You didn't finish signing in to gw within 10 minutes. | Press Connect to open the sign-in page again. |
 | `sign-in` | `sign-in-refused` | The Hermes on gw didn't accept the sign-in. | Press Connect to sign in again. |
