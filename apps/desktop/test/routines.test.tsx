@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { RoutinesList, RunsList } from '../src/renderer/bots/Routines'
-import { afterControl, NO_RUNS, rereadAfter, RUNNING_REREAD_MS, routinesViewOf, runsViewOf, scheduleWords, tookWords } from '../src/renderer/bots/routines-view'
+import { afterControl, afterReread, NO_RUNS, REREAD_MS, rereadAfter, routinesViewOf, runsViewOf, scheduleWords, tookWords } from '../src/renderer/bots/routines-view'
 
 const NONE = { busy: null, history: { bot: 'rae' as BotId, revision: 1, read: async () => ({ ok: true, value: [] }) as const, onOpen: () => {} }, onToggle: () => {}, onDelete: () => {} }
 const routine = (id: string, name: string, schedule: string, paused = false): Routine => ({ id: id as RoutineId, name, schedule, paused, nextRunAt: null })
@@ -153,11 +153,19 @@ describe('the past runs of a routine', () => {
     ])
   })
 
-  it('reads the runs again while one is running, since another bot\'s run sends no cron.changed', () => {
-    expect(rereadAfter({ ok: true, value: RUNS })).toBe(RUNNING_REREAD_MS)
-    expect(rereadAfter({ ok: true, value: RUNS.filter(held => held.outcome.is !== 'running') }), 'every run settled').toBeNull()
-    expect(rereadAfter(null), 'still loading').toBeNull()
-    expect(rereadAfter({ ok: false, refusal: { kind: 'offline', message: 'x' } }), 'refused').toBeNull()
+  it('reads the runs again while the list is open, since another bot\'s runs send no cron.changed, but not from a Hermes without the route', () => {
+    expect(rereadAfter({ ok: true, value: RUNS })).toBe(REREAD_MS)
+    expect(rereadAfter({ ok: true, value: [] }), 'no runs yet').toBe(REREAD_MS)
+    expect(rereadAfter({ ok: false, refusal: { kind: 'offline', message: 'x' } }), 'offline for now').toBe(REREAD_MS)
+    expect(rereadAfter({ ok: false, refusal: { kind: 'unsupported', message: 'x' } }), 'no route').toBeNull()
+  })
+
+  it('keeps the runs it shows when a later read fails, and shows the failure when it has none', () => {
+    const shown = { ok: true, value: RUNS } as const
+    const offline = { ok: false, refusal: { kind: 'offline', message: 'gone' } } as const
+    expect(afterReread(shown, offline)).toBe(shown)
+    expect(afterReread(null, offline)).toBe(offline)
+    expect(afterReread(offline, shown)).toBe(shown)
   })
 
   it('opens a run in the profile Hermes names for it, else in the routine\'s bot', () => {

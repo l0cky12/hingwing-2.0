@@ -100,15 +100,21 @@ export function afterControl(
 
 export const NO_RUNS = 'No runs yet.'
 
-/** How long an open list showing a running run waits before it asks Hermes again. */
-export const RUNNING_REREAD_MS = 15_000
+/** How long an open list waits before it asks Hermes again. */
+export const REREAD_MS = 15_000
 
 /**
- * When to read the runs again, or null for no sooner than the next `cron.changed`. Hermes sends that only for the gateway's own
- * profile (tui_gateway/change_watcher.py), so a run of another bot would show Running until the list closed.
+ * When an open list reads the runs again, or null for never. Hermes sends `cron.changed` only for the gateway's own profile
+ * (tui_gateway/change_watcher.py), so another bot's runs start and end with no word from Hermes. A Hermes without the route
+ * is not asked again.
  */
 export const rereadAfter = (listed: CommandOutcome<readonly RoutineRun[]> | null): number | null =>
-  listed?.ok === true && listed.value.some(run => run.outcome.is === 'running') ? RUNNING_REREAD_MS : null
+  listed !== null && !listed.ok && listed.refusal.kind === 'unsupported' ? null : REREAD_MS
+
+/** The list after another read: a failed read keeps the runs already shown, so a moment offline doesn't take them away. */
+export const afterReread = (
+  held: CommandOutcome<readonly RoutineRun[]> | null, answered: CommandOutcome<readonly RoutineRun[]>
+): CommandOutcome<readonly RoutineRun[]> => (!answered.ok && held?.ok === true ? held : answered)
 
 /** How a run went, in words, because a colour alone says nothing to everyone. */
 export const OUTCOME_WORDS: { readonly [S in RunOutcome['is']]: string } = {
