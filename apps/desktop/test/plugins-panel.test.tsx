@@ -1,7 +1,7 @@
 import type { CatalogPlugin, Plugin } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import { catalogKind, installedKind, installedWords } from '../src/renderer/apps/plugins-view'
+import { afterInstall, catalogKind, installedKind, installedWords } from '../src/renderer/apps/plugins-view'
 
 vi.mock('../src/renderer/store', () => ({ Epoch: {}, run: async () => ({ ok: true, value: undefined }), useTopic: () => undefined }))
 
@@ -72,5 +72,23 @@ describe('what a plugin card says', () => {
     expect(installedWords({ ...done, restartRequired: true })).toBe('Installed spotify. Restart Hermes to finish.')
     expect(installedWords({ ...done, missingEnv: ['SPOTIFY_CLIENT_ID'] })).toBe("Installed spotify. It needs SPOTIFY_CLIENT_ID set on Hermes's computer before it works.")
     expect(installedWords({ ...done, restartRequired: true, missingEnv: ['A', 'B', 'C'] })).toBe("Installed spotify. Restart Hermes to finish. It needs A, B and C set on Hermes's computer before it works.")
+  })
+})
+
+describe('what the tab says after an install', () => {
+  const done = { name: 'spotify', enabled: true, restartRequired: false, missingEnv: [], warnings: [] }
+  const refused = { ok: false, refusal: { kind: 'rejected', message: 'enable refused: missing dependency' } } as const
+  const listed = { ok: true, value: [] } as const
+  const unread = { ok: false, refusal: { kind: 'rejected', message: 'Highwing is not connected to Hermes.' } } as const
+
+  it('keeps Hermes’s words when the plugins read again', () => {
+    expect(afterInstall({ ok: true, value: done }, listed)).toEqual({ ok: true, words: 'Installed spotify.' })
+    expect(afterInstall(refused, listed)).toEqual({ ok: false, words: 'enable refused: missing dependency' })
+  })
+
+  it('alerts when Highwing could not read the plugins again, even after an install that worked', () => {
+    expect(afterInstall({ ok: true, value: done }, unread)).toEqual({
+      ok: false, words: "Installed spotify. Highwing couldn't read the plugins again: Highwing is not connected to Hermes. Open Connectors again to see them."
+    })
   })
 })

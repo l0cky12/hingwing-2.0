@@ -11,7 +11,7 @@ import { nameOf, useSkillSwitches } from '../setup/Skills'
 import { run, useTopic } from '../store'
 import { useSwitches } from '../switches'
 import { TABS, tabAfterKey, type Tab } from './connectors-tabs'
-import { askWords, catalogKind, installedKind, installedWords, AVAILABLE_PAGE } from './plugins-view'
+import { afterInstall, askWords, catalogKind, installedKind, AVAILABLE_PAGE } from './plugins-view'
 import { TemplateDialog } from './Templates'
 import { ToolServerForm, useToolServers } from './ToolServers'
 import { namedTools, STATES, toolCount } from './tool-servers-view'
@@ -195,13 +195,12 @@ function usePlugins(bot: BotId | null) {
     setInstalling({ name, at: 'installing' })
     const outcome = await run({ do: 'installPlugin', bot, name })
     if (!openRef.current) return
-    if (outcome.ok) {
-      const next = await run({ do: 'plugins', bot })
-      if (!openRef.current) return
-      if (next.ok) setRead(next.value)
-    }
+    // Hermes places a plugin before it turns it on, so an install refused at that step still leaves it installed, off.
+    const next = await run({ do: 'plugins', bot })
+    if (!openRef.current) return
+    if (next.ok) setRead(next.value)
     setInstalling(null)
-    setSaid(outcome.ok ? { ok: true, words: installedWords(outcome.value) } : { ok: false, words: outcome.refusal.message })
+    setSaid(afterInstall(outcome, next))
   }
 
   return { read, restart, ...switches, catalog, installing, said, readCatalog, ask, cancel: () => setInstalling(null), install }
