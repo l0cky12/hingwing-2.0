@@ -333,6 +333,7 @@ describe('the card for a gateway address', () => {
     const markup = text(render({ at: 'failed', live: null, target: at('https://hermes.example.com'), into: 'replace', failure: 'dashboard' }))
     expect(markup).toContain("The address of the gateway's Webapp, not the dashboard's.")
     expect(markup).toContain('webapp.public_url in ~/.hermes/config.yaml')
+    expect(markup).toContain("the machine's own address with webapp.port, 9120 by default")
   })
 
   it('opens on the address being edited, in the Gateway address field', () => {
