@@ -1,6 +1,6 @@
 import type { BotId, CommandOutcome } from '@highwing/hermes/domain'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { givePet, petPrompt, type PetCalls } from '../src/renderer/bots/pet-picture'
+import { givePet, petForNewBot, petPrompt, type PetCalls } from '../src/renderer/bots/pet-picture'
 
 const redraw = vi.hoisted(() => ({ calls: [] as unknown[][], result: (): Promise<string> => Promise.resolve('') }))
 
@@ -65,5 +65,24 @@ describe('giving a bot a pet picture', () => {
     const refusal = refused('rejected', 'Hermes would not keep it.')
     const made = calls(async () => ({ ok: true, value: 'data:image/png;base64,R0VO' }), async () => refusal)
     expect(await givePet(made, BOT, ABOUT)).toEqual(refusal)
+  })
+})
+
+describe('a new bot', () => {
+  const MADE: CommandOutcome<{ readonly bot: BotId }> = { ok: true, value: { bot: BOT } }
+
+  it('gets its pet drawn when its maker left the look alone', () => {
+    const draw = vi.fn(async () => ({ ok: true as const, value: undefined }))
+    petForNewBot(MADE, true, draw, ABOUT)
+    expect(draw).toHaveBeenCalledExactlyOnceWith(BOT, ABOUT)
+  })
+
+  it.each([
+    ['a look its maker picked', MADE, false],
+    ['a refused create', refused('rejected', 'Hermes would not make it.'), true]
+  ])('gets no pet for %s', (_, made, untouched) => {
+    const draw = vi.fn(async () => ({ ok: true as const, value: undefined }))
+    petForNewBot(made, untouched, draw, ABOUT)
+    expect(draw).not.toHaveBeenCalled()
   })
 })

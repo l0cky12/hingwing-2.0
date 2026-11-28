@@ -6,13 +6,15 @@ import { BotEditor, type BotEditorProps } from './BotEditor'
 import { nameProblem } from './bot-form'
 import type { LookCalls } from './LookPicker'
 import { NewBotForm } from './NewBotForm'
+import { PET_CALLS } from './pet-picture'
 import { Routines, type RoutinesProps } from './Routines'
 
-export const BOT_EDIT_CALLS: Pick<BotEditorProps, 'onDescribe' | 'onEdit' | 'onPickPicture' | 'onRemovePicture'> = {
+export const BOT_EDIT_CALLS: Pick<BotEditorProps, 'onDescribe' | 'onEdit' | 'onPickPicture' | 'onRemovePicture' | 'pet'> = {
   onDescribe: bot => run({ do: 'describeBot', bot }),
   onEdit: (bot, edit, revision) => run({ do: 'editBot', bot, edit, revision }),
   onPickPicture: bot => pickBotPicture(bot),
-  onRemovePicture: bot => run({ do: 'removeBotPicture', bot })
+  onRemovePicture: bot => run({ do: 'removeBotPicture', bot }),
+  pet: PET_CALLS
 }
 
 export const LOOKS: LookCalls = {
@@ -129,7 +131,7 @@ function OpenPanel({ bot, details, onClose }: { readonly bot: Bot; readonly deta
         )}
         {...BOT_EDIT_CALLS} onClose={onClose}
       />
-      {making !== null && <NewBotForm problemOf={name => nameProblem(name, bots)} models={making} looks={LOOKS} onCreate={create} onClose={() => setMaking(null)} />}
+      {making !== null && <NewBotForm problemOf={name => nameProblem(name, bots)} models={making} looks={LOOKS} pet={BOT_EDIT_CALLS.pet} onCreate={create} onClose={() => setMaking(null)} />}
     </>
   )
 }

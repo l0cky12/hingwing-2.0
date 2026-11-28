@@ -122,6 +122,18 @@ describe("the open bot's profile panel", () => {
     expect(seen.commands.at(-1)).toEqual({ do: 'createBot', draft, picture: 'data:image/png;base64,' })
   })
 
+  it("asks Hermes to draw the open bot's pet from its Generate pet picture button, and says so while it waits", async () => {
+    button('Details for Rae')!.props.onClick!()
+    await settle()
+    expect(button('Generate pet picture')!.props['disabled']).toBe(false)
+    button('Generate pet picture')!.props.onClick!()
+    expect(button('Drawing…')!.props['disabled']).toBe(true)
+    expect(button('Upload picture')!.props['disabled']).toBe(true)
+    await settle()
+    expect(seen.commands.at(-1)).toMatchObject({ do: 'generatePicture', prompt: expect.stringContaining('named Rae,') })
+    expect(button('Generate pet picture')!.props['disabled']).toBe(false)
+  })
+
   it('keeps New bot… off while Save is out, since the save landing closes the panel', async () => {
     button('Details for Rae')!.props.onClick!()
     await settle()

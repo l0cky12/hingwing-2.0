@@ -34,12 +34,19 @@ export async function givePet(calls: PetCalls, bot: BotId, about: PetAbout): Pro
   return drawn === null ? UNDRAWN : calls.save(bot, drawn)
 }
 
+export type DrawPet = (bot: BotId, about: PetAbout) => Promise<CommandOutcome>
+
 /** `givePet`, then every avatar reads the bot's picture again. */
-export function usePetPicture(calls: PetCalls = PET_CALLS): (bot: BotId, about: PetAbout) => Promise<CommandOutcome> {
+export function usePetPicture(calls: PetCalls = PET_CALLS): DrawPet {
   const forget = useForgetPicture()
   return async (bot, about) => {
     const outcome = await givePet(calls, bot, about)
     if (outcome.ok) forget(bot)
     return outcome
   }
+}
+
+/** Once a bot is made with the look its maker left alone, draws its pet in the background. The bot keeps its face until Hermes finishes, and for good if Hermes refuses. */
+export function petForNewBot(made: CommandOutcome<{ readonly bot: BotId }>, untouched: boolean, drawPet: DrawPet, about: PetAbout): void {
+  if (untouched && made.ok) void drawPet(made.value.bot, about)
 }

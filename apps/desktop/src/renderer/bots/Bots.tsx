@@ -57,7 +57,7 @@ export function BotsSidebar({ head, compact, foot = null }: { readonly head: Rea
   )
 }
 
-type EditorCalls = Pick<BotEditorProps, 'onDescribe' | 'onEdit' | 'onPickPicture' | 'onRemovePicture'>
+type EditorCalls = Pick<BotEditorProps, 'onDescribe' | 'onEdit' | 'onPickPicture' | 'onRemovePicture' | 'pet'>
 
 interface BotsPanelProps extends EditorCalls {
   readonly head?: ReactNode
@@ -542,7 +542,7 @@ export function BotsPanel({
         {foot}
       </aside>
       {form !== null && (
-        <NewBotForm problemOf={name => nameProblem(name, bots)} models={form.models} looks={looks} onCreate={create} onClose={() => setForm(null)} />
+        <NewBotForm problemOf={name => nameProblem(name, bots)} models={form.models} looks={looks} pet={editor.pet} onCreate={create} onClose={() => setForm(null)} />
       )}
       {grouping && <GroupForm offered={seatableIn(bots, groups)} listed={groups?.state === 'listed' ? groups.rows.map(row => row.id) : []} onCreate={onCreateGroup} onClose={closeGroupForm} />}
       {editing !== null && (
