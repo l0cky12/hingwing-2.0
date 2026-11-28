@@ -856,7 +856,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 
 :root { --hair: color-mix(in srgb, var(--rule) 62%, var(--sheet)); }
 .screen[hidden] { display: none; }
-.tasks { padding: 32px 28px 28px; }
+.tasks { padding: 32px 28px 28px; container-type: inline-size; }
 .tasks > h2 { margin: 0 0 16px; font-size: var(--text-3xl); line-height: 1.3; font-weight: 700; }
 .board { display: flex; align-items: flex-start; gap: 16px; overflow-x: auto; padding-bottom: 12px; }
 .lane { flex: none; width: 240px; }
@@ -867,6 +867,10 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .task > button:hover { border-color: var(--ink); }
 .task .title { font-weight: 500; overflow-wrap: anywhere; }
 .task .by, .task .summary { font-size: var(--text-sm); color: var(--graphite); overflow-wrap: anywhere; }
+@container (width < calc(2 * 240px + 16px)) {
+  .board { flex-direction: column; align-items: stretch; overflow-x: visible; padding-bottom: 0; }
+  .lane { width: auto; }
+}
 .window[data-settings] { grid-template-columns: minmax(0, 1fr); }
 .window[data-settings] > :is(.bots, .chats) { display: none; }
 .settings { display: grid; grid-template-columns: 288px minmax(0, 1fr); grid-template-rows: 56px minmax(0, 1fr); grid-template-areas: "side bar" "side main"; height: 100%; min-height: 0; }

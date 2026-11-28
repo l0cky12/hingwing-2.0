@@ -11,6 +11,7 @@ A card opens the chat working on it. Highwing reads the card's detail, takes the
 - `task-board-open-chat` opens a running card's chat in the bot of its run, and closes the view.
 - `task-board-no-chat` says a card that never ran has no chat yet, and opens nothing.
 - `task-board-unsupported` says a Hermes with no kanban plugin has no task board.
+- `task-board-narrow` stacks the columns one above the other in a column too narrow for two of them, such as the chat's side panel beside a page open full window, so every card shows whole.
 
 ## How to get to it (user POV)
 
@@ -28,4 +29,5 @@ Preconditions:
 
 - **Board, refresh and a card's chat.** Run `$H run $K --run task-board wait window wait live press Control+Shift+T see todo see "Sort the invoices" shot board click button Refresh see "Sort the invoices" click button "/Sort the invoices/" said "Sorted fourteen invoices" shot opened quiet`. The heading then reads "Research · Sort the invoices". Hermes sends all eight columns, and the board shot shows the three that hold cards: Todo 1, Running 1 and Done 2.
 - **A card with no chat.** Run `$H run $K --run task-no-chat wait window wait live press Control+Shift+T click button "/Draft the quarterly summary/" see "This task has no chat yet." quiet`.
+- **Beside a page.** Run `$H run --fixture fixtures/preview.jsonl --serve fixtures/preview --kanban fixtures/kanban/small.json --run task-beside-page wait live type "Message Hermes" @request click button Send wait settled click button "Close preview" gone region Preview click button "Open Demo page" wait preview page-says "Preview works" press Control+Shift+T see "Sort the invoices" inview button "/Sort the invoices/" inview button "/Clean up Downloads/" inview button "/Archive last year's receipts/" shot beside-page`. The page takes the window's left and the board the 400 px panel at its right. `beside-page.png` shows Todo, Running and Done one above the other, each card the panel's width.
 - **No task board.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/chats.json --mode bots --run task-none wait window wait live press Control+Shift+T see "This Hermes has no task board." click button Close see "New chat" quiet`.
