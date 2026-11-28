@@ -304,8 +304,8 @@ export function serveWindows(
     return images.load(request, { session: watched?.current() as Session | undefined, local: servedHere(watched) })
   })
 
-  ipc.handle(CHANNEL.taskBoard, async event => (trusted(event) ? readTaskBoard(owner.read) : REFUSED))
-  ipc.handle(CHANNEL.taskChat, async (event, id) => (trusted(event) && isTaskId(id) ? readTaskChat(owner.read, id) : REFUSED))
+  ipc.handle(CHANNEL.taskBoard, async event => (trusted(event) ? readTaskBoard(owner.call) : REFUSED))
+  ipc.handle(CHANNEL.taskChat, async (event, id) => (trusted(event) && isTaskId(id) ? readTaskChat(owner.call, id) : REFUSED))
 
   ipc.handle(CHANNEL.drafts, async event => (trusted(event) ? drafts.load() : []))
   ipc.on(CHANNEL.keepDraft, (event, raw) => {

@@ -8,7 +8,7 @@ import { transcriptOf, type Transcribe } from '../wire/transcribe'
 import { isKanban, type Kanban } from './kanban'
 
 export { play, playToEnd, type Moment } from './play'
-export { fixtureRead } from './kanban'
+export { fixtureCall } from './kanban'
 export { maskedFrame, recordingDialer } from './record'
 export { fixtureLatency, scriptedDialer, type ScriptedDialer, type ScriptOptions } from './script'
 

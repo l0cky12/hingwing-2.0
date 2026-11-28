@@ -1,4 +1,4 @@
-import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, Picked, PickedRoute, ReadHermes, Transcribe } from '@highwing/hermes'
+import type { CallHermes, CheckOptions, CheckResult, Dialer, Feed, Hermes, Picked, PickedRoute, Transcribe } from '@highwing/hermes'
 import {
   currentServer, firstStep, nextServers, sameTarget, type CheckStep, type Command, type CommandOutcome, type Recording, type Server, type ServerEdit, type ServerId, type Servers, type SetupFailure, type Target,
   type Timed
@@ -17,8 +17,8 @@ export interface ConnectionOwner {
   readonly servers: Feed<ServerBook>
   /** The Hermes of the live connection. null until a target is saved. */
   readonly hermes: Hermes | null
-  /** One GET of the live Hermes's HTTP API. Rejects when no connection is open. */
-  readonly read: ReadHermes
+  /** One request of the live Hermes's HTTP API. Rejects when no connection is open. */
+  readonly call: CallHermes
   run<C extends ConnectionCommand>(command: C): Promise<CommandOutcome<HubResult<C>>>
   /** Speech to text by the Hermes of the live connection. */
   transcribe(recording: Recording): Promise<CommandOutcome<string>>
@@ -310,7 +310,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
     setup,
     servers: book,
     get hermes() { return open?.hermes ?? null },
-    read: path => (open === null ? Promise.reject(new Error('No Hermes is connected.')) : open.route.read(path)),
+    call: ask => (open === null ? Promise.reject(new Error('No Hermes is connected.')) : open.route.call(ask)),
     run: async <C extends ConnectionCommand>(command: C) => {
       const outcome = !isSetupCommand(command) ? await runChat(command) : isServerCommand(command) ? await runServers(command) : runSetup(command)
       return outcome as CommandOutcome<HubResult<C>>
@@ -326,13 +326,13 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
 }
 
 /** A window served from one fixed `Hermes`, as a fixture run is. It has no setup, so it refuses every setup command. */
-export function pinnedConnection(hermes: Hermes, read: ReadHermes, transcribe: Transcribe): ConnectionOwner {
+export function pinnedConnection(hermes: Hermes, call: CallHermes, transcribe: Transcribe): ConnectionOwner {
   return {
     setup: feed<Setup>({ at: 'pinned' }),
     servers: feed(NO_SERVERS),
     hermes,
     transcribe: recording => transcribe(recording),
-    read,
+    call,
     run: async <C extends ConnectionCommand>(command: C) =>
       (isSetupCommand(command) ? NOT_NOW : await hermes.run(command)) as CommandOutcome<HubResult<C>>,
     close: () => hermes.close()

@@ -302,20 +302,20 @@ describe('the route to a gateway address, against the fake Webapp', () => {
   it('reads the gateway\'s HTTP API with the sign-in\'s bearer, refreshing once when Hermes no longer takes it', async () => {
     const web = await webapp('ok')
     const route = routeOf(await signedIn(web), web.url)
-    expect(await route.read(BOARD_PATH)).toEqual({ status: 200, body: { columns: [{ name: 'todo', tasks: [] }] } })
+    expect(await route.call({ method: 'GET', path: BOARD_PATH, profile: null })).toEqual({ status: 200, body: { columns: [{ name: 'todo', tasks: [] }] } })
     expect(count(web, 'POST /auth/native/refresh')).toBe(0)
 
     web.lapse()
-    expect(await route.read(BOARD_PATH)).toMatchObject({ status: 200 })
+    expect(await route.call({ method: 'GET', path: BOARD_PATH, profile: null })).toMatchObject({ status: 200 })
     expect(count(web, 'POST /auth/native/refresh')).toBe(1)
-    expect(await route.read('/api/plugins/kanban/missing'), 'a status passes through for the caller to read').toEqual({ status: 404, body: { detail: 'Not Found' } })
+    expect(await route.call({ method: 'GET', path: '/api/plugins/kanban/missing', profile: null }), 'a status passes through for the caller to read').toEqual({ status: 404, body: { detail: 'Not Found' } })
   })
 
   it('rejects a read for a sign-in Hermes ended', async () => {
     const web = await webapp('ok')
     const route = routeOf(await signedIn(web), web.url)
     web.signOut()
-    await expect(route.read(BOARD_PATH)).rejects.toMatchObject({ kind: 'signed-out' })
+    await expect(route.call({ method: 'GET', path: BOARD_PATH, profile: null })).rejects.toMatchObject({ kind: 'signed-out' })
     expect(count(web, `GET ${BOARD_PATH}`), 'the refused bearer was tried once, and not again on a sign-in that is gone').toBe(1)
   })
 

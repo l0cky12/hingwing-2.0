@@ -1,10 +1,11 @@
 import { createServer, type IncomingHttpHeaders } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { describe, expect, it } from 'vitest'
-import { DialError, liveRoute } from '../src/hub'
+import { DialError, liveRoute, TicketRefused } from '../src/hub'
+import { profiled } from '../src/wire/link'
 import type { ScenarioName } from '../src/testing/fake-host'
 import { ASK_NATIVE_HTTP, ATTACH, PROBE, SERVE, type HermesArgs, type SshRun } from '../src/wire/ssh'
-import { mintWith, readWith, transcribeWith, type MintOptions, type RunHermes } from '../src/wire/tickets'
+import { callWith, mintWith, transcribeWith, type MintOptions, type RunHermes } from '../src/wire/tickets'
 import { closing, errandGateway, host, listen } from './support/host'
 
 const failureOf = (dial: Promise<unknown>) => dial.then(
@@ -150,53 +151,102 @@ describe('liveRoute, against the fake hermes of this computer', () => {
   })
 })
 
-describe('readWith', () => {
-  const HTTP_TICKET = out(`${JSON.stringify({ type: 'hello', protocol: 1, endpoint: { api_origin: 'http://127.0.0.1:4100', instance_id: 'i-1' } })}\n${JSON.stringify({ id: 1, ok: true, ticket: 'once', expires_in: 30 })}\n`)
+describe('callWith', () => {
+  const helloOf = (origin: string) => JSON.stringify({ type: 'hello', protocol: 1, endpoint: { api_origin: origin, instance_id: 'i-1' } })
+  const ticketAt = (origin: string, ticket = 'once') => out(`${helloOf(origin)}\n${JSON.stringify({ id: 1, ok: true, ticket, expires_in: 30 })}\n`)
 
-  function reading(serve: SshRun, answer: () => Response = () => Response.json({ columns: [] })) {
-    const ran: { readonly args: string; readonly input: string | undefined }[] = []
-    const run: RunHermes = async (args, { input }) => (ran.push({ args: args.join(' '), input }), serve)
-    const sent: { readonly url: string; readonly init: RequestInit | undefined }[] = []
-    const fetcher = (async (url: string, init?: RequestInit) => (sent.push({ url, init }), answer())) as unknown as typeof fetch
-    const forwarded: string[] = []
-    const read = readWith(run, async origin => (forwarded.push(origin), origin.replace('4100', '5200')), fetcher)
-    return { read, ran, sent, forwarded }
+  interface Heard { readonly method: string | undefined; readonly url: string | undefined; readonly headers: IncomingHttpHeaders; readonly body: unknown }
+
+  /** A gateway's HTTP listener that answers every request with `status` and `body`, and keeps what each one carried. */
+  const listener = async (status = 200, body: unknown = { columns: [] }) => {
+    const heard: Heard[] = []
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = []
+      request.on('data', (chunk: Buffer) => chunks.push(chunk))
+      request.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8')
+        heard.push({ method: request.method, url: request.url, headers: request.headers, body: text === '' ? null : JSON.parse(text) })
+        response.writeHead(status, { 'content-type': 'application/json' }).end(typeof body === 'string' ? body : JSON.stringify(body))
+      })
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    closing(server, held => held.close())
+    return { heard, origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}` }
   }
 
-  it('asks --serve for a native-http ticket, and sends it as the one header of one request to the forwarded origin', async () => {
-    const far = reading(HTTP_TICKET)
-    expect(await far.read('/api/plugins/kanban/board')).toEqual({ status: 200, body: { columns: [] } })
+  function calling(serve: SshRun, origin = 'http://127.0.0.1:1') {
+    const ran: { readonly args: string; readonly input: string | undefined }[] = []
+    const run: RunHermes = async (args, { input }) => (ran.push({ args: args.join(' '), input }), serve)
+    const forwarded: string[] = []
+    const call = callWith(run, async from => (forwarded.push(from), origin))
+    return { call, ran, forwarded }
+  }
+
+  it('asks --serve for a native-http ticket with no profile, and sends it as the one header of one GET, with no Origin', async () => {
+    const gateway = await listener()
+    const far = calling(ticketAt('http://127.0.0.1:4100'), gateway.origin)
+    expect(await far.call({ method: 'GET', path: '/api/plugins/kanban/board', profile: null })).toEqual({ status: 200, body: { columns: [] } })
     expect(far.ran).toEqual([{ args: SERVE.join(' '), input: ASK_NATIVE_HTTP }])
     expect(far.forwarded).toEqual(['http://127.0.0.1:4100'])
-    expect(far.sent).toHaveLength(1)
-    expect(far.sent[0]?.url).toBe('http://127.0.0.1:5200/api/plugins/kanban/board')
-    expect(far.sent[0]?.init).toMatchObject({ redirect: 'manual', headers: { 'x-hermes-gateway-ticket': 'once' } })
+    const [{ method, url, headers, body }] = gateway.heard as [Heard]
+    expect([method, url, body]).toEqual(['GET', '/api/plugins/kanban/board', null])
+    expect(headers['x-hermes-gateway-ticket']).toBe('once')
+    expect(headers.origin, 'the gate refuses a ticket that comes with an Origin').toBeUndefined()
   })
 
-  it('mints a new ticket for every read', async () => {
-    const far = reading(HTTP_TICKET)
-    await far.read('/a')
-    await far.read('/b')
+  it("asks for a ticket bound to the bot's profile, and names that profile in a GET's query", async () => {
+    const gateway = await listener(200, { command_allowlist: [] })
+    const far = calling(ticketAt('http://127.0.0.1:4100'), gateway.origin)
+    await far.call({ method: 'GET', path: '/api/config', profile: 'ada' })
+    expect(JSON.parse(far.ran[0]?.input ?? '')).toEqual({ id: 1, purpose: 'native-http', profile: 'ada' })
+    expect(far.ran[0]?.input?.indexOf('\n')).toBe((far.ran[0]?.input?.length ?? 0) - 1)
+    expect(gateway.heard[0]?.url).toBe('/api/config?profile=ada')
+  })
+
+  it("sends a PUT's JSON body with the profile in it, and answers Hermes's reply", async () => {
+    const gateway = await listener(200, { ok: true })
+    const far = calling(ticketAt('http://127.0.0.1:4100', 'edit'), gateway.origin)
+    expect(await far.call({ method: 'PUT', path: '/api/config', profile: 'ada', json: { config: { command_allowlist: ['podman *'] } } })).toEqual({ status: 200, body: { ok: true } })
+    const [{ method, url, headers, body }] = gateway.heard as [Heard]
+    expect([method, url]).toEqual(['PUT', '/api/config'])
+    expect(body).toEqual({ config: { command_allowlist: ['podman *'] }, profile: 'ada' })
+    expect(headers['content-type']).toBe('application/json')
+    expect(headers['x-hermes-gateway-ticket']).toBe('edit')
+    expect(headers.origin).toBeUndefined()
+  })
+
+  it('mints a new ticket for every request', async () => {
+    const gateway = await listener()
+    const far = calling(ticketAt('http://127.0.0.1:4100'), gateway.origin)
+    await far.call({ method: 'GET', path: '/a', profile: null })
+    await far.call({ method: 'GET', path: '/b', profile: null })
     expect(far.ran).toHaveLength(2)
   })
 
   it('passes a 404 and a body that is not JSON through for the caller to read', async () => {
-    expect(await reading(HTTP_TICKET, () => new Response('Not Found', { status: 404 })).read('/missing')).toEqual({ status: 404, body: null })
+    const gateway = await listener(404, 'Not Found')
+    expect(await calling(ticketAt('http://127.0.0.1:4100'), gateway.origin).call({ method: 'GET', path: '/missing', profile: null })).toEqual({ status: 404, body: null })
   })
 
-  it.each<[string, SshRun]>([
-    ['a gateway that is absent', out({ type: 'error', error: { code: 'absent' } }, 5)],
-    ['a ticket the gateway would not mint', out(`${JSON.stringify({ type: 'hello', endpoint: { api_origin: 'http://127.0.0.1:4100' } })}\n{"id":1,"ok":false,"error":{"code":"unsupported_purpose"}}\n`)],
-    ['a ssh that could not reach the machine', { ok: false, why: 'unreachable' }]
-  ])('rejects without a request on %s', async (_what, serve) => {
-    const far = reading(serve)
-    await expect(far.read('/a')).rejects.toThrow('Hermes minted no ticket for its HTTP API.')
-    expect(far.sent).toEqual([])
+  it.each<[string, SshRun, string | null]>([
+    ['a gateway that is absent', out({ type: 'error', error: { code: 'absent' } }, 5), null],
+    ['a ticket the gateway would not mint', served({ id: 1, ok: false, error: { code: 'unsupported_purpose' } }), 'unsupported_purpose'],
+    ['a request line Hermes refused', served({ id: 1, ok: false, error: { code: 'invalid_request' } }), 'invalid_request'],
+    ['a profile this host does not have', served({ id: 1, ok: false, error: { code: 'unknown_profile' } }), 'unknown_profile'],
+    ['a profile the gateway does not serve', served({ id: 1, ok: false, error: { code: 'profile_not_served' } }), 'profile_not_served'],
+    ['a ssh that could not reach the machine', { ok: false, why: 'unreachable' }, null]
+  ])('rejects without a request on %s, naming the code Hermes gave', async (_what, serve, code) => {
+    const gateway = await listener()
+    const far = calling(serve, gateway.origin)
+    const error = await far.call({ method: 'GET', path: '/a', profile: 'ada' }).catch((caught: unknown) => caught)
+    expect(error).toBeInstanceOf(TicketRefused)
+    expect(error).toMatchObject({ code, message: 'Hermes minted no ticket for its HTTP API.' })
+    expect(gateway.heard).toEqual([])
   })
 
   it('rejects when the request does, and keeps the ticket out of the error', async () => {
-    const far = reading(HTTP_TICKET, () => { throw new Error('connect ECONNREFUSED') })
-    await expect(far.read('/a')).rejects.not.toThrow(/once/)
+    const far = calling(ticketAt('http://127.0.0.1:4100'), 'http://127.0.0.1:1')
+    await expect(far.call({ method: 'GET', path: '/a', profile: null })).rejects.not.toThrow(/once/)
   })
 })
 
@@ -258,5 +308,21 @@ describe('transcribeWith', () => {
 
   it('answers that Hermes could not be reached when the post fails', async () => {
     expect(await transcriber(NATIVE, 'http://127.0.0.1:1').transcribe(RECORDING)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
+  })
+})
+
+describe('profiled', () => {
+  it('leaves a request that names no profile as it is', () => {
+    expect(profiled({ method: 'GET', path: '/api/config', profile: null })).toEqual({ path: '/api/config', json: undefined })
+    expect(profiled({ method: 'PUT', path: '/api/config', profile: null, json: { config: {} } })).toEqual({ path: '/api/config', json: { config: {} } })
+  })
+
+  it("names the profile in a GET's query, encoded, after a query it already has", () => {
+    expect(profiled({ method: 'GET', path: '/api/config', profile: 'a b' }).path).toBe('/api/config?profile=a%20b')
+    expect(profiled({ method: 'GET', path: '/api/config?include_defaults=false', profile: 'ada' }).path).toBe('/api/config?include_defaults=false&profile=ada')
+  })
+
+  it("names the profile in a PUT's body, and never in its query", () => {
+    expect(profiled({ method: 'PUT', path: '/api/config', profile: 'ada', json: { config: { a: 1 } } })).toEqual({ path: '/api/config', json: { config: { a: 1 }, profile: 'ada' } })
   })
 })

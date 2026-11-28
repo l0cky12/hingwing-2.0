@@ -23,8 +23,10 @@ export const SERVE = ['gateway', 'tickets', '--serve', '--json'] as const
 export type HermesArgs = typeof PROBE | typeof SERVE | (typeof ATTACH)[keyof typeof ATTACH]
 /** The only line Highwing writes to a `--serve` channel. A literal too, and it names no profile: an interactive ticket takes none. */
 export const ASK_INTERACTIVE = '{"id":1,"purpose":"interactive"}\n'
-/** The line that asks `--serve` for a one-use ticket to the gateway's HTTP routes, such as its speech upload and its kanban board. */
+/** The line that asks `--serve` for a one-use ticket to the gateway's HTTP routes, such as its speech upload and its kanban board. It names no profile, so the ticket reaches the profile the command runs in. */
 export const ASK_NATIVE_HTTP = '{"id":1,"purpose":"native-http"}\n'
+/** The same ask for a ticket bound to one profile's home (hermes_cli/gateway_runtime_tickets.py:77-120). The name goes to `--serve`'s stdin, never into a shell. */
+export const askNativeHttp = (profile: string | null): string => (profile === null ? ASK_NATIVE_HTTP : `${JSON.stringify({ id: 1, purpose: 'native-http', profile })}\n`)
 
 /** The installer's command locations (Hermes's scripts/install.sh): per-user, root, and the legacy venv. */
 export const HERMES_PATHS = ['$HOME/.local/bin/hermes', '/usr/local/bin/hermes', '$HOME/.hermes/hermes-agent/venv/bin/hermes'] as const
@@ -227,12 +229,18 @@ export function originOf(stdout: string): string | null {
   return typeof origin === 'string' && URL.canParse(origin) ? origin : null
 }
 
-/** Reads a run of `--serve` that was sent `ASK_NATIVE_HTTP`: the hello's `api_origin` and the reply's ticket. null: no gateway to ask, or no ticket came. */
-export function httpTicketOf(code: number, stdout: string): { readonly origin: string; readonly ticket: string } | null {
+export type HttpTicket =
+  | { readonly origin: string; readonly ticket: string }
+  /** `refused`: the reply's `error.code`, or null when there was no reply to read: no gateway to ask, or a hello that named no address. */
+  | { readonly refused: string | null }
+
+/** Reads a run of `--serve` that was sent `ASK_NATIVE_HTTP` or `askNativeHttp`: the hello's `api_origin` and the reply's ticket. */
+export function httpTicketOf(code: number, stdout: string): HttpTicket {
   const hello = jsonObjectAt(stdout, 0)
   const reply = jsonObjectAt(stdout, 1)
   const origin = hello?.type === 'hello' && isObject(hello.endpoint) ? hello.endpoint.api_origin : null
-  return code === 0 && typeof origin === 'string' && reply?.ok === true && typeof reply.ticket === 'string' && reply.ticket !== '' ? { origin, ticket: reply.ticket } : null
+  if (code === 0 && typeof origin === 'string' && reply?.ok === true && typeof reply.ticket === 'string' && reply.ticket !== '') return { origin, ticket: reply.ticket }
+  return { refused: isObject(reply?.error) && typeof reply.error.code === 'string' ? reply.error.code : null }
 }
 
 export async function probeHermes(host: SshHost, options: SshOptions): Promise<Probe> {

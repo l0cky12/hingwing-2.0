@@ -80,11 +80,37 @@ export type Mint = (request: { readonly start: boolean }) => Promise<Endpoint>
 
 /** What a gateway's HTTP API answered: the status, and the body as JSON (null when it was not JSON). */
 export interface HttpAnswer { readonly status: number; readonly body: unknown }
+
 /**
- * One authenticated GET of the gateway's HTTP API, `path` being its path and query. A call that cannot get an
- * answer rejects. Any answer resolves, 404 and 401 included, so the caller names what each status means.
+ * One request of the gateway's HTTP API. `profile` names the bot whose config or data it is, and null the profile
+ * the route's own credential belongs to. `json` is a PUT's body.
  */
-export type ReadHermes = (path: string) => Promise<HttpAnswer>
+export interface HermesAsk {
+  readonly method: 'GET' | 'PUT'
+  readonly path: string
+  readonly profile: string | null
+  readonly json?: Readonly<Record<string, unknown>>
+}
+
+/**
+ * One authenticated request of the gateway's HTTP API. A call that cannot get an answer rejects. Any answer
+ * resolves, 404 and 401 included, so the caller names what each status means.
+ */
+export type CallHermes = (ask: HermesAsk) => Promise<HttpAnswer>
+
+/** Where a request names its profile: a GET in its query, a PUT in its body, as Hermes's routes read them. */
+export function profiled({ method, path, profile, json }: HermesAsk): { readonly path: string; readonly json: Readonly<Record<string, unknown>> | undefined } {
+  if (profile === null) return { path, json }
+  if (method === 'GET') return { path: `${path}${path.includes('?') ? '&' : '?'}profile=${encodeURIComponent(profile)}`, json }
+  return { path, json: { ...json, profile } }
+}
+
+/** `--serve` answered a request for an HTTP ticket with a refusal. `code`: the `error.code` of its reply, or null when it named none, as with no gateway to ask. */
+export class TicketRefused extends Error {
+  constructor(readonly code: string | null) {
+    super('Hermes minted no ticket for its HTTP API.')
+  }
+}
 
 export const GATEWAY_PROTOCOL = 'hermes-gateway-v1'
 /** Hermes's hermes_cli/gateway_client.py:16 */

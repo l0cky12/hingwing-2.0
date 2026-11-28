@@ -1,5 +1,5 @@
 import { BOARD_PATH, parseTaskBoard, taskPath } from '../domain/tasks'
-import type { ReadHermes } from '../wire/link'
+import type { CallHermes } from '../wire/link'
 
 export interface Kanban {
   readonly board: unknown
@@ -13,8 +13,8 @@ export const isKanban = (value: unknown): value is Kanban => {
 
 const MISSING = { status: 404, body: { detail: 'Not Found' } } as const
 
-export function fixtureRead(kanban: Kanban | undefined): ReadHermes {
-  return async path => {
+export function fixtureCall(kanban: Kanban | undefined): CallHermes {
+  return async ({ path }) => {
     if (kanban === undefined) return MISSING
     if (path === BOARD_PATH) return { status: 200, body: kanban.board }
     const id = Object.keys(kanban.tasks).find(held => taskPath(held) === path)

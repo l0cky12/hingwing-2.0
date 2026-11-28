@@ -11,7 +11,7 @@ import type { AddressInfo } from 'node:net'
 import { inspect } from 'node:util'
 import { gatewayHost, URL_FAILURES, type GatewayUrl, type UrlFailure } from '../domain/reach'
 import type { CheckOptions } from './check'
-import { DialError, dialWith, GATEWAY_PROTOCOL, HANDSHAKE_MS, sessionAuthorityOf, systemClock, TICKET_PREFIX, type Clock, type Endpoint, type Mint, type ReadHermes } from './link'
+import { DialError, dialWith, GATEWAY_PROTOCOL, HANDSHAKE_MS, profiled, sessionAuthorityOf, systemClock, TICKET_PREFIX, type CallHermes, type Clock, type Endpoint, type Mint } from './link'
 import type { Route } from './remote'
 import { CANT_REACH, TRANSCRIBE_MS, TRANSCRIBE_PATH, transcribeBody, transcriptOf, type Transcribe } from './transcribe'
 
@@ -195,7 +195,7 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
   const fetcher = deps.fetch ?? fetch
   const signInMs = deps.signInMs ?? SIGN_IN_MS
 
-  const send = async (method: 'GET' | 'POST', address: string, asked: Asked): Promise<Answer> => {
+  const send = async (method: 'GET' | 'POST' | 'PUT', address: string, asked: Asked): Promise<Answer> => {
     const deadline = AbortSignal.timeout(asked.ms ?? REQUEST_MS)
     const response = await fetcher(address, {
       method,
@@ -433,15 +433,17 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
           throw life.signal.aborted ? new DialError('dropped') : error
         }
       }
-      const read: ReadHermes = async path => {
+      const call: CallHermes = async ask => {
+        const { path, json } = profiled(ask)
+        const sent = (bearer: string) => send(ask.method, `${url}${path}`, { bearer, signal: life.signal, ...(json === undefined ? {} : { json }) })
         const held = loginOf(url)
         const bearer = await held.bearer()
-        const answer = await send('GET', `${url}${path}`, { bearer, signal: life.signal })
+        const answer = await sent(bearer)
         if (answer.status !== 401) return answer
         await held.replaceRefused(bearer)
-        return send('GET', `${url}${path}`, { bearer: await held.bearer(), signal: life.signal })
+        return sent(await held.bearer())
       }
-      return { dial: dialWith(minted), read, transcribe: transcribeAt(url), dispose: () => life.abort() }
+      return { dial: dialWith(minted), call, transcribe: transcribeAt(url), dispose: () => life.abort() }
     },
 
     keepOnly: async urls => {

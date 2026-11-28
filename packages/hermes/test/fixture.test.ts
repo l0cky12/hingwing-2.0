@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { BOARD_PATH, taskPath } from '../src/domain/tasks'
-import { type FixtureStep, fixtureRead, loadFixture } from '../src/testing/fixture'
+import { type FixtureStep, fixtureCall, loadFixture } from '../src/testing/fixture'
 import { checkParams } from '../src/testing/params'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
 
@@ -264,15 +264,16 @@ describe('loadFixture', () => {
     })
 
     it('answers the board, a card by its path, and a 404 for any other path', async () => {
-      const read = fixtureRead(kanban)
-      expect(await read(BOARD_PATH)).toEqual({ status: 200, body: kanban.board })
-      expect(await read(taskPath('t_1'))).toEqual({ status: 200, body: kanban.tasks.t_1 })
-      expect(await read(taskPath('t_9'))).toMatchObject({ status: 404 })
-      expect(await read('/api/status')).toMatchObject({ status: 404 })
+      const call = fixtureCall(kanban)
+      const get = (path: string) => call({ method: 'GET', path, profile: null })
+      expect(await get(BOARD_PATH)).toEqual({ status: 200, body: kanban.board })
+      expect(await get(taskPath('t_1'))).toEqual({ status: 200, body: kanban.tasks.t_1 })
+      expect(await get(taskPath('t_9'))).toMatchObject({ status: 404 })
+      expect(await get('/api/status')).toMatchObject({ status: 404 })
     })
 
     it('answers 404 to every path when the fixture has no kanban, as a Hermes without the plugin does', async () => {
-      expect(await fixtureRead(undefined)(BOARD_PATH)).toMatchObject({ status: 404 })
+      expect(await fixtureCall(undefined)({ method: 'GET', path: BOARD_PATH, profile: null })).toMatchObject({ status: 404 })
     })
   })
 
