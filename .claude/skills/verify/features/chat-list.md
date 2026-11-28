@@ -13,7 +13,7 @@ Pin, Snooze and Wake move the row at once and keep focus on its ⋯ in the new p
 - `chat-list-asking` says "Waiting for your OK" on the row of a chat that waits on an approval while another chat is open.
 - `chat-list-runs-in` runs a message in a picked chat as its bot, in that chat's session, and leaves the other chats as they were.
 - `chat-list-heading` names the open chat in the top bar's heading.
-- `chat-list-empty` says "No chats yet." for a bot with no chats, with the New chat button still in the top bar.
+- `chat-list-empty` says "No chats yet." for a bot with no chats, with the New chat pencil still beside Search.
 - `chat-list-rename` renames a chat from its menu, in the row and in the top bar. Escape and leaving the field send nothing.
 - `chat-list-export` exports a chat as Markdown from its menu with the keyboard, saves the file, and names it under the list. The More button never opens the chat.
 - `chat-list-offline` turns every More button off while the connection is down.

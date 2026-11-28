@@ -22,8 +22,8 @@ const COLD_TIMEOUT = '90000'
  * `latencies` and `runs` override the bench's own for a scenario too slow to repeat.
  */
 const SCENARIOS = {
-  'mode-to-chats': { mode: 'bots', before: ['click', 'button', 'Bots'], timed: ['menuitemradio', 'Chats', 'visible:nav.chats .chat-row'] },
-  'mode-to-bots': { mode: 'chats', before: ['click', 'button', 'Chats'], timed: ['menuitemradio', 'Bots', 'visible:aside.bots .bot-row'] },
+  'mode-to-chats': { mode: 'bots', before: [], timed: ['button', 'Switch to Chats', 'visible:nav.chats .chat-row'] },
+  'mode-to-bots': { mode: 'chats', before: [], timed: ['button', 'Switch to Bots', 'visible:aside.bots .bot-row'] },
   'bot-first-list': { mode: 'chats', before: [...THINK, ...PICK], timed: ['menuitemradio', 'Birch', BIRCH_ROW] },
   'bot-first-thread': { mode: 'chats', before: [...THINK, ...PICK], timed: ['menuitemradio', 'Atlas', ATLAS_LAST] },
   'bot-first-name': { mode: 'chats', before: [...THINK, ...PICK], timed: ['menuitemradio', 'Cedar', 'text:.bot-pick-button:Cedar'] },

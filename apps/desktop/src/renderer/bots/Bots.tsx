@@ -7,6 +7,7 @@ import { GroupForm } from '../groups/GroupForm'
 import { groupRowsOf, type GroupRowView } from '../groups/group-rows'
 import { newChatIn } from '../new-chat'
 import { Chevron } from '../chrome/ModeSwitch'
+import { SearchIcon } from '../chrome/SidebarHead'
 import { COMMAND_KEY, isShortcut } from '../keys'
 import { modalOpen } from '../shortcuts'
 import { run, useTopic } from '../store'
@@ -91,7 +92,6 @@ interface BotsPanelProps extends EditorCalls {
 }
 
 const icon = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 } as const
-const Search = () => <svg {...icon}><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
 const Close = () => <svg {...icon}><path d="M6 6l12 12M18 6 6 18" /></svg>
 const Panel = () => <svg {...icon}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></svg>
 export const Star = () => <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" /></svg>
@@ -488,8 +488,8 @@ export function BotsPanel({
         <div className="bots-head" onBlur={event => { if (query === '' && !event.currentTarget.contains(event.relatedTarget)) setQuery(null) }}>
           {query === null
             ? <>
+                <button ref={searchButton} type="button" className="side-search" data-bots-search aria-label="Search bots" title="Search bots" onClick={() => setQuery('')}><SearchIcon /><span>Search</span></button>
                 {head}
-                <button ref={searchButton} type="button" data-bots-search aria-label="Search bots" title="Search bots" onClick={() => setQuery('')}><Search /></button>
                 <NewMenu items={plusMenuOf({ link, bots, groups, open, mac: MAC })} onPick={id => picks[id]()} />
               </>
             : <>

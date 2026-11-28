@@ -12,7 +12,8 @@ import { GroupPane } from './groups/GroupPane'
 import { accentTone, toneOfBot } from './chrome/accent'
 import { Banner, TopBar } from './chrome/Chrome'
 import { HermesFoot } from './chrome/HermesFoot'
-import { ModeSwitch, ModeToggle } from './chrome/ModeSwitch'
+import { ModeToggle } from './chrome/ModeSwitch'
+import { NewChatButton, SearchField } from './chrome/SidebarHead'
 import { composerBox, Shortcuts } from './chrome/Shortcuts'
 import { ShortcutSheet } from './chrome/ShortcutSheet'
 import { Preview } from './preview/Preview'
@@ -20,7 +21,7 @@ import { Composer } from './composer/Composer'
 import { showComputer, useComputerShown } from './computer/computer'
 import { ComputerView } from './computer/Computer'
 import { Connectors, ConnectorsButton } from './apps/Connectors'
-import { Palette } from './palette/Palette'
+import { Palette, paletteFrom, type Opened } from './palette/Palette'
 import { Tasks } from './tasks/Tasks'
 import { screenOf, type CardSetup } from './setup/screens'
 import { Settings } from './setup/Settings'
@@ -60,19 +61,16 @@ function ChatScreen({ target }: { readonly target: Target | null }) {
   )
 }
 
-type ModeControl = '.mode-switch' | '.mode-toggle'
-
 function useSwitchModeKeepingFocus(mode: Mode) {
   const root = useRef<HTMLDivElement>(null)
-  const controlUnmountedWithItsColumn = useRef<ModeControl | null>(null)
+  const toggleUnmountedWithItsColumn = useRef(false)
   useLayoutEffect(() => {
-    const control = controlUnmountedWithItsColumn.current
-    if (control === null) return
-    controlUnmountedWithItsColumn.current = null
-    if (document.activeElement === document.body) root.current?.querySelector<HTMLButtonElement>(control)?.focus()
+    if (!toggleUnmountedWithItsColumn.current) return
+    toggleUnmountedWithItsColumn.current = false
+    if (document.activeElement === document.body) root.current?.querySelector<HTMLButtonElement>('.mode-toggle')?.focus()
   }, [mode])
-  const pick = (next: Mode, from: ModeControl) => {
-    controlUnmountedWithItsColumn.current = from
+  const pick = (next: Mode) => {
+    toggleUnmountedWithItsColumn.current = true
     void run({ do: 'setMode', mode: next })
   }
   return { root, pick }
@@ -105,6 +103,7 @@ interface ChatWindowProps {
   readonly theme: Theme
   readonly accent: Accent
   readonly width: SidebarWidth
+  readonly onSearch: () => void
 }
 
 function useSettingsChord(target: Target | null, settingsOpen: boolean) {
@@ -159,7 +158,7 @@ function useAside(pane: string | null, keys: boolean) {
   return { aside, openTasks: useCallback(() => setAside({ at: 'tasks' }), []), openConnectors, close }
 }
 
-function ChatWindow({ hidden, settings, target, mode, theme, accent, width }: ChatWindowProps) {
+function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onSearch }: ChatWindowProps) {
   const preview = useTopic('preview')
   const screen = useTopic('screen')
   const tone = accentTone(accent, toneOfBot(useTopic('bots'), shownChat(useTopic('open'))?.bot ?? null))
@@ -168,14 +167,13 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width }: Ch
   const { settingsButton, close } = useCloseSettings(settings !== null)
   const [sheet, setSheet] = useState<{ readonly back: Element | null } | null>(null)
   const openSheet = useCallback(() => setSheet(held => held ?? { back: document.activeElement }), [])
-  const switcher = <ModeSwitch mode={mode} onPick={next => pick(next, '.mode-switch')} />
   const shown = useTopic('open')?.shown ?? null
   const { aside, openTasks: showTasks, openConnectors, close: closeAside } = useAside(shown === null ? null : samePaneOnFirstMessage(shown), !hidden && settings === null)
   const settingsOpen = settings !== null
   const openTasks = useCallback(() => {
     if (!settingsOpen && !hidden) showTasks()
   }, [settingsOpen, hidden, showTasks])
-  const foot = <div className="account"><HermesFoot target={target} ref={settingsButton} /><ConnectorsButton onOpen={openConnectors} /><ModeToggle mode={mode} onPick={next => pick(next, '.mode-toggle')} /></div>
+  const foot = <div className="account"><HermesFoot target={target} ref={settingsButton} /><ConnectorsButton onOpen={openConnectors} /><ModeToggle mode={mode} onPick={pick} /></div>
   const previewed = preview?.state === 'open' ? preview.address : null
   useEffect(() => {
     if (previewed !== null) showComputer(false)
@@ -186,8 +184,8 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width }: Ch
   const compact = mode === 'bots' && width === 'compact'
   return (
     <div ref={root} className="window" hidden={hidden} data-preview={paned ? (computer === null && preview?.state === 'open' ? preview.layout : 'beside') : undefined} data-compact={compact || undefined} data-settings={settings !== null || undefined}>
-      {mode === 'bots' && <BotsSidebar head={switcher} compact={compact} foot={foot} />}
-      {mode === 'chats' && <ChatsSidebar head={<>{switcher}<BotPicker /></>} foot={foot} />}
+      {mode === 'bots' && <BotsSidebar head={<NewChatButton />} compact={compact} foot={foot} />}
+      {mode === 'chats' && <ChatsSidebar head={<><SearchField onSearch={onSearch} /><NewChatButton /><BotPicker /></>} foot={foot} />}
       <div key="screen" className="screen" data-accent={tone ?? undefined} hidden={covered}>
         <ChatScreen target={target} />
       </div>
@@ -209,6 +207,8 @@ export function App() {
   const accent = useTopic('accent')
   const width = useTopic('sidebarWidth')
   const intro = useTopic('intro')
+  const [palette, setPalette] = useState<Opened | null>(null)
+  const search = useCallback(() => setPalette(held => held ?? paletteFrom(document.activeElement)), [])
   if (setup === undefined || mode === undefined || theme === undefined || accent === undefined || width === undefined || intro === undefined) return null
   const screen = screenOf(setup)
   const live = setup.at === 'pinned' ? null : setup.live
@@ -217,9 +217,9 @@ export function App() {
     <>
       {(setup.at === 'pinned' || live !== null) && (
         <Epoch value={epochOf(setup)}>
-          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved' || cover} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} accent={accent} width={width} />
+          <ChatWindow key={epochOf(setup)} hidden={screen.show === 'saved' || cover} settings={screen.show === 'settings' ? screen.setup : null} target={live?.target ?? null} mode={mode} theme={theme} accent={accent} width={width} onSearch={search} />
           {/* Outside the window a new connection remounts, so a pick main refused for the old one comes back over the new one. */}
-          {screen.show !== 'saved' && !cover && <Palette target={live?.target ?? null} settingsOpen={screen.show === 'settings'} />}
+          {screen.show !== 'saved' && !cover && <Palette target={live?.target ?? null} settingsOpen={screen.show === 'settings'} opened={palette} onOpened={setPalette} />}
         </Epoch>
       )}
       {screen.show === 'first-run' && <FirstRun setup={screen.setup} />}
