@@ -21,7 +21,7 @@ import { NewBotForm } from './NewBotForm'
 import { DeleteDialog } from './DeleteDialog'
 import { MemoryDialog } from './MemoryDialog'
 import { isMenuKey, type Box, type Opener } from '../chrome/popup-menu'
-import { anchorOf, botMenuOf, DELETE_WORDS, deleteRefusal, groupMenuOf, sameOwner, type GroupAction, type MenuAction, type MenuOwner, type OpenMenu } from './bot-menu'
+import { anchorOf, botMenuOf, DELETE_WORDS, groupMenuOf, sameOwner, type GroupAction, type MenuAction, type MenuOwner, type OpenMenu } from './bot-menu'
 import { afterGroupOf, elementIn, fallbackOf, focusIn, moreOf, openerTarget, rowOf, stayedIn, type FocusTarget } from './focus'
 import { busyIn, focusAfter, runsAt, SAID, type MarkRun } from './marks'
 import { NewMenu } from './NewMenu'
@@ -258,7 +258,6 @@ export function BotsPanel({
   const closeGroupForm = () => setGrouping(false)
   const [made, setMade] = useState<BotCreated | null>(null)
   const [editing, setEditing] = useState<BotDetails | null>(null)
-  const [deleting, setDeleting] = useState<Bot | null>(null)
   const [memory, setMemory] = useState(false)
   const [editingGroup, setEditingGroup] = useState<GroupRowView | null>(null)
   const [deletingGroup, setDeletingGroup] = useState<GroupRowView | null>(null)
@@ -355,6 +354,10 @@ export function BotsPanel({
     if (how === 'escape' || how === 'tab') focus([openerTarget(menu)], 'scroll')
     if (how === 'moved' && stayed()) focus(fallbackOf(openerTarget(menu), view), 'in-view')
   }
+  const refuseFromMenu = (why: string) => {
+    closeMenu('escape')
+    setRefused(why)
+  }
   // Group chats are drawn between Pinned and the sections, so a change there moves the rows below them too.
   const placeOf = (owner: MenuOwner) => {
     if (owner.kind === 'bot') {
@@ -388,8 +391,8 @@ export function BotsPanel({
     unpin: bot => mark(bot, 'unpin'),
     hide: bot => mark(bot, 'hide'),
     show: bot => mark(bot, 'show'),
-    // Hermes never deletes its default bot, so its Delete… refuses at once, with no dialog to confirm.
-    delete: bot => (bots?.state === 'listed' && bots.roster.featured?.id === bot.id ? setRefused(deleteRefusal(bot, true)) : setDeleting(bot))
+    // botMenuOf blocks Delete… on every bot until DELETES_BOTS is true.
+    delete: () => {}
   }
   const choose = (bot: Bot, action: MenuAction) => {
     setMenu(null)
@@ -434,15 +437,15 @@ export function BotsPanel({
       return row && (
         <RowMenu
           key={key} name={row.name} items={groupMenuOf(link)} more={moreOf(owner)} anchor={() => anchorOf(opener, 'section', measure(owner))}
-          onChoose={action => chooseForGroup(row, action)} onClose={closeMenu}
+          onChoose={action => chooseForGroup(row, action)} onBlocked={refuseFromMenu} onClose={closeMenu}
         />
       )
     }
     const row = rows.find(held => held.bot.id === owner.bot)
     return row && (
       <RowMenu
-        key={key} name={row.bot.name} items={botMenuOf(row.place, bots?.state === 'listed' && bots.roster.featured?.id === row.bot.id)} more={moreOf(owner)} anchor={() => anchorOf(opener, row.place, measure(owner))}
-        onChoose={action => choose(row.bot, action)} onClose={closeMenu}
+        key={key} name={row.bot.name} items={botMenuOf(row.bot, row.place, bots?.state === 'listed' && bots.roster.featured?.id === row.bot.id)} more={moreOf(owner)} anchor={() => anchorOf(opener, row.place, measure(owner))}
+        onChoose={action => choose(row.bot, action)} onBlocked={refuseFromMenu} onClose={closeMenu}
       />
     )
   }
@@ -563,16 +566,6 @@ export function BotsPanel({
           if (bot === undefined) setMemory(false)
           else closeDialog(() => setMemory(false), { to: 'row', bot })
         }} />
-      )}
-      {deleting !== null && (
-        <DeleteDialog
-          name={deleting.name} words={DELETE_WORDS.bot}
-          onCancel={() => closeDialog(() => setDeleting(null), { to: 'row', bot: deleting.id })}
-          onConfirm={() => {
-            closeDialog(() => setDeleting(null), { to: 'row', bot: deleting.id })
-            setRefused(deleteRefusal(deleting, false))
-          }}
-        />
       )}
       {editingGroup !== null && (
         <GroupEditor group={editingGroup} onRename={onRenameGroup} onClose={() => closeDialog(() => setEditingGroup(null), { to: 'group', group: editingGroup.id })} />

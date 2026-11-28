@@ -1,7 +1,8 @@
+import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { anchorAt, EDGE, GAP, placeSubmenu, type Box } from '../src/renderer/chrome/popup-menu'
-import { PopupMenu } from '../src/renderer/chrome/PopupMenu'
+import { PopupMenu, type PopupMenuProps } from '../src/renderer/chrome/PopupMenu'
 
 const box = (left: number, top: number, right: number, bottom: number): Box => ({ left, top, right, bottom })
 
@@ -58,5 +59,38 @@ describe('a popup menu', () => {
     expect(snooze).toContain('aria-expanded="false"')
     expect(items.find(item => item.name === 'Pin')!.tag).not.toContain('aria-haspopup')
     expect(markup).not.toContain('In 1 hour')
+  })
+})
+
+type Button = ReactElement<{ role?: string; children?: ReactNode; onClick?: () => void }>
+const buttonsIn = (node: ReactNode): Button[] => {
+  if (Array.isArray(node)) return node.flatMap(buttonsIn)
+  if (!isValidElement(node)) return []
+  const element = node as Button
+  return element.props.role === 'menuitem' ? [element] : buttonsIn(element.props.children)
+}
+
+describe("a popup menu's blocked item", () => {
+  it('hands its reason to onBlocked when chosen, and is never chosen', () => {
+    const chosen: string[] = []
+    const blocked: string[] = []
+    const props: PopupMenuProps<'open' | 'edit'> = {
+      label: 'More for Launch plan', className: 'bot-menu', anchor: () => ({ at: 'point', x: 0, y: 0 }), owns: () => false, onClose: () => {},
+      groups: [[{ id: 'open', label: 'Open' }, { id: 'edit', label: 'Edit…', block: "Highwing isn't connected to Hermes right now." }]],
+      onChoose: id => chosen.push(id), onBlocked: why => blocked.push(why)
+    }
+    let drawn: ReactNode = null
+    const Probe = () => {
+      drawn = PopupMenu(props)
+      return null
+    }
+    renderToStaticMarkup(<Probe />)
+    const [open, edit] = buttonsIn(drawn)
+    edit!.props.onClick!()
+    expect(blocked).toEqual(["Highwing isn't connected to Hermes right now."])
+    expect(chosen).toEqual([])
+    open!.props.onClick!()
+    expect(chosen).toEqual(['open'])
+    expect(blocked).toHaveLength(1)
   })
 })

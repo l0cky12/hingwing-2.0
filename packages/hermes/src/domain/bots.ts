@@ -186,6 +186,13 @@ export interface BotEdit {
   readonly persona?: string
 }
 
+/**
+ * Whether Hermes can delete a bot for Highwing. False for every Hermes so far: the gateway serves no `profiles.delete`
+ * (tui_gateway/methods_profiles.py:271-451 has list, create, describe, configure, set_asset and get_asset), and nothing it
+ * advertises says whether it could. Set it true together with that call, never by trying a delete.
+ */
+export const DELETES_BOTS: boolean = false
+
 /** The id Hermes gives a typed name: trimmed and lowercased, `default` in any case (hermes_cli/profiles.py:370-396). */
 export const canonicalBotId = (name: string): BotId => name.trim().toLowerCase() as BotId
 
