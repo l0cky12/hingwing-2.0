@@ -20,7 +20,8 @@ if (!out || !request) throw new Error('usage: record-fixture.ts <out.jsonl> <req
 
 const TURN_MS = 15 * 60_000
 const QUIET_MS = 30_000
-const dial = recordingDialer(liveRoute().dial, out)
+const route = liveRoute()
+const dial = recordingDialer(route.dial, out)
 const client = { name: 'highwing-record', version: '0' }
 
 function until(hermes: Hermes, id: SessionId, done: (session: Session) => boolean, ms: number): Promise<Session> {
@@ -59,7 +60,7 @@ const online = (hermes: Hermes) => new Promise<void>(resolve => {
   })
 })
 
-const first = openHermes({ dial, client })
+const first = openHermes({ dial, ask: route.ask, client })
 await online(first)
 const draftId = randomUUID()
 const opened = await first.run({ do: 'open', ref: { kind: 'new', bot: null, draftId } })
@@ -86,7 +87,7 @@ stopDenying()
 process.stderr.write(`${settled.history.length} turns, the last ${JSON.stringify(settled.history.at(-1)?.outcome)}\n`)
 await first.close()
 
-const second = openHermes({ dial, client })
+const second = openHermes({ dial, ask: route.ask, client })
 await online(second)
 await until(second, id, session => session.sync.state === 'live', 30_000)
 await second.close()

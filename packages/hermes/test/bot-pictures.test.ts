@@ -3,7 +3,7 @@ import gallery from '../../../fixtures/pets/gallery.json' with { type: 'json' }
 import { GENERATED_MAX_BYTES, PICTURE_MAX_BYTES, pictureDataUrlOf } from '../src/domain/bots'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { scriptedDialer, type Fixture, type Images, type Pets } from '../src/testing/fixture'
+import { noAsk, scriptedDialer, type Fixture, type Images, type Pets } from '../src/testing/fixture'
 import { parseGenerated, parsePetPicture, parsePets } from '../src/wire/parse'
 import { BOUND, callsIn, WITH_BOTS } from './support/errand'
 
@@ -16,7 +16,7 @@ const PETS: Pets = gallery
 async function launched(more: Partial<Fixture['header']>, fixture: Fixture = WITH_BOTS) {
   const clock = manualClock()
   const script = scriptedDialer({ ...fixture, header: { ...fixture.header, ...more } }, { clock })
-  const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
+  const hermes = openHermes({ ask: noAsk, dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
   await clock.advance(0)
   const run: typeof hermes.run = async command => {
     const answer = hermes.run(command)

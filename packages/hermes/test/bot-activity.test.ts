@@ -5,7 +5,7 @@ import type { SessionId } from '../src/domain/session'
 import { openHermes } from '../src/hub'
 import { STATUS_BUSY } from '../src/activity'
 import { manualClock } from '../src/testing/clock'
-import { scriptedDialer, type Fixture } from '../src/testing/fixture'
+import { noAsk, scriptedDialer, type Fixture } from '../src/testing/fixture'
 import { BOUND, callsIn, SESSION, WITH_CHATS } from './support/errand'
 
 const EGGBOT = 'dr-eggbot' as BotId
@@ -19,7 +19,7 @@ function open(fixture: Fixture, kept: readonly UnreadChat[] = []) {
   const clock = manualClock()
   const script = scriptedDialer(fixture, { clock })
   const writes: (readonly UnreadChat[])[] = []
-  const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0' }, unread: { chats: kept, keep: chats => writes.push(chats) } })
+  const hermes = openHermes({ ask: noAsk, dial: script, clock, client: { name: 'highwing-test', version: '0' }, unread: { chats: kept, keep: chats => writes.push(chats) } })
   const asked = () => callsIn(script.received).filter(call => call.method === 'session.active_list')
   return { clock, hermes, writes, asked }
 }

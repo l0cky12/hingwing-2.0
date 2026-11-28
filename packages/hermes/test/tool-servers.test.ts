@@ -3,7 +3,7 @@ import servers from '../../../fixtures/mcp/servers.json' with { type: 'json' }
 import type { BotId } from '../src/domain/bots'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { maskedFrame, scriptedDialer, type Fixture, type McpScript } from '../src/testing/fixture'
+import { maskedFrame, noAsk, scriptedDialer, type Fixture, type McpScript } from '../src/testing/fixture'
 import { BOUND, callsIn, WITH_BOTS } from './support/errand'
 
 const EMU = 'default' as BotId
@@ -13,7 +13,7 @@ const SCRIPT = servers as McpScript
 async function launched(mcp: McpScript | null = SCRIPT, fixture: Fixture = WITH_BOTS) {
   const clock = manualClock()
   const script = scriptedDialer({ ...fixture, header: { ...fixture.header, ...(mcp === null ? {} : { mcp }) } }, { clock })
-  const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
+  const hermes = openHermes({ ask: noAsk, dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
   await clock.advance(0)
   const run: typeof hermes.run = async command => {
     const answer = hermes.run(command)

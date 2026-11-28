@@ -1,4 +1,4 @@
-import type { CheckOptions, CheckResult, Dialer, Feed, Hermes, Picked, PickedRoute, ReadHermes, Transcribe } from '@highwing/hermes'
+import type { AskHermes, CheckOptions, CheckResult, Feed, Hermes, Picked, PickedRoute, Transcribe } from '@highwing/hermes'
 import {
   currentServer, firstStep, nextServers, sameTarget, type CheckStep, type Command, type CommandOutcome, type Recording, type Server, type ServerEdit, type ServerId, type Servers, type SetupFailure, type Target,
   type Timed
@@ -18,7 +18,7 @@ export interface ConnectionOwner {
   /** The Hermes of the live connection. null until a target is saved. */
   readonly hermes: Hermes | null
   /** One GET of the live Hermes's HTTP API. Rejects when no connection is open. */
-  readonly read: ReadHermes
+  readonly ask: AskHermes
   run<C extends ConnectionCommand>(command: C): Promise<CommandOutcome<HubResult<C>>>
   /** Speech to text by the Hermes of the live connection. */
   transcribe(recording: Recording): Promise<CommandOutcome<string>>
@@ -34,7 +34,7 @@ export interface ConnectionDeps {
   /** The id of a server about to be made. Never one a saved server has. */
   newId(): ServerId
   /** `place`: which connection this is, the same for the same server in every run. */
-  open(dial: Dialer, place: string): Hermes
+  open(route: Pick<PickedRoute, 'dial' | 'ask'>, place: string): Hermes
   armIntro(): Promise<void>
 }
 
@@ -161,7 +161,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
 
   const connect = (server: Server, epoch: number): Open => {
     const route = deps.routeFor(server, picked => onPick(epoch, picked))
-    return { live: { server: server.id, target: server.ways[0], epoch }, hermes: deps.open(route.dial, server.id), route }
+    return { live: { server: server.id, target: server.ways[0], epoch }, hermes: deps.open(route, server.id), route }
   }
   /** Both end before this returns, so a quit that does not wait for the promise still leaves no process behind. */
   const disconnect = ({ hermes, route }: Open): Promise<void> => {
@@ -310,7 +310,7 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
     setup,
     servers: book,
     get hermes() { return open?.hermes ?? null },
-    read: path => (open === null ? Promise.reject(new Error('No Hermes is connected.')) : open.route.read(path)),
+    ask: request => (open === null ? Promise.reject(new Error('No Hermes is connected.')) : open.route.ask(request)),
     run: async <C extends ConnectionCommand>(command: C) => {
       const outcome = !isSetupCommand(command) ? await runChat(command) : isServerCommand(command) ? await runServers(command) : runSetup(command)
       return outcome as CommandOutcome<HubResult<C>>
@@ -326,13 +326,13 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
 }
 
 /** A window served from one fixed `Hermes`, as a fixture run is. It has no setup, so it refuses every setup command. */
-export function pinnedConnection(hermes: Hermes, read: ReadHermes, transcribe: Transcribe): ConnectionOwner {
+export function pinnedConnection(hermes: Hermes, ask: AskHermes, transcribe: Transcribe): ConnectionOwner {
   return {
     setup: feed<Setup>({ at: 'pinned' }),
     servers: feed(NO_SERVERS),
     hermes,
     transcribe: recording => transcribe(recording),
-    read,
+    ask,
     run: async <C extends ConnectionCommand>(command: C) =>
       (isSetupCommand(command) ? NOT_NOW : await hermes.run(command)) as CommandOutcome<HubResult<C>>,
     close: () => hermes.close()

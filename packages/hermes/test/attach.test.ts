@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AttachmentId, SettledTurn } from '../src/domain/session'
 import { openHermes, type Upload } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { play, scriptedDialer, type Fixture, type Moment } from '../src/testing/fixture'
+import { noAsk, play, scriptedDialer, type Fixture, type Moment } from '../src/testing/fixture'
 import { callsIn, ERRAND, paramsOf, SESSION, SLASH } from './support/errand'
 
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52])
@@ -18,7 +18,7 @@ function open(fixture: Fixture, held: readonly Upload[]) {
   const clock = manualClock()
   const script = scriptedDialer(fixture, { clock })
   const hermes = openHermes({
-    dial: script, clock, client: { name: 'highwing-test', version: '0' },
+    ask: noAsk, dial: script, clock, client: { name: 'highwing-test', version: '0' },
     uploads: { read: async id => held.find(found => found.id === id) ?? null }
   })
   const sent = () => callsIn(script.received).filter(call => call.method !== 'session.stats')

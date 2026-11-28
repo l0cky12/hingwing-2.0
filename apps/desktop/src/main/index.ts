@@ -1,6 +1,6 @@
 import { checkTarget, gatewaysByUrl, liveRoute, openHermes, pickedRoute, remoteRoute, sshRead, timeWay, type Dialer, type Hermes, type Route } from '@highwing/hermes'
 import { byKind, type BotId, type GatewayUrl, type ServerId, type Servers, type Target } from '@highwing/hermes/domain'
-import { fixtureLatency, fixtureRead, fixtureTranscribe, loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
+import { fixtureAsk, fixtureLatency, fixtureTranscribe, loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, safeStorage, session, shell, type OpenDialogOptions } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync } from 'node:fs'
@@ -55,7 +55,7 @@ const addressesOf = (target: Target) => byKind<readonly GatewayUrl[]>(target, { 
 /** Every gateway address a saved server can be reached at, so a sign-in is kept for as long as a way needs it. */
 const addressesIn = ({ list }: Servers) => list.flatMap(({ ways }) => ways.flatMap(addressesOf))
 
-async function savedConnection(settingsDir: string, opener: Opener, open: (dial: Dialer, place: string) => Hermes, armIntro: () => Promise<void>): Promise<ConnectionOwner> {
+async function savedConnection(settingsDir: string, opener: Opener, open: (route: Pick<Route, 'dial' | 'ask'>, place: string) => Hermes, armIntro: () => Promise<void>): Promise<ConnectionOwner> {
   // An installed build takes neither variable: one would keep sign-ins unsealed, the other would cut a real sign-in short.
   const verifying = !app.isPackaged
   const signInMs = verifying && /^[1-9]\d*$/.test(HIGHWING_SIGN_IN_MS ?? '') ? Number(HIGHWING_SIGN_IN_MS) : null
@@ -149,15 +149,20 @@ app.whenReady().then(async () => {
   await attachments.sweep(new Set((await drafts.load()).flatMap(draft => draft.attachments.map(held => held.id))))
   const unread = unreadStore(join(settingsDir, UNREAD_DIR))
   // Unpackaged Electron reports its own version. The desktop package is the app version.
-  const open = (dial: Dialer, place: string) => openHermes({
-    dial, client: { name: 'highwing', version }, onPane: pane.ask, uploads: attachments,
+  const open = ({ dial, ask }: Pick<Route, 'dial' | 'ask'>, place: string) => openHermes({
+    dial, ask, client: { name: 'highwing', version }, onPane: pane.ask, uploads: attachments,
     unread: { chats: unread.load(place), keep: chats => unread.keep(place, chats) }
   })
-  const owner = fixture
-    ? pinnedConnection(open(scriptedDialer(fixture, {
+  const pinned = (held: NonNullable<typeof fixture>) => {
+    const ask = fixtureAsk(held.header, HIGHWING_FIXTURE_CALLS ? frame => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(frame)}\n`) : undefined)
+    const dial = scriptedDialer(held, {
       timing: 'recorded', latencyMs: fixtureLatency(HIGHWING_FIXTURE_LATENCY_MS),
       ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(maskedFrame(frame))}\n`) } : {})
-    }), 'fixture'), fixtureRead(fixture.header), fixtureTranscribe(fixture.header.transcribe))
+    })
+    return pinnedConnection(open({ dial, ask }, 'fixture'), ask, fixtureTranscribe(held.header.transcribe))
+  }
+  const owner = fixture
+    ? pinned(fixture)
     : await savedConnection(settingsDir, opener, open, intro.armIntro)
   pane.follow(owner.setup)
   const pictureDeps = { choose: pictureFile, read: readHead, set: (bot: BotId, data: string) => owner.run({ do: 'setBotPicture', bot, data }) }

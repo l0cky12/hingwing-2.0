@@ -3,12 +3,12 @@ import { GENERATED_MAX_BYTES, MARK_SETS, PICTURE_RULE, type BotCreated, type Bot
 import type { Backup, BotModelSettings, Command, ModelMenu, ModelSaved, Outcome, Refusal } from './domain/command'
 import type { BotManagers } from './domain/passwords'
 import type { Plugin, PluginInstalled, PluginSwitched } from './domain/plugins'
-import type { Toolset } from './domain/toolsets'
+import { parseBotToolsets, parseToolsetSwitched, toolsetPath, TOOLSETS_PATH, type ToolsetsRead, type ToolsetSwitched } from './domain/toolsets'
 import type { ModelId, ModelOption, SessionId } from './domain/session'
 import type { Skill } from './domain/skills'
 import type { Added, ServerSetup, Tested, ToolServer } from './domain/tool-servers'
 import { NOT_CONNECTED } from './open'
-import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
+import { METHOD_NOT_FOUND, Offline, RpcRefusal, type AskHermes, type Connection } from './wire/link'
 import {
   descriptionOf, parseBackupChain, parseBotAt, parseBotManagers, parseBotRecord, parseCatalog, parseCliFailure, parseConfigured, parseConfigValue, parseConfirmAsked, parseCreated, parseDenyRules, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets,
   parsePicture, parsePluginInstalled, parsePlugins, parseRestartNeeded, parseSkillStates, parseSkillText, parseTested, parseToolsets, parseToolServers, type BackupEntry, type Configured, type ConfigValue
@@ -450,8 +450,35 @@ export const installPlugin = (conn: Wire, bot: BotId | null, name: string): Prom
 
 const TOOLSET_REASONS: Reasons = { [METHOD_NOT_FOUND]: () => ({ kind: 'unsupported', message: "This Hermes can't list its tools." }) }
 
-export const listToolsets = (conn: Wire, sessionId: SessionId | null): Promise<Outcome<readonly Toolset[]>> =>
-  guarded(TOOLSET_REASONS, async () => ({ ok: true, value: parseToolsets(await conn.call('tools.list', sessionId === null ? {} : { session_id: sessionId })) }))
+/** A route this Hermes lacks answers 404 or 405, and a ticket bound to another profile answers 403 (dashboard_auth/native_http.py:45-59), as one whose `--serve` ignores the profile does. */
+const NO_TOOLSET_ROUTE: ReadonlySet<number> = new Set([403, 404, 405])
+const CANT_SWITCH = "This Hermes can't switch toolsets from Highwing."
+const TOOLSETS_UNREACHED = "Highwing couldn't reach Hermes's toolset settings, so it can't switch them now."
+
+const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`)
+
+export async function listToolsets(conn: Wire, ask: AskHermes, bot: BotId | null, sessionId: SessionId | null): Promise<Outcome<ToolsetsRead>> {
+  const answer = await ask({ method: 'GET', path: TOOLSETS_PATH, bot }).catch(() => null)
+  const listed = answer?.status === 200 ? parseBotToolsets(answer.body) : null
+  if (listed !== null) return { ok: true, value: { toolsets: listed, locked: null } }
+  const locked = answer !== null && NO_TOOLSET_ROUTE.has(answer.status) ? CANT_SWITCH : TOOLSETS_UNREACHED
+  return guarded(TOOLSET_REASONS, async () => ({
+    ok: true,
+    value: { toolsets: parseToolsets(await conn.call('tools.list', sessionId === null ? {} : { session_id: sessionId })), locked }
+  }))
+}
+
+export async function setToolset(ask: AskHermes, bot: BotId | null, name: string, enabled: boolean): Promise<Outcome<ToolsetSwitched>> {
+  const answer = await ask({ method: 'PUT', path: toolsetPath(name), bot, json: { enabled } }).catch(() => null)
+  if (answer !== null && NO_TOOLSET_ROUTE.has(answer.status)) return { ok: false, refusal: { kind: 'unsupported', message: CANT_SWITCH } }
+  if (answer?.status === 400) {
+    const { body } = answer
+    const detail = typeof body === 'object' && body !== null && 'detail' in body && typeof body.detail === 'string' ? body.detail.trim() : ''
+    return { ok: false, refusal: { kind: 'rejected', message: detail === '' ? `Hermes wouldn't switch ${name}.` : sentence(detail) } }
+  }
+  const switched = answer?.status === 200 ? parseToolsetSwitched(answer.body, { name, enabled }) : null
+  return switched === null ? { ok: false, refusal: { kind: 'offline', message: `Highwing couldn't reach Hermes, so ${name} wasn't switched.` } } : { ok: true, value: switched }
+}
 
 export const removeToolServer = (conn: Wire, bot: BotId | null, name: string): Promise<Outcome<readonly ToolServer[]>> =>
   guarded(REMOVE_REASONS, async () => {

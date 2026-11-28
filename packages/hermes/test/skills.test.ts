@@ -3,7 +3,7 @@ import type { BotId } from '../src/domain/bots'
 import type { SkillLibrary } from '../src/domain/skills'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { scriptedDialer, type Fixture } from '../src/testing/fixture'
+import { noAsk, scriptedDialer, type Fixture } from '../src/testing/fixture'
 import { descriptionOf } from '../src/wire/parse'
 import { callsIn, WITH_BOTS } from './support/errand'
 
@@ -20,7 +20,7 @@ const WITH_SKILLS: Fixture = { ...WITH_BOTS, header: { ...WITH_BOTS.header, skil
 async function launched(fixture: Fixture, latencyMs = 0) {
   const clock = manualClock()
   const script = scriptedDialer(fixture, { clock, latencyMs })
-  const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
+  const hermes = openHermes({ ask: noAsk, dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
   await clock.advance(0)
   const calls = (method: string) => callsIn(script.received).filter(call => call.method === method)
   const seen: SkillLibrary[] = []

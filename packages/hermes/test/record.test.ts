@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import type { PromptId, RequestId } from '../src/domain/session'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { loadFixture, MASKED, maskedFrame, playToEnd, recordingDialer, scriptedDialer, type FixtureStep } from '../src/testing/fixture'
+import { loadFixture, MASKED, maskedFrame, noAsk, playToEnd, recordingDialer, scriptedDialer, type FixtureStep } from '../src/testing/fixture'
 import { ERRAND, paramsOf, PICK, PICK_ASK, PICK_DECLINED, PROFILES, SESSION, SLASH, SUDO, SUDO_ASK, withSteps } from './support/errand'
 
 async function record(drop?: { afterPush: number; missed: number }, fixture = ERRAND) {
@@ -13,7 +13,7 @@ async function record(drop?: { afterPush: number; missed: number }, fixture = ER
   const clock = manualClock()
   const script = scriptedDialer(fixture, { clock, timing: 'recorded', ...(drop === undefined ? {} : { drop }) })
   const hermes = openHermes({
-    dial: recordingDialer(script, path, clock), clock, client: { name: 'highwing-test', version: '0' },
+    ask: noAsk, dial: recordingDialer(script, path, clock), clock, client: { name: 'highwing-test', version: '0' },
     mintId: () => String(paramsOf('prompt.submit').input_id)
   })
   hermes.watch(SESSION, () => {})
@@ -73,7 +73,7 @@ describe('recordingDialer', () => {
     const path = join(mkdtempSync(join(tmpdir(), 'highwing-record-')), 'asks.jsonl')
     const clock = manualClock()
     const script = scriptedDialer(asks, { clock })
-    const hermes = openHermes({ dial: recordingDialer(script, path, clock), clock, client: { name: 'highwing-test', version: '0' } })
+    const hermes = openHermes({ ask: noAsk, dial: recordingDialer(script, path, clock), clock, client: { name: 'highwing-test', version: '0' } })
     hermes.watch(SESSION, () => {})
     await clock.advance(0)
     await hermes.run({ do: 'send', sessionId: SESSION, text: String(paramsOf('prompt.submit').text) })

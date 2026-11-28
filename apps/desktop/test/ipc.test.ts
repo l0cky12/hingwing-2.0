@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
-import type { Hermes, HttpAnswer, PickedRoute } from '@highwing/hermes'
+import type { Hermes, HttpAnswer, HttpAsk, PickedRoute } from '@highwing/hermes'
 import type { AttachmentId, BotActivities, Bots, CatalogPlugin, CommandOutcome, Exported, Groups, Link, OpenChat, Recording, RelayDesk, ServerId, Session, SessionId, Sidebar, SkillLibrary, SlashCatalog, SshHost } from '@highwing/hermes/domain'
 import { loadFixture, play } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -191,10 +191,14 @@ describe('validators', () => {
     expect(parseCommand({ do: 'plugins', bot: ' ' })).toBeNull()
     expect(parseCommand({ do: 'setPlugin', bot: 'research', key: 'image_gen/openai', enabled: false, extra: 1 })).toEqual({ do: 'setPlugin', bot: 'research', key: 'image_gen/openai', enabled: false })
     expect(parseCommand({ do: 'setPlugin', bot: null, key: 'kanban', enabled: true })).toEqual({ do: 'setPlugin', bot: null, key: 'kanban', enabled: true })
-    expect(parseCommand({ do: 'tools', sessionId: null, extra: 1 })).toEqual({ do: 'tools', sessionId: null })
-    expect(parseCommand({ do: 'tools', sessionId: 's-1' })).toEqual({ do: 'tools', sessionId: 's-1' })
-    expect(parseCommand({ do: 'tools', sessionId: ' ' })).toBeNull()
-    expect(parseCommand({ do: 'tools' })).toBeNull()
+    expect(parseCommand({ do: 'tools', bot: null, sessionId: null, extra: 1 })).toEqual({ do: 'tools', bot: null, sessionId: null })
+    expect(parseCommand({ do: 'tools', bot: 'research', sessionId: 's-1' })).toEqual({ do: 'tools', bot: 'research', sessionId: 's-1' })
+    expect(parseCommand({ do: 'tools', bot: null, sessionId: ' ' })).toBeNull()
+    expect(parseCommand({ do: 'tools', bot: ' ', sessionId: null })).toBeNull()
+    expect(parseCommand({ do: 'tools', sessionId: null })).toBeNull()
+    expect(parseCommand({ do: 'tools', bot: null })).toBeNull()
+    expect(parseCommand({ do: 'setToolset', bot: 'research', name: 'web', enabled: false, extra: 1 })).toEqual({ do: 'setToolset', bot: 'research', name: 'web', enabled: false })
+    expect(parseCommand({ do: 'setToolset', bot: null, name: 'web', enabled: true })).toEqual({ do: 'setToolset', bot: null, name: 'web', enabled: true })
     expect(parseCommand({ do: 'connectApp', slug: ' ', bot: null, connectionId: null })).toBeNull()
     expect(parseCommand({ do: 'connectApp', slug: 'github', bot: null })).toBeNull()
     expect(parseCommand({ do: 'appSignIn', opId: '', bot: null })).toBeNull()
@@ -414,6 +418,9 @@ describe('validators', () => {
     ['a plugin switch with no key', { do: 'setPlugin', bot: null, key: ' ', enabled: true }],
     ['a plugin switch with no state', { do: 'setPlugin', bot: null, key: 'kanban' }],
     ['a plugin switch for a bot with a blank name', { do: 'setPlugin', bot: ' ', key: 'kanban', enabled: true }],
+    ['a toolset switch with no name', { do: 'setToolset', bot: null, name: ' ', enabled: true }],
+    ['a toolset switch with no state', { do: 'setToolset', bot: null, name: 'web' }],
+    ['a toolset switch for a bot with a blank name', { do: 'setToolset', bot: ' ', name: 'web', enabled: true }],
     ['the tool servers of a bot with a blank name', { do: 'toolServers', bot: ' ' }],
     ['the tool servers of no bot named at all', { do: 'toolServers' }],
     ['the routines of a bot with no name', { do: 'listRoutines', bot: '' }],
@@ -622,7 +629,7 @@ describe('validators', () => {
       'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'installPlugin', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
       'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'pluginCatalog', 'plugins', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
       'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeServer', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
-      'sendToGroup', 'setAccent', 'setAppearance', 'setBotBackup', 'setBotModel', 'setMode', 'setNotice', 'setOnClose', 'setPlugin', 'setSendKey', 'setShowWork', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
+      'sendToGroup', 'setAccent', 'setAppearance', 'setBotBackup', 'setBotModel', 'setMode', 'setNotice', 'setOnClose', 'setPlugin', 'setSendKey', 'setShowWork', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'setToolset', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
       'takeControl', 'toolServers', 'tools', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'useServer', 'versions'
     ])
   })
@@ -657,7 +664,7 @@ const switchable = (hermes: Hermes) => ownConnection({
 function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   const reads: string[] = []
   let answer: HttpAnswer = { status: 404, body: null }
-  const read = async (path: string) => (reads.push(path), answer)
+  const ask = async ({ path, bot }: HttpAsk) => (reads.push(bot === null ? path : `${path} as ${bot}`), answer)
   const listeners = new Map<string, (event: IpcEvent, ...args: unknown[]) => void>()
   const handlers = new Map<string, (event: IpcEvent, ...args: unknown[]) => unknown>()
   const ipc: IpcMainLike = {
@@ -770,7 +777,7 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   const appearance = feed<Appearance>(DEFAULT_APPEARANCE)
   const sources: AttachSources = { pick: async () => ['/home/me/error.png', '/home/me/big.zip'], pasted: async () => ({ name: 'Pasted image 1.png', bytes: PNG }) }
   const served = serveWindows(
-    (ownerOf ?? (held => pinnedConnection(held, read, HEARD)))(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
+    (ownerOf ?? (held => pinnedConnection(held, ask, HEARD)))(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
     { store, sources }, saver, { mode, theme, accent, sidebarWidth, sendKey, showWork, spellCheck, snoozes, notices, onClose, appearance },
@@ -905,7 +912,7 @@ describe('serveWindows', () => {
       setup,
       servers: feed(NO_SERVERS),
       hermes: null,
-      read: async () => { throw new Error('the test never reads') },
+      ask: async () => { throw new Error('the test never asks') },
       transcribe: HEARD,
       close: async () => {},
       run: async (command: { readonly do: string }) => {
@@ -1417,7 +1424,7 @@ describe("the routine runs call", () => {
     await expect(rig.handlers.get(CHANNEL.routineRuns)!(rig.event(), 'rae', 'a1')).resolves.toEqual({
       ok: true, value: [{ key: 'local-s1', outcome: { is: 'succeeded' }, at: 1_000_000, seconds: 42, chat: 'local-s1', owner: null }]
     })
-    expect(rig.reads).toEqual(['/api/cron/jobs/a1/runs?profile=rae&limit=20'])
+    expect(rig.reads).toEqual(['/api/cron/jobs/a1/runs?limit=20 as rae'])
   })
 
   it('refuses a foreign frame, and a bot or routine that is not a name, without reading', async () => {

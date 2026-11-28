@@ -3,7 +3,7 @@ import { markBot } from '../src/bot-admin'
 import { botsIn, type BotId, type BotMark, type Bots } from '../src/domain/bots'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { scriptedDialer, type Fixture } from '../src/testing/fixture'
+import { noAsk, scriptedDialer, type Fixture } from '../src/testing/fixture'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from '../src/wire/link'
 import { BOUND, callsIn, ERRAND, WITH_BOTS } from './support/errand'
 
@@ -129,7 +129,7 @@ describe('markBot through the hub', () => {
   async function launched(fixture: Fixture) {
     const clock = manualClock()
     const script = scriptedDialer(fixture, { clock })
-    const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
+    const hermes = openHermes({ ask: noAsk, dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
     await clock.advance(0)
     const calls = (method: string) => callsIn(script.received).filter(call => call.method === method)
     return { clock, hermes, calls }

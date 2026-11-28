@@ -305,13 +305,13 @@ export function serveWindows(
     return images.load(request, { session: watched?.current() as Session | undefined, local: servedHere(watched) })
   })
 
-  ipc.handle(CHANNEL.taskBoard, async event => (trusted(event) ? readTaskBoard(owner.read) : REFUSED))
-  ipc.handle(CHANNEL.taskChat, async (event, id) => (trusted(event) && isTaskId(id) ? readTaskChat(owner.read, id) : REFUSED))
+  ipc.handle(CHANNEL.taskBoard, async event => (trusted(event) ? readTaskBoard(owner.ask) : REFUSED))
+  ipc.handle(CHANNEL.taskChat, async (event, id) => (trusted(event) && isTaskId(id) ? readTaskChat(owner.ask, id) : REFUSED))
 
   ipc.handle(CHANNEL.routineRuns, async (event, bot, routine) => {
     const named = parseBotId(bot)
     const id = parseRoutineId(routine)
-    return trusted(event) && named !== null && id !== null ? readRoutineRuns(owner.read, named, id) : REFUSED
+    return trusted(event) && named !== null && id !== null ? readRoutineRuns(owner.ask, named, id) : REFUSED
   })
 
   ipc.handle(CHANNEL.drafts, async event => (trusted(event) ? drafts.load() : []))

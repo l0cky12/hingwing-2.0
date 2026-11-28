@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { BotId } from '../src/domain/bots'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { maskedFrame, scriptedDialer, type Fixture, type VaultScript } from '../src/testing/fixture'
+import { maskedFrame, noAsk, scriptedDialer, type Fixture, type VaultScript } from '../src/testing/fixture'
 import { parseBotManagers } from '../src/wire/parse'
 import { BOUND, callsIn, WITH_BOTS } from './support/errand'
 
@@ -62,7 +62,7 @@ describe('parseBotManagers', () => {
 async function launched(fixture: Fixture) {
   const clock = manualClock()
   const script = scriptedDialer(fixture, { clock })
-  const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
+  const hermes = openHermes({ ask: noAsk, dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
   await clock.advance(0)
   const vaultCalls = () => callsIn(script.received).filter(call => call.method.startsWith('vault.'))
   return { hermes, vaultCalls, received: script.received }

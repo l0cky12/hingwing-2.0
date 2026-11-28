@@ -4,7 +4,7 @@ import { activityDesk, busyOf, type Attached } from './activity'
 import { appSignIn, connectApp, listApps, removeApp } from './apps'
 import {
   addToolServer, botModels, botModelSettings, botPicture, canGeneratePicture, createBot, denyRules, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, readSkills, removeToolServer, setBotBackup, setBotModel,
-  installPlugin, listPlugins, listToolsets, setBotPicture, setPlugin, setSkill, skillText, toolServers
+  installPlugin, listPlugins, listToolsets, setBotPicture, setPlugin, setSkill, setToolset, skillText, toolServers
 } from './bot-admin'
 import type { BotActivities, UnreadChat } from './domain/activity'
 import { listMemory, removeMemory, saveMemory } from './memory'
@@ -35,13 +35,13 @@ import { screenDesk } from './screens'
 import { controlRoutine, listRoutines } from './routines'
 import { deriveSidebar, sessionList } from './sidebar'
 import { readVersions } from './versions'
-import { connect, systemClock, type Clock, type Dialer } from './wire/link'
+import { connect, systemClock, type AskHermes, type Clock, type Dialer } from './wire/link'
 import { NOTHING_TO_SHOW, runSessionCommand, type BranchPin, type Hub } from './session-commands'
 import { parseCatalog, parseEvent, parseServerRequest, type ParsedEvent } from './wire/parse'
 
 export type { Command, Outcome, Refusal, ResultOf } from './domain/command'
 export type { Upload } from './actor'
-export type { Clock, Dialer, HttpAnswer, ReadHermes, WireSocket } from './wire/link'
+export type { Clock, Dialer, AskHermes, HttpAnswer, HttpAsk, WireSocket } from './wire/link'
 export { checkTarget, type CheckOptions, type CheckResult } from './wire/check'
 export { gatewaysByUrl, memoryKeep, type GatewayDeps, type Gateways, type Keep, type UrlCheckResult } from './wire/gateways'
 export { DialError } from './wire/link'
@@ -142,6 +142,8 @@ export interface Hermes {
 export interface HermesOptions {
   /** `liveRoute().dial` for the real gateway, `scriptedDialer(fixture)` for a recorded one. */
   readonly dial: Dialer
+  /** The gateway's HTTP API, as the route that dials asks it. `fixtureAsk(...)` for a recorded run. */
+  readonly ask: AskHermes
   /** Whether the first dial after launch may start the gateway. Automatic retries never do. Default true. */
   readonly startGatewayOnLaunch?: boolean
   readonly clock?: Clock
@@ -682,7 +684,8 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'plugins') return listPlugins(conn, command.bot)
     if (command.do === 'setPlugin') return setPlugin(conn, command.bot, command.key, command.enabled)
     if (command.do === 'installPlugin') return installPlugin(conn, command.bot, command.name)
-    if (command.do === 'tools') return listToolsets(conn, command.sessionId)
+    if (command.do === 'tools') return listToolsets(conn, options.ask, command.bot, command.sessionId)
+    if (command.do === 'setToolset') return setToolset(options.ask, command.bot, command.name, command.enabled)
     if (command.do === 'listRoutines') return listRoutines(conn, command.bot)
     if (command.do === 'controlRoutine') return controlRoutine(conn, command.bot, command.routine, command.action)
     if (command.do === 'botPicture') return botPicture(conn, command.bot)

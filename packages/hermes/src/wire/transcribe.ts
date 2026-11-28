@@ -44,22 +44,24 @@ function jsonOf(text: string): unknown {
 }
 
 /**
- * Posts a recording to a gateway's loopback listener with a `native-http` ticket. Hermes's gate
- * refuses a ticket that comes with an `Origin` header (dashboard_auth/native_http.py:200), which
- * `fetch` may add, so this goes through `node:http`. One request per connection, so a relay that
- * carries one connection carries all of it.
+ * One request to a gateway's loopback listener with a `native-http` ticket. Hermes's gate refuses a ticket that comes with an
+ * `Origin` header (dashboard_auth/native_http.py:200), which `fetch` may add, so this goes through `node:http`. One request per
+ * connection, so a relay that carries one connection carries all of it.
  */
-export function postWithTicket(origin: string, ticket: string, recording: Recording, signal?: AbortSignal): Promise<{ readonly status: number; readonly body: unknown }> {
-  const body = JSON.stringify(transcribeBody(recording))
-  const deadline = AbortSignal.timeout(TRANSCRIBE_MS)
+export function requestWithTicket(
+  origin: string, ticket: string, ask: { readonly method: 'GET' | 'POST' | 'PUT'; readonly path: string; readonly json?: unknown; readonly ms: number }, signal?: AbortSignal
+): Promise<{ readonly status: number; readonly body: unknown }> {
+  const body = ask.json === undefined ? null : JSON.stringify(ask.json)
+  const deadline = AbortSignal.timeout(ask.ms)
   return new Promise((resolve, reject) => {
-    const asked = request(new URL(TRANSCRIBE_PATH, origin), {
-      method: 'POST',
+    const url = new URL(ask.path, origin)
+    if (url.origin !== new URL(origin).origin) return reject(new Error('The request names another address than the gateway.'))
+    const asked = request(url, {
+      method: ask.method,
       signal: signal === undefined ? deadline : AbortSignal.any([signal, deadline]),
       headers: {
         accept: 'application/json',
-        'content-type': 'application/json',
-        'content-length': Buffer.byteLength(body),
+        ...(body === null ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) }),
         'x-hermes-gateway-ticket': ticket,
         connection: 'close'
       }
@@ -70,6 +72,6 @@ export function postWithTicket(origin: string, ticket: string, recording: Record
       response.on('error', reject)
     })
     asked.on('error', reject)
-    asked.end(body)
+    asked.end(body ?? undefined)
   })
 }

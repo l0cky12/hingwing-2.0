@@ -1138,19 +1138,21 @@ Hermes can't manage tool servers from Highwing."
 
 The Connectors screen's Plugins tab lists the bot's plugins with a switch on
 each card, installs a plugin from Hermes's catalog, and its Tools tab lists
-Hermes's toolsets read-only. None of these calls is canonical, so each reaches
-its legacy handler only on a socket with the interactive grant.
+the bot's toolsets with a switch on each card (see
+[A bot's toolsets](#a-bots-toolsets)). None of the socket calls below is
+canonical, so each reaches its legacy handler only on a socket with the
+interactive grant.
 
 | Method | Params | What Highwing does with the answer |
 | --- | --- | --- |
 | `plugins.manage` | `{action: "list"}`, with the bot's `profile` when the screen has one | Lists each plugin with its version, where Hermes found it (`bundled`, `user` or `entrypoint`), its description, and On when its `status` is `enabled`. `disabled` and `not enabled` read Off (`hermes_cli/plugins_cmd.py:933-946`). |
 | `plugins.manage` | `{action: "toggle", key, enable}`, with the bot's `profile` when the screen has one | Turns the plugin on or off by its canonical `key`, since a bare name can match a plugin of another category. Highwing then lists the plugins again and refuses the change, "Hermes kept <name> on.", when the list still shows the old state. When the reply says `restart_required`, the card says the change waits for Hermes to restart. A failure is 5026 in Hermes's words (`tui_gateway/methods_tools.py:1743-1762`). |
 | `plugins.manage` | `{action: "install", catalog_name, enable: true}`, with the bot's `profile` when the screen has one | Installs and turns on the catalog entry of that name. Hermes resolves the repository and the pinned commit from its own catalog and kill list, so Highwing sends no repository (`tui_gateway/methods_tools.py:1772-1786`). The answer's `plugin_name`, `restart_required` and `missing_env` say what is left to do. A failed install is error 5026 with Hermes's words, which Highwing shows as they are. Highwing lists the plugins again after every install, a failed one too: Hermes places the plugin before it turns it on, so an enable it refuses leaves the plugin installed and off (`hermes_cli/plugins_cmd_install.py:892-938`). |
-| `tools.list` | `{session_id}` of the open chat, or `{}` when the chat has no session yet | Lists each toolset with its description, its tools and whether it is on. Hermes reads the toolsets of the chat it holds by that id, and the launch profile's otherwise (`tui_gateway/methods_tools.py:220-247`). |
+| `tools.list` | `{session_id}` of the open chat, or `{}` when the chat has no session yet | Lists each toolset with its description, its tools and whether it is on, for a Hermes that has no toolset routes (below). Hermes reads the toolsets of the chat it holds by that id, and the launch profile's otherwise (`tui_gateway/methods_tools.py:220-247`). |
 
 On an older Hermes, or a socket bound to one profile, the Plugins tab says
-"This Hermes can't list its plugins." and the Tools tab says "This Hermes can't
-list its tools." An older Hermes that lists plugins answers a toggle as an
+"This Hermes can't list its plugins." and the Tools tab, when the toolset routes
+below do not answer either, says "This Hermes can't list its tools." An older Hermes that lists plugins answers a toggle as an
 unknown action (4017), and the Plugins tab then says "This Hermes can't turn
 plugins on or off." with every switch disabled. An install there is refused
 with "This Hermes can't install plugins."
@@ -1191,11 +1193,12 @@ as `nightly-repo-auditor`.
 Hermes has no socket method that lists a routine's runs. The Routines tab of a
 bot's details reads one route of the gateway's HTTP API, on the same listener as
 the socket (`hermes_cli/web_routers/cron.py`). It sends the credential that the
-[Task board](#task-board) section describes.
+[Task board](#task-board) section describes, minted for the routine's bot as
+[A bot's toolsets](#a-bots-toolsets) describes.
 
 | Route | When |
 | --- | --- |
-| `GET /api/cron/jobs/<job_id>/runs?profile=<bot>&limit=20` | Each time a routine's Past runs opens. Highwing shows the first 20 rows of the reply's `runs`, newest first, and drops a row it cannot read |
+| `GET /api/cron/jobs/<job_id>/runs?limit=20&profile=<bot>` | Each time a routine's Past runs opens. Highwing shows the first 20 rows of the reply's `runs`, newest first, and drops a row it cannot read |
 
 Hermes answers a job it does not know with `200` and an empty list, so "No runs
 yet." can also mean the job is gone.
@@ -1223,6 +1226,51 @@ On an older Hermes, or one without the route:
   tab says "Highwing couldn't reach Hermes for this routine's runs."
 - If the reply has no `runs` list, the tab says "Hermes answered with runs
   Highwing can't read."
+### A bot's toolsets
+
+The Tools tab reads and switches the toolsets of the bot the screen shows
+("Configuring: <name>") through Hermes's dashboard routes over the gateway's HTTP
+API, which is the listener the Task board below reads
+(`hermes_cli/web_routers/tools.py:224-336`). No socket call switches a toolset
+for one profile. `tools.configure` either ends the open chat's history or writes
+another profile's config, so Highwing never sends it.
+
+| Route | When |
+| --- | --- |
+| `GET /api/tools/toolsets?profile=<bot>` | When the Tools tab opens, and when the bot or the open chat changes. Answers a list of `{name, label, description, platform, platform_label, enabled, available, configured, tools}`. `platform` is `cli` for the chat's toolsets, and the card names the platform (`platform_label`, such as "Discord") for any other |
+| `PUT /api/tools/toolsets/<name>?profile=<bot>` | When a switch is pressed, with the JSON body `{"enabled": true}` or `{"enabled": false}`. Writes only that profile's `config.yaml` and answers `{ok: true, name, platform, enabled, post_setup_started}`. A name Hermes lacks is 400 `{"detail": "Unknown toolset: <name>"}`, which Highwing shows in Hermes's words |
+
+A switch touches no chat. A chat that Highwing opened keeps its history and runs
+with the new toolsets from its next message (`gateway/session_policy.py:270-278`).
+A group chat's members keep the toolsets their room started with
+(`gateway/session_policy.py:247-253`). So the tab says "Changes reach each of
+<name>'s chats from its next message. Group chats keep the tools they started
+with." Each bot is named, the launch profile included (`default`). Only a
+connection that reaches one profile names no bot, and then Highwing sends no
+`profile`.
+
+A `native-http` ticket is bound to one profile, and a `profile` query that names
+another is refused 403 `profile_scope_mismatch`
+(`hermes_cli/dashboard_auth/native_http.py:45-59`). So for a bot, Highwing
+asks `--serve` for a ticket of that profile by adding `profile` to the request
+line, `{"id":1,"purpose":"native-http","profile":"<bot>"}`, and also sends
+`?profile=<bot>`. A Hermes whose `--serve` ignores `profile` mints a
+launch-profile ticket, which the route then refuses, so it can never write another
+bot's config. A web address sends `Authorization: Bearer <access token>`, which
+reaches every profile, so there the `profile` query alone picks the bot. The
+request has no `Origin`, as for the Task board. Each ask has 30 s in all.
+
+On an older Hermes the Tools tab keeps the read-only cards from `tools.list`, with
+no switches and a note that says why:
+
+- If the list route answers 404 or 405, or 403 for a ticket bound to another
+  profile, the note says "This Hermes can't switch toolsets from Highwing." A
+  switch that gets one of those answers says the same.
+- If the list route answers anything else, or gets no answer, the note says
+  "Highwing couldn't reach Hermes's toolset settings, so it can't switch them
+  now." A switch that gets no answer, or no `ok` reply, says "Highwing couldn't
+  reach Hermes, so <name> wasn't switched."
+- If `tools.list` is refused too, the tab says "This Hermes can't list its tools."
 
 ## Task board
 

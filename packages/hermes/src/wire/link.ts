@@ -81,10 +81,17 @@ export type Mint = (request: { readonly start: boolean }) => Promise<Endpoint>
 /** What a gateway's HTTP API answered: the status, and the body as JSON (null when it was not JSON). */
 export interface HttpAnswer { readonly status: number; readonly body: unknown }
 /**
- * One authenticated GET of the gateway's HTTP API, `path` being its path and query. A call that cannot get an
- * answer rejects. Any answer resolves, 404 and 401 included, so the caller names what each status means.
+ * One authenticated request to the gateway's HTTP API. `bot`: the profile it acts for, null for the launch profile.
+ * The route scopes its credential to that bot and adds `profile=<bot>` to the query, so a Hermes that ignores the
+ * credential's profile refuses instead of acting on another bot.
  */
-export type ReadHermes = (path: string) => Promise<HttpAnswer>
+export type HttpAsk = { readonly path: string; readonly bot: BotId | null } & ({ readonly method: 'GET' } | { readonly method: 'PUT'; readonly json: unknown })
+/** Any answer resolves, 404 and 401 included, so the caller names what each status means. A request that gets no answer rejects. */
+export type AskHermes = (ask: HttpAsk) => Promise<HttpAnswer>
+export const ASK_MS = 30_000
+
+export const pathFor = ({ path, bot }: Pick<HttpAsk, 'path' | 'bot'>): string =>
+  bot === null ? path : `${path}${path.includes('?') ? '&' : '?'}profile=${encodeURIComponent(bot)}`
 
 export const GATEWAY_PROTOCOL = 'hermes-gateway-v1'
 /** Hermes's hermes_cli/gateway_client.py:16 */

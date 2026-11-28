@@ -4,7 +4,7 @@ import plugins from '../../../fixtures/plugins/two.json' with { type: 'json' }
 import type { BotId } from '../src/domain/bots'
 import { openHermes } from '../src/hub'
 import { manualClock } from '../src/testing/clock'
-import { scriptedDialer, type Fixture, type PluginSeed } from '../src/testing/fixture'
+import { noAsk, scriptedDialer, type Fixture, type PluginSeed } from '../src/testing/fixture'
 import { parsePluginInstalled, parsePlugins } from '../src/wire/parse'
 import { BOUND, callsIn, WITH_BOTS } from './support/errand'
 
@@ -13,7 +13,7 @@ const SEEDS = plugins as readonly PluginSeed[]
 async function launched(seeds: readonly PluginSeed[] | null, fixture: Fixture = WITH_BOTS, more: Partial<Fixture['header']> = {}) {
   const clock = manualClock()
   const script = scriptedDialer({ ...fixture, header: { ...fixture.header, ...(seeds === null ? {} : { plugins: seeds }), ...more } }, { clock })
-  const hermes = openHermes({ dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
+  const hermes = openHermes({ ask: noAsk, dial: script, clock, client: { name: 'highwing-test', version: '0.0.0' } })
   await clock.advance(0)
   const run: typeof hermes.run = async command => {
     const answer = hermes.run(command)
