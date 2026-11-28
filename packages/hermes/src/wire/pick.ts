@@ -85,47 +85,59 @@ export function pickedRoute(server: Pick<Server, 'ways' | 'pick'>, wayFor: (targ
     if (life.signal.aborted) throw new DialError('dropped')
     const [mine, dialed, mode] = [++turn, ways, pick]
     const timing = timeAll(dialed, mode)
-    const times = timing === null ? null : await timing.early
     const failures = new Map<number, unknown>()
     const gone = () => life.signal.aborted || mine !== turn
-    for (const index of times === null ? [0] : rankWays(times.map(ms => ms ?? null), mode)) {
-      const way = dialed[index] as Way
-      if (gone()) break
-      if (!ways.includes(way)) continue
-      const socket = await way.route.dial(request).catch((error: unknown) => void failures.set(index, error))
-      if (socket === undefined) continue
-      // An edit or a dispose during the dial ended this way's processes, so its socket would be a dead one. A later dial replaced this one.
-      if (gone() || !ways.includes(way)) {
-        socket.close()
-        continue
+    /** The first of `indices` that connects. A way already tried, or one an edit took away, is skipped. */
+    const first = async (indices: readonly number[]) => {
+      for (const index of indices) {
+        const way = dialed[index] as Way
+        if (gone()) return null
+        if (failures.has(index) || !ways.includes(way)) continue
+        const socket = await way.route.dial(request).catch((error: unknown) => void failures.set(index, error))
+        if (socket === undefined) continue
+        // An edit or a dispose during the dial ended this way's processes, so its socket would be a dead one. A later dial replaced this one.
+        if (gone() || !ways.includes(way)) {
+          socket.close()
+          continue
+        }
+        return { way, socket }
       }
-      held = { way, socket }
-      // An edit during the dial may have changed which way is best.
-      if (ways !== dialed || pick !== mode) {
-        onPick({ using: way.target, times: [] })
-        void pickAgain()
-      } else tell(dialed, timing, times, way, socket)
-      return socket
+      return null
     }
-    throw gone() ? new DialError('dropped') : failures.get(0) ?? [...failures.values()][0] ?? new DialError('dropped')
+    let times: readonly (number | null | undefined)[] | null = timing === null ? null : await timing.early
+    const answered = times === null ? [0] : rankWays(times.map(ms => ms ?? null), mode).filter(index => typeof times?.[index] === 'number')
+    let won = await first(answered)
+    // The ways still being timed are ranked once they are done, so the next fastest is tried next, whatever its place in the order.
+    if (won === null && timing !== null && !gone()) {
+      times = await timing.all
+      won = await first(rankWays(times as readonly (number | null)[], mode))
+    }
+    if (won === null) throw gone() ? new DialError('dropped') : failures.get(0) ?? [...failures.values()][0] ?? new DialError('dropped')
+    const { way, socket } = won
+    held = won
+    // An edit during the dial may have changed which way is best.
+    if (ways !== dialed || pick !== mode) {
+      onPick({ using: way.target, times: told(dialed, times) })
+      void pickAgain()
+    } else tell(dialed, timing, times, way, socket)
+    return socket
   }
 
   /** After an edit, times the ways now listed, and closes the socket in use when a dial would now take another way. The link takes the close as a drop and redials, and that dial picks. */
   const pickAgain = async () => {
-    const [timed, mode] = [ways, pick]
+    const [timed, mode, before] = [ways, pick, held]
     // A dial in flight sees the edit when it connects.
-    if (held === null) return
+    if (before === null) return
     const timing = timeAll(timed, mode)
     const times = timing === null ? null : await timing.early
-    // A later edit picks again itself, and a drop leaves the pick to the redial.
-    const now = held
-    if (life.signal.aborted || ways !== timed || pick !== mode || now === null) return
+    // A later edit picks again itself, and a dial since then picked under this edit.
+    if (life.signal.aborted || ways !== timed || pick !== mode || held !== before) return
     const best = times === null ? 0 : (rankWays(times.map(ms => ms ?? null), mode)[0] as number)
-    if (typeof times?.[best] === 'number' && timed[best] !== now.way) {
+    if (typeof times?.[best] === 'number' && timed[best] !== before.way) {
       held = null
-      return now.socket.close()
+      return before.socket.close()
     }
-    tell(timed, timing, times, now.way, now.socket)
+    tell(timed, timing, times, before.way, before.socket)
   }
 
   return {
