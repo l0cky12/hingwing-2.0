@@ -8,12 +8,14 @@ import { COMMAND_KEY, MAC } from '../keys'
 import { capsOf, SHORTCUTS } from '../shortcuts'
 import { run, useTopic } from '../store'
 import { Bubble, ConnectionCard, line, People, Segmented, Server, type Look, type Segment } from './ConnectionCard'
+import { Models } from './Models'
 import { PasswordManagers } from './PasswordManagers'
 import type { CardSetup } from './screens'
 import { PAGES, settingsViewOf, whereOf, type Check, type Page, type RowId } from './settings-view'
 import { Skills } from './Skills'
 import { UNREPORTED, usageNeedsRead, usageView, type UsageAsk, type UsageView } from './usage-view'
 
+const Chip = () => <svg {...line(16, 1.8)}><rect x="6" y="6" width="12" height="12" rx="2.5" /><path d="M9.5 2.5v3.5M14.5 2.5v3.5M9.5 18v3.5M14.5 18v3.5M2.5 9.5H6M2.5 14.5H6M18 9.5h3.5M18 14.5h3.5" /></svg>
 const Contrast = () => <svg {...line(16, 1.8)}><circle cx="12" cy="12" r="8.5" /><path d="M12 7a5 5 0 0 1 0 10z" fill="currentColor" /></svg>
 const Cross = () => <svg {...line(14, 2)}><path d="M6 6l12 12M18 6 6 18" /></svg>
 const Keyboard = () => <svg {...line(16, 1.8)}><rect x="2.5" y="5.5" width="19" height="13" rx="2.5" /><path d="M6.5 9.5h.01M10 9.5h.01M14 9.5h.01M17.5 9.5h.01M6.5 12.5h.01M17.5 12.5h.01M9 15.5h6" /></svg>
@@ -32,7 +34,7 @@ const Wrench = () => <svg {...line(15, 1.9)}><path d="M14.7 6.3a1 1 0 0 0 0 1.4l
 const List = () => <svg {...line(15, 1.9)}><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" /></svg>
 
 const PAGE_ICONS: { readonly [P in Page]: () => ReactNode } = {
-  connection: () => <Server size={16} width={1.8} />, appearance: Contrast, composer: Pen, window: WindowIcon, notifications: Bell, passwords: Key, skills: Spark, permissions: Shield,
+  connection: () => <Server size={16} width={1.8} />, models: Chip, appearance: Contrast, composer: Pen, window: WindowIcon, notifications: Bell, passwords: Key, skills: Spark, permissions: Shield,
   keys: Keyboard, usage: Gauge, about: Info
 }
 
@@ -289,6 +291,8 @@ export function Settings({ setup, mode, theme, accent, onRequestClose, onShowSho
   const shown = (at: Page) => view.pages.includes(at)
   const cards: { readonly [P in Page]: ReactNode } = {
     connection: <ConnectionCard setup={setup} link={link} {...(book === undefined ? {} : { book })} />,
+    // Mounted only while shown: each asks Hermes as it mounts.
+    models: shown('models') && <Models labelledBy={`${ids}-models`} />,
     appearance: (
       <div className="card rows">
         <Choice label="Theme" desc="System follows your computer’s light or dark setting." value={theme} segments={looksOf(tone)} hidden={off('theme')} look="looks" onPick={picked => void run({ do: 'setTheme', theme: picked })} />
@@ -304,7 +308,6 @@ export function Settings({ setup, mode, theme, accent, onRequestClose, onShowSho
       </div>
     ),
     notifications: <div className="card rows"><NoticeRows off={off} /></div>,
-    // Mounted only while shown: each asks Hermes as it mounts.
     passwords: shown('passwords') && <PasswordManagers labelledBy={`${ids}-passwords`} />,
     skills: shown('skills') && <Skills />,
     permissions: (

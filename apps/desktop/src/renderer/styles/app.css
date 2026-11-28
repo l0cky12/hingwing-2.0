@@ -1068,10 +1068,19 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .settings .card.rows > .row:not([hidden]) ~ .row { border-top: 1px solid var(--hair); }
 .settings .card > * + .manager { border-top: 1px solid var(--hair); }
 .settings .card a.btn { display: inline-block; color: var(--ink); text-decoration: none; }
-.settings .managers .btn:disabled { opacity: .5; cursor: default; }
-.settings .managers .problem-line { flex: 1; min-width: 0; margin: 0; font-weight: 500; color: var(--caution); overflow-wrap: anywhere; }
+.settings :is(.managers, .models) .btn:disabled { opacity: .5; cursor: default; }
+.settings :is(.managers, .models) .problem-line { flex: 1; min-width: 0; margin: 0; font-weight: 500; color: var(--caution); overflow-wrap: anywhere; }
 .settings .bot-choose .bot-pick-button { --name-room: 220px; margin-right: 0; padding: 5px 10px 5px 8px; box-shadow: inset 0 0 0 1px var(--rule); }
 .settings .bot-choose .bot-pick-button:enabled:hover, .settings .bot-choose .bot-pick-button[aria-expanded="true"] { background: var(--paper); }
+.settings .model-pick { position: relative; display: inline-flex; max-width: 100%; }
+.settings .model-pick::after { content: ""; position: absolute; top: 50%; right: 13px; width: 6px; height: 6px; margin-top: -5px; border-right: 1.5px solid var(--graphite); border-bottom: 1.5px solid var(--graphite); transform: rotate(45deg); pointer-events: none; }
+.settings .model-select { appearance: none; min-width: 230px; max-width: 100%; padding: 7px 30px 7px 11px; font: inherit; font-size: var(--text-sm); color: var(--ink); background: var(--paper); border: 1px solid var(--edge); border-radius: var(--radius-sm); cursor: pointer; }
+.settings .model-select:enabled:hover { border-color: var(--graphite); }
+.settings .model-select:focus-visible { outline: none; border-color: var(--signal); box-shadow: var(--ring); }
+.settings .model-pick:has(:disabled) { opacity: .6; }
+.settings .model-select:disabled { cursor: default; }
+.settings .model-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 18px 14px; padding: 9px 12px; border-radius: var(--radius-md); color: var(--ink); background: var(--caution-soft); }
+.settings .model-confirm p { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
 .settings .manager .label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .settings .manager .state { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 7px; border-radius: var(--radius-pill); font: 500 var(--text-xs)/20px var(--sans); }
 .settings .manager .state::before { content: ""; width: 7px; height: 7px; border-radius: var(--radius-round); background: currentColor; }
@@ -1084,12 +1093,15 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .settings .manager .unlock input { flex: 1; min-width: 0; max-width: 320px; padding: 6px 11px; font: var(--text-sm)/1.45 var(--sans); color: var(--ink); background: var(--paper); border: 1px solid var(--edge); border-radius: var(--radius-sm); }
 .settings .manager .unlock input:focus { outline: none; border-color: var(--signal); box-shadow: var(--ring); }
 .settings .manager .unlock code { padding: 1px 5px; border-radius: var(--radius-xs); font-size: var(--text-xs); color: var(--ink); background: var(--paper); box-shadow: inset 0 0 0 1px var(--hair); overflow-wrap: anywhere; }
-.settings .manager .problem { margin: 0 18px 14px; padding: 9px 12px; border-left: 3px solid var(--caution); border-radius: 0 var(--radius-md) var(--radius-md) 0; color: var(--ink); background: var(--caution-soft); overflow-wrap: anywhere; }
+.settings :is(.manager, .models) .problem { margin: 0 18px 14px; padding: 9px 12px; border-left: 3px solid var(--caution); border-radius: 0 var(--radius-md) var(--radius-md) 0; color: var(--ink); background: var(--caution-soft); overflow-wrap: anywhere; }
 
 @container (max-width: 520px) {
   .settings .tones { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .settings .card .row:has(> .control .seg) .text { flex-basis: 100%; }
   .settings .card .row:has(> .control .seg) .control { margin-left: auto; }
+  .settings .card .row:has(> .control .model-pick) .text { flex-basis: 100%; }
+  .settings .card .row > .control:has(.model-pick) { flex: 1 1 100%; }
+  .settings :is(.model-pick, .model-select) { width: 100%; }
   .settings .card .machine .text { flex-basis: calc(100% - 40px - 16px); }
   .settings .card .machine .control { margin-left: auto; }
   .settings .card .way { padding-left: 18px; }
@@ -1120,7 +1132,9 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
   :is(.settings, .setup) .machine .state, .shortcut-sheet .where, :is(.settings, .setup) .edit-form .problem { border: 1px solid CanvasText; }
   :is(.settings, .setup) :is(.machine, .way, .servers) .state::before { box-sizing: border-box; background: none; border: 3.5px solid CanvasText; }
   :is(.settings, .setup) .edit-foot .progress .glyph { background: none; border: 5px solid CanvasText; }
-  .settings .manager .state, .settings .manager .problem, .settings .bot-choose .bot-pick-button { border: 1px solid CanvasText; }
+  .settings .manager .state, .settings :is(.manager, .models) .problem, .settings .bot-choose .bot-pick-button, .settings .model-confirm { border: 1px solid CanvasText; }
+  .settings .model-select { border-color: CanvasText; }
+  .settings .model-select:focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
   .settings .manager .state::before { box-sizing: border-box; background: none; border: 3.5px solid CanvasText; }
 }
 
