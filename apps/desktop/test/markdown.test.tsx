@@ -54,6 +54,9 @@ function marksEveryPrefix() {
   }
 }
 
+/** Rendering every prefix is quadratic in the reply's length, which a busy machine stretches past the default 5 s. */
+const EVERY_PREFIX_MS = 30_000
+
 const TS_BLOCK = `// Keep each backup for a week.
 const days: number = 7
 function backupName(file: string): string {
@@ -61,9 +64,9 @@ function backupName(file: string): string {
 }`
 
 describe('Markdown', () => {
-  it('renders every prefix of the reply without throwing or showing a fence marker', rendersEveryPrefix)
+  it('renders every prefix of the reply without throwing or showing a fence marker', rendersEveryPrefix, EVERY_PREFIX_MS)
 
-  it('marks each shown text with the field find searches, at every prefix of the reply', marksEveryPrefix)
+  it('marks each shown text with the field find searches, at every prefix of the reply', marksEveryPrefix, EVERY_PREFIX_MS)
 
   it('reads the reply as a two-item list, a level-two heading, a link, a three-column table, an sh block and a ts block', () => {
     const blocks = parseMarkdown(reply)
@@ -165,9 +168,9 @@ describe('Markdown with the grammars loaded', () => {
     for (const block of blocks) expect(block).toMatch(COLORED)
   })
 
-  it('renders every prefix of the reply without throwing or showing a fence marker', rendersEveryPrefix)
+  it('renders every prefix of the reply without throwing or showing a fence marker', rendersEveryPrefix, EVERY_PREFIX_MS)
 
-  it('marks each shown text with the field find searches, at every prefix of the reply', marksEveryPrefix)
+  it('marks each shown text with the field find searches, at every prefix of the reply', marksEveryPrefix, EVERY_PREFIX_MS)
 
   it('shows a colored ts block with exactly the text it was given', () => {
     const source = 'const tag = `<${name} a="1">` && b > c\n// it\'s \'quoted\' & <done>\nlet n: number = 0x1F'
@@ -236,7 +239,7 @@ describe('Markdown with a mermaid block', () => {
       const fields = proseLeaves(parseMarkdown(prefix)).map((leaf, index) => [fieldId('t1/0', `block ${index}`), leafText(leaf)])
       expect(markedText(render(prefix)), `prefix of ${end} characters`).toEqual(fields)
     }
-  })
+  }, EVERY_PREFIX_MS)
 })
 
 const PAGE = '<button style="padding: 8px 14px; border-radius: 6px">Save & close</button>\n<script>alert(1)</script>'

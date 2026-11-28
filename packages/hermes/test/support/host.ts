@@ -26,6 +26,9 @@ export const host = async (name: ScenarioName, gateway: Gateway | null = null, h
 
 const PATIENCE_MS = 10_000
 
+/** Lets a test that starts processes wait out several `until`s, so `until` names what never happened before vitest gives up. */
+export const PATIENT_TEST_MS = 3 * PATIENCE_MS
+
 /** Waits for something another process does. Fails with `what` when it never happens. */
 export async function until(what: string, happened: () => boolean): Promise<void> {
   const deadline = systemClock.now() + PATIENCE_MS
