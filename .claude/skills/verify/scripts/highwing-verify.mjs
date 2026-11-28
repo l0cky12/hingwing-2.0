@@ -1223,10 +1223,12 @@ async function checkRing(ctx, role, name) {
   if (!ring.focused) throw new Error(`${role} "${name}" does not have focus`)
   if (ring.style === 'none' || ring.width === 0) throw new Error(`${role} "${name}" draws no outline`)
   const reach = ring.offset + ring.width
-  const clip = { x: Math.floor(ring.box.left - reach), y: Math.floor(ring.box.top - reach) }
+  const clip = { x: Math.max(0, Math.floor(ring.box.left - reach)), y: Math.max(0, Math.floor(ring.box.top - reach)) }
   clip.width = Math.ceil(ring.box.right + reach) - clip.x
   clip.height = Math.ceil(ring.box.bottom + reach) - clip.y
   const png = await ctx.page.screenshot({ clip, animations: 'disabled', caret: 'hide' })
+  // Playwright cuts the clip down to the window, so the shot can be smaller than the clip asked for.
+  const shot = { width: png.readUInt32BE(16), height: png.readUInt32BE(20) }
   const raw = spawnSync('magick', ['png:-', '-depth', '8', 'rgb:-'], { input: png, maxBuffer: 64 << 20 })
   if (raw.status !== 0) throw new Error('magick could not read the ring shot')
   const want = ring.color.match(/[\d.]+/g).slice(0, 3).map(Number)
@@ -1239,7 +1241,12 @@ async function checkRing(ctx, role, name) {
   }
   const missing = []
   for (const [side, [x, y]] of Object.entries(sides)) {
-    const at = 3 * (Math.floor(y - clip.y) * clip.width + Math.floor(x - clip.x))
+    const [column, row] = [Math.floor(x - clip.x), Math.floor(y - clip.y)]
+    if (column < 0 || row < 0 || column >= shot.width || row >= shot.height) {
+      log(ctx, `  ${side} of the ring at x ${Math.floor(x)}, y ${Math.floor(y)} is offscreen, outside the window`)
+      continue
+    }
+    const at = 3 * (row * shot.width + column)
     const got = [...raw.stdout.subarray(at, at + 3)]
     const off = Math.max(...got.map((value, i) => Math.abs(value - want[i])))
     log(ctx, `  ${side} of the ring at x ${Math.floor(x)}, y ${Math.floor(y)} is rgb(${got.join(', ')}), the outline is rgb(${want.join(', ')})`)
