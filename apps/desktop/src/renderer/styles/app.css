@@ -202,6 +202,7 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
   background: var(--surface-user); border-radius: var(--radius-lg);
   font-size: var(--text-lg); line-height: 1.5; max-width: min(62ch, 100% - 112px); white-space: pre-wrap; position: relative;
 }
+.request > .quoted { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 2px 0 6px; padding-left: 10px; border-left: 2px solid var(--edge); color: var(--graphite); font-size: var(--text-md); }
 
 .thread { position: relative; padding-left: var(--col); display: flex; flex-direction: column; gap: var(--gap); }
 .thread > * { position: relative; }

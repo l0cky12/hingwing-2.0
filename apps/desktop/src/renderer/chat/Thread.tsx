@@ -1,7 +1,9 @@
 import { versionLabel, type AdmissionId, type Bot, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Relay, type Told, type TurnId, type Version, type Versions } from '@highwing/hermes/domain'
 import { fieldId, findInThread, multiReply, type BesideRow, type Changing, type FindMatch, type PendingRow, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { createContext, Fragment, memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { Quote } from '../../ipc-contract'
 import { Avatar, BotFace } from '../bots/Avatar'
+import { quoteOf } from '../composer/quote'
 import { SentAttachments } from './Attachments'
 import { AskCard, type RequestAnswer } from './Asks'
 import { Command } from './Copy'
@@ -297,6 +299,14 @@ export type Rewrite = (rowId: number, text: string) => void
 
 export type ReactOn = (turn: TurnId, emoji: string | null) => void
 
+export type ReplyTo = (quote: Quote) => void
+
+function Asked({ message }: { readonly message: string }) {
+  const { quote, body } = quoteOf(message)
+  if (quote === null) return message
+  return <><span className="quoted" data-find-text={message.slice(0, message.length - body.length)}>{quote.text}</span>{body}</>
+}
+
 export function VersionSwitch({ versions, onVersion }: { readonly versions: Versions; readonly onVersion: (version: Version) => void }) {
   const { versions: all, current } = versions
   const step = (by: 1 | -1) => {
@@ -318,6 +328,7 @@ interface TurnProps {
   readonly canBranch: boolean
   readonly onEdit: Rewrite
   readonly onRegenerate: Rewrite
+  readonly onReply: ReplyTo
   readonly onBranch: (rowId: number) => void
   readonly onNewChat: (text: string) => void
   readonly versions: readonly Versions[]
@@ -332,21 +343,23 @@ const RUNNING_ENDS: ReadonlySet<ThreadEnd['kind']> = new Set(['at', 'tip', 'paus
 
 const HANDED = 'Handed over'
 
-export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAgain, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, canReact, onReact, helpers, showWork }: TurnProps) {
+export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAgain, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onReply, onBranch, onNewChat, versions, onVersion, canReact, onReact, helpers, showWork }: TurnProps) {
   const { end, rowId, request, reactions } = turn
   const regenerates = showsRegenerate && rowId !== null && request !== null
   const movesToNewChat = end.kind === 'failed' && end.remedy === 'newChat' && request !== null
   const live = end.kind === 'tip' || (end.kind === 'at' && end.tone === 'live')
   const requestActs: MessageActs = request === null ? {} : {
     copy: { text: request, name: 'Copy request' },
+    reply: { disabled: false, run: () => onReply({ from: 'you', text: quoteOf(request).body }) },
     ...(rowId !== null && {
       edit: { disabled: !canEdit, run: () => onEdit(rowId, request) },
       branch: { disabled: !canBranch, run: () => onBranch(rowId) }
     })
   }
   const prose = turn.nodes.flatMap(node => (node.kind === 'prose' ? [node.markdown] : []))
+  const said = prose.join('\n\n')
   const replyActs: MessageActs = {
-    ...(prose.length > 0 && !RUNNING_ENDS.has(end.kind) && { copy: { text: prose.join('\n\n'), name: 'Copy reply' } }),
+    ...(prose.length > 0 && !RUNNING_ENDS.has(end.kind) && { copy: { text: said, name: 'Copy reply' }, reply: { disabled: false, run: () => onReply({ from: 'hermes', text: said }) } }),
     ...(regenerates && { regenerate: { disabled: !canRegenerate, run: () => onRegenerate(rowId, request) } }),
     ...(reactions !== null && { react: { given: reactions.given, disabled: !canReact, onReact: emoji => onReact(reactions.turn, emoji) } })
   }
@@ -357,7 +370,7 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAg
       <SentAttachments attachments={turn.attachments} />
       {request !== null && (
         <p className={cx('request', turn.handed && 'handed')} data-find={fieldId(turn.key, 'request')}>
-          {request}
+          <Asked message={request} />
           <span className="actions">
             {versions.map(group => <VersionSwitch key={group.versions[0]?.sessionId} versions={group} onVersion={onVersion} />)}
             <MessageActions acts={requestActs} />
@@ -442,7 +455,7 @@ export function Pending({ row, queue }: { readonly row: PendingRow; readonly que
   return (
     <article className="turn pending">
       <SentAttachments attachments={row.attachments} />
-      <p className="request" data-find={fieldId(row.key, 'text')}>{row.text}</p>
+      <p className="request" data-find={fieldId(row.key, 'text')}><Asked message={row.text} /></p>
       {row.status === 'failed'
         ? <p className="err" data-find={fieldId(row.key, 'detail')}>{row.detail}</p>
         : row.status === 'sending' ? <p className="notice">Sending</p> : <Listed row={row} queue={queue} />}
@@ -468,6 +481,7 @@ interface ThreadProps {
   readonly canBranch: boolean
   readonly onEdit: Rewrite
   readonly onRegenerate: Rewrite
+  readonly onReply: ReplyTo
   readonly onBranch: (rowId: number) => void
   readonly onNewChat: (text: string) => void
   readonly versions: ChatVersions
@@ -494,7 +508,7 @@ const sideFound = ({ id, after, asked, answer }: SideRow): Found => ({
 const landingOf = ({ versions, current }: Versions) => versions[current]?.landing
 const NO_GROUPS: readonly Versions[] = []
 
-export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onBranch, onNewChat, versions, onVersion, queue, canReact, onReact, helpers, showWork }: ThreadProps) {
+export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onReply, onBranch, onNewChat, versions, onVersion, queue, canReact, onReact, helpers, showWork }: ThreadProps) {
   const shown = useMemo(() => shownWork(view, showWork), [view, showWork])
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
@@ -626,7 +640,7 @@ export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequ
             <Turn
               turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer} onAskAgain={onAskAgain}
               canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} canBranch={canBranch}
-              onEdit={onEdit} onRegenerate={onRegenerate} onBranch={onBranch} onNewChat={onNewChat} versions={groupsAt(turn.rowId)} onVersion={onVersion}
+              onEdit={onEdit} onRegenerate={onRegenerate} onReply={onReply} onBranch={onBranch} onNewChat={onNewChat} versions={groupsAt(turn.rowId)} onVersion={onVersion}
               canReact={canReact} onReact={onReact} helpers={helpers} showWork={showWork}
             />
             {beside(relayed.after.get(turn.key), answered.after.get(turn.key))}
