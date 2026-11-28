@@ -600,7 +600,7 @@ describe('validators', () => {
 })
 
 const CATALOG: readonly CatalogPlugin[] = [
-  { name: 'mem0', description: 'Memory.', tier: 'community', category: 'memory', maintainer: 'mem0ai', version: '1.3.0', platforms: [], stars: 3, featured: null, repo: 'https://github.com/mem0ai/mem0' }
+  { name: 'mem0', description: 'Memory.', tier: 'community', category: 'memory', maintainer: 'mem0ai', version: '1.3.0', platforms: [], stars: 3, featured: null, repo: 'https://github.com/mem0ai/mem0', image: null }
 ]
 const still = <T>(value: T) => ({ get: () => value, subscribe: () => () => {} })
 const LINK: Link = { state: 'blocked', why: 'hermes-missing', message: 'A link of this test.' }

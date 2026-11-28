@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { parsePluginCatalog, pluginsView, type CatalogPlugin, type Plugin } from '../src/domain/plugins'
 
 const offered = (name: string, fields: Partial<CatalogPlugin> = {}): CatalogPlugin => ({
-  name, description: '', tier: 'community', category: 'tools', maintainer: 'someone', version: '1.0.0', platforms: [], stars: null, featured: null, repo: `https://github.com/someone/${name}`, ...fields
+  name, description: '', tier: 'community', category: 'tools', maintainer: 'someone', version: '1.0.0', platforms: [], stars: null, featured: null, repo: `https://github.com/someone/${name}`, image: null, ...fields
 })
 const installed = (name: string, catalogName: string | null = null, description = ''): Plugin => ({ name, key: name, version: '1.0.0', description, source: 'user', enabled: true, catalogName })
 const names = (plugins: readonly { readonly name: string }[]) => plugins.map(plugin => plugin.name)
@@ -11,10 +11,12 @@ describe('parsePluginCatalog', () => {
   it('reads a public catalog row into what a card shows', () => {
     expect(parsePluginCatalog([{
       name: 'mem0', description: ' Mem0 memory provider. ', repo: 'https://github.com/mem0ai/mem0', sha: '43849c6', tier: 'community', category: 'memory', maintainer: 'mem0ai',
-      platforms: ['linux', 'macos'], capabilities: { providesTools: [] }, version: '1.3.0', readme: '# Mem0', stars: 69507, featured: 2
+      platforms: ['linux', 'macos'], capabilities: { providesTools: [] }, version: '1.3.0', readme: '# Mem0', stars: 69507, featured: 2,
+      image: 'https://raw.githubusercontent.com/mem0ai/mem0/main/docs/images/banner.png'
     }])).toEqual([{
       name: 'mem0', description: 'Mem0 memory provider.', tier: 'community', category: 'memory', maintainer: 'mem0ai', version: '1.3.0',
-      platforms: ['linux', 'macos'], stars: 69507, featured: 2, repo: 'https://github.com/mem0ai/mem0'
+      platforms: ['linux', 'macos'], stars: 69507, featured: 2, repo: 'https://github.com/mem0ai/mem0',
+      image: 'https://raw.githubusercontent.com/mem0ai/mem0/main/docs/images/banner.png'
     }])
   })
 
@@ -23,7 +25,20 @@ describe('parsePluginCatalog', () => {
       { name: ' ', tier: 'official' }, { tier: 'official' }, { name: 'odd', tier: 'experimental' }, 'stray', null,
       { name: 'kept', tier: 'verified', stars: -3, featured: 1.5, platforms: ['macos', 7, ''] },
       { name: 'kept', tier: 'official', description: 'a second row' }
-    ])).toEqual([{ name: 'kept', description: '', tier: 'verified', category: '', maintainer: '', version: '', platforms: ['macos'], stars: null, featured: null, repo: '' }])
+    ])).toEqual([{ name: 'kept', description: '', tier: 'verified', category: '', maintainer: '', version: '', platforms: ['macos'], stars: null, featured: null, repo: '', image: null }])
+  })
+
+  it('keeps art only at an https address on a GitHub host', () => {
+    const imageOf = (image: unknown) => parsePluginCatalog([{ name: 'p', tier: 'community', image }])?.[0]?.image
+    expect(imageOf('https://raw.githubusercontent.com/o/r/main/art.png')).toBe('https://raw.githubusercontent.com/o/r/main/art.png')
+    expect(imageOf('https://gist.githubusercontent.com/o/abc/raw/art.jpg')).toBe('https://gist.githubusercontent.com/o/abc/raw/art.jpg')
+    expect(imageOf('https://github.com/o/r/raw/main/art.png')).toBe('https://github.com/o/r/raw/main/art.png')
+    expect(imageOf('http://raw.githubusercontent.com/o/r/main/art.png')).toBeNull()
+    expect(imageOf('https://example.com/art.png')).toBeNull()
+    expect(imageOf('https://githubusercontent.com.example.com/art.png')).toBeNull()
+    expect(imageOf('not a url')).toBeNull()
+    expect(imageOf('')).toBeNull()
+    expect(imageOf(7)).toBeNull()
   })
 
   it('answers null for a reply that is not a list', () => {

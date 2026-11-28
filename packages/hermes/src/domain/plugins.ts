@@ -18,7 +18,10 @@ export interface Plugin {
 export const CATALOG_TIERS = ['official', 'verified', 'community'] as const
 export type CatalogTier = typeof CATALOG_TIERS[number]
 
-/** One row of Hermes's public plugin catalog. `platforms` empty: it runs on any. `featured`: Nous's rank for it, 1 first, or null for none. */
+/**
+ * One row of Hermes's public plugin catalog. `platforms` empty: it runs on any. `featured`: Nous's rank for it, 1 first, or null for none.
+ * `image`: the card's art, an https URL on a GitHub host, or null.
+ */
 export interface CatalogPlugin {
   readonly name: string
   readonly description: string
@@ -30,6 +33,7 @@ export interface CatalogPlugin {
   readonly stars: number | null
   readonly featured: number | null
   readonly repo: string
+  readonly image: string | null
 }
 
 /** What Hermes says after it installed a catalog plugin. `missingEnv`: settings it needs before it works. */
@@ -47,6 +51,13 @@ const textOf = (raw: unknown) => (typeof raw === 'string' ? raw.trim() : '')
 const rankOf = (raw: unknown) => (Number.isSafeInteger(raw) && (raw as number) >= 0 ? (raw as number) : null)
 const tierOf = (raw: unknown) => CATALOG_TIERS.find(tier => tier === raw)
 
+/** Only the hosts Hermes desktop trusts for a card's art. */
+function imageOf(raw: unknown): string | null {
+  const url = URL.parse(textOf(raw))
+  if (url?.protocol !== 'https:') return null
+  return url.hostname === 'github.com' || url.hostname.endsWith('.githubusercontent.com') ? url.href : null
+}
+
 /**
  * The public catalog Hermes desktop browses (`docs/api/plugins.json`), as a list of rows. null: not a list. A row with no name or
  * a tier this build does not know is dropped, and only the first row of a name is kept.
@@ -62,7 +73,7 @@ export function parsePluginCatalog(raw: unknown): readonly CatalogPlugin[] | nul
     byName.set(name, {
       name, description: textOf(row.description), tier, category: textOf(row.category), maintainer: textOf(row.maintainer), version: textOf(row.version),
       platforms: Array.isArray(row.platforms) ? row.platforms.map(textOf).filter(platform => platform !== '') : [],
-      stars: rankOf(row.stars), featured: rankOf(row.featured), repo: textOf(row.repo)
+      stars: rankOf(row.stars), featured: rankOf(row.featured), repo: textOf(row.repo), image: imageOf(row.image)
     })
   }
   return [...byName.values()]
