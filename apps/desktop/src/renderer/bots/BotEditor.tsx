@@ -20,7 +20,7 @@ export interface BotEditorProps extends EditCalls {
 
 export function BotEditor({ bot, details: loaded, onDescribe, onEdit, onPickPicture, onRemovePicture, pet, onClose, className, tabs }: BotEditorProps) {
   const [details, setDetails] = useState(loaded)
-  const [picturing, setPicturing] = useState<{ readonly busy: boolean; readonly drawing: boolean; readonly words: string | null }>({ busy: false, drawing: false, words: null })
+  const [picturing, setPicturing] = useState<{ readonly doing: 'file' | 'pet' | null; readonly words: string | null }>({ doing: null, words: null })
   const forget = useForgetPicture()
   const drawPet = usePetPicture(pet)
 
@@ -29,11 +29,11 @@ export function BotEditor({ bot, details: loaded, onDescribe, onEdit, onPickPict
     setDetails(saved.details)
     return saved.submitted
   }
-  const picture = async (change: () => Promise<CommandOutcome<PictureChoice | void>>, drawing = false) => {
-    setPicturing({ busy: true, drawing, words: null })
+  const picture = async (change: () => Promise<CommandOutcome<PictureChoice | void>>, doing: 'file' | 'pet' = 'file') => {
+    setPicturing({ doing, words: null })
     const outcome = await change()
     if (outcome.ok && outcome.value !== 'cancelled') forget(bot.id)
-    setPicturing({ busy: false, drawing: false, words: outcome.ok ? null : outcome.refusal.message })
+    setPicturing({ doing: null, words: outcome.ok ? null : outcome.refusal.message })
   }
 
   return (
@@ -43,9 +43,9 @@ export function BotEditor({ bot, details: loaded, onDescribe, onEdit, onPickPict
           {tabs?.(sending)}
           <div className="bot-picture">
             <Avatar bot={bot} size={56} />
-            <button type="button" disabled={picturing.busy} onClick={() => void picture(() => onPickPicture(bot.id))}>Upload picture</button>
-            <button type="button" disabled={picturing.busy} onClick={() => void picture(() => drawPet(bot.id, details), true)}>{picturing.drawing ? 'Drawing…' : 'Generate pet picture'}</button>
-            {bot.picture && <button type="button" disabled={picturing.busy} onClick={() => void picture(() => onRemovePicture(bot.id))}>Remove picture</button>}
+            <button type="button" disabled={picturing.doing !== null} onClick={() => void picture(() => onPickPicture(bot.id))}>Upload picture</button>
+            <button type="button" disabled={picturing.doing !== null} onClick={() => void picture(() => drawPet(bot.id, details), 'pet')}>{picturing.doing === 'pet' ? 'Drawing…' : 'Generate pet picture'}</button>
+            {bot.picture && <button type="button" disabled={picturing.doing !== null} onClick={() => void picture(() => onRemovePicture(bot.id))}>Remove picture</button>}
             {picturing.words !== null && <p className="form-refused" role="alert">{picturing.words}</p>}
           </div>
         </>
