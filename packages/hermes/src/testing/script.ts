@@ -109,8 +109,8 @@ function memorySocket(gateway: ScriptedGateway): WireSocket {
  * message with one turn that says `<profile>: <text>`, naming the profile the submit was routed by.
  * A `session.mutate` that renames one of these chats retitles it, and `session.export` renders its title and messages.
  * The story session is the home bot's Bot Chat, unless the header says `homeBotChat: false`.
- * With a `relay` header it answers `bot_relay.deliver` for each profile as the header scripts it: one
- * reply after a delay on the clock, or a refusal. Without one it knows no `bot_relay.*` method.
+ * With a `relay` header it answers `bot_relay.deliver` for each profile as the header scripts it: `claimed` at once, and
+ * the same id asked again `settled` with one reply once a delay on the clock has passed, or a refusal. Without one it knows no `bot_relay.*` method.
  * With a `tree` header it answers `projects.tree` for a profile with its chats beside the story, each branch naming the
  * chat it was made from. Without one it refuses the call as an unknown method. It pages `session.transcript` for those chats.
  * With a `paths` header it answers `complete.path` from the header's words, and its `cwd` is the story session's `info.cwd`.

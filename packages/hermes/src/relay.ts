@@ -46,11 +46,11 @@ export function relayBook(conn: Pick<Connection, 'call' | 'as' | 'link'>, clock:
   /** Repeats `deliver` with the same id until its receipt is final, all within `RELAY_TIMEOUT_MS`. */
   const follow = async (relay: Relay, to: Bot): Promise<RelayState> => {
     const deadline = clock.now() + RELAY_TIMEOUT_MS
-    for (;;) {
-      const state = parseDelivery(await conn.as(to.id).call('bot_relay.deliver', { id: relay.id, message: relay.text }, deadline - clock.now()), to.name)
+    for (let left = RELAY_TIMEOUT_MS; ; left = deadline - clock.now()) {
+      if (left <= 0) throw new Offline(`bot_relay.deliver gave no final answer in ${RELAY_TIMEOUT_MS} ms`)
+      const state = parseDelivery(await conn.as(to.id).call('bot_relay.deliver', { id: relay.id, message: relay.text }, left), to.name)
       if (state.s !== 'waiting') return state
-      if (deadline - clock.now() <= RELAY_POLL_MS) throw new Offline(`bot_relay.deliver gave no final answer in ${RELAY_TIMEOUT_MS} ms`)
-      await new Promise<void>(resolve => clock.setTimeout(resolve, RELAY_POLL_MS))
+      await new Promise<void>(resolve => clock.setTimeout(resolve, Math.min(RELAY_POLL_MS, deadline - clock.now())))
     }
   }
 
