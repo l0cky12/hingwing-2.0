@@ -18,10 +18,7 @@ export { fieldId, findInThread, type Beside, type BesideRow, type Changing, type
 export { multiReply } from './multi'
 export { answeringWords, groupThread, namesInWords, type GroupItemView, type GroupThreadView, type GroupTurnView, type NameOf } from './group-thread'
 
-/**
- * A page the bot made: an HTML file a finished step wrote. `title` is the `<title>` a diff of it shows, else the file's name.
- * `version` is the node key of the turn's last finished step that wrote it.
- */
+/** A page the bot made: an HTML file a finished step wrote. `title` is the `<title>` a diff of it shows, else the file's name. */
 export interface PageView { readonly path: string; readonly title: string; readonly version: string }
 
 /** Text with literal parts. `code` is set in JetBrains Mono; nothing here is HTML. */
@@ -35,7 +32,6 @@ export interface ThreadView {
   /** What Hermes waits on you for, oldest first, drawn after the turns. */
   readonly asks: readonly AskCard[]
   readonly earlier: Session['earlier']
-  /** Each page's path to the `version` of its last card in the thread. A card with another version is an older one. */
   readonly newestPages: ReadonlyMap<string, string>
   /**
    * The earliest instant after the clock's `now` at which the same session would read differently

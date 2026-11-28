@@ -1,23 +1,8 @@
-"""Write fixtures/page-versions.jsonl: one chat in which Hermes writes the same page twice.
-
-Run with any Python 3:  python3 fixtures/make_page_versions_fixture.py
-Check it:               python3 fixtures/make_page_versions_fixture.py --check
-
-The first turn is fixtures/preview.jsonl's turn without its `desktop_preview` step, so no pane opens by itself. Its
-`write_file` step writes fixtures/preview/index.html, titled "Demo page", to /tmp/hermes-proto-work/site/index.html.
-The story then waits for the client's next `prompt.submit` and plays a second turn whose `write_file` step writes
-fixtures/page-versions/index.html, titled "Demo page, updated", to the same path. A `stored` step after each turn
-holds the rows a resume shows.
-
-Unlike preview.jsonl this is not a recording of Hermes's gateway. Every frame is a copy of one of preview.jsonl's,
+"""Unlike preview.jsonl this is not a recording of Hermes's gateway. Every frame is a copy of one of preview.jsonl's,
 with the ids, `seq`, `at`, row ids and `persisted_turn` renumbered, and the admission counted on as Hermes does in a
 recorded two-turn chat such as panels.jsonl (`sequence` 2, `execution_generation` 2, `revision` 2). The second step's
 `inline_diff` is Hermes's rendering of `difflib.unified_diff` from the first page to the second
 (agent/display.py `_diff_from_snapshot` and `_render_inline_unified_diff`), in the colours of the recorded diffs.
-
---check rebuilds the file and fails if it differs from page-versions.jsonl, if the first turn's frames up to its
-`write_file` step and its first stored rows differ from preview.jsonl's, or if the colours differ from errand.jsonl's
-recorded diff, which has removed and unchanged lines.
 """
 import copy
 import difflib

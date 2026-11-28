@@ -2,7 +2,6 @@ import type { PageView } from '@highwing/thread'
 import { createContext, useContext, useState, type MouseEvent } from 'react'
 import { baseName, FileCallContext } from './FilePath'
 
-/** The thread's `newestPages`, read by each card so a new version of a page redraws its cards without redrawing their turns. */
 export const NewestPagesContext = createContext<ReadonlyMap<string, string>>(new Map())
 
 function PageCard({ page }: { readonly page: PageView }) {
@@ -35,7 +34,6 @@ function PageCard({ page }: { readonly page: PageView }) {
   )
 }
 
-/** The pages a turn made, under its reply. Open fills the window with one and moves the chat to its side. An older card points down to the newest. */
 export function Pages({ pages }: { readonly pages: readonly PageView[] }) {
   if (pages.length === 0) return null
   return <div className="pages">{pages.map(page => <PageCard key={page.path} page={page} />)}</div>
