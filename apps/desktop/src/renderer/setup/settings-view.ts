@@ -49,7 +49,7 @@ export const ROWS: readonly Row[] = [
   { id: 'theme', page: 'appearance', searchText: 'Theme. System, Light, Dark. System follows your computer’s light or dark setting. mode colour color' },
   { id: 'accent', page: 'appearance', searchText: 'Accent. Bot, Ink, Slate, Plum, Olive, Mauve, Umber. Bot uses the color of the open chat’s bot. colour color tint header send button' },
   { id: 'sidebar', page: 'appearance', searchText: 'Show in the sidebar. Bots, Chats. Bots shows your bots. Chats shows the chats of the open bot.' },
-  { id: 'send-key', page: 'composer', searchText: 'Send with Ctrl+Enter. Enter adds a new line. When off, Enter sends and Shift+Enter adds a line. send key message newline line break cmd ⌘' },
+  { id: 'send-key', page: 'composer', searchText: `Send with Ctrl+Enter. Enter adds a new line. When off, Enter sends and Shift+Enter adds a line. send key message newline line break ${CTRL}` },
   { id: 'spell-check', page: 'composer', searchText: 'Check spelling. Underline misspelled words and suggest fixes. spell check spellcheck spelling dictionary typo' },
   { id: 'on-close', page: 'window', searchText: 'When the window closes. Quit, Keep in the tray. Quit leaves Highwing. Keep in the tray leaves it running. close exit background' },
   { id: 'notice-asks', page: 'notifications', searchText: `Approvals and questions. When a bot waits on you in a chat you aren’t looking at. ${NOTICE}` },
