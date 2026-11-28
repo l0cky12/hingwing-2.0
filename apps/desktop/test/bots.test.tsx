@@ -6,7 +6,7 @@ import { BotsPanel } from '../src/renderer/bots/Bots'
 import { botMenuOf } from '../src/renderer/bots/bot-menu'
 import type { LookCalls } from '../src/renderer/bots/LookPicker'
 import { RowMenu } from '../src/renderer/bots/RowMenu'
-import { APPROVED, fact, listed } from './support/bots'
+import { APPROVED, fact, listed, NO_PET } from './support/bots'
 
 const AT_LAUNCH: OpenChat = { shown: { kind: 'bot', bot: 'default' as BotId, sessionId: 's1' as SessionId }, opening: null, missing: null }
 const ONLINE: Link = { state: 'online' }
@@ -27,7 +27,7 @@ const showing = (
       onRenameGroup={async () => ({ ok: true, value: undefined })} onDeleteGroup={async () => ({ ok: true, value: undefined })}
       onModels={async () => ({ ok: true, value: { options: [], fallback: null } })}
       onDescribe={async bot => ({ ok: true, value: { bot, name: 'Rae', description: '', persona: '', revision: 2 } })} onEdit={async () => ({ ok: true, value: undefined })}
-      onPickPicture={async () => ({ ok: true, value: 'cancelled' })} onRemovePicture={async () => ({ ok: true, value: undefined })} looks={NO_LOOKS}
+      onPickPicture={async () => ({ ok: true, value: 'cancelled' })} onRemovePicture={async () => ({ ok: true, value: undefined })} pet={NO_PET} looks={NO_LOOKS}
     />
   )
 const render = (bots: Bots | undefined) => showing(bots, AT_LAUNCH)

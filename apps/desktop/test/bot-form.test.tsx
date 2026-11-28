@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { BotEditor } from '../src/renderer/bots/BotEditor'
 import { BotForm } from '../src/renderer/bots/BotForm'
 import { canSubmit, draftOf, editOf, EMPTY_DRAFT, groupModels, nameProblem, nextForm, saveEdit, startForm, type EditCalls } from '../src/renderer/bots/bot-form'
-import { APPROVED, fact, listed } from './support/bots'
+import { APPROVED, fact, listed, NO_PET } from './support/bots'
 
 const model = (id: string, provider: string, providerName: string) => ({ id, provider, providerName }) as ModelOption
 const MODELS = { options: [model('fast-small', 'acme', 'Acme'), model('careful-large', 'acme', 'Acme'), model('local-7b', 'local', 'Local')], fallback: null }
@@ -205,7 +205,7 @@ describe('the details dialog', () => {
     <BotEditor
       bot={{ id: 'rae' as BotId, name: 'Rae', preview: null, description: null, tone: 'plum', picture, pinned: false, hidden: false }} details={RAE}
       onDescribe={async () => ({ ok: true, value: RAE })} onEdit={async () => ({ ok: true, value: undefined })}
-      onPickPicture={async () => ({ ok: true, value: 'cancelled' })} onRemovePicture={async () => ({ ok: true, value: undefined })} onClose={() => {}}
+      onPickPicture={async () => ({ ok: true, value: 'cancelled' })} onRemovePicture={async () => ({ ok: true, value: undefined })} pet={NO_PET} onClose={() => {}}
     />
   )
   const markup = shown(true)
@@ -220,8 +220,8 @@ describe('the details dialog', () => {
     expect(markup).toContain('>You write short, plain reports.</textarea>')
   })
 
-  it('offers Upload picture, and Remove picture only for a bot that has one, ahead of Cancel and Save', () => {
-    expect(Array.from(markup.matchAll(/<button[^>]*>([^<]*)<\/button>/g), ([, name]) => name)).toEqual(['Upload picture', 'Remove picture', 'Cancel', 'Save'])
+  it('offers Upload picture and Generate pet picture, and Remove picture only for a bot that has one, ahead of Cancel and Save', () => {
+    expect(Array.from(markup.matchAll(/<button[^>]*>([^<]*)<\/button>/g), ([, name]) => name)).toEqual(['Upload picture', 'Generate pet picture', 'Remove picture', 'Cancel', 'Save'])
     expect(shown(false)).not.toContain('Remove picture')
     expect(submitTag(markup)).not.toMatch(/ disabled/)
   })

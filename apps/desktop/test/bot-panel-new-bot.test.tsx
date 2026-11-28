@@ -12,7 +12,7 @@ const slot = <T,>(start: () => T): [T, (next: T | ((held: T) => T)) => void] => 
   if (!hooks.slots.has(key)) hooks.slots.set(key, start())
   return [hooks.slots.get(key) as T, next => hooks.slots.set(key, typeof next === 'function' ? (next as (held: T) => T)(hooks.slots.get(key) as T) : next)]
 }
-const seen = vi.hoisted(() => ({ topics: {} as Record<string, unknown>, commands: [] as WindowCommand[], edited: null as Promise<unknown> | null, created: null as unknown }))
+const seen = vi.hoisted(() => ({ topics: {} as Record<string, unknown>, commands: [] as WindowCommand[], epochs: [] as unknown[][], edited: null as Promise<unknown> | null, created: null as unknown }))
 
 vi.mock('react', async original => ({
   ...(await original<typeof import('react')>()),
@@ -30,19 +30,29 @@ vi.mock('react', async original => ({
   useContext: () => 0,
   useSyncExternalStore: (_subscribe: unknown, read: () => unknown) => read()
 }))
-vi.mock('../src/renderer/store', () => ({
-  Epoch: {},
-  pickBotPicture: async () => ({ ok: true, value: 'cancelled' }),
-  run: async (command: WindowCommand) => {
+vi.mock('../src/renderer/store', () => {
+  const run = async (command: WindowCommand) => {
     seen.commands.push(command)
     if (command.do === 'describeBot') return { ok: true, value: { bot: command.bot, name: 'Rae', description: '', persona: '', revision: 1 } }
     if (command.do === 'botModels') return { ok: true, value: { options: [{ id: 'careful-large', provider: 'acme', providerName: 'Acme' }], fallback: null } }
     if (command.do === 'editBot' && seen.edited !== null) return seen.edited
     if (command.do === 'createBot' && seen.created !== null) return seen.created
     return { ok: true, value: undefined }
-  },
-  useTopic: (topic: string | null) => (topic === null ? undefined : seen.topics[topic])
-}))
+  }
+  return {
+    Epoch: {},
+    pickBotPicture: async (bot: string, at: number) => {
+      seen.epochs.push(['pick', bot, at])
+      return { ok: true, value: 'cancelled' }
+    },
+    run,
+    runAt: (at: number, command: WindowCommand) => {
+      seen.epochs.push([command.do, at])
+      return run(command)
+    },
+    useTopic: (topic: string | null) => (topic === null ? undefined : seen.topics[topic])
+  }
+})
 
 const { TopBar } = await import('../src/renderer/chrome/Chrome')
 
@@ -92,6 +102,7 @@ const OPEN: OpenChat = { shown: { kind: 'bot', bot: RAE, sessionId: 's1' as neve
 beforeEach(() => {
   hooks.slots.clear()
   seen.commands = []
+  seen.epochs = []
   seen.edited = null
   seen.created = null
   seen.topics = { open: OPEN, bots: listed(fact('rae', 'Rae')), 'session:s1': { title: 'Bot Chat' } }
@@ -120,6 +131,26 @@ describe("the open bot's profile panel", () => {
     const draft: BotDraft = { name: 'Sam', description: '', model: null, persona: '' }
     await drawn.find(({ type }) => type === 'NewBotForm')!.props.onCreate!(draft, 'data:image/png;base64,')
     expect(seen.commands.at(-1)).toEqual({ do: 'createBot', draft, picture: 'data:image/png;base64,' })
+  })
+
+  it("asks Hermes to draw the open bot's pet from its Generate pet picture button, and says so while it waits", async () => {
+    button('Details for Rae')!.props.onClick!()
+    await settle()
+    expect(button('Generate pet picture')!.props['disabled']).toBe(false)
+    button('Generate pet picture')!.props.onClick!()
+    expect(button('Drawing…')!.props['disabled']).toBe(true)
+    expect(button('Upload picture')!.props['disabled']).toBe(true)
+    await settle()
+    expect(seen.commands.at(-1)).toMatchObject({ do: 'generatePicture', prompt: expect.stringContaining('named Rae,') })
+    expect(button('Generate pet picture')!.props['disabled']).toBe(false)
+  })
+
+  it("sends Upload picture with the epoch of the connection the panel was opened on", async () => {
+    button('Details for Rae')!.props.onClick!()
+    await settle()
+    button('Upload picture')!.props.onClick!()
+    await settle()
+    expect(seen.epochs.at(-1)).toEqual(['pick', 'rae', 0])
   })
 
   it('keeps New bot… off while Save is out, since the save landing closes the panel', async () => {

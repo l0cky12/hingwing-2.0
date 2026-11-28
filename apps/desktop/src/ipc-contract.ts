@@ -166,7 +166,7 @@ export type IntroCommand = { readonly do: 'examples' } | { readonly do: 'done' }
 export type PluginCatalogCommand = { readonly do: 'pluginCatalog' }
 
 export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | AccentCommand | SidebarWidthCommand | SendKeyCommand | ShowWorkCommand | SpellCheckCommand | SnoozeCommand | NoticeCommand | OnCloseCommand | AppearanceCommand | IntroCommand | PluginCatalogCommand
-export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' | 'refreshBots' }>
+export type WindowCommand = Exclude<AppCommand, { readonly do: 'refreshBots' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : C extends PluginCatalogCommand ? readonly CatalogPlugin[] : HubResult<C>
 
@@ -698,6 +698,11 @@ export const validators: Validators = {
   removeBotPicture: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'removeBotPicture', bot }
+  },
+  setBotPicture: raw => {
+    const bot = botIdOf(raw.bot)
+    const data = pictureDataUrlOf(raw.data, PICTURE_MAX_BYTES)
+    return bot && data !== null ? { do: 'setBotPicture', bot, data } : null
   },
   botPicture: raw => {
     const bot = botIdOf(raw.bot)

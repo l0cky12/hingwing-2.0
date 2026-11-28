@@ -1,4 +1,5 @@
 import { rosterOf, type BotFacts, type BotId, type Bots } from '@highwing/hermes/domain'
+import type { PetCalls } from '../../src/renderer/bots/pet-picture'
 
 export const fact = (id: string, name: string, more: Partial<BotFacts> = {}): BotFacts =>
   ({ id: id as BotId, name, isDefault: false, section: null, preview: null, description: null, chat: null, picture: false, pinned: false, hidden: false, ...more })
@@ -13,3 +14,8 @@ export const APPROVED = listed(
   fact('hermes-dev', 'Hermes', { preview: 'Use case 6 is the video\'s "aut' }),
   fact('highwing', 'highwing', { preview: 'The step 1 plan is ready in the' })
 )
+
+export const NO_PET: PetCalls = {
+  generate: async () => ({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't draw pictures." } }),
+  save: async () => ({ ok: true, value: undefined })
+}

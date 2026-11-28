@@ -1,7 +1,7 @@
 import { quoteOf, versionLabel, type AdmissionId, type Bot, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Quote, type Relay, type Told, type TurnId, type Version, type Versions } from '@highwing/hermes/domain'
 import { fieldId, findInThread, multiReply, type BesideRow, type Changing, type FindMatch, type PendingRow, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { createContext, Fragment, memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { Avatar, BotFace } from '../bots/Avatar'
+import { Avatar, BotFace, useDecodedPicture } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
 import { AskCard, type RequestAnswer } from './Asks'
 import { Command } from './Copy'
@@ -287,13 +287,17 @@ export const ReadOnlyContext = createContext(false)
 
 const STAND_IN = { name: 'Hermes', tone: 'slate' } as const satisfies Pick<Bot, 'name' | 'tone'>
 
+const PET_PICTURE_SIDE = 44
+
 function End({ turnKey, end, started, showWork }: { readonly turnKey: string; readonly end: ThreadEnd; readonly started: boolean; readonly showWork: ShowWork }) {
   const bot = useContext(ChatBotContext)
-  if (end.kind === 'at' || end.kind === 'none') return null
-  const words = end.kind === 'tip' ? <><span><PhraseText words={end.words} /></span><Elapsed elapsed={end.elapsed} /></> : end.kind === 'done' ? <span className="sr">{end.words}</span> : <span data-find={fieldId(turnKey, 'end')}>{end.words}</span>
   const pet = end.kind === 'tip' && showWork === 'replies'
+  const picture = useDecodedPicture(pet ? bot : null)
+  if (end.kind === 'at' || end.kind === 'none') return null
+  const pictured = pet && picture !== null
+  const words = end.kind === 'tip' ? <><span className={pictured ? 'sr' : undefined}><PhraseText words={end.words} /></span><Elapsed elapsed={end.elapsed} /></> : end.kind === 'done' ? <span className="sr">{end.words}</span> : <span data-find={fieldId(turnKey, 'end')}>{end.words}</span>
   const face = pet ? bot ?? STAND_IN : end.kind === 'tip' && !started ? bot : null
-  return <div className={cx('tip', END_CLASS[end.kind], pet && 'pet')} role="status" data-end={end.kind}>{face !== null ? <BotFace bot={face} mood="working" size={22} /> : <span className="glyph" />}{words}</div>
+  return <div className={cx('tip', END_CLASS[end.kind], pet && 'pet')} role="status" data-end={end.kind}>{pictured ? <img className="face pet-picture" src={picture} alt="" width={PET_PICTURE_SIDE} height={PET_PICTURE_SIDE} /> : face !== null ? <BotFace bot={face} mood="working" size={22} /> : <span className="glyph" />}{words}</div>
 }
 
 /** Acts on a sent message by its stored row and text: `onEdit` puts it in the composer, `onRegenerate` asks again for its reply. */

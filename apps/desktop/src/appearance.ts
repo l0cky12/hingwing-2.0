@@ -61,7 +61,7 @@ export const WIDTH_ORDER: readonly ChatWidth[] = ['narrow', 'comfortable', 'wide
 
 export const CONTRAST = { min: 50, max: 150, default: 100 } as const
 export const MOTION = { min: 0, max: 400, default: 150 } as const
-const DURATIONS: { readonly [property: string]: number } = { '--duration-fast': 150, '--duration-blink': 1000, '--duration-pulse': 1600, '--duration-dots': 1200 }
+const DURATIONS: { readonly [property: string]: number } = { '--duration-fast': 150, '--duration-blink': 1000, '--duration-pulse': 1600, '--duration-dots': 1200, '--duration-hop': 1000 }
 
 const defaultPick = (role: FontRole): FontPick => ({ family: null, size: FONT_ROLES[role].size })
 

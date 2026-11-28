@@ -6,6 +6,7 @@ import { EMPTY_DRAFT } from '../src/renderer/bots/bot-form'
 import { DEFAULT_LOOK, faceOf, faceSvg, lookWords, shapeFor, surpriseFor } from '../src/renderer/bots/look'
 import { LookPicker, pendingLook, PetTile, thumbOf, type LookCalls } from '../src/renderer/bots/LookPicker'
 import { NewBotForm } from '../src/renderer/bots/NewBotForm'
+import { NO_PET } from './support/bots'
 
 const NAMES = ['Rae', 'Ada', 'Sam', 'Research', 'Emu', 'Timothy', 'highwing', 'Pip', 'Ledger', 'Juno']
 const PICTURE = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString('base64')}`
@@ -238,7 +239,7 @@ describe('the New bot form', () => {
   })
 
   it('starts on the Auto face of a blank name, with every field of the form after it', () => {
-    const drawn = renderToStaticMarkup(<NewBotForm problemOf={() => null} models={MODELS} looks={CALLS} onCreate={async () => ({ ok: false, refusal: { kind: 'rejected', message: 'no' } })} onClose={() => {}} />)
+    const drawn = renderToStaticMarkup(<NewBotForm problemOf={() => null} models={MODELS} looks={CALLS} pet={NO_PET} onCreate={async () => ({ ok: false, refusal: { kind: 'rejected', message: 'no' } })} onClose={() => {}} />)
     expect(drawn).toContain(faceSvg(shapeFor('auto', ''), 'slate', 64))
     expect(drawn.match(/<label[^>]*>([^<]*)</g)?.map(label => label.replace(/<label[^>]*>|</g, ''))).toEqual(['Name', 'Description', 'Model', 'Persona'])
   })
