@@ -615,8 +615,8 @@ const STEPS = {
       const mark = ctx.page.locator('#transcript .tip.pet .face').last()
       const read = () => mark.evaluate(element => {
         const loaded = element instanceof HTMLImageElement && element.complete && element.naturalWidth > 0
-        const running = element.getAnimations().filter(animation => animation.playState === 'running' && Number(animation.effect?.getTiming().duration) > 0)
-        const words = [...element.closest('.tip').children].filter(child => child !== element && !child.matches('.sr')).map(child => child.textContent).join(' ').trim()
+        const running = element.getAnimations().filter(animation => animation.animationName === 'hop' && animation.playState === 'running' && Number(animation.effect?.getTiming().duration) > 0)
+        const words = [...element.closest('.tip').children].filter(child => child !== element && !child.matches('.sr, .elapsed')).map(child => child.textContent).join(' ').trim()
         return {
           drawn: element instanceof HTMLImageElement ? (loaded ? 'picture' : 'unloaded picture') : 'face',
           motion: running.length > 0 ? 'hopping' : 'still',
@@ -625,9 +625,10 @@ const STEPS = {
           words
         }
       }, undefined, { timeout: ctx.timeout })
-      const held = await poll(ctx, read, found => found.drawn === drawn && found.motion === motion)
+      const fits = found => found.drawn === drawn && found.motion === motion && (drawn === 'picture') === (found.words === '')
+      const held = await poll(ctx, read, fits)
       log(ctx, `  the working mark is a ${held.size} px ${held.drawn}, ${held.motion} (${held.animations}), beside "${held.words}"`)
-      if (held.drawn !== drawn || held.motion !== motion) throw new Error(`the working mark is a ${held.drawn}, ${held.motion}, not a ${drawn}, ${motion}`)
+      if (!fits(held)) throw new Error(`the working mark is a ${held.drawn}, ${held.motion}, beside "${held.words}", not a ${drawn}, ${motion}${drawn === 'picture' ? ' with its words for screen readers only' : ' beside its words'}`)
     }
   },
   tile: {
