@@ -4,7 +4,6 @@
  */
 import { spawn } from 'node:child_process'
 import { createServer, type AddressInfo, type Socket } from 'node:net'
-import type { BotId } from '../domain/bots'
 import type { SshFailure, SshHost } from '../domain/reach'
 import { EXIT_KINDS, HANDSHAKE_MS, systemClock, type Clock, type DialError } from './link'
 

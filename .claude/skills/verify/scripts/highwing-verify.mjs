@@ -269,6 +269,22 @@ const STEPS = {
       log(ctx, `  the preview shows ${state.url} at ${JSON.stringify(state.bounds)}, ${state.visible ? 'visible' : 'hidden'}`)
     }
   },
+  saved: {
+    arity: 2,
+    run: async (ctx, name, text) => {
+      const read = async () => { try { return readFileSync(join(ctx.evidence, 'saves', name), 'utf8') } catch { return null } }
+      const held = await poll(ctx, read, content => content?.includes(text) === true)
+      if (held?.includes(text) !== true) throw new Error(`saves/${name} ${held === null ? 'was never written' : `does not hold ${JSON.stringify(text)}: ${JSON.stringify(held.slice(0, 200))}`}`)
+      log(ctx, `  saves/${name} holds ${JSON.stringify(held.slice(0, 200))}`)
+    }
+  },
+  'nothing-saved': {
+    arity: 0,
+    run: async ctx => {
+      const held = existsSync(join(ctx.evidence, 'saves')) ? readdirSync(join(ctx.evidence, 'saves')) : []
+      if (held.length > 0) throw new Error(`main saved ${held.join(', ')}`)
+    }
+  },
   'page-says': {
     arity: 1,
     run: async (ctx, text) => {
@@ -1519,9 +1535,10 @@ function withEdits(fixturePath, { dropAfter, models, catalog, connectors, guarde
   if (guarded) header.guarded = guarded.split(',')
   if (usage) header.usage = JSON.parse(readFileSync(resolve(process.cwd(), usage), 'utf8'))
   if (profiles) {
-    const { chats, relay, souls, groups, cron, skills, skillsElsewhere, turn_ms: turnMs, ...reply } = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
+    const { chats, relay, souls, groups, cron, skills, skillsElsewhere, turn_ms: turnMs, files, ...reply } = JSON.parse(readFileSync(resolve(process.cwd(), profiles), 'utf8'))
     header.profiles = reply
     if (chats !== undefined) header.chats = chats
+    if (files !== undefined) header.files = files
     if (relay !== undefined) header.relay = relay
     if (turnMs !== undefined) header.turnMs = turnMs
     if (souls !== undefined) header.souls = souls
@@ -1838,7 +1855,8 @@ async function run(argv) {
   if (options.cancel && !/^[^=]+=[^=]+$/.test(options.cancel)) fail(`--cancel takes <method>=<reason>, not "${options.cancel}"`)
   if (!options.yolo && (options['yolo-denied'] || options['yolo-elsewhere-after'])) fail('--yolo-denied and --yolo-elsewhere-after need --yolo, because a Hermes with no YOLO answers neither')
   if (options.tree && !options.profiles) fail('--tree needs --profiles, because the tree lists the chats that file seeds')
-  if ((scenario || byAddress) && edited) fail('--drop-after, --models, --catalog, --connectors, --guarded, --usage, --profiles, --paths, --create-warnings, --configure-clash, --asset-fails, --images, --display, --titles, --transcribe, --pets, --cron, --memory, --deny, --vault, --backups, --mcp, --plugins, --plugin-catalog, --plugin-refusals, --media, --tools, --list-only, --kanban, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --approvals, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve, --attach-limit, --account and --stretch edit the fixture a --fixture run replays. They do nothing with --fake-host, --fake-webapp or --webapp-url')
+  if (realUrl && edited) fail('--drop-after, --models, --profiles and the other fixture edits change the fixture a run replays. A real gateway plays none, so they do nothing with --webapp-url')
+  if ((scenario || webScenario) && Object.entries(edits).some(([edit, value]) => value && edit !== 'profiles')) fail('--drop-after, --models, --catalog, --connectors, --guarded, --usage, --paths, --create-warnings, --configure-clash, --asset-fails, --images, --display, --titles, --transcribe, --pets, --cron, --memory, --deny, --vault, --backups, --mcp, --plugins, --plugin-catalog, --plugin-refusals, --media, --tools, --list-only, --kanban, --bound, --no-bot-chat, --tree, --yolo, --yolo-denied, --yolo-elsewhere-after, --approvals, --answered-elsewhere, --answer-here, --cancel, --acted-elsewhere, --serve, --attach-limit, --account and --stretch edit the fixture a --fixture run replays. They do nothing with --fake-host or --fake-webapp, which take only --profiles')
   if (options['configure-clash'] && !options.profiles) fail('--configure-clash needs --profiles: without it Hermes has no bots to rename')
   if (options['asset-fails'] && !options.profiles) fail('--asset-fails needs --profiles: without it Hermes stores no pictures')
   if (options['attach-limit'] && !/^[1-9]\d*$/.test(options['attach-limit'])) fail(`--attach-limit takes a number of bytes, not "${options['attach-limit']}"`)

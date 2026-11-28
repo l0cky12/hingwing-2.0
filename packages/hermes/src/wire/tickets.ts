@@ -6,7 +6,6 @@
 import { CHECK_FAILURES } from '../domain/reach'
 import { DialError, dialWith, EXIT_KINDS, GATEWAY_PROTOCOL, TICKET_PREFIX, type Clock, type Mint, type ReadHermes } from './link'
 import type { Route } from './remote'
-import type { BotId } from '../domain/bots'
 import { cantReach, WHOLE_DOWNLOAD_MS, downloadedOf, downloadPath, unminted, type Download } from './download'
 import { ASK_INTERACTIVE, askNativeHttp, ATTACH, attachedOf, httpTicketOf, NOT_FOUND, originOf, PROBE, probeOf, runTool, SERVE, servedOf, type HermesArgs, type HttpTicket, type ProbeFailure, type SshRun } from './ssh'
 import { askWithTicket, CANT_REACH, CANT_TRANSCRIBE, postWithTicket, transcriptOf, type Transcribe } from './transcribe'

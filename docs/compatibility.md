@@ -1285,6 +1285,90 @@ On an older Hermes, or one without the route:
 - If the reply has no `runs` list, the tab says "Hermes answered with runs
   Highwing can't read."
 
+### A bot's Library
+
+The Library tab of a bot's details panel lists the files, images and links the
+bot's chats made, newest first. Highwing builds it from the chats' stored rows,
+so it needs no Hermes route of its own. It reads ten chats a step, newest
+first, under the bot's profile:
+
+| Method | Params | What Highwing takes from the answer |
+| --- | --- | --- |
+| `session.list` | `{scope: "stored", include_hidden: true, limit}`, with the bot's `profile` | The chats, a Bot Chat too, and each one's `last_active_at` |
+| `session.transcript` | `{session_id, order: "latest", limit: 500, inline_images: false}`, with the bot's `profile`, for each chat, at most 20 pages | The rows below |
+
+Only these rows count (`tui_gateway/session_history.py:297-373`):
+
+- A `tool` row named `write_file` or `patch`. Hermes keeps the `content` of
+  only these two, and of `skill_manage` and `clarify`. That content is the
+  tool's result as JSON. Highwing takes its `files_modified`, else its
+  `resolved_path`, both absolute (`tools/file_tools.py:936-952`, `:1044-1052`).
+  A result with `error` set is a write that failed, and names nothing. A path
+  that is not absolute is dropped, since a stored chat says nothing it is
+  relative to. A file whose name ends in an image extension is an image.
+- An `assistant` row's `text`. Highwing reads it as the chat shows it: an
+  http(s) link is a link, and an http(s) markdown image is an image. Nothing in
+  a code block counts.
+- A row's `timestamp` dates it. A tool row stores none, so it takes the time of
+  the row before it, else the chat's last activity.
+
+One item stands for one file or address across all the bot's chats, from its
+newest mention. A picture a tool showed while it ran (`image_path`) is not in
+the stored rows, so it is not in the Library.
+
+An item opens in the preview pane: a link or a web image as any web page, a
+file of this computer as the pane shows a file a step named. A file of a Hermes
+on another machine shows as an HTML page read over ssh, and anything else says
+"This file is on <machine>. Save it to open it on this computer."
+
+Save copies a file of this computer. For a Hermes elsewhere it asks Hermes for
+the file, before it asks where to put it:
+
+| Route | When |
+| --- | --- |
+| `GET /api/fs/download?path=&profile=&session_id=` | When Save is pressed for a file of a Hermes on another machine or at a web address. `profile` is the bot, and `session_id` the chat that named the file (`hermes_cli/web_routers/files.py:1533-1557`) |
+
+| Connection | Credential |
+| --- | --- |
+| Another machine | A new ticket for each file. Highwing runs `hermes gateway tickets --serve --json` and writes the one line `{"id":1,"purpose":"native-http","profile":"<bot>"}`, since the route checks `?profile=` against the profile a ticket was minted for (`hermes_cli/dashboard_auth/native_http.py:62-69`, `hermes_cli/gateway_runtime_tickets.py:97-116`). It sends the ticket as `x-hermes-gateway-ticket` to the hello's `endpoint.api_origin` through its own `ssh -W` relay, with no `Origin` header. The relay waits 30 s for Hermes to start answering, since a profile with an ssh workspace sends the file from a third machine |
+| A web address | `Authorization: Bearer <access token>`, refreshed once on a 401. A bearer reaches every profile, so `?profile=` alone picks the bot |
+
+The whole request has 120 s. Highwing holds the file in memory, up to 100 MB,
+and writes it only once all of it came.
+
+What Highwing never does:
+
+- It never opens, reads or copies a file of this computer for a Hermes on
+  another machine, whatever this computer holds at that path.
+- It never acts on a path or an address the window sends. The window names an
+  item by an id that main gave it when it read that bot's Library on the live
+  connection.
+- It never follows a redirect, so a ticket or a bearer goes only to the
+  address Hermes or the user gave.
+- It never writes a file that came short.
+
+On an older Hermes, and for Hermes's other answers:
+
+| Hermes answers | The tab says |
+| --- | --- |
+| `--serve` refuses `unsupported_purpose`, the hello names no `api_origin`, the route answers FastAPI's 404 `{"detail":"Not Found"}` or a 405, or a 403 `profile_scope_mismatch` from a Hermes that took the ticket but not its profile | "This Hermes can't send files to Highwing. Update Hermes, then try again." |
+| `--serve` refuses `unknown_profile` | "Hermes has no bot named <bot> any more." |
+| `--serve` refuses `profile_not_served` | "The running Hermes doesn't serve <bot>, so it can't send <bot>'s files." |
+| 404 `File not found` | "<file> isn't there any more." |
+| 404 `Session not found` | "Hermes no longer has the chat that made <file>." |
+| Another 404 | "Hermes couldn't find <file>." with Hermes's detail |
+| Another 403, such as a sensitive file | "Hermes won't send <file>." with Hermes's detail |
+| 409, a live database | "Hermes is using <file>, so it can't send it now. Try again later." |
+| 400, such as a folder | "Hermes can't send <file>." with Hermes's detail |
+| No answer, `invalid_request`, no gateway, a 401 on a ticket, a redirect or a 5xx | "Highwing couldn't reach Hermes to get <file>." |
+| A 401 after the refresh, at a web address | "Your sign-in to the Hermes on <host> has ended." |
+| More than 100 MB | "<file> is over 100 MB. Highwing saves files up to 100 MB from Hermes." |
+| Fewer bytes than `content-length`, or a cut connection | "<file> stopped coming before it was whole, so Highwing saved nothing." |
+
+A Hermes that refuses `session.list` for the bot shows Hermes's words in place
+of the list. A chat whose transcript Hermes refuses counts as unread, and the
+tab says "Highwing couldn't read 2 of them."
+
 ## Task board
 
 Hermes has no socket method that reads its kanban board. The Tasks view reads
