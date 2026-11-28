@@ -1,8 +1,26 @@
 import type { Bot } from '@highwing/hermes/domain'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { faceOf, faceSvg, type FaceMood } from './look'
 import { usePicture } from './pictures'
 import { initialOf } from './roster-view'
+
+/** The bot's picture once the whole of it has decoded, so a caller keeps its stand-in drawn until then. A cut-off PNG never passes. */
+export function useDecodedPicture(bot: Pick<Bot, 'id' | 'picture'> | null): string | null {
+  const read = usePicture(bot?.picture ? bot.id : null)
+  const [decoded, setDecoded] = useState<string | null>(null)
+  useEffect(() => {
+    if (read === null) return
+    let live = true
+    const image = new Image()
+    image.src = read
+    void image.decode().then(() => createImageBitmap(image)).then(bitmap => {
+      bitmap.close()
+      if (live) setDecoded(read)
+    }, () => {})
+    return () => { live = false }
+  }, [read])
+  return read !== null && decoded === read ? read : null
+}
 
 export function Avatar({ bot, size }: { readonly bot: Bot | Pick<Bot, 'name' | 'tone'>; readonly size: number }) {
   const picture = usePicture('picture' in bot && bot.picture ? bot.id : null)

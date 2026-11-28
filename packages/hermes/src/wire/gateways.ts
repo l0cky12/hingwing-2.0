@@ -11,7 +11,7 @@ import type { AddressInfo } from 'node:net'
 import { inspect } from 'node:util'
 import { gatewayHost, URL_FAILURES, type GatewayUrl, type UrlFailure } from '../domain/reach'
 import type { CheckOptions } from './check'
-import { DialError, dialWith, GATEWAY_PROTOCOL, HANDSHAKE_MS, profiled, sessionAuthorityOf, systemClock, TICKET_PREFIX, type CallHermes, type Clock, type Endpoint, type Mint } from './link'
+import { DialError, dialWith, GATEWAY_PROTOCOL, HANDSHAKE_MS, profiled, sessionAuthorityOf, systemClock, TICKET_PREFIX, type CallHermes, type Clock, type HermesAsk, type Endpoint, type Mint } from './link'
 import type { Route } from './remote'
 import { CANT_REACH, TRANSCRIBE_MS, TRANSCRIBE_PATH, transcribeBody, transcriptOf, type Transcribe } from './transcribe'
 
@@ -80,8 +80,6 @@ export interface Gateways {
 const SIGN_IN_MS = 600_000
 const REQUEST_MS = 10_000
 const HIDDEN = '•••'
-/** Hermes's dashboard reads `profile=current` as its own profile (hermes_cli/web_server_profiles.py), in any case, so a bot of that name cannot be told apart from it. */
-const DASHBOARD_PROFILE = 'current'
 
 type Obj = Readonly<Record<string, unknown>>
 const isObject = (value: unknown): value is Obj => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -192,6 +190,20 @@ interface Login {
 }
 
 /** One per process. Its sign-ins, one per address, are what a check and a route share. */
+/**
+ * The routes that resolve `?profile=` through the dashboard's profile scope, which over a web address reads `current` as
+ * the profile Hermes runs as (hermes_cli/web_server_profiles.py), yet `current` is a valid profile name. A read for a bot
+ * named `current` there would answer with another bot's data. The cron routes look the name up as it is, and a ticket
+ * read is bound by the ticket's own profile, so neither has the doubt.
+ */
+const SCOPED_ROUTES = ['/api/learning/', '/api/config']
+const namesCurrent = ({ path, profile }: HermesAsk): boolean => {
+  const url = new URL(path, 'http://hermes.invalid')
+  const names = profile === null ? url.searchParams.getAll('profile') : [profile, ...url.searchParams.getAll('profile')]
+  return SCOPED_ROUTES.some(route => url.pathname.startsWith(route)) && names.some(name => name.trim().toLowerCase() === 'current')
+}
+const CURRENT_IS_OWN = 'Over a web address, Hermes reads a bot named current as the bot it runs as.'
+
 export function gatewaysByUrl(deps: GatewayDeps): Gateways {
   const clock = deps.clock ?? systemClock
   const fetcher = deps.fetch ?? fetch
@@ -436,7 +448,7 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
         }
       }
       const call: CallHermes = async ask => {
-        if (ask.profile?.toLowerCase() === DASHBOARD_PROFILE) throw new Error('The web dashboard reads a profile named current as its own.')
+        if (namesCurrent(ask)) throw new Error(CURRENT_IS_OWN)
         const { path, json } = profiled(ask)
         const sent = (bearer: string) => send(ask.method, `${url}${path}`, { bearer, signal: life.signal, ...(json === undefined ? {} : { json }) })
         const held = loginOf(url)

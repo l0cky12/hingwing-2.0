@@ -1,0 +1,37 @@
+{
+  "entries": [
+    {
+      "file": "MEMORY.md",
+      "text": "Prefers short answers."
+    },
+    {
+      "file": "USER.md",
+      "text": "Lives in Lisbon."
+    }
+  ],
+  "profiles": {
+    "rae": {
+      "entries": [
+        {
+          "file": "MEMORY.md",
+          "text": "Weekly review checklist, in the order the user likes it. Step 1: look through the notes folder for anything tagged for week 1 and list what is still open. Step 2: look through the notes folder for anything tagged for week 2 and list what is still open. Step 3: look through the notes folder for anything tagged for week 3 and list what is still open. Step 4: look through the notes folder for anything tagged for week 4 and list what is still open. Step 5: look through the notes folder for anything tagged for week 5 and list what is still open. Step 6: look through the notes folder for anything tagged for week 6 and list what is still open. Step 7: look through the notes folder for anything tagged for week 7 and list what is still open. Step 8: look through the notes folder for anything tagged for week 8 and list what is still open. Step 9: look through the notes folder for anything tagged for week 9 and list what is still open. Step 10: look through the notes folder for anything tagged for week 10 and list what is still open. Step 11: look through the notes folder for anything tagged for week 11 and list what is still open. Step 12: look through the notes folder for anything tagged for week 12 and list what is still open."
+        },
+        {
+          "file": "MEMORY.md",
+          "text": "Keeps the budget sheet in the shared drive.\nUpdate it on the first of the month."
+        },
+        {
+          "file": "MEMORY.md",
+          "text": "Sends the summary to the team on Fridays."
+        },
+        {
+          "file": "USER.md",
+          "text": "Likes plain words and short lists."
+        }
+      ],
+      "limits": {
+        "memory": 1500
+      }
+    }
+  }
+}

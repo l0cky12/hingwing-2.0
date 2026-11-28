@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import type { RoutineId } from '../src/domain/routines'
+import { parseRoutineRuns, runsPath } from '../src/domain/runs'
 import { BOARD_PATH, taskPath } from '../src/domain/tasks'
+import type { FixtureRoutes } from '../src/testing/calls'
 import { type FixtureStep, fixtureCall, loadFixture } from '../src/testing/fixture'
 import { checkParams } from '../src/testing/params'
 import { GATEWAY_EVENT_TYPES } from '../src/wire/contract.generated'
@@ -176,6 +179,18 @@ describe('loadFixture', () => {
     expect(() => loadFixture(clash)).toThrow(`${clash}:1: "configureClash" must be the title another client writes`)
   })
 
+  it("reads each bot's own memory under profiles, and refuses a profile whose entries are not memory entries", () => {
+    const memory = { entries: [], profiles: { rae: { entries: [{ file: 'MEMORY.md', text: 'Likes lists.' }], limits: { memory: 90 } } } }
+    expect(loadFixture(write([{ ...header, memory }])).header.memory).toEqual(memory)
+    const path = write([{ ...header, memory: { entries: [], profiles: { rae: { entries: [{ file: 'NOTES.md', text: 'x' }] } } } }])
+    expect(() => loadFixture(path)).toThrow(`${path}:1: "memory" must be`)
+  })
+
+  it('keeps a memory cap of 0 and an entry that is only a byte-order mark, as Hermes keeps both', () => {
+    const memory = { entries: [{ file: 'USER.md', text: '\ufeff' }], limits: { memory: 0 } }
+    expect(loadFixture(write([{ ...header, memory }])).header.memory).toEqual(memory)
+  })
+
   it('keeps the account usage, usage bars and insights replies a file cans, and refuses one that is not an object', () => {
     const replies = { accountUsage: { lines: ['Acme Pro'], nous_route: false }, usageBars: { available: false }, insights: { days: 30, sessions: 4, messages: 9 } }
     expect(loadFixture(write([{ ...header, ...replies }])).header).toMatchObject(replies)
@@ -188,7 +203,7 @@ describe('loadFixture', () => {
     const memory = { entries: [{ file: 'MEMORY.md', text: 'Prefers short answers.' }, { file: 'USER.md', text: 'Lives in Lisbon.' }], limits: { memory: 40 } }
     expect(loadFixture(write([{ ...header, memory }])).header.memory).toEqual(memory)
     expect(loadFixture(write([header])).header).not.toHaveProperty('memory')
-    for (const value of [{ entries: [{ file: 'NOTES.md', text: 'x' }] }, { entries: [{ file: 'MEMORY.md', text: ' ' }] }, { entries: [], limits: { disk: 1 } }, { entries: [], limits: { memory: 0 } }]) {
+    for (const value of [{ entries: [{ file: 'NOTES.md', text: 'x' }] }, { entries: [{ file: 'MEMORY.md', text: ' ' }] }, { entries: [], limits: { disk: 1 } }, { entries: [], limits: { memory: -1 } }]) {
       const path = write([{ ...header, memory: value }])
       expect(() => loadFixture(path)).toThrow(`${path}:1: "memory" must be { entries, limits? } with each entry { file: "MEMORY.md" or "USER.md", text } and limits { memory?, user? }`)
     }
@@ -268,7 +283,7 @@ describe('loadFixture', () => {
     })
 
     it('answers the board, a card by its path, and a 404 for any other path', async () => {
-      const call = fixtureCall(kanban, null)
+      const call = fixtureCall({ kanban }, null)
       const get = (path: string) => call({ method: 'GET', path, profile: null })
       expect(await get(BOARD_PATH)).toEqual({ status: 200, body: kanban.board })
       expect(await get(taskPath('t_1'))).toEqual({ status: 200, body: kanban.tasks.t_1 })
@@ -277,7 +292,57 @@ describe('loadFixture', () => {
     })
 
     it('answers 404 to every path when the fixture has no kanban, as a Hermes without the plugin does', async () => {
-      expect(await fixtureCall(undefined, null)({ method: 'GET', path: BOARD_PATH, profile: null })).toMatchObject({ status: 404 })
+      expect(await fixtureCall({}, null)({ method: 'GET', path: BOARD_PATH, profile: null })).toMatchObject({ status: 404 })
+    })
+  })
+
+  describe("a routine's run history", () => {
+    const fixtureFile = (name: string) => JSON.parse(readFileSync(fileURLToPath(new URL(`../../../fixtures/${name}`, import.meta.url)), 'utf8')) as Record<string, unknown>
+
+    const getter = (routes: FixtureRoutes) => (path: string, profile: string | null = null) => fixtureCall(routes, null)({ method: 'GET', path, profile })
+    const cron = { jobs: [], profiles: { rae: [{ job_id: 'a1' }, { job_id: 'b2' }] }, history: { a1: { runs: [{ id: 's1' }], limit: 20 } } }
+
+    it('reads the history of a listed job, and refuses one of a job no store lists or one that is not an object', () => {
+      expect(loadFixture(write([{ ...header, cron }])).header.cron).toEqual(cron)
+      for (const history of [{ zz: {} }, [], 'x']) {
+        const path = write([{ ...header, cron: { ...cron, history } }])
+        expect(() => loadFixture(path)).toThrow(`${path}:1: "cron" must be { jobs, profiles?, unscoped?, runs?, history? }`)
+      }
+    })
+
+    it("answers a job's runs reply whatever profile and limit the path asks for, and 404 for a job with no history, as an older Hermes does", async () => {
+      const read = getter({ cron })
+      expect(await read(runsPath('a1' as RoutineId), 'rae')).toEqual({ status: 200, body: cron.history.a1 })
+      expect(await read('/api/cron/jobs/a1/runs')).toEqual({ status: 200, body: cron.history.a1 })
+      expect(await read(runsPath('b2' as RoutineId), 'rae')).toMatchObject({ status: 404 })
+      expect(await read(runsPath('constructor' as RoutineId), 'rae')).toMatchObject({ status: 404 })
+      expect(await read('/api/cron/jobs/%E0%A4%A/runs')).toMatchObject({ status: 404 })
+      expect(await read('/api/cron/jobs/a1')).toMatchObject({ status: 404 })
+      expect(await getter({})(runsPath('a1' as RoutineId), 'rae')).toMatchObject({ status: 404 })
+    })
+
+    it('serves the kanban and the history side by side', async () => {
+      const kanban = { board: { columns: [] }, tasks: {} }
+      const read = getter({ kanban, cron })
+      expect(await read(BOARD_PATH)).toEqual({ status: 200, body: kanban.board })
+      expect(await read(runsPath('a1' as RoutineId), 'rae')).toMatchObject({ status: 200 })
+    })
+
+    it("keeps fixtures/cron/runs.json readable by the parser: one run of each kind, with none of a row's private columns", async () => {
+      const loaded = loadFixture(write([{ ...header, cron: fixtureFile('cron/runs.json') }])).header.cron!
+      const answer = await getter({ cron: loaded })(runsPath('4f1c2a9e0b7d' as RoutineId), 'rae')
+      const runs = parseRoutineRuns(answer.body)
+      expect(runs?.map(run => [run.outcome.is, run.seconds, run.chat])).toEqual([
+        ['running', null, 'local-0201'], ['succeeded', 42, 'local-0202'], ['failed', 180, 'local-0203'], ['cancelled', 7, 'local-0204'], ['failed', null, null]
+      ])
+      expect(JSON.stringify(runs)).not.toMatch(/chat-77c1|user-4821|origin|You are Rae/)
+    })
+
+    it("gives every run that has a chat a chat of Rae's in fixtures/profiles/rae-runs.json, so Open run opens something", async () => {
+      const loaded = loadFixture(write([{ ...header, cron: fixtureFile('cron/runs.json') }])).header.cron!
+      const answer = await getter({ cron: loaded })(runsPath('4f1c2a9e0b7d' as RoutineId), 'rae')
+      const chats = (fixtureFile('profiles/rae-runs.json').chats as { rae: { id: string }[] }).rae.map(chat => chat.id)
+      expect(parseRoutineRuns(answer.body)?.flatMap(run => (run.chat === null ? [] : [run.chat]))).toEqual(chats)
     })
   })
 

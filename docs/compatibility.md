@@ -925,6 +925,56 @@ lists the bots of one Hermes, so it calls neither. The handed message and its
 reply live in Highwing while it is connected. They are not in the history of
 the chat they were sent from.
 
+### A bot's memory
+
+The details panel's Memory tab shows what Hermes remembers for the open bot:
+the entries of its MEMORY.md and USER.md, and how full each file is. Hermes has
+no socket method that reads memory for a named bot, so Highwing reads three of
+the gateway's HTTP routes, each with `?profile=<bot>`. It reads them each time
+the tab opens, and it never writes memory there.
+
+| Route | What Highwing takes from it |
+| --- | --- |
+| `GET /api/learning/graph?profile=<bot>` | The `memory` list. Each card's `source` names its file: `memory` is MEMORY.md and `profile` is USER.md. Its `body` is the entry's text and its `fingerprint` identifies the whole entry (`agent/learning_graph.py:143-185`) |
+| `GET /api/config?profile=<bot>` | `memory.memory_char_limit` and `memory.user_char_limit`. The route merges Hermes's defaults into the bot's config.yaml, so each cap is there even when config.yaml leaves it out |
+| `GET /api/learning/node?id=<node id>&profile=<bot>` | The whole entry, only for a card whose `body` is cut short. The graph cuts a long entry's body. Highwing knows a body is cut when the first 12 hex digits of the SHA-256 of its text, trimmed as Python's `str.strip()` trims it, differ from the card's `fingerprint`. The node id is the `id` of the graph's matching `kind: "memory"` node, which comes in the same order as the cards. Highwing never reads anything out of the id |
+
+Each read sends the credential the [task board](#task-board) does. For this
+computer and another machine, the line Highwing writes to `--serve` also names
+the bot: `{"id":1,"purpose":"native-http","profile":"<bot>"}`. Hermes refuses
+a ticket on a route whose `?profile=` names another bot, with
+`403 profile_scope_mismatch` (`hermes_cli/dashboard_auth/native_http.py`), and
+mints a ticket for another bot of the same gateway when the line names it
+(`hermes_cli/gateway_runtime_tickets.py`).
+
+Hermes takes `?profile=current` to mean the profile it runs as
+(`hermes_cli/web_server_profiles.py`), yet `current` is a valid profile name.
+Over a web address, Highwing sends no read that names `current`, so the tab of
+a bot named `current` says "Highwing couldn't read this bot's memory from
+Hermes." A ticket read has no such doubt, because the ticket's own profile
+decides, so that bot's tab works on this computer and over SSH.
+
+Each meter counts a file the way Hermes's memory tool does
+(`tools/memory_tool_store.py:314-315`): the entries joined by Hermes's
+three-character separator, a newline, `§` and a newline, counted in
+characters. Highwing holds that separator, not the caps.
+
+On an older Hermes:
+
+- If the graph route answers 404, the tab says "This Hermes can't show memory
+  yet."
+- A cap of 0 shows the size as words, with no meter.
+- If the config route gives no cap for a file, or does not answer, the tab
+  shows that file's entries and its size with no meter, and says Highwing
+  couldn't read how much the file may hold.
+- If no ticket can be had, the read gets no answer, or Hermes refuses it, the
+  tab says "Highwing couldn't read this bot's memory from Hermes." A Hermes
+  whose `--serve` does not take `profile` gets this answer too.
+- If a reply is not shaped as above, the tab says "Hermes answered with memory
+  Highwing can't read."
+
+Tested against Hermes v0.23.4 (`8fc0374447`).
+
 ### A bot's models
 
 Settings' Models page sets two models for each bot: the default, which new
@@ -1105,6 +1155,17 @@ reason as a warning. The picker reads three more calls:
 Highwing sends `pet.thumb` only a slug with no `/`, `\`, `:`, `.` or `..`.
 Hermes builds the thumb's cache path from the raw slug (`agent/pet/store.py:68-70`).
 
+A new bot left on its default look, and a bot made from a template, also gets
+a pet picture. Once the bot is made, Highwing calls `image.generate {prompt,
+aspect_ratio: "square", max_bytes: 8000000}` in the background, draws the
+answer onto a 512 px square, and stores it with `profiles.set_asset {name,
+asset: "avatar", data}`.
+The bot shows its face until the pet arrives. A look the person picked is never
+replaced. The same two calls run when someone presses Generate pet picture in a
+bot's Edit dialog, for any bot, including the default one. On a Hermes without
+`image.generate`, or with no image model, a new bot keeps its face and shows no
+message, and the button shows the words Hermes or Highwing gave for the refusal.
+
 On an older Hermes:
 
 - Without `image.generate`, the Generate tab says "This Hermes has no image
@@ -1185,6 +1246,44 @@ can't set a bot's approval mode from Highwing." or "This Hermes can't schedule
 jobs from Highwing." Hermes takes only lowercase letters, numbers, `-` and `_`
 for a profile's name, so the dialog's Bot name starts as the template's id, such
 as `nightly-repo-auditor`.
+
+### A routine's past runs
+
+Hermes has no socket method that lists a routine's runs. The Routines tab of a
+bot's details reads one route of the gateway's HTTP API, on the same listener as
+the socket (`hermes_cli/web_routers/cron.py`). It sends the credential that the
+[Task board](#task-board) section describes.
+
+| Route | When |
+| --- | --- |
+| `GET /api/cron/jobs/<job_id>/runs?profile=<bot>&limit=20` | Each time a routine's Past runs opens. Highwing shows the first 20 rows of the reply's `runs`, newest first, and drops a row it cannot read |
+
+Hermes answers a job it does not know with `200` and an empty list, so "No runs
+yet." can also mean the job is gone.
+
+A row is one of two kinds, named by its `source`. Highwing reads only the fields
+in the table, and passes on none of the rest (a session row also holds a chat id,
+a user id, the origin, the system prompt and the model's settings).
+
+| Row | Fields read | How it shows |
+| --- | --- | --- |
+| `source: "cron"`, an agent run's session | `id`, `started_at`, `ended_at`, `end_reason`, `is_active`, `title` | A `title` that starts `CANCELLED · ` is Cancelled, with the words after it as the reason. Otherwise `is_active` is Running, `end_reason: "cron_complete"` is Succeeded, and `cron_incomplete_no_output` is Failed, "It ended without a final reply." Any other `end_reason`, or none, is No result. The length is `ended_at` less `started_at`. Its `id` opens the run's chat |
+| `source: "cron_output"`, a run with no session | `id`, `started_at`, `title` | The word before ` · ` in `title` sets the state: `COMPLETED` or `OK` is Succeeded, `FAILED` or `ERROR` is Failed, `CANCELLED` is Cancelled, and `MISSED` is Missed. The words after it are the reason, or "Hermes gave no reason." for a Failed row with none. A `title` with no such word is No result. Hermes stamps `started_at` and `ended_at` alike, so the row shows no length. It has no chat to open |
+
+A run's chat opens in the bot's profile as a read-only chat: Highwing shows no
+composer and no edit, regenerate, branch or reaction, because Hermes takes no
+message there. When Hermes has no reason for a stopped run, it puts the run's own
+title after `CANCELLED · `, and Highwing cannot tell that from a reason, so the
+title shows as one.
+
+On an older Hermes, or one without the route:
+
+- If the route answers 404, the tab says "This Hermes can't show a routine's past
+  runs to Highwing."
+- If no ticket can be had, or the read gets no answer or any other status, the
+  tab says "Highwing couldn't reach Hermes for this routine's runs."
+- If the reply has no `runs` list, the tab says "Hermes answered with runs
+  Highwing can't read."
 
 ## Task board
 

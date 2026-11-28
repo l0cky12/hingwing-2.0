@@ -27,6 +27,7 @@ export type { Skill, SkillLibrary } from './skills'
 export { ROUTINE_ACTIONS, type Routine, type RoutineAction, type RoutineId } from './routines'
 export { mentionedBots, mentionOf, typedMention } from './mention'
 export type { Job, JobId } from './jobs'
+export { NO_REASON, parseRoutineRuns, RUNS_SHOWN, runsPath, type RoutineRun, type RunOutcome } from './runs'
 export type { Relay, RelayDesk, RelayId, RelayState } from './relay'
 export { shownBot, shownChat, shownGroup, type ChatRef, type OpenChat, type Shown, type ShownGroup, type Unstarted } from './open'
 export {
@@ -34,6 +35,9 @@ export {
 } from './groups'
 export { holdsEdit, parseCommandRules, RAW_RULES_PATH, RULE_KINDS, RULE_ORDER, RULES_PATH, ruleOf, withEdit, type CommandRules, type RuleEdit, type RuleKind } from './rules'
 export { BOARD_PATH, isTaskId, parseTaskBoard, parseTaskChat, taskPath, type TaskBoard, type TaskCard, type TaskChat, type TaskColumn } from './tasks'
+export {
+  botMemoryOf, MEMORY_CAPS_PATH, MEMORY_GRAPH_PATH, memoryEntryPath, NO_MEMORY_CAPS, parseMemoryCaps, parseMemoryEntry, parseMemoryGraph, pythonStrip, type BotMemory, type MemoryCaps, type MemoryCard, type MemoryFile, type MemoryFileName
+} from './memory'
 export type { PaneAsk } from './pane'
 export { activityIn, botActivitiesOf, sameActivities, unreadAfter, type BotActivities, type BotActivity, type Busy, type BusyChats, type ChatBusy, type UnreadChat } from './activity'
 export type { FoundMessage, MessagesRead } from './messages'

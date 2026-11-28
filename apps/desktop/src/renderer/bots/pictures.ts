@@ -18,6 +18,7 @@ const subscribe = (listener: () => void) => {
   return () => void listeners.delete(listener)
 }
 const snapshot = () => version
+const unsubscribed = () => () => {}
 
 const DATA_URL = /^data:(image\/(?:png|jpeg|webp));base64,([\s\S]*)$/
 
@@ -84,13 +85,43 @@ export function useRetryPicturesOnceOnline(online: boolean): void {
 
 export function usePicture(bot: BotId | null): string | null {
   const key = `${useContext(Epoch)} ${bot}`
-  useSyncExternalStore(subscribe, snapshot, snapshot)
+  useSyncExternalStore(bot === null ? unsubscribed : subscribe, snapshot, snapshot)
   const held = entries.has(key)
   useEffect(() => {
     if (bot !== null && !entries.has(key)) load(key, bot)
   }, [key, bot, held])
   const entry = entries.get(key)
   return bot !== null && entry?.state === 'loaded' ? entry.url : null
+}
+
+const claims = new Map<string, number>()
+const writes = new Map<string, Promise<unknown>>()
+
+export interface PictureWrites {
+  /** Starts a change to the bot's picture. The check it returns turns false once a later change starts, so a slow pet never overwrites a newer picture. */
+  readonly claim: (bot: BotId) => () => boolean
+  /** Sends a write once the bot's last one is answered: Hermes runs `profiles.set_asset` on a worker pool, so the order writes arrive in is not the order they land in. */
+  readonly write: <T>(bot: BotId, send: () => Promise<T>) => Promise<T>
+}
+
+export function usePictureWrites(): PictureWrites {
+  const epoch = useContext(Epoch)
+  return {
+    claim: bot => {
+      const key = `${epoch} ${bot}`
+      const mine = (claims.get(key) ?? 0) + 1
+      claims.set(key, mine)
+      return () => claims.get(key) === mine
+    },
+    write: (bot, send) => {
+      const key = `${epoch} ${bot}`
+      const done = (writes.get(key) ?? Promise.resolve()).then(send)
+      const settled = done.catch(() => {})
+      writes.set(key, settled)
+      void settled.then(() => { if (writes.get(key) === settled) writes.delete(key) })
+      return done
+    }
+  }
 }
 
 export function useForgetPicture(): (bot: BotId) => void {

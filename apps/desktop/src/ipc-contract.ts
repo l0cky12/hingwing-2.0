@@ -1,9 +1,9 @@
 import {
   APPROVAL_MODES, BOT_MARKS, BOT_TEMPLATES, BOT_TONES, EFFORTS, EXPORT_FORMATS, GROUP_NAME_MAX, GROUP_SIZE, isGroupId, isManagerName, isPetSlug, onThisComputer, PICK_MODES, PICTURE_MAX_BYTES, pictureDataUrlOf, PLAIN_CONTROLS, ROUTINE_ACTIONS, targetOf,
-  type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
+  type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type BotMemory, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CommandRules, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type CatalogPlugin, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type Quote, type Recording, type RelayDesk, type RequestId, type RequestReply,
-  type PickMode, type RestoreScope, type ResultOf, type RoutineId, type ScreenView, type Server, type ServerId, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type Target, type RuleEdit, type TaskBoard, type TaskChat, type Timed, type TurnId, type Unstarted
+  type PickMode, type RestoreScope, type ResultOf, type RoutineId, type ScreenView, type Server, type ServerId, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type RoutineRun, type Target, type RuleEdit, type TaskBoard, type TaskChat, type Timed, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 import { isAppearance, type Appearance } from './appearance'
 import type { Intro } from './intro'
@@ -81,11 +81,13 @@ export type PreviewContent = { readonly kind: 'page'; readonly load: PageLoad } 
 /**
  * The pane beside the chat. Owned by Electron main, one per window, and kept across chats.
  * `address` is the web URL or the absolute path shown. `title` is Hermes's label, else the page's own title, else the address
- * or the file's name. `file`: a file on this computer, which the user's own program can open.
+ * or the file's name. `file`: a file on this computer, which the user's own program can open. `page`: the chat that asked
+ * for the page and the path as it named it, such as a card's path, which Hermes may name relative to its folder. null for
+ * a request no chat made, a table, or once the view has gone to another page.
  */
 export type Preview =
   | { readonly state: 'closed' }
-  | { readonly state: 'open'; readonly layout: PaneLayout; readonly title: string; readonly address: string; readonly file: boolean; readonly content: PreviewContent }
+  | { readonly state: 'open'; readonly layout: PaneLayout; readonly title: string; readonly page: { readonly session: SessionId; readonly path: string } | null; readonly address: string; readonly file: boolean; readonly content: PreviewContent }
 
 /** `beside`: the pane shares the window with the chat. `page`: a page the bot made fills the window, with the chat in a panel at its side. */
 export type PaneLayout = 'beside' | 'page'
@@ -166,7 +168,7 @@ export type IntroCommand = { readonly do: 'examples' } | { readonly do: 'done' }
 export type PluginCatalogCommand = { readonly do: 'pluginCatalog' }
 
 export type AppCommand = Command | SetupCommand | PreviewCommand | ModeCommand | ThemeCommand | AccentCommand | SidebarWidthCommand | SendKeyCommand | ShowWorkCommand | SpellCheckCommand | SnoozeCommand | NoticeCommand | OnCloseCommand | AppearanceCommand | IntroCommand | PluginCatalogCommand
-export type WindowCommand = Exclude<AppCommand, { readonly do: 'setBotPicture' | 'refreshBots' }>
+export type WindowCommand = Exclude<AppCommand, { readonly do: 'refreshBots' }>
 export type HubResult<C extends AppCommand> = C extends Command ? ResultOf<C> : void
 export type AppResult<C extends AppCommand> = C extends { do: 'export' } ? string | null : C extends PluginCatalogCommand ? readonly CatalogPlugin[] : HubResult<C>
 
@@ -283,12 +285,16 @@ export interface Bridge {
   choosePicture(): Promise<CommandOutcome<PictureFile>>
   /** The kanban board of the connected Hermes, read afresh. */
   taskBoard(): Promise<CommandOutcome<TaskBoard>>
+  /** What the bot's Hermes profile remembers in MEMORY.md and USER.md, read afresh. */
+  botMemory(bot: BotId): Promise<CommandOutcome<BotMemory>>
   /** The chat working on a card, read afresh. null: the card has none yet. */
   taskChat(id: string): Promise<CommandOutcome<TaskChat | null>>
   /** The bot's always-allow and deny rules, read afresh from its Hermes. `bot` null: the profile the connection itself reaches. `epoch` is as for `run`. */
   commandRules(bot: BotId | null, epoch: number): Promise<CommandOutcome<CommandRules>>
   /** Adds or removes one rule, and answers the rules as Hermes holds them afterwards. `bot` and `epoch` are as for `commandRules`. */
   editCommandRule(bot: BotId | null, edit: RuleEdit, epoch: number): Promise<CommandOutcome<CommandRules>>
+  /** The newest runs of a routine, read afresh from Hermes. */
+  routineRuns(bot: BotId, routine: RoutineId): Promise<CommandOutcome<readonly RoutineRun[]>>
   /** Opens the file dialog and holds each file picked, in the order picked. Nothing picked: an empty list. */
   attachPick(): Promise<readonly StageResult[]>
   /** Holds the image on the clipboard. No image there: an empty list. */
@@ -315,7 +321,7 @@ export type ScreenFrame = 'open' | ArrayBuffer | { readonly closed: number }
 export const CHANNEL = {
   watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image',
   drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft', pickPicture: 'highwing:pick-picture', choosePicture: 'highwing:choose-picture', attachPick: 'highwing:attach-pick',
-  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop', screen: 'highwing:screen', taskBoard: 'highwing:task-board', taskChat: 'highwing:task-chat', commandRules: 'highwing:command-rules', editCommandRule: 'highwing:edit-command-rule', transcribe: 'highwing:transcribe'
+  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop', screen: 'highwing:screen', taskBoard: 'highwing:task-board', taskChat: 'highwing:task-chat', commandRules: 'highwing:command-rules', editCommandRule: 'highwing:edit-command-rule', routineRuns: 'highwing:routine-runs', botMemory: 'highwing:bot-memory', transcribe: 'highwing:transcribe'
 } as const
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
@@ -401,6 +407,11 @@ const REFS: { readonly [K in ChatRef['kind']]: (raw: Obj) => Extract<ChatRef, { 
     const bot = botIdOf(raw.bot)
     if (sessionId === null || (raw.bot !== undefined && bot === null)) return null
     return { kind: 'chat', sessionId, ...(bot === null ? {} : { bot }) }
+  },
+  run: raw => {
+    const sessionId = sessionIdOf(raw)
+    const bot = botIdOf(raw.bot)
+    return sessionId && bot && { kind: 'run', bot, sessionId }
   },
   link: raw => {
     const sessionId = sessionIdOf(raw)
@@ -696,6 +707,11 @@ export const validators: Validators = {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'removeBotPicture', bot }
   },
+  setBotPicture: raw => {
+    const bot = botIdOf(raw.bot)
+    const data = pictureDataUrlOf(raw.data, PICTURE_MAX_BYTES)
+    return bot && data !== null ? { do: 'setBotPicture', bot, data } : null
+  },
   botPicture: raw => {
     const bot = botIdOf(raw.bot)
     return bot && { do: 'botPicture', bot }
@@ -860,6 +876,7 @@ export function parseCommand(raw: unknown): WindowCommand | null {
 }
 
 export const parseBotId = botIdOf
+export const parseRoutineId = (raw: unknown): RoutineId | null => (filled(raw) ? (raw as RoutineId) : null)
 
 /** The bot of a rules call: null for the profile the connection itself reaches. undefined: neither null nor a bot. */
 export const parseRulesBot = (raw: unknown): BotId | null | undefined => (raw === null ? null : botIdOf(raw) ?? undefined)

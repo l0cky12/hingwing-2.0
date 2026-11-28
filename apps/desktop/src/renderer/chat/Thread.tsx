@@ -1,7 +1,7 @@
 import { quoteOf, versionLabel, type AdmissionId, type Bot, type ChatVersions, type Landing, type PromptId, type PromptReply, type QueuedAction, type Quote, type Relay, type Told, type TurnId, type Version, type Versions } from '@highwing/hermes/domain'
 import { fieldId, findInThread, multiReply, type BesideRow, type Changing, type FindMatch, type PendingRow, type PromptButton, type PromptCard, type ThreadEnd, type ThreadNode, type ThreadView, type TurnView } from '@highwing/thread'
 import { createContext, Fragment, memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { Avatar, BotFace } from '../bots/Avatar'
+import { Avatar, BotFace, useDecodedPicture } from '../bots/Avatar'
 import { SentAttachments } from './Attachments'
 import { AskCard, type RequestAnswer } from './Asks'
 import { Command } from './Copy'
@@ -14,7 +14,7 @@ import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find
 import { isOpen, NONE_OPEN, toggled, type OpenState } from './open'
 import { hasActs, MessageActions, type MessageActs } from './MessageActions'
 import { Given } from './Reactions'
-import { Pages } from './Pages'
+import { NewestPagesContext, Pages } from './Pages'
 import { placeByTurn } from './relays'
 import { shownWork } from './show-work'
 import { SideTurn } from './Sides'
@@ -54,6 +54,7 @@ const TOLD_WORDS = {
 } as const satisfies Record<Told, string | null>
 
 function Prompt({ nodeKey, card, asking, onAnswer, onAskAgain }: PromptProps) {
+  const readOnly = useContext(ReadOnlyContext)
   const [told, setTold] = useState<Told | undefined>(undefined)
   const [askedAgain, setAskedAgain] = useState(false)
   const toldWords = told === undefined ? null : TOLD_WORDS[told]
@@ -88,6 +89,7 @@ function Prompt({ nodeKey, card, asking, onAnswer, onAskAgain }: PromptProps) {
       <p className="why" role="status" {...(card.state === 'expired' ? { 'data-find': fieldId(nodeKey, 'words') } : {})}>{card.state === 'expired' ? card.words : null}</p>
       {card.state === 'expired'
         ? <div className="choices"><button type="button" className="primary" disabled={onAskAgain === null || askedAgain} onClick={() => askAgain(card.askAgain)}>Ask again</button></div>
+        : readOnly ? null
         : card.pick.kind === 'one'
           ? <Buttons buttons={card.pick.buttons} freeText={card.pick.freeText} tell={card.tell} command={card.command} busy={card.busy} onAnswer={answer} onTell={deny} />
           : <Checks choices={card.pick.choices} busy={card.busy} onAnswer={answer} />}
@@ -286,16 +288,22 @@ const END_CLASS = {
 
 /** The bot of the open chat, which draws the end of a turn whose reply has not started. null where the chat has no listed bot. */
 export const ChatBotContext = createContext<Bot | null>(null)
+/** True in a chat that takes no messages, such as a routine's past run. Its turns offer Copy and nothing that writes. */
+export const ReadOnlyContext = createContext(false)
 
 const STAND_IN = { name: 'Hermes', tone: 'slate' } as const satisfies Pick<Bot, 'name' | 'tone'>
 
+const PET_PICTURE_SIDE = 44
+
 function End({ turnKey, end, started, showWork }: { readonly turnKey: string; readonly end: ThreadEnd; readonly started: boolean; readonly showWork: ShowWork }) {
   const bot = useContext(ChatBotContext)
-  if (end.kind === 'at' || end.kind === 'none') return null
-  const words = end.kind === 'tip' ? <><span><PhraseText words={end.words} /></span><Elapsed elapsed={end.elapsed} /></> : end.kind === 'done' ? <span className="sr">{end.words}</span> : <span data-find={fieldId(turnKey, 'end')}>{end.words}</span>
   const pet = end.kind === 'tip' && showWork === 'replies'
+  const picture = useDecodedPicture(pet ? bot : null)
+  if (end.kind === 'at' || end.kind === 'none') return null
+  const pictured = pet && picture !== null
+  const words = end.kind === 'tip' ? <><span className={pictured ? 'sr' : undefined}><PhraseText words={end.words} /></span><Elapsed elapsed={end.elapsed} /></> : end.kind === 'done' ? <span className="sr">{end.words}</span> : <span data-find={fieldId(turnKey, 'end')}>{end.words}</span>
   const face = pet ? bot ?? STAND_IN : end.kind === 'tip' && !started ? bot : null
-  return <div className={cx('tip', END_CLASS[end.kind], pet && 'pet')} role="status" data-end={end.kind}>{face !== null ? <BotFace bot={face} mood="working" size={22} /> : <span className="glyph" />}{words}</div>
+  return <div className={cx('tip', END_CLASS[end.kind], pet && 'pet')} role="status" data-end={end.kind}>{pictured ? <img className="face pet-picture" src={picture} alt="" width={PET_PICTURE_SIDE} height={PET_PICTURE_SIDE} /> : face !== null ? <BotFace bot={face} mood="working" size={22} /> : <span className="glyph" />}{words}</div>
 }
 
 /** Acts on a sent message by its stored row and text: `onEdit` puts it in the composer, `onRegenerate` asks again for its reply. */
@@ -341,21 +349,24 @@ interface TurnProps {
   readonly onReact: ReactOn
   readonly helpers: HelperControls | null
   readonly showWork: ShowWork
+  /** The chat takes no messages: the turn offers Copy and nothing that writes. */
+  readonly readOnly?: boolean
 }
 
 const RUNNING_ENDS: ReadonlySet<ThreadEnd['kind']> = new Set(['at', 'tip', 'paused'])
 
 const HANDED = 'Handed over'
 
-export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAgain, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onReply, onBranch, onNewChat, versions, onVersion, canReact, onReact, helpers, showWork }: TurnProps) {
+export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAgain, canEdit, showsRegenerate, canRegenerate, canBranch, onEdit, onRegenerate, onReply, onBranch, onNewChat, versions, onVersion, canReact, onReact, helpers, showWork, readOnly }: TurnProps) {
   const { end, rowId, request, reactions } = turn
+  const writes = readOnly !== true
   const regenerates = showsRegenerate && rowId !== null && request !== null
-  const movesToNewChat = end.kind === 'failed' && end.remedy === 'newChat' && request !== null
+  const movesToNewChat = writes && end.kind === 'failed' && end.remedy === 'newChat' && request !== null
   const live = end.kind === 'tip' || (end.kind === 'at' && end.tone === 'live')
   const requestActs: MessageActs = request === null ? {} : {
     copy: { text: request, name: 'Copy request' },
-    reply: { disabled: false, run: () => onReply({ from: 'you', text: quoteOf(request).body }) },
-    ...(rowId !== null && {
+    ...(writes && { reply: { disabled: false, run: () => onReply({ from: 'you', text: quoteOf(request).body }) } }),
+    ...(writes && rowId !== null && {
       edit: { disabled: !canEdit, run: () => onEdit(rowId, request) },
       branch: { disabled: !canBranch, run: () => onBranch(rowId) }
     })
@@ -363,9 +374,9 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAg
   const prose = turn.nodes.flatMap(node => (node.kind === 'prose' ? [node.markdown] : []))
   const said = prose.join('\n\n')
   const replyActs: MessageActs = {
-    ...(prose.length > 0 && !RUNNING_ENDS.has(end.kind) && { copy: { text: said, name: 'Copy reply' }, reply: { disabled: false, run: () => onReply({ from: 'hermes', text: said }) } }),
-    ...(regenerates && { regenerate: { disabled: !canRegenerate, run: () => onRegenerate(rowId, request) } }),
-    ...(reactions !== null && { react: { given: reactions.given, disabled: !canReact, onReact: emoji => onReact(reactions.turn, emoji) } })
+    ...(prose.length > 0 && !RUNNING_ENDS.has(end.kind) && { copy: { text: said, name: 'Copy reply' }, ...(writes && { reply: { disabled: false, run: () => onReply({ from: 'hermes', text: said }) } }) }),
+    ...(writes && regenerates && { regenerate: { disabled: !canRegenerate, run: () => onRegenerate(rowId, request) } }),
+    ...(writes && reactions !== null && { react: { given: reactions.given, disabled: !canReact, onReact: emoji => onReact(reactions.turn, emoji) } })
   }
   return (
     <article className={cx('turn', live && 'live-turn', end.kind === 'none' && 'interlude')} data-row={rowId ?? undefined} aria-label={turn.handed ? HANDED : undefined}>
@@ -389,9 +400,9 @@ export const Turn = memo(function Turn({ turn, open, onToggle, onAnswer, onAskAg
       </div>
       <Pages pages={turn.pages} />
       {turn.tokens !== null && <p className="used">{turn.tokens}</p>}
-      {(movesToNewChat || reactions !== null || hasActs(replyActs)) && (
+      {(movesToNewChat || (writes && reactions !== null) || hasActs(replyActs)) && (
         <div className="turn-actions">
-          {reactions !== null && <Given given={reactions.given} disabled={!canReact} onReact={emoji => onReact(reactions.turn, emoji)} />}
+          {writes && reactions !== null && <Given given={reactions.given} disabled={!canReact} onReact={emoji => onReact(reactions.turn, emoji)} />}
           {movesToNewChat && <button type="button" className="new-chat" onClick={() => onNewChat(request)}>Start a new chat</button>}
           <MessageActions acts={replyActs} />
         </div>
@@ -513,6 +524,7 @@ const landingOf = ({ versions, current }: Versions) => versions[current]?.landin
 const NO_GROUPS: readonly Versions[] = []
 
 export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequest, onLoadEarlier, onFindClosed, onFindScrolled, canEdit, regenerateTurnKey, canRegenerate, canBranch, onEdit, onRegenerate, onReply, onBranch, onNewChat, versions, onVersion, queue, canReact, onReact, helpers, showWork }: ThreadProps) {
+  const writes = !useContext(ReadOnlyContext)
   const shown = useMemo(() => shownWork(view, showWork), [view, showWork])
   const [open, setOpen] = useState<OpenState>(NONE_OPEN)
   const [find, setFind] = useState<FindState | null>(null)
@@ -627,7 +639,7 @@ export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequ
   }, [finding])
 
   return (
-    <>
+    <NewestPagesContext value={view.newestPages}>
       {find !== null && (
         <FindBar
           query={find.query} total={matches.length} current={current} earlier={view.earlier} inputRef={findInput}
@@ -645,18 +657,18 @@ export function Thread({ view, relays, sides, onAnswer, onAskAgain, onAnswerRequ
               turn={turn} open={open} onToggle={onToggle} onAnswer={onAnswer} onAskAgain={onAskAgain}
               canEdit={canEdit} showsRegenerate={turn.key === regenerateTurnKey} canRegenerate={canRegenerate} canBranch={canBranch}
               onEdit={onEdit} onRegenerate={onRegenerate} onReply={onReply} onBranch={onBranch} onNewChat={onNewChat} versions={groupsAt(turn.rowId)} onVersion={onVersion}
-              canReact={canReact} onReact={onReact} helpers={helpers} showWork={showWork}
+              canReact={canReact} onReact={onReact} helpers={helpers} showWork={showWork} readOnly={!writes}
             />
             {beside(relayed.after.get(turn.key), answered.after.get(turn.key))}
           </Fragment>
         ))}
         {beside(relayed.last, answered.last)}
         {atEnd.length > 0 && <p className="versions-end">{atEnd.map(group => <VersionSwitch key={group.versions[0]?.sessionId} versions={group} onVersion={onVersion} />)}</p>}
-        {view.asks.map(card => (
+        {(writes ? view.asks : []).map(card => (
           <AskCard key={card.key} card={card} changing={changing.get(card.key) ?? null} onChange={question => change(card.key, question)} onAnswer={onAnswerRequest} />
         ))}
         {view.pending.map(row => <Pending key={row.key} row={row} queue={queue} />)}
       </div>
-    </>
+    </NewestPagesContext>
   )
 }

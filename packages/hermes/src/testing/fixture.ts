@@ -2,6 +2,7 @@
  * `@highwing/hermes/testing`: a recorded or generated gateway, played back through the real client.
  */
 import { readFileSync } from 'node:fs'
+import { pythonStrip } from '../domain/memory'
 import { APPROVAL_MODES, type ApprovalMode, type SessionId } from '../domain/session'
 import { systemClock, type Reach } from '../wire/link'
 import { transcriptOf, type Transcribe } from '../wire/transcribe'
@@ -250,7 +251,14 @@ export interface Oneshot { readonly text?: string; readonly error?: string; read
  * `entries` are the chunks of MEMORY.md and USER.md, in file order. `limits.memory` caps MEMORY.md and `limits.user`
  * caps USER.md, in characters, the way MemoryStore does.
  */
-export interface MemoryScript {
+export interface MemoryScript extends MemoryFiles {
+  /**
+   * The top level is the launch profile, `default`. `profiles[p]` is the memory of bot `p`, which the dashboard API's
+   * `?profile=p` reads answer. A profile not listed holds no entries. Each profile's caps are its own `limits` over Hermes's defaults, as Hermes merges each profile's config, never the top level's.
+   */
+  readonly profiles?: { readonly [profile: string]: MemoryFiles }
+}
+export interface MemoryFiles {
   readonly entries: readonly { readonly file: 'MEMORY.md' | 'USER.md'; readonly text: string }[]
   readonly limits?: { readonly memory?: number; readonly user?: number }
 }
@@ -365,12 +373,14 @@ export type RelayScript = { readonly reply: string; readonly delay_ms?: number }
  * `unscoped`: play a Hermes older than the `profile` param, which lists the home store for every profile and says nothing of scope.
  * `runs`: each one rewrites a home job's `last_run_at`, `last_status` and `last_error` `after_ms` after the gateway's first list,
  * and pushes `cron.changed` to every socket, as Hermes's watcher does when the scheduler writes cron/jobs.json (tui_gateway/change_watcher.py:468).
+ * `history`: each job's reply to `GET /api/cron/jobs/<job_id>/runs`, body as Hermes sends it. A job with no entry answers 404, as a Hermes without the route does.
  */
 export interface CronScript {
   readonly jobs: readonly CronRow[]
   readonly profiles?: { readonly [profile: string]: readonly CronRow[] }
   readonly unscoped?: boolean
   readonly runs?: readonly CronRun[]
+  readonly history?: { readonly [job_id: string]: unknown }
 }
 export interface CronRow { readonly job_id: string; readonly [key: string]: unknown }
 export interface CronRun { readonly after_ms: number; readonly job_id: string; readonly last_run_at: string; readonly last_status: string; readonly last_error?: string }
@@ -562,17 +572,23 @@ const isCronRun = (value: unknown): value is CronRun =>
 
 const isCronRows = (value: unknown) => Array.isArray(value) && value.every(job => isObject(job) && isText(job.job_id))
 
+const cronJobIds = (value: { readonly jobs?: unknown; readonly profiles?: unknown }): ReadonlySet<string> =>
+  new Set([value.jobs, ...(isObject(value.profiles) ? Object.values(value.profiles) : [])].flatMap(rows => (Array.isArray(rows) ? rows.map(job => (job as { job_id: string }).job_id) : [])))
+
 const isCronScript = (value: unknown): value is CronScript =>
   isObject(value) && isCronRows(value.jobs)
   && (value.profiles === undefined || (isObject(value.profiles) && Object.values(value.profiles).every(isCronRows)))
   && (value.unscoped === undefined || typeof value.unscoped === 'boolean')
   && (value.runs === undefined || (Array.isArray(value.runs) && value.runs.every(run => isCronRun(run) && (value.jobs as { job_id: string }[]).some(job => job.job_id === run.job_id))))
+  && (value.history === undefined || (isObject(value.history) && Object.keys(value.history).every(id => cronJobIds(value).has(id))))
 
 const MEMORY_FILES = new Set(['MEMORY.md', 'USER.md'])
-const isCharLimit = (value: unknown) => value === undefined || (Number.isSafeInteger(value) && (value as number) > 0)
-const isMemory = (value: unknown): value is MemoryScript =>
-  isObject(value) && Array.isArray(value.entries) && value.entries.every(entry => isObject(entry) && typeof entry.file === 'string' && MEMORY_FILES.has(entry.file) && typeof entry.text === 'string' && entry.text.trim() !== '')
+const isCharLimit = (value: unknown) => value === undefined || (Number.isSafeInteger(value) && (value as number) >= 0)
+const isMemoryFiles = (value: unknown): value is MemoryFiles =>
+  isObject(value) && Array.isArray(value.entries) && value.entries.every(entry => isObject(entry) && typeof entry.file === 'string' && MEMORY_FILES.has(entry.file) && typeof entry.text === 'string' && pythonStrip(entry.text) !== '')
   && (value.limits === undefined || (isObject(value.limits) && Object.keys(value.limits).every(key => key === 'memory' || key === 'user') && isCharLimit(value.limits.memory) && isCharLimit(value.limits.user)))
+const isMemory = (value: unknown): value is MemoryScript =>
+  isMemoryFiles(value) && ((value as MemoryScript).profiles === undefined || (isObject((value as MemoryScript).profiles) && Object.values((value as MemoryScript).profiles!).every(isMemoryFiles)))
 
 const MCP_STATUSES: readonly unknown[] = ['connected', 'disabled', 'connecting', 'failed', 'lazy', 'configured']
 const SEED_KEYS = ['name', 'url', 'headers', 'command', 'args', 'status', 'tools', 'needs_auth', 'plugin']
@@ -737,7 +753,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   if (pets !== undefined && !isPets(pets)) return '"pets" must be { pets, thumbs, delay_ms?, refused_once? } with "thumbs" mapping a slug to a data URL'
   const { connectors } = value
   if (connectors !== undefined && !isConnectors(connectors)) return '"connectors" must be { catalog, accounts, signInUrl } with a unique slug on every app and an http(s) sign-in page'
-  if (memory !== undefined && !isMemory(memory)) return '"memory" must be { entries, limits? } with each entry { file: "MEMORY.md" or "USER.md", text } and limits { memory?, user? }'
+  if (memory !== undefined && !isMemory(memory)) return '"memory" must be { entries, limits? } with each entry { file: "MEMORY.md" or "USER.md", text } and limits { memory?, user? }, and may add profiles mapping a profile to the same'
   const { vault } = value
   if (vault !== undefined && !isVaultScript(vault)) {
     return '"vault" must map a profile to { onepassword?, bitwarden? }, each { installed, enabled?, unlocked?, logins?, password?, refuses?, token?, listFails? }'
@@ -795,7 +811,7 @@ function parseHeader(value: unknown): Fixture['header'] | string {
   }
   const { cron } = value
   if (cron !== undefined && !isCronScript(cron)) {
-    return '"cron" must be { jobs, profiles?, unscoped?, runs? }: each job with a "job_id", "profiles" mapping a profile to such jobs, each run { after_ms, job_id, last_run_at, last_status, last_error? } of a listed home job'
+    return '"cron" must be { jobs, profiles?, unscoped?, runs?, history? }: each job with a "job_id", "profiles" mapping a profile to such jobs, each run { after_ms, job_id, last_run_at, last_status, last_error? } of a listed home job, and "history" mapping a listed job_id to its runs reply'
   }
   const { turnMs, activeList } = value
   if (turnMs !== undefined && !(isObject(turnMs) && Object.values(turnMs).every(ms => Number.isSafeInteger(ms) && (ms as number) >= 0))) {

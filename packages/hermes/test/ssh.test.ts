@@ -112,8 +112,15 @@ describe('httpTicketOf', () => {
   })
 
   it('asks for the HTTP ticket on one line', () => {
-    expect(JSON.parse(ASK_NATIVE_HTTP)).toEqual({ id: 1, purpose: 'native-http' })
-    expect(ASK_NATIVE_HTTP.indexOf('\n')).toBe(ASK_NATIVE_HTTP.length - 1)
+    expect(JSON.parse(askNativeHttp(null))).toEqual({ id: 1, purpose: 'native-http' })
+    expect(askNativeHttp(null)).toBe('{"id":1,"purpose":"native-http"}\n')
+    expect(askNativeHttp(null).indexOf('\n')).toBe(askNativeHttp(null).length - 1)
+  })
+
+  it('names a profile on the same one line, quoted as JSON', () => {
+    const line = askNativeHttp('we"ird')
+    expect(JSON.parse(line)).toEqual({ id: 1, purpose: 'native-http', profile: 'we"ird' })
+    expect(line.indexOf('\n')).toBe(line.length - 1)
   })
 
   it('asks for a ticket bound to a profile on one line, whatever the name holds', () => {

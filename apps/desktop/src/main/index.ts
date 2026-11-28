@@ -158,7 +158,7 @@ app.whenReady().then(async () => {
     ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(maskedFrame(frame))}\n`) } : {})
   })
   const owner = fixture && played
-    ? pinnedConnection(open(played, 'fixture'), fixtureCall(fixture.header.kanban, played.rules), fixtureTranscribe(fixture.header.transcribe))
+    ? pinnedConnection(open(played, 'fixture'), fixtureCall(fixture.header, played.rules), fixtureTranscribe(fixture.header.transcribe))
     : await savedConnection(settingsDir, opener, open, intro.armIntro)
   pane.follow(owner.setup)
   const pictureDeps = { choose: pictureFile, read: readHead, set: (bot: BotId, data: string) => owner.run({ do: 'setBotPicture', bot, data }) }

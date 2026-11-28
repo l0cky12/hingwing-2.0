@@ -1,4 +1,4 @@
-import { byKind, machineOf, onThisComputer, type Session, type SshHost } from '@highwing/hermes/domain'
+import { byKind, machineOf, onThisComputer, type Session, type SessionId, type SshHost } from '@highwing/hermes/domain'
 import { realpath } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -119,11 +119,14 @@ export const failureOf = (code: number, description: string, address: string): s
  * Hermes or the window put it, and `address` the page the view is on now. `file` is the path a
  * step named, when it is on this computer: what Open opens, wherever a page has gone since.
  * `painted`: the page has drawn once, so a reload keeps it in view. `table`: a CSV file, drawn by
- * the window in place of a page.
+ * the window in place of a page. `session`: the chat that asked, if one did. `opened`: the address the
+ * pane first showed, so a page the view has left is told from one it still shows.
  */
 export interface Pane {
   readonly layout: PaneLayout
+  readonly session: SessionId | null
   readonly asked: string
+  readonly opened: string
   readonly address: string
   readonly file: string | null
   readonly label: string | null
@@ -134,7 +137,7 @@ export interface Pane {
 }
 
 export type PaneEvent =
-  | { readonly on: 'show'; readonly layout: PaneLayout; readonly asked: string; readonly address: string; readonly file: string | null; readonly label: string | null; readonly load: PageLoad }
+  | { readonly on: 'show'; readonly layout: PaneLayout; readonly session: SessionId | null; readonly asked: string; readonly address: string; readonly file: string | null; readonly label: string | null; readonly load: PageLoad }
   | { readonly on: 'navigated'; readonly address: string }
   | { readonly on: 'loading' }
   | { readonly on: 'loaded' }
@@ -156,8 +159,8 @@ const MOVES: { readonly [E in Exclude<PaneEvent['on'], 'show' | 'close'>]: Move<
 
 export function nextPane(pane: Pane | null, event: PaneEvent): Pane | null {
   if (event.on === 'show') {
-    const { layout, asked, address, file, label, load } = event
-    return { layout, asked, address, file, label, pageTitle: null, load, painted: false, table: null }
+    const { layout, session, asked, address, file, label, load } = event
+    return { layout, session, asked, opened: address, address, file, label, pageTitle: null, load, painted: false, table: null }
   }
   if (pane === null || event.on === 'close') return null
   return (MOVES[event.on] as Move<typeof event.on>)(pane, event)
@@ -170,6 +173,7 @@ export const previewOf = (pane: Pane | null): Preview =>
         state: 'open',
         layout: pane.layout,
         title: pane.label ?? pane.pageTitle ?? (pane.file === null ? pane.address : basename(pane.address)),
+        page: pane.session === null || pane.table !== null || pane.address !== pane.opened ? null : { session: pane.session, path: pane.asked },
         address: pane.address,
         file: pane.file !== null,
         content: pane.table === null ? { kind: 'page', load: pane.load } : { kind: 'table', table: pane.table }

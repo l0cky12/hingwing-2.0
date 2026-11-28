@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ServerId, Session, SshHost, Target } from '@highwing/hermes/domain'
+import type { ServerId, Session, SessionId, SshHost, Target } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import type { PaneLayout, Setup } from '../src/ipc-contract'
 import { failureOf, nextPane, pageFor, pageInView, pageUrlOf, pathOfPageUrl, previewOf, reachable, reachOf, servedPath, type Pane, type PaneEvent } from '../src/main/preview-page'
@@ -95,7 +95,7 @@ describe('failureOf', () => {
 describe('the pane', () => {
   const run = (...events: PaneEvent[]) => events.reduce<Pane | null>(nextPane, null)
   const show = (label: string | null = null, address = 'http://localhost:5173/', file: string | null = null, layout: PaneLayout = 'beside'): PaneEvent =>
-    ({ on: 'show', layout, asked: address, address, file, label, load: { at: 'loading' } })
+    ({ on: 'show', layout, session: null, asked: address, address, file, label, load: { at: 'loading' } })
 
   it("is titled by Hermes's label, else by the page's own title, else by its address", () => {
     expect(previewOf(run(show('demo'), { on: 'titled', title: 'Vite App' }))).toMatchObject({ state: 'open', title: 'demo' })
@@ -105,7 +105,7 @@ describe('the pane', () => {
 
   it('draws the page once it has loaded, and keeps it in view while it reloads', () => {
     const loading = run(show())
-    expect(previewOf(loading)).toEqual({ state: 'open', layout: 'beside', title: 'http://localhost:5173/', address: 'http://localhost:5173/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
+    expect(previewOf(loading)).toEqual({ state: 'open', layout: 'beside', title: 'http://localhost:5173/', page: null, address: 'http://localhost:5173/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
     expect(pageInView(loading)).toBe(false)
     const shown = nextPane(loading, { on: 'loaded' })
     expect(previewOf(shown)).toMatchObject({ content: { load: { at: 'shown' } } })
@@ -131,11 +131,19 @@ describe('the pane', () => {
     expect(previewOf(moved)).toMatchObject({ address: 'http://localhost:5173/about' })
   })
 
+  it('names the chat that asked for a page and its path while the view is on it, through a reload, and not after it leaves', () => {
+    const asked = { ...show(null, SITE, SITE, 'page'), session: 's1' as SessionId, asked: 'site/index.html' }
+    const shown = run(asked, { on: 'loaded' }, { on: 'navigated', address: SITE })
+    expect(previewOf(shown)).toMatchObject({ page: { session: 's1', path: 'site/index.html' }, address: SITE })
+    expect(previewOf(nextPane(shown, { on: 'navigated', address: '/w/site/other.html' }))).toMatchObject({ page: null })
+    expect(previewOf(run(show(null, SITE, SITE, 'page')))).toMatchObject({ page: null })
+  })
+
   it('shows a CSV file as its table, titled by its name, and offers to open it', () => {
     const table = { header: ['name', 'total'], rows: [['Alice', '120']], total: 1 }
     const report = '/tmp/hermes-proto-work/report.csv'
     expect(previewOf(run(show(null, report, report), { on: 'tabled', table })))
-      .toEqual({ state: 'open', layout: 'beside', title: 'report.csv', address: report, file: true, content: { kind: 'table', table } })
+      .toEqual({ state: 'open', layout: 'beside', title: 'report.csv', page: null, address: report, file: true, content: { kind: 'table', table } })
     expect(previewOf(run(show('Q3 report', report, report), { on: 'tabled', table }))).toMatchObject({ title: 'Q3 report' })
   })
 
@@ -156,7 +164,7 @@ describe('the pane', () => {
 
   it('starts a new page with nothing of the last one', () => {
     expect(previewOf(run(show('demo'), { on: 'loaded' }, show(null, 'https://example.com/'))))
-      .toEqual({ state: 'open', layout: 'beside', title: 'https://example.com/', address: 'https://example.com/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
+      .toEqual({ state: 'open', layout: 'beside', title: 'https://example.com/', page: null, address: 'https://example.com/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
   })
 })
 

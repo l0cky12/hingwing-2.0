@@ -132,7 +132,8 @@ describe('the custom properties of an appearance', () => {
   })
 
   it('stop every animation at 0 and keep their proportions otherwise', () => {
-    expect(appearanceStyle({ ...DEFAULT_APPEARANCE, motionMs: 0 })).toMatchObject({ '--duration-fast': '0ms', '--duration-blink': '0ms', '--duration-pulse': '0ms', '--duration-dots': '0ms' })
+    expect(appearanceStyle({ ...DEFAULT_APPEARANCE, motionMs: 0 })).toMatchObject({ '--duration-fast': '0ms', '--duration-blink': '0ms', '--duration-pulse': '0ms', '--duration-dots': '0ms', '--duration-hop': '0ms' })
     expect(appearanceStyle({ ...DEFAULT_APPEARANCE, motionMs: 300 })).toMatchObject({ '--duration-fast': '300ms', '--duration-pulse': '3200ms' })
+    expect(appearanceStyle(DEFAULT_APPEARANCE)).toMatchObject({ '--duration-hop': '1000ms' })
   })
 })

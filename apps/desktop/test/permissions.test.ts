@@ -188,7 +188,7 @@ describe('editCommandRule', () => {
   describe('against a Hermes that keeps the rules', () => {
     const hermes = (header = { allow: ['delete in root path'], deny: ['rm -rf /*'] }) => {
       const book = new RuleBook(header, 'default')
-      return { book, call: fixtureCall(undefined, book) }
+      return { book, call: fixtureCall({}, book) }
     }
 
     it('keeps approvals.mode and the other list through an add and a remove, one bot at a time', async () => {
@@ -201,11 +201,11 @@ describe('editCommandRule', () => {
 
     it('says Hermes did not save it on a managed install, which answers {"ok": true} and drops the write', async () => {
       const book = new RuleBook({ allow: [], deny: [], locked: true }, 'default')
-      expect(await editCommandRule(fixtureCall(undefined, book), ADA, add('allow', 'ls'))).toEqual({ ok: false, refusal: NOT_SAVED })
+      expect(await editCommandRule(fixtureCall({}, book), ADA, add('allow', 'ls'))).toEqual({ ok: false, refusal: NOT_SAVED })
     })
 
     it('is a 404, so unsupported, for a Hermes whose header holds no rules', async () => {
-      expect(await readCommandRules(fixtureCall(undefined, null), ADA)).toEqual({ ok: false, refusal: UNSUPPORTED })
+      expect(await readCommandRules(fixtureCall({}, null), ADA)).toEqual({ ok: false, refusal: UNSUPPORTED })
     })
   })
 })

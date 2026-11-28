@@ -325,6 +325,16 @@ describe('the route to a gateway address, against the fake Webapp', () => {
     expect(web.requests, 'nothing was sent').toHaveLength(before)
   })
 
+  it('reads nothing for a bot named current, which Hermes would take for the bot it runs as', async () => {
+    const web = await webapp('ok')
+    const route = routeOf(await signedIn(web), web.url)
+    await expect(route.call({ method: 'GET', path: '/api/learning/graph', profile: 'current' })).rejects.toThrow('a bot named current')
+    await expect(route.call({ method: 'GET', path: '/api/config', profile: 'Current' })).rejects.toThrow('a bot named current')
+    expect(web.requests.filter(request => request.includes('/api/learning/') || request.includes('/api/config')), 'no request left the app').toEqual([])
+    await route.call({ method: 'GET', path: '/api/cron/jobs/a1/runs?limit=20', profile: 'current' })
+    expect(count(web, 'GET /api/cron/jobs/a1/runs'), 'the cron route reads current as a name, so its read goes out').toBe(1)
+  })
+
   it('rejects a read for a sign-in Hermes ended', async () => {
     const web = await webapp('ok')
     const route = routeOf(await signedIn(web), web.url)

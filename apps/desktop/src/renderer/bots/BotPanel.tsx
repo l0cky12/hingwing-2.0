@@ -1,18 +1,21 @@
-import type { Bot, BotCreated, BotDetails, BotDraft, ModelMenu } from '@highwing/hermes/domain'
+import type { Bot, BotCreated, BotDetails, BotDraft, BotId, ModelMenu, SessionId } from '@highwing/hermes/domain'
 import { useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { pickBotPicture, run, useTopic } from '../store'
+import { pickBotPicture, run, runAt, useTopic } from '../store'
 import { Avatar } from './Avatar'
+import { BotMemory } from './BotMemory'
 import { BotEditor, type BotEditorProps } from './BotEditor'
 import { nameProblem } from './bot-form'
 import type { LookCalls } from './LookPicker'
 import { NewBotForm } from './NewBotForm'
+import { PET_CALLS } from './pet-picture'
 import { Routines, type RoutinesProps } from './Routines'
 
-export const BOT_EDIT_CALLS: Pick<BotEditorProps, 'onDescribe' | 'onEdit' | 'onPickPicture' | 'onRemovePicture'> = {
+export const BOT_EDIT_CALLS: Pick<BotEditorProps, 'onDescribe' | 'onEdit' | 'onPickPicture' | 'onRemovePicture' | 'pet'> = {
   onDescribe: bot => run({ do: 'describeBot', bot }),
   onEdit: (bot, edit, revision) => run({ do: 'editBot', bot, edit, revision }),
-  onPickPicture: bot => pickBotPicture(bot),
-  onRemovePicture: bot => run({ do: 'removeBotPicture', bot })
+  onPickPicture: (bot, epoch) => pickBotPicture(bot, epoch),
+  onRemovePicture: (bot, epoch) => runAt(epoch, { do: 'removeBotPicture', bot }),
+  pet: PET_CALLS
 }
 
 export const LOOKS: LookCalls = {
@@ -23,10 +26,13 @@ export const LOOKS: LookCalls = {
   petPicture: ({ slug, url }) => run({ do: 'petPicture', slug, url })
 }
 
-const ROUTINE_CALLS: Pick<RoutinesProps, 'onList' | 'onControl'> = {
+const ROUTINE_CALLS: Pick<RoutinesProps, 'onList' | 'onControl' | 'onRuns'> = {
   onList: bot => run({ do: 'listRoutines', bot }),
-  onControl: (bot, routine, action) => run({ do: 'controlRoutine', bot, routine, action })
+  onControl: (bot, routine, action) => run({ do: 'controlRoutine', bot, routine, action }),
+  onRuns: (bot, routine) => window.highwing.routineRuns(bot, routine)
 }
+
+const readMemory = (bot: Bot['id']) => window.highwing.botMemory(bot)
 
 type Panel =
   | { readonly at: 'closed' }
@@ -36,7 +42,7 @@ type Panel =
 const CLOSED: Panel = { at: 'closed' }
 
 /** Add a tab here when its content lands. The row stays hidden until there is more than one. */
-const TABS = [{ id: 'details', label: 'Details' }, { id: 'routines', label: 'Routines' }] as const
+export const TABS = [{ id: 'details', label: 'Details' }, { id: 'routines', label: 'Routines' }, { id: 'memory', label: 'Memory' }] as const
 type TabId = typeof TABS[number]['id']
 
 export function useBotPanel() {
@@ -124,20 +130,35 @@ function OpenPanel({ bot, details, onClose }: { readonly bot: Bot; readonly deta
             <button type="button" className="bot-new" aria-haspopup="dialog" disabled={sending} onClick={startNew}>New bot…</button>
             {warned}
             {tab === 'routines' ? <RoutinesTab bot={bot} onClose={onClose} /> : null}
+            {tab === 'memory' ? <MemoryTab bot={bot} onClose={onClose} /> : null}
           </>
         )}
         {...BOT_EDIT_CALLS} onClose={onClose}
       />
-      {making !== null && <NewBotForm problemOf={name => nameProblem(name, bots)} models={making} looks={LOOKS} onCreate={create} onClose={() => setMaking(null)} />}
+      {making !== null && <NewBotForm problemOf={name => nameProblem(name, bots)} models={making} looks={LOOKS} pet={BOT_EDIT_CALLS.pet} onCreate={create} onClose={() => setMaking(null)} />}
     </>
   )
 }
 
 /** The Details form's Save and Cancel are hidden under this tab, so it has a Close of its own. */
 function RoutinesTab({ bot, onClose }: { readonly bot: Bot; readonly onClose: () => void }) {
+  const onOpenRun = useCallback((owner: BotId, sessionId: SessionId) => {
+    void run({ do: 'open', ref: { kind: 'run', bot: owner, sessionId } })
+    onClose()
+  }, [onClose])
   return (
     <div className="routines-tab" role="tabpanel" aria-label="Routines">
-      <Routines bot={bot.id} name={bot.name} revision={useTopic('routines')} {...ROUTINE_CALLS} />
+      <Routines bot={bot.id} name={bot.name} revision={useTopic('routines')} onOpenRun={onOpenRun} {...ROUTINE_CALLS} />
+      <div className="form-choices"><button type="button" onClick={onClose}>Close</button></div>
+    </div>
+  )
+}
+
+/** Read-only, and the Details form's Save and Cancel are hidden under this tab, so it has a Close of its own. */
+function MemoryTab({ bot, onClose }: { readonly bot: Bot; readonly onClose: () => void }) {
+  return (
+    <div className="memory-tab" role="tabpanel" aria-label="Memory">
+      <BotMemory bot={bot.id} onRead={readMemory} />
       <div className="form-choices"><button type="button" onClick={onClose}>Close</button></div>
     </div>
   )

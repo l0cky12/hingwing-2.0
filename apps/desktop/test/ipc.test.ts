@@ -126,6 +126,7 @@ describe('validators', () => {
     expect(parseCommand({ do: 'open', ref: { kind: 'chat', sessionId: 's9', bot: '' } })).toBeNull()
     expect(parseCommand({ do: 'open', ref: { kind: 'chat', sessionId: 's9', bot: 7 } })).toBeNull()
     expect(parseCommand({ do: 'open', ref: { kind: 'link', sessionId: 's9', bot: 'research' } })).toEqual({ do: 'open', ref: { kind: 'link', sessionId: 's9' } })
+    expect(parseCommand({ do: 'open', ref: { kind: 'run', bot: 'research', sessionId: 's9', x: 1 } })).toEqual({ do: 'open', ref: { kind: 'run', bot: 'research', sessionId: 's9' } })
     expect(parseCommand({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null, draftId: 'd1' }, text: 'hello', sessionId: 's9' }))
       .toEqual({ do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: 'hello', attachments: [] })
     expect(parseCommand({ do: 'start', chat: { kind: 'new', bot: null, draftId: 'd1', sessionId: null }, text: 'hello' }))
@@ -243,6 +244,7 @@ describe('validators', () => {
       .toEqual({ do: 'editBot', bot: 'rae', edit: { name: 'Ray', description: '' }, revision: null })
     expect(parseCommand({ do: 'removeBotPicture', bot: 'rae', data: 'x' })).toEqual({ do: 'removeBotPicture', bot: 'rae' })
     expect(parseCommand({ do: 'botPicture', bot: 'rae' })).toEqual({ do: 'botPicture', bot: 'rae' })
+    expect(parseCommand({ do: 'setBotPicture', bot: 'rae', data: PICTURE, extra: 1 })).toEqual({ do: 'setBotPicture', bot: 'rae', data: PICTURE })
   })
 
   it('keep the panel commands: a process, a helper, a control button with what it takes, a checkpoint and its scope, and an emoji or none on a turn', () => {
@@ -347,6 +349,8 @@ describe('validators', () => {
     ['an open that names no chat', { do: 'open' }],
     ['an open of a kind of chat Highwing does not know', { do: 'open', ref: { kind: 'session', sessionId: 's1' } }],
     ['an open of a bot with no name', { do: 'open', ref: { kind: 'bot', bot: ' ' } }],
+    ['an open of a run with no bot', { do: 'open', ref: { kind: 'run', sessionId: 's9' } }],
+    ['an open of a run with no session', { do: 'open', ref: { kind: 'run', bot: 'research' } }],
     ['an open of a new chat with no draft id', { do: 'open', ref: { kind: 'new', bot: 'research', draftId: ' ' } }],
     ['an open of a new chat whose bot is not a name or null', { do: 'open', ref: { kind: 'new', draftId: 'd1' } }],
     ['a first message with no chat', { do: 'start', text: 'hello' }],
@@ -428,7 +432,9 @@ describe('validators', () => {
     ['an edit with no revision', { do: 'editBot', bot: 'rae', edit: { persona: 'x' } }],
     ['an edit at a negative revision', { do: 'editBot', bot: 'rae', edit: { persona: 'x' }, revision: -1 }],
     ['an edit at a fractional revision', { do: 'editBot', bot: 'rae', edit: { persona: 'x' }, revision: 1.5 }],
-    ['a picture a window sends as bytes', { do: 'setBotPicture', bot: 'rae', data: 'data:image/png;base64,iVBORw0KGgo=' }],
+    ['a picture that is not a picture', { do: 'setBotPicture', bot: 'rae', data: `data:image/png;base64,${Buffer.from('not a picture').toString('base64')}` }],
+    ['a picture over the size limit', { do: 'setBotPicture', bot: 'rae', data: OVERSIZED }],
+    ['a picture for a bot with no name', { do: 'setBotPicture', bot: ' ', data: PICTURE }],
     ['a picture removal for a bot with no name', { do: 'removeBotPicture', bot: ' ' }],
     ['the picture of a bot with no name', { do: 'botPicture', bot: ' ' }],
     ['a blank first message', { do: 'start', chat: { kind: 'bot', bot: 'research', sessionId: null }, text: '' }],
@@ -619,7 +625,7 @@ describe('validators', () => {
       'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'installPlugin', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
       'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'pluginCatalog', 'plugins', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
       'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeServer', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
-      'sendToGroup', 'setAccent', 'setAppearance', 'setBotBackup', 'setBotModel', 'setMode', 'setNotice', 'setOnClose', 'setPlugin', 'setSendKey', 'setShowWork', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
+      'sendToGroup', 'setAccent', 'setAppearance', 'setBotBackup', 'setBotModel', 'setBotPicture', 'setMode', 'setNotice', 'setOnClose', 'setPlugin', 'setSendKey', 'setShowWork', 'setSidebarWidth', 'setSkill', 'setSpellCheck', 'setTheme', 'side', 'skillText', 'snooze', 'start', 'stop', 'stopCheck', 'stopGroup', 'stopHelper',
       'takeControl', 'toolServers', 'tools', 'tune', 'unlockPasswordManager', 'usePasswordManager', 'useServer', 'versions'
     ])
   })
@@ -1364,7 +1370,7 @@ describe('the attach calls', () => {
       check: async () => ({ ok: true }),
       routeFor: () => {
         const [name, book] = [`server ${++served}`, books[served - 1]!]
-        const answer = fixtureCall(undefined, book)
+        const answer = fixtureCall({}, book)
         const call: CallHermes = async ask => {
           sent.push({ server: name, ask })
           if (name === 'server 1' && ask.method === 'GET' && sent.length === 1) await held
@@ -1392,7 +1398,7 @@ describe('the attach calls', () => {
 
   it('serializes the edits of a connection, so two that overlap both land', async () => {
     const book = new RuleBook({ allow: [], deny: [] }, 'default')
-    const answer = fixtureCall(undefined, book)
+    const answer = fixtureCall({}, book)
     const call: CallHermes = async ask => {
       const reply = await answer(ask)
       if (ask.method === 'GET') await new Promise(resolve => setTimeout(resolve, 5))
@@ -1472,6 +1478,58 @@ describe('the task calls', () => {
     served.dispose()
     expect(handlers.has(CHANNEL.taskBoard)).toBe(false)
     expect(handlers.has(CHANNEL.taskChat)).toBe(false)
+  })
+})
+
+describe("the routine runs call", () => {
+  const RUNS = { runs: [{ id: 'local-s1', source: 'cron', started_at: 1000, ended_at: 1042, end_reason: 'cron_complete', title: 'Morning digest' }], limit: 20 }
+
+  it("reads the routine's runs for the named bot, as the list draws them", async () => {
+    const rig = harness()
+    rig.answers({ status: 200, body: RUNS })
+    await expect(rig.handlers.get(CHANNEL.routineRuns)!(rig.event(), 'rae', 'a1')).resolves.toEqual({
+      ok: true, value: [{ key: 'local-s1', outcome: { is: 'succeeded' }, at: 1_000_000, seconds: 42, chat: 'local-s1', owner: null }]
+    })
+    expect(rig.asked).toEqual([{ method: 'GET', path: '/api/cron/jobs/a1/runs?limit=20', profile: 'rae' }])
+  })
+
+  it('refuses a foreign frame, and a bot or routine that is not a name, without reading', async () => {
+    const rig = harness()
+    const runs = rig.handlers.get(CHANNEL.routineRuns)!
+    for (const [event, bot, routine] of [[rig.event('https://example.com/'), 'rae', 'a1'], [rig.event(), '', 'a1'], [rig.event(), 'rae', ' '], [rig.event(), 7, 'a1'], [rig.event(), 'rae', { id: 'a1' }], [rig.event(), undefined, undefined]] as const) {
+      await expect(runs(event, bot, routine)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    }
+    expect(rig.reads).toEqual([])
+  })
+
+  it('stops answering once disposed', () => {
+    const { handlers, served } = harness()
+    served.dispose()
+    expect(handlers.has(CHANNEL.routineRuns)).toBe(false)
+  })
+})
+
+describe('the bot memory call', () => {
+  it("reads the named bot's memory through Hermes's profile-scoped routes", async () => {
+    const rig = harness()
+    rig.answers({ status: 200, body: { memory: [], nodes: [] } })
+    await expect(rig.handlers.get(CHANNEL.botMemory)!(rig.event(), 'rae')).resolves.toMatchObject({ ok: true, value: { files: [{ name: 'MEMORY.md' }, { name: 'USER.md' }] } })
+    expect(rig.asked).toContainEqual({ method: 'GET', path: '/api/learning/graph', profile: 'rae' })
+  })
+
+  it('refuses a foreign frame, and a bot with no name, without reading', async () => {
+    const rig = harness()
+    const memory = rig.handlers.get(CHANNEL.botMemory)!
+    for (const [event, raw] of [[rig.event('https://example.com/'), 'rae'], [rig.event(), ''], [rig.event(), 7], [rig.event(), { id: 'rae' }]] as const) {
+      await expect(memory(event, raw)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    }
+    expect(rig.reads).toEqual([])
+  })
+
+  it('stops answering once disposed', () => {
+    const { handlers, served } = harness()
+    served.dispose()
+    expect(handlers.has(CHANNEL.botMemory)).toBe(false)
   })
 })
 

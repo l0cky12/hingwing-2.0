@@ -1,6 +1,6 @@
 import type { ChatRef, Shown, ShownGroup } from '@highwing/hermes/domain'
 
-export type Visit = Extract<ChatRef, { kind: 'bot' | 'new' | 'chat' | 'group' }>
+export type Visit = Extract<ChatRef, { kind: 'bot' | 'new' | 'chat' | 'run' | 'group' }>
 
 /** `at` is the index of the current visit, -1 while there is none. */
 export interface Visits {
@@ -19,6 +19,7 @@ export function visitOf(shown: Shown | ShownGroup | null): Visit | null {
     case 'bot': return { kind: 'bot', bot: shown.bot }
     case 'group': return { kind: 'group', group: shown.group }
     case 'chat': case 'branch': return { kind: 'chat', sessionId: shown.sessionId }
+    case 'run': return { kind: 'run', bot: shown.bot, sessionId: shown.sessionId }
     case 'new': return shown.sessionId === null ? { kind: 'new', bot: shown.bot, draftId: shown.draftId } : { kind: 'chat', sessionId: shown.sessionId }
   }
 }

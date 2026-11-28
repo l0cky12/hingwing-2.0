@@ -5,6 +5,7 @@ import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEve
 import { nameProblem } from '../bots/bot-form'
 import { pictureOf } from '../bots/look'
 import { FaceArt } from '../bots/LookPicker'
+import { petForNewBot, usePetPicture } from '../bots/pet-picture'
 import { useImage } from '../chat/Image'
 import { connectorsKeys } from '../keys'
 import { line } from '../setup/ConnectionCard'
@@ -537,9 +538,13 @@ function TemplatesPanel() {
   const [chosen, setChosen] = useState<BotTemplate | null>(null)
   const opener = useRef<HTMLElement | null>(null)
   const bots = useTopic('bots')
+  const drawPet = usePetPicture()
   const create = async (template: BotTemplate, answers: TemplateAnswers) => {
     const picture = await pictureOf({ from: 'face', ...template.face }, answers.name).catch(() => null)
-    return picture === null ? UNDRAWN : run({ do: 'createFromTemplate', template: template.id, answers, picture })
+    if (picture === null) return UNDRAWN
+    const made = await run({ do: 'createFromTemplate', template: template.id, answers, picture })
+    petForNewBot(made, true, drawPet, { name: answers.name, description: template.summary })
+    return made
   }
   const close = () => {
     setChosen(null)

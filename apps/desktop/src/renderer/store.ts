@@ -73,8 +73,9 @@ export function useTopic<T extends Topic>(topic: T | null): TopicValue<T> | unde
   return useSyncExternalStore(topic === null ? NEVER : subscribe(key, topic), () => copies.get(key)?.value as TopicValue<T> | undefined)
 }
 
-export const run = <C extends WindowCommand>(command: C) => window.highwing.run(command, epoch)
-export const pickBotPicture = (bot: BotId) => window.highwing.pickBotPicture(bot, epoch)
+export const runAt = <C extends WindowCommand>(at: number, command: C) => window.highwing.run(command, at)
+export const run = <C extends WindowCommand>(command: C) => runAt(epoch, command)
+export const pickBotPicture = (bot: BotId, at: number) => window.highwing.pickBotPicture(bot, at)
 export const transcribe = (recording: Recording) => window.highwing.transcribe(recording, epoch)
 export const commandRules = (bot: BotId | null) => window.highwing.commandRules(bot, epoch)
 export const editCommandRule = (bot: BotId | null, edit: RuleEdit) => window.highwing.editCommandRule(bot, edit, epoch)

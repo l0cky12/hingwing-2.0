@@ -20,6 +20,7 @@ describe('visitOf', () => {
     ['a bot with its chat', { kind: 'bot', bot: botId, sessionId }, bot('b1')],
     ['a picked chat', { kind: 'chat', bot: botId, sessionId }, chat('s1')],
     ['a branch', { kind: 'branch', bot: botId, sessionId, text: 'hi' }, chat('s1')],
+    ["a routine's run", { kind: 'run', bot: botId, sessionId }, { kind: 'run', bot: botId, sessionId }],
     ['a new chat with its first message sent', { kind: 'new', bot: botId, draftId: 'd', sessionId }, chat('s1')],
     ['a new chat nothing was sent to', { kind: 'new', bot: botId, draftId: 'd', sessionId: null }, { kind: 'new', bot: botId, draftId: 'd' }],
     ['a group', { kind: 'group', group: 'g1' as GroupId, over: null }, { kind: 'group', group: 'g1' as GroupId }]

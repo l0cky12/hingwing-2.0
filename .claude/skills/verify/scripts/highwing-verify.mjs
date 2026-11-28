@@ -2,8 +2,8 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync, appendFileSync, openSync, readSync, closeSync } from 'node:fs'
-import { delimiter, dirname, extname, join, resolve, sep } from 'node:path'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync, appendFileSync, openSync, readSync, closeSync } from 'node:fs'
+import { delimiter, dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
@@ -84,7 +84,8 @@ const STATES = {
   preview: page => page.getByRole('region', { name: 'Preview', exact: true }),
   'group-thinking': page => page.locator('#transcript .tip.thinking').filter({ hasText: / (?:is|are) thinking$/ }),
   'group-replied': page => page.locator('#transcript:has(.said-by):not(:has(.tip))'),
-  pet: page => page.locator('#transcript .tip.pet .face[data-mood="working"]')
+  pet: page => page.locator('#transcript .tip.pet .face[data-mood="working"]'),
+  'pet-picture': page => page.locator('#transcript .tip.pet img.pet-picture')
 }
 
 const rendered = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
@@ -126,6 +127,7 @@ function sampleCode({ lang, ms }) {
 }
 
 const ACTIVITIES = ['working', 'waiting', 'unread', 'none']
+const WORKING_MARK_SIZES = { picture: 44, face: 22 }
 
 const STEPS = {
   wait: { arity: 1, run: async (ctx, state) => waitFor(ctx, state) },
@@ -606,6 +608,33 @@ const STEPS = {
       if (held !== drawn) throw new Error(`the avatar of "${name}" draws ${held}, not a ${drawn}`)
     }
   },
+  'working-mark': {
+    arity: 2,
+    run: async (ctx, drawn, motion) => {
+      if (drawn !== 'picture' && drawn !== 'face') throw new Error(`working-mark takes "picture" or "face", not "${drawn}"`)
+      if (motion !== 'hopping' && motion !== 'still') throw new Error(`working-mark takes "hopping" or "still", not "${motion}"`)
+      const mark = ctx.page.locator('#transcript .tip.pet .face').last()
+      const read = () => mark.evaluate(element => {
+        const loaded = element instanceof HTMLImageElement && element.complete && element.naturalWidth > 0
+        const running = element.getAnimations().filter(animation => animation.animationName === 'hop' && animation.playState === 'running' && Number(animation.effect?.getTiming().duration) > 0)
+        const words = [...element.closest('.tip').children].filter(child => child !== element && !child.matches('.sr, .elapsed')).map(child => child.textContent).join(' ').trim()
+        const read = [...element.closest('.tip').querySelectorAll(':scope > .sr')].map(child => child.textContent).join(' ').trim()
+        return {
+          drawn: element instanceof HTMLImageElement ? (loaded ? 'picture' : 'unloaded picture') : 'face',
+          motion: running.length > 0 ? 'hopping' : 'still',
+          size: Math.round(element.getBoundingClientRect().width),
+          animations: running.map(animation => `${animation.animationName} ${animation.effect.getTiming().duration} ms`).join(', ') || 'none',
+          words,
+          read
+        }
+      }, undefined, { timeout: ctx.timeout })
+      const fits = found => found.drawn === drawn && found.motion === motion && found.size === WORKING_MARK_SIZES[drawn]
+        && (drawn === 'picture' ? found.words === '' && found.read !== '' : found.words !== '')
+      const held = await poll(ctx, read, fits)
+      log(ctx, `  the working mark is a ${held.size} px ${held.drawn}, ${held.motion} (${held.animations}), beside "${held.words}", read out as "${held.read}"`)
+      if (!fits(held)) throw new Error(`the working mark is a ${held.drawn}, ${held.motion}, beside "${held.words}", not a ${WORKING_MARK_SIZES[drawn]} px ${drawn}, ${motion}${drawn === 'picture' ? ' with its words for screen readers only' : ' beside its words'}`)
+    }
+  },
   tile: {
     arity: 2,
     run: async (ctx, name, drawn) => {
@@ -630,6 +659,14 @@ const STEPS = {
         clipboard.write([new ClipboardItem({ 'image/png': new Blob([Buffer.from(png, 'base64')], { type: 'image/png' }) })]), bytes)
       await ctx.page.getByLabel('Message Hermes', { exact: true }).focus({ timeout: ctx.timeout })
       await ctx.page.keyboard.press('Control+V')
+    }
+  },
+  put: {
+    arity: 2,
+    run: async (ctx, from, to) => {
+      if (!isAbsolute(to)) throw new Error(`put writes to an absolute path, not ${JSON.stringify(to)}`)
+      mkdirSync(dirname(to), { recursive: true })
+      copyFileSync(join(REPO, from), to)
     }
   },
   'drag-file': {

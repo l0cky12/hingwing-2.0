@@ -506,6 +506,8 @@ button.file-open:hover { color: var(--signal); text-decoration: underline; text-
 .tip .face { position: absolute; z-index: 1; left: calc(var(--thread-x) - var(--col) - 10.25px); width: 22px; height: 22px; }
 .tip .face svg { display: block; }
 .tip.pet .face { animation: hop var(--duration-hop) ease-in-out infinite; transform-origin: 50% 100%; }
+.tip .pet-picture { left: calc(var(--thread-x) - var(--col) - 21.25px); width: 44px; height: 44px; border-radius: var(--radius-round); object-fit: cover; }
+.tip.pet:has(.pet-picture) { min-height: 56px; }
 .face-dot { transform-box: fill-box; transform-origin: center; }
 .face[data-mood="working"] .face-dot { animation: dot var(--duration-dots) ease-in-out infinite; }
 .face[data-mood="working"] .face-dot:nth-child(2) { animation-delay: var(--duration-fast); }
@@ -678,7 +680,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 /* The profile waits, hidden, under a New bot form opened from it. */
 .bot-panel:has(+ .bot-form[open]), .bot-panel:has(+ .bot-form[open])::backdrop { display: none; }
 .bot-panel.on-routines .bot-form-body > :not(.bot-tabs, .bot-new, .bots-warned, .routines-tab), .bot-panel.on-routines form > :is(.form-refused, .form-choices) { display: none; }
-.routines-tab > .form-choices { padding-top: 14px; }
+.bot-panel.on-memory .bot-form-body > :not(.bot-tabs, .bot-new, .bots-warned, .memory-tab), .bot-panel.on-memory form > :is(.form-refused, .form-choices) { display: none; }
+.routines-tab > .form-choices, .memory-tab > .form-choices { padding-top: 14px; }
 .look-row { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .look-button { position: relative; flex: none; width: 64px; height: 64px; padding: 0; border: 0; border-radius: var(--radius-round); background: none; color: var(--ink); }
 .look-button:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
@@ -724,6 +727,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .look-reset { display: block; margin-inline: auto; padding: 2px 4px; border: 0; background: none; color: var(--signal); font-size: var(--text-sm); text-decoration: underline; text-underline-offset: 3px; }
 .composer :is(.refusal, .busy) { max-width: var(--chat-width); margin: 8px auto 0; padding: 0 28px 0 calc(28px + var(--col)); }
 .composer .busy { font-size: var(--text-sm); color: var(--graphite); }
+.run-note { margin: 0; padding: 12px calc(max(0px, (100% - var(--chat-width)) / 2) + 28px + var(--col)) 16px; background: var(--paper); border-top: 1px solid var(--rule); font-size: var(--text-md); color: var(--graphite); }
 .composer.dragging .pill { border-style: dashed; border-color: var(--signal); }
 .chips, .attach-refused, .drop-line { max-width: var(--chat-width); margin: 0 auto 10px; padding: 0 28px 0 calc(28px + var(--col)); box-sizing: border-box; }
 .chips { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; list-style: none; }
@@ -877,6 +881,9 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .page-card button { padding: 4px 14px; border: 1px solid var(--ink); border-radius: var(--radius-sm); background: transparent; color: var(--ink); font: 500 var(--text-sm)/1.5 var(--sans); }
 .page-card button:hover { background: var(--paper); }
 .page-card .file-note { grid-column: 1 / -1; }
+.page-card.older h3 { color: var(--graphite); }
+.page-card .page-newer { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; margin-top: 4px; padding: 2px 0; border: 0; color: var(--graphite); text-align: start; }
+.page-card .page-newer:hover { background: transparent; color: var(--ink); text-decoration: underline; }
 .context .ring { flex: none; }
 .context .ring circle { fill: none; stroke-width: 2; }
 .context .ring .track { stroke: var(--rule); }
@@ -1772,6 +1779,31 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .routine:first-child { border-top: 0; }
 .routine-name { color: var(--ink); font-size: var(--text-md); overflow-wrap: anywhere; }
 .routine-when { grid-column: 1; color: var(--graphite); font-size: var(--text-sm); }
-.routine-controls { grid-area: 1 / 2 / 3; display: flex; gap: 6px; }
+.routine-controls { grid-area: 1 / 2 / 3; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.routine-runs { grid-column: 1 / -1; margin-top: 6px; }
+.routine-runs > ul { list-style: none; margin: 0; padding: 0; }
+.routine-runs .routines-note { padding: 8px 0 4px; }
+.run { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 2px 12px; padding: 8px 0; border-top: 1px solid var(--rule); font-size: var(--text-sm); }
+.run-state { color: var(--ink); font-weight: 500; }
+.run-failed .run-state { color: var(--brick); }
+.run-when { color: var(--graphite); }
+.run-why { grid-column: 1 / -1; color: var(--graphite); overflow-wrap: anywhere; }
+.run > button { padding: 4px 10px; font-size: var(--text-sm); border-radius: var(--radius-sm); border: 1px solid var(--rule); background: transparent; color: var(--ink); }
+.run > button:hover:not(:disabled) { border-color: var(--ink); }
 .routines-note { margin: 0; padding: 14px 0; font-size: var(--text-sm); color: var(--graphite); }
 .routines-refused { color: var(--brick); }
+.memory-note { margin: 0; padding: 14px 0; font-size: var(--text-sm); color: var(--graphite); }
+.memory-refused { color: var(--brick); }
+.memory-file { padding-bottom: 8px; }
+.memory-file h3 { margin: 12px 0 2px; font-size: var(--text-md); }
+.memory-about, .memory-size { margin: 0; font-size: var(--text-sm); color: var(--graphite); }
+.memory-meter { display: block; width: 100%; height: 8px; margin: 8px 0 4px; appearance: none; border: 0; border-radius: var(--radius-pill); background: var(--rule); overflow: hidden; }
+.memory-meter::-webkit-meter-bar { height: 8px; border: 0; background: var(--rule); }
+.memory-meter::-webkit-meter-optimum-value { background: var(--signal); }
+.memory-meter::-webkit-meter-suboptimum-value, .memory-meter::-webkit-meter-even-less-good-value { background: var(--caution); }
+.memory-entries { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.memory-entries li { padding: 8px 10px; border: 1px solid var(--rule); border-radius: var(--radius-md); background: var(--paper); white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (forced-colors: active) {
+  .memory-meter { appearance: auto; }
+  .memory-entries li { border-color: CanvasText; }
+}
