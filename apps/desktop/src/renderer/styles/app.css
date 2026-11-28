@@ -639,8 +639,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .form-choices button:disabled { opacity: .45; }
 .form-waiting { margin: 0 auto 0 0; align-self: center; font-size: var(--text-sm); color: var(--graphite); }
 .bot-picture { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px; }
-.bot-picture button, .routine-controls button, .bot-new { padding: 5px 12px; font-size: var(--text-sm); border-radius: var(--radius-sm); border: 1px solid var(--rule); background: transparent; color: var(--ink); }
-.bot-picture button:hover:not(:disabled), .routine-controls button:hover:not(:disabled), .bot-new:hover:not(:disabled) { border-color: var(--ink); }
+.bot-picture button, .routine-controls button, .routine-edit button, .bot-new { padding: 5px 12px; font-size: var(--text-sm); border-radius: var(--radius-sm); border: 1px solid var(--rule); background: transparent; color: var(--ink); }
+.bot-picture button:hover:not(:disabled), .routine-controls button:hover:not(:disabled), .routine-edit button:hover:not(:disabled), .bot-new:hover:not(:disabled) { border-color: var(--ink); }
 .bot-picture button:disabled, .bot-new:disabled { opacity: .45; }
 .bot-picture .form-refused { flex-basis: 100%; }
 .group-form { width: min(480px, calc(100% - 32px)); }
@@ -1763,11 +1763,21 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 }
 
 .routines { list-style: none; margin: 0; padding: 0; }
-.routine { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--rule); }
+.routine { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--rule); }
 .routine:first-child { border-top: 0; }
 .routine-name { color: var(--ink); font-size: var(--text-md); overflow-wrap: anywhere; }
 .routine-when { grid-column: 1; color: var(--graphite); font-size: var(--text-sm); }
-.routine-controls { grid-area: 1 / 2 / 3; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.routine-controls { grid-column: 1; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.routine-state { grid-column: 1; color: var(--ink); font-size: var(--text-sm); font-weight: 500; }
+.routine-edit { grid-column: 1 / -1; display: grid; gap: 6px; margin-top: 6px; }
+.routine-edit label { color: var(--ink); font-size: var(--text-sm); font-weight: 500; }
+.routine-edit input { box-sizing: border-box; width: 100%; padding: 8px 11px; font: var(--text-sm)/1.45 var(--mono); color: var(--ink); background: var(--paper); border: 1px solid var(--edge); border-radius: var(--radius-sm); }
+.routine-edit input:focus { outline: none; border-color: var(--signal); box-shadow: var(--ring); }
+.routine-edit .routines-note { padding: 0; }
+.routine-edit button.primary { background: var(--ink); color: var(--sheet); }
+.routine-edit button:disabled { opacity: .45; }
+.routine-hint { margin: 0; color: var(--graphite); font-size: var(--text-sm); }
+.routine-edit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .routine-runs { grid-column: 1 / -1; margin-top: 6px; }
 .routine-runs > ul { list-style: none; margin: 0; padding: 0; }
 .routine-runs .routines-note { padding: 8px 0 4px; }

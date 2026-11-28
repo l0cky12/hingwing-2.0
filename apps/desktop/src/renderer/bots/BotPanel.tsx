@@ -1,6 +1,6 @@
 import type { Bot, BotCreated, BotDetails, BotDraft, BotId, ModelMenu, SessionId } from '@highwing/hermes/domain'
 import { useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { pickBotPicture, run, runAt, useTopic } from '../store'
+import { editRoutine, pickBotPicture, run, runAt, useTopic } from '../store'
 import { Avatar } from './Avatar'
 import { BotEditor, type BotEditorProps } from './BotEditor'
 import { nameProblem } from './bot-form'
@@ -25,10 +25,12 @@ export const LOOKS: LookCalls = {
   petPicture: ({ slug, url }) => run({ do: 'petPicture', slug, url })
 }
 
-const ROUTINE_CALLS: Pick<RoutinesProps, 'onList' | 'onControl' | 'onRuns'> = {
+const ROUTINE_CALLS: Pick<RoutinesProps, 'onList' | 'onControl' | 'onRuns' | 'onOffered' | 'onEdit'> = {
   onList: bot => run({ do: 'listRoutines', bot }),
   onControl: (bot, routine, action) => run({ do: 'controlRoutine', bot, routine, action }),
-  onRuns: (bot, routine) => window.highwing.routineRuns(bot, routine)
+  onRuns: (bot, routine) => window.highwing.routineRuns(bot, routine),
+  onOffered: (bot, routine) => window.highwing.routineEditsOffered(bot, routine),
+  onEdit: (bot, routine, edit) => editRoutine(bot, routine, edit)
 }
 
 type Panel =
