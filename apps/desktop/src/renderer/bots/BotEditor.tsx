@@ -32,11 +32,9 @@ export function BotEditor({ bot, details: loaded, onDescribe, onEdit, onPickPict
   }
   const picture = async (change: () => Promise<CommandOutcome<PictureChoice | void>>, doing: 'file' | 'pet' = 'file') => {
     setPicturing({ doing, words: null })
+    if (doing === 'file') claim(bot.id)
     const outcome = await change()
-    if (outcome.ok && outcome.value !== 'cancelled' && doing === 'file') {
-      claim(bot.id)
-      forget(bot.id)
-    }
+    if (outcome.ok && outcome.value !== 'cancelled' && doing === 'file') forget(bot.id)
     setPicturing({ doing: null, words: outcome.ok ? null : outcome.refusal.message })
   }
 

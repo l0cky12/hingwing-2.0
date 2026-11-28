@@ -3,10 +3,13 @@ import type { ThreadView, TurnView } from '@highwing/thread'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { ShowWork } from '../src/ipc-contract'
-import { usePicture } from '../src/renderer/bots/pictures'
+import { useDecodedPicture } from '../src/renderer/bots/Avatar'
 import { ChatBotContext, Thread } from '../src/renderer/chat/Thread'
 
-vi.mock('../src/renderer/bots/pictures', () => ({ usePicture: vi.fn((bot: string | null) => (bot === null ? null : 'blob:rae-picture')) }))
+vi.mock('../src/renderer/bots/Avatar', async original => ({
+  ...(await original<typeof import('../src/renderer/bots/Avatar')>()),
+  useDecodedPicture: vi.fn((bot: Pick<Bot, 'picture'> | null) => (bot?.picture ? 'blob:rae-picture' : null))
+}))
 
 const BOT: Bot = { id: 'rae' as BotId, name: 'Rae', preview: '', description: '', tone: 'plum', picture: false, pinned: false, hidden: false }
 const tip = { kind: 'tip', words: [], elapsed: null } as unknown as TurnView['end']
@@ -87,8 +90,8 @@ describe('the end of a running turn under Replies only, for a bot with a picture
     expect(working(BOT)).toContain('<span>Working</span>')
   })
 
-  it("draws today's face while the picture is still being read", () => {
-    vi.mocked(usePicture).mockReturnValueOnce(null)
+  it("draws today's face until the whole picture has decoded", () => {
+    vi.mocked(useDecodedPicture).mockReturnValueOnce(null)
     const markup = drawn(turn([]), PICTURED, 'replies')
     expect(markup).toContain('data-mood="working"')
     expect(markup).not.toContain('pet-picture')

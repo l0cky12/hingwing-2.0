@@ -45,8 +45,9 @@ export function usePetPicture(calls: PetCalls = PET_CALLS): DrawPet {
   const claim = useClaimPicture()
   const forget = useForgetPicture()
   return async (bot, about) => {
-    const outcome = await givePet(calls, bot, about, epoch, claim(bot))
-    if (outcome.ok) forget(bot)
+    const current = claim(bot)
+    const outcome = await givePet(calls, bot, about, epoch, current)
+    if (outcome.ok && current()) forget(bot)
     return outcome
   }
 }

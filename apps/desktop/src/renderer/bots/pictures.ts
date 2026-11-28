@@ -18,6 +18,7 @@ const subscribe = (listener: () => void) => {
   return () => void listeners.delete(listener)
 }
 const snapshot = () => version
+const unsubscribed = () => () => {}
 
 const DATA_URL = /^data:(image\/(?:png|jpeg|webp));base64,([\s\S]*)$/
 
@@ -84,7 +85,7 @@ export function useRetryPicturesOnceOnline(online: boolean): void {
 
 export function usePicture(bot: BotId | null): string | null {
   const key = `${useContext(Epoch)} ${bot}`
-  useSyncExternalStore(subscribe, snapshot, snapshot)
+  useSyncExternalStore(bot === null ? unsubscribed : subscribe, snapshot, snapshot)
   const held = entries.has(key)
   useEffect(() => {
     if (bot !== null && !entries.has(key)) load(key, bot)
