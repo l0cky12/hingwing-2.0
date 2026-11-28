@@ -11,7 +11,7 @@ import type { AddressInfo } from 'node:net'
 import { inspect } from 'node:util'
 import { gatewayHost, URL_FAILURES, type GatewayUrl, type UrlFailure } from '../domain/reach'
 import type { CheckOptions } from './check'
-import { DialError, dialWith, GATEWAY_PROTOCOL, HANDSHAKE_MS, sessionAuthorityOf, systemClock, TICKET_PREFIX, type Clock, type Endpoint, type Mint, type ReadHermes } from './link'
+import { DialError, dialWith, GATEWAY_PROTOCOL, HANDSHAKE_MS, profiled, sessionAuthorityOf, systemClock, TICKET_PREFIX, type CallHermes, type Clock, type HermesAsk, type Endpoint, type Mint } from './link'
 import type { Route } from './remote'
 import { CANT_REACH, TRANSCRIBE_MS, TRANSCRIBE_PATH, transcribeBody, transcriptOf, type Transcribe } from './transcribe'
 
@@ -197,9 +197,10 @@ interface Login {
  * read is bound by the ticket's own profile, so neither has the doubt.
  */
 const SCOPED_ROUTES = ['/api/learning/', '/api/config']
-const namesCurrent = (path: string): boolean => {
+const namesCurrent = ({ path, profile }: HermesAsk): boolean => {
   const url = new URL(path, 'http://hermes.invalid')
-  return SCOPED_ROUTES.some(route => url.pathname.startsWith(route)) && url.searchParams.getAll('profile').some(name => name.trim().toLowerCase() === 'current')
+  const names = profile === null ? url.searchParams.getAll('profile') : [profile, ...url.searchParams.getAll('profile')]
+  return SCOPED_ROUTES.some(route => url.pathname.startsWith(route)) && names.some(name => name.trim().toLowerCase() === 'current')
 }
 const CURRENT_IS_OWN = 'Over a web address, Hermes reads a bot named current as the bot it runs as.'
 
@@ -208,7 +209,7 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
   const fetcher = deps.fetch ?? fetch
   const signInMs = deps.signInMs ?? SIGN_IN_MS
 
-  const send = async (method: 'GET' | 'POST', address: string, asked: Asked): Promise<Answer> => {
+  const send = async (method: 'GET' | 'POST' | 'PUT', address: string, asked: Asked): Promise<Answer> => {
     const deadline = AbortSignal.timeout(asked.ms ?? REQUEST_MS)
     const response = await fetcher(address, {
       method,
@@ -446,16 +447,18 @@ export function gatewaysByUrl(deps: GatewayDeps): Gateways {
           throw life.signal.aborted ? new DialError('dropped') : error
         }
       }
-      const read: ReadHermes = async path => {
-        if (namesCurrent(path)) throw new Error(CURRENT_IS_OWN)
+      const call: CallHermes = async ask => {
+        if (namesCurrent(ask)) throw new Error(CURRENT_IS_OWN)
+        const { path, json } = profiled(ask)
+        const sent = (bearer: string) => send(ask.method, `${url}${path}`, { bearer, signal: life.signal, ...(json === undefined ? {} : { json }) })
         const held = loginOf(url)
         const bearer = await held.bearer()
-        const answer = await send('GET', `${url}${path}`, { bearer, signal: life.signal })
+        const answer = await sent(bearer)
         if (answer.status !== 401) return answer
         await held.replaceRefused(bearer)
-        return send('GET', `${url}${path}`, { bearer: await held.bearer(), signal: life.signal })
+        return sent(await held.bearer())
       }
-      return { dial: dialWith(minted), read, transcribe: transcribeAt(url), dispose: () => life.abort() }
+      return { dial: dialWith(minted), call, transcribe: transcribeAt(url), dispose: () => life.abort() }
     },
 
     keepOnly: async urls => {

@@ -1,9 +1,9 @@
-import type { HttpAnswer, ReadHermes } from '@highwing/hermes'
+import type { CallHermes, HermesAsk, HttpAnswer } from '@highwing/hermes'
 import type { BotId, RoutineId } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import { readRoutineRuns } from '../src/main/routine-runs'
 
-const answering = (answer: HttpAnswer | Error): ReadHermes => async () => {
+const answering = (answer: HttpAnswer | Error): CallHermes => async () => {
   if (answer instanceof Error) throw answer
   return answer
 }
@@ -29,10 +29,10 @@ describe('readRoutineRuns', () => {
     expect(await readRoutineRuns(answering({ status: 200, body: { runs: [], limit: 20 } }), BOT, ROUTINE)).toEqual({ ok: true, value: [] })
   })
 
-  it("asks for the routine's newest runs in the bot's profile, by path", async () => {
-    const asked: string[] = []
-    await readRoutineRuns(async path => (asked.push(path), { status: 404, body: null }), BOT, ROUTINE)
-    expect(asked).toEqual(['/api/cron/jobs/4f1c2a9e0b7d/runs?profile=rae&limit=20'])
+  it("asks for the routine's newest runs in the bot's profile", async () => {
+    const asked: HermesAsk[] = []
+    await readRoutineRuns(async ask => (asked.push(ask), { status: 404, body: null }), BOT, ROUTINE)
+    expect(asked).toEqual([{ method: 'GET', path: '/api/cron/jobs/4f1c2a9e0b7d/runs?limit=20', profile: 'rae' }])
   })
 
   it.each<[string, HttpAnswer | Error, keyof typeof REFUSALS]>([

@@ -161,8 +161,11 @@ export type Command =
    * change up at the start of the next turn, in open chats too.
    */
   | { readonly do: 'setBotBackup'; readonly bot: BotId; readonly model: ModelOption | null }
-  /** The globs of the bot's `approvals.deny`: Hermes blocks a matching command whatever the approval mode, YOLO included. null: the socket's own profile. */
-  | { readonly do: 'denyRules'; readonly bot: BotId | null }
+  /**
+   * A token that changes when the bot's config.yaml does, so a page that shows its command rules reads them again only then.
+   * null: the socket's own profile.
+   */
+  | { readonly do: 'configStamp'; readonly bot: BotId | null }
   | { readonly do: 'describeBot'; readonly bot: BotId }
   /** The cron jobs this bot owns, paused ones included, read on each ask. */
   | { readonly do: 'listRoutines'; readonly bot: BotId }
@@ -311,7 +314,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'apps' } ? AppsBoard
   : C extends { do: 'connectApp' | 'appSignIn' } ? AppSignIn
   : C extends { do: 'memory' } ? readonly MemoryEntry[]
-  : C extends { do: 'denyRules' } ? readonly string[]
+  : C extends { do: 'configStamp' } ? string
   : C extends { do: 'markBot' } ? Marked
   : C extends { do: 'passwordManagers' | 'usePasswordManager' | 'unlockPasswordManager' | 'lockPasswordManager' } ? BotManagers
   : C extends { do: 'toolServers' | 'removeToolServer' } ? readonly ToolServer[]

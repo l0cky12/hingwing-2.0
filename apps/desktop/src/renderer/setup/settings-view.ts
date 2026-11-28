@@ -3,7 +3,7 @@ import { SHORTCUTS, type Shortcut, type ShortcutId } from '../shortcuts'
 
 export type Page = 'connection' | 'models' | 'appearance' | 'composer' | 'window' | 'notifications' | 'passwords' | 'permissions' | 'keys' | 'usage' | 'about'
 export type RowId =
-  | 'connection' | 'models' | 'theme' | 'accent' | 'show-work' | 'sidebar' | `font-${FontRole}` | 'chat-width' | 'contrast' | 'math' | 'motion' | 'send-key' | 'spell-check' | 'on-close' | 'notice-asks' | 'notice-replies' | 'notice-jobs' | 'passwords' | 'permissions' | 'denied'
+  | 'connection' | 'models' | 'theme' | 'accent' | 'show-work' | 'sidebar' | `font-${FontRole}` | 'chat-width' | 'contrast' | 'math' | 'motion' | 'send-key' | 'spell-check' | 'on-close' | 'notice-asks' | 'notice-replies' | 'notice-jobs' | 'passwords' | 'permissions' | 'allowed' | 'denied' | 'add-rule'
   | 'shortcuts' | `key:${ShortcutId}` | 'usage' | 'about-app' | 'about-hermes'
 
 export const PAGES: readonly { readonly id: Page; readonly label: string; readonly lede: string }[] = [
@@ -14,7 +14,7 @@ export const PAGES: readonly { readonly id: Page; readonly label: string; readon
   { id: 'window', label: 'Window', lede: 'What closing Highwing’s window does.' },
   { id: 'notifications', label: 'Notifications', lede: 'Which desktop notifications Highwing shows.' },
   { id: 'passwords', label: 'Password managers', lede: 'The 1Password and Bitwarden logins each bot can use.' },
-  { id: 'permissions', label: 'Permissions', lede: 'How Hermes asks before it runs a command.' },
+  { id: 'permissions', label: 'Permissions', lede: 'How Hermes asks before it runs a command, and which commands it always runs or never runs.' },
   { id: 'keys', label: 'Keyboard shortcuts', lede: 'Each shortcut, and where in Highwing it works.' },
   { id: 'usage', label: 'Usage', lede: 'What this Hermes reports of its use.' },
   { id: 'about', label: 'About', lede: 'The versions of Highwing and of the Hermes it talks to.' }
@@ -75,7 +75,9 @@ export const ROWS: readonly Row[] = [
   { id: 'notice-jobs', page: 'notifications', searchText: `Scheduled jobs. When a scheduled job finishes. cron ${NOTICE}` },
   { id: 'passwords', page: 'passwords', searchText: 'Password managers. 1Password, Bitwarden. Bot. Each bot keeps its own password managers. unlock lock vault secret login master password token' },
   { id: 'permissions', page: 'permissions', searchText: 'Commands are approved on the composer. approval approve Manual, Smart, Off. YOLO' },
-  { id: 'denied', page: 'permissions', searchText: 'Denied commands. This bot never runs a command that matches one of these, even with YOLO on. To change them, edit approvals.deny in the bot’s config.yaml. deny block blocked forbid rule glob' },
+  { id: 'allowed', page: 'permissions', searchText: 'Always allowed. Hermes runs a command that matches one of these without asking. Each is a command, or a pattern such as podman *, or a kind of command Hermes flagged when you chose Always allow. allow allowlist always allow remove rule command_allowlist' },
+  { id: 'denied', page: 'permissions', searchText: 'Denied. Hermes never runs a command that matches one of these, even with YOLO on. Each is a pattern, where * stands for any text, and capital letters don’t matter. deny block blocked forbid remove rule glob approvals.deny' },
+  { id: 'add-rule', page: 'permissions', searchText: 'Add a rule. Type a command, or a pattern with * for any text, and choose what Hermes does with it. Allow, Deny. allow deny new rule glob pattern command' },
   { id: 'shortcuts', page: 'keys', searchText: `Show all. Every shortcut Highwing has, grouped by what it does. sheet ${SHORTCUT} ${CTRL}` },
   ...shortcutRows,
   { id: 'usage', page: 'usage', searchText: 'Usage. What this Hermes reports. tokens cost plan limit quota account' },

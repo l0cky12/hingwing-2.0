@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
-import type { Hermes, HttpAnswer, PickedRoute } from '@highwing/hermes'
+import type { CallHermes, Hermes, HermesAsk, HttpAnswer, PickedRoute } from '@highwing/hermes'
 import type { AttachmentId, BotActivities, Bots, CatalogPlugin, CommandOutcome, Exported, Groups, Link, OpenChat, Recording, RelayDesk, ServerId, Session, SessionId, Sidebar, SkillLibrary, SlashCatalog, SshHost } from '@highwing/hermes/domain'
-import { loadFixture, play } from '@highwing/hermes/testing'
+import { fixtureCall, loadFixture, play, RuleBook } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_APPEARANCE, type Appearance } from '../src/appearance'
 import { DUE, EXAMPLES, nextIntro, OFF, type Intro, type IntroEvent } from '../src/intro'
@@ -158,8 +158,8 @@ describe('validators', () => {
     expect(parseCommand({ do: 'createBot', draft: { ...draft, model: null }, picture: null })).toEqual({ do: 'createBot', draft: { ...draft, model: null }, picture: null })
     expect(parseCommand({ do: 'botModels', bot: null, extra: 1 })).toEqual({ do: 'botModels', bot: null })
     expect(parseCommand({ do: 'botModels', bot: 'research' })).toEqual({ do: 'botModels', bot: 'research' })
-    expect(parseCommand({ do: 'denyRules', bot: null, extra: 1 })).toEqual({ do: 'denyRules', bot: null })
-    expect(parseCommand({ do: 'denyRules', bot: 'research' })).toEqual({ do: 'denyRules', bot: 'research' })
+    expect(parseCommand({ do: 'configStamp', bot: null, extra: 1 })).toEqual({ do: 'configStamp', bot: null })
+    expect(parseCommand({ do: 'configStamp', bot: 'research' })).toEqual({ do: 'configStamp', bot: 'research' })
   })
 
   it("keep the bot of the Models page and the model or backup picked for it", () => {
@@ -396,8 +396,8 @@ describe('validators', () => {
     ['a pet picture whose slug has spaces Hermes would trim', { do: 'petPicture', slug: ' tabby', url: null }],
     ['a model list for a bot with no name', { do: 'botModels', bot: ' ' }],
     ['a model list that names no bot', { do: 'botModels' }],
-    ['deny rules for a bot with no name', { do: 'denyRules', bot: ' ' }],
-    ['deny rules that name no bot', { do: 'denyRules' }],
+    ['a config token for a bot with no name', { do: 'configStamp', bot: ' ' }],
+    ['a config token that names no bot', { do: 'configStamp' }],
     ['details of a bot with no name', { do: 'describeBot', bot: '' }],
     ['the password managers of a bot with no name', { do: 'passwordManagers', bot: ' ' }],
     ['a password manager Highwing does not set up', { do: 'usePasswordManager', bot: 'rae', manager: 'local', use: true }],
@@ -621,7 +621,7 @@ describe('validators', () => {
   it('cover every command verb', () => {
     expect(Object.keys(validators).sort()).toEqual([
       'accountUsage', 'addToolServer', 'answer', 'appSignIn', 'apps', 'archive', 'arrangeWays', 'botModelSettings', 'botModels', 'botPicture', 'branch', 'browse', 'canGeneratePicture', 'checkTarget', 'checkpointDiff',
-      'checkpoints', 'closePreview', 'completePath', 'compress', 'connectApp', 'contextBreakdown', 'control', 'controlRoutine', 'createBot', 'createFromTemplate', 'createGroup', 'deleteGroup', 'denyRules', 'describeBot', 'discard',
+      'checkpoints', 'closePreview', 'completePath', 'compress', 'configStamp', 'connectApp', 'contextBreakdown', 'control', 'controlRoutine', 'createBot', 'createFromTemplate', 'createGroup', 'deleteGroup', 'describeBot', 'discard',
       'done', 'editBot', 'editTarget', 'examples', 'export', 'generatePicture', 'handBack', 'installPlugin', 'keepTarget', 'killProcess', 'listRoutines', 'loadEarlier', 'lockPasswordManager', 'markBot', 'memory', 'models', 'move',
       'open', 'openPreview', 'passwordManagers', 'petPicture', 'pets', 'pickModel', 'pin', 'placePreview', 'pluginCatalog', 'plugins', 'preview', 'queued', 'react', 'readMessages', 'reconnect',
       'reloadPreview', 'remove', 'removeApp', 'removeBotPicture', 'removeMemory', 'removeServer', 'removeToolServer', 'rename', 'renameGroup', 'restore', 'retitle', 'rewind', 'saveMemory', 'send',
@@ -660,7 +660,8 @@ const switchable = (hermes: Hermes) => ownConnection({
 function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   const reads: string[] = []
   let answer: HttpAnswer = { status: 404, body: null }
-  const read = async (path: string) => (reads.push(path), answer)
+  const asked: HermesAsk[] = []
+  const call: CallHermes = async ask => (asked.push(ask), reads.push(ask.path), answer)
   const listeners = new Map<string, (event: IpcEvent, ...args: unknown[]) => void>()
   const handlers = new Map<string, (event: IpcEvent, ...args: unknown[]) => unknown>()
   const ipc: IpcMainLike = {
@@ -773,7 +774,7 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   const appearance = feed<Appearance>(DEFAULT_APPEARANCE)
   const sources: AttachSources = { pick: async () => ['/home/me/error.png', '/home/me/big.zip'], pasted: async () => ({ name: 'Pasted image 1.png', bytes: PNG }) }
   const served = serveWindows(
-    (ownerOf ?? (held => pinnedConnection(held, read, HEARD)))(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
+    (ownerOf ?? (held => pinnedConnection(held, call, HEARD)))(hermes), ipc, url => url.startsWith('app://'), opener, { load: async (request, context) => (loaded.push({ request, context }), { ok: false }) },
     { keep: draft => void kept.push(draft), load: async () => stored }, pane,
     { pick: async (bot, live) => (picked.push(bot), lives.push(live), { ok: true, value: 'cancelled' }), choose: async () => (picked.push('chosen'), { ok: true, value: PICTURE }) },
     { store, sources }, saver, { mode, theme, accent, sidebarWidth, sendKey, showWork, spellCheck, snoozes, notices, onClose, appearance },
@@ -798,7 +799,7 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   }
   return {
     listeners, handlers, pushes, destroyed, event, emit: (session: Session) => emit(session), commands, opened, loaded, kept, picked, lives, stored, previewed, toPane, staged, served,
-    reads, answers: (next: HttpAnswer) => void (answer = next), saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, accent, sidebarWidth, sendKey, showWork, spellCheck, snoozes, notices, onClose, appearance, intro
+    reads, asked, answers: (next: HttpAnswer) => void (answer = next), saves, exportsAs, setCatalog, setBots, setOpen, mode, theme, accent, sidebarWidth, sendKey, showWork, spellCheck, snoozes, notices, onClose, appearance, intro
   }
 }
 
@@ -908,7 +909,8 @@ describe('serveWindows', () => {
       setup,
       servers: feed(NO_SERVERS),
       hermes: null,
-      read: async () => { throw new Error('the test never reads') },
+      call: async () => { throw new Error('the test never calls') },
+      callAt: () => null,
       transcribe: HEARD,
       close: async () => {},
       run: async (command: { readonly do: string }) => {
@@ -1345,6 +1347,74 @@ describe('the attach calls', () => {
     expect(rig.loaded).toEqual([])
   })
 
+  it('takes a remove of a rule longer than an add may be, as the page lists it', async () => {
+    const rig = harness()
+    const long = 'x'.repeat(4001)
+    rig.answers({ status: 200, body: { command_allowlist: [long], approvals: { deny: [] } } })
+    await rig.handlers.get(CHANNEL.editCommandRule)!(rig.event(), 'research', { change: 'remove', kind: 'allow', rule: long }, 0)
+    expect(rig.asked[1]).toEqual({ method: 'PUT', path: '/api/config', profile: 'research', json: { config: { command_allowlist: [] } } })
+    await expect(rig.handlers.get(CHANNEL.editCommandRule)!(rig.event(), 'research', { change: 'add', kind: 'allow', rule: long }, 0)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+  })
+
+  it('goes on with the server an edit began on when the window switches meanwhile, so no save reaches the other one', async () => {
+    const [first, second] = [new RuleBook({ allow: ['podman *'], deny: [] }, 'default'), new RuleBook({ allow: ['other *'], deny: [] }, 'default')]
+    const sent: { server: string; ask: HermesAsk }[] = []
+    let release = () => {}
+    const held = new Promise<void>(resolve => (release = resolve))
+    const books = [first, second]
+    let served = 0
+    let owner: ConnectionOwner | undefined
+    const { handlers, event } = harness(hermes => (owner = ownConnection({
+      loaded: savedAt({ kind: 'remote', host: 'box' as SshHost }),
+      save: async () => {},
+      check: async () => ({ ok: true }),
+      routeFor: () => {
+        const [name, book] = [`server ${++served}`, books[served - 1]!]
+        const answer = fixtureCall({}, book)
+        const call: CallHermes = async ask => {
+          sent.push({ server: name, ask })
+          if (name === 'server 1' && ask.method === 'GET' && sent.length === 1) await held
+          return answer(ask)
+        }
+        return { dial: async () => { throw new Error('the test never dials') }, transcribe: HEARD, call, dispose: () => {} } as unknown as PickedRoute
+      },
+      newId: () => 'server-2' as ServerId,
+      open: () => ({ ...hermes, close: async () => {} }),
+      armIntro: async () => {}
+    })))
+    const [run, edit] = [handlers.get(CHANNEL.run)!, handlers.get(CHANNEL.editCommandRule)!]
+    const editing = edit(event(), null, { change: 'add', kind: 'allow', rule: 'ls' }, 1)
+    await run(event(), { do: 'editTarget' }, 1)
+    await run(event(), { do: 'checkTarget', target: { kind: 'local' }, into: 'replace' }, 1)
+    await new Promise(resolve => setImmediate(resolve))
+    expect(owner!.setup.get()).toMatchObject({ live: { epoch: 2 } })
+    release()
+    await expect(editing).resolves.toEqual({ ok: true, value: { allow: ['podman *', 'ls'], deny: [] } })
+    expect(sent.map(({ server, ask }) => `${server} ${ask.method}`)).toEqual(['server 1 GET', 'server 1 PUT', 'server 1 GET'])
+    expect(second.config(null), 'the other server was never written').toMatchObject({ command_allowlist: ['other *'] })
+    await expect(edit(event(), null, { change: 'add', kind: 'allow', rule: 'ls' }, 1)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    expect(sent).toHaveLength(3)
+  })
+
+  it('serializes the edits of a connection, so two that overlap both land', async () => {
+    const book = new RuleBook({ allow: [], deny: [] }, 'default')
+    const answer = fixtureCall({}, book)
+    const call: CallHermes = async ask => {
+      const reply = await answer(ask)
+      if (ask.method === 'GET') await new Promise(resolve => setTimeout(resolve, 5))
+      return reply
+    }
+    const { handlers, event } = harness(hermes => pinnedConnection(hermes, call, HEARD))
+    const edit = handlers.get(CHANNEL.editCommandRule)!
+    const [one, two, other] = await Promise.all([
+      edit(event(), null, { change: 'add', kind: 'allow', rule: 'ls' }, 0),
+      edit(event(), null, { change: 'add', kind: 'allow', rule: 'cat' }, 0),
+      edit(event('app://index.html', 2), null, { change: 'add', kind: 'deny', rule: 'rm *' }, 0)
+    ])
+    expect([one, two, other].every(outcome => (outcome as { ok: boolean }).ok)).toBe(true)
+    expect(book.config(null)).toMatchObject({ command_allowlist: ['ls', 'cat'], approvals: { deny: ['rm *'] } })
+  })
+
   it('stop answering once disposed', () => {
     const { handlers, served } = harness()
     served.dispose()
@@ -1420,7 +1490,7 @@ describe("the routine runs call", () => {
     await expect(rig.handlers.get(CHANNEL.routineRuns)!(rig.event(), 'rae', 'a1')).resolves.toEqual({
       ok: true, value: [{ key: 'local-s1', outcome: { is: 'succeeded' }, at: 1_000_000, seconds: 42, chat: 'local-s1', owner: null }]
     })
-    expect(rig.reads).toEqual(['/api/cron/jobs/a1/runs?profile=rae&limit=20'])
+    expect(rig.asked).toEqual([{ method: 'GET', path: '/api/cron/jobs/a1/runs?limit=20', profile: 'rae' }])
   })
 
   it('refuses a foreign frame, and a bot or routine that is not a name, without reading', async () => {
@@ -1444,7 +1514,7 @@ describe('the bot memory call', () => {
     const rig = harness()
     rig.answers({ status: 200, body: { memory: [], nodes: [] } })
     await expect(rig.handlers.get(CHANNEL.botMemory)!(rig.event(), 'rae')).resolves.toMatchObject({ ok: true, value: { files: [{ name: 'MEMORY.md' }, { name: 'USER.md' }] } })
-    expect(rig.reads).toContain('/api/learning/graph?profile=rae')
+    expect(rig.asked).toContainEqual({ method: 'GET', path: '/api/learning/graph', profile: 'rae' })
   })
 
   it('refuses a foreign frame, and a bot with no name, without reading', async () => {
@@ -1539,6 +1609,61 @@ describe('the transcribe call', () => {
     await new Promise(resolve => setImmediate(resolve))
     await expect(call(rig.event(), RECORDING, 1)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
     await expect(call(rig.event(), RECORDING, 2)).resolves.toEqual({ ok: true, value: '3 bytes of audio/webm;codecs=opus' })
+  })
+})
+
+describe('the command rule calls', () => {
+  const CONFIG = { status: 200, body: { command_allowlist: ['podman *'], approvals: { mode: 'manual', deny: [] } } }
+  const ADD = { change: 'add', kind: 'deny', rule: 'git push --force*' }
+
+  it("reads a bot's rules, and the profile the connection reaches with no bot, each through the live connection's call", async () => {
+    const rig = harness()
+    rig.answers(CONFIG)
+    const read = rig.handlers.get(CHANNEL.commandRules)!
+    await expect(read(rig.event(), 'research', 0)).resolves.toEqual({ ok: true, value: { allow: ['podman *'], deny: [] } })
+    await expect(read(rig.event(), null, 0)).resolves.toMatchObject({ ok: true })
+    expect(rig.asked).toEqual([
+      { method: 'GET', path: '/api/config', profile: 'research' },
+      { method: 'GET', path: '/api/config', profile: null }
+    ])
+  })
+
+  it('edits one rule, and answers the rules as Hermes then holds them', async () => {
+    const rig = harness()
+    rig.answers(CONFIG)
+    await expect(rig.handlers.get(CHANNEL.editCommandRule)!(rig.event(), 'research', ADD, 0)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    expect(rig.asked.map(ask => ask.method), 'the save went out, and the config read after it lacked the rule').toEqual(['GET', 'PUT', 'GET'])
+    expect(rig.asked[0]?.path, 'an edit builds on the file').toBe('/api/config?include_defaults=false')
+    expect(rig.asked[1]).toEqual({ method: 'PUT', path: '/api/config', profile: 'research', json: { config: { approvals: { deny: ['git push --force*'] } } } })
+  })
+
+  it('refuse a foreign frame, a malformed bot or edit, and a stale connection, without calling Hermes', async () => {
+    const rig = harness()
+    const [read, edit] = [rig.handlers.get(CHANNEL.commandRules)!, rig.handlers.get(CHANNEL.editCommandRule)!]
+    for (const [event, bot] of [[rig.event('https://example.com/'), 'research'], [rig.event(), ' '], [rig.event(), 7], [rig.event(), undefined]] as const) {
+      await expect(read(event, bot, 0)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    }
+    for (const [event, bot, raw] of [
+      [rig.event('https://example.com/'), 'research', ADD],
+      [rig.event(), ' ', ADD],
+      [rig.event(), 'research', { ...ADD, change: 'replace' }],
+      [rig.event(), 'research', { ...ADD, kind: 'ask' }],
+      [rig.event(), 'research', { ...ADD, rule: 7 }],
+      [rig.event(), 'research', { ...ADD, rule: 'x'.repeat(4001) }],
+      [rig.event(), 'research', null]
+    ] as const) {
+      await expect(edit(event, bot, raw, 0)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    }
+    await expect(read(rig.event(), 'research', 99)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    await expect(edit(rig.event(), 'research', ADD, 99)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    expect(rig.asked).toEqual([])
+  })
+
+  it('stop answering once disposed', () => {
+    const { handlers, served } = harness()
+    served.dispose()
+    expect(handlers.has(CHANNEL.commandRules)).toBe(false)
+    expect(handlers.has(CHANNEL.editCommandRule)).toBe(false)
   })
 })
 

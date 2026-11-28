@@ -302,22 +302,36 @@ describe('the route to a gateway address, against the fake Webapp', () => {
   it('reads the gateway\'s HTTP API with the sign-in\'s bearer, refreshing once when Hermes no longer takes it', async () => {
     const web = await webapp('ok')
     const route = routeOf(await signedIn(web), web.url)
-    expect(await route.read(BOARD_PATH)).toEqual({ status: 200, body: { columns: [{ name: 'todo', tasks: [] }] } })
+    expect(await route.call({ method: 'GET', path: BOARD_PATH, profile: null })).toEqual({ status: 200, body: { columns: [{ name: 'todo', tasks: [] }] } })
     expect(count(web, 'POST /auth/native/refresh')).toBe(0)
 
     web.lapse()
-    expect(await route.read(BOARD_PATH)).toMatchObject({ status: 200 })
+    expect(await route.call({ method: 'GET', path: BOARD_PATH, profile: null })).toMatchObject({ status: 200 })
     expect(count(web, 'POST /auth/native/refresh')).toBe(1)
-    expect(await route.read('/api/plugins/kanban/missing'), 'a status passes through for the caller to read').toEqual({ status: 404, body: { detail: 'Not Found' } })
+    expect(await route.call({ method: 'GET', path: '/api/plugins/kanban/missing', profile: null }), 'a status passes through for the caller to read').toEqual({ status: 404, body: { detail: 'Not Found' } })
+  })
+
+  it('sends nothing for a bot the dashboard would take for its own profile, and reaches the others', async () => {
+    const web = await webapp('ok')
+    const route = routeOf(await signedIn(web), web.url)
+    await route.call({ method: 'GET', path: '/api/config', profile: 'ada' })
+    await route.call({ method: 'PUT', path: '/api/config', profile: 'ada', json: { config: {} } })
+    expect(web.requests.filter(request => request.endsWith('/api/config'))).toEqual(['GET /api/config', 'PUT /api/config'])
+    const before = web.requests.length
+    for (const profile of ['current', 'Current']) {
+      await expect(route.call({ method: 'GET', path: '/api/config', profile })).rejects.toThrow('current')
+      await expect(route.call({ method: 'PUT', path: '/api/config', profile, json: { config: {} } })).rejects.toThrow('current')
+    }
+    expect(web.requests, 'nothing was sent').toHaveLength(before)
   })
 
   it('reads nothing for a bot named current, which Hermes would take for the bot it runs as', async () => {
     const web = await webapp('ok')
     const route = routeOf(await signedIn(web), web.url)
-    await expect(route.read('/api/learning/graph?profile=current')).rejects.toThrow('a bot named current')
-    await expect(route.read('/api/config?profile=Current')).rejects.toThrow('a bot named current')
+    await expect(route.call({ method: 'GET', path: '/api/learning/graph', profile: 'current' })).rejects.toThrow('a bot named current')
+    await expect(route.call({ method: 'GET', path: '/api/config', profile: 'Current' })).rejects.toThrow('a bot named current')
     expect(web.requests.filter(request => request.includes('/api/learning/') || request.includes('/api/config')), 'no request left the app').toEqual([])
-    await route.read('/api/cron/jobs/a1/runs?profile=current&limit=20')
+    await route.call({ method: 'GET', path: '/api/cron/jobs/a1/runs?limit=20', profile: 'current' })
     expect(count(web, 'GET /api/cron/jobs/a1/runs'), 'the cron route reads current as a name, so its read goes out').toBe(1)
   })
 
@@ -325,7 +339,7 @@ describe('the route to a gateway address, against the fake Webapp', () => {
     const web = await webapp('ok')
     const route = routeOf(await signedIn(web), web.url)
     web.signOut()
-    await expect(route.read(BOARD_PATH)).rejects.toMatchObject({ kind: 'signed-out' })
+    await expect(route.call({ method: 'GET', path: BOARD_PATH, profile: null })).rejects.toMatchObject({ kind: 'signed-out' })
     expect(count(web, `GET ${BOARD_PATH}`), 'the refused bearer was tried once, and not again on a sign-in that is gone').toBe(1)
   })
 

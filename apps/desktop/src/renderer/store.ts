@@ -1,5 +1,5 @@
 import { createContext, useContext, useSyncExternalStore } from 'react'
-import type { BotId, Recording } from '@highwing/hermes/domain'
+import type { BotId, Recording, RuleEdit } from '@highwing/hermes/domain'
 import { applyPush, epochOf, type Bridge, type Setup, type Topic, type TopicValue, type WindowCommand } from '../ipc-contract'
 
 declare global {
@@ -77,3 +77,5 @@ export const runAt = <C extends WindowCommand>(at: number, command: C) => window
 export const run = <C extends WindowCommand>(command: C) => runAt(epoch, command)
 export const pickBotPicture = (bot: BotId, at: number) => window.highwing.pickBotPicture(bot, at)
 export const transcribe = (recording: Recording) => window.highwing.transcribe(recording, epoch)
+export const commandRules = (bot: BotId | null) => window.highwing.commandRules(bot, epoch)
+export const editCommandRule = (bot: BotId | null, edit: RuleEdit) => window.highwing.editCommandRule(bot, edit, epoch)

@@ -1,5 +1,4 @@
 /** Hermes's memory replies as the dashboard API sends them (hermes_cli/web_routers/status.py, config_env.py), read into what the Memory tab draws. */
-import type { BotId } from './bots'
 import type { MemoryEntry } from './command'
 
 export type MemoryFileName = MemoryEntry['file']
@@ -27,9 +26,10 @@ const PYTHON_SPACE = '[\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u20
 const PYTHON_ENDS = new RegExp(`^${PYTHON_SPACE}+|${PYTHON_SPACE}+$`, 'g')
 export const pythonStrip = (text: string): string => text.replace(PYTHON_ENDS, '')
 
-export const memoryGraphPath = (bot: BotId): string => `/api/learning/graph?profile=${encodeURIComponent(bot)}`
-export const memoryCapsPath = (bot: BotId): string => `/api/config?profile=${encodeURIComponent(bot)}`
-export const memoryEntryPath = (bot: BotId, node: string): string => `/api/learning/node?id=${encodeURIComponent(node)}&profile=${encodeURIComponent(bot)}`
+/** The Memory tab's HTTP reads. Each is asked for one bot, whose name the call adds as `?profile=`. */
+export const MEMORY_GRAPH_PATH = '/api/learning/graph'
+export const MEMORY_CAPS_PATH = '/api/config'
+export const memoryEntryPath = (node: string): string => `/api/learning/node?id=${encodeURIComponent(node)}`
 
 type Obj = Readonly<Record<string, unknown>>
 const isObject = (value: unknown): value is Obj => value !== null && typeof value === 'object' && !Array.isArray(value)

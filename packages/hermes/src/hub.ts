@@ -3,7 +3,7 @@ import { DONE, refused, SessionActor, type Upload } from './actor'
 import { activityDesk, busyOf, type Attached } from './activity'
 import { appSignIn, connectApp, listApps, removeApp } from './apps'
 import {
-  addToolServer, botModels, botModelSettings, botPicture, canGeneratePicture, createBot, denyRules, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, readSkills, removeToolServer, setBotBackup, setBotModel,
+  addToolServer, botModels, botModelSettings, botPicture, canGeneratePicture, createBot, configStamp, describeBot, editBot, generatePicture, listPets, markBot, passwordManagers, petPicture, readSkills, removeToolServer, setBotBackup, setBotModel,
   installPlugin, listPlugins, listToolsets, setBotPicture, setPlugin, setSkill, skillText, toolServers
 } from './bot-admin'
 import type { BotActivities, UnreadChat } from './domain/activity'
@@ -41,10 +41,10 @@ import { parseCatalog, parseEvent, parseServerRequest, type ParsedEvent } from '
 
 export type { Command, Outcome, Refusal, ResultOf } from './domain/command'
 export type { Upload } from './actor'
-export type { Clock, Dialer, HttpAnswer, ReadHermes, WireSocket } from './wire/link'
+export type { CallHermes, Clock, Dialer, HermesAsk, HttpAnswer, WireSocket } from './wire/link'
 export { checkTarget, type CheckOptions, type CheckResult } from './wire/check'
 export { gatewaysByUrl, memoryKeep, type GatewayDeps, type Gateways, type Keep, type UrlCheckResult } from './wire/gateways'
-export { DialError } from './wire/link'
+export { DialError, TicketRefused } from './wire/link'
 export { pickedRoute, timeWay, type Picked, type PickedRoute, type Way } from './wire/pick'
 export { remoteRoute, type Route } from './wire/remote'
 export { sshRead, type RemoteRead } from './wire/ssh'
@@ -630,7 +630,7 @@ export function openHermes(options: HermesOptions): Hermes {
       return started.ok ? run({ do: 'send', sessionId: started.value, text: command.text, attachments: command.attachments ?? [] }) : started
     }
     if (command.do === 'botModels') return botModels(conn, command.bot)
-    if (command.do === 'denyRules') return denyRules(conn, command.bot)
+    if (command.do === 'configStamp') return configStamp(conn, command.bot)
     if (command.do === 'botModelSettings') return botModelSettings(conn, command.bot)
     if (command.do === 'setBotModel') return setBotModel(conn, command.bot, command.model, command.confirm === true)
     if (command.do === 'setBotBackup') return setBotBackup(conn, command.bot, command.model)

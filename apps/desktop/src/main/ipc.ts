@@ -1,7 +1,7 @@
-import type { Hermes } from '@highwing/hermes'
+import type { CallHermes, Hermes } from '@highwing/hermes'
 import { isTaskId, type BotId, type CommandOutcome, type Session, type SessionId } from '@highwing/hermes/domain'
 import {
-  CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseRecording, parseRoutineId, parseTopic,
+  CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseRecording, parseRuleEdit, parseRoutineId, parseRulesBot, parseTopic,
   type Accent, type AppTopic, type FileAction, type FileOutcome, type ImageOutcome, type ImageType, type Mode, type Notices, type OnClose, type PictureChoice, type PictureFile, type Push, type SessionPatch, type StageResult,
   type SendKey, type ShowWork, type SidebarWidth, type Snoozes, type Tail, type Theme, type Topic
 } from '../ipc-contract'
@@ -17,6 +17,7 @@ import type { ImageLoader } from './images'
 import { snoozed, type PreferenceStore } from './preferences'
 import type { PreviewPane } from './preview'
 import type { Saver } from './saves'
+import { editCommandRule, inTurn, readCommandRules } from './permissions'
 import { readRoutineRuns } from './routine-runs'
 import { readBotMemory } from './memory'
 import { readTaskBoard, readTaskChat } from './tasks'
@@ -306,18 +307,34 @@ export function serveWindows(
     return images.load(request, { session: watched?.current() as Session | undefined, local: servedHere(watched) })
   })
 
-  ipc.handle(CHANNEL.taskBoard, async event => (trusted(event) ? readTaskBoard(owner.read) : REFUSED))
-  ipc.handle(CHANNEL.taskChat, async (event, id) => (trusted(event) && isTaskId(id) ? readTaskChat(owner.read, id) : REFUSED))
+  ipc.handle(CHANNEL.taskBoard, async event => (trusted(event) ? readTaskBoard(owner.call) : REFUSED))
+  ipc.handle(CHANNEL.taskChat, async (event, id) => (trusted(event) && isTaskId(id) ? readTaskChat(owner.call, id) : REFUSED))
+
+  /** One connection's edits go one at a time, whichever bot or window they are for: a null bot and a named one can be the same profile. */
+  const ruleEdits = inTurn<unknown>()
+  const callFor = (epoch: unknown): CallHermes | null => (typeof epoch === 'number' ? owner.callAt(epoch) : null)
+  ipc.handle(CHANNEL.commandRules, async (event, raw, epoch) => {
+    const bot = parseRulesBot(raw)
+    if (!trusted(event) || bot === undefined) return REFUSED
+    const call = callFor(epoch)
+    return call === null ? OTHER_CONNECTION : readCommandRules(call, bot)
+  })
+  ipc.handle(CHANNEL.editCommandRule, async (event, raw, rawEdit, epoch) => {
+    const [bot, edit] = [parseRulesBot(raw), parseRuleEdit(rawEdit)]
+    if (!trusted(event) || bot === undefined || edit === null) return REFUSED
+    const call = callFor(epoch)
+    return call === null ? OTHER_CONNECTION : ruleEdits(epoch, () => editCommandRule(call, bot, edit))
+  })
 
   ipc.handle(CHANNEL.routineRuns, async (event, bot, routine) => {
     const named = parseBotId(bot)
     const id = parseRoutineId(routine)
-    return trusted(event) && named !== null && id !== null ? readRoutineRuns(owner.read, named, id) : REFUSED
+    return trusted(event) && named !== null && id !== null ? readRoutineRuns(owner.call, named, id) : REFUSED
   })
 
   ipc.handle(CHANNEL.botMemory, async (event, raw) => {
     const bot = parseBotId(raw)
-    return trusted(event) && bot !== null ? readBotMemory(owner.read, bot) : REFUSED
+    return trusted(event) && bot !== null ? readBotMemory(owner.call, bot) : REFUSED
   })
 
   ipc.handle(CHANNEL.drafts, async event => (trusted(event) ? drafts.load() : []))
@@ -371,6 +388,8 @@ export function serveWindows(
       ipc.removeHandler(CHANNEL.image)
       ipc.removeHandler(CHANNEL.taskBoard)
       ipc.removeHandler(CHANNEL.taskChat)
+      ipc.removeHandler(CHANNEL.commandRules)
+      ipc.removeHandler(CHANNEL.editCommandRule)
       ipc.removeHandler(CHANNEL.routineRuns)
       ipc.removeHandler(CHANNEL.botMemory)
       ipc.removeHandler(CHANNEL.drafts)

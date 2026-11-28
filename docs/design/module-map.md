@@ -31,6 +31,7 @@ highwing-2.0/
           requests.ts                                     the life of what Hermes asks outside the turn: opened, reconciled with a snapshot, answered, closed
           queue.ts                                        Hermes's queue: queueOf (a pending list becomes `queue`), offeredBy (what a row's state offers), sendPlan (submit, steer or redirect)
           command.ts                                      Command, ResultOf, Outcome, Refusal: data the renderer sends and gets back
+          rules.ts                                        CommandRules, RuleKind, RuleEdit, RULE_KINDS: a bot's always-allow and deny lists as `/api/config` holds them, the body that replaces one, and the edits of them
           slash.ts                                        SlashEntry, SlashCatalog, slashLineOf: the slash menu's rows. OWN_COMMANDS, ownCommand: the lines Highwing runs itself
           bots.ts                                         Bots, Roster, Bot, BotFacts, rosterOf: the sidebar's bots, grouped and painted
           groups.ts                                       Groups, GroupRow, GroupChat, GroupEvent, Answering, GroupDraft, seatsFor, groupIdFor; GroupDesk, nextGroups, logStart and nextPoll, which only the hub uses
@@ -42,7 +43,8 @@ highwing-2.0/
           contract.generated.ts                           copied from Hermes by `pnpm sync:contract`
           contract.openrpc.json                           copied with it; read only by testing/ for key sets
           link.ts                                         dial, handshake, heartbeat, JSON-RPC, backoff, and `as(bot)`, which adds a bot's profile to a call
-          tickets.ts                                      mintWith: probe, attach and the ticket that reaches every profile, for both routes; liveRoute, readWith (one ticketed GET of the HTTP API)
+          tickets.ts                                      mintWith: probe, attach and the ticket that reaches every profile, for both routes; liveRoute, callWith (one ticketed request of the HTTP API, bound to a profile when it names one)
+          native-http.ts                                  sendWithTicket: one node:http request with a native-http ticket and no Origin, for the HTTP API and the speech upload
           ssh.ts                                          Hermes's SSH client contract: the locator, one hermes command over ssh, its replies, the stderr table, the relay
           remote.ts                                       remoteRoute: a Dialer to the gateway on another machine, and its processes
           check.ts                                        checkTarget: Tailscale, ssh and Hermes, one step at a time
@@ -51,6 +53,7 @@ highwing-2.0/
         testing/                 public entry "./testing" Node
           fixture.ts                                      fixture format, scriptedDialer, recordingDialer, play
           fake-host.ts                                    fake ssh, tailscale and hermes executables, and SCENARIOS (imported by path, not exported)
+          rules.ts                                        RuleBook, configCall: each profile's command rules and the token `config.get` of `mtime` answers, shared by the scripted gateway, the fixture's HTTP calls and the loopback's `/api/config`
           rooms.ts                                        ScriptedRooms: Hermes's group chats played from a fixture's `groups` header, with Hermes's rules and its members' turns on the clock
     thread/                      @highwing/thread         pure, browser-safe
       src/thread-view.ts                                  design C: threadView, outline, checkThread
@@ -66,6 +69,7 @@ highwing-2.0/
       mode.ts                    no Electron              readMode, modeStore: mode.json, whether the window shows the bots or the chats beside the chat
       attachments.ts             no Electron              attachmentStore: attachments/, the files staged for messages; desktopSources: the file dialog and clipboard, or HIGHWING_PICK_FILES
       connection.ts              no Electron              ownConnection, nextSetup, pinnedConnection: the setup state, the saved servers, the live Hermes
+      permissions.ts             no Electron              readCommandRules, editCommandRule: a bot's command rules over the HTTP API, read again after each save
       notify.ts                  no Electron              noticeOf, notifyTurnEnds: a desktop notification when the shown chat's turn ends while no window has focus
     src/preload/index.ts         preload                  exposes Bridge: watch, run, file, image, drafts, keepDraft, attachPick, attachPaste and attachDropped
     src/renderer/                renderer                 store.ts (useTopic), new-chat.ts (newChatIn), setup/, bots/ (NewMenu.tsx: the plus menu), groups/ (GroupForm.tsx: New group chat; GroupPane.tsx: the open group chat), chats/, chat/ (Attachments.tsx: chips and sent files), composer/ (drafts.ts: useDraft, useAttachments), chrome/, styles/

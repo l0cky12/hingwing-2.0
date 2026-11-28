@@ -10,7 +10,7 @@ import type { Added, ServerSetup, Tested, ToolServer } from './domain/tool-serve
 import { NOT_CONNECTED } from './open'
 import { METHOD_NOT_FOUND, Offline, RpcRefusal, type Connection } from './wire/link'
 import {
-  descriptionOf, parseBackupChain, parseBotAt, parseBotManagers, parseBotRecord, parseCatalog, parseCliFailure, parseConfigured, parseConfigValue, parseConfirmAsked, parseCreated, parseDenyRules, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets,
+  descriptionOf, parseBackupChain, parseBotAt, parseBotManagers, parseBotRecord, parseCatalog, parseCliFailure, parseConfigured, parseConfigValue, parseConfirmAsked, parseCreated, parseConfigStamp, parseDetails, parseGenerated, parseImageProbe, parseModelMenu, parsePetPicture, parsePets,
   parsePicture, parsePluginInstalled, parsePlugins, parseRestartNeeded, parseSkillStates, parseSkillText, parseTested, parseToolsets, parseToolServers, type BackupEntry, type Configured, type ConfigValue
 } from './wire/parse'
 
@@ -152,9 +152,14 @@ export const setBotBackup = (conn: Wire, bot: BotId, model: ModelOption | null):
     return failed === null ? DONE : rejected(failed)
   })
 
-/** With no session `config.get full` reads the profile's own config.yaml (gateway/session_config.py:65-115). */
-export const denyRules = (conn: Wire, bot: BotId | null): Promise<Outcome<readonly string[]>> =>
-  guarded({}, async () => ({ ok: true, value: parseDenyRules(await (bot === null ? conn : conn.as(bot)).call('config.get', { key: 'full' })) }))
+const NO_STAMP: Outcome<never> = { ok: false, refusal: { kind: 'unsupported', message: "This Hermes doesn't say when its config changes." } }
+
+/** With no session `config.get mtime` reads the profile's own config.yaml (gateway/session_config.py:96-98). */
+export const configStamp = (conn: Wire, bot: BotId | null): Promise<Outcome<string>> =>
+  guarded({}, async () => {
+    const stamp = parseConfigStamp(await (bot === null ? conn : conn.as(bot)).call('config.get', { key: 'mtime' }))
+    return stamp === null ? NO_STAMP : { ok: true, value: stamp }
+  })
 
 const LIST_ROWS = { include_sessions: false } as const
 

@@ -8,6 +8,7 @@ import { Command } from './Copy'
 import type { ShowWork } from '../../ipc-contract'
 import { isShortcut } from '../keys'
 import { modalOpen } from '../shortcuts'
+import { openSettingsOn } from '../setup/settings-page'
 import { Helper, Moa, Notice, Plan, Reasoning, type HelperControls } from './Helpers'
 import { FIND_OPEN, FindBar, reveal, useFindMarks, type FindState } from './Find'
 import { isOpen, NONE_OPEN, toggled, type OpenState } from './open'
@@ -63,6 +64,11 @@ function Prompt({ nodeKey, card, asking, onAnswer, onAskAgain }: PromptProps) {
         <p data-find={fieldId(nodeKey, 'words')}>{card.words}</p>
         {card.command !== null && <Command nodeKey={nodeKey} command={card.command} />}
         {toldWords !== null && <p className="notice">{toldWords}</p>}
+        {card.chosenAlways && (
+          <p className="notice">
+            See or remove it in Permissions. <button type="button" className="open-rules" onClick={() => openSettingsOn('permissions')}>Open Permissions</button>
+          </p>
+        )}
       </div>
     )
   }

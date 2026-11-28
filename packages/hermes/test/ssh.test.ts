@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseSshHost } from '../src/domain/reach'
-import { ASK_INTERACTIVE, askNativeHttp, ATTACH, attachedOf, HERMES_PATHS, httpTicketOf, PROBE, probeOf, READ_CAP, relay, remoteHermes, runTool, SERVE, servedOf, SSH_OPTIONS, sshFailureOf, sshPing, UPGRADE_MS, sshRead } from '../src/wire/ssh'
+import { ASK_INTERACTIVE, ASK_NATIVE_HTTP, askNativeHttp, ATTACH, attachedOf, HERMES_PATHS, httpTicketOf, PROBE, probeOf, READ_CAP, relay, remoteHermes, runTool, SERVE, servedOf, SSH_OPTIONS, sshFailureOf, sshPing, UPGRADE_MS, sshRead } from '../src/wire/ssh'
 import { manualClock, settle } from '../src/testing/clock'
 
 describe('sshFailureOf', () => {
@@ -98,28 +98,38 @@ describe('httpTicketOf', () => {
 
   it.each([
     [0, `${hello}\n{"id": 1, "ok": true, "ticket": "t-1", "expires_in": 30}\n`, { origin: 'http://127.0.0.1:35187', ticket: 't-1' }],
-    [0, `a banner\n${hello}\n{"id": 1, "ok": true, "ticket": "t-1"}\n`, null],
-    [0, '{"type": "hello", "protocol": 1}\n{"id": 1, "ok": true, "ticket": "t-1"}\n', null],
-    [0, `${hello}\n{"id": 1, "ok": false, "error": {"code": "unsupported_purpose"}}\n`, null],
-    [0, `${hello}\n{"id": 1, "ok": true, "ticket": ""}\n`, null],
-    [0, `${hello}\n`, null],
-    [5, '{"type": "error", "error": {"code": "absent"}}\n', null],
-    [1, `${hello}\n{"id": 1, "ok": true, "ticket": "t-1"}\n`, null],
-    [0, '', null]
+    [0, `a banner\n${hello}\n{"id": 1, "ok": true, "ticket": "t-1"}\n`, { refused: null }],
+    [0, '{"type": "hello", "protocol": 1}\n{"id": 1, "ok": true, "ticket": "t-1"}\n', { refused: null }],
+    [0, `${hello}\n{"id": 1, "ok": false, "error": {"code": "unsupported_purpose"}}\n`, { refused: 'unsupported_purpose' }],
+    [0, `${hello}\n{"id": 1, "ok": false, "error": {"code": "unknown_profile"}}\n`, { refused: 'unknown_profile' }],
+    [0, `${hello}\n{"id": 1, "ok": true, "ticket": ""}\n`, { refused: null }],
+    [0, `${hello}\n`, { refused: null }],
+    [5, '{"type": "error", "error": {"code": "absent"}}\n', { refused: null }],
+    [1, `${hello}\n{"id": 1, "ok": true, "ticket": "t-1"}\n`, { refused: null }],
+    [0, '', { refused: null }]
   ])('reads exit %i with %j', (code, stdout, ticket) => {
     expect(httpTicketOf(code, stdout)).toEqual(ticket)
   })
 
   it('asks for the HTTP ticket on one line', () => {
-    expect(JSON.parse(askNativeHttp())).toEqual({ id: 1, purpose: 'native-http' })
-    expect(askNativeHttp()).toBe('{"id":1,"purpose":"native-http"}\n')
-    expect(askNativeHttp().indexOf('\n')).toBe(askNativeHttp().length - 1)
+    expect(JSON.parse(askNativeHttp(null))).toEqual({ id: 1, purpose: 'native-http' })
+    expect(askNativeHttp(null)).toBe('{"id":1,"purpose":"native-http"}\n')
+    expect(askNativeHttp(null).indexOf('\n')).toBe(askNativeHttp(null).length - 1)
   })
 
   it('names a profile on the same one line, quoted as JSON', () => {
     const line = askNativeHttp('we"ird')
     expect(JSON.parse(line)).toEqual({ id: 1, purpose: 'native-http', profile: 'we"ird' })
     expect(line.indexOf('\n')).toBe(line.length - 1)
+  })
+
+  it('asks for a ticket bound to a profile on one line, whatever the name holds', () => {
+    expect(askNativeHttp(null)).toBe(ASK_NATIVE_HTTP)
+    for (const name of ['ada', "o'brien", 'a"b', 'two\nlines']) {
+      const line = askNativeHttp(name)
+      expect(JSON.parse(line)).toEqual({ id: 1, purpose: 'native-http', profile: name })
+      expect(line.indexOf('\n')).toBe(line.length - 1)
+    }
   })
 })
 

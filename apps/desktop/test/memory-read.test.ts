@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { HttpAnswer, ReadHermes } from '@highwing/hermes'
+import type { CallHermes, HermesAsk, HttpAnswer } from '@highwing/hermes'
 import { pythonStrip, type BotId } from '@highwing/hermes/domain'
 import { describe, expect, it } from 'vitest'
 import { readBotMemory } from '../src/main/memory'
@@ -35,9 +35,13 @@ const OK: Replies = {
   [LONG_PATH]: { status: 200, body: { ok: true, kind: 'memory', id: 'n:long', label: 'long', content: LONG } }
 }
 
+/** The path and query a GET goes out with, the profile it asks for named as Hermes's routes read it. */
+const sentAs = ({ path, profile }: HermesAsk) => (profile === null ? path : `${path}${path.includes('?') ? '&' : '?'}profile=${encodeURIComponent(profile)}`)
+
 function reading(replies: Replies) {
   const asked: string[] = []
-  const read: ReadHermes = async path => {
+  const read: CallHermes = async ask => {
+    const path = sentAs(ask)
     asked.push(path)
     const reply = replies[path] ?? { status: 404, body: null }
     if (reply instanceof Error) throw reply

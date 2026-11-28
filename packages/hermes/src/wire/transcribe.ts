@@ -3,7 +3,6 @@
  * gateway's socket carries no transcription, so each route posts the recording to the gateway's
  * HTTP listener with the credential its kind of connection holds.
  */
-import { request } from 'node:http'
 import type { Outcome, Recording } from '../domain/command'
 
 /** Turns one recording into text. A refusal's message is plain words for the composer to show. */
@@ -33,43 +32,4 @@ export function transcriptOf(status: number, body: unknown): Outcome<string> {
   if (status === 404 || status === 405) return CANT_TRANSCRIBE
   const detail = isObject(body) && typeof body.detail === 'string' && body.detail.trim() !== '' ? ` ${sentence(body.detail.trim())}` : ''
   return { ok: false, refusal: { kind: 'rejected', message: `Hermes couldn't turn that into text.${detail}` } }
-}
-
-function jsonOf(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return null
-  }
-}
-
-/**
- * Posts a recording to a gateway's loopback listener with a `native-http` ticket. Hermes's gate
- * refuses a ticket that comes with an `Origin` header (dashboard_auth/native_http.py:200), which
- * `fetch` may add, so this goes through `node:http`. One request per connection, so a relay that
- * carries one connection carries all of it.
- */
-export function postWithTicket(origin: string, ticket: string, recording: Recording, signal?: AbortSignal): Promise<{ readonly status: number; readonly body: unknown }> {
-  const body = JSON.stringify(transcribeBody(recording))
-  const deadline = AbortSignal.timeout(TRANSCRIBE_MS)
-  return new Promise((resolve, reject) => {
-    const asked = request(new URL(TRANSCRIBE_PATH, origin), {
-      method: 'POST',
-      signal: signal === undefined ? deadline : AbortSignal.any([signal, deadline]),
-      headers: {
-        accept: 'application/json',
-        'content-type': 'application/json',
-        'content-length': Buffer.byteLength(body),
-        'x-hermes-gateway-ticket': ticket,
-        connection: 'close'
-      }
-    }, response => {
-      const chunks: Buffer[] = []
-      response.on('data', (chunk: Buffer) => chunks.push(chunk))
-      response.on('end', () => resolve({ status: response.statusCode ?? 0, body: jsonOf(Buffer.concat(chunks).toString('utf8')) }))
-      response.on('error', reject)
-    })
-    asked.on('error', reject)
-    asked.end(body)
-  })
 }

@@ -13,6 +13,7 @@ import { parseEvent } from '../wire/parse'
 import { BACKUP_KEYS, MASKED, type ChatSeed, type Fixture, type FixtureStep, type PluginSeed, type Reads } from './fixture'
 import { launchBookOf, type MemoryBook } from './memory-book'
 import { checkParams } from './params'
+import { RuleBook } from './rules'
 import { ScriptedRooms } from './rooms'
 import { ScriptedVault } from './vault'
 import { ScriptedToolServers } from './tool-servers'
@@ -917,7 +918,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   },
   /** gateway/session_config.py:65-73 hands the session controls to gateway/session_busy_controls.py:30-56. */
   'config.get': (gateway, _socket, params, routed) => (params.key === 'approval_mode' ? gateway.readApprovals(params, routed, null)
-    : params.key === 'full' && gateway.fixture.header.deny !== undefined ? gateway.fullConfig(params, routed, gateway.fixture.header.deny)
+    : params.key === 'mtime' && gateway.rules !== null ? gateway.configStamp(params, routed)
     : gateway.control(params, routed, false)),
   /** gateway/session_tui_config.py:187-193 */
   'config.set': (gateway, socket, params, routed) => {
@@ -1050,6 +1051,8 @@ export class ScriptedGateway {
   private readonly controls: Record<string, string> | null
   /** The bot's `approvals.mode`, from the header. Null: Hermes never says one, as an older Hermes does not. */
   private approvals: ApprovalMode | null
+  /** The command rules of every profile, from the header's `rules`. null: the Hermes has no `/api/config` for Highwing to read, and `config.get` of `mtime` is refused. */
+  readonly rules: RuleBook | null
   private readonly profiles: Obj[]
   private readonly souls: Map<string, string>
   /** profile -> its installed skills, each turned on or off as `profiles.configure` last left it. */
@@ -1125,6 +1128,7 @@ export class ScriptedGateway {
     const { profiles } = fixture.header
     this.profiles = isObject(profiles) && Array.isArray(profiles.profiles) ? profiles.profiles.filter(isObject) : []
     this.home = this.profiles.map(row => (row.is_default === true ? row.name : undefined)).find(isText) ?? 'default'
+    this.rules = fixture.header.rules === undefined ? null : new RuleBook(fixture.header.rules, this.home)
     this.memory = fixture.header.memory === undefined ? null : launchBookOf(fixture.header.memory)
     this.storyIsBotChatOf = fixture.header.homeBotChat === false ? null : this.home
     const seededChats = Object.entries(fixture.header.chats ?? {}).flatMap(([profile, seeds]) => seeds.map(seed => seeded(profile, seed)))
@@ -1731,11 +1735,11 @@ export class ScriptedGateway {
     return { value: this.approvals }
   }
 
-  /** `config.get` for key `full` (gateway/session_config.py:65-115), holding only the `approvals.deny` the header names for every bot. */
-  fullConfig(params: Obj, routed: string, deny: readonly string[]): unknown {
+  /** `config.get` for key `mtime` (gateway/session_config.py:96-98): the profile's config.yaml, which a PUT of `/api/config` changes. */
+  configStamp(params: Obj, routed: string): unknown {
     if (Object.keys(params).some(key => !['session_id', 'profile', 'key'].includes(key))) throw new Refused('invalid_params')
     if (params.session_id !== undefined && params.session_id !== null) this.authorize(params, routed)
-    return { config: { approvals: { deny } } }
+    return { mtime: this.rules?.stamp(routed) ?? null, mcp_rev: 0 }
   }
 
   /**

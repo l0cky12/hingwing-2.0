@@ -2,19 +2,25 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { BotId } from '../src/domain/bots'
-import { botMemoryOf, memoryCapsPath, memoryEntryPath, memoryGraphPath, NO_MEMORY_CAPS, parseMemoryCaps, parseMemoryEntry, parseMemoryGraph, pythonStrip } from '../src/domain/memory'
+import { botMemoryOf, MEMORY_CAPS_PATH, MEMORY_GRAPH_PATH, memoryEntryPath, NO_MEMORY_CAPS, parseMemoryCaps, parseMemoryEntry, parseMemoryGraph, pythonStrip } from '../src/domain/memory'
+import { fixtureCall, type FixtureRoutes } from '../src/testing/calls'
 import type { MemoryScript } from '../src/testing/fixture'
-import { fixtureRead } from '../src/testing/kanban'
 import { launchBookOf, memoryReads } from '../src/testing/memory-book'
+import { profiled } from '../src/wire/link'
 
 const RAE = 'rae' as BotId
+
+/** A GET for one bot through a fixture's HTTP calls, as the Memory tab makes it. */
+const fixtureRead = (routes: FixtureRoutes) => (path: string, bot: BotId) => fixtureCall(routes, null)({ method: 'GET', path, profile: bot })
+/** The path and query a GET for that bot goes out with. */
+const asked = (path: string, bot: string) => profiled({ method: 'GET', path, profile: bot }).path
 const BOTS = JSON.parse(readFileSync(fileURLToPath(new URL('../../../fixtures/memory/bots.json', import.meta.url)), 'utf8')) as MemoryScript
 
 describe('the memory read paths', () => {
-  it('name the profile, encoded', () => {
-    expect(memoryGraphPath(RAE)).toBe('/api/learning/graph?profile=rae')
-    expect(memoryCapsPath('a b' as BotId)).toBe('/api/config?profile=a%20b')
-    expect(memoryEntryPath(RAE, 'memory:memory:0:abc')).toBe('/api/learning/node?id=memory%3Amemory%3A0%3Aabc&profile=rae')
+  it('name no profile, which the call adds encoded, and encode the entry id', () => {
+    expect(asked(MEMORY_GRAPH_PATH, 'rae')).toBe('/api/learning/graph?profile=rae')
+    expect(asked(MEMORY_CAPS_PATH, 'a b')).toBe('/api/config?profile=a%20b')
+    expect(asked(memoryEntryPath('memory:memory:0:abc'), 'rae')).toBe('/api/learning/node?id=memory%3Amemory%3A0%3Aabc&profile=rae')
   })
 })
 
@@ -119,11 +125,11 @@ describe("the fixture's memory routes", () => {
 
   it('answer 404 on every memory route when the fixture has no memory, as an older Hermes does', async () => {
     const none = fixtureRead({})
-    for (const path of [memoryGraphPath(RAE), memoryCapsPath(RAE), memoryEntryPath(RAE, 'x')]) expect(await none(path)).toMatchObject({ status: 404 })
+    for (const path of [MEMORY_GRAPH_PATH, MEMORY_CAPS_PATH, memoryEntryPath('x')]) expect(await none(path, RAE)).toMatchObject({ status: 404 })
   })
 
   it("answer a profile's graph in the shape the parser reads, with a long entry cut", async () => {
-    const answer = await read(memoryGraphPath(RAE))
+    const answer = await read(MEMORY_GRAPH_PATH, RAE)
     expect(answer.status).toBe(200)
     const cards = parseMemoryGraph(answer.body)
     expect(cards?.map(card => card.file)).toEqual(['MEMORY.md', 'MEMORY.md', 'MEMORY.md', 'USER.md'])
@@ -134,32 +140,32 @@ describe("the fixture's memory routes", () => {
   })
 
   it('answer a cut entry in full through its node, and a stale node as a 404', async () => {
-    const cards = parseMemoryGraph((await read(memoryGraphPath(RAE))).body)!
-    const full = await read(memoryEntryPath(RAE, cards[0]!.node))
+    const cards = parseMemoryGraph((await read(MEMORY_GRAPH_PATH, RAE)).body)!
+    const full = await read(memoryEntryPath(cards[0]!.node), RAE)
     expect(parseMemoryEntry(full.body)).toBe(BOTS.profiles!.rae!.entries[0]!.text)
-    expect(await read(memoryEntryPath(RAE, 'memory:memory:9:nope'))).toMatchObject({ status: 404 })
+    expect(await read(memoryEntryPath('memory:memory:9:nope'), RAE)).toMatchObject({ status: 404 })
   })
 
   it('answer the launch profile from the top level, and a profile not listed with no entries under Hermes defaults', async () => {
-    expect(parseMemoryGraph((await read(memoryGraphPath('default' as BotId))).body)?.map(card => card.text)).toEqual(['Prefers short answers.', 'Lives in Lisbon.'])
-    expect(parseMemoryGraph((await read(memoryGraphPath('zed' as BotId))).body)).toEqual([])
-    expect(parseMemoryCaps((await read(memoryCapsPath('zed' as BotId))).body)).toEqual({ 'MEMORY.md': 2200, 'USER.md': 1375 })
+    expect(parseMemoryGraph((await read(MEMORY_GRAPH_PATH, 'default' as BotId)).body)?.map(card => card.text)).toEqual(['Prefers short answers.', 'Lives in Lisbon.'])
+    expect(parseMemoryGraph((await read(MEMORY_GRAPH_PATH, 'zed' as BotId)).body)).toEqual([])
+    expect(parseMemoryCaps((await read(MEMORY_CAPS_PATH, 'zed' as BotId)).body)).toEqual({ 'MEMORY.md': 2200, 'USER.md': 1375 })
   })
 
   it("answer a profile's own limits, which leave its MEMORY.md past nine tenths of its cap", async () => {
-    const caps = parseMemoryCaps((await read(memoryCapsPath(RAE))).body)!
+    const caps = parseMemoryCaps((await read(MEMORY_CAPS_PATH, RAE)).body)!
     expect(caps).toEqual({ 'MEMORY.md': 1500, 'USER.md': 1375 })
-    const cards = parseMemoryGraph((await read(memoryGraphPath(RAE))).body)!
-    const full = await Promise.all(cards.map(async card => ({ file: card.file, text: parseMemoryEntry((await read(memoryEntryPath(RAE, card.node))).body)! })))
+    const cards = parseMemoryGraph((await read(MEMORY_GRAPH_PATH, RAE)).body)!
+    const full = await Promise.all(cards.map(async card => ({ file: card.file, text: parseMemoryEntry((await read(memoryEntryPath(card.node), RAE)).body)! })))
     const [memory] = botMemoryOf(full, caps).files
     expect(memory.used / memory.cap!).toBeGreaterThanOrEqual(0.9)
   })
 
   it("never lends the launch profile's limits to another profile", async () => {
     const reads = memoryReads({ entries: [], limits: { memory: 40, user: 30 }, profiles: { rae: { entries: [] } } })
-    expect(parseMemoryCaps(reads(memoryCapsPath(RAE))!.body)).toEqual({ 'MEMORY.md': 2200, 'USER.md': 1375 })
-    expect(parseMemoryCaps(reads(memoryCapsPath('zed' as BotId))!.body)).toEqual({ 'MEMORY.md': 2200, 'USER.md': 1375 })
-    expect(parseMemoryCaps(reads(memoryCapsPath('default' as BotId))!.body)).toEqual({ 'MEMORY.md': 40, 'USER.md': 30 })
+    expect(parseMemoryCaps(reads(asked(MEMORY_CAPS_PATH, RAE))!.body)).toEqual({ 'MEMORY.md': 2200, 'USER.md': 1375 })
+    expect(parseMemoryCaps(reads(asked(MEMORY_CAPS_PATH, 'zed' as BotId))!.body)).toEqual({ 'MEMORY.md': 2200, 'USER.md': 1375 })
+    expect(parseMemoryCaps(reads(asked(MEMORY_CAPS_PATH, 'default' as BotId))!.body)).toEqual({ 'MEMORY.md': 40, 'USER.md': 30 })
   })
 })
 
@@ -167,7 +173,7 @@ describe('the fake keeps a trailing byte-order mark, as Hermes does', () => {
   it('digests and serves the entry with it', async () => {
     const marked = 'Keeps notes.\ufeff'
     const read = fixtureRead({ memory: { entries: [{ file: 'MEMORY.md', text: marked }] } })
-    const cards = parseMemoryGraph((await read(memoryGraphPath('default' as BotId))).body)!
+    const cards = parseMemoryGraph((await read(MEMORY_GRAPH_PATH, 'default' as BotId)).body)!
     expect(cards.map(card => card.text)).toEqual([marked])
   })
 })
@@ -176,9 +182,9 @@ describe("the fake's launch profile", () => {
   it('is one book for the socket and the HTTP reads, so an edit through learning.edit shows in the tab', async () => {
     const script: MemoryScript = { entries: [{ file: 'USER.md', text: 'Lives in Lisbon.' }] }
     const book = launchBookOf(script)
-    const node = parseMemoryGraph(await fixtureRead({ memory: script })(memoryGraphPath('default' as BotId)).then(answer => answer.body))![0]!.node
+    const node = parseMemoryGraph(await fixtureRead({ memory: script })(MEMORY_GRAPH_PATH, 'default' as BotId).then(answer => answer.body))![0]!.node
     expect(book.edit(node, 'Lives in Porto.')).toMatchObject({ ok: true })
-    const cards = parseMemoryGraph((await fixtureRead({ memory: script })(memoryGraphPath('default' as BotId))).body)!
+    const cards = parseMemoryGraph((await fixtureRead({ memory: script })(MEMORY_GRAPH_PATH, 'default' as BotId)).body)!
     expect(cards.map(card => card.text)).toEqual(['Lives in Porto.'])
   })
 })

@@ -132,7 +132,7 @@ function harness(loaded: Settings, save: () => Promise<void> = async () => {}, a
       const dial = Object.assign(async () => { throw new Error('the test never dials') }, { held })
       const transcribe = async () => ({ ok: true as const, value: `heard by ${held.target.kind}` })
       return {
-        dial, read: async path => ({ status: 200, body: { target, path } }), transcribe,
+        dial, call: async ({ path }) => ({ status: 200, body: { target, path } }), transcribe,
         arrange: (ways, mode) => void held.arranged.push([ways, mode]),
         dispose: () => { held.disposed = true; log.push(`dispose ${opened.indexOf(held) + 1}`) }
       } satisfies PickedRoute
@@ -186,7 +186,7 @@ describe('ownConnection at launch', () => {
     expect(owner.hermes).toBeNull()
     expect(await owner.run({ do: 'reconnect', start: true })).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
     expect(await owner.transcribe(RECORDING)).toMatchObject({ ok: false, refusal: { kind: 'offline' } })
-    await expect(owner.read('/api/plugins/kanban/board')).rejects.toThrow('No Hermes is connected.')
+    await expect(owner.call({ method: 'GET', path: '/api/plugins/kanban/board', profile: null })).rejects.toThrow('No Hermes is connected.')
   })
 })
 
@@ -227,11 +227,11 @@ describe('ownConnection, checking a target', () => {
 
   it('reads the HTTP API through the route of the live connection, which a switch replaces', async () => {
     const { owner, pass } = harness(savedAt(LOCAL))
-    expect(await owner.read('/a')).toEqual({ status: 200, body: { target: LOCAL, path: '/a' } })
+    expect(await owner.call({ method: 'GET', path: '/a', profile: null })).toEqual({ status: 200, body: { target: LOCAL, path: '/a' } })
     await owner.run({ do: 'editTarget' })
     await owner.run({ do: 'checkTarget', target: REMOTE, into: 'replace' })
     await pass()
-    expect(await owner.read('/b')).toEqual({ status: 200, body: { target: REMOTE, path: '/b' } })
+    expect(await owner.call({ method: 'GET', path: '/b', profile: null })).toEqual({ status: 200, body: { target: REMOTE, path: '/b' } })
   })
 
   it('keeps the live connection and saves nothing when the check fails', async () => {
@@ -468,7 +468,7 @@ describe('ownConnection, several ways in to one server', () => {
     opened[0]!.pick({ using: LAN, times: TIMES })
     expect(at()).toEqual({ at: 'chat', live: { server: SERVER, target: LAN, epoch: 1 } })
     expect(book().times).toEqual(TIMES)
-    expect(await owner.read('/a'), 'the same route still reads').toMatchObject({ status: 200 })
+    expect(await owner.call({ method: 'GET', path: '/a', profile: null }), 'the same route still reads').toMatchObject({ status: 200 })
 
     const before = states.length
     opened[0]!.pick({ using: LAN, times: [{ target: REMOTE, ms: null }, { target: LAN, ms: 12 }] })
@@ -605,7 +605,7 @@ describe('ownConnection, several servers', () => {
     expect(opened[2]).toMatchObject({ target: REMOTE, place: SERVER, closed: false })
     expect(files.at(-1)!.current).toBe(SERVER)
     expect(book().current).toBe(SERVER)
-    expect(await owner.read('/a')).toEqual({ status: 200, body: { target: REMOTE, path: '/a' } })
+    expect(await owner.call({ method: 'GET', path: '/a', profile: null })).toEqual({ status: 200, body: { target: REMOTE, path: '/a' } })
   })
 
   it('moves the chat to the picked server when Settings closed while the pick was saved', async () => {
@@ -965,9 +965,9 @@ describe('pinnedConnection', () => {
   it('has no setup, and passes chat commands to its Hermes', async () => {
     const commands: unknown[] = []
     const hermes = { run: async (command: unknown) => { commands.push(command); return { ok: true, value: undefined } }, close: async () => {} } as unknown as Hermes
-    const read = async () => ({ status: 200, body: 'board' })
-    const owner = pinnedConnection(hermes, read, async () => ({ ok: true, value: 'heard by the fixture' }))
-    expect(owner.read).toBe(read)
+    const call = async () => ({ status: 200, body: 'board' })
+    const owner = pinnedConnection(hermes, call, async () => ({ ok: true, value: 'heard by the fixture' }))
+    expect(owner.call).toBe(call)
     expect(owner.setup.get()).toEqual({ at: 'pinned' })
     expect(await owner.transcribe(RECORDING)).toEqual({ ok: true, value: 'heard by the fixture' })
     expect(await owner.run({ do: 'checkTarget', target: LOCAL, into: 'replace' })).toMatchObject({ ok: false })

@@ -1,6 +1,6 @@
 import { checkTarget, gatewaysByUrl, liveRoute, openHermes, pickedRoute, remoteRoute, sshRead, timeWay, type Dialer, type Hermes, type Route } from '@highwing/hermes'
 import { byKind, type BotId, type GatewayUrl, type ServerId, type Servers, type Target } from '@highwing/hermes/domain'
-import { fixtureLatency, fixtureRead, fixtureTranscribe, loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
+import { fixtureLatency, fixtureCall, fixtureTranscribe, loadFixture, maskedFrame, recordingDialer, scriptedDialer } from '@highwing/hermes/testing'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, safeStorage, session, shell, type OpenDialogOptions } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync } from 'node:fs'
@@ -153,11 +153,12 @@ app.whenReady().then(async () => {
     dial, client: { name: 'highwing', version }, onPane: pane.ask, uploads: attachments,
     unread: { chats: unread.load(place), keep: chats => unread.keep(place, chats) }
   })
-  const owner = fixture
-    ? pinnedConnection(open(scriptedDialer(fixture, {
-      timing: 'recorded', latencyMs: fixtureLatency(HIGHWING_FIXTURE_LATENCY_MS),
-      ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(maskedFrame(frame))}\n`) } : {})
-    }), 'fixture'), fixtureRead(fixture.header), fixtureTranscribe(fixture.header.transcribe))
+  const played = fixture && scriptedDialer(fixture, {
+    timing: 'recorded', latencyMs: fixtureLatency(HIGHWING_FIXTURE_LATENCY_MS),
+    ...(HIGHWING_FIXTURE_CALLS ? { onReceived: (frame: unknown) => appendFileSync(HIGHWING_FIXTURE_CALLS, `${JSON.stringify(maskedFrame(frame))}\n`) } : {})
+  })
+  const owner = fixture && played
+    ? pinnedConnection(open(played, 'fixture'), fixtureCall(fixture.header, played.rules), fixtureTranscribe(fixture.header.transcribe))
     : await savedConnection(settingsDir, opener, open, intro.armIntro)
   pane.follow(owner.setup)
   const pictureDeps = { choose: pictureFile, read: readHead, set: (bot: BotId, data: string) => owner.run({ do: 'setBotPicture', bot, data }) }
