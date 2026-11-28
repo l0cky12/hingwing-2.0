@@ -71,8 +71,8 @@ describe('Markdown', () => {
     expect(find(blocks, 'heading').map(heading => heading.level)).toEqual([2])
     expect(find(blocks, 'table').map(table => table.head.length)).toEqual([3])
     expect(find(blocks, 'code')).toEqual([
-      { kind: 'code', lang: 'sh', text: 'cp notes.md notes.md.bak', open: false },
-      { kind: 'code', lang: 'ts', text: TS_BLOCK, open: false }
+      { kind: 'code', lang: 'sh', text: 'cp notes.md notes.md.bak', open: false, preview: null },
+      { kind: 'code', lang: 'ts', text: TS_BLOCK, open: false, preview: null }
     ])
     expect(render(reply)).toContain('<a href="https://example.com/style-guide" target="_blank" rel="noreferrer" aria-expanded="false">style guide</a>')
   })
@@ -99,7 +99,7 @@ describe('Markdown', () => {
   })
 
   it('keeps a tab inside a fence, so Copy gives back the text as written', () => {
-    expect(parseMarkdown('```make\nbuild:\n\tcc -o app main.c\n```')).toEqual([{ kind: 'code', lang: 'make', text: 'build:\n\tcc -o app main.c', open: false }])
+    expect(parseMarkdown('```make\nbuild:\n\tcc -o app main.c\n```')).toEqual([{ kind: 'code', lang: 'make', text: 'build:\n\tcc -o app main.c', open: false, preview: null }])
   })
 
   it('nests a list indented with a tab', () => {
@@ -235,6 +235,41 @@ describe('Markdown with a mermaid block', () => {
       const prefix = diagrams.slice(0, end)
       const fields = proseLeaves(parseMarkdown(prefix)).map((leaf, index) => [fieldId('t1/0', `block ${index}`), leafText(leaf)])
       expect(markedText(render(prefix)), `prefix of ${end} characters`).toEqual(fields)
+    }
+  })
+})
+
+const PAGE = '<button style="padding: 8px 14px; border-radius: 6px">Save & close</button>\n<script>alert(1)</script>'
+const frames = (markup: string) => Array.from(markup.matchAll(/<iframe([^>]*)>/g), ([, attrs]) =>
+  Object.fromEntries(Array.from(attrs!.matchAll(/ ([\w-]+)="([^"]*)"/g), ([, name, value]) => [name!.toLowerCase(), textOf(value!)])))
+
+describe('Markdown with an html block', () => {
+  it('previews a closed html fence in a frame that runs no script, with Source and Copy for its source', () => {
+    const markup = render(`\`\`\`html\n${PAGE}\n\`\`\``)
+    expect(frames(markup)).toEqual([{ sandbox: '', srcdoc: PAGE, title: 'HTML preview' }])
+    expect(markup).not.toContain('<script')
+    expect(toggles(markup)).toEqual(['Preview true', 'Source false'])
+    expect(markup).toContain('aria-label="Copy code"')
+    expect(markup).toMatch(/<pre data-find="[^"]*" hidden="">/)
+    expect(markedText(markup)).toEqual([[fieldId('t1/0', 'block 0'), PAGE]])
+  })
+
+  it('shows an html block that is still streaming as a plain code block, with the caret inside it', () => {
+    const markup = render(`\`\`\`html\n${PAGE}`)
+    expect(frames(markup)).toEqual([])
+    expect(toggles(markup)).toEqual([])
+    expect(codeBlocks(markup).map(textOf)).toEqual([PAGE])
+    expect(markup).toContain('<span class="caret"></span></pre>')
+  })
+
+  it('renders every prefix of the html reply and marks each shown text with the field find searches', () => {
+    const page = finalReply('fixtures/html.jsonl')
+    expect(frames(render(page))).toHaveLength(1)
+    for (let end = 0; end <= page.length; end++) {
+      const prefix = page.slice(0, end)
+      const fields = proseLeaves(parseMarkdown(prefix)).map((leaf, index) => [fieldId('t1/0', `block ${index}`), leafText(leaf)])
+      expect(markedText(render(prefix)), `prefix of ${end} characters`).toEqual(fields)
+      expect(render(prefix), `prefix of ${end} characters`).not.toContain('<script')
     }
   })
 })
