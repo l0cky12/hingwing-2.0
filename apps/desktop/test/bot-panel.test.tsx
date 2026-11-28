@@ -38,7 +38,7 @@ beforeEach(() => {
 describe("a bot chat's top bar", () => {
   it('draws the bot as a button in the heading, and the heading keeps its name', () => {
     const html = bar()
-    expect(html).toMatch(/<h1 aria-label="Hermes Rae · Bot Chat"><span class="brand">Hermes<\/span> <button type="button" class="bot-pill" aria-label="Details for Rae" aria-haspopup="dialog" aria-keyshortcuts="Control\+Alt\+B" title="Bot details \(Ctrl\+Alt\+B\)"><span class="avatar[^>]*>R<\/span>Rae<\/button><span class="where">· Bot Chat<\/span><\/h1>/)
+    expect(html).toMatch(/<h1 aria-label="Hermes Rae · Bot Chat"><span class="brand">Hermes<\/span> <button type="button" class="bot-pill" aria-label="Details for Rae" aria-haspopup="dialog" aria-keyshortcuts="Control\+Alt\+B" title="Bot details \(Ctrl\+Alt\+B\)"><span class="avatar[^>]*>R<\/span><span class="name">Rae<\/span><\/button><span class="where">· Bot Chat<\/span><\/h1>/)
   })
 
   it('leaves the heading as plain text for a bot the roster does not list', () => {
