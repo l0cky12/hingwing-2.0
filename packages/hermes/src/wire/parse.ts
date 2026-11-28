@@ -1420,6 +1420,11 @@ const OTHER = 'Other'
 
 const trimmed = (raw: unknown): string | null => (isString(raw) ? raw.trim() : null)
 
+const httpsUrl = (raw: unknown): string | null => {
+  const text = words(raw)
+  return text !== null && URL.parse(text)?.protocol === 'https:' ? text : null
+}
+
 /** `connectors.catalog` joined to `connectors.accounts`. An account whose connector is not in the catalog is dropped. */
 export function parseApps(catalog: unknown, accounts: unknown): AppsBoard {
   const rows = isObject(catalog) && Array.isArray(catalog.connectors) ? catalog.connectors.filter(isObject) : []
@@ -1439,7 +1444,7 @@ export function parseApps(catalog: unknown, accounts: unknown): AppsBoard {
       if (connectionId === null || status === null) return best
       return betterAccount(best, { connectionId, standing: standingOf(status), label: words(entry.label) ?? name })
     }, null)
-    return [{ slug, name, description, category: category === '' ? OTHER : category, account }]
+    return [{ slug, name, description, category: category === '' ? OTHER : category, logo: httpsUrl(row.logo_url), account }]
   })
   return { apps }
 }

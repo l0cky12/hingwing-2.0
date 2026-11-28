@@ -11,6 +11,8 @@ export interface AppEntry {
   readonly name: string
   readonly description: string
   readonly category: string
+  /** The catalog's logo address, https only. */
+  readonly logo: string | null
   readonly account: AppAccount | null
 }
 
