@@ -4,13 +4,14 @@ import { CHOICES, KINDS, textsOf } from '../src/renderer/setup/form'
 import { parseCommand } from '../src/ipc-contract'
 
 describe('the choices of the setup form', () => {
-  it('are a tailnet machine, an ssh destination, a web address and this computer, in that order', () => {
-    expect(KINDS.map(kind => CHOICES[kind].label)).toEqual(['Tailnet machine', 'SSH', 'Web address', 'This computer'])
-    expect(KINDS.map(kind => CHOICES[kind].field?.label ?? null)).toEqual(['Hermes machine', 'SSH destination', 'Gateway address', null])
+  it('are an ssh destination, a web address and this computer, in that order', () => {
+    expect(KINDS.map(kind => CHOICES[kind].label)).toEqual(['SSH', 'Web', 'This computer'])
+    expect(KINDS.map(kind => CHOICES[kind].field?.label ?? null)).toEqual(['SSH destination', 'Gateway address', null])
   })
 
   it.each([
-    ['remote', ' ada@hermes-host ', { kind: 'remote', host: 'ada@hermes-host' }],
+    ['ssh', ' ada@hermes-host ', { kind: 'ssh', host: 'ada@hermes-host' }],
+    ['ssh', 'hermes-host.example-tailnet.ts.net', { kind: 'ssh', host: 'hermes-host.example-tailnet.ts.net' }],
     ['ssh', ' ada@192.168.1.20 ', { kind: 'ssh', host: 'ada@192.168.1.20' }],
     ['ssh', 'workshop', { kind: 'ssh', host: 'workshop' }],
     ['url', 'hermes.example.com', { kind: 'url', url: 'https://hermes.example.com' }],
@@ -31,10 +32,6 @@ describe('the choices of the setup form', () => {
     expect(CHOICES.url.read(typed)).toEqual({ ok: false, ...URL_PROBLEMS[problem] })
   })
 
-  it('say that text which is no machine name is none', () => {
-    expect(CHOICES.remote.read('hermes host')).toEqual({ ok: false, words: "That isn't a machine name. Use the name Tailscale lists, such as hermes-host.", fix: null })
-  })
-
   it('say that text which is no ssh destination is none', () => {
     expect(CHOICES.ssh.read('-oProxyCommand=true')).toEqual({ ok: false, words: "That isn't an SSH destination. Use an address such as 192.168.1.20, or a host in your SSH config.", fix: null })
   })
@@ -53,17 +50,17 @@ describe('the choices of the setup form', () => {
     }
   )
 
-  it('never warn about a machine name', () => {
-    expect(CHOICES.remote.field?.warning('http://hermes.example.com')).toBeNull()
+  it('never warn about an ssh destination', () => {
+    expect(CHOICES.ssh.field?.warning('http://hermes.example.com')).toBeNull()
   })
 })
 
 describe('textsOf', () => {
   it('fills the field of the target being edited, and leaves the others empty', () => {
-    const EMPTY = { local: '', remote: '', ssh: '', url: '' }
+    const EMPTY = { local: '', ssh: '', url: '' }
     expect(textsOf(undefined)).toEqual(EMPTY)
     expect(textsOf({ kind: 'local' })).toEqual(EMPTY)
-    expect(textsOf({ kind: 'remote', host: 'ada@hermes-host' as SshHost })).toEqual({ ...EMPTY, remote: 'ada@hermes-host' })
+    expect(textsOf({ kind: 'remote', host: 'ada@hermes-host' as SshHost }), 'a saved tailnet machine is edited as SSH').toEqual({ ...EMPTY, ssh: 'ada@hermes-host' })
     expect(textsOf({ kind: 'ssh', host: '192.168.1.20' as SshHost })).toEqual({ ...EMPTY, ssh: '192.168.1.20' })
     expect(textsOf({ kind: 'url', url: 'https://hermes.example.com' as GatewayUrl })).toEqual({ ...EMPTY, url: 'https://hermes.example.com' })
   })

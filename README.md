@@ -78,9 +78,9 @@ You do not need to start the Hermes gateway. Highwing starts it when it first co
 
    To log in as a different user on the Hermes machine, use `user@hermes-host` here and in step 4.
 
-3. Start Highwing. On the setup screen, choose **Tailnet machine**. For a machine that is not on your tailnet, choose **SSH** and type any SSH destination. Highwing then skips the Tailscale steps of the check.
-4. In **Hermes machine**, type the machine's Tailscale name, for example `hermes-host` or `hermes-host.example-tailnet.ts.net`. To log in as a different user, type `user@hermes-host`.
-5. Choose **Connect**. Highwing checks Tailscale on this computer, finds the machine on your tailnet, logs in over SSH and finds Hermes there. The screen shows each step.
+3. Start Highwing. On the setup screen, keep **SSH** chosen.
+4. In **SSH destination**, type the machine's Tailscale name, for example `hermes-host` or `hermes-host.example-tailnet.ts.net`. A machine that is not on your tailnet takes any SSH destination, such as its LAN address. To log in as a different user, type `user@hermes-host`.
+5. Choose **Connect**. Highwing logs in over SSH and finds Hermes there. The screen shows each step.
 6. When the check passes, choose **Open chat**.
 
 Highwing saves the connection in `~/.config/Highwing/connection.json` and opens on the chat from then on. The file holds each server you saved: its name, its ways in and which server is in use. A way in holds only what you typed, such as the SSH destination with its `user@` part, or a gateway address. Ports, keys and any other SSH options come from your SSH configuration. To change the machine, choose **Settings** in the top bar, then **Change**. **Close** goes back to the chat and keeps your draft.

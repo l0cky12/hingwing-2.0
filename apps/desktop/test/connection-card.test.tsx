@@ -38,7 +38,7 @@ describe('which screen the window shows', () => {
 describe('the connection row', () => {
   it('names the machine, adds the full name in mono, and shows the Online pill', () => {
     expect(cardOf(AT_REST, ONLINE, null)).toMatchObject({
-      summary: { kind: 'remote', title: 'hermes-host', host: 'hermes-host.example-tailnet.ts.net', linkMessage: null, online: true, action: null },
+      summary: { kind: 'ssh', title: 'hermes-host', host: 'hermes-host.example-tailnet.ts.net', linkMessage: null, online: true, action: null },
       editor: null,
       news: null
     })
@@ -122,12 +122,12 @@ describe('the editor on a first run', () => {
       .toMatchObject({ foot: { show: 'nothing' }, cancel: null, problem: { words: 'No machine called hermes-lab is on your tailnet.' } })
   })
 
-  it('draws the shared card with Tailnet machine picked, the machine field and Connect, and no Cancel', () => {
+  it('draws the shared card with SSH picked, the SSH destination field and Connect, and no Cancel', () => {
     const markup = renderToStaticMarkup(<ConnectionCard setup={{ at: 'form', live: null, notice: null }} link={undefined} />)
-    expect(markup).toMatch(/<label><input type="radio" name="[^"]+" checked=""\/><svg[^]*?<\/svg>Tailnet machine<\/label>/)
+    expect(markup).toMatch(/<label><input type="radio" name="[^"]+" checked=""\/><svg[^]*?<\/svg>SSH<\/label>/)
     expect(markup).toContain('This computer</label>')
-    expect(markup).toContain('placeholder="hermes-host"')
-    expect(markup).toContain('Its Tailscale name. Add user@ in front to log in as someone else.')
+    expect(markup).toContain('placeholder="192.168.1.20"')
+    expect(markup).toContain('A Tailscale name, a LAN address, or a host in your SSH config. Add user@ in front to log in as someone else.')
     expect(Array.from(markup.matchAll(/<button[^>]*>([^<]*)<\/button>/g), ([, name]) => name)).toEqual(['Connect'])
     expect(markup).not.toContain('Highwing keeps the current connection')
   })
@@ -143,7 +143,7 @@ describe('the Connection page for one server with one way', () => {
   it('is the card as it was, with Change, and the two Add buttons under it', () => {
     expect(cardOf(AT_REST, ONLINE, null, book)).toEqual({
       servers: [], ways: null, editor: null, change: true, adds: true, busy: false, news: null,
-      summary: { kind: 'remote', title: 'hermes-host', host: 'hermes-host.example-tailnet.ts.net', linkMessage: null, online: true, action: null }
+      summary: { kind: 'ssh', title: 'hermes-host', host: 'hermes-host.example-tailnet.ts.net', linkMessage: null, online: true, action: null }
     })
     const markup = renderToStaticMarkup(<ConnectionCard setup={AT_REST} link={ONLINE} book={book} />)
     expect(buttons(markup)).toEqual(['Change', 'Add a way in', 'Add a server'])
@@ -159,8 +159,8 @@ describe('the Connection page for one server with one way', () => {
 
   it.each([
     ['addWay', 'Add a way in to hermes-host', 'Another way in to hermes-host', 'ssh'],
-    ['addServer', 'Add a server', 'Where the other Hermes runs', 'remote'],
-    ['replace', 'Change the connection', 'Where Hermes runs', 'remote']
+    ['addServer', 'Add a server', 'Where the other Hermes runs', 'ssh'],
+    ['replace', 'Change the connection', 'Where Hermes runs', 'ssh']
   ] as const)('opens the %s editor as "%s", empty unless it changes the connection', (into, title, asks, kind) => {
     expect(cardOf(AT_REST, ONLINE, into, book).editor).toMatchObject({ into, title, asks, kind, seed: into === 'replace' ? HOST : null, cancel: 'fold' })
   })
@@ -197,7 +197,7 @@ describe('the Connection page for one server with several ways', () => {
   })
 
   it('names the server once in the row, with the tile of its first way, and offers no Change', () => {
-    expect(cardOf(viaLan, ONLINE, null, book)).toMatchObject({ summary: { kind: 'remote', title: 'hermes-host', host: null, online: true }, change: false, adds: true, servers: [] })
+    expect(cardOf(viaLan, ONLINE, null, book)).toMatchObject({ summary: { kind: 'ssh', title: 'hermes-host', host: null, online: true }, change: false, adds: true, servers: [] })
   })
 
   it('marks no way In use while the link is not online, and shows no time before a timing', () => {
@@ -317,15 +317,27 @@ describe('the card for a gateway address', () => {
     return { label, input: new RegExp(`<input[^>]*id="${id}"[^>]*>`).exec(markup)![0] }
   }
 
-  it('offers the four places Hermes can run, the tailnet first with its machine field', () => {
+  it('offers SSH, Web and This computer, and opens a new connection on SSH with its destination field', () => {
     const markup = render({ at: 'form', live: null, notice: null })
-    expect(segments(markup)).toEqual(['x Tailnet machine', '  SSH', '  Web address', '  This computer'])
-    expect(fieldOf(markup)).toMatchObject({ label: 'Hermes machine', input: expect.stringContaining('placeholder="hermes-host"') })
+    expect(segments(markup)).toEqual(['x SSH', '  Web', '  This computer'])
+    expect(fieldOf(markup)).toMatchObject({ label: 'SSH destination', input: expect.stringContaining('placeholder="192.168.1.20"') })
+  })
+
+  it('opens a saved tailnet machine on SSH, with its name in the SSH destination field', () => {
+    const markup = render({ at: 'failed', live: LIVE, target: HOST, into: 'replace', failure: 'host-offline' })
+    expect(segments(markup)).toEqual(['x SSH', '  Web', '  This computer'])
+    expect(fieldOf(markup)).toMatchObject({ label: 'SSH destination', input: expect.stringContaining('value="hermes-host.example-tailnet.ts.net"') })
+  })
+
+  it("asks for the Webapp's address under the field, not the dashboard's", () => {
+    const markup = text(render({ at: 'failed', live: null, target: at('https://hermes.example.com'), into: 'replace', failure: 'dashboard' }))
+    expect(markup).toContain("The address of the gateway's Webapp, not the dashboard's.")
+    expect(markup).toContain('webapp.public_url in ~/.hermes/config.yaml')
   })
 
   it('opens on the address being edited, in the Gateway address field', () => {
     const markup = render({ at: 'failed', live: null, target: at('https://hermes.example.com:8443'), into: 'replace', failure: 'url-unreachable' })
-    expect(segments(markup)[2]).toBe('x Web address')
+    expect(segments(markup)[1]).toBe('x Web')
     expect(fieldOf(markup)).toMatchObject({ label: 'Gateway address', input: expect.stringContaining('value="https://hermes.example.com:8443"') })
     expect(fieldOf(markup).input).toContain('placeholder="https://hermes.example.com"')
     expect(text(markup)).not.toContain('plain http')
