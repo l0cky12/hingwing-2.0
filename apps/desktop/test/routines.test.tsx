@@ -1,11 +1,11 @@
-import type { Routine, RoutineId } from '@highwing/hermes/domain'
+import type { Routine, RoutineId, RoutineRun, SessionId } from '@highwing/hermes/domain'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { RoutinesList } from '../src/renderer/bots/Routines'
-import { afterControl, routinesViewOf, scheduleWords } from '../src/renderer/bots/routines-view'
+import { RoutinesList, RunsList } from '../src/renderer/bots/Routines'
+import { afterControl, NO_RUNS, routinesViewOf, runsViewOf, scheduleWords, tookWords } from '../src/renderer/bots/routines-view'
 
-const NONE = { busy: null, onToggle: () => {}, onDelete: () => {} }
+const NONE = { busy: null, history: { read: async () => ({ ok: true, value: [] }) as const, onOpen: () => {} }, onToggle: () => {}, onDelete: () => {} }
 const routine = (id: string, name: string, schedule: string, paused = false): Routine => ({ id: id as RoutineId, name, schedule, paused, nextRunAt: null })
 
 describe('scheduleWords', () => {
@@ -56,12 +56,19 @@ describe('the Routines tab', () => {
     expect(html).toContain('<ul class="routines" aria-label="Routines">')
     const rows = [...html.matchAll(/<li class="routine" aria-busy="false"><span class="routine-name">([^<]*)<\/span><span class="routine-when">([^<]*)<\/span><span class="routine-controls">(.*?)<\/span><\/li>/g)]
     expect(rows.map(([, name, when, controls]) => [name, when, [...controls!.matchAll(/aria-label="([^"]*)"/g)].map(([, label]) => label)])).toEqual([
-      ['Morning digest', 'Weekdays at 09:00', ['Pause Morning digest', 'Delete Morning digest…']],
-      ['Backup check', 'Paused', ['Resume Backup check', 'Delete Backup check…']]
+      ['Morning digest', 'Weekdays at 09:00', ['Past runs of Morning digest', 'Pause Morning digest', 'Delete Morning digest…']],
+      ['Backup check', 'Paused', ['Past runs of Backup check', 'Resume Backup check', 'Delete Backup check…']]
     ])
   })
 
-  it('disables every control while one is on its way to Hermes', () => {
+  it("gives each routine a Past runs button that starts closed and names the list it opens", () => {
+    const view = routinesViewOf({ ok: true, value: [routine('a1', 'Morning digest', 'every 60m')] }, 'Research')
+    const html = renderToStaticMarkup(<RoutinesList view={view} {...NONE} />)
+    expect(html).toMatch(/<button type="button" aria-expanded="false" aria-controls="[^"]+" aria-label="Past runs of Morning digest">Past runs<\/button>/)
+    expect(html).not.toContain('Loading runs')
+  })
+
+  it('disables every control but Past runs while one is on its way to Hermes', () => {
     const view = routinesViewOf({ ok: true, value: [routine('a1', 'Morning digest', 'every 60m'), routine('b2', 'Backup check', 'every 60m')] }, 'Research')
     const html = renderToStaticMarkup(<RoutinesList view={view} {...NONE} busy={'a1' as RoutineId} />)
     expect(html).toContain('<li class="routine" aria-busy="true">')
@@ -96,6 +103,71 @@ describe('a control of a routine', () => {
     })
     const unsupported = { ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't show routines to Highwing." } } as const
     expect(afterControl(LISTED, 'a1' as RoutineId, unsupported)).toEqual({ listed: unsupported, said: null })
+  })
+})
+
+const CLOCK = { now: Date.UTC(2026, 10, 27, 12, 0), timeZone: 'UTC' }
+const run = (key: string, outcome: RoutineRun['outcome'], at: number, seconds: number | null, chat: string | null): RoutineRun => ({ key, outcome, at, seconds, chat: chat as SessionId | null })
+const HOUR = 3_600_000
+
+describe('tookWords', () => {
+  it.each([
+    [0, 'took under 1 s'],
+    [0.4, 'took under 1 s'],
+    [42, 'took 42 s'],
+    [59.4, 'took 59 s'],
+    [60, 'took 1 min'],
+    [179, 'took 3 min'],
+    [180, 'took 3 min'],
+    [3540, 'took 59 min'],
+    [3600, 'took 1 h'],
+    [3900, 'took 1 h 5 min'],
+    [7200, 'took 2 h']
+  ])('says %s seconds as %j', (seconds, words) => {
+    expect(tookWords(seconds)).toBe(words)
+  })
+})
+
+describe('the past runs of a routine', () => {
+  const RUNS: readonly RoutineRun[] = [
+    run('s1', { is: 'running' }, CLOCK.now - 5 * 60_000, null, 's1'),
+    run('s2', { is: 'succeeded' }, CLOCK.now - HOUR, 42, 's2'),
+    run('s3', { is: 'failed', why: 'It ended without a final reply.' }, CLOCK.now - 25 * HOUR, 180, 's3'),
+    run('s4', { is: 'cancelled', why: 'cancelled on request (Stop)' }, CLOCK.now - 50 * HOUR, 7, 's4'),
+    run('o5', { is: 'failed', why: 'Provider returned 429: rate limited' }, CLOCK.now - 80 * HOUR, null, null),
+    run('o6', { is: 'missed', why: null }, CLOCK.now - 90 * HOUR, null, null),
+    run('o7', { is: 'unknown' }, CLOCK.now - 100 * HOUR, null, null)
+  ]
+
+  it('says each run in words: its state, its time, how long it took, and why it failed', () => {
+    const view = runsViewOf({ ok: true, value: RUNS }, CLOCK)
+    expect(view.state === 'listed' && view.rows.map(({ state, when, took, why }) => [state, when, took, why])).toEqual([
+      ['Running', 'Today 11:55', null, null],
+      ['Succeeded', 'Today 11:00', 'took 42 s', null],
+      ['Failed', 'Yesterday 11:00', 'took 3 min', 'It ended without a final reply.'],
+      ['Cancelled', 'Wed 25 Nov 10:00', 'took 7 s', 'cancelled on request (Stop)'],
+      ['Failed', 'Tue 24 Nov 04:00', null, 'Provider returned 429: rate limited'],
+      ['Missed', 'Mon 23 Nov 18:00', null, null],
+      ['No result', 'Mon 23 Nov 08:00', null, null]
+    ])
+  })
+
+  it('draws a list named for the routine, with an Open run button only on a run that has a chat', () => {
+    const html = renderToStaticMarkup(<RunsList id="runs" name="Morning digest" view={runsViewOf({ ok: true, value: RUNS }, CLOCK)} onOpen={() => {}} />)
+    expect(html).toContain('<ul aria-label="Past runs of Morning digest">')
+    expect([...html.matchAll(/aria-label="(Open run from [^"]*)"/g)].map(([, label]) => label)).toEqual([
+      'Open run from Today 11:55', 'Open run from Today 11:00', 'Open run from Yesterday 11:00', 'Open run from Wed 25 Nov 10:00'
+    ])
+    expect(html).toContain('<span class="run-why">Provider returned 429: rate limited</span>')
+    expect(html.match(/<span class="run-why">/g)).toHaveLength(3)
+  })
+
+  it('says it is loading, says there are none, and shows what Hermes refused with as an alert', () => {
+    const draw = (listed: Parameters<typeof runsViewOf>[0]) => renderToStaticMarkup(<RunsList id="runs" name="Morning digest" view={runsViewOf(listed, CLOCK)} onOpen={() => {}} />)
+    expect(draw(null)).toContain('aria-busy="true">Loading runs…</p>')
+    expect(draw({ ok: true, value: [] })).toContain(`<p class="routines-note">${NO_RUNS}</p>`)
+    expect(NO_RUNS).toBe('No runs yet.')
+    expect(draw({ ok: false, refusal: { kind: 'unsupported', message: "This Hermes can't show a routine's past runs to Highwing." } })).toContain('role="alert">This Hermes can&#x27;t show a routine&#x27;s past runs to Highwing.</p>')
   })
 })
 

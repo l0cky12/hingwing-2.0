@@ -1,4 +1,5 @@
-import type { CommandOutcome, Routine, RoutineId } from '@highwing/hermes/domain'
+import type { CommandOutcome, Routine, RoutineId, RoutineRun, RunOutcome, SessionId } from '@highwing/hermes/domain'
+import { whenWords, type ViewClock } from '@highwing/thread'
 
 export interface RoutineRow { readonly id: RoutineId; readonly name: string; readonly when: string; readonly paused: boolean }
 
@@ -95,4 +96,53 @@ export function afterControl(
   if (!listed.ok) return { listed, said: null }
   const now = answered.value
   return { listed: { ok: true, value: now === null ? listed.value.filter(held => held.id !== id) : listed.value.map(held => (held.id === id ? now : held)) }, said: null }
+}
+
+export const NO_RUNS = 'No runs yet.'
+
+/** How a run went, in words, because a colour alone says nothing to everyone. */
+export const OUTCOME_WORDS: { readonly [S in RunOutcome['is']]: string } = {
+  running: 'Running', succeeded: 'Succeeded', failed: 'Failed', cancelled: 'Cancelled', missed: 'Missed', unknown: 'No result'
+}
+
+/** A run's length as `took 42 s`, `took 3 min` or `took 1 h 5 min`. */
+export function tookWords(seconds: number): string {
+  const whole = Math.round(seconds)
+  if (whole === 0) return 'took under 1 s'
+  if (whole < 60) return `took ${whole} s`
+  const minutes = Math.round(whole / 60)
+  if (minutes < 60) return `took ${minutes} min`
+  return minutes % 60 === 0 ? `took ${minutes / 60} h` : `took ${Math.floor(minutes / 60)} h ${minutes % 60} min`
+}
+
+const reasonOf = (outcome: RunOutcome): string | null => ('why' in outcome ? outcome.why : null)
+
+export interface RunRow {
+  readonly key: string
+  readonly outcome: RunOutcome['is']
+  readonly state: string
+  readonly when: string
+  readonly took: string | null
+  readonly why: string | null
+  /** The chat that opens it. null: Hermes kept none. */
+  readonly chat: SessionId | null
+}
+
+export type RunsView =
+  | { readonly state: 'loading' }
+  | { readonly state: 'refused'; readonly message: string }
+  | { readonly state: 'empty'; readonly hint: string }
+  | { readonly state: 'listed'; readonly rows: readonly RunRow[] }
+
+export function runsViewOf(listed: CommandOutcome<readonly RoutineRun[]> | null, clock: ViewClock): RunsView {
+  if (listed === null) return { state: 'loading' }
+  if (!listed.ok) return { state: 'refused', message: listed.refusal.message }
+  if (listed.value.length === 0) return { state: 'empty', hint: NO_RUNS }
+  return {
+    state: 'listed',
+    rows: listed.value.map(run => ({
+      key: run.key, outcome: run.outcome.is, state: OUTCOME_WORDS[run.outcome.is], when: whenWords(run.at, clock),
+      took: run.seconds === null ? null : tookWords(run.seconds), why: reasonOf(run.outcome), chat: run.chat
+    }))
+  }
 }

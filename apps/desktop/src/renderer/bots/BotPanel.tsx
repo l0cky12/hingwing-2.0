@@ -1,4 +1,4 @@
-import type { Bot, BotCreated, BotDetails, BotDraft, ModelMenu } from '@highwing/hermes/domain'
+import type { Bot, BotCreated, BotDetails, BotDraft, BotId, ModelMenu, SessionId } from '@highwing/hermes/domain'
 import { useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { pickBotPicture, run, useTopic } from '../store'
 import { Avatar } from './Avatar'
@@ -23,9 +23,10 @@ export const LOOKS: LookCalls = {
   petPicture: ({ slug, url }) => run({ do: 'petPicture', slug, url })
 }
 
-const ROUTINE_CALLS: Pick<RoutinesProps, 'onList' | 'onControl'> = {
+const ROUTINE_CALLS: Pick<RoutinesProps, 'onList' | 'onControl' | 'onRuns'> = {
   onList: bot => run({ do: 'listRoutines', bot }),
-  onControl: (bot, routine, action) => run({ do: 'controlRoutine', bot, routine, action })
+  onControl: (bot, routine, action) => run({ do: 'controlRoutine', bot, routine, action }),
+  onRuns: (bot, routine) => window.highwing.routineRuns(bot, routine)
 }
 
 type Panel =
@@ -135,9 +136,13 @@ function OpenPanel({ bot, details, onClose }: { readonly bot: Bot; readonly deta
 
 /** The Details form's Save and Cancel are hidden under this tab, so it has a Close of its own. */
 function RoutinesTab({ bot, onClose }: { readonly bot: Bot; readonly onClose: () => void }) {
+  const onOpenRun = useCallback((owner: BotId, sessionId: SessionId) => {
+    void run({ do: 'open', ref: { kind: 'run', bot: owner, sessionId } })
+    onClose()
+  }, [onClose])
   return (
     <div className="routines-tab" role="tabpanel" aria-label="Routines">
-      <Routines bot={bot.id} name={bot.name} revision={useTopic('routines')} {...ROUTINE_CALLS} />
+      <Routines bot={bot.id} name={bot.name} revision={useTopic('routines')} onOpenRun={onOpenRun} {...ROUTINE_CALLS} />
       <div className="form-choices"><button type="button" onClick={onClose}>Close</button></div>
     </div>
   )

@@ -63,6 +63,12 @@ function timeWords(wall: Wall, today: Wall): string {
   return `${weekday} ${wall.day} ${MONTHS[wall.month - 1]}${year} ${clockTime}`
 }
 
+/** A moment as a turn's time line says it: `Today 09:00`, `Yesterday 09:00`, or `Fri 27 Nov 09:00`. */
+export function whenWords(at: number, clock: ViewClock): string {
+  const zone = zoneOf(clock.timeZone)
+  return timeWords(startWall(at, zone), wallClock(clock.now, zone))
+}
+
 export function timeOfDay(at: number, timeZone: string): string {
   const { hour, minute } = wallClock(at, zoneOf(timeZone))
   return `${two(hour)}:${two(minute)}`

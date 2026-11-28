@@ -1765,6 +1765,16 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .routine:first-child { border-top: 0; }
 .routine-name { color: var(--ink); font-size: var(--text-md); overflow-wrap: anywhere; }
 .routine-when { grid-column: 1; color: var(--graphite); font-size: var(--text-sm); }
-.routine-controls { grid-area: 1 / 2 / 3; display: flex; gap: 6px; }
+.routine-controls { grid-area: 1 / 2 / 3; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.routine-runs { grid-column: 1 / -1; margin-top: 6px; }
+.routine-runs > ul { list-style: none; margin: 0; padding: 0; }
+.routine-runs .routines-note { padding: 8px 0 4px; }
+.run { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 2px 12px; padding: 8px 0; border-top: 1px solid var(--rule); font-size: var(--text-sm); }
+.run-state { color: var(--ink); font-weight: 500; }
+.run-failed .run-state { color: var(--brick); }
+.run-when { color: var(--graphite); }
+.run-why { grid-column: 1 / -1; color: var(--graphite); overflow-wrap: anywhere; }
+.run > button { padding: 4px 10px; font-size: var(--text-sm); border-radius: var(--radius-sm); border: 1px solid var(--rule); background: transparent; color: var(--ink); }
+.run > button:hover:not(:disabled) { border-color: var(--ink); }
 .routines-note { margin: 0; padding: 14px 0; font-size: var(--text-sm); color: var(--graphite); }
 .routines-refused { color: var(--brick); }
