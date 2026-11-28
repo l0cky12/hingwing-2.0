@@ -56,14 +56,29 @@ describe('parseConfigStamp', () => {
 
 describe('parseCommandRules', () => {
   it("reads the two lists as Hermes does: trimmed, blanks and what is not text dropped, a repeat once", () => {
-    expect(parseCommandRules({ command_allowlist: [' podman * ', '', 7, 'podman *', 'delete in root path'], approvals: { mode: 'manual', deny: ['  rm -rf /* ', null, '  '] } }))
+    expect(parseCommandRules({ command_allowlist: [' podman * ', '', 7, 'podman *', 'delete in root path'], approvals: { mode: 'manual', deny: ['  rm -rf /* ', null, '  '] } }, 'effective'))
       .toEqual({ allow: ['podman *', 'delete in root path'], deny: ['rm -rf /*'] })
   })
 
   it('reads a config that holds one list as having an empty other, and one that holds neither as no config', () => {
-    expect(parseCommandRules({ command_allowlist: ['ls'] })).toEqual({ allow: ['ls'], deny: [] })
-    expect(parseCommandRules({ approvals: { deny: ['ls'] } })).toEqual({ allow: [], deny: ['ls'] })
-    for (const body of [{}, { approvals: { mode: 'smart' } }, { command_allowlist: 'ls' }, null, 'ls', [], 3]) expect(parseCommandRules(body)).toBeNull()
+    expect(parseCommandRules({ command_allowlist: ['ls'] }, 'effective')).toEqual({ allow: ['ls'], deny: [] })
+    expect(parseCommandRules({ approvals: { deny: ['ls'] } }, 'effective')).toEqual({ allow: [], deny: ['ls'] })
+    for (const body of [{}, { approvals: { mode: 'smart' } }, { command_allowlist: null }, null, 'ls', [], 3]) expect(parseCommandRules(body, 'effective')).toBeNull()
+  })
+
+  it('reads a raw config that lacks a list as holding none of it, and a reply that is no object as no config', () => {
+    expect(parseCommandRules({}, 'raw')).toEqual({ allow: [], deny: [] })
+    expect(parseCommandRules({ approvals: { mode: 'smart' }, command_allowlist: null }, 'raw')).toEqual({ allow: [], deny: [] })
+    expect(parseCommandRules({ approvals: { deny: ['ls'] } }, 'raw')).toEqual({ allow: [], deny: ['ls'] })
+    for (const body of [null, 'ls', [], 3]) expect(parseCommandRules(body, 'raw')).toBeNull()
+  })
+
+  it.each(['effective', 'raw'] as const)('reads a %s list that is not a list as no config, so an edit never overwrites what it cannot read', source => {
+    expect(parseCommandRules({ command_allowlist: 'ls' }, source)).toBeNull()
+    expect(parseCommandRules({ command_allowlist: 'ls, cat', approvals: { deny: [] } }, source)).toBeNull()
+    expect(parseCommandRules({ command_allowlist: ['ls'], approvals: { deny: 'rm -rf /*' } }, source)).toBeNull()
+    expect(parseCommandRules({ command_allowlist: ['ls'], approvals: { deny: { a: 1 } } }, source)).toBeNull()
+    expect(parseCommandRules({ command_allowlist: ['ls'], approvals: 'manual' }, source)).toBeNull()
   })
 })
 

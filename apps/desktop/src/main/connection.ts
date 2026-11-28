@@ -19,6 +19,11 @@ export interface ConnectionOwner {
   readonly hermes: Hermes | null
   /** One request of the live Hermes's HTTP API. Rejects when no connection is open. */
   readonly call: CallHermes
+  /**
+   * The same, on the route of connection `epoch`, which stays that route if the window moves to another server meanwhile.
+   * null when `epoch` is not the live connection. A call that reads and then writes goes through this, so its write never lands on a server it did not read.
+   */
+  callAt(epoch: number): CallHermes | null
   run<C extends ConnectionCommand>(command: C): Promise<CommandOutcome<HubResult<C>>>
   /** Speech to text by the Hermes of the live connection. */
   transcribe(recording: Recording): Promise<CommandOutcome<string>>
@@ -311,6 +316,10 @@ export function ownConnection(deps: ConnectionDeps): ConnectionOwner {
     servers: book,
     get hermes() { return open?.hermes ?? null },
     call: ask => (open === null ? Promise.reject(new Error('No Hermes is connected.')) : open.route.call(ask)),
+    callAt: epoch => {
+      const held = open
+      return held !== null && held.live.epoch === epoch ? ask => held.route.call(ask) : null
+    },
     run: async <C extends ConnectionCommand>(command: C) => {
       const outcome = !isSetupCommand(command) ? await runChat(command) : isServerCommand(command) ? await runServers(command) : runSetup(command)
       return outcome as CommandOutcome<HubResult<C>>
@@ -333,6 +342,7 @@ export function pinnedConnection(hermes: Hermes, call: CallHermes, transcribe: T
     hermes,
     transcribe: recording => transcribe(recording),
     call,
+    callAt: epoch => (epoch === 0 ? call : null),
     run: async <C extends ConnectionCommand>(command: C) =>
       (isSetupCommand(command) ? NOT_NOW : await hermes.run(command)) as CommandOutcome<HubResult<C>>,
     close: () => hermes.close()

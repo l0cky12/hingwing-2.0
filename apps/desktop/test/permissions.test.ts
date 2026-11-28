@@ -24,11 +24,15 @@ function scripted(...replies: readonly Reply[]) {
 }
 
 const OFFLINE = { kind: 'offline', message: "Highwing couldn't reach Hermes to read its command rules." }
+const UNSURE = { kind: 'offline', message: "Highwing couldn't tell whether Hermes saved that change." }
 const OFFLINE_EDIT = { kind: 'offline', message: "Highwing couldn't reach Hermes, so it didn't change the rule." }
 const UNSUPPORTED = { kind: 'unsupported', message: "This Hermes can't show its command rules to Highwing. Update Hermes, then try again." }
 const UNREADABLE = { kind: 'unsupported', message: "Hermes answered with command rules Highwing can't read." }
 const NOT_SAVED = { kind: 'rejected', message: "Hermes didn't save that change. An administrator may manage this setting." }
 const GET = (profile: string | null): HermesAsk => ({ method: 'GET', path: '/api/config', profile })
+const RAW = (profile: string | null): HermesAsk => ({ method: 'GET', path: '/api/config?include_defaults=false', profile })
+const PUT = (profile: string | null, config: object): HermesAsk => ({ method: 'PUT', path: '/api/config', profile, json: { config } })
+const SAVED: HttpAnswer = { status: 200, body: { ok: true } }
 
 describe('readCommandRules', () => {
   it("reads both lists of the bot's config, asking for that bot", async () => {
@@ -68,13 +72,13 @@ describe('editCommandRule', () => {
   it('reads, writes only the allow list with the rule added, reads again, and answers what Hermes holds', async () => {
     const { call, asked } = scripted(CONFIG(['podman *'], ['rm -rf /*']), { status: 200, body: { ok: true } }, CONFIG(['podman *', 'ls'], ['rm -rf /*']))
     expect(await editCommandRule(call, ADA, add('allow', 'ls'))).toEqual({ ok: true, value: { allow: ['podman *', 'ls'], deny: ['rm -rf /*'] } })
-    expect(asked).toEqual([GET('ada'), { method: 'PUT', path: '/api/config', profile: 'ada', json: { config: { command_allowlist: ['podman *', 'ls'] } } }, GET('ada')])
+    expect(asked, 'the file is read raw, and what Hermes holds afterwards is read as it runs by it').toEqual([RAW('ada'), PUT('ada', { command_allowlist: ['podman *', 'ls'] }), GET('ada')])
   })
 
   it('writes only approvals.deny for a deny rule, so approvals.mode and the other list are not in the body', async () => {
     const { call, asked } = scripted(CONFIG(['podman *'], []), { status: 200, body: { ok: true } }, CONFIG(['podman *'], ['git push --force*']))
     await editCommandRule(call, null, add('deny', 'git push --force*'))
-    expect(asked[1]).toEqual({ method: 'PUT', path: '/api/config', profile: null, json: { config: { approvals: { deny: ['git push --force*'] } } } })
+    expect(asked[1]).toEqual(PUT(null, { approvals: { deny: ['git push --force*'] } }))
   })
 
   it('removes the rule from its list, and from no other', async () => {
@@ -90,12 +94,12 @@ describe('editCommandRule', () => {
   })
 
   it('writes nothing for an add of a rule the list holds, and for a remove of one it lacks', async () => {
-    const held = scripted(CONFIG(['ls'], []))
+    const held = scripted(CONFIG(['ls'], []), CONFIG(['ls'], []))
     expect(await editCommandRule(held.call, ADA, add('allow', 'ls'))).toEqual({ ok: true, value: { allow: ['ls'], deny: [] } })
-    expect(held.asked).toEqual([GET('ada')])
-    const lacking = scripted(CONFIG(['ls'], []))
+    expect(held.asked, 'it answers with the config as it runs, and sends no save').toEqual([RAW('ada'), GET('ada')])
+    const lacking = scripted(CONFIG(['ls'], []), CONFIG(['ls'], []))
     expect(await editCommandRule(lacking.call, ADA, remove('deny', 'ls'))).toEqual({ ok: true, value: { allow: ['ls'], deny: [] } })
-    expect(lacking.asked).toEqual([GET('ada')])
+    expect(lacking.asked).toEqual([RAW('ada'), GET('ada')])
   })
 
   it.each(['', '   ', 'rm -rf /\ncurl x.example'])('refuses %j before any call', async rule => {
@@ -124,19 +128,61 @@ describe('editCommandRule', () => {
     expect(await editCommandRule(scripted(CONFIG([], []), new TicketRefused('invalid_request')).call, ADA, add('allow', 'ls'))).toEqual({ ok: false, refusal: UNSUPPORTED })
   })
 
-  it('says it changed nothing when the first read, the save, or the read after it cannot reach Hermes', async () => {
+  it('says it changed nothing when the first read cannot reach Hermes', async () => {
     const first = scripted(new Error('down'))
     expect(await editCommandRule(first.call, ADA, add('allow', 'ls'))).toEqual({ ok: false, refusal: OFFLINE_EDIT })
-    const save = scripted(CONFIG([], []), new Error('down'))
-    expect(await editCommandRule(save.call, ADA, add('allow', 'ls'))).toEqual({ ok: false, refusal: OFFLINE_EDIT })
-    const after = scripted(CONFIG([], []), { status: 200, body: { ok: true } }, new Error('down'))
-    expect(await editCommandRule(after.call, ADA, add('allow', 'ls'))).toEqual({ ok: false, refusal: OFFLINE_EDIT })
+    expect(first.asked).toEqual([RAW('ada')])
+  })
+
+  it("says it could not tell whether Hermes saved when the save got no answer, and when the read after a save that Hermes took failed", async () => {
+    const save = scripted(CONFIG([], []), new Error('socket hang up'))
+    expect(await editCommandRule(save.call, ADA, add('allow', 'ls'))).toEqual({ ok: false, refusal: UNSURE })
+    for (const after of [new Error('down'), { status: 500, body: null }, { status: 404, body: null }, { status: 200, body: 'ls' }] as const) {
+      const { call } = scripted(CONFIG([], []), SAVED, after)
+      expect(await editCommandRule(call, ADA, add('allow', 'ls')), JSON.stringify(after)).toEqual({ ok: false, refusal: UNSURE })
+    }
   })
 
   it('refuses without a save when the first read is refused', async () => {
     const { call, asked } = scripted({ status: 404, body: null })
     expect(await editCommandRule(call, ADA, add('allow', 'ls'))).toEqual({ ok: false, refusal: UNSUPPORTED })
     expect(asked).toHaveLength(1)
+  })
+
+  it('reads a file that holds neither list as two empty ones, and writes the one list the edit names', async () => {
+    const { call, asked } = scripted({ status: 200, body: {} }, SAVED, CONFIG(['ls'], []))
+    expect(await editCommandRule(call, ADA, add('allow', 'ls'))).toEqual({ ok: true, value: { allow: ['ls'], deny: [] } })
+    expect(asked).toEqual([RAW('ada'), PUT('ada', { command_allowlist: ['ls'] }), GET('ada')])
+  })
+
+  it('builds the new list on the file, not on the config Hermes runs by, so a template the file keeps is not written back expanded', async () => {
+    const { call, asked } = scripted(CONFIG(['${HOME}/bin/*', 'cat'], []), SAVED, CONFIG(['/home/ada/bin/*'], []))
+    await editCommandRule(call, ADA, remove('allow', 'cat'))
+    expect(asked[0]).toEqual(RAW('ada'))
+    expect(asked[1]).toEqual(PUT('ada', { command_allowlist: ['${HOME}/bin/*'] }))
+  })
+
+  it.each([
+    ['a list kept as text', { command_allowlist: 'ls, cat', approvals: { deny: [] } }],
+    ['a deny list kept as text', { command_allowlist: ['ls'], approvals: { deny: 'rm -rf /*' } }]
+  ])('refuses before any save on %s, which a save would overwrite', async (_what, body) => {
+    const { call, asked } = scripted({ status: 200, body })
+    expect(await editCommandRule(call, ADA, add('allow', 'cat'))).toEqual({ ok: false, refusal: UNREADABLE })
+    expect(asked).toEqual([RAW('ada')])
+  })
+
+  it('removes a rule as the page lists it, however long it is and whatever lines it holds', async () => {
+    const long = `echo ${'x'.repeat(5000)}`
+    const lines = 'printf a\nprintf b'
+    const { call, asked } = scripted(CONFIG([long, lines, 'ls'], []), SAVED, CONFIG([lines, 'ls'], []))
+    expect(await editCommandRule(call, ADA, remove('allow', long))).toEqual({ ok: true, value: { allow: [lines, 'ls'], deny: [] } })
+    expect(asked[1]).toEqual(PUT('ada', { command_allowlist: [lines, 'ls'] }))
+    const second = scripted(CONFIG([lines, 'ls'], []), SAVED, CONFIG(['ls'], []))
+    expect(await editCommandRule(second.call, ADA, remove('allow', `${lines}\n`))).toMatchObject({ ok: true })
+    expect(second.asked[1]).toEqual(PUT('ada', { command_allowlist: ['ls'] }))
+    const blank = scripted()
+    expect(await editCommandRule(blank.call, ADA, remove('allow', '  '))).toMatchObject({ ok: false })
+    expect(blank.asked).toEqual([])
   })
 
   describe('against a Hermes that keeps the rules', () => {

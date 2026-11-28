@@ -1,4 +1,4 @@
-import type { Hermes } from '@highwing/hermes'
+import type { CallHermes, Hermes } from '@highwing/hermes'
 import { isTaskId, type BotId, type CommandOutcome, type Session, type SessionId } from '@highwing/hermes/domain'
 import {
   CHANNEL, epochOf, isAppTopic, isLocal, OTHER_CONNECTION, isPreviewCommand, isSetupCommand, MAX_ATTACHMENTS, parseBotId, parseCommand, parseDraft, parseDropped, parseFileRequest, parseImageRequest, parseRecording, parseRuleEdit, parseRulesBot, parseTopic,
@@ -17,7 +17,7 @@ import type { ImageLoader } from './images'
 import { snoozed, type PreferenceStore } from './preferences'
 import type { PreviewPane } from './preview'
 import type { Saver } from './saves'
-import { editCommandRule, readCommandRules } from './permissions'
+import { editCommandRule, inTurn, readCommandRules } from './permissions'
 import { readTaskBoard, readTaskChat } from './tasks'
 
 export const COALESCE_MS = 16
@@ -308,15 +308,20 @@ export function serveWindows(
   ipc.handle(CHANNEL.taskBoard, async event => (trusted(event) ? readTaskBoard(owner.call) : REFUSED))
   ipc.handle(CHANNEL.taskChat, async (event, id) => (trusted(event) && isTaskId(id) ? readTaskChat(owner.call, id) : REFUSED))
 
+  /** One connection's edits go one at a time, whichever bot or window they are for: a null bot and a named one can be the same profile. */
+  const ruleEdits = inTurn<unknown>()
+  const callFor = (epoch: unknown): CallHermes | null => (typeof epoch === 'number' ? owner.callAt(epoch) : null)
   ipc.handle(CHANNEL.commandRules, async (event, raw, epoch) => {
     const bot = parseRulesBot(raw)
     if (!trusted(event) || bot === undefined) return REFUSED
-    return epoch === epochOf(owner.setup.get()) ? readCommandRules(owner.call, bot) : OTHER_CONNECTION
+    const call = callFor(epoch)
+    return call === null ? OTHER_CONNECTION : readCommandRules(call, bot)
   })
   ipc.handle(CHANNEL.editCommandRule, async (event, raw, rawEdit, epoch) => {
     const [bot, edit] = [parseRulesBot(raw), parseRuleEdit(rawEdit)]
     if (!trusted(event) || bot === undefined || edit === null) return REFUSED
-    return epoch === epochOf(owner.setup.get()) ? editCommandRule(owner.call, bot, edit) : OTHER_CONNECTION
+    const call = callFor(epoch)
+    return call === null ? OTHER_CONNECTION : ruleEdits(epoch, () => editCommandRule(call, bot, edit))
   })
 
   ipc.handle(CHANNEL.drafts, async event => (trusted(event) ? drafts.load() : []))

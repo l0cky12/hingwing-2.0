@@ -17,6 +17,11 @@ export interface CommandRules {
 export type RuleEdit = { readonly change: 'add' | 'remove'; readonly kind: RuleKind; readonly rule: string }
 
 export const RULES_PATH = '/api/config'
+/**
+ * The config as the file holds it, with each `${VAR}` template as written and a key the file lacks left out. An edit reads
+ * this one: the effective config expands the templates, and Hermes's save would write an expanded value back.
+ */
+export const RAW_RULES_PATH = `${RULES_PATH}?include_defaults=false`
 
 /**
  * Each entry trimmed, blanks and anything but text left out, and a repeat once: how Hermes reads both lists
@@ -51,7 +56,7 @@ export const RULE_KINDS: { readonly [K in RuleKind]: RuleFacts } = {
     empty: 'Nothing is always allowed.'
   },
   deny: {
-    read: config => (isObject(config.approvals) ? config.approvals.deny : undefined),
+    read: config => (isObject(config.approvals) ? config.approvals.deny : config.approvals),
     body: rules => ({ approvals: { deny: rules } }),
     label: 'Denied',
     desc: 'Hermes never runs a command that matches one of these, even with YOLO on. Each is a pattern, where * stands for any text, and capital letters don’t matter.',
@@ -60,11 +65,18 @@ export const RULE_KINDS: { readonly [K in RuleKind]: RuleFacts } = {
   }
 }
 
-/** null: the reply is not a config. A config that holds neither list reads as two empty ones. */
-export function parseCommandRules(body: unknown): CommandRules | null {
+const isUnset = (raw: unknown): boolean => raw === undefined || raw === null
+
+/**
+ * null: the reply is not a config, or holds a list as something but a list, such as the text Hermes still honors in an older file,
+ * which an edit would overwrite. The effective config holds both lists, so one that holds neither is not a config. The raw one
+ * leaves out a list the file lacks, and a config that holds neither reads as two empty ones.
+ */
+export function parseCommandRules(body: unknown, source: 'effective' | 'raw'): CommandRules | null {
   if (!isObject(body)) return null
   const [allow, deny] = RULE_ORDER.map(kind => RULE_KINDS[kind].read(body))
-  if (!Array.isArray(allow) && !Array.isArray(deny)) return null
+  if (![allow, deny].every(raw => isUnset(raw) || Array.isArray(raw))) return null
+  if (source === 'effective' && isUnset(allow) && isUnset(deny)) return null
   return { allow: listOf(allow), deny: listOf(deny) }
 }
 

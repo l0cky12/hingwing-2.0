@@ -864,11 +864,12 @@ export const parseBotId = botIdOf
 /** The bot of a rules call: null for the profile the connection itself reaches. undefined: neither null nor a bot. */
 export const parseRulesBot = (raw: unknown): BotId | null | undefined => (raw === null ? null : botIdOf(raw) ?? undefined)
 
+/** The longest rule an add takes. A remove names a rule the page lists, whatever its length. */
 const RULE_MAX_CHARS = 4000
 
 export function parseRuleEdit(raw: unknown): RuleEdit | null {
   if (!isObject(raw) || (raw.change !== 'add' && raw.change !== 'remove') || (raw.kind !== 'allow' && raw.kind !== 'deny')) return null
-  return typeof raw.rule === 'string' && raw.rule.length <= RULE_MAX_CHARS ? { change: raw.change, kind: raw.kind, rule: raw.rule } : null
+  return typeof raw.rule === 'string' && (raw.change === 'remove' || raw.rule.length <= RULE_MAX_CHARS) ? { change: raw.change, kind: raw.kind, rule: raw.rule } : null
 }
 
 export function parseFileRequest(raw: unknown): FileRequest | null {

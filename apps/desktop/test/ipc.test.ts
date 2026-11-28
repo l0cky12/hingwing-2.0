@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
 import type { CallHermes, Hermes, HermesAsk, HttpAnswer, PickedRoute } from '@highwing/hermes'
 import type { AttachmentId, BotActivities, Bots, CatalogPlugin, CommandOutcome, Exported, Groups, Link, OpenChat, Recording, RelayDesk, ServerId, Session, SessionId, Sidebar, SkillLibrary, SlashCatalog, SshHost } from '@highwing/hermes/domain'
-import { loadFixture, play } from '@highwing/hermes/testing'
+import { fixtureCall, loadFixture, play, RuleBook } from '@highwing/hermes/testing'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_APPEARANCE, type Appearance } from '../src/appearance'
 import { DUE, EXAMPLES, nextIntro, OFF, type Intro, type IntroEvent } from '../src/intro'
@@ -904,6 +904,7 @@ describe('serveWindows', () => {
       servers: feed(NO_SERVERS),
       hermes: null,
       call: async () => { throw new Error('the test never calls') },
+      callAt: () => null,
       transcribe: HEARD,
       close: async () => {},
       run: async (command: { readonly do: string }) => {
@@ -1340,6 +1341,74 @@ describe('the attach calls', () => {
     expect(rig.loaded).toEqual([])
   })
 
+  it('takes a remove of a rule longer than an add may be, as the page lists it', async () => {
+    const rig = harness()
+    const long = 'x'.repeat(4001)
+    rig.answers({ status: 200, body: { command_allowlist: [long], approvals: { deny: [] } } })
+    await rig.handlers.get(CHANNEL.editCommandRule)!(rig.event(), 'research', { change: 'remove', kind: 'allow', rule: long }, 0)
+    expect(rig.asked[1]).toEqual({ method: 'PUT', path: '/api/config', profile: 'research', json: { config: { command_allowlist: [] } } })
+    await expect(rig.handlers.get(CHANNEL.editCommandRule)!(rig.event(), 'research', { change: 'add', kind: 'allow', rule: long }, 0)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+  })
+
+  it('goes on with the server an edit began on when the window switches meanwhile, so no save reaches the other one', async () => {
+    const [first, second] = [new RuleBook({ allow: ['podman *'], deny: [] }, 'default'), new RuleBook({ allow: ['other *'], deny: [] }, 'default')]
+    const sent: { server: string; ask: HermesAsk }[] = []
+    let release = () => {}
+    const held = new Promise<void>(resolve => (release = resolve))
+    const books = [first, second]
+    let served = 0
+    let owner: ConnectionOwner | undefined
+    const { handlers, event } = harness(hermes => (owner = ownConnection({
+      loaded: savedAt({ kind: 'remote', host: 'box' as SshHost }),
+      save: async () => {},
+      check: async () => ({ ok: true }),
+      routeFor: () => {
+        const [name, book] = [`server ${++served}`, books[served - 1]!]
+        const answer = fixtureCall(undefined, book)
+        const call: CallHermes = async ask => {
+          sent.push({ server: name, ask })
+          if (name === 'server 1' && ask.method === 'GET' && sent.length === 1) await held
+          return answer(ask)
+        }
+        return { dial: async () => { throw new Error('the test never dials') }, transcribe: HEARD, call, dispose: () => {} } as unknown as PickedRoute
+      },
+      newId: () => 'server-2' as ServerId,
+      open: () => ({ ...hermes, close: async () => {} }),
+      armIntro: async () => {}
+    })))
+    const [run, edit] = [handlers.get(CHANNEL.run)!, handlers.get(CHANNEL.editCommandRule)!]
+    const editing = edit(event(), null, { change: 'add', kind: 'allow', rule: 'ls' }, 1)
+    await run(event(), { do: 'editTarget' }, 1)
+    await run(event(), { do: 'checkTarget', target: { kind: 'local' }, into: 'replace' }, 1)
+    await new Promise(resolve => setImmediate(resolve))
+    expect(owner!.setup.get()).toMatchObject({ live: { epoch: 2 } })
+    release()
+    await expect(editing).resolves.toEqual({ ok: true, value: { allow: ['podman *', 'ls'], deny: [] } })
+    expect(sent.map(({ server, ask }) => `${server} ${ask.method}`)).toEqual(['server 1 GET', 'server 1 PUT', 'server 1 GET'])
+    expect(second.config(null), 'the other server was never written').toMatchObject({ command_allowlist: ['other *'] })
+    await expect(edit(event(), null, { change: 'add', kind: 'allow', rule: 'ls' }, 1)).resolves.toMatchObject({ ok: false, refusal: { kind: 'stale' } })
+    expect(sent).toHaveLength(3)
+  })
+
+  it('serializes the edits of a connection, so two that overlap both land', async () => {
+    const book = new RuleBook({ allow: [], deny: [] }, 'default')
+    const answer = fixtureCall(undefined, book)
+    const call: CallHermes = async ask => {
+      const reply = await answer(ask)
+      if (ask.method === 'GET') await new Promise(resolve => setTimeout(resolve, 5))
+      return reply
+    }
+    const { handlers, event } = harness(hermes => pinnedConnection(hermes, call, HEARD))
+    const edit = handlers.get(CHANNEL.editCommandRule)!
+    const [one, two, other] = await Promise.all([
+      edit(event(), null, { change: 'add', kind: 'allow', rule: 'ls' }, 0),
+      edit(event(), null, { change: 'add', kind: 'allow', rule: 'cat' }, 0),
+      edit(event('app://index.html', 2), null, { change: 'add', kind: 'deny', rule: 'rm *' }, 0)
+    ])
+    expect([one, two, other].every(outcome => (outcome as { ok: boolean }).ok)).toBe(true)
+    expect(book.config(null)).toMatchObject({ command_allowlist: ['ls', 'cat'], approvals: { deny: ['rm *'] } })
+  })
+
   it('stop answering once disposed', () => {
     const { handlers, served } = harness()
     served.dispose()
@@ -1506,6 +1575,7 @@ describe('the command rule calls', () => {
     rig.answers(CONFIG)
     await expect(rig.handlers.get(CHANNEL.editCommandRule)!(rig.event(), 'research', ADD, 0)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
     expect(rig.asked.map(ask => ask.method), 'the save went out, and the config read after it lacked the rule').toEqual(['GET', 'PUT', 'GET'])
+    expect(rig.asked[0]?.path, 'an edit builds on the file').toBe('/api/config?include_defaults=false')
     expect(rig.asked[1]).toEqual({ method: 'PUT', path: '/api/config', profile: 'research', json: { config: { approvals: { deny: ['git push --force*'] } } } })
   })
 
