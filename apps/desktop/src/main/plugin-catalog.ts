@@ -1,4 +1,5 @@
 import { parsePluginCatalog, type CatalogPlugin, type CommandOutcome } from '@highwing/hermes/domain'
+import { webFetch } from './images'
 
 /** The snapshot Hermes desktop browses (apps/desktop/src/app/capabilities/catalog/catalog-data.ts). The gateway has no call that lists the catalog. */
 export const CATALOG_URL = 'https://nousresearch.github.io/hermes-agent/docs/api/plugins.json'
@@ -30,7 +31,6 @@ async function load(deps: CatalogDeps): Promise<CommandOutcome<readonly CatalogP
   }
 }
 
-/** Every window shares one copy and one read in flight. A failed read is not kept, so Try again reads again. */
 export function pluginCatalog(deps: CatalogDeps): PluginCatalog {
   let kept: { readonly at: number; readonly plugins: readonly CatalogPlugin[] } | null = null
   let reading: Promise<CommandOutcome<readonly CatalogPlugin[]>> | null = null
@@ -47,12 +47,10 @@ export function pluginCatalog(deps: CatalogDeps): PluginCatalog {
   }
 }
 
-/** `net.fetch` honours the system proxy and certificate store, as `desktopImageDeps` does. */
 export function desktopCatalogDeps(net: Pick<Electron.Net, 'fetch'>): CatalogDeps {
-  return { fetchWeb: (url, signal) => net.fetch(url, { signal, credentials: 'omit', redirect: 'follow' }), now: Date.now, timeoutMs: WEB_TIMEOUT_MS }
+  return { fetchWeb: webFetch(net), now: Date.now, timeoutMs: WEB_TIMEOUT_MS }
 }
 
-/** A fixture run answers from the header's `pluginCatalog` and touches no network. Absent: the read fails. */
 export function fixtureCatalogDeps(rows: readonly unknown[] | undefined): CatalogDeps {
   return {
     fetchWeb: async () => (rows === undefined ? new Response(null, { status: 404 }) : new Response(JSON.stringify(rows), { headers: { 'content-type': 'application/json' } })),

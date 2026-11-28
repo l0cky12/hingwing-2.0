@@ -365,7 +365,6 @@ const INSTALL_REASONS: Reasons = {
   5026: message => ({ kind: 'rejected', message })
 }
 
-/** No wait is set: Hermes clones and scans the plugin before it answers, which can take a minute or more. */
 export const installPlugin = (conn: Wire, bot: BotId | null, name: string): Promise<Outcome<PluginInstalled>> =>
   guarded(INSTALL_REASONS, async () => parsePluginInstalled(await scoped(conn, bot).call('plugins.manage', { action: 'install', catalog_name: name, enable: true }), name))
 

@@ -1095,8 +1095,7 @@ export class ScriptedGateway {
   private readonly vault: ScriptedVault | null
   private readonly mcp: ScriptedToolServers | null
   private readonly pluginRows: PluginState[] | null
-  /** profile -> the plugins `plugins.manage` installed there, listed after the header's. */
-  private readonly installedPlugins = new Map<string, PluginState[]>()
+  private readonly installedByProfile = new Map<string, PluginState[]>()
   private drop: Drop
   private delivered = 0
   private seqShift = 0
@@ -2329,16 +2328,12 @@ export class ScriptedGateway {
     return this.mcp.call(method, params, routed)
   }
 
-  /**
-   * tui_gateway/methods_tools.py:1737-1762. `list` answers the header's rows for every profile, then what was installed in the profile the
-   * call names. `install` plays only a `catalog_name`, enabled, and refuses in Hermes's words a name the catalog lacks or one installed
-   * already (hermes_cli/plugins_cmd_install.py:504, :844, tui_gateway/methods_tools.py:1784-1785).
-   */
+  /** tui_gateway/methods_tools.py:1737-1762, 1772-1786; hermes_cli/plugins_cmd_install.py:504, :844 */
   plugins(socket: Socket, params: Obj, routed: string): unknown {
     const shared = this.pluginRows
     if (shared === null || socket.reach === 'profile') throw unknownMethod('plugins.manage')
     const action = params.action ?? 'list'
-    const installed = this.installedPlugins.get(routed) ?? []
+    const installed = this.installedByProfile.get(routed) ?? []
     const rows = [...shared, ...installed]
     if (action === 'toggle') return this.togglePlugin(rows, params)
     if (action === 'install') return this.installPlugin(rows, installed, params, routed)
@@ -2371,7 +2366,7 @@ export class ScriptedGateway {
     if (pluginRefusals !== undefined && Object.hasOwn(pluginRefusals, name)) throw refuse(pluginRefusals[name]!)
     if (rows.some(plugin => plugin.name === name)) throw refuse(`Plugin '${name}' already exists.`)
     const text = (raw: unknown) => (typeof raw === 'string' ? raw : '')
-    this.installedPlugins.set(routed, [...installed, { name, key: name, version: text(row.version), description: text(row.description), source: 'user', status: 'enabled', catalog_name: name }])
+    this.installedByProfile.set(routed, [...installed, { name, key: name, version: text(row.version), description: text(row.description), source: 'user', status: 'enabled', catalog_name: name }])
     return { ok: true, plugin_name: name, enabled: true, restart_required: false, warnings: [], missing_env: [], gateway_reloaded: true }
   }
 

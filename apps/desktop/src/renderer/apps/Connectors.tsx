@@ -7,7 +7,7 @@ import { line } from '../setup/ConnectionCard'
 import { nameOf, useSkillSwitches } from '../setup/Skills'
 import { run, useTopic } from '../store'
 import { useSwitches } from '../switches'
-import { askWords, catalogKind, installedKind, installedWords, PAGE } from './plugins-view'
+import { askWords, catalogKind, installedKind, installedWords, AVAILABLE_PAGE } from './plugins-view'
 import { ToolServerForm, useToolServers } from './ToolServers'
 import { namedTools, STATES, toolCount } from './tool-servers-view'
 
@@ -153,8 +153,7 @@ function useListed<T>(ask: () => Promise<CommandOutcome<readonly T[]>>, key: str
   return [read, (items: readonly T[]) => setRead({ at: 'read', items })] as const
 }
 
-/** `asking`: the card shows where the plugin comes from, with Install and Cancel. One install runs at a time. */
-type Installing = { readonly name: string; readonly at: 'asking' | 'installing' } | null
+type Installing = { readonly name: string; readonly at: 'confirming' | 'installing' } | null
 
 function usePlugins(bot: BotId | null) {
   const [read, setRead] = useListed(() => run({ do: 'plugins', bot }), bot)
@@ -187,7 +186,7 @@ function usePlugins(bot: BotId | null) {
 
   const ask = (name: string) => {
     if (installing?.at === 'installing') return
-    setInstalling({ name, at: 'asking' })
+    setInstalling({ name, at: 'confirming' })
     setSaid(null)
   }
 
@@ -216,7 +215,6 @@ interface CardProps {
   readonly toolNames?: string
   readonly state?: { readonly standing: string; readonly words: string }
   readonly later?: boolean
-  /** More lines under the detail, such as what a card asks before an install. */
   readonly below?: ReactNode
   readonly children?: ReactNode
 }
@@ -366,7 +364,7 @@ interface OfferProps {
 
 export function OfferCard({ plugin, installing, onAsk, onInstall, onCancel }: OfferProps) {
   const mine = installing?.name === plugin.name ? installing.at : null
-  const below = mine === 'asking' && (
+  const below = mine === 'confirming' && (
     <>
       {plugin.repo !== '' && <p className="hub-detail" data-mono title={plugin.repo}>{plugin.repo}</p>}
       <p className="hub-ask">{askWords(plugin)}</p>
@@ -375,8 +373,8 @@ export function OfferCard({ plugin, installing, onAsk, onInstall, onCancel }: Of
   return (
     <Card name={plugin.name} kind={catalogKind(plugin)} detail={plugin.description} below={below} {...(mine === 'installing' ? { state: { standing: 'connecting', words: 'Installing…' } } : {})}>
       <div className="hub-actions">
-        {mine === 'asking' && <button type="button" aria-label={`Cancel installing ${plugin.name}`} onClick={onCancel}>Cancel</button>}
-        {mine === 'asking' && <button type="button" aria-label={`Install ${plugin.name}`} onClick={onInstall}>Install</button>}
+        {mine === 'confirming' && <button type="button" aria-label={`Cancel installing ${plugin.name}`} onClick={onCancel}>Cancel</button>}
+        {mine === 'confirming' && <button type="button" aria-label={`Install ${plugin.name}`} onClick={onInstall}>Install</button>}
         {mine === null && <button type="button" aria-label={`Install ${plugin.name}`} disabled={installing?.at === 'installing'} onClick={onAsk}>Install</button>}
       </div>
     </Card>
@@ -386,14 +384,13 @@ export function OfferCard({ plugin, installing, onAsk, onInstall, onCancel }: Of
 function PluginsPanel({ name, plugins }: { readonly name: string; readonly plugins: ReturnType<typeof usePlugins> }) {
   const { read: installed, restart, problem, of, catalog, installing, said } = plugins
   const [query, setQuery] = useState<ConnectorsQuery>({ text: '', filter: 'all' })
-  const [limit, setLimit] = useState(PAGE)
+  const [limit, setLimit] = useState(AVAILABLE_PAGE)
   const items = installed.at === 'read' ? installed.items : null
   const offered = catalog.at === 'read' ? catalog.items : null
-  // The catalog holds thousands of rows, so the sort waits for a new list or query, not every render.
   const view = useMemo(() => (items === null ? null : pluginsView(items, offered ?? [], query)), [items, offered, query])
   const onQuery = (next: ConnectorsQuery) => {
     setQuery(next)
-    setLimit(PAGE)
+    setLimit(AVAILABLE_PAGE)
   }
   const { text, filter } = query
 
@@ -449,7 +446,7 @@ function PluginsPanel({ name, plugins }: { readonly name: string; readonly plugi
                   />
                 ))}
               </ul>
-              {view.available.length > limit && <div className="hub-note"><button type="button" onClick={() => setLimit(limit + PAGE)}>Show more</button></div>}
+              {view.available.length > limit && <div className="hub-note"><button type="button" onClick={() => setLimit(limit + AVAILABLE_PAGE)}>Show more</button></div>}
             </section>
           )}
           {view.total > 0 && view.counts.all === 0 && <p className="hub-note">No plugins match.</p>}

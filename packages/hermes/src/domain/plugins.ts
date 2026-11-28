@@ -15,7 +15,6 @@ export interface Plugin {
   readonly catalogName: string | null
 }
 
-/** How far Nous Research vouches for a catalog plugin: its own, one it reviewed, or one anyone listed. */
 export const CATALOG_TIERS = ['official', 'verified', 'community'] as const
 export type CatalogTier = typeof CATALOG_TIERS[number]
 
