@@ -68,6 +68,7 @@ describe('the end of a running turn under Replies only', () => {
 
 describe('the end of a running turn under Replies only, for a bot with a picture', () => {
   const PICTURED: Bot = { ...BOT, picture: true }
+  const working = (bot: Bot) => drawn({ ...turn([]), end: { kind: 'tip', words: [{ t: 'text', v: 'Working' }], elapsed: '4s' } }, bot, 'replies')
 
   it("shows the bot's own picture, and keeps the words for screen readers only", () => {
     const markup = drawn(turn([]), PICTURED, 'replies')
@@ -75,6 +76,7 @@ describe('the end of a running turn under Replies only, for a bot with a picture
     expect(markup).toMatch(/<img class="face pet-picture" src="blob:rae-picture"/)
     expect(markup).not.toContain('data-mood')
     expect(markup).toContain('><span class="sr"></span></div>')
+    expect(working(PICTURED), 'the words are kept for screen readers, the elapsed time stays in view').toMatch(/<span class="sr">Working<\/span><span class="elapsed"><span class="sr">, <\/span>4s<\/span>/)
   })
 
   it("draws today's face for a bot with no picture, and its words in the open", () => {
@@ -82,6 +84,7 @@ describe('the end of a running turn under Replies only, for a bot with a picture
     expect(markup).toContain('data-mood="working"')
     expect(markup).not.toContain('pet-picture')
     expect(markup).toContain('</span><span></span></div>')
+    expect(working(BOT)).toContain('<span>Working</span>')
   })
 
   it("draws today's face while the picture is still being read", () => {
