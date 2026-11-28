@@ -234,6 +234,7 @@ Named states live in the `STATES` table in the helper. Add a state there, not a 
 | `helper-running` | a helper that has started work, not one still waiting to start, carries the live end (`.helper[data-end="live"]` whose hidden state reads "working") |
 | `group-thinking` | an open group chat's thread ends in a live end that says a member is thinking (`#transcript .tip.thinking`, "Sam is thinking" or "Ada and Sam are thinking") |
 | `group-replied` | an open group chat's thread holds a member's reply and no live end, so no member is answering |
+| `pet` | under Replies only, a running turn's end is the bot's working face (`#transcript .tip.pet .face[data-mood="working"]`) |
 
 `wait` polls with no backoff. The errand's listing step lives about 144 ms at recorded timing. Playwright's own `waitFor` spaces its polls up to 500 ms apart and missed it 3 times out of 3, while this loop caught it 5 times out of 5. A `shot` of it took 80 to 440 ms while other verify runs shared the machine, and failed the state check in 16 of 30 such runs. A recipe that shoots a state this brief passes `--stretch 6`, which keeps the listing step on screen about 864 ms.
 
