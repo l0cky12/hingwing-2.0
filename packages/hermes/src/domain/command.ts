@@ -2,6 +2,7 @@ import type { AppSignIn, AppsBoard } from './apps'
 import type { BotTemplateId, TemplateAnswers } from './bot-templates'
 import type { BotCreated, BotDetails, BotDraft, BotEdit, BotId, BotMark, Marked, PetChoice } from './bots'
 import type { GroupDraft, GroupId } from './groups'
+import type { MadeRead } from './library'
 import type { MessagesRead } from './messages'
 import type { ChatRef, Unstarted } from './open'
 import type { BotManagers, ManagerName } from './passwords'
@@ -168,6 +169,8 @@ export type Command =
   | { readonly do: 'listRoutines'; readonly bot: BotId }
   /** Answers the routine as Hermes holds it after a pause or a resume, and null after a delete. */
   | { readonly do: 'controlRoutine'; readonly bot: BotId; readonly routine: RoutineId; readonly action: RoutineAction }
+  /** One step back through the bot's chats for what they made. Main reads it for a bot's Library, and keeps the items it names. */
+  | { readonly do: 'readMade'; readonly bot: BotId; readonly step: number }
   /**
    * One save of the details dialog, then the roster is asked for again. `revision` is the one `describeBot` answered:
    * a rename refused because the name changed elsewhere since is a `conflict`.
@@ -304,6 +307,7 @@ export type ResultOf<C extends Command> =
   : C extends { do: 'skillText' } ? string
   : C extends { do: 'listRoutines' } ? readonly Routine[]
   : C extends { do: 'controlRoutine' } ? Routine | null
+  : C extends { do: 'readMade' } ? MadeRead
   : C extends { do: 'botPicture' | 'petPicture' } ? string | null
   : C extends { do: 'canGeneratePicture' } ? boolean
   : C extends { do: 'generatePicture' | 'retitle' } ? string

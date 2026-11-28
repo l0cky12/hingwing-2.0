@@ -428,14 +428,23 @@ export type TurnScript =
 export type Reads = Readonly<Partial<Record<typeof READS[number], unknown>>>
 export const READS = ['process.list', 'session.control.read'] as const
 
+/**
+ * One stored row of a seeded chat. `timestamp`: seconds, by default the chat's `last_active`. A `tool` row with only `text` is a
+ * step stored with no name or arguments. One with a `name` is stored as Hermes stores it (tui_gateway/session_history.py:334-344):
+ * `args`, `content` (Hermes keeps it for write_file and patch) and `timestamp` only when given, and no row id.
+ */
+export type SeedRow =
+  | { readonly role: 'user' | 'assistant'; readonly text: string; readonly timestamp?: number }
+  | { readonly role: 'tool'; readonly text: string }
+  | { readonly role: 'tool'; readonly name: string; readonly args?: Json; readonly content?: string; readonly timestamp?: number }
+
 /** A chat a bot has before the story starts. */
 export interface ChatSeed {
   readonly id: string
   readonly title: string
-  /** Seconds since the epoch, as Hermes stamps a row. Every row of the chat has it. */
+  /** Seconds since the epoch, as Hermes stamps a row: the time of every user and assistant row that names none of its own. */
   readonly last_active: number
-  /** A `tool` row is one step of the turn, stored with no name or arguments. */
-  readonly rows: readonly { readonly role: 'user' | 'assistant' | 'tool'; readonly text: string }[]
+  readonly rows: readonly SeedRow[]
   /** Out of `session.list` unless it asks for hidden chats, as a Bot Chat is. */
   readonly hidden?: boolean
   /** Pinned by the user. A Bot Chat the roster names is pinned unless it is seeded. */
@@ -532,9 +541,15 @@ function parseStep(value: unknown, previousAt: number): FixtureStep | string {
   }
 }
 
+const isSeedRow = (row: unknown): row is SeedRow =>
+  isObject(row) && (row.timestamp === undefined || typeof row.timestamp === 'number')
+  && (row.role === 'tool' && typeof row.name === 'string'
+    ? row.name !== '' && (row.args === undefined || isObject(row.args)) && (row.content === undefined || typeof row.content === 'string')
+    : (row.role === 'user' || row.role === 'assistant' || (row.role === 'tool' && row.timestamp === undefined)) && typeof row.text === 'string')
+
 const isSeed = (value: unknown): value is ChatSeed =>
   isObject(value) && typeof value.id === 'string' && value.id !== '' && typeof value.title === 'string' && typeof value.last_active === 'number'
-  && Array.isArray(value.rows) && value.rows.every(row => isObject(row) && (row.role === 'user' || row.role === 'assistant' || row.role === 'tool') && typeof row.text === 'string')
+  && Array.isArray(value.rows) && value.rows.every(isSeedRow)
   && (value.hidden === undefined || typeof value.hidden === 'boolean')
   && (value.pinned === undefined || typeof value.pinned === 'boolean')
   && (value.asking === undefined || (isObject(value.asking) && typeof value.asking.command === 'string' && typeof value.asking.description === 'string'))

@@ -505,7 +505,9 @@ class EchoChat implements Stream {
 
 function seeded(profile: string, seed: ChatSeed): EchoChat {
   const chat = new EchoChat(seed.id, profile, seed.title, seed.hidden === true)
-  seed.rows.forEach(({ role, text }, at) => chat.rows.push({ role, text, timestamp: seed.last_active, row_id: at + 1 }))
+  seed.rows.forEach((row, at) => chat.rows.push('name' in row
+    ? { role: row.role, name: row.name, context: row.name, ...(row.args === undefined ? {} : { args: row.args }), ...(row.content === undefined ? {} : { content: row.content }), ...(row.timestamp === undefined ? {} : { timestamp: row.timestamp }) }
+    : { role: row.role, text: row.text, timestamp: 'timestamp' in row && row.timestamp !== undefined ? row.timestamp : seed.last_active, row_id: at + 1 }))
   chat.parent = seed.branched_from ?? null
   chat.shown = seed.shown ?? null
   chat.startedAt = seed.last_active

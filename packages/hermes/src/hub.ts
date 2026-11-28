@@ -26,6 +26,7 @@ import type { AttachmentId, BranchId, Link, Session, SessionContent, SessionId, 
 import { slashLineOf, type SlashCatalog } from './domain/slash'
 import { groupBook } from './groups'
 import { jobList } from './jobs'
+import { readMade } from './library'
 import { readMessages, type Place } from './messages'
 import { chatDesk } from './open'
 import { relayBook } from './relay'
@@ -684,6 +685,7 @@ export function openHermes(options: HermesOptions): Hermes {
     if (command.do === 'installPlugin') return installPlugin(conn, command.bot, command.name)
     if (command.do === 'tools') return listToolsets(conn, command.sessionId)
     if (command.do === 'listRoutines') return listRoutines(conn, command.bot)
+    if (command.do === 'readMade') return readMade({ bot: command.bot, via: conn.as(command.bot) }, command.step, desk.listed)
     if (command.do === 'controlRoutine') return controlRoutine(conn, command.bot, command.routine, command.action)
     if (command.do === 'botPicture') return botPicture(conn, command.bot)
     if (command.do === 'canGeneratePicture') return canGeneratePicture(conn)

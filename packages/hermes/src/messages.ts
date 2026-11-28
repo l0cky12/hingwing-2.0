@@ -3,49 +3,13 @@ import type { BotId } from './domain/bots'
 import type { Outcome } from './domain/command'
 import type { FoundMessage, MessagesRead } from './domain/messages'
 import type { SessionId } from './domain/session'
-import { RpcRefusal, type Calls } from './wire/link'
-import { parseChatPage, parseWords, type StoredWords } from './wire/parse'
+import { chatsOf, rowsOf, unlessRefused } from './stored'
+import type { Calls } from './wire/link'
+import { parseWords, type StoredWords } from './wire/parse'
 
 const CHATS_PER_STEP = 5
-/** The largest `session.list` page the gateway serves. */
-const LIST_ROWS = 200
-/** The most rows a `session.transcript` page holds. */
-const PAGE_ROWS = 500
-const MOST_PAGES = 20
 
 export interface Place { readonly bot: BotId | null; readonly via: Calls }
-
-interface Listed { readonly id: SessionId; readonly title: string | null }
-
-class Unreadable extends Error {}
-
-/** The newest `count` chats of a place, in Hermes's stored order, and whether it holds more. */
-async function chatsOf(via: Calls, count: number): Promise<{ readonly chats: readonly Listed[]; readonly more: boolean }> {
-  const chats: Listed[] = []
-  for (let cursor: string | null = null; ;) {
-    const page = parseChatPage(await via.call('session.list', {
-      scope: 'stored', include_hidden: true, limit: Math.min(LIST_ROWS, count + 1 - chats.length), ...(cursor === null ? {} : { cursor })
-    }))
-    chats.push(...page.chats.map(row => ({ id: row.id, title: row.title || null })))
-    cursor = page.next
-    if (chats.length > count || cursor === null) return { chats: chats.slice(0, count), more: chats.length > count }
-  }
-}
-
-async function rowsOf(via: Calls, sessionId: SessionId): Promise<readonly StoredWords[]> {
-  const pages: (readonly StoredWords[])[] = []
-  for (let cursor: string | null = null; pages.length < MOST_PAGES;) {
-    const page = parseWords(await via.call('session.transcript', {
-      session_id: sessionId, order: 'latest', limit: PAGE_ROWS, inline_images: false, ...(cursor === null ? {} : { cursor })
-    }))
-    if (page === null) throw new Unreadable()
-    if (page.reset) pages.splice(0)
-    pages.push(page.rows)
-    if (page.next === null) return pages.toReversed().flat()
-    cursor = page.next
-  }
-  throw new Unreadable()
-}
 
 function messagesIn(rows: readonly StoredWords[], sessionId: SessionId, bot: BotId | null, chat: string | null): FoundMessage[] {
   let landing: number | null = null
@@ -57,13 +21,7 @@ function messagesIn(rows: readonly StoredWords[], sessionId: SessionId, bot: Bot
 
 interface PlaceRead { readonly messages: readonly FoundMessage[]; readonly more: boolean; readonly unread: number }
 
-type Owned = (bot: BotId, sessions: readonly SessionId[]) => void
-
-const unlessRefused = <T>(read: Promise<T>): Promise<T | null> =>
-  read.catch((error: unknown) => {
-    if (error instanceof RpcRefusal || error instanceof Unreadable) return null
-    throw error
-  })
+export type Owned = (bot: BotId, sessions: readonly SessionId[]) => void
 
 async function readPlace({ bot, via }: Place, step: number, owned: Owned): Promise<PlaceRead> {
   const listing = await unlessRefused(chatsOf(via, (step + 1) * CHATS_PER_STEP))
@@ -73,7 +31,7 @@ async function readPlace({ bot, via }: Place, step: number, owned: Owned): Promi
   const messages: FoundMessage[] = []
   let unread = 0
   for (const chat of chats) {
-    const rows = await unlessRefused(rowsOf(via, chat.id))
+    const rows = await unlessRefused(rowsOf(via, chat.id, parseWords))
     if (rows === null) unread++
     else messages.push(...messagesIn(rows, chat.id, bot, chat.title))
   }

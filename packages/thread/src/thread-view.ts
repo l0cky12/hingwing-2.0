@@ -12,6 +12,8 @@ import { changesAt, elapsedWords, leftChangesAt, leftWords, timeLines, whenWords
 export type { ViewClock }
 export { whenWords }
 
+export { joinLibrary, libraryOf } from './library'
+
 export { leafText, parseMarkdown, proseLeaves, type Align, type Block, type Cell, type CodeBlock, type Inline, type ProseLeaf } from './prose'
 export { drawnQuestions, type AskCard, type ConnectCard, type DrawnQuestion, type QuestionsCard, type QuestionView, type SecretCard, type SecretField, type TargetView } from './asks'
 export { fieldId, findInThread, type Beside, type BesideRow, type Changing, type FieldPart, type FindMatch } from './find'

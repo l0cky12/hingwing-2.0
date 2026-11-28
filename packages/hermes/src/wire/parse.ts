@@ -1244,6 +1244,42 @@ export function parseWords(reply: StoredTranscriptResult): { readonly rows: read
   })
 }
 
+/** The two tools whose stored row keeps its result, which names every file it wrote as an absolute path (tools/file_tools.py:936-952, :1044-1052). */
+const WRITING_TOOLS: ReadonlySet<string> = new Set(['write_file', 'patch'])
+/** POSIX, a drive, or UNC. A relative path is dropped: a stored chat says nothing it is relative to. */
+const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/]|\\\\)/
+
+/** One stored row as the Library reads it. A row that made nothing still gives its time, which the rows after it may take. */
+export interface StoredMade { readonly at: number | null; readonly wrote: readonly string[]; readonly said: string | null }
+
+function wroteIn(row: ReturnType<typeof fields<StoredTranscriptRow>>): readonly string[] {
+  if (row.optStr('role') !== 'tool' || !WRITING_TOOLS.has(row.optStr('name') ?? '')) return []
+  const content = row.raw('content')
+  const result = typeof content === 'string' ? decodedJson(content) : content
+  // Hermes reports a failed write with `error` set, and names no file it modified (tools/file_tools.py:941).
+  if (!isObject(result) || Boolean(result.error)) return []
+  const paths = isStrings(result.files_modified) ? result.files_modified : isString(result.resolved_path) ? [result.resolved_path] : []
+  return paths.filter(path => ABSOLUTE_PATH.test(path))
+}
+
+export function parseMade(reply: StoredTranscriptResult): { readonly rows: readonly StoredMade[]; readonly next: string | null; readonly reset: boolean } | null {
+  return usable(() => {
+    const page = fields<StoredTranscriptResult>(reply)
+    const rows = (page.optList('rows') ?? []).flatMap((value): StoredMade[] => {
+      const row = usable(() => fields<StoredTranscriptRow>(value))
+      if (row === null) return []
+      const seconds = row.optNum('timestamp')
+      const text = row.optStr('text') ?? ''
+      return [{
+        at: seconds !== null && seconds > 0 ? Math.round(seconds * 1000) : null,
+        wrote: wroteIn(row),
+        said: row.optStr('role') === 'assistant' && text.trim() !== '' ? text : null
+      }]
+    })
+    return { rows, next: page.optStr('next_cursor'), reset: page.optBool('reset') === true }
+  })
+}
+
 export function parseSaid(reply: StoredTranscriptResult): { readonly said: readonly Said[]; readonly next: string | null; readonly reset: boolean } | null {
   return usable(() => {
     const page = fields<StoredTranscriptResult>(reply)
