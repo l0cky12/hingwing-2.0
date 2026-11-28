@@ -4,6 +4,7 @@ import type { PickMode } from '../src/domain/servers'
 import { manualClock } from '../src/testing/clock'
 import { FAKE_HOST, FAKE_LAN_HOST } from '../src/testing/fake-host'
 import { DialError, type WireSocket } from '../src/wire/link'
+import { TIE_MS } from '../src/domain/servers'
 import { pickedRoute, TIME_MS, timeWay, type Picked, type Way } from '../src/wire/pick'
 import { host, until } from './support/host'
 
@@ -11,11 +12,11 @@ const TAILNET: Target = { kind: 'remote', host: FAKE_HOST }
 const LAN: Target = { kind: 'ssh', host: FAKE_LAN_HOST }
 const WEB: Target = { kind: 'url', url: 'https://hermes.example.com' as GatewayUrl }
 
-interface Plan { readonly ms: number | null; readonly dial?: 'connects' | DialError | Promise<void> }
+interface Plan { readonly ms: number | null | Promise<number | null>; readonly dial?: 'connects' | DialError | Promise<void> }
 const planned = (entries: readonly (readonly [Target, Plan])[]) => new Map(entries)
 
 /** Ways that answer and dial as planned, and a record of what the route did with them. */
-function ways(plans: ReadonlyMap<Target, Plan>, pick: PickMode = 'fastest', listed: readonly Target[] = [...plans.keys()]) {
+function ways(plans: ReadonlyMap<Target, Plan>, pick: PickMode = 'fastest', listed: readonly Target[] = [...plans.keys()], clock = manualClock()) {
   const log: string[] = []
   const picks: Picked[] = []
   const sockets = new Map<Target, { closed: boolean }>()
@@ -43,7 +44,7 @@ function ways(plans: ReadonlyMap<Target, Plan>, pick: PickMode = 'fastest', list
       }
     }
   }
-  const route = pickedRoute({ ways: listed as [Target, ...Target[]], pick }, wayFor, picked => picks.push(picked))
+  const route = pickedRoute({ ways: listed as [Target, ...Target[]], pick }, wayFor, picked => picks.push(picked), clock)
   return { route, log, picks, sockets, dial: () => route.dial({ start: false }) as Promise<WireSocket & { readonly name: string }> }
 }
 
@@ -76,6 +77,32 @@ describe('pickedRoute', () => {
     const { dial, picks } = ways(planned([[TAILNET, { ms: 120, dial: new DialError('auth') }], [LAN, { ms: 15, dial: new DialError('unreachable') }]]))
     await expect(dial()).rejects.toMatchObject({ kind: 'auth' })
     expect(picks).toEqual([])
+  })
+
+  it('dials the first answer once no slower way could win the tie, without waiting on a way that has not answered', async () => {
+    let answer: (ms: number | null) => void = () => {}
+    const silent = new Promise<number | null>(resolve => { answer = resolve })
+    const clock = manualClock()
+    const { dial, picks } = ways(planned([[TAILNET, { ms: silent }], [LAN, { ms: 15 }]]), 'fastest', undefined, clock)
+    const dialing = dial()
+    await clock.advance(TIE_MS)
+    expect((await dialing).name).toBe('lan')
+    expect(picks).toEqual([{ using: LAN, times: [{ target: LAN, ms: 15 }] }])
+    answer(null)
+    await until('the late time to be told', () => picks.length === 2)
+    expect(picks[1]).toEqual({ using: LAN, times: [{ target: TAILNET, ms: null }, { target: LAN, ms: 15 }] })
+  })
+
+  it('in order, waits for the ways above an answer before it dials', async () => {
+    let answer: (ms: number | null) => void = () => {}
+    const first = new Promise<number | null>(resolve => { answer = resolve })
+    const clock = manualClock()
+    const { dial, log } = ways(planned([[TAILNET, { ms: first }], [LAN, { ms: 15 }]]), 'order', undefined, clock)
+    const dialing = dial()
+    await clock.advance(TIME_MS)
+    expect(log.some(line => line.startsWith('dial'))).toBe(false)
+    answer(120)
+    expect((await dialing).name).toBe('tailnet')
   })
 
   it('picks again on every dial', async () => {
