@@ -1408,6 +1408,34 @@ describe('the task calls', () => {
   })
 })
 
+describe("the routine runs call", () => {
+  const RUNS = { runs: [{ id: 'local-s1', source: 'cron', started_at: 1000, ended_at: 1042, end_reason: 'cron_complete', title: 'Morning digest' }], limit: 20 }
+
+  it("reads the routine's runs for the named bot, as the list draws them", async () => {
+    const rig = harness()
+    rig.answers({ status: 200, body: RUNS })
+    await expect(rig.handlers.get(CHANNEL.routineRuns)!(rig.event(), 'rae', 'a1')).resolves.toEqual({
+      ok: true, value: [{ key: 'local-s1', outcome: { is: 'succeeded' }, at: 1_000_000, seconds: 42, chat: 'local-s1' }]
+    })
+    expect(rig.reads).toEqual(['/api/cron/jobs/a1/runs?profile=rae&limit=20'])
+  })
+
+  it('refuses a foreign frame, and a bot or routine that is not a name, without reading', async () => {
+    const rig = harness()
+    const runs = rig.handlers.get(CHANNEL.routineRuns)!
+    for (const [event, bot, routine] of [[rig.event('https://example.com/'), 'rae', 'a1'], [rig.event(), '', 'a1'], [rig.event(), 'rae', ' '], [rig.event(), 7, 'a1'], [rig.event(), 'rae', { id: 'a1' }], [rig.event(), undefined, undefined]] as const) {
+      await expect(runs(event, bot, routine)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    }
+    expect(rig.reads).toEqual([])
+  })
+
+  it('stops answering once disposed', () => {
+    const { handlers, served } = harness()
+    served.dispose()
+    expect(handlers.has(CHANNEL.routineRuns)).toBe(false)
+  })
+})
+
 describe('the picture call', () => {
   it("asks main's picker for the named bot, and refuses a foreign frame or a bot with no name without asking", async () => {
     const rig = harness()

@@ -3,7 +3,7 @@ import {
   type About, type AdmissionId, type AvatarTone, type Attachment, type AttachmentId, type BotDraft, type BotEdit, type BotId, type BotMark, type Bots, type BranchId, type BusyMode, type ChatRef,
   type CheckpointId, type CheckStep, type Command, type CommandOutcome, type ControlAction, type GroupChat, type GroupDraft, type GroupId, type Groups, type Header, type HelperId, type Item, type Link, type ModelOption,
   type BotActivities, type CatalogPlugin, type OpenChat, type OpenTurn, type ProcessId, type PromptId, type PromptReply, type QueuedAction, type Quote, type Recording, type RelayDesk, type RequestId, type RequestReply,
-  type PickMode, type RestoreScope, type ResultOf, type RoutineId, type ScreenView, type Server, type ServerId, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type Target, type TaskBoard, type TaskChat, type Timed, type TurnId, type Unstarted
+  type PickMode, type RestoreScope, type ResultOf, type RoutineId, type ScreenView, type Server, type ServerId, type ServerSetup, type Session, type SessionId, type SettledTurn, type SetupFailure, type Sidebar, type SkillLibrary, type SlashCatalog, type RoutineRun, type Target, type TaskBoard, type TaskChat, type Timed, type TurnId, type Unstarted
 } from '@highwing/hermes/domain'
 import { isAppearance, type Appearance } from './appearance'
 import type { Intro } from './intro'
@@ -285,6 +285,8 @@ export interface Bridge {
   taskBoard(): Promise<CommandOutcome<TaskBoard>>
   /** The chat working on a card, read afresh. null: the card has none yet. */
   taskChat(id: string): Promise<CommandOutcome<TaskChat | null>>
+  /** The newest runs of a routine, read afresh from Hermes. */
+  routineRuns(bot: BotId, routine: RoutineId): Promise<CommandOutcome<readonly RoutineRun[]>>
   /** Opens the file dialog and holds each file picked, in the order picked. Nothing picked: an empty list. */
   attachPick(): Promise<readonly StageResult[]>
   /** Holds the image on the clipboard. No image there: an empty list. */
@@ -311,7 +313,7 @@ export type ScreenFrame = 'open' | ArrayBuffer | { readonly closed: number }
 export const CHANNEL = {
   watch: 'highwing:watch', unwatch: 'highwing:unwatch', push: 'highwing:push', run: 'highwing:run', file: 'highwing:file', image: 'highwing:image',
   drafts: 'highwing:drafts', keepDraft: 'highwing:keep-draft', pickPicture: 'highwing:pick-picture', choosePicture: 'highwing:choose-picture', attachPick: 'highwing:attach-pick',
-  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop', screen: 'highwing:screen', taskBoard: 'highwing:task-board', taskChat: 'highwing:task-chat', transcribe: 'highwing:transcribe'
+  attachPaste: 'highwing:attach-paste', attachDrop: 'highwing:attach-drop', screen: 'highwing:screen', taskBoard: 'highwing:task-board', taskChat: 'highwing:task-chat', routineRuns: 'highwing:routine-runs', transcribe: 'highwing:transcribe'
 } as const
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
@@ -861,6 +863,7 @@ export function parseCommand(raw: unknown): WindowCommand | null {
 }
 
 export const parseBotId = botIdOf
+export const parseRoutineId = (raw: unknown): RoutineId | null => (filled(raw) ? (raw as RoutineId) : null)
 
 export function parseFileRequest(raw: unknown): FileRequest | null {
   if (!isObject(raw) || (raw.action !== 'open' && raw.action !== 'show' && raw.action !== 'preview' && raw.action !== 'page')) return null
