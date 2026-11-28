@@ -48,6 +48,7 @@ export { DialError } from './wire/link'
 export { pickedRoute, timeWay, type Picked, type PickedRoute, type Way } from './wire/pick'
 export { remoteRoute, type Route } from './wire/remote'
 export { sshRead, type RemoteRead } from './wire/ssh'
+export { parseCronJob } from './wire/parse'
 export { liveRoute } from './wire/tickets'
 export type { Transcribe } from './wire/transcribe'
 

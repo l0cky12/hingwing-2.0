@@ -2118,6 +2118,15 @@ function routineOf(raw: unknown): { readonly routine: Routine; readonly owner: s
 }
 
 /**
+ * A job as Hermes's cron REST routes answer it: the raw record of cron/jobs.json, which names its id `id` and its schedule's
+ * words `schedule_display`, where a `cron.manage` row says `job_id` and `schedule`. The raw `schedule` is a dict of the parsed
+ * schedule, so it is never read. null: the body is no job record.
+ */
+export function parseCronJob(body: unknown): Routine | null {
+  return isObject(body) ? routineOf({ ...body, job_id: body.id, schedule: body.schedule_display })?.routine ?? null : null
+}
+
+/**
  * The jobs of a `cron.manage` list that belong to `bot`. A gateway that scoped the list to the bot's own store says so in
  * `scoped`, and every job is the bot's. An older one lists the launch profile's store, where a job is the bot's when its name
  * carries the bot's tag, and an untagged job is the default bot's (tools/cronjob_tools.py via tui_gateway/methods_tools.py:1311-1325).

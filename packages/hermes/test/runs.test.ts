@@ -15,6 +15,7 @@ describe('runsPath', () => {
   it('asks for the routine in the bot profile, newest 20 only, escaping what a name may hold', () => {
     expect(runsPath('a1' as RoutineId, 'rae' as BotId)).toBe('/api/cron/jobs/a1/runs?profile=rae&limit=20')
     expect(runsPath('a/b?c' as RoutineId, 'r&e' as BotId)).toBe('/api/cron/jobs/a%2Fb%3Fc/runs?profile=r%26e&limit=20')
+    expect(runsPath('a1' as RoutineId, 'rae' as BotId, 1)).toBe('/api/cron/jobs/a1/runs?profile=rae&limit=1')
   })
 })
 
