@@ -121,6 +121,20 @@ describe('pickedRoute', () => {
     expect(log.filter(line => line.startsWith('dial'))).toEqual(['dial lan', 'dial web'])
   })
 
+  it('when the fastest way fails, dials the next way to answer without waiting for a way still being timed', async () => {
+    let webAnswers: (ms: number | null) => void = () => {}
+    const web = new Promise<number | null>(resolve => { webAnswers = resolve })
+    const clock = manualClock()
+    const silent = new Promise<number | null>(() => {})
+    const { dial, log } = ways(planned([[TAILNET, { ms: silent }], [LAN, { ms: 15, dial: new DialError('unreachable') }], [WEB, { ms: web }]]), 'fastest', undefined, clock)
+    const dialing = dial()
+    await clock.advance(TIE_MS)
+    await until('the LAN dial to fail', () => log.includes('dial lan'))
+    webAnswers(40)
+    expect((await dialing).name).toBe('web')
+    expect(log.filter(line => line.startsWith('dial'))).toEqual(['dial lan', 'dial web'])
+  })
+
   it('lets only the latest of two dials in flight set the way in use', async () => {
     let connect = () => {}
     const slow = new Promise<void>(resolve => { connect = resolve })

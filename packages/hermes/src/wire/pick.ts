@@ -54,6 +54,8 @@ export function pickedRoute(server: Pick<Server, 'ways' | 'pick'>, wayFor: (targ
     let settle = () => {}
     const settled = new Promise<void>(resolve => { settle = resolve })
     let cancelTie: (() => void) | null = null
+    let heard: (() => void)[] = []
+    const done = () => times.filter(ms => ms !== undefined).length
     const decided = () => {
       const answered = times.findIndex(ms => typeof ms === 'number')
       if (times.every(ms => ms !== undefined)) return true
@@ -64,13 +66,19 @@ export function pickedRoute(server: Pick<Server, 'ways' | 'pick'>, wayFor: (targ
       times[at] = ms
       if (mode === 'fastest' && ms !== null && cancelTie === null) cancelTie = clock.setTimeout(settle, TIE_MS)
       if (decided()) settle()
+      for (const wake of heard) wake()
+      heard = []
       return ms
     }))
     const early = settled.then(() => {
       cancelTie?.()
       return [...times]
     })
-    return { early, all }
+    /** The times so far, and how many ways are done. */
+    const now = () => ({ times: [...times], done: done() })
+    /** Resolves once more than `seen` ways are done. */
+    const more = (seen: number) => (done() > seen ? Promise.resolve() : new Promise<void>(resolve => void heard.push(resolve)))
+    return { early, all, now, more }
   }
   type Timing = ReturnType<typeof timeAll>
 
@@ -105,12 +113,18 @@ export function pickedRoute(server: Pick<Server, 'ways' | 'pick'>, wayFor: (targ
       return null
     }
     let times: readonly (number | null | undefined)[] | null = timing === null ? null : await timing.early
-    const answered = times === null ? [0] : rankWays(times.map(ms => ms ?? null), mode).filter(index => typeof times?.[index] === 'number')
-    let won = await first(answered)
-    // The ways still being timed are ranked once they are done, so the next fastest is tried next, whatever its place in the order.
-    if (won === null && timing !== null && !gone()) {
-      times = await timing.all
-      won = await first(rankWays(times as readonly (number | null)[], mode))
+    const answered = (held: readonly (number | null | undefined)[]) => rankWays(held.map(ms => ms ?? null), mode).filter(index => typeof held[index] === 'number')
+    let won = await first(times === null ? [0] : answered(times))
+    // After a failure the next way to answer is tried next, whatever its place in the order. A way that never answers is tried last.
+    while (won === null && timing !== null && !gone()) {
+      const seen = timing.now()
+      times = seen.times
+      if (seen.done === dialed.length) {
+        won = await first(rankWays(seen.times.map(ms => ms ?? null), mode))
+        break
+      }
+      won = await first(answered(seen.times))
+      if (won === null) await timing.more(seen.done)
     }
     if (won === null) throw gone() ? new DialError('dropped') : failures.get(0) ?? [...failures.values()][0] ?? new DialError('dropped')
     const { way, socket } = won
