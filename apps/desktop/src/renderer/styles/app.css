@@ -724,6 +724,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .look-reset { display: block; margin-inline: auto; padding: 2px 4px; border: 0; background: none; color: var(--signal); font-size: var(--text-sm); text-decoration: underline; text-underline-offset: 3px; }
 .composer :is(.refusal, .busy) { max-width: var(--chat-width); margin: 8px auto 0; padding: 0 28px 0 calc(28px + var(--col)); }
 .composer .busy { font-size: var(--text-sm); color: var(--graphite); }
+.run-note { margin: 0; padding: 12px calc(max(0px, (100% - var(--chat-width)) / 2) + 28px + var(--col)) 16px; background: var(--paper); border-top: 1px solid var(--rule); font-size: var(--text-md); color: var(--graphite); }
 .composer.dragging .pill { border-style: dashed; border-color: var(--signal); }
 .chips, .attach-refused, .drop-line { max-width: var(--chat-width); margin: 0 auto 10px; padding: 0 28px 0 calc(28px + var(--col)); box-sizing: border-box; }
 .chips { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; list-style: none; }
