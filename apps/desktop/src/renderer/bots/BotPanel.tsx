@@ -1,8 +1,11 @@
-import type { Bot, BotDetails } from '@highwing/hermes/domain'
+import type { Bot, BotDetails, ModelMenu } from '@highwing/hermes/domain'
 import { useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { pickBotPicture, run, useTopic } from '../store'
 import { Avatar } from './Avatar'
 import { BotEditor, type BotEditorProps } from './BotEditor'
+import { nameProblem } from './bot-form'
+import type { LookCalls } from './LookPicker'
+import { NewBotForm } from './NewBotForm'
 import { Routines, type RoutinesProps } from './Routines'
 
 export const BOT_EDIT_CALLS: Pick<BotEditorProps, 'onDescribe' | 'onEdit' | 'onPickPicture' | 'onRemovePicture'> = {
@@ -10,6 +13,14 @@ export const BOT_EDIT_CALLS: Pick<BotEditorProps, 'onDescribe' | 'onEdit' | 'onP
   onEdit: (bot, edit, revision) => run({ do: 'editBot', bot, edit, revision }),
   onPickPicture: bot => pickBotPicture(bot),
   onRemovePicture: bot => run({ do: 'removeBotPicture', bot })
+}
+
+export const LOOKS: LookCalls = {
+  canGenerate: () => run({ do: 'canGeneratePicture' }),
+  generate: prompt => run({ do: 'generatePicture', prompt }),
+  choose: () => window.highwing.choosePicture(),
+  pets: () => run({ do: 'pets' }),
+  petPicture: ({ slug, url }) => run({ do: 'petPicture', slug, url })
 }
 
 const ROUTINE_CALLS: Pick<RoutinesProps, 'onList' | 'onControl'> = {
@@ -21,6 +32,7 @@ type Panel =
   | { readonly at: 'closed' }
   | { readonly at: 'open'; readonly bot: Bot; readonly details: BotDetails }
   | { readonly at: 'refused'; readonly bot: Bot; readonly words: string }
+  | { readonly at: 'new'; readonly models: ModelMenu | 'loading' }
 
 const CLOSED: Panel = { at: 'closed' }
 
@@ -42,7 +54,12 @@ export function useBotPanel() {
     asked.current++
     setPanel(CLOSED)
   }, [])
-  return { panel, open, close }
+  const startNew = useCallback(() => {
+    asked.current++
+    setPanel({ at: 'new', models: 'loading' })
+    void run({ do: 'botModels', bot: null }).then(outcome => { if (outcome.ok) setPanel(held => held.at === 'new' ? { at: 'new', models: outcome.value } : held) })
+  }, [])
+  return { panel, open, close, startNew }
 }
 
 export interface TabRowProps<T extends string> {
@@ -70,22 +87,28 @@ export function TabRow<T extends string>({ tabs, selected, onSelect }: TabRowPro
 }
 
 /** `current` is the roster's entry for the open chat's bot, which shows a picture changed in the panel. */
-export function BotPanel({ panel, current, onClose }: { readonly panel: Panel; readonly current: Bot | null; readonly onClose: () => void }) {
+export function BotPanel({ panel, current, onClose, onNewBot }: { readonly panel: Panel; readonly current: Bot | null; readonly onClose: () => void; readonly onNewBot: () => void }) {
+  const bots = useTopic('bots')
   if (panel.at === 'open') {
     const bot = current?.id === panel.bot.id ? current : panel.bot
-    return <OpenPanel key={bot.id} bot={bot} details={panel.details} onClose={onClose} />
+    return <OpenPanel key={bot.id} bot={bot} details={panel.details} onClose={onClose} onNewBot={onNewBot} />
+  }
+  // The plus menu's form, drawn here because chat mode has no Bots column to draw it.
+  if (panel.at === 'new') {
+    return <NewBotForm problemOf={name => nameProblem(name, bots)} models={panel.models} looks={LOOKS} onCreate={(draft, picture) => run({ do: 'createBot', draft, picture })} onClose={onClose} />
   }
   return panel.at === 'refused' ? <Refused bot={panel.bot} words={panel.words} onClose={onClose} /> : null
 }
 
 /** The Details form stays mounted under another tab, so an edit not yet saved is still there on the way back. */
-function OpenPanel({ bot, details, onClose }: { readonly bot: Bot; readonly details: BotDetails; readonly onClose: () => void }) {
+function OpenPanel({ bot, details, onClose, onNewBot }: { readonly bot: Bot; readonly details: BotDetails; readonly onClose: () => void; readonly onNewBot: () => void }) {
   const [tab, setTab] = useState<TabId>('details')
   const tabs = <TabRow tabs={TABS} selected={tab} onSelect={setTab} />
+  const newBot = <button type="button" className="bot-new" aria-haspopup="dialog" onClick={onNewBot}>New bot…</button>
   return (
     <BotEditor
       bot={bot} details={details} className={tab === 'details' ? 'bot-panel' : `bot-panel on-${tab}`}
-      tabs={<>{tabs}{tab === 'routines' ? <RoutinesTab bot={bot} onClose={onClose} /> : null}</>} {...BOT_EDIT_CALLS} onClose={onClose}
+      tabs={<>{tabs}{newBot}{tab === 'routines' ? <RoutinesTab bot={bot} onClose={onClose} /> : null}</>} {...BOT_EDIT_CALLS} onClose={onClose}
     />
   )
 }

@@ -14,7 +14,7 @@ import { run, useTopic } from '../store'
 import { useBotDrafts } from '../composer/drafts'
 import { Avatar } from './Avatar'
 import { BotEditor, type BotEditorProps } from './BotEditor'
-import { BOT_EDIT_CALLS } from './BotPanel'
+import { BOT_EDIT_CALLS, LOOKS } from './BotPanel'
 import { nameProblem } from './bot-form'
 import type { LookCalls } from './LookPicker'
 import { NewBotForm } from './NewBotForm'
@@ -33,14 +33,6 @@ import { drawnAbove, drawnAboveGroups, HIDDEN_CLOSED, hiddenTriggers, lineOf, ne
 const CARET_KEYS: ReadonlySet<string> = new Set(['PageUp', 'PageDown', 'End'])
 const MAC = navigator.userAgent.includes('Mac')
 const SAID_MS = 5_000
-
-const LOOKS: LookCalls = {
-  canGenerate: () => run({ do: 'canGeneratePicture' }),
-  generate: prompt => run({ do: 'generatePicture', prompt }),
-  choose: () => window.highwing.choosePicture(),
-  pets: () => run({ do: 'pets' }),
-  petPicture: ({ slug, url }) => run({ do: 'petPicture', slug, url })
-}
 
 export function BotsSidebar({ head, compact, foot = null }: { readonly head: ReactNode; readonly compact: boolean; readonly foot?: ReactNode }) {
   const open = useTopic('open')

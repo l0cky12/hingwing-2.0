@@ -617,8 +617,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .form-choices button:disabled { opacity: .45; }
 .form-waiting { margin: 0 auto 0 0; align-self: center; font-size: var(--text-sm); color: var(--graphite); }
 .bot-picture { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px; }
-.bot-picture button, .routine-controls button { padding: 5px 12px; font-size: var(--text-sm); border-radius: var(--radius-sm); border: 1px solid var(--rule); background: transparent; color: var(--ink); }
-.bot-picture button:hover:not(:disabled), .routine-controls button:hover:not(:disabled) { border-color: var(--ink); }
+.bot-picture button, .routine-controls button, .bot-new { padding: 5px 12px; font-size: var(--text-sm); border-radius: var(--radius-sm); border: 1px solid var(--rule); background: transparent; color: var(--ink); }
+.bot-picture button:hover:not(:disabled), .routine-controls button:hover:not(:disabled), .bot-new:hover { border-color: var(--ink); }
 .bot-picture button:disabled { opacity: .45; }
 .bot-picture .form-refused { flex-basis: 100%; }
 .group-form { width: min(480px, calc(100% - 32px)); }
@@ -653,7 +653,8 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .bot-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--rule); }
 .bot-tabs button { padding: 6px 10px; border: 0; border-bottom: 2px solid transparent; background: none; }
 .bot-tabs [aria-selected="true"] { border-bottom-color: var(--signal); font-weight: 700; }
-.bot-panel.on-routines .bot-form-body > :not(.bot-tabs, .routines-tab), .bot-panel.on-routines form > :is(.form-refused, .form-choices) { display: none; }
+.bot-new { position: absolute; top: 0; right: 0; }
+.bot-panel.on-routines .bot-form-body > :not(.bot-tabs, .bot-new, .routines-tab), .bot-panel.on-routines form > :is(.form-refused, .form-choices) { display: none; }
 .routines-tab > .form-choices { padding-top: 14px; }
 .look-row { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .look-button { position: relative; flex: none; width: 64px; height: 64px; padding: 0; border: 0; border-radius: var(--radius-round); background: none; color: var(--ink); }
@@ -1437,7 +1438,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
   .bot-activity[data-activity="working"] > span { background: CanvasText; }
   .bot-activity[data-activity="waiting"] { background: Highlight; color: HighlightText; }
   .bot-activity[data-activity="unread"] { background: CanvasText; }
-  .bots .bot-more, .bot-picture button { border: 1px solid ButtonText; }
+  .bots .bot-more, .bot-picture button, .bot-new { border: 1px solid ButtonText; }
   .look-pop { border: 2px solid CanvasText; }
   .look-badge { border: 1px solid CanvasText; }
   .look-button:focus-visible { outline-color: Highlight; }

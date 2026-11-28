@@ -97,11 +97,11 @@ describe('the panel tab row', () => {
 describe('the panel when Hermes refuses to describe the bot', () => {
   it("names the bot and says Hermes's words, with a way to close", () => {
     const bot = botIn(listed(fact('rae', 'Rae')), RAE)!
-    const html = renderToStaticMarkup(<BotPanel panel={{ at: 'refused', bot, words: "This Hermes can't edit bots from Highwing." }} current={bot} onClose={() => {}} />)
+    const html = renderToStaticMarkup(<BotPanel panel={{ at: 'refused', bot, words: "This Hermes can't edit bots from Highwing." }} current={bot} onClose={() => {}} onNewBot={() => {}} />)
     expect(html).toMatch(/<dialog class="bot-form bot-panel" aria-label="Rae"><h2>Rae<\/h2>.*<p class="form-refused" role="alert">This Hermes can&#x27;t edit bots from Highwing.<\/p>.*>Close<\/button>/)
   })
 
   it('draws nothing while closed', () => {
-    expect(renderToStaticMarkup(<BotPanel panel={{ at: 'closed' }} current={null} onClose={() => {}} />)).toBe('')
+    expect(renderToStaticMarkup(<BotPanel panel={{ at: 'closed' }} current={null} onClose={() => {}} onNewBot={() => {}} />)).toBe('')
   })
 })
