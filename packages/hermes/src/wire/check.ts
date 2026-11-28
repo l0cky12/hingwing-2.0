@@ -73,6 +73,11 @@ async function checkRemote(host: SshHost, options: CheckOptions): Promise<CheckR
   onStep('peer')
   const absent = peerFailure(tailnet, hostPart(host))
   if (absent !== null) return { ok: false, failure: absent }
+  return checkSsh(host, options)
+}
+
+async function checkSsh(host: SshHost, options: CheckOptions): Promise<CheckResult> {
+  const { onStep } = options
   onStep('ssh')
   const probe = await probeHermes(host, { ...options, deadlineMs: PROBE_MS })
   if (probe.ok || CHECK_FAILURES[probe.failure].step === 'hermes') onStep('hermes')
@@ -88,15 +93,16 @@ async function checkLocal(options: CheckOptions): Promise<CheckResult> {
 
 /**
  * Whether Highwing can reach Hermes at `target`, one step at a time, stopping at the first that
- * fails. A remote target needs Tailscale to list the machine, ssh to reach it and a Hermes there
- * that knows the SSH client contract. This computer needs only that Hermes. Those two checks start
- * nothing and contact no gateway. A gateway address has no machine to ask, so its check signs in and
+ * fails. A tailnet machine needs Tailscale to list it, ssh to reach it and a Hermes there that knows
+ * the SSH client contract. An ssh destination needs the last two, and this computer needs only that
+ * Hermes. Those three checks start nothing and contact no gateway. A gateway address has no machine to ask, so its check signs in and
  * opens one socket, as `Gateways.check` describes.
  */
 export function checkTarget(target: Target, options: CheckOptions): Promise<CheckResult> {
   return byKind(target, {
     local: () => checkLocal(options),
     remote: ({ host }) => checkRemote(host, options),
+    ssh: ({ host }) => checkSsh(host, options),
     url: async ({ url }) => {
       if (options.gateways === undefined) throw new Error('checkTarget was given no `gateways` to check a gateway address with')
       return options.gateways.check(url, options)

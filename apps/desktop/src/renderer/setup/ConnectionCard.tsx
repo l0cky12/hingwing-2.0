@@ -11,6 +11,7 @@ export const line = (size: number, width: number) =>
 export const Server = ({ size = 15, width = 1.9 }) => <svg {...line(size, width)}><rect x="3" y="3.5" width="18" height="7" rx="2" /><rect x="3" y="13.5" width="18" height="7" rx="2" /><path d="M7 7h.01M7 17h.01" /></svg>
 const Laptop = ({ size = 15, width = 1.9 }) => <svg {...line(size, width)}><rect x="4" y="4.5" width="16" height="11" rx="1.5" /><path d="M2 19.5h20" /></svg>
 const Globe = ({ size = 15, width = 1.9 }) => <svg {...line(size, width)}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>
+const Terminal = ({ size = 15, width = 1.9 }) => <svg {...line(size, width)}><rect x="3" y="4.5" width="18" height="15" rx="2" /><path d="m7.5 9.5 3 2.5-3 2.5M13 14.5h3.5" /></svg>
 export const People = () => <svg {...line(15, 1.9)}><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0" /><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8" /></svg>
 export const Bubble = () => <svg {...line(15, 1.9)}><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-5A8 8 0 1 1 21 12z" /></svg>
 
@@ -38,7 +39,7 @@ export function Segmented<V extends string>({ labelledBy, describedBy, value, se
   )
 }
 
-const ICONS: { readonly [K in Kind]: (props: { readonly size?: number; readonly width?: number }) => ReactNode } = { remote: Server, url: Globe, local: Laptop }
+const ICONS: { readonly [K in Kind]: (props: { readonly size?: number; readonly width?: number }) => ReactNode } = { remote: Server, ssh: Terminal, url: Globe, local: Laptop }
 
 const KINDS: readonly Segment<Kind>[] = KIND_ORDER.map(value => {
   const Icon = ICONS[value]

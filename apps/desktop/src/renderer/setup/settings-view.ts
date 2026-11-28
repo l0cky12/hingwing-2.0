@@ -45,7 +45,7 @@ const shortcutRows: readonly Row[] = SHORTCUTS.map(shortcut => ({
 }))
 
 export const ROWS: readonly Row[] = [
-  { id: 'connection', page: 'connection', searchText: 'Hermes. Where Hermes runs. Tailnet machine, Web address, This computer. Hermes machine. Gateway address. Change. Connect. server host address SSH Tailscale URL sign in online' },
+  { id: 'connection', page: 'connection', searchText: 'Hermes. Where Hermes runs. Tailnet machine, SSH, Web address, This computer. Hermes machine. SSH destination. Gateway address. Change. Connect. server host address Tailscale LAN URL sign in online' },
   { id: 'theme', page: 'appearance', searchText: 'Theme. System, Light, Dark. System follows your computer’s light or dark setting. mode colour color' },
   { id: 'accent', page: 'appearance', searchText: 'Accent. Bot, Ink, Slate, Plum, Olive, Mauve, Umber. Bot uses the color of the open chat’s bot. colour color tint header send button' },
   { id: 'sidebar', page: 'appearance', searchText: 'Show in the sidebar. Bots, Chats. Bots shows your bots. Chats shows the chats of the open bot.' },

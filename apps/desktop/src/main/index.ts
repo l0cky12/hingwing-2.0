@@ -50,7 +50,7 @@ const REMOTE_READ_MS = 20_000
 
 const recorded = (dial: Dialer): Dialer => (HIGHWING_RECORD ? recordingDialer(dial, HIGHWING_RECORD) : dial)
 
-const addressOf = (target: Target) => byKind<GatewayUrl | null>(target, { local: () => null, remote: () => null, url: ({ url }) => url })
+const addressOf = (target: Target) => byKind<GatewayUrl | null>(target, { local: () => null, remote: () => null, ssh: () => null, url: ({ url }) => url })
 
 async function savedConnection(settingsDir: string, opener: Opener, open: (dial: Dialer, place: string) => Hermes, armIntro: () => Promise<void>): Promise<ConnectionOwner> {
   // An installed build takes neither variable: one would keep sign-ins unsealed, the other would cut a real sign-in short.
@@ -63,6 +63,7 @@ async function savedConnection(settingsDir: string, opener: Opener, open: (dial:
     const route = byKind<Route>(target, {
       local: () => liveRoute(),
       remote: ({ host }) => remoteRoute(host),
+      ssh: ({ host }) => remoteRoute(host),
       url: ({ url }) => gateways.route(url)
     })
     return { ...route, dial: recorded(route.dial) }

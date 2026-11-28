@@ -174,15 +174,15 @@ describe('the card for a gateway address', () => {
     return { label, input: new RegExp(`<input[^>]*id="${id}"[^>]*>`).exec(markup)![0] }
   }
 
-  it('offers the three places Hermes can run, the tailnet first with its machine field', () => {
+  it('offers the four places Hermes can run, the tailnet first with its machine field', () => {
     const markup = render({ at: 'form', live: null, notice: null })
-    expect(segments(markup)).toEqual(['x Tailnet machine', '  Web address', '  This computer'])
+    expect(segments(markup)).toEqual(['x Tailnet machine', '  SSH', '  Web address', '  This computer'])
     expect(fieldOf(markup)).toMatchObject({ label: 'Hermes machine', input: expect.stringContaining('placeholder="hermes-host"') })
   })
 
   it('opens on the address being edited, in the Gateway address field', () => {
     const markup = render({ at: 'failed', live: null, target: at('https://hermes.example.com:8443'), failure: 'url-unreachable' })
-    expect(segments(markup)[1]).toBe('x Web address')
+    expect(segments(markup)[2]).toBe('x Web address')
     expect(fieldOf(markup)).toMatchObject({ label: 'Gateway address', input: expect.stringContaining('value="https://hermes.example.com:8443"') })
     expect(fieldOf(markup).input).toContain('placeholder="https://hermes.example.com"')
     expect(text(markup)).not.toContain('plain http')

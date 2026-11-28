@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseSshHost } from '../src/domain/reach'
-import { ASK_INTERACTIVE, ASK_NATIVE_HTTP, ATTACH, attachedOf, HERMES_PATHS, httpTicketOf, PROBE, probeOf, READ_CAP, relay, remoteHermes, runTool, SERVE, servedOf, SSH_OPTIONS, sshFailureOf, UPGRADE_MS, sshRead } from '../src/wire/ssh'
+import { ASK_INTERACTIVE, ASK_NATIVE_HTTP, ATTACH, attachedOf, HERMES_PATHS, httpTicketOf, PROBE, probeOf, READ_CAP, relay, remoteHermes, runTool, SERVE, servedOf, SSH_OPTIONS, sshFailureOf, sshPing, UPGRADE_MS, sshRead } from '../src/wire/ssh'
 import { manualClock, settle } from '../src/testing/clock'
 
 describe('sshFailureOf', () => {
@@ -260,6 +260,31 @@ describe('sshRead, through an ssh that runs its command with sh', () => {
     writeFileSync(denied, '#!/bin/sh\necho "hermes-host: Permission denied (publickey)." >&2\nexit 255\n', { mode: 0o755 })
     expect(await read(join(root, 'x.html'), denied)).toEqual({ ok: false, why: 'ssh-denied' })
     expect(await read(join(root, 'x.html'), join(root, 'no-ssh'))).toEqual({ ok: false, why: 'ssh-missing' })
+  })
+})
+
+describe('sshPing, through an ssh that runs its command with sh', () => {
+  const root = mkdtempSync(join(tmpdir(), 'highwing-ping-'))
+  const tool = (name: string, script: string) => {
+    writeFileSync(join(root, name), `#!/bin/sh\n${script}\n`, { mode: 0o755 })
+    return join(root, name)
+  }
+  const host = parseSshHost('hermes-host')!
+  const ping = (sshBin: string, clock = manualClock()) => sshPing(host, { sshBin, deadlineMs: 5_000, signal: new AbortController().signal, clock })
+
+  it('answers when ssh logs in and the far shell runs the command', async () => {
+    const log = join(root, 'argv')
+    expect(await ping(tool('ssh', `echo "$@" > ${log}\nfor arg; do last=$arg; done\nexec /bin/sh -c "$last"`))).toBe(true)
+    expect(execFileSync('cat', [log], { encoding: 'utf8' }).trim()).toBe([...SSH_OPTIONS, 'hermes-host', 'exit'].join(' '))
+  })
+
+  it('does not answer when ssh fails, is missing, or stays silent past the deadline', async () => {
+    expect(await ping(tool('refused', 'exit 255'))).toBe(false)
+    expect(await ping(join(root, 'no-ssh'))).toBe(false)
+    const clock = manualClock()
+    const hung = ping(tool('hung', 'exec sleep 30'), clock)
+    await clock.advance(5_000)
+    expect(await hung).toBe(false)
   })
 })
 

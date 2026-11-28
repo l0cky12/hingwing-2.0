@@ -65,7 +65,7 @@ export const reachOf = (setup: Setup, session: Session | undefined): Reach => {
     session,
     local: target === null || onThisComputer(target),
     machine: target === null ? 'this computer' : machineOf(target),
-    host: target === null ? null : byKind<SshHost | null>(target, { local: () => null, remote: ({ host }) => host, url: () => null })
+    host: target === null ? null : byKind<SshHost | null>(target, { local: () => null, remote: ({ host }) => host, ssh: ({ host }) => host, url: () => null })
   }
 }
 

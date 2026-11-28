@@ -2,11 +2,12 @@ import { byKind, gatewayHost, isPlainHttp, parseGatewayUrl, parseSshHost, URL_PR
 
 export type Kind = Target['kind']
 
-export const LEAD = 'Highwing talks to the Hermes gateway on this computer, on another machine of your tailnet over SSH, or at a web address.'
+export const LEAD = 'Highwing talks to the Hermes gateway on this computer, on another machine over SSH, or at a web address.'
 
 export const SIGN_IN_HINT = 'Highwing opened the sign-in page in your browser. It never sees your password.'
 
 const NOT_A_NAME = "That isn't a machine name. Use the name Tailscale lists, such as hermes-host."
+const NOT_A_DESTINATION = "That isn't an SSH destination. Use an address such as 192.168.1.20, or a host in your SSH config."
 
 function plainHttpWarning(text: string): string | null {
   const parsed = parseGatewayUrl(text)
@@ -40,6 +41,14 @@ export const CHOICES: { readonly [K in Kind]: Choice } = {
       return host === null ? { ok: false, words: NOT_A_NAME, fix: null } : { ok: true, target: { kind: 'remote', host } }
     }
   },
+  ssh: {
+    label: 'SSH',
+    field: { label: 'SSH destination', placeholder: '192.168.1.20', hint: 'A LAN address, or a host in your SSH config. Add user@ in front to log in as someone else.', warning: () => null },
+    read: text => {
+      const host = parseSshHost(text)
+      return host === null ? { ok: false, words: NOT_A_DESTINATION, fix: null } : { ok: true, target: { kind: 'ssh', host } }
+    }
+  },
   url: {
     label: 'Web address',
     field: {
@@ -61,7 +70,8 @@ export function textsOf(shown: Target | undefined): Readonly<Record<Kind, string
   const typed = shown === undefined ? {} : byKind<Partial<Record<Kind, string>>>(shown, {
     local: () => ({}),
     remote: ({ host }) => ({ remote: host }),
+    ssh: ({ host }) => ({ ssh: host }),
     url: ({ url }) => ({ url })
   })
-  return { local: '', remote: '', url: '', ...typed }
+  return { local: '', remote: '', ssh: '', url: '', ...typed }
 }

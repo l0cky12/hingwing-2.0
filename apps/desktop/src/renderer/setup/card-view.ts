@@ -1,4 +1,4 @@
-import { byKind, failureOf, machineOf, STEP_WORDS, type Link, type Target } from '@highwing/hermes/domain'
+import { byKind, failureOf, machineOf, serverName, STEP_WORDS, type Link, type Target } from '@highwing/hermes/domain'
 import { bannerOf, type BannerAction } from '../chrome/Chrome'
 import { SIGN_IN_HINT } from './form'
 import type { CardSetup } from './screens'
@@ -42,8 +42,8 @@ const oneCheckAtATime = (summary: Summary | null): Summary | null =>
   summary?.action?.run.some(command => command.do === 'checkTarget') === true ? { ...summary, action: null } : summary
 
 function summaryOf(target: Target, link: Link | undefined): Summary {
-  const title = byKind(target, { local: () => 'This computer', remote: remote => machineOf(remote), url: gateway => machineOf(gateway) })
-  const saved = byKind<string | null>(target, { local: () => null, remote: ({ host }) => host, url: ({ url }) => url })
+  const title = serverName(target)
+  const saved = byKind<string | null>(target, { local: () => null, remote: ({ host }) => host, ssh: ({ host }) => host, url: ({ url }) => url })
   const action = link === undefined ? null : (bannerOf(link, target)?.action ?? null)
   return {
     kind: target.kind,
