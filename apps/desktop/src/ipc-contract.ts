@@ -248,8 +248,10 @@ export type ImageOutcome = { readonly ok: true; readonly type: ImageType; readon
  * new-chat view, or a group chat.
  */
 export type DraftKey = `chat:${SessionId}` | `bot:${BotId}` | 'new' | `group:${GroupId}`
-/** `bot` is the bot of the chat the draft was typed in, so it can be matched to that bot's list. Empty `text` and no attachments: no draft. */
-export interface Draft { readonly key: DraftKey; readonly bot: BotId | null; readonly text: string; readonly attachments: readonly Attachment[] }
+export type QuoteFrom = 'hermes' | 'you'
+export interface Quote { readonly from: QuoteFrom; readonly text: string }
+/** `bot` is the bot of the chat the draft was typed in, so it can be matched to that bot's list. Empty `text`, no attachments and no quote: no draft. */
+export interface Draft { readonly key: DraftKey; readonly bot: BotId | null; readonly text: string; readonly attachments: readonly Attachment[]; readonly quote: Quote | null }
 
 /** A file Highwing was asked to hold for a message: held, or refused with plain words that name it. */
 export type StageResult = { readonly ok: true; readonly attachment: Attachment } | { readonly ok: false; readonly name: string; readonly reason: string }
@@ -850,13 +852,19 @@ const draftKeyOf = (raw: unknown): DraftKey | null => {
   return colon > 0 && Object.hasOwn(DRAFT_KINDS, raw.slice(0, colon)) && filled(raw.slice(colon + 1)) ? (raw as DraftKey) : null
 }
 
-/** `attachments` may be missing, as in a draft an earlier build wrote. */
+const heldQuoteOf = (raw: unknown): Quote | null | undefined => {
+  if (raw === undefined || raw === null) return null
+  return isObject(raw) && (raw.from === 'hermes' || raw.from === 'you') && filled(raw.text) ? { from: raw.from, text: raw.text } : undefined
+}
+
+/** `attachments` and `quote` may be missing, as in a draft an earlier build wrote. */
 export function parseDraft(raw: unknown): Draft | null {
   if (!isObject(raw) || !text(raw.text) || !(raw.bot === null || filled(raw.bot))) return null
   const key = draftKeyOf(raw.key)
   const held = raw.attachments === undefined ? [] : Array.isArray(raw.attachments) && raw.attachments.length <= MAX_ATTACHMENTS ? raw.attachments.map(attachmentOf) : null
-  if (held === null || held.includes(null)) return null
-  return key && { key, bot: botIdOf(raw.bot), text: raw.text, attachments: held as Attachment[] }
+  const quote = heldQuoteOf(raw.quote)
+  if (held === null || held.includes(null) || quote === undefined) return null
+  return key && { key, bot: botIdOf(raw.bot), text: raw.text, attachments: held as Attachment[], quote }
 }
 
 /** Hermes's upload cap (hermes_cli/web_routers/audio.py:52), so a longer recording is refused here, not after the trip. */
@@ -869,7 +877,7 @@ export function parseRecording(raw: unknown): Recording | null {
   return audio instanceof Uint8Array && audio.byteLength > 0 && audio.byteLength <= RECORDING_MAX_BYTES ? { mime: raw.mime, audio } : null
 }
 
-export const isEmptyDraft = (draft: Pick<Draft, 'text' | 'attachments'>) => draft.text === '' && draft.attachments.length === 0
+export const isEmptyDraft = (draft: Pick<Draft, 'text' | 'attachments' | 'quote'>) => draft.text === '' && draft.attachments.length === 0 && draft.quote === null
 
 export function parseDropped(raw: unknown): readonly DroppedFile[] | null {
   if (!Array.isArray(raw)) return null

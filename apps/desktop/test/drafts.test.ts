@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Draft } from '../src/ipc-contract'
 import { draftStore, readDraft } from '../src/main/drafts'
 
-const draftOf = (key: string, bot: string, text: string) => ({ key, bot, text, attachments: [] }) as unknown as Draft
+const draftOf = (key: string, bot: string, text: string) => ({ key, bot, text, attachments: [], quote: null }) as unknown as Draft
 const SHOT = { id: 'a-1', name: 'error.png', kind: 'image', size: 2048 } as const
 const CHAT = draftOf('chat:local-0102', 'research', 'half a thought')
 const UNSTARTED = draftOf('bot:research', 'research', 'Rename every photo')
@@ -17,9 +17,9 @@ const fileFor = (dir: string, draft: Draft) => join(dir, filesIn(dir).find(name 
 describe('readDraft', () => {
   it('reads a draft this build wrote, and one an earlier build wrote with no attachments', () => {
     expect(readDraft(text({ version: 1, ...CHAT }))).toEqual(CHAT)
-    expect(readDraft(text({ version: 1, key: 'new', bot: null, text: 'x' }))).toEqual({ key: 'new', bot: null, text: 'x', attachments: [] })
+    expect(readDraft(text({ version: 1, key: 'new', bot: null, text: 'x' }))).toEqual({ key: 'new', bot: null, text: 'x', attachments: [], quote: null })
     expect(readDraft(text({ version: 1, ...CHAT, text: '', attachments: [SHOT] }))).toEqual({ ...CHAT, text: '', attachments: [SHOT] })
-    expect(readDraft(text({ version: 1, key: 'group:launch-plan', bot: null, text: '@sam go' }))).toEqual({ key: 'group:launch-plan', bot: null, text: '@sam go', attachments: [] })
+    expect(readDraft(text({ version: 1, key: 'group:launch-plan', bot: null, text: '@sam go' }))).toEqual({ key: 'group:launch-plan', bot: null, text: '@sam go', attachments: [], quote: null })
   })
 
   it.each([
@@ -93,6 +93,18 @@ describe('draftStore', () => {
     await store.settled()
     await expect(draftStore(dir).load()).resolves.toEqual([attached])
     store.keep({ ...attached, attachments: [] })
+    await store.settled()
+    expect(filesIn(dir)).toEqual([])
+  })
+
+  it('keeps the quote a draft replies to, even with no text, and deletes the draft once the quote is gone too', async () => {
+    const dir = emptyDir()
+    const store = draftStore(dir)
+    const replying = { ...CHAT, text: '', quote: { from: 'hermes', text: 'Both are notes.' } } as const
+    store.keep(replying)
+    await store.settled()
+    await expect(draftStore(dir).load()).resolves.toEqual([replying])
+    store.keep({ ...replying, quote: null })
     await store.settled()
     expect(filesIn(dir)).toEqual([])
   })

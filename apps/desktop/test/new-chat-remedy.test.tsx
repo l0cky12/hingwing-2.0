@@ -67,12 +67,12 @@ describe("a refused message carried to a new chat's draft", () => {
   it('is the whole draft when the new chat had none', async () => {
     const { store, kept } = await loaded([])
     store.carryToNewChat(BOT, MESSAGE)
-    expect(kept).toEqual([{ key: 'new', bot: BOT, text: MESSAGE, attachments: [] }])
+    expect(kept).toEqual([{ key: 'new', bot: BOT, text: MESSAGE, attachments: [], quote: null }])
   })
 
   it('follows a blank line after the text the user left there', async () => {
-    const { store, kept } = await loaded([{ key: 'new', bot: BOT, text: 'Draft the weekly note', attachments: [] } as unknown as Draft])
+    const { store, kept } = await loaded([{ key: 'new', bot: BOT, text: 'Draft the weekly note', attachments: [], quote: null } as unknown as Draft])
     store.carryToNewChat(BOT, MESSAGE)
-    expect(kept).toEqual([{ key: 'new', bot: BOT, text: `Draft the weekly note\n\n${MESSAGE}`, attachments: [] }])
+    expect(kept).toEqual([{ key: 'new', bot: BOT, text: `Draft the weekly note\n\n${MESSAGE}`, attachments: [], quote: null }])
   })
 })

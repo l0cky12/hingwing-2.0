@@ -7,7 +7,7 @@ export const DRAFTS_DIR = 'drafts'
 const VERSION = 1
 
 export interface DraftStore {
-  /** Writes the draft, or deletes it when it has no text and no attachments. Applied in call order. */
+  /** Writes the draft, or deletes it when it has no text, no attachments and no quote. Applied in call order. */
   keep(draft: Draft): void
   load(): Promise<readonly Draft[]>
   /** Resolves once every `keep` so far has reached the disk or failed. */
@@ -29,7 +29,7 @@ export function readDraft(text: string): Draft | null {
 const fileOf = (dir: string, key: DraftKey) => join(dir, `${createHash('sha256').update(key).digest('hex').slice(0, 32)}.json`)
 
 async function write(dir: string, draft: Draft): Promise<void> {
-  const { key, bot, text, attachments } = draft
+  const { key, bot, text, attachments, quote } = draft
   const file = fileOf(dir, key)
   if (isEmptyDraft(draft)) {
     await unlink(file).catch((error: NodeJS.ErrnoException) => {
@@ -40,7 +40,7 @@ async function write(dir: string, draft: Draft): Promise<void> {
   await mkdir(dir, { recursive: true, mode: 0o700 })
   const temp = await open(`${file}.tmp`, 'w', 0o600)
   try {
-    await temp.writeFile(`${JSON.stringify({ version: VERSION, key, bot, text, attachments })}\n`)
+    await temp.writeFile(`${JSON.stringify({ version: VERSION, key, bot, text, attachments, quote })}\n`)
     await temp.sync()
   } finally {
     await temp.close()

@@ -331,7 +331,7 @@ export function Composer({ slot, group, inputRef, autoFocus, seed = '', sessionI
     }
     setOutput(outcome.value)
     setAttachRefusals([])
-    draftSent(slot, text, new Set(sent))
+    draftSent(slot, text, new Set(sent), null)
   }
 
   const onMenuKey = (event: KeyboardEvent<HTMLTextAreaElement>, open: Extract<Menu, { open: true }>): boolean => {

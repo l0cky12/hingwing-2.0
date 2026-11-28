@@ -1,12 +1,13 @@
 import { type Attachment, type AttachmentId, type BotId, type SessionId, type Shown, type ShownGroup, type Sidebar } from '@highwing/hermes/domain'
 import { useSyncExternalStore } from 'react'
-import { isEmptyDraft, type Draft, type DraftKey } from '../../ipc-contract'
+import { isEmptyDraft, type Draft, type DraftKey, type Quote } from '../../ipc-contract'
+import { quoteOf } from './quote'
 
 export type DraftSlot = Pick<Draft, 'key' | 'bot'> | null
-type Held = Pick<Draft, 'text' | 'attachments'>
+type Held = Pick<Draft, 'text' | 'attachments' | 'quote'>
 
 const SAVE_MS = 500
-const EMPTY: Held = { text: '', attachments: [] }
+const EMPTY: Held = { text: '', attachments: [], quote: null }
 
 export function slotOf(shown: Shown | ShownGroup): NonNullable<DraftSlot> {
   if (shown.kind === 'group') return { key: `group:${shown.group}`, bot: null }
@@ -105,17 +106,22 @@ export const attachTo = (slot: DraftSlot, attachments: readonly Attachment[]) =>
   if (attachments.length > 0) put(slot, { attachments: [...heldOf(slot).attachments, ...attachments] }, 'now')
 }
 
-/** Puts a branch's text in the chat it made. A draft the chat has, or one typed or cleared since the window loaded, wins. */
-export function seedDraft(slot: NonNullable<DraftSlot>, text: string) {
-  if (seeds !== null) return void seeds.push({ ...slot, text, attachments: [] })
-  plant({ ...slot, text, attachments: [] })
+export const quoteInto = (slot: DraftSlot, quote: Quote | null) => put(slot, { quote }, 'now')
+
+/** Puts a branch's message in the chat it made. A draft the chat has, or one typed or cleared since the window loaded, wins. */
+export function seedDraft(slot: NonNullable<DraftSlot>, message: string) {
+  const { quote, body } = quoteOf(message)
+  const draft = { ...slot, text: body, attachments: [], quote }
+  if (seeds !== null) return void seeds.push(draft)
+  plant(draft)
   changed()
 }
 
-export function carryToNewChat(bot: BotId | null, text: string) {
+export function carryToNewChat(bot: BotId | null, message: string) {
   const slot = { key: 'new', bot } as const
-  const held = heldOf(slot).text
-  put(slot, { text: held === '' ? text : `${held}\n\n${text}` }, 'now')
+  const { quote, body } = quoteOf(message)
+  const held = heldOf(slot)
+  put(slot, { text: held.text === '' ? body : `${held.text}\n\n${body}`, quote: held.quote ?? quote }, 'now')
 }
 
 export const detach = (slot: DraftSlot, id: AttachmentId) => put(slot, { attachments: heldOf(slot).attachments.filter(held => held.id !== id) }, 'now')
@@ -132,18 +138,22 @@ export function moveAttachment(slot: DraftSlot, id: AttachmentId, by: -1 | 1) {
 
 /** Moves a draft to another slot that holds none. */
 export function moveDraft(from: DraftSlot, to: DraftSlot) {
-  const { text, attachments } = heldOf(from)
-  if (from?.key === to?.key || (text === '' && attachments.length === 0)) return
-  const there = heldOf(to)
-  if (there.text !== '' || there.attachments.length > 0) return
-  put(to, { text, attachments }, 'now')
+  const { text, attachments, quote } = heldOf(from)
+  const held = { text, attachments, quote }
+  if (from?.key === to?.key || isEmptyDraft(held) || !isEmptyDraft(heldOf(to))) return
+  put(to, held, 'now')
   put(from, EMPTY, 'now')
 }
 
-/** Clears what was sent: the text, unless it changed while the message was on its way, and exactly the attachments sent with it. */
-export function draftSent(slot: DraftSlot, text: string, sent: ReadonlySet<AttachmentId>) {
+const sameQuote = (a: Quote | null, b: Quote | null) => a?.from === b?.from && a?.text === b?.text
+
+export function draftSent(slot: DraftSlot, text: string, sent: ReadonlySet<AttachmentId>, quote: Quote | null) {
   const held = heldOf(slot)
-  put(slot, { text: held.text.trim() === text ? '' : held.text, attachments: held.attachments.filter(attachment => !sent.has(attachment.id)) }, 'now')
+  put(slot, {
+    text: held.text.trim() === text ? '' : held.text,
+    attachments: held.attachments.filter(attachment => !sent.has(attachment.id)),
+    quote: sameQuote(held.quote, quote) ? null : held.quote
+  }, 'now')
 }
 
 export function sweepDrafts(sidebar: Sidebar | undefined, open: DraftKey | null) {
@@ -183,6 +193,8 @@ export const stagingIn = (slot: DraftSlot): number => staging.get(slot?.key ?? n
 export const useStaging = (slot: DraftSlot): number => useSyncExternalStore(subscribe, () => stagingIn(slot))
 
 export const useAttachments = (slot: DraftSlot): readonly Attachment[] => useSyncExternalStore(subscribe, () => heldOf(slot).attachments)
+
+export const useQuote = (slot: DraftSlot): Quote | null => useSyncExternalStore(subscribe, () => heldOf(slot).quote)
 
 export const useChatDrafts = (): ReadonlySet<SessionId> => useSyncExternalStore(subscribe, () => chats)
 

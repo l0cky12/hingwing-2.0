@@ -716,7 +716,7 @@ function harness(ownerOf?: (hermes: Hermes) => ConnectionOwner) {
   const kept: Draft[] = []
   const picked: string[] = []
   const lives: (() => boolean)[] = []
-  const stored: readonly Draft[] = [{ key: 'new', bot: null, text: 'kept on disk', attachments: [] }]
+  const stored: readonly Draft[] = [{ key: 'new', bot: null, text: 'kept on disk', attachments: [], quote: null }]
   const previewed: { request: string; label: string | null; session: Session | undefined; layout?: PaneLayout }[] = []
   const toPane: PreviewCommand[] = []
   const pane: PreviewOwner = {
@@ -1325,7 +1325,7 @@ describe('the attach calls', () => {
 })
 
 describe('the draft calls', () => {
-  const draft = { key: 'chat:local-0102', bot: 'research', text: 'half a thought', attachments: [] }
+  const draft = { key: 'chat:local-0102', bot: 'research', text: 'half a thought', attachments: [], quote: null }
 
   it('keep a draft from the app page and hand back the stored ones', async () => {
     const rig = harness()
@@ -1464,9 +1464,9 @@ describe('the transcribe call', () => {
 
 describe('parseDraft', () => {
   it('keeps the known fields of each kind of key, and no attachments for a draft an earlier build wrote', () => {
-    expect(parseDraft({ key: 'bot:research', bot: 'research', text: 'x', extra: 1 })).toEqual({ key: 'bot:research', bot: 'research', text: 'x', attachments: [] })
-    expect(parseDraft({ key: 'new', bot: null, text: '' })).toEqual({ key: 'new', bot: null, text: '', attachments: [] })
-    expect(parseDraft({ key: 'group:launch-plan', bot: null, text: '@sam go' })).toEqual({ key: 'group:launch-plan', bot: null, text: '@sam go', attachments: [] })
+    expect(parseDraft({ key: 'bot:research', bot: 'research', text: 'x', extra: 1 })).toEqual({ key: 'bot:research', bot: 'research', text: 'x', attachments: [], quote: null })
+    expect(parseDraft({ key: 'new', bot: null, text: '' })).toEqual({ key: 'new', bot: null, text: '', attachments: [], quote: null })
+    expect(parseDraft({ key: 'group:launch-plan', bot: null, text: '@sam go' })).toEqual({ key: 'group:launch-plan', bot: null, text: '@sam go', attachments: [], quote: null })
   })
 
   it('refuses a key of a kind no place to type has', () => {
@@ -1475,9 +1475,25 @@ describe('parseDraft', () => {
 
   it('keeps the known fields of each attachment, and refuses a draft with one it cannot read', () => {
     const held = { id: 'a-1', name: 'error.png', kind: 'image', size: 2048 }
-    expect(parseDraft({ key: 'new', bot: null, text: '', attachments: [{ ...held, path: '/etc/passwd' }] })).toEqual({ key: 'new', bot: null, text: '', attachments: [held] })
+    expect(parseDraft({ key: 'new', bot: null, text: '', attachments: [{ ...held, path: '/etc/passwd' }], quote: null })).toEqual({ key: 'new', bot: null, text: '', attachments: [held], quote: null })
     for (const attachments of ['a-1', [{ ...held, kind: 'pdf' }], [{ ...held, size: -1 }], [{ ...held, name: '' }]]) {
       expect(parseDraft({ key: 'new', bot: null, text: '', attachments })).toBeNull()
+    }
+  })
+})
+
+describe('parseDraft and a quote', () => {
+  const quote = { from: 'hermes', text: 'The folder holds two files.' }
+
+  it('keeps the quote a draft replies to, and none for a draft an earlier build wrote', () => {
+    expect(parseDraft({ key: 'chat:s1', bot: null, text: '', quote: { ...quote, extra: 1 } })).toEqual({ key: 'chat:s1', bot: null, text: '', attachments: [], quote })
+    expect(parseDraft({ key: 'chat:s1', bot: null, text: 'x', quote: null })?.quote).toBeNull()
+    expect(parseDraft({ key: 'chat:s1', bot: null, text: 'x' })?.quote).toBeNull()
+  })
+
+  it('refuses a draft with a quote it cannot read', () => {
+    for (const bad of ['The folder', { ...quote, from: 'bot' }, { ...quote, text: ' ' }, { from: 'you' }]) {
+      expect(parseDraft({ key: 'chat:s1', bot: null, text: 'x', quote: bad }), JSON.stringify(bad)).toBeNull()
     }
   })
 })

@@ -19,7 +19,7 @@ async function openWindow(saved: readonly Draft[] = [], typeFirst: (store: typeo
   await started
   return { ...store, kept }
 }
-const savedIn = (id: string, text: string): Draft => ({ ...chat(id), text, attachments: [] })
+const savedIn = (id: string, text: string): Draft => ({ ...chat(id), text, attachments: [], quote: null })
 
 describe("a bot's unsent draft, as its row reads it", () => {
   afterEach(() => {
@@ -59,7 +59,7 @@ describe("a bot's unsent draft, as its row reads it", () => {
   it('is gone once the draft is sent', async () => {
     const { draftSent, useBotDrafts, writeDraft } = await openWindow()
     writeDraft(chat('s1'), 'Compare the two papers')
-    draftSent(chat('s1'), 'Compare the two papers', new Set())
+    draftSent(chat('s1'), 'Compare the two papers', new Set(), null)
     expect(useBotDrafts().has(BOT)).toBe(false)
   })
 
