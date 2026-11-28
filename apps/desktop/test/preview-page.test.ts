@@ -105,7 +105,7 @@ describe('the pane', () => {
 
   it('draws the page once it has loaded, and keeps it in view while it reloads', () => {
     const loading = run(show())
-    expect(previewOf(loading)).toEqual({ state: 'open', layout: 'beside', title: 'http://localhost:5173/', address: 'http://localhost:5173/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
+    expect(previewOf(loading)).toEqual({ state: 'open', layout: 'beside', title: 'http://localhost:5173/', asked: 'http://localhost:5173/', address: 'http://localhost:5173/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
     expect(pageInView(loading)).toBe(false)
     const shown = nextPane(loading, { on: 'loaded' })
     expect(previewOf(shown)).toMatchObject({ content: { load: { at: 'shown' } } })
@@ -128,14 +128,14 @@ describe('the pane', () => {
   it('follows the page to where it navigated, and keeps what was asked for', () => {
     const moved = run(show(), { on: 'navigated', address: 'http://localhost:5173/about' })
     expect(moved).toMatchObject({ asked: 'http://localhost:5173/', address: 'http://localhost:5173/about' })
-    expect(previewOf(moved)).toMatchObject({ address: 'http://localhost:5173/about' })
+    expect(previewOf(moved)).toMatchObject({ asked: 'http://localhost:5173/', address: 'http://localhost:5173/about' })
   })
 
   it('shows a CSV file as its table, titled by its name, and offers to open it', () => {
     const table = { header: ['name', 'total'], rows: [['Alice', '120']], total: 1 }
     const report = '/tmp/hermes-proto-work/report.csv'
     expect(previewOf(run(show(null, report, report), { on: 'tabled', table })))
-      .toEqual({ state: 'open', layout: 'beside', title: 'report.csv', address: report, file: true, content: { kind: 'table', table } })
+      .toEqual({ state: 'open', layout: 'beside', title: 'report.csv', asked: report, address: report, file: true, content: { kind: 'table', table } })
     expect(previewOf(run(show('Q3 report', report, report), { on: 'tabled', table }))).toMatchObject({ title: 'Q3 report' })
   })
 
@@ -156,7 +156,7 @@ describe('the pane', () => {
 
   it('starts a new page with nothing of the last one', () => {
     expect(previewOf(run(show('demo'), { on: 'loaded' }, show(null, 'https://example.com/'))))
-      .toEqual({ state: 'open', layout: 'beside', title: 'https://example.com/', address: 'https://example.com/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
+      .toEqual({ state: 'open', layout: 'beside', title: 'https://example.com/', asked: 'https://example.com/', address: 'https://example.com/', file: false, content: { kind: 'page', load: { at: 'loading' } } })
   })
 })
 

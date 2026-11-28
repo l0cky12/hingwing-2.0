@@ -130,7 +130,7 @@ describe('pages', () => {
       tool('write_file', { path: '/w/notes.md' }, { diffs: [written('/w/notes.md', ['# Notes'])] }),
       tool('write_file', { path: '/w/board.HTM' }, { diffs: [written('/w/board.HTM', ['<body>'])] }),
       tool('patch', { path: '/w/site/index.html' }, { diffs: [diff('/w/site/index.html', 1, 1)] })
-    ])).toEqual([{ path: '/w/site/index.html', title: 'Q3 report', version: 't1/3' }, { path: '/w/board.HTM', title: 'board.HTM', version: 't1/2' }])
+    ])).toEqual([{ path: '/w/site/index.html', title: 'Q3 report', version: 't1/0 t1/3' }, { path: '/w/board.HTM', title: 'board.HTM', version: 't1/2' }])
   })
 
   it('takes a newer title, and drops a page a later step deleted', () => {
@@ -139,7 +139,7 @@ describe('pages', () => {
       tool('patch', { path: '/w/a.html' }, { diffs: [{ ...diff('/w/a.html', 1, 1), lines: [{ t: 'del', text: '<title>Draft</title>' }, { t: 'add', text: '<title>Final</title>' }] }] }),
       tool('write_file', { path: '/w/b.html' }, { diffs: [written('/w/b.html', ['<p>'])] }),
       tool('terminal', { command: 'rm /w/b.html' }, { diffs: [{ ...diff('/w/b.html', 0, 1), deletesFile: true }] })
-    ])).toEqual([{ path: '/w/a.html', title: 'Final', version: 't1/1' }])
+    ])).toEqual([{ path: '/w/a.html', title: 'Final', version: 't1/0 t1/1' }])
   })
 
   it('lists nothing for a step still running, and keeps one empty list for a turn with no page', () => {
@@ -158,10 +158,17 @@ describe('pages', () => {
     expect(view.newestPages).toEqual(new Map([['/w/a.html', 't2/1'], ['/w/b.html', 't1/1']]))
   })
 
-  it('gives a page one turn wrote twice one card, at its second write', () => {
+  it('gives a page one turn wrote twice one card, whose version holds both writes', () => {
     const view = threadView(session({ history: [settled([writes('/w/a.html', 'Draft'), text('Fixing.'), writes('/w/a.html', 'Final')])] }), CLOCK)
-    expect(view.turns[0]?.pages).toEqual([{ path: '/w/a.html', title: 'Final', version: 't1/2' }])
-    expect(view.newestPages).toEqual(new Map([['/w/a.html', 't1/2']]))
+    expect(view.turns[0]?.pages).toEqual([{ path: '/w/a.html', title: 'Final', version: 't1/0 t1/2' }])
+    expect(view.newestPages).toEqual(new Map([['/w/a.html', 't1/0 t1/2']]))
+  })
+
+  it('gives a new version when an earlier-started write of the page finishes after a later one', () => {
+    const later = threadView(running([runningTool('write_file', { path: '/w/a.html' }), writes('/w/a.html', 'Final')]), CLOCK)
+    const both = threadView(running([writes('/w/a.html', 'Draft'), writes('/w/a.html', 'Final')]), CLOCK)
+    expect(later.newestPages.get('/w/a.html')).toBe('t9/1')
+    expect(both.newestPages.get('/w/a.html')).toBe('t9/0 t9/1')
   })
 
   it('counts a page the running turn rewrote as newer than a settled one', () => {

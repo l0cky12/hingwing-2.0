@@ -81,11 +81,12 @@ export type PreviewContent = { readonly kind: 'page'; readonly load: PageLoad } 
 /**
  * The pane beside the chat. Owned by Electron main, one per window, and kept across chats.
  * `address` is the web URL or the absolute path shown. `title` is Hermes's label, else the page's own title, else the address
- * or the file's name. `file`: a file on this computer, which the user's own program can open.
+ * or the file's name. `file`: a file on this computer, which the user's own program can open. `asked`: the request as the
+ * window or Hermes put it, such as a page card's path, which Hermes may name relative to its folder.
  */
 export type Preview =
   | { readonly state: 'closed' }
-  | { readonly state: 'open'; readonly layout: PaneLayout; readonly title: string; readonly address: string; readonly file: boolean; readonly content: PreviewContent }
+  | { readonly state: 'open'; readonly layout: PaneLayout; readonly title: string; readonly asked: string; readonly address: string; readonly file: boolean; readonly content: PreviewContent }
 
 /** `beside`: the pane shares the window with the chat. `page`: a page the bot made fills the window, with the chat in a panel at its side. */
 export type PaneLayout = 'beside' | 'page'

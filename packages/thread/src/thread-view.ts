@@ -399,7 +399,9 @@ function pagesOf(items: readonly Item[], at: (index: number) => string): readonl
         continue
       }
       const title = lines.flatMap(line => (line.t === 'del' ? [] : [TITLE.exec(line.text)?.[1]?.trim() ?? ''])).find(Boolean)
-      pages.set(path, { path, title: title ?? pages.get(path)?.title ?? basename(path) ?? path, version: at(index) })
+      const earlier = pages.get(path)
+      // Every finished write is in the version, so a write that finishes after a later-started one still changes it.
+      pages.set(path, { path, title: title ?? earlier?.title ?? basename(path) ?? path, version: earlier === undefined ? at(index) : `${earlier.version} ${at(index)}` })
     }
   })
   return pages.size === 0 ? NO_PAGES : [...pages.values()]

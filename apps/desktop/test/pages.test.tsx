@@ -1,7 +1,8 @@
 import type { SessionId } from '@highwing/hermes/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { reloadsPane, type PaneSeen } from '../src/renderer/chat/page-reload'
+import type { Preview } from '../src/ipc-contract'
+import { paneKey, reloadsPane, type PaneSeen } from '../src/renderer/chat/page-reload'
 import { NewestPagesContext, Pages } from '../src/renderer/chat/Pages'
 
 describe('the pages a turn made', () => {
@@ -56,5 +57,21 @@ describe('reloading the open page when its chat writes it again', () => {
   it('does not reload when no card in the chat names the page, before or after', () => {
     expect(reloadsPane(seen(undefined), seen('t2/1'))).toBe(false)
     expect(reloadsPane(seen('t1/0'), seen(undefined))).toBe(false)
+  })
+})
+
+describe('which page the open pane shows', () => {
+  const pane = (asked: string, address: string): Preview => ({ state: 'open', layout: 'page', title: 'Report', asked, address, file: true, content: { kind: 'page', load: { at: 'shown' } } })
+  const newest = new Map([['site/index.html', 't2/1']])
+
+  it('is the card path the pane was asked for, which Hermes may name relative to its folder', () => {
+    expect(paneKey(pane('site/index.html', '/w/site/index.html'), newest)).toBe('site/index.html')
+  })
+
+  it('is the address when no card names the request, and nothing when the pane is closed', () => {
+    expect(paneKey(pane('/w/site/index.html', '/w/site/index.html'), new Map([['/w/site/index.html', 't1/0']]))).toBe('/w/site/index.html')
+    expect(paneKey(pane('http://localhost:5173/', 'http://localhost:5173/'), newest)).toBe('http://localhost:5173/')
+    expect(paneKey({ state: 'closed' }, newest)).toBeNull()
+    expect(paneKey(undefined, newest)).toBeNull()
   })
 })

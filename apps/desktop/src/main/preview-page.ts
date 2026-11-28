@@ -170,6 +170,7 @@ export const previewOf = (pane: Pane | null): Preview =>
         state: 'open',
         layout: pane.layout,
         title: pane.label ?? pane.pageTitle ?? (pane.file === null ? pane.address : basename(pane.address)),
+        asked: pane.asked,
         address: pane.address,
         file: pane.file !== null,
         content: pane.table === null ? { kind: 'page', load: pane.load } : { kind: 'table', table: pane.table }
