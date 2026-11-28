@@ -548,15 +548,17 @@ textarea::placeholder { color: var(--graphite); }
 textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--ring); }
 .composer textarea:focus { box-shadow: none; }
 .composer .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; font: var(--text-md)/1.4 var(--sans); color: var(--graphite); }
-.tools .end { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; margin-left: auto; }
-.tools .end:has(> .model > :is(.later, .err, .confirm)) { flex-basis: 100%; }
+/* Every control sits on one row at any width. Each readout starts from nothing and grows to its whole name as room allows, so the row never wraps, and a note or refusal takes a row of its own under it. */
+.tools .end { display: contents; }
+.tools .end > :first-child, .tools .end > .model:first-child > .anchor { margin-left: auto; }
 .tools .go { display: flex; flex: none; gap: 4px; padding-left: 4px; }
 .tools :where(.clip, .readout, .meter) { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; border: 0; border-radius: var(--radius-md); background: transparent; font: inherit; color: var(--graphite); white-space: nowrap; }
 .tools :where(.clip, .readout, .meter):is(:hover:not(:disabled), [aria-expanded="true"]) { color: var(--ink); background: var(--paper); }
-.tools :is(.readout, .knob, .model .anchor) { min-width: 0; max-width: 100%; }
-.tools .knob.shrinks-first { flex: 1 1 8em; max-width: max-content; }
+.tools :is(.knob, .model .anchor, .context) { flex: 1 1 0; min-width: 0; max-width: max-content; }
+.tools .model .anchor { flex-grow: 2; }
+.tools :is(.readout, .meter) { min-width: 0; max-width: 100%; }
 .tools .value { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.tools .readout > :not(.value) { flex: none; }
+.tools :is(.readout, .meter) > :not(.value) { flex: none; }
 .tools .clip { flex: none; justify-content: center; width: 28px; padding: 0; }
 .tools .clip.mic[aria-pressed="true"] { color: var(--sheet); background: var(--brick); }
 .tools button:disabled { cursor: default; opacity: .45; }
@@ -821,7 +823,6 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 .page-card button { padding: 4px 14px; border: 1px solid var(--ink); border-radius: var(--radius-sm); background: transparent; color: var(--ink); font: 500 var(--text-sm)/1.5 var(--sans); }
 .page-card button:hover { background: var(--paper); }
 .page-card .file-note { grid-column: 1 / -1; }
-.context { flex: none; }
 .context .ring { flex: none; }
 .context .ring circle { fill: none; stroke-width: 2; }
 .context .ring .track { stroke: var(--rule); }
@@ -1113,6 +1114,19 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; }
   .jump, .jump.shown { transition: none; }
+}
+/* The card's popovers are placed against it, so the toolbar reads the chat screen's width rather than holding a container of its own. */
+@container (max-width: 640px) {
+  .tools .context .value { display: none; }
+}
+@container (max-width: 520px) {
+  .tools .folder-knob :is(.value, .chev) { display: none; }
+}
+@container (max-width: 500px) {
+  .tools .readout .chev { display: none; }
+}
+@container (max-width: 440px) {
+  .tools .approvals .value { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); }
 }
 @container (max-width: 640px) {
   .bar { gap: 8px; padding: 10px 16px; }

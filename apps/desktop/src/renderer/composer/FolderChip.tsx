@@ -41,7 +41,7 @@ export function FolderChip({ cwd, field, disabled, running, onMove }: FolderChip
   }
 
   return (
-    <div className="knob shrinks-first" ref={anchor}>
+    <div className="knob folder-knob" ref={anchor}>
       <button
         ref={button} type="button" className="readout" disabled={disabled} title={cwd} aria-label={`Folder: ${cwd}`}
         aria-expanded={shown} aria-haspopup="dialog" aria-controls={shown ? boxId : undefined} onClick={toggle}
