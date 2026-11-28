@@ -157,7 +157,7 @@ export function previewPane(deps: PreviewDeps): PreviewPane {
     const page = 'page' in verdict ? verdict.page : null
     const file = page?.kind === 'file' ? page.path : null
     const format = file === null ? null : formatOf(file)
-    const shows = (state: PageLoad) => apply({ on: 'show', layout, asked: request, address: verdict.address, file, label, load: state })
+    const shows = (state: PageLoad) => apply({ on: 'show', layout, session: session?.id ?? null, asked: request, address: verdict.address, file, label, load: state })
     if (page?.kind === 'ssh') {
       drop()
       shows({ at: 'loading' })

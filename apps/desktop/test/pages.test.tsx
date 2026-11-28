@@ -31,7 +31,7 @@ describe('the pages a turn made', () => {
 })
 
 describe('reloading the open page when its chat writes it again', () => {
-  const seen = (version: string | undefined, path = '/w/a.html', session = 's1'): PaneSeen => ({ session: session as SessionId, path, version })
+  const seen = (version: string | undefined, path = '/w/a.html'): PaneSeen => ({ path, version })
 
   it('reloads when the same chat names a new version of the page the pane still shows', () => {
     expect(reloadsPane(seen('t1/0'), seen('t2/1'))).toBe(true)
@@ -50,10 +50,6 @@ describe('reloading the open page when its chat writes it again', () => {
     expect(reloadsPane(seen('t1/0'), seen('t2/1', '/w/b.html'))).toBe(false)
   })
 
-  it('does not reload when the chat changed', () => {
-    expect(reloadsPane(seen('t1/0'), seen('t2/1', '/w/a.html', 's2'))).toBe(false)
-  })
-
   it('does not reload when no card in the chat names the page, before or after', () => {
     expect(reloadsPane(seen(undefined), seen('t2/1'))).toBe(false)
     expect(reloadsPane(seen('t1/0'), seen(undefined))).toBe(false)
@@ -61,17 +57,23 @@ describe('reloading the open page when its chat writes it again', () => {
 })
 
 describe('which page the open pane shows', () => {
-  const pane = (asked: string, address: string): Preview => ({ state: 'open', layout: 'page', title: 'Report', asked, address, file: true, content: { kind: 'page', load: { at: 'shown' } } })
+  const S1 = 's1' as SessionId
+  const pane = (path: string, address: string, page: Extract<Preview, { state: 'open' }>['page'] = { session: S1, path }): Preview =>
+    ({ state: 'open', layout: 'page', title: 'Report', page, address, file: true, content: { kind: 'page', load: { at: 'shown' } } })
   const newest = new Map([['site/index.html', 't2/1']])
 
-  it('is the card path the pane was asked for, which Hermes may name relative to its folder', () => {
-    expect(paneKey(pane('site/index.html', '/w/site/index.html'), newest)).toBe('site/index.html')
+  it('is the path this chat asked for, which Hermes may name relative to its folder', () => {
+    expect(paneKey(pane('site/index.html', '/w/site/index.html'), S1, newest)).toBe('site/index.html')
   })
 
-  it('is the address when no card names the request, and nothing when the pane is closed', () => {
-    expect(paneKey(pane('/w/site/index.html', '/w/site/index.html'), new Map([['/w/site/index.html', 't1/0']]))).toBe('/w/site/index.html')
-    expect(paneKey(pane('http://localhost:5173/', 'http://localhost:5173/'), newest)).toBe('http://localhost:5173/')
-    expect(paneKey({ state: 'closed' }, newest)).toBeNull()
-    expect(paneKey(undefined, newest)).toBeNull()
+  it('is the address when no card names the request', () => {
+    expect(paneKey(pane('/w/site/index.html', '/w/site/index.html'), S1, new Map([['/w/site/index.html', 't1/0']]))).toBe('/w/site/index.html')
+  })
+
+  it('is nothing for a page another chat asked for, a pane that left its page, or a closed pane', () => {
+    expect(paneKey(pane('site/index.html', '/w/site/index.html'), 's2' as SessionId, newest)).toBeNull()
+    expect(paneKey(pane('site/index.html', '/w/site/other.html', null), S1, newest)).toBeNull()
+    expect(paneKey({ state: 'closed' }, S1, newest)).toBeNull()
+    expect(paneKey(undefined, S1, newest)).toBeNull()
   })
 })
