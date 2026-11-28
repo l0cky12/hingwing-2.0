@@ -306,3 +306,9 @@ Where the code differs from the text above. The text above is unchanged, so each
 | `remoteRoute` has its own `attach`, and `liveDialer` its own `cliMint`. | Both routes share `mintWith` in `wire/tickets.ts`. The route passes how a hermes command runs and how the gateway's port is reached. `endpointOf` became `attachedOf` in `ssh.ts`, beside `probeOf` and `servedOf`. | Client rules 1 to 4 are the same on both routes. Only the transport differs. |
 | A probe that gets no answer fails the dial. | The same on another machine. On this computer the dial goes on with attach alone. | The local route never probed before, so an older local Hermes must keep connecting. Client rule 1 names this fallback. |
 | The fake `hermes` answers the probe and attach. | It also answers `--serve` over its stdin, and the scenario `ok-bound` is a Hermes whose probe lists no `interactive` ticket. The loopback gateway gives a socket the reach of the ticket it redeemed. | The remote dial and the "cannot switch bots" path are driven through the real `ssh` code in tests and in the verify skill. |
+
+### Launcher (`packaging/arch`)
+
+| The design said | The code does | Why |
+|---|---|---|
+| `/usr/bin/highwing` passes `--ozone-platform-hint=auto`, unverified on Electron 45 (open question 5). | It passes `--ozone-platform=wayland` when `WAYLAND_DISPLAY` is set and `--ozone-platform=x11` otherwise. An `--ozone-platform` given to `highwing` comes later and wins. | On Hyprland, Electron 45 with the hint opened the window through XWayland whenever `XDG_SESSION_TYPE` was unset, as it is in the systemd user manager's environment. |
