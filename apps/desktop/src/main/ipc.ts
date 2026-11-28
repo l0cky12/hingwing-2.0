@@ -18,6 +18,7 @@ import { snoozed, type PreferenceStore } from './preferences'
 import type { PreviewPane } from './preview'
 import type { Saver } from './saves'
 import { readRoutineRuns } from './routine-runs'
+import { readBotMemory } from './memory'
 import { readTaskBoard, readTaskChat } from './tasks'
 
 export const COALESCE_MS = 16
@@ -314,6 +315,11 @@ export function serveWindows(
     return trusted(event) && named !== null && id !== null ? readRoutineRuns(owner.read, named, id) : REFUSED
   })
 
+  ipc.handle(CHANNEL.botMemory, async (event, raw) => {
+    const bot = parseBotId(raw)
+    return trusted(event) && bot !== null ? readBotMemory(owner.read, bot) : REFUSED
+  })
+
   ipc.handle(CHANNEL.drafts, async event => (trusted(event) ? drafts.load() : []))
   ipc.on(CHANNEL.keepDraft, (event, raw) => {
     const draft = parseDraft(raw)
@@ -366,6 +372,7 @@ export function serveWindows(
       ipc.removeHandler(CHANNEL.taskBoard)
       ipc.removeHandler(CHANNEL.taskChat)
       ipc.removeHandler(CHANNEL.routineRuns)
+      ipc.removeHandler(CHANNEL.botMemory)
       ipc.removeHandler(CHANNEL.drafts)
       ipc.removeAllListeners(CHANNEL.keepDraft)
       ipc.removeHandler(CHANNEL.pickPicture)

@@ -1439,6 +1439,30 @@ describe("the routine runs call", () => {
   })
 })
 
+describe('the bot memory call', () => {
+  it("reads the named bot's memory through Hermes's profile-scoped routes", async () => {
+    const rig = harness()
+    rig.answers({ status: 200, body: { memory: [], nodes: [] } })
+    await expect(rig.handlers.get(CHANNEL.botMemory)!(rig.event(), 'rae')).resolves.toMatchObject({ ok: true, value: { files: [{ name: 'MEMORY.md' }, { name: 'USER.md' }] } })
+    expect(rig.reads).toContain('/api/learning/graph?profile=rae')
+  })
+
+  it('refuses a foreign frame, and a bot with no name, without reading', async () => {
+    const rig = harness()
+    const memory = rig.handlers.get(CHANNEL.botMemory)!
+    for (const [event, raw] of [[rig.event('https://example.com/'), 'rae'], [rig.event(), ''], [rig.event(), 7], [rig.event(), { id: 'rae' }]] as const) {
+      await expect(memory(event, raw)).resolves.toMatchObject({ ok: false, refusal: { kind: 'rejected' } })
+    }
+    expect(rig.reads).toEqual([])
+  })
+
+  it('stops answering once disposed', () => {
+    const { handlers, served } = harness()
+    served.dispose()
+    expect(handlers.has(CHANNEL.botMemory)).toBe(false)
+  })
+})
+
 describe('the picture call', () => {
   it("asks main's picker for the named bot, and refuses a foreign frame or a bot with no name without asking", async () => {
     const rig = harness()

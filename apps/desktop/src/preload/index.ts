@@ -30,6 +30,7 @@ const bridge: Bridge = {
   taskBoard: () => ipcRenderer.invoke(CHANNEL.taskBoard),
   taskChat: id => ipcRenderer.invoke(CHANNEL.taskChat, id),
   routineRuns: (bot, routine) => ipcRenderer.invoke(CHANNEL.routineRuns, bot, routine),
+  botMemory: bot => ipcRenderer.invoke(CHANNEL.botMemory, bot),
   attachPick: () => ipcRenderer.invoke(CHANNEL.attachPick),
   attachPaste: () => ipcRenderer.invoke(CHANNEL.attachPaste),
   openScreen: (epoch, request) => ipcRenderer.send(CHANNEL.screen, epoch, request),
