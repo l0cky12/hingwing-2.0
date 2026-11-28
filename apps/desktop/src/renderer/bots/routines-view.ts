@@ -100,6 +100,16 @@ export function afterControl(
 
 export const NO_RUNS = 'No runs yet.'
 
+/** How long an open list showing a running run waits before it asks Hermes again. */
+export const RUNNING_REREAD_MS = 15_000
+
+/**
+ * When to read the runs again, or null for no sooner than the next `cron.changed`. Hermes sends that only for the gateway's own
+ * profile (tui_gateway/change_watcher.py), so a run of another bot would show Running until the list closed.
+ */
+export const rereadAfter = (listed: CommandOutcome<readonly RoutineRun[]> | null): number | null =>
+  listed?.ok === true && listed.value.some(run => run.outcome.is === 'running') ? RUNNING_REREAD_MS : null
+
 /** How a run went, in words, because a colour alone says nothing to everyone. */
 export const OUTCOME_WORDS: { readonly [S in RunOutcome['is']]: string } = {
   running: 'Running', succeeded: 'Succeeded', failed: 'Failed', cancelled: 'Cancelled', missed: 'Missed', unknown: 'No result'

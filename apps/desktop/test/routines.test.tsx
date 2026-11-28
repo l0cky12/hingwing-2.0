@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { RoutinesList, RunsList } from '../src/renderer/bots/Routines'
-import { afterControl, NO_RUNS, routinesViewOf, runsViewOf, scheduleWords, tookWords } from '../src/renderer/bots/routines-view'
+import { afterControl, NO_RUNS, rereadAfter, RUNNING_REREAD_MS, routinesViewOf, runsViewOf, scheduleWords, tookWords } from '../src/renderer/bots/routines-view'
 
 const NONE = { busy: null, history: { bot: 'rae' as BotId, revision: 1, read: async () => ({ ok: true, value: [] }) as const, onOpen: () => {} }, onToggle: () => {}, onDelete: () => {} }
 const routine = (id: string, name: string, schedule: string, paused = false): Routine => ({ id: id as RoutineId, name, schedule, paused, nextRunAt: null })
@@ -151,6 +151,13 @@ describe('the past runs of a routine', () => {
       ['Missed', 'Mon 23 Nov 18:00', null, null],
       ['No result', 'Mon 23 Nov 08:00', null, null]
     ])
+  })
+
+  it('reads the runs again while one is running, since another bot\'s run sends no cron.changed', () => {
+    expect(rereadAfter({ ok: true, value: RUNS })).toBe(RUNNING_REREAD_MS)
+    expect(rereadAfter({ ok: true, value: RUNS.filter(held => held.outcome.is !== 'running') }), 'every run settled').toBeNull()
+    expect(rereadAfter(null), 'still loading').toBeNull()
+    expect(rereadAfter({ ok: false, refusal: { kind: 'offline', message: 'x' } }), 'refused').toBeNull()
   })
 
   it('opens a run in the profile Hermes names for it, else in the routine\'s bot', () => {

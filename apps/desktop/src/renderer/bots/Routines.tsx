@@ -2,7 +2,7 @@ import type { BotId, CommandOutcome, Routine, RoutineAction, RoutineId, RoutineR
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { TIME_ZONE } from '../chat/wake'
 import { DeleteDialog } from './DeleteDialog'
-import { afterControl, routinesViewOf, runsViewOf, type RoutineRow, type RoutinesView, type RunRow, type RunsView } from './routines-view'
+import { afterControl, rereadAfter, routinesViewOf, runsViewOf, type RoutineRow, type RoutinesView, type RunRow, type RunsView } from './routines-view'
 
 export interface RoutinesProps {
   readonly bot: BotId
@@ -118,13 +118,20 @@ function RoutineItem({ row, busy, history, onToggle, onDelete }: ItemProps) {
 /** Mounted while a routine's Past runs is open, so each time it opens it asks Hermes afresh. */
 function PastRuns({ id, routine, name, history }: { readonly id: string; readonly routine: RoutineId; readonly name: string; readonly history: RunHistory }) {
   const [listed, setListed] = useState<CommandOutcome<readonly RoutineRun[]> | null>(null)
+  const [polled, poll] = useState(0)
   const read = useRef(history.read)
   read.current = history.read
   useEffect(() => {
     let current = true
     void read.current(routine).then(outcome => { if (current) setListed(outcome) })
     return () => { current = false }
-  }, [routine, history.revision])
+  }, [routine, history.revision, polled])
+  const wait = rereadAfter(listed)
+  useEffect(() => {
+    if (wait === null) return
+    const timer = window.setTimeout(() => poll(count => count + 1), wait)
+    return () => window.clearTimeout(timer)
+  }, [wait, listed])
   return <RunsList id={id} name={name} view={runsViewOf(listed, { now: Date.now(), timeZone: TIME_ZONE }, history.bot)} onOpen={history.onOpen} />
 }
 
