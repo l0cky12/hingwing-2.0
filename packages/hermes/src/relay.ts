@@ -2,16 +2,21 @@ import { randomBytes } from 'node:crypto'
 import type { Bot } from './domain/bots'
 import type { Relay, RelayDesk, RelayId, RelayState } from './domain/relay'
 import type { SessionId, TurnId } from './domain/session'
-import { Offline, RpcRefusal, type Connection } from './wire/link'
+import { Offline, RpcRefusal, type Clock, type Connection } from './wire/link'
 import { parseDelivery, undeliveredWords } from './wire/parse'
 
 const METHOD_NOT_FOUND = -32601
 const PROBE_TIMEOUT_MS = 10_000
 /**
- * `bot_relay.deliver` answers when the target's turn ends. Hermes's own desktop waits this long: 120 s
+ * How long a relay waits for its final answer. Hermes's own desktop waits this long: 120 s
  * for the target's lock, two attempts of 600 s, and 180 s of margin.
  */
 export const RELAY_TIMEOUT_MS = 1_500_000
+/**
+ * `bot_relay.deliver` answers once it admits the message, usually `queued` or `claimed` (gateway/session_bot.py `_admit`).
+ * The same id asked again answers with the receipt as it is now, so a pending one is asked again this often.
+ */
+export const RELAY_POLL_MS = 3_000
 
 function failureWords(error: unknown, name: string, online: boolean): string {
   if (error instanceof RpcRefusal) return undeliveredWords(error.reason, name) ?? `${name} couldn't take your message: ${error.message}`
@@ -30,7 +35,7 @@ export interface RelayBook {
 }
 
 /** Owns the messages handed to other bots, for the hub's lifetime. `changed` runs after every change of `desk`. */
-export function relayBook(conn: Pick<Connection, 'call' | 'as' | 'link'>, changed: () => void): RelayBook {
+export function relayBook(conn: Pick<Connection, 'call' | 'as' | 'link'>, clock: Clock, changed: () => void): RelayBook {
   let desk: RelayDesk = { supported: false, bySession: {} }
   const put = (next: RelayDesk) => {
     desk = next
@@ -38,6 +43,16 @@ export function relayBook(conn: Pick<Connection, 'call' | 'as' | 'link'>, change
   }
   const settle = (sessionId: SessionId, id: RelayId, state: RelayState) =>
     put({ ...desk, bySession: { ...desk.bySession, [sessionId]: (desk.bySession[sessionId] ?? []).map(relay => (relay.id === id ? { ...relay, state } : relay)) } })
+  /** Repeats `deliver` with the same id until its receipt is final, all within `RELAY_TIMEOUT_MS`. */
+  const follow = async (relay: Relay, to: Bot): Promise<RelayState> => {
+    const deadline = clock.now() + RELAY_TIMEOUT_MS
+    for (;;) {
+      const state = parseDelivery(await conn.as(to.id).call('bot_relay.deliver', { id: relay.id, message: relay.text }, deadline - clock.now()), to.name)
+      if (state.s !== 'waiting') return state
+      if (deadline - clock.now() <= RELAY_POLL_MS) throw new Offline(`bot_relay.deliver gave no final answer in ${RELAY_TIMEOUT_MS} ms`)
+      await new Promise<void>(resolve => clock.setTimeout(resolve, RELAY_POLL_MS))
+    }
+  }
 
   return {
     get desk() { return desk },
@@ -53,8 +68,7 @@ export function relayBook(conn: Pick<Connection, 'call' | 'as' | 'link'>, change
     send: (sessionId, after, to, text) => {
       const relay: Relay = { id: randomBytes(16).toString('hex') as RelayId, to: to.id, name: to.name, tone: to.tone, text, after, state: { s: 'waiting' } }
       put({ ...desk, bySession: { ...desk.bySession, [sessionId]: [...(desk.bySession[sessionId] ?? []), relay] } })
-      void conn.as(to.id).call('bot_relay.deliver', { id: relay.id, message: text }, RELAY_TIMEOUT_MS).then(
-        reply => parseDelivery(reply, to.name),
+      void follow(relay, to).catch(
         (error: unknown): RelayState => ({ s: 'failed', words: failureWords(error, to.name, conn.link.state === 'online') })
       ).then(state => settle(sessionId, relay.id, state))
     },
