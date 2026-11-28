@@ -153,6 +153,8 @@ const STEPS = {
   inside: { arity: 4, run: async (ctx, role, name, outerRole, outerName) => checkInside(ctx, role, name, outerRole, outerName) },
   'same-row': { arity: 4, run: async (ctx, role, name, otherRole, otherName) => checkSameRow(ctx, role, name, otherRole, otherName) },
   'one-line': { arity: 1, run: async (ctx, text) => checkOneLine(ctx, text) },
+  flush: { arity: 2, run: async (ctx, css, otherCss) => checkFlush(ctx, css, otherCss) },
+  ring: { arity: 2, run: async (ctx, role, name) => checkRing(ctx, role, name) },
   reveal: { arity: 2, run: async (ctx, role, name) => byRole(ctx.page, role, name).scrollIntoViewIfNeeded({ timeout: ctx.timeout }) },
   shot: { arity: 1, run: async (ctx, name) => shoot(ctx, name) },
   field: {
@@ -1143,6 +1145,51 @@ async function checkOneLine(ctx, text) {
   }))
   log(ctx, `  "${text}" draws on ${lines.join(', ')} line(s) in ${lines.length} place(s)`)
   if (lines.some(count => count > 1)) throw new Error(`"${text}" breaks across ${Math.max(...lines)} lines`)
+}
+
+async function checkFlush(ctx, css, otherCss) {
+  const [one, other] = [ctx.page.locator(css).first(), ctx.page.locator(otherCss).first()]
+  await one.waitFor({ state: 'visible', timeout: ctx.timeout })
+  await other.waitFor({ state: 'visible', timeout: ctx.timeout })
+  const [a, b] = await Promise.all([one.boundingBox(), other.boundingBox()])
+  log(ctx, `  ${css} ends at y ${a.y + a.height}, ${otherCss} at y ${b.y + b.height}`)
+  if (Math.abs(a.y + a.height - (b.y + b.height)) > 0.5) throw new Error(`${css} and ${otherCss} do not end on one line`)
+}
+
+async function checkRing(ctx, role, name) {
+  const target = byRole(ctx.page, role, name).first()
+  await target.waitFor({ state: 'visible', timeout: ctx.timeout })
+  const ring = await target.evaluate(el => {
+    const style = getComputedStyle(el)
+    const box = el.getBoundingClientRect()
+    return { focused: el === document.activeElement, style: style.outlineStyle, color: style.outlineColor, width: parseFloat(style.outlineWidth), offset: parseFloat(style.outlineOffset), box: { left: box.left, top: box.top, right: box.right, bottom: box.bottom } }
+  })
+  if (!ring.focused) throw new Error(`${role} "${name}" does not have focus`)
+  if (ring.style === 'none' || ring.width === 0) throw new Error(`${role} "${name}" draws no outline`)
+  const reach = ring.offset + ring.width
+  const clip = { x: Math.floor(ring.box.left - reach), y: Math.floor(ring.box.top - reach) }
+  clip.width = Math.ceil(ring.box.right + reach) - clip.x
+  clip.height = Math.ceil(ring.box.bottom + reach) - clip.y
+  const png = await ctx.page.screenshot({ clip, animations: 'disabled', caret: 'hide' })
+  const raw = spawnSync('magick', ['png:-', '-depth', '8', 'rgb:-'], { input: png, maxBuffer: 64 << 20 })
+  if (raw.status !== 0) throw new Error('magick could not read the ring shot')
+  const want = ring.color.match(/[\d.]+/g).slice(0, 3).map(Number)
+  const middle = ring.offset + ring.width / 2
+  const sides = {
+    top: [(ring.box.left + ring.box.right) / 2, ring.box.top - middle],
+    bottom: [(ring.box.left + ring.box.right) / 2, ring.box.bottom + middle],
+    left: [ring.box.left - middle, (ring.box.top + ring.box.bottom) / 2],
+    right: [ring.box.right + middle, (ring.box.top + ring.box.bottom) / 2]
+  }
+  const missing = []
+  for (const [side, [x, y]] of Object.entries(sides)) {
+    const at = 3 * (Math.floor(y - clip.y) * clip.width + Math.floor(x - clip.x))
+    const got = [...raw.stdout.subarray(at, at + 3)]
+    const off = Math.max(...got.map((value, i) => Math.abs(value - want[i])))
+    log(ctx, `  ${side} of the ring at x ${Math.floor(x)}, y ${Math.floor(y)} is rgb(${got.join(', ')}), the outline is rgb(${want.join(', ')})`)
+    if (off > 24) missing.push(side)
+  }
+  if (missing.length > 0) throw new Error(`${role} "${name}" has its focus ring cut off at the ${missing.join(', ')}`)
 }
 
 async function sizeWindow(ctx, options) {

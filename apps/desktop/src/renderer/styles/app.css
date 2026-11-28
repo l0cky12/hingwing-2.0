@@ -153,16 +153,18 @@ button:disabled { cursor: default; opacity: .45; }
 code, pre { font-family: var(--mono); }
 
 .bar { display: flex; align-items: center; gap: var(--space-6); min-height: 56px; padding: var(--space-3) var(--space-7); border-bottom: 1px solid var(--rule); }
+.top { min-width: 0; }
 .top .bar { background: color-mix(in srgb, var(--accent) 10%, var(--sheet)); }
-.bar h1 { margin: 0; font-size: var(--text-md); font-weight: 400; color: var(--graphite); }
+.bar h1 { min-width: 0; margin: 0; overflow: clip; overflow-clip-margin: 4px; font-size: var(--text-md); font-weight: 400; color: var(--graphite); white-space: nowrap; text-overflow: ellipsis; }
 .bar h1 .brand { font-weight: 700; color: var(--ink); margin-right: 8px; }
-.bar button { margin-left: auto; padding: 4px 14px; border-radius: var(--radius-sm); border: 1px solid var(--ink); background: transparent; }
+.bar button { flex: none; margin-left: auto; padding: 4px 14px; border-radius: var(--radius-sm); border: 1px solid var(--ink); background: transparent; }
 .bar button ~ button { margin-left: 0; }
 .bar button:hover { background: var(--sheet); }
 .bar h1:has(.bot-pill) { display: flex; align-items: center; gap: 8px; }
 .bar h1:has(.bot-pill) .brand { margin-right: 0; }
 .bar .bot-pill { display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 3px 12px 3px 3px; border: 1px solid var(--rule); border-radius: var(--radius-pill); background: var(--sheet); color: var(--ink); font-weight: 500; }
 .bar .bot-pill:hover { border-color: var(--ink); }
+.bar h1 .where { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 .banner { display: flex; align-items: center; gap: var(--space-4); padding: 9px var(--space-7); background: var(--caution-soft); border-bottom: 1px solid var(--rule); }
 .banner p { margin: 0; color: var(--caution); font-weight: 500; }
@@ -1110,7 +1112,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
   .jump, .jump.shown { transition: none; }
 }
 @container (max-width: 640px) {
-  .bar { flex-wrap: wrap; gap: 8px; padding: 10px 16px; }
+  .bar { gap: 8px; padding: 10px 16px; }
   .banner { padding: 9px 16px; }
   #transcript { padding-left: 16px; padding-right: 16px; }
   .composer :is(.refusal, .busy), .slash-anchor, .slash-output, .editing, .chips, .attach-refused, .drop-line, .sides, .examples, .computer-card, .status-stack, .stack-said { padding: 0 16px 0 calc(16px + var(--col)); }
