@@ -27,8 +27,8 @@ describe('plugins', () => {
     const { run, calls } = await launched(SEEDS)
     expect(await run({ do: 'plugins', bot: 'research' as BotId })).toEqual({
       ok: true, value: [
-        { name: 'kanban', key: 'kanban', version: '1.2.0', description: 'A task board the bot and you share.', source: 'bundled', enabled: true },
-        { name: 'browser-tools', key: 'browser-tools', version: '0.4.1', description: 'Gives the bot a Playwright browser.', source: 'user', enabled: false }
+        { name: 'kanban', key: 'kanban', version: '1.2.0', description: 'A task board the bot and you share.', source: 'bundled', enabled: true, catalogName: null },
+        { name: 'browser-tools', key: 'browser-tools', version: '0.4.1', description: 'Gives the bot a Playwright browser.', source: 'user', enabled: false, catalogName: null }
       ]
     })
     expect(calls()).toEqual([expect.objectContaining({ params: { action: 'list', profile: 'research' } })])
@@ -81,11 +81,11 @@ describe('parsePlugins', () => {
       plugins: [
         { name: 'a', key: 'a', version: '', description: '', source: 'user', status: 'disabled', portable: false, install_dir: '', has_desktop_half: false, servers: [] },
         { name: ' ', key: 'b', version: '1', description: 'x', source: 'user', status: 'enabled', portable: false, install_dir: '', has_desktop_half: false, servers: [] },
-        { name: 'c', status: 'enabled' } as never
+        { name: 'c', status: 'enabled', catalog_name: ' hermes-c ' } as never
       ]
     })).toEqual([
-      { name: 'a', key: 'a', version: '', description: '', source: 'user', enabled: false },
-      { name: 'c', key: 'c', version: '', description: '', source: '', enabled: true }
+      { name: 'a', key: 'a', version: '', description: '', source: 'user', enabled: false, catalogName: null },
+      { name: 'c', key: 'c', version: '', description: '', source: '', enabled: true, catalogName: 'hermes-c' }
     ])
     expect(parsePlugins({})).toEqual([])
   })

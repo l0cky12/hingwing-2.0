@@ -1531,7 +1531,7 @@ export function parsePlugins(reply: PluginsManageResult): readonly Plugin[] {
   return (Array.isArray(rows) ? rows.filter(isObject) : []).flatMap(row => {
     const name = words(row.name)
     if (name === null) return []
-    return [{ name, key: words(row.key) ?? name, version: trimmed(row.version) ?? '', description: trimmed(row.description) ?? '', source: trimmed(row.source) ?? '', enabled: row.status === 'enabled' }]
+    return [{ name, key: words(row.key) ?? name, version: trimmed(row.version) ?? '', description: trimmed(row.description) ?? '', source: trimmed(row.source) ?? '', enabled: row.status === 'enabled', catalogName: words(row.catalog_name) }]
   })
 }
 
