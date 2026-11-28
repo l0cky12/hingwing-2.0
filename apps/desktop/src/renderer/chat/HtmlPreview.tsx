@@ -1,6 +1,6 @@
 import type { CodeBlock } from '@highwing/thread'
 import { useState } from 'react'
-import { CopyButton } from './Copy'
+import { CopyIcon } from './Copy'
 
 type View = 'preview' | 'source'
 
@@ -14,14 +14,14 @@ export function HtmlPreview({ node, findId }: HtmlPreviewProps) {
   const [view, setView] = useState<View>('preview')
   return (
     <div className="code html-preview">
-      {view === 'preview' && <iframe sandbox="" srcDoc={node.text} title="HTML preview" />}
-      <pre data-find={findId} hidden={view === 'preview'}><code>{node.text}</code></pre>
-      <div className="chip">
+      <div className="code-head">
         <span className="lang">{node.lang}</span>
         <button type="button" className="view" aria-pressed={view === 'preview'} onClick={() => setView('preview')}>Preview</button>
         <button type="button" className="view" aria-pressed={view === 'source'} onClick={() => setView('source')}>Source</button>
-        <CopyButton text={node.text} name="Copy code" />
+        <CopyIcon text={node.text} name="Copy code" />
       </div>
+      {view === 'preview' && <iframe sandbox="" srcDoc={node.text} title="HTML preview" />}
+      <pre data-find={findId} hidden={view === 'preview'}><code>{node.text}</code></pre>
     </div>
   )
 }

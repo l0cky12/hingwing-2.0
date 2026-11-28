@@ -2,7 +2,7 @@ import type { Reaction } from '@highwing/hermes/domain'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ICON, PopupMenu, type PopupItem } from '../chrome/PopupMenu'
 import { anchorAt } from '../chrome/popup-menu'
-import { useCopy } from './Copy'
+import { CopyIcon } from './Copy'
 import { Reactions } from './Reactions'
 
 export interface Act { readonly disabled: boolean; readonly run: () => void }
@@ -21,20 +21,6 @@ const Svg = ({ children }: { readonly children: ReactNode }) => <svg {...ICON}>{
 
 function ActButton({ name, icon, act }: { readonly name: string; readonly icon: ReactNode; readonly act: Act }) {
   return <button type="button" className="copy icon" aria-label={name} title={name} disabled={act.disabled} onClick={act.run}>{icon}</button>
-}
-
-function CopyIcon({ text, name }: { readonly text: string; readonly name: string }) {
-  const { said, copy } = useCopy()
-  return (
-    <>
-      <button type="button" className={said === null ? 'copy icon' : 'copy icon shown'} aria-label={name} title={name} onClick={() => copy(text)}>
-        {said === null
-          ? <Svg><rect width="14" height="14" x="8" y="8" rx="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></Svg>
-          : <><Svg><path d="M20 6 9 17l-5-5" /></Svg>{said}</>}
-      </button>
-      <span className="sr" aria-live="polite">{said ?? ''}</span>
-    </>
-  )
 }
 
 const ICON_ROW: readonly ((acts: MessageActs) => ReactNode)[] = [

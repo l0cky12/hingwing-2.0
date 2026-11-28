@@ -1,6 +1,6 @@
 import type { Block } from '@highwing/thread'
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { CopyButton } from './Copy'
+import { CopyIcon } from './Copy'
 import { drawDiagram, drawnBefore, lookNow, watchLook, type Drawing } from './diagrams'
 
 type View = 'diagram' | 'source'
@@ -31,10 +31,7 @@ export function Diagram({ node, findId }: DiagramProps) {
   const shown = drawing.status === 'drawn' && view === 'diagram' ? drawing.svg : null
   return (
     <div className="code diagram" data-state={drawing.status}>
-      {shown !== null && <div className="drawn" role="img" aria-label={`Diagram: ${firstLine(node.text)}`} dangerouslySetInnerHTML={{ __html: shown }} />}
-      <pre data-find={findId} hidden={shown !== null}><code>{node.text}</code></pre>
-      {drawing.status === 'failed' && <p className="undrawn">Couldn’t draw this diagram.</p>}
-      <div className="chip">
+      <div className="code-head">
         <span className="lang">{node.lang}</span>
         {drawing.status !== 'failed' && (
           <>
@@ -42,8 +39,11 @@ export function Diagram({ node, findId }: DiagramProps) {
             <button type="button" className="view" aria-pressed={view === 'source'} onClick={() => setView('source')}>Source</button>
           </>
         )}
-        <CopyButton text={node.text} name="Copy code" />
+        <CopyIcon text={node.text} name="Copy code" />
       </div>
+      {shown !== null && <div className="drawn" role="img" aria-label={`Diagram: ${firstLine(node.text)}`} dangerouslySetInnerHTML={{ __html: shown }} />}
+      <pre data-find={findId} hidden={shown !== null}><code>{node.text}</code></pre>
+      {drawing.status === 'failed' && <p className="undrawn">Couldn’t draw this diagram.</p>}
     </div>
   )
 }

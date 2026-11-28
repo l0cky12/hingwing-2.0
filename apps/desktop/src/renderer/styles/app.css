@@ -260,7 +260,7 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
   width: fit-content; max-width: 100%; padding: 12px 16px;
   background: var(--surface-raised); border-radius: var(--radius-lg); box-shadow: var(--shadow-1);
 }
-:is(.thread > .prose, .said-by, .relay-reply) :is(pre, :not(pre) > code, .drawn) { background: var(--paper); }
+:is(.thread > .prose, .said-by, .relay-reply) :is(.code, :not(pre) > code) { background: var(--paper); }
 :is(.said-by, .relay-reply) > .prose { padding: 0; }
 /* A card is only as wide as its words, so its copy button sits on the top edge, over the padding and not the text. */
 :is(.thread > .prose, .relay-reply > .prose) > .copy { top: -10px; right: 12px; }
@@ -297,23 +297,23 @@ main { overflow-y: auto; scrollbar-gutter: stable both-edges; scrollbar-width: t
 .prose :is(th, td):last-child { padding-right: 0; }
 .prose th { font-weight: 700; border-bottom: 1.5px solid var(--graphite); }
 .prose .katex-display { margin: 6px 0; padding: 4px 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
-.prose .code { position: relative; }
+.prose .code { margin: 6px 0 0; border: 1px solid var(--rule); background: var(--sheet); border-radius: var(--radius-sm); }
 .prose .code:not(:last-child) { margin-bottom: 10px; }
-.prose .chip {
-  position: absolute; top: 6px; right: 6px; display: flex; align-items: center; gap: 8px; padding: 0 2px 0 8px;
-  font: 400 var(--text-xs)/24px var(--sans); color: var(--graphite); background: var(--sheet); border-radius: var(--radius-xs);
-  opacity: 0; transition: opacity var(--duration-fast) ease;
-}
-.prose .code:hover .chip, .prose .code:has(:focus-visible) .chip, .prose .chip:has(.copy.shown) { opacity: 1; }
-.prose > .code:first-child > .chip { right: 72px; }
-.prose .diagram > .drawn { margin: 6px 0 0; padding: 12px 14px; max-height: min(70vh, 560px); overflow: auto; background: var(--sheet); border-radius: var(--radius-sm); scrollbar-width: thin; }
+.prose .code > pre { margin: 0; padding-top: 6px; background: none; }
+.code-head { display: flex; align-items: center; justify-content: flex-end; gap: 4px; height: 44px; padding: 0 8px 0 14px; font: 500 var(--text-xs)/1 var(--mono); color: var(--graphite); user-select: none; }
+.code-head > .lang { margin-right: auto; }
+.code-head > .copy { position: static; justify-content: center; min-width: 26px; height: 26px; padding: 0 5px; border: 0; border-radius: var(--radius-xs); background: none; color: var(--graphite); font-family: var(--sans); opacity: 1; }
+.code-head > .copy:hover, .code-head > .copy.shown { color: var(--ink); }
+.code-head > .copy:hover { background: var(--code-bg); }
+.code-head > .copy > svg { width: 14px; height: 14px; }
+.prose .diagram > .drawn { padding: 6px 14px 12px; max-height: min(70vh, 560px); overflow: auto; scrollbar-width: thin; }
 .prose .diagram > .drawn > svg { display: block; }
 .prose .diagram > .undrawn { max-width: var(--measure); margin: 6px 0 0; font: 400 var(--text-sm)/1.5 var(--sans); color: var(--graphite); }
+.code-head > .view { height: 26px; padding: 0 8px; border: 0; border-radius: var(--radius-xs); background: none; color: var(--graphite); font: 500 var(--text-xs)/1 var(--sans); }
+.code-head > .view:hover { color: var(--ink); }
+.code-head > .view[aria-pressed="true"] { color: var(--ink); background: var(--code-bg); }
 /* A web page is white unless it sets a background, so the frame is white in either theme. */
-.prose .html-preview > iframe { display: block; width: var(--measure); max-width: 100%; height: 280px; margin: 6px 0 0; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--web-page); }
-.chip > .view { padding: 0 6px; border: 0; border-radius: var(--radius-xs); background: none; color: var(--graphite); font: inherit; }
-.chip > .view:hover { color: var(--ink); }
-.chip > .view[aria-pressed="true"] { color: var(--ink); background: var(--code-bg); }
+.prose .html-preview > iframe { display: block; width: var(--measure); max-width: 100%; height: 280px; border: 0; border-radius: 0 0 var(--radius-sm) var(--radius-sm); background: var(--web-page); }
 .caret::after { content: ""; display: inline-block; width: 0.5em; height: 1em; margin-left: 2px; vertical-align: -0.12em; background: var(--signal); animation: blink var(--duration-blink) steps(2) infinite; }
 
 .step > .head, .group > .head, .reasoning > .head, .moa > .head, .helper > .head, .plan > .head, .panel > .head {
@@ -516,7 +516,7 @@ button.file-open:hover { color: var(--signal); text-decoration: underline; text-
 .tip.complete .glyph { width: 14px; height: 14px; left: calc(var(--thread-x) - var(--col) - 6.25px); background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--graphite); }
 .tip.complete .glyph::after { content: ""; position: absolute; left: 4.5px; top: 1.75px; width: 4.5px; height: 8px; border-right: 2px solid var(--graphite); border-bottom: 2px solid var(--graphite); transform: rotate(45deg); box-sizing: border-box; }
 .step, .record section, .copyable { position: relative; }
-.copyable > pre, .prose > .code:first-child > pre, .record section:has(> .copy) > :is(.path, pre:not(.diff)) { padding-right: 72px; }
+.copyable > pre, .record section:has(> .copy) > :is(.path, pre:not(.diff)) { padding-right: 72px; }
 .step > .head:has(~ .copy) { padding-right: 82px; }
 .copy {
   position: absolute; top: 2px; right: 2px; z-index: 1; padding: 1px 8px; border: 1px solid var(--rule); border-radius: var(--radius-xs);
@@ -561,8 +561,6 @@ button.reaction:hover:not(:disabled) { border-color: var(--signal); }
 .bar .members ~ button { margin-left: 0; }
 .relay-from { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font: 500 var(--text-sm)/1.4 var(--sans); }
 .relay-reply > :is(.notice, .err) { margin: 0; }
-.chip > .copy { position: static; padding: 0 6px; border: 0; background: none; color: var(--graphite); font: inherit; opacity: 1; }
-.chip > .copy:hover, .chip > .copy.shown { color: var(--ink); }
 .sr { position: absolute; top: 0; left: 0; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .tip.paused, .tip.lost { color: var(--graphite); font-weight: 400; }
 .tip.paused .glyph { background: var(--graphite); }
@@ -1289,7 +1287,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
   .tip.complete .glyph, .tip.lost .glyph { border-width: 2px; }
   .tip.complete .glyph::after { left: 3px; top: 0.25px; width: 4px; height: 7px; }
   .caret::after { width: 0; border-left: 0.5em solid CanvasText; }
-  .chip > .view[aria-pressed="true"] { outline: 1px solid CanvasText; }
+  .code-head > .view[aria-pressed="true"] { outline: 1px solid CanvasText; }
 
   .approval { --card-edge: 1px; border: 1px solid CanvasText; }
   .approval.live { --card-edge: 4px; border-left-width: var(--card-edge); }
@@ -1305,7 +1303,7 @@ textarea:focus { outline: none; border-color: var(--signal); box-shadow: var(--r
   .diff .add { padding-left: 0; border-left: var(--line-edge) solid CanvasText; }
   .diff .del { padding-left: 0; border-left: var(--line-edge) dotted CanvasText; }
 
-  .step.open > .record:not(.bare), .prose pre, .approval pre { border: 1px solid CanvasText; }
+  .step.open > .record:not(.bare), .prose .code, .approval pre { border: 1px solid CanvasText; }
   .composer { border-top: 1px solid CanvasText; }
   .composer .pill, .top .bar :is(h1, .members, .pencil) { border-color: CanvasText; }
   .composer button { border: 1px solid ButtonText; }
