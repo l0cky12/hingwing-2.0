@@ -247,7 +247,7 @@ export interface Oneshot { readonly text?: string; readonly error?: string; read
 export interface MemoryScript extends MemoryFiles {
   /**
    * The top level is the launch profile, `default`. `profiles[p]` is the memory of bot `p`, which the dashboard API's
-   * `?profile=p` reads answer. A profile not listed holds no entries, under the top level's limits, and an entry without `limits` takes the top level's.
+   * `?profile=p` reads answer. A profile not listed holds no entries, under the top level's limits, and a profile without `limits` takes the top level's.
    */
   readonly profiles?: { readonly [profile: string]: MemoryFiles }
 }
