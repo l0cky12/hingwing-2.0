@@ -937,19 +937,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   /**
    * `_delivery_params` (gateway/session_bot.py:804-827), with the id rule of tools/bot_live_delivery.py:131-134,
    * then the target: a profile that is not running refuses `runtime_unavailable` (tui_gateway/methods_bot_relay.py:122).
-   * The message runs as a turn of the target's Bot Chat (gateway/session_bot.py:954-1000, `handIn`). The call answers once
-   * that turn ends, with the receipt `_result` builds (gateway/session_bot.py:480-512).
+   * The message runs as a turn of the target's Bot Chat (gateway/session_bot.py:954-1000, `handIn`). The call answers at
+   * once, as `_admit` does, with the receipt `_result` builds (gateway/session_bot.py:480-512): `claimed`, as the turn has started.
    */
   'bot_relay.deliver': (gateway, _socket, params, routed) => {
     const { id, message } = params
     if (typeof id !== 'string' || !/^[0-9a-f]{32,64}$/.test(id) || typeof message !== 'string' || message.trim() === '') throw new Refused('invalid_params')
     const script = gateway.fixture.header.relay?.[routed] ?? { refuse: 'runtime_unavailable' }
     if ('refuse' in script) throw new Refused(script.refuse)
-    const chat = gateway.handIn(routed, id, message, script.reply, script.delay_ms ?? 0)
-    return new Later(script.delay_ms ?? 0, {
-      status: 'settled', delivery_id: id, profile_home: `/fixture/profiles/${routed}`, session_id: chat.id, message,
-      admission_id: `${chat.id}-admission-${id.slice(0, 8)}`, reply: script.reply
-    })
+    return gateway.deliver(routed, id, message, script.reply, script.delay_ms ?? 0)
   },
   'image.attach_bytes': (gateway, socket, params, routed) => {
     const reason = attached(gateway, socket, params, routed)
@@ -1076,6 +1072,8 @@ export class ScriptedGateway {
   private readonly removed = new Set<EchoChat>()
   private readonly fate = { archived: false, pinned: false, removed: false }
   private readonly receipts = new Map<string, { readonly digest: string; readonly result: Obj }>()
+  /** delivery id -> the receipt `bot_relay.deliver` answers for it now. */
+  private readonly deliveries = new Map<string, Obj>()
   private readonly seeded: readonly EchoChat[]
   private readonly storyIsBotChatOf: string | null
   private readonly afterReply: (() => void)[] = []
@@ -1953,6 +1951,26 @@ export class ScriptedGateway {
    * :1229-1241, gateway/session_bot.py:980), and its `message.start` carries no text (gateway/session_automation.py:394-408).
    * `sessions.changed` follows the row count at the turn's start and end (tui_gateway/change_watcher.py:461-478).
    */
+  /**
+   * The receipt of delivery `id`. Its first `deliver` admits it and answers `claimed`, and the same id asked again answers
+   * the receipt as it is now, `settled` with the reply once the turn ended (`_receipt_answer`, gateway/session_bot.py:836-848).
+   * Another message, or another profile, under that id is refused as `admission_conflict` (`_require_same_delivery`).
+   */
+  deliver(routed: string, id: string, message: string, reply: string, ms: number): Obj {
+    const held = this.deliveries.get(id)
+    if (held !== undefined) {
+      if (held.message !== message || held.profile_home !== `/fixture/profiles/${routed}`) throw new Refused('admission_conflict')
+      return held
+    }
+    const chat = this.handIn(routed, id, message, reply, ms)
+    const receipt = {
+      delivery_id: id, profile_home: `/fixture/profiles/${routed}`, session_id: chat.id, message, admission_id: `${chat.id}-admission-${id.slice(0, 8)}`
+    }
+    this.deliveries.set(id, { status: 'claimed', ...receipt })
+    this.options.clock.setTimeout(() => this.deliveries.set(id, { status: 'settled', ...receipt, reply }), ms)
+    return { status: 'claimed', ...receipt }
+  }
+
   handIn(routed: string, id: string, message: string, reply: string, ms: number): EchoChat {
     const chat = this.botChats.get(routed) ?? this.newBotChat(routed)
     const generation = ++chat.generation

@@ -43,7 +43,7 @@ describe('math in a reply', () => {
 
   it('keeps math inside code as code', () => {
     expect(inlineOf('`$x$`')).toEqual([{ t: 'code', v: '$x$' }])
-    expect(parseMarkdown('```\n$$x$$\n```')).toEqual([{ kind: 'code', lang: null, text: '$$x$$', open: false }])
+    expect(parseMarkdown('```\n$$x$$\n```')).toEqual([{ kind: 'code', lang: null, text: '$$x$$', open: false, preview: null }])
     expect(inlineOf('costs $10. Write `$x$` here')).toEqual([text('costs $10. Write '), { t: 'code', v: '$x$' }, text(' here')])
   })
 

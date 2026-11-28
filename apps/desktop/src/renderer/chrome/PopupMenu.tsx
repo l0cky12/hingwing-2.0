@@ -13,7 +13,7 @@ export interface PopupItem<A extends string> {
   readonly disabled?: boolean
   /** Choices that open in a menu beside this item. */
   readonly submenu?: readonly PopupItem<A>[]
-  /** Why the item can't be used now, shown as its title and said to a screen reader. It stays focusable. */
+  /** Why the item can't be used now, shown as its title and said to a screen reader. It stays focusable, and choosing it calls `onBlocked`. */
   readonly block?: string
 }
 
@@ -26,6 +26,8 @@ export interface PopupMenuProps<A extends string> {
   /** An element outside the menu that a press or focus on leaves it open, such as the button that toggles it. */
   readonly owns: (target: Element) => boolean
   readonly onChoose: (id: A) => void
+  /** A blocked item was chosen, so the owner can show `why` where a sighted keyboard user sees it. */
+  readonly onBlocked?: (why: string) => void
   readonly onClose: (how: 'escape' | 'tab' | 'away') => void
 }
 
@@ -39,7 +41,7 @@ const Chevron = () => <svg {...ICON} className="popup-more"><path d="m9 6 6 6-6 
  * close it, and a press or focus anywhere else closes it. An item with a submenu opens it beside the menu on hover,
  * click, Enter or ArrowRight, and ArrowLeft or Escape closes it back onto the item.
  */
-export function PopupMenu<A extends string>({ label, groups, className, anchor, owns, onChoose, onClose }: PopupMenuProps<A>) {
+export function PopupMenu<A extends string>({ label, groups, className, anchor, owns, onChoose, onBlocked, onClose }: PopupMenuProps<A>) {
   const ids = useId()
   const holder = useRef<HTMLDivElement>(null)
   const menu = useRef<HTMLDivElement>(null)
@@ -148,7 +150,8 @@ export function PopupMenu<A extends string>({ label, groups, className, anchor, 
         aria-describedby={described === '' ? undefined : described}
         aria-haspopup={item.submenu === undefined ? undefined : 'menu'} aria-expanded={item.submenu === undefined ? undefined : open?.id === item.id}
         onClick={() => {
-          if (item.block !== undefined || item.disabled) return
+          if (item.block !== undefined) return onBlocked?.(item.block)
+          if (item.disabled) return
           if (item.submenu === undefined) onChoose(item.id)
           else setOpen({ id: item.id, focus: true })
         }}
