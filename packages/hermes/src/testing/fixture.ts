@@ -2,6 +2,7 @@
  * `@highwing/hermes/testing`: a recorded or generated gateway, played back through the real client.
  */
 import { readFileSync } from 'node:fs'
+import { pythonStrip } from '../domain/memory'
 import { APPROVAL_MODES, type ApprovalMode, type SessionId } from '../domain/session'
 import { systemClock, type Reach } from '../wire/link'
 import { transcriptOf, type Transcribe } from '../wire/transcribe'
@@ -576,9 +577,9 @@ const isCronScript = (value: unknown): value is CronScript =>
   && (value.history === undefined || (isObject(value.history) && Object.keys(value.history).every(id => cronJobIds(value).has(id))))
 
 const MEMORY_FILES = new Set(['MEMORY.md', 'USER.md'])
-const isCharLimit = (value: unknown) => value === undefined || (Number.isSafeInteger(value) && (value as number) > 0)
+const isCharLimit = (value: unknown) => value === undefined || (Number.isSafeInteger(value) && (value as number) >= 0)
 const isMemoryFiles = (value: unknown): value is MemoryFiles =>
-  isObject(value) && Array.isArray(value.entries) && value.entries.every(entry => isObject(entry) && typeof entry.file === 'string' && MEMORY_FILES.has(entry.file) && typeof entry.text === 'string' && entry.text.trim() !== '')
+  isObject(value) && Array.isArray(value.entries) && value.entries.every(entry => isObject(entry) && typeof entry.file === 'string' && MEMORY_FILES.has(entry.file) && typeof entry.text === 'string' && pythonStrip(entry.text) !== '')
   && (value.limits === undefined || (isObject(value.limits) && Object.keys(value.limits).every(key => key === 'memory' || key === 'user') && isCharLimit(value.limits.memory) && isCharLimit(value.limits.user)))
 const isMemory = (value: unknown): value is MemoryScript =>
   isMemoryFiles(value) && ((value as MemoryScript).profiles === undefined || (isObject((value as MemoryScript).profiles) && Object.values((value as MemoryScript).profiles!).every(isMemoryFiles)))

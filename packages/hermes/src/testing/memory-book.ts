@@ -105,6 +105,15 @@ export function memoryBook(script: MemoryFiles): MemoryBook {
   }
 }
 
+const launchBooks = new WeakMap<MemoryScript, MemoryBook>()
+
+/** The launch profile's book, one per fixture, so an edit through the socket's `learning.edit` shows in the HTTP reads too, as both read one home on Hermes. */
+export function launchBookOf(script: MemoryScript): MemoryBook {
+  const book = launchBooks.get(script) ?? memoryBook(script)
+  launchBooks.set(script, book)
+  return book
+}
+
 function bookFor(script: MemoryScript, profile: string): MemoryFiles {
   if (profile === 'default') return script
   const own = script.profiles?.[profile]
@@ -122,7 +131,7 @@ const NODE_ROUTE = '/api/learning/node'
 export function memoryReads(script: MemoryScript | undefined): (path: string) => { readonly status: number; readonly body: unknown } | null {
   const books = new Map<string, MemoryBook>()
   const bookOf = (held: MemoryScript, profile: string) => {
-    const book = books.get(profile) ?? memoryBook(bookFor(held, profile))
+    const book = books.get(profile) ?? (profile === 'default' ? launchBookOf(held) : memoryBook(bookFor(held, profile)))
     books.set(profile, book)
     return book
   }

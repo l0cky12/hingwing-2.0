@@ -317,6 +317,8 @@ describe('the route to a gateway address, against the fake Webapp', () => {
     await expect(route.read('/api/learning/graph?profile=current')).rejects.toThrow('a bot named current')
     await expect(route.read('/api/config?profile=Current')).rejects.toThrow('a bot named current')
     expect(web.requests.filter(request => request.includes('/api/learning/') || request.includes('/api/config')), 'no request left the app').toEqual([])
+    await route.read('/api/cron/jobs/a1/runs?profile=current&limit=20')
+    expect(count(web, 'GET /api/cron/jobs/a1/runs'), 'the cron route reads current as a name, so its read goes out').toBe(1)
   })
 
   it('rejects a read for a sign-in Hermes ended', async () => {

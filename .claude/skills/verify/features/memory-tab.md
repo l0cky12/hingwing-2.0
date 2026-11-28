@@ -7,6 +7,7 @@ The details panel of [Bot details](./bot-details.md) has a Memory tab after Rout
 - `memory-tab` shows Rae's three MEMORY.md entries, the long one in full, with a near-full meter, and its one USER.md entry.
 - `memory-tab-default` shows Emu's own entries and none of Rae's.
 - `memory-tab-missing` says this Hermes cannot show memory, with no meter.
+- `memory-tab-after-edit` shows an entry edited through Memory… in the default bot's tab.
 
 ## How to get to it (user POV)
 
@@ -19,6 +20,8 @@ Preconditions: `--profiles fixtures/profiles/rae.json`, and `--memory fixtures/m
 - **A bot's memory.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/rae.json --memory fixtures/memory/bots.json --run memory-tab wait live wait bots click button Rae said "The weekly report is ready" click button "Details for Rae" see "Upload picture" count tab Memory 1 click tab Memory see "Sends the summary to the team on Fridays." see "Step 12: look through the notes folder" see "Likes plain words and short lists." count meter "MEMORY.md: 1,365 of 1,500 characters" 1 count meter "USER.md: 34 of 1,375 characters" 1 count tabpanel Memory 1 count button Save 0 shot memory-tab reveal meter "USER.md: 34 of 1,375 characters" shot memory-tab-user quiet`. `memory-tab.png` shows the near-full MEMORY.md meter over the long entry. "Step 12" is past the graph's 1,200-character cut, so seeing it proves the tab read that entry in full.
 - **The default bot.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/rae.json --memory fixtures/memory/bots.json --run memory-tab-default wait live wait bots click button "Details for Emu" click tab Memory see "Prefers short answers." see "Lives in Lisbon." absent "Sends the summary" count meter "MEMORY.md: 22 of 2,200 characters" 1 count meter "USER.md: 16 of 1,375 characters" 1 shot memory-tab-default quiet`. Emu's caps are Hermes's defaults, which the fake sends for a file whose cap the fixture leaves out.
 - **A Hermes without the read.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/rae.json --run memory-tab-missing wait live wait bots click button Rae said "The weekly report is ready" click button "Details for Rae" click tab Memory see "This Hermes can't show memory yet." count alert "" 1 count meter "/.*/" 0 shot memory-tab-missing click button Close gone dialog Rae quiet`.
+
+- **After an edit.** Run `$H run --fixture fixtures/errand.jsonl --profiles fixtures/profiles/roster.json --memory fixtures/memory/home.json --run memory-tab-after-edit wait live wait bots click button "More for Emu" click menuitem "Memory…" see "Lives in Lisbon." click button "Edit USER.md: Lives in Lisbon." type "Memory text for USER.md" "Lives in Porto." click button Save see "Lives in Porto." click button Close gone dialog Memory click button "Details for Emu" click tab Memory see "Lives in Porto." absent "Lives in Lisbon." count meter "USER.md: 15 of 1,375 characters" 1 shot memory-tab-after-edit quiet`. The socket's `learning.edit` and the tab's HTTP reads share the `default` profile's copy, as they share one home on Hermes.
 
 ## Gotchas
 

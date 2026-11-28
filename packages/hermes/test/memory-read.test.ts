@@ -5,7 +5,7 @@ import type { BotId } from '../src/domain/bots'
 import { botMemoryOf, memoryCapsPath, memoryEntryPath, memoryGraphPath, NO_MEMORY_CAPS, parseMemoryCaps, parseMemoryEntry, parseMemoryGraph, pythonStrip } from '../src/domain/memory'
 import type { MemoryScript } from '../src/testing/fixture'
 import { fixtureRead } from '../src/testing/kanban'
-import { memoryReads } from '../src/testing/memory-book'
+import { launchBookOf, memoryReads } from '../src/testing/memory-book'
 
 const RAE = 'rae' as BotId
 const BOTS = JSON.parse(readFileSync(fileURLToPath(new URL('../../../fixtures/memory/bots.json', import.meta.url)), 'utf8')) as MemoryScript
@@ -169,6 +169,17 @@ describe('the fake keeps a trailing byte-order mark, as Hermes does', () => {
     const read = fixtureRead({ memory: { entries: [{ file: 'MEMORY.md', text: marked }] } })
     const cards = parseMemoryGraph((await read(memoryGraphPath('default' as BotId))).body)!
     expect(cards.map(card => card.text)).toEqual([marked])
+  })
+})
+
+describe("the fake's launch profile", () => {
+  it('is one book for the socket and the HTTP reads, so an edit through learning.edit shows in the tab', async () => {
+    const script: MemoryScript = { entries: [{ file: 'USER.md', text: 'Lives in Lisbon.' }] }
+    const book = launchBookOf(script)
+    const node = parseMemoryGraph(await fixtureRead({ memory: script })(memoryGraphPath('default' as BotId)).then(answer => answer.body))![0]!.node
+    expect(book.edit(node, 'Lives in Porto.')).toMatchObject({ ok: true })
+    const cards = parseMemoryGraph((await fixtureRead({ memory: script })(memoryGraphPath('default' as BotId))).body)!
+    expect(cards.map(card => card.text)).toEqual(['Lives in Porto.'])
   })
 })
 
