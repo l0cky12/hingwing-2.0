@@ -28,7 +28,7 @@ vi.mock('../src/renderer/store', () => ({
   }
 }))
 
-const { retryOfflinePictures, usePicture } = await import('../src/renderer/bots/pictures')
+const { retryOfflinePictures, useClaimPicture, usePicture } = await import('../src/renderer/bots/pictures')
 
 const PNG = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString('base64')}`
 const settle = () => new Promise(resolve => setTimeout(resolve, 0))
@@ -63,5 +63,18 @@ describe("a bot's picture", () => {
     retryOfflinePictures()
     for (let draw = 0; draw < 5; draw++) expect(usePicture(bot)).toBeNull()
     expect(host.reads).toEqual([bot])
+  })
+})
+
+describe("a change to a bot's picture", () => {
+  it('stays current until a later change to the same bot starts', () => {
+    const claim = useClaimPicture()
+    const pet = claim('claimed-bot' as BotId)
+    const other = claim('other-bot' as BotId)
+    expect(pet(), 'nothing started since').toBe(true)
+    const upload = claim('claimed-bot' as BotId)
+    expect(pet(), 'an upload started after it').toBe(false)
+    expect(upload()).toBe(true)
+    expect(other(), 'another bot is untouched').toBe(true)
   })
 })

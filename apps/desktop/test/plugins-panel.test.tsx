@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { afterInstall, catalogKind, installedKind, installedWords } from '../src/renderer/apps/plugins-view'
 
-vi.mock('../src/renderer/store', () => ({ Epoch: {}, run: async () => ({ ok: true, value: undefined }), useTopic: () => undefined }))
+vi.mock('../src/renderer/store', () => ({ Epoch: {}, run: async () => ({ ok: true, value: undefined }), runAt: async () => ({ ok: true, value: undefined }), useTopic: () => undefined }))
 
 const { OfferCard } = await import('../src/renderer/apps/Connectors')
 

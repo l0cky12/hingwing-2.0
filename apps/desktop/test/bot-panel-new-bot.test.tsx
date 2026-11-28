@@ -30,19 +30,23 @@ vi.mock('react', async original => ({
   useContext: () => 0,
   useSyncExternalStore: (_subscribe: unknown, read: () => unknown) => read()
 }))
-vi.mock('../src/renderer/store', () => ({
-  Epoch: {},
-  pickBotPicture: async () => ({ ok: true, value: 'cancelled' }),
-  run: async (command: WindowCommand) => {
+vi.mock('../src/renderer/store', () => {
+  const run = async (command: WindowCommand) => {
     seen.commands.push(command)
     if (command.do === 'describeBot') return { ok: true, value: { bot: command.bot, name: 'Rae', description: '', persona: '', revision: 1 } }
     if (command.do === 'botModels') return { ok: true, value: { options: [{ id: 'careful-large', provider: 'acme', providerName: 'Acme' }], fallback: null } }
     if (command.do === 'editBot' && seen.edited !== null) return seen.edited
     if (command.do === 'createBot' && seen.created !== null) return seen.created
     return { ok: true, value: undefined }
-  },
-  useTopic: (topic: string | null) => (topic === null ? undefined : seen.topics[topic])
-}))
+  }
+  return {
+    Epoch: {},
+    pickBotPicture: async () => ({ ok: true, value: 'cancelled' }),
+    run,
+    runAt: (_epoch: number, command: WindowCommand) => run(command),
+    useTopic: (topic: string | null) => (topic === null ? undefined : seen.topics[topic])
+  }
+})
 
 const { TopBar } = await import('../src/renderer/chrome/Chrome')
 

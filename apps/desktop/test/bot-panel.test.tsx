@@ -12,6 +12,7 @@ vi.mock('react', async original => ({
 vi.mock('../src/renderer/store', () => ({
   Epoch: {},
   run: async () => ({ ok: true, value: undefined }),
+  runAt: async () => ({ ok: true, value: undefined }),
   useTopic: (topic: string | null) => (topic === null ? undefined : topics.values[topic])
 }))
 

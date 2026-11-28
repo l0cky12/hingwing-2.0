@@ -1,7 +1,8 @@
 import type { BotId, CommandOutcome } from '@highwing/hermes/domain'
-import { run } from '../store'
+import { useContext } from 'react'
+import { Epoch, runAt } from '../store'
 import { pictureOf } from './look'
-import { useForgetPicture } from './pictures'
+import { useClaimPicture, useForgetPicture } from './pictures'
 
 export interface PetAbout { readonly name: string; readonly description: string }
 
@@ -15,30 +16,36 @@ export function petPrompt({ name, description }: PetAbout): string {
 }
 
 export interface PetCalls {
-  readonly generate: (prompt: string) => Promise<CommandOutcome<string>>
-  readonly save: (bot: BotId, data: string) => Promise<CommandOutcome>
+  readonly generate: (prompt: string, epoch: number) => Promise<CommandOutcome<string>>
+  readonly save: (bot: BotId, data: string, epoch: number) => Promise<CommandOutcome>
 }
 
 export const PET_CALLS: PetCalls = {
-  generate: prompt => run({ do: 'generatePicture', prompt }),
-  save: (bot, data) => run({ do: 'setBotPicture', bot, data })
+  generate: (prompt, epoch) => runAt(epoch, { do: 'generatePicture', prompt }),
+  save: (bot, data, epoch) => runAt(epoch, { do: 'setBotPicture', bot, data })
 }
 
 const UNDRAWN: CommandOutcome = { ok: false, refusal: { kind: 'rejected', message: "Highwing couldn't draw that picture." } }
 
-export async function givePet(calls: PetCalls, bot: BotId, about: PetAbout): Promise<CommandOutcome> {
-  const generated = await calls.generate(petPrompt(about))
+const DROPPED: CommandOutcome = { ok: true, value: undefined }
+
+/** Every call names the epoch the pet was asked in, so main refuses it once another connection is live, where the same bot id may be another bot. */
+export async function givePet(calls: PetCalls, bot: BotId, about: PetAbout, epoch: number, current: () => boolean): Promise<CommandOutcome> {
+  const generated = await calls.generate(petPrompt(about), epoch)
   if (!generated.ok) return generated
   const drawn = await pictureOf({ from: 'generate', picture: generated.value }, about.name).catch(() => null)
-  return drawn === null ? UNDRAWN : calls.save(bot, drawn)
+  if (drawn === null) return UNDRAWN
+  return current() ? calls.save(bot, drawn, epoch) : DROPPED
 }
 
 export type DrawPet = (bot: BotId, about: PetAbout) => Promise<CommandOutcome>
 
 export function usePetPicture(calls: PetCalls = PET_CALLS): DrawPet {
+  const epoch = useContext(Epoch)
+  const claim = useClaimPicture()
   const forget = useForgetPicture()
   return async (bot, about) => {
-    const outcome = await givePet(calls, bot, about)
+    const outcome = await givePet(calls, bot, about, epoch, claim(bot))
     if (outcome.ok) forget(bot)
     return outcome
   }

@@ -93,6 +93,19 @@ export function usePicture(bot: BotId | null): string | null {
   return bot !== null && entry?.state === 'loaded' ? entry.url : null
 }
 
+const claims = new Map<string, number>()
+
+/** Starts a change to a bot's picture. The check it returns turns false once a later change starts, so a slow pet never overwrites a newer picture. */
+export function useClaimPicture(): (bot: BotId) => () => boolean {
+  const epoch = useContext(Epoch)
+  return bot => {
+    const key = `${epoch} ${bot}`
+    const mine = (claims.get(key) ?? 0) + 1
+    claims.set(key, mine)
+    return () => claims.get(key) === mine
+  }
+}
+
 export function useForgetPicture(): (bot: BotId) => void {
   const epoch = useContext(Epoch)
   return bot => {
