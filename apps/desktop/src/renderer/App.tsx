@@ -202,7 +202,6 @@ function ChatWindow({ hidden, settings, target, mode, theme, accent, width, onSe
   )
 }
 
-/** The stylesheet reads only custom properties, so one pass over the root restyles every window part at once. */
 function useAppearance(appearance: Appearance | undefined) {
   useLayoutEffect(() => {
     if (appearance === undefined) return

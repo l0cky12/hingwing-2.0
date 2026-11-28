@@ -14,7 +14,6 @@ declare global {
   interface Window { queryLocalFonts?: () => Promise<readonly LocalFont[]> }
 }
 
-/** The families installed on this computer. Empty while they are read, and where Chromium can't list them. */
 function useInstalledFamilies(): readonly string[] {
   const [families, setFamilies] = useState<readonly string[]>([])
   useEffect(() => {
@@ -29,10 +28,6 @@ function useInstalledFamilies(): readonly string[] {
 
 type Pick = (change: (from: Appearance) => Appearance) => void
 
-/**
- * Each pick sends the whole appearance, so a second pick made before main echoes the first must build on the first, or it would
- * undo it. The last value sent shows until main echoes it back.
- */
 function useAppearancePicks(): readonly [Appearance, Pick] {
   const held = useTopic('appearance') ?? DEFAULT_APPEARANCE
   const [sent, setSent] = useState<Appearance | null>(null)
@@ -105,7 +100,6 @@ function FontRow({ role, appearance, installed, hidden, pick }: { readonly role:
   )
 }
 
-/** Holds the dragged value until the slider loses focus, so the thumb never waits on main's answer. */
 function Slider({ label, desc, min, max, step, value, unit, fallback, hidden, onPick }: {
   readonly label: string
   readonly desc: string
@@ -119,21 +113,14 @@ function Slider({ label, desc, min, max, step, value, unit, fallback, hidden, on
   readonly onPick: (value: number) => void
 }) {
   const id = useId()
-  const [held, setHeld] = useState<number | null>(null)
-  const shown = held ?? value
   return (
     <div className="row" hidden={hidden}>
       <RowText id={id} label={label} desc={desc} reset={value === fallback ? null : () => onPick(fallback)} />
       <div className="control">
-        <output className="readout" htmlFor={`${id}-range`}>{unit(shown)}</output>
+        <output className="readout" htmlFor={`${id}-range`}>{unit(value)}</output>
         <input
-          id={`${id}-range`} type="range" min={min} max={max} step={step} value={shown} aria-labelledby={id} aria-describedby={`${id}-desc`} aria-valuetext={unit(shown)}
-          onChange={event => {
-            const next = Number(event.target.value)
-            setHeld(next)
-            onPick(next)
-          }}
-          onBlur={() => setHeld(null)}
+          id={`${id}-range`} type="range" min={min} max={max} step={step} value={value} aria-labelledby={id} aria-describedby={`${id}-desc`} aria-valuetext={unit(value)}
+          onChange={event => onPick(Number(event.target.value))}
         />
       </div>
     </div>
@@ -175,7 +162,6 @@ function SelectRow<V extends string>({ label, desc, value, options, hidden, onPi
 
 const WIDTHS = WIDTH_ORDER.map(width => ({ value: width, label: CHAT_WIDTHS[width].label }))
 
-/** Settings → Appearance below the theme: each kind of text, the chat's width, contrast, math and animation. Each holds across restarts, in every window. */
 export function AppearanceRows({ off }: { readonly off: (row: RowId) => boolean }) {
   const [appearance, pick] = useAppearancePicks()
   const installed = useInstalledFamilies()

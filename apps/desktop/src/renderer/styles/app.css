@@ -60,7 +60,6 @@
   --mono: "JetBrains Mono", "DejaVu Sans Mono", monospace;
   --prompt-font: Schibsted, "Liberation Sans", sans-serif;
   --terminal-font: "JetBrains Mono", "DejaVu Sans Mono", monospace;
-  /* Settings → Appearance sets each role's size as a factor of its default. */
   --ui-scale: 1;
   --prompt-scale: 1;
   --code-scale: 1;

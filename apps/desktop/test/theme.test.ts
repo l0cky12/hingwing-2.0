@@ -70,7 +70,6 @@ const ROOTS = rulesNestedOnlyInAtRules(CSS).filter(rule => rule.selector === ':r
 const paletteOf = (scheme: Scheme): ReadonlyMap<string, string> =>
   new Map(ROOTS.filter(rule => applies(rule.media, scheme)).flatMap(rule => [...rule.declarations]))
 
-/** A palette color, through the var() it may be derived from, such as --graphite from --graphite-base. */
 const colorIn = (palette: ReadonlyMap<string, string>, name: string): string => {
   const value = palette.get(`--${name}`) ?? ''
   const derived = /^var\(--([\w-]+)\)$/.exec(value)

@@ -158,7 +158,6 @@ export const isNoticeKind = (raw: unknown): raw is NoticeKind => NOTICE_KINDS.in
 export const isNotices = (raw: unknown): raw is Notices =>
   isObject(raw) && Object.keys(raw).length === NOTICE_KINDS.length && NOTICE_KINDS.every(kind => typeof raw[kind] === 'boolean')
 
-/** The whole appearance after one pick. A window merges its pick into the one it shows, so main keeps no rules of its own about fields. */
 export type AppearanceCommand = { readonly do: 'setAppearance'; readonly appearance: Appearance }
 
 export type IntroCommand = { readonly do: 'examples' } | { readonly do: 'done' }

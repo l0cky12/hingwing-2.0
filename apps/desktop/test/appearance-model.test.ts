@@ -7,7 +7,6 @@ import { APPEARANCE, readPreference } from '../src/main/preferences'
 const withFont = (role: FontRole, pick: FontPick): Appearance => ({ ...DEFAULT_APPEARANCE, fonts: { ...DEFAULT_APPEARANCE.fonts, [role]: pick } })
 const without = <T extends object>(value: T, key: keyof T) => Object.fromEntries(Object.entries(value).filter(([held]) => held !== key))
 const stylesheet = readFileSync(join(import.meta.dirname, '../src/renderer/styles/app.css'), 'utf8')
-/** The value the stylesheet's first `:root` rule gives a custom property. */
 const sheetDefault = (property: string) => new RegExp(`^:root \\{[^}]*?\\n  ${property}: ([^;]+);`, 'ms').exec(stylesheet)?.[1]
 
 describe('an appearance from outside the renderer', () => {

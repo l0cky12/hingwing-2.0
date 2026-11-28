@@ -28,7 +28,6 @@ interface Props {
 }
 interface Found { readonly type: string; readonly props: Props }
 
-/** Every element the rows draw, with each component called through to the elements it returns. */
 function drawn(node: ReactNode, found: Found[] = []): Found[] {
   if (Array.isArray(node)) node.forEach(child => drawn(child, found))
   else if (isValidElement(node)) {

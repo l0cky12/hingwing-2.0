@@ -9,7 +9,6 @@ import { ThreadImage } from './Image'
 import { WebLink } from './WebLink'
 
 export const MentionHandles = createContext<ReadonlySet<string> | null>(null)
-/** Settings → Appearance → Render math. Off shows the TeX as written, between its delimiters. */
 export const TypesetMath = createContext(true)
 
 /** `_MENTION_RE` (gateway/hosted_room_discussion.py:43), so a word is set apart exactly when Hermes would route on it. */
