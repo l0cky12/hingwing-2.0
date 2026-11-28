@@ -120,7 +120,7 @@ describe('the Theme and window-close rows of Settings', () => {
     const html = render('system')
     const labels = Array.from(html.matchAll(/<p class="label" id="[^"]*">([^<]*)<\/p>/g), ([, label]) => label)
     expect(labels.slice(labels.indexOf('Accent'), labels.indexOf('Accent') + 2)).toEqual(['Accent', 'Show the bot’s work'])
-    expect(html).toContain('Replies only hides thinking and tool calls, and shows the bot hopping while it works.')
+    expect(html).toContain('Replies only shows the bot hopping while it works, then just its final reply.')
     const work = seen.segmented.find(control => labelOf(html, control.labelledBy) === 'Show the bot’s work')!
     expect(work.value).toBe('all')
     expect(choicesOf(groupOf(html, 'seg', work.labelledBy))).toEqual(['only', 'Actions', 'Everything (checked)'])

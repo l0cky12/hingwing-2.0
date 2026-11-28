@@ -20,8 +20,15 @@ function endOffHidden(end: ThreadEnd, nodes: readonly ThreadNode[], pick: Hiding
   return { kind: 'tip', words: [{ t: 'text', v: node.kind === 'reasoning' ? 'Thinking' : 'Working' }], elapsed: end.elapsed }
 }
 
+const RUNNING: ReadonlySet<ThreadEnd['kind']> = new Set(['at', 'tip', 'paused'])
+
+function finalReplyStart({ nodes, end }: TurnView): number {
+  return RUNNING.has(end.kind) ? nodes.length : nodes.findLastIndex(node => !shows(node, 'replies')) + 1
+}
+
 function shownTurn(turn: TurnView, pick: Hiding): TurnView {
-  const nodes = turn.nodes.filter(node => shows(node, pick))
+  const from = pick === 'replies' ? finalReplyStart(turn) : 0
+  const nodes = turn.nodes.filter((node, at) => shows(node, pick) && (node.kind !== 'prose' || at >= from))
   return nodes.length === turn.nodes.length ? turn : { ...turn, nodes, end: endOffHidden(turn.end, turn.nodes, pick) }
 }
 
